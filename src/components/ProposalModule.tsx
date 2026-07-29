@@ -1086,8 +1086,12 @@ export const ProposalModule = () => {
       totalDiscount: safeNum(formData.totalDiscount),
       totalNetValue: safeNum(formData.totalNetValue),
       totalCost: safeNum(formData.totalCost),
-      totalMarginValue: safeNum(formData.totalMarginValue),
-      totalMarginPerc: safeNum(formData.totalMarginPerc),
+      totalMarginValue: Number.isFinite(Number(formData.totalMarginValue))
+        ? Number(formData.totalMarginValue)
+        : 0,
+      totalMarginPerc: Number.isFinite(Number(formData.totalMarginPerc))
+        ? Number(formData.totalMarginPerc)
+        : 0,
       totalTaxes: safeNum(formData.totalTaxes),
       totalCommission: safeNum(formData.totalCommission),
       totalFreight: safeNum(formData.totalFreight),
@@ -1715,7 +1719,7 @@ export const ProposalModule = () => {
 
   // Sincronizar totais com o formData para salvar
   useEffect(() => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       totalItems: totals.totalItems,
       totalGrossValue: totals.totalGross,
@@ -1725,10 +1729,17 @@ export const ProposalModule = () => {
       totalTaxes: totals.totalTaxes,
       totalCommission: totals.totalComm,
       totalFreight: totals.totalFreight,
-      totalMarginValue: totals.totalMarginValue,
-      totalMarginPerc: totals.totalMarginPerc
+      // Espelho da faixa "Margem comercial" (não a margem de produção).
+      totalMarginValue:
+        commercialPreview.view.commercialMarginTotalValue ?? Number.NaN,
+      totalMarginPerc:
+        commercialPreview.view.commercialMarginTotalPercent ?? Number.NaN,
     }));
-  }, [totals]);
+  }, [
+    totals,
+    commercialPreview.view.commercialMarginTotalValue,
+    commercialPreview.view.commercialMarginTotalPercent,
+  ]);
 
   const handleOpenClientPrintView = () => {
     const id = editingProposal?.id?.trim();

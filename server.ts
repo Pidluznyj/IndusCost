@@ -14669,20 +14669,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return new Prisma.Decimal(parsed);
   }
 
-  const proposalListItemMarginSelect = {
-    productId: true,
-    quantity: true,
-    suggestedPrice: true,
-    negotiatedPrice: true,
-    discountPerc: true,
-    discountValue: true,
-    priceTableId: true,
-    priceTableVersionId: true,
-    priceSource: true,
-    pricingSnapshotJson: true,
-    commercialPricingSnapshotJson: true,
-  } as const;
-
   async function withOfficialProposalListMargin(
     rows: Array<Record<string, unknown>>
   ): Promise<
@@ -14690,7 +14676,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       Record<string, unknown> & {
         totalMarginPerc: number | null;
         totalMarginValue: number | null;
-        marginSource: "ITEMS" | "HEADER" | "NONE";
+        marginSource: "HEADER" | "NONE";
       }
     >
   > {
@@ -14704,12 +14690,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     if (!Array.isArray(items) || items.length === 0) return scalars;
     const production = resolveProposalOfficialMarginFromItems(items);
     const commercial = resolveProposalCommercialMarginFromItems(items);
-    // Cabeçalho exibe margem comercial (paridade listagem/formulário).
+    // Cabeçalho = margem comercial do formulário (espelho na listagem).
+    // Preserva 0 e negativo; só cai em 0 quando a comercial está indisponível (schema Decimal).
     // totalCost permanece o de produção vigente.
     return {
       ...scalars,
-      totalMarginPerc: commercial.totalMarginPerc ?? 0,
-      totalMarginValue: commercial.totalMarginValue ?? 0,
+      totalMarginPerc:
+        commercial.totalMarginPerc != null ? commercial.totalMarginPerc : 0,
+      totalMarginValue:
+        commercial.totalMarginValue != null ? commercial.totalMarginValue : 0,
       totalCost: production.totalCost ?? 0,
     };
   }
@@ -14775,7 +14764,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         include: {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
-          items: { select: proposalListItemMarginSelect },
         },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
       });
@@ -14796,7 +14784,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         include: {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
-          items: { select: proposalListItemMarginSelect },
         },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
         skip,

@@ -1,9 +1,11 @@
 /**
- * Margem da listagem de Propostas — mesma margem comercial total do formulário
- * (formação congelada + preço líquido; total ponderado pelo líquido).
+ * Margem da listagem de Propostas — espelho do cabeçalho persistido
+ * (`totalMarginPerc` / `totalMarginValue`), gravado no save a partir da
+ * margem comercial do formulário. A coluna não recalcula nada.
  *
- * A margem oficial de produção (Pedido) permanece em `resolveProposalOfficialMarginFromItems`
- * para persistência / PDF interno.
+ * A margem oficial de produção permanece em `resolveProposalOfficialMarginFromItems`
+ * para custo / PDF interno. `resolveProposalCommercialMarginFromItems` só
+ * alimenta o save (autoridade no servidor).
  */
 import { previewProposalCommercialMargins } from "./proposalCommercialMarginPreview.js";
 import {
@@ -105,6 +107,7 @@ export function resolveProposalOfficialMarginFromItems(
 
 /**
  * Margem comercial consolidada — paridade com `commercialPreview.view` do formulário.
+ * Usada no save; a listagem não chama isto.
  */
 export function resolveProposalCommercialMarginFromItems(
   items: ReadonlyArray<ProposalListMarginItemInput> | null | undefined
@@ -144,8 +147,8 @@ export function resolveProposalCommercialMarginFromItems(
 }
 
 /**
- * Anexa margem comercial ao DTO de listagem (mesma do formulário).
- * Se os itens não entregarem %, usa o cabeçalho (gravado no save como comercial).
+ * Espelho do cabeçalho: blank → blank, 0 → 0, negativo → negativo.
+ * Não recalcula a partir dos itens.
  */
 export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
   proposal: T & {
@@ -156,31 +159,18 @@ export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
 ): T & {
   totalMarginPerc: number | null;
   totalMarginValue: number | null;
-  marginSource: "ITEMS" | "HEADER" | "NONE";
+  marginSource: "HEADER" | "NONE";
 } {
-  const items = proposal.items;
   const { items: _omit, ...rest } = proposal as T & { items?: unknown };
 
-  if (Array.isArray(items) && items.length > 0) {
-    const resolved = resolveProposalCommercialMarginFromItems(items);
-    if (resolved.totalMarginPerc != null || resolved.totalMarginValue != null) {
-      return {
-        ...(rest as T),
-        totalMarginPerc: resolved.totalMarginPerc,
-        totalMarginValue: resolved.totalMarginValue,
-        marginSource: "ITEMS",
-      };
-    }
-  }
-
-  const headerPerc = Number(proposal.totalMarginPerc);
-  const headerValue = Number(proposal.totalMarginValue);
-  const hasHeader =
-    Number.isFinite(headerPerc) || Number.isFinite(headerValue);
+  const headerPerc = toNullableNum(proposal.totalMarginPerc);
+  const headerValue = toNullableNum(proposal.totalMarginValue);
+  const hasPerc = headerPerc != null;
+  const hasValue = headerValue != null;
   return {
     ...(rest as T),
-    totalMarginPerc: Number.isFinite(headerPerc) ? headerPerc : null,
-    totalMarginValue: Number.isFinite(headerValue) ? headerValue : null,
-    marginSource: hasHeader ? "HEADER" : "NONE",
+    totalMarginPerc: hasPerc ? headerPerc : null,
+    totalMarginValue: hasValue ? headerValue : null,
+    marginSource: hasPerc || hasValue ? "HEADER" : "NONE",
   };
 }

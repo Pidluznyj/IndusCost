@@ -73,7 +73,7 @@ describe("proposalListMargin", () => {
     assert.equal(zeroCost.totalMarginValue, null);
   });
 
-  it("comercial: listagem bate com a margem total do formulário", () => {
+  it("comercial (save): bate com a margem total do formulário", () => {
     const p48 = formPrice(48, 4.5);
     const formation = {
       formationContextId: "v1|v2",
@@ -137,7 +137,7 @@ describe("proposalListMargin", () => {
     );
   });
 
-  it("enrich usa margem comercial dos itens e remove o array do DTO", () => {
+  it("enrich espelha o cabeçalho e ignora itens (não recalcula)", () => {
     const p48 = formPrice(48, 4.5);
     const formation = {
       formationContextId: "v1|v2",
@@ -178,8 +178,8 @@ describe("proposalListMargin", () => {
     const enriched = enrichProposalListRowMargin({
       id: "p1",
       number: 1,
-      totalMarginPerc: 100,
-      totalMarginValue: 999,
+      totalMarginPerc: 12.34,
+      totalMarginValue: 56.78,
       items: [
         {
           quantity: 1,
@@ -191,127 +191,39 @@ describe("proposalListMargin", () => {
         },
       ],
     });
-    assert.equal(enriched.marginSource, "ITEMS");
-    assert.equal(
-      enriched.totalMarginPerc,
-      formPreview.summary.proposalCommercialMarginTotalPercent
-    );
+    assert.equal(enriched.marginSource, "HEADER");
+    assert.equal(enriched.totalMarginPerc, 12.34);
+    assert.equal(enriched.totalMarginValue, 56.78);
     assert.equal((enriched as { items?: unknown }).items, undefined);
   });
 
-  it("comercial: Entre faixas (snapshot) aparece na listagem", () => {
-    const p33 = formPrice(33, 6);
-    const p48 = formPrice(48, 4.5);
-    const mid = (p33 + p48) / 2;
-    const formation = {
-      formationContextId: "v1|v2",
-      referenceDate: "2024-06-15",
-      frozenCostUnit: COST,
-      taxRate: TAX,
-      freightRate: FREIGHT_RATE,
-      freightAbsoluteUnit: 0,
-      otherVariablesRate: OTHER,
-      tiers: [
-        { id: "band-33", marginRate: 0.33, salePrice: p33, commissionRate: 0.06 },
-        { id: "band-48", marginRate: 0.48, salePrice: p48, commissionRate: 0.045 },
-      ],
-    };
-
-    const formPreview = previewProposalCommercialMargins([
-      {
-        quantity: 1,
-        suggestedPrice: p48,
-        negotiatedPrice: mid,
-        discountPerc: 0,
-        priceTableId: "pt",
-        commercialFormation: formation,
-      },
-    ]);
-    assert.equal(formPreview.byIndex[0]!.tierPosition, "BETWEEN_TIERS");
-    assert.equal(formPreview.byIndex[0]!.isComplete, true);
-    const snap = formPreview.snapshots[0];
-    assert.ok(snap);
-
-    const listResolved = resolveProposalCommercialMarginFromItems([
-      {
-        quantity: 1,
-        suggestedPrice: p48,
-        negotiatedPrice: mid,
-        discountPerc: 0,
-        commercialPricingSnapshotJson:
-          serializeProposalCommercialPricingSnapshot(snap),
-      },
-    ]);
-    assert.equal(
-      listResolved.totalMarginPerc,
-      formPreview.summary.proposalCommercialMarginTotalPercent
-    );
-  });
-
-  it("comercial: snapshot com margem já calculada (sem faixas) ainda exibe na lista", () => {
-    const snap = {
-      schemaVersion: 1 as const,
-      formationContextId: "ctx",
-      priceTableId: null,
-      priceTableVersionId: null,
-      referenceDate: "2026-07-29",
-      referenceTableUnitPrice: 100,
-      negotiatedGrossUnitPrice: 100,
-      informedDiscountRate: 0,
-      informedDiscountValue: 0,
-      finalNetUnitPrice: 100,
-      finalNetLineValue: 509.2,
-      frozenCostUnit: null,
-      taxRate: null,
-      freightRate: null,
-      freightAbsoluteUnit: null,
-      otherVariablesRate: null,
-      tiers: [] as [],
-      calculatedCommissionRate: 0.05,
-      commercialMarginRate: 0.4309,
-      commercialMarginValue: 219.4,
-      calculationSource: "PROPOSAL_PRICE_FORMATION" as const,
-      warnings: [],
-    };
-    const listResolved = resolveProposalCommercialMarginFromItems([
-      {
-        quantity: 4,
-        negotiatedPrice: 100,
-        commercialPricingSnapshotJson:
-          serializeProposalCommercialPricingSnapshot(snap),
-      },
-    ]);
-    assert.equal(listResolved.totalMarginPerc, 43.09);
-    assert.equal(listResolved.totalMarginValue, 219.4);
-  });
-
-  it("enrich preserva cabeçalho quando não há itens", () => {
-    const enriched = enrichProposalListRowMargin({
-      id: "p2",
-      totalMarginPerc: 25.5,
-      totalMarginValue: 100,
-      items: [],
+  it("enrich preserva zero e negativo do cabeçalho", () => {
+    const zero = enrichProposalListRowMargin({
+      id: "z",
+      totalMarginPerc: 0,
+      totalMarginValue: 0,
     });
-    assert.equal(enriched.marginSource, "HEADER");
-    assert.equal(enriched.totalMarginPerc, 25.5);
-    assert.equal(enriched.totalMarginValue, 100);
+    assert.equal(zero.marginSource, "HEADER");
+    assert.equal(zero.totalMarginPerc, 0);
+    assert.equal(zero.totalMarginValue, 0);
+
+    const neg = enrichProposalListRowMargin({
+      id: "n",
+      totalMarginPerc: -5.5,
+      totalMarginValue: -100,
+    });
+    assert.equal(neg.totalMarginPerc, -5.5);
+    assert.equal(neg.totalMarginValue, -100);
   });
 
-  it("enrich usa cabeçalho quando itens não entregam margem comercial", () => {
+  it("enrich fica em branco quando cabeçalho não é numérico", () => {
     const enriched = enrichProposalListRowMargin({
-      id: "p3",
-      totalMarginPerc: 43.09,
-      totalMarginValue: 219.4,
-      items: [
-        {
-          quantity: 1,
-          negotiatedPrice: 100,
-          commercialPricingSnapshotJson: null,
-        },
-      ],
+      id: "blank",
+      totalMarginPerc: null,
+      totalMarginValue: null,
     });
-    assert.equal(enriched.marginSource, "HEADER");
-    assert.equal(enriched.totalMarginPerc, 43.09);
-    assert.equal(enriched.totalMarginValue, 219.4);
+    assert.equal(enriched.marginSource, "NONE");
+    assert.equal(enriched.totalMarginPerc, null);
+    assert.equal(enriched.totalMarginValue, null);
   });
 });

@@ -5,9 +5,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { getEffectiveProductProductionCostsForPairs } from "./productionCostTables.server.js";
 import { effectiveProductionCostLookupKey } from "./productionCostVersioning.js";
-import { stampProposalItemsWithCommercialMarginsForWrite } from "./proposalCommercialMargin.server.js";
-import { snapshotLooksComplete } from "./proposalCommercialMarginRecalc.js";
-import { parseProposalCommercialPricingSnapshot } from "./proposalCommercialMarginSnapshot.js";
 import { calculateProposalLineMargin } from "./proposalLineMargin.js";
 import {
   enrichProposalListRowMargin,
@@ -110,68 +107,25 @@ export async function attachProposalProductionCostsForMargin(
 }
 
 /**
- * Listagem: margem comercial (paridade com o formulário).
- * Reconstrói o snapshot a partir da formação (mesmo motor do save/edição),
- * inclusive itens “Entre faixas”, para não depender só do JSON persistido.
+ * Listagem: espelho do cabeçalho (margem comercial gravada no save).
+ * Não recalcula a partir de itens/formação.
  */
 export async function enrichProposalsWithOfficialProductionMargins(
-  prisma: PrismaClient,
+  _prisma: PrismaClient,
   proposals: Array<Record<string, unknown>>
 ): Promise<
   Array<
     Record<string, unknown> & {
       totalMarginPerc: number | null;
       totalMarginValue: number | null;
-      marginSource: "ITEMS" | "HEADER" | "NONE";
+      marginSource: "HEADER" | "NONE";
     }
   >
 > {
-  const withCommercial = await attachProposalCommercialSnapshotsForList(
-    prisma,
-    proposals
-  );
-  return withCommercial.map((row) => enrichProposalListRowMargin(row));
+  return proposals.map((row) => enrichProposalListRowMargin(row));
 }
 
-/**
- * Em memória (não grava): garante commercialPricingSnapshotJson calculável
- * como no formulário — formação do produto + preço negociado.
- *
- * Snapshots incompletos/ausentes são descartados antes do stamp para forçar
- * a mesma data “hoje” do hydrate do editor (senão a listagem fica “—” até
- * o primeiro save enviar a prévia do browser).
- */
-export async function attachProposalCommercialSnapshotsForList(
-  prisma: PrismaClient,
-  proposals: ReadonlyArray<Record<string, unknown>>
-): Promise<Array<Record<string, unknown>>> {
-  const out: Array<Record<string, unknown>> = [];
-  for (const proposal of proposals) {
-    const items = Array.isArray(proposal.items)
-      ? (proposal.items as Array<Record<string, unknown>>)
-      : [];
-    if (items.length === 0) {
-      out.push(proposal);
-      continue;
-    }
-    const prepared = items.map((item) => {
-      const snap = parseProposalCommercialPricingSnapshot(
-        item.commercialPricingSnapshotJson
-      );
-      if (snapshotLooksComplete(snap)) return item;
-      return { ...item, commercialPricingSnapshotJson: null };
-    });
-    const stamped = await stampProposalItemsWithCommercialMarginsForWrite(
-      prisma,
-      prepared,
-      { referenceDate: new Date() }
-    );
-    out.push({ ...proposal, items: stamped });
-  }
-  return out;
-}
-
-/** Aplica custos de produção nos itens de uma proposta (GET detalhe / formulário). */
+/** Aplica custos de produção nos itens (GET detalhe). Não altera margem comercial do cabeçalho. */
 export async function applyProductionCostsToProposalDetail<
   T extends {
     externalOpenedAt?: Date | string | null;
@@ -195,8 +149,7 @@ export async function applyProductionCostsToProposalDetail<
   return {
     ...proposal,
     items,
-    totalMarginPerc: margin.totalMarginPerc,
-    totalMarginValue: margin.totalMarginValue,
+    // Cabeçalho totalMargin* permanece o comercial persistido (espelho da listagem).
     totalCost: margin.totalCost,
   };
 }
@@ -204,7 +157,8 @@ export async function applyProductionCostsToProposalDetail<
 /**
  * No write (POST/PUT): grava unitCost de produção vigente na data da proposta
  * e recalcula margem da linha (não usa custo congelado da tabela comercial).
- * unitCost/margin ausentes → 0 no banco (Decimal obrigatório); listagem reenriquece.
+ * unitCost/margin ausentes → 0 no banco (Decimal obrigatório).
+ * Cabeçalho totalMargin* é gravado à parte como margem comercial (espelho da listagem).
  */
 export async function stampProposalItemsWithProductionCostsForWrite(
   prisma: PrismaClient,
