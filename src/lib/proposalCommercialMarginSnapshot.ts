@@ -1,12 +1,15 @@
 /**
  * Persistência histórica da margem comercial da Proposta.
  *
- * Usa campos existentes:
- * - colunas de ProposalItem (preço, desconto, qty, priceTable*)
- * - `pricingSnapshotJson.commercialMarginFreeze` (namespace aditivo)
+ * Coluna oficial (migration aditiva):
+ * - `ProposalItem.commercialPricingSnapshotJson` — JSON versionado (`schemaVersion`)
  *
- * Sem migration. Não altera o root publicado (item/proposalDefaults/formulaSnapshotJson).
+ * Compatibilidade:
+ * - namespace legado `pricingSnapshotJson.commercialMarginFreeze` (leitura)
+ *
+ * Qty/productId ficam nas colunas do item (sem duplicar no snapshot).
  * Zero explícito, null e chave ausente são distintos na leitura.
+ * Legado sem snapshot → null (sem backfill / sem zero falso).
  */
 import type { CommercialMarginTier } from "./commercialMarginCore.js";
 import {
@@ -18,6 +21,9 @@ import {
 
 export const PROPOSAL_COMMERCIAL_MARGIN_FREEZE_KEY = "commercialMarginFreeze" as const;
 export const PROPOSAL_COMMERCIAL_MARGIN_FREEZE_SCHEMA_VERSION = 1 as const;
+export const PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION = 1 as const;
+export const PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_COLUMN =
+  "commercialPricingSnapshotJson" as const;
 
 export const PROPOSAL_COMMERCIAL_MARGIN_UPDATE_TO_CURRENT_TABLE_ACTION =
   "Atualizar item para a tabela vigente" as const;
@@ -27,6 +33,40 @@ export type ProposalCommercialMarginFreezeTier = {
   marginRate: number;
   salePrice: number;
   commissionRate: number;
+};
+
+/**
+ * Contrato oficial persistido em `commercialPricingSnapshotJson`.
+ * Somente campos aprovados — sempre com `schemaVersion`.
+ */
+export type ProposalCommercialPricingSnapshot = {
+  schemaVersion: typeof PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION;
+  formationContextId: string | null;
+  priceTableId: string | null;
+  priceTableVersionId: string | null;
+  referenceDate: string | null;
+
+  referenceTableUnitPrice: number | null;
+  negotiatedGrossUnitPrice: number | null;
+  informedDiscountRate: number | null;
+  informedDiscountValue: number | null;
+  finalNetUnitPrice: number | null;
+  finalNetLineValue: number | null;
+
+  frozenCostUnit: number | null;
+  taxRate: number | null;
+  freightRate: number | null;
+  freightAbsoluteUnit: number | null;
+  otherVariablesRate: number | null;
+
+  tiers: ProposalCommercialMarginFreezeTier[];
+
+  calculatedCommissionRate: number | null;
+  commercialMarginRate: number | null;
+  commercialMarginValue: number | null;
+
+  calculationSource: ProposalCommercialMarginSource;
+  warnings: string[];
 };
 
 /**
@@ -338,6 +378,184 @@ export function mergeCommercialMarginFreezeIntoPricingSnapshot(
   const base = isPlainObject(pricingSnapshotJson) ? { ...pricingSnapshotJson } : {};
   base[PROPOSAL_COMMERCIAL_MARGIN_FREEZE_KEY] = freeze;
   return base;
+}
+
+/** Converte freeze de domínio → contrato oficial da coluna (campos aprovados). */
+export function toProposalCommercialPricingSnapshot(
+  freeze: ProposalCommercialMarginFreeze
+): ProposalCommercialPricingSnapshot {
+  return {
+    schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
+    formationContextId: freeze.formationContextId,
+    priceTableId: freeze.priceTableId,
+    priceTableVersionId: freeze.priceTableVersionId,
+    referenceDate: freeze.referenceDate,
+    referenceTableUnitPrice: freeze.referenceTableUnitPrice,
+    negotiatedGrossUnitPrice: freeze.negotiatedGrossUnitPrice,
+    informedDiscountRate: freeze.informedDiscountRate,
+    informedDiscountValue: freeze.informedDiscountValue,
+    finalNetUnitPrice: freeze.finalNetUnitPrice,
+    finalNetLineValue: freeze.finalNetLineValue,
+    frozenCostUnit: freeze.frozenCostUnit,
+    taxRate: freeze.taxRate,
+    freightRate: freeze.freightRate,
+    freightAbsoluteUnit: freeze.freightAbsoluteUnit,
+    otherVariablesRate: freeze.otherVariablesRate,
+    tiers: freeze.tiers.map((t) => ({
+      tierId: t.tierId,
+      marginRate: t.marginRate,
+      salePrice: t.salePrice,
+      commissionRate: t.commissionRate,
+    })),
+    calculatedCommissionRate: freeze.calculatedCommissionRate,
+    commercialMarginRate: freeze.commercialMarginRate,
+    commercialMarginValue: freeze.commercialMarginValue,
+    calculationSource: freeze.calculationSource,
+    warnings: [...freeze.warnings],
+  };
+}
+
+/**
+ * Serializa para JSONB (números finitos; Decimal-like → number).
+ * Rejeita snapshot sem schemaVersion.
+ */
+export function serializeProposalCommercialPricingSnapshot(
+  snapshot: ProposalCommercialPricingSnapshot
+): Record<string, unknown> {
+  if (snapshot.schemaVersion !== PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION) {
+    throw new Error(
+      `schemaVersion inválido: esperado ${PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION}.`
+    );
+  }
+
+  const num = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const n = toFiniteNumber(value);
+    return n;
+  };
+
+  return {
+    schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
+    formationContextId: snapshot.formationContextId,
+    priceTableId: snapshot.priceTableId,
+    priceTableVersionId: snapshot.priceTableVersionId,
+    referenceDate: snapshot.referenceDate,
+    referenceTableUnitPrice: num(snapshot.referenceTableUnitPrice),
+    negotiatedGrossUnitPrice: num(snapshot.negotiatedGrossUnitPrice),
+    informedDiscountRate: num(snapshot.informedDiscountRate),
+    informedDiscountValue: num(snapshot.informedDiscountValue),
+    finalNetUnitPrice: num(snapshot.finalNetUnitPrice),
+    finalNetLineValue: num(snapshot.finalNetLineValue),
+    frozenCostUnit: num(snapshot.frozenCostUnit),
+    taxRate: num(snapshot.taxRate),
+    freightRate: num(snapshot.freightRate),
+    freightAbsoluteUnit: num(snapshot.freightAbsoluteUnit),
+    otherVariablesRate: num(snapshot.otherVariablesRate),
+    tiers: snapshot.tiers.map((t) => ({
+      tierId: t.tierId,
+      marginRate: num(t.marginRate),
+      salePrice: num(t.salePrice),
+      commissionRate: num(t.commissionRate),
+    })),
+    calculatedCommissionRate: num(snapshot.calculatedCommissionRate),
+    commercialMarginRate: num(snapshot.commercialMarginRate),
+    commercialMarginValue: num(snapshot.commercialMarginValue),
+    calculationSource: snapshot.calculationSource,
+    warnings: [...snapshot.warnings],
+  };
+}
+
+/**
+ * Lê a coluna oficial. Null legado / ausente / sem schemaVersion → null
+ * (não inventa zero).
+ */
+export function parseProposalCommercialPricingSnapshot(
+  value: unknown
+): ProposalCommercialPricingSnapshot | null {
+  if (value == null) return null;
+  if (!isPlainObject(value)) return null;
+  if (
+    !Object.prototype.hasOwnProperty.call(value, "schemaVersion") ||
+    value.schemaVersion !== PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION
+  ) {
+    return null;
+  }
+
+  const readNum = (key: string): number | null => {
+    const p = readExplicitNumberField(value, key);
+    if (p.presence === "value") return p.value;
+    return null;
+  };
+
+  const tiersRaw = Array.isArray(value.tiers) ? value.tiers : [];
+  const tiers: ProposalCommercialMarginFreezeTier[] = [];
+  for (const t of tiersRaw) {
+    const n = normalizeTier(t);
+    if (n) tiers.push(n);
+  }
+
+  const calculationSource =
+    value.calculationSource === "PROPOSAL_PRICE_FORMATION" ||
+    value.calculationSource === "UNAVAILABLE"
+      ? value.calculationSource
+      : "UNAVAILABLE";
+
+  return {
+    schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
+    formationContextId:
+      typeof value.formationContextId === "string" ? value.formationContextId : null,
+    priceTableId: typeof value.priceTableId === "string" ? value.priceTableId : null,
+    priceTableVersionId:
+      typeof value.priceTableVersionId === "string" ? value.priceTableVersionId : null,
+    referenceDate: typeof value.referenceDate === "string" ? value.referenceDate : null,
+    referenceTableUnitPrice: readNum("referenceTableUnitPrice"),
+    negotiatedGrossUnitPrice: readNum("negotiatedGrossUnitPrice"),
+    informedDiscountRate: readNum("informedDiscountRate"),
+    informedDiscountValue: readNum("informedDiscountValue"),
+    finalNetUnitPrice: readNum("finalNetUnitPrice"),
+    finalNetLineValue: readNum("finalNetLineValue"),
+    frozenCostUnit: readNum("frozenCostUnit"),
+    taxRate: readNum("taxRate"),
+    freightRate: readNum("freightRate"),
+    freightAbsoluteUnit: readNum("freightAbsoluteUnit"),
+    otherVariablesRate: readNum("otherVariablesRate"),
+    tiers,
+    calculatedCommissionRate: readNum("calculatedCommissionRate"),
+    commercialMarginRate: readNum("commercialMarginRate"),
+    commercialMarginValue: readNum("commercialMarginValue"),
+    calculationSource,
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((w): w is string => typeof w === "string")
+      : [],
+  };
+}
+
+/**
+ * Resolve snapshot comercial do item: coluna oficial primeiro;
+ * fallback ao namespace legado em pricingSnapshotJson.
+ */
+export function resolveProposalItemCommercialPricingSnapshot(item: {
+  commercialPricingSnapshotJson?: unknown;
+  pricingSnapshotJson?: unknown;
+}): ProposalCommercialPricingSnapshot | null {
+  const fromColumn = parseProposalCommercialPricingSnapshot(
+    item.commercialPricingSnapshotJson
+  );
+  if (fromColumn) return fromColumn;
+
+  const legacy = readProposalCommercialMarginFreeze(item.pricingSnapshotJson);
+  if (!legacy) return null;
+  return toProposalCommercialPricingSnapshot(legacy);
+}
+
+/** Monta payload de create/update sem forçar null→0. */
+export function buildProposalItemCommercialPricingSnapshotWrite(
+  snapshot: ProposalCommercialPricingSnapshot | null | undefined
+): { commercialPricingSnapshotJson: Record<string, unknown> } | Record<string, never> {
+  if (snapshot == null) return {};
+  return {
+    commercialPricingSnapshotJson: serializeProposalCommercialPricingSnapshot(snapshot),
+  };
 }
 
 /**

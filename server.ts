@@ -14564,6 +14564,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     if (Object.prototype.hasOwnProperty.call(item, "pricingSnapshotJson")) {
       row.pricingSnapshotJson = item.pricingSnapshotJson;
     }
+    if (Object.prototype.hasOwnProperty.call(item, "commercialPricingSnapshotJson")) {
+      row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson;
+    }
     if (Object.prototype.hasOwnProperty.call(item, "priceTableId")) {
       row.priceTableId = item.priceTableId;
     }

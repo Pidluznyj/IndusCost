@@ -1146,6 +1146,8 @@ model ProposalItem {
   priceTableItemId        String?          @db.Uuid
   priceSource             String?
   pricingSnapshotJson     Json?
+  /// Snapshot comercial versionado (schemaVersion + formação/faixas/margem). Null = legado sem freeze.
+  commercialPricingSnapshotJson Json?
   priceTableId            String?          @db.Uuid
   priceTableVersionId     String?          @db.Uuid
   priceTableCode          String?

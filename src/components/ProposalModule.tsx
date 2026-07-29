@@ -949,6 +949,9 @@ export const ProposalModule = () => {
       if (item.priceTableItemId !== undefined) row.priceTableItemId = item.priceTableItemId;
       if (item.priceSource !== undefined) row.priceSource = item.priceSource;
       if (item.pricingSnapshotJson !== undefined) row.pricingSnapshotJson = item.pricingSnapshotJson;
+      if (item.commercialPricingSnapshotJson !== undefined) {
+        row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson;
+      }
       if (item.priceTableId !== undefined) row.priceTableId = item.priceTableId;
       if (item.priceTableVersionId !== undefined) row.priceTableVersionId = item.priceTableVersionId;
       if (item.priceTableCode !== undefined) row.priceTableCode = item.priceTableCode;
