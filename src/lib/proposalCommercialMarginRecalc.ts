@@ -526,6 +526,49 @@ export function aggregateProposalCommercialRecalcPreview(
   };
 }
 
+export function aggregateProposalCommercialHeaderFromRecalcResults(
+  results: ReadonlyArray<ProposalCommercialRecalcItemResult>
+): Map<
+  string,
+  { totalMarginPerc: number | null; totalMarginValue: number | null }
+> {
+  const byProposal = new Map<
+    string,
+    { net: number; marginValue: number; complete: number }
+  >();
+  for (const row of results) {
+    const cur = byProposal.get(row.proposalId) ?? {
+      net: 0,
+      marginValue: 0,
+      complete: 0,
+    };
+    if (row.isComplete && row.commercialMarginValue != null) {
+      cur.net += row.netLineValue;
+      cur.marginValue += row.commercialMarginValue;
+      cur.complete += 1;
+    }
+    byProposal.set(row.proposalId, cur);
+  }
+  const out = new Map<
+    string,
+    { totalMarginPerc: number | null; totalMarginValue: number | null }
+  >();
+  for (const [proposalId, cur] of byProposal) {
+    if (cur.complete <= 0) {
+      out.set(proposalId, { totalMarginPerc: null, totalMarginValue: null });
+      continue;
+    }
+    out.set(proposalId, {
+      totalMarginValue: roundPricingMoney(cur.marginValue),
+      totalMarginPerc:
+        cur.net > 0
+          ? roundPricingPercent((cur.marginValue / cur.net) * 100)
+          : null,
+    });
+  }
+  return out;
+}
+
 export function itemNeedsRecalc(
   input: ProposalCommercialRecalcItemInput,
   onlyMissing: boolean

@@ -14671,7 +14671,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       Record<string, unknown> & {
         totalMarginPerc: number | null;
         totalMarginValue: number | null;
-        marginSource: "HEADER" | "NONE";
+        marginSource: "COMMERCIAL" | "HEADER" | "NONE";
       }
     >
   > {

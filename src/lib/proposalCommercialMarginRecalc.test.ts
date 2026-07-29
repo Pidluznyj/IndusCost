@@ -6,6 +6,7 @@ import type { CommercialMarginTier } from "./commercialMarginCore.js";
 import { calculatePriceTableItemFromFrozenCost } from "./priceTablePublication.js";
 import {
   assertProposalCommercialRecalcApplyConfirmation,
+  aggregateProposalCommercialHeaderFromRecalcResults,
   aggregateProposalCommercialRecalcPreview,
   buildUnavailableCommercialPricingSnapshot,
   classifyProposalCommercialMarginSource,
@@ -344,6 +345,34 @@ describe("proposalCommercialMarginRecalc — margem parcial, faixas, indisponív
     assert.equal(result.nextSnapshot!.calculationSource, "UNAVAILABLE");
   });
 
+  it("agrega cabeçalho comercial ponderado por líquido (paridade grid)", () => {
+    const rows: ProposalCommercialRecalcItemResult[] = [
+      {
+        proposalItemId: "i1",
+        proposalId: "p1",
+        proposalNumber: 1252,
+        productId: "prod",
+        sourceClass: "RECONSTRUCTED_FROM_PROPOSAL_DATE",
+        reasonCode: null,
+        isComplete: true,
+        changed: true,
+        netLineValue: 548.65,
+        commercialMarginValue: 201.94,
+        commercialMarginPercent: 36.81,
+        concessionValue: 0,
+        explicitDiscount: 0,
+        warnings: [],
+        currentSnapshot: null,
+        nextSnapshot: null,
+      },
+    ];
+    const headers = aggregateProposalCommercialHeaderFromRecalcResults(rows);
+    const h = headers.get("p1");
+    assert.ok(h);
+    assert.equal(h!.totalMarginValue, 201.94);
+    assert.equal(h!.totalMarginPerc, 36.81);
+  });
+
   it("agrega preview com várias faixas e reasonCodes", () => {
     const tiers = buildTiers();
     const formation = {
@@ -528,7 +557,9 @@ describe("proposalCommercialMarginRecalc — independência / auditoria / perfor
     assert.match(src, /commercialAuditLog\.create/);
     assert.match(src, /\$transaction/);
     assert.match(src, /proposalItem\.update/);
-    // Apply só escreve o snapshot comercial derivado.
+    assert.match(src, /proposal\.update/);
+    assert.match(src, /totalMarginPerc/);
+    // Apply só escreve o snapshot comercial derivado + cabeçalho comercial.
     assert.match(
       src,
       /data:\s*\{\s*commercialPricingSnapshotJson:/

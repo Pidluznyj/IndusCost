@@ -11,6 +11,7 @@ import {
 import type { ProposalCommercialMarginReasonCode } from "./proposalCommercialMargin.js";
 import { serializeProposalCommercialPricingSnapshot } from "./proposalCommercialMarginSnapshot.js";
 import {
+  aggregateProposalCommercialHeaderFromRecalcResults,
   aggregateProposalCommercialRecalcPreview,
   assertProposalCommercialRecalcApplyConfirmation,
   classifyProposalCommercialMarginSource,
@@ -324,7 +325,9 @@ export async function runProposalCommercialMarginRecalc(
 
     if (args.apply) {
       const changed = batchResults.filter((r) => r.changed && r.nextSnapshot);
-      if (changed.length > 0) {
+      const headerByProposal =
+        aggregateProposalCommercialHeaderFromRecalcResults(batchResults);
+      if (changed.length > 0 || headerByProposal.size > 0) {
         const recalculatedAt = new Date().toISOString();
         await db.$transaction(async (tx) => {
           for (const row of changed) {
@@ -354,6 +357,19 @@ export async function runProposalCommercialMarginRecalc(
                 }),
                 performedBy:
                   options?.performedBy ?? "script:recalculateProposalCommercialMargins",
+              },
+            });
+          }
+          // Cabeçalho da listagem = margem comercial consolidada (não a margem Nomus).
+          for (const [proposalId, header] of headerByProposal) {
+            if (header.totalMarginPerc == null && header.totalMarginValue == null) {
+              continue;
+            }
+            await tx.proposal.update({
+              where: { id: proposalId },
+              data: {
+                totalMarginPerc: header.totalMarginPerc ?? 0,
+                totalMarginValue: header.totalMarginValue ?? 0,
               },
             });
           }
@@ -415,4 +431,103 @@ export async function runProposalCommercialMarginRecalcAllPages(
     ...aggregateProposalCommercialRecalcPreview(allResults, allProposalIds),
     pagesProcessed,
   };
+}
+
+/**
+ * Margem comercial para a listagem (GET /api/proposals).
+ * Usa snapshot + formação vigente na data — mesma lógica do formulário/save.
+ * Não grava nada.
+ */
+export async function resolveProposalCommercialListMargins(
+  db: PrismaClient,
+  proposalIds: ReadonlyArray<string>
+): Promise<
+  Map<string, { totalMarginPerc: number | null; totalMarginValue: number | null }>
+> {
+  const ids = [...new Set(proposalIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (ids.length === 0) return new Map();
+
+  const proposals = await db.proposal.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      number: true,
+      externalProposalCode: true,
+      externalProposalId: true,
+      sourceSystem: true,
+      externalOpenedAt: true,
+      createdAt: true,
+      items: {
+        select: {
+          id: true,
+          proposalId: true,
+          productId: true,
+          quantity: true,
+          suggestedPrice: true,
+          negotiatedPrice: true,
+          discountPerc: true,
+          discountValue: true,
+          priceTableId: true,
+          priceTableVersionId: true,
+          commercialPricingSnapshotJson: true,
+        },
+      },
+    },
+  });
+
+  const batchItems: ProposalCommercialRecalcItemInput[] = [];
+  for (const p of proposals) {
+    for (const item of p.items) {
+      batchItems.push(toItemInput(item, p));
+    }
+  }
+
+  if (batchItems.length === 0) {
+    return new Map(ids.map((id) => [id, { totalMarginPerc: null, totalMarginValue: null }]));
+  }
+
+  const versionIds = batchItems
+    .map((i) => i.priceTableVersionId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const versionDates = await resolveVersionReferenceDates(db, versionIds);
+
+  const productIdsByDate = new Map<string, Set<string>>();
+  for (const item of batchItems) {
+    const sourceClass = classifyProposalCommercialMarginSource({
+      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+      priceTableVersionId: item.priceTableVersionId,
+      forceFromFormation: true,
+    });
+    let dateKey = item.proposalReferenceDate;
+    if (
+      sourceClass === "EXACT_PROPOSAL_PRICE_TABLE_VERSION" &&
+      item.priceTableVersionId &&
+      versionDates.has(item.priceTableVersionId)
+    ) {
+      dateKey = versionDates.get(item.priceTableVersionId)!;
+    }
+    let set = productIdsByDate.get(dateKey);
+    if (!set) {
+      set = new Set();
+      productIdsByDate.set(dateKey, set);
+    }
+    set.add(item.productId);
+  }
+
+  const formationLookup = new Map<
+    string,
+    Awaited<ReturnType<typeof loadProposalCommercialFormationsBatch>>
+  >();
+  for (const [dateKey, productIds] of productIdsByDate) {
+    const date = new Date(`${dateKey}T12:00:00.000Z`);
+    formationLookup.set(
+      dateKey,
+      await loadProposalCommercialFormationsBatch(db, [...productIds], date)
+    );
+  }
+
+  const results = batchItems.map((item) =>
+    resolveItemWithLookups(item, versionDates, formationLookup, true)
+  );
+  return aggregateProposalCommercialHeaderFromRecalcResults(results);
 }

@@ -1,11 +1,11 @@
 /**
- * Margem da listagem de Propostas — espelho do cabeçalho persistido
- * (`totalMarginPerc` / `totalMarginValue`), gravado no save a partir da
- * margem comercial do formulário. A coluna não recalcula nada.
+ * Margem da listagem de Propostas — coluna "Margem" = margem comercial
+ * (mesma do formulário / save). Preferência:
+ * 1) itens com snapshot/formação resolvível → comercial consolidada
+ * 2) senão espelho do cabeçalho (`totalMarginPerc` / `totalMarginValue`)
  *
  * A margem oficial de produção permanece em `resolveProposalOfficialMarginFromItems`
- * para custo / PDF interno. `resolveProposalCommercialMarginFromItems` só
- * alimenta o save (autoridade no servidor).
+ * para custo / PDF interno.
  */
 import { previewProposalCommercialMargins } from "./proposalCommercialMarginPreview.js";
 import {
@@ -107,7 +107,7 @@ export function resolveProposalOfficialMarginFromItems(
 
 /**
  * Margem comercial consolidada — paridade com `commercialPreview.view` do formulário.
- * Usada no save; a listagem não chama isto.
+ * Usada no save e na listagem quando há dados comerciais nos itens.
  */
 export function resolveProposalCommercialMarginFromItems(
   items: ReadonlyArray<ProposalListMarginItemInput> | null | undefined
@@ -147,8 +147,8 @@ export function resolveProposalCommercialMarginFromItems(
 }
 
 /**
- * Espelho do cabeçalho: blank → blank, 0 → 0, negativo → negativo.
- * Não recalcula a partir dos itens.
+ * Coluna do grid: comercial dos itens quando disponível; senão cabeçalho.
+ * Blank → blank, 0 → 0, negativo → negativo.
  */
 export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
   proposal: T & {
@@ -159,9 +159,22 @@ export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
 ): T & {
   totalMarginPerc: number | null;
   totalMarginValue: number | null;
-  marginSource: "HEADER" | "NONE";
+  marginSource: "COMMERCIAL" | "HEADER" | "NONE";
 } {
   const { items: _omit, ...rest } = proposal as T & { items?: unknown };
+
+  const items = Array.isArray(proposal.items) ? proposal.items : null;
+  if (items && items.length > 0) {
+    const commercial = resolveProposalCommercialMarginFromItems(items);
+    if (commercial.totalMarginPerc != null || commercial.totalMarginValue != null) {
+      return {
+        ...(rest as T),
+        totalMarginPerc: commercial.totalMarginPerc,
+        totalMarginValue: commercial.totalMarginValue,
+        marginSource: "COMMERCIAL",
+      };
+    }
+  }
 
   const headerPerc = toNullableNum(proposal.totalMarginPerc);
   const headerValue = toNullableNum(proposal.totalMarginValue);

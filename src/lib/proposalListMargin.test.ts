@@ -137,7 +137,7 @@ describe("proposalListMargin", () => {
     );
   });
 
-  it("enrich espelha o cabeçalho e ignora itens (não recalcula)", () => {
+  it("enrich preferência: comercial dos itens sobre cabeçalho Nomus", () => {
     const p48 = formPrice(48, 4.5);
     const formation = {
       formationContextId: "v1|v2",
@@ -191,10 +191,35 @@ describe("proposalListMargin", () => {
         },
       ],
     });
-    assert.equal(enriched.marginSource, "HEADER");
-    assert.equal(enriched.totalMarginPerc, 12.34);
-    assert.equal(enriched.totalMarginValue, 56.78);
+    // Grid deve espelhar a comercial do formulário, não a margem Nomus/cabeçalho.
+    assert.equal(enriched.marginSource, "COMMERCIAL");
+    assert.equal(
+      enriched.totalMarginPerc,
+      formPreview.summary.proposalCommercialMarginTotalPercent
+    );
+    assert.equal(
+      enriched.totalMarginValue,
+      formPreview.summary.proposalCommercialMarginTotalValue
+    );
     assert.equal((enriched as { items?: unknown }).items, undefined);
+  });
+
+  it("enrich sem comercial nos itens cai no cabeçalho", () => {
+    const enriched = enrichProposalListRowMargin({
+      id: "p-header",
+      totalMarginPerc: 100,
+      totalMarginValue: 50,
+      items: [
+        {
+          quantity: 1,
+          negotiatedPrice: 100,
+          // sem snapshot / formação → comercial indisponível
+        },
+      ],
+    });
+    assert.equal(enriched.marginSource, "HEADER");
+    assert.equal(enriched.totalMarginPerc, 100);
+    assert.equal(enriched.totalMarginValue, 50);
   });
 
   it("enrich preserva zero e negativo do cabeçalho", () => {

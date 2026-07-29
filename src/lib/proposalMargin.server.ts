@@ -11,6 +11,7 @@ import {
   resolveProposalOfficialMarginFromItems,
   type ProposalListMarginItemInput,
 } from "./proposalListMargin.js";
+import { resolveProposalCommercialListMargins } from "./proposalCommercialMarginRecalc.server.js";
 
 export type ProposalMarginDateSource = {
   externalOpenedAt?: Date | string | null;
@@ -107,22 +108,45 @@ export async function attachProposalProductionCostsForMargin(
 }
 
 /**
- * Listagem: espelho do cabeçalho (margem comercial gravada no save).
- * Não recalcula a partir de itens/formação.
+ * Listagem: coluna Margem = comercial (formação/snapshot), não a margem Nomus do cabeçalho.
+ * Fallback para cabeçalho só quando a comercial não fecha.
  */
 export async function enrichProposalsWithOfficialProductionMargins(
-  _prisma: PrismaClient,
+  prisma: PrismaClient,
   proposals: Array<Record<string, unknown>>
 ): Promise<
   Array<
     Record<string, unknown> & {
       totalMarginPerc: number | null;
       totalMarginValue: number | null;
-      marginSource: "HEADER" | "NONE";
+      marginSource: "COMMERCIAL" | "HEADER" | "NONE";
     }
   >
 > {
-  return proposals.map((row) => enrichProposalListRowMargin(row));
+  const ids = proposals
+    .map((row) => (typeof row.id === "string" ? row.id : String(row.id ?? "")))
+    .filter((id) => id.length > 0);
+  const commercialById = await resolveProposalCommercialListMargins(prisma, ids);
+
+  return proposals.map((row) => {
+    const id = typeof row.id === "string" ? row.id : String(row.id ?? "");
+    const commercial = commercialById.get(id);
+    if (
+      commercial &&
+      (commercial.totalMarginPerc != null || commercial.totalMarginValue != null)
+    ) {
+      const { items: _omit, ...rest } = row as Record<string, unknown> & {
+        items?: unknown;
+      };
+      return {
+        ...rest,
+        totalMarginPerc: commercial.totalMarginPerc,
+        totalMarginValue: commercial.totalMarginValue,
+        marginSource: "COMMERCIAL" as const,
+      };
+    }
+    return enrichProposalListRowMargin(row);
+  });
 }
 
 /** Aplica custos de produção nos itens (GET detalhe). Não altera margem comercial do cabeçalho. */
