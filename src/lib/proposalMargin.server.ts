@@ -106,8 +106,12 @@ export async function attachProposalProductionCostsForMargin(
   });
 }
 
+/**
+ * Listagem: margem comercial (paridade com o formulário).
+ * Não usa custo de produção — o grid exibe a mesma % da “Margem comercial” total.
+ */
 export async function enrichProposalsWithOfficialProductionMargins(
-  prisma: PrismaClient,
+  _prisma: PrismaClient,
   proposals: Array<Record<string, unknown>>
 ): Promise<
   Array<
@@ -118,15 +122,7 @@ export async function enrichProposalsWithOfficialProductionMargins(
     }
   >
 > {
-  const withCosts = await attachProposalProductionCostsForMargin(
-    prisma,
-    proposals as Array<{
-      externalOpenedAt?: Date | string | null;
-      createdAt?: Date | string | null;
-      items?: ProposalItemForMarginCost[] | null;
-    }>
-  );
-  return withCosts.map((row) => enrichProposalListRowMargin(row));
+  return proposals.map((row) => enrichProposalListRowMargin(row));
 }
 
 /** Aplica custos de produção nos itens de uma proposta (GET detalhe / formulário). */

@@ -68,19 +68,18 @@ describe("proposal form layout", () => {
     assert.match(formSlice, /Total Líq\./);
   });
 
-  it("grid de itens exibe coluna Margem e faixa de margem total da proposta", () => {
+  it("grid de itens exibe margem comercial e total da proposta", () => {
     const mod = read("src/components/ProposalModule.tsx");
     const formStart = mod.indexOf('if (view === "form")');
     assert.ok(formStart > 0);
     const formSlice = mod.slice(formStart, formStart + 120_000);
 
-    assert.match(formSlice, /data-testid="proposal-total-margin-strip"/);
-    assert.match(formSlice, /Margem da proposta/);
-    assert.match(formSlice, /data-testid="proposal-total-margin-perc"/);
-    assert.match(formSlice, />\s*Margem\s*</);
-    assert.match(formSlice, /data-testid=\{`proposal-item-margin-\$\{idx\}`\}/);
-    assert.match(formSlice, /item\.marginPerc/);
-    assert.match(formSlice, /totals\.totalMarginPerc/);
+    assert.match(formSlice, /data-testid="proposal-total-commercial-margin-strip"/);
+    assert.match(formSlice, /Margem comercial/);
+    assert.match(formSlice, /data-testid="proposal-total-commercial-margin-perc"/);
+    assert.match(formSlice, /Margem com\./);
+    assert.match(formSlice, /data-testid=\{`proposal-item-commercial-margin-\$\{idx\}`\}/);
+    assert.match(formSlice, /commercialPreview\.view\.commercialMarginTotalPercent/);
   });
 
   it("listagem de propostas exibe somente margem % (sem valor R$ de contribuição)", () => {
@@ -92,14 +91,13 @@ describe("proposal form layout", () => {
     assert.doesNotMatch(mod, /totalMarginPerc\)\.toFixed\(3\)%/);
   });
 
-  it("formulário não exibe valor R$ de contribuição da margem", () => {
+  it("formulário não exibe valor R$ de contribuição da margem de produção", () => {
     const mod = read("src/components/ProposalModule.tsx");
     const formStart = mod.indexOf('if (view === "form")');
     assert.ok(formStart > 0);
     const formSlice = mod.slice(formStart, formStart + 120_000);
     assert.doesNotMatch(formSlice, /proposal-total-margin-value/);
     assert.doesNotMatch(formSlice, /formatMoneyDisplay\(totals\.totalMarginValue\)/);
-    assert.doesNotMatch(formSlice, /Margem R\$/);
     assert.doesNotMatch(formSlice, /Margem de Contribuição/);
   });
 });

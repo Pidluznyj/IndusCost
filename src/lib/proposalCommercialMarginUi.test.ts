@@ -128,8 +128,22 @@ describe("proposalCommercialMargin UI — prévia em tempo real", () => {
     assert.equal(missing.byIndex[0]!.isComplete, false);
     assert.equal(
       proposalCommercialMarginUnavailableLabel(missing.byIndex[0]!.reasonCode),
-      "Tabela não selecionada."
+      "Produto sem formação."
     );
+
+    const manualWithFormation = previewProposalCommercialMargins([
+      {
+        quantity: 1,
+        negotiatedPrice: p48,
+        suggestedPrice: null,
+        priceSource: "MANUAL",
+        priceTableId: null,
+        commercialFormation: formation,
+      },
+    ]);
+    assert.equal(manualWithFormation.byIndex[0]!.isComplete, true);
+    assert.equal(manualWithFormation.byIndex[0]!.commercialMarginPercent, 48);
+    assert.equal(manualWithFormation.byIndex[0]!.reasonCode, null);
   });
 
   it("total ponderado ≠ média simples", () => {

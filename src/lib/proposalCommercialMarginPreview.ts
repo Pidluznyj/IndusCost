@@ -123,10 +123,11 @@ export function previewProposalItemCommercialMargin(
 
   const formation = item.commercialFormation;
   if (!formation || formation.tiers.length < 2) {
-    const reason =
-      !item.priceTableId && item.priceSource !== "PRICE_TABLE"
-        ? "PRICE_TABLE_NOT_SELECTED"
-        : "INCOMPLETE_MARGIN_TIERS";
+    // Tabela de preço é opcional: margem usa formação do produto + preço negociado.
+    const reason: "INCOMPLETE_MARGIN_TIERS" | "PRODUCT_WITHOUT_PRICE_FORMATION" =
+      formation && formation.tiers.length > 0
+        ? "INCOMPLETE_MARGIN_TIERS"
+        : "PRODUCT_WITHOUT_PRICE_FORMATION";
     const marginItem = unavailableProposalCommercialMarginItem({
       quantity: qty,
       referenceTableUnitPrice: item.suggestedPrice ?? null,

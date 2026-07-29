@@ -326,6 +326,63 @@ async function fetchCommercialFormationForPreview(
   };
 }
 
+function proposalItemHasUsableCommercialFormation(
+  item: Pick<
+    ProposalItem,
+    "commercialFormation" | "commercialPricingSnapshotJson" | "pricingSnapshotJson"
+  >
+): boolean {
+  const formation = item.commercialFormation;
+  if (
+    formation &&
+    Array.isArray(formation.tiers) &&
+    formation.tiers.length >= 2 &&
+    formation.frozenCostUnit != null
+  ) {
+    return true;
+  }
+  const snap =
+    parseProposalCommercialPricingSnapshot(item.commercialPricingSnapshotJson) ??
+    parseProposalCommercialPricingSnapshot(item.pricingSnapshotJson);
+  return Boolean(
+    snap &&
+      Array.isArray(snap.tiers) &&
+      snap.tiers.length >= 2 &&
+      snap.frozenCostUnit != null
+  );
+}
+
+/** Carrega formação comercial do produto — independente de tabela de preço. */
+async function hydrateProposalItemsCommercialFormation(
+  items: ProposalItem[]
+): Promise<ProposalItem[]> {
+  const missingProductIds = [
+    ...new Set(
+      items
+        .filter((it) => it.productId && !proposalItemHasUsableCommercialFormation(it))
+        .map((it) => it.productId as string)
+    ),
+  ];
+  if (missingProductIds.length === 0) return items;
+
+  const formationByProductId = new Map<string, ProposalItem["commercialFormation"]>();
+  await Promise.all(
+    missingProductIds.map(async (productId) => {
+      formationByProductId.set(
+        productId,
+        await fetchCommercialFormationForPreview(productId)
+      );
+    })
+  );
+
+  return items.map((it) => {
+    if (!it.productId || proposalItemHasUsableCommercialFormation(it)) return it;
+    const formation = formationByProductId.get(it.productId);
+    if (!formation) return it;
+    return { ...it, commercialFormation: formation };
+  });
+}
+
 type PriceTableListRow = {
   id: string;
   code: string;
@@ -558,6 +615,8 @@ export const ProposalModule = () => {
   /** Índice do item com o popover de origem de preço aberto. */
   const [itemOriginMenuOpenIndex, setItemOriginMenuOpenIndex] = useState<number | null>(null);
   const itemOriginMenuRef = useRef<HTMLDivElement | null>(null);
+  /** Evita loop ao tentar hidratar formação comercial ausente (ex.: proposta sem tabela). */
+  const formationHydrateAttemptedRef = useRef<Set<string>>(new Set());
   /** Índices dos itens selecionados para ações em massa (desconto em lote etc.). */
   const [selectedItemIndexes, setSelectedItemIndexes] = useState<Set<number>>(new Set());
   /** Input de desconto % para ação em massa. String para permitir vazio/parcial enquanto digita. */
@@ -899,6 +958,7 @@ export const ProposalModule = () => {
     setDefaultTableChangedNotice(null);
     setSelectedItemIndexes(new Set());
     setBulkDiscountInput("");
+    formationHydrateAttemptedRef.current = new Set();
     setFormData({
       title: "",
       customerId: "",
@@ -920,6 +980,7 @@ export const ProposalModule = () => {
   const handleEdit = useCallback(async (id: string) => {
     setAnalysisProposalId(null);
     setLoading(true);
+    formationHydrateAttemptedRef.current = new Set();
     try {
       const data = await fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`);
       const items = Array.isArray(data.items)
@@ -927,12 +988,16 @@ export const ProposalModule = () => {
             recomputeItemDerivedFields(normalizeProposalItem(it), "none")
           )
         : [];
+      const hydratedItems = await hydrateProposalItemsCommercialFormation(items);
+      for (const it of hydratedItems) {
+        if (it.productId) formationHydrateAttemptedRef.current.add(it.productId);
+      }
       setEditingProposal(data);
       setTablePriceSessionAlerts([]);
       setDefaultTableChangedNotice(null);
       setSelectedItemIndexes(new Set());
       setBulkDiscountInput("");
-      setFormData({ ...data, items });
+      setFormData({ ...data, items: hydratedItems });
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
@@ -1219,6 +1284,7 @@ export const ProposalModule = () => {
         freightValue?: unknown;
         calculationExplainability?: ProposalItem["calculationExplainability"];
       }>(`/api/products/${productId}/pricing-snapshot`);
+      const commercialFormation = await fetchCommercialFormationForPreview(productId);
 
       const unitCost = toNullableUnitCost(snapshot.unitCost);
       const suggestedPrice = safeNum(snapshot.suggestedPrice);
@@ -1241,6 +1307,8 @@ export const ProposalModule = () => {
           commissionPerc,
           freightValue: freightVal,
           calculationExplainability: snapshot.calculationExplainability,
+          priceSource: "MANUAL",
+          commercialFormation,
           pricingSnapshotJson: {
             capturedAt: new Date().toISOString(),
             source: "PRODUCT_PRICING_SNAPSHOT",
@@ -1613,6 +1681,37 @@ export const ProposalModule = () => {
       view: buildProposalCommercialSummaryView(preview.byIndex, preview.summary),
     };
   }, [formData.items]);
+
+  // Sem tabela: ainda assim carrega formação do produto para margem pelo preço negociado.
+  useEffect(() => {
+    if (view !== "form") return;
+    const items = formData.items ?? [];
+    const pending = items.filter(
+      (it) =>
+        Boolean(it.productId) &&
+        !proposalItemHasUsableCommercialFormation(it) &&
+        !formationHydrateAttemptedRef.current.has(it.productId as string)
+    );
+    if (pending.length === 0) return;
+
+    for (const it of pending) {
+      if (it.productId) formationHydrateAttemptedRef.current.add(it.productId);
+    }
+
+    let cancelled = false;
+    void hydrateProposalItemsCommercialFormation(items).then((next) => {
+      if (cancelled) return;
+      const changed = next.some(
+        (it, idx) => it.commercialFormation !== items[idx]?.commercialFormation
+      );
+      if (!changed) return;
+      setFormData((prev) => ({ ...prev, items: next }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [view, formData.items]);
 
   // Sincronizar totais com o formData para salvar
   useEffect(() => {
@@ -2655,7 +2754,12 @@ export const ProposalModule = () => {
                 <th className="p-4 font-semibold text-sm">Cliente</th>
                 <th className="p-4 font-semibold text-sm">Data</th>
                 <th className="p-4 font-semibold text-sm">Valor Líquido</th>
-                <th className="p-4 font-semibold text-sm">Margem</th>
+                <th
+                  className="p-4 font-semibold text-sm text-right"
+                  title="Margem comercial total (mesma do formulário da proposta)"
+                >
+                  Margem
+                </th>
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -2703,7 +2807,7 @@ export const ProposalModule = () => {
                         : "—"}
                     </td>
                     <td className="p-4 text-right" data-testid={`proposal-list-margin-${p.id}`}>
-                      {Number.isFinite(Number(p.totalMarginPerc)) ? (
+                      {p.totalMarginPerc != null && Number.isFinite(Number(p.totalMarginPerc)) ? (
                         <p
                           className={cn(
                             "text-sm font-bold tabular-nums leading-tight",

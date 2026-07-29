@@ -14671,13 +14671,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   const proposalListItemMarginSelect = {
     productId: true,
     quantity: true,
+    suggestedPrice: true,
     negotiatedPrice: true,
+    discountPerc: true,
     discountValue: true,
-    taxesPerc: true,
-    unitCost: true,
-    commissionPerc: true,
-    freightValue: true,
+    priceTableId: true,
+    priceTableVersionId: true,
+    priceSource: true,
     pricingSnapshotJson: true,
+    commercialPricingSnapshotJson: true,
   } as const;
 
   async function withOfficialProposalListMargin(
