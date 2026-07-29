@@ -170,15 +170,17 @@ function resolveItemWithLookups(
   formationLookup: Map<
     string,
     Awaited<ReturnType<typeof loadProposalCommercialFormationsBatch>>
-  >
+  >,
+  forceFromFormation: boolean
 ): ProposalCommercialRecalcItemResult {
   const sourceClass = classifyProposalCommercialMarginSource({
     commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
     priceTableVersionId: item.priceTableVersionId,
+    forceFromFormation,
   });
 
   if (sourceClass === "EXACT_PROPOSAL_FORMATION_SNAPSHOT") {
-    return resolveProposalCommercialRecalcItem({ item });
+    return resolveProposalCommercialRecalcItem({ item, forceFromFormation });
   }
 
   let dateKey = item.proposalReferenceDate;
@@ -195,9 +197,9 @@ function resolveItemWithLookups(
   let formation: ProposalCommercialFormationInput | null = null;
   if (!formationFailureReason) {
     const loaded = formationLookup.get(dateKey)?.get(item.productId);
-    if (loaded?.ok) {
+    if (loaded && loaded.ok === true) {
       formation = formationToInput(loaded);
-    } else if (loaded && !loaded.ok) {
+    } else if (loaded && loaded.ok === false) {
       formationFailureReason = loaded.reasonCode;
     } else {
       formationFailureReason = "HISTORICAL_FORMATION_NOT_FOUND";
@@ -208,6 +210,7 @@ function resolveItemWithLookups(
     item,
     formation,
     formationFailureReason,
+    forceFromFormation,
   });
 }
 
@@ -226,6 +229,7 @@ export async function runProposalCommercialMarginRecalc(
   const proposals = await db.proposal.findMany({
     where: buildProposalWhere(args),
     orderBy: { createdAt: "desc" },
+    skip: args.skip,
     take: args.limit,
     select: {
       id: true,
@@ -278,6 +282,7 @@ export async function runProposalCommercialMarginRecalc(
       const sourceClass = classifyProposalCommercialMarginSource({
         commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
         priceTableVersionId: item.priceTableVersionId,
+        forceFromFormation: args.forceFromFormation,
       });
       if (sourceClass === "EXACT_PROPOSAL_FORMATION_SNAPSHOT") continue;
       let dateKey = item.proposalReferenceDate;
@@ -309,7 +314,12 @@ export async function runProposalCommercialMarginRecalc(
     }
 
     const batchResults = batchItems.map((item) =>
-      resolveItemWithLookups(item, versionDates, formationLookup)
+      resolveItemWithLookups(
+        item,
+        versionDates,
+        formationLookup,
+        args.forceFromFormation
+      )
     );
 
     if (args.apply) {
@@ -355,4 +365,54 @@ export async function runProposalCommercialMarginRecalc(
   }
 
   return aggregateProposalCommercialRecalcPreview(allResults, proposalIds);
+}
+
+const DEFAULT_ALL_PAGES_SIZE = 200;
+
+/**
+ * Percorre todas as páginas de propostas (skip/limit) até esgotar.
+ * Usado pelo hook pós-sync Nomus e por recálculos completos.
+ */
+export async function runProposalCommercialMarginRecalcAllPages(
+  db: PrismaClient,
+  args: ProposalCommercialRecalcCliArgs,
+  options?: { performedBy?: string | null; pageSize?: number }
+): Promise<ProposalCommercialRecalcPreview & { pagesProcessed: number }> {
+  const pageSize = Math.max(
+    1,
+    Math.min(5000, options?.pageSize ?? Math.min(args.limit, DEFAULT_ALL_PAGES_SIZE))
+  );
+  let skip = Math.max(0, args.skip);
+  let pagesProcessed = 0;
+  const allResults: ProposalCommercialRecalcItemResult[] = [];
+  const allProposalIds = new Set<string>();
+
+  while (true) {
+    const page = await runProposalCommercialMarginRecalc(
+      db,
+      { ...args, skip, limit: pageSize },
+      options
+    );
+    pagesProcessed += 1;
+    for (const row of page.results) {
+      allResults.push(row);
+      allProposalIds.add(row.proposalId);
+    }
+    // Conta propostas da página via set do preview (mesmo sem itens elegíveis).
+    const fetched = page.proposalsAnalyzed;
+    if (fetched === 0) break;
+    // Quando onlyMissing filtra todos os itens, proposalsAnalyzed ainda reflete o findMany.
+    // Se a página veio “cheia” mas sem results, avançamos pelo tamanho da página.
+    const advanceBy = fetched > 0 ? fetched : pageSize;
+    // proposalsAnalyzed = size do set de propostas carregadas nesta página.
+    skip += advanceBy;
+    if (fetched < pageSize) break;
+    // Proteção: se a página não avançar ids (anomalia), evita loop infinito.
+    if (advanceBy <= 0) break;
+  }
+
+  return {
+    ...aggregateProposalCommercialRecalcPreview(allResults, allProposalIds),
+    pagesProcessed,
+  };
 }

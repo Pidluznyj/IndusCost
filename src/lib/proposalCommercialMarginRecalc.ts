@@ -37,7 +37,14 @@ export type ProposalCommercialRecalcCliArgs = {
   dateTo: string | null;
   source: "INTERNAL" | "IMPORTED" | "ALL";
   limit: number;
+  /** Offset de propostas (paginação). */
+  skip: number;
   onlyMissing: boolean;
+  /**
+   * Ignora snapshot completo e reconstrói faixas pela tabela/versão
+   * (ou pela data da proposta) — “tabelas vigentes na referência”.
+   */
+  forceFromFormation: boolean;
   json: boolean;
   batchSize: number;
 };
@@ -151,6 +158,7 @@ export function parseProposalCommercialRecalcCliArgs(
   }
   const source = sourceRaw as "INTERNAL" | "IMPORTED" | "ALL";
   const limitRaw = Number(readArg(argv, "limit") ?? 200);
+  const skipRaw = Number(readArg(argv, "skip") ?? 0);
   const batchRaw = Number(readArg(argv, "batch-size") ?? 25);
   return {
     dryRun,
@@ -162,7 +170,9 @@ export function parseProposalCommercialRecalcCliArgs(
     dateTo: readArg(argv, "date-to"),
     source,
     limit: Number.isFinite(limitRaw) ? Math.max(1, Math.min(5000, limitRaw)) : 200,
+    skip: Number.isFinite(skipRaw) ? Math.max(0, Math.floor(skipRaw)) : 0,
     onlyMissing: hasFlag(argv, "only-missing"),
+    forceFromFormation: hasFlag(argv, "force-from-formation"),
     json: hasFlag(argv, "json"),
     batchSize: Number.isFinite(batchRaw) ? Math.max(1, Math.min(100, batchRaw)) : 25,
   };
@@ -208,9 +218,12 @@ export function snapshotLooksComplete(
 export function classifyProposalCommercialMarginSource(input: {
   commercialPricingSnapshotJson?: unknown;
   priceTableVersionId?: string | null;
+  forceFromFormation?: boolean;
 }): ProposalCommercialRecalcSourceClass {
-  const snap = parseProposalCommercialPricingSnapshot(input.commercialPricingSnapshotJson);
-  if (snapshotLooksComplete(snap)) return "EXACT_PROPOSAL_FORMATION_SNAPSHOT";
+  if (!input.forceFromFormation) {
+    const snap = parseProposalCommercialPricingSnapshot(input.commercialPricingSnapshotJson);
+    if (snapshotLooksComplete(snap)) return "EXACT_PROPOSAL_FORMATION_SNAPSHOT";
+  }
   if (typeof input.priceTableVersionId === "string" && input.priceTableVersionId.trim()) {
     return "EXACT_PROPOSAL_PRICE_TABLE_VERSION";
   }
@@ -532,6 +545,7 @@ export function resolveProposalCommercialRecalcItem(input: {
   item: ProposalCommercialRecalcItemInput;
   formation?: ProposalCommercialFormationInput | null;
   formationFailureReason?: ProposalCommercialMarginReasonCode | null;
+  forceFromFormation?: boolean;
 }): ProposalCommercialRecalcItemResult {
   const { item } = input;
   const current = parseProposalCommercialPricingSnapshot(
@@ -540,6 +554,7 @@ export function resolveProposalCommercialRecalcItem(input: {
   let sourceClass = classifyProposalCommercialMarginSource({
     commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
     priceTableVersionId: item.priceTableVersionId,
+    forceFromFormation: input.forceFromFormation === true,
   });
 
   const baseMeta = {

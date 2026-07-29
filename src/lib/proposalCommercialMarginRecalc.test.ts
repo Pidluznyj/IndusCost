@@ -41,7 +41,7 @@ function formPrice(marginPercent: number, commissionPercent: number) {
     marginRate: marginPercent / 100,
   });
   assert.equal(formed.ok, true);
-  if (!formed.ok) throw new Error(formed.message);
+  if (!formed.ok) throw new Error("formPrice failed");
   return formed.result.salePrice;
 }
 
@@ -89,6 +89,8 @@ describe("proposalCommercialMarginRecalc — CLI e segurança", () => {
     const args = parseProposalCommercialRecalcCliArgs([]);
     assert.equal(args.dryRun, true);
     assert.equal(args.apply, false);
+    assert.equal(args.skip, 0);
+    assert.equal(args.forceFromFormation, false);
   });
 
   it("apply exige confirmação explícita", () => {
@@ -120,13 +122,17 @@ describe("proposalCommercialMarginRecalc — CLI e segurança", () => {
       "--dry-run",
       "--source=IMPORTED",
       "--limit=25",
+      "--skip=50",
       "--only-missing",
+      "--force-from-formation",
       "--proposal-code=ABC",
       "--json",
     ]);
     assert.equal(args.source, "IMPORTED");
     assert.equal(args.limit, 25);
+    assert.equal(args.skip, 50);
     assert.equal(args.onlyMissing, true);
+    assert.equal(args.forceFromFormation, true);
     assert.equal(args.proposalCode, "ABC");
     assert.equal(args.json, true);
   });
@@ -162,6 +168,49 @@ describe("proposalCommercialMarginRecalc — classificação de fonte", () => {
       priceTableVersionId: "ver-1",
     });
     assert.equal(className, "EXACT_PROPOSAL_FORMATION_SNAPSHOT");
+  });
+
+  it("forceFromFormation ignora snapshot completo e usa versão/data", () => {
+    const tiers = buildTiers();
+    const computed = computeSnapshotFromFormation({
+      formation: {
+        formationContextId: "v1|v2|v3",
+        referenceDate: "2026-03-15",
+        frozenCostUnit: COST,
+        taxRate: TAX,
+        freightRate: FREIGHT_RATE,
+        freightAbsoluteUnit: FREIGHT_ABS,
+        otherVariablesRate: OTHER,
+        tiers,
+      },
+      productId: "prod-1",
+      quantity: 2,
+      suggestedPrice: tiers[1]!.salePrice,
+      negotiatedPrice: tiers[1]!.salePrice,
+      discountPerc: 0,
+      discountValue: 0,
+      priceTableVersionId: "ver-1",
+    });
+    assert.equal(
+      classifyProposalCommercialMarginSource({
+        commercialPricingSnapshotJson: serializeProposalCommercialPricingSnapshot(
+          computed.snapshot
+        ),
+        priceTableVersionId: "ver-1",
+        forceFromFormation: true,
+      }),
+      "EXACT_PROPOSAL_PRICE_TABLE_VERSION"
+    );
+    assert.equal(
+      classifyProposalCommercialMarginSource({
+        commercialPricingSnapshotJson: serializeProposalCommercialPricingSnapshot(
+          computed.snapshot
+        ),
+        priceTableVersionId: null,
+        forceFromFormation: true,
+      }),
+      "RECONSTRUCTED_FROM_PROPOSAL_DATE"
+    );
   });
 
   it("usa versão explícita quando snapshot incompleto", () => {
@@ -445,6 +494,8 @@ describe("proposalCommercialMarginRecalc — independência / auditoria / perfor
     const files = [
       "src/lib/proposalCommercialMarginRecalc.ts",
       "src/lib/proposalCommercialMarginRecalc.server.ts",
+      "src/lib/proposalCommercialMarginRecalcAfterNomusSync.ts",
+      "src/lib/proposalCommercialMarginRecalcAfterNomusSync.server.ts",
       "scripts/recalculateProposalCommercialMargins.ts",
     ];
     for (const rel of files) {
@@ -453,8 +504,19 @@ describe("proposalCommercialMarginRecalc — independência / auditoria / perfor
       assert.doesNotMatch(src, /from ["'][^"']*\/server(?:\.ts)?["']/);
       assert.doesNotMatch(src, /SalesOrderItem/);
       assert.doesNotMatch(src, /db\.salesOrder\b/);
-      assert.doesNotMatch(src, /import\s+.*nomus/i);
+      // Sem cliente/API Nomus (nome AfterNomusSync no path é ok).
+      assert.doesNotMatch(src, /from ["'][^"']*nomus[A-Z][^"']*["']/);
+      assert.doesNotMatch(src, /NOMUS_BASE_URL|fetchAllNomus/);
     }
+  });
+
+  it("sync de propostas amarra o hook pós-apply", () => {
+    const src = readFileSync(
+      join(process.cwd(), "scripts/nomusProposalsSyncV1.ts"),
+      "utf8"
+    );
+    assert.match(src, /runProposalCommercialMarginRecalcAfterNomusSync/);
+    assert.match(src, /marginRecalc/);
   });
 
   it("apply registra intenção de auditoria no adapter", () => {

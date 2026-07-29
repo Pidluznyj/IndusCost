@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Prisma, PrismaClient, ProposalStatus } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
+import { runProposalCommercialMarginRecalcAfterNomusSync } from "../src/lib/proposalCommercialMarginRecalcAfterNomusSync.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -1012,12 +1013,58 @@ async function main(): Promise<void> {
   if (!isApply) return;
 
   const result = await applyPlans(plans);
+
+  // Pós-sync: recalcula margem comercial (tabela vigente na data da proposta).
+  // Default = dry-run; apply só com confirmação (env/flags). Falha do hook não aborta o sync.
+  let marginRecalc: Awaited<
+    ReturnType<typeof runProposalCommercialMarginRecalcAfterNomusSync>
+  > | null = null;
+  try {
+    marginRecalc = await runProposalCommercialMarginRecalcAfterNomusSync(prisma, {
+      syncMode: "apply",
+      argv: process.argv.slice(2),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[proposal-margin-recalc-after-sync] falhou (sync oficial preservado): ${message}`
+    );
+    marginRecalc = {
+      enabled: true,
+      skipped: false,
+      mode: "dry-run",
+      applyDowngradedToDryRun: false,
+      error: message,
+    };
+  }
+
   console.log(
     JSON.stringify(
       {
         mode: "apply",
         summary: dry,
         applied: result,
+        marginRecalc: marginRecalc
+          ? {
+              mode: marginRecalc.mode,
+              skipped: marginRecalc.skipped,
+              skipReason: marginRecalc.skipReason ?? null,
+              applyDowngradedToDryRun: marginRecalc.applyDowngradedToDryRun,
+              error: marginRecalc.error ?? null,
+              preview: marginRecalc.preview
+                ? {
+                    pagesProcessed: marginRecalc.preview.pagesProcessed ?? null,
+                    proposalsAnalyzed: marginRecalc.preview.proposalsAnalyzed,
+                    itemsAnalyzed: marginRecalc.preview.itemsAnalyzed,
+                    itemsComplete: marginRecalc.preview.itemsComplete,
+                    itemsChanged: marginRecalc.preview.itemsChanged,
+                    itemsUnavailable: marginRecalc.preview.itemsUnavailable,
+                    coveragePercent: marginRecalc.preview.coveragePercent,
+                    bySource: marginRecalc.preview.bySource,
+                  }
+                : null,
+            }
+          : null,
         skippedBlockedProposals: blocked.map((b) => ({
           externalProposalId: b.externalProposalId,
           externalProposalCode: b.externalProposalCode,

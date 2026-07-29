@@ -22,6 +22,8 @@
     "test:treasury": "node scripts/runTreasuryTests.mjs",
     "sync:nomus:proposals:dry": "tsx scripts/nomusProposalsSyncV1.ts",
     "sync:nomus:proposals:apply": "tsx scripts/nomusProposalsSyncV1.ts --apply",
+    "recalc:proposal-margins:dry": "tsx scripts/recalculateProposalCommercialMargins.ts --dry-run --source=IMPORTED --force-from-formation",
+    "recalc:proposal-margins:apply": "tsx scripts/recalculateProposalCommercialMargins.ts --apply --confirm-apply=RECALCULATE_PROPOSAL_MARGINS --source=IMPORTED --force-from-formation",
     "sync:nomus:customers:dry": "tsx scripts/nomusCustomersSyncV1.ts",
     "sync:nomus:customers:apply": "tsx scripts/nomusCustomersSyncV1.ts --apply",
     "sync:nomus:products:dry": "tsx scripts/nomusProductsSyncV1.ts",

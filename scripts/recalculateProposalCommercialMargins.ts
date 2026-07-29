@@ -3,8 +3,13 @@
  *
  * Uso:
  *   npx tsx scripts/recalculateProposalCommercialMargins.ts --dry-run
- *   npx tsx scripts/recalculateProposalCommercialMargins.ts --dry-run --source=IMPORTED --limit=50
- *   npx tsx scripts/recalculateProposalCommercialMargins.ts --apply --confirm-apply=RECALCULATE_PROPOSAL_MARGINS --limit=10
+ *   npx tsx scripts/recalculateProposalCommercialMargins.ts --dry-run --source=IMPORTED --force-from-formation
+ *   npx tsx scripts/recalculateProposalCommercialMargins.ts --apply --confirm-apply=RECALCULATE_PROPOSAL_MARGINS --force-from-formation
+ *   npm run recalc:proposal-margins:dry
+ *   npm run recalc:proposal-margins:apply
+ *
+ * Hook automático: ao final de `npm run sync:nomus:proposals:apply` (default dry-run;
+ * apply com PROPOSAL_COMMERCIAL_MARGIN_RECALC_AFTER_SYNC=apply + CONFIRM).
  *
  * Segurança:
  * - Default = dry-run (somente leitura).
