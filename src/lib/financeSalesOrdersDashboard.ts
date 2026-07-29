@@ -637,9 +637,45 @@ export async function buildFinanceSalesOrdersDashboard(
       nomusRawResponse: order.nomusRawResponse,
     }))
   );
-  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+  const managerialPortfolio = aggregateSalesOrderMarginSummaries(
     [...marginByOrder.values()].map((row) => row.marginSummary)
   );
+  const { aggregateCommercialMarginPayloads } = await import(
+    "./salesOrderCommercialMarginReadModel.js"
+  );
+  const commercialPayloads = [...marginByOrder.values()]
+    .map((row) => row.marginSummary?.commercialMargin)
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const commercialPortfolio =
+    commercialPayloads.length > 0
+      ? aggregateCommercialMarginPayloads(commercialPayloads)
+      : null;
+  // Portfolio exportado/exibido como margem comercial usa o agregado canônico.
+  const marginPortfolio = managerialPortfolio
+    ? {
+        ...managerialPortfolio,
+        marginValue:
+          commercialPortfolio?.commercialMarginTotalValue ??
+          managerialPortfolio.marginValue,
+        marginPercent:
+          commercialPortfolio?.commercialMarginTotalPercent ??
+          managerialPortfolio.marginPercent,
+        marginRevenueCovered:
+          commercialPortfolio?.commercialSoldTotalValue ??
+          managerialPortfolio.marginRevenueCovered,
+        marginCoveragePercent:
+          commercialPortfolio?.commercialMarginCoveragePercent ??
+          managerialPortfolio.marginCoveragePercent,
+        costCoverageStatus: commercialPortfolio
+          ? commercialPortfolio.isComplete
+            ? ("FULL" as const)
+            : commercialPortfolio.itemsCalculated > 0
+              ? ("PARTIAL" as const)
+              : ("NONE" as const)
+          : managerialPortfolio.costCoverageStatus,
+        commercialMargin: commercialPortfolio,
+      }
+    : undefined;
 
   const extended = buildExtendedMetricsFromOrders({
     orders: periodOrders,

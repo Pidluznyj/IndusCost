@@ -16,12 +16,11 @@ import {
   resolveMarginPercentVariant,
   toFiniteMetricNumber,
 } from "@/src/lib/salesOrderManagementMetricCards";
-import {
-  resolveSalesOrderMarginMoneyLabel,
-  resolveSalesOrderMarginPercentLabel,
-} from "@/src/lib/salesOrderMarginDisplay";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 import type { SalesOrderManagementMarginEconomics } from "@/src/lib/salesOrderManagementTypes";
+import {
+  resolveCommercialMarginDisplayLabel,
+} from "@/src/lib/salesOrderCommercialMarginReadModel";
 import { cn } from "@/src/lib/utils";
 
 function DrillCardButton({
@@ -60,12 +59,24 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
   const consolidated = marginEconomics?.consolidated;
   if (!consolidated && !loading) return null;
 
-  const marginPercent = toFiniteMetricNumber(consolidated?.marginPercent);
-  const marginValue = toFiniteMetricNumber(consolidated?.marginValue);
+  const commercial = consolidated?.commercialMargin ?? null;
+  const commercialLabel =
+    marginEconomics?.commercialLabel ??
+    resolveCommercialMarginDisplayLabel(commercial);
+  // Cards comerciais leem apenas o payload canônico — sem margem gerencial.
+  const marginPercent = toFiniteMetricNumber(commercial?.commercialMarginTotalPercent);
+  const marginValue = toFiniteMetricNumber(commercial?.commercialMarginTotalValue);
   const totalCost = toFiniteMetricNumber(consolidated?.totalCost);
-  const netRevenue = toFiniteMetricNumber(consolidated?.netRevenue);
+  const netRevenue = toFiniteMetricNumber(
+    commercial?.commercialSoldTotalValue ?? consolidated?.netRevenue
+  );
   const ordersWithData = marginEconomics?.ordersWithMarginData ?? null;
-  const marginSubtitle = resolveMarginCardShortSubtitle(consolidated);
+  const marginSubtitle =
+    commercial != null
+      ? commercial.isComplete
+        ? "Cobertura total"
+        : `Cobertura ${commercial.commercialMarginCoveragePercent ?? 0}%`
+      : resolveMarginCardShortSubtitle(consolidated);
 
   return (
     <SalesOrderKpiSection
@@ -90,13 +101,13 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
         >
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label={resolveSalesOrderMarginPercentLabel(consolidated)}
+            label={`${commercialLabel} (%)`}
             amount={marginPercent}
             amountFormat="percent"
             tone={metricVariantToTotalizerTone(resolveMarginPercentVariant(marginPercent))}
             icon={Percent}
             subtitle={marginSubtitle}
-            helperText="Margem gerencial · clique para detalhar"
+            helperText="Margem comercial · clique para detalhar"
             loading={loading}
           />
         </DrillCardButton>
@@ -106,7 +117,7 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
         >
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label={resolveSalesOrderMarginMoneyLabel(consolidated)}
+            label={`${commercialLabel} (R$)`}
             amount={marginValue}
             amountFormat="currency"
             tone={metricVariantToTotalizerTone(resolveMarginMoneyVariant(marginValue))}
@@ -120,18 +131,18 @@ export const SalesOrderManagementMarginOverview = memo(function SalesOrderManage
                 />
               ) : undefined
             }
-            helperText="Margem gerencial consolidada"
+            helperText="Margem comercial consolidada (ponderada)"
             loading={loading}
           />
         </DrillCardButton>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-          label="Receita líquida"
+          label="Valor líquido coberto"
           amount={netRevenue}
           amountFormat="currency"
           tone="money"
           icon={TrendingUp}
-          helperText="Receita com custo usada na margem"
+          helperText="Base da margem comercial no filtro"
           loading={loading}
         />
         <SystemTotalizerCard

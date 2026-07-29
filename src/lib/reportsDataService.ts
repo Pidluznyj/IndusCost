@@ -12,7 +12,7 @@ import {
   OFFICIAL_SO_RULES_SOURCE,
   type OfficialReportsProductMixRow,
 } from "./salesOrderRulesAdapter.js";
-import { calculateOfficialSalesOrderMarginsForOrders } from "./salesMarginRulesAdapter.js";
+import { calculateSalesOrderMarginsForOrders } from "./salesOrderMarginService.server.js";
 import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 import type { SalesOrderListFilters } from "./salesOrdersListSummary.js";
 import {
@@ -20,6 +20,7 @@ import {
 } from "./productOfficialFinalCost.js";
 import { isCostAnalysisFailure } from "./productCostSnapshot.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import { aggregateCommercialMarginPayloads } from "./salesOrderCommercialMarginReadModel.js";
 
 export type ReportsDataQuery = {
   dateFrom: string | null;
@@ -257,7 +258,7 @@ export async function buildReportsDataPayload(
     orderBy: { issueDate: "desc" },
   })) as ReportsOrderRow[];
 
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(
     db as PrismaClient,
     orders.map((order) => ({
       id: order.id,
@@ -331,9 +332,41 @@ export async function buildReportsDataPayload(
 
   const mixByProduct = buildOfficialReportsProductMixFromOrders(rulesOrders, listFilters);
 
-  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+  const managerialPortfolio = aggregateSalesOrderMarginSummaries(
     [...marginByOrder.values()].map((row) => row.marginSummary)
   ) ?? null;
+  const commercialPayloads = [...marginByOrder.values()]
+    .map((row) => row.marginSummary?.commercialMargin)
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const commercialPortfolio =
+    commercialPayloads.length > 0
+      ? aggregateCommercialMarginPayloads(commercialPayloads)
+      : null;
+  const marginPortfolio = managerialPortfolio
+    ? {
+        ...managerialPortfolio,
+        marginValue:
+          commercialPortfolio?.commercialMarginTotalValue ??
+          managerialPortfolio.marginValue,
+        marginPercent:
+          commercialPortfolio?.commercialMarginTotalPercent ??
+          managerialPortfolio.marginPercent,
+        marginRevenueCovered:
+          commercialPortfolio?.commercialSoldTotalValue ??
+          managerialPortfolio.marginRevenueCovered,
+        marginCoveragePercent:
+          commercialPortfolio?.commercialMarginCoveragePercent ??
+          managerialPortfolio.marginCoveragePercent,
+        costCoverageStatus: commercialPortfolio
+          ? commercialPortfolio.isComplete
+            ? ("FULL" as const)
+            : commercialPortfolio.itemsCalculated > 0
+              ? ("PARTIAL" as const)
+              : ("NONE" as const)
+          : managerialPortfolio.costCoverageStatus,
+        commercialMargin: commercialPortfolio,
+      }
+    : null;
 
   const allOrdersForRepurchase = await db.salesOrder.findMany({
     where: { status: { not: "CANCELLED" } },

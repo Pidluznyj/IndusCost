@@ -31,14 +31,16 @@ import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
-  aggregateSalesOrderMarginSummaries,
   buildOfficialSalesOrderMarginTooltipText,
   buildSalesOrderMarginCoverageHint,
   formatSalesOrderMarginPercent,
-  resolveSalesOrderMarginMoneyLabel,
-  resolveSalesOrderMarginPercentLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import {
+  aggregateCommercialMarginPayloads,
+  resolveCommercialMarginDisplayLabel,
+} from "@/src/lib/salesOrderCommercialMarginReadModel";
 import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
+import type { SalesOrderCommercialMarginSummaryPayload } from "@/src/lib/salesOrderCommercialMargin";
 import {
   COMMERCIAL_SALES_ORDER_BASIS_NOTE,
   computeCommercialPhase2FromSalesOrders,
@@ -268,17 +270,66 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const fo = filtered;
     const valid = fo.filter((o) => isCommercialMetricsSalesOrder(o.status));
     const useOfficial = filtersAreDefault && officialOrderMetrics != null;
-    const marginSummaries = valid
-      .map((o) => o.marginSummary)
-      .filter((s): s is SalesOrderMarginSummaryPayload => Boolean(s));
-    const filteredMarginAgg = aggregateSalesOrderMarginSummaries(marginSummaries);
-    const usesOfficialMarginMetrics = marginSummaries.length > 0 && filteredMarginAgg != null;
-    const marginCoverage = filteredMarginAgg ?? null;
+    // Consolida apenas payloads comerciais já calculados no servidor (sem fórmula local).
+    const commercialPayloads = valid
+      .map((o) => o.marginSummary?.commercialMargin)
+      .filter((s): s is SalesOrderCommercialMarginSummaryPayload => Boolean(s));
+    const filteredCommercialAgg =
+      commercialPayloads.length > 0
+        ? aggregateCommercialMarginPayloads(commercialPayloads)
+        : null;
+    const usesOfficialMarginMetrics = filteredCommercialAgg != null && filteredCommercialAgg.itemsCalculated > 0;
+    const marginCoverage = filteredCommercialAgg
+      ? ({
+          netRevenue: filteredCommercialAgg.commercialSoldTotalValue,
+          totalCost: 0,
+          marginValue: filteredCommercialAgg.commercialMarginTotalValue,
+          marginPercent: filteredCommercialAgg.commercialMarginTotalPercent,
+          markup: null,
+          itemsCount: filteredCommercialAgg.itemsActive,
+          validItemsCount: filteredCommercialAgg.itemsCalculated,
+          ignoredItemsCount: filteredCommercialAgg.itemsUnavailable,
+          hasMissingCost: filteredCommercialAgg.itemsUnavailable > 0,
+          hasMissingProduct: false,
+          hasNegativeMargin: (filteredCommercialAgg.commercialMarginTotalValue ?? 0) < 0,
+          hasInvalidRevenue: false,
+          status: filteredCommercialAgg.isComplete
+            ? "OK"
+            : filteredCommercialAgg.itemsCalculated > 0
+              ? "PARTIAL"
+              : "SEM_CUSTO",
+          statusLabel: resolveCommercialMarginDisplayLabel(filteredCommercialAgg),
+          statusSeverity: filteredCommercialAgg.isComplete
+            ? "success"
+            : filteredCommercialAgg.itemsCalculated > 0
+              ? "warning"
+              : "danger",
+          totalSalesRevenueInScope: filteredCommercialAgg.totalActiveSoldValue,
+          marginRevenueCovered: filteredCommercialAgg.commercialSoldTotalValue,
+          marginRevenueUncovered: Math.max(
+            0,
+            filteredCommercialAgg.totalActiveSoldValue -
+              filteredCommercialAgg.commercialSoldTotalValue
+          ),
+          marginCoveragePercent: filteredCommercialAgg.commercialMarginCoveragePercent,
+          itemsTotal: filteredCommercialAgg.itemsActive,
+          itemsWithCost: filteredCommercialAgg.itemsCalculated,
+          itemsWithoutCost: filteredCommercialAgg.itemsUnavailable,
+          costCoverageStatus: filteredCommercialAgg.isComplete
+            ? "FULL"
+            : filteredCommercialAgg.itemsCalculated > 0
+              ? "PARTIAL"
+              : "NONE",
+          commercialMargin: filteredCommercialAgg,
+        } satisfies SalesOrderMarginSummaryPayload)
+      : null;
     const totalNet = useOfficial
       ? officialOrderMetrics.soldAmount
       : valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
     const totalGross = valid.reduce((a, o) => a + safeCommercialNumber(o.totalGrossValue), 0);
-    const totalMargin = usesOfficialMarginMetrics ? filteredMarginAgg!.marginValue : 0;
+    const totalMargin = usesOfficialMarginMetrics
+      ? (filteredCommercialAgg!.commercialMarginTotalValue ?? 0)
+      : 0;
     const count = fo.length;
     const validCount = useOfficial ? officialOrderMetrics.filteredOrders : valid.length;
     const invoicedCount = useOfficial
@@ -296,8 +347,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     const totalItems = valid.reduce((a, o) => a + (o.totalItems || 0), 0);
     const avgItems = validCount > 0 ? totalItems / validCount : 0;
     const marginAvg =
-      usesOfficialMarginMetrics && filteredMarginAgg?.marginPercent != null
-        ? filteredMarginAgg.marginPercent
+      usesOfficialMarginMetrics && filteredCommercialAgg?.commercialMarginTotalPercent != null
+        ? filteredCommercialAgg.commercialMarginTotalPercent
         : 0;
 
     const validChrono = [...valid].sort(
@@ -834,7 +885,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   />
                   <FinanceExecutiveTotalizerCard
                     icon={TrendingUp}
-                    label={resolveSalesOrderMarginPercentLabel(metrics.marginCoverage)}
+                    label={`${resolveCommercialMarginDisplayLabel(metrics.marginCoverage?.commercialMargin)} (%)`}
                     value={
                       metrics.usesOfficialMarginMetrics
                         ? formatSalesOrderMarginPercent(metrics.marginAvg)
@@ -853,7 +904,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   />
                   <FinanceExecutiveTotalizerCard
                     icon={TrendingUp}
-                    label={resolveSalesOrderMarginMoneyLabel(metrics.marginCoverage)}
+                    label={`${resolveCommercialMarginDisplayLabel(metrics.marginCoverage?.commercialMargin)} (R$)`}
                     value={
                       metrics.usesOfficialMarginMetrics
                         ? formatCurrency(metrics.totalMargin)

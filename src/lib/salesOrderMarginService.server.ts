@@ -481,15 +481,33 @@ async function mergeCommercialMarginsIntoOrderResults(
   >
 ): Promise<void> {
   try {
-    const { calculateCommercialMarginsForSalesOrders } = await import(
-      "./salesOrderCommercialMargin.server.js"
+    // Fonte única: read model canônico (mesmo motor, sem fórmula paralela).
+    const { buildSalesOrderCommercialMarginReadModels } = await import(
+      "./salesOrderCommercialMarginReadService.server.js"
     );
-    const commercialByOrder = await calculateCommercialMarginsForSalesOrders(
+    const { toCommercialMarginItemPayload } = await import(
+      "./salesOrderCommercialMarginReadModel.js"
+    );
+    const needsItemLoad = orders.some((order) => !order.items?.length);
+    const loadedItems = needsItemLoad
+      ? await loadSalesOrderItemsForMargin(
+          prisma,
+          orders.map((order) => order.id)
+        )
+      : null;
+    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
       prisma,
       orders.map((order) => ({
         id: order.id,
-        issueDate: order.issueDate,
-        items: order.items,
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        items: order.items?.length
+          ? order.items
+          : (loadedItems?.get(order.id) ?? []),
       }))
     );
 
@@ -499,12 +517,14 @@ async function mergeCommercialMarginsIntoOrderResults(
       if (!result || !commercial) continue;
       result.marginSummary = {
         ...(result.marginSummary as SalesOrderMarginSummaryPayload),
-        commercialMargin: commercial.summary,
+        commercialMargin: commercial.commercialMargin,
       };
+      const itemById = new Map(commercial.items.map((item) => [item.itemId, item]));
       for (const [itemId, payload] of result.itemMargins) {
+        const itemDto = itemById.get(itemId);
         result.itemMargins.set(itemId, {
           ...payload,
-          commercialMargin: commercial.byItemId.get(itemId) ?? null,
+          commercialMargin: itemDto ? toCommercialMarginItemPayload(itemDto) : null,
         });
       }
     }

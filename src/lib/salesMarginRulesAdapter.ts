@@ -629,23 +629,61 @@ export async function enrichCustomerIntelligenceOrdersWithOfficialMargin(
   });
 
   const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(db, dbOrders);
+  const { buildSalesOrderCommercialMarginReadModels } = await import(
+    "./salesOrderCommercialMarginReadService.server.js"
+  );
+  const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
+    db,
+    dbOrders.map((order) => ({
+      id: order.id,
+      issueDate: order.issueDate,
+      items: order.items,
+    }))
+  );
 
   return orders.map((order) => {
     const margin = marginByOrder.get(order.id);
-    if (!margin) return order;
-    const summary = margin.marginSummary;
+    const commercial = commercialByOrder.get(order.id);
+    if (!margin && !commercial) return order;
+    const summary = margin?.marginSummary;
+    const commercialSummary = commercial?.commercialMargin;
     const itemsByItemId = new Map<string, SalesOrderMarginItemResult>();
-    for (const item of margin.itemResults) {
+    for (const item of margin?.itemResults ?? []) {
       if (item.salesOrderItemId) itemsByItemId.set(item.salesOrderItemId, item);
     }
+    const commercialItemById = new Map(
+      (commercial?.items ?? []).map((item) => [item.itemId, item])
+    );
     return {
       ...order,
-      totalMarginValue: summary.marginValue,
-      totalMarginPerc: summary.marginPercent,
-      marginRevenueCovered: summary.marginRevenueCovered,
-      totalSalesRevenueInScope: summary.totalSalesRevenueInScope,
-      costCoverageStatus: summary.costCoverageStatus,
+      totalMarginValue:
+        commercialSummary?.commercialMarginTotalValue ?? summary?.marginValue ?? null,
+      totalMarginPerc:
+        commercialSummary?.commercialMarginTotalPercent ?? summary?.marginPercent ?? null,
+      marginRevenueCovered:
+        commercialSummary?.commercialSoldTotalValue ??
+        summary?.marginRevenueCovered ??
+        null,
+      totalSalesRevenueInScope:
+        commercialSummary?.totalActiveSoldValue ??
+        summary?.totalSalesRevenueInScope ??
+        null,
+      costCoverageStatus: commercialSummary
+        ? commercialSummary.isComplete
+          ? "FULL"
+          : commercialSummary.itemsCalculated > 0
+            ? "PARTIAL"
+            : "NONE"
+        : summary?.costCoverageStatus,
       items: order.items.map((item) => {
+        const commercialItem = item.id ? commercialItemById.get(item.id) : undefined;
+        if (commercialItem?.commercialMarginValue != null) {
+          return {
+            ...item,
+            marginValue: commercialItem.commercialMarginValue,
+            marginPerc: commercialItem.commercialMarginPercent,
+          };
+        }
         const official = item.id ? itemsByItemId.get(item.id) : undefined;
         if (!official) return item;
         return {
@@ -755,7 +793,76 @@ export async function loadOfficialCommercial360MarginBundle<
   const { rules, marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, forMargin, {
     itemsByOrderId,
   });
-  const scoped = resolveOfficialScopedMarginMetrics(rules);
+  let scoped = resolveOfficialScopedMarginMetrics(rules);
+
+  // Overlay margem comercial canônica (não substitui gerencial secundária).
+  try {
+    const { buildSalesOrderCommercialMarginReadModels } = await import(
+      "./salesOrderCommercialMarginReadService.server.js"
+    );
+    const { toCommercialMarginItemPayload, aggregateCommercialMarginPayloads } = await import(
+      "./salesOrderCommercialMarginReadModel.js"
+    );
+    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
+      db,
+      forMargin.map((order) => ({
+        id: order.id,
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        items: order.items ?? itemsByOrderId.get(order.id) ?? [],
+      }))
+    );
+    const commercialPayloads: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSummaryPayload[] =
+      [];
+    for (const order of forMargin) {
+      const result = marginByOrder.get(order.id);
+      const commercial = commercialByOrder.get(order.id);
+      if (!result?.marginSummary || !commercial) continue;
+      const itemById = new Map(commercial.items.map((item) => [item.itemId, item]));
+      result.marginSummary = {
+        ...result.marginSummary,
+        commercialMargin: commercial.commercialMargin,
+      };
+      for (const [itemId, payload] of result.itemMargins) {
+        const itemDto = itemById.get(itemId);
+        result.itemMargins.set(itemId, {
+          ...payload,
+          commercialMargin: itemDto ? toCommercialMarginItemPayload(itemDto) : null,
+        });
+      }
+      commercialPayloads.push(commercial.commercialMargin);
+    }
+    const commercialAggregate =
+      commercialPayloads.length > 0
+        ? aggregateCommercialMarginPayloads(commercialPayloads)
+        : null;
+    if (commercialAggregate) {
+      scoped = {
+        ...scoped,
+        marginAmount:
+          commercialAggregate.commercialMarginTotalValue ?? scoped.marginAmount,
+        marginPercent:
+          commercialAggregate.commercialMarginTotalPercent ?? scoped.marginPercent,
+        marginRevenueCovered: commercialAggregate.commercialSoldTotalValue,
+        marginCoveragePercent:
+          commercialAggregate.commercialMarginCoveragePercent,
+        costCoverageStatus: commercialAggregate.isComplete
+          ? "FULL"
+          : commercialAggregate.itemsCalculated > 0
+            ? "PARTIAL"
+            : "NONE",
+      };
+    }
+  } catch (err) {
+    console.warn(
+      "[loadOfficialCommercial360MarginBundle] falha na margem comercial canônica.",
+      err
+    );
+  }
 
   const salesOrders = orders.map((order) => {
     const result = marginByOrder.get(order.id);
@@ -789,10 +896,16 @@ export async function loadOfficialCommercial360MarginBundle<
     salesOrders,
     officialMarginMetrics: {
       ...scoped,
-      orderMargins: rules.orderResults.map((order) => ({
-        orderId: order.orderId,
-        marginValue: order.marginAmount,
-        marginPercent: order.marginPercent,
+      scopeNote:
+        "Margem comercial agregada (% ponderada por valor líquido coberto).",
+      orderMargins: [...marginByOrder.entries()].map(([orderId, result]) => ({
+        orderId,
+        marginValue:
+          result.marginSummary.commercialMargin?.commercialMarginTotalValue ??
+          result.marginSummary.marginValue,
+        marginPercent:
+          result.marginSummary.commercialMargin?.commercialMarginTotalPercent ??
+          result.marginSummary.marginPercent,
       })),
     },
   };
@@ -849,25 +962,54 @@ export async function buildOfficialSalesOrderListMarginSummary(
   const { summarizeSalesOrderCommercialMargins } = await import(
     "./salesOrderCommercialMargin.js"
   );
+  const { aggregateCommercialMarginPayloads } = await import(
+    "./salesOrderCommercialMarginReadModel.js"
+  );
   let commercialAggregate = summarizeSalesOrderCommercialMargins([]);
   try {
-    const { calculateCommercialMarginsForSalesOrders } = await import(
-      "./salesOrderCommercialMargin.server.js"
+    // Fonte única: read model canônico (batch).
+    const { buildSalesOrderCommercialMarginReadModels } = await import(
+      "./salesOrderCommercialMarginReadService.server.js"
     );
-    const commercialByOrder = await calculateCommercialMarginsForSalesOrders(db, orders);
+    const { loadSalesOrderItemsForMargin } = await import(
+      "./salesOrderMarginService.server.js"
+    );
+    const needsItemLoad = orders.some((order) => !order.items?.length);
+    const loadedItems = needsItemLoad
+      ? await loadSalesOrderItemsForMargin(
+          db,
+          orders.map((order) => order.id)
+        )
+      : null;
+    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
+      db,
+      orders.map((order) => ({
+        id: order.id,
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        items: order.items?.length
+          ? order.items
+          : (loadedItems?.get(order.id) ?? []),
+      }))
+    );
+    const commercialPayloads = [];
     for (const order of orders) {
       const result = marginByOrder.get(order.id);
       const commercial = commercialByOrder.get(order.id);
       if (!result?.marginSummary || !commercial) continue;
       result.marginSummary = {
         ...result.marginSummary,
-        commercialMargin: commercial.summary,
+        commercialMargin: commercial.commercialMargin,
       };
+      commercialPayloads.push(commercial.commercialMargin);
     }
-    const commercialItems = [...commercialByOrder.values()].flatMap((row) =>
-      [...row.byItemId.values()]
-    );
-    commercialAggregate = summarizeSalesOrderCommercialMargins(commercialItems);
+    if (commercialPayloads.length > 0) {
+      commercialAggregate = aggregateCommercialMarginPayloads(commercialPayloads);
+    }
   } catch (err) {
     console.warn(
       "[buildOfficialSalesOrderListMarginSummary] falha na margem comercial; usando gerencial.",

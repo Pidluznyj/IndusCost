@@ -271,3 +271,105 @@ export function commercialMarginIdentityKey(
     itemsUnavailable: summary.itemsUnavailable,
   };
 }
+
+/** Remove metadados do DTO — payload compatível com contratos existentes. */
+export function toCommercialMarginItemPayload(
+  dto: SalesOrderCommercialMarginItemDTO
+): SalesOrderCommercialMarginItemPayload {
+  const { itemId: _itemId, orderId: _orderId, composition: _composition, ...payload } = dto;
+  return payload;
+}
+
+/**
+ * Consolida payloads comerciais já calculados no servidor (Σ R$ / Σ vendido coberto).
+ * Não recalcula margem a partir de custo/preço — só agrega resultados oficiais.
+ */
+export function aggregateCommercialMarginPayloads(
+  payloads: ReadonlyArray<SalesOrderCommercialMarginSummaryPayload>
+): SalesOrderCommercialMarginSummaryPayload {
+  let commercialMarginTotalValue = 0;
+  let commercialSoldTotalValue = 0;
+  let totalActiveSoldValue = 0;
+  let itemsCalculated = 0;
+  let itemsUnavailable = 0;
+  let itemsActive = 0;
+  const warnings: string[] = [];
+  let hasAnyCalculated = false;
+
+  for (const row of payloads) {
+    totalActiveSoldValue += row.totalActiveSoldValue ?? 0;
+    itemsCalculated += row.itemsCalculated ?? 0;
+    itemsUnavailable += row.itemsUnavailable ?? 0;
+    itemsActive += row.itemsActive ?? 0;
+    if (
+      row.commercialMarginTotalValue != null &&
+      Number.isFinite(row.commercialMarginTotalValue) &&
+      row.itemsCalculated > 0
+    ) {
+      hasAnyCalculated = true;
+      commercialMarginTotalValue += row.commercialMarginTotalValue;
+      commercialSoldTotalValue += row.commercialSoldTotalValue ?? 0;
+    }
+    for (const w of row.warnings ?? []) {
+      if (!warnings.includes(w)) warnings.push(w);
+    }
+  }
+
+  commercialMarginTotalValue = roundPricingMoney(commercialMarginTotalValue);
+  commercialSoldTotalValue = roundPricingMoney(commercialSoldTotalValue);
+  totalActiveSoldValue = roundPricingMoney(totalActiveSoldValue);
+
+  const commercialMarginTotalPercent =
+    commercialSoldTotalValue > 0
+      ? roundPricingPercent((commercialMarginTotalValue / commercialSoldTotalValue) * 100)
+      : null;
+  const commercialMarginCoveragePercent =
+    totalActiveSoldValue > 0
+      ? roundPricingPercent((commercialSoldTotalValue / totalActiveSoldValue) * 100)
+      : null;
+  const isComplete =
+    itemsActive > 0 && itemsUnavailable === 0 && commercialMarginTotalPercent != null;
+
+  if (!isComplete && itemsUnavailable > 0) {
+    warnings.unshift(
+      `Margem comercial parcial: ${itemsCalculated} de ${itemsActive} itens calculados.`
+    );
+  }
+
+  return {
+    commercialMarginTotalValue: hasAnyCalculated ? commercialMarginTotalValue : null,
+    commercialMarginTotalPercent,
+    commercialSoldTotalValue,
+    totalActiveSoldValue,
+    commercialMarginCoveragePercent,
+    itemsCalculated,
+    itemsUnavailable,
+    itemsActive,
+    isComplete,
+    warnings,
+  };
+}
+
+/** Status de exibição canônico da margem comercial. */
+export function resolveCommercialMarginDisplayStatus(
+  commercial: SalesOrderCommercialMarginSummaryPayload | null | undefined
+): "COMPLETE" | "PARTIAL" | "UNAVAILABLE" {
+  if (!commercial || commercial.itemsActive <= 0 || commercial.itemsCalculated <= 0) {
+    return "UNAVAILABLE";
+  }
+  if (commercial.isComplete) return "COMPLETE";
+  return "PARTIAL";
+}
+
+export function resolveCommercialMarginDisplayLabel(
+  commercial: SalesOrderCommercialMarginSummaryPayload | null | undefined
+): string {
+  switch (resolveCommercialMarginDisplayStatus(commercial)) {
+    case "PARTIAL":
+      return "Margem comercial parcial";
+    case "UNAVAILABLE":
+      return "Margem não calculada";
+    default:
+      return "Margem comercial";
+  }
+}

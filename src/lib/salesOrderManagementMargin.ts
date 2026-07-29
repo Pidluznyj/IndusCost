@@ -2,6 +2,11 @@
  * Agregação econômica da Gestão de Pedidos — usa payloads de margem do backend.
  */
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import {
+  aggregateCommercialMarginPayloads,
+  resolveCommercialMarginDisplayLabel,
+  resolveCommercialMarginDisplayStatus,
+} from "./salesOrderCommercialMarginReadModel.js";
 import type {
   SalesOrderMarginItemResult,
   SalesOrderMarginSummaryPayload,
@@ -37,6 +42,7 @@ export type SalesOrderManagementMarginItemCounts = {
 };
 
 export type SalesOrderManagementMarginEconomics = {
+  /** Consolida gerencial (receita/custo) + commercialMargin anexado. */
   consolidated: SalesOrderMarginSummaryPayload | null;
   ordersWithMarginData: number;
   ordersWithNegativeMargin: number;
@@ -44,6 +50,9 @@ export type SalesOrderManagementMarginEconomics = {
   ordersWithoutProduct: number;
   itemCounts: SalesOrderManagementMarginItemCounts;
   scopeNote: string;
+  /** Status canônico da margem comercial no filtro. */
+  commercialStatus: "COMPLETE" | "PARTIAL" | "UNAVAILABLE";
+  commercialLabel: string;
 };
 
 export function countMarginItemStatuses(
@@ -95,7 +104,70 @@ export function buildSalesOrderManagementMarginEconomics(
     }
   }
 
-  const consolidated = aggregateSalesOrderMarginSummaries(summaries) ?? null;
+  const managerial = aggregateSalesOrderMarginSummaries(summaries) ?? null;
+  const commercialPayloads = summaries
+    .map((row) => row.commercialMargin)
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const commercialAggregate =
+    commercialPayloads.length > 0
+      ? aggregateCommercialMarginPayloads(commercialPayloads)
+      : null;
+
+  const consolidated = managerial
+    ? {
+        ...managerial,
+        commercialMargin: commercialAggregate,
+      }
+    : commercialAggregate
+      ? ({
+          netRevenue: commercialAggregate.commercialSoldTotalValue,
+          totalCost: 0,
+          marginValue: commercialAggregate.commercialMarginTotalValue,
+          marginPercent: commercialAggregate.commercialMarginTotalPercent,
+          markup: null,
+          itemsCount: commercialAggregate.itemsActive,
+          validItemsCount: commercialAggregate.itemsCalculated,
+          ignoredItemsCount: commercialAggregate.itemsUnavailable,
+          hasMissingCost: commercialAggregate.itemsUnavailable > 0,
+          hasMissingProduct: false,
+          hasNegativeMargin:
+            (commercialAggregate.commercialMarginTotalValue ?? 0) < 0,
+          hasInvalidRevenue: false,
+          status:
+            commercialAggregate.isComplete
+              ? "OK"
+              : commercialAggregate.itemsCalculated > 0
+                ? "PARTIAL"
+                : "SEM_CUSTO",
+          statusLabel: resolveCommercialMarginDisplayLabel(commercialAggregate),
+          statusSeverity: commercialAggregate.isComplete
+            ? "success"
+            : commercialAggregate.itemsCalculated > 0
+              ? "warning"
+              : "danger",
+          totalSalesRevenueInScope: commercialAggregate.totalActiveSoldValue,
+          marginRevenueCovered: commercialAggregate.commercialSoldTotalValue,
+          marginRevenueUncovered: Math.max(
+            0,
+            commercialAggregate.totalActiveSoldValue -
+              commercialAggregate.commercialSoldTotalValue
+          ),
+          marginCoveragePercent:
+            commercialAggregate.commercialMarginCoveragePercent,
+          itemsTotal: commercialAggregate.itemsActive,
+          itemsWithCost: commercialAggregate.itemsCalculated,
+          itemsWithoutCost: commercialAggregate.itemsUnavailable,
+          costCoverageStatus: commercialAggregate.isComplete
+            ? "FULL"
+            : commercialAggregate.itemsCalculated > 0
+              ? "PARTIAL"
+              : "NONE",
+          commercialMargin: commercialAggregate,
+        } satisfies SalesOrderMarginSummaryPayload)
+      : null;
+
+  const commercialStatus = resolveCommercialMarginDisplayStatus(commercialAggregate);
+  const commercialLabel = resolveCommercialMarginDisplayLabel(commercialAggregate);
 
   return {
     consolidated,
@@ -104,17 +176,16 @@ export function buildSalesOrderManagementMarginEconomics(
     ordersWithoutCost,
     ordersWithoutProduct,
     itemCounts,
+    commercialStatus,
+    commercialLabel,
     scopeNote: (() => {
-      if (!consolidated) {
-        return "Totais econômicos consolidados de todos os pedidos do filtro atual (margem % ponderada por receita).";
+      if (!commercialAggregate || commercialStatus === "UNAVAILABLE") {
+        return "Margem comercial indisponível no filtro atual — nenhum item com formação histórica calculada.";
       }
-      if (consolidated.costCoverageStatus === "FULL") {
-        return "Margem do período — calculada sobre 100% da receita vendida no filtro (% ponderada por receita).";
+      if (commercialStatus === "COMPLETE") {
+        return "Margem comercial do período — Σ R$ / Σ valor líquido coberto (ponderada). 100% dos itens ativos calculados.";
       }
-      if (consolidated.costCoverageStatus === "PARTIAL") {
-        return `Margem parcial — calculada sobre receita com custo disponível (${consolidated.marginCoveragePercent ?? 0}% da receita vendida no filtro).`;
-      }
-      return "Margem indisponível — nenhuma linha com custo no filtro atual.";
+      return `Margem comercial parcial — ${commercialAggregate.itemsCalculated} de ${commercialAggregate.itemsActive} itens calculados (cobertura ${commercialAggregate.commercialMarginCoveragePercent ?? 0}% do valor vendido).`;
     })(),
   };
 }
