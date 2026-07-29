@@ -47,6 +47,17 @@ import {
   resolveProposalFreightAbsolute,
   resolveProposalFreightPercent,
 } from "@/src/lib/proposalFreightPercent";
+import { previewProposalCommercialMargins } from "@/src/lib/proposalCommercialMarginPreview";
+import {
+  buildProposalCommercialSummaryView,
+  formatProposalCommercialMoney,
+  formatProposalCommercialPercent,
+  formatProposalCommercialTierPosition,
+  proposalCommercialMarginUnavailableLabel,
+} from "@/src/lib/proposalCommercialMarginDisplay";
+import { parseProposalCommercialPricingSnapshot } from "@/src/lib/proposalCommercialMarginSnapshot";
+import { ProposalCommercialMarginTooltip } from "@/src/components/proposal/ProposalCommercialMarginTooltip";
+import "@/src/components/proposal/proposal-commercial-margin.css";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
@@ -278,10 +289,40 @@ function normalizeProposalItem(
     priceTableItemId: item.priceTableItemId,
     priceSource: item.priceSource,
     pricingSnapshotJson: item.pricingSnapshotJson,
+    commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+    commercialFormation: item.commercialFormation ?? null,
     priceTableId: item.priceTableId,
     priceTableVersionId: item.priceTableVersionId,
     priceTableCode: item.priceTableCode,
     priceTableVersionNumber: item.priceTableVersionNumber,
+  };
+}
+
+type CommercialFormationApiOk = NonNullable<ProposalItem["commercialFormation"]> & {
+  ok: true;
+};
+
+async function fetchCommercialFormationForPreview(
+  productId: string
+): Promise<ProposalItem["commercialFormation"]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const res = await fetch(
+    `/api/products/${productId}/commercial-formation?referenceDate=${encodeURIComponent(today)}`,
+    { credentials: "include" }
+  );
+  if (!res.ok) return null;
+  const body = (await res.json()) as CommercialFormationApiOk | { ok: false };
+  if (!body || (body as { ok?: boolean }).ok !== true) return null;
+  const ok = body as CommercialFormationApiOk;
+  return {
+    formationContextId: ok.formationContextId,
+    referenceDate: ok.referenceDate,
+    frozenCostUnit: ok.frozenCostUnit,
+    taxRate: ok.taxRate,
+    freightRate: ok.freightRate,
+    freightAbsoluteUnit: ok.freightAbsoluteUnit,
+    otherVariablesRate: ok.otherVariablesRate,
+    tiers: ok.tiers,
   };
 }
 
@@ -949,9 +990,11 @@ export const ProposalModule = () => {
       if (item.priceTableItemId !== undefined) row.priceTableItemId = item.priceTableItemId;
       if (item.priceSource !== undefined) row.priceSource = item.priceSource;
       if (item.pricingSnapshotJson !== undefined) row.pricingSnapshotJson = item.pricingSnapshotJson;
+      // Snapshot comercial: envia prévia só como hint; backend recalcula e sobrescreve.
       if (item.commercialPricingSnapshotJson !== undefined) {
         row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson;
       }
+      // Nunca enviar formação em sessão / margem calculada no cliente como autoridade.
       if (item.priceTableId !== undefined) row.priceTableId = item.priceTableId;
       if (item.priceTableVersionId !== undefined) row.priceTableVersionId = item.priceTableVersionId;
       if (item.priceTableCode !== undefined) row.priceTableCode = item.priceTableCode;
@@ -1010,6 +1053,14 @@ export const ProposalModule = () => {
     try {
       setSaving(true);
       const payload = buildSavePayload();
+      // Anexa snapshot de prévia apenas como hint de data/formação; servidor sobrescreve.
+      if (Array.isArray(payload.items)) {
+        payload.items = (payload.items as Array<Record<string, unknown>>).map((row, idx) => {
+          const snap = commercialPreview.snapshots[idx];
+          if (snap) row.commercialPricingSnapshotJson = snap;
+          return row;
+        });
+      }
       const validationErrors = validateProposalPayloadForSafeDecimals(payload);
       if (validationErrors.length > 0) {
         alert(
@@ -1082,11 +1133,12 @@ export const ProposalModule = () => {
       const qty = 1;
 
       if (selectedTableId) {
-        const [data, productionSnapshot] = await Promise.all([
+        const [data, productionSnapshot, commercialFormation] = await Promise.all([
           fetchPublishedPriceJson(selectedTableId, productId),
           fetchJsonOk<{ unitCost?: unknown }>(`/api/products/${productId}/pricing-snapshot`).catch(
             () => null
           ),
+          fetchCommercialFormationForPreview(productId),
         ]);
         const df = data.proposalDefaults;
         // Tabela = preços comerciais; custo = produção vigente (não frozenTotalCost).
@@ -1130,6 +1182,13 @@ export const ProposalModule = () => {
             priceTableItemId: data.item.priceTableItemId,
             priceSource: "PRICE_TABLE",
             pricingSnapshotJson: snapshotPayload,
+            commercialFormation: commercialFormation
+              ? {
+                  ...commercialFormation,
+                  priceTableId: data.priceTable.id,
+                  priceTableVersionId: data.version.id,
+                }
+              : null,
             priceTableId: data.priceTable.id,
             priceTableVersionId: data.version.id,
             priceTableCode: data.priceTable.code,
@@ -1216,9 +1275,24 @@ export const ProposalModule = () => {
     const current = items[index];
     if (!current?.productId) return;
 
+    const currentSnap = parseProposalCommercialPricingSnapshot(
+      current.commercialPricingSnapshotJson
+    );
+    if (currentSnap || current.priceTableId) {
+      const ok = window.confirm(
+        "Atualizar item para a tabela vigente?\n\n" +
+          "Esta ação recalcula preço e margem comercial com a formação atual.\n" +
+          "Não ocorre automaticamente — confirme para continuar."
+      );
+      if (!ok) return;
+    }
+
     setItemPriceTableUpdatingIndex(index);
     try {
-      const data = await fetchPublishedPriceJson(priceTableId, current.productId);
+      const [data, commercialFormation] = await Promise.all([
+        fetchPublishedPriceJson(priceTableId, current.productId),
+        fetchCommercialFormationForPreview(current.productId),
+      ]);
       const qty = safeNum(current.quantity, 1);
 
       const df = data.proposalDefaults;
@@ -1260,6 +1334,14 @@ export const ProposalModule = () => {
           priceTableItemId: data.item.priceTableItemId,
           priceSource: ITEM_PRICE_SOURCE_PRICE_TABLE,
           pricingSnapshotJson: snapshotPayload,
+          commercialPricingSnapshotJson: null,
+          commercialFormation: commercialFormation
+            ? {
+                ...commercialFormation,
+                priceTableId: data.priceTable.id,
+                priceTableVersionId: data.version.id,
+              }
+            : null,
           priceTableId: data.priceTable.id,
           priceTableVersionId: data.version.id,
           priceTableCode: data.priceTable.code,
@@ -1504,6 +1586,31 @@ export const ProposalModule = () => {
       totalFreight,
       totalMarginValue: marginSummary.totalMarginValue ?? 0,
       totalMarginPerc: marginSummary.totalMarginPerc ?? Number.NaN,
+    };
+  }, [formData.items]);
+
+  /** Prévia da margem comercial — motor puro (backend autoritativo no save). */
+  const commercialPreview = useMemo(() => {
+    const items = formData.items ?? [];
+    const preview = previewProposalCommercialMargins(
+      items.map((i) => ({
+        productId: i.productId,
+        quantity: safeNum(i.quantity),
+        suggestedPrice: safeNum(i.suggestedPrice),
+        negotiatedPrice: safeNum(i.negotiatedPrice),
+        discountPerc: safeNum(i.discountPerc),
+        discountValue: safeNum(i.discountValue),
+        priceTableId: i.priceTableId,
+        priceTableVersionId: i.priceTableVersionId,
+        priceSource: i.priceSource,
+        commercialPricingSnapshotJson: i.commercialPricingSnapshotJson,
+        pricingSnapshotJson: i.pricingSnapshotJson,
+        commercialFormation: i.commercialFormation,
+      }))
+    );
+    return {
+      ...preview,
+      view: buildProposalCommercialSummaryView(preview.byIndex, preview.summary),
     };
   }, [formData.items]);
 
@@ -1881,30 +1988,32 @@ export const ProposalModule = () => {
               {(formData.items?.length ?? 0) > 0 ? (
                 <div
                   className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-2.5"
-                  data-testid="proposal-total-margin-strip"
+                  data-testid="proposal-total-commercial-margin-strip"
                 >
                   <p className="text-[11px] text-muted-foreground leading-snug max-w-xl">
-                    Margem igual ao Pedido de Venda: preço negociado (após desconto) menos custo de produção
-                    vigente na data da proposta. A tabela comercial só define o preço sugerido.
+                    Margem comercial em tempo real (formação congelada + preço líquido). Total ponderado pelo
+                    valor líquido — nunca média simples. O save recalcula no servidor.
                   </p>
                   <div className="flex items-baseline gap-2 shrink-0">
                     <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                      Margem da proposta
+                      Margem comercial
                     </span>
                     <span
                       className={cn(
                         "text-base font-bold font-mono tabular-nums",
-                        !Number.isFinite(totals.totalMarginPerc)
+                        commercialPreview.view.commercialMarginTotalPercent == null
                           ? "text-muted-foreground"
-                          : totals.totalMarginPerc >= 20
+                          : commercialPreview.view.commercialMarginTotalPercent >= 20
                             ? "text-green-600"
-                            : totals.totalMarginPerc >= 10
+                            : commercialPreview.view.commercialMarginTotalPercent >= 10
                               ? "text-orange-600"
                               : "text-red-600"
                       )}
-                      data-testid="proposal-total-margin-perc"
+                      data-testid="proposal-total-commercial-margin-perc"
                     >
-                      {formatPercentDisplay(totals.totalMarginPerc)}
+                      {formatProposalCommercialPercent(
+                        commercialPreview.view.commercialMarginTotalPercent
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1938,8 +2047,11 @@ export const ProposalModule = () => {
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Negociado</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Desc %</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right min-w-[88px]">
-                          Margem
+                        <th
+                          className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right min-w-[120px]"
+                          title="Margem comercial (formação). Produção permanece no detalhe interno."
+                        >
+                          Margem com.
                         </th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
                       </tr>
@@ -2191,22 +2303,66 @@ export const ProposalModule = () => {
                           </td>
                           <td
                             className="p-3 text-right"
-                            data-testid={`proposal-item-margin-${idx}`}
+                            data-testid={`proposal-item-commercial-margin-${idx}`}
                           >
-                            <span
-                              className={cn(
-                                "text-xs font-bold font-mono tabular-nums",
-                                !Number.isFinite(item.marginPerc)
-                                  ? "text-muted-foreground"
-                                  : item.marginPerc >= 20
-                                    ? "text-green-600"
-                                    : item.marginPerc >= 10
-                                      ? "text-orange-600"
-                                      : "text-red-600"
-                              )}
-                            >
-                              {formatPercentDisplay(item.marginPerc)}
-                            </span>
+                            {(() => {
+                              const cm = commercialPreview.byIndex[idx];
+                              if (!cm) {
+                                return (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                );
+                              }
+                              if (!cm.isComplete) {
+                                return (
+                                  <div className="inline-flex items-start justify-end gap-1">
+                                    <div className="text-right">
+                                      <p
+                                        className="text-[10px] font-bold text-amber-700"
+                                        data-testid={`proposal-item-commercial-margin-unavailable-${idx}`}
+                                      >
+                                        Margem não calculada
+                                      </p>
+                                      <p className="text-[9px] text-muted-foreground max-w-[140px]">
+                                        {proposalCommercialMarginUnavailableLabel(cm.reasonCode)}
+                                      </p>
+                                    </div>
+                                    <ProposalCommercialMarginTooltip
+                                      item={cm}
+                                      testId={`proposal-commercial-margin-tooltip-${idx}`}
+                                    />
+                                  </div>
+                                );
+                              }
+                              const pct = cm.commercialMarginPercent ?? Number.NaN;
+                              return (
+                                <div className="inline-flex items-start justify-end gap-1">
+                                  <div className="text-right">
+                                    <p
+                                      className={cn(
+                                        "text-xs font-bold font-mono tabular-nums",
+                                        pct >= 20
+                                          ? "text-green-600"
+                                          : pct >= 10
+                                            ? "text-orange-600"
+                                            : "text-red-600"
+                                      )}
+                                    >
+                                      {formatProposalCommercialPercent(pct)}
+                                    </p>
+                                    <p className="text-[9px] text-muted-foreground font-mono">
+                                      {formatProposalCommercialMoney(cm.commercialMarginValue)}
+                                    </p>
+                                    <p className="text-[9px] text-muted-foreground">
+                                      {formatProposalCommercialTierPosition(cm.tierPosition)}
+                                    </p>
+                                  </div>
+                                  <ProposalCommercialMarginTooltip
+                                    item={cm}
+                                    testId={`proposal-commercial-margin-tooltip-${idx}`}
+                                  />
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 text-center">
                             <button 
@@ -2229,36 +2385,74 @@ export const ProposalModule = () => {
                   </table>
                 </div>
 
-              {/* Summary Footer */}
-              <div className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-6">
+              {/* Summary Footer — comercial (ponderado) + líquidos */}
+              <div
+                className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-6"
+                data-testid="proposal-commercial-summary"
+              >
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor Bruto Total</p>
-                  <p className="text-lg font-bold font-mono">{formatMoneyDisplay(totals.totalGross)}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Ref. tabelas</p>
+                  <p className="text-lg font-bold font-mono">
+                    {formatProposalCommercialMoney(commercialPreview.view.referenceTableTotal)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Concessão total:{" "}
+                    {formatProposalCommercialMoney(
+                      commercialPreview.view.totalCommercialConcession
+                    )}
+                  </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Descontos Concedidos</p>
-                  <p className="text-lg font-bold font-mono text-red-600">-{formatMoneyDisplay(totals.totalDiscount)}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Descontos / redução</p>
+                  <p className="text-lg font-bold font-mono text-red-600">
+                    -{formatProposalCommercialMoney(commercialPreview.view.explicitDiscountTotal)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Manual:{" "}
+                    {formatProposalCommercialMoney(commercialPreview.view.manualReductionTotal)}
+                  </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Receita Líquida</p>
-                  <p className="text-lg font-bold font-mono text-primary">{formatMoneyDisplay(totals.totalNet)}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor líquido proposto</p>
+                  <p className="text-lg font-bold font-mono text-primary">
+                    {formatMoneyDisplay(totals.totalNet)}
+                  </p>
                 </div>
                 <div className="space-y-1 border-l border-border pl-6">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">
+                    Margem comercial
+                  </p>
                   <p
                     className={cn(
                       "text-lg font-bold font-mono",
-                      !Number.isFinite(totals.totalMarginPerc)
+                      commercialPreview.view.commercialMarginTotalPercent == null
                         ? "text-muted-foreground"
-                        : totals.totalMarginPerc >= 20
+                        : commercialPreview.view.commercialMarginTotalPercent >= 20
                           ? "text-green-600"
-                          : totals.totalMarginPerc >= 10
+                          : commercialPreview.view.commercialMarginTotalPercent >= 10
                             ? "text-orange-600"
                             : "text-red-600"
                     )}
-                    data-testid="proposal-footer-margin-perc"
+                    data-testid="proposal-footer-commercial-margin-perc"
                   >
-                    {formatPercentDisplay(totals.totalMarginPerc)}
+                    {formatProposalCommercialPercent(
+                      commercialPreview.view.commercialMarginTotalPercent
+                    )}
+                  </p>
+                  <p
+                    className="text-xs font-mono text-muted-foreground"
+                    data-testid="proposal-footer-commercial-margin-value"
+                  >
+                    {formatProposalCommercialMoney(
+                      commercialPreview.view.commercialMarginTotalValue
+                    )}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Cobertura{" "}
+                    {formatProposalCommercialPercent(commercialPreview.view.coveragePercent)}
+                    {" · "}
+                    {commercialPreview.view.itemsCalculated}/
+                    {commercialPreview.view.itemsActive} itens
                   </p>
                 </div>
               </div>

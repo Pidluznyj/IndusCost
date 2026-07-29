@@ -56,6 +56,10 @@ import {
   enrichProposalsWithOfficialProductionMargins,
   stampProposalItemsWithProductionCostsForWrite,
 } from "./src/lib/proposalMargin.server.js";
+import {
+  loadProposalCommercialFormationsBatch,
+  stampProposalItemsWithCommercialMarginsForWrite,
+} from "./src/lib/proposalCommercialMargin.server.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
   getProductFrozenCostTrace,
@@ -9701,6 +9705,57 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
+  /** Formação comercial (faixas dinâmicas) para prévia da margem na Proposta — batch-safe. */
+  app.get(
+    "/api/products/:id/commercial-formation",
+    requireAppAuth,
+    requireAnyPermission(["proposals.view", "proposals.create", "proposals.update", "pricing.view"]),
+    async (req, res) => {
+      const productId = String(req.params.id ?? "").trim();
+      const refRaw = String(req.query.referenceDate ?? "").trim();
+      const referenceDate = refRaw
+        ? new Date(`${refRaw}T12:00:00`)
+        : new Date();
+      if (!productId) {
+        return res.status(400).json({
+          ok: false,
+          reasonCode: "PRODUCT_WITHOUT_PRICE_FORMATION",
+          message: "Produto inválido.",
+        });
+      }
+      if (!Number.isFinite(referenceDate.getTime())) {
+        return res.status(400).json({
+          ok: false,
+          reasonCode: "HISTORICAL_FORMATION_NOT_FOUND",
+          message: "Data de referência inválida.",
+        });
+      }
+      try {
+        const map = await loadProposalCommercialFormationsBatch(
+          prisma,
+          [productId],
+          referenceDate
+        );
+        const formation = map.get(productId);
+        if (!formation) {
+          return res.status(404).json({
+            ok: false,
+            reasonCode: "PRODUCT_WITHOUT_PRICE_FORMATION",
+            message: "Formação comercial não encontrada.",
+          });
+        }
+        return res.json(formation);
+      } catch (e) {
+        console.error("GET /api/products/:id/commercial-formation", e);
+        return res.status(500).json({
+          ok: false,
+          reasonCode: "INCONSISTENT_PRICE_FORMATION_SET",
+          message: "Erro ao carregar formação comercial.",
+        });
+      }
+    }
+  );
+
   app.post(
     "/api/price-table-versions/:id/publish",
     requireAppAuth,
@@ -14962,15 +15017,23 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           createdAt: now,
         }
       );
+      const commercialStamped = await stampProposalItemsWithCommercialMarginsForWrite(
+        prisma,
+        stampedItems,
+        {
+          referenceDate:
+            (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt ?? now,
+        }
+      );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),
-        stampedItems
+        commercialStamped
       );
       const proposal = await prisma.proposal.create({
         data: {
           ...(proposalScalars as any),
           items: {
-            create: stampedItems.map((item) => buildProposalItemCreateInput(item)),
+            create: commercialStamped.map((item) => buildProposalItemCreateInput(item)),
           },
         },
         include: { items: true },
@@ -15018,9 +15081,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           createdAt: existing.createdAt,
         }
       );
+      const commercialStamped = await stampProposalItemsWithCommercialMarginsForWrite(
+        prisma,
+        stampedItems,
+        {
+          referenceDate:
+            (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt ??
+            existing.externalOpenedAt ??
+            existing.createdAt,
+        }
+      );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),
-        stampedItems
+        commercialStamped
       );
       const proposal = await prisma.$transaction(async (tx) => {
         await tx.proposalItem.deleteMany({ where: { proposalId: id } });
@@ -15029,7 +15102,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           data: {
             ...(proposalScalars as any),
             items: {
-              create: stampedItems.map((item) => buildProposalItemCreateInput(item)),
+              create: commercialStamped.map((item) => buildProposalItemCreateInput(item)),
             },
           },
           include: { items: true },

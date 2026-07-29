@@ -68,6 +68,27 @@ export interface ProposalItem {
    * Null em itens legados (sem backfill).
    */
   commercialPricingSnapshotJson?: Record<string, unknown> | null;
+  /**
+   * Formação comercial em sessão (prévia FE). Não é autoridade de save.
+   * O backend recalcula e persiste `commercialPricingSnapshotJson`.
+   */
+  commercialFormation?: {
+    formationContextId: string;
+    referenceDate: string;
+    priceTableId?: string | null;
+    priceTableVersionId?: string | null;
+    frozenCostUnit: number;
+    taxRate: number;
+    freightRate: number;
+    freightAbsoluteUnit: number;
+    otherVariablesRate: number;
+    tiers: Array<{
+      id: string;
+      marginRate: number;
+      salePrice: number;
+      commissionRate: number;
+    }>;
+  } | null;
   /** Rastreio direto da tabela/versão usada no item (proposta mista). */
   priceTableId?: string | null;
   priceTableVersionId?: string | null;

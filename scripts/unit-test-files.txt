@@ -29,6 +29,7 @@ src/lib/proposalItemEstimatedCommission.test.ts
 src/lib/proposalCommercialMargin.test.ts
 src/lib/proposalCommercialMarginSnapshot.test.ts
 src/lib/proposalCommercialPricingSnapshotSchema.test.ts
+src/lib/proposalCommercialMarginUi.test.ts
 src/lib/commercialMarginCore.test.ts
 src/lib/settingsApplyHhHmSimulation.test.ts
 src/lib/pricingFormationIndicatorsStats.test.ts
