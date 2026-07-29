@@ -29,8 +29,8 @@ export const PublicLoginRoute: React.FC = () => {
 
   return (
     <AuthLoginPage
-      networkError={state?.authError ?? auth.authError}
-      onRetry={() => void auth.loadMe()}
+      authNotice={state?.authError ?? auth.authError}
+      onRetrySessionCheck={() => void auth.loadMe()}
     />
   );
 };

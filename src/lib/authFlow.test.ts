@@ -62,6 +62,19 @@ test("RequireAuth: bloqueia enquanto carrega e redireciona ao /login sem sessão
   assert.match(src, /from:\s*location/);
 });
 
+test("login: sessão expirada mostra formulário; só rede pura usa Tentar novamente", () => {
+  const login = read("src/components/AuthLoginPage.tsx");
+  const route = read("src/components/PublicLoginRoute.tsx");
+  const ui = read("src/lib/authLoginUi.ts");
+  assert.match(ui, /isAuthSessionExpiredMessage/);
+  assert.match(ui, /isAuthConnectivityErrorMessage/);
+  assert.match(login, /isAuthSessionExpiredMessage/);
+  assert.match(login, /auth-login-session-banner/);
+  assert.match(login, /Ir para o login/);
+  assert.match(route, /authNotice=\{/);
+  assert.doesNotMatch(login, /networkError && onRetry/);
+});
+
 test("P11: Layout e RequirePathViewAccess usam DTO/navegação efetiva", () => {
   const layout = read("src/components/layout/Layout.tsx");
   assert.match(layout, /navigationAccessContextFromAuth/);
