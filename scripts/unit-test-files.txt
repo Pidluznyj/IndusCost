@@ -163,6 +163,7 @@ src/lib/salesOrderCommercialMarginQueryBudget.test.ts
 src/lib/salesOrderCommercialMarginReadModel.test.ts
 src/lib/salesOrderCommercialMarginCrossScreen.test.ts
 src/lib/salesOrderCommercialMarginReportsExport.test.ts
+src/lib/sales/salesOrderCommercialDiscountReport.test.ts
 src/lib/finance/salesOrderEffectiveFinancialSchedule.test.ts
 src/lib/finance/salesOrderStagedDeliverySchedule.test.ts
 src/lib/finance/stagedDeliveryScheduleRepair.test.ts

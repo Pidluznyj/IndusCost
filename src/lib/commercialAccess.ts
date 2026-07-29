@@ -18,6 +18,9 @@ export const COMMERCIAL_RESOURCE_KEYS = {
   salesOrders: "commercial.sales_orders",
   salesOrdersDetail: "commercial.sales_orders.detail",
   salesOrdersInvoice: "commercial.sales_orders.invoice",
+  salesOrdersDiscountReport: "commercial.sales_orders.discount_report",
+  salesOrdersDiscountReportMargin:
+    "commercial.sales_orders.discount_report.margin",
   salesOrdersFlow: "commercial.sales_orders.flow",
   salesOrdersFlowValues: "commercial.sales_orders.flow.values",
   salesOrdersFlowFinancial: "commercial.sales_orders.flow.financial",
@@ -92,6 +95,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/sales-orders/report", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/export*", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/reports/monthly-receivables*", resourceKey: "commercial.sales_orders", action: "view" },
+  { method: "GET", path: "/api/sales-orders/reports/commercial-discounts*", resourceKey: "commercial.sales_orders.discount_report", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/detail", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/intelligence", resourceKey: "commercial.sales_orders.detail", action: "view" },

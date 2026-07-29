@@ -90,6 +90,11 @@ describe("sidebarLabels — breadcrumb do header", () => {
       { label: MODULE_LABELS["sales-orders"], path: "/sales-orders" },
       { label: "Recebíveis mensais" },
     ]);
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/sales-orders/commercial-discounts"), [
+      { label: "Comercial" },
+      { label: MODULE_LABELS["sales-orders"], path: "/sales-orders" },
+      { label: "Descontos comerciais" },
+    ]);
     assert.equal(
       resolveAppHeaderBreadcrumb("/sales-orders/management").at(-1)?.label,
       "Gestão de Pedidos"
