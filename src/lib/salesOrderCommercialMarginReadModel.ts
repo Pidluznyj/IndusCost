@@ -371,14 +371,7 @@ export type CommercialMarginMonthlyOrderInput = {
   commercialMargin: SalesOrderCommercialMarginSummaryPayload | null | undefined;
 };
 
-/**
- * Margem comercial % mês a mês — mesma ponderação do card
- * (Σ R$ margem / Σ líquido coberto), agrupada por issueDate.
- */
-export function buildMonthlyCommercialMarginRows(
-  orders: ReadonlyArray<CommercialMarginMonthlyOrderInput>,
-  year: number
-): Array<{
+export type CommercialMarginMonthlyRow = {
   month: number;
   monthLabel: string;
   salesAmount: number;
@@ -388,22 +381,45 @@ export function buildMonthlyCommercialMarginRows(
   marginAmount: number;
   marginPercent: number | null;
   ordersCount: number;
-}> {
+  /** Σ líquido coberto (denominador da %). */
+  coveredNetValue: number;
+  /** Σ líquido ativo dos pedidos do mês (inclui sem cobertura). */
+  totalNetValue: number;
+  isPartial: boolean;
+  coveredOrders: number;
+  totalEligibleOrders: number;
+};
+
+/**
+ * Margem comercial % mês a mês — mesma ponderação do card
+ * (Σ R$ margem / Σ líquido coberto), agrupada por issueDate.
+ * Meses sem denominador válido → `marginPercent: null` (nunca 0 artificial).
+ */
+export function buildMonthlyCommercialMarginRows(
+  orders: ReadonlyArray<CommercialMarginMonthlyOrderInput>,
+  year: number
+): CommercialMarginMonthlyRow[] {
   const buckets = new Map<
     number,
     {
       marginSum: number;
-      soldSum: number;
+      coveredSoldSum: number;
+      totalActiveSoldSum: number;
       ordersCount: number;
+      coveredOrders: number;
       hasCalculated: boolean;
+      hasPartial: boolean;
     }
   >();
   for (let m = 1; m <= 12; m += 1) {
     buckets.set(m, {
       marginSum: 0,
-      soldSum: 0,
+      coveredSoldSum: 0,
+      totalActiveSoldSum: 0,
       ordersCount: 0,
+      coveredOrders: 0,
       hasCalculated: false,
+      hasPartial: false,
     });
   }
 
@@ -416,6 +432,10 @@ export function buildMonthlyCommercialMarginRows(
     bucket.ordersCount += 1;
 
     const cm = order.commercialMargin;
+    const activeSold =
+      cm && Number.isFinite(cm.totalActiveSoldValue) ? cm.totalActiveSoldValue : 0;
+    bucket.totalActiveSoldSum += activeSold;
+
     if (
       !cm ||
       cm.itemsCalculated <= 0 ||
@@ -425,29 +445,40 @@ export function buildMonthlyCommercialMarginRows(
       continue;
     }
     bucket.hasCalculated = true;
+    bucket.coveredOrders += 1;
+    if (!cm.isComplete) bucket.hasPartial = true;
     bucket.marginSum += cm.commercialMarginTotalValue;
-    bucket.soldSum += cm.commercialSoldTotalValue ?? 0;
+    bucket.coveredSoldSum += cm.commercialSoldTotalValue ?? 0;
   }
 
   return Array.from({ length: 12 }, (_, index) => {
     const month = index + 1;
     const bucket = buckets.get(month)!;
     const marginAmount = roundPricingMoney(bucket.marginSum);
-    const sold = roundPricingMoney(bucket.soldSum);
+    const coveredNetValue = roundPricingMoney(bucket.coveredSoldSum);
+    const totalNetValue = roundPricingMoney(bucket.totalActiveSoldSum);
     const marginPercent =
-      bucket.hasCalculated && sold > 0
-        ? roundPricingPercent((marginAmount / sold) * 100)
+      bucket.hasCalculated && coveredNetValue > 0
+        ? roundPricingPercent((marginAmount / coveredNetValue) * 100)
         : null;
+    const isPartial =
+      bucket.hasCalculated &&
+      (bucket.hasPartial || bucket.coveredOrders < bucket.ordersCount);
     return {
       month,
       monthLabel: MONTH_LABELS_PT[index]!,
-      salesAmount: sold,
+      salesAmount: coveredNetValue,
       taxAmount: 0,
-      netSalesAmount: sold,
+      netSalesAmount: coveredNetValue,
       costAmount: 0,
       marginAmount: bucket.hasCalculated ? marginAmount : 0,
       marginPercent,
       ordersCount: bucket.ordersCount,
+      coveredNetValue,
+      totalNetValue,
+      isPartial,
+      coveredOrders: bucket.coveredOrders,
+      totalEligibleOrders: bucket.ordersCount,
     };
   });
 }

@@ -198,6 +198,11 @@ export async function buildSalesOrderResultDashboard(
     marginPercent: null as number | null,
     costAmount: 0,
     taxAmount: 0,
+    coveredNetValue: 0,
+    totalNetValue: 0,
+    isPartial: false,
+    coveredOrders: 0,
+    totalEligibleOrders: row.ordersCount,
   }));
   try {
     const { buildSalesOrderCommercialMarginReadModels } = await import(
@@ -206,16 +211,39 @@ export async function buildSalesOrderResultDashboard(
     const { buildMonthlyCommercialMarginRows } = await import(
       "./salesOrderCommercialMarginReadModel.js"
     );
+    const { loadSalesOrderListChartYearOrders } = await import(
+      "./salesOrderListMarginSummary.server.js"
+    );
+    // Série do gráfico: ano civil da request, sem demais filtros da tela.
+    const chartOrders = await loadSalesOrderListChartYearOrders(db, filters.year);
+    const needsItemLoad = chartOrders.some((order) => !order.items?.length);
+    let itemsByOrder = new Map<string, SalesOrderForMargin["items"]>();
+    if (needsItemLoad) {
+      const { loadSalesOrderItemsForMargin } = await import(
+        "./salesOrderMarginService.server.js"
+      );
+      itemsByOrder = await loadSalesOrderItemsForMargin(
+        db,
+        chartOrders.map((order) => order.id)
+      );
+    }
     const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
       db,
-      orders.map((order) => ({
+      chartOrders.map((order) => ({
         id: order.id,
-        issueDate: order.issueDate,
-        items: order.items,
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        items: order.items?.length
+          ? order.items
+          : (itemsByOrder.get(order.id) ?? []),
       }))
     );
     monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
-      orders.map((order) => ({
+      chartOrders.map((order) => ({
         issueDate: order.issueDate,
         commercialMargin: commercialByOrder.get(order.id)?.commercialMargin,
       })),

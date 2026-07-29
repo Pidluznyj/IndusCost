@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-test("Pedidos de Venda abre com ano e mês correntes", () => {
+test("Pedidos de Venda abre com ano corrente (mês livre no default)", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
     "utf8"
   );
-  assert.ok(page.includes("const currentMonth = useMemo(() => new Date().getMonth() + 1, [])"));
+  assert.ok(page.includes("const currentYear = useMemo(() => new Date().getFullYear(), [])"));
   assert.ok(page.includes('useState<string>(() => String(currentYear))'));
-  assert.ok(page.includes('useState<string>(() => String(currentMonth))'));
+  assert.ok(page.includes('buildInitialSalesOrderListAppliedFilters(String(currentYear), "")'));
 });
 
 test("Pedidos de Venda usa CustomerAutocompleteFilter", () => {
@@ -61,7 +61,7 @@ test("Pedidos de Venda tem filtro Valor De/Até com atalhos", () => {
   assert.ok(page.includes("maxNetValue: preset.max"));
 });
 
-test("filtro de valor não entra nos gráficos mensais", () => {
+test("filtro de valor e demais filtros não entram nos gráficos mensais", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
     "utf8"
@@ -70,14 +70,19 @@ test("filtro de valor não entra nos gráficos mensais", () => {
     join(process.cwd(), "src", "components", "sales", "SalesOrderListMonthlyCharts.tsx"),
     "utf8"
   );
-  assert.ok(page.includes("Valor líquido De/Até filtra só o grid"));
+  assert.ok(page.includes("sales-orders-filter-net-value"));
   const chartsBlock = page.slice(
     page.indexOf("const monthlyChartsFilters"),
     page.indexOf("listFilterDraftRef")
   );
+  assert.ok(chartsBlock.includes("year: currentYear"));
   assert.ok(!chartsBlock.includes("minNetValue"));
   assert.ok(!chartsBlock.includes("maxNetValue"));
+  assert.ok(!chartsBlock.includes("customerId"));
+  assert.ok(!chartsBlock.includes("appliedFilters"));
   assert.ok(!charts.includes("filters.minNetValue"));
+  assert.ok(!charts.includes("filters.customerId"));
+  assert.ok(!charts.includes("filters.status"));
 });
 
 test("Produtos Vendidos usa autocomplete no filtro de cliente", () => {

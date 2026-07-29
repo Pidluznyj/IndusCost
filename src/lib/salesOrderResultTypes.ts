@@ -49,6 +49,11 @@ export type SalesOrderResultMonthlyRow = {
   marginAmount: number;
   marginPercent: number | null;
   ordersCount: number;
+  coveredNetValue?: number;
+  totalNetValue?: number;
+  isPartial?: boolean;
+  coveredOrders?: number;
+  totalEligibleOrders?: number;
 };
 
 /** Comparativo YoY de valor vendido (issueDate) — 12 meses. */

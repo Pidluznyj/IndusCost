@@ -2,6 +2,7 @@ import React from "react";
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   LabelList,
   Legend,
@@ -19,7 +20,6 @@ import {
   FinanceBillingChartShell,
 } from "@/src/components/finance/billing/FinanceBillingChartShell";
 import { getExecutiveChartColors } from "@/src/lib/executiveDashboardChartTheme";
-import { resolveExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear";
 
 function MarginPercentBarLabel(props: LabelProps) {
   const value =
@@ -28,7 +28,7 @@ function MarginPercentBarLabel(props: LabelProps) {
       : typeof props.value === "string"
         ? Number(props.value)
         : null;
-  if (value == null || !Number.isFinite(value) || value === 0) return null;
+  if (value == null || !Number.isFinite(value)) return null;
   const x = Number(props.x ?? 0) + Number(props.width ?? 0) / 2;
   const y = Number(props.y ?? 0) - 4;
   return (
@@ -46,7 +46,7 @@ function MarginPercentBarLabel(props: LabelProps) {
 }
 
 /**
- * Margem comercial % mês a mês — mesma do card MARGEM COMERCIAL (ponderada por líquido coberto).
+ * Margem comercial % mês a mês — motor oficial do card, população anual sem filtros da tela.
  */
 export function SalesOrderListMonthlyMarginPercentChart({
   rows,
@@ -55,17 +55,19 @@ export function SalesOrderListMonthlyMarginPercentChart({
   rows: SalesOrderResultMonthlyRow[];
   selectedYear: number;
 }) {
-  const byMonth = new Map(rows.map((row) => [row.month, row.marginPercent]));
-  const yearCtx = resolveExecutiveDashboardYearContext(selectedYear, new Date());
+  const byMonth = new Map(rows.map((row) => [row.month, row]));
   const colors = getExecutiveChartColors("salesOrders");
 
   const data = FINANCE_SALES_ORDERS_MONTH_LABELS.map((monthLabel, index) => {
     const month = index + 1;
-    const marginPercent = byMonth.get(month) ?? null;
+    const row = byMonth.get(month);
+    const marginPercent = row?.marginPercent ?? null;
     return {
       name: monthLabel,
-      marginPercent: marginPercent ?? 0,
+      // Recharts precisa de número; `null` vira ausência visual via fill transparente.
+      marginPercent: marginPercent == null ? null : marginPercent,
       hasMargin: marginPercent != null,
+      isPartial: row?.isPartial === true,
     };
   });
 
@@ -74,7 +76,7 @@ export function SalesOrderListMonthlyMarginPercentChart({
   return (
     <FinanceBillingChartShell
       title={`Margem % por mês — ${selectedYear}`}
-      subtitle="Margem comercial (mesmo motor do card): Σ margem ÷ Σ líquido coberto, por mês de emissão. Barras = ano (sem filtro de mês); o card acima segue todos os filtros atuais, inclusive o mês."
+      subtitle="Margem comercial mensal (mesmo motor do card): Σ margem ÷ Σ líquido coberto por mês de emissão. Independente dos filtros da tela — população anual canônica."
       empty={empty}
       emptyDescription="Sem margem comercial calculável para o período."
       testId="sales-orders-monthly-margin-percent-chart"
@@ -98,23 +100,34 @@ export function SalesOrderListMonthlyMarginPercentChart({
               domain={[0, "auto"]}
             />
             <Tooltip
-              formatter={(value: number) => [
-                formatSalesOrderMarginPercent(value),
-                "Margem comercial %",
-              ]}
+              formatter={(value: number | null, _name, item) => {
+                const payload = item?.payload as
+                  | { hasMargin?: boolean; isPartial?: boolean }
+                  | undefined;
+                if (!payload?.hasMargin || value == null || !Number.isFinite(value)) {
+                  return ["Sem base válida", "Margem comercial %"];
+                }
+                const suffix = payload.isPartial ? " (parcial)" : "";
+                return [
+                  `${formatSalesOrderMarginPercent(value)}${suffix}`,
+                  "Margem comercial %",
+                ];
+              }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar
               dataKey="marginPercent"
-              name={
-                yearCtx.isSelectedYearCurrent
-                  ? `Margem comercial % ${selectedYear} YTD`
-                  : `Margem comercial % ${selectedYear}`
-              }
+              name={`Margem comercial % ${selectedYear}`}
               fill={colors.currentYearBar}
               radius={[4, 4, 0, 0]}
               maxBarSize={36}
             >
+              {data.map((entry, index) => (
+                <Cell
+                  key={`margin-cell-${index}`}
+                  fill={entry.hasMargin ? colors.currentYearBar : "transparent"}
+                />
+              ))}
               <LabelList dataKey="marginPercent" content={<MarginPercentBarLabel />} />
             </Bar>
           </ComposedChart>

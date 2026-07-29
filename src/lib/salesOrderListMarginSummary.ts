@@ -22,6 +22,11 @@ export type SalesOrderListMonthlyCommercialMarginRow = {
   marginAmount: number;
   marginPercent: number | null;
   ordersCount: number;
+  coveredNetValue: number;
+  totalNetValue: number;
+  isPartial: boolean;
+  coveredOrders: number;
+  totalEligibleOrders: number;
 };
 
 export type SalesOrderListMarginSummary = {
@@ -44,8 +49,8 @@ export type SalesOrderListMarginSummary = {
   available: boolean;
   tooltipSummary: SalesOrderMarginSummaryPayload;
   /**
-   * Margem comercial % mês a mês — mesma população e motor do card
-   * (Σ margem ÷ Σ líquido coberto por mês de emissão).
+   * Margem comercial % mês a mês — população anual canônica (sem filtros da tela),
+   * Σ margem ÷ Σ líquido coberto por mês de emissão.
    */
   monthlyCommercialMargin: SalesOrderListMonthlyCommercialMarginRow[];
 };

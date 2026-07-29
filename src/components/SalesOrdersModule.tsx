@@ -320,19 +320,10 @@ function SalesOrderList() {
 
   const monthlyChartsFilters = useMemo(
     () => ({
-      year: appliedFilters.year ? Number(appliedFilters.year) : currentYear,
-      status: appliedFilters.status || undefined,
-      hasInvoice: appliedFilters.hasInvoice || undefined,
-      receivableStatus: appliedFilters.receivableStatus || undefined,
-      customerId: appliedFilters.customerId || undefined,
-      sellerKey: appliedFilters.sellerKey || undefined,
-      startDate: appliedFilters.startDate || undefined,
-      endDate: appliedFilters.endDate || undefined,
-      minNetValue: appliedFilters.minNetValue || undefined,
-      maxNetValue: appliedFilters.maxNetValue || undefined,
-      q: appliedFilters.search || undefined,
+      // Gráficos ignoram filtros da tela — sempre o ano civil corrente.
+      year: currentYear,
     }),
-    [appliedFilters, currentYear]
+    [currentYear]
   );
 
   // Ref dos drafts: evita stale closure no Pesquisar / atalhos de valor líquido.

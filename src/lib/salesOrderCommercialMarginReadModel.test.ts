@@ -582,7 +582,197 @@ describe("buildMonthlyCommercialMarginRows", () => {
     assert.equal(rows[0]!.marginPercent, 37.5); // (100+50)/(200+200)
     assert.equal(rows[0]!.marginAmount, 150);
     assert.equal(rows[0]!.ordersCount, 2);
+    assert.equal(rows[0]!.coveredNetValue, 400);
+    assert.equal(rows[0]!.isPartial, false);
+    assert.equal(rows[0]!.coveredOrders, 2);
     assert.equal(rows[1]!.marginPercent, 40);
     assert.equal(rows[2]!.marginPercent, null);
+    assert.equal(rows[2]!.coveredNetValue, 0);
+  });
+
+  it("cenário A — ponderação 22% (não média simples 30%)", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: "2026-01-05",
+          commercialMargin: {
+            commercialMarginTotalValue: 40,
+            commercialMarginTotalPercent: 40,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+        {
+          issueDate: "2026-01-15",
+          commercialMargin: {
+            commercialMarginTotalValue: 180,
+            commercialMarginTotalPercent: 20,
+            commercialSoldTotalValue: 900,
+            totalActiveSoldValue: 900,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+      ],
+      2026
+    );
+    assert.equal(rows[0]!.marginPercent, 22);
+    assert.notEqual(rows[0]!.marginPercent, 30);
+  });
+
+  it("cenário B — meses independentes", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: "2026-01-10",
+          commercialMargin: {
+            commercialMarginTotalValue: 22,
+            commercialMarginTotalPercent: 22,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+        {
+          issueDate: "2026-02-10",
+          commercialMargin: {
+            commercialMarginTotalValue: 35,
+            commercialMarginTotalPercent: 35,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+      ],
+      2026
+    );
+    assert.equal(rows[0]!.marginPercent, 22);
+    assert.equal(rows[1]!.marginPercent, 35);
+  });
+
+  it("cenário D — consolidado YTD não vai para um único mês", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: "2026-01-10",
+          commercialMargin: {
+            commercialMarginTotalValue: 10,
+            commercialMarginTotalPercent: 10,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+        {
+          issueDate: "2026-07-10",
+          commercialMargin: {
+            commercialMarginTotalValue: 90,
+            commercialMarginTotalPercent: 90,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+      ],
+      2026
+    );
+    // YTD seria 50%; julho isolado é 90%; janeiro 10%.
+    assert.equal(rows[0]!.marginPercent, 10);
+    assert.equal(rows[6]!.marginPercent, 90);
+    assert.notEqual(rows[6]!.marginPercent, 50);
+  });
+
+  it("cenário F — cobertura parcial marca isPartial e usa só líquido coberto", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: "2026-03-01",
+          commercialMargin: {
+            commercialMarginTotalValue: 40,
+            commercialMarginTotalPercent: 40,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 250,
+            commercialMarginCoveragePercent: 40,
+            itemsCalculated: 1,
+            itemsUnavailable: 1,
+            itemsActive: 2,
+            isComplete: false,
+            warnings: ["parcial"],
+          },
+        },
+      ],
+      2026
+    );
+    assert.equal(rows[2]!.marginPercent, 40);
+    assert.equal(rows[2]!.coveredNetValue, 100);
+    assert.equal(rows[2]!.totalNetValue, 250);
+    assert.equal(rows[2]!.isPartial, true);
+  });
+
+  it("cenário G — mês sem denominador retorna null, nunca 0", () => {
+    const rows = buildMonthlyCommercialMarginRows([], 2026);
+    assert.equal(rows.length, 12);
+    for (const row of rows) {
+      assert.equal(row.marginPercent, null);
+      assert.notEqual(row.marginPercent, 0);
+    }
+  });
+
+  it("cenário H — ano dinâmico mantém 12 meses", () => {
+    const year = new Date().getFullYear();
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: `${year}-06-01`,
+          commercialMargin: {
+            commercialMarginTotalValue: 10,
+            commercialMarginTotalPercent: 10,
+            commercialSoldTotalValue: 100,
+            totalActiveSoldValue: 100,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+      ],
+      year
+    );
+    assert.equal(rows.length, 12);
+    assert.equal(rows[5]!.marginPercent, 10);
+    assert.equal(rows[0]!.month, 1);
+    assert.equal(rows[11]!.month, 12);
   });
 });

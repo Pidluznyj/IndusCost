@@ -11,22 +11,14 @@ import type { FinanceSalesOrdersMonthlyComparisonRow } from "@/src/lib/financeSa
 import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 
 export type SalesOrderListMonthlyChartsFilters = {
+  /** Ano civil dos gráficos — independente dos filtros da listagem. */
   year: number;
-  status?: string;
-  hasInvoice?: string;
-  receivableStatus?: string;
-  customerId?: string;
-  sellerKey?: string;
-  startDate?: string;
-  endDate?: string;
-  minNetValue?: string;
-  maxNetValue?: string;
-  q?: string;
 };
 
 /**
  * Gráficos acima do grid: valor vendido YoY + margem % mês a mês.
- * Consome `/api/sales-orders/results` (mesma população OP-02 da listagem).
+ * Ignoram filtros da tela; usam população anual canônica do ano corrente.
+ * Margem: preferir série do marginSummary (card API, população year-only).
  */
 export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCharts({
   filters,
@@ -35,7 +27,7 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
 }: {
   filters: SalesOrderListMonthlyChartsFilters;
   showMarginChart: boolean;
-  /** Preferir série do card (mesmo motor); fallback = /results. */
+  /** Série year-only do mesmo motor do card (população sem filtros da tela). */
   monthlyCommercialMargin?: SalesOrderResultDashboardPayload["monthlyCommercialMargin"] | null;
 }) {
   noteDevPerfRender("SalesOrderListMonthlyCharts");
@@ -53,26 +45,15 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    // Somente o ano — nenhum filtro da listagem (cliente/vendedor/mês/status/…).
     const path = getSalesOrderResultApiPath({
       year: filters.year,
-      // Comparativo mensal = ano completo (igual Financeiro > Pedidos).
       month: undefined,
-      status: filters.status || undefined,
-      hasInvoice: filters.hasInvoice || undefined,
-      receivableStatus: filters.receivableStatus || undefined,
-      customerId: filters.customerId || undefined,
-      sellerKey: filters.sellerKey || undefined,
-      startDate: filters.startDate || undefined,
-      endDate: filters.endDate || undefined,
-      minNetValue: filters.minNetValue || undefined,
-      maxNetValue: filters.maxNetValue || undefined,
-      q: filters.q || undefined,
     });
 
     void fetchUiSessionCachedJson<SalesOrderResultDashboardPayload>(path, {
       signal: controller.signal,
-      // Evita servir payload antigo (sem monthlyCommercialMargin → caía na gerencial).
-      cacheKey: `${path}::commercial-margin-v2`,
+      cacheKey: `${path}::commercial-margin-charts-v3`,
     })
       .then((data) => {
         if (!controller.signal.aborted) setPayload(data);

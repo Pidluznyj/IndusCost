@@ -955,7 +955,10 @@ export async function buildOfficialSalesOrderListMarginSummary(
   orders: SalesOrderForMargin[],
   options?: {
     year?: number;
-    /** População year-wide (sem mês) para a série do gráfico; default = `orders`. */
+    /**
+     * População do gráfico mensal — deve ser anual canônica (sem filtros da tela).
+     * Default = `orders` (retrocompat); a listagem passa a população year-only.
+     */
     ordersForMonthlySeries?: SalesOrderForMargin[];
   }
 ): Promise<SalesOrderListMarginSummary> {
