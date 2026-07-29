@@ -428,8 +428,12 @@ type NfeAccumulator = {
 };
 
 function buildNfeEvidence(acc: NfeAccumulator): SalesOrderFlowEvidenceNfe {
+  // Preferir status canônico de NomusNfe (`statusRaw`); link/O2C só como fallback.
+  // Evita SalesOrderNfeLink stale (ex.: cancelada antiga) sobrescrever NF autorizada.
   const preferredStatus =
-    acc.statusSamples.find((s) => s.status != null)?.status ?? acc.statusRaw;
+    acc.statusRaw ??
+    acc.statusSamples.find((s) => s.status != null)?.status ??
+    null;
   const statusNormalized = normalizeNfeStatus({ status: preferredStatus });
   return {
     externalId: acc.externalId,
@@ -634,11 +638,35 @@ export function assembleSalesOrderFlowEvidenceBatch(
     }
   }
 
+  // Índice pedido ↔ refs Nomus para vincular NF descoberta só via DS.
+  const orderIdByExternalSalesOrderId = new Map<number, string>();
+  const orderIdByCodeNorm = new Map<string, string>();
+  for (const order of input.orders) {
+    if (order.externalSalesOrderId != null) {
+      orderIdByExternalSalesOrderId.set(order.externalSalesOrderId, order.id);
+    }
+    const raw = (order.orderCode ?? order.externalSalesOrderCode ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+    const m = /^PD[-_]?(\d+)$/.exec(raw);
+    if (m) orderIdByCodeNorm.set(`PD${m[1]}`, order.id);
+  }
+
   for (const doc of input.stockDocuments ?? []) {
     if (doc.idNfe != null) {
       const acc = ensureNfe(doc.idNfe);
       acc.sources.add("STOCK_DOCUMENT_ID_NFE");
       acc.statusSamples.push({ source: "STOCK_DOCUMENT_ID_NFE", status: null });
+      // DS do pedido com idNfe ⇒ NF vinculada ao pedido (paridade Nomus Documentos de Saída).
+      if (doc.externalSalesOrderId != null) {
+        const oid = orderIdByExternalSalesOrderId.get(doc.externalSalesOrderId);
+        if (oid) acc.linkedSalesOrderIds.add(oid);
+      }
+      if (doc.orderCodeNormalized) {
+        const oid = orderIdByCodeNorm.get(doc.orderCodeNormalized);
+        if (oid) acc.linkedSalesOrderIds.add(oid);
+      }
     }
   }
 
@@ -907,7 +935,18 @@ export function assembleSalesOrderFlowEvidenceBatch(
     }
 
     const nfes = [...orderNfeIds]
-      .map((id) => nfeByExternalId.get(id))
+      .map((id) => {
+        const n = nfeByExternalId.get(id);
+        if (!n) return null;
+        // DS do pedido com esta NF: garantir linkedSalesOrderIds (fallback do motor).
+        if (!n.linkedSalesOrderIds.includes(order.id)) {
+          return {
+            ...n,
+            linkedSalesOrderIds: [...n.linkedSalesOrderIds, order.id].sort(),
+          };
+        }
+        return n;
+      })
       .filter((n): n is SalesOrderFlowEvidenceNfe => n != null)
       .sort((a, b) => a.externalId - b.externalId);
 

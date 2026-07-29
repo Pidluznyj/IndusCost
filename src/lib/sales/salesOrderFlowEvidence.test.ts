@@ -466,6 +466,84 @@ describe("salesOrderFlowEvidence (assembler)", () => {
     assert.equal(pack.validNfes.length, 0);
     assert.equal(pack.nfes[0]!.isCanceled, true);
   });
+
+  it("DS com idNfe + ref do pedido vincula NF autorizada mesmo sem SalesOrderNfeLink", () => {
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        baseOrder(ORDER_A, [
+          {
+            id: ITEM_A1,
+            salesOrderId: ORDER_A,
+            productId: PRODUCT_1,
+            skuSnapshot: "SKU-1",
+            productNameSnapshot: "P1",
+            quantity: 1,
+            nomusItemStatusNormalized: "FULFILLED",
+            nomusItemStatusRaw: "4",
+            nomusQuantityFulfilled: 1,
+            nomusItemExternalId: 501,
+          },
+        ]),
+      ],
+      stockDocuments: [
+        {
+          id: DOC_1,
+          externalId: 4220,
+          idNfe: 7142,
+          totalValue: 2850,
+          externalSalesOrderId: 100,
+          orderCodeNormalized: "PD02586",
+        },
+      ],
+      nomusNfes: [
+        {
+          id: NFE_ID,
+          externalId: 7142,
+          numero: "7142",
+          serie: "2",
+          status: 4,
+        },
+      ],
+    });
+    const pack = map.get(ORDER_A)!;
+    assert.equal(pack.validNfes.length, 1);
+    assert.equal(pack.validNfes[0]!.externalId, 7142);
+    assert.ok(pack.validNfes[0]!.linkedSalesOrderIds.includes(ORDER_A));
+    assert.ok(pack.validNfes[0]!.sources.includes("STOCK_DOCUMENT_ID_NFE"));
+  });
+
+  it("status NomusNfe (autorizada) prevalece sobre link stale cancelado", () => {
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        baseOrder(ORDER_A, [
+          {
+            id: ITEM_A1,
+            salesOrderId: ORDER_A,
+            productId: PRODUCT_1,
+            skuSnapshot: "SKU",
+            productNameSnapshot: "P",
+            quantity: 1,
+            nomusItemStatusNormalized: "FULFILLED",
+            nomusItemStatusRaw: "4",
+          },
+        ]),
+      ],
+      nfeLinks: [
+        {
+          id: "stale",
+          salesOrderId: ORDER_A,
+          nfeExternalId: 7142,
+          nfeStatus: 7,
+        },
+      ],
+      nomusNfes: [{ id: NFE_ID, externalId: 7142, status: 4 }],
+    });
+    const pack = map.get(ORDER_A)!;
+    assert.equal(pack.nfes[0]!.statusRaw, 4);
+    assert.equal(pack.nfes[0]!.isCanceled, false);
+    assert.equal(pack.nfes[0]!.isValidForBilling, true);
+    assert.equal(pack.validNfes.length, 1);
+  });
 });
 
 describe("salesOrderFlowEvidence.server (batch loader)", () => {

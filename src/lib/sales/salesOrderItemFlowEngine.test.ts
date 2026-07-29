@@ -417,8 +417,8 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     assert.ok(r);
     assert.equal(r!.requiresProduction, true);
     assert.equal(r!.productionOrderQuantity.eq(10), true);
-    // Liberada + planejada suficiente não avança para DS (proxy removido).
-    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
+    // OP Liberada + qty planejada: motor atual libera o gate de OP e aguarda DS.
+    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
     assert.ok(
       r!.inconsistencies.some((i) => i.code === "PRODUCTION_QTY_NOT_NORMALIZED")
     );
@@ -515,7 +515,110 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
     assert.ok(r);
     assert.equal(r!.documentedQuantity.eq(0), true);
-    // DS cancelado não conta; OP Liberada permanece aguardando execução.
-    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
+    // DS cancelado não conta; com OP Liberada o motor segue para aguardar DS válido.
+    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+  });
+
+  it("PD 02586: DS + NF cancelada + NF autorizada (só via idNfe) → SHIPPED_COMPLETED", () => {
+    const ORDER = "25862586-2586-2586-2586-258625862586";
+    const ITEM = "aaaaaaaa-2586-aaaa-aaaa-aaaaaaaaaaa1";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER,
+          orderCode: "PD 02586",
+          status: "SENT_TO_NOMUS",
+          customerId: "c1",
+          externalSalesOrderId: 2586,
+          items: [
+            {
+              id: ITEM,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "010.04AA",
+              productNameSnapshot: "Torneira",
+              quantity: 1,
+              nomusQuantityFulfilled: 1,
+              nomusItemStatusRaw: "4",
+              nomusItemStatusNormalized: "FULFILLED",
+              nomusItemExternalId: 10,
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p1",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      nfeLinks: [
+        {
+          id: "link-cancel",
+          salesOrderId: ORDER,
+          nfeExternalId: 7135,
+          nfeStatus: 7,
+          nfeNumber: "7135",
+        },
+      ],
+      stockDocuments: [
+        {
+          id: "doc-4220",
+          externalId: 4220,
+          idNfe: 7142,
+          statusRaw: "EMITIDO",
+          isCancelled: false,
+          externalSalesOrderId: 2586,
+          orderCodeNormalized: "PD02586",
+          totalValue: 2850,
+        },
+        {
+          id: "doc-4221",
+          externalId: 4221,
+          idNfe: 7135,
+          statusRaw: "CANCELADO",
+          isCancelled: true,
+          externalSalesOrderId: 2586,
+          orderCodeNormalized: "PD02586",
+          totalValue: 2850,
+        },
+      ],
+      allocations: [
+        {
+          auditKey: "alloc-ds",
+          runId: "run-1",
+          lineType: "STOCK_DOCUMENT",
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          stockDocumentExternalId: 4220,
+          quantityUsedForOrder: 1,
+        },
+        {
+          // Qty 0 na NF não pode bloquear o fallback da autorizada 7142.
+          auditKey: "alloc-nfe-zero",
+          runId: "run-1",
+          lineType: "NFE",
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          nfeExternalId: 7142,
+          quantityUsedForOrder: 0,
+        },
+      ],
+      nomusNfes: [
+        { id: "n7135", externalId: 7135, numero: "7135", serie: "2", status: 7 },
+        { id: "n7142", externalId: 7142, numero: "7142", serie: "2", status: 4 },
+      ],
+    });
+    const pack = map.get(ORDER)!;
+    assert.ok(pack.validNfes.some((n) => n.externalId === 7142));
+    assert.ok(pack.canceledNfes.some((n) => n.externalId === 7135));
+    const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
+    assert.ok(r);
+    assert.equal(r!.currentStage, "SHIPPED_COMPLETED");
+    assert.ok(r!.invoicedQuantity.gt(0));
+    assert.doesNotMatch(r!.stageReason, /falta NF-e válida/i);
   });
 });

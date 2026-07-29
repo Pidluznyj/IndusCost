@@ -240,7 +240,6 @@ export async function loadSalesOrderFlowEvidenceBatch(
           },
         })
       : [];
-  const nomusNfes: SalesOrderFlowEvidenceNomusNfeRow[] = nomusNfesRaw;
 
   // 6) Vínculos OP oficiais
   const productionLinksRaw = includeProductionEvidence
@@ -428,6 +427,32 @@ export async function loadSalesOrderFlowEvidenceBatch(
     ...stockDocMap.values(),
   ].map(({ rawJson: _raw, ...row }) => row);
   const stockDocumentIds = stockDocuments.map((d) => d.id);
+
+  // Carregar NomusNfe também para idNfe descobertos só no Documento de Saída
+  // (senão a NF autorizada no Nomus não entra no pack / Kanban).
+  const knownNfeIds = new Set(nfeExternalIds);
+  const dsOnlyNfeIds = uniqueNumbers(stockDocuments.map((d) => d.idNfe)).filter(
+    (id) => !knownNfeIds.has(id)
+  );
+  const extraNomusNfesRaw =
+    includeFiscalEvidence && dsOnlyNfeIds.length > 0
+      ? await prisma.nomusNfe.findMany({
+          where: { externalId: { in: dsOnlyNfeIds } },
+          select: {
+            id: true,
+            externalId: true,
+            numero: true,
+            serie: true,
+            chave: true,
+            status: true,
+            xmlDhEmi: true,
+          },
+        })
+      : [];
+  const nomusNfes: SalesOrderFlowEvidenceNomusNfeRow[] = [
+    ...nomusNfesRaw,
+    ...extraNomusNfesRaw,
+  ];
 
   // 9) Itens de documento (+ refs oficiais do raw)
   const stockDocumentItemsRaw =

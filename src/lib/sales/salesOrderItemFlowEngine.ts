@@ -783,30 +783,45 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const seenNfe = new Set<number>();
   for (const a of allocations) {
     if (a.nfeExternalId == null || seenNfe.has(a.nfeExternalId)) continue;
-    seenNfe.add(a.nfeExternalId);
     const nfe = nfeById.get(a.nfeExternalId);
+    const qtyRaw = a.quantityUsedForOrder;
+    const qtyPositive =
+      qtyRaw != null && Number(qtyRaw) > 0;
+    const canceled = nfe?.isCanceled === true;
+    // Qty 0/nula em NF não-cancelada: não “envenena” seenNfe — deixa o
+    // fallback validNfes cobrir com a qty do item (PD 02586: 7142 autorizada).
+    if (!qtyPositive && !canceled) continue;
+
+    seenNfe.add(a.nfeExternalId);
     const hasDocument = pack.stockDocuments.some(
-      (d) => d.idNfe === a.nfeExternalId
+      (d) => d.idNfe === a.nfeExternalId && d.isCancelled !== true
     );
     nfeAllocations.push({
       nfeExternalId: a.nfeExternalId,
-      quantity: a.quantityUsedForOrder,
-      isCanceled: nfe?.isCanceled === true,
-      isValidForBilling: nfe?.isValidForBilling !== false && nfe?.isCanceled !== true,
+      quantity: qtyRaw,
+      isCanceled: canceled,
+      isValidForBilling: nfe?.isValidForBilling !== false && !canceled,
       hasDocument,
       hasShipDate: false,
     });
   }
   for (const nfe of pack.validNfes) {
     if (seenNfe.has(nfe.externalId)) continue;
-    if (!nfe.linkedSalesOrderIds.includes(pack.orderId)) continue;
+    const linkedToOrder =
+      nfe.linkedSalesOrderIds.includes(pack.orderId) ||
+      pack.stockDocuments.some(
+        (d) => d.idNfe === nfe.externalId && d.isCancelled !== true
+      );
+    if (!linkedToOrder) continue;
     seenNfe.add(nfe.externalId);
     nfeAllocations.push({
       nfeExternalId: nfe.externalId,
       quantity: item.quantity,
       isCanceled: false,
       isValidForBilling: true,
-      hasDocument: pack.stockDocuments.some((d) => d.idNfe === nfe.externalId),
+      hasDocument: pack.stockDocuments.some(
+        (d) => d.idNfe === nfe.externalId && d.isCancelled !== true
+      ),
       hasShipDate: false,
     });
   }

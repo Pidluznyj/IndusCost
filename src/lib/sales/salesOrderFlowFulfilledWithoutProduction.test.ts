@@ -283,4 +283,47 @@ describe("salesOrderFlowFulfilledWithoutProduction (OP-06)", () => {
     assert.equal(order.currentStage, "WAITING_NFE");
     assert.equal(Number(order.activeResidualValue.toString()), 0);
   });
+
+  it("PD 02586: NF cancelada 7135 + autorizada 7142 → SHIPPED_COMPLETED", () => {
+    const r = resolveSalesOrderItemFlow(
+      manufacturedNeedingOp("pd02586-auth", {
+        status: 4,
+        statusNormalized: "FULFILLED",
+        orderedQuantity: 1,
+        fulfilledQuantity: 1,
+        producedQuantity: 0,
+        productionOrderLinks: [],
+        documentAllocations: [{ allocationKey: "ds-4220", quantity: 1 }],
+        nfeAllocations: [
+          {
+            nfeExternalId: 7135,
+            quantity: 1,
+            isCanceled: true,
+            isValidForBilling: false,
+            hasDocument: true,
+            hasShipDate: false,
+          },
+          {
+            nfeExternalId: 7142,
+            quantity: 1,
+            isCanceled: false,
+            isValidForBilling: true,
+            hasDocument: true,
+            hasShipDate: false,
+          },
+        ],
+      })
+    );
+    assert.equal(r.currentStage, "SHIPPED_COMPLETED");
+    assert.equal(r.invoicedQuantity.eq(1), true);
+    assert.doesNotMatch(r.stageReason, /falta NF-e válida/i);
+
+    const order = resolveSalesOrderFlow([r], {
+      salesOrderId: "order-pd-02586-auth",
+      itemFinancials: [
+        { salesOrderItemId: "pd02586-auth", plannedNetValue: 2850 },
+      ],
+    });
+    assert.equal(order.currentStage, "SHIPPED_COMPLETED");
+  });
 });
