@@ -34,6 +34,10 @@ export {
   TREASURY_SIMPLE_CASH_RISK_TITLE,
   TREASURY_SIMPLE_CASH_RISK_UI_PATH,
 };
+export type {
+  TreasurySimpleCashRiskPeriod,
+  TreasurySimpleCashRiskScenario,
+};
 
 export const TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE =
   "Fluxo Gerencial: projeção do saldo com contas, títulos e lançamentos canônicos da Tesouraria." as const;

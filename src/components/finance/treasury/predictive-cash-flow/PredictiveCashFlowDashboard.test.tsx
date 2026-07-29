@@ -99,8 +99,9 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     );
     assert.match(chart, /Consolidado/);
     assert.match(chart, /Por banco/);
-    assert.match(chart, /Abertura informada/);
+    assert.match(chart, /PREDICTIVE_EVOLUTION_START_SOURCE_LABELS/);
     assert.match(chart, /Limite \(R\$ 0\)/);
+    assert.match(chart, /type="monotone"/);
   });
 
   it("lista Contas como botões clicáveis", () => {
