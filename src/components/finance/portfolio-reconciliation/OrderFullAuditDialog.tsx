@@ -4899,11 +4899,11 @@ function ProposalTab({
             value={formatMoneyOrDash(proposal.totals.totalCost)}
           />
           <Kpi
-            label="Margem R$"
+            label="Margem comercial R$"
             value={formatMoneyOrDash(proposal.totals.totalMarginValue)}
           />
           <Kpi
-            label="Margem %"
+            label="Margem comercial %"
             value={
               proposal.totals.totalMarginPerc != null
                 ? formatFinancePercent(proposal.totals.totalMarginPerc)
@@ -5026,8 +5026,8 @@ function ProposalItemsSection({
               <th className="py-1.5 pr-2 font-semibold text-right">Desconto</th>
               <th className="py-1.5 pr-2 font-semibold text-right">Total</th>
               <th className="py-1.5 pr-2 font-semibold text-right">Custo</th>
-              <th className="py-1.5 pr-2 font-semibold text-right">Margem R$</th>
-              <th className="py-1.5 pr-2 font-semibold text-right">Margem %</th>
+              <th className="py-1.5 pr-2 font-semibold text-right">Margem com. R$</th>
+              <th className="py-1.5 pr-2 font-semibold text-right">Margem com. %</th>
               <th className="py-1.5 pr-2 font-semibold text-right">Comissão</th>
               <th className="py-1.5 pr-2 font-semibold">Virou pedido?</th>
               <th className="py-1.5 pr-2 font-semibold">Item pedido</th>

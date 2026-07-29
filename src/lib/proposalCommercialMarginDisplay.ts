@@ -8,7 +8,51 @@ import {
   type ProposalCommercialMarginReasonCode,
   type ProposalCommercialMarginSummaryPayload,
 } from "./proposalCommercialMargin.js";
+import {
+  parseProposalCommercialPricingSnapshot,
+  readProposalCommercialMarginFreeze,
+} from "./proposalCommercialMarginSnapshot.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
+
+/**
+ * Margem comercial do item para exibição em qualquer surface de Proposta.
+ * Não usa marginPerc/marginValue de produção — só snapshot comercial.
+ */
+export function resolveProposalItemCommercialMarginDisplay(item: {
+  commercialPricingSnapshotJson?: unknown;
+  pricingSnapshotJson?: unknown;
+}): {
+  marginPerc: number | null;
+  marginValue: number | null;
+} {
+  const snap = parseProposalCommercialPricingSnapshot(
+    item.commercialPricingSnapshotJson
+  );
+  if (snap?.commercialMarginRate != null && Number.isFinite(snap.commercialMarginRate)) {
+    return {
+      marginPerc: roundPricingPercent(snap.commercialMarginRate * 100),
+      marginValue:
+        snap.commercialMarginValue != null && Number.isFinite(snap.commercialMarginValue)
+          ? roundPricingMoney(snap.commercialMarginValue)
+          : null,
+    };
+  }
+  const freeze = readProposalCommercialMarginFreeze(item.pricingSnapshotJson);
+  if (
+    freeze?.commercialMarginRate != null &&
+    Number.isFinite(freeze.commercialMarginRate)
+  ) {
+    return {
+      marginPerc: roundPricingPercent(freeze.commercialMarginRate * 100),
+      marginValue:
+        freeze.commercialMarginValue != null &&
+        Number.isFinite(freeze.commercialMarginValue)
+          ? roundPricingMoney(freeze.commercialMarginValue)
+          : null,
+    };
+  }
+  return { marginPerc: null, marginValue: null };
+}
 
 export function formatProposalCommercialMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";

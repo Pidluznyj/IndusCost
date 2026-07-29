@@ -7,7 +7,9 @@ import { previewProposalCommercialMargins } from "./proposalCommercialMarginPrev
 import {
   formatProposalCommercialPercent,
   proposalCommercialMarginUnavailableLabel,
+  resolveProposalItemCommercialMarginDisplay,
 } from "./proposalCommercialMarginDisplay.js";
+import { PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION } from "./proposalCommercialMarginSnapshot.js";
 
 const TAX = 0.2875;
 const OTHER = 0.02;
@@ -27,6 +29,30 @@ function formPrice(marginPercent: number, commissionPercent: number) {
   if (!formed.ok) throw new Error(formed.message);
   return formed.result.salePrice;
 }
+
+describe("resolveProposalItemCommercialMarginDisplay", () => {
+  it("lê margem comercial do snapshot e ignora marginPerc de produção", () => {
+    const display = resolveProposalItemCommercialMarginDisplay({
+      commercialPricingSnapshotJson: {
+        schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
+        commercialMarginRate: 0.42,
+        commercialMarginValue: 150.5,
+      },
+      pricingSnapshotJson: { commercialMarginRate: 0.99 },
+    });
+    assert.equal(display.marginPerc, 42);
+    assert.equal(display.marginValue, 150.5);
+  });
+
+  it("sem snapshot comercial não cai na margem de produção", () => {
+    const display = resolveProposalItemCommercialMarginDisplay({
+      commercialPricingSnapshotJson: null,
+      pricingSnapshotJson: { unitCost: 10 },
+    });
+    assert.equal(display.marginPerc, null);
+    assert.equal(display.marginValue, null);
+  });
+});
 
 describe("proposalCommercialMargin UI — prévia em tempo real", () => {
   const p33 = formPrice(33, 6);
@@ -211,6 +237,35 @@ describe("proposalCommercialMargin — PDF cliente e independência", () => {
       "utf8"
     );
     assert.match(adapter, /delete item\.commercialMarginRate/);
+    assert.match(adapter, /applyCommercialMarginDisplayScalars/);
     assert.doesNotMatch(adapter, /salesOrderCommercialMargin/);
+  });
+
+  it("surfaces de proposta exibem margem comercial, não a de produção", () => {
+    const analysis = readFileSync(
+      join(process.cwd(), "src/components/proposal/ProposalAnalysisModal.tsx"),
+      "utf8"
+    );
+    assert.match(analysis, /resolveProposalItemCommercialMarginDisplay/);
+    assert.doesNotMatch(analysis, /formatNumber\(safeNum\(row\.marginPerc\)/);
+
+    const indicators = readFileSync(
+      join(process.cwd(), "src/components/proposal/ProposalIndicatorsTab.tsx"),
+      "utf8"
+    );
+    assert.match(indicators, /resolveProposalItemCommercialMarginDisplay/);
+
+    const pdf = readFileSync(
+      join(process.cwd(), "src/lib/proposalInternalManagementPdf.ts"),
+      "utf8"
+    );
+    assert.match(pdf, /resolveProposalItemCommercialMarginDisplay/);
+    assert.match(pdf, /Margem com\./);
+
+    const audit = readFileSync(
+      join(process.cwd(), "src/lib/finance/orderFullAuditService.ts"),
+      "utf8"
+    );
+    assert.match(audit, /resolveProposalItemCommercialMarginDisplay/);
   });
 });

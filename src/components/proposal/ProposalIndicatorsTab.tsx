@@ -24,6 +24,11 @@ import { AppAlert } from "@/src/components/shared/AppAlert";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
+import {
+  formatProposalCommercialMoney,
+  formatProposalCommercialPercent,
+  resolveProposalItemCommercialMarginDisplay,
+} from "@/src/lib/proposalCommercialMarginDisplay";
 
 function safeNum(value: unknown): number | null {
   const n = Number(value);
@@ -344,7 +349,7 @@ export function ProposalIndicatorsTab({
       { key: "tax", label: "Impostos", value: taxes, className: "bg-orange-600/80" },
       { key: "comm", label: "Comissão", value: comm, className: "bg-fuchsia-600/70" },
       { key: "freight", label: "Frete", value: freight, className: "bg-slate-700/70" },
-      { key: "margin", label: "Margem", value: margin, className: "bg-green-600/80" },
+      { key: "margin", label: "Margem comercial", value: margin, className: "bg-green-600/80" },
     ];
   }, [totalsByNature, totals.totalTaxes, totals.totalCommission, totals.totalFreight, totals.totalMarginValue]);
 
@@ -446,7 +451,7 @@ export function ProposalIndicatorsTab({
         />
         <FinanceExecutiveTotalizerCard
           icon={AlertCircle}
-          label="Margem (R$)"
+          label="Margem comercial (R$)"
           value={formatAdaptiveCurrency(totals.totalMarginValue)}
           tone={
             safeNum(totals.totalMarginValue) != null && safeNum(totals.totalMarginValue)! >= 0
@@ -456,7 +461,7 @@ export function ProposalIndicatorsTab({
         />
         <FinanceExecutiveTotalizerCard
           icon={AlertCircle}
-          label="Margem (%)"
+          label="Margem comercial (%)"
           value={marginPerc == null ? "—" : `${formatAdaptiveNumber(marginPerc)}%`}
         />
       </SummaryKpiGrid>
@@ -631,8 +636,8 @@ export function ProposalIndicatorsTab({
                 <th className="p-3 font-semibold text-right">HM</th>
                 <th className="p-3 font-semibold text-right">Custo base</th>
                 <th className="p-3 font-semibold text-right">Impostos</th>
-                <th className="p-3 font-semibold text-right">Margem</th>
-                <th className="p-3 font-semibold text-right">Margem %</th>
+                <th className="p-3 font-semibold text-right">Margem com.</th>
+                <th className="p-3 font-semibold text-right">Margem com. %</th>
                 <th className="p-3 font-semibold text-right">Preço unit.</th>
                 <th className="p-3 font-semibold text-right">Preço total</th>
                 <th className="p-3 font-semibold text-right"></th>
@@ -644,6 +649,7 @@ export function ProposalIndicatorsTab({
                 const netLine = qty * (safeNum(it.negotiatedPrice) ?? 0) - (safeNum(it.discountValue) ?? 0);
                 const mt = lineMetrics[idx];
                 const showWarn = Boolean(mt?.warning);
+                const commercial = resolveProposalItemCommercialMarginDisplay(it);
                 return (
                   <tr key={`${it.productId}-${idx}`} className="hover:bg-accent/10 transition-colors">
                     <td className="p-3 font-mono text-muted-foreground">{String(idx + 1).padStart(2, "0")}</td>
@@ -662,8 +668,12 @@ export function ProposalIndicatorsTab({
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(mt.hmTotal)}</td>
                     <td className="p-3 text-right tabular-nums font-semibold">{moneyOrDash(mt.baseTotal)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(it.taxesValue)}</td>
-                    <td className="p-3 text-right tabular-nums">{moneyOrDash(it.marginValue)}</td>
-                    <td className="p-3 text-right tabular-nums">{safeNum(it.marginPerc) == null ? "—" : `${formatAdaptiveNumber(it.marginPerc)}%`}</td>
+                    <td className="p-3 text-right tabular-nums">
+                      {formatProposalCommercialMoney(commercial.marginValue)}
+                    </td>
+                    <td className="p-3 text-right tabular-nums">
+                      {formatProposalCommercialPercent(commercial.marginPerc)}
+                    </td>
                     <td className="p-3 text-right tabular-nums">{formatAdaptiveCurrency(it.negotiatedPrice)}</td>
                     <td className="p-3 text-right tabular-nums font-semibold">{moneyOrDash(netLine)}</td>
                     <td className="p-3 text-right">

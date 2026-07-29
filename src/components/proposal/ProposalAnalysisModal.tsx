@@ -23,6 +23,10 @@ import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/F
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import type { FinanceKpiTone } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  formatProposalCommercialPercent,
+  resolveProposalItemCommercialMarginDisplay,
+} from "@/src/lib/proposalCommercialMarginDisplay";
 
 function proposalKpiTone(
   tone?: "default" | "primary" | "green" | "amber" | "red"
@@ -212,14 +216,20 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                     />
                     <FinanceExecutiveTotalizerCard
                       icon={TrendingUp}
-                      label="Margem"
-                      value={`${formatNumber(safeNum(data.totalMarginPerc), 2)}%`}
+                      label="Margem comercial"
+                      value={
+                        safeNum(data.totalMarginPerc) == null
+                          ? "—"
+                          : `${formatNumber(safeNum(data.totalMarginPerc), 2)}%`
+                      }
                       tone={proposalKpiTone(
-                        safeNum(data.totalMarginPerc) >= 20
-                          ? "green"
-                          : safeNum(data.totalMarginPerc) >= 10
-                            ? "amber"
-                            : "red"
+                        safeNum(data.totalMarginPerc) == null
+                          ? "default"
+                          : safeNum(data.totalMarginPerc)! >= 20
+                            ? "green"
+                            : safeNum(data.totalMarginPerc)! >= 10
+                              ? "amber"
+                              : "red"
                       )}
                     />
                     <FinanceExecutiveTotalizerCard
@@ -334,7 +344,7 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                             <th className="p-2.5 font-semibold text-right">Custo un.</th>
                             <th className="p-2.5 font-semibold text-right">Negociado</th>
                             <th className="p-2.5 font-semibold text-right">Desc.</th>
-                            <th className="p-2.5 font-semibold text-right">Margem %</th>
+                            <th className="p-2.5 font-semibold text-right">Margem com. %</th>
                             <th className="p-2.5 font-semibold text-right">Líquido linha</th>
                           </tr>
                         </thead>
@@ -344,6 +354,7 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                             const neg = safeNum(row.negotiatedPrice);
                             const disc = safeNum(row.discountValue);
                             const netLine = qty * neg - disc;
+                            const commercial = resolveProposalItemCommercialMarginDisplay(row);
                             return (
                               <tr key={row.id ?? idx} className="hover:bg-accent/20">
                                 <td className="p-2.5">
@@ -365,7 +376,7 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                                   {formatCurrency(disc)}
                                 </td>
                                 <td className="p-2.5 text-right tabular-nums font-medium">
-                                  {formatNumber(safeNum(row.marginPerc), 2)}%
+                                  {formatProposalCommercialPercent(commercial.marginPerc)}
                                 </td>
                                 <td className="p-2.5 text-right font-semibold tabular-nums">
                                   {formatCurrency(netLine)}

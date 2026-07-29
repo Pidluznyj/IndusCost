@@ -134,8 +134,8 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
                 "Comissão estimada",
                 doc.totals.commissionLabel,
               ],
-              ["Margem R$", money(doc.totals.marginValue)],
-              ["Margem %", pct(doc.totals.marginPerc)],
+              ["Margem comercial R$", money(doc.totals.marginValue)],
+              ["Margem comercial %", pct(doc.totals.marginPerc)],
               ["Markup", doc.totals.markup != null ? num(doc.totals.markup, 4) : "—"],
             ].map(([label, value]) => (
               <div
@@ -200,8 +200,8 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Comissão %</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Comissão R$</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Custo total</th>
-                  <th className="border border-slate-300 px-2 py-1.5 text-right">Margem R$</th>
-                  <th className="border border-slate-300 px-2 py-1.5 text-right">Margem %</th>
+                  <th className="border border-slate-300 px-2 py-1.5 text-right">Margem com. R$</th>
+                  <th className="border border-slate-300 px-2 py-1.5 text-right">Margem com. %</th>
                   <th className="border border-slate-300 px-2 py-1.5 text-right">Markup</th>
                 </tr>
               </thead>
@@ -238,10 +238,10 @@ export function ProposalInternalManagementDocument({ document: doc, branding }: 
                       {money(item.totalCost)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
-                      {money(item.marginValue)}
+                      {item.marginMissing ? "—" : money(item.marginValue)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
-                      {pct(item.marginPerc)}
+                      {item.marginMissing ? "—" : pct(item.marginPerc)}
                     </td>
                     <td className="border border-slate-200 px-2 py-1 text-right tabular-nums">
                       {item.markup != null ? num(item.markup, 2) : "—"}

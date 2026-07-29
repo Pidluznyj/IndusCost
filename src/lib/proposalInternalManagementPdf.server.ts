@@ -97,6 +97,7 @@ export async function loadAndBuildProposalInternalManagementPdf(
       freightValue: decimalToNumber(item.freightValue),
       notes: item.notes,
       pricingSnapshotJson: item.pricingSnapshotJson,
+      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
     })),
   });
 

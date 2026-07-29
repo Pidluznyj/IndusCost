@@ -49,6 +49,7 @@ import {
 import { loadCommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.server.js";
 import { resolveCommissionSellerDisplay } from "@/src/lib/commissions/commissionSellerDisplay.js";
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
+import { resolveProposalItemCommercialMarginDisplay } from "@/src/lib/proposalCommercialMarginDisplay.js";
 import {
   buildEffectiveScheduleConsumerAlerts,
   projectEffectiveScheduleForOrderAudit,
@@ -3653,6 +3654,11 @@ async function loadProposalBlock(
         alerts.push("PROPOSAL_ITEM_NOT_CONVERTED");
       }
 
+      const commercial = resolveProposalItemCommercialMarginDisplay({
+        commercialPricingSnapshotJson: pi.commercialPricingSnapshotJson,
+        pricingSnapshotJson: pi.pricingSnapshotJson,
+      });
+
       return {
         proposalItemId: pi.id,
         productId: pi.productId,
@@ -3666,8 +3672,8 @@ async function loadProposalBlock(
         discountPerc: decimalToNumber(pi.discountPerc),
         discountValue: decimalToNumber(pi.discountValue),
         totalNetValue: proposalTotal,
-        marginValue: decimalToNumber(pi.marginValue),
-        marginPerc: decimalToNumber(pi.marginPerc),
+        marginValue: commercial.marginValue,
+        marginPerc: commercial.marginPerc,
         taxesPerc: decimalToNumber(pi.taxesPerc),
         taxesValue: decimalToNumber(pi.taxesValue),
         commissionPerc: decimalToNumber(pi.commissionPerc),

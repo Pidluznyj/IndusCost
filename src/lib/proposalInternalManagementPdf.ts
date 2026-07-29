@@ -10,6 +10,7 @@ import {
   extractProposalItemEstimatedCommission,
   formatProposalEstimatedCommissionLabel,
 } from "./proposalItemEstimatedCommission.js";
+import { resolveProposalItemCommercialMarginDisplay } from "./proposalCommercialMarginDisplay.js";
 import {
   buildFormattedLandscapePdf,
   formatPdfMoneyBr,
@@ -53,6 +54,7 @@ export type ProposalInternalManagementPdfItemInput = {
   freightValue?: number | string | null;
   notes?: string | null;
   pricingSnapshotJson?: unknown;
+  commercialPricingSnapshotJson?: unknown;
 };
 
 export type ProposalInternalManagementPdfInput = {
@@ -107,8 +109,8 @@ export type ProposalInternalManagementPdfItemRow = {
   commissionPerc: number;
   commissionLabel: string;
   commissionEstimated: boolean;
-  marginValue: number;
-  marginPerc: number;
+  marginValue: number | null;
+  marginPerc: number | null;
   markup: number | null;
   notes: string | null;
   costIncomplete: boolean;
@@ -224,8 +226,9 @@ export function buildProposalInternalManagementPdfDocument(
     const unitPrice = n(item.negotiatedPrice);
     const totalPrice = quantity * unitPrice;
     const totalCost = quantity * unitCost;
-    const itemMargin = n(item.marginValue);
-    const itemMarginPerc = n(item.marginPerc);
+    const commercial = resolveProposalItemCommercialMarginDisplay(item);
+    const itemMargin = commercial.marginValue;
+    const itemMarginPerc = commercial.marginPerc;
     const storedCommissionValue = n(item.commissionValue);
     const storedCommissionPerc = n(item.commissionPerc);
     const taxesValue = n(item.taxesValue);
@@ -277,7 +280,9 @@ export function buildProposalInternalManagementPdfDocument(
 
     const costIncomplete = !(unitCost > 0);
     const marginMissing =
-      !(itemMargin !== 0 || itemMarginPerc !== 0) && totalPrice > 0 && costIncomplete;
+      commercial.marginPerc == null &&
+      commercial.marginValue == null &&
+      totalPrice > 0;
     const itemMarkup = totalCost > 0 ? totalPrice / totalCost : null;
     const commissionLabel = formatProposalEstimatedCommissionLabel({
       commissionPerc: commissionPending && !(commissionPerc > 0) ? null : commissionPerc,
@@ -467,8 +472,8 @@ export function buildProposalInternalManagementPdfBuffer(
         "Fabricação",
         "Impostos",
         "Comissão",
-        "Margem R$",
-        "Margem %",
+        "Margem com. R$",
+        "Margem com. %",
         "Markup",
       ],
       rows: [
@@ -512,7 +517,7 @@ export function buildProposalInternalManagementPdfBuffer(
         "Comissão %",
         "Comissão R$",
         "Custo",
-        "Margem",
+        "Margem com.",
         "%",
         "Markup",
       ],
@@ -530,8 +535,8 @@ export function buildProposalInternalManagementPdfBuffer(
             ? "valor pendente"
             : formatPdfMoneyBr(item.commissionValue),
         formatPdfMoneyBr(item.totalCost),
-        formatPdfMoneyBr(item.marginValue),
-        formatPdfPercentBr(item.marginPerc),
+        item.marginValue != null ? formatPdfMoneyBr(item.marginValue) : "—",
+        item.marginPerc != null ? formatPdfPercentBr(item.marginPerc) : "—",
         item.markup != null ? formatPdfNumberBr(item.markup, 2) : "—",
       ]),
     },

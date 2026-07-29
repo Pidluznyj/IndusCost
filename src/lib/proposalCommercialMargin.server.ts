@@ -26,8 +26,16 @@ import {
   type ProposalCommercialPricingSnapshot,
   parseProposalCommercialPricingSnapshot,
 } from "./proposalCommercialMarginSnapshot.js";
+import { resolveProposalItemCommercialMarginDisplay } from "./proposalCommercialMarginDisplay.js";
 
 type Decimalish = { toNumber?: () => number } | number | string | null | undefined;
+
+/** Persiste margem comercial nos campos de exibição do item (não a de produção). */
+function applyCommercialMarginDisplayScalars(item: Record<string, unknown>): void {
+  const { marginPerc, marginValue } = resolveProposalItemCommercialMarginDisplay(item);
+  item.marginPerc = marginPerc ?? 0;
+  item.marginValue = marginValue ?? 0;
+}
 
 function toNum(value: Decimalish): number | null {
   if (value == null || value === "") return null;
@@ -545,6 +553,7 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
       });
       item.commercialPricingSnapshotJson =
         serializeProposalCommercialPricingSnapshot(snapshot);
+      applyCommercialMarginDisplayScalars(item);
       return item;
     }
 
@@ -562,10 +571,12 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
       item.commercialPricingSnapshotJson = serializeProposalCommercialPricingSnapshot(
         toProposalCommercialPricingSnapshot(freeze)
       );
+      applyCommercialMarginDisplayScalars(item);
       return item;
     }
 
     item.commercialPricingSnapshotJson = null;
+    applyCommercialMarginDisplayScalars(item);
     return item;
   });
 }
