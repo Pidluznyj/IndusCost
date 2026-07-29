@@ -185,6 +185,42 @@ export async function buildSalesOrderResultDashboard(
     filters,
   });
 
+  let monthlyCommercialMargin = marginPayload.monthlyMargin.map((row) => ({
+    ...row,
+    marginAmount: 0,
+    marginPercent: null as number | null,
+    costAmount: 0,
+    taxAmount: 0,
+  }));
+  try {
+    const { buildSalesOrderCommercialMarginReadModels } = await import(
+      "./salesOrderCommercialMarginReadService.server.js"
+    );
+    const { buildMonthlyCommercialMarginRows } = await import(
+      "./salesOrderCommercialMarginReadModel.js"
+    );
+    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
+      db,
+      orders.map((order) => ({
+        id: order.id,
+        issueDate: order.issueDate,
+        items: order.items,
+      }))
+    );
+    monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
+      orders.map((order) => ({
+        issueDate: order.issueDate,
+        commercialMargin: commercialByOrder.get(order.id)?.commercialMargin,
+      })),
+      filters.year
+    );
+  } catch (err) {
+    console.warn(
+      "[buildSalesOrderResultDashboard] falha na série mensal de margem comercial.",
+      err
+    );
+  }
+
   // Ano anterior: mesma população OP-02 (filtros da listagem), só para série YoY de vendas.
   // Sem mês — o comparativo mensal é sempre o ano completo.
   const previousYear = filters.year - 1;
@@ -257,6 +293,7 @@ export async function buildSalesOrderResultDashboard(
     filters,
     totals: marginPayload.totals,
     monthlyMargin: marginPayload.monthlyMargin,
+    monthlyCommercialMargin,
     monthlySalesComparison,
     realizedVsProjected,
     projection,

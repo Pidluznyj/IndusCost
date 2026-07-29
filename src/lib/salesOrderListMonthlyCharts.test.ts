@@ -27,6 +27,18 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.match(charts, /SalesOrderListMonthlyMarginPercentChart/);
     assert.match(charts, /showMarginChart/);
     assert.match(charts, /monthlySalesComparison/);
+    assert.match(charts, /monthlyCommercialMargin/);
+  });
+
+  it("gráfico de margem da listagem usa margem comercial (não gerencial)", () => {
+    const chart = read(
+      "src/components/sales/SalesOrderListMonthlyMarginPercentChart.tsx"
+    );
+    assert.match(chart, /Margem comercial/);
+    assert.doesNotMatch(chart, /Margem gerencial oficial/);
+    const engine = read("src/lib/salesOrderResultEngine.server.ts");
+    assert.match(engine, /buildMonthlyCommercialMarginRows/);
+    assert.match(engine, /monthlyCommercialMargin/);
   });
 
   it("engine de results expõe monthlySalesComparison YoY", () => {

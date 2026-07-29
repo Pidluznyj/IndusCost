@@ -102,7 +102,13 @@ export type SalesOrderResultSource = {
 export type SalesOrderResultDashboardPayload = {
   filters: SalesOrderResultFilters;
   totals: SalesOrderResultTotals;
+  /** Margem gerencial oficial (custo versionado) — aba Resultado. */
   monthlyMargin: SalesOrderResultMonthlyRow[];
+  /**
+   * Margem comercial (mesmo motor/ponderação do card MARGEM COMERCIAL).
+   * Usada no gráfico da listagem Comercial > Pedidos.
+   */
+  monthlyCommercialMargin: SalesOrderResultMonthlyRow[];
   /** Valor vendido mês a mês: ano filtrado vs ano anterior (OP-02 / mesma listagem). */
   monthlySalesComparison: SalesOrderResultMonthlySalesComparisonRow[];
   realizedVsProjected: SalesOrderResultRealizedVsProjectedRow[];

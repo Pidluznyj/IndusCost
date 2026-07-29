@@ -248,7 +248,7 @@ describe("salesOrdersListSummary", () => {
       join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
       "utf8"
     );
-    assert.ok(page.includes('params.set("sellerKey", sellerKey)'));
+    assert.ok(page.includes('params.set("sellerKey", appliedFilters.sellerKey)'));
     assert.ok(page.includes("Todos os vendedores"));
     assert.ok(page.includes("seller-filter-options"));
   });
@@ -264,11 +264,11 @@ describe("salesOrdersListSummary", () => {
     // Filtro Mês (label + opção "Todos os meses")
     assert.ok(page.includes(">Mês<"));
     assert.ok(page.includes("Todos os meses"));
-    // Alterar Ano/Mês chama API com year/month
-    assert.ok(page.includes('params.set("year", year)'));
-    assert.ok(page.includes('params.set("month", month)'));
-    // Ano/Mês entram na chave de filtros que dispara reset para página 1
-    assert.ok(/listFiltersKey[\s\S]*year[\s\S]*month/.test(page));
+    // Ano/Mês entram nos filtros aplicados (Pesquisar) e na query
+    assert.ok(page.includes('params.set("year", appliedFilters.year)'));
+    assert.ok(page.includes('params.set("month", appliedFilters.month)'));
+    assert.ok(page.includes("appliedFilters"));
+    assert.ok(page.includes("applyListFilters"));
     assert.ok(page.includes("setCurrentPage(1)"));
   });
 
@@ -356,19 +356,17 @@ describe("salesOrdersListSummary", () => {
     assert.equal(where.status, "DRAFT");
   });
 
-  it("UI da lista renderiza Busca inteligente ligada à API com debounce e reset", () => {
+  it("UI da lista aplica Busca inteligente só ao Pesquisar", () => {
     const page = readFileSync(
       join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
       "utf8"
     );
     assert.ok(page.includes("Busca inteligente"));
-    assert.ok(page.includes('params.set("q", search)'));
-    // debounce ~300ms
-    assert.ok(/setTimeout\(\(\) => setSearch\(searchDraft\.trim\(\)\), 300\)/.test(page));
-    // entra na chave que dispara reset para página 1
-    assert.ok(/listFiltersKey[\s\S]*search/.test(page));
-    // Limpar filtros limpa a busca
-    assert.ok(page.includes('setSearch("")'));
+    assert.ok(page.includes('params.set("q", appliedFilters.search)'));
+    assert.ok(page.includes("applyListFilters"));
+    assert.ok(page.includes("sales-orders-apply-filters"));
+    assert.ok(!/setTimeout\(\(\) => setSearch\(searchDraft\.trim\(\)\), 300\)/.test(page));
+    assert.ok(page.includes('setSearchDraft("")'));
   });
 
   it("paginação não altera summary quando agregado no universo filtrado", () => {

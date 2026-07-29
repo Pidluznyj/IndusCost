@@ -13,6 +13,7 @@ import {
   aggregateCommercialMarginSummaries,
   buildCommercialMarginItemDTO,
   buildCommercialMarginSummaryDTO,
+  buildMonthlyCommercialMarginRows,
   commercialMarginIdentityKey,
   summarizeCompositionTotals,
 } from "./salesOrderCommercialMarginReadModel.js";
@@ -522,5 +523,66 @@ describe("salesOrderCommercialMarginReadService — fonte única + batch", () =>
     // Mesma data civil → um batch de formação.
     assert.equal(counters.priceTableFindMany, 1);
     assert.equal(counters.priceTableItemFindMany, 1);
+  });
+});
+
+describe("buildMonthlyCommercialMarginRows", () => {
+  it("pondera % por mês com a mesma lógica do card (Σ margem / Σ líquido coberto)", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: new Date(2026, 0, 10),
+          commercialMargin: {
+            commercialMarginTotalValue: 100,
+            commercialMarginTotalPercent: 50,
+            commercialSoldTotalValue: 200,
+            totalActiveSoldValue: 200,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+        {
+          issueDate: new Date(2026, 0, 20),
+          commercialMargin: {
+            commercialMarginTotalValue: 50,
+            commercialMarginTotalPercent: 25,
+            commercialSoldTotalValue: 200,
+            totalActiveSoldValue: 200,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+        {
+          issueDate: new Date(2026, 1, 5),
+          commercialMargin: {
+            commercialMarginTotalValue: 80,
+            commercialMarginTotalPercent: 40,
+            commercialSoldTotalValue: 200,
+            totalActiveSoldValue: 200,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 1,
+            itemsUnavailable: 0,
+            itemsActive: 1,
+            isComplete: true,
+            warnings: [],
+          },
+        },
+      ],
+      2026
+    );
+
+    assert.equal(rows[0]!.marginPercent, 37.5); // (100+50)/(200+200)
+    assert.equal(rows[0]!.marginAmount, 150);
+    assert.equal(rows[0]!.ordersCount, 2);
+    assert.equal(rows[1]!.marginPercent, 40);
+    assert.equal(rows[2]!.marginPercent, null);
   });
 });

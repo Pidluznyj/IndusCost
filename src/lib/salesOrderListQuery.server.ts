@@ -68,16 +68,26 @@ function parsePositiveIntQuery(value: unknown, fallback: number): number {
   return Math.trunc(n);
 }
 
-/** Aceita número livre (inclui vírgula decimal BR). Negativo/ inválido → null. */
+/** Aceita número livre (inclui milhar/decimal BR). Negativo/ inválido → null. */
 export function parseSalesOrderListNetValueParam(value: unknown): number | null {
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw == null || raw === "") return null;
   if (typeof raw === "number") {
     return Number.isFinite(raw) && raw >= 0 ? raw : null;
   }
-  const text = String(raw).trim();
+  const text = String(raw).trim().replace(/\s/g, "");
   if (!text) return null;
-  const normalized = text.replace(/\s/g, "").replace(",", ".");
+  let normalized: string;
+  if (text.includes(",")) {
+    // BR: 1.000,50 / 1000,50
+    normalized = text.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(text)) {
+    // BR milhar sem decimais: 1.000 / 10.000
+    normalized = text.replace(/\./g, "");
+  } else {
+    // 1000 / 1000.50
+    normalized = text;
+  }
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return parsed;

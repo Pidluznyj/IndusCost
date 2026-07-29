@@ -350,6 +350,110 @@ export function aggregateCommercialMarginPayloads(
   };
 }
 
+const MONTH_LABELS_PT = [
+  "jan",
+  "fev",
+  "mar",
+  "abr",
+  "mai",
+  "jun",
+  "jul",
+  "ago",
+  "set",
+  "out",
+  "nov",
+  "dez",
+] as const;
+
+export type CommercialMarginMonthlyOrderInput = {
+  issueDate: Date | string | null | undefined;
+  commercialMargin: SalesOrderCommercialMarginSummaryPayload | null | undefined;
+};
+
+/**
+ * Margem comercial % mês a mês — mesma ponderação do card
+ * (Σ R$ margem / Σ líquido coberto), agrupada por issueDate.
+ */
+export function buildMonthlyCommercialMarginRows(
+  orders: ReadonlyArray<CommercialMarginMonthlyOrderInput>,
+  year: number
+): Array<{
+  month: number;
+  monthLabel: string;
+  salesAmount: number;
+  taxAmount: number;
+  netSalesAmount: number;
+  costAmount: number;
+  marginAmount: number;
+  marginPercent: number | null;
+  ordersCount: number;
+}> {
+  const buckets = new Map<
+    number,
+    {
+      marginSum: number;
+      soldSum: number;
+      ordersCount: number;
+      hasCalculated: boolean;
+    }
+  >();
+  for (let m = 1; m <= 12; m += 1) {
+    buckets.set(m, {
+      marginSum: 0,
+      soldSum: 0,
+      ordersCount: 0,
+      hasCalculated: false,
+    });
+  }
+
+  for (const order of orders) {
+    const raw = order.issueDate;
+    const d =
+      raw instanceof Date ? raw : raw != null && raw !== "" ? new Date(String(raw)) : null;
+    if (!d || !Number.isFinite(d.getTime())) continue;
+    if (d.getFullYear() !== year) continue;
+    const month = d.getMonth() + 1;
+    const bucket = buckets.get(month);
+    if (!bucket) continue;
+    bucket.ordersCount += 1;
+
+    const cm = order.commercialMargin;
+    if (
+      !cm ||
+      cm.itemsCalculated <= 0 ||
+      cm.commercialMarginTotalValue == null ||
+      !Number.isFinite(cm.commercialMarginTotalValue)
+    ) {
+      continue;
+    }
+    bucket.hasCalculated = true;
+    bucket.marginSum += cm.commercialMarginTotalValue;
+    bucket.soldSum += cm.commercialSoldTotalValue ?? 0;
+  }
+
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const bucket = buckets.get(month)!;
+    const marginAmount = roundPricingMoney(bucket.marginSum);
+    const sold = roundPricingMoney(bucket.soldSum);
+    const marginPercent =
+      bucket.hasCalculated && sold > 0
+        ? roundPricingPercent((marginAmount / sold) * 100)
+        : null;
+    return {
+      month,
+      monthLabel: MONTH_LABELS_PT[index]!,
+      salesAmount: sold,
+      taxAmount: 0,
+      netSalesAmount: sold,
+      costAmount: 0,
+      marginAmount: bucket.hasCalculated ? marginAmount : 0,
+      marginPercent,
+      ordersCount: bucket.ordersCount,
+    };
+  });
+}
+
 /** Status de exibição canônico da margem comercial. */
 export function resolveCommercialMarginDisplayStatus(
   commercial: SalesOrderCommercialMarginSummaryPayload | null | undefined

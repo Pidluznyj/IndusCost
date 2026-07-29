@@ -46,7 +46,7 @@ function MarginPercentBarLabel(props: LabelProps) {
 }
 
 /**
- * Margem gerencial % mês a mês (motor oficial) — shell alinhado ao gráfico de pedidos.
+ * Margem comercial % mês a mês — mesma do card MARGEM COMERCIAL (ponderada por líquido coberto).
  */
 export function SalesOrderListMonthlyMarginPercentChart({
   rows,
@@ -74,9 +74,9 @@ export function SalesOrderListMonthlyMarginPercentChart({
   return (
     <FinanceBillingChartShell
       title={`Margem % por mês — ${selectedYear}`}
-      subtitle="Margem gerencial oficial (receita líquida − custo versionado), ponderada por receita. Mesma população da listagem."
+      subtitle="Margem comercial (mesmo motor do card), ponderada por valor líquido coberto. Mesma população da listagem."
       empty={empty}
-      emptyDescription="Sem margem calculável para o período (sem pedidos ou custo indisponível)."
+      emptyDescription="Sem margem comercial calculável para o período."
       testId="sales-orders-monthly-margin-percent-chart"
     >
       {({ height }) => (
@@ -100,7 +100,7 @@ export function SalesOrderListMonthlyMarginPercentChart({
             <Tooltip
               formatter={(value: number) => [
                 formatSalesOrderMarginPercent(value),
-                "Margem %",
+                "Margem comercial %",
               ]}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -108,8 +108,8 @@ export function SalesOrderListMonthlyMarginPercentChart({
               dataKey="marginPercent"
               name={
                 yearCtx.isSelectedYearCurrent
-                  ? `Margem % ${selectedYear} YTD`
-                  : `Margem % ${selectedYear}`
+                  ? `Margem comercial % ${selectedYear} YTD`
+                  : `Margem comercial % ${selectedYear}`
               }
               fill={colors.currentYearBar}
               radius={[4, 4, 0, 0]}

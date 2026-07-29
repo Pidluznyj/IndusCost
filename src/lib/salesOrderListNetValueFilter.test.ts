@@ -10,6 +10,8 @@ describe("salesOrderListQuery — valor líquido", () => {
   it("parse aceita número, vírgula BR e rejeita inválido", () => {
     assert.equal(parseSalesOrderListNetValueParam("1500.5"), 1500.5);
     assert.equal(parseSalesOrderListNetValueParam("1500,5"), 1500.5);
+    assert.equal(parseSalesOrderListNetValueParam("1.500,50"), 1500.5);
+    assert.equal(parseSalesOrderListNetValueParam("10.000"), 10000);
     assert.equal(parseSalesOrderListNetValueParam(" 2000 "), 2000);
     assert.equal(parseSalesOrderListNetValueParam(""), null);
     assert.equal(parseSalesOrderListNetValueParam("-10"), null);

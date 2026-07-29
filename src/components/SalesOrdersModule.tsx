@@ -4,7 +4,7 @@ import "@/src/components/sales/sales-order-report-print.css";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, Search, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
@@ -83,6 +83,42 @@ const SALES_ORDER_NET_VALUE_PRESETS = [
   { id: "5k-20k", label: "5–20 mil", min: "5000", max: "20000" },
   { id: "above-20k", label: "Acima 20 mil", min: "20000", max: "" },
 ] as const;
+
+/** Filtros efetivos da listagem/export — só mudam ao clicar em Pesquisar. */
+type SalesOrderListAppliedFilters = {
+  status: string;
+  hasInvoice: string;
+  receivableStatus: string;
+  customerId: string;
+  sellerKey: string;
+  startDate: string;
+  endDate: string;
+  minNetValue: string;
+  maxNetValue: string;
+  year: string;
+  month: string;
+  search: string;
+};
+
+function buildInitialSalesOrderListAppliedFilters(
+  year: string,
+  month: string
+): SalesOrderListAppliedFilters {
+  return {
+    status: "",
+    hasInvoice: "",
+    receivableStatus: "",
+    customerId: "",
+    sellerKey: "",
+    startDate: "",
+    endDate: "",
+    minNetValue: "",
+    maxNetValue: "",
+    year,
+    month,
+    search: "",
+  };
+}
 
 function FilterLabel({
   htmlFor,
@@ -209,9 +245,10 @@ function SalesOrderList() {
   const [maxNetValue, setMaxNetValue] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
   const [month, setMonth] = useState<string>(() => String(currentMonth));
-  // Busca inteligente: searchDraft é o input imediato; search é o valor com debounce.
   const [searchDraft, setSearchDraft] = useState("");
-  const [search, setSearch] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState<SalesOrderListAppliedFilters>(() =>
+    buildInitialSalesOrderListAppliedFilters(String(currentYear), String(currentMonth))
+  );
   const [exportingInternal, setExportingInternal] = useState(false);
   const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
   const [exportingReportPdf, setExportingReportPdf] = useState(false);
@@ -283,21 +320,22 @@ function SalesOrderList() {
 
   const monthlyChartsFilters = useMemo(
     () => ({
-      year: year ? Number(year) : currentYear,
-      status: status || undefined,
-      hasInvoice: hasInvoice || undefined,
-      receivableStatus: receivableStatus || undefined,
-      customerId: customerId || undefined,
-      sellerKey: sellerKey || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-      minNetValue: minNetValue.trim() || undefined,
-      maxNetValue: maxNetValue.trim() || undefined,
-      q: search || undefined,
+      year: appliedFilters.year ? Number(appliedFilters.year) : currentYear,
+      status: appliedFilters.status || undefined,
+      hasInvoice: appliedFilters.hasInvoice || undefined,
+      receivableStatus: appliedFilters.receivableStatus || undefined,
+      customerId: appliedFilters.customerId || undefined,
+      sellerKey: appliedFilters.sellerKey || undefined,
+      startDate: appliedFilters.startDate || undefined,
+      endDate: appliedFilters.endDate || undefined,
+      // Valor líquido De/Até filtra só o grid/export — não os gráficos.
+      q: appliedFilters.search || undefined,
     }),
-    [
-      year,
-      currentYear,
+    [appliedFilters, currentYear]
+  );
+
+  const applyListFilters = useCallback(() => {
+    setAppliedFilters({
       status,
       hasInvoice,
       receivableStatus,
@@ -305,94 +343,13 @@ function SalesOrderList() {
       sellerKey,
       startDate,
       endDate,
-      minNetValue,
-      maxNetValue,
-      search,
-    ]
-  );
-
-  useEffect(() => {
-    const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
-    return () => clearTimeout(handle);
-  }, [searchDraft]);
-
-  const listFiltersKey = useMemo(
-    () =>
-      JSON.stringify({
-        status,
-        hasInvoice,
-        receivableStatus,
-        customerId,
-        sellerKey,
-        startDate,
-        endDate,
-        minNetValue,
-        maxNetValue,
-        year,
-        month,
-        search,
-      }),
-    [
-      status,
-      hasInvoice,
-      receivableStatus,
-      customerId,
-      sellerKey,
-      startDate,
-      endDate,
-      minNetValue,
-      maxNetValue,
+      minNetValue: minNetValue.trim(),
+      maxNetValue: maxNetValue.trim(),
       year,
       month,
-      search,
-    ]
-  );
-  const sellerOptionsFiltersKey = useMemo(
-    () =>
-      JSON.stringify({
-        status,
-        hasInvoice,
-        receivableStatus,
-        customerId,
-        startDate,
-        endDate,
-        minNetValue,
-        maxNetValue,
-        year,
-        month,
-        search,
-      }),
-    [
-      status,
-      hasInvoice,
-      receivableStatus,
-      customerId,
-      startDate,
-      endDate,
-      minNetValue,
-      maxNetValue,
-      year,
-      month,
-      search,
-    ]
-  );
-  const prevListFiltersKeyRef = useRef<string | null>(null);
-
-  const listExportQuery = useMemo(() => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    if (hasInvoice) params.set("hasInvoice", hasInvoice);
-    if (receivableStatus) params.set("receivableStatus", receivableStatus);
-    if (customerId) params.set("customerId", customerId);
-    if (sellerKey) params.set("sellerKey", sellerKey);
-    if (startDate) params.set("startDate", startDate);
-    if (endDate) params.set("endDate", endDate);
-    if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
-    if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
-    if (year) params.set("year", year);
-    if (month) params.set("month", month);
-    if (search) params.set("q", search);
-    return params.toString();
+      search: searchDraft.trim(),
+    });
+    setCurrentPage(1);
   }, [
     status,
     hasInvoice,
@@ -405,8 +362,68 @@ function SalesOrderList() {
     maxNetValue,
     year,
     month,
-    search,
+    searchDraft,
   ]);
+
+  const clearListFilters = useCallback(() => {
+    setStatus("");
+    setHasInvoice("");
+    setReceivableStatus("");
+    setCustomerId("");
+    setCustomerSelection(null);
+    setSellerKey("");
+    setStartDate("");
+    setEndDate("");
+    setMinNetValue("");
+    setMaxNetValue("");
+    setYear("");
+    setMonth("");
+    setSearchDraft("");
+    setAppliedFilters(buildInitialSalesOrderListAppliedFilters("", ""));
+    setCurrentPage(1);
+  }, []);
+
+  const listFiltersKey = useMemo(
+    () => JSON.stringify(appliedFilters),
+    [appliedFilters]
+  );
+  const sellerOptionsFiltersKey = useMemo(
+    () =>
+      JSON.stringify({
+        status: appliedFilters.status,
+        hasInvoice: appliedFilters.hasInvoice,
+        receivableStatus: appliedFilters.receivableStatus,
+        customerId: appliedFilters.customerId,
+        startDate: appliedFilters.startDate,
+        endDate: appliedFilters.endDate,
+        minNetValue: appliedFilters.minNetValue,
+        maxNetValue: appliedFilters.maxNetValue,
+        year: appliedFilters.year,
+        month: appliedFilters.month,
+        search: appliedFilters.search,
+      }),
+    [appliedFilters]
+  );
+  const prevListFiltersKeyRef = useRef<string | null>(null);
+
+  const listExportQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (appliedFilters.status) params.set("status", appliedFilters.status);
+    if (appliedFilters.hasInvoice) params.set("hasInvoice", appliedFilters.hasInvoice);
+    if (appliedFilters.receivableStatus) {
+      params.set("receivableStatus", appliedFilters.receivableStatus);
+    }
+    if (appliedFilters.customerId) params.set("customerId", appliedFilters.customerId);
+    if (appliedFilters.sellerKey) params.set("sellerKey", appliedFilters.sellerKey);
+    if (appliedFilters.startDate) params.set("startDate", appliedFilters.startDate);
+    if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
+    if (appliedFilters.minNetValue) params.set("minNetValue", appliedFilters.minNetValue);
+    if (appliedFilters.maxNetValue) params.set("maxNetValue", appliedFilters.maxNetValue);
+    if (appliedFilters.year) params.set("year", appliedFilters.year);
+    if (appliedFilters.month) params.set("month", appliedFilters.month);
+    if (appliedFilters.search) params.set("q", appliedFilters.search);
+    return params.toString();
+  }, [appliedFilters]);
 
   const internalExportQuery = listExportQuery;
 
@@ -547,34 +564,27 @@ function SalesOrderList() {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
-      if (status) params.set("status", status);
-      if (hasInvoice) params.set("hasInvoice", hasInvoice);
-      if (receivableStatus) params.set("receivableStatus", receivableStatus);
-      if (customerId) params.set("customerId", customerId);
-      if (sellerKey) params.set("sellerKey", sellerKey);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
-      if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
-      if (year) params.set("year", year);
-      if (month) params.set("month", month);
-      if (search) params.set("q", search);
+      if (appliedFilters.status) params.set("status", appliedFilters.status);
+      if (appliedFilters.hasInvoice) params.set("hasInvoice", appliedFilters.hasInvoice);
+      if (appliedFilters.receivableStatus) {
+        params.set("receivableStatus", appliedFilters.receivableStatus);
+      }
+      if (appliedFilters.customerId) params.set("customerId", appliedFilters.customerId);
+      if (appliedFilters.sellerKey) params.set("sellerKey", appliedFilters.sellerKey);
+      if (appliedFilters.startDate) params.set("startDate", appliedFilters.startDate);
+      if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
+      if (appliedFilters.minNetValue) {
+        params.set("minNetValue", appliedFilters.minNetValue);
+      }
+      if (appliedFilters.maxNetValue) {
+        params.set("maxNetValue", appliedFilters.maxNetValue);
+      }
+      if (appliedFilters.year) params.set("year", appliedFilters.year);
+      if (appliedFilters.month) params.set("month", appliedFilters.month);
+      if (appliedFilters.search) params.set("q", appliedFilters.search);
       return params.toString();
     },
-    [
-      status,
-      hasInvoice,
-      receivableStatus,
-      customerId,
-      sellerKey,
-      startDate,
-      endDate,
-      minNetValue,
-      maxNetValue,
-      year,
-      month,
-      search,
-    ]
+    [appliedFilters]
   );
 
   const load = useCallback(
@@ -677,17 +687,19 @@ function SalesOrderList() {
     const ac = new AbortController();
     setSellerOptionsLoading(true);
     const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    if (hasInvoice) params.set("hasInvoice", hasInvoice);
-    if (receivableStatus) params.set("receivableStatus", receivableStatus);
-    if (customerId) params.set("customerId", customerId);
-    if (startDate) params.set("startDate", startDate);
-    if (endDate) params.set("endDate", endDate);
-    if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
-    if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
-    if (year) params.set("year", year);
-    if (month) params.set("month", month);
-    if (search) params.set("q", search);
+    if (appliedFilters.status) params.set("status", appliedFilters.status);
+    if (appliedFilters.hasInvoice) params.set("hasInvoice", appliedFilters.hasInvoice);
+    if (appliedFilters.receivableStatus) {
+      params.set("receivableStatus", appliedFilters.receivableStatus);
+    }
+    if (appliedFilters.customerId) params.set("customerId", appliedFilters.customerId);
+    if (appliedFilters.startDate) params.set("startDate", appliedFilters.startDate);
+    if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
+    if (appliedFilters.minNetValue) params.set("minNetValue", appliedFilters.minNetValue);
+    if (appliedFilters.maxNetValue) params.set("maxNetValue", appliedFilters.maxNetValue);
+    if (appliedFilters.year) params.set("year", appliedFilters.year);
+    if (appliedFilters.month) params.set("month", appliedFilters.month);
+    if (appliedFilters.search) params.set("q", appliedFilters.search);
     const q = params.toString();
     // Rota consumida: GET /api/sales-orders/seller-filter-options (via helper).
     void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
@@ -705,7 +717,7 @@ function SalesOrderList() {
         if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => ac.abort();
-  }, [sellerOptionsFiltersKey]);
+  }, [sellerOptionsFiltersKey, appliedFilters]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -739,9 +751,13 @@ function SalesOrderList() {
         - Ações separadas por divisor sutil; botões discretos (ghost) para não
           competir visualmente com os KPIs e a tabela.
       */}
-      <div
+      <form
         className="space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
         data-testid="sales-orders-filter-bar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          applyListFilters();
+        }}
       >
         <div className="grid grid-cols-12 gap-2">
           {/* Linha 1: período + status + busca */}
@@ -971,27 +987,22 @@ function SalesOrderList() {
         <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/70 pt-2 sales-orders-no-print">
           <button
             type="button"
-            onClick={() => {
-              setStatus("");
-              setHasInvoice("");
-              setReceivableStatus("");
-              setCustomerId("");
-              setCustomerSelection(null);
-              setSellerKey("");
-              setStartDate("");
-              setEndDate("");
-              setMinNetValue("");
-              setMaxNetValue("");
-              setYear("");
-              setMonth("");
-              setSearchDraft("");
-              setSearch("");
-              setCurrentPage(1);
-            }}
+            onClick={clearListFilters}
             className={SALES_FILTER_ACTION_BUTTON_CLASS}
             data-testid="sales-orders-clear-filters"
           >
             Limpar filtros
+          </button>
+          <button
+            type="submit"
+            className={cn(
+              SALES_FILTER_ACTION_BUTTON_CLASS,
+              "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+            )}
+            data-testid="sales-orders-apply-filters"
+          >
+            <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Pesquisar</span>
           </button>
           <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
           {allowExport ? (
@@ -1079,16 +1090,16 @@ function SalesOrderList() {
             </>
           ) : null}
         </div>
-      </div>
+      </form>
 
       <p className="text-xs text-muted-foreground">
         {total === 0 ? (
           <>Nenhum pedido encontrado para os filtros informados.</>
         ) : (
           <>
-            {search ? (
+            {appliedFilters.search ? (
               <>
-                Busca: <span className="font-semibold text-foreground">"{search}"</span> ·{" "}
+                Busca: <span className="font-semibold text-foreground">"{appliedFilters.search}"</span> ·{" "}
               </>
             ) : null}
             Exibindo{" "}
