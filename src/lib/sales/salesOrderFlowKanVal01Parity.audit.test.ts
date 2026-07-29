@@ -57,7 +57,10 @@ describe("KAN-VAL-01 — auditoria de paridade e regra genérica", () => {
   it("recompute pós-sync e rebuild direcionável existem", () => {
     const afterSync = read("src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts");
     const rebuild = read("src/lib/sales/salesOrderFlowRebuild.ts");
+    const o2cRebuild = read("scripts/rebuildOrderToCashAudit.ts");
     assert.match(afterSync, /runSalesOrderFlowRecomputeAfterNomusSync/);
     assert.match(rebuild, /--order=/);
+    assert.match(o2cRebuild, /runSalesOrderFlowRecomputeAfterNomusSync/);
+    assert.match(o2cRebuild, /order-to-cash-audit/);
   });
 });

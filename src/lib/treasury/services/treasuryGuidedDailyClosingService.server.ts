@@ -50,6 +50,7 @@ import {
   type TreasuryAuditDb,
 } from "./treasuryAuditService.server.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
+import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 import {
   addTreasuryMoney,
   normalizeTreasuryMoneyString,
@@ -430,7 +431,7 @@ export function createTreasuryGuidedDailyClosingService(deps: {
     const row = await prisma.treasuryFinancialAccount.findFirst({
       where: {
         isActive: true,
-        companyCode: { not: null },
+        ...treasuryCompanyCodePresentWhere(),
       },
       select: { companyCode: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],

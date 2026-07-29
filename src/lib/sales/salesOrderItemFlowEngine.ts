@@ -47,6 +47,11 @@ export type SalesOrderItemFlowDocumentAllocationInput = {
   /** Documento cancelado/inválido não cobre. Default true. */
   isValid?: boolean;
   isCanceled?: boolean;
+  /**
+   * true quando a qty veio de fallback (O2C sem quantityUsedForOrder).
+   * Gera DOCUMENT_QUANTITY_NOT_NORMALIZED.
+   */
+  quantityNotNormalized?: boolean;
 };
 
 export type SalesOrderItemFlowNfeAllocationInput = {
@@ -58,6 +63,11 @@ export type SalesOrderItemFlowNfeAllocationInput = {
   hasDocument?: boolean;
   /** Data de envio/saída normalizada presente. */
   hasShipDate?: boolean;
+  /**
+   * true quando a NF está ligada ao pedido mas sem alocação O2C por item
+   * em pedido multi-item (cobertura ambígua).
+   */
+  itemAllocationAmbiguous?: boolean;
 };
 
 export type SalesOrderItemFlowProductionLinkInput = {
@@ -412,6 +422,27 @@ export function resolveSalesOrderItemFlow(
   const invoicedQuantity = nfeAgg.quantity;
   const shippedQuantity = nfeAgg.quantity;
 
+  for (const row of input.documentAllocations ?? []) {
+    if (row.quantityNotNormalized === true && row.isCanceled !== true) {
+      pushInconsistency(
+        inconsistencies,
+        "DOCUMENT_QUANTITY_NOT_NORMALIZED",
+        "Alocação de documento de saída sem quantityUsedForOrder — qty do item usada como fallback."
+      );
+      break;
+    }
+  }
+  for (const row of input.nfeAllocations ?? []) {
+    if (row.itemAllocationAmbiguous === true) {
+      pushInconsistency(
+        inconsistencies,
+        "NFE_ITEM_ALLOCATION_AMBIGUOUS",
+        "NF-e vinculada ao pedido sem alocação O2C por item em pedido multi-item."
+      );
+      break;
+    }
+  }
+
   if (nfeAgg.anyCanceledWithCoverage) {
     pushInconsistency(
       inconsistencies,
@@ -747,12 +778,19 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const item = pack.items.find((i) => i.id === salesOrderItemId);
   if (!item) return null;
 
-  const links = pack.productionLinks.filter(
-    (l) =>
-      l.salesOrderItemId === item.id ||
-      (item.nomusItemExternalId != null &&
-        l.externalSalesOrderItemId === item.nomusItemExternalId)
-  );
+  const links = pack.productionLinks.filter((l) => {
+    if (l.salesOrderItemId === item.id) return true;
+    if (
+      item.nomusItemExternalId != null &&
+      l.externalSalesOrderItemId === item.nomusItemExternalId
+    ) {
+      return true;
+    }
+    // Fallback: itemNumber do vínculo OP == sequência Nomus do item.
+    const seq = item.nomusItemSequence?.trim();
+    const itemNumber = l.itemNumber?.trim();
+    return Boolean(seq && itemNumber && seq === itemNumber);
+  });
 
   const allocations = pack.allocations.filter(
     (a) => a.salesOrderItemId === item.id
@@ -768,15 +806,24 @@ export function resolveSalesOrderItemFlowFromEvidence(
       .map((d) => d.externalId)
   );
 
+  const orderedQtyFallback = item.quantity ?? 0;
   const documentAllocations: SalesOrderItemFlowDocumentAllocationInput[] =
     allocations
       .filter((a) => a.stockDocumentExternalId != null)
-      .map((a) => ({
-        allocationKey: a.auditKey,
-        quantity: a.quantityUsedForOrder ?? 0,
-        isCanceled: canceledDocIds.has(a.stockDocumentExternalId!),
-        isValid: !canceledDocIds.has(a.stockDocumentExternalId!),
-      }));
+      .map((a) => {
+        const canceled = canceledDocIds.has(a.stockDocumentExternalId!);
+        const rawQty = a.quantityUsedForOrder;
+        const qtyPositive = rawQty != null && Number(rawQty) > 0;
+        // O2C sem qty: fallback conservador para não travar em WAITING_OUTPUT_DOCUMENT.
+        const useFallback = !qtyPositive && !canceled;
+        return {
+          allocationKey: a.auditKey,
+          quantity: useFallback ? orderedQtyFallback : (rawQty ?? 0),
+          isCanceled: canceled,
+          isValid: !canceled,
+          quantityNotNormalized: useFallback,
+        };
+      });
 
   const nfeById = new Map(pack.nfes.map((n) => [n.externalId, n]));
   const nfeAllocations: SalesOrderItemFlowNfeAllocationInput[] = [];
@@ -789,7 +836,7 @@ export function resolveSalesOrderItemFlowFromEvidence(
       qtyRaw != null && Number(qtyRaw) > 0;
     const canceled = nfe?.isCanceled === true;
     // Qty 0/nula em NF não-cancelada: não “envenena” seenNfe — deixa o
-    // fallback validNfes cobrir com a qty do item (PD 02586: 7142 autorizada).
+    // fallback validNfes cobrir quando seguro (pedido mono-item).
     if (!qtyPositive && !canceled) continue;
 
     seenNfe.add(a.nfeExternalId);
@@ -805,6 +852,12 @@ export function resolveSalesOrderItemFlowFromEvidence(
       hasShipDate: false,
     });
   }
+
+  const activeItems = pack.items.filter(
+    (i) => i.nomusIsCanceled !== true && i.nomusIsStale !== true
+  );
+  const monoItemOrder = activeItems.length === 1;
+
   for (const nfe of pack.validNfes) {
     if (seenNfe.has(nfe.externalId)) continue;
     const linkedToOrder =
@@ -814,15 +867,17 @@ export function resolveSalesOrderItemFlowFromEvidence(
       );
     if (!linkedToOrder) continue;
     seenNfe.add(nfe.externalId);
+    // Multi-item sem O2C por item: não inventar cobertura com qty do item.
     nfeAllocations.push({
       nfeExternalId: nfe.externalId,
-      quantity: item.quantity,
+      quantity: monoItemOrder ? item.quantity : null,
       isCanceled: false,
       isValidForBilling: true,
       hasDocument: pack.stockDocuments.some(
         (d) => d.idNfe === nfe.externalId && d.isCancelled !== true
       ),
       hasShipDate: false,
+      itemAllocationAmbiguous: !monoItemOrder,
     });
   }
 

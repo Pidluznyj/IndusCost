@@ -16,6 +16,7 @@ import {
   normalizeTreasuryMoneyString,
   type TreasuryMoneyString,
 } from "../treasuryMoney.js";
+import { bindTreasuryOptionalUuidAccountFilter } from "../treasuryPrismaFilters.js";
 
 export type TreasuryDashboardDayFlowQuery = {
   civilDate: TreasuryCivilDate;
@@ -96,7 +97,8 @@ export function createTreasuryDashboardDayFlowRepository(
   return {
     async aggregateDayFlow(query) {
       const { gte, lt } = civilDayUtcRange(query.civilDate);
-      const accountIds = query.accountIds?.length ? query.accountIds : null;
+      const { filterByAccounts, accountIdList } =
+        bindTreasuryOptionalUuidAccountFilter(query.accountIds);
       const scenario = query.scenario;
 
       const arRows = await prisma.$queryRaw<AggRow[]>`
@@ -120,8 +122,8 @@ export function createTreasuryDashboardDayFlowRepository(
            AND c.status = 'ACTIVE'
           WHERE ar."sourcePresenceStatus" <> 'MISSING_CONFIRMED'
             AND (
-              ${accountIds}::text[] IS NULL
-              OR c."plannedAccountId" = ANY(${accountIds}::text[])
+              NOT ${filterByAccounts}
+              OR c."plannedAccountId" = ANY(${accountIdList}::uuid[])
             )
         )
         SELECT
@@ -177,8 +179,8 @@ export function createTreasuryDashboardDayFlowRepository(
            AND c.status = 'ACTIVE'
           WHERE ap."sourcePresenceStatus" <> 'MISSING_CONFIRMED'
             AND (
-              ${accountIds}::text[] IS NULL
-              OR c."plannedAccountId" = ANY(${accountIds}::text[])
+              NOT ${filterByAccounts}
+              OR c."plannedAccountId" = ANY(${accountIdList}::uuid[])
             )
         )
         SELECT

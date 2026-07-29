@@ -14,7 +14,9 @@ export type SalesOrderFlowRecomputeAfterSyncSource =
   | "nfes"
   | "sales-order-nfe-links"
   | "production-order-sales-links"
-  | "cut-fulfillment-cancel";
+  | "cut-fulfillment-cancel"
+  /** Após apply do rebuild OrderToCashAudit (facts materializados). */
+  | "order-to-cash-audit";
 
 export type SalesOrderFlowRecomputeAfterSyncTrigger = {
   source: SalesOrderFlowRecomputeAfterSyncSource;

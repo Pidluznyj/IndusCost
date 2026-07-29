@@ -621,4 +621,273 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     assert.ok(r!.invoicedQuantity.gt(0));
     assert.doesNotMatch(r!.stageReason, /falta NF-e válida/i);
   });
+
+  it("FIX-01: O2C DS com quantityUsedForOrder 0 → fallback qty do item + inconsistência", () => {
+    const ORDER = "33333333-3333-3333-3333-333333333333";
+    const ITEM = "cccccccc-cccc-cccc-cccc-ccccccccccc1";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER,
+          orderCode: "PD-FIX01",
+          status: "SENT_TO_NOMUS",
+          customerId: "c1",
+          externalSalesOrderId: 301,
+          items: [
+            {
+              id: ITEM,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "SKU",
+              productNameSnapshot: "Prod",
+              quantity: 10,
+              nomusQuantityFulfilled: 0,
+              nomusItemStatusRaw: "2",
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemExternalId: 701,
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p1",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      productionLinks: [
+        {
+          id: "l1",
+          productionOrderId: "op1",
+          productionOrderExternalId: 1,
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          externalSalesOrderId: 301,
+          externalSalesOrderItemId: 701,
+          linkedQuantity: 10,
+          isCurrent: true,
+        },
+      ],
+      productionOrders: [
+        { id: "op1", externalId: 1, quantity: 10, status: "Liberada" },
+      ],
+      stockDocuments: [
+        {
+          id: "doc1",
+          externalId: 9101,
+          statusRaw: "EMITIDO",
+          isCancelled: false,
+          externalSalesOrderId: 301,
+        },
+      ],
+      allocations: [
+        {
+          auditKey: "alloc-ds-zero",
+          runId: "run-1",
+          lineType: "STOCK_DOCUMENT",
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          stockDocumentExternalId: 9101,
+          quantityUsedForOrder: 0,
+        },
+      ],
+    });
+    const pack = map.get(ORDER)!;
+    const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
+    assert.ok(r);
+    assert.equal(r!.documentedQuantity.eq(10), true);
+    assert.equal(r!.currentStage, "WAITING_NFE");
+    assert.ok(
+      r!.inconsistencies.some((i) => i.code === "DOCUMENT_QUANTITY_NOT_NORMALIZED")
+    );
+  });
+
+  it("FIX-02: NF order-level em multi-item sem O2C → não inventa cobertura por item", () => {
+    const ORDER = "44444444-4444-4444-4444-444444444444";
+    const ITEM_A = "dddddddd-dddd-dddd-dddd-ddddddddddd1";
+    const ITEM_B = "dddddddd-dddd-dddd-dddd-ddddddddddd2";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER,
+          orderCode: "PD-FIX02",
+          status: "SENT_TO_NOMUS",
+          customerId: "c1",
+          items: [
+            {
+              id: ITEM_A,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "A",
+              productNameSnapshot: "Item A",
+              quantity: 10,
+              nomusQuantityFulfilled: 0,
+              nomusItemStatusRaw: "2",
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemExternalId: 801,
+            },
+            {
+              id: ITEM_B,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "B",
+              productNameSnapshot: "Item B",
+              quantity: 5,
+              nomusQuantityFulfilled: 0,
+              nomusItemStatusRaw: "2",
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemExternalId: 802,
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p1",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      productionLinks: [
+        {
+          id: "la",
+          productionOrderId: "op1",
+          productionOrderExternalId: 1,
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM_A,
+          externalSalesOrderId: 402,
+          externalSalesOrderItemId: 801,
+          linkedQuantity: 10,
+          isCurrent: true,
+        },
+        {
+          id: "lb",
+          productionOrderId: "op2",
+          productionOrderExternalId: 2,
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM_B,
+          externalSalesOrderId: 402,
+          externalSalesOrderItemId: 802,
+          linkedQuantity: 5,
+          isCurrent: true,
+        },
+      ],
+      productionOrders: [
+        { id: "op1", externalId: 1, quantity: 10, status: "Liberada" },
+        { id: "op2", externalId: 2, quantity: 5, status: "Liberada" },
+      ],
+      stockDocuments: [
+        {
+          id: "doc-a",
+          externalId: 9201,
+          statusRaw: "EMITIDO",
+          isCancelled: false,
+          idNfe: 8001,
+        },
+      ],
+      allocations: [
+        {
+          auditKey: "alloc-ds-a",
+          runId: "run-1",
+          lineType: "STOCK_DOCUMENT",
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM_A,
+          stockDocumentExternalId: 9201,
+          quantityUsedForOrder: 10,
+        },
+      ],
+      nfeLinks: [
+        {
+          id: "nfe-link",
+          salesOrderId: ORDER,
+          nfeExternalId: 8001,
+          nfeStatus: 4,
+          nfeNumber: "8001",
+        },
+      ],
+      nomusNfes: [
+        { id: "n8001", externalId: 8001, numero: "8001", serie: "1", status: 4 },
+      ],
+    });
+    const pack = map.get(ORDER)!;
+    const ra = resolveSalesOrderItemFlowFromEvidence(pack, ITEM_A)!;
+    const rb = resolveSalesOrderItemFlowFromEvidence(pack, ITEM_B)!;
+    // Sem alocação O2C de NF por item: multi-item não usa qty do item.
+    assert.equal(ra.invoicedQuantity.eq(0), true);
+    assert.equal(rb.invoicedQuantity.eq(0), true);
+    assert.equal(ra.currentStage, "WAITING_NFE");
+    assert.ok(
+      ra.inconsistencies.some((i) => i.code === "NFE_ITEM_ALLOCATION_AMBIGUOUS")
+    );
+    assert.ok(
+      rb.inconsistencies.some((i) => i.code === "NFE_ITEM_ALLOCATION_AMBIGUOUS")
+    );
+  });
+
+  it("FIX-04: OP vincula por itemNumber == nomusItemSequence quando IDs faltam", () => {
+    const ORDER = "55555555-5555-5555-5555-555555555555";
+    const ITEM = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER,
+          orderCode: "PD-FIX04",
+          status: "SENT_TO_NOMUS",
+          customerId: "c1",
+          items: [
+            {
+              id: ITEM,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "SKU",
+              productNameSnapshot: "Prod",
+              quantity: 8,
+              nomusQuantityFulfilled: 0,
+              nomusItemStatusRaw: "2",
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemExternalId: null,
+              nomusItemSequence: "3",
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p1",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      productionLinks: [
+        {
+          id: "l-seq",
+          productionOrderId: "op1",
+          productionOrderExternalId: 99,
+          salesOrderId: ORDER,
+          salesOrderItemId: null,
+          externalSalesOrderId: 555,
+          externalSalesOrderItemId: 99999,
+          itemNumber: "3",
+          linkedQuantity: 8,
+          isCurrent: true,
+        },
+      ],
+      productionOrders: [
+        { id: "op1", externalId: 99, quantity: 8, status: "Liberada" },
+      ],
+    });
+    const pack = map.get(ORDER)!;
+    const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
+    assert.ok(r);
+    assert.equal(r!.productionOrderQuantity.eq(8), true);
+    assert.notEqual(r!.currentStage, "WAITING_PRODUCTION_ORDER");
+    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+  });
 });

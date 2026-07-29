@@ -19,6 +19,7 @@ import {
   type TreasuryMoneyString,
 } from "../treasuryMoney.js";
 import { TREASURY_DEFAULT_COMPANY_CODE } from "../domain/treasuryProjectionRecalcAfterNomusSync.js";
+import { bindTreasuryOptionalUuidAccountFilter } from "../treasuryPrismaFilters.js";
 
 export type TreasuryReportFactsQuery = {
   reportKey: TreasuryReportKey;
@@ -364,7 +365,8 @@ async function loadPlannedVsActual(
   query: TreasuryReportFactsQuery
 ): Promise<TreasuryReportFacts> {
   const { gte, lt } = civilRange(query.from, query.to);
-  const accountIds = query.accountIds.length ? query.accountIds : null;
+  const { filterByAccounts, accountIdList } =
+    bindTreasuryOptionalUuidAccountFilter(query.accountIds);
   const scenario = query.scenario;
 
   type Agg = {
@@ -394,8 +396,8 @@ async function loadPlannedVsActual(
          AND c.status = 'ACTIVE'
         WHERE ar."sourcePresenceStatus" <> 'MISSING_CONFIRMED'
           AND (
-            ${accountIds}::text[] IS NULL
-            OR c."plannedAccountId" = ANY(${accountIds}::text[])
+            NOT ${filterByAccounts}
+            OR c."plannedAccountId" = ANY(${accountIdList}::uuid[])
           )
       )
       SELECT
@@ -436,8 +438,8 @@ async function loadPlannedVsActual(
          AND c.status = 'ACTIVE'
         WHERE ap."sourcePresenceStatus" <> 'MISSING_CONFIRMED'
           AND (
-            ${accountIds}::text[] IS NULL
-            OR c."plannedAccountId" = ANY(${accountIds}::text[])
+            NOT ${filterByAccounts}
+            OR c."plannedAccountId" = ANY(${accountIdList}::uuid[])
           )
       )
       SELECT

@@ -24,6 +24,7 @@ import {
   type TreasuryDailyClosingPreviewService,
 } from "./treasuryDailyClosingPreviewService.server.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
+import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 
 export type TreasuryGuidedTodayActor = {
   userId: string;
@@ -90,7 +91,7 @@ async function resolveGuidedCompanyCode(
   const row = await prisma.treasuryFinancialAccount.findFirst({
     where: {
       isActive: true,
-      companyCode: { not: null },
+      ...treasuryCompanyCodePresentWhere(),
       ...(accountIds?.length ? { id: { in: accountIds } } : {}),
     },
     select: { companyCode: true },

@@ -1,8 +1,10 @@
 /**
  * Rebuild oficial da camada materializada OrderToCashAudit (Run + Fact).
  *
- * Grava somente OrderToCashAuditRun / OrderToCashAuditFact.
- * Não altera SalesOrder, NF, CR, Fluxo, Comissões nem demais módulos oficiais.
+ * Grava OrderToCashAuditRun / OrderToCashAuditFact.
+ * Após apply bem-sucedido, dispara recomputação incremental do Fluxo de Pedidos
+ * (snapshot Kanban) para os salesOrderIds cobertos pelos facts — soft-fail.
+ * Não altera SalesOrder, NF, CR nem Comissões.
  * Não chama Nomus — usa somente a base local já sincronizada.
  *
  * Uso:
@@ -51,6 +53,10 @@ import {
   type OrderToCashRebuildCliOptions,
 } from "../src/lib/sales/orderToCashAuditRebuild.ts";
 import { mergeSalesOrderWhereWithPortfolioOperationalGate } from "../src/lib/finance/financePortfolioOperationalOrderGate.server.ts";
+import {
+  buildSalesOrderFlowRecomputeAfterSyncTrigger,
+  runSalesOrderFlowRecomputeAfterNomusSync,
+} from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
 
 const prisma = new PrismaClient();
 const LOG = "[order-to-cash-audit-rebuild]";
@@ -785,6 +791,33 @@ async function main(): Promise<void> {
   );
   console.log(`total inserido: ${status === "FAILED" ? 0 : summary.totalFacts}`);
   console.log(`${LOG} APPLY concluído — status=${status} runId=${runId}`);
+
+  if (status !== "FAILED") {
+    const salesOrderIds = [
+      ...new Set(
+        built.rows
+          .map((r) => r.salesOrderId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      ),
+    ];
+    if (salesOrderIds.length > 0) {
+      try {
+        await runSalesOrderFlowRecomputeAfterNomusSync(
+          prisma,
+          buildSalesOrderFlowRecomputeAfterSyncTrigger({
+            source: "order-to-cash-audit",
+            syncMode: "apply",
+            salesOrderIds,
+          })
+        );
+      } catch (err) {
+        console.error(
+          `${LOG} sales-order-flow recompute falhou (O2C apply segue):`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+  }
 
   process.exitCode = exitCodeForOrderToCashApplyStatus(status);
 }

@@ -219,6 +219,7 @@ describe("salesOrderFlowRecomputeAfterNomusSync (OP-57)", () => {
       "cut-fulfillment-cancel",
       "sales-order-nfe-links",
       "production-order-sales-links",
+      "order-to-cash-audit",
     ] as const) {
       const trigger = buildSalesOrderFlowRecomputeAfterSyncTrigger({
         source,
