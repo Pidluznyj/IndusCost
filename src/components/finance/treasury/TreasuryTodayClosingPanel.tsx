@@ -274,13 +274,14 @@ export function TreasuryTodayClosingPanel(props: TreasuryTodayClosingPanelProps)
             const draft = drafts[account.accountId];
             if (!draft) return null;
             return (
-              <AccountFinalBalanceCard
-                key={account.accountId}
-                account={account}
-                draft={draft}
-                canManage={canManage}
-                onDraftChange={onDraftChange}
-              />
+              <React.Fragment key={account.accountId}>
+                <AccountFinalBalanceCard
+                  account={account}
+                  draft={draft}
+                  canManage={canManage}
+                  onDraftChange={onDraftChange}
+                />
+              </React.Fragment>
             );
           })}
           <div className="flex flex-wrap gap-2">

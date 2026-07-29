@@ -206,15 +206,11 @@ export function PredictiveCashFlowTimelineChart({
 
   const chartData = useMemo(() => {
     return board.points.map((p) => {
-      const row: PredictiveEvolutionSeriesPoint & Record<string, number> = {
+      const accountBalances = p.byAccount ?? {};
+      return {
         ...p,
-      };
-      if (p.byAccount) {
-        for (const [id, value] of Object.entries(p.byAccount)) {
-          row[id] = value;
-        }
-      }
-      return row;
+        ...accountBalances,
+      } as PredictiveEvolutionSeriesPoint & Record<string, number>;
     });
   }, [board.points]);
 

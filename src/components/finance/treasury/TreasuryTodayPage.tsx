@@ -89,21 +89,18 @@ export function TreasuryTodayPage() {
   );
 
   return (
-    <FinanceBiDashboardShell
-      header={
-        <FinanceExecutivePageHeader
-          title={TREASURY_TODAY_PAGE_TITLE}
-          subtitle={subtitle}
-          updatedAt={headerUpdatedAt}
-          actions={[
-            buildTreasurySimpleRefreshHeaderAction({
-              onClick: () => void load(),
-              disabled: loading || !canView,
-            }),
-          ]}
-        />
-      }
-    >
+    <FinanceBiDashboardShell>
+      <FinanceExecutivePageHeader
+        title={TREASURY_TODAY_PAGE_TITLE}
+        subtitle={subtitle}
+        updatedAt={headerUpdatedAt}
+        actions={[
+          buildTreasurySimpleRefreshHeaderAction({
+            onClick: () => void load(),
+            disabled: loading || !canView,
+          }),
+        ]}
+      />
       <TreasuryTodayPanel
         viewKind={viewKind}
         data={data}

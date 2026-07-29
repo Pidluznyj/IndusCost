@@ -94,7 +94,7 @@ function TodayMetricCard({
   label: string;
   value: string;
   testId: string;
-  tone?: TreasuryTodayMetricTone | "info";
+  tone?: TreasuryTodayMetricTone;
 }) {
   return (
     <div
@@ -442,7 +442,9 @@ function ReadyBody({ data }: { data: TreasuryGuidedTodayDto }) {
           </h3>
           <ol className="space-y-2" data-testid="treasury-today-steps">
             {data.steps.map((step) => (
-              <RoutineStepRow key={step.id} step={step} />
+              <React.Fragment key={step.id}>
+                <RoutineStepRow step={step} />
+              </React.Fragment>
             ))}
           </ol>
         </section>
@@ -460,7 +462,9 @@ function ReadyBody({ data }: { data: TreasuryGuidedTodayDto }) {
           {data.attention.length > 0 ? (
             <ul className="space-y-2" data-testid="treasury-today-attention">
               {data.attention.map((item) => (
-                <AttentionItem key={item.id} item={item} />
+                <React.Fragment key={item.id}>
+                  <AttentionItem item={item} />
+                </React.Fragment>
               ))}
             </ul>
           ) : (
@@ -496,7 +500,9 @@ function ReadyBody({ data }: { data: TreasuryGuidedTodayDto }) {
         </div>
         <div className="space-y-3" data-testid="treasury-today-accounts">
           {data.accounts.map((acc) => (
-            <AccountRow key={acc.accountId} acc={acc} />
+            <React.Fragment key={acc.accountId}>
+              <AccountRow acc={acc} />
+            </React.Fragment>
           ))}
         </div>
       </section>

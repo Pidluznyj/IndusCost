@@ -201,21 +201,18 @@ export function TreasurySimplePayablesReviewPage() {
   };
 
   return (
-    <FinanceBiDashboardShell
-      header={
-        <FinanceExecutivePageHeader
-          title={TREASURY_SIMPLE_PAYABLES_REVIEW_TITLE}
-          subtitle={TREASURY_SIMPLE_PAYABLES_REVIEW_SUBTITLE}
-          updatedAt={headerUpdatedAt}
-          actions={[
-            buildTreasurySimpleRefreshHeaderAction({
-              onClick: () => void load(),
-              disabled: loading || !canView,
-            }),
-          ]}
-        />
-      }
-    >
+    <FinanceBiDashboardShell>
+      <FinanceExecutivePageHeader
+        title={TREASURY_SIMPLE_PAYABLES_REVIEW_TITLE}
+        subtitle={TREASURY_SIMPLE_PAYABLES_REVIEW_SUBTITLE}
+        updatedAt={headerUpdatedAt}
+        actions={[
+          buildTreasurySimpleRefreshHeaderAction({
+            onClick: () => void load(),
+            disabled: loading || !canView,
+          }),
+        ]}
+      />
       <TreasurySimplePayablesReviewPanel
         viewKind={viewKind}
         rows={filtered}

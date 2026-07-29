@@ -48,7 +48,7 @@ export type PredictiveEvolutionBoard = {
   fromDate: string;
   toDate: string;
   points: PredictiveEvolutionSeriesPoint[];
-  starts: PredictiveEvolutionAccountStart[];
+  starts: readonly PredictiveEvolutionAccountStart[];
   startSourceSummary: PredictiveEvolutionStartSource;
   accounts: readonly { id: string; name: string; color: string }[];
 };

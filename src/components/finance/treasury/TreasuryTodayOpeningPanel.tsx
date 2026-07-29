@@ -331,13 +331,14 @@ export function TreasuryTodayOpeningPanel(props: TreasuryTodayOpeningPanelProps)
           const draft = drafts[account.accountId];
           if (!draft) return null;
           return (
-            <AccountRow
-              key={account.accountId}
-              account={account}
-              draft={draft}
-              canManage={canManage}
-              onDraftChange={onDraftChange}
-            />
+            <React.Fragment key={account.accountId}>
+              <AccountRow
+                account={account}
+                draft={draft}
+                canManage={canManage}
+                onDraftChange={onDraftChange}
+              />
+            </React.Fragment>
           );
         })}
       </div>

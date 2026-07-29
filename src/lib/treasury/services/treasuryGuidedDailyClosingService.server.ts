@@ -609,7 +609,7 @@ export function createTreasuryGuidedDailyClosingService(deps: {
           await writeTreasuryAuditLog(
             tx,
             buildTreasuryCreatedAudit({
-              entityType: "DAILY_CLOSING_BANK",
+              entityType: "DAILY_CLOSING",
               entityId: `${row.seed.accountId}:${civilDate}`,
               after: {
                 ...row.plan.audit.afterJson,

@@ -97,7 +97,12 @@ export type TreasuryTodayViewKind =
   | "empty"
   | "ready";
 
-export type TreasuryTodayMetricTone = "neutral" | "success" | "warning" | "danger";
+export type TreasuryTodayMetricTone =
+  | "neutral"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info";
 
 export function todayCivilDateLocal(): string {
   return todayTreasuryCivilDateInSaoPaulo();

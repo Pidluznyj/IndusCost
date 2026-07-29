@@ -223,21 +223,18 @@ export function TreasuryTodayClosingPage() {
   });
 
   return (
-    <FinanceBiDashboardShell
-      header={
-        <FinanceExecutivePageHeader
-          title={TREASURY_TODAY_CLOSING_PAGE_TITLE}
-          subtitle={TREASURY_TODAY_CLOSING_PAGE_SUBTITLE}
-          updatedAt={headerUpdatedAt}
-          actions={[
-            buildTreasurySimpleRefreshHeaderAction({
-              onClick: () => void load(),
-              disabled: loading || !canView,
-            }),
-          ]}
-        />
-      }
-    >
+    <FinanceBiDashboardShell>
+      <FinanceExecutivePageHeader
+        title={TREASURY_TODAY_CLOSING_PAGE_TITLE}
+        subtitle={TREASURY_TODAY_CLOSING_PAGE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
+        actions={[
+          buildTreasurySimpleRefreshHeaderAction({
+            onClick: () => void load(),
+            disabled: loading || !canView,
+          }),
+        ]}
+      />
       <TreasuryTodayClosingPanel
         viewKind={viewKind}
         step={step}

@@ -476,21 +476,18 @@ export function TreasurySimpleOfxInvestigationPage() {
   );
 
   return (
-    <FinanceBiDashboardShell
-      header={
-        <FinanceExecutivePageHeader
-          title={TREASURY_SIMPLE_OFX_PAGE_TITLE}
-          subtitle={TREASURY_SIMPLE_OFX_PAGE_SUBTITLE}
-          updatedAt={headerUpdatedAt}
-          actions={[
-            buildTreasurySimpleRefreshHeaderAction({
-              onClick: () => void load(),
-              disabled: loading || !canView,
-            }),
-          ]}
-        />
-      }
-    >
+    <FinanceBiDashboardShell>
+      <FinanceExecutivePageHeader
+        title={TREASURY_SIMPLE_OFX_PAGE_TITLE}
+        subtitle={TREASURY_SIMPLE_OFX_PAGE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
+        actions={[
+          buildTreasurySimpleRefreshHeaderAction({
+            onClick: () => void load(),
+            disabled: loading || !canView,
+          }),
+        ]}
+      />
       <TreasurySimpleOfxInvestigationPanel
         viewKind={viewKind}
         step={step}

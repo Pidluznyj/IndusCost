@@ -264,7 +264,9 @@ export function PredictiveCashFlowReconciliationPanel({
             </thead>
             <tbody>
               {view.rows.map((row) => (
-                <AccountRow key={row.accountId} row={row} />
+                <React.Fragment key={row.accountId}>
+                  <AccountRow row={row} />
+                </React.Fragment>
               ))}
             </tbody>
             <tfoot>
