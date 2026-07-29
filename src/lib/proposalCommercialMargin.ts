@@ -155,7 +155,10 @@ export type CalculateProposalItemCommercialMarginInput = {
   warnings?: string[];
 };
 
-/** Lê fração explícita: ausente ≠ zero. Aceita percentuais > 1 convertendo /100. */
+/** Lê fração explícita: ausente ≠ zero. Aceita percentuais > 1 convertendo /100.
+ * Atenção: valor exatamente `1` permanece 1.0 (=100%) — para comissão use
+ * `normalizeCommercialCommissionRateFraction` (1 = 1%).
+ */
 export function readExplicitRate(
   value: unknown
 ): { present: true; value: number } | { present: false } {
@@ -355,9 +358,19 @@ export function calculateProposalItemCommercialMargin(
   let tierPosition: CommercialPricePositionKind | null = null;
   const tierWarnings: string[] = [];
 
-  const providedCommission = readExplicitRate(input.commissionRate);
-  if (providedCommission.present) {
-    commissionRate = normalizeCommercialCommissionRateFraction(providedCommission.value);
+  const providedCommissionRaw =
+    input.commissionRate == null || input.commissionRate === ""
+      ? null
+      : typeof input.commissionRate === "number"
+        ? input.commissionRate
+        : Number(input.commissionRate);
+  if (
+    providedCommissionRaw != null &&
+    Number.isFinite(providedCommissionRaw) &&
+    providedCommissionRaw >= 0
+  ) {
+    // Percentual de tabela (1 = 1%) ou fração já normalizada (< 1).
+    commissionRate = normalizeCommercialCommissionRateFraction(providedCommissionRaw);
   } else {
     const tiersInput = input.tiers ?? [];
     if (!tiersInput.length) {

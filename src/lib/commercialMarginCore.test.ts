@@ -4,6 +4,7 @@ import {
   calculateCommercialMarginFromNetUnitPrice,
   calculateSalePriceFromCommercialMarginRates,
   interpolateCommercialCommissionRate,
+  normalizeCommercialCommissionRateFraction,
   resolveCommercialCommissionFromTiers,
   resolveCommercialPricePosition,
   validateAndSortCommercialMarginTiers,
@@ -199,6 +200,27 @@ describe("commercialMarginCore — comissão proporcional e teto", () => {
     assert.equal(resolved.commissionRate, 0.01);
     assert.equal(resolved.position.position, "BELOW_LOWEST");
   });
+
+  it("abaixo da menor: política 1 (1%) não vira 100%", () => {
+    const resolved = resolveCommercialCommissionFromTiers({
+      netUnitPrice: 100,
+      tiers: tiers334857(),
+      belowLowestCommissionRate: 1,
+    });
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) throw new Error(resolved.message);
+    assert.equal(resolved.commissionRate, 0.01);
+  });
+});
+
+describe("normalizeCommercialCommissionRateFraction", () => {
+  it("1 = 1%, 6 = 6%, fração < 1 permanece", () => {
+    assert.equal(normalizeCommercialCommissionRateFraction(1), 0.01);
+    assert.equal(normalizeCommercialCommissionRateFraction(6), 0.06);
+    assert.equal(normalizeCommercialCommissionRateFraction(4.5), 0.045);
+    assert.equal(normalizeCommercialCommissionRateFraction(0.06), 0.06);
+    assert.equal(normalizeCommercialCommissionRateFraction(0.01), 0.01);
+  });
 });
 
 describe("commercialMarginCore — fórmula inversa e identidade", () => {
@@ -216,6 +238,35 @@ describe("commercialMarginCore — fórmula inversa e identidade", () => {
     assert.equal(r.ok, true);
     if (!r.ok) throw new Error(r.message);
     assert.ok(r.commercialMarginPercent < 0);
+  });
+
+  it("13b. commissionRate=1 no núcleo é 1%, não 100%", () => {
+    const dirty = calculateCommercialMarginFromNetUnitPrice({
+      netUnitPrice: 9.98,
+      quantity: 30,
+      frozenCostUnit: 3.94,
+      taxRate: 0.2675,
+      commissionRate: 1,
+      freightRate: 0.03,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: 0,
+    });
+    const ok = calculateCommercialMarginFromNetUnitPrice({
+      netUnitPrice: 9.98,
+      quantity: 30,
+      frozenCostUnit: 3.94,
+      taxRate: 0.2675,
+      commissionRate: 0.01,
+      freightRate: 0.03,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: 0,
+    });
+    assert.equal(dirty.ok, true);
+    assert.equal(ok.ok, true);
+    if (!dirty.ok || !ok.ok) throw new Error("calc");
+    assert.ok(Math.abs(dirty.commercialMarginPercent - ok.commercialMarginPercent) < 1e-9);
+    assert.ok(dirty.commercialMarginPercent > -50);
+    assert.ok(Math.abs(dirty.commissionValue - 9.98 * 30 * 0.01) < 0.02);
   });
 
   it("15. identidade direta/inversa recupera a margem", () => {

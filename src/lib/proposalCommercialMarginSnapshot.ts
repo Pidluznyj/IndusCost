@@ -11,7 +11,10 @@
  * Zero explícito, null e chave ausente são distintos na leitura.
  * Legado sem snapshot → null (sem backfill / sem zero falso).
  */
-import type { CommercialMarginTier } from "./commercialMarginCore.js";
+import {
+  normalizeCommercialCommissionRateFraction,
+  type CommercialMarginTier,
+} from "./commercialMarginCore.js";
 import {
   calculateProposalItemCommercialMargin,
   type ProposalCommercialMarginItemPayload,
@@ -167,7 +170,12 @@ function normalizeTier(raw: unknown): ProposalCommercialMarginFreezeTier | null 
     return null;
   }
   if (!(salePrice > 0) || commissionRate < 0) return null;
-  return { tierId, marginRate, salePrice, commissionRate };
+  return {
+    tierId,
+    marginRate,
+    salePrice,
+    commissionRate: normalizeCommercialCommissionRateFraction(commissionRate),
+  };
 }
 
 export function freezeTiersToCommercialMarginTiers(
@@ -177,7 +185,7 @@ export function freezeTiersToCommercialMarginTiers(
     id: t.tierId,
     marginRate: t.marginRate,
     salePrice: t.salePrice,
-    commissionRate: t.commissionRate,
+    commissionRate: normalizeCommercialCommissionRateFraction(t.commissionRate),
   }));
 }
 

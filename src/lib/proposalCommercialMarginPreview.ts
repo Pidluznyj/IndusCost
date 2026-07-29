@@ -2,7 +2,10 @@
  * Prévia browser-safe da margem comercial da Proposta.
  * Usa o motor puro — não duplica fórmula; backend continua autoritativo no save.
  */
-import type { CommercialMarginTier } from "./commercialMarginCore.js";
+import {
+  normalizeCommercialCommissionRateFraction,
+  type CommercialMarginTier,
+} from "./commercialMarginCore.js";
 import {
   calculateProposalItemCommercialMargin,
   summarizeProposalCommercialMargins,
@@ -10,7 +13,7 @@ import {
   type ProposalCommercialMarginItemPayload,
   type ProposalCommercialMarginSummaryPayload,
 } from "./proposalCommercialMargin.js";
-import { roundPricingPercent } from "./pricingCalculations.js";
+import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import {
   buildProposalCommercialMarginFreeze,
   recalculateProposalCommercialMarginFromFrozenFormation,
@@ -98,6 +101,10 @@ function commercialMarginItemFromStoredSnapshot(
   const commercialMarginPercent = roundPricingPercent(
     snapshot.commercialMarginRate * 100
   );
+  const commissionRate =
+    snapshot.calculatedCommissionRate == null
+      ? null
+      : normalizeCommercialCommissionRateFraction(snapshot.calculatedCommissionRate);
   return {
     quantity,
     referenceTableUnitPrice: snapshot.referenceTableUnitPrice,
@@ -117,8 +124,11 @@ function commercialMarginItemFromStoredSnapshot(
     freightAbsoluteValue: null,
     otherVariablesRate: snapshot.otherVariablesRate,
     otherVariablesValue: null,
-    commissionRate: snapshot.calculatedCommissionRate,
-    commissionValue: null,
+    commissionRate,
+    commissionValue:
+      commissionRate != null && snapshot.finalNetLineValue != null
+        ? roundPricingMoney(snapshot.finalNetLineValue * commissionRate)
+        : null,
     lowerTier: null,
     upperTier: null,
     exactTier: null,

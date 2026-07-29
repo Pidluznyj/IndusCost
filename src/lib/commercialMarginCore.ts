@@ -354,7 +354,9 @@ export function resolveCommercialCommissionFromTiers(input: {
   if (position.position === "BELOW_LOWEST") {
     const policy = input.belowLowestCommissionRate;
     const rate =
-      policy != null && Number.isFinite(policy) && policy >= 0 ? Number(policy) : null;
+      policy != null && Number.isFinite(policy) && policy >= 0
+        ? normalizeCommercialCommissionRateFraction(Number(policy))
+        : null;
     return {
       ok: true,
       position,
@@ -371,7 +373,7 @@ export function resolveCommercialCommissionFromTiers(input: {
       ok: true,
       position,
       tiers,
-      commissionRate: highest.commissionRate,
+      commissionRate: normalizeCommercialCommissionRateFraction(highest.commissionRate),
       ceilingTier: true,
       belowLowest: false,
     };
@@ -382,7 +384,9 @@ export function resolveCommercialCommissionFromTiers(input: {
       ok: true,
       position,
       tiers,
-      commissionRate: position.exactTier.commissionRate,
+      commissionRate: normalizeCommercialCommissionRateFraction(
+        position.exactTier.commissionRate
+      ),
       ceilingTier: position.exactTier.id === tiers[tiers.length - 1]!.id,
       belowLowest: false,
     };
@@ -402,7 +406,7 @@ export function resolveCommercialCommissionFromTiers(input: {
       ok: true,
       position: { ...position, progress },
       tiers,
-      commissionRate,
+      commissionRate: normalizeCommercialCommissionRateFraction(commissionRate),
       ceilingTier: false,
       belowLowest: false,
     };
@@ -468,7 +472,11 @@ export function calculateCommercialMarginFromNetUnitPrice(
   const quantity = toFinite(input.quantity);
   const cost = toFinite(input.frozenCostUnit);
   const taxRate = toFinite(input.taxRate);
-  const commissionRate = toFinite(input.commissionRate);
+  const commissionRaw = toFinite(input.commissionRate);
+  const commissionRate =
+    commissionRaw == null
+      ? null
+      : normalizeCommercialCommissionRateFraction(commissionRaw);
   const freightRate = toFinite(input.freightRate) ?? 0;
   const freightAbs = toFinite(input.freightAbsoluteUnit) ?? 0;
   const otherRate = toFinite(input.otherVariablesRate);
@@ -560,7 +568,11 @@ export function calculateSalePriceFromCommercialMarginRates(input: {
 }): { ok: true; salePrice: number; divisor: number } | { ok: false; code: string; message: string } {
   const cost = toFinite(input.frozenCostUnit);
   const taxRate = toFinite(input.taxRate);
-  const commissionRate = toFinite(input.commissionRate);
+  const commissionRaw = toFinite(input.commissionRate);
+  const commissionRate =
+    commissionRaw == null
+      ? null
+      : normalizeCommercialCommissionRateFraction(commissionRaw);
   const freightRate = toFinite(input.freightRate) ?? 0;
   const freightAbs = toFinite(input.freightAbsoluteUnit) ?? 0;
   const otherRate = toFinite(input.otherVariablesRate);

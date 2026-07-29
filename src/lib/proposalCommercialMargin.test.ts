@@ -211,7 +211,7 @@ describe("proposalCommercialMargin — faixas variáveis", () => {
       negotiatedGrossUnitPrice: 9.98,
       finalNetUnitPrice: 9.98,
       frozenCostUnit: 3.94,
-      taxRate: 0.2075,
+      taxRate: 0.2675,
       freightRate: 0.03,
       freightAbsoluteUnit: 0,
       otherVariablesRate: 0,
@@ -219,6 +219,8 @@ describe("proposalCommercialMargin — faixas variáveis", () => {
       formationContextId: "ctx-dirty-1pct",
     });
     assert.equal(item.isComplete, true);
+    assert.equal(item.tierPosition, "BELOW_LOWEST");
+    assert.equal(item.commissionRate, 0.01);
     assert.ok(
       (item.commissionRate ?? 0) <= 0.03 + 1e-9,
       `comissão esperada ≤3%, obteve ${item.commissionRate}`
@@ -226,6 +228,29 @@ describe("proposalCommercialMargin — faixas variáveis", () => {
     assert.ok(
       (item.commercialMarginPercent ?? -999) > -50,
       `margem não deve colapsar com comissão 100%; obteve ${item.commercialMarginPercent}%`
+    );
+  });
+
+  it("5c. commissionRate fornecido = 1 (1%) não vira 100% — caso 301.40AA", () => {
+    const item = calculateProposalItemCommercialMargin({
+      quantity: 30,
+      negotiatedGrossUnitPrice: 9.98,
+      finalNetUnitPrice: 9.98,
+      frozenCostUnit: 3.94,
+      taxRate: 0.2675,
+      freightRate: 0.03,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: 0,
+      commissionRate: 1,
+      tiers,
+      formationContextId: "ctx-provided-1pct",
+    });
+    assert.equal(item.isComplete, true);
+    assert.equal(item.commissionRate, 0.01);
+    assert.ok(Math.abs((item.commissionValue ?? 0) - 2.99) < 0.02);
+    assert.ok(
+      (item.commercialMarginPercent ?? -999) > -50,
+      `margem colapsada: ${item.commercialMarginPercent}%`
     );
   });
 
