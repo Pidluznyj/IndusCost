@@ -62,6 +62,13 @@ export type ProposalInternalManagementPdfItemInput = {
   priceTableVersionId?: string | null;
   priceSource?: string | null;
   productId?: string | null;
+  /** Breakdown MP/HH/HM da tabela de custo de produção vigente (anexado no server). */
+  productionCostBreakdown?: {
+    materialCost?: number | null;
+    laborCost?: number | null;
+    machineCost?: number | null;
+    processCost?: number | null;
+  } | null;
 };
 
 export type ProposalInternalManagementPdfInput = {
@@ -258,8 +265,15 @@ export function buildProposalInternalManagementPdfDocument(
     const storedCommissionValue = n(item.commissionValue);
     const storedCommissionPerc = n(item.commissionPerc);
     const taxesValue = n(item.taxesValue);
-    const breakdown = extractProposalItemCostBreakdown(item.pricingSnapshotJson, quantity);
-    const estimated = extractProposalItemEstimatedCommission(item.pricingSnapshotJson);
+    const breakdown = extractProposalItemCostBreakdown(
+      item.pricingSnapshotJson,
+      quantity,
+      { productionBreakdown: item.productionCostBreakdown ?? null }
+    );
+    const estimated = extractProposalItemEstimatedCommission(
+      item.pricingSnapshotJson,
+      item.commercialPricingSnapshotJson
+    );
 
     let commissionPerc = storedCommissionPerc > 0 ? storedCommissionPerc : 0;
     let commissionValue = storedCommissionValue > 0 ? storedCommissionValue : 0;

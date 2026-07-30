@@ -45,6 +45,18 @@ describe("proposalItemEstimatedCommission", () => {
     assert.match(result.pendingReason ?? "", /não disponível/i);
   });
 
+  it("lê comissão do commercialPricingSnapshotJson quando pricingSnapshot está vazio", () => {
+    const result = extractProposalItemEstimatedCommission(null, {
+      schemaVersion: 1,
+      calculatedCommissionRate: 0.045,
+      finalNetUnitPrice: 100,
+      commercialMarginRate: 0.34,
+    });
+    assert.equal(result.source, "SNAPSHOT");
+    assert.equal(result.commissionPerc, 4.5);
+    assert.equal(result.commissionValuePerUnit, 4.5);
+  });
+
   it("estima valor da linha por percentual × receita", () => {
     assert.equal(
       estimateProposalItemCommissionValue({

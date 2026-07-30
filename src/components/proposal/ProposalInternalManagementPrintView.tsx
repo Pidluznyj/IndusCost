@@ -76,6 +76,8 @@ function buildDocumentFromProposal(
       unitCost: item.unitCost,
       negotiatedPrice: item.negotiatedPrice,
       suggestedPrice: item.suggestedPrice,
+      discountPerc: item.discountPerc,
+      discountValue: item.discountValue,
       marginValue: item.marginValue,
       marginPerc: item.marginPerc,
       commissionPerc: item.commissionPerc,
@@ -84,6 +86,22 @@ function buildDocumentFromProposal(
       freightValue: item.freightValue,
       notes: item.notes,
       pricingSnapshotJson: item.pricingSnapshotJson,
+      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+      priceTableId: item.priceTableId,
+      priceTableVersionId: item.priceTableVersionId,
+      priceSource: item.priceSource,
+      productId: item.productId,
+      productionCostBreakdown:
+        (
+          item as {
+            productionCostBreakdown?: {
+              materialCost?: number | null;
+              laborCost?: number | null;
+              machineCost?: number | null;
+              processCost?: number | null;
+            } | null;
+          }
+        ).productionCostBreakdown ?? null,
     })),
   });
 }

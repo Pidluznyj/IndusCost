@@ -84,6 +84,12 @@ export async function attachProposalProductionCostsForMargin(
     const items = (proposal.items ?? []).map((item) => {
       const productId = typeof item.productId === "string" ? item.productId.trim() : "";
       let unitCost: number | null = null;
+      let productionCostBreakdown: {
+        materialCost: number;
+        laborCost: number;
+        machineCost: number;
+        processCost: number;
+      } | null = null;
       if (productId && ref) {
         const key = effectiveProductionCostLookupKey(productId, ref);
         const effective = costs.get(key);
@@ -93,11 +99,18 @@ export async function attachProposalProductionCostsForMargin(
           Number.isFinite(effective.unitProductionCost)
         ) {
           unitCost = Math.max(0, Number(effective.unitProductionCost));
+          productionCostBreakdown = {
+            materialCost: effective.breakdown.materialCost,
+            laborCost: effective.breakdown.laborCost,
+            machineCost: effective.breakdown.machineCost,
+            processCost: effective.breakdown.processCost,
+          };
         }
       }
       return {
         ...item,
         unitCost,
+        productionCostBreakdown,
       };
     });
     return {
@@ -168,6 +181,9 @@ export async function applyProductionCostsToProposalDetail<
   const items = (proposal.items ?? []).map((item, index) => ({
     ...item,
     unitCost: costByIndex[index]?.unitCost ?? null,
+    productionCostBreakdown:
+      (costByIndex[index] as { productionCostBreakdown?: unknown } | undefined)
+        ?.productionCostBreakdown ?? null,
   }));
   const margin = resolveProposalOfficialMarginFromItems(items);
   return {

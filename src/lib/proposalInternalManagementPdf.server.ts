@@ -9,6 +9,7 @@ import {
   type ProposalInternalManagementPdfDocument,
 } from "./proposalInternalManagementPdf.js";
 import { resolveProposalCommercialListMargins } from "./proposalCommercialMarginRecalc.server.js";
+import { applyProductionCostsToProposalDetail } from "./proposalMargin.server.js";
 
 function decimalToNumber(value: unknown): number {
   if (value == null) return 0;
@@ -50,6 +51,11 @@ export async function loadAndBuildProposalInternalManagementPdf(
     };
   }
 
+  const enrichedProposal = await applyProductionCostsToProposalDetail(
+    prisma,
+    proposal
+  );
+
   const commercialById = await resolveProposalCommercialListMargins(prisma, [
     proposal.id,
   ]);
@@ -57,74 +63,97 @@ export async function loadAndBuildProposalInternalManagementPdf(
   const totalMarginPerc =
     commercial?.totalMarginPerc != null
       ? commercial.totalMarginPerc
-      : decimalToNumber(proposal.totalMarginPerc);
+      : decimalToNumber(enrichedProposal.totalMarginPerc);
   const totalMarginValue =
     commercial?.totalMarginValue != null
       ? commercial.totalMarginValue
-      : decimalToNumber(proposal.totalMarginValue);
+      : decimalToNumber(enrichedProposal.totalMarginValue);
 
   const document = buildProposalInternalManagementPdfDocument({
-    id: proposal.id,
-    number: proposal.number,
-    title: proposal.title,
-    status: proposal.status,
-    responsible: proposal.responsible,
-    companyIssuer: proposal.companyIssuer,
-    validityDays: proposal.validityDays,
-    paymentTerms: proposal.paymentTerms,
-    paymentMethod: proposal.paymentMethod,
-    freightCondition: proposal.freightCondition,
-    deliveryLocation: proposal.deliveryLocation,
-    notes: proposal.notes,
-    internalNotes: proposal.internalNotes,
-    createdAt: proposal.createdAt,
-    customerName: proposal.Customer?.companyName ?? proposal.Customer?.tradeName ?? null,
-    customerTradeName: proposal.Customer?.tradeName ?? null,
-    customerDocument: proposal.Customer?.taxId ?? null,
-    customerPhone: proposal.Customer?.phone ?? null,
-    customerAddress: proposal.Customer?.address ?? null,
-    customerCity: proposal.Customer?.city ?? null,
-    customerState: proposal.Customer?.state ?? null,
-    customerZip: proposal.Customer?.zipCode ?? null,
-    totalGrossValue: decimalToNumber(proposal.totalGrossValue),
-    totalDiscount: decimalToNumber(proposal.totalDiscount),
-    totalNetValue: decimalToNumber(proposal.totalNetValue),
-    totalCost: decimalToNumber(proposal.totalCost),
+    id: enrichedProposal.id,
+    number: enrichedProposal.number,
+    title: enrichedProposal.title,
+    status: enrichedProposal.status,
+    responsible: enrichedProposal.responsible,
+    companyIssuer: enrichedProposal.companyIssuer,
+    validityDays: enrichedProposal.validityDays,
+    paymentTerms: enrichedProposal.paymentTerms,
+    paymentMethod: enrichedProposal.paymentMethod,
+    freightCondition: enrichedProposal.freightCondition,
+    deliveryLocation: enrichedProposal.deliveryLocation,
+    notes: enrichedProposal.notes,
+    internalNotes: enrichedProposal.internalNotes,
+    createdAt: enrichedProposal.createdAt,
+    customerName:
+      enrichedProposal.Customer?.companyName ??
+      enrichedProposal.Customer?.tradeName ??
+      null,
+    customerTradeName: enrichedProposal.Customer?.tradeName ?? null,
+    customerDocument: enrichedProposal.Customer?.taxId ?? null,
+    customerPhone: enrichedProposal.Customer?.phone ?? null,
+    customerAddress: enrichedProposal.Customer?.address ?? null,
+    customerCity: enrichedProposal.Customer?.city ?? null,
+    customerState: enrichedProposal.Customer?.state ?? null,
+    customerZip: enrichedProposal.Customer?.zipCode ?? null,
+    totalGrossValue: decimalToNumber(enrichedProposal.totalGrossValue),
+    totalDiscount: decimalToNumber(enrichedProposal.totalDiscount),
+    totalNetValue: decimalToNumber(enrichedProposal.totalNetValue),
+    totalCost:
+      enrichedProposal.totalCost != null
+        ? decimalToNumber(enrichedProposal.totalCost)
+        : decimalToNumber(proposal.totalCost),
     totalMarginValue,
     totalMarginPerc,
-    totalTaxes: decimalToNumber(proposal.totalTaxes),
-    totalCommission: decimalToNumber(proposal.totalCommission),
-    totalFreight: decimalToNumber(proposal.totalFreight),
-    items: proposal.items.map((item) => ({
-      sku: item.Product?.sku ?? null,
-      name: item.Product?.name ?? null,
-      quantity: decimalToNumber(item.quantity),
-      unit: item.unit,
-      unitCost: decimalToNumber(item.unitCost),
-      negotiatedPrice: decimalToNumber(item.negotiatedPrice),
-      suggestedPrice: decimalToNumber(item.suggestedPrice),
-      discountPerc: decimalToNumber(item.discountPerc),
-      discountValue: decimalToNumber(item.discountValue),
-      marginValue: decimalToNumber(item.marginValue),
-      marginPerc: decimalToNumber(item.marginPerc),
-      commissionPerc: decimalToNumber(item.commissionPerc),
-      commissionValue: decimalToNumber(item.commissionValue),
-      taxesValue: decimalToNumber(item.taxesValue),
-      freightValue: decimalToNumber(item.freightValue),
-      notes: item.notes,
-      pricingSnapshotJson: item.pricingSnapshotJson,
-      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
-      priceTableId: item.priceTableId,
-      priceTableVersionId: item.priceTableVersionId,
-      priceSource: item.priceSource,
-      productId: item.productId,
-    })),
+    totalTaxes: decimalToNumber(enrichedProposal.totalTaxes),
+    totalCommission: decimalToNumber(enrichedProposal.totalCommission),
+    totalFreight: decimalToNumber(enrichedProposal.totalFreight),
+    items: enrichedProposal.items.map((item) => {
+      const breakdown = (
+        item as {
+          productionCostBreakdown?: {
+            materialCost?: number | null;
+            laborCost?: number | null;
+            machineCost?: number | null;
+            processCost?: number | null;
+          } | null;
+        }
+      ).productionCostBreakdown;
+      return {
+        sku: item.Product?.sku ?? null,
+        name: item.Product?.name ?? null,
+        quantity: decimalToNumber(item.quantity),
+        unit: item.unit,
+        unitCost:
+          item.unitCost != null ? decimalToNumber(item.unitCost) : null,
+        negotiatedPrice: decimalToNumber(item.negotiatedPrice),
+        suggestedPrice: decimalToNumber(item.suggestedPrice),
+        discountPerc: decimalToNumber(item.discountPerc),
+        discountValue: decimalToNumber(item.discountValue),
+        marginValue: decimalToNumber(item.marginValue),
+        marginPerc: decimalToNumber(item.marginPerc),
+        commissionPerc: decimalToNumber(item.commissionPerc),
+        commissionValue: decimalToNumber(item.commissionValue),
+        taxesValue: decimalToNumber(item.taxesValue),
+        freightValue: decimalToNumber(item.freightValue),
+        notes: item.notes,
+        pricingSnapshotJson: item.pricingSnapshotJson,
+        commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+        priceTableId: item.priceTableId,
+        priceTableVersionId: item.priceTableVersionId,
+        priceSource: item.priceSource,
+        productId: item.productId,
+        productionCostBreakdown: breakdown ?? null,
+      };
+    }),
   });
 
   const buffer = buildProposalInternalManagementPdfBuffer(document);
   const filename = buildProposalInternalManagementPdfFilename({
-    proposalNumber: proposal.number,
-    customerName: proposal.Customer?.companyName ?? proposal.Customer?.tradeName ?? null,
+    proposalNumber: enrichedProposal.number,
+    customerName:
+      enrichedProposal.Customer?.companyName ??
+      enrichedProposal.Customer?.tradeName ??
+      null,
   });
 
   return { ok: true, document, buffer, filename };

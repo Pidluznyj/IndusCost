@@ -33,66 +33,110 @@ function unavailable(reason: string): ProposalItemEstimatedCommission {
   };
 }
 
+function fromCommercialPricingSnapshot(
+  commercialPricingSnapshotJson: unknown,
+  pricingSnapshotJson: unknown
+): ProposalItemEstimatedCommission | null {
+  // Import dinâmico evitado — leitura local do contrato comercial (fraction 0–1).
+  const commercialRoot = asRecord(commercialPricingSnapshotJson);
+  const legacyFreeze = asRecord(asRecord(pricingSnapshotJson)?.commercialMarginFreeze);
+  const root = commercialRoot ?? legacyFreeze;
+  if (!root) return null;
+
+  const rateRaw = n(root.calculatedCommissionRate);
+  if (rateRaw == null) return null;
+
+  // Contrato comercial: fraction (0.045 = 4,5%). Valores > 1 tratados como %.
+  const rateFraction = rateRaw > 1 ? rateRaw / 100 : rateRaw;
+  if (!(rateFraction >= 0) || !Number.isFinite(rateFraction)) return null;
+
+  const sale =
+    n(root.finalNetUnitPrice) ??
+    n(root.negotiatedGrossUnitPrice) ??
+    null;
+
+  return {
+    commissionPerc: rateFraction * 100,
+    commissionValuePerUnit: sale != null ? sale * rateFraction : null,
+    source: "SNAPSHOT",
+    pendingReason: null,
+  };
+}
+
 /**
  * Extrai % de comissão estimado congelado na tabela/formação de preço.
+ * Preferência: pricingSnapshotJson (tabela publicada) → commercialPricingSnapshotJson.
  * Não inventa percentual; se não houver regra no snapshot, retorna unavailable.
  */
 export function extractProposalItemEstimatedCommission(
-  pricingSnapshotJson: unknown
+  pricingSnapshotJson: unknown,
+  commercialPricingSnapshotJson?: unknown
 ): ProposalItemEstimatedCommission {
   const root = asRecord(pricingSnapshotJson);
-  if (!root) {
+
+  if (root) {
+    const defaults = asRecord(root.proposalDefaults);
+    const item = asRecord(root.item) ?? asRecord(root.publishedItem) ?? root;
+
+    const fromDefaults = n(defaults?.commissionPerc);
+    const fromItem = n(item?.commissionPerc);
+    const percColumn =
+      fromDefaults != null && fromDefaults > 0
+        ? fromDefaults
+        : fromItem != null && fromItem > 0
+          ? fromItem
+          : null;
+
+    if (percColumn != null) {
+      const unitValue =
+        n(defaults?.commissionValue) ??
+        n(item?.commissionValue) ??
+        null;
+      return {
+        commissionPerc: percColumn,
+        commissionValuePerUnit: unitValue != null && unitValue >= 0 ? unitValue : null,
+        source: "SNAPSHOT",
+        pendingReason: null,
+      };
+    }
+
+    const formula =
+      asRecord(item?.formulaSnapshotJson) ?? asRecord(root.formulaSnapshotJson);
+    const rates = asRecord(formula?.rates);
+    const commissionRate = n(rates?.commissionRate);
+    if (commissionRate != null && commissionRate > 0) {
+      const perc = commissionRate * 100;
+      const sale =
+        n(item?.salePrice) ??
+        n(defaults?.suggestedPrice) ??
+        n(defaults?.negotiatedPrice);
+      return {
+        commissionPerc: perc,
+        commissionValuePerUnit: sale != null ? sale * commissionRate : null,
+        source: "SNAPSHOT",
+        pendingReason: null,
+      };
+    }
+
+    // Zero explícito no snapshot (regra resolvida como 0%).
+    if (fromDefaults === 0 || fromItem === 0) {
+      return {
+        commissionPerc: 0,
+        commissionValuePerUnit: 0,
+        source: "SNAPSHOT",
+        pendingReason: null,
+      };
+    }
+  }
+
+  const fromCommercial = fromCommercialPricingSnapshot(
+    commercialPricingSnapshotJson,
+    pricingSnapshotJson
+  );
+  if (fromCommercial) return fromCommercial;
+
+  if (!root && !asRecord(commercialPricingSnapshotJson)) {
     return unavailable("Comissão estimada não disponível no snapshot da proposta.");
-  }
-
-  const defaults = asRecord(root.proposalDefaults);
-  const item = asRecord(root.item) ?? asRecord(root.publishedItem) ?? root;
-
-  const fromDefaults = n(defaults?.commissionPerc);
-  const fromItem = n(item?.commissionPerc);
-  const percColumn =
-    fromDefaults != null && fromDefaults > 0
-      ? fromDefaults
-      : fromItem != null && fromItem > 0
-        ? fromItem
-        : null;
-
-  if (percColumn != null) {
-    const unitValue =
-      n(defaults?.commissionValue) ??
-      n(item?.commissionValue) ??
-      null;
-    return {
-      commissionPerc: percColumn,
-      commissionValuePerUnit: unitValue != null && unitValue >= 0 ? unitValue : null,
-      source: "SNAPSHOT",
-      pendingReason: null,
-    };
-  }
-
-  const formula =
-    asRecord(item?.formulaSnapshotJson) ?? asRecord(root.formulaSnapshotJson);
-  const rates = asRecord(formula?.rates);
-  const commissionRate = n(rates?.commissionRate);
-  if (commissionRate != null && commissionRate > 0) {
-    const perc = commissionRate * 100;
-    const sale = n(item?.salePrice) ?? n(defaults?.suggestedPrice) ?? n(defaults?.negotiatedPrice);
-    return {
-      commissionPerc: perc,
-      commissionValuePerUnit: sale != null ? sale * commissionRate : null,
-      source: "SNAPSHOT",
-      pendingReason: null,
-    };
-  }
-
-  // Zero explícito no snapshot (regra resolvida como 0%).
-  if (fromDefaults === 0 || fromItem === 0) {
-    return {
-      commissionPerc: 0,
-      commissionValuePerUnit: 0,
-      source: "SNAPSHOT",
-      pendingReason: null,
-    };
   }
 
   return unavailable("Comissão estimada não resolvida no snapshot da proposta.");

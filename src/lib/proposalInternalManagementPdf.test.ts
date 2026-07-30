@@ -239,6 +239,67 @@ describe("proposalInternalManagementPdf", () => {
     assert.equal(pending.source, "UNAVAILABLE");
     assert.equal(pending.materialTotal, null);
     assert.match(pending.pendingReason ?? "", /Breakdown/i);
+
+    const fromProduction = extractProposalItemCostBreakdown(null, 2, {
+      productionBreakdown: {
+        materialCost: 10,
+        laborCost: 3,
+        machineCost: 2,
+        processCost: 1,
+      },
+    });
+    assert.equal(fromProduction.source, "PRODUCTION");
+    assert.equal(fromProduction.materialTotal, 20);
+    assert.equal(fromProduction.fabricationTotal, 12);
+  });
+
+  it("usa comissao e MP/fabricacao do snapshot comercial + breakdown de producao", () => {
+    const doc = buildProposalInternalManagementPdfDocument({
+      ...SAMPLE_PROPOSAL,
+      totalCommission: 0,
+      items: [
+        {
+          sku: "611.35AA",
+          name: "Item",
+          quantity: 10,
+          unit: "UN",
+          unitCost: 100,
+          negotiatedPrice: 200,
+          discountValue: 0,
+          marginValue: 0,
+          marginPerc: 0,
+          commissionPerc: 0,
+          commissionValue: 0,
+          pricingSnapshotJson: null,
+          commercialPricingSnapshotJson: {
+            schemaVersion: 1,
+            calculationSource: "PROPOSAL_PRICE_TABLE",
+            calculatedCommissionRate: 0.03,
+            commercialMarginRate: 0.34,
+            commercialMarginValue: 680,
+            finalNetLineValue: 2000,
+            finalNetUnitPrice: 200,
+            frozenCostUnit: 100,
+            tiers: [],
+            warnings: [],
+          },
+          productionCostBreakdown: {
+            materialCost: 60,
+            laborCost: 25,
+            machineCost: 15,
+            processCost: 0,
+          },
+        },
+      ],
+    });
+    assert.equal(doc.items[0]?.commissionPending, false);
+    assert.equal(doc.items[0]?.commissionPerc, 3);
+    assert.equal(doc.items[0]?.commissionValue, 60);
+    assert.equal(doc.items[0]?.materialTotal, 600);
+    assert.equal(doc.items[0]?.fabricationTotal, 400);
+    assert.equal(doc.totals.materialCost, 600);
+    assert.equal(doc.totals.fabricationCost, 400);
+    assert.doesNotMatch(doc.commissionSummaryLabel, /Pendente/i);
   });
 
   it("filename e paths usam proposalId", () => {
@@ -280,6 +341,8 @@ describe("proposalInternalManagementPdf", () => {
     assert.match(mod, /buildProposalInternalManagementPrintPath|internal-management-print/);
     assert.match(app, /internal-management-print/);
     assert.match(internalPrint, /ProposalInternalManagementDocument/);
+    assert.match(internalPrint, /commercialPricingSnapshotJson/);
+    assert.match(internalPrint, /productionCostBreakdown/);
     assert.match(internalDoc, /RELATÓRIO GERENCIAL INTERNO|RELAT.RIO GERENCIAL INTERNO/);
     assert.match(internalDoc, /Resumo gerencial da proposta/);
     assert.match(internalDoc, /matéria-prima|mat.ria-prima|Matéria-prima|Mat.ria-prima/i);
