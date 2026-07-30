@@ -12,6 +12,10 @@ import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
 } from "./proposalLineMargin.js";
+import {
+  resolveProposalItemCommercialMarginDisplay,
+} from "./proposalCommercialMarginDisplay.js";
+import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 
 export type ProposalListMarginItemInput = {
   quantity?: unknown;
@@ -186,4 +190,113 @@ export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
     totalMarginValue: hasValue ? headerValue : null,
     marginSource: hasPerc || hasValue ? "HEADER" : "NONE",
   };
+}
+
+/**
+ * Margem comercial para o dashboard de análise — mesma fonte da listagem.
+ * 1) Prévia/formação a partir dos itens
+ * 2) Soma dos snapshots comerciais gravados nos itens
+ * 3) Cabeçalho só se não parecer margem de produção (100% ≈ líquido)
+ * Nunca inventa 100% a partir de custo zero de produção.
+ */
+export function resolveProposalAnalysisCommercialMargin(proposal: {
+  totalNetValue?: unknown;
+  totalMarginPerc?: unknown;
+  totalMarginValue?: unknown;
+  items?: ReadonlyArray<ProposalListMarginItemInput> | null;
+}): {
+  totalMarginPerc: number | null;
+  totalMarginValue: number | null;
+  source: "ITEMS_PREVIEW" | "ITEMS_SNAPSHOT" | "HEADER" | "NONE";
+} {
+  const items = Array.isArray(proposal.items) ? proposal.items : [];
+  const fromPreview = resolveProposalCommercialMarginFromItems(items);
+  if (
+    fromPreview.totalMarginPerc != null ||
+    fromPreview.totalMarginValue != null
+  ) {
+    if (
+      !looksLikeZeroCostProductionMargin({
+        totalNetValue: proposal.totalNetValue,
+        totalMarginPerc: fromPreview.totalMarginPerc,
+        totalMarginValue: fromPreview.totalMarginValue,
+      })
+    ) {
+      return {
+        totalMarginPerc: fromPreview.totalMarginPerc,
+        totalMarginValue: fromPreview.totalMarginValue,
+        source: "ITEMS_PREVIEW",
+      };
+    }
+  }
+
+  let marginValueSum = 0;
+  let netSum = 0;
+  let anySnapshot = false;
+  for (const item of items) {
+    const display = resolveProposalItemCommercialMarginDisplay(item);
+    if (display.marginPerc == null && display.marginValue == null) continue;
+    anySnapshot = true;
+    const quantity = safeNum(item.quantity);
+    const negotiated = safeNum(item.negotiatedPrice);
+    const discount = safeNum(item.discountValue);
+    const netLine = Math.max(0, quantity * negotiated - discount);
+    if (display.marginValue != null && Number.isFinite(display.marginValue)) {
+      marginValueSum += display.marginValue;
+    } else if (display.marginPerc != null && netLine > 0) {
+      marginValueSum += (display.marginPerc / 100) * netLine;
+    }
+    netSum += netLine;
+  }
+  if (anySnapshot) {
+    const totalMarginValue = roundPricingMoney(marginValueSum);
+    const totalMarginPerc =
+      netSum > 0
+        ? roundPricingPercent((marginValueSum / netSum) * 100)
+        : null;
+    return {
+      totalMarginPerc,
+      totalMarginValue,
+      source: "ITEMS_SNAPSHOT",
+    };
+  }
+
+  const headerPerc = toNullableNum(proposal.totalMarginPerc);
+  const headerValue = toNullableNum(proposal.totalMarginValue);
+  if (
+    (headerPerc != null || headerValue != null) &&
+    !looksLikeZeroCostProductionMargin({
+      totalNetValue: proposal.totalNetValue,
+      totalMarginPerc: headerPerc,
+      totalMarginValue: headerValue,
+    })
+  ) {
+    return {
+      totalMarginPerc: headerPerc,
+      totalMarginValue: headerValue,
+      source: "HEADER",
+    };
+  }
+
+  return {
+    totalMarginPerc: null,
+    totalMarginValue: null,
+    source: "NONE",
+  };
+}
+
+function looksLikeZeroCostProductionMargin(input: {
+  totalNetValue?: unknown;
+  totalMarginPerc?: number | null;
+  totalMarginValue?: number | null;
+}): boolean {
+  const perc = input.totalMarginPerc;
+  if (perc == null || !Number.isFinite(perc)) return false;
+  if (Math.abs(perc - 100) > 0.051) return false;
+  const net = toNullableNum(input.totalNetValue);
+  const value = input.totalMarginValue;
+  if (net == null || net <= 0 || value == null || !Number.isFinite(value)) {
+    return true;
+  }
+  return Math.abs(value - net) / net < 0.01;
 }

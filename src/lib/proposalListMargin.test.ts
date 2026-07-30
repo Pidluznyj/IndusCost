@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { calculatePriceTableItemFromFrozenCost } from "./priceTablePublication.js";
 import {
   enrichProposalListRowMargin,
+  resolveProposalAnalysisCommercialMargin,
   resolveProposalCommercialMarginFromItems,
   resolveProposalOfficialMarginFromItems,
 } from "./proposalListMargin.js";
@@ -250,5 +251,51 @@ describe("proposalListMargin", () => {
     assert.equal(enriched.marginSource, "NONE");
     assert.equal(enriched.totalMarginPerc, null);
     assert.equal(enriched.totalMarginValue, null);
+  });
+
+  it("analysis: rejeita cabeçalho 100% ≈ líquido (margem de produção) e usa snapshot", () => {
+    const resolved = resolveProposalAnalysisCommercialMargin({
+      totalNetValue: 39970,
+      totalMarginPerc: 100,
+      totalMarginValue: 39970,
+      items: [
+        {
+          quantity: 1,
+          negotiatedPrice: 39970,
+          discountValue: 0,
+          commercialPricingSnapshotJson: {
+            schemaVersion: 1,
+            calculationSource: "PROPOSAL_PRICE_FORMATION",
+            commercialMarginRate: 0.4244,
+            commercialMarginValue: 16940.67,
+            finalNetLineValue: 39970,
+            frozenCostUnit: 100,
+            taxRate: 0,
+            freightRate: 0,
+            freightAbsoluteUnit: 0,
+            otherVariablesRate: 0,
+            tiers: [],
+            warnings: [],
+          },
+        },
+      ],
+    });
+    assert.ok(
+      resolved.source === "ITEMS_SNAPSHOT" || resolved.source === "ITEMS_PREVIEW"
+    );
+    assert.ok(resolved.totalMarginPerc != null);
+    assert.ok(Math.abs((resolved.totalMarginPerc ?? 0) - 42.44) < 0.1);
+    assert.notEqual(resolved.totalMarginPerc, 100);
+  });
+
+  it("analysis: cabeçalho 100% sem snapshot comercial → NONE (não espelha produção)", () => {
+    const resolved = resolveProposalAnalysisCommercialMargin({
+      totalNetValue: 39970,
+      totalMarginPerc: 100,
+      totalMarginValue: 39970,
+      items: [{ quantity: 1, negotiatedPrice: 39970 }],
+    });
+    assert.equal(resolved.source, "NONE");
+    assert.equal(resolved.totalMarginPerc, null);
   });
 });

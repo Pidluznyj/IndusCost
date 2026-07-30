@@ -61,6 +61,7 @@ import {
   enrichProposalsWithOfficialProductionMargins,
   stampProposalItemsWithProductionCostsForWrite,
 } from "./src/lib/proposalMargin.server.js";
+import { resolveProposalCommercialListMargins } from "./src/lib/proposalCommercialMarginRecalc.server.js";
 import {
   loadProposalCommercialFormationsBatch,
   stampProposalItemsWithCommercialMarginsForWrite,
@@ -15128,6 +15129,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return res.status(404).json({ error: "NOT_FOUND", message: "Proposta não encontrada." });
     }
     const enriched = await applyProductionCostsToProposalDetail(prisma, proposal);
+    const commercialById = await resolveProposalCommercialListMargins(prisma, [
+      proposal.id,
+    ]);
+    const commercial = commercialById.get(proposal.id);
+    const withCommercialHeader =
+      commercial &&
+      (commercial.totalMarginPerc != null || commercial.totalMarginValue != null)
+        ? {
+            ...enriched,
+            totalMarginPerc: commercial.totalMarginPerc,
+            totalMarginValue: commercial.totalMarginValue,
+          }
+        : enriched;
 
     let customerHistory = null;
     if (proposal.customerId) {
@@ -15155,7 +15169,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
 
     res.json({
-      ...enriched,
+      ...withCommercialHeader,
       customerHistory,
     });
   });

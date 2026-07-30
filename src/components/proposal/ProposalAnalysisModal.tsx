@@ -34,7 +34,7 @@ import {
   formatProposalCommercialPercent,
   resolveProposalItemCommercialMarginDisplay,
 } from "@/src/lib/proposalCommercialMarginDisplay";
-import { resolveProposalCommercialMarginFromItems } from "@/src/lib/proposalListMargin";
+import { resolveProposalAnalysisCommercialMargin } from "@/src/lib/proposalListMargin";
 
 export type CustomerHistoryData = {
   totalOrdersCount: number;
@@ -82,19 +82,9 @@ export type DealInsightItem = {
 
 export function buildDealIntelligence(proposal: ProposalDetailWithAnalysis) {
   const netValue = safeNum(proposal.totalNetValue);
-  const commercial = resolveProposalCommercialMarginFromItems(proposal.items);
-  const commercialMarginPerc =
-    commercial.totalMarginPerc != null
-      ? commercial.totalMarginPerc
-      : proposal.totalMarginPerc != null
-        ? safeNum(proposal.totalMarginPerc)
-        : null;
-  const commercialMarginValue =
-    commercial.totalMarginValue != null
-      ? commercial.totalMarginValue
-      : proposal.totalMarginValue != null
-        ? safeNum(proposal.totalMarginValue)
-        : null;
+  const commercial = resolveProposalAnalysisCommercialMargin(proposal);
+  const commercialMarginPerc = commercial.totalMarginPerc;
+  const commercialMarginValue = commercial.totalMarginValue;
   const marginPerc = commercialMarginPerc ?? 0;
   const status = proposal.status;
   const hasSalesOrder = Boolean(proposal.salesOrder?.id);

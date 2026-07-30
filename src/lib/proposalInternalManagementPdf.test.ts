@@ -85,6 +85,50 @@ const SAMPLE_PROPOSAL = {
 };
 
 describe("proposalInternalManagementPdf", () => {
+  it("margem comercial do resumo não usa venda − custo de produção", () => {
+    const doc = buildProposalInternalManagementPdfDocument({
+      ...SAMPLE_PROPOSAL,
+      totalNetValue: 39970,
+      totalCost: 12655.89,
+      totalMarginValue: 39970,
+      totalMarginPerc: 100,
+      items: [
+        {
+          sku: "611.01AA",
+          name: "Torneira",
+          quantity: 1,
+          unit: "UN",
+          unitCost: 2000,
+          negotiatedPrice: 39970,
+          discountValue: 0,
+          marginValue: 0,
+          marginPerc: 0,
+          commissionPerc: 0,
+          commissionValue: 0,
+          commercialPricingSnapshotJson: {
+            schemaVersion: 1,
+            calculationSource: "PROPOSAL_PRICE_FORMATION",
+            commercialMarginRate: 0.4244,
+            commercialMarginValue: 16940.67,
+            finalNetLineValue: 39970,
+            frozenCostUnit: 100,
+            taxRate: 0,
+            freightRate: 0,
+            freightAbsoluteUnit: 0,
+            otherVariablesRate: 0,
+            tiers: [],
+            warnings: [],
+          },
+        },
+      ],
+    });
+    const productionFallbackPerc = ((39970 - 12655.89) / 39970) * 100;
+    assert.ok(Math.abs(doc.totals.marginPerc - 42.44) < 0.1);
+    assert.ok(Math.abs(doc.totals.marginPerc - productionFallbackPerc) > 1);
+    assert.notEqual(doc.totals.marginPerc, 100);
+    assert.ok(Math.abs(doc.totals.marginValue - 16940.67) < 0.1);
+  });
+
   it("monta documento com custo, margem, comissao e marcador confidencial", () => {
     const doc = buildProposalInternalManagementPdfDocument(SAMPLE_PROPOSAL);
     assert.equal(doc.totals.net, 10000);

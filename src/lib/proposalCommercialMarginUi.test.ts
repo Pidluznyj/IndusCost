@@ -246,9 +246,7 @@ describe("proposalCommercialMargin — PDF cliente e independência", () => {
       join(process.cwd(), "src/components/proposal/ProposalAnalysisModal.tsx"),
       "utf8"
     );
-    assert.match(analysis, /resolveProposalItemCommercialMarginDisplay/);
-    assert.match(analysis, /resolveProposalCommercialMarginFromItems/);
-    assert.match(analysis, /commercialMarginPerc/);
+    assert.match(analysis, /resolveProposalAnalysisCommercialMargin/);
     assert.doesNotMatch(analysis, /formatNumber\(safeNum\(row\.marginPerc\)/);
     assert.doesNotMatch(analysis, /Gerar Pedido de Venda/);
     assert.doesNotMatch(analysis, /onGenerateSalesOrder/);
@@ -265,6 +263,9 @@ describe("proposalCommercialMargin — PDF cliente e independência", () => {
       "utf8"
     );
     assert.match(pdf, /resolveProposalItemCommercialMarginDisplay/);
+    assert.match(pdf, /resolveProposalAnalysisCommercialMargin/);
+    assert.doesNotMatch(pdf, /totalPrice - totalCost/);
+    assert.doesNotMatch(pdf, /net - cost/);
     assert.match(pdf, /Margem com\./);
 
     const audit = readFileSync(

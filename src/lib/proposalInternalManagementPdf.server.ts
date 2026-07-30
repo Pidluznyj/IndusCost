@@ -8,6 +8,7 @@ import {
   buildProposalInternalManagementPdfFilename,
   type ProposalInternalManagementPdfDocument,
 } from "./proposalInternalManagementPdf.js";
+import { resolveProposalCommercialListMargins } from "./proposalCommercialMarginRecalc.server.js";
 
 function decimalToNumber(value: unknown): number {
   if (value == null) return 0;
@@ -49,6 +50,19 @@ export async function loadAndBuildProposalInternalManagementPdf(
     };
   }
 
+  const commercialById = await resolveProposalCommercialListMargins(prisma, [
+    proposal.id,
+  ]);
+  const commercial = commercialById.get(proposal.id);
+  const totalMarginPerc =
+    commercial?.totalMarginPerc != null
+      ? commercial.totalMarginPerc
+      : decimalToNumber(proposal.totalMarginPerc);
+  const totalMarginValue =
+    commercial?.totalMarginValue != null
+      ? commercial.totalMarginValue
+      : decimalToNumber(proposal.totalMarginValue);
+
   const document = buildProposalInternalManagementPdfDocument({
     id: proposal.id,
     number: proposal.number,
@@ -76,8 +90,8 @@ export async function loadAndBuildProposalInternalManagementPdf(
     totalDiscount: decimalToNumber(proposal.totalDiscount),
     totalNetValue: decimalToNumber(proposal.totalNetValue),
     totalCost: decimalToNumber(proposal.totalCost),
-    totalMarginValue: decimalToNumber(proposal.totalMarginValue),
-    totalMarginPerc: decimalToNumber(proposal.totalMarginPerc),
+    totalMarginValue,
+    totalMarginPerc,
     totalTaxes: decimalToNumber(proposal.totalTaxes),
     totalCommission: decimalToNumber(proposal.totalCommission),
     totalFreight: decimalToNumber(proposal.totalFreight),
@@ -89,6 +103,8 @@ export async function loadAndBuildProposalInternalManagementPdf(
       unitCost: decimalToNumber(item.unitCost),
       negotiatedPrice: decimalToNumber(item.negotiatedPrice),
       suggestedPrice: decimalToNumber(item.suggestedPrice),
+      discountPerc: decimalToNumber(item.discountPerc),
+      discountValue: decimalToNumber(item.discountValue),
       marginValue: decimalToNumber(item.marginValue),
       marginPerc: decimalToNumber(item.marginPerc),
       commissionPerc: decimalToNumber(item.commissionPerc),
@@ -98,6 +114,10 @@ export async function loadAndBuildProposalInternalManagementPdf(
       notes: item.notes,
       pricingSnapshotJson: item.pricingSnapshotJson,
       commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+      priceTableId: item.priceTableId,
+      priceTableVersionId: item.priceTableVersionId,
+      priceSource: item.priceSource,
+      productId: item.productId,
     })),
   });
 

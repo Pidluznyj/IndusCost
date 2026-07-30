@@ -11,6 +11,7 @@ import {
   formatProposalEstimatedCommissionLabel,
 } from "./proposalItemEstimatedCommission.js";
 import { resolveProposalItemCommercialMarginDisplay } from "./proposalCommercialMarginDisplay.js";
+import { resolveProposalAnalysisCommercialMargin } from "./proposalListMargin.js";
 import {
   buildFormattedLandscapePdf,
   formatPdfMoneyBr,
@@ -46,6 +47,8 @@ export type ProposalInternalManagementPdfItemInput = {
   unitCost: number | string | null;
   negotiatedPrice: number | string | null;
   suggestedPrice?: number | string | null;
+  discountPerc?: number | string | null;
+  discountValue?: number | string | null;
   marginValue: number | string | null;
   marginPerc: number | string | null;
   commissionPerc: number | string | null;
@@ -55,6 +58,10 @@ export type ProposalInternalManagementPdfItemInput = {
   notes?: string | null;
   pricingSnapshotJson?: unknown;
   commercialPricingSnapshotJson?: unknown;
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceSource?: string | null;
+  productId?: string | null;
 };
 
 export type ProposalInternalManagementPdfInput = {
@@ -215,27 +222,38 @@ export function buildProposalInternalManagementPdfDocument(
   const items = Array.isArray(input.items) ? input.items : [];
   const net = n(input.totalNetValue);
   const cost = n(input.totalCost);
-  const marginValue = n(input.totalMarginValue);
-  const marginPerc = n(input.totalMarginPerc);
   const storedCommission = n(input.totalCommission);
   const markup = cost > 0 ? net / cost : null;
+
+  const commercialTotals = resolveProposalAnalysisCommercialMargin({
+    totalNetValue: input.totalNetValue,
+    totalMarginPerc: input.totalMarginPerc,
+    totalMarginValue: input.totalMarginValue,
+    items: items.map((item) => ({
+      quantity: item.quantity,
+      negotiatedPrice: item.negotiatedPrice,
+      suggestedPrice: item.suggestedPrice,
+      discountPerc: item.discountPerc,
+      discountValue: item.discountValue,
+      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+      pricingSnapshotJson: item.pricingSnapshotJson,
+      priceTableId: item.priceTableId,
+      priceTableVersionId: item.priceTableVersionId,
+      priceSource: item.priceSource,
+      productId: item.productId,
+    })),
+  });
 
   const rows: ProposalInternalManagementPdfItemRow[] = items.map((item, index) => {
     const quantity = n(item.quantity);
     const unitCost = n(item.unitCost);
     const unitPrice = n(item.negotiatedPrice);
-    const totalPrice = quantity * unitPrice;
+    const discountValue = n(item.discountValue);
+    const totalPrice = Math.max(0, quantity * unitPrice - discountValue);
     const totalCost = quantity * unitCost;
     const commercial = resolveProposalItemCommercialMarginDisplay(item);
-    let itemMargin = commercial.marginValue;
-    let itemMarginPerc = commercial.marginPerc;
-
-    // Fallback: se o item não tem snapshot comercial congelado, calcula a margem comercial
-    // a partir da receita líquida do item (quantidade * preço negociado) e do custo de produção.
-    if ((itemMargin == null || itemMarginPerc == null) && totalPrice > 0 && totalCost > 0) {
-      itemMargin = totalPrice - totalCost;
-      itemMarginPerc = (itemMargin / totalPrice) * 100;
-    }
+    const itemMargin = commercial.marginValue;
+    const itemMarginPerc = commercial.marginPerc;
 
     const storedCommissionValue = n(item.commissionValue);
     const storedCommissionPerc = n(item.commissionPerc);
@@ -355,41 +373,17 @@ export function buildProposalInternalManagementPdfDocument(
       : rows.find((row) => row.commissionPerc > 0 || row.commissionPerc === 0)?.commissionPerc ??
         null;
 
-  // Soma ponderada das margens comerciais calculadas nos itens
-  let calculatedMarginSum = 0;
-  let revenueForMarginSum = 0;
-  let hasItemCommercialMargin = false;
-
-  for (const row of rows) {
-    if (row.marginValue != null && row.marginPerc != null && row.totalPrice > 0) {
-      calculatedMarginSum += row.marginValue;
-      revenueForMarginSum += row.totalPrice;
-      hasItemCommercialMargin = true;
-    }
-  }
-
-  let finalMarginValue: number = 0;
-  let finalMarginPerc: number = 0;
-
-  if (hasItemCommercialMargin && Math.abs(revenueForMarginSum - net) < 0.01) {
-    finalMarginValue = calculatedMarginSum;
-    finalMarginPerc = revenueForMarginSum > 0 ? (calculatedMarginSum / revenueForMarginSum) * 100 : 0;
-  } else if (net > 0 && cost > 0) {
-    finalMarginValue = net - cost;
-    finalMarginPerc = (finalMarginValue / net) * 100;
-  } else if (input.totalMarginValue != null && input.totalMarginPerc != null) {
-    const rawVal = n(input.totalMarginValue);
-    const rawPct = n(input.totalMarginPerc);
-    if (cost > 0 && Math.abs(rawVal - net) < 0.01) {
-      finalMarginValue = net - cost;
-      finalMarginPerc = (finalMarginValue / net) * 100;
-    } else {
-      finalMarginValue = rawVal;
-      finalMarginPerc = rawPct;
-    }
-  }
+  // Margem comercial = motor/formação (mesma da listagem/formulário).
+  // Não usa venda − custo de produção.
+  const finalMarginValue = commercialTotals.totalMarginValue ?? 0;
+  const finalMarginPerc = commercialTotals.totalMarginPerc ?? 0;
 
   const pendencies: string[] = [];
+  if (commercialTotals.source === "NONE") {
+    pendencies.push(
+      "Margem comercial indisponível: sem snapshot/formação comercial resolvível nos itens."
+    );
+  }
   const incompleteCostItems = rows.filter((row) => row.costIncomplete);
   if (incompleteCostItems.length > 0) {
     pendencies.push(`${incompleteCostItems.length} item(ns) com custo incompleto ou zerado.`);
