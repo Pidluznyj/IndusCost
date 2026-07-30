@@ -34,7 +34,13 @@ import {
   treasuryMoneyToNumber,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { fetchTreasuryPredictiveCrCpByAccount } from "@/src/lib/treasury/treasuryPredictiveCrCpByAccountApi.js";
+import {
+  TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
+  useTableHorizontalScrollSync,
+} from "@/src/components/finance/portfolio-reconciliation/useTableHorizontalScrollSync";
 import { cn } from "@/src/lib/utils";
+
+const TITLE_TABLE_MIN_WIDTH = 980;
 
 export type PredictiveCashFlowAccountCrCpPanelProps = {
   companyCode: string | null;
@@ -117,90 +123,131 @@ function TitleRowsTable({
   emptyLabel: string;
   side: "RECEIVABLE" | "PAYABLE";
 }) {
+  const {
+    topScrollRef,
+    mainScrollRef,
+    tableRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+  } = useTableHorizontalScrollSync({
+    minWidth: TITLE_TABLE_MIN_WIDTH,
+    deps: [titles],
+  });
+
   if (titles.length === 0) {
     return (
       <p className="px-4 py-10 text-center text-sm text-[#6B7280]">{emptyLabel}</p>
     );
   }
 
+  const mainScrollId = `predictive-cf-crcp-scroll-main-${side}`;
+
   return (
-    <div className="overflow-auto">
-      <table className="min-w-[980px] w-full border-collapse text-sm">
-        <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
-          <tr className="border-b border-[#E5E7EB] text-left text-[10px]">
-            {TITLE_COLUMNS.map((column) => (
-              <th
-                key={column.key}
-                className={cn(
-                  "px-3 py-2.5",
-                  column.align === "right" ? "text-right" : ""
-                )}
-              >
-                <SortHeaderButton
-                  column={column}
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={onSort}
-                />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {titles.map((t) => (
-            <tr
-              key={`${t.side}-${t.id}`}
-              className="border-b border-[#E5E7EB] last:border-0 hover:bg-[#F8FAFC]/40"
-              data-testid={`predictive-cf-crcp-title-row-${side}-${t.id}`}
-            >
-              <td className="px-3 py-2.5 tabular-nums">
-                {t.dueDate ? formatPredictiveCashFlowDate(t.dueDate) : "—"}
-              </td>
-              <td className="px-3 py-2.5">
-                <span
+    <div className="min-w-0">
+      <div
+        ref={topScrollRef}
+        className={TABLE_HORIZONTAL_TOP_SCROLL_CLASS}
+        onScroll={handleTopScroll}
+        data-testid={`predictive-cf-crcp-scroll-top-${side}`}
+        aria-label={
+          side === "RECEIVABLE"
+            ? "Rolagem horizontal das contas a receber (topo)"
+            : "Rolagem horizontal das contas a pagar (topo)"
+        }
+        role="scrollbar"
+        aria-orientation="horizontal"
+        aria-controls={mainScrollId}
+      >
+        <div style={{ width: scrollContentWidth, height: 12 }} aria-hidden />
+      </div>
+      <div
+        id={mainScrollId}
+        ref={mainScrollRef}
+        className="overflow-x-auto"
+        onScroll={handleMainScroll}
+        data-testid={mainScrollId}
+      >
+        <table
+          ref={tableRef}
+          className="min-w-[980px] w-full border-collapse text-sm"
+        >
+          <thead className="sticky top-3 z-10 bg-[#F8FAFC]">
+            <tr className="border-b border-[#E5E7EB] text-left text-[10px]">
+              {TITLE_COLUMNS.map((column) => (
+                <th
+                  key={column.key}
                   className={cn(
-                    "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
-                    t.situation === "OVERDUE"
-                      ? "bg-red-50 text-red-800"
-                      : "bg-emerald-50 text-emerald-800"
+                    "px-3 py-2.5",
+                    column.align === "right" ? "text-right" : ""
                   )}
                 >
-                  {t.situation === "OVERDUE" ? "Vencido" : "A vencer"}
-                </span>
-              </td>
-              <td className="px-3 py-2.5">{t.counterpartyName ?? "—"}</td>
-              <td className="px-3 py-2.5">{t.documentNumber ?? "—"}</td>
-              <td className="px-3 py-2.5">{t.installmentLabel ?? "—"}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums">
-                {moneyLabel(t.originalAmount)}
-              </td>
-              <td className="px-3 py-2.5 text-right tabular-nums">
-                {moneyLabel(t.settledAmount)}
-              </td>
-              <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
-                {moneyLabel(t.openBalance)}
-              </td>
-              <td className="px-3 py-2.5 text-xs">
-                {t.nomusFinancialAccountName
-                  ? `${t.nomusFinancialAccountName}${
-                      t.nomusFinancialAccountId
-                        ? ` (#${t.nomusFinancialAccountId})`
-                        : ""
-                    }`
-                  : t.nomusFinancialAccountId
-                    ? `#${t.nomusFinancialAccountId}`
-                    : "Sem conta financeira"}
-                {t.unlinkedReasonLabel ? (
-                  <span className="mt-0.5 block text-[#B45309]">
-                    {t.unlinkedReasonLabel}
-                  </span>
-                ) : null}
-              </td>
-              <td className="px-3 py-2.5 text-xs">{t.destinationBucketLabel}</td>
+                  <SortHeaderButton
+                    column={column}
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={onSort}
+                  />
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {titles.map((t) => (
+              <tr
+                key={`${t.side}-${t.id}`}
+                className="border-b border-[#E5E7EB] last:border-0 hover:bg-[#F8FAFC]/40"
+                data-testid={`predictive-cf-crcp-title-row-${side}-${t.id}`}
+              >
+                <td className="px-3 py-2.5 tabular-nums">
+                  {t.dueDate ? formatPredictiveCashFlowDate(t.dueDate) : "—"}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
+                      t.situation === "OVERDUE"
+                        ? "bg-red-50 text-red-800"
+                        : "bg-emerald-50 text-emerald-800"
+                    )}
+                  >
+                    {t.situation === "OVERDUE" ? "Vencido" : "A vencer"}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5">{t.counterpartyName ?? "—"}</td>
+                <td className="px-3 py-2.5">{t.documentNumber ?? "—"}</td>
+                <td className="px-3 py-2.5">{t.installmentLabel ?? "—"}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  {moneyLabel(t.originalAmount)}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  {moneyLabel(t.settledAmount)}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                  {moneyLabel(t.openBalance)}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {t.nomusFinancialAccountName
+                    ? `${t.nomusFinancialAccountName}${
+                        t.nomusFinancialAccountId
+                          ? ` (#${t.nomusFinancialAccountId})`
+                          : ""
+                      }`
+                    : t.nomusFinancialAccountId
+                      ? `#${t.nomusFinancialAccountId}`
+                      : "Sem conta financeira"}
+                  {t.unlinkedReasonLabel ? (
+                    <span className="mt-0.5 block text-[#B45309]">
+                      {t.unlinkedReasonLabel}
+                    </span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2.5 text-xs">{t.destinationBucketLabel}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -164,6 +164,9 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(crcp, /predictive-cf-crcp-filter-counterparty/);
     assert.match(crcp, /predictive-cf-crcp-sort-\$\{column\.key\}/);
     assert.match(crcp, /presentTreasuryCrCpTitles/);
+    assert.match(crcp, /useTableHorizontalScrollSync/);
+    assert.match(crcp, /TABLE_HORIZONTAL_TOP_SCROLL_CLASS/);
+    assert.match(crcp, /predictive-cf-crcp-scroll-top-\$\{side\}/);
     assert.match(crcp, /createPortal/);
     assert.match(crcp, /key: "dueDate"/);
     const chart = readFileSync(
