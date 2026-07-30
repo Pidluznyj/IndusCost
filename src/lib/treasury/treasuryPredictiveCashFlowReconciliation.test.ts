@@ -7,6 +7,7 @@ import type {
 import {
   buildPredictiveCashFlowReconciliationBoard,
   buildPredictiveCashFlowReconciliationBoardFromLocal,
+  filterPredictiveCashFlowReconciliationBoardByAccountIds,
 } from "./treasuryPredictiveCashFlowReconciliation.js";
 
 function closingAcc(
@@ -154,5 +155,58 @@ describe("treasuryPredictiveCashFlowReconciliation", () => {
     assert.equal(board.rows[0]!.calculatedOpening, 100);
     assert.equal(board.rows[0]!.calculatedClosing, 125);
     assert.equal(board.rows[0]!.informedOpening, null);
+  });
+
+  it("recorta board canônico pelas contas da empresa e recalcula totais", () => {
+    const board = buildPredictiveCashFlowReconciliationBoard({
+      civilDate: "2026-07-29",
+      openingAccounts: [
+        openingAcc({
+          accountId: "a1",
+          accountName: "Koppetel",
+          currentOpeningBalance: "100.00",
+          suggestedOpeningBalance: "100.00",
+        }),
+        openingAcc({
+          accountId: "a2",
+          accountName: "Lazarios",
+          currentOpeningBalance: "200.00",
+          suggestedOpeningBalance: "200.00",
+        }),
+      ],
+      closingAccounts: [
+        closingAcc({
+          accountId: "a1",
+          accountName: "Koppetel",
+          openingBalance: "100.00",
+          realizedInflows: "10.00",
+          realizedOutflows: "5.00",
+          realizedClosingBalance: "105.00",
+          informedClosingBalance: "105.00",
+          divergence: "0.00",
+          situation: "OK",
+        }),
+        closingAcc({
+          accountId: "a2",
+          accountName: "Lazarios",
+          openingBalance: "200.00",
+          realizedInflows: "0.00",
+          realizedOutflows: "0.00",
+          realizedClosingBalance: "200.00",
+          informedClosingBalance: "200.00",
+          divergence: "0.00",
+          situation: "OK",
+        }),
+      ],
+    });
+    const scoped = filterPredictiveCashFlowReconciliationBoardByAccountIds(
+      board,
+      ["a1"]
+    );
+    assert.equal(scoped.rows.length, 1);
+    assert.equal(scoped.rows[0]!.accountId, "a1");
+    assert.equal(scoped.totals.accountCount, 1);
+    assert.equal(scoped.totals.informedOpening, 100);
+    assert.equal(scoped.totals.informedClosing, 105);
   });
 });

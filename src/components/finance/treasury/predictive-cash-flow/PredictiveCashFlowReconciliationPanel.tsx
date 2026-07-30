@@ -16,6 +16,7 @@ import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosi
 import {
   buildPredictiveCashFlowReconciliationBoard,
   buildPredictiveCashFlowReconciliationBoardFromLocal,
+  filterPredictiveCashFlowReconciliationBoardByAccountIds,
   formatPredictiveReconciliationMoney,
   predictiveReconciliationDiffTone,
   type PredictiveCashFlowReconciliationAccountRow,
@@ -133,8 +134,8 @@ export function PredictiveCashFlowReconciliationPanel({
   const [source, setSource] = useState<"canonical" | "local">("local");
 
   useEffect(() => {
-    if (defaultDate && !date) setDate(defaultDate);
-  }, [defaultDate, date]);
+    if (defaultDate) setDate(defaultDate);
+  }, [defaultDate]);
 
   const localFallback = useMemo(
     () =>
@@ -160,11 +161,14 @@ export function PredictiveCashFlowReconciliationPanel({
       .then(([openingWs, closingWs]) => {
         if (ac.signal.aborted) return;
         setBoard(
-          buildPredictiveCashFlowReconciliationBoard({
-            civilDate: date,
-            openingAccounts: openingWs.accounts,
-            closingAccounts: closingWs.accounts,
-          })
+          filterPredictiveCashFlowReconciliationBoardByAccountIds(
+            buildPredictiveCashFlowReconciliationBoard({
+              civilDate: date,
+              openingAccounts: openingWs.accounts,
+              closingAccounts: closingWs.accounts,
+            }),
+            accounts.map((a) => a.id)
+          )
         );
         setSource("canonical");
       })
@@ -188,9 +192,8 @@ export function PredictiveCashFlowReconciliationPanel({
         if (!ac.signal.aborted) setLoading(false);
       });
     return () => ac.abort();
-    // Contas/transações só alimentam o fallback no catch; não re-disparam o fetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- date is the fetch key
-  }, [date]);
+    // Contas/transações alimentam o recorte por empresa e o fallback local.
+  }, [date, accounts, transactions]);
 
   const view = board ?? localFallback;
 
@@ -210,7 +213,7 @@ export function PredictiveCashFlowReconciliationPanel({
             <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
               Por conta e banco: abertura e fechamento informados × calculados
               (CR/CP e movimentos do dia). Diferenças destacadas. No rodapé, o
-              consolidado de todas as contas.
+              consolidado das contas da empresa selecionada.
             </p>
           </div>
         </div>

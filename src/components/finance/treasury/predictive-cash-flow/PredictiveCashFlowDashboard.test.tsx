@@ -24,6 +24,7 @@ const sampleAccounts = [
     institutionName: "Viacredi",
     includeInConsolidated: true,
     isActive: true,
+    companyCode: "EMP1",
   },
   {
     id: "a2",
@@ -32,6 +33,7 @@ const sampleAccounts = [
     institutionName: "Viacredi",
     includeInConsolidated: true,
     isActive: true,
+    companyCode: "EMP2",
   },
 ] as const;
 
@@ -69,8 +71,8 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(html, /predictive-cf-accounts/);
     assert.match(html, /data-variant="hero"/);
     assert.match(html, /Viacredi - Koppetel/);
-    assert.match(html, /Viacredi - Lazarios/);
-    assert.match(html, /Saldos canônicos/);
+    assert.doesNotMatch(html, /Viacredi - Lazarios/);
+    assert.match(html, /consolidado/);
     assert.match(html, /predictive-cf-balance-kpis/);
     assert.match(html, /Saldos informados/);
     assert.match(html, /Saldos calculados/);
@@ -190,9 +192,34 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
       join(here, "PredictiveCashFlowBalanceKpis.tsx"),
       "utf8"
     );
-    assert.match(kpisUi, /lg:grid-cols-2/);
+    assert.match(dash, /filterPredictiveCashFlowAccountsByCompanyCode/);
+    assert.match(dash, /scopedAccounts/);
+    assert.match(kpisUi, /filterPredictiveCashFlowReconciliationBoardByAccountIds/);
+    assert.match(kpisUi, /lg:grid-cols-2|sm:grid-cols-2/);
     assert.match(kpisUi, /Saldos informados/);
     assert.match(kpisUi, /Saldos calculados/);
+  });
+
+  it("contas e consolidado respeitam a empresa do filtro", () => {
+    const html = render(
+      <PredictiveCashFlowDashboard
+        timeline={[]}
+        accounts={[...sampleAccounts]}
+        transactions={[]}
+        filters={createEmptyTreasurySimpleCashRiskFilters()}
+        companyCode="EMP1"
+        companyCodes={["EMP1", "EMP2"]}
+        riskSummary={null}
+        loading={false}
+        error={null}
+        staleMessage={null}
+        onFiltersChange={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    assert.match(html, /Viacredi - Koppetel/);
+    assert.doesNotMatch(html, /Viacredi - Lazarios/);
+    assert.match(html, /R\$\s*60\.351,00/);
   });
 
   it("lista Contas como botões clicáveis", () => {
@@ -206,6 +233,7 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
             institutionName: "Banco",
             includeInConsolidated: true,
             isActive: true,
+            companyCode: "EMP1",
           },
         ]}
         companyCode="EMP1"
@@ -216,5 +244,7 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(html, /predictive-cf-account-a1/);
     assert.match(html, /button/);
     assert.match(html, /Informar saldos do dia — Conta Teste/);
+    assert.match(html, /empresa/);
+    assert.match(html, /EMP1/);
   });
 });

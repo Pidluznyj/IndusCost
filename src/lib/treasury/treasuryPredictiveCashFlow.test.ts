@@ -4,6 +4,7 @@ import type { TreasuryAgendaDayDto } from "./contracts/treasuryDto.js";
 import {
   buildPredictiveCashFlowKpis,
   extractPredictiveTransactionsFromAgendaDays,
+  filterPredictiveCashFlowAccountsByCompanyCode,
   generatePredictiveCashFlowTimeline,
   mapAgendaDaysToPredictiveTimeline,
   resolveCompositionTransactionType,
@@ -134,6 +135,7 @@ describe("treasuryPredictiveCashFlow", () => {
           institutionName: "Banco",
           includeInConsolidated: true,
           isActive: true,
+          companyCode: "EMP1",
         },
       ],
       timeline,
@@ -143,6 +145,38 @@ describe("treasuryPredictiveCashFlow", () => {
     assert.equal(kpis.totalReceivables, 3000);
     assert.equal(kpis.totalPayables, 2000);
     assert.equal(kpis.finalProjection, 11000);
+  });
+
+  it("filtra contas pela empresa selecionada", () => {
+    const accounts = [
+      {
+        id: "a1",
+        name: "A",
+        initialBalance: 10,
+        institutionName: "B",
+        includeInConsolidated: true,
+        isActive: true,
+        companyCode: "001",
+      },
+      {
+        id: "a2",
+        name: "B",
+        initialBalance: 99,
+        institutionName: "B",
+        includeInConsolidated: true,
+        isActive: true,
+        companyCode: "002",
+      },
+    ];
+    const scoped = filterPredictiveCashFlowAccountsByCompanyCode(accounts, "001");
+    assert.deepEqual(
+      scoped.map((a) => a.id),
+      ["a1"]
+    );
+    assert.equal(
+      filterPredictiveCashFlowAccountsByCompanyCode(accounts, "").length,
+      2
+    );
   });
 
   it("classifica itemKind RECEIVABLE/PAYABLE", () => {

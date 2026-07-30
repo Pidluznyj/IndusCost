@@ -132,7 +132,17 @@ export function buildPredictiveCashFlowReconciliationBoard(input: {
     })
     .sort((a, b) => a.accountName.localeCompare(b.accountName, "pt-BR"));
 
-  const totals: PredictiveCashFlowReconciliationTotals = {
+  return {
+    civilDate: input.civilDate,
+    rows,
+    totals: buildTotalsFromRows(rows),
+  };
+}
+
+function buildTotalsFromRows(
+  rows: readonly PredictiveCashFlowReconciliationAccountRow[]
+): PredictiveCashFlowReconciliationTotals {
+  return {
     informedOpening: sumNullable(rows.map((r) => r.informedOpening)),
     calculatedOpening: sumNullable(rows.map((r) => r.calculatedOpening)),
     openingDiff: sumNullable(rows.map((r) => r.openingDiff)),
@@ -144,11 +154,28 @@ export function buildPredictiveCashFlowReconciliationBoard(input: {
     accountCount: rows.length,
     divergenceCount: rows.filter((r) => r.hasDivergence).length,
   };
+}
 
+/**
+ * Recorta o board canônico às contas do filtro (empresa) e recalcula totais.
+ * Sem accountIds / set vazio → retorna o board original.
+ */
+export function filterPredictiveCashFlowReconciliationBoardByAccountIds(
+  board: PredictiveCashFlowReconciliationBoard,
+  accountIds: ReadonlySet<string> | readonly string[] | null | undefined
+): PredictiveCashFlowReconciliationBoard {
+  if (accountIds == null) return board;
+  const ids =
+    accountIds instanceof Set
+      ? accountIds
+      : new Set(accountIds.map((id) => String(id)));
+  if (ids.size === 0) return board;
+  const rows = board.rows.filter((row) => ids.has(row.accountId));
+  if (rows.length === board.rows.length) return board;
   return {
-    civilDate: input.civilDate,
+    civilDate: board.civilDate,
     rows,
-    totals,
+    totals: buildTotalsFromRows(rows),
   };
 }
 
@@ -204,18 +231,7 @@ export function buildPredictiveCashFlowReconciliationBoardFromLocal(input: {
   return {
     civilDate: input.civilDate,
     rows,
-    totals: {
-      informedOpening: null,
-      calculatedOpening: sumNullable(rows.map((r) => r.calculatedOpening)),
-      openingDiff: null,
-      receivables: rows.reduce((s, r) => s + r.receivables, 0),
-      payables: rows.reduce((s, r) => s + r.payables, 0),
-      calculatedClosing: sumNullable(rows.map((r) => r.calculatedClosing)),
-      informedClosing: null,
-      closingDiff: null,
-      accountCount: rows.length,
-      divergenceCount: 0,
-    },
+    totals: buildTotalsFromRows(rows),
   };
 }
 

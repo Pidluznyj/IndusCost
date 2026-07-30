@@ -15,6 +15,7 @@ import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosi
 import {
   buildPredictiveCashFlowReconciliationBoard,
   buildPredictiveCashFlowReconciliationBoardFromLocal,
+  filterPredictiveCashFlowReconciliationBoardByAccountIds,
   formatPredictiveReconciliationMoney,
   type PredictiveCashFlowReconciliationTotals,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlowReconciliation.js";
@@ -40,17 +41,17 @@ function MetricTile({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-white px-4 py-4 shadow-none",
+        "rounded-md border bg-white px-2.5 py-1.5 shadow-none",
         tone === "informed" ? "border-[#BFDBFE]" : "border-[#A7F3D0]"
       )}
       data-testid={testId}
     >
-      <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-[#6B7280]">
         {label}
       </p>
       <p
         className={cn(
-          "mt-2 text-xl font-extrabold tabular-nums tracking-tight sm:text-2xl",
+          "mt-0.5 text-sm font-extrabold tabular-nums tracking-tight sm:text-base",
           tone === "informed" ? "text-[#1E3A8A]" : "text-[#065F46]"
         )}
         data-testid={`${testId}-value`}
@@ -81,17 +82,17 @@ function KpiGrid({
   return (
     <section
       className={cn(
-        "rounded-2xl border p-4 sm:p-5",
+        "rounded-lg border px-2.5 py-2",
         tone === "informed"
           ? "border-[#BFDBFE] bg-gradient-to-br from-[#EFF6FF] to-white"
           : "border-[#A7F3D0] bg-gradient-to-br from-[#ECFDF5] to-white"
       )}
       data-testid={testIdPrefix}
     >
-      <div className="mb-4 flex items-start gap-3">
+      <div className="mb-1.5 flex items-center gap-2">
         <div
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
             tone === "informed"
               ? "bg-[#DBEAFE] text-[#1D4ED8]"
               : "bg-[#D1FAE5] text-[#047857]"
@@ -100,13 +101,13 @@ function KpiGrid({
           {icon}
         </div>
         <div className="min-w-0">
-          <h3 className="text-sm font-extrabold tracking-tight text-[#111827]">
+          <h3 className="text-xs font-extrabold tracking-tight text-[#111827]">
             {title}
           </h3>
-          <p className="mt-0.5 text-xs text-[#6B7280]">{subtitle}</p>
+          <p className="truncate text-[10px] text-[#6B7280]">{subtitle}</p>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-1.5">
         <MetricTile
           label="Abertura"
           value={opening}
@@ -140,6 +141,11 @@ export function PredictiveCashFlowBalanceKpis({
     null
   );
 
+  const accountIds = useMemo(
+    () => accounts.map((a) => a.id),
+    [accounts]
+  );
+
   const localTotals = useMemo(() => {
     if (!civilDate) return null;
     return buildPredictiveCashFlowReconciliationBoardFromLocal({
@@ -161,20 +167,22 @@ export function PredictiveCashFlowBalanceKpis({
     ])
       .then(([openingWs, closingWs]) => {
         if (ac.signal.aborted) return;
-        setTotals(
+        const board = filterPredictiveCashFlowReconciliationBoardByAccountIds(
           buildPredictiveCashFlowReconciliationBoard({
             civilDate,
             openingAccounts: openingWs.accounts,
             closingAccounts: closingWs.accounts,
-          }).totals
+          }),
+          accountIds
         );
+        setTotals(board.totals);
       })
       .catch(() => {
         if (ac.signal.aborted) return;
         setTotals(localTotals);
       });
     return () => ac.abort();
-  }, [civilDate, localTotals]);
+  }, [civilDate, localTotals, accountIds]);
 
   const view = totals ?? localTotals;
   const informedOpening = formatTotal(view?.informedOpening);
@@ -186,13 +194,13 @@ export function PredictiveCashFlowBalanceKpis({
 
   return (
     <div
-      className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
       data-testid="predictive-cf-balance-kpis"
     >
       <KpiGrid
         title="Saldos informados"
         subtitle="Extrato / rotina canônica do dia"
-        icon={<Landmark className="h-4 w-4" aria-hidden />}
+        icon={<Landmark className="h-3.5 w-3.5" aria-hidden />}
         tone="informed"
         opening={informedOpening}
         closing={informedClosing}
@@ -201,7 +209,7 @@ export function PredictiveCashFlowBalanceKpis({
       <KpiGrid
         title="Saldos calculados"
         subtitle="Sistema com base em CR e CP"
-        icon={<Calculator className="h-4 w-4" aria-hidden />}
+        icon={<Calculator className="h-3.5 w-3.5" aria-hidden />}
         tone="calculated"
         opening={calculatedOpening}
         closing={calculatedClosing}

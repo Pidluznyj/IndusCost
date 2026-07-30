@@ -26,6 +26,8 @@ export type PredictiveCashFlowAccount = {
   institutionName: string;
   includeInConsolidated: boolean;
   isActive: boolean;
+  /** Empresa da conta (filtro do Fluxo Gerencial). */
+  companyCode?: string | null;
 };
 
 export type PredictiveCashFlowTransaction = {
@@ -77,7 +79,18 @@ export function mapTreasuryAccountToPredictiveAccount(
     institutionName: account.institutionName,
     includeInConsolidated: account.includeInConsolidated !== false,
     isActive: account.isActive !== false,
+    companyCode: account.companyCode?.trim() || null,
   };
+}
+
+/** Contas da empresa selecionada no Fluxo Gerencial (valores e KPIs). */
+export function filterPredictiveCashFlowAccountsByCompanyCode(
+  accounts: readonly PredictiveCashFlowAccount[],
+  companyCode: string | null | undefined
+): PredictiveCashFlowAccount[] {
+  const code = companyCode?.trim() ?? "";
+  if (!code) return [...accounts];
+  return accounts.filter((a) => (a.companyCode?.trim() ?? "") === code);
 }
 
 export function resolveCompositionTransactionType(
