@@ -676,6 +676,8 @@ describe("sales order flow indicators (OP-66)", () => {
       "src/components/commercial/SalesOrderFlowKanbanFullscreen.tsx"
     );
     assert.match(fullscreen, /sales-order-flow-kanban-search/);
+    assert.match(fullscreen, /sales-order-flow-kanban-filter-year/);
+    assert.match(fullscreen, /sales-order-flow-kanban-filter-month/);
     assert.match(fullscreen, /sales-order-flow-kanban-filter-order/);
     assert.match(fullscreen, /sales-order-flow-kanban-filter-customer/);
     assert.match(fullscreen, /sales-order-flow-kanban-search-apply/);
@@ -687,6 +689,8 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(fullscreen, /SLA médio/);
     assert.match(fullscreen, /Limpar filtros/);
     assert.match(fullscreen, /CustomerAutocompleteFilter/);
+    assert.match(fullscreen, /patchSalesOrderFlowYearMonth/);
+    assert.match(fullscreen, /SALES_ORDER_MONTH_OPTIONS/);
     assert.match(fullscreen, /onApplySearch/);
     assert.match(fullscreen, /onClearSearch/);
     assert.match(fullscreen, /Código do pedido/);
@@ -695,6 +699,11 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(fullscreen, /\/api\/branding-settings/);
     // Filtros/autocomplete acima dos headers/cards do board.
     assert.match(fullscreen, /relative z-40/);
+
+    const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
+    assert.match(mod, /year=\{draftFilters\.year\}/);
+    assert.match(mod, /month=\{draftFilters\.month\}/);
+    assert.match(mod, /issueFrom: defaults\.issueFrom/);
   });
 
   it("Overlay canônico fica acima do Kanban fullscreen (modal DS/detalhe)", () => {

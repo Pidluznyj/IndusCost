@@ -25,6 +25,13 @@ import {
   formatSalesOrderFlowSlaDaysLabel,
   sumSalesOrderFlowFilteredOrderValue,
 } from "@/src/lib/sales/salesOrderFlowKanbanKpis";
+import {
+  buildSalesOrderYearOptions,
+  createDefaultSalesOrderFlowFilters,
+  patchSalesOrderFlowYearMonth,
+  SALES_ORDER_MONTH_OPTIONS,
+  type SalesOrderFlowUiFilters,
+} from "@/src/lib/salesOrderFlowUi";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { cn, formatCurrency } from "@/src/lib/utils";
 
@@ -49,10 +56,13 @@ type Props = {
   /** Busca por pedido (mesmo `q` da barra de filtros da página). */
   orderSearch: string;
   customerId: string;
+  /** Ano/mês de emissão — mesmos campos da barra externa do Fluxo. */
+  year: string;
+  month: string;
   searching?: boolean;
   onOrderSearchChange: (value: string) => void;
-  onApplySearch: (patch?: { q?: string; customerId?: string }) => void;
-  /** Limpa busca de pedido/cliente do Kanban (e sincroniza com a página). */
+  onApplySearch: (patch?: Partial<SalesOrderFlowUiFilters>) => void;
+  /** Limpa busca + período do Kanban (e sincroniza com a página). */
   onClearSearch: () => void;
   /** SLA médio aparado (emissão → concluído) do filtro atual. */
   avgCycleDaysTrimmed?: number | null;
@@ -78,6 +88,8 @@ export function SalesOrderFlowKanbanFullscreen({
   onRetryColumn,
   orderSearch,
   customerId,
+  year,
+  month,
   searching = false,
   onOrderSearchChange,
   onApplySearch,
@@ -90,6 +102,12 @@ export function SalesOrderFlowKanbanFullscreen({
     useState<EntityAutocompleteSelection | null>(null);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
 
+  const yearOptions = useMemo(
+    () => buildSalesOrderYearOptions(new Date().getFullYear(), 5),
+    []
+  );
+  const defaultPeriod = useMemo(() => createDefaultSalesOrderFlowFilters(), []);
+
   const filteredOrderValue = useMemo(
     () => sumSalesOrderFlowFilteredOrderValue(columns),
     [columns]
@@ -98,6 +116,25 @@ export function SalesOrderFlowKanbanFullscreen({
     () => columns.reduce((acc, column) => acc + (column.total || 0), 0),
     [columns]
   );
+
+  const applyYearMonth = (patch: { year?: string; month?: string }) => {
+    const next = patchSalesOrderFlowYearMonth(
+      {
+        ...createDefaultSalesOrderFlowFilters(),
+        q: orderSearch,
+        customerId,
+        year,
+        month,
+      },
+      patch
+    );
+    onApplySearch({
+      year: next.year,
+      month: next.month,
+      issueFrom: next.issueFrom,
+      issueTo: next.issueTo,
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -158,7 +195,11 @@ export function SalesOrderFlowKanbanFullscreen({
   if (typeof document === "undefined") return null;
 
   const logoSrc = resolvePrintLogoSrc(branding);
-  const searchActive = Boolean(orderSearch.trim() || customerId.trim());
+  const periodActive =
+    year.trim() !== defaultPeriod.year || Boolean(month.trim());
+  const searchActive = Boolean(
+    orderSearch.trim() || customerId.trim() || periodActive
+  );
   const duration = reduceMotion ? 0 : EMIL_DURATION.overlay;
 
   return createPortal(
@@ -286,9 +327,64 @@ export function SalesOrderFlowKanbanFullscreen({
             </div>
 
             <div
-              className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_auto]"
+              className="grid gap-2 sm:grid-cols-[minmax(6.5rem,7.5rem)_minmax(7rem,8.5rem)_minmax(0,1fr)_minmax(0,1.2fr)_auto_auto]"
               data-testid="sales-order-flow-kanban-search"
             >
+              <label className="min-w-0">
+                <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Ano
+                </span>
+                <select
+                  className={FILTER_CONTROL_CLASS}
+                  data-testid="sales-order-flow-kanban-filter-year"
+                  aria-label="Filtrar por ano de emissão"
+                  value={year || "all"}
+                  disabled={searching}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    applyYearMonth({
+                      year: value === "all" ? "" : value,
+                    });
+                  }}
+                >
+                  <option value="all">Todos os anos</option>
+                  {yearOptions.map((optionYear) => (
+                    <option key={optionYear} value={String(optionYear)}>
+                      {optionYear}
+                    </option>
+                  ))}
+                  {year && !yearOptions.includes(Number(year)) ? (
+                    <option value={year}>{year}</option>
+                  ) : null}
+                </select>
+              </label>
+
+              <label className="min-w-0">
+                <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Mês
+                </span>
+                <select
+                  className={FILTER_CONTROL_CLASS}
+                  data-testid="sales-order-flow-kanban-filter-month"
+                  aria-label="Filtrar por mês de emissão"
+                  value={month}
+                  disabled={searching || !year}
+                  onChange={(event) =>
+                    applyYearMonth({ month: event.target.value })
+                  }
+                >
+                  <option value="">Todos</option>
+                  {SALES_ORDER_MONTH_OPTIONS.map((optionMonth) => (
+                    <option
+                      key={optionMonth.value}
+                      value={String(optionMonth.value)}
+                    >
+                      {optionMonth.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <label className="min-w-0">
                 <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Pedido

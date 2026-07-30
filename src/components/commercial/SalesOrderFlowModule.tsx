@@ -939,10 +939,22 @@ export function SalesOrderFlowModule() {
           onRetryColumn={handleRetryColumn}
           orderSearch={draftFilters.q}
           customerId={draftFilters.customerId}
+          year={draftFilters.year}
+          month={draftFilters.month}
           searching={loading}
           onOrderSearchChange={(value) => patchDraftFilters({ q: value })}
           onApplySearch={(patch) => applyFilterPatch(patch)}
-          onClearSearch={() => applyFilterPatch({ q: "", customerId: "" })}
+          onClearSearch={() => {
+            const defaults = createDefaultSalesOrderFlowFilters();
+            applyFilterPatch({
+              q: "",
+              customerId: "",
+              year: defaults.year,
+              month: defaults.month,
+              issueFrom: defaults.issueFrom,
+              issueTo: defaults.issueTo,
+            });
+          }}
           avgCycleDaysTrimmed={summary?.totals.avgCycleDaysTrimmed ?? null}
           avgCycleDaysSampleSize={summary?.totals.avgCycleDaysSampleSize ?? 0}
         />
