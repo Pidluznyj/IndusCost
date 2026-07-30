@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TreasuryCrCpTitleDto } from "./treasuryPredictiveCrCpByAccountRules.js";
 import {
+  EMPTY_TREASURY_CRCP_TITLES_FILTERS,
   filterTreasuryCrCpTitles,
+  formatTreasuryCrCpTitlesMonthsLabel,
   listTreasuryCrCpTitleCounterparties,
+  listTreasuryCrCpTitleDueYears,
   presentTreasuryCrCpTitles,
   sortTreasuryCrCpTitles,
+  sumTreasuryCrCpTitlesOpenBalance,
   toggleTreasuryCrCpTitlesSort,
 } from "./treasuryPredictiveCrCpTitlesPresentation.js";
 
@@ -70,9 +74,9 @@ describe("treasuryPredictiveCrCpTitlesPresentation", () => {
 
   it("filtra por cliente/fornecedor e situação", () => {
     const filtered = filterTreasuryCrCpTitles(sample, {
+      ...EMPTY_TREASURY_CRCP_TITLES_FILTERS,
       situation: "OVERDUE",
       counterparty: "Britania",
-      query: "",
     });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]!.id, "r1");
@@ -80,12 +84,53 @@ describe("treasuryPredictiveCrCpTitlesPresentation", () => {
 
   it("filtra por busca em documento", () => {
     const filtered = filterTreasuryCrCpTitles(sample, {
-      situation: "ALL",
-      counterparty: "",
+      ...EMPTY_TREASURY_CRCP_TITLES_FILTERS,
       query: "nf-99",
     });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]!.id, "p1");
+  });
+
+  it("filtra por ano e por meses selecionados", () => {
+    const wider = [
+      ...sample,
+      title({
+        id: "r3",
+        side: "RECEIVABLE",
+        dueDate: "2025-07-01",
+        counterpartyName: "Legacy",
+      }),
+      title({
+        id: "r4",
+        side: "RECEIVABLE",
+        dueDate: "2026-08-01",
+        counterpartyName: "Ago",
+      }),
+    ];
+    const byYear = filterTreasuryCrCpTitles(wider, {
+      ...EMPTY_TREASURY_CRCP_TITLES_FILTERS,
+      year: 2026,
+      months: "all",
+    });
+    assert.deepEqual(
+      byYear.map((t) => t.id).sort(),
+      ["p1", "r1", "r2", "r4"]
+    );
+    const byMonths = filterTreasuryCrCpTitles(wider, {
+      ...EMPTY_TREASURY_CRCP_TITLES_FILTERS,
+      year: 2026,
+      months: [7],
+    });
+    assert.deepEqual(
+      byMonths.map((t) => t.id).sort(),
+      ["p1", "r1", "r2"]
+    );
+    assert.deepEqual(listTreasuryCrCpTitleDueYears(wider, new Date(2026, 6, 30)), [
+      2026,
+      2025,
+    ]);
+    assert.equal(formatTreasuryCrCpTitlesMonthsLabel([7, 8]), "Julho, Agosto");
+    assert.equal(sumTreasuryCrCpTitlesOpenBalance(sample), 330);
   });
 
   it("ordena por saldo e alterna direção", () => {
@@ -112,7 +157,7 @@ describe("treasuryPredictiveCrCpTitlesPresentation", () => {
   it("apresenta filtro + sort juntos", () => {
     const presented = presentTreasuryCrCpTitles(
       sample,
-      { situation: "ALL", counterparty: "", query: "" },
+      EMPTY_TREASURY_CRCP_TITLES_FILTERS,
       "dueDate",
       "asc"
     );

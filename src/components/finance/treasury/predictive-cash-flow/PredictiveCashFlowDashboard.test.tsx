@@ -162,6 +162,10 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(crcp, /predictive-cf-crcp-section-receivable/);
     assert.match(crcp, /predictive-cf-crcp-section-payable/);
     assert.match(crcp, /predictive-cf-crcp-filter-counterparty/);
+    assert.match(crcp, /predictive-cf-crcp-filter-year/);
+    assert.match(crcp, /predictive-cf-crcp-filter-months/);
+    assert.match(crcp, /TitlesMonthsMultiSelect/);
+    assert.match(crcp, /listTreasuryCrCpTitleDueYears/);
     assert.match(crcp, /predictive-cf-crcp-sort-\$\{column\.key\}/);
     assert.match(crcp, /presentTreasuryCrCpTitles/);
     assert.match(crcp, /useTableHorizontalScrollSync/);

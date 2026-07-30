@@ -5,6 +5,7 @@
 
 import type { TreasuryCrCpTitleDto } from "./treasuryPredictiveCrCpByAccountRules.js";
 import { treasuryMoneyToNumber } from "../treasuryPredictiveCashFlow.js";
+import { SALES_ORDER_MONTH_OPTIONS } from "../../salesOrderPeriodFilter.js";
 
 export type TreasuryCrCpTitlesSituationFilter = "ALL" | "OVERDUE" | "UPCOMING";
 
@@ -22,20 +23,103 @@ export type TreasuryCrCpTitlesSortKey =
 
 export type TreasuryCrCpTitlesSortDir = "asc" | "desc";
 
+/** `all` = janeiro–dezembro; array = meses específicos (1–12). */
+export type TreasuryCrCpTitlesMonthsFilter = number[] | "all";
+
 export type TreasuryCrCpTitlesPresentationFilters = {
   situation: TreasuryCrCpTitlesSituationFilter;
   /** Nome exato do cliente/fornecedor; vazio = todos. */
   counterparty: string;
   /** Busca livre em documento / parcela / conta Nomus. */
   query: string;
+  /** Ano do vencimento; `null` = todos. */
+  year: number | null;
+  /** Meses do vencimento; `all` = todos. */
+  months: TreasuryCrCpTitlesMonthsFilter;
 };
+
+export const TREASURY_CRCP_TITLES_ALL_MONTHS = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+] as const;
+
+export const TREASURY_CRCP_TITLES_MONTH_OPTIONS = SALES_ORDER_MONTH_OPTIONS;
 
 export const EMPTY_TREASURY_CRCP_TITLES_FILTERS: TreasuryCrCpTitlesPresentationFilters =
   {
     situation: "ALL",
     counterparty: "",
     query: "",
+    year: null,
+    months: "all",
   };
+
+export function parseTreasuryCrCpTitleDueYearMonth(
+  dueDate: string | null | undefined
+): { year: number; month: number } | null {
+  if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return null;
+  const year = Number(dueDate.slice(0, 4));
+  const month = Number(dueDate.slice(5, 7));
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12
+  ) {
+    return null;
+  }
+  return { year, month };
+}
+
+export function listTreasuryCrCpTitleDueYears(
+  titles: readonly TreasuryCrCpTitleDto[],
+  now: Date = new Date()
+): number[] {
+  const years = new Set<number>();
+  const currentYear = now.getFullYear();
+  if (Number.isInteger(currentYear)) years.add(currentYear);
+  for (const title of titles) {
+    const ym = parseTreasuryCrCpTitleDueYearMonth(title.dueDate);
+    if (ym) years.add(ym.year);
+  }
+  return [...years].sort((a, b) => b - a);
+}
+
+export function resolveTreasuryCrCpTitlesMonths(
+  months: TreasuryCrCpTitlesMonthsFilter
+): number[] {
+  if (months === "all") return [...TREASURY_CRCP_TITLES_ALL_MONTHS];
+  const unique = [
+    ...new Set(
+      months.filter((m) => Number.isInteger(m) && m >= 1 && m <= 12)
+    ),
+  ];
+  return unique.sort((a, b) => a - b);
+}
+
+export function isTreasuryCrCpTitlesAllMonths(
+  months: TreasuryCrCpTitlesMonthsFilter
+): boolean {
+  if (months === "all") return true;
+  const resolved = resolveTreasuryCrCpTitlesMonths(months);
+  return (
+    resolved.length === 12 &&
+    TREASURY_CRCP_TITLES_ALL_MONTHS.every((m, idx) => resolved[idx] === m)
+  );
+}
+
+export function formatTreasuryCrCpTitlesMonthsLabel(
+  months: TreasuryCrCpTitlesMonthsFilter
+): string {
+  if (isTreasuryCrCpTitlesAllMonths(months)) return "Todos os meses";
+  const resolved = resolveTreasuryCrCpTitlesMonths(months);
+  if (resolved.length === 0) return "Todos os meses";
+  const labels = resolved.map((month) => {
+    const opt = TREASURY_CRCP_TITLES_MONTH_OPTIONS.find((m) => m.value === month);
+    return opt?.label ?? String(month);
+  });
+  if (labels.length <= 3) return labels.join(", ");
+  return `${labels.length} meses selecionados`;
+}
 
 export function listTreasuryCrCpTitleCounterparties(
   titles: readonly TreasuryCrCpTitleDto[]
@@ -48,12 +132,29 @@ export function listTreasuryCrCpTitleCounterparties(
   return [...names].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
+export function sumTreasuryCrCpTitlesOpenBalance(
+  titles: readonly TreasuryCrCpTitleDto[]
+): number {
+  let total = 0;
+  for (const title of titles) {
+    total += treasuryMoneyToNumber(title.openBalance);
+  }
+  return Math.round(total * 100) / 100;
+}
+
 export function filterTreasuryCrCpTitles(
   titles: readonly TreasuryCrCpTitleDto[],
   filters: TreasuryCrCpTitlesPresentationFilters
 ): TreasuryCrCpTitleDto[] {
   const counterparty = filters.counterparty.trim();
   const query = filters.query.trim().toLowerCase();
+  const yearFilter = filters.year;
+  const allMonths = isTreasuryCrCpTitlesAllMonths(filters.months);
+  const monthsSet = allMonths
+    ? null
+    : new Set(resolveTreasuryCrCpTitlesMonths(filters.months));
+  const hasPeriodFilter = yearFilter != null || monthsSet != null;
+
   return titles.filter((title) => {
     if (filters.situation === "OVERDUE" && title.situation !== "OVERDUE") {
       return false;
@@ -63,6 +164,12 @@ export function filterTreasuryCrCpTitles(
     }
     if (counterparty && (title.counterpartyName?.trim() ?? "") !== counterparty) {
       return false;
+    }
+    if (hasPeriodFilter) {
+      const ym = parseTreasuryCrCpTitleDueYearMonth(title.dueDate);
+      if (!ym) return false;
+      if (yearFilter != null && ym.year !== yearFilter) return false;
+      if (monthsSet && !monthsSet.has(ym.month)) return false;
     }
     if (!query) return true;
     const haystack = [

@@ -2,13 +2,14 @@
  * CR e CP por conta — API agrupada (Nomus bankAccountId → conta local).
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Building2,
+  ChevronDown,
   Eye,
   Search,
   X,
@@ -21,9 +22,15 @@ import {
 } from "@/src/lib/treasury/domain/treasuryPredictiveCrCpByAccountRules.js";
 import {
   EMPTY_TREASURY_CRCP_TITLES_FILTERS,
+  formatTreasuryCrCpTitlesMonthsLabel,
+  isTreasuryCrCpTitlesAllMonths,
   listTreasuryCrCpTitleCounterparties,
+  listTreasuryCrCpTitleDueYears,
   presentTreasuryCrCpTitles,
+  sumTreasuryCrCpTitlesOpenBalance,
   toggleTreasuryCrCpTitlesSort,
+  TREASURY_CRCP_TITLES_MONTH_OPTIONS,
+  type TreasuryCrCpTitlesMonthsFilter,
   type TreasuryCrCpTitlesPresentationFilters,
   type TreasuryCrCpTitlesSortDir,
   type TreasuryCrCpTitlesSortKey,
@@ -48,13 +55,122 @@ export type PredictiveCashFlowAccountCrCpPanelProps = {
   toDate: string;
 };
 
-function moneyLabel(value: string | null | undefined): string {
+function moneyLabel(value: string | number | null | undefined): string {
   if (value == null) return "—";
+  if (typeof value === "number") {
+    return formatPredictiveCashFlowMoney(value);
+  }
   return formatPredictiveCashFlowMoney(treasuryMoneyToNumber(value));
 }
 
 const FILTER_CONTROL_CLASS =
   "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 disabled:opacity-50";
+
+function TitlesMonthsMultiSelect({
+  value,
+  onChange,
+}: {
+  value: TreasuryCrCpTitlesMonthsFilter;
+  onChange: (next: TreasuryCrCpTitlesMonthsFilter) => void;
+}) {
+  const listId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const allSelected = isTreasuryCrCpTitlesAllMonths(value);
+  const selectedMonths = useMemo(() => {
+    if (allSelected) return [] as number[];
+    return Array.isArray(value) ? [...value].sort((a, b) => a - b) : [];
+  }, [allSelected, value]);
+  const summary = formatTreasuryCrCpTitlesMonthsLabel(
+    allSelected ? "all" : selectedMonths
+  );
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
+
+  function selectAll() {
+    onChange("all");
+  }
+
+  function toggleMonth(month: number) {
+    if (allSelected) {
+      onChange([month]);
+      return;
+    }
+    const set = new Set(selectedMonths);
+    if (set.has(month)) set.delete(month);
+    else set.add(month);
+    const next = [...set].sort((a, b) => a - b);
+    onChange(next.length === 0 || next.length === 12 ? "all" : next);
+  }
+
+  return (
+    <div className="min-w-0" ref={rootRef} data-testid="predictive-cf-crcp-filter-months">
+      <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+        Mês
+      </span>
+      <div className="relative">
+        <button
+          type="button"
+          className={cn(
+            FILTER_CONTROL_CLASS,
+            "flex items-center justify-between gap-2 text-left"
+          )}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => setOpen((current) => !current)}
+          data-testid="predictive-cf-crcp-filter-months-trigger"
+        >
+          <span className="truncate">{summary}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-[#9CA3AF]" aria-hidden />
+        </button>
+        {open ? (
+          <div
+            id={listId}
+            role="listbox"
+            aria-multiselectable
+            className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-[#E5E7EB] bg-white p-2 shadow-lg"
+            data-testid="predictive-cf-crcp-filter-months-dropdown"
+          >
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-[#F8FAFC]">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() => selectAll()}
+                className="h-4 w-4"
+              />
+              Todos os meses
+            </label>
+            <div className="my-1 border-t border-[#E5E7EB]" />
+            {TREASURY_CRCP_TITLES_MONTH_OPTIONS.map((opt) => {
+              const checked = !allSelected && selectedMonths.includes(opt.value);
+              return (
+                <label
+                  key={opt.value}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-[#F8FAFC]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleMonth(opt.value)}
+                    className="h-4 w-4"
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 type SortableColumn = {
   key: TreasuryCrCpTitlesSortKey;
@@ -273,6 +389,10 @@ function TitleDetailDialog({
     () => listTreasuryCrCpTitleCounterparties(allTitles),
     [allTitles]
   );
+  const yearOptions = useMemo(
+    () => listTreasuryCrCpTitleDueYears(allTitles),
+    [allTitles]
+  );
 
   const receivableTitles = useMemo(
     () =>
@@ -288,6 +408,14 @@ function TitleDetailDialog({
     () =>
       presentTreasuryCrCpTitles(group.payableTitles, filters, sortKey, sortDir),
     [group.payableTitles, filters, sortKey, sortDir]
+  );
+  const receivableOpenBalance = useMemo(
+    () => sumTreasuryCrCpTitlesOpenBalance(receivableTitles),
+    [receivableTitles]
+  );
+  const payableOpenBalance = useMemo(
+    () => sumTreasuryCrCpTitlesOpenBalance(payableTitles),
+    [payableTitles]
   );
 
   useEffect(() => {
@@ -312,7 +440,9 @@ function TitleDetailDialog({
   const filtersActive =
     filters.situation !== "ALL" ||
     Boolean(filters.counterparty.trim()) ||
-    Boolean(filters.query.trim());
+    Boolean(filters.query.trim()) ||
+    filters.year != null ||
+    !isTreasuryCrCpTitlesAllMonths(filters.months);
 
   return createPortal(
     <div
@@ -362,9 +492,41 @@ function TitleDetailDialog({
         </div>
 
         <div
-          className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto_auto_auto]"
+          className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,0.85fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto]"
           data-testid="predictive-cf-crcp-titles-filters"
         >
+          <label className="min-w-0">
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+              Ano
+            </span>
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="predictive-cf-crcp-filter-year"
+              value={filters.year == null ? "" : String(filters.year)}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setFilters((current) => ({
+                  ...current,
+                  year: raw ? Number(raw) : null,
+                }));
+              }}
+            >
+              <option value="">Todos</option>
+              {yearOptions.map((year) => (
+                <option key={year} value={String(year)}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <TitlesMonthsMultiSelect
+            value={filters.months}
+            onChange={(months) =>
+              setFilters((current) => ({ ...current, months }))
+            }
+          />
+
           <label className="min-w-0">
             <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
               Cliente / fornecedor
@@ -410,7 +572,7 @@ function TitleDetailDialog({
             </div>
           </label>
 
-          <div className="flex flex-wrap items-end gap-1.5 sm:col-span-2">
+          <div className="flex flex-wrap items-end gap-1.5 sm:col-span-2 lg:col-span-3 xl:col-span-1">
             {(
               [
                 ["ALL", "Todos"],
@@ -435,12 +597,9 @@ function TitleDetailDialog({
                 {label}
               </button>
             ))}
-          </div>
-
-          <div className="flex items-end">
             <button
               type="button"
-              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F8FAFC] disabled:opacity-40"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F8FAFC] disabled:opacity-40"
               data-testid="predictive-cf-crcp-filters-clear"
               disabled={!filtersActive}
               onClick={() => setFilters(EMPTY_TREASURY_CRCP_TITLES_FILTERS)}
@@ -468,7 +627,7 @@ function TitleDetailDialog({
                 <p className="text-xs text-emerald-800/80">
                   {receivableTitles.length} título(s) · saldo{" "}
                   <span className="font-semibold tabular-nums">
-                    {moneyLabel(group.accountsReceivableTotal)}
+                    {moneyLabel(receivableOpenBalance)}
                   </span>
                 </p>
               </div>
@@ -498,7 +657,7 @@ function TitleDetailDialog({
                 <p className="text-xs text-red-800/80">
                   {payableTitles.length} título(s) · saldo{" "}
                   <span className="font-semibold tabular-nums">
-                    {moneyLabel(group.accountsPayableTotal)}
+                    {moneyLabel(payableOpenBalance)}
                   </span>
                 </p>
               </div>
