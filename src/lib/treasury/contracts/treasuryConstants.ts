@@ -54,6 +54,10 @@ export const TREASURY_PROJECTIONS_COMPARE_PATH =
 export const TREASURY_AGENDA_PATH =
   `${TREASURY_API_PREFIX}/agenda` as const;
 
+/** CR/CP do Fluxo Gerencial agrupados por conta (Nomus bankAccountId → local). */
+export const TREASURY_PREDICTIVE_CRCP_BY_ACCOUNT_PATH =
+  `${TREASURY_API_PREFIX}/predictive-cash-flow/cr-cp-by-account` as const;
+
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 

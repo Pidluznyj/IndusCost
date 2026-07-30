@@ -33,6 +33,10 @@ import {
 } from "../domain/treasuryAccountRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import {
+  findActiveDuplicateNomusBankAccountLink,
+  normalizeNomusFinancialAccountId,
+} from "../domain/treasuryPredictiveCrCpByAccountRules.js";
+import {
   toTreasuryAccountAuditPayload,
   toTreasuryFinancialAccountAccessDto,
   toTreasuryFinancialAccountDto,
@@ -187,6 +191,38 @@ export function createTreasuryAccountService(deps: {
     return prisma.$transaction(async (tx) => fn(tx));
   }
 
+  async function assertUniqueActiveNomusBankAccountLink(input: {
+    nomusBankAccountId: string | null | undefined;
+    excludeAccountId?: string | null;
+    nomusDisplayName?: string | null;
+  }): Promise<void> {
+    const nomusId = normalizeNomusFinancialAccountId(input.nomusBankAccountId);
+    if (!nomusId) return;
+    const { rows } = await repo.list({
+      isActive: true,
+      page: 1,
+      pageSize: 500,
+    });
+    const dup = findActiveDuplicateNomusBankAccountLink({
+      accounts: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        isActive: r.isActive,
+        nomusBankAccountId: r.nomusBankAccountId,
+      })),
+      nomusBankAccountId: nomusId,
+      excludeAccountId: input.excludeAccountId,
+    });
+    if (!dup) return;
+    const label =
+      input.nomusDisplayName?.trim() ||
+      `conta Nomus (#${nomusId})`;
+    throw new TreasuryDomainError(
+      "CONFLICT",
+      `A conta Nomus ${label} já está vinculada à conta ${dup.name}.`
+    );
+  }
+
   return {
     assertTransferAccountsDistinct: assertTreasuryTransferAccountsDistinct,
 
@@ -253,6 +289,9 @@ export function createTreasuryAccountService(deps: {
       command: TreasuryCreateAccountCommand
     ): Promise<TreasuryFinancialAccountDto> {
       requireManage(actor);
+      await assertUniqueActiveNomusBankAccountLink({
+        nomusBankAccountId: command.nomusBankAccountId,
+      });
       const created = await runInTransaction(async (tx) => {
         const row = await repo.create(
           {
@@ -310,6 +349,13 @@ export function createTreasuryAccountService(deps: {
         expectedUpdatedAt: expected,
         actualUpdatedAt: account.updatedAt,
       });
+
+      if (command.nomusBankAccountId !== undefined) {
+        await assertUniqueActiveNomusBankAccountLink({
+          nomusBankAccountId: command.nomusBankAccountId,
+          excludeAccountId: accountId,
+        });
+      }
 
       const patch: TreasuryAccountUpdateData = {};
       if (command.name != null) patch.name = command.name.trim();

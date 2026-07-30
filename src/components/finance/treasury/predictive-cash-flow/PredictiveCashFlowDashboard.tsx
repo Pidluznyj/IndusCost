@@ -305,8 +305,7 @@ export function PredictiveCashFlowDashboard({
       <PredictiveCashFlowRiskStrip summary={riskSummary} />
 
       <PredictiveCashFlowAccountCrCpPanel
-        accounts={accounts}
-        transactions={transactions}
+        companyCode={companyCode}
         fromDate={horizon.baseDate}
         toDate={horizon.endDate}
       />

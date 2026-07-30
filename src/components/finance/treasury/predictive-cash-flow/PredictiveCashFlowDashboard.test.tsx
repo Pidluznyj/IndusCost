@@ -133,6 +133,7 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(dash, /PredictiveCashFlowBalanceKpis/);
     assert.match(dash, /PredictiveCashFlowRiskStrip/);
     assert.match(dash, /PredictiveCashFlowAccountCrCpPanel/);
+    assert.match(dash, /companyCode=\{companyCode\}/);
     assert.match(dash, /predictive-cf-filter-year/);
     assert.match(dash, /predictive-cf-filter-company/);
     assert.doesNotMatch(dash, /kpis:/);
@@ -150,6 +151,13 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(recon, /Fechamento final \(todas as contas\)/);
     assert.match(recon, /fetchTreasuryTodayClosing/);
     assert.match(dash, /PredictiveCashFlowReconciliationPanel/);
+    const crcp = readFileSync(
+      join(here, "PredictiveCashFlowAccountCrCpPanel.tsx"),
+      "utf8"
+    );
+    assert.match(crcp, /fetchTreasuryPredictiveCrCpByAccount/);
+    assert.match(crcp, /Ver títulos/);
+    assert.match(crcp, /Contas sem vínculo|isUnlinked/);
     const chart = readFileSync(
       join(here, "PredictiveCashFlowTimelineChart.tsx"),
       "utf8"
