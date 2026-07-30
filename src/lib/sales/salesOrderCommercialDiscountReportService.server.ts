@@ -29,6 +29,7 @@ import {
   buildCommercialDiscountFilterLabels,
   redactMarginFromDetailRow,
   redactMarginFromKpis,
+  applyCommercialDiscountPeriodOverride,
   SALES_ORDER_COMMERCIAL_DISCOUNT_REPORT_EXPORT_ROWS_MAX,
   SALES_ORDER_COMMERCIAL_DISCOUNT_REPORT_ORDERS_TAKE_MAX,
   SALES_ORDER_COMMERCIAL_DISCOUNT_REPORT_PAGE_SIZE_DEFAULT,
@@ -217,7 +218,9 @@ export async function loadSalesOrderCommercialDiscountReportPayload(
   prisma: PrismaClient,
   input: LoadCommercialDiscountReportInput
 ): Promise<CommercialDiscountReportPayload> {
-  const listQuery = parseSalesOrderListQuery(input.query);
+  const listQuery = parseSalesOrderListQuery(
+    applyCommercialDiscountPeriodOverride(input.query)
+  );
   const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
     sellerKeyRaw: listQuery.sellerKeyRaw,
     sellerText: listQuery.sellerText,

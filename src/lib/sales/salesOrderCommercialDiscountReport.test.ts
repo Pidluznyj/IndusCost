@@ -8,6 +8,9 @@ import {
 } from "./salesOrderCommercialDiscountReportExport.js";
 import {
   weightedDiscountRate,
+  applyCommercialDiscountPeriodOverride,
+  buildCommercialDiscountReportSearchParams,
+  createDefaultCommercialDiscountYearMonth,
   type CommercialDiscountReportPayload,
 } from "./salesOrderCommercialDiscountReport.js";
 import {
@@ -453,5 +456,54 @@ describe("salesOrderCommercialDiscountReport — permissões e export", () => {
     assert.equal(kpis.itemsActive, 2000);
     assert.ok(views.bySeller.length >= 1);
     assert.ok(elapsed < 500, `agregação demorou ${elapsed}ms`);
+  });
+});
+
+describe("commercial discount year/month + period override", () => {
+  it("default carrega ano corrente sem mês", () => {
+    const defaults = createDefaultCommercialDiscountYearMonth(
+      new Date(2026, 6, 30)
+    );
+    assert.equal(defaults.year, "2026");
+    assert.equal(defaults.month, "");
+  });
+
+  it("query default envia year e não envia startDate", () => {
+    const params = buildCommercialDiscountReportSearchParams({
+      year: "2026",
+      month: "",
+      startDate: "",
+      endDate: "",
+    });
+    assert.equal(params.get("year"), "2026");
+    assert.equal(params.get("month"), null);
+    assert.equal(params.get("startDate"), null);
+  });
+
+  it("período sobrescreve year/month na query", () => {
+    const params = buildCommercialDiscountReportSearchParams({
+      year: "2026",
+      month: "7",
+      startDate: "2026-01-15",
+      endDate: "2026-02-20",
+    });
+    assert.equal(params.get("startDate"), "2026-01-15");
+    assert.equal(params.get("endDate"), "2026-02-20");
+    assert.equal(params.get("year"), null);
+    assert.equal(params.get("month"), null);
+  });
+
+  it("applyCommercialDiscountPeriodOverride limpa year/month no server", () => {
+    const overridden = applyCommercialDiscountPeriodOverride({
+      year: "2026",
+      month: "7",
+      startDate: "2026-03-01",
+      endDate: "",
+      customerId: "c1",
+    });
+    assert.equal(overridden.year, undefined);
+    assert.equal(overridden.month, undefined);
+    assert.equal(overridden.startDate, "2026-03-01");
+    assert.equal(overridden.customerId, "c1");
   });
 });

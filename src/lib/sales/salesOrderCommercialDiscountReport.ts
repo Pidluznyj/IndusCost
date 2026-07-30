@@ -386,6 +386,99 @@ export function buildCommercialDiscountFilterLabels(
   return labels;
 }
 
+/**
+ * Período (startDate/endDate) sobrescreve Ano/Mês no relatório de descontos.
+ * Quando qualquer data de emissão está preenchida, year/month são ignorados.
+ */
+export function applyCommercialDiscountPeriodOverride<
+  T extends Record<string, unknown>,
+>(query: T): T {
+  const start = String(query.startDate ?? "").trim();
+  const end = String(query.endDate ?? "").trim();
+  if (!start && !end) return query;
+  return {
+    ...query,
+    year: undefined,
+    month: undefined,
+  };
+}
+
+/** Default de carregamento: ano corrente, mês em branco (todo o ano). */
+export function createDefaultCommercialDiscountYearMonth(
+  now: Date = new Date()
+): { year: string; month: string } {
+  return {
+    year: String(now.getFullYear()),
+    month: "",
+  };
+}
+
+/**
+ * Monta query string dos filtros do relatório.
+ * Com período explícito, não envia year/month (override).
+ */
+export function buildCommercialDiscountReportSearchParams(input: {
+  year?: string;
+  month?: string;
+  startDate?: string;
+  endDate?: string;
+  customerId?: string;
+  seller?: string;
+  productQuery?: string;
+  family?: string;
+  discountRateMin?: string;
+  discountRateMax?: string;
+  marginPercentMin?: string;
+  marginPercentMax?: string;
+  presence?: string;
+  billing?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: string;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  const startDate = input.startDate?.trim() ?? "";
+  const endDate = input.endDate?.trim() ?? "";
+  const hasPeriod = Boolean(startDate || endDate);
+  if (hasPeriod) {
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+  } else {
+    const year = input.year?.trim() ?? "";
+    const month = input.month?.trim() ?? "";
+    if (year && year !== "all") params.set("year", year);
+    if (year && year !== "all" && month) params.set("month", month);
+  }
+  if (input.customerId?.trim()) params.set("customerId", input.customerId.trim());
+  if (input.seller?.trim()) params.set("seller", input.seller.trim());
+  if (input.productQuery?.trim()) params.set("productQuery", input.productQuery.trim());
+  if (input.family?.trim()) params.set("family", input.family.trim());
+  if (input.discountRateMin?.trim()) {
+    params.set("discountRateMin", input.discountRateMin.trim());
+  }
+  if (input.discountRateMax?.trim()) {
+    params.set("discountRateMax", input.discountRateMax.trim());
+  }
+  if (input.marginPercentMin?.trim()) {
+    params.set("marginPercentMin", input.marginPercentMin.trim());
+  }
+  if (input.marginPercentMax?.trim()) {
+    params.set("marginPercentMax", input.marginPercentMax.trim());
+  }
+  if (input.presence && input.presence !== "all") {
+    params.set("presence", input.presence);
+  }
+  if (input.billing && input.billing !== "all") {
+    params.set("billing", input.billing);
+  }
+  params.set("page", String(input.page ?? 1));
+  params.set("pageSize", String(input.pageSize ?? 50));
+  params.set("sortBy", input.sortBy ?? "discountValue");
+  params.set("sortDir", input.sortDir ?? "desc");
+  return params;
+}
+
 export function redactMarginFromDetailRow(
   row: CommercialDiscountDetailRow
 ): CommercialDiscountDetailRow {

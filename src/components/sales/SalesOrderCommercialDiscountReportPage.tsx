@@ -26,9 +26,15 @@ import {
 } from "@/src/lib/sales/salesOrderCommercialDiscountReportExportUi";
 import {
   SALES_ORDER_COMMERCIAL_DISCOUNT_REPORT_SUBTITLE,
+  buildCommercialDiscountReportSearchParams,
+  createDefaultCommercialDiscountYearMonth,
   type CommercialDiscountPresenceFilter,
   type CommercialDiscountReportPayload,
 } from "@/src/lib/sales/salesOrderCommercialDiscountReport";
+import {
+  buildSalesOrderYearOptions,
+  SALES_ORDER_MONTH_OPTIONS,
+} from "@/src/lib/salesOrderPeriodFilter";
 import { formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
 
 const FILTER_CONTROL =
@@ -142,6 +148,16 @@ export function SalesOrderCommercialDiscountReportPage(): React.ReactElement {
   const canExport = canExportSalesOrderCommercialDiscountReport(auth);
   const includeMarginUi = canViewSalesOrderCommercialDiscountReportMargin(auth);
 
+  const defaultYearMonth = useMemo(
+    () => createDefaultCommercialDiscountYearMonth(),
+    []
+  );
+  const yearOptions = useMemo(
+    () => buildSalesOrderYearOptions(new Date().getFullYear(), 5),
+    []
+  );
+  const [year, setYear] = useState(defaultYearMonth.year);
+  const [month, setMonth] = useState(defaultYearMonth.month);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [customer, setCustomer] = useState<EntityAutocompleteSelection | null>(null);
@@ -165,26 +181,32 @@ export function SalesOrderCommercialDiscountReportPage(): React.ReactElement {
     "monthly" | "seller" | "customer" | "product" | "family" | "risk"
   >("monthly");
 
+  const periodOverridesYearMonth = Boolean(startDate || endDate);
+
   const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    if (startDate) params.set("startDate", startDate);
-    if (endDate) params.set("endDate", endDate);
-    if (customer?.id) params.set("customerId", customer.id);
-    if (seller.trim()) params.set("seller", seller.trim());
-    if (productQuery.trim()) params.set("productQuery", productQuery.trim());
-    if (family.trim()) params.set("family", family.trim());
-    if (discountRateMin.trim()) params.set("discountRateMin", discountRateMin.trim());
-    if (discountRateMax.trim()) params.set("discountRateMax", discountRateMax.trim());
-    if (marginPercentMin.trim()) params.set("marginPercentMin", marginPercentMin.trim());
-    if (marginPercentMax.trim()) params.set("marginPercentMax", marginPercentMax.trim());
-    if (presence !== "all") params.set("presence", presence);
-    if (billing !== "all") params.set("billing", billing);
-    params.set("page", String(page));
-    params.set("pageSize", "50");
-    params.set("sortBy", "discountValue");
-    params.set("sortDir", "desc");
-    return params.toString();
+    return buildCommercialDiscountReportSearchParams({
+      year,
+      month,
+      startDate,
+      endDate,
+      customerId: customer?.id,
+      seller,
+      productQuery,
+      family,
+      discountRateMin,
+      discountRateMax,
+      marginPercentMin,
+      marginPercentMax,
+      presence,
+      billing,
+      page,
+      pageSize: 50,
+      sortBy: "discountValue",
+      sortDir: "desc",
+    }).toString();
   }, [
+    year,
+    month,
     startDate,
     endDate,
     customer,
@@ -299,12 +321,84 @@ export function SalesOrderCommercialDiscountReportPage(): React.ReactElement {
         data-testid="commercial-discount-filter-bar"
       >
         <div>
+          <label
+            className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+            htmlFor="commercial-discount-filter-year"
+          >
+            Ano
+          </label>
+          <select
+            id="commercial-discount-filter-year"
+            className={FILTER_CONTROL}
+            data-testid="commercial-discount-filter-year"
+            aria-label="Filtrar por ano de emissão"
+            value={year || "all"}
+            disabled={periodOverridesYearMonth}
+            title={
+              periodOverridesYearMonth
+                ? "Período de emissão sobrescreve Ano/Mês"
+                : undefined
+            }
+            onChange={(e) => {
+              setPage(1);
+              const value = e.target.value;
+              setYear(value === "all" ? "" : value);
+              if (value === "all") setMonth("");
+            }}
+          >
+            <option value="all">Todos os anos</option>
+            {yearOptions.map((optionYear) => (
+              <option key={optionYear} value={String(optionYear)}>
+                {optionYear}
+              </option>
+            ))}
+            {year && !yearOptions.includes(Number(year)) ? (
+              <option value={year}>{year}</option>
+            ) : null}
+          </select>
+        </div>
+        <div>
+          <label
+            className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+            htmlFor="commercial-discount-filter-month"
+          >
+            Mês
+          </label>
+          <select
+            id="commercial-discount-filter-month"
+            className={FILTER_CONTROL}
+            data-testid="commercial-discount-filter-month"
+            aria-label="Filtrar por mês de emissão"
+            value={month}
+            disabled={periodOverridesYearMonth || !year}
+            title={
+              periodOverridesYearMonth
+                ? "Período de emissão sobrescreve Ano/Mês"
+                : !year
+                  ? "Selecione um ano para filtrar o mês"
+                  : undefined
+            }
+            onChange={(e) => {
+              setPage(1);
+              setMonth(e.target.value);
+            }}
+          >
+            <option value="">Todos</option>
+            {SALES_ORDER_MONTH_OPTIONS.map((optionMonth) => (
+              <option key={optionMonth.value} value={String(optionMonth.value)}>
+                {optionMonth.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             Emissão de
           </label>
           <input
             type="date"
             className={FILTER_CONTROL}
+            data-testid="commercial-discount-filter-start-date"
             value={startDate}
             onChange={(e) => {
               setPage(1);
@@ -319,6 +413,7 @@ export function SalesOrderCommercialDiscountReportPage(): React.ReactElement {
           <input
             type="date"
             className={FILTER_CONTROL}
+            data-testid="commercial-discount-filter-end-date"
             value={endDate}
             onChange={(e) => {
               setPage(1);
@@ -326,6 +421,14 @@ export function SalesOrderCommercialDiscountReportPage(): React.ReactElement {
             }}
           />
         </div>
+        {periodOverridesYearMonth ? (
+          <p
+            className="md:col-span-2 xl:col-span-4 text-xs text-amber-800"
+            data-testid="commercial-discount-period-override-hint"
+          >
+            Período de emissão ativo: sobrescreve os filtros de Ano e Mês.
+          </p>
+        ) : null}
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             Cliente
