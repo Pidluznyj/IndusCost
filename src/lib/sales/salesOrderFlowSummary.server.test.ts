@@ -78,6 +78,23 @@ function createDb(options?: {
         calls.push({ kind: "aggregate", where: args.where });
         return { _max: { computedAt: new Date("2026-07-17T10:00:00Z") } };
       },
+      findMany: async (args: { where: unknown }) => {
+        calls.push({ kind: "findMany", where: args.where });
+        return [
+          {
+            completedAt: new Date("2026-07-10T12:00:00Z"),
+            salesOrder: { issueDate: new Date("2026-07-01T12:00:00Z") },
+          },
+          {
+            completedAt: new Date("2026-07-12T12:00:00Z"),
+            salesOrder: { issueDate: new Date("2026-07-02T12:00:00Z") },
+          },
+          {
+            completedAt: new Date("2026-07-20T12:00:00Z"),
+            salesOrder: { issueDate: new Date("2026-06-01T12:00:00Z") },
+          },
+        ];
+      },
     },
   } as unknown as SalesOrderFlowSummaryDb;
 
@@ -119,11 +136,14 @@ describe("salesOrderFlowSummary.server (OP-59)", () => {
     assert.match(groupWhere, /"c2"/);
     assert.match(groupWhere, /"isOverdue":true/);
 
-    // OP-75: orçamento de query count (1 groupBy + 6 counts + 1 aggregate).
+    // OP-75: orçamento de query (1 groupBy + 6 counts + 1 aggregate + 1 findMany SLA).
     assert.equal(calls.length, SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET);
     assert.equal(calls.filter((c) => c.kind === "groupBy").length, 1);
     assert.equal(calls.filter((c) => c.kind === "count").length, 6);
     assert.equal(calls.filter((c) => c.kind === "aggregate").length, 1);
+    assert.equal(calls.filter((c) => c.kind === "findMany").length, 1);
+    assert.ok(payload.totals.avgCycleDaysTrimmed != null);
+    assert.equal(payload.totals.avgCycleDaysSampleSize, 3);
   });
 
   it("oculta valores quando canViewValues=false", async () => {

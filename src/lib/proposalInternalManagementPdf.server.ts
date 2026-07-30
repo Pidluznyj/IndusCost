@@ -8,7 +8,7 @@ import {
   buildProposalInternalManagementPdfFilename,
   type ProposalInternalManagementPdfDocument,
 } from "./proposalInternalManagementPdf.js";
-import { resolveProposalCommercialListMargins } from "./proposalCommercialMarginRecalc.server.js";
+import { resolveProposalCommercialItemDetails } from "./proposalCommercialMarginRecalc.server.js";
 import { applyProductionCostsToProposalDetail } from "./proposalMargin.server.js";
 
 function decimalToNumber(value: unknown): number {
@@ -56,18 +56,33 @@ export async function loadAndBuildProposalInternalManagementPdf(
     proposal
   );
 
-  const commercialById = await resolveProposalCommercialListMargins(prisma, [
+  const commercialByItem = await resolveProposalCommercialItemDetails(prisma, [
     proposal.id,
   ]);
-  const commercial = commercialById.get(proposal.id);
-  const totalMarginPerc =
-    commercial?.totalMarginPerc != null
-      ? commercial.totalMarginPerc
-      : decimalToNumber(enrichedProposal.totalMarginPerc);
+  let totalMarginValueSum = 0;
+  let totalNetSum = 0;
+  let commercialCompleteCount = 0;
+  for (const detail of commercialByItem.values()) {
+    if (
+      detail.result.isComplete &&
+      detail.marginValue != null &&
+      Number.isFinite(detail.marginValue)
+    ) {
+      totalMarginValueSum += detail.marginValue;
+      totalNetSum += detail.result.netLineValue;
+      commercialCompleteCount += 1;
+    }
+  }
   const totalMarginValue =
-    commercial?.totalMarginValue != null
-      ? commercial.totalMarginValue
+    commercialCompleteCount > 0
+      ? totalMarginValueSum
       : decimalToNumber(enrichedProposal.totalMarginValue);
+  const totalMarginPerc =
+    commercialCompleteCount > 0 && totalNetSum > 0
+      ? (totalMarginValueSum / totalNetSum) * 100
+      : commercialCompleteCount > 0
+        ? null
+        : decimalToNumber(enrichedProposal.totalMarginPerc);
 
   const document = buildProposalInternalManagementPdfDocument({
     id: enrichedProposal.id,
@@ -118,6 +133,7 @@ export async function loadAndBuildProposalInternalManagementPdf(
           } | null;
         }
       ).productionCostBreakdown;
+      const commercial = commercialByItem.get(item.id);
       return {
         sku: item.Product?.sku ?? null,
         name: item.Product?.name ?? null,
@@ -129,15 +145,29 @@ export async function loadAndBuildProposalInternalManagementPdf(
         suggestedPrice: decimalToNumber(item.suggestedPrice),
         discountPerc: decimalToNumber(item.discountPerc),
         discountValue: decimalToNumber(item.discountValue),
-        marginValue: decimalToNumber(item.marginValue),
-        marginPerc: decimalToNumber(item.marginPerc),
-        commissionPerc: decimalToNumber(item.commissionPerc),
-        commissionValue: decimalToNumber(item.commissionValue),
+        marginValue:
+          commercial?.marginValue != null
+            ? commercial.marginValue
+            : decimalToNumber(item.marginValue),
+        marginPerc:
+          commercial?.marginPerc != null
+            ? commercial.marginPerc
+            : decimalToNumber(item.marginPerc),
+        commissionPerc:
+          commercial?.commissionPerc != null
+            ? commercial.commissionPerc
+            : decimalToNumber(item.commissionPerc),
+        commissionValue:
+          commercial?.commissionValue != null
+            ? commercial.commissionValue
+            : decimalToNumber(item.commissionValue),
         taxesValue: decimalToNumber(item.taxesValue),
         freightValue: decimalToNumber(item.freightValue),
         notes: item.notes,
         pricingSnapshotJson: item.pricingSnapshotJson,
-        commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+        commercialPricingSnapshotJson:
+          commercial?.commercialPricingSnapshotJson ??
+          item.commercialPricingSnapshotJson,
         priceTableId: item.priceTableId,
         priceTableVersionId: item.priceTableVersionId,
         priceSource: item.priceSource,

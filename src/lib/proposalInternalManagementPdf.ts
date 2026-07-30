@@ -10,8 +10,10 @@ import {
   extractProposalItemEstimatedCommission,
   formatProposalEstimatedCommissionLabel,
 } from "./proposalItemEstimatedCommission.js";
+import { previewProposalCommercialMargins } from "./proposalCommercialMarginPreview.js";
 import { resolveProposalItemCommercialMarginDisplay } from "./proposalCommercialMarginDisplay.js";
 import { resolveProposalAnalysisCommercialMargin } from "./proposalListMargin.js";
+import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import {
   buildFormattedLandscapePdf,
   formatPdfMoneyBr,
@@ -232,6 +234,34 @@ export function buildProposalInternalManagementPdfDocument(
   const storedCommission = n(input.totalCommission);
   const markup = cost > 0 ? net / cost : null;
 
+  const commercialPreview = previewProposalCommercialMargins(
+    items.map((item) => ({
+      productId: typeof item.productId === "string" ? item.productId : null,
+      quantity: n(item.quantity),
+      suggestedPrice:
+        item.suggestedPrice != null && item.suggestedPrice !== ""
+          ? n(item.suggestedPrice)
+          : null,
+      negotiatedPrice: n(item.negotiatedPrice),
+      discountPerc:
+        item.discountPerc != null && item.discountPerc !== ""
+          ? n(item.discountPerc)
+          : null,
+      discountValue:
+        item.discountValue != null && item.discountValue !== ""
+          ? n(item.discountValue)
+          : null,
+      priceTableId: typeof item.priceTableId === "string" ? item.priceTableId : null,
+      priceTableVersionId:
+        typeof item.priceTableVersionId === "string"
+          ? item.priceTableVersionId
+          : null,
+      priceSource: typeof item.priceSource === "string" ? item.priceSource : null,
+      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
+      pricingSnapshotJson: item.pricingSnapshotJson,
+    }))
+  );
+
   const commercialTotals = resolveProposalAnalysisCommercialMargin({
     totalNetValue: input.totalNetValue,
     totalMarginPerc: input.totalMarginPerc,
@@ -258,9 +288,45 @@ export function buildProposalInternalManagementPdfDocument(
     const discountValue = n(item.discountValue);
     const totalPrice = Math.max(0, quantity * unitPrice - discountValue);
     const totalCost = quantity * unitCost;
-    const commercial = resolveProposalItemCommercialMarginDisplay(item);
-    const itemMargin = commercial.marginValue;
-    const itemMarginPerc = commercial.marginPerc;
+    const previewItem = commercialPreview.byIndex[index] ?? null;
+    const display = resolveProposalItemCommercialMarginDisplay(item);
+    const storedMarginValue =
+      item.marginValue != null && item.marginValue !== ""
+        ? n(item.marginValue)
+        : null;
+    const storedMarginPerc =
+      item.marginPerc != null && item.marginPerc !== ""
+        ? n(item.marginPerc)
+        : null;
+    const looksLikeProduction100 =
+      storedMarginPerc != null &&
+      Math.abs(storedMarginPerc - 100) <= 0.051 &&
+      !(unitCost > 0);
+
+    let itemMargin: number | null = null;
+    let itemMarginPerc: number | null = null;
+    if (
+      previewItem?.isComplete &&
+      (previewItem.commercialMarginValue != null ||
+        previewItem.commercialMarginPercent != null)
+    ) {
+      itemMargin = previewItem.commercialMarginValue;
+      itemMarginPerc = previewItem.commercialMarginPercent;
+    } else if (display.marginPerc != null || display.marginValue != null) {
+      itemMargin = display.marginValue;
+      itemMarginPerc = display.marginPerc;
+    } else if (
+      !looksLikeProduction100 &&
+      (storedMarginPerc != null || storedMarginValue != null)
+    ) {
+      itemMarginPerc = storedMarginPerc;
+      itemMargin =
+        storedMarginValue != null
+          ? storedMarginValue
+          : storedMarginPerc != null && totalPrice > 0
+            ? roundPricingMoney((storedMarginPerc / 100) * totalPrice)
+            : null;
+    }
 
     const storedCommissionValue = n(item.commissionValue);
     const storedCommissionPerc = n(item.commissionPerc);
@@ -275,6 +341,23 @@ export function buildProposalInternalManagementPdfDocument(
       item.commercialPricingSnapshotJson
     );
 
+    const previewCommissionRate =
+      previewItem?.isComplete && previewItem.commissionRate != null
+        ? previewItem.commissionRate > 1
+          ? previewItem.commissionRate / 100
+          : previewItem.commissionRate
+        : null;
+    const previewCommissionPerc =
+      previewCommissionRate != null
+        ? roundPricingPercent(previewCommissionRate * 100)
+        : null;
+    const previewCommissionValue =
+      previewItem?.isComplete && previewItem.commissionValue != null
+        ? previewItem.commissionValue
+        : previewCommissionRate != null && totalPrice > 0
+          ? roundPricingMoney(totalPrice * previewCommissionRate)
+          : null;
+
     let commissionPerc = storedCommissionPerc > 0 ? storedCommissionPerc : 0;
     let commissionValue = storedCommissionValue > 0 ? storedCommissionValue : 0;
     let commissionEstimated = false;
@@ -282,22 +365,36 @@ export function buildProposalInternalManagementPdfDocument(
     let commissionPendingReason: string | null = null;
 
     if (storedCommissionPerc > 0 || storedCommissionValue > 0) {
-      if (!(storedCommissionPerc > 0) && estimated.commissionPerc != null) {
+      if (!(storedCommissionPerc > 0) && previewCommissionPerc != null) {
+        commissionPerc = previewCommissionPerc;
+        commissionEstimated = true;
+      } else if (!(storedCommissionPerc > 0) && estimated.commissionPerc != null) {
         commissionPerc = estimated.commissionPerc;
         commissionEstimated = true;
       }
       if (!(storedCommissionValue > 0)) {
-        const estimatedValue = estimateProposalItemCommissionValue({
-          quantity,
-          lineRevenue: totalPrice,
-          commissionPerc: commissionPerc > 0 ? commissionPerc : estimated.commissionPerc,
-          commissionValuePerUnit: estimated.commissionValuePerUnit,
-        });
+        const estimatedValue =
+          previewCommissionValue ??
+          estimateProposalItemCommissionValue({
+            quantity,
+            lineRevenue: totalPrice,
+            commissionPerc: commissionPerc > 0 ? commissionPerc : estimated.commissionPerc,
+            commissionValuePerUnit: estimated.commissionValuePerUnit,
+          });
         if (estimatedValue != null) {
           commissionValue = estimatedValue;
           commissionEstimated = true;
         }
       }
+    } else if (previewCommissionPerc != null) {
+      commissionPerc = previewCommissionPerc;
+      commissionValue = previewCommissionValue ?? 0;
+      commissionEstimated = true;
+      commissionPending =
+        previewCommissionValue == null && previewCommissionPerc > 0;
+      commissionPendingReason = commissionPending
+        ? "Percentual disponível; valor estimado pendente (sem base de venda)."
+        : null;
     } else if (estimated.source === "SNAPSHOT" && estimated.commissionPerc != null) {
       commissionPerc = estimated.commissionPerc;
       const estimatedValue = estimateProposalItemCommissionValue({

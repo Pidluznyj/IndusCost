@@ -129,7 +129,7 @@ export function SalesOrderFlowKanbanBoard({
             variants={reduceMotion ? undefined : emilColumnVariants}
             transition={columnTransition}
             className={cn(
-              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 shadow-sm",
+              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/80",
               fullscreen
                 ? "h-full max-h-none"
                 : "max-h-[min(70vh,640px)]"
@@ -138,36 +138,50 @@ export function SalesOrderFlowKanbanBoard({
           >
             <header
               className={cn(
-                "relative z-0 shrink-0 rounded-t-xl border-b px-3 py-2.5",
+                "relative z-0 shrink-0 border-b border-border/60 px-3 pb-2.5 pt-3",
                 salesOrderFlowKanbanHeaderClass(column.stage)
               )}
             >
+              <div
+                className={cn(
+                  "absolute inset-x-0 top-0 h-1",
+                  salesOrderFlowKanbanAccentClass(column.stage)
+                )}
+                aria-hidden="true"
+              />
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-semibold leading-tight text-foreground">
+                <h3 className="text-[13px] font-semibold leading-snug tracking-tight text-foreground">
                   {column.label}
                 </h3>
-                <span className="rounded-full border border-slate-300/80 bg-white/90 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                <span className="tabular-nums rounded-md bg-foreground/[0.06] px-2 py-0.5 text-xs font-bold text-foreground">
                   {column.total}
                 </span>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-slate-600">
-                <span>Valor</span>
-                <strong className="text-right text-foreground">
-                  {formatColumnMoney(column.orderValue, valuesVisible)}
-                </strong>
-                <span>Saldo ativo</span>
-                <strong className="text-right text-foreground">
-                  {formatColumnMoney(column.activeResidualValue, valuesVisible)}
-                </strong>
-                <span>Atrasados / bloqueados</span>
-                <strong className="text-right text-foreground">
-                  {column.totals.overdueCount} / {column.totals.blockedCount}
-                </strong>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                <span className="rounded-md bg-background/70 px-1.5 py-0.5 text-muted-foreground">
+                  Valor{" "}
+                  <strong className="font-semibold text-foreground">
+                    {formatColumnMoney(column.orderValue, valuesVisible)}
+                  </strong>
+                </span>
+                <span className="rounded-md bg-background/70 px-1.5 py-0.5 text-muted-foreground">
+                  Saldo{" "}
+                  <strong className="font-semibold text-foreground">
+                    {formatColumnMoney(column.activeResidualValue, valuesVisible)}
+                  </strong>
+                </span>
+                {(column.totals.overdueCount > 0 ||
+                  column.totals.blockedCount > 0) && (
+                  <span className="rounded-md bg-rose-500/10 px-1.5 py-0.5 font-medium text-rose-800">
+                    {column.totals.overdueCount} atras. ·{" "}
+                    {column.totals.blockedCount} bloq.
+                  </span>
+                )}
               </div>
             </header>
 
             <div
-              className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain p-2"
+              className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-y-contain bg-[linear-gradient(180deg,rgba(15,23,42,0.02),transparent_48px)] p-2"
               data-testid={`sales-order-flow-kanban-column-scroll-${column.stage}`}
             >
               {column.status === "loading" ? (
@@ -223,7 +237,7 @@ export function SalesOrderFlowKanbanBoard({
               ) : null}
 
               <motion.div
-                className="space-y-2"
+                className="space-y-1.5"
                 variants={reduceMotion ? undefined : emilCardListStagger}
                 initial={reduceMotion ? false : "hidden"}
                 animate="show"
@@ -350,9 +364,18 @@ export function SalesOrderFlowKanbanCard({
     setMinimized(defaultMinimized);
   }, [defaultMinimized, card.orderId]);
 
-  const badges = resolveCardBadges(card);
+  const badges = resolveCardBadges(card).slice(0, 3);
   const stageLabel =
     SALES_ORDER_FLOW_STAGE_LABELS[card.stage] ?? String(card.stage);
+  const nextAction =
+    card.missingToLeave?.trim() ||
+    card.nextAction?.trim() ||
+    "Sem ação definida";
+  const accentClass = card.isBlocked
+    ? "bg-rose-500"
+    : card.isOverdue
+      ? "bg-amber-500"
+      : "bg-sky-500/70";
   const morphTransition = {
     duration: reduceMotion ? 0 : EMIL_DURATION.popover,
     ease: EMIL_EASE_OUT,
@@ -367,32 +390,33 @@ export function SalesOrderFlowKanbanCard({
           animate={{ opacity: 1, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
           transition={morphTransition}
-          className="flex w-full items-stretch gap-1 rounded-lg border border-border bg-card shadow-sm"
+          className="flex w-full items-stretch overflow-hidden rounded-xl border border-border/70 bg-card"
           data-testid={`sales-order-flow-card-${card.orderId}`}
           data-minimized="true"
         >
+          <div className={cn("w-1 shrink-0", accentClass)} aria-hidden="true" />
           <button
             type="button"
             className={cn(
-              "min-w-0 flex-1 px-2.5 py-2 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+              "min-w-0 flex-1 px-2.5 py-2 text-left hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
               PRESSABLE
             )}
             onClick={onOpen}
             aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-sm font-bold text-foreground">
+              <p className="truncate text-[13px] font-bold tracking-tight text-foreground">
                 {card.orderCode}
               </p>
               {card.isBlocked ? (
                 <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-hidden="true" />
               ) : null}
             </div>
-            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
+            <p className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">
               {stageLabel}
             </p>
             <p
-              className="mt-1 line-clamp-2 text-[11px] font-semibold leading-snug text-amber-950"
+              className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground"
               title={card.stayReason}
               data-testid={`sales-order-flow-card-stay-reason-mini-${card.orderId}`}
             >
@@ -402,7 +426,7 @@ export function SalesOrderFlowKanbanCard({
           <button
             type="button"
             className={cn(
-              "shrink-0 border-l border-border px-2 text-muted-foreground hover:bg-accent hover:text-foreground",
+              "shrink-0 border-l border-border/70 px-2 text-muted-foreground hover:bg-accent hover:text-foreground",
               PRESSABLE
             )}
             data-testid={`sales-order-flow-card-expand-${card.orderId}`}
@@ -422,239 +446,253 @@ export function SalesOrderFlowKanbanCard({
           animate={{ opacity: 1, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
           transition={morphTransition}
-          className="rounded-lg border border-border bg-card shadow-sm"
+          className="overflow-hidden rounded-xl border border-border/70 bg-card"
           data-testid={`sales-order-flow-card-${card.orderId}`}
           data-minimized="false"
         >
-      <div className="flex items-start gap-1 border-b border-border/60 px-1 pt-1">
-        <button
-          type="button"
-          className={cn(
-            "ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground",
-            PRESSABLE
-          )}
-          data-testid={`sales-order-flow-card-minimize-${card.orderId}`}
-          aria-label={`Minimizar pedido ${card.orderCode}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            setMinimized(true);
-          }}
-        >
-          <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-      </div>
-      <button
-        type="button"
-        className={cn(
-          "w-full p-3 pt-1 text-left hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-          PRESSABLE
-        )}
-        onClick={onOpen}
-        aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-foreground">
-              {card.orderCode}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {card.customerName?.trim() || "Cliente não informado"}
-            </p>
-            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
-              {stageLabel}
-            </p>
-          </div>
-          <PriorityBadge priority={card.priority} />
-        </div>
-
-        <div
-          className="mt-2 rounded-md border border-sky-200 bg-sky-50/80 px-2 py-1.5 text-xs text-sky-950"
-          data-testid={`sales-order-flow-card-stay-reason-${card.orderId}`}
-        >
-          <p className="font-semibold uppercase tracking-wide text-[10px] text-sky-800">
-            Por que está nesta coluna
-          </p>
-          <p className="mt-0.5 font-medium leading-snug">{card.stayReason}</p>
-          <p className="mt-1.5 font-semibold uppercase tracking-wide text-[10px] text-sky-800">
-            O que falta para sair
-          </p>
-          <p className="mt-0.5 font-medium leading-snug">{card.missingToLeave}</p>
-        </div>
-
-        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
-          <span className="text-slate-600">Vendedor</span>
-          <strong className="truncate text-right font-medium text-foreground">
-            {card.sellerName?.trim() || "—"}
-          </strong>
-          <span className="text-slate-600">Empresa</span>
-          <strong className="truncate text-right font-medium text-foreground">
-            {card.companyIssuer?.trim() || "—"}
-          </strong>
-          <span className="text-slate-600">Entrega</span>
-          <strong
-            className={cn(
-              "text-right font-medium",
-              card.isOverdue ? "text-rose-700" : "text-foreground"
-            )}
-          >
-            {formatFlowDate(card.promisedDeliveryAt)}
-          </strong>
-          <span className="text-slate-600">Na etapa</span>
-          <strong className="text-right font-medium text-foreground">
-            {formatDaysInStage(card.daysInStage)}
-          </strong>
-        </div>
-
-        <div className="mt-2 rounded-md border border-border/70 bg-muted/25 px-2 py-1.5 text-xs">
-          {valuesVisible ? (
-            <div className="grid grid-cols-2 gap-x-2">
-              <span className="text-slate-600">Valor</span>
-              <strong className="text-right text-foreground">
-                {formatNullableMoney(card.orderValue)}
-              </strong>
-              <span className="text-slate-600">Saldo ativo</span>
-              <strong className="text-right text-foreground">
-                {formatNullableMoney(card.activeResidualValue)}
-              </strong>
-            </div>
-          ) : (
-            <p className="text-center text-slate-600">
-              Valores ocultos por permissão
-            </p>
-          )}
-        </div>
-
-        <div className="mt-2 flex items-center justify-between text-xs">
-          <span className="text-slate-600">Itens</span>
-          <strong className="text-foreground">
-            {card.completedItems} concluídos · {card.pendingItems} pendentes
-          </strong>
-        </div>
-
-        <div className="mt-2 space-y-1.5">
-          {card.progressProductionOrder != null ? (
-            <CompactProgress
-              label="OP planejada"
-              value={card.progressProductionOrder}
-              icon={Factory}
-            />
-          ) : null}
-          {card.progressProduced != null ? (
-            <CompactProgress
-              label="Produção"
-              value={card.progressProduced}
-              icon={Factory}
-            />
-          ) : null}
-          <CompactProgress
-            label="Documento"
-            value={card.progressDocumented}
-            icon={PackageCheck}
-          />
-          <CompactProgress
-            label="Faturado"
-            value={card.progressInvoiced}
-            icon={CalendarClock}
-          />
-          <CompactProgress
-            label="Enviado"
-            value={card.progressShipped}
-            icon={Truck}
-          />
-        </div>
-
-        <div className="mt-2 border-t border-border/70 pt-2 text-xs">
-          <p className="text-slate-600">Próxima ação</p>
-          <p className="font-medium text-foreground">
-            {card.missingToLeave?.trim() ||
-              card.nextAction?.trim() ||
-              "Sem ação definida"}
-          </p>
-          <p className="mt-1 text-slate-600">
-            Área:{" "}
-            <span className="font-medium text-foreground">
-              {formatKanbanResponsibleAreaLabel(card.responsibleArea)}
-            </span>
-          </p>
-        </div>
-
-        {card.isBlocked ? (
-          <div className="mt-2 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1.5 text-xs text-rose-900">
-            <span className="inline-flex items-center gap-1 font-semibold">
-              <Ban className="h-3 w-3" /> Bloqueado
-            </span>
-            {card.blockReason?.trim() ? ` · ${card.blockReason.trim()}` : null}
-          </div>
-        ) : null}
-
-        {inconsistenciesVisible && card.inconsistencies.length > 0 ? (
-          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">
-            <p className="inline-flex items-center gap-1 font-semibold">
-              <AlertTriangle className="h-3 w-3" />
-              {card.inconsistencies.length} inconsistência(s)
-            </p>
-            <p className="mt-0.5 line-clamp-2">
-              {card.inconsistencies
-                .slice(0, 2)
-                .map((item) => formatInconsistencyLabel(item.code))
-                .join(" · ")}
-            </p>
-          </div>
-        ) : null}
-
-        {badges.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {badges.map((badge) => (
-              <span
-                key={badge.key}
+          <div className="flex">
+            <div className={cn("w-1 shrink-0 self-stretch", accentClass)} aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-1 px-2 pt-1.5">
+                <PriorityBadge priority={card.priority} />
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground",
+                    PRESSABLE
+                  )}
+                  data-testid={`sales-order-flow-card-minimize-${card.orderId}`}
+                  aria-label={`Minimizar pedido ${card.orderCode}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMinimized(true);
+                  }}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <button
+                type="button"
                 className={cn(
-                  "rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-                  badge.className
+                  "w-full px-3 pb-3 pt-0.5 text-left hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                  PRESSABLE
                 )}
+                onClick={onOpen}
+                aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
               >
-                {badge.label}
-              </span>
-            ))}
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-bold tracking-tight text-foreground">
+                    {card.orderCode}
+                  </p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {card.customerName?.trim() || "Cliente não informado"}
+                    <span className="text-border"> · </span>
+                    {stageLabel}
+                  </p>
+                </div>
+
+                <div
+                  className="mt-2 space-y-1"
+                  data-testid={`sales-order-flow-card-stay-reason-${card.orderId}`}
+                >
+                  <p className="text-[11px] leading-snug text-foreground">
+                    <span className="font-medium text-muted-foreground">
+                      Aqui porque{" "}
+                    </span>
+                    {card.stayReason}
+                  </p>
+                  <p className="text-[11px] leading-snug text-foreground">
+                    <span className="font-medium text-sky-800">Para sair · </span>
+                    {nextAction}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {formatKanbanResponsibleAreaLabel(card.responsibleArea)}
+                    <span className="text-border"> · </span>
+                    {formatDaysInStage(card.daysInStage)} na etapa
+                  </p>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <span>
+                    Entrega{" "}
+                    <strong
+                      className={cn(
+                        "font-semibold",
+                        card.isOverdue ? "text-rose-700" : "text-foreground"
+                      )}
+                    >
+                      {formatFlowDate(card.promisedDeliveryAt)}
+                    </strong>
+                  </span>
+                  {valuesVisible ? (
+                    <>
+                      <span>
+                        Valor{" "}
+                        <strong className="font-semibold text-foreground">
+                          {formatNullableMoney(card.orderValue)}
+                        </strong>
+                      </span>
+                      <span>
+                        Saldo{" "}
+                        <strong className="font-semibold text-foreground">
+                          {formatNullableMoney(card.activeResidualValue)}
+                        </strong>
+                      </span>
+                    </>
+                  ) : (
+                    <span>Valores ocultos por permissão</span>
+                  )}
+                </div>
+
+                <p className="mt-1.5 text-[10px] text-muted-foreground">
+                  {card.sellerName?.trim() || "Sem vendedor"}
+                  {card.companyIssuer?.trim()
+                    ? ` · ${card.companyIssuer.trim()}`
+                    : null}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Itens{" "}
+                  <strong className="font-semibold text-foreground">
+                    {card.completedItems} concluídos · {card.pendingItems}{" "}
+                    pendentes
+                  </strong>
+                </p>
+
+                <FlowProgressStrip card={card} />
+
+                {card.isBlocked ? (
+                  <p className="mt-2 inline-flex items-start gap-1 text-[11px] font-medium text-rose-800">
+                    <Ban className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span>
+                      Bloqueado
+                      {card.blockReason?.trim()
+                        ? ` · ${card.blockReason.trim()}`
+                        : null}
+                    </span>
+                  </p>
+                ) : null}
+
+                {inconsistenciesVisible && card.inconsistencies.length > 0 ? (
+                  <p className="mt-1.5 inline-flex items-start gap-1 text-[11px] text-amber-900">
+                    <AlertTriangle
+                      className="mt-0.5 h-3 w-3 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span className="line-clamp-2">
+                      {card.inconsistencies.length} inconsistência(s):{" "}
+                      {card.inconsistencies
+                        .slice(0, 2)
+                        .map((item) => formatInconsistencyLabel(item.code))
+                        .join(" · ")}
+                    </span>
+                  </p>
+                ) : null}
+
+                {badges.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {badges.map((badge) => (
+                      <span
+                        key={badge.key}
+                        className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                          badge.className
+                        )}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </button>
+            </div>
           </div>
-        ) : null}
-      </button>
         </motion.div>
       )}
     </AnimatePresence>
   );
 }
 
-function CompactProgress({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: number;
-  icon: typeof Factory;
-}) {
-  const percent = clampProgress(value);
+function FlowProgressStrip({ card }: { card: SalesOrderFlowListCard }) {
+  const steps = [
+    card.progressProductionOrder != null
+      ? {
+          key: "op",
+          label: "OP planejada",
+          value: card.progressProductionOrder,
+          Icon: Factory,
+        }
+      : null,
+    card.progressProduced != null
+      ? {
+          key: "prod",
+          label: "Produção",
+          value: card.progressProduced,
+          Icon: Factory,
+        }
+      : null,
+    {
+      key: "doc",
+      label: "Documento",
+      value: card.progressDocumented,
+      Icon: PackageCheck,
+    },
+    {
+      key: "nfe",
+      label: "Faturado",
+      value: card.progressInvoiced,
+      Icon: CalendarClock,
+    },
+    {
+      key: "ship",
+      label: "Enviado",
+      value: card.progressShipped,
+      Icon: Truck,
+    },
+  ].filter((step): step is NonNullable<typeof step> => step != null);
+
   return (
-    <div>
-      <div className="mb-0.5 flex items-center justify-between text-[10px]">
-        <span className="inline-flex items-center gap-1 text-muted-foreground">
-          <Icon className="h-3 w-3" /> {label}
-        </span>
-        <strong className="text-foreground">{formatProgressPercent(percent)}</strong>
-      </div>
-      <div
-        className="h-1.5 overflow-hidden rounded-full bg-slate-100"
-        role="progressbar"
-        aria-label={`${label}: ${formatProgressPercent(percent)}`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-      >
-        <div
-          className="h-full rounded-full bg-sky-500 transition-[width] duration-200 [transition-timing-function:var(--ease-out-strong)]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+    <div className="mt-2 space-y-1">
+      {steps.map((step) => {
+        const percent = clampProgress(step.value);
+        const Icon = step.Icon;
+        return (
+          <div
+            key={step.key}
+            className="min-w-0"
+            title={`${step.label}: ${formatProgressPercent(percent)}`}
+          >
+            <div className="mb-0.5 flex items-center justify-between gap-1 text-[10px]">
+              <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
+                <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{step.label}</span>
+              </span>
+              <strong className="shrink-0 tabular-nums text-foreground">
+                {formatProgressPercent(percent)}
+              </strong>
+            </div>
+            <div
+              className="h-1 overflow-hidden rounded-full bg-slate-100"
+              role="progressbar"
+              aria-label={`${step.label}: ${formatProgressPercent(percent)}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
+            >
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width] duration-200 [transition-timing-function:var(--ease-out-strong)]",
+                  percent >= 100
+                    ? "bg-emerald-500"
+                    : percent > 0
+                      ? "bg-sky-500"
+                      : "bg-transparent"
+                )}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -701,23 +739,17 @@ function formatInconsistencyLabel(code: string): string {
 
 function PriorityBadge({ priority }: { priority: string }) {
   const normalized = priority.trim().toUpperCase();
-  const label =
-    normalized === "URGENT"
-      ? "Urgente"
-      : normalized === "HIGH"
-        ? "Alta"
-        : normalized === "LOW"
-          ? "Baixa"
-          : "Normal";
+  if (normalized === "NORMAL" || normalized === "LOW" || !normalized) {
+    return <span className="h-5" aria-hidden="true" />;
+  }
+  const label = normalized === "URGENT" ? "Urgente" : "Alta";
   return (
     <span
       className={cn(
-        "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
         normalized === "URGENT"
-          ? "border-rose-200 bg-rose-50 text-rose-800"
-          : normalized === "HIGH"
-            ? "border-amber-200 bg-amber-50 text-amber-800"
-            : "border-slate-200 bg-slate-50 text-slate-700"
+          ? "bg-rose-500/10 text-rose-800"
+          : "bg-amber-500/10 text-amber-900"
       )}
     >
       {label}
@@ -736,111 +768,136 @@ function resolveCardBadges(card: SalesOrderFlowListCard): Array<{
     {
       key: "CUT",
       label: "Atendido com corte",
-      className: "border-rose-200 bg-rose-50 text-rose-800",
+      className: "bg-rose-500/10 text-rose-800",
     },
     {
       key: "PARTIAL",
       label: "Parcial — saldo pendente",
-      className: "border-amber-200 bg-amber-50 text-amber-800",
+      className: "bg-amber-500/10 text-amber-900",
     },
     {
       key: "STOCK_FULFILLED",
       label: "Atendido sem OP",
-      className: "border-sky-200 bg-sky-50 text-sky-800",
+      className: "bg-sky-500/10 text-sky-800",
     },
     {
       key: "OP_LINKED",
       label: "OP vinculada",
-      className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+      className: "bg-indigo-500/10 text-indigo-800",
     },
     {
       key: "OP_PARTIAL",
       label: "OP parcial",
-      className: "border-amber-200 bg-amber-50 text-amber-900",
+      className: "bg-amber-500/10 text-amber-900",
     },
     {
       key: "DS_LINKED",
       label: "DS vinculado",
-      className: "border-teal-200 bg-teal-50 text-teal-800",
+      className: "bg-teal-500/10 text-teal-800",
     },
     {
       key: "DS_PARTIAL",
       label: "DS parcial",
-      className: "border-amber-200 bg-amber-50 text-amber-800",
+      className: "bg-amber-500/10 text-amber-900",
     },
     {
       key: "NFE_AUTHORIZED",
       label: "NF autorizada",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      className: "bg-emerald-500/10 text-emerald-800",
     },
     {
       key: "NFE_CANCELLED",
       label: "NF cancelada",
-      className: "border-rose-200 bg-rose-50 text-rose-800",
+      className: "bg-rose-500/10 text-rose-800",
     },
     {
       key: "SHIPMENT_COMPLETE",
       label: "Envio completo",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-900",
+      className: "bg-emerald-500/10 text-emerald-900",
     },
     {
       key: "AMBIGUOUS_LINK",
       label: "Vínculo ambíguo",
-      className: "border-orange-200 bg-orange-50 text-orange-900",
+      className: "bg-orange-500/10 text-orange-900",
     },
     {
       key: "ITEM_UNRESOLVED",
       label: "Item não resolvido",
-      className: "border-orange-200 bg-orange-50 text-orange-800",
+      className: "bg-orange-500/10 text-orange-800",
     },
     {
       key: "EXCESS_COVERAGE",
       label: "Cobertura excedente",
-      className: "border-violet-200 bg-violet-50 text-violet-800",
+      className: "bg-violet-500/10 text-violet-800",
     },
     {
       key: "PARTIAL_COVERAGE",
       label: "Cobertura parcial",
-      className: "border-amber-200 bg-amber-50 text-amber-800",
+      className: "bg-amber-500/10 text-amber-900",
     },
     {
       key: "DS_UNRECOGNIZED",
       label: "DS não reconhecido",
-      className: "border-orange-200 bg-orange-50 text-orange-900",
+      className: "bg-orange-500/10 text-orange-900",
     },
     {
       key: "NFE_UNLINKED",
       label: "NF sem vínculo",
-      className: "border-orange-200 bg-orange-50 text-orange-800",
+      className: "bg-orange-500/10 text-orange-800",
     },
     {
       key: "OP_UNLINKED",
       label: "OP sem vínculo",
-      className: "border-amber-200 bg-amber-50 text-amber-900",
+      className: "bg-amber-500/10 text-amber-900",
     },
     {
       key: "SNAPSHOT_DIVERGENT",
       label: "Snapshot divergente",
-      className: "border-rose-200 bg-rose-50 text-rose-900",
+      className: "bg-rose-500/10 text-rose-900",
     },
     {
       key: "OVERDUE",
       label: "Atraso",
-      className: "border-rose-200 bg-rose-50 text-rose-800",
+      className: "bg-rose-500/10 text-rose-800",
     },
   ] as const;
   return definitions.filter((definition) => badges.has(definition.key));
 }
 
+function salesOrderFlowKanbanAccentClass(stage: SalesOrderFlowStage): string {
+  switch (stage) {
+    case "WAITING_RELEASE":
+      return "bg-amber-400";
+    case "WAITING_PRODUCTION_ORDER":
+      return "bg-sky-400";
+    case "IN_PRODUCTION":
+      return "bg-indigo-400";
+    case "WAITING_OUTPUT_DOCUMENT":
+      return "bg-orange-400";
+    case "WAITING_NFE":
+      return "bg-rose-400";
+    case "SHIPPED_COMPLETED":
+      return "bg-emerald-400";
+    default:
+      return "bg-slate-300";
+  }
+}
+
 function salesOrderFlowKanbanHeaderClass(stage: SalesOrderFlowStage): string {
   switch (stage) {
     case "SHIPPED_COMPLETED":
-      return "border-emerald-200 bg-emerald-50/90 text-emerald-900";
+      return "bg-emerald-50/50";
     case "WAITING_RELEASE":
+      return "bg-amber-50/45";
+    case "WAITING_PRODUCTION_ORDER":
+      return "bg-sky-50/45";
+    case "IN_PRODUCTION":
+      return "bg-indigo-50/40";
     case "WAITING_OUTPUT_DOCUMENT":
+      return "bg-orange-50/40";
     case "WAITING_NFE":
-      return "border-amber-200 bg-amber-50/90 text-amber-900";
+      return "bg-rose-50/40";
     default:
-      return "border-border bg-card/95 text-foreground";
+      return "bg-muted/20";
   }
 }

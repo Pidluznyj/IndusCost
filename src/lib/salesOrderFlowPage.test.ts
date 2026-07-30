@@ -680,6 +680,11 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(fullscreen, /sales-order-flow-kanban-filter-customer/);
     assert.match(fullscreen, /sales-order-flow-kanban-search-apply/);
     assert.match(fullscreen, /sales-order-flow-kanban-clear-filters/);
+    assert.match(fullscreen, /sales-order-flow-kanban-kpis/);
+    assert.match(fullscreen, /sales-order-flow-kanban-kpi-total/);
+    assert.match(fullscreen, /sales-order-flow-kanban-kpi-sla/);
+    assert.match(fullscreen, /Total R\$ filtro/);
+    assert.match(fullscreen, /SLA médio/);
     assert.match(fullscreen, /Limpar filtros/);
     assert.match(fullscreen, /CustomerAutocompleteFilter/);
     assert.match(fullscreen, /onApplySearch/);

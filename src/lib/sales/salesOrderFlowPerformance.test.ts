@@ -9,7 +9,7 @@ import {
 
 describe("salesOrderFlowPerformance (OP-75)", () => {
   it("define orçamentos de query count alinhados aos loaders", () => {
-    assert.equal(SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET, 8);
+    assert.equal(SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET, 9);
     assert.equal(SALES_ORDER_FLOW_LIST_QUERIES_PER_STAGE_BUDGET, 3);
     assert.equal(SALES_ORDER_FLOW_EVIDENCE_BATCH_PIPELINE_STEPS, 9);
   });

@@ -295,10 +295,43 @@ describe("proposalInternalManagementPdf", () => {
     assert.equal(doc.items[0]?.commissionPending, false);
     assert.equal(doc.items[0]?.commissionPerc, 3);
     assert.equal(doc.items[0]?.commissionValue, 60);
+    assert.equal(doc.items[0]?.marginPerc, 34);
+    assert.equal(doc.items[0]?.marginValue, 680);
     assert.equal(doc.items[0]?.materialTotal, 600);
     assert.equal(doc.items[0]?.fabricationTotal, 400);
     assert.equal(doc.totals.materialCost, 600);
     assert.equal(doc.totals.fabricationCost, 400);
+    assert.doesNotMatch(doc.commissionSummaryLabel, /Pendente/i);
+  });
+
+  it("usa margem e comissao ja gravadas no item da proposta quando snapshot nao resolve", () => {
+    const doc = buildProposalInternalManagementPdfDocument({
+      ...SAMPLE_PROPOSAL,
+      totalCommission: 0,
+      items: [
+        {
+          sku: "P-10",
+          name: "Item com margem da proposta",
+          quantity: 2,
+          unit: "UN",
+          unitCost: 50,
+          negotiatedPrice: 100,
+          discountValue: 0,
+          marginValue: 70,
+          marginPerc: 35,
+          commissionPerc: 4.5,
+          commissionValue: 9,
+          pricingSnapshotJson: null,
+          commercialPricingSnapshotJson: null,
+        },
+      ],
+    });
+    assert.equal(doc.items[0]?.marginPerc, 35);
+    assert.equal(doc.items[0]?.marginValue, 70);
+    assert.equal(doc.items[0]?.marginMissing, false);
+    assert.equal(doc.items[0]?.commissionPending, false);
+    assert.equal(doc.items[0]?.commissionPerc, 4.5);
+    assert.equal(doc.items[0]?.commissionValue, 9);
     assert.doesNotMatch(doc.commissionSummaryLabel, /Pendente/i);
   });
 
@@ -341,8 +374,8 @@ describe("proposalInternalManagementPdf", () => {
     assert.match(mod, /buildProposalInternalManagementPrintPath|internal-management-print/);
     assert.match(app, /internal-management-print/);
     assert.match(internalPrint, /ProposalInternalManagementDocument/);
-    assert.match(internalPrint, /commercialPricingSnapshotJson/);
-    assert.match(internalPrint, /productionCostBreakdown/);
+    assert.match(internalPrint, /internal-management-document/);
+    assert.match(routes, /internal-management-document/);
     assert.match(internalDoc, /RELATÓRIO GERENCIAL INTERNO|RELAT.RIO GERENCIAL INTERNO/);
     assert.match(internalDoc, /Resumo gerencial da proposta/);
     assert.match(internalDoc, /matéria-prima|mat.ria-prima|Matéria-prima|Mat.ria-prima/i);
@@ -350,6 +383,7 @@ describe("proposalInternalManagementPdf", () => {
     assert.match(routes, /internal-management-pdf/);
     assert.match(server, /registerProposalInternalManagementPdfRoutes/);
     assert.match(pdfLib, /buildFormattedLandscapePdf/);
+    assert.match(pdfLib, /previewProposalCommercialMargins/);
     assert.doesNotMatch(pdfLib, /buildMinimalPdfDocument/);
     assert.match(mod, /safeNum\(df\.commissionPerc\)/);
     assert.match(internalDoc, /Comissão estimada|Comiss[aã]o estimada/);

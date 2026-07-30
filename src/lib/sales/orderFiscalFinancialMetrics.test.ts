@@ -266,6 +266,7 @@ describe("salesOrderReport summary — campos separados", () => {
         canceledValue: 0,
         cutValue: 0,
         activeValue: 100,
+        discountValue: 0,
         invoicedValue: 100,
         nfeProductsValue: 90,
         nfeHighlightedTaxesValue: 10,

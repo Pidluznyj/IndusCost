@@ -161,23 +161,6 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
   const invoicedValue = round2(
     audit.nfes.reduce((sum, nfe) => sum + (nfe.allocatedValueToOrder ?? 0), 0)
   );
-  const pendingBalance = Math.max(0, round2(s.activeOrderValue - invoicedValue));
-  const nfeSorted = [...audit.nfes].sort((a, b) => {
-    const da = a.dataProcessamento ?? a.dataEmissao ?? "";
-    const db = b.dataProcessamento ?? b.dataEmissao ?? "";
-    return db.localeCompare(da);
-  });
-  const lastNfeDate = nfeSorted[0]?.dataProcessamento ?? nfeSorted[0]?.dataEmissao ?? null;
-  const activeValue = round2(s.activeOrderValue);
-  const ticket =
-    itemCounts.active > 0 ? round2(activeValue / itemCounts.active) : 0;
-  const marginTotals = audit.marginPricing.totals;
-  const commercial = audit.marginPricing.commercialMargin ?? null;
-  const commercialReady =
-    commercial != null &&
-    commercial.itemsCalculated > 0 &&
-    commercial.commercialMarginTotalPercent != null;
-
   const compositionRows = (audit.items ?? []).map((item) =>
     resolveItemCommercialCompositionForDisplay({
       orderedQuantity: item.quantity ?? 0,
@@ -188,10 +171,29 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
     })
   );
   const composition = summarizeCommercialCompositionForDisplay(compositionRows);
+  const activeValue =
+    composition.netActiveTotalValue > 0
+      ? composition.netActiveTotalValue
+      : round2(s.activeOrderValue);
+  const pendingBalance = Math.max(0, round2(activeValue - invoicedValue));
+  const nfeSorted = [...audit.nfes].sort((a, b) => {
+    const da = a.dataProcessamento ?? a.dataEmissao ?? "";
+    const db = b.dataProcessamento ?? b.dataEmissao ?? "";
+    return db.localeCompare(da);
+  });
+  const lastNfeDate = nfeSorted[0]?.dataProcessamento ?? nfeSorted[0]?.dataEmissao ?? null;
+  const ticket =
+    itemCounts.active > 0 ? round2(activeValue / itemCounts.active) : 0;
+  const marginTotals = audit.marginPricing.totals;
+  const commercial = audit.marginPricing.commercialMargin ?? null;
+  const commercialReady =
+    commercial != null &&
+    commercial.itemsCalculated > 0 &&
+    commercial.commercialMarginTotalPercent != null;
 
   return {
     originalValue: round2(s.originalOrderValue),
-    activeValue: composition.netActiveTotalValue > 0 ? composition.netActiveTotalValue : activeValue,
+    activeValue,
     canceledValue: round2(s.canceledOrderValue),
     cutValue: round2(s.cutOrderValue),
     invoicedValue,
@@ -223,7 +225,7 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
     commercialMarginItemsCalculated: commercial?.itemsCalculated ?? null,
     commercialMarginItemsActive: commercial?.itemsActive ?? null,
     invoiceCoveragePercent:
-      s.activeOrderValue > 0 ? round2((invoicedValue / s.activeOrderValue) * 100) : null,
+      activeValue > 0 ? round2((invoicedValue / activeValue) * 100) : null,
   };
 }
 

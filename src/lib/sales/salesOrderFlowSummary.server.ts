@@ -18,6 +18,10 @@ import {
   type SalesOrderFlowSummaryStageAggregate,
   type SalesOrderFlowSummaryTotals,
 } from "./salesOrderFlowSummary.js";
+import { computeSalesOrderFlowAvgCycleDaysTrimmed } from "./salesOrderFlowKanbanKpis.js";
+
+/** Cap defensivo para amostra de SLA (não carrega o universo completo). */
+const SALES_ORDER_FLOW_SLA_SAMPLE_CAP = 2000;
 
 export type SalesOrderFlowSummaryDb = Pick<
   PrismaClient,
@@ -95,6 +99,7 @@ export async function loadSalesOrderFlowSummary(
     completedWithCutCount,
     canceledCount,
     lastAggregate,
+    completedCycleRows,
   ] = await Promise.all([
     db.groupBy({
       by: ["currentStage"],
@@ -132,6 +137,18 @@ export async function loadSalesOrderFlowSummary(
       where,
       _max: { computedAt: true },
     }),
+    db.findMany({
+      where: andWhere(where, {
+        currentStage: "SHIPPED_COMPLETED",
+        completedAt: { not: null },
+      }),
+      select: {
+        completedAt: true,
+        salesOrder: { select: { issueDate: true } },
+      },
+      take: SALES_ORDER_FLOW_SLA_SAMPLE_CAP,
+      orderBy: { completedAt: "desc" },
+    }),
   ]);
 
   const aggregates: SalesOrderFlowSummaryStageAggregate[] = groups.map(
@@ -143,6 +160,13 @@ export async function loadSalesOrderFlowSummary(
     })
   );
 
+  const cycle = computeSalesOrderFlowAvgCycleDaysTrimmed(
+    completedCycleRows.map((row) => ({
+      issueDate: row.salesOrder.issueDate,
+      completedAt: row.completedAt,
+    }))
+  );
+
   const totals: SalesOrderFlowSummaryTotals = {
     overdueCount,
     blockedCount,
@@ -150,6 +174,8 @@ export async function loadSalesOrderFlowSummary(
     partiallyShippedCount,
     completedWithCutCount,
     canceledCount,
+    avgCycleDaysTrimmed: cycle.avgDays,
+    avgCycleDaysSampleSize: cycle.sampleSize,
   };
 
   return buildSalesOrderFlowSummaryPayload({

@@ -28,6 +28,8 @@ export type SalesOrderReportSummary = {
   canceledValue: number;
   cutValue: number;
   activeValue: number;
+  /** Desconto comercial concedido (bruto ativo − líquido ativo). */
+  discountValue: number;
   /** Total NF válido (base comparável ao pedido — preferência xmlVNF). */
   invoicedValue: number;
   /** Produtos líquidos das NF válidas (valorLiquido). */
@@ -76,6 +78,8 @@ export type SalesOrderReportRow = {
   canceledValue: number;
   cutValue: number;
   activeValue: number;
+  /** Desconto comercial concedido (bruto ativo − líquido ativo). */
+  discountValue: number;
   /** Total NF válido comparável (xmlVNF preferencial). */
   invoicedValue: number;
   nfeProductsValue: number;
@@ -178,6 +182,7 @@ export function computeSalesOrderReportSummaryFromRows(
   const canceledValue = sumSalesOrderReportField(rows, (r) => r.canceledValue);
   const cutValue = sumSalesOrderReportField(rows, (r) => r.cutValue);
   const activeValue = sumSalesOrderReportField(rows, (r) => r.activeValue);
+  const discountValue = sumSalesOrderReportField(rows, (r) => r.discountValue ?? 0);
   const invoicedValue = sumSalesOrderReportField(rows, (r) => r.invoicedValue);
   const nfeProductsValue = sumSalesOrderReportField(rows, (r) => r.nfeProductsValue);
   const nfeHighlightedTaxesValue = sumSalesOrderReportField(
@@ -203,6 +208,7 @@ export function computeSalesOrderReportSummaryFromRows(
     canceledValue,
     cutValue,
     activeValue,
+    discountValue,
     invoicedValue,
     nfeProductsValue,
     nfeHighlightedTaxesValue,

@@ -4,7 +4,7 @@
  */
 
 /** Operações Prisma no resumo (groupBy + 6 counts + aggregate). */
-export const SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET = 8;
+export const SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET = 9;
 
 /**
  * Por coluna do Kanban: índice leve + bottleneck items + cards da página.

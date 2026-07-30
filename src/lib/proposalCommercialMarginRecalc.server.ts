@@ -10,6 +10,7 @@ import {
 } from "./proposalCommercialMargin.server.js";
 import type { ProposalCommercialMarginReasonCode } from "./proposalCommercialMargin.js";
 import { serializeProposalCommercialPricingSnapshot } from "./proposalCommercialMarginSnapshot.js";
+import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import {
   aggregateProposalCommercialHeaderFromRecalcResults,
   aggregateProposalCommercialRecalcPreview,
@@ -444,8 +445,42 @@ export async function resolveProposalCommercialListMargins(
 ): Promise<
   Map<string, { totalMarginPerc: number | null; totalMarginValue: number | null }>
 > {
+  const resolved = await resolveProposalCommercialItemDetails(db, proposalIds);
+  const results = [...resolved.values()];
+  const header = aggregateProposalCommercialHeaderFromRecalcResults(
+    results.map((row) => row.result)
+  );
+  // Garante chave para ids sem itens.
+  for (const id of proposalIds) {
+    const key = String(id).trim();
+    if (key && !header.has(key)) {
+      header.set(key, { totalMarginPerc: null, totalMarginValue: null });
+    }
+  }
+  return header;
+}
+
+export type ProposalCommercialItemResolvedDetails = {
+  result: ProposalCommercialRecalcItemResult;
+  marginPerc: number | null;
+  marginValue: number | null;
+  commissionPerc: number | null;
+  commissionValue: number | null;
+  commercialPricingSnapshotJson: Record<string, unknown> | null;
+};
+
+/**
+ * Detalhe comercial por item — mesma cadeia da listagem/formulário
+ * (snapshot + formação vigente). Usado no relatório gerencial interno.
+ * Não grava nada.
+ */
+export async function resolveProposalCommercialItemDetails(
+  db: PrismaClient,
+  proposalIds: ReadonlyArray<string>
+): Promise<Map<string, ProposalCommercialItemResolvedDetails>> {
   const ids = [...new Set(proposalIds.map((id) => String(id).trim()).filter(Boolean))];
-  if (ids.length === 0) return new Map();
+  const out = new Map<string, ProposalCommercialItemResolvedDetails>();
+  if (ids.length === 0) return out;
 
   const proposals = await db.proposal.findMany({
     where: { id: { in: ids } },
@@ -482,9 +517,7 @@ export async function resolveProposalCommercialListMargins(
     }
   }
 
-  if (batchItems.length === 0) {
-    return new Map(ids.map((id) => [id, { totalMarginPerc: null, totalMarginValue: null }]));
-  }
+  if (batchItems.length === 0) return out;
 
   const versionIds = batchItems
     .map((i) => i.priceTableVersionId)
@@ -526,8 +559,36 @@ export async function resolveProposalCommercialListMargins(
     );
   }
 
-  const results = batchItems.map((item) =>
-    resolveItemWithLookups(item, versionDates, formationLookup, true)
-  );
-  return aggregateProposalCommercialHeaderFromRecalcResults(results);
+  for (const item of batchItems) {
+    const result = resolveItemWithLookups(item, versionDates, formationLookup, true);
+    const snap = result.nextSnapshot ?? result.currentSnapshot;
+    const rateRaw = snap?.calculatedCommissionRate;
+    const commissionRate =
+      rateRaw != null && Number.isFinite(rateRaw)
+        ? rateRaw > 1
+          ? rateRaw / 100
+          : rateRaw
+        : null;
+    const commissionPerc =
+      commissionRate != null ? roundPricingPercent(commissionRate * 100) : null;
+    const commissionValue =
+      commissionRate != null && result.netLineValue > 0
+        ? roundPricingMoney(result.netLineValue * commissionRate)
+        : commissionRate === 0
+          ? 0
+          : null;
+
+    out.set(item.proposalItemId, {
+      result,
+      marginPerc: result.commercialMarginPercent,
+      marginValue: result.commercialMarginValue,
+      commissionPerc,
+      commissionValue,
+      commercialPricingSnapshotJson: snap
+        ? serializeProposalCommercialPricingSnapshot(snap)
+        : null,
+    });
+  }
+
+  return out;
 }

@@ -60,6 +60,7 @@ function mapReportRowToDetail(row: SalesOrderReportRow): Record<string, string |
     "Valor cancelado": row.canceledValue,
     "Valor cortado": row.cutValue,
     "Valor ativo": row.activeValue,
+    Desconto: row.discountValue,
     "Total NF válido": row.invoicedValue,
     "Produtos NF": row.nfeProductsValue,
     "Impostos destacados NF": row.nfeHighlightedTaxesValue,
@@ -100,6 +101,7 @@ function applyReportSheetFormatting(ws: XLSX.WorkSheet, rowCount: number, colCou
     14, // Valor cancelado
     14, // Valor cortado
     14, // Valor ativo
+    12, // Desconto
     14, // Total NF válido
     14, // Produtos NF
     16, // Impostos destacados
@@ -138,6 +140,7 @@ function applyMoneyFormatToDetailSheet(
     "Valor cancelado",
     "Valor cortado",
     "Valor ativo",
+    "Desconto",
     "Total NF válido",
     "Produtos NF",
     "Impostos destacados NF",
@@ -181,6 +184,7 @@ export function buildSalesOrderReportExportWorkbook(
     { Campo: "Valor cancelado total", Valor: summary.canceledValue },
     { Campo: "Valor cortado total", Valor: summary.cutValue },
     { Campo: "Valor ativo total", Valor: summary.activeValue },
+    { Campo: "Desconto total", Valor: summary.discountValue },
     { Campo: "Total NF válido", Valor: summary.invoicedValue },
     { Campo: "Produtos NF", Valor: summary.nfeProductsValue },
     { Campo: "Impostos destacados NF", Valor: summary.nfeHighlightedTaxesValue },

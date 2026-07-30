@@ -214,7 +214,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={summary.invoicedValue > 0.009 ? "info" : "muted"}
           />
           <Kpi
-            label="Saldo pendente"
+            label="A faturar"
             value={formatFinanceCurrency(summary.pendingBalance)}
             tone={summary.pendingBalance > 0.009 ? "warning" : "muted"}
           />

@@ -67,6 +67,13 @@ export type SalesOrderFlowSummaryTotals = {
   partiallyShippedCount: number;
   completedWithCutCount: number;
   canceledCount: number;
+  /**
+   * SLA médio (dias) emissão → concluído, com média aparada
+   * (remove extremos altos/baixos). Null se não houver amostra.
+   */
+  avgCycleDaysTrimmed: number | null;
+  /** Quantidade de pedidos concluídos usados antes da aparagem. */
+  avgCycleDaysSampleSize: number;
 };
 
 export type SalesOrderFlowSummaryPayload = {

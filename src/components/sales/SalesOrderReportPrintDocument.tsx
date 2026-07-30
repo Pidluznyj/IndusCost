@@ -113,6 +113,11 @@ export function SalesOrderReportPrintDocument({
               tone="positive"
             />
             <SummaryKpiCard
+              label="Desconto"
+              value={formatFinanceCurrency(summary.discountValue)}
+              tone={summary.discountValue > 0.009 ? "info" : "neutral"}
+            />
+            <SummaryKpiCard
               label="Valor cancelado"
               value={formatFinanceCurrency(summary.canceledValue)}
               tone="risk"
@@ -180,7 +185,7 @@ export function SalesOrderReportPrintDocument({
           {/*
             Ordem canônica das colunas da tabela analítica (2026-07):
               Cliente · Pedido · Emissão · Entrega · Vendedor · Faturamento
-              · Itens · Valor ativo · Total NF · A faturar · Saldo CR
+              · Itens · Valor ativo · Desconto · Total NF · A faturar · Saldo CR
           */}
           {rows.length === 0 ? (
             <p className="sales-orders-print-empty">
@@ -198,6 +203,7 @@ export function SalesOrderReportPrintDocument({
                   <th className="col-status">Faturamento</th>
                   <th className="col-num">Itens</th>
                   <th className="col-money">Valor ativo</th>
+                  <th className="col-money">Desconto</th>
                   <th className="col-money">Total NF</th>
                   <th className="col-money">A faturar</th>
                   <th className="col-money">Saldo CR</th>
@@ -242,6 +248,15 @@ export function SalesOrderReportPrintDocument({
                     <td className={`col-money ${moneyClassForRow("active")}`}>
                       {formatFinanceCurrency(row.activeValue)}
                     </td>
+                    <td
+                      className={`col-money ${
+                        row.discountValue > 0.009
+                          ? moneyClassForRow("invoiced")
+                          : moneyClassForRow("original")
+                      }`}
+                    >
+                      {formatFinanceCurrency(row.discountValue)}
+                    </td>
                     <td className={`col-money ${moneyClassForRow("invoiced")}`}>
                       {formatFinanceCurrency(row.invoicedValue)}
                     </td>
@@ -264,6 +279,9 @@ export function SalesOrderReportPrintDocument({
                   </td>
                   <td className={`col-money ${moneyClassForRow("active")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.activeValue)}
+                  </td>
+                  <td className={`col-money ${moneyClassForRow("invoiced")} sales-orders-print-money--total`}>
+                    {formatFinanceCurrency(summary.discountValue)}
                   </td>
                   <td className={`col-money ${moneyClassForRow("invoiced")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.invoicedValue)}

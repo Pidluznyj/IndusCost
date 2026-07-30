@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Expand, Minimize2, Search, X } from "lucide-react";
 import {
@@ -21,8 +21,12 @@ import {
 } from "@/src/lib/motion/emilUiMotion";
 import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog";
+import {
+  formatSalesOrderFlowSlaDaysLabel,
+  sumSalesOrderFlowFilteredOrderValue,
+} from "@/src/lib/sales/salesOrderFlowKanbanKpis";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
-import { cn } from "@/src/lib/utils";
+import { cn, formatCurrency } from "@/src/lib/utils";
 
 const FILTER_CONTROL_CLASS =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-[box-shadow,border-color] duration-150 [transition-timing-function:var(--ease-out-strong)] focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50";
@@ -50,6 +54,9 @@ type Props = {
   onApplySearch: (patch?: { q?: string; customerId?: string }) => void;
   /** Limpa busca de pedido/cliente do Kanban (e sincroniza com a página). */
   onClearSearch: () => void;
+  /** SLA médio aparado (emissão → concluído) do filtro atual. */
+  avgCycleDaysTrimmed?: number | null;
+  avgCycleDaysSampleSize?: number;
 };
 
 /**
@@ -75,11 +82,22 @@ export function SalesOrderFlowKanbanFullscreen({
   onOrderSearchChange,
   onApplySearch,
   onClearSearch,
+  avgCycleDaysTrimmed = null,
+  avgCycleDaysSampleSize = 0,
 }: Props) {
   const reduceMotion = useReducedMotion();
   const [customerSelection, setCustomerSelection] =
     useState<EntityAutocompleteSelection | null>(null);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+
+  const filteredOrderValue = useMemo(
+    () => sumSalesOrderFlowFilteredOrderValue(columns),
+    [columns]
+  );
+  const totalOrdersInFilter = useMemo(
+    () => columns.reduce((acc, column) => acc + (column.total || 0), 0),
+    [columns]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -189,6 +207,49 @@ export function SalesOrderFlowKanbanFullscreen({
                   Esc para fechar · cards podem ficar só com número e status
                 </p>
               </div>
+
+              <div
+                className="flex flex-wrap items-stretch gap-1.5"
+                data-testid="sales-order-flow-kanban-kpis"
+              >
+                <div
+                  className="min-w-[7.5rem] rounded-lg border border-border/70 bg-background/80 px-2.5 py-1"
+                  data-testid="sales-order-flow-kanban-kpi-total"
+                  title={
+                    totalOrdersInFilter > 0
+                      ? `${totalOrdersInFilter} pedido(s) no filtro atual`
+                      : "Total de pedidos no filtro"
+                  }
+                >
+                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Total R$ filtro
+                  </p>
+                  <p className="tabular-nums text-sm font-semibold leading-tight text-foreground">
+                    {valuesVisible
+                      ? filteredOrderValue != null
+                        ? formatCurrency(filteredOrderValue, 2)
+                        : "—"
+                      : "Oculto"}
+                  </p>
+                </div>
+                <div
+                  className="min-w-[7.5rem] rounded-lg border border-border/70 bg-background/80 px-2.5 py-1"
+                  data-testid="sales-order-flow-kanban-kpi-sla"
+                  title={
+                    avgCycleDaysSampleSize > 0
+                      ? `Média aparada (sem extremos) · ${avgCycleDaysSampleSize} concluído(s) no filtro`
+                      : "SLA médio da emissão até a conclusão (sem extremos)"
+                  }
+                >
+                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    SLA médio
+                  </p>
+                  <p className="tabular-nums text-sm font-semibold leading-tight text-foreground">
+                    {formatSalesOrderFlowSlaDaysLabel(avgCycleDaysTrimmed)}
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
                 className={cn(
@@ -310,7 +371,7 @@ export function SalesOrderFlowKanbanFullscreen({
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
+          <div className="min-h-0 flex-1 overflow-auto bg-[radial-gradient(ellipse_at_top,rgba(14,165,233,0.07),transparent_45%)] p-2 sm:p-3">
             <SalesOrderFlowKanbanBoard
               columns={columns}
               valuesVisible={valuesVisible}

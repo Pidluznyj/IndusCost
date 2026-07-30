@@ -48,6 +48,7 @@ import {
   type SalesOrderReportPayload,
   type SalesOrderReportRow,
 } from "./salesOrderReport.js";
+import { resolveSalesOrderReportOrderValues } from "./salesOrderReportOrderValues.js";
 
 const REPORT_ORDER_FIELD_LIMIT = SALES_ORDER_REPORT_ROWS_LIMIT;
 
@@ -226,83 +227,35 @@ export async function loadSalesOrderReportPayload(
     };
 
     // Status/quantidade oficial por item (nomusRawResponse.itensPedido[]).
+    // Valor ativo/desconto: helper puro — totalNetValue é líquido; qty×unitário
+    // costuma ser bruto e NÃO pode virar "A faturar".
     const rawItems = extractNomusRawItems(order.nomusRawResponse);
-    let itemsCount = order.totalItems ?? rawItems.length;
-    let activeItemsCount = 0;
-    let canceledItemsCount = 0;
-    let cutItemsCount = 0;
-    /**
-     * `originalValue` começa com o `totalNetValue` OFICIAL do pedido (fonte
-     * da verdade: coluna `SalesOrder.totalNetValue` gravada pelo Nomus sync).
-     * Nunca é sobrescrito por um valor calculado das linhas do
-     * `nomusRawResponse` que divirja em ordens de magnitude — isso era o
-     * bug do totalizador aparecer menor: quando `unitPrice` das linhas vinha
-     * zerado ou em escala diferente, a soma `qtyOrdered × unitPrice` ficava
-     * bem abaixo do total oficial e o totalizador do PDF/XLSX herdava esse
-     * valor menor.
-     */
     const officialOrderNetValue = decimalToNumber(order.totalNetValue) ?? 0;
-    let originalValue = officialOrderNetValue;
-    let canceledValue = 0;
-    let cutValue = 0;
-
-    if (rawItems.length > 0) {
-      itemsCount = rawItems.length;
-      let originalFromItems = 0;
-      for (const raw of rawItems) {
+    const orderValues = resolveSalesOrderReportOrderValues({
+      officialOrderNetValue,
+      orderStatus: order.status,
+      itemsCountFallback: order.totalItems ?? rawItems.length,
+      rawItems: rawItems.map((raw) => {
         const parsed = parseNomusSalesOrderItemStatusFromRawItem(raw);
-        const qtyOrdered = parsed.quantityOrdered ?? raw.quantidade ?? 0;
-        const unitPrice = readUnitPriceFromRawItem(raw.raw) ?? 0;
-        const totalItemValue = qtyOrdered * unitPrice;
-        originalFromItems += totalItemValue;
-        if (parsed.statusNormalized === "CANCELED") {
-          canceledItemsCount += 1;
-          canceledValue += totalItemValue;
-        } else if (parsed.statusNormalized === "FULFILLED_WITH_CUT") {
-          cutItemsCount += 1;
-          const cutQty = parsed.quantityCut ?? 0;
-          cutValue += cutQty * unitPrice;
-          activeItemsCount += 1;
-        } else {
-          activeItemsCount += 1;
-        }
-      }
-      // Sanity check de escala (2026-07). Só usamos a soma das linhas como
-      // `originalValue` quando ela está próxima do total oficial do pedido.
-      // Se `unitPrice` das linhas vier zerado, incompleto ou em escala
-      // diferente, `originalFromItems` cai bem abaixo do `totalNetValue` e
-      // o motor descarta esse valor mantendo o total oficial. Faixa aceita:
-      // 90%–200% do valor oficial (respeita frete/imposto/desconto). Se o
-      // pedido oficial for zero, preserva o comportamento antigo.
-      if (originalFromItems > 0) {
-        if (officialOrderNetValue <= 0) {
-          originalValue = originalFromItems;
-        } else {
-          const ratio = originalFromItems / officialOrderNetValue;
-          if (ratio >= 0.9 && ratio <= 2) {
-            originalValue = originalFromItems;
-          }
-          // Se ratio fora da faixa → preserva `officialOrderNetValue` (já é
-          // o default). E também descarta canceledValue/cutValue calculados
-          // nas linhas quando estavam em escala corrompida, evitando
-          // inflar/deflacionar activeValue.
-          else {
-            canceledValue = 0;
-            cutValue = 0;
-            if (order.status === "CANCELLED") {
-              canceledValue = officialOrderNetValue;
-            }
-          }
-        }
-      }
-    } else if (order.status === "CANCELLED") {
-      canceledItemsCount = itemsCount;
-      canceledValue = originalValue;
-    } else {
-      activeItemsCount = itemsCount;
-    }
-
-    const activeValue = Math.max(0, originalValue - canceledValue - cutValue);
+        return {
+          quantityOrdered: parsed.quantityOrdered ?? raw.quantidade ?? 0,
+          unitPrice: readUnitPriceFromRawItem(raw.raw) ?? 0,
+          statusNormalized: parsed.statusNormalized,
+          quantityCut: parsed.quantityCut ?? 0,
+        };
+      }),
+    });
+    const {
+      itemsCount,
+      activeItemsCount,
+      canceledItemsCount,
+      cutItemsCount,
+      originalValue,
+      canceledValue,
+      cutValue,
+      activeValue,
+      discountValue,
+    } = orderValues;
     const metrics = buildOrderFiscalFinancialMetrics({
       orderActiveValue: activeValue,
       nfeProductsValue,
@@ -380,6 +333,7 @@ export async function loadSalesOrderReportPayload(
       canceledValue: roundMoney(canceledValue),
       cutValue: roundMoney(cutValue),
       activeValue: roundMoney(activeValue),
+      discountValue: roundMoney(discountValue),
       invoicedValue: roundMoney(invoicedValue),
       nfeProductsValue: roundMoney(nfeProductsValue),
       nfeHighlightedTaxesValue: roundMoney(nfeHighlightedTaxesValue),

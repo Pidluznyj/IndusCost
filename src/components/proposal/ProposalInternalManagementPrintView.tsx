@@ -2,13 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import type { Proposal, ProposalItem } from "@/src/types/commercial";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { ProposalInternalManagementDocument } from "@/src/components/proposal/ProposalInternalManagementDocument";
-import {
-  buildProposalInternalManagementPdfDocument,
-  type ProposalInternalManagementPdfDocument,
-} from "@/src/lib/proposalInternalManagementPdf";
+import type { ProposalInternalManagementPdfDocument } from "@/src/lib/proposalInternalManagementPdf";
 
 const ROUTE_BODY_CLASS = "proposal-print-route";
 
@@ -30,80 +26,6 @@ function mergeBranding(data: BrandingSettingsDTO): BrandingSettingsDTO {
         ? data.secondaryColor.trim()
         : DEFAULT_BRANDING.secondaryColor,
   };
-}
-
-function buildDocumentFromProposal(
-  proposal: Proposal & { items?: ProposalItem[] }
-): ProposalInternalManagementPdfDocument {
-  const customer = proposal.Customer;
-  return buildProposalInternalManagementPdfDocument({
-    id: proposal.id,
-    number: proposal.number,
-    title: proposal.title,
-    status: proposal.status,
-    responsible: proposal.responsible,
-    companyIssuer: proposal.companyIssuer,
-    validityDays: proposal.validityDays,
-    paymentTerms: proposal.paymentTerms,
-    paymentMethod: proposal.paymentMethod,
-    freightCondition: proposal.freightCondition,
-    deliveryLocation: proposal.deliveryLocation,
-    notes: proposal.notes,
-    internalNotes: proposal.internalNotes,
-    createdAt: proposal.createdAt,
-    customerName: customer?.companyName ?? customer?.tradeName ?? null,
-    customerTradeName: customer?.tradeName ?? null,
-    customerDocument: customer?.taxId ?? null,
-    customerPhone: customer?.phone ?? null,
-    customerAddress: customer?.address ?? null,
-    customerCity: customer?.city ?? null,
-    customerState: customer?.state ?? null,
-    customerZip: customer?.zipCode ?? null,
-    totalGrossValue: proposal.totalGrossValue,
-    totalDiscount: proposal.totalDiscount,
-    totalNetValue: proposal.totalNetValue,
-    totalCost: proposal.totalCost,
-    totalMarginValue: proposal.totalMarginValue,
-    totalMarginPerc: proposal.totalMarginPerc,
-    totalTaxes: proposal.totalTaxes,
-    totalCommission: proposal.totalCommission,
-    totalFreight: proposal.totalFreight,
-    items: (proposal.items ?? []).map((item) => ({
-      sku: item.Product?.sku ?? null,
-      name: item.Product?.name ?? null,
-      quantity: item.quantity,
-      unit: item.unit,
-      unitCost: item.unitCost,
-      negotiatedPrice: item.negotiatedPrice,
-      suggestedPrice: item.suggestedPrice,
-      discountPerc: item.discountPerc,
-      discountValue: item.discountValue,
-      marginValue: item.marginValue,
-      marginPerc: item.marginPerc,
-      commissionPerc: item.commissionPerc,
-      commissionValue: item.commissionValue,
-      taxesValue: item.taxesValue,
-      freightValue: item.freightValue,
-      notes: item.notes,
-      pricingSnapshotJson: item.pricingSnapshotJson,
-      commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
-      priceTableId: item.priceTableId,
-      priceTableVersionId: item.priceTableVersionId,
-      priceSource: item.priceSource,
-      productId: item.productId,
-      productionCostBreakdown:
-        (
-          item as {
-            productionCostBreakdown?: {
-              materialCost?: number | null;
-              laborCost?: number | null;
-              machineCost?: number | null;
-              processCost?: number | null;
-            } | null;
-          }
-        ).productionCostBreakdown ?? null,
-    })),
-  });
 }
 
 export const ProposalInternalManagementPrintView = () => {
@@ -155,17 +77,21 @@ export const ProposalInternalManagementPrintView = () => {
 
     const run = async () => {
       try {
-        const [prop, brandRes] = await Promise.all([
-          fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${resolvedId}`),
-          fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings").catch(() => DEFAULT_BRANDING),
+        const [payload, brandRes] = await Promise.all([
+          fetchJsonOk<{ document: ProposalInternalManagementPdfDocument }>(
+            `/api/proposals/${resolvedId}/internal-management-document`
+          ),
+          fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings").catch(
+            () => DEFAULT_BRANDING
+          ),
         ]);
         if (cancelled) return;
-        if (!prop) {
+        if (!payload?.document) {
           setError("Proposta não encontrada.");
           setMgmtDoc(null);
           return;
         }
-        setMgmtDoc(buildDocumentFromProposal(prop));
+        setMgmtDoc(payload.document);
         setBranding(mergeBranding(brandRes));
       } catch (err) {
         if (!cancelled) {
@@ -222,23 +148,17 @@ export const ProposalInternalManagementPrintView = () => {
 
       <div className="proposal-print-scroll mx-auto w-full max-w-[1180px] overflow-x-hidden print:overflow-visible">
         {loading ? (
-          <div className="flex min-h-[40vh] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="mt-2 text-sm text-muted-foreground">
-              Carregando relatório gerencial interno…
-            </p>
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-white p-10 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Carregando relatório gerencial…
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-900">
             {error}
           </div>
-        ) : !mgmtDoc ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-            Proposta não localizada.
-          </div>
-        ) : (
+        ) : mgmtDoc ? (
           <ProposalInternalManagementDocument document={mgmtDoc} branding={branding} />
-        )}
+        ) : null}
       </div>
     </div>
   );

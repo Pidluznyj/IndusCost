@@ -943,6 +943,8 @@ export function SalesOrderFlowModule() {
           onOrderSearchChange={(value) => patchDraftFilters({ q: value })}
           onApplySearch={(patch) => applyFilterPatch(patch)}
           onClearSearch={() => applyFilterPatch({ q: "", customerId: "" })}
+          avgCycleDaysTrimmed={summary?.totals.avgCycleDaysTrimmed ?? null}
+          avgCycleDaysSampleSize={summary?.totals.avgCycleDaysSampleSize ?? 0}
         />
       ) : null}
 
