@@ -35,7 +35,7 @@ export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab 
       />
       <ExecutiveAccumulatedComboChart
         title="Acumulado de Pedidos de Venda"
-        subtitle={`Comparativo ${tab.previousYear} vs ${tab.selectedYear} · meta acumulada +30% · projeção por média YTD`}
+        subtitle={`Comparativo ${tab.previousYear} vs ${tab.selectedYear} · meta acumulada +20% · projeção por média YTD`}
         series={tab.accumulatedEvolution}
         config={tab.chartSeries}
       />

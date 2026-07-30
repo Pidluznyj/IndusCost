@@ -77,9 +77,9 @@ describe("financeExecutiveReportUxCopy", () => {
 
   it("translateExecutiveReportWarning simplifica metas derivadas", () => {
     const msg = translateExecutiveReportWarning(
-      "Metas de faturamento derivadas (+30% sobre período anterior); não há cadastro editável de metas."
+      "Metas de faturamento derivadas (+20% sobre período anterior); não há cadastro editável de metas."
     );
     assert.match(msg, /Meta estimada/i);
-    assert.ok(!msg.includes("derivadas (+30%"));
+    assert.ok(!msg.includes("derivadas (+20%"));
   });
 });

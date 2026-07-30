@@ -1,7 +1,27 @@
 /** Regras puras do dashboard gerencial de pedidos/faturamento — testáveis sem banco. */
 
 export const SALES_ORDER_CANCELLED_STATUS = "CANCELLED" as const;
-export const TARGET_GROWTH_FACTOR = 1.3;
+/** Meta default = ano/mês anterior × 1,20 (+20%). */
+export const TARGET_GROWTH_FACTOR = 1.2;
+
+/** Rótulo curto do fator (ex.: "+20%"). */
+export function formatTargetGrowthRateLabel(
+  factor: number = TARGET_GROWTH_FACTOR
+): string {
+  if (!Number.isFinite(factor)) return "+0%";
+  return `+${Math.round((factor - 1) * 100)}%`;
+}
+
+/** Fator em pt-BR com 2 casas (ex.: "1,20"). */
+export function formatTargetGrowthFactorPtBr(
+  factor: number = TARGET_GROWTH_FACTOR
+): string {
+  if (!Number.isFinite(factor)) return "0,00";
+  return factor.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 export function isCancelledSalesOrderStatus(status: string): boolean {
   return status === SALES_ORDER_CANCELLED_STATUS;
@@ -32,7 +52,7 @@ export function isOverdueSalesOrder(input: {
 }
 
 export const EXECUTIVE_OVERDUE_ORDERS_HINT =
-  "Pedidos emitidos no ano selecionado, não cancelados, com entrega prevista vencida e sem NF processada.";
+  "Pedidos de mercado emitidos no ano selecionado (3 empresas, sem intercompany), não cancelados, com entrega prevista vencida e sem NF processada.";
 
 /** Pedido atrasado no dashboard = critério base + issueDate no ano selecionado. */
 export function isOverdueSalesOrderInSelectedYear(input: {
@@ -130,19 +150,19 @@ export function computeYtdDailyAverageByWorkday(
 }
 
 export const EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT =
-  "Média calculada com pedidos não cancelados do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.";
+  "Média dos pedidos de mercado das 3 empresas (sem intercompany) no ano selecionado até hoje, divididos pelos dias úteis decorridos.";
 
 export const EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT =
   "Média calculada com faturamento de mercado do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.";
 
 export const EXECUTIVE_ANNUAL_TARGET_HINT =
-  "Meta anual calculada como o total de pedidos não cancelados do ano anterior multiplicado por 1,30.";
+  "Meta anual = total de pedidos de mercado (3 empresas do grupo, sem intercompany) do ano anterior completo × 1,20.";
 
 export const EXECUTIVE_MONTHLY_TARGET_HINT =
-  "Meta mensal calculada com base no mesmo mês do ano anterior, acrescida de 30%.";
+  "Meta mensal = mesmo mês do ano anterior (pedidos de mercado das 3 empresas, sem intercompany), acrescida de 20%.";
 
 export const EXECUTIVE_REALIZED_HINT =
-  "Valor real de pedidos de venda emitidos no período, excluindo pedidos cancelados.";
+  "Valor real de pedidos de venda emitidos no período pelas 3 empresas do grupo, excluindo cancelados e movimentações intercompany.";
 
 export const EXECUTIVE_PROJECTION_HINT =
   "Projeção calculada usando a média diária YTD por dia útil, aplicada aos dias úteis do período projetado.";

@@ -21,7 +21,7 @@ describe("buildChartSeriesConfig", () => {
     assert.equal(config.previousYear, 2025);
     assert.equal(config.labels.previousYearBar, "Pedidos 2025");
     assert.equal(config.labels.currentYearBar, "Pedidos 2026 YTD");
-    assert.equal(config.labels.targetLine, "Meta 2026 (+30%)");
+    assert.equal(config.labels.targetLine, "Meta 2026 (+20%)");
     assert.equal(config.colors.previousYearBar, "#ED7D31");
     assert.equal(config.colors.currentYearBar, "#1B5E20");
     assert.equal(config.colors.targetLine, "#43A047");
@@ -97,7 +97,7 @@ describe("buildAccumulatedSeriesPoints", () => {
     assert.ok(july!.accumulatedTarget >= 0);
   });
 
-  it("accumulated target equals previous year accumulated × 1.30", () => {
+  it("accumulated target equals previous year accumulated × growth factor", () => {
     const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
     const monthly = buildMonthlySeriesPoints(ctx, new Map([[1, 130_000]]), new Map([[1, 100_000]]));
     const accumulated = buildAccumulatedSeriesPoints(ctx, monthly);
@@ -123,7 +123,7 @@ describe("buildAccumulatedSeriesPoints", () => {
 });
 
 describe("buildMonthlySeriesPoints", () => {
-  it("computes monthly target as previous year × 1.30", () => {
+  it("computes monthly target as previous year × growth factor", () => {
     const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
     const previous = new Map<number, number>([[3, 100_000]]);
     const current = new Map<number, number>([[3, 120_000]]);

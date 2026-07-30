@@ -189,7 +189,7 @@ const METRIC_DEFINITIONS: SalesOrderMetricDefinition[] = [
   {
     key: "monthTarget",
     label: "Meta mês",
-    description: "Mesmo mês ano anterior × 1,30 (computeGrowthTarget).",
+    description: "Mesmo mês ano anterior × 1,20 (computeGrowthTarget).",
     valueField: "derived",
     dateField: "issueDate",
     includes: ["Comparativo ano anterior"],

@@ -8,7 +8,7 @@ export type BillingMultiYearMonthlyPoint = {
   monthLabel: string;
   /** year → valor mensal (null = mês futuro sem realizado) */
   values: Record<number, number | null>;
-  /** Meta do ano selecionado = mesmo mês do ano anterior × 1,30 */
+  /** Meta do ano selecionado = mesmo mês do ano anterior × 1,20 */
   targetValue: number | null;
 };
 

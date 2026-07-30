@@ -19,7 +19,7 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
 
       <ExecutiveDashboardSummaryKpiGrid cards={tab.summaryCards} testId="executive-billing-summary-kpis" />
 
-      <ExecutiveTargetPanel title="Meta do mês — realizado vs ano anterior (+30%)" target={tab.target} />
+      <ExecutiveTargetPanel title="Meta do mês — realizado vs ano anterior (+20%)" target={tab.target} />
 
       <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-bold">Comparativo anual acumulado</h3>
@@ -28,7 +28,7 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
             { label: "YTD ano atual", formatted: tab.yearComparison.formatted.yearToDateCurrent },
             { label: "YTD ano anterior", formatted: tab.yearComparison.formatted.yearToDatePrevious },
             { label: "Ano anterior (total)", formatted: tab.yearComparison.formatted.previousYearTotal },
-            { label: "Meta anual (+30%)", formatted: tab.yearComparison.formatted.annualTarget },
+            { label: "Meta anual (+20%)", formatted: tab.yearComparison.formatted.annualTarget },
           ]}
           minColumnWidth={160}
         />

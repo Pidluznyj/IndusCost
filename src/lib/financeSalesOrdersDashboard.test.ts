@@ -381,7 +381,7 @@ describe("financeSalesOrdersDashboard", () => {
     assert.equal(f.month, null);
   });
 
-  it("meta mês = anterior × 1.30", () => {
+  it("meta mês = anterior × growth factor", () => {
     assert.equal(computeGrowthTarget(100_000), 100_000 * TARGET_GROWTH_FACTOR);
   });
 

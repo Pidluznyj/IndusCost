@@ -6,7 +6,7 @@ export const EXECUTIVE_DASHBOARD_SERIES_COLORS = {
     previousYearBar: "#ED7D31",
     /** Ano selecionado / YTD (barra) — verde escuro */
     currentYearBar: "#1B5E20",
-    /** Meta mensal (+30%) — linha verde */
+    /** Meta mensal (+20%) — linha verde */
     targetLine: "#43A047",
     /** Projeção acumulada — azul */
     projectedLine: "#1565C0",
@@ -16,7 +16,7 @@ export const EXECUTIVE_DASHBOARD_SERIES_COLORS = {
     previousYearBar: "#D4A017",
     /** Ano selecionado / YTD (barra) — verde (distinto do dourado e da projeção azul) */
     currentYearBar: "#2E7D32",
-    /** Meta mensal (+30%) — linha vermelha / alerta */
+    /** Meta mensal (+20%) — linha vermelha / alerta */
     targetLine: "#C62828",
     /** Projeção — azul */
     projectedLine: "#1565C0",

@@ -446,7 +446,7 @@ export async function buildBillingDashboardFromNfes(
       compact: true,
       hint: `Média YTD × ${workdaysInMonth} dias úteis no mês`,
     }),
-    metricCard("billing-target", "Meta do mês (+30%)", target.target, { asCurrency: true, compact: true }),
+    metricCard("billing-target", "Meta do mês (+20%)", target.target, { asCurrency: true, compact: true }),
     metricCard("billing-achievement", "% atingimento meta", target.achievementPercent, { asPercent: true }),
     metricCard("billing-gap", "Diferença p/ meta", target.gap, { asCurrency: true, compact: true }),
     metricCard("billing-count-month", "NF-e autorizadas no mês", monthAgg.count),

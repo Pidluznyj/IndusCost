@@ -172,9 +172,9 @@ export const PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX: PresidentialAuditRow[] 
   },
   {
     section: "Metas",
-    indicator: "Meta mês / ano (+30%)",
+    indicator: "Meta mês / ano (+20%)",
     componentOrBuilder: "salesOrderDashboardRules / billingDashboardMetrics",
-    currentSource: "Derivada (+30% período anterior)",
+    currentSource: "Derivada (+20% período anterior)",
     officialMotor: "Mesma regra das telas oficiais",
     status: "OK_USA_MOTOR_OFICIAL",
     notes: "targetsDerived: true — sem tabela de metas editável.",

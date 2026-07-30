@@ -42,7 +42,7 @@ export function calculatePercentageChange(
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-/** % de atingimento da meta — delega à regra oficial (+30% / divisão por target). */
+/** % de atingimento da meta — delega à regra oficial (+20% / divisão por target). */
 export function calculateTargetAchievement(
   actual: number | null,
   target: number | null

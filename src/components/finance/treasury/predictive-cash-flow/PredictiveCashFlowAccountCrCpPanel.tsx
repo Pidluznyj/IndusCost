@@ -3,13 +3,31 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, Eye, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Building2,
+  Eye,
+  Search,
+  X,
+} from "lucide-react";
 import {
   TREASURY_CRCP_UNLINKED_ID,
   type TreasuryCrCpAccountGroupDto,
   type TreasuryCrCpByAccountBoardDto,
   type TreasuryCrCpTitleDto,
 } from "@/src/lib/treasury/domain/treasuryPredictiveCrCpByAccountRules.js";
+import {
+  EMPTY_TREASURY_CRCP_TITLES_FILTERS,
+  listTreasuryCrCpTitleCounterparties,
+  presentTreasuryCrCpTitles,
+  toggleTreasuryCrCpTitlesSort,
+  type TreasuryCrCpTitlesPresentationFilters,
+  type TreasuryCrCpTitlesSortDir,
+  type TreasuryCrCpTitlesSortKey,
+} from "@/src/lib/treasury/domain/treasuryPredictiveCrCpTitlesPresentation.js";
 import {
   formatPredictiveCashFlowDate,
   formatPredictiveCashFlowMoney,
@@ -24,11 +42,167 @@ export type PredictiveCashFlowAccountCrCpPanelProps = {
   toDate: string;
 };
 
-type TitleFilter = "ALL" | "RECEIVABLE" | "PAYABLE" | "OVERDUE" | "UPCOMING";
-
 function moneyLabel(value: string | null | undefined): string {
   if (value == null) return "—";
   return formatPredictiveCashFlowMoney(treasuryMoneyToNumber(value));
+}
+
+const FILTER_CONTROL_CLASS =
+  "h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 disabled:opacity-50";
+
+type SortableColumn = {
+  key: TreasuryCrCpTitlesSortKey;
+  label: string;
+  align?: "left" | "right";
+};
+
+const TITLE_COLUMNS: SortableColumn[] = [
+  { key: "dueDate", label: "Vencimento" },
+  { key: "situation", label: "Situação" },
+  { key: "counterpartyName", label: "Cliente / fornecedor" },
+  { key: "documentNumber", label: "Documento" },
+  { key: "installmentLabel", label: "Parcela" },
+  { key: "originalAmount", label: "Original", align: "right" },
+  { key: "settledAmount", label: "Pago/Recebido", align: "right" },
+  { key: "openBalance", label: "Saldo", align: "right" },
+  { key: "nomusFinancialAccountName", label: "Conta Nomus" },
+  { key: "destinationBucketLabel", label: "Agrupamento" },
+];
+
+function SortHeaderButton({
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  column: SortableColumn;
+  sortKey: TreasuryCrCpTitlesSortKey;
+  sortDir: TreasuryCrCpTitlesSortDir;
+  onSort: (key: TreasuryCrCpTitlesSortKey) => void;
+}) {
+  const active = sortKey === column.key;
+  const Icon = !active ? ArrowUpDown : sortDir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column.key)}
+      className={cn(
+        "inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors hover:text-[#111827]",
+        column.align === "right" ? "w-full justify-end" : "",
+        active ? "text-[#0F172A]" : "text-[#6B7280]"
+      )}
+      data-testid={`predictive-cf-crcp-sort-${column.key}`}
+      aria-sort={
+        active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+      }
+    >
+      {column.label}
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+    </button>
+  );
+}
+
+function TitleRowsTable({
+  titles,
+  sortKey,
+  sortDir,
+  onSort,
+  emptyLabel,
+  side,
+}: {
+  titles: TreasuryCrCpTitleDto[];
+  sortKey: TreasuryCrCpTitlesSortKey;
+  sortDir: TreasuryCrCpTitlesSortDir;
+  onSort: (key: TreasuryCrCpTitlesSortKey) => void;
+  emptyLabel: string;
+  side: "RECEIVABLE" | "PAYABLE";
+}) {
+  if (titles.length === 0) {
+    return (
+      <p className="px-4 py-10 text-center text-sm text-[#6B7280]">{emptyLabel}</p>
+    );
+  }
+
+  return (
+    <div className="overflow-auto">
+      <table className="min-w-[980px] w-full border-collapse text-sm">
+        <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
+          <tr className="border-b border-[#E5E7EB] text-left text-[10px]">
+            {TITLE_COLUMNS.map((column) => (
+              <th
+                key={column.key}
+                className={cn(
+                  "px-3 py-2.5",
+                  column.align === "right" ? "text-right" : ""
+                )}
+              >
+                <SortHeaderButton
+                  column={column}
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {titles.map((t) => (
+            <tr
+              key={`${t.side}-${t.id}`}
+              className="border-b border-[#E5E7EB] last:border-0 hover:bg-[#F8FAFC]/40"
+              data-testid={`predictive-cf-crcp-title-row-${side}-${t.id}`}
+            >
+              <td className="px-3 py-2.5 tabular-nums">
+                {t.dueDate ? formatPredictiveCashFlowDate(t.dueDate) : "—"}
+              </td>
+              <td className="px-3 py-2.5">
+                <span
+                  className={cn(
+                    "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
+                    t.situation === "OVERDUE"
+                      ? "bg-red-50 text-red-800"
+                      : "bg-emerald-50 text-emerald-800"
+                  )}
+                >
+                  {t.situation === "OVERDUE" ? "Vencido" : "A vencer"}
+                </span>
+              </td>
+              <td className="px-3 py-2.5">{t.counterpartyName ?? "—"}</td>
+              <td className="px-3 py-2.5">{t.documentNumber ?? "—"}</td>
+              <td className="px-3 py-2.5">{t.installmentLabel ?? "—"}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">
+                {moneyLabel(t.originalAmount)}
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums">
+                {moneyLabel(t.settledAmount)}
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                {moneyLabel(t.openBalance)}
+              </td>
+              <td className="px-3 py-2.5 text-xs">
+                {t.nomusFinancialAccountName
+                  ? `${t.nomusFinancialAccountName}${
+                      t.nomusFinancialAccountId
+                        ? ` (#${t.nomusFinancialAccountId})`
+                        : ""
+                    }`
+                  : t.nomusFinancialAccountId
+                    ? `#${t.nomusFinancialAccountId}`
+                    : "Sem conta financeira"}
+                {t.unlinkedReasonLabel ? (
+                  <span className="mt-0.5 block text-[#B45309]">
+                    {t.unlinkedReasonLabel}
+                  </span>
+                ) : null}
+              </td>
+              <td className="px-3 py-2.5 text-xs">{t.destinationBucketLabel}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function TitleDetailDialog({
@@ -38,155 +212,266 @@ function TitleDetailDialog({
   group: TreasuryCrCpAccountGroupDto;
   onClose: () => void;
 }) {
-  const [filter, setFilter] = useState<TitleFilter>("ALL");
-  const titles = useMemo(() => {
-    const all = [...group.receivableTitles, ...group.payableTitles];
-    return all
-      .filter((t) => {
-        if (filter === "RECEIVABLE") return t.side === "RECEIVABLE";
-        if (filter === "PAYABLE") return t.side === "PAYABLE";
-        if (filter === "OVERDUE") return t.situation === "OVERDUE";
-        if (filter === "UPCOMING") return t.situation === "UPCOMING";
-        return true;
-      })
-      .sort((a, b) => {
-        if (a.situation !== b.situation) {
-          return a.situation === "OVERDUE" ? -1 : 1;
-        }
-        return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
-      });
-  }, [group, filter]);
+  const [filters, setFilters] = useState<TreasuryCrCpTitlesPresentationFilters>(
+    EMPTY_TREASURY_CRCP_TITLES_FILTERS
+  );
+  const [sortKey, setSortKey] = useState<TreasuryCrCpTitlesSortKey>("dueDate");
+  const [sortDir, setSortDir] = useState<TreasuryCrCpTitlesSortDir>("asc");
 
-  return (
+  const allTitles = useMemo(
+    () => [...group.receivableTitles, ...group.payableTitles],
+    [group]
+  );
+  const counterparties = useMemo(
+    () => listTreasuryCrCpTitleCounterparties(allTitles),
+    [allTitles]
+  );
+
+  const receivableTitles = useMemo(
+    () =>
+      presentTreasuryCrCpTitles(
+        group.receivableTitles,
+        filters,
+        sortKey,
+        sortDir
+      ),
+    [group.receivableTitles, filters, sortKey, sortDir]
+  );
+  const payableTitles = useMemo(
+    () =>
+      presentTreasuryCrCpTitles(group.payableTitles, filters, sortKey, sortDir),
+    [group.payableTitles, filters, sortKey, sortDir]
+  );
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  const onSort = (key: TreasuryCrCpTitlesSortKey) => {
+    const next = toggleTreasuryCrCpTitlesSort(sortKey, sortDir, key);
+    setSortKey(next.sortKey);
+    setSortDir(next.sortDir);
+  };
+
+  const filtersActive =
+    filters.situation !== "ALL" ||
+    Boolean(filters.counterparty.trim()) ||
+    Boolean(filters.query.trim());
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[90] flex flex-col bg-[#F8FAFC]"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="predictive-cf-crcp-titles-title"
       data-testid="predictive-cf-crcp-titles-dialog"
     >
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-[#E5E7EB] bg-white shadow-lg">
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-          <div>
-            <h3 className="text-base font-extrabold text-[#111827]">
+      <header className="shrink-0 border-b border-[#E5E7EB] bg-white px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+              Tesouraria · apresentação de títulos
+            </p>
+            <h3
+              id="predictive-cf-crcp-titles-title"
+              className="truncate text-lg font-extrabold text-[#111827] sm:text-xl"
+            >
               Títulos · {group.accountName}
             </h3>
             <p className="mt-1 text-sm text-[#6B7280]">
-              CR {group.accountsReceivableCount} · CP{" "}
-              {group.accountsPayableCount}
+              <span className="font-semibold text-emerald-700">
+                CR {group.accountsReceivableCount}
+              </span>
+              {" · "}
+              <span className="font-semibold text-red-700">
+                CP {group.accountsPayableCount}
+              </span>
+              {" · "}
+              Liquidez{" "}
+              <span className="font-semibold tabular-nums text-[#111827]">
+                {moneyLabel(group.netMovement)}
+              </span>
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-[#E5E7EB] p-2 text-[#6B7280] hover:bg-[#F8FAFC]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F8FAFC]"
             aria-label="Fechar"
+            data-testid="predictive-cf-crcp-titles-close"
           >
             <X className="h-4 w-4" />
+            Fechar
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 border-b border-[#E5E7EB] px-5 py-3">
-          {(
-            [
-              ["ALL", "Todos"],
-              ["RECEIVABLE", "Contas a Receber"],
-              ["PAYABLE", "Contas a Pagar"],
-              ["OVERDUE", "Vencidos"],
-              ["UPCOMING", "A vencer"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setFilter(id)}
-              className={cn(
-                "rounded-lg border px-3 py-1.5 text-xs font-semibold",
-                filter === id
-                  ? "border-sky-300 bg-sky-50 text-sky-950"
-                  : "border-[#E5E7EB] bg-white text-[#374151]"
-              )}
+
+        <div
+          className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto_auto_auto]"
+          data-testid="predictive-cf-crcp-titles-filters"
+        >
+          <label className="min-w-0">
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+              Cliente / fornecedor
+            </span>
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="predictive-cf-crcp-filter-counterparty"
+              value={filters.counterparty}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  counterparty: event.target.value,
+                }))
+              }
             >
-              {label}
+              <option value="">Todos</option>
+              {counterparties.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="min-w-0">
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+              Busca
+            </span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+              <input
+                className={cn(FILTER_CONTROL_CLASS, "pl-8")}
+                data-testid="predictive-cf-crcp-filter-query"
+                placeholder="Documento, parcela, conta…"
+                value={filters.query}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    query: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </label>
+
+          <div className="flex flex-wrap items-end gap-1.5 sm:col-span-2">
+            {(
+              [
+                ["ALL", "Todos"],
+                ["OVERDUE", "Vencidos"],
+                ["UPCOMING", "A vencer"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() =>
+                  setFilters((current) => ({ ...current, situation: id }))
+                }
+                className={cn(
+                  "h-9 rounded-lg border px-3 text-xs font-semibold",
+                  filters.situation === id
+                    ? "border-sky-300 bg-sky-50 text-sky-950"
+                    : "border-[#E5E7EB] bg-white text-[#374151]"
+                )}
+                data-testid={`predictive-cf-crcp-filter-situation-${id}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F8FAFC] disabled:opacity-40"
+              data-testid="predictive-cf-crcp-filters-clear"
+              disabled={!filtersActive}
+              onClick={() => setFilters(EMPTY_TREASURY_CRCP_TITLES_FILTERS)}
+            >
+              Limpar filtros
             </button>
-          ))}
+          </div>
         </div>
-        <div className="overflow-auto px-5 py-4">
-          {titles.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[#6B7280]">
-              Nenhum título neste filtro.
-            </p>
-          ) : (
-            <table className="min-w-[900px] w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[#E5E7EB] text-left text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
-                  <th className="px-2 py-2">Tipo</th>
-                  <th className="px-2 py-2">Vencimento</th>
-                  <th className="px-2 py-2">Situação</th>
-                  <th className="px-2 py-2">Cliente / fornecedor</th>
-                  <th className="px-2 py-2">Documento</th>
-                  <th className="px-2 py-2">Parcela</th>
-                  <th className="px-2 py-2 text-right">Original</th>
-                  <th className="px-2 py-2 text-right">Pago/Recebido</th>
-                  <th className="px-2 py-2 text-right">Saldo</th>
-                  <th className="px-2 py-2">Conta Nomus</th>
-                  <th className="px-2 py-2">Agrupamento</th>
-                </tr>
-              </thead>
-              <tbody>
-                {titles.map((t: TreasuryCrCpTitleDto) => (
-                  <tr
-                    key={`${t.side}-${t.id}`}
-                    className="border-b border-[#E5E7EB] last:border-0"
-                  >
-                    <td className="px-2 py-2 font-semibold">
-                      {t.side === "RECEIVABLE" ? "CR" : "CP"}
-                    </td>
-                    <td className="px-2 py-2 tabular-nums">
-                      {t.dueDate
-                        ? formatPredictiveCashFlowDate(t.dueDate)
-                        : "—"}
-                    </td>
-                    <td className="px-2 py-2">
-                      {t.situation === "OVERDUE" ? "Vencido" : "A vencer"}
-                    </td>
-                    <td className="px-2 py-2">{t.counterpartyName ?? "—"}</td>
-                    <td className="px-2 py-2">{t.documentNumber ?? "—"}</td>
-                    <td className="px-2 py-2">{t.installmentLabel ?? "—"}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {moneyLabel(t.originalAmount)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {moneyLabel(t.settledAmount)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums font-semibold">
-                      {moneyLabel(t.openBalance)}
-                    </td>
-                    <td className="px-2 py-2 text-xs">
-                      {t.nomusFinancialAccountName
-                        ? `${t.nomusFinancialAccountName}${
-                            t.nomusFinancialAccountId
-                              ? ` (#${t.nomusFinancialAccountId})`
-                              : ""
-                          }`
-                        : t.nomusFinancialAccountId
-                          ? `#${t.nomusFinancialAccountId}`
-                          : "Sem conta financeira"}
-                      {t.unlinkedReasonLabel ? (
-                        <span className="mt-0.5 block text-[#B45309]">
-                          {t.unlinkedReasonLabel}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-2 py-2 text-xs">
-                      {t.destinationBucketLabel}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+      </header>
+
+      <div
+        className="min-h-0 flex-1 overflow-auto p-3 sm:p-4"
+        data-testid="predictive-cf-crcp-titles-body"
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section
+            className="flex min-h-[280px] flex-col overflow-hidden rounded-xl border border-emerald-200/80 bg-white shadow-sm"
+            data-testid="predictive-cf-crcp-section-receivable"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-extrabold text-emerald-950">
+                  Contas a receber
+                </h4>
+                <p className="text-xs text-emerald-800/80">
+                  {receivableTitles.length} título(s) · saldo{" "}
+                  <span className="font-semibold tabular-nums">
+                    {moneyLabel(group.accountsReceivableTotal)}
+                  </span>
+                </p>
+              </div>
+              <span className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                CR
+              </span>
+            </div>
+            <TitleRowsTable
+              titles={receivableTitles}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={onSort}
+              emptyLabel="Nenhum título a receber neste filtro."
+              side="RECEIVABLE"
+            />
+          </section>
+
+          <section
+            className="flex min-h-[280px] flex-col overflow-hidden rounded-xl border border-red-200/80 bg-white shadow-sm"
+            data-testid="predictive-cf-crcp-section-payable"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-red-100 bg-red-50/70 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-extrabold text-red-950">
+                  Contas a pagar
+                </h4>
+                <p className="text-xs text-red-800/80">
+                  {payableTitles.length} título(s) · saldo{" "}
+                  <span className="font-semibold tabular-nums">
+                    {moneyLabel(group.accountsPayableTotal)}
+                  </span>
+                </p>
+              </div>
+              <span className="rounded-md bg-red-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                CP
+              </span>
+            </div>
+            <TitleRowsTable
+              titles={payableTitles}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={onSort}
+              emptyLabel="Nenhum título a pagar neste filtro."
+              side="PAYABLE"
+            />
+          </section>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -405,7 +690,6 @@ export function PredictiveCashFlowAccountCrCpPanel({
         />
       ) : null}
 
-      {/* hint for tests / a11y */}
       <span className="sr-only" data-testid="predictive-cf-crcp-unlinked-id">
         {TREASURY_CRCP_UNLINKED_ID}
       </span>

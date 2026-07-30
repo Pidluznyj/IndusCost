@@ -158,6 +158,14 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(crcp, /fetchTreasuryPredictiveCrCpByAccount/);
     assert.match(crcp, /Ver títulos/);
     assert.match(crcp, /Contas sem vínculo|isUnlinked/);
+    assert.match(crcp, /fixed inset-0 z-\[90\]/);
+    assert.match(crcp, /predictive-cf-crcp-section-receivable/);
+    assert.match(crcp, /predictive-cf-crcp-section-payable/);
+    assert.match(crcp, /predictive-cf-crcp-filter-counterparty/);
+    assert.match(crcp, /predictive-cf-crcp-sort-\$\{column\.key\}/);
+    assert.match(crcp, /presentTreasuryCrCpTitles/);
+    assert.match(crcp, /createPortal/);
+    assert.match(crcp, /key: "dueDate"/);
     const chart = readFileSync(
       join(here, "PredictiveCashFlowTimelineChart.tsx"),
       "utf8"

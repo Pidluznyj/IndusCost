@@ -377,7 +377,7 @@ export function buildFinanceExecutiveReportDataQuality(input: {
   const warnings = [...input.warnings];
   if (input.billingTargetMissing) {
     warnings.push(
-      "Metas de faturamento derivadas (+30% sobre período anterior); não há cadastro editável de metas."
+      "Metas de faturamento derivadas (+20% sobre período anterior); não há cadastro editável de metas."
     );
   }
   if (input.arStaleExcluded) {

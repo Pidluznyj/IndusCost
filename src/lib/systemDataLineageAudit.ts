@@ -311,7 +311,7 @@ export const SYSTEM_DATA_LINEAGE: SystemDataLineageEntry[] = [
     rawSqlTables: [],
     externalSources: [],
     derivedFrom: [],
-    hardcodedAllowed: ["TARGET_GROWTH_FACTOR = 1.3 — meta documentada"],
+    hardcodedAllowed: ["TARGET_GROWTH_FACTOR = 1.2 — meta documentada (+20%)"],
     hardcodedSuspicions: [],
     status: "attention",
     notes: ["Meta percentual fixa; revisar se deve vir de configuração futura."],

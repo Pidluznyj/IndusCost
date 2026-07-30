@@ -100,7 +100,7 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
   billingMetrics: {
     module: "billingDashboardMetrics.ts",
     builder: "buildBillingDashboardTab",
-    description: "Métricas de faturamento de mercado, metas (+30%), média diária e projeção.",
+    description: "Métricas de faturamento de mercado, metas (+20%), média diária e projeção.",
   },
   salesOrders: {
     module: "salesOrdersDashboardMetrics.ts",
@@ -112,7 +112,7 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
   salesOrderRules: {
     module: "salesOrderDashboardRules.ts",
     builder: "computeAchievementPercent, computeMonthProjection, computeGrowthTarget, …",
-    description: "Regras puras compartilhadas entre faturamento e pedidos (metas +30%).",
+    description: "Regras puras compartilhadas entre faturamento e pedidos (metas +20%).",
   },
   costCenterDashboard: {
     module: "financeCostCenterDashboard.ts",
@@ -191,7 +191,7 @@ export const FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS: FinanceExecutiveReportKnownGap
     id: "custom-meta-table",
     label: "Metas cadastradas em tabela/config",
     status: "missing",
-    notes: "Metas atuais são derivadas (+30% sobre período anterior) — não há tabela de metas editável.",
+    notes: "Metas atuais são derivadas (+20% sobre período anterior) — não há tabela de metas editável.",
   },
   {
     id: "executive-narrative-ai",
@@ -205,7 +205,7 @@ export type FinanceExecutiveReportDataQuality = {
   sanitization: FinanceDataSanitization | null;
   warnings: string[];
   unavailableSections: string[];
-  /** Metas derivadas (+30% sobre período anterior) — não há cadastro editável. */
+  /** Metas derivadas (+20% sobre período anterior) — não há cadastro editável. */
   targetsDerived: boolean;
   sync: {
     accountsReceivableLastSyncAt: string | null;

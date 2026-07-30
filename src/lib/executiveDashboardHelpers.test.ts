@@ -34,7 +34,9 @@ import {
   computeYearProjection,
   computeYtdDailyAverageByWorkday,
   computeTicketAverage,
+  EXECUTIVE_ANNUAL_TARGET_HINT,
   EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
+  formatTargetGrowthRateLabel,
   isOpenPortfolioOrder,
   isOverdueSalesOrder,
   isOverdueSalesOrderInSelectedYear,
@@ -294,12 +296,17 @@ describe("salesOrderDashboardRules", () => {
     assert.equal(isSalesOrderInvoiced(false), false);
   });
 
-  it("month target equals same month previous year times 1.30", () => {
+  it("month target equals same month previous year times growth factor", () => {
+    assert.equal(TARGET_GROWTH_FACTOR, 1.2);
     assert.equal(computeGrowthTarget(100_000), 100_000 * TARGET_GROWTH_FACTOR);
   });
 
-  it("annual target equals total previous year times 1.30", () => {
-    assert.equal(computeGrowthTarget(10_000_000), 13_000_000);
+  it("annual target equals total previous year times growth factor", () => {
+    assert.equal(computeGrowthTarget(10_000_000), 12_000_000);
+    assert.equal(computeGrowthTarget(14_000_000), 16_800_000);
+    assert.equal(formatTargetGrowthRateLabel(), "+20%");
+    assert.match(EXECUTIVE_ANNUAL_TARGET_HINT, /ano anterior completo/);
+    assert.match(EXECUTIVE_ANNUAL_TARGET_HINT, /1,20/);
   });
 
   it("realized minus target is positive when above target", () => {

@@ -26,8 +26,11 @@ import {
   EXECUTIVE_REALIZED_HINT,
   EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
   EXECUTIVE_TARGET_GAP_HINT,
+  formatTargetGrowthFactorPtBr,
+  formatTargetGrowthRateLabel,
   TARGET_GROWTH_FACTOR,
 } from "@/src/lib/salesOrderDashboardRules.js";
+import { isIntercompanySalesOrder } from "@/src/lib/financeInternalGroupExclusions.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import {
   loadSalesOrderEnrichedMetricsForIssueYear,
@@ -166,7 +169,10 @@ async function queryOpenPortfolio(referenceDate: Date): Promise<{ count: number 
     referenceDate
   );
   const open = metrics.filter(
-    (m) => !m.hasNfe && m.logisticStatusCardId !== "finishedOrCancelled"
+    (m) =>
+      !m.hasNfe &&
+      m.logisticStatusCardId !== "finishedOrCancelled" &&
+      !isIntercompanySalesOrder({ customerName: m.customerName })
   );
   return {
     count: open.length,
@@ -179,7 +185,11 @@ async function queryOverdueSummary(
   today: Date
 ): Promise<{ count: number | null; net: number | null }> {
   const metrics = await loadSalesOrderEnrichedMetricsForIssueYear(selectedYear, today);
-  const overdue = metrics.filter((m) => m.logisticStatusCardId === "overduePending");
+  const overdue = metrics.filter(
+    (m) =>
+      m.logisticStatusCardId === "overduePending" &&
+      !isIntercompanySalesOrder({ customerName: m.customerName })
+  );
   return {
     count: overdue.length,
     net: overdue.reduce((sum, m) => sum + m.totalNetValue, 0),
@@ -189,7 +199,11 @@ async function queryOverdueSummary(
 async function queryOverdueList(selectedYear: number, now: Date): Promise<OverdueOrderRow[]> {
   const metrics = await loadSalesOrderEnrichedMetricsForIssueYear(selectedYear, now);
   return metrics
-    .filter((m) => m.logisticStatusCardId === "overduePending")
+    .filter(
+      (m) =>
+        m.logisticStatusCardId === "overduePending" &&
+        !isIntercompanySalesOrder({ customerName: m.customerName })
+    )
     .sort((a, b) => {
       const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
       const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
@@ -276,10 +290,6 @@ export async function buildSalesOrdersDashboardTab(
     count: null,
     net: prevOfficial.metrics.soldAmountMonth,
   };
-  const prevYearTotalAgg = {
-    count: null,
-    net: prevOfficial.metrics.soldAmountYtd,
-  };
   const [
 
 
@@ -300,17 +310,24 @@ export async function buildSalesOrdersDashboardTab(
   const previousYearMonthly = new Map(
     prevOfficial.monthlyTimeline.map((p) => [p.month, p.soldAmount])
   );
+  // Meta anual: base = ANO ANTERIOR COMPLETO (soma Jan–Dez), não YTD comparável.
+  // Isso alinha a meta ao giro real das 3 empresas no ano passado (~14 Mi em 2025).
+  const prevYearFullNet =
+    Math.round(
+      [...previousYearMonthly.values()].reduce((sum, value) => sum + value, 0) * 100
+    ) / 100;
   const monthlyTarget = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
   const monthlyRealizedMinusTarget = computeRealizedMinusTarget(monthAgg.net, monthlyTarget.target);
-  const annualBlock = buildTargetBlock(ytdAgg.net, prevYearTotalAgg.net);
+  const annualBlock = buildTargetBlock(ytdAgg.net, prevYearFullNet);
   const annualTargetValue = annualBlock.target;
   const annualAchievement = annualBlock.achievementPercent;
+  const growthRateLabel = formatTargetGrowthRateLabel(TARGET_GROWTH_FACTOR);
   const targets: SalesOrdersTargetsBlock = {
     growthRate: TARGET_GROWTH_FACTOR,
-    growthRateLabel: "+30%",
+    growthRateLabel,
     annual: {
       ...annualBlock,
-      basePreviousYear: prevYearTotalAgg.net,
+      basePreviousYear: prevYearFullNet,
       basePreviousYearLabel: previousYear,
       actualYtd: ytdAgg.net,
       hint: EXECUTIVE_ANNUAL_TARGET_HINT,
@@ -393,7 +410,7 @@ export async function buildSalesOrdersDashboardTab(
     metricCard("open-portfolio", "Carteira aberta", openPortfolio.net, {
       asCurrency: true,
       compact: true,
-      hint: "Pedidos não cancelados sem nota fiscal processada",
+      hint: "Pedidos de mercado das 3 empresas, não cancelados, sem NF processada (sem intercompany).",
     }),
     metricCard("overdue-count", "Pedidos atrasados", overdueSummary.count, {
       hint: EXECUTIVE_OVERDUE_ORDERS_HINT,
@@ -406,7 +423,7 @@ export async function buildSalesOrdersDashboardTab(
 
   return {
     available: true,
-    source: `${official.metricsSource} — SalesOrder.totalNetValue por issueDate; metas = ano/mês anterior × 1,30`,
+    source: `${official.metricsSource} — SalesOrder.totalNetValue por issueDate (3 empresas, sem intercompany); meta anual = ano anterior completo × ${formatTargetGrowthFactorPtBr()}; meta mensal = mesmo mês anterior × ${formatTargetGrowthFactorPtBr()}`,
     metricsSource: official.metricsSource,
     rulesEngineVersion: official.rulesEngineVersion,
     selectedYear: year,

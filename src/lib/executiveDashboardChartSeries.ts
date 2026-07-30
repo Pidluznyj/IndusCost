@@ -4,6 +4,7 @@ import {
   computeGrowthTarget,
   computeRealizedMinusTarget,
   computeTargetGap,
+  formatTargetGrowthRateLabel,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { getExecutiveChartColors, type ExecutiveChartKind } from "@/src/lib/executiveDashboardChartTheme.js";
 import type {
@@ -24,7 +25,7 @@ export function buildChartSeriesLabels(
   return {
     previousYearBar: `${prefix} ${previousYear}`,
     currentYearBar: isSelectedYearCurrent ? `${prefix} ${selectedYear} YTD` : `${prefix} ${selectedYear}`,
-    targetLine: `Meta ${selectedYear} (+30%)`,
+    targetLine: `Meta ${selectedYear} (${formatTargetGrowthRateLabel()})`,
     projectedLine: `Projeção ${selectedYear}`,
   };
 }

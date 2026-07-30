@@ -580,6 +580,6 @@ export function buildAnnualComparisonSeriesLabels(year: number): {
     paidAmount: "Pago",
     payableOpenAmount: "A Pagar",
     netCashAmount: "Saldo mensal",
-    receivableGoal: `Meta de recebimento ${year} (+30%)`,
+    receivableGoal: `Meta de recebimento ${year} (+20%)`,
   };
 }

@@ -35,7 +35,7 @@ export function buildFinanceBillingActionItems(input: {
       id: "below-target",
       severity: achievement < 60 ? "critical" : "warning",
       title: "Faturamento abaixo da meta do mês",
-      description: `% atingimento: ${achievement.toFixed(1)}% — meta +30% sobre mês anterior`,
+      description: `% atingimento: ${achievement.toFixed(1)}% — meta +20% sobre mês anterior`,
       value: tab?.target.formatted.gap,
     });
   }

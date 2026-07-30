@@ -64,7 +64,7 @@ function MonthlyExecutiveTooltip({
       value: formatExecutiveCurrency(point.currentYearValue),
     });
     rows.push({
-      label: `${config.labels.targetLine} (vs ${config.previousYear} × 1,30)`,
+      label: `${config.labels.targetLine} (vs ${config.previousYear} × 1,20)`,
       value: formatExecutiveCurrency(point.targetValue),
     });
     if (point.differenceToTarget != null) {
@@ -516,7 +516,7 @@ export function ExecutiveTargetPanel({
         cards={[
           { label: "Realizado", formatted: target.formatted.actual },
           { label: "Período anterior", formatted: target.formatted.previousPeriod },
-          { label: "Meta (+30%)", formatted: target.formatted.target },
+          { label: "Meta (+20%)", formatted: target.formatted.target },
           { label: "Diferença p/ meta", formatted: target.formatted.gap },
           { label: "% atingimento", formatted: target.formatted.achievementPercent },
         ]}
