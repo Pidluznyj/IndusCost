@@ -17,6 +17,7 @@ import {
 } from "./commissionReceiptClosing.js";
 import {
   applyCommissionReceiptClosing,
+  cancelCommissionReceiptClosing,
   findClosedReceiptClosing,
   loadReceiptClosingLedgerLines,
   previewCommissionReceiptClosing,
@@ -159,6 +160,14 @@ export async function applyReceiptClosingFromApi(input: {
     userId: input.userId,
     notes,
   });
+}
+
+export async function cancelReceiptClosingFromApi(input: {
+  closingId: string;
+  userId: string;
+  reason: string;
+}) {
+  return cancelCommissionReceiptClosing(prisma, input);
 }
 
 export async function reprocessReceiptClosingPreviewFromApi(filters: ReceiptClosingFilters) {

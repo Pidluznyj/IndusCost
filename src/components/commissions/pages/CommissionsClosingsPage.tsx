@@ -44,7 +44,12 @@ import { isCanonicalSellerDisplayName } from "@/src/lib/commissions/commissionCl
 import { CommissionClosingSellerReportPrintDocument } from "@/src/components/commissions/CommissionClosingSellerReportPrintDocument";
 import { CommissionClosingReportPrintDocument } from "@/src/components/commissions/CommissionClosingReportPrintDocument";
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
+import type { ReceiptClosingReprocessPreview } from "@/src/lib/commissions/commissionReceiptClosing";
 import { cn } from "@/src/lib/utils";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { canReprocessCommissions } from "@/src/lib/commissionsModulePermissions";
+import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 
 const MONTH_OPTIONS = [
   { value: "", label: "Todos" },
@@ -65,6 +70,12 @@ const MONTH_OPTIONS = [
 type ViewMode = "list" | "detail" | "seller";
 
 export function CommissionsClosingsPage() {
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const canManageClosing =
+    canReprocessCommissions(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsReprocess, "reprocess");
+
   const now = new Date();
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState("");
@@ -83,6 +94,18 @@ export function CommissionsClosingsPage() {
   const [printMode, setPrintMode] = useState<"seller" | "closing" | null>(null);
   const [closingPrintPayload, setClosingPrintPayload] = useState<ReceiptClosingPagePayload | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  const [recalcTarget, setRecalcTarget] = useState<CommissionClosingListItem | null>(null);
+  const [recalcPreview, setRecalcPreview] = useState<ReceiptClosingReprocessPreview | null>(null);
+  const [recalcLoadingPreview, setRecalcLoadingPreview] = useState(false);
+  const [recalcConfirm, setRecalcConfirm] = useState("");
+  const [recalcReason, setRecalcReason] = useState("");
+  const [recalcApplying, setRecalcApplying] = useState(false);
+
+  const [cancelTarget, setCancelTarget] = useState<CommissionClosingListItem | null>(null);
+  const [cancelConfirm, setCancelConfirm] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelApplying, setCancelApplying] = useState(false);
 
   const yearOptions = useMemo(
     () => buildCommissionsYearOptions(Number.parseInt(year, 10) || now.getFullYear()),
@@ -236,6 +259,109 @@ export function CommissionsClosingsPage() {
       setPrintRequestId((n) => n + 1);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível gerar o PDF geral."));
+    }
+  }
+
+  async function openRecalc(item: CommissionClosingListItem) {
+    setRecalcTarget(item);
+    setRecalcPreview(null);
+    setRecalcConfirm("");
+    setRecalcReason("");
+    setRecalcLoadingPreview(true);
+    setError(null);
+    try {
+      const preview = await fetchJsonOk<ReceiptClosingReprocessPreview>(
+        "/api/commissions/receipt-closing/reprocess-preview",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ year: item.year, month: item.month }),
+        }
+      );
+      setRecalcPreview(preview);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível gerar a prévia de recálculo."));
+      setRecalcTarget(null);
+    } finally {
+      setRecalcLoadingPreview(false);
+    }
+  }
+
+  function closeRecalcModal() {
+    if (recalcApplying) return;
+    setRecalcTarget(null);
+    setRecalcPreview(null);
+    setRecalcConfirm("");
+    setRecalcReason("");
+  }
+
+  async function confirmRecalc() {
+    if (!recalcTarget) return;
+    setRecalcApplying(true);
+    setError(null);
+    try {
+      await fetchJsonOk("/api/commissions/receipt-closing/reprocess-apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          year: recalcTarget.year,
+          month: recalcTarget.month,
+          confirm: recalcConfirm,
+          reason: recalcReason,
+        }),
+      });
+      closeRecalcModal();
+      if (view !== "list") {
+        setView("list");
+        setDetail(null);
+        setSellerReport(null);
+      }
+      await reload();
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível recalcular o fechamento."));
+    } finally {
+      setRecalcApplying(false);
+    }
+  }
+
+  function openCancel(item: CommissionClosingListItem) {
+    setCancelTarget(item);
+    setCancelConfirm("");
+    setCancelReason("");
+  }
+
+  function closeCancelModal() {
+    if (cancelApplying) return;
+    setCancelTarget(null);
+    setCancelConfirm("");
+    setCancelReason("");
+  }
+
+  async function confirmCancel() {
+    if (!cancelTarget) return;
+    setCancelApplying(true);
+    setError(null);
+    try {
+      await fetchJsonOk("/api/commissions/receipt-closing/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          closingId: cancelTarget.closingId,
+          confirm: cancelConfirm,
+          reason: cancelReason,
+        }),
+      });
+      closeCancelModal();
+      if (view !== "list") {
+        setView("list");
+        setDetail(null);
+        setSellerReport(null);
+      }
+      await reload();
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível cancelar o fechamento."));
+    } finally {
+      setCancelApplying(false);
     }
   }
 
@@ -447,6 +573,26 @@ export function CommissionsClosingsPage() {
                         >
                           XLSX
                         </button>
+                        {canManageClosing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                              onClick={() => void openRecalc(item)}
+                              data-testid="commissions-closings-recalc"
+                            >
+                              Recalcular
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                              onClick={() => openCancel(item)}
+                              data-testid="commissions-closings-cancel"
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -498,6 +644,26 @@ export function CommissionsClosingsPage() {
               >
                 <Download className="mr-2 h-4 w-4" /> XLSX geral
               </button>
+              {canManageClosing ? (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                    onClick={() => void openRecalc(detail.closing)}
+                    data-testid="commissions-closings-detail-recalc"
+                  >
+                    Recalcular
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                    onClick={() => openCancel(detail.closing)}
+                    data-testid="commissions-closings-detail-cancel"
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -877,6 +1043,162 @@ export function CommissionsClosingsPage() {
       ) : null}
 
       {detailLoading ? <CommissionsLoading label="Carregando…" /> : null}
+
+      {recalcTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <h4 className="text-lg font-bold">
+              Recalcular fechamento — {recalcTarget.periodLabel}
+            </h4>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Roda o motor oficial de novo com a tabela de preço e os pedidos como estão hoje. O
+              fechamento atual vira histórico (Reprocessado) e um novo Fechado é criado — nada é
+              apagado. Comissão já liberada/paga não é alterada automaticamente.
+            </p>
+
+            {recalcLoadingPreview ? (
+              <div className="mt-3">
+                <CommissionsLoading label="Calculando prévia…" />
+              </div>
+            ) : null}
+
+            {recalcPreview ? (
+              <div
+                className="mt-3 space-y-1 rounded-lg border border-border bg-muted/30 p-3 text-xs"
+                data-testid="commissions-closings-recalc-diff"
+              >
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Comissão liberada</span>
+                  <span className="font-medium tabular-nums">
+                    {formatFinanceCurrency(recalcPreview.before.totalReleasedCommission)} →{" "}
+                    {formatFinanceCurrency(recalcPreview.afterTotals.totalReleasedCommission)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Comissão prevista</span>
+                  <span className="font-medium tabular-nums">
+                    {formatFinanceCurrency(recalcPreview.before.totalExpectedCommission)} →{" "}
+                    {formatFinanceCurrency(recalcPreview.afterTotals.totalExpectedCommission)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Base comissionável</span>
+                  <span className="font-medium tabular-nums">
+                    {formatFinanceCurrency(recalcPreview.before.totalCommissionableBase)} →{" "}
+                    {formatFinanceCurrency(recalcPreview.afterTotals.totalCommissionableBase)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Linhas</span>
+                  <span className="font-medium tabular-nums">
+                    {recalcPreview.before.lineCount} → {recalcPreview.afterTotals.lineCount}{" "}
+                    ({recalcPreview.diff.changedLines} alterada(s),{" "}
+                    {recalcPreview.diff.addedLines} nova(s),{" "}
+                    {recalcPreview.diff.removedLines} removida(s))
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            <label className="mt-4 block text-xs font-semibold uppercase text-muted-foreground">
+              Digite REPROCESSAR COMISSAO para confirmar
+            </label>
+            <input
+              className={`${COMMISSIONS_FILTER_FIELD_CLASS} mt-1 w-full`}
+              value={recalcConfirm}
+              onChange={(e) => setRecalcConfirm(e.target.value)}
+              placeholder="REPROCESSAR COMISSAO"
+              disabled={recalcApplying}
+            />
+            <textarea
+              className={`${COMMISSIONS_FILTER_FIELD_CLASS} mt-2 w-full`}
+              rows={2}
+              value={recalcReason}
+              onChange={(e) => setRecalcReason(e.target.value)}
+              placeholder="Motivo do recálculo (ex.: tabela de preço corrigida em 01/07)"
+              disabled={recalcApplying}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className={financeBiButtonOutlineClass}
+                onClick={closeRecalcModal}
+                disabled={recalcApplying}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={() => void confirmRecalc()}
+                disabled={
+                  recalcApplying ||
+                  recalcLoadingPreview ||
+                  recalcConfirm !== "REPROCESSAR COMISSAO" ||
+                  recalcReason.trim().length < 3
+                }
+                data-testid="commissions-closings-recalc-confirm"
+              >
+                {recalcApplying ? "Recalculando…" : "Confirmar recálculo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {cancelTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h4 className="text-lg font-bold">Cancelar fechamento — {cancelTarget.periodLabel}</h4>
+            <p className="mt-2 text-sm text-muted-foreground">
+              O fechamento deixa de ser oficial (vira Cancelado) e o período fica livre para um
+              novo fechamento. As linhas já gravadas ficam preservadas para auditoria — nada é
+              apagado, e comissão já liberada/paga não é alterada.
+            </p>
+            <label className="mt-4 block text-xs font-semibold uppercase text-muted-foreground">
+              Digite CANCELAR COMISSAO para confirmar
+            </label>
+            <input
+              className={`${COMMISSIONS_FILTER_FIELD_CLASS} mt-1 w-full`}
+              value={cancelConfirm}
+              onChange={(e) => setCancelConfirm(e.target.value)}
+              placeholder="CANCELAR COMISSAO"
+              disabled={cancelApplying}
+            />
+            <textarea
+              className={`${COMMISSIONS_FILTER_FIELD_CLASS} mt-2 w-full`}
+              rows={2}
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Motivo do cancelamento"
+              disabled={cancelApplying}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className={financeBiButtonOutlineClass}
+                onClick={closeCancelModal}
+                disabled={cancelApplying}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={() => void confirmCancel()}
+                disabled={
+                  cancelApplying ||
+                  cancelConfirm !== "CANCELAR COMISSAO" ||
+                  cancelReason.trim().length < 3
+                }
+                data-testid="commissions-closings-cancel-confirm"
+              >
+                {cancelApplying ? "Cancelando…" : "Confirmar cancelamento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {printRequestId > 0 && printMode === "seller" && sellerReport
         ? createPortal(

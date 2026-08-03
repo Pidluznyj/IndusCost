@@ -16,6 +16,7 @@ import {
 import { filterReceiptClosingLinesBySellerKey } from "./commissionReceiptClosingSellerFilter.js";
 import {
   parseReceiptClosingApplyBody,
+  parseReceiptClosingCancelBody,
   parseReceiptClosingReprocessBody,
 } from "./commissionApiValidation.js";
 import { CommissionValidationError } from "./commissionApiValidation.js";
@@ -594,6 +595,42 @@ describe("commissionReceiptClosingApi", () => {
       reason: "correção de regra",
     });
     assert.equal(body.reason, "correção de regra");
+  });
+
+  it("parseReceiptClosingCancelBody exige CANCELAR COMISSAO e motivo", () => {
+    assert.throws(
+      () =>
+        parseReceiptClosingCancelBody({
+          closingId: "c1",
+          confirm: "FECHAR COMISSAO",
+          reason: "motivo",
+        }),
+      (e: unknown) => e instanceof CommissionValidationError && e.code === "CONFIRMATION_REQUIRED"
+    );
+    assert.throws(
+      () =>
+        parseReceiptClosingCancelBody({
+          closingId: "c1",
+          confirm: "CANCELAR COMISSAO",
+          reason: "xx",
+        }),
+      CommissionValidationError
+    );
+    assert.throws(
+      () =>
+        parseReceiptClosingCancelBody({
+          confirm: "CANCELAR COMISSAO",
+          reason: "tabela de preço corrigida",
+        }),
+      CommissionValidationError
+    );
+    const body = parseReceiptClosingCancelBody({
+      closingId: "closing-1",
+      confirm: "CANCELAR COMISSAO",
+      reason: "tabela de preço corrigida",
+    });
+    assert.equal(body.closingId, "closing-1");
+    assert.equal(body.reason, "tabela de preço corrigida");
   });
 
   it("mapPreviewLineToApiLine zera vendedor canônico só em empresa do grupo", () => {

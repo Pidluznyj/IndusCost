@@ -94,6 +94,7 @@ describe("commissionsRoutes", () => {
       "/api/commissions/receipt-closing/:year/:month/export-detail.xlsx",
       "/api/commissions/receipt-closing/:year/:month/report",
       "/api/commissions/receipt-closing/:year/:month/report.xlsx",
+      "/api/commissions/receipt-closing/cancel",
       "/api/commissions/receipt-closing/reprocess-preview",
       "/api/commissions/receipt-closing/reprocess-apply",
       "/api/commissions/reports",
@@ -149,6 +150,16 @@ describe("commissionsRoutes", () => {
     const applyIdx = src.indexOf('"/api/commissions/receipt-closing/apply"');
     const applySlice = src.slice(applyIdx, applyIdx + 200);
     assert.match(applySlice, /receiptClosingApplyGuard/);
+  });
+
+  it("receipt-closing cancel exige guard de reprocess e delega cancelReceiptClosingFromApi", () => {
+    const src = routes();
+    assert.match(src, /\/api\/commissions\/receipt-closing\/cancel/);
+    const cancelIdx = src.indexOf('"/api/commissions/receipt-closing/cancel"');
+    const cancelSlice = src.slice(cancelIdx, cancelIdx + 400);
+    assert.match(cancelSlice, /reprocessGuard/);
+    assert.match(cancelSlice, /cancelReceiptClosingFromApi/);
+    assert.match(cancelSlice, /parseReceiptClosingCancelBody/);
   });
 
   it("payment-batches mark-paid usa markCommissionPaymentBatchPaid", () => {

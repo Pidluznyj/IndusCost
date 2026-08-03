@@ -68,6 +68,7 @@ import {
   parseMarkPaidBody,
   parsePaymentBatchCreateBody,
   parseReceiptClosingApplyBody,
+  parseReceiptClosingCancelBody,
   parseReceiptClosingPeriodBody,
   parseReceiptClosingReprocessBody,
   parseCommissionReprocessBody,
@@ -150,6 +151,7 @@ import {
 } from "@/src/lib/commissions/commissionQuery.js";
 import {
   applyReceiptClosingFromApi,
+  cancelReceiptClosingFromApi,
   exportReceiptClosingCsv,
   exportReceiptClosingDetailXlsx,
   getReceiptClosingPage,
@@ -835,6 +837,32 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch (error) {
         console.error("GET /api/commissions/receipt-closing/:year/:month/report", error);
         return res.status(500).json({ error: "Erro ao carregar relatório fechado de comissões." });
+      }
+    }
+  );
+
+  app.post(
+    "/api/commissions/receipt-closing/cancel",
+    ...reprocessGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const body = parseReceiptClosingCancelBody(req.body);
+        const result = await cancelReceiptClosingFromApi({
+          closingId: body.closingId,
+          userId: ctx.user.id,
+          reason: body.reason,
+        });
+        return res.json(result);
+      } catch (error) {
+        if (error instanceof CommissionValidationError) return handleValidationError(res, error);
+        try {
+          return handleReceiptClosingError(res, error);
+        } catch {
+          console.error("POST /api/commissions/receipt-closing/cancel", error);
+          return res.status(500).json({ error: "Erro ao cancelar fechamento por recebimento." });
+        }
       }
     }
   );

@@ -806,6 +806,27 @@ export function parseReceiptClosingApplyBody(body: unknown) {
   };
 }
 
+export function parseReceiptClosingCancelBody(body: unknown) {
+  if (body == null || typeof body !== "object") {
+    throw new CommissionValidationError("INVALID_BODY", "Corpo da requisição inválido.");
+  }
+  const record = body as Record<string, unknown>;
+  const closingId = requireString(record.closingId, "closingId");
+  const confirm = requireString(record.confirm, "confirm");
+  if (confirm !== "CANCELAR COMISSAO") {
+    throw new CommissionValidationError(
+      "CONFIRMATION_REQUIRED",
+      'Confirmação obrigatória: digite "CANCELAR COMISSAO".'
+    );
+  }
+  const reason = requireString(record.reason ?? record.notes, "reason", 3);
+  return {
+    closingId,
+    confirm,
+    reason,
+  };
+}
+
 export function parseReceiptClosingReprocessBody(body: unknown) {
   if (body == null || typeof body !== "object") {
     throw new CommissionValidationError("INVALID_BODY", "Corpo da requisição inválido.");
