@@ -77,6 +77,13 @@ unset NOMUS_PROPOSALS_MAX_PAGES || true
 
 export NOMUS_BOM_COMPONENTS_DELAY_MS="${NOMUS_BOM_COMPONENTS_DELAY_MS:-1200}"
 
+# Este runner já detém o lock global (flock acima). O sync de propostas
+# (SYNC-07) também sabe checar esse mesmo lock global quando roda sozinho
+# (cron horário) — aqui, como já estamos dentro dele, isso causaria autolock
+# (SKIPPED_LOCKED indevido). O lock de entidade de propostas continua ativo
+# normalmente (protege contra sobreposição real com o cron horário).
+export NOMUS_PROPOSALS_RESPECT_GLOBAL_LOCK=0
+
 echo "NOMUS_SYNC_LOG_DIR=$NOMUS_SYNC_LOG_DIR"
 echo "NOMUS_PAGE_SIZE=$NOMUS_PAGE_SIZE"
 echo "NOMUS_MAX_RETRIES=$NOMUS_MAX_RETRIES"

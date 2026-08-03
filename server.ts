@@ -709,7 +709,9 @@ const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   customers: 26 * 60 * 60 * 1000,
   products: 26 * 60 * 60 * 1000,
   "bom-components": 30 * 60 * 60 * 1000,
-  proposals: 26 * 60 * 60 * 1000,
+  // SYNC-07: propostas passou de diário (02:00) para horário (37 * * * *) —
+  // mesmo limiar dos demais syncs horários.
+  proposals: 2 * 60 * 60 * 1000,
 };
 const NOMUS_PRODUCT_EXPECTED_BLOCK_KEYS = new Set([
   "RAW_MATERIAL_NOT_PRODUCT",

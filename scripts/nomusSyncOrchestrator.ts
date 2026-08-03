@@ -9,6 +9,8 @@ import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   orchestratorPipelineSuccess,
@@ -134,6 +136,26 @@ function parseJsonObjectFromStdout(stdout: string): Record<string, unknown> | nu
     }
   }
   return null;
+}
+
+/**
+ * SYNC-07 (propostas horário): scripts que adquirem lock próprio (ex.:
+ * nomusProposalsSyncV1.ts) podem reportar `status:"SKIPPED"` no JSON de
+ * stdout quando bloqueados por concorrência — exitCode 0 (não é falha).
+ * Sem essa checagem, o orquestrador reportaria SUCCESS para uma execução
+ * que não processou nada. Outros scripts não emitem esse campo hoje, então
+ * este helper é um no-op para eles (mantém exitCode 0 → SUCCESS).
+ */
+export function resolveStepStatusFromChildOutput(
+  exitCode: number | null,
+  stdout: string
+): StepResult["status"] {
+  if (exitCode !== 0) return "FAILED";
+  const parsed = parseJsonObjectFromStdout(stdout);
+  if (parsed && typeof parsed.status === "string" && parsed.status === "SKIPPED") {
+    return "SKIPPED";
+  }
+  return "SUCCESS";
 }
 
 function safeNumber(value: unknown): number | null {
@@ -358,7 +380,7 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecut
   return {
     step: {
       target,
-      status: exitCode === 0 ? "SUCCESS" : "FAILED",
+      status: resolveStepStatusFromChildOutput(exitCode, stdout),
       command,
       startedAt,
       finishedAt,
@@ -506,7 +528,14 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("[nomus-sync-orchestrator] erro:", err);
-  process.exitCode = 1;
-});
+// Import-safe: só executa quando rodado diretamente (npm run / CLI), nunca
+// como efeito colateral de `import` (ex.: testes que reaproveitam helpers puros).
+const thisFile = fileURLToPath(import.meta.url);
+const invokedAsScript = process.argv[1] != null && path.resolve(process.argv[1]) === thisFile;
+
+if (invokedAsScript) {
+  main().catch((err) => {
+    console.error("[nomus-sync-orchestrator] erro:", err);
+    process.exitCode = 1;
+  });
+}

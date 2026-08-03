@@ -2,6 +2,11 @@ import "dotenv/config";
 import { Prisma, PrismaClient, ProposalStatus } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { runProposalCommercialMarginRecalcAfterNomusSync } from "../src/lib/proposalCommercialMarginRecalcAfterNomusSync.server.ts";
+import {
+  acquireProposalsSyncLock,
+  formatProposalsLockBlockedLog,
+  releaseProposalsSyncLock,
+} from "../src/lib/nomusProposalsSyncLock.ts";
 
 const prisma = new PrismaClient();
 
@@ -990,94 +995,146 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
 
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
-  const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount, totalItemsRead } =
-    await buildPlans();
-  const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead);
+  const mode: "dry" | "apply" = isApply ? "apply" : "dry";
+  const startedAt = new Date();
 
-  if (missingSkus.has(KNOWN_MISSING_SKU)) {
-    console.warn(`[sync-v1] SKU conhecido ainda sem cadastro local: ${KNOWN_MISSING_SKU}`);
-  }
-
-  console.log(
-    JSON.stringify(
-      {
-        mode: isApply ? "apply" : "dry-run",
-        summary: dry,
-        applied: null,
-      },
-      null,
-      2
-    )
-  );
-
-  if (!isApply) return;
-
-  const result = await applyPlans(plans);
-
-  // Pós-sync: recalcula margem comercial (tabela vigente na data da proposta).
-  // Default = dry-run; apply só com confirmação (env/flags). Falha do hook não aborta o sync.
-  let marginRecalc: Awaited<
-    ReturnType<typeof runProposalCommercialMarginRecalcAfterNomusSync>
-  > | null = null;
-  try {
-    marginRecalc = await runProposalCommercialMarginRecalcAfterNomusSync(prisma, {
-      syncMode: "apply",
-      argv: process.argv.slice(2),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[proposal-margin-recalc-after-sync] falhou (sync oficial preservado): ${message}`
+  // Concorrência (SYNC-07): serializa qualquer execução do sync de propostas —
+  // CLI direto, orquestrador diário (02:00) via --only=proposals, ou cron horário.
+  // Também respeita o lock global Nomus (diário/pedidos) sem adquiri-lo.
+  const lock = acquireProposalsSyncLock({ mode });
+  if (!lock.ok) {
+    // `as` explícito: narrowing de union discriminada por `!lock.ok` não é
+    // inferido pelo tsconfig deste projeto (strict desligado) — já validado
+    // em runtime pela checagem acima, então o cast é seguro.
+    const blocked = lock as Extract<typeof lock, { ok: false }>;
+    console.warn(formatProposalsLockBlockedLog(blocked));
+    const finishedAt = new Date();
+    console.log(
+      JSON.stringify(
+        {
+          mode: isApply ? "apply" : "dry-run",
+          status: "SKIPPED",
+          skipReason: blocked.code,
+          skipMessage: blocked.message,
+          startedAt: startedAt.toISOString(),
+          finishedAt: finishedAt.toISOString(),
+          durationMs: finishedAt.getTime() - startedAt.getTime(),
+          lockFile: blocked.lockFile,
+          summary: null,
+          applied: null,
+        },
+        null,
+        2
+      )
     );
-    marginRecalc = {
-      enabled: true,
-      skipped: false,
-      mode: "dry-run",
-      applyDowngradedToDryRun: false,
-      error: message,
-    };
+    return;
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: "apply",
-        summary: dry,
-        applied: result,
-        marginRecalc: marginRecalc
-          ? {
-              mode: marginRecalc.mode,
-              skipped: marginRecalc.skipped,
-              skipReason: marginRecalc.skipReason ?? null,
-              applyDowngradedToDryRun: marginRecalc.applyDowngradedToDryRun,
-              error: marginRecalc.error ?? null,
-              preview: marginRecalc.preview
-                ? {
-                    pagesProcessed: marginRecalc.preview.pagesProcessed ?? null,
-                    proposalsAnalyzed: marginRecalc.preview.proposalsAnalyzed,
-                    itemsAnalyzed: marginRecalc.preview.itemsAnalyzed,
-                    itemsComplete: marginRecalc.preview.itemsComplete,
-                    itemsChanged: marginRecalc.preview.itemsChanged,
-                    itemsUnavailable: marginRecalc.preview.itemsUnavailable,
-                    coveragePercent: marginRecalc.preview.coveragePercent,
-                    bySource: marginRecalc.preview.bySource,
-                  }
-                : null,
-            }
-          : null,
-        skippedBlockedProposals: blocked.map((b) => ({
-          externalProposalId: b.externalProposalId,
-          externalProposalCode: b.externalProposalCode,
-          reasons: b.reasons,
-        })),
-        missingSkus: [...missingSkus].sort(),
-        missingCustomers: [...missingCustomers].sort((a, b) => a - b),
-        ignoredInactiveSkus: [...inactiveSkus].sort(),
-      },
-      null,
-      2
-    )
-  );
+  try {
+    const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount, totalItemsRead } =
+      await buildPlans();
+    const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead);
+
+    if (missingSkus.has(KNOWN_MISSING_SKU)) {
+      console.warn(`[sync-v1] SKU conhecido ainda sem cadastro local: ${KNOWN_MISSING_SKU}`);
+    }
+
+    if (!isApply) {
+      const finishedAt = new Date();
+      console.log(
+        JSON.stringify(
+          {
+            mode: "dry-run",
+            status: "SUCCESS",
+            startedAt: startedAt.toISOString(),
+            finishedAt: finishedAt.toISOString(),
+            durationMs: finishedAt.getTime() - startedAt.getTime(),
+            summary: dry,
+            applied: null,
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+
+    const result = await applyPlans(plans);
+
+    // Pós-sync: recalcula margem comercial (tabela vigente na data da proposta).
+    // Default = dry-run; apply só com confirmação (env/flags). Falha do hook não aborta o sync.
+    let marginRecalc: Awaited<
+      ReturnType<typeof runProposalCommercialMarginRecalcAfterNomusSync>
+    > | null = null;
+    try {
+      marginRecalc = await runProposalCommercialMarginRecalcAfterNomusSync(prisma, {
+        syncMode: "apply",
+        argv: process.argv.slice(2),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[proposal-margin-recalc-after-sync] falhou (sync oficial preservado): ${message}`
+      );
+      marginRecalc = {
+        enabled: true,
+        skipped: false,
+        mode: "dry-run",
+        applyDowngradedToDryRun: false,
+        error: message,
+      };
+    }
+
+    const finishedAt = new Date();
+    console.log(
+      JSON.stringify(
+        {
+          mode: "apply",
+          status: "SUCCESS",
+          startedAt: startedAt.toISOString(),
+          finishedAt: finishedAt.toISOString(),
+          durationMs: finishedAt.getTime() - startedAt.getTime(),
+          summary: dry,
+          applied: result,
+          marginRecalc: marginRecalc
+            ? {
+                mode: marginRecalc.mode,
+                skipped: marginRecalc.skipped,
+                skipReason: marginRecalc.skipReason ?? null,
+                applyDowngradedToDryRun: marginRecalc.applyDowngradedToDryRun,
+                error: marginRecalc.error ?? null,
+                preview: marginRecalc.preview
+                  ? {
+                      pagesProcessed: marginRecalc.preview.pagesProcessed ?? null,
+                      proposalsAnalyzed: marginRecalc.preview.proposalsAnalyzed,
+                      itemsAnalyzed: marginRecalc.preview.itemsAnalyzed,
+                      itemsComplete: marginRecalc.preview.itemsComplete,
+                      itemsChanged: marginRecalc.preview.itemsChanged,
+                      itemsUnavailable: marginRecalc.preview.itemsUnavailable,
+                      coveragePercent: marginRecalc.preview.coveragePercent,
+                      bySource: marginRecalc.preview.bySource,
+                    }
+                  : null,
+              }
+            : null,
+          skippedBlockedProposals: blocked.map((b) => ({
+            externalProposalId: b.externalProposalId,
+            externalProposalCode: b.externalProposalCode,
+            reasons: b.reasons,
+          })),
+          missingSkus: [...missingSkus].sort(),
+          missingCustomers: [...missingCustomers].sort((a, b) => a - b),
+          ignoredInactiveSkus: [...inactiveSkus].sort(),
+        },
+        null,
+        2
+      )
+    );
+  } finally {
+    // Sempre libera — sucesso ou erro real (que continua propagando para o
+    // catch abaixo, preservando exit code != 0 em falha genuína).
+    releaseProposalsSyncLock({ lockFile: lock.lockFile, token: lock.token });
+  }
 }
 
 main()
