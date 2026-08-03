@@ -16,6 +16,7 @@ import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCash
 import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
+import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 import {
   applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaOverdue,
@@ -138,12 +139,47 @@ export function createTreasuryCaixaService(input: {
           filters: settlementLoadFilters,
         }).gridRows,
       });
+      // Saldo INFORMADO por dia — motor canônico de fechamento diário.
+      // Espelha a carga do relatório oficial (treasuryReportRepository):
+      // só CLOSED e, por dia, a versão mais alta (reabertura gera nova versão).
+      // `observedBalance` é o saldo do extrato; `closingBalance` é o calculado.
+      // A divergência entre os dois é apurada no domínio, não aqui.
+      const companyAccount = await prisma.treasuryFinancialAccount.findFirst({
+        where: { isActive: true, ...treasuryCompanyCodePresentWhere() },
+        select: { companyCode: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      });
+      const companyCode = companyAccount?.companyCode?.trim() || null;
+
+      const informedClosingByCivilDate = new Map<string, number>();
+      if (companyCode) {
+        const closings = await prisma.treasuryDailyClosing.findMany({
+          where: {
+            companyCode,
+            status: "CLOSED",
+            civilDate: {
+              gte: civilDateToLocalDate(settlementWindowFromCivilDate),
+              lte: dueDateTo,
+            },
+          },
+          orderBy: [{ civilDate: "asc" }, { version: "desc" }],
+          distinct: ["civilDate"],
+          select: { civilDate: true, observedBalance: true },
+        });
+        for (const c of closings) {
+          const value = Number(c.observedBalance);
+          if (!Number.isFinite(value)) continue;
+          informedClosingByCivilDate.set(toIsoDate(c.civilDate), value);
+        }
+      }
+
       // Acumula saldo desde a gênese ANTES de cortar pelo período filtrado —
       // senão um filtro de março recomeçaria a soma do zero em março e
-      // perderia o efeito de janeiro/fevereiro.
-      const realizedDays = applyTreasuryCaixaRunningBalance(realizedDaysAll).filter(
-        (d) => d.civilDate >= periodFrom && d.civilDate <= periodTo
-      );
+      // perderia o efeito de janeiro/fevereiro. O saldo informado sobrepõe o
+      // calculado e re-ancora a cadeia a partir dali.
+      const realizedDays = applyTreasuryCaixaRunningBalance(realizedDaysAll, {
+        informedClosingByCivilDate,
+      }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
 
       // Atrasados são ESTOQUE: o que está vencido hoje, independente do período
       // filtrado. Por isso carrega com status "overdue" e sem recorte de data —

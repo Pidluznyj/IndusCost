@@ -166,7 +166,7 @@ describe("TreasuryAgendaPage / Panel", () => {
     assert.match(html, /Risco Médio \(MEDIUM\): 15\.00/);
     assert.match(html, /Entradas previstas/);
     assert.match(html, /Saídas programadas/);
-    assert.match(html, /Evolução do saldo final/);
+    assert.match(html, /Evolução do Saldo Final/i);
   });
 
   it("módulo registra rota agenda e página exportada", () => {

@@ -24,6 +24,8 @@ import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjecti
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   buildTreasuryCaixaDayFlow,
+  buildTreasuryCaixaMonthlyBalanceChart,
+  buildTreasuryCaixaMonthlyTimeline,
   buildTreasuryCaixaUnifiedTimeline,
   type TreasuryCaixaDayFlow,
   type TreasuryCaixaTimeline as TreasuryCaixaTimelineData,
@@ -33,6 +35,7 @@ import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
 import { TreasuryCaixaOverdueStrip } from "@/src/components/finance/treasury/TreasuryCaixaOverdueStrip";
 import { TreasuryCaixaTimeline } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
+import { TreasuryCaixaBalanceChart } from "@/src/components/finance/treasury/TreasuryCaixaBalanceChart";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import {
@@ -349,6 +352,20 @@ export function TreasuryCaixaPage() {
   );
 
   /**
+   * Série do gráfico — mesmos meses da linha do tempo, então a curva e a tabela
+   * nunca divergem: o ponto do gráfico É o "Terminou" do mês.
+   */
+  const balanceChartPoints = useMemo(
+    () =>
+      timeline
+        ? buildTreasuryCaixaMonthlyBalanceChart(
+            buildTreasuryCaixaMonthlyTimeline(timeline.rows)
+          )
+        : [],
+    [timeline]
+  );
+
+  /**
    * (Re)gera a projeção do período pela rotina canônica e recarrega a busca.
    *
    * Sempre disponível quando há empresa configurada e uma busca feita — a
@@ -503,6 +520,8 @@ export function TreasuryCaixaPage() {
             generatingProjection={generatingProjection}
           />
         ) : null}
+
+        <TreasuryCaixaBalanceChart points={balanceChartPoints} />
 
         {error ? (
           <div

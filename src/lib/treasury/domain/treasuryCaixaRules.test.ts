@@ -1,21 +1,76 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
-import type { TreasuryCaixaTimelineRow } from "./treasuryCaixaRules.js";
+import type {
+  TreasuryCaixaRealizedDay,
+  TreasuryCaixaTimelineRow,
+} from "./treasuryCaixaRules.js";
 import {
   applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaDayFlow,
+  buildTreasuryCaixaMonthlyBalanceChart,
   buildTreasuryCaixaMonthlyTimeline,
   buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   buildTreasuryCaixaUnifiedTimeline,
   computeTreasuryCaixaTotals,
+  detectTreasuryCaixaOutliers,
   resolveTreasuryCaixaDueDateRange,
   TreasuryCaixaFilterError,
 } from "./treasuryCaixaRules.js";
 
 function key(d: Date): string | null {
   return toCivilDateKey(d);
+}
+
+/** Referência de "hoje" compartilhada pelos testes de linha do tempo. */
+const TODAY = "2026-08-03";
+
+/** O agrupador recebe linhas prontas — monta direto, sem passar por builder. */
+function tl(rows: TreasuryCaixaTimelineRow[]): TreasuryCaixaTimelineRow[] {
+  return rows;
+}
+
+/** Linha da linha do tempo; a zona sai da data contra {@link TODAY}. */
+function d(
+  civilDate: string,
+  over: Partial<TreasuryCaixaTimelineRow> = {}
+): TreasuryCaixaTimelineRow {
+  const closing = over.closing !== undefined ? over.closing : 0;
+  return {
+    civilDate,
+    kind:
+      civilDate < TODAY ? "REALIZED" : civilDate > TODAY ? "FORECAST" : "TODAY",
+    opening: 0,
+    inflows: 0,
+    outflows: 0,
+    closing,
+    closingCalculated: closing,
+    closingInformed: null,
+    divergence: null,
+    negative: closing != null && closing < 0,
+    ...over,
+  };
+}
+
+/** Dia realizado com os campos de saldo zerados — o teste sobrescreve o que importa. */
+function realizedDay(
+  civilDate: string,
+  over: Partial<TreasuryCaixaRealizedDay> = {}
+): TreasuryCaixaRealizedDay {
+  return {
+    civilDate,
+    inflows: 0,
+    outflows: 0,
+    receivableCount: 0,
+    payableCount: 0,
+    opening: null,
+    closing: null,
+    closingCalculated: null,
+    closingInformed: null,
+    divergence: null,
+    ...over,
+  };
 }
 
 describe("treasuryCaixaRules — resolveTreasuryCaixaDueDateRange", () => {
@@ -241,30 +296,6 @@ describe("treasuryCaixaRules — buildTreasuryCaixaDayFlow", () => {
 });
 
 describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyTimeline", () => {
-  const TODAY = "2026-08-03";
-
-  /** O agrupador recebe linhas prontas — monta direto, sem passar por builder. */
-  function tl(rows: TreasuryCaixaTimelineRow[]): TreasuryCaixaTimelineRow[] {
-    return rows;
-  }
-
-  function d(
-    civilDate: string,
-    over: Partial<TreasuryCaixaTimelineRow> = {}
-  ): TreasuryCaixaTimelineRow {
-    const closing = over.closing !== undefined ? over.closing : 0;
-    return {
-      civilDate,
-      kind:
-        civilDate < TODAY ? "REALIZED" : civilDate > TODAY ? "FORECAST" : "TODAY",
-      opening: 0,
-      inflows: 0,
-      outflows: 0,
-      closing,
-      negative: closing != null && closing < 0,
-      ...over,
-    };
-  }
 
   it("a soma dos dias bate com o mês (é como o usuário valida)", () => {
     const months = buildTreasuryCaixaMonthlyTimeline(
@@ -417,24 +448,8 @@ describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
 describe("treasuryCaixaRules — applyTreasuryCaixaRunningBalance", () => {
   it("acumula a partir de zero na gênese (01/01/2026)", () => {
     const out = applyTreasuryCaixaRunningBalance([
-      {
-        civilDate: "2026-01-02",
-        inflows: 500,
-        outflows: 200,
-        receivableCount: 1,
-        payableCount: 1,
-        opening: null,
-        closing: null,
-      },
-      {
-        civilDate: "2026-01-05",
-        inflows: 100,
-        outflows: 700,
-        receivableCount: 1,
-        payableCount: 1,
-        opening: null,
-        closing: null,
-      },
+      realizedDay("2026-01-02", { inflows: 500, outflows: 200 }),
+      realizedDay("2026-01-05", { inflows: 100, outflows: 700 }),
     ]);
     assert.equal(out[0]!.opening, 0);
     assert.equal(out[0]!.closing, 300);
@@ -444,24 +459,8 @@ describe("treasuryCaixaRules — applyTreasuryCaixaRunningBalance", () => {
 
   it("dia antes da gênese fica null — não há premissa de saldo ali", () => {
     const out = applyTreasuryCaixaRunningBalance([
-      {
-        civilDate: "2025-12-20",
-        inflows: 1000,
-        outflows: 0,
-        receivableCount: 1,
-        payableCount: 0,
-        opening: null,
-        closing: null,
-      },
-      {
-        civilDate: "2026-01-01",
-        inflows: 50,
-        outflows: 0,
-        receivableCount: 1,
-        payableCount: 0,
-        opening: null,
-        closing: null,
-      },
+      realizedDay("2025-12-20", { inflows: 1000 }),
+      realizedDay("2026-01-01", { inflows: 50 }),
     ]);
     assert.equal(out[0]!.opening, null);
     assert.equal(out[0]!.closing, null);
@@ -472,24 +471,8 @@ describe("treasuryCaixaRules — applyTreasuryCaixaRunningBalance", () => {
 
   it("acumula na ordem cronológica independente da ordem de entrada", () => {
     const out = applyTreasuryCaixaRunningBalance([
-      {
-        civilDate: "2026-03-01",
-        inflows: 0,
-        outflows: 100,
-        receivableCount: 0,
-        payableCount: 1,
-        opening: null,
-        closing: null,
-      },
-      {
-        civilDate: "2026-01-10",
-        inflows: 900,
-        outflows: 0,
-        receivableCount: 1,
-        payableCount: 0,
-        opening: null,
-        closing: null,
-      },
+      realizedDay("2026-03-01", { outflows: 100 }),
+      realizedDay("2026-01-10", { inflows: 900 }),
     ]);
     const jan = out.find((d) => d.civilDate === "2026-01-10")!;
     const mar = out.find((d) => d.civilDate === "2026-03-01")!;
@@ -501,23 +484,245 @@ describe("treasuryCaixaRules — applyTreasuryCaixaRunningBalance", () => {
   });
 });
 
+describe("treasuryCaixaRules — saldo manual sobrepõe o automático", () => {
+  it("dia com saldo informado fecha no informado, não no calculado", () => {
+    const out = applyTreasuryCaixaRunningBalance(
+      [realizedDay("2026-01-02", { inflows: 500, outflows: 200 })],
+      { informedClosingByCivilDate: new Map([["2026-01-02", 250]]) }
+    );
+    // Calculado seria 0 + 500 − 200 = 300; o extrato diz 250.
+    assert.equal(out[0]!.closingCalculated, 300);
+    assert.equal(out[0]!.closingInformed, 250);
+    assert.equal(out[0]!.closing, 250);
+    // Faltam R$ 50 que saíram sem título por trás.
+    assert.equal(out[0]!.divergence, -50);
+  });
+
+  it("o dia seguinte abre no saldo INFORMADO — a série re-ancora na realidade", () => {
+    const out = applyTreasuryCaixaRunningBalance(
+      [
+        realizedDay("2026-01-02", { inflows: 500, outflows: 200 }),
+        realizedDay("2026-01-03", { inflows: 100, outflows: 0 }),
+      ],
+      { informedClosingByCivilDate: new Map([["2026-01-02", 250]]) }
+    );
+    assert.equal(out[1]!.opening, 250);
+    assert.equal(out[1]!.closing, 350);
+    // Sem informado no dia 03, não há divergência a declarar.
+    assert.equal(out[1]!.divergence, null);
+    assert.equal(out[1]!.closingInformed, null);
+  });
+
+  it("divergência positiva quando entrou dinheiro sem título", () => {
+    const out = applyTreasuryCaixaRunningBalance(
+      [realizedDay("2026-01-02", { inflows: 100, outflows: 0 })],
+      { informedClosingByCivilDate: new Map([["2026-01-02", 180]]) }
+    );
+    assert.equal(out[0]!.divergence, 80);
+  });
+
+  it("saldo informado em dia SEM título ainda entra na série e re-ancora", () => {
+    const out = applyTreasuryCaixaRunningBalance(
+      [realizedDay("2026-01-02", { inflows: 100 })],
+      { informedClosingByCivilDate: new Map([["2026-01-04", 999]]) }
+    );
+    const day4 = out.find((d) => d.civilDate === "2026-01-04");
+    assert.ok(day4, "dia sem título mas com saldo informado precisa existir");
+    assert.equal(day4!.inflows, 0);
+    assert.equal(day4!.closingInformed, 999);
+    assert.equal(day4!.closing, 999);
+    // Calculado herdaria 100 do dia 02; o extrato diz 999.
+    assert.equal(day4!.closingCalculated, 100);
+    assert.equal(day4!.divergence, 899);
+  });
+
+  it("informado igual ao calculado → divergência zero (não null)", () => {
+    const out = applyTreasuryCaixaRunningBalance(
+      [realizedDay("2026-01-02", { inflows: 300 })],
+      { informedClosingByCivilDate: new Map([["2026-01-02", 300]]) }
+    );
+    assert.equal(out[0]!.divergence, 0);
+  });
+
+  it("o mês soma as divergências dos dias e conta quantos divergem", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline([
+      d("2026-07-01", { closing: 100, divergence: -50 }),
+      d("2026-07-02", { closing: 200, divergence: 30 }),
+      d("2026-07-03", { closing: 300, divergence: 0 }),
+    ]);
+    assert.equal(months[0]!.divergence, -20);
+    // O dia com divergência exatamente zero não conta como divergente.
+    assert.equal(months[0]!.divergentDayCount, 2);
+  });
+
+  it("mês sem nenhum saldo informado tem divergência null, não zero", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline([
+      d("2026-07-01", { closing: 100 }),
+      d("2026-07-02", { closing: 200 }),
+    ]);
+    assert.equal(months[0]!.divergence, null);
+    assert.equal(months[0]!.divergentDayCount, 0);
+  });
+});
+
+describe("treasuryCaixaRules — detectTreasuryCaixaOutliers", () => {
+  function row(civilDate: string, inflows: number, outflows = 0) {
+    return d(civilDate, { inflows, outflows });
+  }
+
+  it("marca o dia que dispara para cima", () => {
+    // Série estável em ~100 com um dia de 5000.
+    const rows = [
+      row("2026-07-01", 100),
+      row("2026-07-02", 110),
+      row("2026-07-03", 95),
+      row("2026-07-04", 105),
+      row("2026-07-05", 5000),
+    ];
+    const found = detectTreasuryCaixaOutliers(rows);
+    const inflow = found.filter((f) => f.field === "inflows");
+    assert.equal(inflow.length, 1);
+    assert.equal(inflow[0]!.civilDate, "2026-07-05");
+    assert.equal(inflow[0]!.direction, "HIGH");
+    assert.equal(inflow[0]!.value, 5000);
+  });
+
+  it("marca o dia que despenca para baixo", () => {
+    const rows = [
+      row("2026-07-01", 1000),
+      row("2026-07-02", 1100),
+      row("2026-07-03", 950),
+      row("2026-07-04", 1050),
+      row("2026-07-05", 1),
+    ];
+    const found = detectTreasuryCaixaOutliers(rows).filter(
+      (f) => f.field === "inflows"
+    );
+    assert.equal(found.length, 1);
+    assert.equal(found[0]!.direction, "LOW");
+  });
+
+  it("série homogênea não marca ninguém", () => {
+    const rows = [
+      row("2026-07-01", 100),
+      row("2026-07-02", 105),
+      row("2026-07-03", 95),
+      row("2026-07-04", 102),
+      row("2026-07-05", 98),
+    ];
+    assert.deepEqual(detectTreasuryCaixaOutliers(rows), []);
+  });
+
+  it("série constante não marca ninguém (não há dispersão)", () => {
+    const rows = [
+      row("2026-07-01", 100),
+      row("2026-07-02", 100),
+      row("2026-07-03", 100),
+      row("2026-07-04", 100),
+    ];
+    assert.deepEqual(detectTreasuryCaixaOutliers(rows), []);
+  });
+
+  it("amostra pequena demais não marca nada", () => {
+    const rows = [row("2026-07-01", 10), row("2026-07-02", 99999)];
+    assert.deepEqual(detectTreasuryCaixaOutliers(rows), []);
+  });
+
+  it("dias parados (zero) não entram na referência nem são marcados", () => {
+    // Sem o filtro de zero, a mediana viraria 0 e todo movimento seria anômalo.
+    const rows = [
+      row("2026-07-01", 0),
+      row("2026-07-02", 0),
+      row("2026-07-03", 0),
+      row("2026-07-04", 0),
+      row("2026-07-05", 100),
+      row("2026-07-06", 110),
+      row("2026-07-07", 90),
+      row("2026-07-08", 105),
+    ];
+    const found = detectTreasuryCaixaOutliers(rows);
+    assert.deepEqual(found, []);
+  });
+
+  it("entradas e saídas são avaliadas separadamente", () => {
+    const rows = [
+      d("2026-07-01", { inflows: 100, outflows: 50 }),
+      d("2026-07-02", { inflows: 110, outflows: 55 }),
+      d("2026-07-03", { inflows: 95, outflows: 45 }),
+      d("2026-07-04", { inflows: 105, outflows: 52 }),
+      d("2026-07-05", { inflows: 100, outflows: 9000 }),
+    ];
+    const found = detectTreasuryCaixaOutliers(rows);
+    assert.equal(found.length, 1);
+    assert.equal(found[0]!.field, "outflows");
+    assert.equal(found[0]!.direction, "HIGH");
+  });
+
+  it("preserva a zona do dia (realizado x previsto) para a tela distinguir", () => {
+    const rows = [
+      row("2026-08-01", 100),
+      row("2026-08-02", 110),
+      row("2026-08-04", 95),
+      row("2026-08-05", 105),
+      row("2026-08-06", 8000),
+    ];
+    const found = detectTreasuryCaixaOutliers(rows);
+    assert.equal(found[0]!.kind, "FORECAST");
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyBalanceChart", () => {
+  it("gera um ponto por mês com fechamento, rotulado em pt-BR", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline([
+      d("2026-01-31", { closing: 1000 }),
+      d("2026-02-28", { closing: -250 }),
+    ]);
+    const points = buildTreasuryCaixaMonthlyBalanceChart(months);
+    assert.deepEqual(
+      points.map((p) => p.label),
+      ["jan/26", "fev/26"]
+    );
+    assert.equal(points[0]!.closingBalance, 1000);
+    assert.equal(points[1]!.closingBalance, -250);
+  });
+
+  it("mês sem fechamento não vira ponto (não interpola saldo)", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline([
+      d("2026-01-31", { closing: null }),
+      d("2026-02-28", { closing: 500 }),
+    ]);
+    const points = buildTreasuryCaixaMonthlyBalanceChart(months);
+    assert.equal(points.length, 1);
+    assert.equal(points[0]!.monthKey, "2026-02");
+  });
+
+  it("marca o mês de previsão para a tela poder tracejar a linha", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline([
+      d("2026-09-01", { closing: 700 }),
+    ]);
+    const points = buildTreasuryCaixaMonthlyBalanceChart(months);
+    assert.equal(points[0]!.isForecast, true);
+  });
+
+  it("sem meses → série vazia, sem erro", () => {
+    assert.deepEqual(buildTreasuryCaixaMonthlyBalanceChart([]), []);
+  });
+});
+
 describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
-  const TODAY = "2026-08-03";
 
   it("junta passado (fato), hoje (fato) e futuro (previsão) numa linha só", () => {
     const tl = buildTreasuryCaixaUnifiedTimeline({
       todayCivilDate: TODAY,
       realizedDays: [
-        {
-          civilDate: "2026-08-01",
+        // Já vem acumulado pelo chamador (applyTreasuryCaixaRunningBalance).
+        realizedDay("2026-08-01", {
           inflows: 500,
           outflows: 200,
-          receivableCount: 1,
-          payableCount: 1,
-          // Já vem acumulado pelo chamador (applyTreasuryCaixaRunningBalance).
           opening: 1000,
           closing: 1300,
-        },
+          closingCalculated: 1300,
+        }),
       ],
       todayFlow: {
         civilDate: TODAY,
@@ -558,24 +763,8 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
     const tl = buildTreasuryCaixaUnifiedTimeline({
       todayCivilDate: TODAY,
       realizedDays: [
-        {
-          civilDate: TODAY,
-          inflows: 999,
-          outflows: 0,
-          receivableCount: 1,
-          payableCount: 0,
-          opening: null,
-          closing: null,
-        },
-        {
-          civilDate: "2026-08-09",
-          inflows: 888,
-          outflows: 0,
-          receivableCount: 1,
-          payableCount: 0,
-          opening: null,
-          closing: null,
-        },
+        realizedDay(TODAY, { inflows: 999 }),
+        realizedDay("2026-08-09", { inflows: 888 }),
       ],
       todayFlow: null,
       forecastDays: [],

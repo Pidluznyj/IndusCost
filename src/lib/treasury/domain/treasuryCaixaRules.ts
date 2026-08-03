@@ -240,7 +240,17 @@ export type TreasuryCaixaTimelineRow = {
   opening: number | null;
   inflows: number;
   outflows: number;
+  /** Fechamento EFETIVO: informado quando existe, senão calculado. */
   closing: number | null;
+  /** Fechamento automático (abertura + entradas − saídas). */
+  closingCalculated: number | null;
+  /** Saldo informado/observado; null quando ninguém informou. */
+  closingInformed: number | null;
+  /**
+   * `informado − calculado`; null quando não há informado. É o dinheiro que
+   * andou sem título por trás — o número que a coluna Divergência mostra.
+   */
+  divergence: number | null;
   /** Fechou negativo neste dia. */
   negative: boolean;
 };
@@ -289,6 +299,11 @@ export function buildTreasuryCaixaTimeline(input: {
           useForecast ? d.plannedOutflows : d.realizedOutflows
         ),
         closing,
+        // Esta variante recebe o saldo já resolvido pelo motor; não distingue
+        // informado de calculado nem apura divergência.
+        closingCalculated: closing,
+        closingInformed: null,
+        divergence: null,
         negative: closing != null && closing < 0,
       };
     });
@@ -321,6 +336,13 @@ export type TreasuryCaixaTimelineMonth = {
   outflows: number;
   /** Fechamento do último dia do mês; null se o motor não fechou o dia. */
   closing: number | null;
+  /**
+   * Soma das divergências diárias do mês — o total que andou sem título por
+   * trás. `null` quando nenhum dia do mês tem saldo informado.
+   */
+  divergence: number | null;
+  /** Quantos dias do mês têm saldo informado divergindo do calculado. */
+  divergentDayCount: number;
   negative: boolean;
   firstNegativeDate: string | null;
   days: TreasuryCaixaTimelineRow[];
@@ -357,6 +379,10 @@ export function buildTreasuryCaixaMonthlyTimeline(
       const first = days[0]!;
       const last = days[days.length - 1]!;
       const negativeDay = days.find((d) => d.negative);
+      const divergentDays = days.filter(
+        (d) => d.divergence != null && d.divergence !== 0
+      );
+      const hasAnyInformed = days.some((d) => d.divergence != null);
       return {
         monthKey,
         kind: resolveMonthKind(days),
@@ -364,6 +390,10 @@ export function buildTreasuryCaixaMonthlyTimeline(
         inflows: roundMoney(days.reduce((s, d) => s + d.inflows, 0)),
         outflows: roundMoney(days.reduce((s, d) => s + d.outflows, 0)),
         closing: last.closing,
+        divergence: hasAnyInformed
+          ? roundMoney(days.reduce((s, d) => s + (d.divergence ?? 0), 0))
+          : null,
+        divergentDayCount: divergentDays.length,
         negative: negativeDay != null,
         firstNegativeDate: negativeDay?.civilDate ?? null,
         days,
@@ -392,7 +422,18 @@ export type TreasuryCaixaRealizedDay = {
    * {@link applyTreasuryCaixaRunningBalance} ainda não rodou sobre o dia.
    */
   opening: number | null;
+  /** Fechamento EFETIVO do dia: informado quando existe, senão calculado. */
   closing: number | null;
+  /** Fechamento automático: abertura + entradas − saídas. */
+  closingCalculated: number | null;
+  /** Saldo informado (extrato/fechamento oficial); null se ninguém informou. */
+  closingInformed: number | null;
+  /**
+   * `informado − calculado`. Positivo = entrou dinheiro sem título por trás;
+   * negativo = saiu dinheiro sem título. `null` quando não há informado —
+   * nada a comparar não é o mesmo que divergência zero.
+   */
+  divergence: number | null;
 };
 
 /**
@@ -416,21 +457,90 @@ export const TREASURY_CAIXA_GENESIS_CIVIL_DATE = "2026-01-01";
  * perderia o efeito de janeiro/fevereiro. Quem chama corta para o período
  * exibido DEPOIS de acumular.
  */
+export type TreasuryCaixaRunningBalanceOptions = {
+  /** Dia em que a acumulação começa do zero. */
+  genesisCivilDate?: string;
+  /**
+   * Saldo informado (manual/extrato) por dia civil.
+   *
+   * REGRA CENTRAL: o saldo manual SOBREPÕE o automático. O dia fecha no valor
+   * informado e o dia seguinte abre nele — a série inteira re-ancora na
+   * realidade, em vez de seguir acumulando um cálculo que o extrato já
+   * desmentiu. A diferença entre os dois não é descartada: vira
+   * {@link TreasuryCaixaRealizedDay.divergence}, que é o dinheiro que andou
+   * sem título por trás.
+   */
+  informedClosingByCivilDate?: ReadonlyMap<string, number>;
+};
+
 export function applyTreasuryCaixaRunningBalance(
   days: readonly TreasuryCaixaRealizedDay[],
-  genesisCivilDate: string = TREASURY_CAIXA_GENESIS_CIVIL_DATE
+  options: TreasuryCaixaRunningBalanceOptions = {}
 ): TreasuryCaixaRealizedDay[] {
-  const sorted = [...days].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  const genesisCivilDate =
+    options.genesisCivilDate ?? TREASURY_CAIXA_GENESIS_CIVIL_DATE;
+  const informed = options.informedClosingByCivilDate;
+
+  // Um saldo informado num dia SEM título movimentado ainda re-ancora a série.
+  // Sem criar a linha, esse saldo real sumiria da tela e a cadeia seguiria
+  // errada a partir dali.
+  const byDate = new Map<string, TreasuryCaixaRealizedDay>();
+  for (const d of days) byDate.set(d.civilDate, d);
+  if (informed) {
+    for (const civilDate of informed.keys()) {
+      if (byDate.has(civilDate)) continue;
+      byDate.set(civilDate, {
+        civilDate,
+        inflows: 0,
+        outflows: 0,
+        receivableCount: 0,
+        payableCount: 0,
+        opening: null,
+        closing: null,
+        closingCalculated: null,
+        closingInformed: null,
+        divergence: null,
+      });
+    }
+  }
+
+  const sorted = [...byDate.values()].sort((a, b) =>
+    a.civilDate.localeCompare(b.civilDate)
+  );
+
   let running: number | null = null;
   return sorted.map((d) => {
     if (d.civilDate < genesisCivilDate) {
-      return { ...d, opening: null, closing: null };
+      return {
+        ...d,
+        opening: null,
+        closing: null,
+        closingCalculated: null,
+        closingInformed: null,
+        divergence: null,
+      };
     }
     if (running == null) running = 0;
-    const opening = running;
-    const closing = roundMoney(opening + d.inflows - d.outflows);
+    const opening = roundMoney(running);
+    const closingCalculated = roundMoney(opening + d.inflows - d.outflows);
+    const rawInformed = informed?.get(d.civilDate);
+    const closingInformed =
+      rawInformed != null && Number.isFinite(rawInformed)
+        ? roundMoney(rawInformed)
+        : null;
+    const closing = closingInformed ?? closingCalculated;
     running = closing;
-    return { ...d, opening: roundMoney(opening), closing };
+    return {
+      ...d,
+      opening,
+      closing,
+      closingCalculated,
+      closingInformed,
+      divergence:
+        closingInformed != null
+          ? roundMoney(closingInformed - closingCalculated)
+          : null,
+    };
   });
 }
 
@@ -475,17 +585,19 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
     // Saldo já vem acumulado desde a gênese (applyTreasuryCaixaRunningBalance,
     // rodado pelo chamador sobre a lista inteira antes de filtrar o período) —
     // aqui só repassamos. `null` continua significando "antes da gênese".
-    const opening =
-      d.opening != null && Number.isFinite(d.opening) ? roundMoney(d.opening) : null;
-    const closing =
-      d.closing != null && Number.isFinite(d.closing) ? roundMoney(d.closing) : null;
+    const num = (v: number | null | undefined): number | null =>
+      v != null && Number.isFinite(v) ? roundMoney(v) : null;
+    const closing = num(d.closing);
     rows.push({
       civilDate: d.civilDate,
       kind: "REALIZED",
-      opening,
+      opening: num(d.opening),
       inflows: d.inflows,
       outflows: d.outflows,
       closing,
+      closingCalculated: num(d.closingCalculated),
+      closingInformed: num(d.closingInformed),
+      divergence: num(d.divergence),
       negative: closing != null && closing < 0,
     });
   }
@@ -512,6 +624,9 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       inflows: input.todayFlow.inflows,
       outflows: input.todayFlow.outflows,
       closing,
+      closingCalculated: input.todayFlow.closingCalculated,
+      closingInformed: input.todayFlow.closingInformed,
+      divergence: input.todayFlow.divergence,
       negative: closing != null && closing < 0,
     });
     anchorClosing = closing;
@@ -528,6 +643,11 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       inflows: roundMoney(agendaToday.inflows),
       outflows: roundMoney(agendaToday.outflows),
       closing,
+      // Fallback pela agenda: é projeção, não fechamento — não há saldo
+      // informado nem divergência a declarar.
+      closingCalculated: closing,
+      closingInformed: null,
+      divergence: null,
       negative: closing != null && closing < 0,
     });
   }
@@ -558,6 +678,10 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       inflows: roundMoney(d.inflows),
       outflows: roundMoney(d.outflows),
       closing,
+      // Futuro é estimativa: não existe saldo informado nem divergência.
+      closingCalculated: closing,
+      closingInformed: null,
+      divergence: null,
       negative: closing != null && closing < 0,
     });
   }
@@ -604,6 +728,9 @@ export function buildTreasuryCaixaRealizedDays(input: {
       payableCount: 0,
       opening: null,
       closing: null,
+      closingCalculated: null,
+      closingInformed: null,
+      divergence: null,
     };
     byDate.set(civilDate, created);
     return created;
@@ -730,6 +857,156 @@ export function buildTreasuryCaixaOverdue(input: {
       }))
     ),
   };
+}
+
+/**
+ * Passo 8 — números que se destacam (para cima ou para baixo).
+ *
+ * Marca os dias cujo movimento foge do padrão do período, para revisão manual.
+ * Usa escore z MODIFICADO (Iglewicz & Hoaglin): mediana e MAD (desvio absoluto
+ * mediano) no lugar de média e desvio padrão.
+ *
+ * Por que não média/desvio padrão: os dois são arrastados justamente pelos
+ * valores extremos que queremos detectar — um único dia gigante infla o desvio
+ * e passa a esconder a si mesmo. Mediana e MAD têm ponto de ruptura de 50%:
+ * metade da série pode ser anômala sem contaminar a referência.
+ *
+ *     z = 0,6745 × (x − mediana) / MAD
+ *
+ * O fator 0,6745 é Φ⁻¹(0,75) — faz o MAD estimar a mesma escala do desvio
+ * padrão quando os dados SÃO normais, mantendo o corte 3,5 comparável à regra
+ * dos 3 sigmas.
+ *
+ * Dias sem movimento (valor zero) ficam fora da referência E da marcação: numa
+ * série com muitos dias parados a mediana viraria zero e qualquer movimento
+ * normal seria acusado de anômalo.
+ */
+export type TreasuryCaixaOutlierField = "inflows" | "outflows";
+export type TreasuryCaixaOutlierDirection = "HIGH" | "LOW";
+
+export type TreasuryCaixaOutlier = {
+  civilDate: string;
+  field: TreasuryCaixaOutlierField;
+  value: number;
+  /** Valor típico do período — referência contra a qual o dia se destacou. */
+  median: number;
+  modifiedZ: number;
+  direction: TreasuryCaixaOutlierDirection;
+  kind: TreasuryCaixaTimelineKind;
+};
+
+/** Corte clássico do escore z modificado. */
+export const TREASURY_CAIXA_OUTLIER_Z_THRESHOLD = 3.5;
+
+/** Φ⁻¹(0,75) — consistência do MAD para a normal. */
+const MAD_NORMAL_CONSISTENCY = 0.6745;
+/** Equivalente quando o MAD é zero e caímos no desvio médio absoluto. */
+const MEAN_AD_NORMAL_CONSISTENCY = 0.7979;
+
+/**
+ * Com menos que isto qualquer valor parece extremo — não vale marcar nada.
+ * Quatro é o mínimo para a mediana ter algum sentido nas duas metades.
+ */
+const TREASURY_CAIXA_OUTLIER_MIN_SAMPLE = 4;
+
+function medianOf(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 0 ? (s[mid - 1]! + s[mid]!) / 2 : s[mid]!;
+}
+
+export function detectTreasuryCaixaOutliers(
+  rows: readonly TreasuryCaixaTimelineRow[],
+  threshold: number = TREASURY_CAIXA_OUTLIER_Z_THRESHOLD
+): TreasuryCaixaOutlier[] {
+  const found: TreasuryCaixaOutlier[] = [];
+
+  for (const field of ["inflows", "outflows"] as const) {
+    const moving = rows.filter((r) => Number.isFinite(r[field]) && r[field] > 0);
+    if (moving.length < TREASURY_CAIXA_OUTLIER_MIN_SAMPLE) continue;
+
+    const values = moving.map((r) => r[field]);
+    const median = medianOf(values);
+    const mad = medianOf(values.map((v) => Math.abs(v - median)));
+
+    let scale: number;
+    let factor: number;
+    if (mad > 0) {
+      scale = mad;
+      factor = MAD_NORMAL_CONSISTENCY;
+    } else {
+      // MAD zero = mais da metade dos dias tem o mesmo valor. Cai no desvio
+      // médio, que ainda enxerga dispersão nas caudas.
+      const meanAd =
+        values.reduce((s, v) => s + Math.abs(v - median), 0) / values.length;
+      if (!(meanAd > 0)) continue; // série constante: não há o que destacar
+      scale = meanAd;
+      factor = MEAN_AD_NORMAL_CONSISTENCY;
+    }
+
+    for (const r of moving) {
+      const z = (factor * (r[field] - median)) / scale;
+      if (!Number.isFinite(z) || Math.abs(z) < threshold) continue;
+      found.push({
+        civilDate: r.civilDate,
+        field,
+        value: r[field],
+        median: roundMoney(median),
+        modifiedZ: Math.round(z * 100) / 100,
+        direction: z > 0 ? "HIGH" : "LOW",
+        kind: r.kind,
+      });
+    }
+  }
+
+  return found.sort(
+    (a, b) =>
+      a.civilDate.localeCompare(b.civilDate) || a.field.localeCompare(b.field)
+  );
+}
+
+/**
+ * Passo 9 — série do gráfico: saldo final acumulado, mês a mês.
+ *
+ * O fechamento do mês JÁ é o saldo acumulado (a cadeia vem encadeada desde a
+ * gênese), então o ponto é o próprio `closing` — nada é somado de novo aqui.
+ * Mês sem fechamento não vira ponto: interpolar inventaria saldo.
+ */
+export type TreasuryCaixaBalanceChartPoint = {
+  monthKey: string;
+  label: string;
+  closingBalance: number;
+  kind: TreasuryCaixaMonthKind;
+  isForecast: boolean;
+};
+
+const MONTH_ABBR = [
+  "jan", "fev", "mar", "abr", "mai", "jun",
+  "jul", "ago", "set", "out", "nov", "dez",
+] as const;
+
+export function buildTreasuryCaixaMonthlyBalanceChart(
+  months: readonly TreasuryCaixaTimelineMonth[]
+): TreasuryCaixaBalanceChartPoint[] {
+  const points: TreasuryCaixaBalanceChartPoint[] = [];
+  for (const m of months) {
+    if (m.closing == null || !Number.isFinite(m.closing)) continue;
+    const [year, month] = m.monthKey.split("-");
+    const index = Number(month) - 1;
+    const label =
+      year && index >= 0 && index < 12
+        ? `${MONTH_ABBR[index]}/${year.slice(2)}`
+        : m.monthKey;
+    points.push({
+      monthKey: m.monthKey,
+      label,
+      closingBalance: roundMoney(m.closing),
+      kind: m.kind,
+      isForecast: m.kind === "FORECAST",
+    });
+  }
+  return points;
 }
 
 export type TreasuryCaixaBoardDto = {

@@ -20,7 +20,10 @@ import type {
   TreasuryCaixaTimelineMonth,
   TreasuryCaixaTimelineRow,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
-import { buildTreasuryCaixaMonthlyTimeline } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import {
+  buildTreasuryCaixaMonthlyTimeline,
+  detectTreasuryCaixaOutliers,
+} from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
@@ -72,6 +75,73 @@ function MonthKindBadge({ kind }: { kind: TreasuryCaixaTimelineMonth["kind"] }) 
   );
 }
 
+/**
+ * Divergência: saldo informado no extrato menos o calculado pelos títulos.
+ * Zero explícito ≠ ausência — "—" quer dizer que ninguém informou saldo no dia,
+ * então não há o que comparar. Só o valor diferente de zero ganha cor.
+ */
+function DivergenceCell({
+  value,
+  informed,
+}: {
+  value: number | null;
+  informed: number | null;
+}) {
+  if (value == null) {
+    return (
+      <td
+        className="px-2 py-1.5 text-right tabular-nums text-muted-foreground"
+        title="Nenhum saldo informado neste dia — nada a comparar."
+      >
+        —
+      </td>
+    );
+  }
+  if (value === 0) {
+    return (
+      <td
+        className="px-2 py-1.5 text-right tabular-nums text-[#059669]"
+        title="Saldo informado bate exatamente com o calculado pelos títulos."
+      >
+        ✓
+      </td>
+    );
+  }
+  return (
+    <td
+      className={cn(
+        "px-2 py-1.5 text-right tabular-nums font-semibold",
+        value > 0 ? "text-[#0369A1]" : "text-[#B45309]"
+      )}
+      title={
+        value > 0
+          ? `Entrou ${formatPredictiveCashFlowMoney(value)} a mais do que os títulos explicam (saldo informado: ${money(informed)}).`
+          : `Saiu ${formatPredictiveCashFlowMoney(Math.abs(value))} a mais do que os títulos explicam (saldo informado: ${money(informed)}).`
+      }
+    >
+      {value > 0 ? "+" : ""}
+      {money(value)}
+    </td>
+  );
+}
+
+/** Marca o valor que se destacou do padrão do período. */
+function OutlierMark({ direction }: { direction: "HIGH" | "LOW" }) {
+  return (
+    <span
+      className="ml-1 inline-block align-middle text-[10px] font-bold text-[#B45309]"
+      title={
+        direction === "HIGH"
+          ? "Muito acima do típico do período — vale conferir."
+          : "Muito abaixo do típico do período — vale conferir."
+      }
+      data-testid="caixa-timeline-outlier"
+    >
+      {direction === "HIGH" ? "▲" : "▼"}
+    </span>
+  );
+}
+
 /** Rótulo textual além da cor — acessibilidade e clareza para quem é leigo. */
 function KindBadge({ kind }: { kind: TreasuryCaixaTimelineRow["kind"] }) {
   if (kind === "TODAY") {
@@ -107,6 +177,16 @@ export function TreasuryCaixaTimeline({
     [timeline]
   );
   const spansMultipleMonths = months.length > 1;
+  /** Anomalias indexadas por dia+campo, para marcar a célula direto na tabela. */
+  const outliers = useMemo(() => {
+    const map = new Map<string, "HIGH" | "LOW">();
+    if (!timeline) return map;
+    for (const o of detectTreasuryCaixaOutliers(timeline.rows)) {
+      map.set(`${o.civilDate}|${o.field}`, o.direction);
+    }
+    return map;
+  }, [timeline]);
+  const outlierCount = outliers.size;
   const [mode, setMode] = useState<ViewMode>("day");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 
@@ -237,6 +317,12 @@ export function TreasuryCaixaTimeline({
                   <th className="px-2 py-1.5 text-right">Entrou</th>
                   <th className="px-2 py-1.5 text-right">Saiu</th>
                   <th className="px-2 py-1.5 text-right">Terminou</th>
+                  <th
+                    className="px-2 py-1.5 text-right"
+                    title="Saldo informado no extrato menos o calculado pelos títulos."
+                  >
+                    Divergência
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -296,6 +382,10 @@ export function TreasuryCaixaTimeline({
                             >
                               {money(m.closing)}
                             </td>
+                            <DivergenceCell
+                              value={m.divergence}
+                              informed={null}
+                            />
                           </tr>
                           {isOpen
                             ? m.days.map((r) => (
@@ -319,9 +409,23 @@ export function TreasuryCaixaTimeline({
                                   </td>
                                   <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                                     {r.inflows === 0 ? "—" : money(r.inflows)}
+                                    {outliers.has(`${r.civilDate}|inflows`) ? (
+                                      <OutlierMark
+                                        direction={
+                                          outliers.get(`${r.civilDate}|inflows`)!
+                                        }
+                                      />
+                                    ) : null}
                                   </td>
                                   <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
                                     {r.outflows === 0 ? "—" : money(r.outflows)}
+                                    {outliers.has(`${r.civilDate}|outflows`) ? (
+                                      <OutlierMark
+                                        direction={
+                                          outliers.get(`${r.civilDate}|outflows`)!
+                                        }
+                                      />
+                                    ) : null}
                                   </td>
                                   <td
                                     className={cn(
@@ -331,6 +435,10 @@ export function TreasuryCaixaTimeline({
                                   >
                                     {money(r.closing)}
                                   </td>
+                                  <DivergenceCell
+                                    value={r.divergence}
+                                    informed={r.closingInformed}
+                                  />
                                 </tr>
                               ))
                             : null}
@@ -359,9 +467,19 @@ export function TreasuryCaixaTimeline({
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                       {r.inflows === 0 ? "—" : money(r.inflows)}
+                      {outliers.has(`${r.civilDate}|inflows`) ? (
+                        <OutlierMark
+                          direction={outliers.get(`${r.civilDate}|inflows`)!}
+                        />
+                      ) : null}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
                       {r.outflows === 0 ? "—" : money(r.outflows)}
+                      {outliers.has(`${r.civilDate}|outflows`) ? (
+                        <OutlierMark
+                          direction={outliers.get(`${r.civilDate}|outflows`)!}
+                        />
+                      ) : null}
                     </td>
                     <td
                       className={cn(
@@ -371,6 +489,10 @@ export function TreasuryCaixaTimeline({
                     >
                       {money(r.closing)}
                     </td>
+                    <DivergenceCell
+                      value={r.divergence}
+                      informed={r.closingInformed}
+                    />
                   </tr>
                     ))}
               </tbody>
@@ -386,10 +508,34 @@ export function TreasuryCaixaTimeline({
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
             <strong>&quot;Começou&quot; e &quot;Terminou&quot;</strong> nos dias
             passados são <strong>calculados</strong>: partem de R$ 0,00 em
-            01/01/2026 e acumulam entrada/saída dia a dia — não são o saldo real
-            do banco. Ficam em branco só antes de 01/01/2026, onde não há como
-            saber quanto tinha em caixa.
+            01/01/2026 e acumulam entrada/saída dia a dia. Quando existe
+            fechamento do dia, o <strong>saldo informado no extrato vale</strong>{" "}
+            — o dia fecha nele e o dia seguinte começa nele.
           </p>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            <strong>Divergência</strong> é o saldo informado menos o calculado
+            pelos títulos: é o dinheiro que andou sem título por trás.{" "}
+            <span className="text-[#0369A1]">Azul</span> = entrou a mais que o
+            esperado; <span className="text-[#B45309]">âmbar</span> = saiu a
+            mais. <span className="text-[#059669]">✓</span> = bate exatamente.{" "}
+            <strong>&quot;—&quot;</strong> = ninguém informou saldo naquele dia,
+            então não há o que comparar.
+          </p>
+          {outlierCount > 0 ? (
+            <p
+              className="mt-1 text-[11px] leading-snug text-muted-foreground"
+              data-testid="caixa-timeline-outlier-legend"
+            >
+              <span className="font-bold text-[#B45309]">▲▼</span> marcam{" "}
+              <strong>
+                {outlierCount} valor{outlierCount === 1 ? "" : "es"} fora do
+                padrão
+              </strong>{" "}
+              do período — muito acima ou muito abaixo do dia típico. Não é erro:
+              é um convite a conferir (pode ser um pagamento grande legítimo ou
+              um lançamento errado).
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
             O dinheiro conta no dia em que <strong>andou</strong>: contas a
             receber entram no dia da <strong>baixa</strong>; contas a pagar, no
