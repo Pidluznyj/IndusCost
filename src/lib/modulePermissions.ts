@@ -37,7 +37,6 @@ export type AppModuleId =
   | "crm-commercial"
   | "commissions"
   | "simulations"
-  | "reports"
   | "finance"
   | "treasury"
   | "suppliers"
@@ -86,7 +85,6 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "crm-commercial",
   "commissions",
   "simulations",
-  "reports",
   "finance",
   "treasury",
   "suppliers",
@@ -180,8 +178,6 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       if (held?.length) return evaluateFleetRouteAccess(held, "view");
       return check.hasPermission("fleet.view") || check.hasPermission("fleet.manage");
     }
-    case "reports":
-      return check.hasPermission("reports.view") || check.hasPermission("dashboard.view");
     case "finance":
       return (
         check.hasPermission("finance.view") ||
@@ -426,7 +422,6 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "crm-commercial": "CRM Comercial",
   commissions: "Comissões",
   simulations: "Simulações",
-  reports: "Relatórios",
   finance: "Financeiro",
   treasury: "Tesouraria",
   suppliers: "Fornecedores",

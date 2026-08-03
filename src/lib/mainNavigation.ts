@@ -19,7 +19,6 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "commissions",
   "simulations",
   "finance",
-  "reports",
   "fleet",
   "guide",
   "settings",

@@ -19,7 +19,6 @@ import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage"
 import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { CommissionsModule } from "./components/CommissionsModule";
-import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
 import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligencePage";
@@ -1321,26 +1320,6 @@ export default function App() {
               }
             >
               <CostToCashTracePage />
-            </ModulePageShell>
-          }
-        />
-        <Route
-          path="reports"
-          element={
-            <ModulePageShell
-              title="Relatórios e BI"
-              description="Analise indicadores e exporte dados estratégicos."
-              headerActions={
-                <Link
-                  to="/reports/cost-to-cash-trace"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                >
-                  <GitBranch className="h-4 w-4 text-primary" />
-                  Rastreabilidade
-                </Link>
-              }
-            >
-              <ReportsModule />
             </ModulePageShell>
           }
         />

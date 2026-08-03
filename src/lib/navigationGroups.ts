@@ -213,7 +213,6 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
       "portfolio-reconciliation",
       "opex",
       "taxes",
-      "reports",
     ],
   },
   {
