@@ -17,6 +17,7 @@ import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingD
 import { ProductionCostTablesPanel } from "@/src/components/pricing/ProductionCostTablesPanel";
 import { MaterialCostTablesPanel } from "@/src/components/pricing/MaterialCostTablesPanel";
 import { CostPriceMarginAuditPanel } from "@/src/components/pricing/CostPriceMarginAuditPanel";
+import { PriceFormationFormulaTooltip } from "@/src/components/pricing/PriceFormationFormulaTooltip";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
@@ -1729,8 +1730,9 @@ export const PricingModule = () => {
                 </div>
                 <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                    <label className="flex items-center gap-1 text-[11px] font-bold uppercase text-muted-foreground">
                       Frete estimado (%)
+                      <PriceFormationFormulaTooltip />
                     </label>
                     <input
                       type="number"
@@ -1746,8 +1748,7 @@ export const PricingModule = () => {
                     />
                   </div>
                   <p className="text-[11px] text-muted-foreground max-w-md leading-snug">
-                    Default {DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT}%. Entra no denominador com
-                    impostos, comissão e margem. Aceita 0%.
+                    Default {DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT}%. Aceita 0%.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
