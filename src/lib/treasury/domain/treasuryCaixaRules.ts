@@ -71,12 +71,29 @@ export function resolveTreasuryCaixaDueDateRange(
 }
 
 export type TreasuryCaixaTotals = {
+  /** Saldo em aberto (ainda não liquidado) — o que falta receber/pagar. */
   totalReceivable: number;
   totalPayable: number;
+  /** Saldo líquido em aberto (a receber - a pagar). */
   netBalance: number;
+  /** Já liquidado no período — o que já foi efetivamente recebido/pago. */
+  totalReceived: number;
+  totalPaid: number;
+  /** Saldo líquido já realizado (recebido - pago). */
+  netRealized: number;
   receivableCount: number;
   payableCount: number;
 };
+
+function sumField(
+  rows: readonly Record<string, unknown>[],
+  field: string
+): number {
+  return rows.reduce((sum, row) => {
+    const value = row[field];
+    return sum + (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  }, 0);
+}
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -84,21 +101,20 @@ function roundMoney(value: number): number {
 
 /** Soma sempre sobre as MESMAS linhas exibidas na tabela — cards nunca divergem do grid. */
 export function computeTreasuryCaixaTotals(input: {
-  receivables: readonly { balanceReceivable: number }[];
-  payables: readonly { balancePayable: number }[];
+  receivables: readonly { balanceReceivable: number; amountReceived?: number }[];
+  payables: readonly { balancePayable: number; amountPaid?: number }[];
 }): TreasuryCaixaTotals {
-  const totalReceivable = input.receivables.reduce(
-    (sum, r) => sum + (Number.isFinite(r.balanceReceivable) ? r.balanceReceivable : 0),
-    0
-  );
-  const totalPayable = input.payables.reduce(
-    (sum, p) => sum + (Number.isFinite(p.balancePayable) ? p.balancePayable : 0),
-    0
-  );
+  const totalReceivable = sumField(input.receivables, "balanceReceivable");
+  const totalPayable = sumField(input.payables, "balancePayable");
+  const totalReceived = sumField(input.receivables, "amountReceived");
+  const totalPaid = sumField(input.payables, "amountPaid");
   return {
     totalReceivable: roundMoney(totalReceivable),
     totalPayable: roundMoney(totalPayable),
     netBalance: roundMoney(totalReceivable - totalPayable),
+    totalReceived: roundMoney(totalReceived),
+    totalPaid: roundMoney(totalPaid),
+    netRealized: roundMoney(totalReceived - totalPaid),
     receivableCount: input.receivables.length,
     payableCount: input.payables.length,
   };

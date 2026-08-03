@@ -97,4 +97,32 @@ describe("treasuryCaixaRules — computeTreasuryCaixaTotals", () => {
     });
     assert.equal(totals.totalReceivable, 10);
   });
+
+  it("soma também o que já foi recebido/pago, além do saldo em aberto", () => {
+    const totals = computeTreasuryCaixaTotals({
+      receivables: [
+        { balanceReceivable: 0, amountReceived: 200 },
+        { balanceReceivable: 50.5, amountReceived: 0 },
+      ],
+      payables: [
+        { balancePayable: 0, amountPaid: 80 },
+        { balancePayable: 30, amountPaid: 0 },
+      ],
+    });
+    assert.equal(totals.totalReceived, 200);
+    assert.equal(totals.totalPaid, 80);
+    assert.equal(totals.netRealized, 120);
+    assert.equal(totals.totalReceivable, 50.5);
+    assert.equal(totals.totalPayable, 30);
+  });
+
+  it("amountReceived/amountPaid ausentes → tratados como zero", () => {
+    const totals = computeTreasuryCaixaTotals({
+      receivables: [{ balanceReceivable: 10 }],
+      payables: [{ balancePayable: 5 }],
+    });
+    assert.equal(totals.totalReceived, 0);
+    assert.equal(totals.totalPaid, 0);
+    assert.equal(totals.netRealized, 0);
+  });
 });

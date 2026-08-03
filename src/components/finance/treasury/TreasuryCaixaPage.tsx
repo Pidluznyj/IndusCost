@@ -128,7 +128,7 @@ export function TreasuryCaixaPage() {
         <FinanceExecutivePageHeader
           eyebrow="FINANCEIRO · CENTRAL DE TESOURARIA"
           title="Caixa"
-          subtitle="Contas a pagar e a receber por vencimento — motor oficial, sem agrupar por banco."
+          subtitle="Recebido/pago realizados + saldos em aberto por vencimento. A receber inclui previsões do Pedido de Venda ainda sem CR emitido."
           compact
           actions={[]}
         />
@@ -212,27 +212,42 @@ export function TreasuryCaixaPage() {
 
         {data ? (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <TotalizerCard
-                label="Total a Receber"
+                label="Já Recebido"
+                value={formatMoney(data.totals.totalReceived)}
+                tone="receivable"
+              />
+              <TotalizerCard
+                label="Já Pago"
+                value={formatMoney(data.totals.totalPaid)}
+                tone="payable"
+              />
+              <TotalizerCard
+                label="Saldo Realizado"
+                value={formatMoney(data.totals.netRealized)}
+                tone="net"
+              />
+              <TotalizerCard
+                label="A Receber (em aberto)"
                 value={formatMoney(data.totals.totalReceivable)}
                 tone="receivable"
               />
               <TotalizerCard
-                label="Total a Pagar"
+                label="A Pagar (em aberto)"
                 value={formatMoney(data.totals.totalPayable)}
                 tone="payable"
               />
               <TotalizerCard
-                label="Saldo Líquido"
+                label="Saldo em Aberto"
                 value={formatMoney(data.totals.netBalance)}
                 tone="net"
               />
-              <TotalizerCard
-                label="Qtd. Títulos (CR / CP)"
-                value={`${data.totals.receivableCount} / ${data.totals.payableCount}`}
-              />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Qtd. títulos no período — CR: {data.totals.receivableCount} / CP:{" "}
+              {data.totals.payableCount}
+            </p>
 
             <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
               <h2 className="mb-2 text-sm font-semibold text-foreground">
@@ -245,6 +260,8 @@ export function TreasuryCaixaPage() {
                       <th className="px-2 py-1.5">Vencimento</th>
                       <th className="px-2 py-1.5">Cliente</th>
                       <th className="px-2 py-1.5">Status</th>
+                      <th className="px-2 py-1.5 text-right">Valor</th>
+                      <th className="px-2 py-1.5 text-right">Recebido</th>
                       <th className="px-2 py-1.5 text-right">Saldo</th>
                     </tr>
                   </thead>
@@ -256,6 +273,12 @@ export function TreasuryCaixaPage() {
                         </td>
                         <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
                         <td className="px-2 py-1.5">{r.calculatedStatus}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {formatMoney(r.amountReceivable)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {formatMoney(r.amountReceived)}
+                        </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                           {formatMoney(r.balanceReceivable)}
                         </td>
@@ -264,7 +287,7 @@ export function TreasuryCaixaPage() {
                     {data.receivables.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={6}
                           className="px-2 py-4 text-center text-muted-foreground"
                         >
                           Sem títulos no período.
@@ -287,6 +310,8 @@ export function TreasuryCaixaPage() {
                       <th className="px-2 py-1.5">Vencimento</th>
                       <th className="px-2 py-1.5">Fornecedor</th>
                       <th className="px-2 py-1.5">Status</th>
+                      <th className="px-2 py-1.5 text-right">Valor</th>
+                      <th className="px-2 py-1.5 text-right">Pago</th>
                       <th className="px-2 py-1.5 text-right">Saldo</th>
                     </tr>
                   </thead>
@@ -298,6 +323,12 @@ export function TreasuryCaixaPage() {
                         </td>
                         <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
                         <td className="px-2 py-1.5">{p.calculatedStatus}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {formatMoney(p.amountPayable)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {formatMoney(p.amountPaid)}
+                        </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                           {formatMoney(p.balancePayable)}
                         </td>
@@ -306,7 +337,7 @@ export function TreasuryCaixaPage() {
                     {data.payables.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={6}
                           className="px-2 py-4 text-center text-muted-foreground"
                         >
                           Sem títulos no período.

@@ -2,6 +2,8 @@
  * Service — aba "Caixa" da Tesouraria.
  * Zero regra de negócio própria: carrega via loaders canônicos e monta o
  * resultado com os motores oficiais (financeAccountsReceivable/PayableRulesEngine).
+ * CR usa a agenda efetiva FIN-08 (mesma fonte da linha do tempo mensal do Fluxo de
+ * Caixa), então inclui previsões do Pedido de Venda ainda sem CR emitido.
  * Sem agrupar por banco — lista plana de títulos, igual ao motor entrega.
  */
 
@@ -10,6 +12,9 @@ import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccounts
 import { buildFinanceAccountsReceivableRulesResult } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { buildFinanceAccountsPayableRulesResult } from "@/src/lib/financeAccountsPayableRulesEngine.js";
+import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
+import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
+import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import {
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
@@ -35,10 +40,15 @@ export function createTreasuryCaixaService(input: {
       const { dueDateFrom, dueDateTo } = resolveTreasuryCaixaDueDateRange(period);
       const referenceDate = new Date();
 
+      // CR carrega o ano inteiro: o motor FIN-08 precisa do portfólio sem recorte
+      // para casar CR real x previsão do Pedido. O recorte do período é aplicado
+      // depois, pelo motor oficial, via dueDateFrom/dueDateTo.
+      const arPortfolioFilters = { status: "all", year: period.year } as const;
+
       const [arLoaded, apLoaded] = await Promise.all([
         loadFinanceArManagementRowsFromPrisma(
           prisma,
-          { status: "all", dueDateFrom, dueDateTo },
+          arPortfolioFilters,
           referenceDate
         ),
         loadFinanceApManagementRowsFromPrisma(
@@ -48,7 +58,20 @@ export function createTreasuryCaixaService(input: {
         ),
       ]);
 
-      const arResult = buildFinanceAccountsReceivableRulesResult(arLoaded.rows, {
+      const arRows = arLoaded.rows as FinanceCashFlowArRow[];
+      const { orderContexts, nfeOrderLinks } =
+        await enrichFinanceCashFlowArLoadBundle(prisma, arRows, referenceDate);
+
+      const arEffectiveRows = buildFinanceCashFlowEffectiveArPortfolio({
+        rows: arRows,
+        filters: arPortfolioFilters,
+        orderContexts,
+        nfeOrderLinks,
+        referenceDate,
+        syncCutoff: arLoaded.syncCutoff,
+      });
+
+      const arResult = buildFinanceAccountsReceivableRulesResult(arEffectiveRows, {
         referenceDate,
         syncCutoff: arLoaded.syncCutoff,
         filters: { status: "all", dueDateFrom, dueDateTo },
