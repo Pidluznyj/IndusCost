@@ -24,7 +24,10 @@ import {
   CommissionReprocessError,
   MAX_ORDERS,
 } from "../src/lib/commissions/commissionReprocess.server.ts";
-import type { CommissionReprocessFilters } from "../src/lib/commissions/commissionReprocess.ts";
+import type {
+  CommissionReprocessFilters,
+  CommissionReprocessSummary,
+} from "../src/lib/commissions/commissionReprocess.ts";
 import { fmtBrl } from "./commission-script-utils.ts";
 import { hasFlag, parseArg, requireDatabaseUrl } from "./commission-audit-args.ts";
 
@@ -66,26 +69,47 @@ function buildFiltersFromArgs(): Partial<CommissionReprocessFilters> & Record<st
   };
 }
 
-function printSummary(summary: {
-  totalOrders: number;
-  changedOrders: number;
-  blockedOrders: number;
-  errorOrders: number;
-  totalDeltaAmount: number;
-  totalOldAmount: number;
-  totalNewAmount: number;
-}): void {
-  console.log("\n--- Resumo ---");
-  console.log(`Pedidos avaliados: ${summary.totalOrders} (limite ${MAX_ORDERS})`);
-  console.log(`Pedidos alterados: ${summary.changedOrders}`);
-  console.log(`Pedidos bloqueados (pagos/fechados): ${summary.blockedOrders}`);
-  console.log(`Pedidos com erro: ${summary.errorOrders}`);
-  console.log(`Valor antigo total: ${fmtBrl(summary.totalOldAmount)}`);
-  console.log(`Valor novo total: ${fmtBrl(summary.totalNewAmount)}`);
-  console.log(`Delta total: ${fmtBrl(summary.totalDeltaAmount)}`);
+/** Contagem: 0 é válido, ausente/NaN não — nunca imprimir undefined. */
+function fmtCount(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? String(value)
+    : "indisponível";
 }
 
-async function runPreview(): Promise<void> {
+/** Dinheiro: só formata número finito; ausência é declarada, não vira R$ 0,00. */
+function fmtMoney(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? fmtBrl(value)
+    : "indisponível";
+}
+
+function printSummary(summary: CommissionReprocessSummary): void {
+  console.log("\n--- Resumo ---");
+  console.log(
+    `Pedidos avaliados: ${fmtCount(summary.analyzedCount)} (limite ${MAX_ORDERS})`
+  );
+  console.log(`Pedidos alterados: ${fmtCount(summary.changedCount)}`);
+  console.log(
+    `Pedidos bloqueados (pagos/fechados): ${fmtCount(summary.blockedCount)}`
+  );
+  console.log(`Pedidos com erro: ${fmtCount(summary.errorCount)}`);
+  console.log(`Valor atual total: ${fmtMoney(summary.currentTotal)}`);
+  console.log(`Valor recalculado total: ${fmtMoney(summary.recalculatedTotal)}`);
+  console.log(`Diferença total: ${fmtMoney(summary.differenceTotal)}`);
+}
+
+function printErrors(
+  errors: ReadonlyArray<{ salesOrderId?: string; message?: string }>
+): void {
+  if (errors.length === 0) return;
+  console.log(`\n--- Erros (${errors.length}) ---`);
+  for (const e of errors) {
+    console.log(`  • Pedido ${e.salesOrderId ?? "(sem id)"}: ${e.message ?? "(sem mensagem)"}`);
+  }
+}
+
+/** true = houve erro; o chamador decide o exit code. */
+async function runPreview(): Promise<boolean> {
   const filters = buildFiltersFromArgs();
   const userId = parseArg("userId") ?? "cli-script";
   const userRole = parseArg("role") ?? "ADMIN";
@@ -98,19 +122,29 @@ async function runPreview(): Promise<void> {
   });
 
   printSummary(result.summary);
-  console.log(`\nrunToken (usar em --apply): ${result.runToken}`);
+  printErrors(result.errors);
 
-  if (result.errors.length > 0) {
-    console.log("\n--- Erros ---");
-    for (const e of result.errors) {
-      console.log(`  • Pedido ${e.salesOrderId}: ${e.message}`);
-    }
+  const hasErrors =
+    result.errors.length > 0 ||
+    (Number.isFinite(result.summary.errorCount) && result.summary.errorCount > 0);
+
+  if (hasErrors) {
+    // Prévia com erro não pode virar apply: o token liberaria uma execução
+    // que já se sabe incompleta.
+    console.error(
+      "\n❌ Prévia inválida: há pedidos com erro. O runToken NÃO será exibido."
+    );
+    console.error("Corrija os erros acima e rode a prévia novamente.");
+    return true;
   }
 
+  console.log(`\nrunToken (usar em --apply): ${result.runToken}`);
   console.log("\nPreview concluído. Nenhuma alteração foi feita no banco.");
+  return false;
 }
 
-async function runApply(): Promise<void> {
+/** true = houve erro; o chamador decide o exit code. */
+async function runApply(): Promise<boolean> {
   const filters = buildFiltersFromArgs();
   const userId = parseArg("userId");
   const userRole = parseArg("role") ?? "ADMIN";
@@ -135,10 +169,30 @@ async function runApply(): Promise<void> {
   });
 
   printSummary(result.summary);
-  console.log(`\nComissões atualizadas: ${result.commissionsUpdated}`);
-  console.log(`Erros durante apply: ${result.errorsCount}`);
-  console.log(`Run ID (auditoria): ${result.auditId}`);
-  console.log("\nReprocessamento aplicado com sucesso.");
+  console.log(`\nPedidos alterados: ${fmtCount(result.summary.changedCount)}`);
+  console.log(`Run ID: ${result.runId ?? "(sem id)"}`);
+  console.log(`Run ID (auditoria): ${result.auditId ?? "(sem id)"}`);
+  printErrors(result.errors ?? []);
+
+  // Fonte única da contagem de erro: o array de erros e o summary oficial.
+  const errorsCount = Math.max(
+    result.errors?.length ?? 0,
+    Number.isFinite(result.summary.errorCount) ? result.summary.errorCount : 0
+  );
+  if (errorsCount > 0) {
+    // Execução parcial não é sucesso: parte dos pedidos ficou para trás e o
+    // estado do período segue divergente.
+    console.error(
+      `\n❌ Reprocessamento PARCIAL: ${errorsCount} pedido(s) falharam.`
+    );
+    console.error(
+      "Os pedidos sem erro foram aplicados. Rode nova prévia para ver o que ainda diverge."
+    );
+    return true;
+  }
+
+  console.log("\n✅ Reprocessamento aplicado sem erros.");
+  return false;
 }
 
 async function main(): Promise<void> {
@@ -153,11 +207,10 @@ async function main(): Promise<void> {
     throw new Error("Use apenas um modo: --preview/--dry-run ou --apply.");
   }
 
-  if (preview) {
-    await runPreview();
-  } else {
-    await runApply();
-  }
+  const hadErrors = preview ? await runPreview() : await runApply();
+  // Erro em qualquer pedido = saída diferente de zero, para o chamador
+  // (cron, pipeline, operador) não tratar execução parcial como sucesso.
+  if (hadErrors) process.exitCode = 3;
 }
 
 main()
