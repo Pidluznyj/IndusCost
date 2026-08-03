@@ -19,6 +19,7 @@ import {
   createTreasuryProjectionApiService,
   type TreasuryProjectionApiService,
 } from "../services/treasuryProjectionApiService.server.js";
+import { createTreasuryProjectionEngineInputLoaderFromPrisma } from "../services/treasuryProjectionEngineInputLoader.server.js";
 import {
   handleTreasuryRouteError,
   resolveTreasuryRequestId,
@@ -51,7 +52,12 @@ export function createTreasuryProjectionControllers(
 ) {
   const service =
     deps.service ??
-    createTreasuryProjectionApiService(createTreasuryProjectionApiDeps(prisma));
+    createTreasuryProjectionApiService(
+      createTreasuryProjectionApiDeps(prisma, {
+        loadEngineInput:
+          createTreasuryProjectionEngineInputLoaderFromPrisma(prisma),
+      })
+    );
 
   async function withAuth(
     req: Request,
