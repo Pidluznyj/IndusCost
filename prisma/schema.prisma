@@ -7446,7 +7446,11 @@ model CommissionOrderItemSnapshot {
   ruleId                String?                           @db.Uuid
   ruleSnapshotJson      Json?
   exclusionReason       String?
-  sourceHash            String                            @unique
+  /// Hash de CONTEÚDO do item — auditoria, não identidade. Em modelo versionado
+  /// o mesmo conteúdo aparece legitimamente em snapshots pais diferentes (item
+  /// que não mudou entre versões), então NÃO pode ser único global. A identidade
+  /// lógica é protegida por @@unique([orderSnapshotId, salesOrderItemId]).
+  sourceHash            String
   status                CommissionOrderItemSnapshotStatus
   createdAt             DateTime                          @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
@@ -7462,6 +7466,7 @@ model CommissionOrderItemSnapshot {
   @@index([productId])
   @@index([status])
   @@index([ruleId])
+  @@index([sourceHash])
 }
 
 enum CommissionReceivableScheduleStatus {
