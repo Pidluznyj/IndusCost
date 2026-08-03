@@ -344,15 +344,36 @@ export function TreasuryCaixaPage() {
     [data, todayFlow, agendaDays]
   );
 
-  /** Gera a projeção do período pela rotina canônica e recarrega a busca. */
+  /**
+   * (Re)gera a projeção do período pela rotina canônica e recarrega a busca.
+   *
+   * Sempre disponível quando há empresa configurada e uma busca feita — a
+   * projeção materializada é um retrato congelado, e sem este botão não havia
+   * como atualizá-la quando um run antigo (possivelmente defasado) já existia:
+   * o aviso de "projeção não gerada" só aparece quando NÃO existe run nenhum.
+   */
+  const projectionParams = useMemo(() => {
+    if (pendingProjection) return pendingProjection;
+    if (!data) return null;
+    const companyCode = accounts
+      .map((a) => a.companyCode?.trim())
+      .find((c) => c);
+    if (!companyCode) return null;
+    return {
+      companyCode,
+      baseDate: data.dueDateFrom,
+      endDate: data.dueDateTo,
+    };
+  }, [pendingProjection, data, accounts]);
+
   const generateProjection = useCallback(async () => {
-    if (!pendingProjection) return;
+    if (!projectionParams) return;
     setGeneratingProjection(true);
     try {
       await calculateTreasuryProjection({
-        companyCode: pendingProjection.companyCode,
-        baseDate: pendingProjection.baseDate,
-        endDate: pendingProjection.endDate,
+        companyCode: projectionParams.companyCode,
+        baseDate: projectionParams.baseDate,
+        endDate: projectionParams.endDate,
         scenario: "PROBABLE",
         consolidated: true,
       });
@@ -369,7 +390,7 @@ export function TreasuryCaixaPage() {
     }
     // `search` é recriado a cada mudança de filtro; incluir causaria loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingProjection]);
+  }, [projectionParams]);
 
   function handleMonthChange(value: string) {
     setMonth(value === "" ? "" : Number(value));
@@ -474,7 +495,7 @@ export function TreasuryCaixaPage() {
             timeline={timeline}
             loading={loading}
             unavailableReason={timelineUnavailable}
-            onGenerateProjection={pendingProjection ? generateProjection : undefined}
+            onGenerateProjection={projectionParams ? generateProjection : undefined}
             generatingProjection={generatingProjection}
           />
         ) : null}

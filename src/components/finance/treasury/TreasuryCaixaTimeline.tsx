@@ -145,6 +145,20 @@ export function TreasuryCaixaTimeline({
               {timeline.forecastCount === 1 ? "" : "s"}
             </p>
           ) : null}
+          {/* A projeção é um retrato congelado — quando títulos/saldos mudam,
+              o futuro só acompanha depois de regenerar. Sem este botão fixo a
+              atualização era impossível quando já existia um run antigo. */}
+          {onGenerateProjection && !unavailableReason ? (
+            <button
+              type="button"
+              onClick={onGenerateProjection}
+              disabled={generatingProjection || loading}
+              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+              data-testid="caixa-timeline-refresh-projection"
+            >
+              {generatingProjection ? "Atualizando…" : "Atualizar projeção"}
+            </button>
+          ) : null}
           {spansMultipleMonths ? (
             <div
               className="inline-flex rounded-md border border-border bg-background p-0.5"
