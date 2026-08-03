@@ -152,6 +152,7 @@ export async function persistCommissionReceivableScheduleRebuild(
   if (input.dryRun) return result;
   if (
     input.plan.toCreate.length === 0 &&
+    input.plan.toReactivate.length === 0 &&
     input.plan.toSupersede.length === 0 &&
     input.plan.toStale.length === 0
   ) {
@@ -159,6 +160,15 @@ export async function persistCommissionReceivableScheduleRebuild(
   }
 
   await db.$transaction(async (tx) => {
+    // Reaproveita a linha idêntica já gravada antes de qualquer create — é o
+    // que evita o P2002 em sourceHash quando o conteúdo já existe.
+    for (const row of input.plan.toReactivate) {
+      await tx.commissionReceivableSchedule.update({
+        where: { id: row.existingId },
+        data: { status: row.status },
+      });
+    }
+
     if (input.plan.toStale.length > 0) {
       await tx.commissionReceivableSchedule.updateMany({
         where: { id: { in: input.plan.toStale.map((row) => row.existingId) } },
@@ -200,16 +210,25 @@ export async function rebuildCommissionReceivableSchedule(
     nfeId != null ? await loadReceivablesForNfe(db, nfeId) : [];
 
   const drafts = buildCommissionReceivableScheduleDrafts({ snapshot, receivables });
-  const existingActive = await db.commissionReceivableSchedule.findMany({
-    where: {
-      orderSnapshotId: snapshot.id,
-      status: "ACTIVE",
-    },
-    select: { id: true, receivableId: true, sourceHash: true },
+
+  // Carrega TODOS os status: sourceHash é único global, então uma linha
+  // SUPERSEDED/CUSTOMER_EXCLUDED com o mesmo hash bloqueia o create mesmo sem
+  // estar ativa. Buscar só ACTIVE deixava essa colisão invisível ao plano.
+  const existingAnyStatus = await db.commissionReceivableSchedule.findMany({
+    where: { orderSnapshotId: snapshot.id },
+    select: { id: true, receivableId: true, sourceHash: true, status: true },
   });
+  const existingActive = existingAnyStatus
+    .filter((row) => row.status === "ACTIVE")
+    .map((row) => ({
+      id: row.id,
+      receivableId: row.receivableId,
+      sourceHash: row.sourceHash,
+    }));
 
   const plan = planCommissionReceivableScheduleRebuild({
     existingActive,
+    existingAnyStatus,
     drafts,
   });
 

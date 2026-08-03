@@ -287,3 +287,133 @@ describe("commissionReceivableScheduler", () => {
     );
   });
 });
+
+describe("planCommissionReceivableScheduleRebuild — idempotência por sourceHash", () => {
+  const drafts = buildCommissionReceivableScheduleDrafts({
+    snapshot: snapshotContext(),
+    receivables: [
+      {
+        receivableId: 5001,
+        receivableCode: "CR-5001",
+        installmentNumber: 1,
+        receivableNominalAmount: 1000,
+      },
+    ],
+  });
+  const draft = drafts[0]!;
+
+  it("linha ACTIVE com mesmo hash → unchanged, sem create", () => {
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [
+        { id: "row-1", receivableId: draft.receivableId, sourceHash: draft.sourceHash },
+      ],
+      existingAnyStatus: [
+        {
+          id: "row-1",
+          receivableId: draft.receivableId,
+          sourceHash: draft.sourceHash,
+          status: draft.status,
+        },
+      ],
+      drafts,
+    });
+    assert.equal(plan.unchanged.length, 1);
+    assert.equal(plan.toCreate.length, 0);
+    assert.equal(plan.toReactivate.length, 0);
+    assert.equal(plan.toSupersede.length, 0);
+    assert.equal(plan.toStale.length, 0);
+  });
+
+  it("hash idêntico em linha SUPERSEDED → reaproveita, nunca create (P2002)", () => {
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [],
+      existingAnyStatus: [
+        {
+          id: "row-old",
+          receivableId: draft.receivableId,
+          sourceHash: draft.sourceHash,
+          status: "SUPERSEDED",
+        },
+      ],
+      drafts,
+    });
+    assert.equal(plan.toCreate.length, 0, "create cego colidiria em sourceHash");
+    assert.equal(plan.toReactivate.length, 1);
+    assert.equal(plan.toReactivate[0]!.existingId, "row-old");
+    assert.equal(plan.toReactivate[0]!.status, draft.status);
+  });
+
+  it("CUSTOMER_EXCLUDED já materializado → unchanged, sem erro e sem duplicar", () => {
+    const excludedDrafts = buildCommissionReceivableScheduleDrafts({
+      snapshot: snapshotContext({ itemStatuses: ["CUSTOMER_EXCLUDED"] }),
+      receivables: [
+        {
+          receivableId: 5001,
+          receivableCode: "CR-5001",
+          installmentNumber: 1,
+          receivableNominalAmount: 1000,
+        },
+      ],
+    });
+    const excluded = excludedDrafts[0]!;
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [],
+      existingAnyStatus: [
+        {
+          id: "row-excl",
+          receivableId: excluded.receivableId,
+          sourceHash: excluded.sourceHash,
+          status: excluded.status,
+        },
+      ],
+      drafts: excludedDrafts,
+    });
+    assert.equal(plan.toCreate.length, 0);
+    assert.equal(plan.toReactivate.length, 0);
+    assert.equal(plan.unchanged.length, 1);
+  });
+
+  it("linha reaproveitada não é marcada STALE no mesmo passo", () => {
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [
+        { id: "row-1", receivableId: draft.receivableId, sourceHash: draft.sourceHash },
+      ],
+      existingAnyStatus: [
+        {
+          id: "row-1",
+          receivableId: draft.receivableId,
+          sourceHash: draft.sourceHash,
+          status: draft.status,
+        },
+      ],
+      drafts,
+    });
+    assert.equal(plan.toStale.length, 0);
+  });
+
+  it("sem existingAnyStatus (chamador antigo) mantém o comportamento anterior", () => {
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [],
+      drafts,
+    });
+    assert.equal(plan.toCreate.length, 1);
+    assert.equal(plan.toReactivate.length, 0);
+  });
+
+  it("conteúdo realmente novo continua sendo criado", () => {
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive: [],
+      existingAnyStatus: [
+        {
+          id: "row-outro",
+          receivableId: 9999,
+          sourceHash: "hash-de-outra-linha",
+          status: "ACTIVE",
+        },
+      ],
+      drafts,
+    });
+    assert.equal(plan.toCreate.length, 1);
+    assert.equal(plan.toReactivate.length, 0);
+  });
+});
