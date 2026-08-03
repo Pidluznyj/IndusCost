@@ -464,11 +464,18 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
 }
 
 export function buildTreasuryCaixaRealizedDays(input: {
+  /** CR: agrupa pela data da BAIXA (settlementDate) — regra do motor oficial. */
   receivables: readonly {
     settlementDate: string | null;
     amountReceived: number;
   }[];
-  payables: readonly { paymentDate: string | null; amountPaid: number }[];
+  /**
+   * CP: agrupa pelo VENCIMENTO, não pela baixa. Regra canônica do financeiro
+   * (financeAccountsPayableRules: `effectivePaymentDate = dueDate` quando pago;
+   * "baixa é apenas informativa"). Usar `paymentDate` aqui zeraria a coluna,
+   * porque o Nomus não preenche esse campo.
+   */
+  payables: readonly { dueDate: string | null; amountPaid: number }[];
 }): TreasuryCaixaRealizedDay[] {
   const byDate = new Map<string, TreasuryCaixaRealizedDay>();
 
@@ -496,7 +503,7 @@ export function buildTreasuryCaixaRealizedDays(input: {
   }
 
   for (const p of input.payables) {
-    const key = p.paymentDate?.slice(0, 10);
+    const key = p.dueDate?.slice(0, 10);
     const amount = Number(p.amountPaid);
     if (!key || !Number.isFinite(amount) || amount <= 0) continue;
     const day = bucket(key);
@@ -615,6 +622,8 @@ export type TreasuryCaixaBoardDto = {
   totals: TreasuryCaixaTotals;
   /** Passado do período: entrou/saiu por data de liquidação (só dias com movimento). */
   realizedDays: TreasuryCaixaRealizedDay[];
+  /** Estoque de atrasados HOJE — independe do período filtrado. */
+  overdue: TreasuryCaixaOverdue;
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
 };

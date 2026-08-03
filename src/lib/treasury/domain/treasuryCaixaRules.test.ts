@@ -447,7 +447,7 @@ describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
         { settlementDate: "2026-07-15", amountReceived: 500 },
         { settlementDate: "2026-07-16", amountReceived: 200 },
       ],
-      payables: [{ paymentDate: "2026-07-15", amountPaid: 300 }],
+      payables: [{ dueDate: "2026-07-15", amountPaid: 300 }],
     });
     assert.equal(days.length, 2);
     assert.equal(days[0]!.civilDate, "2026-07-15");
@@ -461,7 +461,7 @@ describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
   it("ignora título sem data de liquidação (não foi pago)", () => {
     const days = buildTreasuryCaixaRealizedDays({
       receivables: [{ settlementDate: null, amountReceived: 900 }],
-      payables: [{ paymentDate: null, amountPaid: 400 }],
+      payables: [{ dueDate: null, amountPaid: 400 }],
     });
     assert.deepEqual(days, []);
   });
@@ -493,7 +493,7 @@ describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
         { settlementDate: "2026-07-20", amountReceived: 1 },
         { settlementDate: "2026-07-10", amountReceived: 1 },
       ],
-      payables: [{ paymentDate: "2026-07-15", amountPaid: 1 }],
+      payables: [{ dueDate: "2026-07-15", amountPaid: 1 }],
     });
     assert.deepEqual(
       days.map((d) => d.civilDate),
@@ -744,5 +744,36 @@ describe("treasuryCaixaRules — buildTreasuryCaixaOverdue", () => {
     assert.equal(o.receivable.total, 0);
     assert.equal(o.payable.total, 0);
     assert.deepEqual(o.receivable.buckets, []);
+  });
+});
+
+describe("treasuryCaixaRules — assimetria CR/CP na data de caixa", () => {
+  it("CP entra pelo vencimento mesmo tendo sido pago depois (regra canônica)", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [],
+      // Vencido em 10/07; a baixa real pode ter sido outro dia — o motor
+      // oficial aloca CP sempre no vencimento.
+      payables: [{ dueDate: "2026-07-10", amountPaid: 5000 }],
+    });
+    assert.equal(days.length, 1);
+    assert.equal(days[0]!.civilDate, "2026-07-10");
+    assert.equal(days[0]!.outflows, 5000);
+  });
+
+  it("CP sem pagamento não entra (amountPaid zero)", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [],
+      payables: [{ dueDate: "2026-07-10", amountPaid: 0 }],
+    });
+    assert.deepEqual(days, []);
+  });
+
+  it("CR e CP no mesmo dia somam nos lados certos", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [{ settlementDate: "2026-07-10", amountReceived: 900 }],
+      payables: [{ dueDate: "2026-07-10", amountPaid: 400 }],
+    });
+    assert.equal(days[0]!.inflows, 900);
+    assert.equal(days[0]!.outflows, 400);
   });
 });

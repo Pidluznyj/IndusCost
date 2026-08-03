@@ -31,6 +31,7 @@ import {
 import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
+import { TreasuryCaixaOverdueStrip } from "@/src/components/finance/treasury/TreasuryCaixaOverdueStrip";
 import { TreasuryCaixaTimeline } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
@@ -455,6 +456,8 @@ export function TreasuryCaixaPage() {
         />
 
         <TreasuryCaixaTodayFlow flow={todayFlow} loading={accountsLoading} />
+
+        <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
 
         {data || timelineUnavailable ? (
           <TreasuryCaixaTimeline

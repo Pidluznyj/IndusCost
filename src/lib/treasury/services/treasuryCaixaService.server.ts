@@ -17,6 +17,7 @@ import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/fina
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import {
+  buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
@@ -121,6 +122,8 @@ export function createTreasuryCaixaService(input: {
           syncCutoff: arSettled.syncCutoff,
           filters: settlementLoadFilters,
         }).gridRows,
+        // CP é alocado pelo VENCIMENTO (regra canônica do financeiro): a data de
+        // baixa é apenas informativa e o Nomus sequer a preenche.
         payables: buildFinanceAccountsPayableRulesResult(apSettled.rows, {
           referenceDate,
           syncCutoff: apSettled.syncCutoff,
@@ -129,12 +132,42 @@ export function createTreasuryCaixaService(input: {
         // Só os dias do período filtrado entram na linha do tempo.
       }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
 
+      // Atrasados são ESTOQUE: o que está vencido hoje, independente do período
+      // filtrado. Por isso carrega com status "overdue" e sem recorte de data —
+      // filtrar por período esconderia atraso antigo, que é o mais grave.
+      const overdueFilters = { status: "overdue" } as const;
+      const [arOverdue, apOverdue] = await Promise.all([
+        loadFinanceArManagementRowsFromPrisma(
+          prisma,
+          overdueFilters,
+          referenceDate
+        ),
+        loadFinanceApManagementRowsFromPrisma(
+          prisma,
+          overdueFilters,
+          referenceDate
+        ),
+      ]);
+      const overdue = buildTreasuryCaixaOverdue({
+        receivables: buildFinanceAccountsReceivableRulesResult(arOverdue.rows, {
+          referenceDate,
+          syncCutoff: arOverdue.syncCutoff,
+          filters: overdueFilters,
+        }).gridRows,
+        payables: buildFinanceAccountsPayableRulesResult(apOverdue.rows, {
+          referenceDate,
+          syncCutoff: apOverdue.syncCutoff,
+          filters: overdueFilters,
+        }).gridRows,
+      });
+
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
         dueDateTo: toIsoDate(dueDateTo),
         totals,
         realizedDays,
+        overdue,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
       };

@@ -369,6 +369,19 @@ export function TreasuryCaixaTimeline({
             em aberto — esses ainda podem mudar.
             {mode === "month" ? " Clique num mês para ver os dias." : ""}
           </p>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            <strong>&quot;Começou&quot; e &quot;Terminou&quot; em branco</strong>{" "}
+            nos dias passados significa que ninguém informou o saldo do banco
+            naquele dia. Não é erro: preencher esse valor por cálculo assumiria
+            que todo movimento tem título por trás — e é justamente isso que as
+            divergências revelam não ser verdade. Informe o saldo em Contas para
+            preencher.
+          </p>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            Contas a receber entram no dia da <strong>baixa</strong>; contas a
+            pagar entram no dia do <strong>vencimento</strong> — é a regra do
+            motor financeiro do sistema.
+          </p>
         </>
       )}
     </section>
