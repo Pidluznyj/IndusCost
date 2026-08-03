@@ -121,6 +121,28 @@ function formatLineStatus(status: string): string {
   return found?.label ?? status;
 }
 
+/**
+ * Percentual já vem reconciliado do servidor (nunca inventa 0% — ver
+ * resolveOfficialReconciledRatePercent em commissionReportOfficialReconcile.ts).
+ * Aqui só formatamos para exibição, sem recalcular nada.
+ */
+function formatRatePercentCell(row: CommissionReportRecord): { text: string; title?: string } {
+  if (row.ratePercent == null) {
+    return {
+      text: "—",
+      title: row.divergesFromOrderSnapshot
+        ? "Percentual não pôde ser reconstruído a partir do snapshot oficial (itens do pedido com percentuais diferentes e sem base para derivar)."
+        : "Percentual não disponível para esta linha.",
+    };
+  }
+  return {
+    text: `${row.ratePercent.toFixed(2)}%`,
+    title: row.divergesFromOrderSnapshot
+      ? "Percentual e valor vieram do snapshot oficial do pedido."
+      : undefined,
+  };
+}
+
 function resolveCommissionBlockReason(row: CommissionReportRecord): string | null {
   if (row.lineStatus === "COMMISSIONABLE" && row.finalCommissionAmount > 0.009) {
     return null;
@@ -773,8 +795,11 @@ export function CommissionsReportsPage() {
                   <td className="whitespace-nowrap px-3 py-2 tabular-nums">
                     {formatFinanceCurrency(row.commissionableBaseAmount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                    {row.ratePercent.toFixed(2)}%
+                  <td
+                    className="whitespace-nowrap px-3 py-2 tabular-nums"
+                    title={formatRatePercentCell(row).title}
+                  >
+                    {formatRatePercentCell(row).text}
                   </td>
                   <CommissionAmountCell row={row} />
                   <td className="max-w-[8rem] overflow-hidden px-3 py-2">
@@ -884,7 +909,9 @@ export function CommissionsReportsPage() {
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Percentual</dt>
-                <dd>{detail.ratePercent.toFixed(2)}%</dd>
+                <dd title={formatRatePercentCell(detail).title}>
+                  {formatRatePercentCell(detail).text}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Comissão final</dt>

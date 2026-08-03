@@ -28,7 +28,8 @@ export type SalesOrderMarginDetailCommissionContext = {
   nomusReceivableId: number | null;
   settlementDate: string | null;
   receivedAmount: number;
-  ratePercent: number;
+  /** null = percentual não auditável (nunca exibir como 0% — ver commissionReportOfficialReconcile.ts). */
+  ratePercent: number | null;
   finalCommissionAmount: number;
   commissionableBaseAmount: number;
   lineStatus: string;
@@ -260,7 +261,11 @@ export function SalesOrderMarginDetailDrawer({
                   label="Comissão do registro"
                   value={
                     commissionContext
-                      ? `${formatFinanceCurrency(commissionContext.finalCommissionAmount)} (${commissionContext.ratePercent.toFixed(2)}%)`
+                      ? `${formatFinanceCurrency(commissionContext.finalCommissionAmount)} (${
+                          commissionContext.ratePercent == null
+                            ? "% indisponível"
+                            : `${commissionContext.ratePercent.toFixed(2)}%`
+                        })`
                       : "Não disponível"
                   }
                 />

@@ -126,7 +126,8 @@ export type CommissionReportRecord = {
   receivedAmount: number;
   uniqueReceivedAmount: number;
   commissionableBaseAmount: number;
-  ratePercent: number;
+  /** null = percentual não auditável (linha reconciliada pelo snapshot sem percentual derivável). */
+  ratePercent: number | null;
   grossCommissionAmount: number;
   excludedCommissionAmount: number;
   finalCommissionAmount: number;
@@ -203,7 +204,9 @@ export type CommissionReportsPayload = {
   }>;
 };
 
-export type CommissionReportSourceLine = ReceiptClosingApiLine & {
+export type CommissionReportSourceLine = Omit<ReceiptClosingApiLine, "ratePercent"> & {
+  /** null = percentual não auditável (nunca inventar 0% ao reconciliar com o snapshot oficial). */
+  ratePercent: number | null;
   year: number;
   month: number;
   periodStatus: CommissionReportPeriodStatus;
@@ -328,7 +331,7 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     receivedAmount: round2(line.receivedAmount),
     uniqueReceivedAmount: round2(line.uniqueReceivedAmount),
     commissionableBaseAmount: round2(line.commissionableBaseAmount),
-    ratePercent: round2(line.ratePercent),
+    ratePercent: line.ratePercent == null ? null : round2(line.ratePercent),
     grossCommissionAmount: gross,
     excludedCommissionAmount: excluded,
     finalCommissionAmount: final,
@@ -456,7 +459,7 @@ export function buildCommissionReportSellerRows(
       row.commissionableBase = round2(row.commissionableBase + record.commissionableBaseAmount);
       row.grossCommission = round2(row.grossCommission + record.grossCommissionAmount);
       row.finalCommission = round2(row.finalCommission + record.finalCommissionAmount);
-      if (record.commissionableBaseAmount > 0) {
+      if (record.commissionableBaseAmount > 0 && record.ratePercent != null) {
         row.rateWeightSum += record.ratePercent * record.commissionableBaseAmount;
         row.rateBaseSum += record.commissionableBaseAmount;
       }
@@ -750,7 +753,7 @@ export function buildCommissionReportsExportWorkbook(input: {
       r.receivableNumber ?? (r.nomusReceivableId != null ? String(r.nomusReceivableId) : ""),
       r.receivedAmount,
       r.commissionableBaseAmount,
-      r.ratePercent,
+      r.ratePercent ?? "",
       r.grossCommissionAmount,
       r.excludedCommissionAmount,
       r.finalCommissionAmount,

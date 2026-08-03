@@ -36,6 +36,9 @@ function runPureQa(): void {
     rawSellerName: "RODRIGO DA SILVA RAMOS",
     scheduledCommissionSum: 12.19,
     itemStatuses: ["COMMISSIONABLE"],
+    // Item único, percentual inequívoco (12.19 / 300 * 100 ≈ 4.0633%).
+    itemRatePercents: [4.0633],
+    activeScheduleCount: 1,
   };
 
   assert.equal(
@@ -58,6 +61,9 @@ function runPureQa(): void {
       releasedCommissionAmount: 0,
       grossCommissionAmount: 0,
       commissionableBaseAmount: 0,
+      // Valor real que o motor de ledger produz quando não acha margem/regra —
+      // não é artificial. É o próprio caso que a reconciliação precisa corrigir.
+      ratePercent: 0,
       canonicalSellerId: null,
       canonicalSellerName: null,
       rawSellerId: null,
@@ -73,6 +79,9 @@ function runPureQa(): void {
   assert.equal(reconciled.canonicalSellerName, "Rodrigo Da Silva Ramos");
   assert.equal(reconciled.releasedCommissionAmount, 0);
   assert.match(reconciled.statusReason ?? "", /snapshot/);
+  // Regressão do fix: percentual reconciliado junto com o valor, nunca 0% ao
+  // lado de comissão positiva.
+  assert.equal(reconciled.ratePercent, 4.0633);
 
   const report = mapSourceLineToReportRecord({
     lineKey: "pd02523",
@@ -102,7 +111,7 @@ function runPureQa(): void {
     receivedAmount: 300,
     uniqueReceivedAmount: 300,
     commissionableBaseAmount: reconciled.commissionableBaseAmount,
-    ratePercent: 4.06,
+    ratePercent: reconciled.ratePercent,
     expectedCommissionAmount: reconciled.expectedCommissionAmount,
     releasedCommissionAmount: 0,
     grossCommissionAmount: 12.19,
@@ -121,6 +130,7 @@ function runPureQa(): void {
   });
 
   assert.equal(report.finalCommissionAmount, 12.19);
+  assert.equal(report.ratePercent, 4.06);
   assert.notEqual(report.lineStatus, "NO_MARGIN");
   assert.equal(report.divergesFromOrderSnapshot, true);
   assert.equal(report.sellerName, "Rodrigo Da Silva Ramos");

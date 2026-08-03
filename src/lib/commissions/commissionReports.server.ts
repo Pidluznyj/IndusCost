@@ -512,7 +512,7 @@ export async function enrichReportLinesWithOfficialSnapshots(
             rawSellerId: true,
             rawSellerName: true,
             salesOrder: { select: { orderCode: true } },
-            items: { select: { status: true } },
+            items: { select: { status: true, commissionRatePercent: true } },
             receivableSchedules: {
               where: { status: "ACTIVE" },
               select: { scheduledCommissionAmount: true },
@@ -545,7 +545,7 @@ export async function enrichReportLinesWithOfficialSnapshots(
             rawSellerId: true,
             rawSellerName: true,
             salesOrder: { select: { orderCode: true } },
-            items: { select: { status: true } },
+            items: { select: { status: true, commissionRatePercent: true } },
             receivableSchedules: {
               where: { status: "ACTIVE" },
               select: { scheduledCommissionAmount: true },
@@ -573,6 +573,11 @@ export async function enrichReportLinesWithOfficialSnapshots(
       rawSellerName: row.rawSellerName,
       scheduledCommissionSum,
       itemStatuses: row.items.map((i) => i.status),
+      itemRatePercents: row.items
+        .filter((i) => i.status === "COMMISSIONABLE")
+        .map((i) => decimalToNumber(i.commissionRatePercent))
+        .filter((rate) => rate > 0),
+      activeScheduleCount: row.receivableSchedules.length,
     };
     snapByOrderId.set(ref.salesOrderId, ref);
     if (ref.orderCode) snapByOrderCode.set(ref.orderCode, ref);
@@ -607,6 +612,8 @@ export async function enrichReportLinesWithOfficialSnapshots(
         releasedCommissionAmount: line.releasedCommissionAmount,
         grossCommissionAmount: line.grossCommissionAmount,
         commissionableBaseAmount: line.commissionableBaseAmount,
+        ratePercent: line.ratePercent,
+        installmentNumber: line.installmentNumber,
         canonicalSellerId: line.canonicalSellerId,
         canonicalSellerName: line.canonicalSellerName,
         rawSellerId: line.rawSellerId,
