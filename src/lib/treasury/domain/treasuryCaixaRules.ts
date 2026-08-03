@@ -233,9 +233,9 @@ export type TreasuryCaixaTimelineRow = {
   civilDate: string;
   kind: TreasuryCaixaTimelineKind;
   /**
-   * Saldo de abertura. `null` em dia passado sem saldo informado — reconstruir
-   * caminhando de trás pra frente mentiria: a conta assumiria que todo movimento
-   * tem título por trás, que é justamente o que as divergências violam.
+   * Saldo de abertura. Em dia passado é o acumulado desde
+   * {@link TREASURY_CAIXA_GENESIS_CIVIL_DATE} (zero na gênese) — não um saldo
+   * informado. `null` só antes da gênese, onde não há premissa de saldo inicial.
    */
   opening: number | null;
   inflows: number;
@@ -386,7 +386,53 @@ export type TreasuryCaixaRealizedDay = {
   outflows: number;
   receivableCount: number;
   payableCount: number;
+  /**
+   * Saldo calculado por acumulação a partir de {@link TREASURY_CAIXA_GENESIS_CIVIL_DATE}.
+   * `null` antes da gênese (histórico fora do que o sistema cobre) ou quando
+   * {@link applyTreasuryCaixaRunningBalance} ainda não rodou sobre o dia.
+   */
+  opening: number | null;
+  closing: number | null;
 };
+
+/**
+ * Data em que a Caixa passa a assumir saldo conhecido (zero) e acumular dia a
+ * dia. Antes dela não há como saber quanto tinha em caixa — não é calculado.
+ */
+export const TREASURY_CAIXA_GENESIS_CIVIL_DATE = "2026-01-01";
+
+/**
+ * Passo 4a-bis — acumula saldo dia a dia a partir da gênese (zero), na ORDEM
+ * cronológica completa, ANTES de qualquer corte por período de filtro.
+ *
+ * Pedido do negócio: nos meses em que ninguém lançou saldo manual, a tela não
+ * deve ficar em branco — deve partir de 0 em 01/01/2026 e caminhar com o fluxo
+ * diário de CR/CP (mesma fonte do resto da linha do tempo). É diferente de
+ * "reconstruir por inferência": aqui a âncora (zero na gênese) é uma premissa
+ * de negócio explícita, não uma suposição sobre títulos por trás do movimento.
+ *
+ * Precisa rodar sobre a lista INTEIRA (sem cortar por mês/dia do filtro),
+ * senão um filtro de março, por exemplo, recomeçaria do zero em março e
+ * perderia o efeito de janeiro/fevereiro. Quem chama corta para o período
+ * exibido DEPOIS de acumular.
+ */
+export function applyTreasuryCaixaRunningBalance(
+  days: readonly TreasuryCaixaRealizedDay[],
+  genesisCivilDate: string = TREASURY_CAIXA_GENESIS_CIVIL_DATE
+): TreasuryCaixaRealizedDay[] {
+  const sorted = [...days].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  let running: number | null = null;
+  return sorted.map((d) => {
+    if (d.civilDate < genesisCivilDate) {
+      return { ...d, opening: null, closing: null };
+    }
+    if (running == null) running = 0;
+    const opening = running;
+    const closing = roundMoney(opening + d.inflows - d.outflows);
+    running = closing;
+    return { ...d, opening: roundMoney(opening), closing };
+  });
+}
 
 /**
  * Passo 4a — funde as três zonas numa linha do tempo só.
@@ -426,15 +472,21 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
 
   for (const d of input.realizedDays) {
     if (d.civilDate >= input.todayCivilDate) continue;
+    // Saldo já vem acumulado desde a gênese (applyTreasuryCaixaRunningBalance,
+    // rodado pelo chamador sobre a lista inteira antes de filtrar o período) —
+    // aqui só repassamos. `null` continua significando "antes da gênese".
+    const opening =
+      d.opening != null && Number.isFinite(d.opening) ? roundMoney(d.opening) : null;
+    const closing =
+      d.closing != null && Number.isFinite(d.closing) ? roundMoney(d.closing) : null;
     rows.push({
       civilDate: d.civilDate,
       kind: "REALIZED",
-      // Saldo de dia passado só existiria se tivesse sido informado.
-      opening: null,
+      opening,
       inflows: d.inflows,
       outflows: d.outflows,
-      closing: null,
-      negative: false,
+      closing,
+      negative: closing != null && closing < 0,
     });
   }
 
@@ -550,6 +602,8 @@ export function buildTreasuryCaixaRealizedDays(input: {
       outflows: 0,
       receivableCount: 0,
       payableCount: 0,
+      opening: null,
+      closing: null,
     };
     byDate.set(civilDate, created);
     return created;

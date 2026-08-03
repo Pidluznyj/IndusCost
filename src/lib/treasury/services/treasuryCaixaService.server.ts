@@ -17,10 +17,12 @@ import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/fina
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import {
+  applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
+  TREASURY_CAIXA_GENESIS_CIVIL_DATE,
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
 } from "../domain/treasuryCaixaRules.js";
@@ -95,11 +97,16 @@ export function createTreasuryCaixaService(input: {
       // do período. Por isso a carga aqui abre a janela de vencimento para trás
       // (início do ano anterior) em vez de usar o recorte do filtro; sem isso,
       // pagamento de título atrasado sumiria do dia em que o dinheiro andou.
-      // A janela é limitada de propósito: cobre atraso realista sem varrer a
-      // tabela inteira.
+      // O piso nunca passa da gênese da Caixa: o acumulado de saldo (abaixo)
+      // precisa de TODO o histórico desde ali para o "Começou"/"Terminou" não
+      // recomeçar do zero no meio do caminho quando o filtro for um ano futuro.
+      const settlementWindowFromCivilDate =
+        `${period.year - 1}-01-01` < TREASURY_CAIXA_GENESIS_CIVIL_DATE
+          ? `${period.year - 1}-01-01`
+          : TREASURY_CAIXA_GENESIS_CIVIL_DATE;
       const settlementLoadFilters = {
         status: "all",
-        dueDateFrom: civilDateToLocalDate(`${period.year - 1}-01-01`),
+        dueDateFrom: civilDateToLocalDate(settlementWindowFromCivilDate),
         dueDateTo,
       } as const;
       const [arSettled, apSettled] = await Promise.all([
@@ -116,7 +123,7 @@ export function createTreasuryCaixaService(input: {
       ]);
       const periodFrom = toIsoDate(dueDateFrom);
       const periodTo = toIsoDate(dueDateTo);
-      const realizedDays = buildTreasuryCaixaRealizedDays({
+      const realizedDaysAll = buildTreasuryCaixaRealizedDays({
         receivables: buildFinanceAccountsReceivableRulesResult(arSettled.rows, {
           referenceDate,
           syncCutoff: arSettled.syncCutoff,
@@ -130,8 +137,13 @@ export function createTreasuryCaixaService(input: {
           syncCutoff: apSettled.syncCutoff,
           filters: settlementLoadFilters,
         }).gridRows,
-        // Só os dias do período filtrado entram na linha do tempo.
-      }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
+      });
+      // Acumula saldo desde a gênese ANTES de cortar pelo período filtrado —
+      // senão um filtro de março recomeçaria a soma do zero em março e
+      // perderia o efeito de janeiro/fevereiro.
+      const realizedDays = applyTreasuryCaixaRunningBalance(realizedDaysAll).filter(
+        (d) => d.civilDate >= periodFrom && d.civilDate <= periodTo
+      );
 
       // Atrasados são ESTOQUE: o que está vencido hoje, independente do período
       // filtrado. Por isso carrega com status "overdue" e sem recorte de data —

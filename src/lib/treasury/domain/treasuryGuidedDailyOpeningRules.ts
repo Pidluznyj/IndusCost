@@ -308,10 +308,34 @@ export function planTreasuryGuidedDailyOpeningSaveItem(input: {
     justificationDetail: input.item.justificationDetail,
   });
 
+  let current = input.currentState ?? null;
+  if (!current && input.seed.currentOpening) {
+    current = {
+      accountId: input.seed.accountId,
+      civilDate: input.civilDate as any,
+      status: "OPEN",
+      openingBalance: {
+        amount: input.seed.currentOpening.amount,
+        version: input.seed.currentOpening.version,
+        informedByUserId: "",
+        informedAt: "",
+      },
+      closingBankBalance: null,
+      predictedClosingBalance: null,
+      realizedClosingBalance: null,
+      divergence: null,
+      notes: null,
+      caveats: [],
+      version: input.seed.currentOpening.version,
+      formalClosingId: null,
+      formalClosingStatus: null,
+    };
+  }
+
   const planned = planTreasuryDailyOpeningBalance({
     accountId: input.seed.accountId,
     civilDate: input.civilDate,
-    current: input.currentState ?? null,
+    current,
     expectedVersion: input.item.expectedVersion,
     amount: confirm ? null : amount,
     confirmSuggestedAmount: confirm ? confirmSuggestedAmount : null,
