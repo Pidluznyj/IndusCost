@@ -161,6 +161,11 @@ export function createTreasuryProjectionEngineInputLoaderFromPrisma(
           openBalance: view.openBalance,
           isCancelledOrRemovedFromSource:
             view.cancellation.isCancelledOrRemovedFromSource,
+          // Dedup canônica de pré-NF recriado (FIN-02) precisa do hint de
+          // pedido na descrição e da NF de origem para classificar o título.
+          description: view.description,
+          sourceInvoiceId: view.invoice.externalId,
+          sourceInvoiceNumber: view.invoice.number,
         },
         complement: arComplements.get(view.id) ?? null,
         activePromise: promiseByTitle.get(view.id) ?? null,

@@ -281,7 +281,27 @@ function calculateItemCommission(input: {
     tiers,
   });
 
+  // A exclusão do cliente depende apenas de cliente, data e regra — nunca de
+  // faixa comercial. Resolver ANTES de tratar a falha de faixa evita rotular
+  // como "sem tabela comercial publicada" um item que jamais comissionaria.
+  const exclusion = resolveCustomerExclusionForSale({
+    customerExternalId: input.order.customerExternalId,
+    customerName: input.order.customerName,
+    referenceDate,
+    rules: input.context.exclusionRules,
+  });
+
   if (!rateResolution.ok) {
+    // Cliente excluído + faixa ausente: o resultado financeiro é o mesmo
+    // (R$ 0,00), mas a causa verdadeira é a exclusão, não falta de cadastro.
+    // Sem faixa não há alíquota para apurar o bruto teórico, então ele fica
+    // zerado — diferente do excluído COM faixa, logo abaixo, que o preserva.
+    const excludedWithoutTier = applyCustomerExclusionToCommission({
+      exclusion,
+      ratePercent: 0,
+      commissionAmount: 0,
+    }).excluded;
+
     return {
       ...baseResult,
       commissionRatePercent: 0,
@@ -292,10 +312,14 @@ function calculateItemCommission(input: {
         ...match.rule,
         ratePercent: match.ratePercent,
       }),
-      exclusionStatus: "NONE",
-      exclusionReason: null,
-      status: rateResolution.status,
-      statusReason: rateResolution.statusReason,
+      exclusionStatus: excludedWithoutTier ? "EXCLUDED" : "NONE",
+      exclusionReason: excludedWithoutTier
+        ? exclusion?.reason ?? exclusion?.exclusionMessage ?? "Cliente excluído de comissão"
+        : null,
+      status: excludedWithoutTier ? "CUSTOMER_EXCLUDED" : rateResolution.status,
+      statusReason: excludedWithoutTier
+        ? exclusion?.exclusionMessage ?? exclusion?.reason ?? null
+        : rateResolution.statusReason,
       tierMetadata: null,
     };
   }
@@ -304,12 +328,6 @@ function calculateItemCommission(input: {
     soldAmount,
     rateResolution.ratePercent
   );
-  const exclusion = resolveCustomerExclusionForSale({
-    customerExternalId: input.order.customerExternalId,
-    customerName: input.order.customerName,
-    referenceDate,
-    rules: input.context.exclusionRules,
-  });
   const applied = applyCustomerExclusionToCommission({
     exclusion,
     ratePercent: rateResolution.ratePercent,

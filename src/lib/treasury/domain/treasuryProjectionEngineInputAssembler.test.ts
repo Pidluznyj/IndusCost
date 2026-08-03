@@ -361,3 +361,157 @@ describe("assembleTreasuryProjectionEngineInput — camada manual", () => {
     assert.equal(out.transfers.length, 0);
   });
 });
+
+describe("assembleTreasuryProjectionEngineInput — dedup de pré-NF recriado (FIN-02)", () => {
+  const accounts: AssembleTreasuryProjectionEngineInput["accounts"] = [
+    {
+      account: {
+        id: ACCOUNT_A,
+        code: "CX01",
+        name: "Caixa",
+        includeInConsolidated: true,
+        allowNegativeBalance: false,
+        minimumBalance: "0.00",
+      },
+      balance: null,
+    },
+  ];
+
+  function preNf(input: {
+    id: string;
+    externalId: number;
+    description: string;
+    dueDate: string;
+    amount: string;
+  }) {
+    return {
+      view: {
+        id: input.id,
+        externalId: input.externalId,
+        installmentNumber: null,
+        dueDate: input.dueDate,
+        originalAmount: input.amount,
+        openBalance: input.amount,
+        isCancelledOrRemovedFromSource: false,
+        description: input.description,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+      },
+      complement: null,
+      activePromise: null,
+    };
+  }
+
+  it("caso real PD 02364: três 'Parcela 1 de 1' abertas → vale só o título mais novo", () => {
+    const out = assembleTreasuryProjectionEngineInput(
+      baseInput({
+        accounts,
+        receivables: [
+          preNf({
+            id: "r-16770",
+            externalId: 16770,
+            description: "Pedido PD 02364 - Parcela 1 de 1",
+            dueDate: "2026-08-14",
+            amount: "247398.45",
+          }),
+          preNf({
+            id: "r-16829",
+            externalId: 16829,
+            description: "Pedido PD 02364 - Parcela 1 de 1",
+            dueDate: "2026-08-14",
+            amount: "273408.45",
+          }),
+          preNf({
+            id: "r-17076",
+            externalId: 17076,
+            description: "Pedido PD 02364 - Parcela 1 de 1",
+            dueDate: "2026-08-14",
+            amount: "290748.45",
+          }),
+        ],
+      })
+    );
+    assert.equal(out.receivables.length, 1);
+    assert.equal(out.receivables[0]!.nomusExternalId, 17076);
+    assert.equal(out.receivables[0]!.openBalance, "290748.45");
+  });
+
+  it("pré-NF cai quando o mesmo pedido já tem CR real (com NF) no mesmo vencimento", () => {
+    const out = assembleTreasuryProjectionEngineInput(
+      baseInput({
+        accounts,
+        receivables: [
+          {
+            view: {
+              id: "r-real",
+              externalId: 200,
+              installmentNumber: 1,
+              dueDate: "2026-08-20",
+              originalAmount: "1000.00",
+              openBalance: "1000.00",
+              isCancelledOrRemovedFromSource: false,
+              description: "Pedido PD 0100 - Parcela 1 de 1",
+              sourceInvoiceId: 77,
+              sourceInvoiceNumber: "7351",
+            },
+            complement: null,
+            activePromise: null,
+          },
+          preNf({
+            id: "r-prenf",
+            externalId: 150,
+            description: "Pedido PD 0100 - Parcela 1 de 1",
+            dueDate: "2026-08-20",
+            amount: "1000.00",
+          }),
+        ],
+      })
+    );
+    assert.equal(out.receivables.length, 1);
+    assert.equal(out.receivables[0]!.nomusExternalId, 200);
+  });
+
+  it("pré-NF única e legítima de outro pedido permanece (previsão desejada)", () => {
+    const out = assembleTreasuryProjectionEngineInput(
+      baseInput({
+        accounts,
+        receivables: [
+          preNf({
+            id: "r-unitermi",
+            externalId: 17142,
+            description: "Pedido PD 02667 - Parcela 1 de 2",
+            dueDate: "2026-08-14",
+            amount: "55500.00",
+          }),
+        ],
+      })
+    );
+    assert.equal(out.receivables.length, 1);
+    assert.equal(out.receivables[0]!.openBalance, "55500.00");
+  });
+
+  it("título sem hint de pedido na descrição não é tocado pela dedup", () => {
+    const out = assembleTreasuryProjectionEngineInput(
+      baseInput({
+        accounts,
+        receivables: [
+          preNf({
+            id: "r-a",
+            externalId: 300,
+            description: "Duplicata avulsa",
+            dueDate: "2026-08-14",
+            amount: "100.00",
+          }),
+          preNf({
+            id: "r-b",
+            externalId: 301,
+            description: "Duplicata avulsa",
+            dueDate: "2026-08-14",
+            amount: "100.00",
+          }),
+        ],
+      })
+    );
+    assert.equal(out.receivables.length, 2);
+  });
+});

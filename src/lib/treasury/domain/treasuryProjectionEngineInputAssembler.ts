@@ -12,7 +12,11 @@
  *   saldo em aberto do próprio título (evita dupla contagem realizado × previsto).
  */
 
-import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import { civilDateToLocalDate, toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import {
+  suppressObsoleteOpenPreNfNomusArRows,
+  suppressPreNfReplacedByRealCrOnSameOrder,
+} from "@/src/lib/finance/financeArOperationalPortfolio.js";
 import type {
   TreasuryProjectionAccountBase,
   TreasuryProjectionLedgerSeed,
@@ -93,6 +97,11 @@ export type ProjectionReceivableInputRow = {
   originalAmount: TreasuryAssemblerDecimalLike;
   openBalance: TreasuryAssemblerDecimalLike;
   isCancelledOrRemovedFromSource: boolean;
+  /** Descrição Nomus — carrega o hint "PD xxxx" usado na dedup de pré-NF. */
+  description?: string | null;
+  /** NF de origem — distingue CR real (WITH_NFE) de previsão pré-NF. */
+  sourceInvoiceId?: number | null;
+  sourceInvoiceNumber?: string | null;
 };
 
 export type ProjectionPayableInputRow = {
@@ -181,6 +190,51 @@ function mapAccount(bundle: ProjectionAccountBundle): TreasuryProjectionAccountB
     investmentsBalance: balance ? money(balance.investmentsBalance) : undefined,
     usedLimit: balance ? money(balance.usedLimit) : undefined,
   };
+}
+
+/**
+ * Dedup canônica de previsões pré-NF recriadas pelo Nomus (regra FIN-02).
+ *
+ * Padrão real (ex.: PD 02364/Esmaltec): o Nomus recria o título de previsão da
+ * MESMA parcela do MESMO pedido a cada mudança de valor e deixa os antigos em
+ * aberto — três "Parcela 1 de 1" abertas no mesmo vencimento somariam 811k
+ * quando o depósito esperado é um só (o mais recente). Sem esta supressão a
+ * projeção infla as entradas com dinheiro que nunca vai andar.
+ *
+ * Reutiliza EXATAMENTE as funções oficiais do financeiro (mesma política das
+ * telas de Fluxo de Caixa / Contas a Receber):
+ * 1. `suppressPreNfReplacedByRealCrOnSameOrder` — pré-NF cai quando o mesmo
+ *    pedido já tem CR real (com NF) no MESMO vencimento civil;
+ * 2. `suppressObsoleteOpenPreNfNomusArRows` — mesma parcela (N/M) do mesmo
+ *    pedido → vale só o título mais novo (maior externalId).
+ *
+ * Deliberadamente NÃO aplica a regra mais agressiva "pedido com NF derruba
+ * todo pré-NF" (FIN-02 pleno): a projeção da Tesouraria quer manter previsões
+ * legítimas de parcelas ainda não faturadas.
+ */
+export function suppressObsoletePreNfProjectionReceivables(
+  bundles: readonly ProjectionReceivableBundle[]
+): ProjectionReceivableBundle[] {
+  const rows = bundles.map((b) => {
+    const dueKey = civil(b.view.dueDate);
+    return {
+      externalId: b.view.externalId,
+      description: b.view.description ?? null,
+      sourceInvoiceId: b.view.sourceInvoiceId ?? null,
+      sourceInvoiceNumber: b.view.sourceInvoiceNumber ?? null,
+      balanceReceivable: Number(money(b.view.openBalance)),
+      dueDate: dueKey ? civilDateToLocalDate(dueKey) : null,
+      amountReceivable: Number(money(b.view.originalAmount)),
+    };
+  });
+
+  const surviving = new Set(
+    suppressObsoleteOpenPreNfNomusArRows(
+      suppressPreNfReplacedByRealCrOnSameOrder(rows)
+    ).map((r) => r.externalId)
+  );
+
+  return bundles.filter((b) => surviving.has(b.view.externalId));
 }
 
 function mapReceivable(
@@ -298,7 +352,9 @@ export function assembleTreasuryProjectionEngineInput(
   const accounts = input.accounts.map(mapAccount);
   const knownAccountIds = new Set(accounts.map((a) => a.accountId));
 
-  const receivables = input.receivables
+  const receivables = suppressObsoletePreNfProjectionReceivables(
+    input.receivables
+  )
     .map(mapReceivable)
     .filter((r) => hasPositiveOpenBalance(r.openBalance));
   const payables = input.payables
