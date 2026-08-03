@@ -8,6 +8,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchTreasuryCaixa, type TreasuryCaixaPayload } from "@/src/lib/treasury/treasuryCaixaApi.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js";
@@ -87,6 +88,7 @@ function TotalizerCard({
 }
 
 export function TreasuryCaixaPage() {
+  const auth = useAuth();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState<number | "">("");
@@ -264,6 +266,11 @@ export function TreasuryCaixaPage() {
         <TreasuryCaixaAccountsSummary
           accounts={accounts}
           loading={accountsLoading}
+          isSuperAdmin={auth.isSuperAdmin()}
+          onChanged={() => {
+            void loadAccounts();
+            if (data) void search();
+          }}
         />
 
         {error ? (
