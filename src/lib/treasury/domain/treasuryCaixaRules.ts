@@ -120,11 +120,49 @@ export function computeTreasuryCaixaTotals(input: {
   };
 }
 
+/**
+ * Marco zero do saldo em caixa: assume-se caixa = R$ 0,00 em 01/01/2026.
+ * Premissa de negócio declarada — o saldo exibido é o caixa GERADO desde essa data,
+ * não a posição bancária real (essa vive em Tesouraria > Contas / saldos informados).
+ */
+export const TREASURY_CAIXA_BASELINE_CIVIL_DATE = "2026-01-01" as const;
+
+export type TreasuryCaixaCashBalance = {
+  /** Marco zero assumido (caixa = 0). */
+  baselineDate: string;
+  /** Última data considerada — fim do período filtrado. */
+  asOfDate: string;
+  /** Entradas liquidadas entre baseline e asOfDate (por data de baixa). */
+  received: number;
+  /** Saídas liquidadas entre baseline e asOfDate (por data de pagamento). */
+  paid: number;
+  /** received − paid. */
+  balance: number;
+};
+
+export function buildTreasuryCaixaCashBalance(input: {
+  baselineDate: string;
+  asOfDate: string;
+  received: number;
+  paid: number;
+}): TreasuryCaixaCashBalance {
+  const received = Number.isFinite(input.received) ? input.received : 0;
+  const paid = Number.isFinite(input.paid) ? input.paid : 0;
+  return {
+    baselineDate: input.baselineDate,
+    asOfDate: input.asOfDate,
+    received: roundMoney(received),
+    paid: roundMoney(paid),
+    balance: roundMoney(received - paid),
+  };
+}
+
 export type TreasuryCaixaBoardDto = {
   period: TreasuryCaixaPeriodInput;
   dueDateFrom: string;
   dueDateTo: string;
   totals: TreasuryCaixaTotals;
+  cashBalance: TreasuryCaixaCashBalance;
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
 };

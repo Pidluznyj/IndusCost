@@ -2,12 +2,21 @@
  * Página — Caixa (Tesouraria).
  * Filtro Ano/(Mês)/(Dia) por vencimento → duas tabelas planas (CR e CP),
  * sem agrupar por banco, via motor oficial (financeAccountsReceivable/PayableRulesEngine).
+ * Contas + lançamento de saldo reutilizam o painel/modal canônicos do Fluxo Gerencial
+ * (APIs /today/opening e /today/closing, com log de usuário, data/hora e motivo).
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { fetchTreasuryCaixa, type TreasuryCaixaPayload } from "@/src/lib/treasury/treasuryCaixaApi.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
+import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js";
+import { fetchTreasuryAccountLatestBalance } from "@/src/lib/treasury/treasuryBalancesApi.js";
+import {
+  mapTreasuryAccountToPredictiveAccount,
+  type PredictiveCashFlowAccount,
+} from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
+import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import {
@@ -85,6 +94,57 @@ export function TreasuryCaixaPage() {
   const [data, setData] = useState<TreasuryCaixaPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const accountsAbortRef = useRef<AbortController | null>(null);
+
+  /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
+  const loadAccounts = useCallback(async () => {
+    accountsAbortRef.current?.abort();
+    const controller = new AbortController();
+    accountsAbortRef.current = controller;
+    setAccountsLoading(true);
+    try {
+      const page = await fetchTreasuryAccounts({
+        page: 1,
+        pageSize: 200,
+        isActive: true,
+        sortBy: "sortOrder",
+        sortDirection: "asc",
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      const rows = page?.rows ?? [];
+      const withBalances = await Promise.all(
+        rows.map(async (account) => {
+          try {
+            const snap = await fetchTreasuryAccountLatestBalance(
+              account.id,
+              controller.signal
+            );
+            return mapTreasuryAccountToPredictiveAccount(
+              account,
+              snap?.availableBalance ?? "0.00"
+            );
+          } catch {
+            return mapTreasuryAccountToPredictiveAccount(account, "0.00");
+          }
+        })
+      );
+      if (controller.signal.aborted) return;
+      setAccounts(withBalances);
+    } catch {
+      if (!controller.signal.aborted) setAccounts([]);
+    } finally {
+      if (!controller.signal.aborted) setAccountsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAccounts();
+    return () => accountsAbortRef.current?.abort();
+  }, [loadAccounts]);
 
   const yearOptions = useMemo(() => {
     const base = today.getFullYear();
@@ -201,6 +261,11 @@ export function TreasuryCaixaPage() {
           </div>
         </section>
 
+        <TreasuryCaixaAccountsSummary
+          accounts={accounts}
+          loading={accountsLoading}
+        />
+
         {error ? (
           <div
             className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
@@ -212,6 +277,36 @@ export function TreasuryCaixaPage() {
 
         {data ? (
           <>
+            <section
+              className="rounded-lg border-2 border-[#1E3A8A]/25 bg-[#EFF6FF] px-4 py-3 shadow-sm"
+              data-testid="caixa-cash-balance"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#1E3A8A]/70">
+                    Movimento acumulado
+                  </p>
+                  <p
+                    className="mt-0.5 text-2xl font-extrabold tabular-nums tracking-tight text-[#1E3A8A]"
+                    data-testid="caixa-cash-balance-value"
+                  >
+                    {formatMoney(data.cashBalance.balance)}
+                  </p>
+                </div>
+                <p className="text-xs tabular-nums text-[#1E3A8A]/80">
+                  Entradas {formatMoney(data.cashBalance.received)} − Saídas{" "}
+                  {formatMoney(data.cashBalance.paid)}
+                </p>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-[#1E3A8A]/70">
+                Quanto entrou menos quanto saiu, por data de liquidação, de{" "}
+                {formatCivilDate(data.cashBalance.baselineDate)} até{" "}
+                {formatCivilDate(data.cashBalance.asOfDate)}.{" "}
+                <strong>Não é o saldo do banco</strong> — o saldo real é o
+                &quot;Caixa hoje&quot; acima.
+              </p>
+            </section>
+
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <TotalizerCard
                 label="Já Recebido"
