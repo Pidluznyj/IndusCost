@@ -399,11 +399,28 @@ export type TreasuryCaixaRealizedDay = {
  * Dias passados sem movimento não viram linha — só ruído. Onde o dado não
  * existe o campo fica `null`, e a tela mostra "—" em vez de inventar zero.
  */
+/**
+ * Dia futuro vindo da agenda.
+ *
+ * `inflows`/`outflows` são os do CENÁRIO PEDIDO (campos `inflows`/`outflows` do
+ * DTO), não os buckets `planned*`. Motivo: `plannedOutflows` só é preenchido a
+ * partir do cenário contratual — pedindo PROBABLE ele vem zerado enquanto o
+ * saldo cai, e a linha não fecha. Os campos do cenário são exatamente os que
+ * movem o `closingBalance`.
+ */
+export type TreasuryCaixaForecastDayInput = {
+  civilDate: string;
+  openingBalance: number;
+  inflows: number;
+  outflows: number;
+  closingBalance: number | null;
+};
+
 export function buildTreasuryCaixaUnifiedTimeline(input: {
   todayCivilDate: string;
   realizedDays: readonly TreasuryCaixaRealizedDay[];
   todayFlow: TreasuryCaixaDayFlow | null;
-  forecastDays: readonly TreasuryCaixaTimelineDayInput[];
+  forecastDays: readonly TreasuryCaixaForecastDayInput[];
 }): TreasuryCaixaTimeline {
   const rows: TreasuryCaixaTimelineRow[] = [];
 
@@ -421,7 +438,30 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
     });
   }
 
-  if (input.todayFlow) {
+  // Hoje: a agenda tem prioridade quando cobre o dia. O fechamento diário conta
+  // só o que JÁ aconteceu; a agenda projeta o dia inteiro. Usar o realizado aqui
+  // criaria degrau entre hoje e amanhã — amanhã abriria com saldo diferente do
+  // fechamento exibido em hoje. O bloco "Movimento de hoje" segue mostrando o
+  // realizado, que responde outra pergunta.
+  const agendaToday = input.forecastDays.find(
+    (d) => d.civilDate === input.todayCivilDate
+  );
+  if (agendaToday) {
+    const closing =
+      agendaToday.closingBalance != null &&
+      Number.isFinite(agendaToday.closingBalance)
+        ? roundMoney(agendaToday.closingBalance)
+        : null;
+    rows.push({
+      civilDate: agendaToday.civilDate,
+      kind: "TODAY",
+      opening: roundMoney(agendaToday.openingBalance),
+      inflows: roundMoney(agendaToday.inflows),
+      outflows: roundMoney(agendaToday.outflows),
+      closing,
+      negative: closing != null && closing < 0,
+    });
+  } else if (input.todayFlow) {
     const closing =
       input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
     rows.push({
@@ -445,8 +485,8 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       civilDate: d.civilDate,
       kind: "FORECAST",
       opening: roundMoney(d.openingBalance),
-      inflows: roundMoney(d.plannedInflows),
-      outflows: roundMoney(d.plannedOutflows),
+      inflows: roundMoney(d.inflows),
+      outflows: roundMoney(d.outflows),
       closing,
       negative: closing != null && closing < 0,
     });

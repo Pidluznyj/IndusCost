@@ -74,13 +74,14 @@ function buildTimelineFromSources(
     todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
     realizedDays: board.realizedDays ?? [],
     todayFlow,
+    // `inflows`/`outflows` = cenário pedido; são os que movem o closingBalance.
+    // Os buckets `planned*` não servem: plannedOutflows só vem do contratual e
+    // fica zerado quando se pede PROBABLE, deixando a coluna "Saiu" vazia.
     forecastDays: agendaDays.map((d) => ({
       civilDate: d.civilDate,
       openingBalance: treasuryMoneyToNumber(d.openingBalance),
-      plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
-      plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
-      realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
-      realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
+      inflows: treasuryMoneyToNumber(d.inflows),
+      outflows: treasuryMoneyToNumber(d.outflows),
       closingBalance:
         d.closingBalance == null
           ? null
