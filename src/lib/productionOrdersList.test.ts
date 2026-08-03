@@ -160,9 +160,10 @@ describe("buildProductionOrdersListWhere", () => {
   });
 
   it("ordenação mantém openedAt nulo no fim e externalId como desempate", () => {
-    assert.deepEqual(productionOrdersListOrderBy(), [
+    assert.deepStrictEqual(productionOrdersListOrderBy(), [
       { openedAt: { sort: "desc", nulls: "last" } },
       { externalId: "desc" },
+      { id: "desc" },
     ]);
   });
 });

@@ -139,7 +139,11 @@ export function buildProductionOrdersListWhere(
 }
 
 export function productionOrdersListOrderBy(): Prisma.NomusProductionOrderOrderByWithRelationInput[] {
-  return [{ openedAt: { sort: "desc", nulls: "last" } }, { externalId: "desc" }];
+  return [
+    { openedAt: { sort: "desc", nulls: "last" } },
+    { externalId: "desc" },
+    { id: "desc" },
+  ];
 }
 
 export function serializeProductionOrderDecimal(

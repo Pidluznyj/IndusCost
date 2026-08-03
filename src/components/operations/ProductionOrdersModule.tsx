@@ -61,12 +61,14 @@ export function ProductionOrdersModule() {
   const [searchDraft, setSearchDraft] = useState(() => initialParam(searchParams, "search"));
   const [tipoDraft, setTipoDraft] = useState(() => initialParam(searchParams, "tipo"));
   const [companyDraft, setCompanyDraft] = useState(() => initialParam(searchParams, "company"));
+  const [fromDraft, setFromDraft] = useState(() => initialParam(searchParams, "from"));
+  const [toDraft, setToDraft] = useState(() => initialParam(searchParams, "to"));
   const [search, setSearch] = useState(searchDraft);
   const [tipo, setTipo] = useState(tipoDraft);
   const [company, setCompany] = useState(companyDraft);
   const [status, setStatus] = useState<string | null>(() => searchParams.get("status"));
-  const [from, setFrom] = useState(() => initialParam(searchParams, "from"));
-  const [to, setTo] = useState(() => initialParam(searchParams, "to"));
+  const [from, setFrom] = useState(fromDraft);
+  const [to, setTo] = useState(toDraft);
   const [page, setPage] = useState(() => initialPage(searchParams));
   const [retryToken, setRetryToken] = useState(0);
   const [selectedProductionOrderId, setSelectedProductionOrderId] = useState<string | null>(null);
@@ -101,19 +103,15 @@ export function ProductionOrdersModule() {
   const [gridScrollWidth, setGridScrollWidth] = useState(1280);
   const dateRangeInvalid = isProductionOrdersDateRangeInvalid(from, to);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const nextSearch = searchDraft.trim();
-      const nextTipo = tipoDraft.trim();
-      const nextCompany = companyDraft.trim();
-      if (nextSearch === search && nextTipo === tipo && nextCompany === company) return;
-      setPage(1);
-      setSearch(nextSearch);
-      setTipo(nextTipo);
-      setCompany(nextCompany);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [searchDraft, tipoDraft, companyDraft, search, tipo, company]);
+  const handleSearch = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setPage(1);
+    setSearch(searchDraft.trim());
+    setTipo(tipoDraft.trim());
+    setCompany(companyDraft.trim());
+    setFrom(fromDraft);
+    setTo(toDraft);
+  };
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -204,9 +202,9 @@ export function ProductionOrdersModule() {
     searchDraft.trim() ||
       tipoDraft.trim() ||
       companyDraft.trim() ||
-      status ||
-      from ||
-      to
+      fromDraft ||
+      toDraft ||
+      status
   );
 
   useEffect(() => {
@@ -246,6 +244,8 @@ export function ProductionOrdersModule() {
     setSearchDraft("");
     setTipoDraft("");
     setCompanyDraft("");
+    setFromDraft("");
+    setToDraft("");
     setSearch("");
     setStatus(null);
     setTipo("");
@@ -264,7 +264,8 @@ export function ProductionOrdersModule() {
         {PRODUCTION_ORDERS_BREADCRUMB}
       </p>
 
-      <div
+      <form
+        onSubmit={handleSearch}
         className="rounded-xl border border-border bg-card p-3"
         data-testid="production-orders-filters"
       >
@@ -304,12 +305,9 @@ export function ProductionOrdersModule() {
               type="date"
               data-testid="production-orders-from"
               className={FILTER_CONTROL_CLASS}
-              value={from}
+              value={fromDraft}
               aria-invalid={dateRangeInvalid}
-              onChange={(event) => {
-                setPage(1);
-                setFrom(event.target.value);
-              }}
+              onChange={(event) => setFromDraft(event.target.value)}
             />
           </FilterField>
           <FilterField label="Abertura até">
@@ -317,21 +315,26 @@ export function ProductionOrdersModule() {
               type="date"
               data-testid="production-orders-to"
               className={FILTER_CONTROL_CLASS}
-              value={to}
+              value={toDraft}
               aria-invalid={dateRangeInvalid}
-              onChange={(event) => {
-                setPage(1);
-                setTo(event.target.value);
-              }}
+              onChange={(event) => setToDraft(event.target.value)}
             />
           </FilterField>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              disabled={loading}
+              data-testid="production-orders-search-button"
+            >
+              Pesquisar
+            </button>
             <button
               type="button"
               data-testid="production-orders-clear-filters"
               className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-40"
               onClick={clearFilters}
-              disabled={!draftFiltersActive}
+              disabled={!draftFiltersActive && !filtersActive}
             >
               Limpar filtros
             </button>
@@ -342,7 +345,7 @@ export function ProductionOrdersModule() {
             A data inicial não pode ser posterior à data final.
           </p>
         ) : null}
-      </div>
+      </form>
 
       <div
         className="flex flex-wrap gap-2"
