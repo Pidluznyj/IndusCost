@@ -83,15 +83,22 @@ function MonthKindBadge({ kind }: { kind: TreasuryCaixaTimelineMonth["kind"] }) 
 function DivergenceCell({
   value,
   informed,
+  scope,
 }: {
   value: number | null;
-  informed: number | null;
+  /** Saldo informado do dia; irrelevante (e ausente) na linha de mês. */
+  informed?: number | null;
+  scope: "day" | "month";
 }) {
   if (value == null) {
     return (
       <td
         className="px-2 py-1.5 text-right tabular-nums text-muted-foreground"
-        title="Nenhum saldo informado neste dia — nada a comparar."
+        title={
+          scope === "day"
+            ? "Nenhum saldo informado neste dia — nada a comparar."
+            : "Nenhum dia deste mês teve saldo informado — nada a comparar."
+        }
       >
         —
       </td>
@@ -101,23 +108,31 @@ function DivergenceCell({
     return (
       <td
         className="px-2 py-1.5 text-right tabular-nums text-[#059669]"
-        title="Saldo informado bate exatamente com o calculado pelos títulos."
+        title={
+          scope === "day"
+            ? "Saldo informado bate exatamente com o calculado pelos títulos."
+            : "No total do mês, o informado bate com o calculado."
+        }
       >
         ✓
       </td>
     );
   }
+  const amount = formatPredictiveCashFlowMoney(Math.abs(value));
+  const direction = value > 0 ? "Entrou" : "Saiu";
+  const suffix =
+    scope === "day" && informed != null
+      ? ` (saldo informado: ${money(informed)})`
+      : scope === "month"
+        ? " no total do mês"
+        : "";
   return (
     <td
       className={cn(
         "px-2 py-1.5 text-right tabular-nums font-semibold",
         value > 0 ? "text-[#0369A1]" : "text-[#B45309]"
       )}
-      title={
-        value > 0
-          ? `Entrou ${formatPredictiveCashFlowMoney(value)} a mais do que os títulos explicam (saldo informado: ${money(informed)}).`
-          : `Saiu ${formatPredictiveCashFlowMoney(Math.abs(value))} a mais do que os títulos explicam (saldo informado: ${money(informed)}).`
-      }
+      title={`${direction} ${amount} a mais do que os títulos explicam${suffix}.`}
     >
       {value > 0 ? "+" : ""}
       {money(value)}
@@ -384,7 +399,7 @@ export function TreasuryCaixaTimeline({
                             </td>
                             <DivergenceCell
                               value={m.divergence}
-                              informed={null}
+                              scope="month"
                             />
                           </tr>
                           {isOpen
@@ -438,6 +453,7 @@ export function TreasuryCaixaTimeline({
                                   <DivergenceCell
                                     value={r.divergence}
                                     informed={r.closingInformed}
+                                    scope="day"
                                   />
                                 </tr>
                               ))
@@ -492,6 +508,7 @@ export function TreasuryCaixaTimeline({
                     <DivergenceCell
                       value={r.divergence}
                       informed={r.closingInformed}
+                      scope="day"
                     />
                   </tr>
                     ))}

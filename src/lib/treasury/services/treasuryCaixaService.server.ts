@@ -36,6 +36,27 @@ function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Limites UTC para filtrar coluna `@db.Date`.
+ *
+ * `TreasuryDailyClosing.civilDate` é `@db.Date`: o Postgres devolve meia-noite
+ * UTC. Montar o limite com `civilDateToLocalDate` (meia-noite LOCAL) desloca
+ * para 03:00Z em UTC-3, e o fechamento do próprio dia do limite cairia fora do
+ * `gte`. Mesma razão do helper `civilRange` do repositório de relatórios —
+ * limite superior exclusivo (`lt` no dia seguinte) em vez de `lte`.
+ */
+export function civilDateUtcRange(
+  from: string,
+  to: string
+): { gte: Date; lt: Date } {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  return {
+    gte: new Date(Date.UTC(fy!, fm! - 1, fd!)),
+    lt: new Date(Date.UTC(ty!, tm! - 1, td! + 1)),
+  };
+}
+
 export function createTreasuryCaixaService(input: {
   prisma: PrismaClient;
 }): TreasuryCaixaService {
@@ -153,14 +174,15 @@ export function createTreasuryCaixaService(input: {
 
       const informedClosingByCivilDate = new Map<string, number>();
       if (companyCode) {
+        const closingRange = civilDateUtcRange(
+          settlementWindowFromCivilDate,
+          periodTo
+        );
         const closings = await prisma.treasuryDailyClosing.findMany({
           where: {
             companyCode,
             status: "CLOSED",
-            civilDate: {
-              gte: civilDateToLocalDate(settlementWindowFromCivilDate),
-              lte: dueDateTo,
-            },
+            civilDate: { gte: closingRange.gte, lt: closingRange.lt },
           },
           orderBy: [{ civilDate: "asc" }, { version: "desc" }],
           distinct: ["civilDate"],
