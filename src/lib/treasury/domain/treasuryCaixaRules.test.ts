@@ -4,6 +4,7 @@ import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import {
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyTimeline,
+  buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   buildTreasuryCaixaUnifiedTimeline,
   buildTreasuryCaixaTimeline,
@@ -656,5 +657,92 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
     });
     assert.deepEqual(tl.rows, []);
     assert.equal(tl.firstNegativeDate, null);
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaOverdue", () => {
+  it("distribui os títulos nas faixas de atraso e soma os lados", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [
+        { daysOverdue: 3, balanceReceivable: 1000 },
+        { daysOverdue: 40, balanceReceivable: 2000 },
+        { daysOverdue: 200, balanceReceivable: 500 },
+      ],
+      payables: [{ daysOverdue: 10, balancePayable: 300 }],
+    });
+    assert.equal(o.receivable.total, 3500);
+    assert.equal(o.receivable.count, 3);
+    assert.equal(o.payable.total, 300);
+    assert.deepEqual(
+      o.receivable.buckets.map((b) => b.key),
+      ["overdue1to7", "overdue31to60", "overdue90plus"]
+    );
+    assert.equal(o.payable.buckets[0]!.key, "overdue8to15");
+  });
+
+  it("agrupa vários títulos na mesma faixa", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [
+        { daysOverdue: 2, balanceReceivable: 100 },
+        { daysOverdue: 5, balanceReceivable: 250 },
+      ],
+      payables: [],
+    });
+    assert.equal(o.receivable.buckets.length, 1);
+    assert.equal(o.receivable.buckets[0]!.amount, 350);
+    assert.equal(o.receivable.buckets[0]!.count, 2);
+  });
+
+  it("não conta título a vencer nem vencendo hoje", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [
+        { daysOverdue: 0, balanceReceivable: 900 },
+        { daysOverdue: -5, balanceReceivable: 900 },
+      ],
+      payables: [],
+    });
+    assert.equal(o.receivable.total, 0);
+    assert.deepEqual(o.receivable.buckets, []);
+  });
+
+  it("não conta título já liquidado (saldo zero)", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [{ daysOverdue: 30, balanceReceivable: 0 }],
+      payables: [{ daysOverdue: 30, balancePayable: 0 }],
+    });
+    assert.equal(o.receivable.count, 0);
+    assert.equal(o.payable.count, 0);
+  });
+
+  it("faixa sem título não aparece", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [{ daysOverdue: 95, balanceReceivable: 10 }],
+      payables: [],
+    });
+    assert.equal(o.receivable.buckets.length, 1);
+    assert.equal(o.receivable.buckets[0]!.key, "overdue90plus");
+  });
+
+  it("respeita os limites das faixas (7/8 e 90/91)", () => {
+    const o = buildTreasuryCaixaOverdue({
+      receivables: [
+        { daysOverdue: 7, balanceReceivable: 1 },
+        { daysOverdue: 8, balanceReceivable: 1 },
+        { daysOverdue: 90, balanceReceivable: 1 },
+        { daysOverdue: 91, balanceReceivable: 1 },
+      ],
+      payables: [],
+    });
+    assert.deepEqual(
+      o.receivable.buckets.map((b) => b.key),
+      ["overdue1to7", "overdue8to15", "overdue61to90", "overdue90plus"]
+    );
+  });
+
+  it("sem atrasados → zeros, sem NaN", () => {
+    const o = buildTreasuryCaixaOverdue({ receivables: [], payables: [] });
+    assert.equal(o.receivable.total, 0);
+    assert.equal(o.payable.total, 0);
+    assert.deepEqual(o.receivable.buckets, []);
   });
 });

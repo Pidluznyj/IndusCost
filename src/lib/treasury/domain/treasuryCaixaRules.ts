@@ -513,6 +513,101 @@ export function buildTreasuryCaixaRealizedDays(input: {
     .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
 }
 
+/**
+ * Passo 6 — atrasados: ESTOQUE, não fluxo.
+ *
+ * Título vencido e não liquidado não pertence a nenhum dia da linha do tempo.
+ * O motor canônico deliberadamente NÃO joga CR vencido sem promessa para "hoje"
+ * (ver docs/treasury/15-PROJECTION-AND-DOUBLE-COUNTING.md) — se jogasse, o saldo
+ * projetado subiria com dinheiro que não entrou e a data em que o caixa vira
+ * negativo viria tarde demais.
+ *
+ * Por isso o atrasado aparece numa faixa própria, ancorada no presente, e não
+ * espalhado nos dias. As faixas de aging são as canônicas do financeiro.
+ */
+export type TreasuryCaixaOverdueBucket = {
+  key: string;
+  label: string;
+  amount: number;
+  count: number;
+};
+
+export type TreasuryCaixaOverdueSide = {
+  total: number;
+  count: number;
+  buckets: TreasuryCaixaOverdueBucket[];
+};
+
+export type TreasuryCaixaOverdue = {
+  receivable: TreasuryCaixaOverdueSide;
+  payable: TreasuryCaixaOverdueSide;
+};
+
+/** Faixas de atraso — mesmas chaves/labels do dashboard financeiro. */
+export const TREASURY_CAIXA_OVERDUE_BUCKETS = [
+  { key: "overdue1to7", label: "1 a 7 dias", minDays: 1, maxDays: 7 },
+  { key: "overdue8to15", label: "8 a 15 dias", minDays: 8, maxDays: 15 },
+  { key: "overdue16to30", label: "16 a 30 dias", minDays: 16, maxDays: 30 },
+  { key: "overdue31to60", label: "31 a 60 dias", minDays: 31, maxDays: 60 },
+  { key: "overdue61to90", label: "61 a 90 dias", minDays: 61, maxDays: 90 },
+  { key: "overdue90plus", label: "Acima de 90 dias", minDays: 91, maxDays: null },
+] as const;
+
+function buildOverdueSide(
+  rows: readonly { daysOverdue: number; amount: number }[]
+): TreasuryCaixaOverdueSide {
+  const buckets: TreasuryCaixaOverdueBucket[] = TREASURY_CAIXA_OVERDUE_BUCKETS.map(
+    (b) => ({ key: b.key, label: b.label, amount: 0, count: 0 })
+  );
+  let total = 0;
+  let count = 0;
+
+  for (const row of rows) {
+    const days = Number(row.daysOverdue);
+    const amount = Number(row.amount);
+    // Só conta o que está vencido (>0 dia) e ainda tem saldo aberto.
+    if (!Number.isFinite(days) || days < 1) continue;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const index = TREASURY_CAIXA_OVERDUE_BUCKETS.findIndex(
+      (b) => days >= b.minDays && (b.maxDays == null || days <= b.maxDays)
+    );
+    if (index < 0) continue;
+    buckets[index]!.amount += amount;
+    buckets[index]!.count += 1;
+    total += amount;
+    count += 1;
+  }
+
+  return {
+    total: roundMoney(total),
+    count,
+    // Faixa sem título não vira selo vazio na tela.
+    buckets: buckets
+      .filter((b) => b.count > 0)
+      .map((b) => ({ ...b, amount: roundMoney(b.amount) })),
+  };
+}
+
+export function buildTreasuryCaixaOverdue(input: {
+  receivables: readonly { daysOverdue: number; balanceReceivable: number }[];
+  payables: readonly { daysOverdue: number; balancePayable: number }[];
+}): TreasuryCaixaOverdue {
+  return {
+    receivable: buildOverdueSide(
+      input.receivables.map((r) => ({
+        daysOverdue: r.daysOverdue,
+        amount: r.balanceReceivable,
+      }))
+    ),
+    payable: buildOverdueSide(
+      input.payables.map((p) => ({
+        daysOverdue: p.daysOverdue,
+        amount: p.balancePayable,
+      }))
+    ),
+  };
+}
+
 export type TreasuryCaixaBoardDto = {
   period: TreasuryCaixaPeriodInput;
   dueDateFrom: string;
