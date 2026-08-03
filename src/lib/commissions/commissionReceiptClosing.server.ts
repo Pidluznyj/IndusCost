@@ -370,49 +370,81 @@ export async function reprocessCommissionReceiptClosingApply(
   const preview = await loadReceiptClosingPreviewWithMaterialization(input);
   const calculationHash = buildReceiptClosingHashFromPreview(preview);
 
-  return db.$transaction(async (tx) => {
-    const existing = await tx.commissionMonthlyClosing.findFirst({
-      where: {
-        year: input.year,
-        month: input.month,
-        source: RECEIPT_CLOSING_SOURCE,
-        status: "CLOSED",
-      },
-      orderBy: { closedAt: "desc" },
+  try {
+    return await db.$transaction(async (tx) => {
+      const existing = await tx.commissionMonthlyClosing.findFirst({
+        where: {
+          year: input.year,
+          month: input.month,
+          source: RECEIPT_CLOSING_SOURCE,
+          status: "CLOSED",
+        },
+        orderBy: { closedAt: "desc" },
+      });
+      if (!existing) {
+        throw new ReceiptClosingValidationError(
+          "NO_CLOSED_CLOSING",
+          "Nenhum fechamento CLOSED encontrado para reprocessar."
+        );
+      }
+
+      // Rebaixa o fechamento atual para REPROCESSED ANTES de criar o novo.
+      // O índice único parcial (year, month, source) WHERE status='CLOSED' só
+      // admite um CLOSED por período — criar o novo antes de liberar o slot
+      // causava violação de constraint (P2002) e 500 no reprocessamento.
+      await tx.commissionMonthlyClosing.update({
+        where: { id: existing.id },
+        data: {
+          status: "REPROCESSED",
+          notes: appendReceiptClosingNote(
+            existing.notes,
+            formatReceiptClosingReprocessNote(input.userId, reason, "pending")
+          ),
+        },
+      });
+
+      const newClosing = await createClosingWithLines(tx, {
+        preview,
+        userId: input.userId,
+        notes: formatReceiptClosingReprocessNote(input.userId, reason, "pending"),
+        calculationHash,
+      });
+
+      // Agora que o novo CLOSED existe, vincula o antigo a ele.
+      await tx.commissionMonthlyClosing.update({
+        where: { id: existing.id },
+        data: {
+          supersededByClosingId: newClosing.closingId,
+          notes: appendReceiptClosingNote(
+            existing.notes,
+            formatReceiptClosingReprocessNote(input.userId, reason, newClosing.closingId)
+          ),
+        },
+      });
+
+      await tx.commissionMonthlyClosing.update({
+        where: { id: newClosing.closingId },
+        data: {
+          notes: formatReceiptClosingReprocessNote(input.userId, reason, newClosing.closingId),
+        },
+      });
+
+      return { ...newClosing, supersededClosingId: existing.id };
     });
-    if (!existing) {
+  } catch (error) {
+    // Reprocessamento concorrente do mesmo período: outro CLOSED foi criado
+    // entre a leitura e a escrita → constraint parcial. Erro amigável (não 500).
+    if (
+      error != null &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code: string }).code === "P2002"
+    ) {
       throw new ReceiptClosingValidationError(
-        "NO_CLOSED_CLOSING",
-        "Nenhum fechamento CLOSED encontrado para reprocessar."
+        "REPROCESS_CONFLICT",
+        "Não foi possível reprocessar: já existe outro fechamento CLOSED para o período (possível reprocessamento simultâneo). Atualize e tente novamente."
       );
     }
-
-    const newClosing = await createClosingWithLines(tx, {
-      preview,
-      userId: input.userId,
-      notes: formatReceiptClosingReprocessNote(input.userId, reason, "pending"),
-      calculationHash,
-    });
-
-    await tx.commissionMonthlyClosing.update({
-      where: { id: existing.id },
-      data: {
-        status: "REPROCESSED",
-        supersededByClosingId: newClosing.closingId,
-        notes: appendReceiptClosingNote(
-          existing.notes,
-          formatReceiptClosingReprocessNote(input.userId, reason, newClosing.closingId)
-        ),
-      },
-    });
-
-    await tx.commissionMonthlyClosing.update({
-      where: { id: newClosing.closingId },
-      data: {
-        notes: formatReceiptClosingReprocessNote(input.userId, reason, newClosing.closingId),
-      },
-    });
-
-    return { ...newClosing, supersededClosingId: existing.id };
-  });
+    throw error;
+  }
 }

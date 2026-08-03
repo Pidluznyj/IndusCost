@@ -139,6 +139,34 @@ function createMockDb() {
   const lines: Array<Record<string, unknown>> = [];
   let closingSeq = 0;
 
+  // Reproduz o índice único parcial do banco:
+  // UNIQUE (year, month, source) WHERE status = 'CLOSED'.
+  // Sem isso, o mock não pegava o bug de ordem no reprocessamento.
+  const assertClosedUnique = (candidate: {
+    id?: string;
+    year: number;
+    month: number;
+    source: string;
+    status: string;
+  }) => {
+    if (candidate.status !== "CLOSED") return;
+    for (const row of closings.values()) {
+      if (row.id === candidate.id) continue;
+      if (
+        row.status === "CLOSED" &&
+        row.year === candidate.year &&
+        row.month === candidate.month &&
+        row.source === candidate.source
+      ) {
+        const err = new Error(
+          "Unique constraint (year, month, source) WHERE status = CLOSED"
+        ) as Error & { code: string };
+        err.code = "P2002";
+        throw err;
+      }
+    }
+  };
+
   const db = {
     closings,
     lines,
@@ -178,6 +206,7 @@ function createMockDb() {
           closedAt: (data.closedAt as Date) ?? null,
           supersededByClosingId: null,
         };
+        assertClosedUnique(row);
         closings.set(id, row);
         return row;
       },
@@ -198,6 +227,7 @@ function createMockDb() {
               ? Number(data.totalReceivedAmount)
               : existing.totalReceivedAmount,
         } as MockClosing;
+        assertClosedUnique(updated);
         closings.set(where.id, updated);
         return updated;
       },
@@ -618,11 +648,21 @@ describe("commissionReceiptClosing", () => {
     );
 
     const loadCommissionReceiptPreview = async () => preview;
+    // Espelha a ordem de reprocessCommissionReceiptClosingApply: rebaixa o
+    // fechamento atual para REPROCESSED ANTES de criar o novo CLOSED, senão o
+    // índice único parcial (year,month,source WHERE status=CLOSED) é violado.
     const result = await (async () => {
       const calculationHash = buildReceiptClosingHashFromPreview(preview);
       return db.$transaction(async (tx) => {
         const existing = await tx.commissionMonthlyClosing.findFirst({
           where: { year: 2026, month: 6, source: "RECEIPT_BASED", status: "CLOSED" },
+        });
+        await tx.commissionMonthlyClosing.update({
+          where: { id: existing!.id },
+          data: {
+            status: "REPROCESSED",
+            notes: appendReceiptClosingNote(existing!.notes, "reprocessando"),
+          },
         });
         const newClosing = await tx.commissionMonthlyClosing.create({
           data: {
@@ -646,7 +686,6 @@ describe("commissionReceiptClosing", () => {
         await tx.commissionMonthlyClosing.update({
           where: { id: existing!.id },
           data: {
-            status: "REPROCESSED",
             supersededByClosingId: newClosing.id,
             notes: appendReceiptClosingNote(existing!.notes, "reprocessado"),
           },
@@ -660,8 +699,60 @@ describe("commissionReceiptClosing", () => {
 
     assert.equal(db.closings.get(result.oldId)?.status, "REPROCESSED");
     assert.equal(db.closings.get(result.newClosingId)?.status, "CLOSED");
+    assert.equal(db.closings.get(result.oldId)?.supersededByClosingId, result.newClosingId);
     assert.equal(db.lines.length, 2);
     void loadCommissionReceiptPreview;
+  });
+
+  it("reprocess: criar novo CLOSED antes de rebaixar o antigo viola a constraint (regressão do 500)", async () => {
+    const db = createMockDb();
+    await db.commissionMonthlyClosing.create({
+      data: {
+        year: 2026,
+        month: 6,
+        status: "CLOSED",
+        source: "RECEIPT_BASED",
+        totalReceivedAmount: 1000,
+        totalCommissionableBase: 1000,
+        totalExpectedCommission: 20,
+        totalReleasedCommission: 20,
+        totalExcludedAmount: 0,
+        totalExceptionAmount: 0,
+        lineCount: 1,
+        calculationHash: "old-hash",
+        createdBy: "user-1",
+        closedBy: "user-1",
+        closedAt: new Date(),
+      },
+    });
+
+    // Ordem ERRADA (a que causava o 500): criar o segundo CLOSED com o
+    // primeiro ainda CLOSED → P2002.
+    await assert.rejects(
+      db.commissionMonthlyClosing.create({
+        data: {
+          year: 2026,
+          month: 6,
+          status: "CLOSED",
+          source: "RECEIPT_BASED",
+          totalReceivedAmount: 1000,
+          totalCommissionableBase: 1000,
+          totalExpectedCommission: 30,
+          totalReleasedCommission: 30,
+          totalExcludedAmount: 0,
+          totalExceptionAmount: 0,
+          lineCount: 1,
+          calculationHash: "new-hash",
+          createdBy: "user-2",
+          closedBy: "user-2",
+          closedAt: new Date(),
+        },
+      }),
+      (err: unknown) =>
+        err != null &&
+        typeof err === "object" &&
+        (err as { code?: string }).code === "P2002"
+    );
   });
 
   it("cancelamento marca CANCELLED e preserva linhas", async () => {
