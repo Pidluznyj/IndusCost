@@ -206,6 +206,97 @@ export function buildTreasuryCaixaDayFlow(input: {
   };
 }
 
+/**
+ * Passo 4 — linha do tempo: um dia por linha, com o "hoje" separando o que já
+ * aconteceu do que é previsão.
+ *
+ * Regra central (pedido do negócio): dia passado mostra o que foi REALMENTE
+ * pago/recebido (`realized*`); dia futuro mostra PREVISÃO (`planned*`). O dia de
+ * hoje usa realizado, para bater com o bloco "Movimento de hoje" do Passo 3.
+ *
+ * O saldo de fechamento vem sempre do motor (`closingBalance`) — não é recalculado
+ * aqui, senão a linha do tempo divergiria da projeção oficial.
+ */
+export type TreasuryCaixaTimelineKind = "REALIZED" | "TODAY" | "FORECAST";
+
+export type TreasuryCaixaTimelineDayInput = {
+  civilDate: string;
+  openingBalance: number;
+  plannedInflows: number;
+  plannedOutflows: number;
+  realizedInflows: number;
+  realizedOutflows: number;
+  closingBalance: number | null;
+};
+
+export type TreasuryCaixaTimelineRow = {
+  civilDate: string;
+  kind: TreasuryCaixaTimelineKind;
+  opening: number;
+  inflows: number;
+  outflows: number;
+  closing: number | null;
+  /** Fechou negativo neste dia. */
+  negative: boolean;
+};
+
+export type TreasuryCaixaTimeline = {
+  todayCivilDate: string;
+  rows: TreasuryCaixaTimelineRow[];
+  realizedCount: number;
+  forecastCount: number;
+  /** Primeiro dia com saldo negativo (prévia do passo 7); null se nunca. */
+  firstNegativeDate: string | null;
+};
+
+export function classifyTreasuryCaixaTimelineDay(
+  civilDate: string,
+  todayCivilDate: string
+): TreasuryCaixaTimelineKind {
+  if (civilDate < todayCivilDate) return "REALIZED";
+  if (civilDate > todayCivilDate) return "FORECAST";
+  return "TODAY";
+}
+
+export function buildTreasuryCaixaTimeline(input: {
+  todayCivilDate: string;
+  days: readonly TreasuryCaixaTimelineDayInput[];
+}): TreasuryCaixaTimeline {
+  const rows: TreasuryCaixaTimelineRow[] = [...input.days]
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate))
+    .map((d) => {
+      const kind = classifyTreasuryCaixaTimelineDay(
+        d.civilDate,
+        input.todayCivilDate
+      );
+      // Futuro = previsão; passado e hoje = o que realmente aconteceu.
+      const useForecast = kind === "FORECAST";
+      const closing =
+        d.closingBalance != null && Number.isFinite(d.closingBalance)
+          ? roundMoney(d.closingBalance)
+          : null;
+      return {
+        civilDate: d.civilDate,
+        kind,
+        opening: roundMoney(d.openingBalance),
+        inflows: roundMoney(useForecast ? d.plannedInflows : d.realizedInflows),
+        outflows: roundMoney(
+          useForecast ? d.plannedOutflows : d.realizedOutflows
+        ),
+        closing,
+        negative: closing != null && closing < 0,
+      };
+    });
+
+  return {
+    todayCivilDate: input.todayCivilDate,
+    rows,
+    realizedCount: rows.filter((r) => r.kind === "REALIZED").length,
+    forecastCount: rows.filter((r) => r.kind === "FORECAST").length,
+    firstNegativeDate: rows.find((r) => r.negative)?.civilDate ?? null,
+  };
+}
+
 export type TreasuryCaixaBoardDto = {
   period: TreasuryCaixaPeriodInput;
   dueDateFrom: string;

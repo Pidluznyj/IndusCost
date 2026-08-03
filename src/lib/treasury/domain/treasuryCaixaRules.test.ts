@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import {
   buildTreasuryCaixaDayFlow,
+  buildTreasuryCaixaTimeline,
+  classifyTreasuryCaixaTimelineDay,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
   TreasuryCaixaFilterError,
@@ -231,5 +233,94 @@ describe("treasuryCaixaRules — buildTreasuryCaixaDayFlow", () => {
     assert.equal(flow.outflows, 0);
     assert.equal(flow.divergence, null);
     assert.equal(flow.accountCount, 0);
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaTimeline", () => {
+  const TODAY = "2026-08-03";
+
+  function day(
+    civilDate: string,
+    over: Partial<
+      Parameters<typeof buildTreasuryCaixaTimeline>[0]["days"][number]
+    > = {}
+  ) {
+    return {
+      civilDate,
+      openingBalance: 1000,
+      plannedInflows: 500,
+      plannedOutflows: 200,
+      realizedInflows: 80,
+      realizedOutflows: 30,
+      closingBalance: 1050,
+      ...over,
+    };
+  }
+
+  it("passado usa o realizado; futuro usa a previsão", () => {
+    const tl = buildTreasuryCaixaTimeline({
+      todayCivilDate: TODAY,
+      days: [day("2026-08-01"), day("2026-08-05")],
+    });
+    const [past, future] = tl.rows;
+    assert.equal(past!.kind, "REALIZED");
+    assert.equal(past!.inflows, 80);
+    assert.equal(past!.outflows, 30);
+    assert.equal(future!.kind, "FORECAST");
+    assert.equal(future!.inflows, 500);
+    assert.equal(future!.outflows, 200);
+  });
+
+  it("hoje usa realizado, para bater com o Movimento de hoje", () => {
+    const tl = buildTreasuryCaixaTimeline({
+      todayCivilDate: TODAY,
+      days: [day(TODAY)],
+    });
+    assert.equal(tl.rows[0]!.kind, "TODAY");
+    assert.equal(tl.rows[0]!.inflows, 80);
+    assert.equal(tl.rows[0]!.outflows, 30);
+  });
+
+  it("ordena por data mesmo recebendo fora de ordem", () => {
+    const tl = buildTreasuryCaixaTimeline({
+      todayCivilDate: TODAY,
+      days: [day("2026-08-05"), day("2026-08-01"), day(TODAY)],
+    });
+    assert.deepEqual(
+      tl.rows.map((r) => r.civilDate),
+      ["2026-08-01", TODAY, "2026-08-05"]
+    );
+    assert.equal(tl.realizedCount, 1);
+    assert.equal(tl.forecastCount, 1);
+  });
+
+  it("marca o primeiro dia negativo", () => {
+    const tl = buildTreasuryCaixaTimeline({
+      todayCivilDate: TODAY,
+      days: [
+        day("2026-08-04", { closingBalance: 500 }),
+        day("2026-08-05", { closingBalance: -120 }),
+        day("2026-08-06", { closingBalance: -900 }),
+      ],
+    });
+    assert.equal(tl.firstNegativeDate, "2026-08-05");
+    assert.equal(tl.rows[0]!.negative, false);
+    assert.equal(tl.rows[1]!.negative, true);
+  });
+
+  it("fechamento nulo não vira zero nem conta como negativo", () => {
+    const tl = buildTreasuryCaixaTimeline({
+      todayCivilDate: TODAY,
+      days: [day("2026-08-05", { closingBalance: null })],
+    });
+    assert.equal(tl.rows[0]!.closing, null);
+    assert.equal(tl.rows[0]!.negative, false);
+    assert.equal(tl.firstNegativeDate, null);
+  });
+
+  it("classifica as três zonas em relação a hoje", () => {
+    assert.equal(classifyTreasuryCaixaTimelineDay("2026-08-02", TODAY), "REALIZED");
+    assert.equal(classifyTreasuryCaixaTimelineDay(TODAY, TODAY), "TODAY");
+    assert.equal(classifyTreasuryCaixaTimelineDay("2026-08-04", TODAY), "FORECAST");
   });
 });

@@ -19,13 +19,17 @@ import {
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosingApi.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
+import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import {
   buildTreasuryCaixaDayFlow,
+  buildTreasuryCaixaTimeline,
   type TreasuryCaixaDayFlow,
+  type TreasuryCaixaTimeline as TreasuryCaixaTimelineData,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
+import { TreasuryCaixaTimeline } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import {
@@ -108,6 +112,10 @@ export function TreasuryCaixaPage() {
   const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [todayFlow, setTodayFlow] = useState<TreasuryCaixaDayFlow | null>(null);
+  const [timeline, setTimeline] = useState<TreasuryCaixaTimelineData | null>(null);
+  const [timelineUnavailable, setTimelineUnavailable] = useState<string | null>(
+    null
+  );
   const accountsAbortRef = useRef<AbortController | null>(null);
 
   /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
@@ -217,13 +225,63 @@ export function TreasuryCaixaPage() {
         day: day === "" ? undefined : day,
       });
       setData(payload);
+
+      // Passo 4 — linha do tempo do mesmo período, pela agenda canônica.
+      // A agenda exige empresa; sem companyCode configurado ela não carrega.
+      const companyCode = accounts
+        .map((a) => a.companyCode?.trim())
+        .find((c) => c);
+      if (!companyCode) {
+        setTimeline(null);
+        setTimelineUnavailable(
+          "Para ver a linha do tempo, defina a empresa (companyCode) em pelo menos uma conta ativa, em Tesouraria > Contas."
+        );
+      } else {
+        try {
+          const agenda = await fetchTreasuryAgenda({
+            companyCode,
+            baseDate: payload.dueDateFrom,
+            endDate: payload.dueDateTo,
+            scenario: "PROBABLE",
+            accountIds: null,
+            consolidated: true,
+            includeDayDetail: false,
+          });
+          setTimeline(
+            buildTreasuryCaixaTimeline({
+              todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
+              days: (agenda.days ?? []).map((d) => ({
+                civilDate: d.civilDate,
+                openingBalance: treasuryMoneyToNumber(d.openingBalance),
+                plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
+                plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
+                realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
+                realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
+                closingBalance:
+                  d.closingBalance == null
+                    ? null
+                    : treasuryMoneyToNumber(d.closingBalance),
+              })),
+            })
+          );
+          setTimelineUnavailable(null);
+        } catch (agendaErr) {
+          setTimeline(null);
+          setTimelineUnavailable(
+            agendaErr instanceof Error
+              ? `Linha do tempo indisponível: ${agendaErr.message}`
+              : "Linha do tempo indisponível para este período."
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao buscar o caixa.");
       setData(null);
+      setTimeline(null);
     } finally {
       setLoading(false);
     }
-  }, [year, month, day]);
+  }, [year, month, day, accounts]);
 
   function handleMonthChange(value: string) {
     setMonth(value === "" ? "" : Number(value));
@@ -320,6 +378,14 @@ export function TreasuryCaixaPage() {
         />
 
         <TreasuryCaixaTodayFlow flow={todayFlow} loading={accountsLoading} />
+
+        {data || timelineUnavailable ? (
+          <TreasuryCaixaTimeline
+            timeline={timeline}
+            loading={loading}
+            unavailableReason={timelineUnavailable}
+          />
+        ) : null}
 
         {error ? (
           <div
