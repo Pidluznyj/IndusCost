@@ -4,6 +4,8 @@ import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import {
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyTimeline,
+  buildTreasuryCaixaRealizedDays,
+  buildTreasuryCaixaUnifiedTimeline,
   buildTreasuryCaixaTimeline,
   classifyTreasuryCaixaTimelineDay,
   computeTreasuryCaixaTotals,
@@ -433,5 +435,226 @@ describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyTimeline", () => {
 
   it("sem dias → nenhum mês", () => {
     assert.deepEqual(buildTreasuryCaixaMonthlyTimeline([]), []);
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
+  it("agrupa por data de liquidação, não por vencimento", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [
+        { settlementDate: "2026-07-15", amountReceived: 1000 },
+        { settlementDate: "2026-07-15", amountReceived: 500 },
+        { settlementDate: "2026-07-16", amountReceived: 200 },
+      ],
+      payables: [{ paymentDate: "2026-07-15", amountPaid: 300 }],
+    });
+    assert.equal(days.length, 2);
+    assert.equal(days[0]!.civilDate, "2026-07-15");
+    assert.equal(days[0]!.inflows, 1500);
+    assert.equal(days[0]!.outflows, 300);
+    assert.equal(days[0]!.receivableCount, 2);
+    assert.equal(days[0]!.payableCount, 1);
+    assert.equal(days[1]!.inflows, 200);
+  });
+
+  it("ignora título sem data de liquidação (não foi pago)", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [{ settlementDate: null, amountReceived: 900 }],
+      payables: [{ paymentDate: null, amountPaid: 400 }],
+    });
+    assert.deepEqual(days, []);
+  });
+
+  it("ignora valor zero ou negativo", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [
+        { settlementDate: "2026-07-15", amountReceived: 0 },
+        { settlementDate: "2026-07-15", amountReceived: -50 },
+      ],
+      payables: [],
+    });
+    assert.deepEqual(days, []);
+  });
+
+  it("aceita timestamp e recorta para o dia civil", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [
+        { settlementDate: "2026-07-15T13:45:00.000Z", amountReceived: 100 },
+      ],
+      payables: [],
+    });
+    assert.equal(days[0]!.civilDate, "2026-07-15");
+  });
+
+  it("ordena cronologicamente", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [
+        { settlementDate: "2026-07-20", amountReceived: 1 },
+        { settlementDate: "2026-07-10", amountReceived: 1 },
+      ],
+      payables: [{ paymentDate: "2026-07-15", amountPaid: 1 }],
+    });
+    assert.deepEqual(
+      days.map((d) => d.civilDate),
+      ["2026-07-10", "2026-07-15", "2026-07-20"]
+    );
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
+  const TODAY = "2026-08-03";
+
+  it("junta passado (fato), hoje (fato) e futuro (previsão) numa linha só", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [
+        {
+          civilDate: "2026-08-01",
+          inflows: 500,
+          outflows: 200,
+          receivableCount: 1,
+          payableCount: 1,
+        },
+      ],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 1000,
+        inflows: 300,
+        outflows: 100,
+        closingCalculated: 1200,
+        closingInformed: 1200,
+        divergence: 0,
+        accountCount: 1,
+        pendingClosingCount: 0,
+      },
+      forecastDays: [
+        {
+          civilDate: "2026-08-05",
+          openingBalance: 1200,
+          plannedInflows: 700,
+          plannedOutflows: 900,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          closingBalance: 1000,
+        },
+      ],
+    });
+    assert.deepEqual(
+      tl.rows.map((r) => r.kind),
+      ["REALIZED", "TODAY", "FORECAST"]
+    );
+    assert.equal(tl.realizedCount, 1);
+    assert.equal(tl.forecastCount, 1);
+    // Passado: entrou/saiu são fato; saldo não foi informado → null.
+    assert.equal(tl.rows[0]!.inflows, 500);
+    assert.equal(tl.rows[0]!.opening, null);
+    assert.equal(tl.rows[0]!.closing, null);
+    // Futuro usa a previsão, não o realizado.
+    assert.equal(tl.rows[2]!.inflows, 700);
+  });
+
+  it("dia realizado que caia hoje ou no futuro é descartado (evita duplicar)", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [
+        {
+          civilDate: TODAY,
+          inflows: 999,
+          outflows: 0,
+          receivableCount: 1,
+          payableCount: 0,
+        },
+        {
+          civilDate: "2026-08-09",
+          inflows: 888,
+          outflows: 0,
+          receivableCount: 1,
+          payableCount: 0,
+        },
+      ],
+      todayFlow: null,
+      forecastDays: [],
+    });
+    assert.deepEqual(tl.rows, []);
+  });
+
+  it("dia de previsão que caia hoje ou no passado é descartado", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: null,
+      forecastDays: [
+        {
+          civilDate: "2026-08-01",
+          openingBalance: 1,
+          plannedInflows: 1,
+          plannedOutflows: 1,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          closingBalance: 1,
+        },
+      ],
+    });
+    assert.deepEqual(tl.rows, []);
+  });
+
+  it("hoje usa o fechamento informado quando existe", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 100,
+        inflows: 0,
+        outflows: 0,
+        closingCalculated: 100,
+        closingInformed: 95,
+        divergence: -5,
+        accountCount: 1,
+        pendingClosingCount: 0,
+      },
+      forecastDays: [],
+    });
+    assert.equal(tl.rows[0]!.closing, 95);
+  });
+
+  it("marca o primeiro dia negativo do futuro", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: null,
+      forecastDays: [
+        {
+          civilDate: "2026-08-04",
+          openingBalance: 100,
+          plannedInflows: 0,
+          plannedOutflows: 0,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          closingBalance: 50,
+        },
+        {
+          civilDate: "2026-08-05",
+          openingBalance: 50,
+          plannedInflows: 0,
+          plannedOutflows: 0,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          closingBalance: -20,
+        },
+      ],
+    });
+    assert.equal(tl.firstNegativeDate, "2026-08-05");
+  });
+
+  it("tudo vazio → linha do tempo vazia, sem erro", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: null,
+      forecastDays: [],
+    });
+    assert.deepEqual(tl.rows, []);
+    assert.equal(tl.firstNegativeDate, null);
   });
 });
