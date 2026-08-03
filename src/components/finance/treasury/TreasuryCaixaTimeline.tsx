@@ -172,9 +172,10 @@ export function TreasuryCaixaTimeline({
         </div>
       </div>
 
+      {/* Aviso sobre o FUTURO — não substitui a tabela: passado e hoje são fato. */}
       {unavailableReason ? (
         <div
-          className="rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-2 text-[11px] text-[#92400E]"
+          className="mb-2 rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-2 text-[11px] text-[#92400E]"
           data-testid="caixa-timeline-unavailable"
         >
           <p>{unavailableReason}</p>
@@ -190,7 +191,9 @@ export function TreasuryCaixaTimeline({
             </button>
           ) : null}
         </div>
-      ) : loading ? (
+      ) : null}
+
+      {loading ? (
         <p className="py-3 text-xs text-muted-foreground">Carregando…</p>
       ) : !timeline || timeline.rows.length === 0 ? (
         <p className="py-3 text-xs text-muted-foreground">

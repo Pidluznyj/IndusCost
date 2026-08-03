@@ -518,6 +518,8 @@ export type TreasuryCaixaBoardDto = {
   dueDateFrom: string;
   dueDateTo: string;
   totals: TreasuryCaixaTotals;
+  /** Passado do período: entrou/saiu por data de liquidação (só dias com movimento). */
+  realizedDays: TreasuryCaixaRealizedDay[];
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
 };

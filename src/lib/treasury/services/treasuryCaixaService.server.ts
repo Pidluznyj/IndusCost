@@ -15,7 +15,9 @@ import { buildFinanceAccountsPayableRulesResult } from "@/src/lib/financeAccount
 import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
+import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import {
+  buildTreasuryCaixaRealizedDays,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
   type TreasuryCaixaBoardDto,
@@ -87,11 +89,52 @@ export function createTreasuryCaixaService(input: {
         payables: apResult.gridRows,
       });
 
+      // Passado da linha do tempo: agrupa por data de LIQUIDAÇÃO, não por
+      // vencimento — um título vencido antes e pago dentro do período é caixa
+      // do período. Por isso a carga aqui abre a janela de vencimento para trás
+      // (início do ano anterior) em vez de usar o recorte do filtro; sem isso,
+      // pagamento de título atrasado sumiria do dia em que o dinheiro andou.
+      // A janela é limitada de propósito: cobre atraso realista sem varrer a
+      // tabela inteira.
+      const settlementLoadFilters = {
+        status: "all",
+        dueDateFrom: civilDateToLocalDate(`${period.year - 1}-01-01`),
+        dueDateTo,
+      } as const;
+      const [arSettled, apSettled] = await Promise.all([
+        loadFinanceArManagementRowsFromPrisma(
+          prisma,
+          settlementLoadFilters,
+          referenceDate
+        ),
+        loadFinanceApManagementRowsFromPrisma(
+          prisma,
+          settlementLoadFilters,
+          referenceDate
+        ),
+      ]);
+      const periodFrom = toIsoDate(dueDateFrom);
+      const periodTo = toIsoDate(dueDateTo);
+      const realizedDays = buildTreasuryCaixaRealizedDays({
+        receivables: buildFinanceAccountsReceivableRulesResult(arSettled.rows, {
+          referenceDate,
+          syncCutoff: arSettled.syncCutoff,
+          filters: settlementLoadFilters,
+        }).gridRows,
+        payables: buildFinanceAccountsPayableRulesResult(apSettled.rows, {
+          referenceDate,
+          syncCutoff: apSettled.syncCutoff,
+          filters: settlementLoadFilters,
+        }).gridRows,
+        // Só os dias do período filtrado entram na linha do tempo.
+      }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
+
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
         dueDateTo: toIsoDate(dueDateTo),
         totals,
+        realizedDays,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
       };

@@ -21,9 +21,10 @@ import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosi
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjectionCalculateApi.js";
+import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   buildTreasuryCaixaDayFlow,
-  buildTreasuryCaixaTimeline,
+  buildTreasuryCaixaUnifiedTimeline,
   type TreasuryCaixaDayFlow,
   type TreasuryCaixaTimeline as TreasuryCaixaTimelineData,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
@@ -56,6 +57,35 @@ const MONTH_OPTIONS = [
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
+}
+
+/**
+ * Passado (do board, por data de liquidação) + hoje (fechamento do dia) +
+ * futuro (agenda). Passar `agendaDays` vazio produz a linha do tempo só com o
+ * que é fato — é o caminho usado quando não há projeção materializada.
+ */
+function buildTimelineFromSources(
+  board: TreasuryCaixaPayload,
+  todayFlow: TreasuryCaixaDayFlow | null,
+  agendaDays: readonly TreasuryAgendaDayDto[]
+): TreasuryCaixaTimelineData {
+  return buildTreasuryCaixaUnifiedTimeline({
+    todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
+    realizedDays: board.realizedDays ?? [],
+    todayFlow,
+    forecastDays: agendaDays.map((d) => ({
+      civilDate: d.civilDate,
+      openingBalance: treasuryMoneyToNumber(d.openingBalance),
+      plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
+      plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
+      realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
+      realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
+      closingBalance:
+        d.closingBalance == null
+          ? null
+          : treasuryMoneyToNumber(d.closingBalance),
+    })),
+  });
 }
 
 function formatMoney(value: number): string {
@@ -240,9 +270,11 @@ export function TreasuryCaixaPage() {
         .map((a) => a.companyCode?.trim())
         .find((c) => c);
       if (!companyCode) {
-        setTimeline(null);
+        // Sem empresa não há projeção — mas passado e hoje seguem válidos.
+        setTimeline(buildTimelineFromSources(payload, todayFlow, []));
+        setPendingProjection(null);
         setTimelineUnavailable(
-          "Para ver a linha do tempo, defina a empresa (companyCode) em pelo menos uma conta ativa, em Tesouraria > Contas."
+          "O futuro não aparece: defina a empresa (companyCode) em pelo menos uma conta ativa, em Tesouraria > Contas. Passado e hoje abaixo não dependem disso."
         );
       } else {
         try {
@@ -256,52 +288,39 @@ export function TreasuryCaixaPage() {
             includeDayDetail: false,
           });
           const days = agenda.days ?? [];
+          // Passado e hoje são fato e não dependem de projeção. A projeção só
+          // acrescenta o futuro — por isso a linha do tempo é montada sempre, e
+          // a ausência de projeção vira aviso, não tela vazia.
+          setTimeline(
+            buildTimelineFromSources(payload, todayFlow, days)
+          );
           // A agenda lê uma projeção MATERIALIZADA. Sem run gravado ela devolve
-          // days: [] com runId null — estado que precisa ser explicado, não
-          // exibido como "período vazio".
+          // days: [] com runId null — estado que precisa ser explicado.
           if (agenda.runId == null) {
-            setTimeline(null);
             setPendingProjection({
               companyCode,
               baseDate: payload.dueDateFrom,
               endDate: payload.dueDateTo,
             });
             setTimelineUnavailable(
-              "A projeção deste período ainda não foi gerada. A linha do tempo lê uma projeção calculada e gravada — clique em Gerar projeção para criá-la."
+              "O futuro ainda não aparece: a projeção deste período não foi gerada. Passado e hoje abaixo são fatos e não dependem dela."
             );
           } else if (days.length === 0) {
-            setTimeline(null);
             setPendingProjection(null);
             setTimelineUnavailable(
-              "A projeção existe, mas não cobre este período. Projeções são geradas a partir de uma data-base para frente — períodos anteriores a ela não aparecem."
+              "A projeção existe, mas não cobre este período — ela é gerada de uma data-base para frente. Passado e hoje abaixo não dependem dela."
             );
           } else {
-            setTimeline(
-              buildTreasuryCaixaTimeline({
-                todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
-                days: days.map((d) => ({
-                  civilDate: d.civilDate,
-                  openingBalance: treasuryMoneyToNumber(d.openingBalance),
-                  plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
-                  plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
-                  realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
-                  realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
-                  closingBalance:
-                    d.closingBalance == null
-                      ? null
-                      : treasuryMoneyToNumber(d.closingBalance),
-                })),
-              })
-            );
             setPendingProjection(null);
             setTimelineUnavailable(null);
           }
         } catch (agendaErr) {
-          setTimeline(null);
+          // Falhou a projeção, mas passado e hoje continuam válidos.
+          setTimeline(buildTimelineFromSources(payload, todayFlow, []));
           setTimelineUnavailable(
             agendaErr instanceof Error
-              ? `Linha do tempo indisponível: ${agendaErr.message}`
-              : "Linha do tempo indisponível para este período."
+              ? `Futuro indisponível: ${agendaErr.message}`
+              : "Futuro indisponível para este período."
           );
         }
       }
