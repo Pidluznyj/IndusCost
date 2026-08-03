@@ -8,7 +8,10 @@ import type {
   TreasuryGuidedDailyOpeningSituation,
   TreasuryGuidedDailyOpeningWorkspaceDto,
 } from "../contracts/treasuryDto.js";
-import type { TreasuryCivilDate } from "../contracts/treasuryCivilDate.js";
+import {
+  parseTreasuryCivilDate,
+  type TreasuryCivilDate,
+} from "../contracts/treasuryCivilDate.js";
 import {
   TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES,
   type TreasuryDailyOpeningDiffJustificationCode,
@@ -312,7 +315,7 @@ export function planTreasuryGuidedDailyOpeningSaveItem(input: {
   if (!current && input.seed.currentOpening) {
     current = {
       accountId: input.seed.accountId,
-      civilDate: input.civilDate as any,
+      civilDate: parseTreasuryCivilDate(input.civilDate),
       status: "OPEN",
       openingBalance: {
         amount: input.seed.currentOpening.amount,

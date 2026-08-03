@@ -190,6 +190,42 @@ describe("treasuryGuidedDailyOpeningRules", () => {
     );
   });
 
+  it("concorrência é detectada mesmo sem currentState explícito — reconstrói de seed.currentOpening", () => {
+    // Reproduz o caso real: o serviço chama sem `currentState` (ver
+    // treasuryGuidedDailyOpeningService.server.ts), só com `seed.currentOpening`.
+    // Sem reconstruir `current` a partir do seed, a checagem de versão via
+    // planTreasuryDailyOpeningBalance nunca via um estado existente e deixava
+    // passar uma atualização com expectedVersion desatualizado.
+    const withHistory = seed({
+      accountId: "acc-4",
+      previousClosedPosition: {
+        closingId: "c4",
+        civilDate: "2026-07-27",
+        observedBalance: "10.00",
+      },
+      currentOpening: { amount: "10.00", version: 1 },
+    });
+
+    assert.throws(
+      () =>
+        planTreasuryGuidedDailyOpeningSaveItem({
+          seed: withHistory,
+          civilDate: CIVIL,
+          item: {
+            accountId: "acc-4",
+            expectedVersion: 0,
+            amount: "11.00",
+            justificationCode: "PREVIOUS_BALANCE_INCORRECT",
+          },
+          actorUserId: "u4",
+          recordedAt: SERVER_NOW,
+          // Sem currentState — exatamente como o serviço chama em produção.
+        }),
+      (err: unknown) =>
+        err instanceof TreasuryDomainError && err.code === "CONFLICT"
+    );
+  });
+
   it("timezone civil date permanece YYYY-MM-DD na chave", () => {
     const planned = planTreasuryGuidedDailyOpeningSaveItem({
       seed: seed({

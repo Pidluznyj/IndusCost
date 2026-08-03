@@ -384,12 +384,11 @@ export function TreasuryCaixaTimeline({
             {mode === "month" ? " Clique num mês para ver os dias." : ""}
           </p>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            <strong>&quot;Começou&quot; e &quot;Terminou&quot; em branco</strong>{" "}
-            nos dias passados significa que ninguém informou o saldo do banco
-            naquele dia. Não é erro: preencher esse valor por cálculo assumiria
-            que todo movimento tem título por trás — e é justamente isso que as
-            divergências revelam não ser verdade. Informe o saldo em Contas para
-            preencher.
+            <strong>&quot;Começou&quot; e &quot;Terminou&quot;</strong> nos dias
+            passados são <strong>calculados</strong>: partem de R$ 0,00 em
+            01/01/2026 e acumulam entrada/saída dia a dia — não são o saldo real
+            do banco. Ficam em branco só antes de 01/01/2026, onde não há como
+            saber quanto tinha em caixa.
           </p>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
             O dinheiro conta no dia em que <strong>andou</strong>: contas a

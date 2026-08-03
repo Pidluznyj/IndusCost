@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import type { TreasuryCaixaTimelineRow } from "./treasuryCaixaRules.js";
 import {
+  applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyTimeline,
   buildTreasuryCaixaOverdue,
@@ -413,6 +414,93 @@ describe("treasuryCaixaRules — buildTreasuryCaixaRealizedDays", () => {
   });
 });
 
+describe("treasuryCaixaRules — applyTreasuryCaixaRunningBalance", () => {
+  it("acumula a partir de zero na gênese (01/01/2026)", () => {
+    const out = applyTreasuryCaixaRunningBalance([
+      {
+        civilDate: "2026-01-02",
+        inflows: 500,
+        outflows: 200,
+        receivableCount: 1,
+        payableCount: 1,
+        opening: null,
+        closing: null,
+      },
+      {
+        civilDate: "2026-01-05",
+        inflows: 100,
+        outflows: 700,
+        receivableCount: 1,
+        payableCount: 1,
+        opening: null,
+        closing: null,
+      },
+    ]);
+    assert.equal(out[0]!.opening, 0);
+    assert.equal(out[0]!.closing, 300);
+    assert.equal(out[1]!.opening, 300);
+    assert.equal(out[1]!.closing, -300);
+  });
+
+  it("dia antes da gênese fica null — não há premissa de saldo ali", () => {
+    const out = applyTreasuryCaixaRunningBalance([
+      {
+        civilDate: "2025-12-20",
+        inflows: 1000,
+        outflows: 0,
+        receivableCount: 1,
+        payableCount: 0,
+        opening: null,
+        closing: null,
+      },
+      {
+        civilDate: "2026-01-01",
+        inflows: 50,
+        outflows: 0,
+        receivableCount: 1,
+        payableCount: 0,
+        opening: null,
+        closing: null,
+      },
+    ]);
+    assert.equal(out[0]!.opening, null);
+    assert.equal(out[0]!.closing, null);
+    // A gênese em si já acumula (zero é o saldo DE ENTRADA do dia 01/01).
+    assert.equal(out[1]!.opening, 0);
+    assert.equal(out[1]!.closing, 50);
+  });
+
+  it("acumula na ordem cronológica independente da ordem de entrada", () => {
+    const out = applyTreasuryCaixaRunningBalance([
+      {
+        civilDate: "2026-03-01",
+        inflows: 0,
+        outflows: 100,
+        receivableCount: 0,
+        payableCount: 1,
+        opening: null,
+        closing: null,
+      },
+      {
+        civilDate: "2026-01-10",
+        inflows: 900,
+        outflows: 0,
+        receivableCount: 1,
+        payableCount: 0,
+        opening: null,
+        closing: null,
+      },
+    ]);
+    const jan = out.find((d) => d.civilDate === "2026-01-10")!;
+    const mar = out.find((d) => d.civilDate === "2026-03-01")!;
+    assert.equal(jan.opening, 0);
+    assert.equal(jan.closing, 900);
+    // Março continua a cadeia de janeiro mesmo sem dias intermediários.
+    assert.equal(mar.opening, 900);
+    assert.equal(mar.closing, 800);
+  });
+});
+
 describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
   const TODAY = "2026-08-03";
 
@@ -426,6 +514,9 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
           outflows: 200,
           receivableCount: 1,
           payableCount: 1,
+          // Já vem acumulado pelo chamador (applyTreasuryCaixaRunningBalance).
+          opening: 1000,
+          closing: 1300,
         },
       ],
       todayFlow: {
@@ -455,10 +546,10 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
     );
     assert.equal(tl.realizedCount, 1);
     assert.equal(tl.forecastCount, 1);
-    // Passado: entrou/saiu são fato; saldo não foi informado → null.
+    // Passado: entrou/saiu são fato; saldo é o acumulado desde a gênese.
     assert.equal(tl.rows[0]!.inflows, 500);
-    assert.equal(tl.rows[0]!.opening, null);
-    assert.equal(tl.rows[0]!.closing, null);
+    assert.equal(tl.rows[0]!.opening, 1000);
+    assert.equal(tl.rows[0]!.closing, 1300);
     // Futuro usa a previsão, não o realizado.
     assert.equal(tl.rows[2]!.inflows, 700);
   });
@@ -473,6 +564,8 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
           outflows: 0,
           receivableCount: 1,
           payableCount: 0,
+          opening: null,
+          closing: null,
         },
         {
           civilDate: "2026-08-09",
@@ -480,6 +573,8 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
           outflows: 0,
           receivableCount: 1,
           payableCount: 0,
+          opening: null,
+          closing: null,
         },
       ],
       todayFlow: null,
