@@ -10,21 +10,14 @@
 import type { PrismaClient } from "@prisma/client";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import { buildFinanceAccountsReceivableRulesResult } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
-import { sumFinanceArReceivedBySettlementInPeriod } from "@/src/lib/financeAccountsReceivableDashboard.js";
-import {
-  loadFinanceApManagementRowsFromPrisma,
-  sumFinanceApPaidInPaymentPeriod,
-} from "@/src/lib/financeAccountsPayableDashboard.js";
+import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { buildFinanceAccountsPayableRulesResult } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
-import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import {
-  buildTreasuryCaixaCashBalance,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
-  TREASURY_CAIXA_BASELINE_CIVIL_DATE,
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
 } from "../domain/treasuryCaixaRules.js";
@@ -94,43 +87,11 @@ export function createTreasuryCaixaService(input: {
         payables: apResult.gridRows,
       });
 
-      // Saldo em caixa: soma pela data de LIQUIDAÇÃO (baixa/pagamento), não por
-      // vencimento — um título vencido em 2025 e pago em 2026 é caixa de 2026.
-      // Por isso a carga é sem recorte de vencimento; o recorte é a janela de
-      // liquidação [baseline, fim do período].
-      const baselineDate = civilDateToLocalDate(TREASURY_CAIXA_BASELINE_CIVIL_DATE);
-      const unfilteredFilters = { status: "all" } as const;
-      const [arCashLoaded, apCashLoaded] = await Promise.all([
-        loadFinanceArManagementRowsFromPrisma(prisma, unfilteredFilters, referenceDate),
-        loadFinanceApManagementRowsFromPrisma(prisma, unfilteredFilters, referenceDate),
-      ]);
-      const cashBalance = buildTreasuryCaixaCashBalance({
-        baselineDate: TREASURY_CAIXA_BASELINE_CIVIL_DATE,
-        asOfDate: toIsoDate(dueDateTo),
-        received: sumFinanceArReceivedBySettlementInPeriod(
-          arCashLoaded.rows,
-          unfilteredFilters,
-          referenceDate,
-          arCashLoaded.syncCutoff,
-          baselineDate,
-          dueDateTo
-        ),
-        paid: sumFinanceApPaidInPaymentPeriod(
-          apCashLoaded.rows,
-          unfilteredFilters,
-          referenceDate,
-          apCashLoaded.syncCutoff,
-          baselineDate,
-          dueDateTo
-        ),
-      });
-
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
         dueDateTo: toIsoDate(dueDateTo),
         totals,
-        cashBalance,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
       };

@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import {
-  buildTreasuryCaixaCashBalance,
+  buildTreasuryCaixaDayFlow,
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaDueDateRange,
-  TREASURY_CAIXA_BASELINE_CIVIL_DATE,
   TreasuryCaixaFilterError,
 } from "./treasuryCaixaRules.js";
 
@@ -129,53 +128,108 @@ describe("treasuryCaixaRules — computeTreasuryCaixaTotals", () => {
   });
 });
 
-describe("treasuryCaixaRules — buildTreasuryCaixaCashBalance", () => {
-  it("marco zero é 01/01/2026", () => {
-    assert.equal(TREASURY_CAIXA_BASELINE_CIVIL_DATE, "2026-01-01");
+describe("treasuryCaixaRules — buildTreasuryCaixaDayFlow", () => {
+  it("consolida as contas: começou, entrou, saiu, terminou", () => {
+    const flow = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [
+        {
+          openingBalance: 150000,
+          realizedInflows: 10000,
+          realizedOutflows: 30000,
+          realizedClosingBalance: 130000,
+          informedClosingBalance: 130000,
+        },
+        {
+          openingBalance: 50000,
+          realizedInflows: 5000,
+          realizedOutflows: 15000,
+          realizedClosingBalance: 40000,
+          informedClosingBalance: 40000,
+        },
+      ],
+    });
+    assert.equal(flow.opening, 200000);
+    assert.equal(flow.inflows, 15000);
+    assert.equal(flow.outflows, 45000);
+    assert.equal(flow.closingCalculated, 170000);
+    assert.equal(flow.closingInformed, 170000);
+    assert.equal(flow.divergence, 0);
+    assert.equal(flow.accountCount, 2);
+    assert.equal(flow.pendingClosingCount, 0);
   });
 
-  it("saldo = entradas − saídas, preservando as datas da janela", () => {
-    const cash = buildTreasuryCaixaCashBalance({
-      baselineDate: TREASURY_CAIXA_BASELINE_CIVIL_DATE,
-      asOfDate: "2026-03-31",
-      received: 1500.75,
-      paid: 400.25,
+  it("saldo não informado é null, nunca zero", () => {
+    const flow = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [
+        {
+          openingBalance: null,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          realizedClosingBalance: null,
+          informedClosingBalance: null,
+        },
+      ],
     });
-    assert.equal(cash.baselineDate, "2026-01-01");
-    assert.equal(cash.asOfDate, "2026-03-31");
-    assert.equal(cash.received, 1500.75);
-    assert.equal(cash.paid, 400.25);
-    assert.equal(cash.balance, 1100.5);
+    assert.equal(flow.opening, null);
+    assert.equal(flow.closingCalculated, null);
+    assert.equal(flow.closingInformed, null);
+    assert.equal(flow.divergence, null);
+    assert.equal(flow.pendingClosingCount, 1);
   });
 
-  it("caixa negativo quando saídas superam entradas", () => {
-    const cash = buildTreasuryCaixaCashBalance({
-      baselineDate: TREASURY_CAIXA_BASELINE_CIVIL_DATE,
-      asOfDate: "2026-02-28",
-      received: 100,
-      paid: 250,
+  it("divergência = informado − calculado (dinheiro sem lastro)", () => {
+    const flow = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [
+        {
+          openingBalance: 100000,
+          realizedInflows: 0,
+          realizedOutflows: 30000,
+          realizedClosingBalance: 70000,
+          informedClosingBalance: 60000,
+        },
+      ],
     });
-    assert.equal(cash.balance, -150);
+    // Banco tem 10k a menos do que os títulos explicam → saiu sem CP.
+    assert.equal(flow.divergence, -10000);
   });
 
-  it("sem movimento → saldo zero (o marco zero em si)", () => {
-    const cash = buildTreasuryCaixaCashBalance({
-      baselineDate: TREASURY_CAIXA_BASELINE_CIVIL_DATE,
-      asOfDate: "2026-01-01",
-      received: 0,
-      paid: 0,
+  it("conta sem fechamento informado entra na contagem de pendentes", () => {
+    const flow = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [
+        {
+          openingBalance: 10,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          realizedClosingBalance: 10,
+          informedClosingBalance: 10,
+        },
+        {
+          openingBalance: 20,
+          realizedInflows: 0,
+          realizedOutflows: 0,
+          realizedClosingBalance: 20,
+          informedClosingBalance: null,
+        },
+      ],
     });
-    assert.equal(cash.balance, 0);
+    assert.equal(flow.pendingClosingCount, 1);
+    // Só a conta informada entra no total informado — sem inventar zero.
+    assert.equal(flow.closingInformed, 10);
   });
 
-  it("valores não finitos viram zero em vez de NaN", () => {
-    const cash = buildTreasuryCaixaCashBalance({
-      baselineDate: TREASURY_CAIXA_BASELINE_CIVIL_DATE,
-      asOfDate: "2026-06-30",
-      received: Number.NaN,
-      paid: 80,
+  it("sem contas → tudo null/zero, sem NaN", () => {
+    const flow = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [],
     });
-    assert.equal(cash.received, 0);
-    assert.equal(cash.balance, -80);
+    assert.equal(flow.opening, null);
+    assert.equal(flow.inflows, 0);
+    assert.equal(flow.outflows, 0);
+    assert.equal(flow.divergence, null);
+    assert.equal(flow.accountCount, 0);
   });
 });

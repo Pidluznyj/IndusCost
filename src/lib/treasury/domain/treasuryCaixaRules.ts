@@ -121,39 +121,88 @@ export function computeTreasuryCaixaTotals(input: {
 }
 
 /**
- * Marco zero do saldo em caixa: assume-se caixa = R$ 0,00 em 01/01/2026.
- * Premissa de negócio declarada — o saldo exibido é o caixa GERADO desde essa data,
- * não a posição bancária real (essa vive em Tesouraria > Contas / saldos informados).
+ * Passo 3 — fluxo de um dia: "começou com X, entrou Y, saiu Z, terminou com W".
+ *
+ * Os quatro números vêm prontos do workspace canônico de fechamento diário
+ * (`/today/closing`), por conta. Aqui só consolidamos somando as contas — nenhum
+ * cálculo de caixa é refeito. `null` significa "não informado" (≠ zero).
  */
-export const TREASURY_CAIXA_BASELINE_CIVIL_DATE = "2026-01-01" as const;
-
-export type TreasuryCaixaCashBalance = {
-  /** Marco zero assumido (caixa = 0). */
-  baselineDate: string;
-  /** Última data considerada — fim do período filtrado. */
-  asOfDate: string;
-  /** Entradas liquidadas entre baseline e asOfDate (por data de baixa). */
-  received: number;
-  /** Saídas liquidadas entre baseline e asOfDate (por data de pagamento). */
-  paid: number;
-  /** received − paid. */
-  balance: number;
+export type TreasuryCaixaDayFlowAccountInput = {
+  openingBalance: number | null;
+  realizedInflows: number;
+  realizedOutflows: number;
+  realizedClosingBalance: number | null;
+  informedClosingBalance: number | null;
 };
 
-export function buildTreasuryCaixaCashBalance(input: {
-  baselineDate: string;
-  asOfDate: string;
-  received: number;
-  paid: number;
-}): TreasuryCaixaCashBalance {
-  const received = Number.isFinite(input.received) ? input.received : 0;
-  const paid = Number.isFinite(input.paid) ? input.paid : 0;
+export type TreasuryCaixaDayFlow = {
+  civilDate: string;
+  /** Soma dos saldos de abertura; null se nenhuma conta tem abertura informada. */
+  opening: number | null;
+  inflows: number;
+  outflows: number;
+  /** Fechamento calculado pelo motor (abertura + entradas − saídas). */
+  closingCalculated: number | null;
+  /** Fechamento informado no extrato; null se ninguém informou ainda. */
+  closingInformed: number | null;
+  /** informado − calculado; null quando falta um dos lados. */
+  divergence: number | null;
+  accountCount: number;
+  /** Quantas contas ainda não têm fechamento informado. */
+  pendingClosingCount: number;
+};
+
+/** Soma tratando null como ausência: se ninguém informou, o total é null (não zero). */
+function sumNullable(values: readonly (number | null)[]): number | null {
+  let hasAny = false;
+  let total = 0;
+  for (const v of values) {
+    if (v == null || !Number.isFinite(v)) continue;
+    hasAny = true;
+    total += v;
+  }
+  return hasAny ? roundMoney(total) : null;
+}
+
+export function buildTreasuryCaixaDayFlow(input: {
+  civilDate: string;
+  accounts: readonly TreasuryCaixaDayFlowAccountInput[];
+}): TreasuryCaixaDayFlow {
+  const opening = sumNullable(input.accounts.map((a) => a.openingBalance));
+  const inflows = roundMoney(
+    input.accounts.reduce(
+      (s, a) => s + (Number.isFinite(a.realizedInflows) ? a.realizedInflows : 0),
+      0
+    )
+  );
+  const outflows = roundMoney(
+    input.accounts.reduce(
+      (s, a) => s + (Number.isFinite(a.realizedOutflows) ? a.realizedOutflows : 0),
+      0
+    )
+  );
+  const closingCalculated = sumNullable(
+    input.accounts.map((a) => a.realizedClosingBalance)
+  );
+  const closingInformed = sumNullable(
+    input.accounts.map((a) => a.informedClosingBalance)
+  );
+
   return {
-    baselineDate: input.baselineDate,
-    asOfDate: input.asOfDate,
-    received: roundMoney(received),
-    paid: roundMoney(paid),
-    balance: roundMoney(received - paid),
+    civilDate: input.civilDate,
+    opening,
+    inflows,
+    outflows,
+    closingCalculated,
+    closingInformed,
+    divergence:
+      closingInformed != null && closingCalculated != null
+        ? roundMoney(closingInformed - closingCalculated)
+        : null,
+    accountCount: input.accounts.length,
+    pendingClosingCount: input.accounts.filter(
+      (a) => a.informedClosingBalance == null
+    ).length,
   };
 }
 
@@ -162,7 +211,6 @@ export type TreasuryCaixaBoardDto = {
   dueDateFrom: string;
   dueDateTo: string;
   totals: TreasuryCaixaTotals;
-  cashBalance: TreasuryCaixaCashBalance;
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
 };
