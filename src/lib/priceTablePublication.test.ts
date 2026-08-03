@@ -14,8 +14,8 @@ function read(rel: string): string {
   return readFileSync(join(root, rel), "utf8");
 }
 
-describe("calculatePriceTableItemFromFrozenCost — frete % no denominador", () => {
-  it("margens padrão 30/40/50/60 com frete 3% e comissões 2/3", () => {
+describe("calculatePriceTableItemFromFrozenCost — frete % sobre o custo (fora do denominador)", () => {
+  it("margens padrão 30/40/50/60 com frete 3% do custo e comissões 2/3", () => {
     const cases = [
       { margin: 0.3, commission: 0.02 },
       { margin: 0.4, commission: 0.03 },
@@ -33,8 +33,37 @@ describe("calculatePriceTableItemFromFrozenCost — frete % no denominador", () 
       });
       assert.equal(r.ok, true);
       if (!r.ok) continue;
-      const expected = 100 / (1 - c.commission - 0.03 - c.margin);
+      // Frete% é fração do CUSTO (3 = 100*0.03), somado no numerador — não entra no divisor.
+      const expected = (100 + 3) / (1 - c.commission - c.margin);
       assert.ok(Math.abs(r.result.salePrice - expected) < 1e-9);
+      assert.ok(Math.abs(r.result.totalFreightPercent - 3) < 1e-9);
+    }
+  });
+
+  it("frete 3% do custo não escala com a margem (permanece R$3 em qualquer faixa)", () => {
+    const low = calculatePriceTableItemFromFrozenCost(100, {
+      taxRate: 0,
+      commissionRate: 0.01,
+      otherRate: 0,
+      marginRate: 0.3,
+      freight: 0,
+      freightRate: 0.03,
+    });
+    const high = calculatePriceTableItemFromFrozenCost(100, {
+      taxRate: 0,
+      commissionRate: 0.04,
+      otherRate: 0,
+      marginRate: 0.6,
+      freight: 0,
+      freightRate: 0.03,
+    });
+    assert.equal(low.ok, true);
+    assert.equal(high.ok, true);
+    if (low.ok && high.ok) {
+      assert.equal(low.result.totalFreightPercent, 3);
+      assert.equal(high.result.totalFreightPercent, 3);
+      // Preço sobe de faixa pra faixa, mas o frete em R$ não acompanha.
+      assert.ok(high.result.salePrice > low.result.salePrice);
     }
   });
 
@@ -49,7 +78,7 @@ describe("calculatePriceTableItemFromFrozenCost — frete % no denominador", () 
     });
     assert.equal(a.ok, true);
     if (a.ok) {
-      assert.ok(Math.abs(a.result.salePrice - 100 / (1 - 0.02 - 0.045 - 0.35)) < 1e-9);
+      assert.ok(Math.abs(a.result.salePrice - (100 + 4.5) / (1 - 0.02 - 0.35)) < 1e-9);
       assert.ok(Math.abs(a.result.totalCommission - a.result.salePrice * 0.02) < 1e-9);
     }
 
@@ -67,12 +96,12 @@ describe("calculatePriceTableItemFromFrozenCost — frete % no denominador", () 
     }
   });
 
-  it("bloqueia soma >= 100% e aceita casas decimais", () => {
+  it("bloqueia soma >= 100% (sem frete no divisor) e aceita casas decimais", () => {
     const bad = calculatePriceTableItemFromFrozenCost(100, {
       taxRate: 0.1,
       commissionRate: 0.2,
       otherRate: 0,
-      marginRate: 0.5,
+      marginRate: 0.7,
       freight: 0,
       freightRate: 0.2,
     });

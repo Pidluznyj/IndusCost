@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   calculateCommercialMarginFromNetUnitPrice,
+  calculateSalePriceFromCommercialMarginRates,
   resolveCommercialCommissionFromTiers,
   type CommercialMarginTier,
 } from "./commercialMarginCore.js";
@@ -32,18 +33,26 @@ const VARIABLE_BANDS = [
   { marginPct: 57.5, commissionPercent: 3 },
 ] as const;
 
+/**
+ * Gera o preço líquido de uma faixa comercial usando o núcleo neutro
+ * (mesma fórmula que `calculateCommercialMarginFromNetUnitPrice` reconhece:
+ * frete% no divisor, por preço). Não usa `calculatePriceTableItemFromFrozenCost`
+ * — desde a correção do motor de Tabela de Preço, frete% lá é sobre o CUSTO
+ * (fora do divisor), formato diferente do núcleo usado por Proposta/Pedido.
+ */
 function formPrice(marginPercent: number, commissionPercent: number) {
-  const formed = calculatePriceTableItemFromFrozenCost(COST, {
+  const formed = calculateSalePriceFromCommercialMarginRates({
+    frozenCostUnit: COST,
     taxRate: TAX,
     commissionRate: commissionPercent / 100,
-    otherRate: OTHER,
     freightRate: FREIGHT_RATE,
-    freight: FREIGHT_ABS,
+    freightAbsoluteUnit: FREIGHT_ABS,
+    otherVariablesRate: OTHER,
     marginRate: marginPercent / 100,
   });
   assert.equal(formed.ok, true);
   if (!formed.ok) throw new Error(formed.message);
-  return formed.result.salePrice;
+  return formed.salePrice;
 }
 
 function buildVariableTiers(): CommercialMarginTier[] {
@@ -520,7 +529,7 @@ describe("proposalCommercialMargin — ausência ≠ zero e reasonCodes", () => 
 });
 
 describe("proposalCommercialMargin — equivalência matemática neutra", () => {
-  it("mesmas entradas econômicas → mesma margem (núcleo ≡ Pedido wrapper ≡ Proposta)", () => {
+  it("mesmas entradas econômicas → mesma margem (núcleo ≡ Proposta)", () => {
     const tiers = buildVariableTiers();
     const net = tiers[1]!.salePrice;
     const commissionRate = 0.045;
@@ -540,29 +549,6 @@ describe("proposalCommercialMargin — equivalência matemática neutra", () => 
     assert.equal(neutral.ok, true);
     if (!neutral.ok) throw new Error(neutral.message);
 
-    // Mesmo núcleo usado pelo cenário Pedido via priceTablePublication.
-    const pedidoScenario = calculateCommercialMarginRateFromNegotiatedPrice({
-      negotiatedUnitPrice: net,
-      frozenTotalCost: COST,
-      rates: {
-        taxRate: TAX,
-        commissionRate,
-        otherRate: OTHER,
-        freightRate: FREIGHT_RATE,
-        freight: FREIGHT_ABS,
-      },
-    });
-    assert.equal(pedidoScenario.ok, true);
-    if (!pedidoScenario.ok) throw new Error(pedidoScenario.message);
-    assert.equal(
-      roundPricingPercent(neutral.commercialMarginPercent),
-      roundPricingPercent(pedidoScenario.marginPercent)
-    );
-    assert.equal(
-      roundPricingMoney(neutral.commercialMarginUnitValue),
-      roundPricingMoney(pedidoScenario.commercialMarginUnitValue)
-    );
-
     const proposal = calculateProposalItemCommercialMargin({
       quantity: qty,
       negotiatedGrossUnitPrice: net,
@@ -579,12 +565,83 @@ describe("proposalCommercialMargin — equivalência matemática neutra", () => 
     assert.equal(proposal.isComplete, true);
     assert.equal(
       roundPricingPercent(proposal.commercialMarginPercent ?? 0),
-      roundPricingPercent(pedidoScenario.marginPercent)
+      roundPricingPercent(neutral.commercialMarginPercent)
     );
     assert.equal(
       proposal.commercialMarginValue,
-      roundPricingMoney(netLine * pedidoScenario.marginRate)
+      roundPricingMoney(netLine * neutral.commercialMarginRate)
     );
+  });
+
+  it("Pedido/Tabela de Preço diverge do núcleo de propósito quando há frete% (frete agora é sobre custo, não sobre preço)", () => {
+    const commissionRate = 0.045;
+    const net = 250;
+
+    const neutral = calculateCommercialMarginFromNetUnitPrice({
+      netUnitPrice: net,
+      quantity: 1,
+      frozenCostUnit: COST,
+      taxRate: TAX,
+      commissionRate,
+      freightRate: FREIGHT_RATE,
+      freightAbsoluteUnit: FREIGHT_ABS,
+      otherVariablesRate: OTHER,
+    });
+    assert.equal(neutral.ok, true);
+    if (!neutral.ok) throw new Error(neutral.message);
+
+    const pedidoScenario = calculateCommercialMarginRateFromNegotiatedPrice({
+      negotiatedUnitPrice: net,
+      frozenTotalCost: COST,
+      rates: {
+        taxRate: TAX,
+        commissionRate,
+        otherRate: OTHER,
+        freightRate: FREIGHT_RATE,
+        freight: FREIGHT_ABS,
+      },
+    });
+    assert.equal(pedidoScenario.ok, true);
+    if (!pedidoScenario.ok) throw new Error(pedidoScenario.message);
+
+    // Divergem porque o frete% do Pedido/Tabela de Preço não é mais fração do
+    // preço (ver priceTablePublication.ts) — ver regressão dedicada em
+    // priceTablePublication.test.ts ("frete 3% do custo não escala com a margem").
+    assert.notEqual(
+      roundPricingPercent(neutral.commercialMarginPercent),
+      roundPricingPercent(pedidoScenario.marginPercent)
+    );
+
+    // Com freightRate=0 (sem frete%), os dois modelos coincidem novamente.
+    const noFreight = calculateCommercialMarginFromNetUnitPrice({
+      netUnitPrice: net,
+      quantity: 1,
+      frozenCostUnit: COST,
+      taxRate: TAX,
+      commissionRate,
+      freightRate: 0,
+      freightAbsoluteUnit: FREIGHT_ABS,
+      otherVariablesRate: OTHER,
+    });
+    const pedidoNoFreight = calculateCommercialMarginRateFromNegotiatedPrice({
+      negotiatedUnitPrice: net,
+      frozenTotalCost: COST,
+      rates: {
+        taxRate: TAX,
+        commissionRate,
+        otherRate: OTHER,
+        freightRate: 0,
+        freight: FREIGHT_ABS,
+      },
+    });
+    assert.equal(noFreight.ok, true);
+    assert.equal(pedidoNoFreight.ok, true);
+    if (noFreight.ok && pedidoNoFreight.ok) {
+      assert.equal(
+        roundPricingPercent(noFreight.commercialMarginPercent),
+        roundPricingPercent(pedidoNoFreight.marginPercent)
+      );
+    }
   });
 });
 

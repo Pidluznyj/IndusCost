@@ -301,7 +301,7 @@ describe("commercialMarginCore — fórmula inversa e identidade", () => {
 });
 
 describe("commercialMarginCore — equivalência Pedido × Proposta (mesmas entradas)", () => {
-  it("núcleo (cenário Proposta) e APIs do Pedido devolvem a mesma margem", () => {
+  it("núcleo (cenário Proposta) e APIs do Pedido devolvem a mesma margem quando não há frete% (freightRate=0)", () => {
     const pLo = 200;
     const pHi = 250;
     const mid = 225;
@@ -324,6 +324,8 @@ describe("commercialMarginCore — equivalência Pedido × Proposta (mesmas entr
         commissionPercent: commissionHiPct,
       },
     });
+    // freightRate=0 aqui: com frete%, o Pedido/Tabela de Preço diverge do núcleo
+    // de propósito (frete% virou fração do custo, não do preço — ver teste abaixo).
     const pedidoInverse = calculateCommercialMarginRateFromNegotiatedPrice({
       negotiatedUnitPrice: mid,
       frozenTotalCost: COST,
@@ -331,7 +333,7 @@ describe("commercialMarginCore — equivalência Pedido × Proposta (mesmas entr
         taxRate: TAX,
         commissionRate: pedidoInterp.ratePercent / 100,
         otherRate: OTHER,
-        freightRate: FREIGHT_RATE,
+        freightRate: 0,
         freight: FREIGHT_ABS,
       },
     });
@@ -360,7 +362,7 @@ describe("commercialMarginCore — equivalência Pedido × Proposta (mesmas entr
       frozenCostUnit: COST,
       taxRate: TAX,
       commissionRate: proposalCommission.commissionRate,
-      freightRate: FREIGHT_RATE,
+      freightRate: 0,
       freightAbsoluteUnit: FREIGHT_ABS,
       otherVariablesRate: OTHER,
     });
@@ -378,10 +380,47 @@ describe("commercialMarginCore — equivalência Pedido × Proposta (mesmas entr
       proposalInverse.commercialMarginUnitValue
     );
   });
+
+  it("com frete% (>0), Pedido/Tabela de Preço diverge do núcleo de propósito (frete% agora é sobre custo)", () => {
+    const mid = 225;
+    const commissionRate = 0.045;
+
+    const pedidoInverse = calculateCommercialMarginRateFromNegotiatedPrice({
+      negotiatedUnitPrice: mid,
+      frozenTotalCost: COST,
+      rates: {
+        taxRate: TAX,
+        commissionRate,
+        otherRate: OTHER,
+        freightRate: FREIGHT_RATE,
+        freight: FREIGHT_ABS,
+      },
+    });
+    assert.equal(pedidoInverse.ok, true);
+    if (!pedidoInverse.ok) throw new Error(pedidoInverse.message);
+
+    const nucleoInverse = calculateCommercialMarginFromNetUnitPrice({
+      netUnitPrice: mid,
+      quantity: 1,
+      frozenCostUnit: COST,
+      taxRate: TAX,
+      commissionRate,
+      freightRate: FREIGHT_RATE,
+      freightAbsoluteUnit: FREIGHT_ABS,
+      otherVariablesRate: OTHER,
+    });
+    assert.equal(nucleoInverse.ok, true);
+    if (!nucleoInverse.ok) throw new Error(nucleoInverse.message);
+
+    assert.notEqual(
+      roundPricingPercent(pedidoInverse.marginPercent),
+      roundPricingPercent(nucleoInverse.commercialMarginPercent)
+    );
+  });
 });
 
 describe("commercialMarginCore — caracterização da API pública do Pedido", () => {
-  it("calculateCommercialMarginRateFromNegotiatedPrice permanece compatível", () => {
+  it("calculateCommercialMarginRateFromNegotiatedPrice — frete% agora é fração do custo", () => {
     const inverse = calculateCommercialMarginRateFromNegotiatedPrice({
       negotiatedUnitPrice: 250,
       frozenTotalCost: COST,
@@ -395,10 +434,14 @@ describe("commercialMarginCore — caracterização da API pública do Pedido", 
     });
     assert.equal(inverse.ok, true);
     if (!inverse.ok) throw new Error(inverse.message);
+    // freteRate$ = custo × frete% (fora do divisor) — não mais fração do preço.
+    const freightFromRate = COST * FREIGHT_RATE;
     const expectedRate =
-      1 - TAX - 0.04 - OTHER - FREIGHT_RATE - (COST + FREIGHT_ABS) / 250;
+      1 - TAX - 0.04 - OTHER - (COST + FREIGHT_ABS + freightFromRate) / 250;
     assert.equal(inverse.marginRate, expectedRate);
     assert.equal(inverse.marginPercent, expectedRate * 100);
     assert.equal(inverse.commercialMarginUnitValue, 250 * expectedRate);
+    assert.equal(inverse.freightRateValueUnit, freightFromRate);
+    assert.equal(inverse.freightAbsoluteUnit, FREIGHT_ABS);
   });
 });

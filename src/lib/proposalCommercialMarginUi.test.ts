@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { calculatePriceTableItemFromFrozenCost } from "./priceTablePublication.js";
+import { calculateSalePriceFromCommercialMarginRates } from "./commercialMarginCore.js";
 import { previewProposalCommercialMargins } from "./proposalCommercialMarginPreview.js";
 import {
   formatProposalCommercialPercent,
@@ -16,18 +16,22 @@ const OTHER = 0.02;
 const FREIGHT_RATE = 0.03;
 const COST = 100;
 
+// Usa o núcleo neutro (mesma fórmula de previewProposalCommercialMargins: frete% por
+// preço). Não usa calculatePriceTableItemFromFrozenCost — desde a correção do motor de
+// Tabela de Preço, frete% lá é sobre o CUSTO, formato diferente do núcleo da Proposta.
 function formPrice(marginPercent: number, commissionPercent: number) {
-  const formed = calculatePriceTableItemFromFrozenCost(COST, {
+  const formed = calculateSalePriceFromCommercialMarginRates({
+    frozenCostUnit: COST,
     taxRate: TAX,
     commissionRate: commissionPercent / 100,
-    otherRate: OTHER,
     freightRate: FREIGHT_RATE,
-    freight: 0,
+    freightAbsoluteUnit: 0,
+    otherVariablesRate: OTHER,
     marginRate: marginPercent / 100,
   });
   assert.equal(formed.ok, true);
   if (!formed.ok) throw new Error(formed.message);
-  return formed.result.salePrice;
+  return formed.salePrice;
 }
 
 describe("resolveProposalItemCommercialMarginDisplay", () => {

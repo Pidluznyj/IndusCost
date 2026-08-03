@@ -2,13 +2,19 @@
  * Helpers puros para cálculo de preço comercial a partir de custo de produção congelado.
  *
  * Fórmula oficial:
- *   PV = (custoFabril + freteR$) / (1 − imposto − comissão − outros − frete% − margem)
+ *   freteRate$ = custoFabril × frete%
+ *   PV = (custoFabril + freteR$ + freteRate$) / (1 − imposto − comissão − outros − margem)
  *
  * - freteR$ (`freight`): legado absoluto no numerador (ProductPricing.freightOut)
- * - frete% (`freightRate`): percentual no denominador (geração comercial moderna)
- * Em gerações com frete%, o frete absoluto deve ser 0 para não duplicar.
+ * - frete% (`freightRate`): representa o peso/volume da peça — é sempre uma fração do
+ *   CUSTO (não do preço de venda), por isso fica fora do divisor. Se ficasse no divisor
+ *   (junto da margem), o frete em R$ inflaria junto com o preço a cada faixa comercial
+ *   de margem maior, mesmo o custo físico de envio sendo o mesmo.
+ * Em gerações com frete%, o frete absoluto legado deve ser 0 para não duplicar.
  *
- * A inversa de margem comercial delega ao núcleo neutro (`commercialMarginCore`).
+ * A inversa de margem comercial delega ao núcleo neutro (`commercialMarginCore`), mas
+ * pré-resolve o frete% em R$ (sobre o custo) antes de delegar, para não alterar o
+ * comportamento do núcleo compartilhado com Propostas.
  */
 import { calculateCommercialMarginFromNetUnitPrice } from "./commercialMarginCore.js";
 
@@ -19,7 +25,7 @@ export type PriceTableItemRates = {
   marginRate: number;
   /** Frete absoluto em R$ (legado / numerador). */
   freight: number;
-  /** Frete estimado como fração do PV (0.03 = 3%). Opcional; ausente = 0. */
+  /** Frete estimado como fração do CUSTO (0.03 = 3% do custo, não do PV). Opcional; ausente = 0. */
   freightRate?: number;
 };
 
@@ -28,6 +34,7 @@ export type PriceTableItemCalculation = {
   frozenTaxCost: number;
   totalCommission: number;
   totalOther: number;
+  /** Frete% resolvido em R$ = frozenTotalCost × freightRate (não escala com salePrice). */
   totalFreightPercent: number;
   frozenOtherCost: number;
   divisor: number;
@@ -54,9 +61,12 @@ export function normalizePricingPercentInput(
 
 /**
  * Inversa de `calculatePriceTableItemFromFrozenCost`:
- *   m = 1 − i − c − o − f% − (custo + freteR$) / PV
+ *   freteRate$ = custo × f%
+ *   m = 1 − i − c − o − (custo + freteR$ + freteRate$) / PV
  *
- * Usa exatamente os mesmos componentes da formação (inclui freightRate).
+ * Frete% é resolvido em R$ sobre o CUSTO aqui (não no núcleo compartilhado) e enviado
+ * ao núcleo como `freightAbsoluteUnit` adicional com `freightRate: 0` — assim o
+ * comportamento do `commercialMarginCore` (usado também por Propostas) não muda.
  */
 export function calculateCommercialMarginRateFromNegotiatedPrice(input: {
   negotiatedUnitPrice: number;
@@ -76,20 +86,22 @@ export function calculateCommercialMarginRateFromNegotiatedPrice(input: {
       commercialMarginUnitValue: number;
     }
   | { ok: false; code: string; message: string } {
+  const frozenTotalCost = Number(input.frozenTotalCost);
   const freightAbs = Number.isFinite(input.rates.freight) ? Number(input.rates.freight) : 0;
   const freightRate =
     input.rates.freightRate != null && Number.isFinite(input.rates.freightRate)
       ? Number(input.rates.freightRate)
       : 0;
+  const freightFromRate = Number.isFinite(frozenTotalCost) ? frozenTotalCost * freightRate : 0;
 
   const core = calculateCommercialMarginFromNetUnitPrice({
     netUnitPrice: Number(input.negotiatedUnitPrice),
     quantity: 1,
-    frozenCostUnit: Number(input.frozenTotalCost),
+    frozenCostUnit: frozenTotalCost,
     taxRate: Number(input.rates.taxRate),
     commissionRate: Number(input.rates.commissionRate),
-    freightRate,
-    freightAbsoluteUnit: freightAbs,
+    freightRate: 0,
+    freightAbsoluteUnit: freightAbs + freightFromRate,
     otherVariablesRate: Number(input.rates.otherRate),
   });
   if (!core.ok) {
@@ -103,8 +115,8 @@ export function calculateCommercialMarginRateFromNegotiatedPrice(input: {
     taxValueUnit: core.taxValueUnit,
     commissionValueUnit: core.commissionValueUnit,
     otherValueUnit: core.otherValueUnit,
-    freightRateValueUnit: core.freightRateValueUnit,
-    freightAbsoluteUnit: core.freightAbsoluteUnit,
+    freightRateValueUnit: freightFromRate,
+    freightAbsoluteUnit: freightAbs,
     costUnit: core.costUnit,
     commercialMarginUnitValue: core.commercialMarginUnitValue,
   };
@@ -159,19 +171,21 @@ export function calculatePriceTableItemFromFrozenCost(
     rates.taxRate -
     rates.commissionRate -
     rates.otherRate -
-    freightRate -
     rates.marginRate;
   if (divisor <= 0) {
     return {
       ok: false,
       code: "INVALID_PRICING_DIVISOR",
       message:
-        "Soma de impostos/comissão/outros/frete/margem maior ou igual a 100%.",
+        "Soma de impostos/comissão/outros/margem maior ou igual a 100%.",
       divisor,
     };
   }
 
-  const salePrice = (frozenTotalCost + freightAbs) / divisor;
+  // Frete% representa peso/volume da peça → é fração do CUSTO, não do preço final.
+  // Fica fora do divisor para não inflar junto com a margem de cada faixa comercial.
+  const totalFreightPercent = frozenTotalCost * freightRate;
+  const salePrice = (frozenTotalCost + freightAbs + totalFreightPercent) / divisor;
   if (!Number.isFinite(salePrice) || salePrice <= 0) {
     return {
       ok: false,
@@ -183,7 +197,6 @@ export function calculatePriceTableItemFromFrozenCost(
   const frozenTaxCost = salePrice * rates.taxRate;
   const totalCommission = salePrice * rates.commissionRate;
   const totalOther = salePrice * rates.otherRate;
-  const totalFreightPercent = salePrice * freightRate;
   const frozenOtherCost = totalCommission + totalOther + freightAbs + totalFreightPercent;
 
   return {

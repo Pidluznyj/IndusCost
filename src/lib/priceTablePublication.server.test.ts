@@ -588,7 +588,7 @@ describe("priceTablePublication.server — estabilidade vs MP viva", () => {
 });
 
 describe("priceTablePublication.server — margem variável e frete %", () => {
-  it("usa margens override e frete 3% no denominador; comissão permanece 2%", async () => {
+  it("usa margens override e frete 3% do custo (fora do denominador); comissão permanece 2%", async () => {
     const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
     const { db, addPublishedProductionCost, priceTableItems, priceTableVersions } = createMockDb(
       products,
@@ -619,8 +619,9 @@ describe("priceTablePublication.server — margem variável e frete %", () => {
     const item = priceTableItems.get(`${result.version!.id}:prod-a`)!;
     assert.equal(item.marginPct, 35);
     assert.equal(item.commissionPerc, 2);
-    // PV = 100 / (1 - 0 - 0.02 - 0 - 0.03 - 0.35) = 100 / 0.60
-    assert.ok(Math.abs(item.salePrice - 100 / 0.6) < 1e-9);
+    // Frete% é fração do custo (3 = 100*0.03), somado no numerador; divisor sem frete.
+    // PV = (100 + 3) / (1 - 0.02 - 0.35) = 103 / 0.63
+    assert.ok(Math.abs(item.salePrice - 103 / 0.63) < 1e-9);
     const snap = item.formulaSnapshotJson as {
       freightPercent: number;
       rates: { freightRate: number; commissionRate: number };
@@ -656,7 +657,8 @@ describe("priceTablePublication.server — margem variável e frete %", () => {
     const itemA = priceTableItems.get(`${withFreight.version!.id}:prod-a`)!;
     assert.equal(itemA.commissionPerc, 3);
     assert.equal(itemA.marginPct, 42);
-    assert.ok(Math.abs(itemA.salePrice - 200 / (1 - 0.03 - 0.045 - 0.42)) < 1e-9);
+    // Frete% do custo (200*0.045=9) somado no numerador; divisor sem frete.
+    assert.ok(Math.abs(itemA.salePrice - (200 + 9) / (1 - 0.03 - 0.42)) < 1e-9);
 
     const zeroFreight = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
       priceTableId: "price-table-1",
@@ -674,19 +676,20 @@ describe("priceTablePublication.server — margem variável e frete %", () => {
     assert.ok(itemB.salePrice < itemA.salePrice);
   });
 
-  it("bloqueia composição com soma percentual >= 100%", async () => {
+  it("bloqueia composição com soma percentual >= 100% (frete não conta mais nessa soma)", async () => {
     const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
     const { db, addPublishedProductionCost } = createMockDb(products, { defaultMarginPct: 30 });
     addPublishedProductionCost("2026-06-01", 1, [
       { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 100 },
     ]);
 
+    // margem 65% + comissão 40% >= 100% bloqueia mesmo sem frete no divisor.
     const result = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
       priceTableId: "price-table-1",
       effectiveDate: civilDateToLocalDate("2026-06-15"),
       includeAllActiveProducts: true,
       hasMarginOverride: true,
-      marginPct: 50,
+      marginPct: 65,
       hasCommissionOverride: true,
       commissionPerc: 40,
       hasFreightOverride: true,
