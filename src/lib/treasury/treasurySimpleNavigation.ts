@@ -1,6 +1,6 @@
 /**
  * Navegação simples da Tesouraria — client-safe.
- * Primária: Hoje / Contas / Conferir banco / Fluxo Gerencial.
+ * Primária: Hoje / Contas / Conferir banco / Fluxo Gerencial / Caixa.
  * Avançada: catálogo técnico preservado (ADMIN / SUPER_ADMIN).
  */
 
@@ -14,7 +14,8 @@ export type TreasurySimplePrimarySectionId =
   | "today"
   | "accounts"
   | "bank"
-  | "projection";
+  | "projection"
+  | "caixa";
 
 export type TreasurySimpleNavSection = {
   id: TreasuryRolloutUiSectionId;
@@ -43,6 +44,11 @@ export const TREASURY_UI_PRIMARY_SECTIONS = [
     id: "projection",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/projection`,
     label: "Fluxo Gerencial",
+  },
+  {
+    id: "caixa",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/caixa`,
+    label: "Caixa",
   },
 ] as const satisfies readonly TreasurySimpleNavSection[];
 
@@ -173,4 +179,5 @@ export const TREASURY_PRIMARY_SECTION_FEATURE_FLAG: Record<
   accounts: "treasury.accounts.enabled",
   bank: "treasury.ofxImport.enabled",
   projection: "treasury.projection.enabled",
+  caixa: null,
 };

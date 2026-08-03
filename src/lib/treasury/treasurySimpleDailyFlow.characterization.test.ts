@@ -57,9 +57,9 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-const EXPECTED_HTTP_HANDLERS = 94;
+const EXPECTED_HTTP_HANDLERS = 97;
 /** home + 4 primárias + 15 avançadas + hub advanced */
-const EXPECTED_UI_SECTIONS = 21;
+const EXPECTED_UI_SECTIONS = 22;
 const EXPECTED_FEATURE_FLAGS = 15;
 const EXPECTED_RESOURCE_KEYS = 18;
 const EXPECTED_LEGACY_BAGS = 28;
@@ -147,7 +147,7 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
     assert.match(body, /não soma novamente/i);
   });
 
-  it("congela ~92 handlers HTTP em treasuryRoutes", () => {
+  it("congela ~97 handlers HTTP em treasuryRoutes", () => {
     const routes = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     const handlers = [...routes.matchAll(/app\.(get|post|put|patch|delete)\(/g)];
     assert.equal(
@@ -166,7 +166,7 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
 
   it("congela rotas avançadas da UI (TreasuryModule + seções)", () => {
     assert.equal(TREASURY_UI_SECTIONS.length, EXPECTED_UI_SECTIONS);
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 4);
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 5);
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.length >= 15);
     const paths = new Set(TREASURY_UI_SECTIONS.map((s) => s.path));
     for (const path of REQUIRED_ADVANCED_UI_PATHS) {

@@ -85,8 +85,8 @@ const migrationsDir = join(repoRoot, "prisma/migrations");
 
 /** Congelamento — superfície HTTP (antes = depois da simplificação UX). */
 const EXPECTED_HTTP_HANDLERS = {
-  total: 94,
-  get: 49,
+  total: 97,
+  get: 52,
   post: 39,
   put: 4,
   patch: 2,
@@ -293,7 +293,7 @@ function migrationsTouchingTreasury(): string[] {
 }
 
 describe("treasury advanced capabilities — API handlers", () => {
-  it("quantidade e métodos HTTP permanecem iguais (94 = 49/39/4/2/0)", () => {
+  it("quantidade e métodos HTTP permanecem iguais (97 = 52/39/4/2/0)", () => {
     const routesSrc = readFileSync(join(treasuryRoot, "treasuryRoutes.ts"), "utf8");
     const counts = countHandlers(routesSrc);
     assert.equal(counts.total, EXPECTED_HTTP_HANDLERS.total);
@@ -414,7 +414,7 @@ describe("treasury advanced capabilities — rotas frontend e deep-links", () =>
     const primaryPaths = new Set<string>(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path)
     );
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 4);
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 5);
     for (const section of TREASURY_UI_ADVANCED_SECTIONS) {
       assert.ok(!primaryPaths.has(section.path), section.path);
       assert.equal(isTreasuryAdvancedPath(section.path), true);

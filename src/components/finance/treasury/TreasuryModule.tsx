@@ -34,6 +34,7 @@ import { TreasuryReceivablesPage } from "./TreasuryReceivablesPage.js";
 import { TreasuryPayablesPage } from "./TreasuryPayablesPage.js";
 import { TreasuryAgendaPage } from "./TreasuryAgendaPage.js";
 import { TreasurySimpleCashRiskProjectionPage } from "./TreasurySimpleCashRiskProjectionPage.js";
+import { TreasuryCaixaPage } from "./TreasuryCaixaPage.js";
 import { TreasuryProjectionComparisonPage } from "./TreasuryProjectionComparisonPage.js";
 import { TreasuryTransfersPage } from "./TreasuryTransfersPage.js";
 import { TreasuryBankMovementsPage } from "./TreasuryBankMovementsPage.js";
@@ -315,6 +316,7 @@ export function TreasuryModule() {
             path="projection"
             element={gate("projection", <TreasurySimpleCashRiskProjectionPage />)}
           />
+          <Route path="caixa" element={gate("caixa", <TreasuryCaixaPage />)} />
           <Route
             path="advanced"
             element={

@@ -34,6 +34,7 @@ export type TreasuryRolloutUiSectionId =
   | "agenda"
   | "projections"
   | "projection"
+  | "caixa"
   | "payment-schedule"
   | "transfers"
   | "manual-entries"
@@ -66,6 +67,8 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   agenda: "treasury.projection.enabled",
   projections: "treasury.projection.enabled",
   projection: "treasury.projection.enabled",
+  /** Caixa: sem subflag própria — segue a mestra, como audit/advanced. */
+  caixa: null,
   "payment-schedule": "treasury.payablesProgramming.enabled",
   transfers: "treasury.transfers.enabled",
   "manual-entries": "treasury.accounts.enabled",

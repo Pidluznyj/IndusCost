@@ -32,11 +32,11 @@ function allFlagsOn() {
 }
 
 describe("treasurySimpleNavigation — navegação principal", () => {
-  it("expõe exatamente 4 abas principais com linguagem simples", () => {
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 4);
+  it("expõe exatamente 5 abas principais com linguagem simples", () => {
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 5);
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Hoje", "Contas", "Conferir banco", "Fluxo Gerencial"]
+      ["Hoje", "Contas", "Conferir banco", "Fluxo Gerencial", "Caixa"]
     );
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path),
@@ -45,6 +45,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
         `${TREASURY_UI_BASE_PATH}/accounts`,
         `${TREASURY_UI_BASE_PATH}/bank`,
         `${TREASURY_UI_BASE_PATH}/projection`,
+        `${TREASURY_UI_BASE_PATH}/caixa`,
       ]
     );
   });
@@ -68,7 +69,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
     const visible = filterTreasuryUiSections(TREASURY_UI_PRIMARY_SECTIONS, flags);
     assert.deepEqual(
       visible.map((s) => s.id),
-      ["today", "accounts"]
+      ["today", "accounts", "caixa"]
     );
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "reconcile"));
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "projections"));
@@ -184,11 +185,12 @@ describe("treasurySimpleNavigation — shell e preservação", () => {
       "treasury.projection.enabled"
     );
     assert.equal(TREASURY_UI_SECTION_FEATURE_FLAG.advanced, null);
+    assert.equal(TREASURY_UI_SECTION_FEATURE_FLAG.caixa, null);
   });
 
   it("catálogo TREASURY_UI_SECTIONS inclui primárias e avançadas", () => {
     const ids = new Set(TREASURY_UI_SECTIONS.map((s) => s.id));
-    for (const id of ["today", "accounts", "bank", "projection", "advanced"]) {
+    for (const id of ["today", "accounts", "bank", "projection", "caixa", "advanced"] as const) {
       assert.ok(ids.has(id), id);
     }
     for (const section of TREASURY_UI_ADVANCED_SECTIONS) {
