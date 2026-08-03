@@ -561,6 +561,232 @@ describe("treasuryCaixaRules — buildTreasuryCaixaUnifiedTimeline", () => {
     assert.deepEqual(tl.rows, []);
     assert.equal(tl.firstNegativeDate, null);
   });
+
+  it("hoje é a REALIDADE mesmo quando a projeção cobre o dia (saldo informado manda)", () => {
+    // Cenário do bug real: informado 428k, mas a projeção achava que hoje
+    // abriria com 239k (descontou no passado CPs vencidos que nunca saíram).
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 428461.9,
+        inflows: 11753.59,
+        outflows: 15000,
+        closingCalculated: 425215.49,
+        closingInformed: null,
+        divergence: null,
+        accountCount: 2,
+        pendingClosingCount: 2,
+      },
+      forecastDays: [
+        {
+          civilDate: TODAY,
+          openingBalance: 239279.25,
+          inflows: 158856.39,
+          outflows: 65648.9,
+          closingBalance: 332486.74,
+        },
+      ],
+    });
+    const today = tl.rows.find((r) => r.kind === "TODAY")!;
+    assert.equal(today.opening, 428461.9);
+    assert.equal(today.inflows, 11753.59);
+    assert.equal(today.outflows, 15000);
+    assert.equal(today.closing, 425215.49);
+  });
+
+  it("futuro re-ancora no fechamento real de hoje — amanhã abre onde hoje terminou", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 428461.9,
+        inflows: 11753.59,
+        outflows: 15000,
+        closingCalculated: 425215.49,
+        closingInformed: null,
+        divergence: null,
+        accountCount: 2,
+        pendingClosingCount: 2,
+      },
+      forecastDays: [
+        {
+          civilDate: TODAY,
+          openingBalance: 239279.25,
+          inflows: 158856.39,
+          outflows: 65648.9,
+          closingBalance: 332486.74,
+        },
+        {
+          civilDate: "2026-08-04",
+          openingBalance: 332486.74,
+          inflows: 43436.86,
+          outflows: 20248.58,
+          closingBalance: 355675.02,
+        },
+        {
+          civilDate: "2026-08-05",
+          openingBalance: 355675.02,
+          inflows: 11894.34,
+          outflows: 35420.78,
+          closingBalance: 332148.58,
+        },
+      ],
+    });
+    // shift = 425.215,49 − 332.486,74 = 92.728,75
+    const d4 = tl.rows.find((r) => r.civilDate === "2026-08-04")!;
+    const d5 = tl.rows.find((r) => r.civilDate === "2026-08-05")!;
+    // Amanhã abre exatamente onde hoje terminou de verdade (sem degrau).
+    assert.equal(d4.opening, 425215.49);
+    assert.equal(d4.closing, 448403.77);
+    // Movimentos diários da projeção não mudam — só os saldos se deslocam.
+    assert.equal(d4.inflows, 43436.86);
+    assert.equal(d4.outflows, 20248.58);
+    // A cadeia continua encadeada: 05 abre onde 04 fechou.
+    assert.equal(d5.opening, d4.closing);
+    assert.equal(d5.closing, 424877.33);
+  });
+
+  it("fechamento INFORMADO de hoje tem prioridade sobre o calculado como âncora", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 1000,
+        inflows: 0,
+        outflows: 0,
+        closingCalculated: 1000,
+        // Extrato diz 900 — dinheiro saiu sem título; a realidade manda.
+        closingInformed: 900,
+        divergence: -100,
+        accountCount: 1,
+        pendingClosingCount: 0,
+      },
+      forecastDays: [
+        {
+          civilDate: TODAY,
+          openingBalance: 1000,
+          inflows: 0,
+          outflows: 0,
+          closingBalance: 1000,
+        },
+        {
+          civilDate: "2026-08-04",
+          openingBalance: 1000,
+          inflows: 50,
+          outflows: 0,
+          closingBalance: 1050,
+        },
+      ],
+    });
+    const d4 = tl.rows.find((r) => r.civilDate === "2026-08-04")!;
+    assert.equal(d4.opening, 900);
+    assert.equal(d4.closing, 950);
+  });
+
+  it("re-ancorar pode revelar (ou desfazer) saldo negativo futuro", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 100,
+        inflows: 0,
+        outflows: 90,
+        closingCalculated: 10,
+        closingInformed: null,
+        divergence: null,
+        accountCount: 1,
+        pendingClosingCount: 1,
+      },
+      forecastDays: [
+        {
+          civilDate: TODAY,
+          openingBalance: 500,
+          inflows: 0,
+          outflows: 0,
+          closingBalance: 500,
+        },
+        {
+          // Na projeção fecharia positivo (+80); ancorado na realidade (10),
+          // o dia fecha negativo: 80 − 490 = −410.
+          civilDate: "2026-08-04",
+          openingBalance: 500,
+          inflows: 0,
+          outflows: 420,
+          closingBalance: 80,
+        },
+      ],
+    });
+    assert.equal(tl.firstNegativeDate, "2026-08-04");
+    assert.equal(tl.rows.find((r) => r.civilDate === "2026-08-04")!.closing, -410);
+  });
+
+  it("projeção que NÃO cobre hoje não é re-ancorada (sem elo, não inventa)", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: {
+        civilDate: TODAY,
+        opening: 1000,
+        inflows: 0,
+        outflows: 0,
+        closingCalculated: 1000,
+        closingInformed: null,
+        divergence: null,
+        accountCount: 1,
+        pendingClosingCount: 0,
+      },
+      // Filtro de um mês futuro: entre hoje e 01/09 há dias não cobertos —
+      // igualar a abertura de setembro ao caixa de hoje mentiria.
+      forecastDays: [
+        {
+          civilDate: "2026-09-01",
+          openingBalance: 700,
+          inflows: 10,
+          outflows: 0,
+          closingBalance: 710,
+        },
+      ],
+    });
+    const sep = tl.rows.find((r) => r.civilDate === "2026-09-01")!;
+    assert.equal(sep.opening, 700);
+    assert.equal(sep.closing, 710);
+  });
+
+  it("sem fluxo de hoje, a agenda preenche hoje como fallback (sem re-ancorar)", () => {
+    const tl = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: null,
+      forecastDays: [
+        {
+          civilDate: TODAY,
+          openingBalance: 200,
+          inflows: 30,
+          outflows: 10,
+          closingBalance: 220,
+        },
+        {
+          civilDate: "2026-08-04",
+          openingBalance: 220,
+          inflows: 0,
+          outflows: 0,
+          closingBalance: 220,
+        },
+      ],
+    });
+    const today = tl.rows.find((r) => r.kind === "TODAY")!;
+    assert.equal(today.opening, 200);
+    assert.equal(today.closing, 220);
+    assert.equal(
+      tl.rows.find((r) => r.civilDate === "2026-08-04")!.opening,
+      220
+    );
+  });
 });
 
 describe("treasuryCaixaRules — buildTreasuryCaixaOverdue", () => {
@@ -651,12 +877,23 @@ describe("treasuryCaixaRules — buildTreasuryCaixaOverdue", () => {
 });
 
 describe("treasuryCaixaRules — assimetria CR/CP na data de caixa", () => {
-  it("CP entra pelo vencimento mesmo tendo sido pago depois (regra canônica)", () => {
+  it("CP com data de pagamento informada entra no dia em que o dinheiro ANDOU", () => {
     const days = buildTreasuryCaixaRealizedDays({
       receivables: [],
-      // Vencido em 10/07; a baixa real pode ter sido outro dia — o motor
-      // oficial aloca CP sempre no vencimento.
-      payables: [{ dueDate: "2026-07-10", amountPaid: 5000 }],
+      // Vencido em 10/07, pago em 15/07 — a realidade (pagamento) manda.
+      payables: [
+        { dueDate: "2026-07-10", paymentDate: "2026-07-15", amountPaid: 5000 },
+      ],
+    });
+    assert.equal(days.length, 1);
+    assert.equal(days[0]!.civilDate, "2026-07-15");
+    assert.equal(days[0]!.outflows, 5000);
+  });
+
+  it("CP sem data de pagamento cai no vencimento (fallback — Nomus raramente informa)", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [],
+      payables: [{ dueDate: "2026-07-10", paymentDate: null, amountPaid: 5000 }],
     });
     assert.equal(days.length, 1);
     assert.equal(days[0]!.civilDate, "2026-07-10");

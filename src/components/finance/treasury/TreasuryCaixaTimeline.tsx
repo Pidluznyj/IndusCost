@@ -378,9 +378,12 @@ export function TreasuryCaixaTimeline({
             preencher.
           </p>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            Contas a receber entram no dia da <strong>baixa</strong>; contas a
-            pagar entram no dia do <strong>vencimento</strong> — é a regra do
-            motor financeiro do sistema.
+            O dinheiro conta no dia em que <strong>andou</strong>: contas a
+            receber entram no dia da <strong>baixa</strong>; contas a pagar, no
+            dia do <strong>pagamento</strong> quando o Nomus informa — sem essa
+            informação, valem pelo vencimento. Títulos previstos para hoje só
+            entram quando forem de fato baixados; o saldo informado das contas é
+            sempre a referência, e o futuro parte dele.
           </p>
         </>
       )}

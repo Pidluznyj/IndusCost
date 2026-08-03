@@ -122,8 +122,9 @@ export function createTreasuryCaixaService(input: {
           syncCutoff: arSettled.syncCutoff,
           filters: settlementLoadFilters,
         }).gridRows,
-        // CP é alocado pelo VENCIMENTO (regra canônica do financeiro): a data de
-        // baixa é apenas informativa e o Nomus sequer a preenche.
+        // CP entra no dia do PAGAMENTO quando o Nomus informa (`paymentDate`);
+        // fallback: vencimento (regra canônica do financeiro), pois a baixa de
+        // CP raramente vem preenchida da origem.
         payables: buildFinanceAccountsPayableRulesResult(apSettled.rows, {
           referenceDate,
           syncCutoff: apSettled.syncCutoff,

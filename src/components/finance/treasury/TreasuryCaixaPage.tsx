@@ -145,7 +145,9 @@ export function TreasuryCaixaPage() {
   const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [todayFlow, setTodayFlow] = useState<TreasuryCaixaDayFlow | null>(null);
-  const [timeline, setTimeline] = useState<TreasuryCaixaTimelineData | null>(null);
+  const [agendaDays, setAgendaDays] = useState<readonly TreasuryAgendaDayDto[]>(
+    []
+  );
   const [timelineUnavailable, setTimelineUnavailable] = useState<string | null>(
     null
   );
@@ -273,7 +275,7 @@ export function TreasuryCaixaPage() {
         .find((c) => c);
       if (!companyCode) {
         // Sem empresa não há projeção — mas passado e hoje seguem válidos.
-        setTimeline(buildTimelineFromSources(payload, todayFlow, []));
+        setAgendaDays([]);
         setPendingProjection(null);
         setTimelineUnavailable(
           "O futuro não aparece: defina a empresa (companyCode) em pelo menos uma conta ativa, em Tesouraria > Contas. Passado e hoje abaixo não dependem disso."
@@ -293,9 +295,7 @@ export function TreasuryCaixaPage() {
           // Passado e hoje são fato e não dependem de projeção. A projeção só
           // acrescenta o futuro — por isso a linha do tempo é montada sempre, e
           // a ausência de projeção vira aviso, não tela vazia.
-          setTimeline(
-            buildTimelineFromSources(payload, todayFlow, days)
-          );
+          setAgendaDays(days);
           // A agenda lê uma projeção MATERIALIZADA. Sem run gravado ela devolve
           // days: [] com runId null — estado que precisa ser explicado.
           if (agenda.runId == null) {
@@ -318,7 +318,7 @@ export function TreasuryCaixaPage() {
           }
         } catch (agendaErr) {
           // Falhou a projeção, mas passado e hoje continuam válidos.
-          setTimeline(buildTimelineFromSources(payload, todayFlow, []));
+          setAgendaDays([]);
           setTimelineUnavailable(
             agendaErr instanceof Error
               ? `Futuro indisponível: ${agendaErr.message}`
@@ -329,11 +329,20 @@ export function TreasuryCaixaPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao buscar o caixa.");
       setData(null);
-      setTimeline(null);
+      setAgendaDays([]);
     } finally {
       setLoading(false);
     }
   }, [year, month, day, accounts]);
+
+  // A linha do tempo é DERIVADA das três fontes. Montá-la aqui (e não dentro de
+  // `search`) garante que ela reage quando o fluxo de hoje termina de carregar
+  // depois da busca — antes, um closure obsoleto congelava `todayFlow` nulo e a
+  // linha de hoje ficava sem o saldo informado (a realidade).
+  const timeline = useMemo<TreasuryCaixaTimelineData | null>(
+    () => (data ? buildTimelineFromSources(data, todayFlow, agendaDays) : null),
+    [data, todayFlow, agendaDays]
+  );
 
   /** Gera a projeção do período pela rotina canônica e recarrega a busca. */
   const generateProjection = useCallback(async () => {

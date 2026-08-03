@@ -438,15 +438,32 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
     });
   }
 
-  // Hoje: a agenda tem prioridade quando cobre o dia. O fechamento diário conta
-  // só o que JÁ aconteceu; a agenda projeta o dia inteiro. Usar o realizado aqui
-  // criaria degrau entre hoje e amanhã — amanhã abriria com saldo diferente do
-  // fechamento exibido em hoje. O bloco "Movimento de hoje" segue mostrando o
-  // realizado, que responde outra pergunta.
+  // Hoje: o FATO manda. O saldo informado manualmente é a realidade e sempre
+  // tem prioridade sobre qualquer número calculado/projetado — a linha de hoje
+  // mostra exatamente os 4 números do bloco "Movimento de hoje" (começou
+  // informado, entrou/saiu realizados, terminou informado ?? calculado).
+  // A projeção NÃO substitui hoje: ela é um retrato congelado que assume que
+  // todo título previsto andou — e é justamente isso que a realidade corrige.
+  // A agenda só preenche hoje como fallback quando o fluxo do dia não carregou.
   const agendaToday = input.forecastDays.find(
     (d) => d.civilDate === input.todayCivilDate
   );
-  if (agendaToday) {
+  /** Fechamento real de hoje — âncora da cadeia futura. */
+  let anchorClosing: number | null = null;
+  if (input.todayFlow) {
+    const closing =
+      input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
+    rows.push({
+      civilDate: input.todayFlow.civilDate,
+      kind: "TODAY",
+      opening: input.todayFlow.opening,
+      inflows: input.todayFlow.inflows,
+      outflows: input.todayFlow.outflows,
+      closing,
+      negative: closing != null && closing < 0,
+    });
+    anchorClosing = closing;
+  } else if (agendaToday) {
     const closing =
       agendaToday.closingBalance != null &&
       Number.isFinite(agendaToday.closingBalance)
@@ -461,30 +478,31 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       closing,
       negative: closing != null && closing < 0,
     });
-  } else if (input.todayFlow) {
-    const closing =
-      input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
-    rows.push({
-      civilDate: input.todayFlow.civilDate,
-      kind: "TODAY",
-      opening: input.todayFlow.opening,
-      inflows: input.todayFlow.inflows,
-      outflows: input.todayFlow.outflows,
-      closing,
-      negative: closing != null && closing < 0,
-    });
   }
+
+  // Futuro re-ancorado: os MOVIMENTOS diários vêm da projeção, mas os SALDOS
+  // são deslocados pela diferença entre o fechamento real de hoje e o que a
+  // projeção achou que hoje fecharia. Assim amanhã abre exatamente onde hoje
+  // terminou de verdade (sem degrau) e a estimativa herda a realidade em vez
+  // de contradizê-la. Só re-ancora quando a projeção cobre hoje — sem esse
+  // elo (ex.: filtro de um mês futuro), deslocar seria inventar os dias no meio.
+  const forecastShift =
+    anchorClosing != null &&
+    agendaToday?.closingBalance != null &&
+    Number.isFinite(agendaToday.closingBalance)
+      ? roundMoney(anchorClosing - agendaToday.closingBalance)
+      : 0;
 
   for (const d of input.forecastDays) {
     if (d.civilDate <= input.todayCivilDate) continue;
     const closing =
       d.closingBalance != null && Number.isFinite(d.closingBalance)
-        ? roundMoney(d.closingBalance)
+        ? roundMoney(d.closingBalance + forecastShift)
         : null;
     rows.push({
       civilDate: d.civilDate,
       kind: "FORECAST",
-      opening: roundMoney(d.openingBalance),
+      opening: roundMoney(d.openingBalance + forecastShift),
       inflows: roundMoney(d.inflows),
       outflows: roundMoney(d.outflows),
       closing,
@@ -510,12 +528,16 @@ export function buildTreasuryCaixaRealizedDays(input: {
     amountReceived: number;
   }[];
   /**
-   * CP: agrupa pelo VENCIMENTO, não pela baixa. Regra canônica do financeiro
-   * (financeAccountsPayableRules: `effectivePaymentDate = dueDate` quando pago;
-   * "baixa é apenas informativa"). Usar `paymentDate` aqui zeraria a coluna,
-   * porque o Nomus não preenche esse campo.
+   * CP: o dinheiro conta no dia em que ANDOU — `paymentDate` quando o Nomus
+   * informa. Fallback: vencimento (regra canônica do financeiro,
+   * `effectivePaymentDate = dueDate` quando pago), porque o Nomus quase nunca
+   * preenche a data de baixa do CP; sem o fallback a coluna zeraria.
    */
-  payables: readonly { dueDate: string | null; amountPaid: number }[];
+  payables: readonly {
+    dueDate: string | null;
+    paymentDate?: string | null;
+    amountPaid: number;
+  }[];
 }): TreasuryCaixaRealizedDay[] {
   const byDate = new Map<string, TreasuryCaixaRealizedDay>();
 
@@ -543,7 +565,8 @@ export function buildTreasuryCaixaRealizedDays(input: {
   }
 
   for (const p of input.payables) {
-    const key = p.dueDate?.slice(0, 10);
+    // Realidade primeiro: data de pagamento informada > vencimento.
+    const key = (p.paymentDate ?? p.dueDate)?.slice(0, 10);
     const amount = Number(p.amountPaid);
     if (!key || !Number.isFinite(amount) || amount <= 0) continue;
     const day = bucket(key);
