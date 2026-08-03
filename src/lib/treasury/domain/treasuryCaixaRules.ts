@@ -232,7 +232,12 @@ export type TreasuryCaixaTimelineDayInput = {
 export type TreasuryCaixaTimelineRow = {
   civilDate: string;
   kind: TreasuryCaixaTimelineKind;
-  opening: number;
+  /**
+   * Saldo de abertura. `null` em dia passado sem saldo informado — reconstruir
+   * caminhando de trás pra frente mentiria: a conta assumiria que todo movimento
+   * tem título por trás, que é justamente o que as divergências violam.
+   */
+  opening: number | null;
   inflows: number;
   outflows: number;
   closing: number | null;
@@ -295,6 +300,217 @@ export function buildTreasuryCaixaTimeline(input: {
     forecastCount: rows.filter((r) => r.kind === "FORECAST").length,
     firstNegativeDate: rows.find((r) => r.negative)?.civilDate ?? null,
   };
+}
+
+/**
+ * Passo 5 — visão mensal: os mesmos dias, agrupados por mês, com drill down.
+ *
+ * O mês não recalcula nada: abertura é a do PRIMEIRO dia, fechamento é o do
+ * ÚLTIMO dia, e entradas/saídas são a soma dos dias. Assim a soma dos dias
+ * sempre bate com o mês — que é como o usuário valida a tela.
+ */
+export type TreasuryCaixaMonthKind = "REALIZED" | "CURRENT" | "FORECAST";
+
+export type TreasuryCaixaTimelineMonth = {
+  /** Chave "YYYY-MM" — ordenável como string. */
+  monthKey: string;
+  kind: TreasuryCaixaMonthKind;
+  /** Abertura do primeiro dia do mês. */
+  opening: number;
+  inflows: number;
+  outflows: number;
+  /** Fechamento do último dia do mês; null se o motor não fechou o dia. */
+  closing: number | null;
+  negative: boolean;
+  firstNegativeDate: string | null;
+  days: TreasuryCaixaTimelineRow[];
+};
+
+function resolveMonthKind(
+  days: readonly TreasuryCaixaTimelineRow[]
+): TreasuryCaixaMonthKind {
+  const hasRealized = days.some((d) => d.kind === "REALIZED");
+  const hasForecast = days.some((d) => d.kind === "FORECAST");
+  const hasToday = days.some((d) => d.kind === "TODAY");
+  if (hasToday || (hasRealized && hasForecast)) return "CURRENT";
+  if (hasForecast) return "FORECAST";
+  return "REALIZED";
+}
+
+export function buildTreasuryCaixaMonthlyTimeline(
+  rows: readonly TreasuryCaixaTimelineRow[]
+): TreasuryCaixaTimelineMonth[] {
+  const byMonth = new Map<string, TreasuryCaixaTimelineRow[]>();
+  for (const row of rows) {
+    const key = row.civilDate.slice(0, 7);
+    const bucket = byMonth.get(key);
+    if (bucket) bucket.push(row);
+    else byMonth.set(key, [row]);
+  }
+
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([monthKey, unsorted]) => {
+      const days = [...unsorted].sort((a, b) =>
+        a.civilDate.localeCompare(b.civilDate)
+      );
+      const first = days[0]!;
+      const last = days[days.length - 1]!;
+      const negativeDay = days.find((d) => d.negative);
+      return {
+        monthKey,
+        kind: resolveMonthKind(days),
+        opening: first.opening,
+        inflows: roundMoney(days.reduce((s, d) => s + d.inflows, 0)),
+        outflows: roundMoney(days.reduce((s, d) => s + d.outflows, 0)),
+        closing: last.closing,
+        negative: negativeDay != null,
+        firstNegativeDate: negativeDay?.civilDate ?? null,
+        days,
+      };
+    });
+}
+
+/**
+ * Passo 4a — dias PASSADOS: o que entrou e saiu de fato.
+ *
+ * Agrega por data de LIQUIDAÇÃO (baixa do CR / pagamento do CP), não por
+ * vencimento — um título vencido em maio e pago em julho é caixa de julho.
+ * É agregação do que o motor canônico já produziu; nenhum cálculo de caixa novo.
+ *
+ * Só entram títulos com data de liquidação preenchida e valor liquidado > 0.
+ */
+export type TreasuryCaixaRealizedDay = {
+  civilDate: string;
+  inflows: number;
+  outflows: number;
+  receivableCount: number;
+  payableCount: number;
+};
+
+/**
+ * Passo 4a — funde as três zonas numa linha do tempo só.
+ *
+ * Cada zona vem de quem sabe respondê-la:
+ *   passado → liquidação de CR/CP (fato, sempre fresco)
+ *   hoje    → fechamento do dia (fato)
+ *   futuro  → projeção materializada (estimativa, pode não existir)
+ *
+ * Dias passados sem movimento não viram linha — só ruído. Onde o dado não
+ * existe o campo fica `null`, e a tela mostra "—" em vez de inventar zero.
+ */
+export function buildTreasuryCaixaUnifiedTimeline(input: {
+  todayCivilDate: string;
+  realizedDays: readonly TreasuryCaixaRealizedDay[];
+  todayFlow: TreasuryCaixaDayFlow | null;
+  forecastDays: readonly TreasuryCaixaTimelineDayInput[];
+}): TreasuryCaixaTimeline {
+  const rows: TreasuryCaixaTimelineRow[] = [];
+
+  for (const d of input.realizedDays) {
+    if (d.civilDate >= input.todayCivilDate) continue;
+    rows.push({
+      civilDate: d.civilDate,
+      kind: "REALIZED",
+      // Saldo de dia passado só existiria se tivesse sido informado.
+      opening: null,
+      inflows: d.inflows,
+      outflows: d.outflows,
+      closing: null,
+      negative: false,
+    });
+  }
+
+  if (input.todayFlow) {
+    const closing =
+      input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
+    rows.push({
+      civilDate: input.todayFlow.civilDate,
+      kind: "TODAY",
+      opening: input.todayFlow.opening,
+      inflows: input.todayFlow.inflows,
+      outflows: input.todayFlow.outflows,
+      closing,
+      negative: closing != null && closing < 0,
+    });
+  }
+
+  for (const d of input.forecastDays) {
+    if (d.civilDate <= input.todayCivilDate) continue;
+    const closing =
+      d.closingBalance != null && Number.isFinite(d.closingBalance)
+        ? roundMoney(d.closingBalance)
+        : null;
+    rows.push({
+      civilDate: d.civilDate,
+      kind: "FORECAST",
+      opening: roundMoney(d.openingBalance),
+      inflows: roundMoney(d.plannedInflows),
+      outflows: roundMoney(d.plannedOutflows),
+      closing,
+      negative: closing != null && closing < 0,
+    });
+  }
+
+  rows.sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+
+  return {
+    todayCivilDate: input.todayCivilDate,
+    rows,
+    realizedCount: rows.filter((r) => r.kind === "REALIZED").length,
+    forecastCount: rows.filter((r) => r.kind === "FORECAST").length,
+    firstNegativeDate: rows.find((r) => r.negative)?.civilDate ?? null,
+  };
+}
+
+export function buildTreasuryCaixaRealizedDays(input: {
+  receivables: readonly {
+    settlementDate: string | null;
+    amountReceived: number;
+  }[];
+  payables: readonly { paymentDate: string | null; amountPaid: number }[];
+}): TreasuryCaixaRealizedDay[] {
+  const byDate = new Map<string, TreasuryCaixaRealizedDay>();
+
+  function bucket(civilDate: string): TreasuryCaixaRealizedDay {
+    const existing = byDate.get(civilDate);
+    if (existing) return existing;
+    const created: TreasuryCaixaRealizedDay = {
+      civilDate,
+      inflows: 0,
+      outflows: 0,
+      receivableCount: 0,
+      payableCount: 0,
+    };
+    byDate.set(civilDate, created);
+    return created;
+  }
+
+  for (const r of input.receivables) {
+    const key = r.settlementDate?.slice(0, 10);
+    const amount = Number(r.amountReceived);
+    if (!key || !Number.isFinite(amount) || amount <= 0) continue;
+    const day = bucket(key);
+    day.inflows += amount;
+    day.receivableCount += 1;
+  }
+
+  for (const p of input.payables) {
+    const key = p.paymentDate?.slice(0, 10);
+    const amount = Number(p.amountPaid);
+    if (!key || !Number.isFinite(amount) || amount <= 0) continue;
+    const day = bucket(key);
+    day.outflows += amount;
+    day.payableCount += 1;
+  }
+
+  return [...byDate.values()]
+    .map((d) => ({
+      ...d,
+      inflows: roundMoney(d.inflows),
+      outflows: roundMoney(d.outflows),
+    }))
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
 }
 
 export type TreasuryCaixaBoardDto = {

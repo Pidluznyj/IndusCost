@@ -429,7 +429,7 @@ describe("treasury simple daily operation — UX simples", () => {
   it("linguagem leiga, estados loading/vazio/erro, mobile e mensagens humanas", () => {
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Hoje", "Contas", "Conferir banco", "Fluxo Gerencial", "Caixa"]
+      ["Contas", "Caixa"]
     );
 
     const todayPanel = readFileSync(join(uiDir, "TreasuryTodayPanel.tsx"), "utf8");

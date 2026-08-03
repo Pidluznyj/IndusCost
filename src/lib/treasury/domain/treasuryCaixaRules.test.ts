@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import {
   buildTreasuryCaixaDayFlow,
+  buildTreasuryCaixaMonthlyTimeline,
   buildTreasuryCaixaTimeline,
   classifyTreasuryCaixaTimelineDay,
   computeTreasuryCaixaTotals,
@@ -322,5 +323,115 @@ describe("treasuryCaixaRules — buildTreasuryCaixaTimeline", () => {
     assert.equal(classifyTreasuryCaixaTimelineDay("2026-08-02", TODAY), "REALIZED");
     assert.equal(classifyTreasuryCaixaTimelineDay(TODAY, TODAY), "TODAY");
     assert.equal(classifyTreasuryCaixaTimelineDay("2026-08-04", TODAY), "FORECAST");
+  });
+});
+
+describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyTimeline", () => {
+  const TODAY = "2026-08-03";
+
+  function tl(days: Parameters<typeof buildTreasuryCaixaTimeline>[0]["days"]) {
+    return buildTreasuryCaixaTimeline({ todayCivilDate: TODAY, days }).rows;
+  }
+
+  function d(
+    civilDate: string,
+    over: Partial<
+      Parameters<typeof buildTreasuryCaixaTimeline>[0]["days"][number]
+    > = {}
+  ) {
+    return {
+      civilDate,
+      openingBalance: 0,
+      plannedInflows: 0,
+      plannedOutflows: 0,
+      realizedInflows: 0,
+      realizedOutflows: 0,
+      closingBalance: 0,
+      ...over,
+    };
+  }
+
+  it("a soma dos dias bate com o mês (é como o usuário valida)", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([
+        d("2026-07-01", {
+          openingBalance: 1000,
+          realizedInflows: 300,
+          realizedOutflows: 100,
+          closingBalance: 1200,
+        }),
+        d("2026-07-02", {
+          openingBalance: 1200,
+          realizedInflows: 200,
+          realizedOutflows: 400,
+          closingBalance: 1000,
+        }),
+      ])
+    );
+    assert.equal(months.length, 1);
+    const jul = months[0]!;
+    assert.equal(jul.monthKey, "2026-07");
+    // Abertura = primeiro dia; fechamento = último dia.
+    assert.equal(jul.opening, 1000);
+    assert.equal(jul.closing, 1000);
+    // Entradas/saídas = soma dos dias.
+    assert.equal(jul.inflows, 500);
+    assert.equal(jul.outflows, 500);
+    assert.equal(jul.days.length, 2);
+  });
+
+  it("separa os meses e ordena cronologicamente", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-09-01"), d("2026-07-01"), d("2026-08-01")])
+    );
+    assert.deepEqual(
+      months.map((m) => m.monthKey),
+      ["2026-07", "2026-08", "2026-09"]
+    );
+  });
+
+  it("mês inteiro no passado é REALIZED; inteiro no futuro é FORECAST", () => {
+    const [jul] = buildTreasuryCaixaMonthlyTimeline(tl([d("2026-07-10")]));
+    assert.equal(jul!.kind, "REALIZED");
+    const [set] = buildTreasuryCaixaMonthlyTimeline(tl([d("2026-09-10")]));
+    assert.equal(set!.kind, "FORECAST");
+  });
+
+  it("mês que contém hoje é CURRENT", () => {
+    const [ago] = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-08-01"), d(TODAY), d("2026-08-20")])
+    );
+    assert.equal(ago!.kind, "CURRENT");
+  });
+
+  it("mês que mistura passado e futuro sem conter hoje também é CURRENT", () => {
+    const [ago] = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-08-02"), d("2026-08-04")])
+    );
+    assert.equal(ago!.kind, "CURRENT");
+  });
+
+  it("propaga o primeiro dia negativo do mês", () => {
+    const [ago] = buildTreasuryCaixaMonthlyTimeline(
+      tl([
+        d("2026-08-10", { closingBalance: 500 }),
+        d("2026-08-11", { closingBalance: -200 }),
+        d("2026-08-12", { closingBalance: -900 }),
+      ])
+    );
+    assert.equal(ago!.negative, true);
+    assert.equal(ago!.firstNegativeDate, "2026-08-11");
+  });
+
+  it("mês sem dia negativo não é marcado", () => {
+    const [ago] = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-08-10", { closingBalance: 5 })])
+    );
+    assert.equal(ago!.negative, false);
+    assert.equal(ago!.firstNegativeDate, null);
+  });
+
+  it("sem dias → nenhum mês", () => {
+    assert.deepEqual(buildTreasuryCaixaMonthlyTimeline([]), []);
   });
 });

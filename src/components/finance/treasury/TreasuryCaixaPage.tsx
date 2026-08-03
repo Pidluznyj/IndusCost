@@ -20,6 +20,7 @@ import {
 import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosingApi.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
+import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjectionCalculateApi.js";
 import {
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaTimeline,
@@ -116,6 +117,13 @@ export function TreasuryCaixaPage() {
   const [timelineUnavailable, setTimelineUnavailable] = useState<string | null>(
     null
   );
+  /** Parâmetros para gerar a projeção que falta (null = não há o que gerar). */
+  const [pendingProjection, setPendingProjection] = useState<{
+    companyCode: string;
+    baseDate: string;
+    endDate: string;
+  } | null>(null);
+  const [generatingProjection, setGeneratingProjection] = useState(false);
   const accountsAbortRef = useRef<AbortController | null>(null);
 
   /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
@@ -247,24 +255,47 @@ export function TreasuryCaixaPage() {
             consolidated: true,
             includeDayDetail: false,
           });
-          setTimeline(
-            buildTreasuryCaixaTimeline({
-              todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
-              days: (agenda.days ?? []).map((d) => ({
-                civilDate: d.civilDate,
-                openingBalance: treasuryMoneyToNumber(d.openingBalance),
-                plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
-                plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
-                realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
-                realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
-                closingBalance:
-                  d.closingBalance == null
-                    ? null
-                    : treasuryMoneyToNumber(d.closingBalance),
-              })),
-            })
-          );
-          setTimelineUnavailable(null);
+          const days = agenda.days ?? [];
+          // A agenda lê uma projeção MATERIALIZADA. Sem run gravado ela devolve
+          // days: [] com runId null — estado que precisa ser explicado, não
+          // exibido como "período vazio".
+          if (agenda.runId == null) {
+            setTimeline(null);
+            setPendingProjection({
+              companyCode,
+              baseDate: payload.dueDateFrom,
+              endDate: payload.dueDateTo,
+            });
+            setTimelineUnavailable(
+              "A projeção deste período ainda não foi gerada. A linha do tempo lê uma projeção calculada e gravada — clique em Gerar projeção para criá-la."
+            );
+          } else if (days.length === 0) {
+            setTimeline(null);
+            setPendingProjection(null);
+            setTimelineUnavailable(
+              "A projeção existe, mas não cobre este período. Projeções são geradas a partir de uma data-base para frente — períodos anteriores a ela não aparecem."
+            );
+          } else {
+            setTimeline(
+              buildTreasuryCaixaTimeline({
+                todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
+                days: days.map((d) => ({
+                  civilDate: d.civilDate,
+                  openingBalance: treasuryMoneyToNumber(d.openingBalance),
+                  plannedInflows: treasuryMoneyToNumber(d.plannedInflows),
+                  plannedOutflows: treasuryMoneyToNumber(d.plannedOutflows),
+                  realizedInflows: treasuryMoneyToNumber(d.realizedInflows),
+                  realizedOutflows: treasuryMoneyToNumber(d.realizedOutflows),
+                  closingBalance:
+                    d.closingBalance == null
+                      ? null
+                      : treasuryMoneyToNumber(d.closingBalance),
+                })),
+              })
+            );
+            setPendingProjection(null);
+            setTimelineUnavailable(null);
+          }
         } catch (agendaErr) {
           setTimeline(null);
           setTimelineUnavailable(
@@ -282,6 +313,33 @@ export function TreasuryCaixaPage() {
       setLoading(false);
     }
   }, [year, month, day, accounts]);
+
+  /** Gera a projeção do período pela rotina canônica e recarrega a busca. */
+  const generateProjection = useCallback(async () => {
+    if (!pendingProjection) return;
+    setGeneratingProjection(true);
+    try {
+      await calculateTreasuryProjection({
+        companyCode: pendingProjection.companyCode,
+        baseDate: pendingProjection.baseDate,
+        endDate: pendingProjection.endDate,
+        scenario: "PROBABLE",
+        consolidated: true,
+      });
+      setPendingProjection(null);
+      await search();
+    } catch (err) {
+      setTimelineUnavailable(
+        err instanceof Error
+          ? `Não foi possível gerar a projeção: ${err.message}`
+          : "Não foi possível gerar a projeção."
+      );
+    } finally {
+      setGeneratingProjection(false);
+    }
+    // `search` é recriado a cada mudança de filtro; incluir causaria loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingProjection]);
 
   function handleMonthChange(value: string) {
     setMonth(value === "" ? "" : Number(value));
@@ -384,6 +442,8 @@ export function TreasuryCaixaPage() {
             timeline={timeline}
             loading={loading}
             unavailableReason={timelineUnavailable}
+            onGenerateProjection={pendingProjection ? generateProjection : undefined}
+            generatingProjection={generatingProjection}
           />
         ) : null}
 

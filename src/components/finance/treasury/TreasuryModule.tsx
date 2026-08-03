@@ -195,7 +195,7 @@ export function TreasuryModule() {
           <NavLink
             key={section.id}
             to={section.path}
-            end={section.id === "today"}
+            end={section.id === "caixa"}
             className={({ isActive }) =>
               cn(
                 "inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors",

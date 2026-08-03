@@ -166,7 +166,7 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
 
   it("congela rotas avançadas da UI (TreasuryModule + seções)", () => {
     assert.equal(TREASURY_UI_SECTIONS.length, EXPECTED_UI_SECTIONS);
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 5);
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 2);
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.length >= 15);
     const paths = new Set(TREASURY_UI_SECTIONS.map((s) => s.path));
     for (const path of REQUIRED_ADVANCED_UI_PATHS) {

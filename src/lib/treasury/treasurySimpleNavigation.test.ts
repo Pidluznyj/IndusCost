@@ -32,44 +32,53 @@ function allFlagsOn() {
 }
 
 describe("treasurySimpleNavigation — navegação principal", () => {
-  it("expõe exatamente 5 abas principais com linguagem simples", () => {
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 5);
+  it("expõe exatamente 2 abas principais com linguagem simples", () => {
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 2);
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Hoje", "Contas", "Conferir banco", "Fluxo Gerencial", "Caixa"]
+      ["Contas", "Caixa"]
     );
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path),
       [
-        `${TREASURY_UI_BASE_PATH}/today`,
         `${TREASURY_UI_BASE_PATH}/accounts`,
-        `${TREASURY_UI_BASE_PATH}/bank`,
-        `${TREASURY_UI_BASE_PATH}/projection`,
         `${TREASURY_UI_BASE_PATH}/caixa`,
       ]
     );
   });
 
-  it("landing da experiência simples é Hoje quando dashboard liberado", () => {
+  it("Hoje, Conferir banco e Fluxo Gerencial saíram da barra mas seguem no catálogo", () => {
+    const primaryIds = new Set<string>(
+      TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.id)
+    );
+    const advancedIds = new Set<string>(
+      TREASURY_UI_ADVANCED_SECTIONS.map((s) => s.id)
+    );
+    for (const id of ["today", "bank", "projection"] as const) {
+      assert.equal(primaryIds.has(id), false, `${id} não deve ser aba principal`);
+      assert.equal(advancedIds.has(id), true, `${id} deve seguir no avançado`);
+    }
+  });
+
+  it("landing da experiência simples é Contas quando a subflag está liberada", () => {
     const flags = allFlagsOn();
     assert.equal(
       resolveTreasuryUiLandingPath(
         TREASURY_UI_PRIMARY_SECTIONS,
         flags,
-        `${TREASURY_UI_BASE_PATH}/today`
+        `${TREASURY_UI_BASE_PATH}/caixa`
       ),
-      `${TREASURY_UI_BASE_PATH}/today`
+      `${TREASURY_UI_BASE_PATH}/accounts`
     );
   });
 
-  it("subflags ocultam abas primárias sem remover catálogo avançado", () => {
+  it("subflag de contas desligada deixa só Caixa (que segue a mestra)", () => {
     const flags = allFlagsOn();
-    flags["treasury.ofxImport.enabled"] = false;
-    flags["treasury.projection.enabled"] = false;
+    flags["treasury.accounts.enabled"] = false;
     const visible = filterTreasuryUiSections(TREASURY_UI_PRIMARY_SECTIONS, flags);
     assert.deepEqual(
       visible.map((s) => s.id),
-      ["today", "accounts", "caixa"]
+      ["caixa"]
     );
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "reconcile"));
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "projections"));
@@ -97,8 +106,17 @@ describe("treasurySimpleNavigation — recursos avançados e papéis", () => {
   });
 
   it("classifica paths primários vs avançados (deep-link)", () => {
-    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/today`), true);
-    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/bank`), true);
+    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/accounts`), true);
+    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/caixa`), true);
+    // Saíram da barra principal, mas seguem acessíveis como avançados.
+    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/today`), false);
+    assert.equal(isTreasuryAdvancedPath(`${TREASURY_UI_BASE_PATH}/today`), true);
+    assert.equal(isTreasuryPrimaryPath(`${TREASURY_UI_BASE_PATH}/bank`), false);
+    assert.equal(isTreasuryAdvancedPath(`${TREASURY_UI_BASE_PATH}/bank`), true);
+    assert.equal(
+      isTreasuryAdvancedPath(`${TREASURY_UI_BASE_PATH}/projection`),
+      true
+    );
     assert.equal(
       isTreasuryAdvancedPath(`${TREASURY_UI_BASE_PATH}/receivables`),
       true

@@ -1,7 +1,11 @@
 /**
  * Navegação simples da Tesouraria — client-safe.
- * Primária: Hoje / Contas / Conferir banco / Fluxo Gerencial / Caixa.
+ * Primária: Contas / Caixa.
  * Avançada: catálogo técnico preservado (ADMIN / SUPER_ADMIN).
+ *
+ * "Hoje", "Conferir banco" e "Fluxo Gerencial" saíram da barra principal a
+ * pedido do produto (não eram usados e confundiam com a tela de Caixa). As
+ * rotas e páginas seguem vivas no catálogo avançado — nada foi removido.
  */
 
 import type { AppUserRole } from "@/src/lib/appAuthClient.js";
@@ -10,12 +14,7 @@ import type { TreasuryRolloutUiSectionId } from "./treasuryRollout.js";
 
 export const TREASURY_SIMPLE_UI_BASE_PATH = "/finance/treasury" as const;
 
-export type TreasurySimplePrimarySectionId =
-  | "today"
-  | "accounts"
-  | "bank"
-  | "projection"
-  | "caixa";
+export type TreasurySimplePrimarySectionId = "accounts" | "caixa";
 
 export type TreasurySimpleNavSection = {
   id: TreasuryRolloutUiSectionId;
@@ -26,24 +25,9 @@ export type TreasurySimpleNavSection = {
 /** Abas da experiência padrão (não inclui ferramentas técnicas). */
 export const TREASURY_UI_PRIMARY_SECTIONS = [
   {
-    id: "today",
-    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/today`,
-    label: "Hoje",
-  },
-  {
     id: "accounts",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/accounts`,
     label: "Contas",
-  },
-  {
-    id: "bank",
-    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/bank`,
-    label: "Conferir banco",
-  },
-  {
-    id: "projection",
-    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/projection`,
-    label: "Fluxo Gerencial",
   },
   {
     id: "caixa",
@@ -57,6 +41,21 @@ export const TREASURY_UI_PRIMARY_SECTIONS = [
  * Labels simples onde o produto pediu renomeação de navegação.
  */
 export const TREASURY_UI_ADVANCED_SECTIONS = [
+  {
+    id: "today",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/today`,
+    label: "Hoje",
+  },
+  {
+    id: "bank",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/bank`,
+    label: "Conferir banco",
+  },
+  {
+    id: "projection",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/projection`,
+    label: "Fluxo Gerencial",
+  },
   {
     id: "receivables",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/receivables`,
@@ -155,8 +154,6 @@ export function isTreasuryPrimaryPath(pathname: string): boolean {
   return TREASURY_UI_PRIMARY_SECTIONS.some(
     (s) =>
       normalized === s.path ||
-      (s.id === "today" &&
-        normalized.startsWith(`${TREASURY_SIMPLE_UI_BASE_PATH}/today/`)) ||
       (s.id === "accounts" &&
         normalized.startsWith(`${TREASURY_SIMPLE_UI_BASE_PATH}/accounts/`))
   );
@@ -175,9 +172,6 @@ export const TREASURY_PRIMARY_SECTION_FEATURE_FLAG: Record<
   TreasurySimplePrimarySectionId,
   TreasuryFeatureFlagId | null
 > = {
-  today: "treasury.dashboard.enabled",
   accounts: "treasury.accounts.enabled",
-  bank: "treasury.ofxImport.enabled",
-  projection: "treasury.projection.enabled",
   caixa: null,
 };
