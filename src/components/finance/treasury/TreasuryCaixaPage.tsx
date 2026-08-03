@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchTreasuryCaixa, type TreasuryCaixaPayload } from "@/src/lib/treasury/treasuryCaixaApi.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
@@ -158,6 +158,10 @@ export function TreasuryCaixaPage() {
     endDate: string;
   } | null>(null);
   const [generatingProjection, setGeneratingProjection] = useState(false);
+  // Menu cascata: listas de títulos começam fechadas — a tela fica compacta e
+  // quem quiser o detalhe abre por conta própria (mesmo padrão do Atrasados).
+  const [receivablesOpen, setReceivablesOpen] = useState(false);
+  const [payablesOpen, setPayablesOpen] = useState(false);
   const accountsAbortRef = useRef<AbortController | null>(null);
 
   /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
@@ -548,104 +552,148 @@ export function TreasuryCaixaPage() {
               {data.totals.payableCount}
             </p>
 
-            <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">
-                Contas a Receber ({data.receivables.length})
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs" data-testid="caixa-receivables-table">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
-                      <th className="px-2 py-1.5">Vencimento</th>
-                      <th className="px-2 py-1.5">Cliente</th>
-                      <th className="px-2 py-1.5">Status</th>
-                      <th className="px-2 py-1.5 text-right">Valor</th>
-                      <th className="px-2 py-1.5 text-right">Recebido</th>
-                      <th className="px-2 py-1.5 text-right">Saldo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.receivables.map((r) => (
-                      <tr key={r.externalId} className="border-b border-border/50">
-                        <td className="px-2 py-1.5 tabular-nums">
-                          {formatCivilDate(r.dueDate)}
-                        </td>
-                        <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
-                        <td className="px-2 py-1.5">{r.calculatedStatus}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {formatMoney(r.amountReceivable)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {formatMoney(r.amountReceived)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                          {formatMoney(r.balanceReceivable)}
-                        </td>
+            <section
+              className="rounded-lg border border-border bg-card shadow-sm"
+              data-testid="caixa-receivables-section"
+              data-open={receivablesOpen}
+            >
+              <button
+                type="button"
+                onClick={() => setReceivablesOpen((v) => !v)}
+                aria-expanded={receivablesOpen}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                data-testid="caixa-receivables-toggle"
+              >
+                {receivablesOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                )}
+                <h2 className="text-sm font-semibold text-foreground">
+                  Contas a Receber ({data.receivables.length})
+                </h2>
+                <span className="ml-auto text-xs font-medium tabular-nums text-emerald-600">
+                  {formatMoney(data.totals.totalReceivable)}
+                </span>
+              </button>
+              {receivablesOpen ? (
+                <div className="overflow-x-auto border-t border-border p-3 pt-2">
+                  <table className="w-full text-xs" data-testid="caixa-receivables-table">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="px-2 py-1.5">Vencimento</th>
+                        <th className="px-2 py-1.5">Cliente</th>
+                        <th className="px-2 py-1.5">Status</th>
+                        <th className="px-2 py-1.5 text-right">Valor</th>
+                        <th className="px-2 py-1.5 text-right">Recebido</th>
+                        <th className="px-2 py-1.5 text-right">Saldo</th>
                       </tr>
-                    ))}
-                    {data.receivables.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-2 py-4 text-center text-muted-foreground"
-                        >
-                          Sem títulos no período.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.receivables.map((r) => (
+                        <tr key={r.externalId} className="border-b border-border/50">
+                          <td className="px-2 py-1.5 tabular-nums">
+                            {formatCivilDate(r.dueDate)}
+                          </td>
+                          <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
+                          <td className="px-2 py-1.5">{r.calculatedStatus}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {formatMoney(r.amountReceivable)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {formatMoney(r.amountReceived)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                            {formatMoney(r.balanceReceivable)}
+                          </td>
+                        </tr>
+                      ))}
+                      {data.receivables.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="px-2 py-4 text-center text-muted-foreground"
+                          >
+                            Sem títulos no período.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </section>
 
-            <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">
-                Contas a Pagar ({data.payables.length})
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs" data-testid="caixa-payables-table">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
-                      <th className="px-2 py-1.5">Vencimento</th>
-                      <th className="px-2 py-1.5">Fornecedor</th>
-                      <th className="px-2 py-1.5">Status</th>
-                      <th className="px-2 py-1.5 text-right">Valor</th>
-                      <th className="px-2 py-1.5 text-right">Pago</th>
-                      <th className="px-2 py-1.5 text-right">Saldo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.payables.map((p) => (
-                      <tr key={p.externalId} className="border-b border-border/50">
-                        <td className="px-2 py-1.5 tabular-nums">
-                          {formatCivilDate(p.dueDate)}
-                        </td>
-                        <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
-                        <td className="px-2 py-1.5">{p.calculatedStatus}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {formatMoney(p.amountPayable)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {formatMoney(p.amountPaid)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                          {formatMoney(p.balancePayable)}
-                        </td>
+            <section
+              className="rounded-lg border border-border bg-card shadow-sm"
+              data-testid="caixa-payables-section"
+              data-open={payablesOpen}
+            >
+              <button
+                type="button"
+                onClick={() => setPayablesOpen((v) => !v)}
+                aria-expanded={payablesOpen}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                data-testid="caixa-payables-toggle"
+              >
+                {payablesOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                )}
+                <h2 className="text-sm font-semibold text-foreground">
+                  Contas a Pagar ({data.payables.length})
+                </h2>
+                <span className="ml-auto text-xs font-medium tabular-nums text-red-600">
+                  {formatMoney(data.totals.totalPayable)}
+                </span>
+              </button>
+              {payablesOpen ? (
+                <div className="overflow-x-auto border-t border-border p-3 pt-2">
+                  <table className="w-full text-xs" data-testid="caixa-payables-table">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="px-2 py-1.5">Vencimento</th>
+                        <th className="px-2 py-1.5">Fornecedor</th>
+                        <th className="px-2 py-1.5">Status</th>
+                        <th className="px-2 py-1.5 text-right">Valor</th>
+                        <th className="px-2 py-1.5 text-right">Pago</th>
+                        <th className="px-2 py-1.5 text-right">Saldo</th>
                       </tr>
-                    ))}
-                    {data.payables.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-2 py-4 text-center text-muted-foreground"
-                        >
-                          Sem títulos no período.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.payables.map((p) => (
+                        <tr key={p.externalId} className="border-b border-border/50">
+                          <td className="px-2 py-1.5 tabular-nums">
+                            {formatCivilDate(p.dueDate)}
+                          </td>
+                          <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
+                          <td className="px-2 py-1.5">{p.calculatedStatus}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {formatMoney(p.amountPayable)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {formatMoney(p.amountPaid)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                            {formatMoney(p.balancePayable)}
+                          </td>
+                        </tr>
+                      ))}
+                      {data.payables.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="px-2 py-4 text-center text-muted-foreground"
+                          >
+                            Sem títulos no período.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </section>
           </>
         ) : !loading ? (
