@@ -20,8 +20,20 @@ import {
 } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
-import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
-import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
+import {
+  loadFinanceCashFlowCanonicalRealizedYearSets,
+  type FinanceCashFlowCanonicalRealizedYearSets,
+} from "@/src/lib/finance/financeCashFlowCanonicalRealized.server.js";
+import {
+  isFinanceApCancelledTitle,
+  resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApRealizedAmount,
+} from "@/src/lib/financeAccountsPayableRules.js";
+import type {
+  FinanceCashFlowApRow,
+  FinanceCashFlowArRow,
+} from "@/src/lib/financeCashFlowDashboard.js";
+import { civilDateToLocalDate, toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 import {
   applyTreasuryCaixaRunningBalance,
@@ -78,6 +90,83 @@ export function resolveTreasuryCaixaMonthlyEstimateRanges(
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Anos civis cujo realizado precisa entrar na cadeia da linha do tempo:
+ * da gênese da Caixa até o ano filtrado (a acumulação parte de zero na
+ * gênese). Ano anterior à gênese fica sozinho — não há premissa de saldo lá.
+ */
+export function resolveTreasuryCaixaChainYears(
+  periodYear: number,
+  genesisCivilDate: string = TREASURY_CAIXA_GENESIS_CIVIL_DATE
+): number[] {
+  const genesisYear = Number(genesisCivilDate.slice(0, 4));
+  const start = Math.min(periodYear, genesisYear);
+  const years: number[] = [];
+  for (let y = start; y <= periodYear; y += 1) years.push(y);
+  return years;
+}
+
+/**
+ * Converte os conjuntos canônicos do Fluxo de Caixa (por ano) nas entradas de
+ * dia de `buildTreasuryCaixaRealizedDays` — MESMAS regras da "Linha do tempo
+ * mensal" do Fluxo:
+ *
+ * - CR entra no dia da BAIXA (`settlementDate`), valor `amountReceived`;
+ * - CP entra pela data canônica `resolveFinanceApEffectivePaymentDate`
+ *   (= vencimento — o Nomus raramente informa a data real do pagamento),
+ *   valor `resolveFinanceApRealizedAmount`, cancelados fora;
+ * - o dia precisa cair DENTRO do ano do contexto: cada tabela anual do Fluxo
+ *   só enxerga títulos daquele ano-vencimento baixados naquele ano. Baixa
+ *   cruzando ano (título de um ano pago no outro) fica fora — é exatamente o
+ *   recorte da tela de referência, e é o que faz os números baterem 1:1.
+ */
+export function buildTreasuryCaixaCanonicalRealizedInputs(
+  contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[]
+): {
+  receivables: { settlementDate: string | null; amountReceived: number }[];
+  payables: {
+    dueDate: string | null;
+    paymentDate: string | null;
+    amountPaid: number;
+  }[];
+} {
+  const receivables: { settlementDate: string | null; amountReceived: number }[] =
+    [];
+  const payables: {
+    dueDate: string | null;
+    paymentDate: string | null;
+    amountPaid: number;
+  }[] = [];
+
+  for (const ctx of contexts) {
+    const yearPrefix = `${ctx.year}-`;
+
+    for (const row of ctx.arReceivedRows as readonly Pick<
+      FinanceCashFlowArRow,
+      "settlementDate" | "amountReceived"
+    >[]) {
+      if (!row.settlementDate) continue;
+      const key = toCivilDateKey(row.settlementDate);
+      if (!key || !key.startsWith(yearPrefix)) continue;
+      const amount = Number(row.amountReceived);
+      if (!Number.isFinite(amount) || amount === 0) continue;
+      receivables.push({ settlementDate: key, amountReceived: amount });
+    }
+
+    for (const row of ctx.apPaidRows as readonly FinanceCashFlowApRow[]) {
+      if (isFinanceApCancelledTitle(row)) continue;
+      const paidAt = resolveFinanceApEffectivePaymentDate(row);
+      const realized = resolveFinanceApRealizedAmount(row);
+      if (!paidAt || realized <= 0) continue;
+      const key = toCivilDateKey(paidAt);
+      if (!key || !key.startsWith(yearPrefix)) continue;
+      payables.push({ dueDate: null, paymentDate: key, amountPaid: realized });
+    }
+  }
+
+  return { receivables, payables };
 }
 
 /**
@@ -351,52 +440,45 @@ export function createTreasuryCaixaService(input: {
         payables: apResult.gridRows.filter((r) => !r.suspendPayment),
       });
 
-      // Passado da linha do tempo: agrupa por data de LIQUIDAÇÃO, não por
-      // vencimento — um título vencido antes e pago dentro do período é caixa
-      // do período. Por isso a carga aqui abre a janela de vencimento para trás
-      // (início do ano anterior) em vez de usar o recorte do filtro; sem isso,
-      // pagamento de título atrasado sumiria do dia em que o dinheiro andou.
-      // O piso nunca passa da gênese da Caixa: o acumulado de saldo (abaixo)
-      // precisa de TODO o histórico desde ali para o "Começou"/"Terminou" não
-      // recomeçar do zero no meio do caminho quando o filtro for um ano futuro.
+      // Passado da linha do tempo: MESMOS conjuntos e MESMAS regras da
+      // "Linha do tempo mensal" do Fluxo de Caixa (Recebido/Pago), ano a ano
+      // da gênese até o ano filtrado — os totais mensais batem 1:1 com aquela
+      // tela por construção; aqui só particionamos por dia. CR entra no dia da
+      // baixa; CP pela data canônica (vencimento — o Nomus raramente informa
+      // o pagamento real). Baixa cruzando ano fica fora, como lá.
+      const chainYears = resolveTreasuryCaixaChainYears(period.year);
+      const canonicalContexts: FinanceCashFlowCanonicalRealizedYearSets[] = [];
+      for (const year of chainYears) {
+        canonicalContexts.push(
+          await loadFinanceCashFlowCanonicalRealizedYearSets(
+            prisma,
+            year,
+            referenceDate,
+            // O board já carregou o AR canônico do ano filtrado
+            // ({ status: "all", year }) — reusa em vez de recarregar.
+            year === period.year
+              ? {
+                  arRows,
+                  syncCutoff: arLoaded.syncCutoff,
+                  orderContexts,
+                  nfeOrderLinks,
+                }
+              : undefined
+          )
+        );
+      }
+      const periodFrom = toIsoDate(dueDateFrom);
+      const periodTo = toIsoDate(dueDateTo);
+      const realizedDaysAll = buildTreasuryCaixaRealizedDays(
+        buildTreasuryCaixaCanonicalRealizedInputs(canonicalContexts)
+      );
+      // Janela dos saldos informados (fechamentos/snapshots): da gênese (ou do
+      // ano filtrado, se anterior a ela) até o fim do período — independe do
+      // recorte de vencimento dos títulos.
       const settlementWindowFromCivilDate =
         `${period.year - 1}-01-01` < TREASURY_CAIXA_GENESIS_CIVIL_DATE
           ? `${period.year - 1}-01-01`
           : TREASURY_CAIXA_GENESIS_CIVIL_DATE;
-      const settlementLoadFilters = {
-        status: "all",
-        dueDateFrom: civilDateToLocalDate(settlementWindowFromCivilDate),
-        dueDateTo,
-      } as const;
-      const [arSettled, apSettled] = await Promise.all([
-        loadFinanceArManagementRowsFromPrisma(
-          prisma,
-          settlementLoadFilters,
-          referenceDate
-        ),
-        loadFinanceApManagementRowsFromPrisma(
-          prisma,
-          settlementLoadFilters,
-          referenceDate
-        ),
-      ]);
-      const periodFrom = toIsoDate(dueDateFrom);
-      const periodTo = toIsoDate(dueDateTo);
-      const realizedDaysAll = buildTreasuryCaixaRealizedDays({
-        receivables: buildFinanceAccountsReceivableRulesResult(arSettled.rows, {
-          referenceDate,
-          syncCutoff: arSettled.syncCutoff,
-          filters: settlementLoadFilters,
-        }).gridRows,
-        // CP entra no dia do PAGAMENTO quando o Nomus informa (`paymentDate`);
-        // fallback: vencimento (regra canônica do financeiro), pois a baixa de
-        // CP raramente vem preenchida da origem.
-        payables: buildFinanceAccountsPayableRulesResult(apSettled.rows, {
-          referenceDate,
-          syncCutoff: apSettled.syncCutoff,
-          filters: settlementLoadFilters,
-        }).gridRows,
-      });
       // Saldo INFORMADO por dia — motor canônico de fechamento diário.
       // Espelha a carga do relatório oficial (treasuryReportRepository):
       // só CLOSED e, por dia, a versão mais alta (reabertura gera nova versão).

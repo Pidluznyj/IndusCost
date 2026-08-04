@@ -602,10 +602,13 @@ export function TreasuryCaixaTimeline({
             </p>
           ) : null}
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            O dinheiro conta no dia em que <strong>andou</strong>: contas a
-            receber entram no dia da <strong>baixa</strong>; contas a pagar, no
-            dia do <strong>pagamento</strong> quando o Nomus informa — sem essa
-            informação, valem pelo vencimento. Títulos previstos para hoje só
+            Entrou/Saiu dos dias passados seguem <strong>as mesmas regras</strong>{" "}
+            da &quot;Linha do tempo mensal&quot; do Fluxo de Caixa (os totais do
+            mês batem 1:1 com aquela tela): contas a receber entram no dia da{" "}
+            <strong>baixa</strong> — recebimento adiantado ou atrasado aparece
+            no dia em que o dinheiro andou; contas a pagar valem pelo{" "}
+            <strong>vencimento</strong> (regra canônica — o Nomus raramente
+            informa a data real do pagamento). Títulos previstos para hoje só
             entram quando forem de fato baixados; o saldo informado das contas é
             sempre a referência, e o futuro parte dele.
           </p>
