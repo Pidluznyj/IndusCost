@@ -6,6 +6,7 @@ import type {
   TreasuryCaixaTimelineRow,
 } from "./treasuryCaixaRules.js";
 import {
+  appendTreasuryCaixaMonthlyDueEstimates,
   applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyBalanceChart,
@@ -379,6 +380,59 @@ describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyTimeline", () => {
 
   it("sem dias → nenhum mês", () => {
     assert.deepEqual(buildTreasuryCaixaMonthlyTimeline([]), []);
+  });
+});
+
+describe("treasuryCaixaRules — appendTreasuryCaixaMonthlyDueEstimates", () => {
+  it("complementa mês ausente (agenda não cobriu) com a estimativa por vencimento", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(tl([d("2026-07-10")]));
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, [
+      { monthKey: "2026-09", estimatedInflow: 1000, estimatedOutflow: 400 },
+    ]);
+    assert.equal(merged.length, 2);
+    const set = merged.find((m) => m.monthKey === "2026-09")!;
+    assert.equal(set.kind, "FORECAST");
+    assert.equal(set.estimateOnly, true);
+    assert.equal(set.inflows, 1000);
+    assert.equal(set.outflows, 400);
+    assert.equal(set.opening, null);
+    assert.equal(set.closing, null);
+    assert.equal(set.divergence, null);
+    assert.equal(set.days.length, 0);
+  });
+
+  it("NÃO sobrescreve mês que já tem dias reais (mais preciso)", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-09-10", { inflows: 50, outflows: 10, closing: 40 })])
+    );
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, [
+      { monthKey: "2026-09", estimatedInflow: 999999, estimatedOutflow: 999999 },
+    ]);
+    assert.equal(merged.length, 1);
+    const set = merged[0]!;
+    assert.equal(set.inflows, 50);
+    assert.equal(set.outflows, 10);
+    assert.equal(set.estimateOnly, undefined);
+  });
+
+  it("mantém ordenação cronológica ao inserir meses complementados no meio", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-07-10"), d("2026-12-10")])
+    );
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, [
+      { monthKey: "2026-09", estimatedInflow: 10, estimatedOutflow: 0 },
+      { monthKey: "2026-08", estimatedInflow: 5, estimatedOutflow: 0 },
+    ]);
+    assert.deepEqual(
+      merged.map((m) => m.monthKey),
+      ["2026-07", "2026-08", "2026-09", "2026-12"]
+    );
+  });
+
+  it("sem estimativas → devolve os meses originais inalterados", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(tl([d("2026-07-10")]));
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, []);
+    assert.deepEqual(merged, months);
   });
 });
 

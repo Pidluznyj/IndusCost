@@ -330,8 +330,12 @@ export type TreasuryCaixaTimelineMonth = {
   /** Chave "YYYY-MM" — ordenável como string. */
   monthKey: string;
   kind: TreasuryCaixaMonthKind;
-  /** Abertura do primeiro dia do mês. */
-  opening: number;
+  /**
+   * Abertura do primeiro dia do mês. `null` só em mês
+   * {@link TreasuryCaixaTimelineMonth.estimateOnly} — sem dia nenhum não há
+   * saldo acumulado a mostrar, só o fluxo estimado.
+   */
+  opening: number | null;
   inflows: number;
   outflows: number;
   /** Fechamento do último dia do mês; null se o motor não fechou o dia. */
@@ -346,7 +350,68 @@ export type TreasuryCaixaTimelineMonth = {
   negative: boolean;
   firstNegativeDate: string | null;
   days: TreasuryCaixaTimelineRow[];
+  /**
+   * `true` para mês complementado por {@link appendTreasuryCaixaMonthlyDueEstimates}
+   * — sem nenhum dia real (a agenda/projeção materializada não cobriu), só o
+   * fluxo estimado por vencimento (mesma regra do "Linha do tempo mensal" do
+   * Fluxo de Caixa). Sem saldo acumulado: `opening`/`closing` ficam `null`
+   * porque a cadeia diária tem um buraco de tamanho desconhecido até ali.
+   */
+  estimateOnly?: boolean;
 };
+
+/** Estimativa mensal de fluxo por vencimento — mesma regra do Fluxo de Caixa. */
+export type TreasuryCaixaMonthlyDueEstimate = {
+  /** Chave "YYYY-MM". */
+  monthKey: string;
+  estimatedInflow: number;
+  estimatedOutflow: number;
+};
+
+/**
+ * Passo 5b — meses futuros fora da cobertura da agenda (projeção materializada,
+ * capada em 90 dias — ver `treasuryProjectionHorizon.ts`) não podem ficar
+ * ausentes da visão mensal só porque ninguém gerou a projeção até lá. Completa
+ * com a MESMA regra de saldo aberto por vencimento do "Linha do tempo mensal"
+ * do Fluxo de Caixa (`sumOfficialArOpenDueInPeriod`/`sumOfficialApOpenDueInPeriod`
+ * — chamadas por quem monta `estimates`), então os números sempre reconciliam
+ * entre as duas telas.
+ *
+ * Só ENTRA mês que não existe em `months` (a agenda não cobriu nenhum dia
+ * dele) — mês com dias reais (previsão dia a dia com saldo acumulado) não é
+ * tocado, é mais preciso e não é sobrescrito. Resultado sempre ordenado por
+ * `monthKey`.
+ *
+ * Limitação conhecida e aceita: um mês PARCIALMENTE coberto pela agenda (ex.:
+ * cobertura de 90 dias termina no meio do mês) mantém só os dias que a agenda
+ * trouxe — não mistura com a estimativa do resto do mês. Resolver isso exigiria
+ * decompor a estimativa em dias, o que reintroduziria a mesma imprecisão que a
+ * projeção dia a dia existe para evitar.
+ */
+export function appendTreasuryCaixaMonthlyDueEstimates(
+  months: readonly TreasuryCaixaTimelineMonth[],
+  estimates: readonly TreasuryCaixaMonthlyDueEstimate[]
+): TreasuryCaixaTimelineMonth[] {
+  const existingKeys = new Set(months.map((m) => m.monthKey));
+  const extra: TreasuryCaixaTimelineMonth[] = estimates
+    .filter((e) => !existingKeys.has(e.monthKey))
+    .map((e) => ({
+      monthKey: e.monthKey,
+      kind: "FORECAST" as const,
+      opening: null,
+      inflows: roundMoney(e.estimatedInflow),
+      outflows: roundMoney(e.estimatedOutflow),
+      closing: null,
+      divergence: null,
+      divergentDayCount: 0,
+      negative: false,
+      firstNegativeDate: null,
+      days: [],
+      estimateOnly: true,
+    }));
+  if (extra.length === 0) return [...months];
+  return [...months, ...extra].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+}
 
 function resolveMonthKind(
   days: readonly TreasuryCaixaTimelineRow[]
@@ -1020,4 +1085,11 @@ export type TreasuryCaixaBoardDto = {
   overdue: TreasuryCaixaOverdue;
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
+  /**
+   * Fluxo estimado por vencimento, mês a mês, para TODO o período pedido —
+   * mesma regra do "Linha do tempo mensal" do Fluxo de Caixa. Serve de
+   * complemento (ver {@link appendTreasuryCaixaMonthlyDueEstimates}) para os
+   * meses que a agenda/projeção materializada ainda não cobre.
+   */
+  monthlyDueEstimates: TreasuryCaixaMonthlyDueEstimate[];
 };

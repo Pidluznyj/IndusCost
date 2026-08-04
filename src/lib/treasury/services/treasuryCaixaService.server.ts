@@ -9,9 +9,15 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
-import { buildFinanceAccountsReceivableRulesResult } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
+import {
+  buildFinanceAccountsReceivableRulesResult,
+  sumOfficialArOpenDueInPeriod,
+} from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
-import { buildFinanceAccountsPayableRulesResult } from "@/src/lib/financeAccountsPayableRulesEngine.js";
+import {
+  buildFinanceAccountsPayableRulesResult,
+  sumOfficialApOpenDueInPeriod,
+} from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "@/src/lib/finance/financeCashFlowEffectiveAr.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
@@ -35,6 +41,40 @@ import {
 export type TreasuryCaixaService = {
   getBoard(period: TreasuryCaixaPeriodInput): Promise<TreasuryCaixaBoardDto>;
 };
+
+/**
+ * Meses civis cobertos por `[dueDateFrom, dueDateTo]`, para a estimativa
+ * mensal por vencimento (ver `appendTreasuryCaixaMonthlyDueEstimates` no
+ * domínio). Os limites já vêm alinhados a mês/ano por `resolveTreasuryCaixaDueDateRange`,
+ * então cada mês entra com o intervalo do CALENDÁRIO inteiro — não recortado
+ * pelo período pedido — mesma regra do "Linha do tempo mensal" do Fluxo de
+ * Caixa (`buildExecutiveMonthlyTimeline`), garantindo que os números batam
+ * mês a mês com aquela tela.
+ */
+export function resolveTreasuryCaixaMonthlyEstimateRanges(
+  dueDateFrom: Date,
+  dueDateTo: Date
+): Array<{ monthKey: string; monthStart: Date; monthEnd: Date }> {
+  const ranges: Array<{ monthKey: string; monthStart: Date; monthEnd: Date }> =
+    [];
+  let year = dueDateFrom.getFullYear();
+  let month = dueDateFrom.getMonth();
+  const lastYear = dueDateTo.getFullYear();
+  const lastMonth = dueDateTo.getMonth();
+  while (year < lastYear || (year === lastYear && month <= lastMonth)) {
+    ranges.push({
+      monthKey: `${year}-${String(month + 1).padStart(2, "0")}`,
+      monthStart: new Date(year, month, 1),
+      monthEnd: new Date(year, month + 1, 0),
+    });
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+  }
+  return ranges;
+}
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -233,9 +273,16 @@ export function createTreasuryCaixaService(input: {
         filters: { status: "all", dueDateFrom, dueDateTo },
       });
 
+      // Mesma regra do Radar Diário de Caixa/Fluxo de Caixa: título com
+      // pagamento/recebimento suspenso não soma no fluxo (o Ledger zera o
+      // valor lá; aqui exclui antes de somar) — sem isso os totais divergiam
+      // da tela de Fluxo de Caixa sempre que existisse um título suspenso no
+      // período. Não filtra `arResult.gridRows`/`apResult.gridRows` em si:
+      // a listagem de títulos devolvida (`receivables`/`payables` do DTO)
+      // continua mostrando os suspensos, como as telas de gestão de CR/CP.
       const totals = computeTreasuryCaixaTotals({
-        receivables: arResult.gridRows,
-        payables: apResult.gridRows,
+        receivables: arResult.gridRows.filter((r) => !r.suspendCollection),
+        payables: apResult.gridRows.filter((r) => !r.suspendPayment),
       });
 
       // Passado da linha do tempo: agrupa por data de LIQUIDAÇÃO, não por
@@ -387,6 +434,29 @@ export function createTreasuryCaixaService(input: {
         }).gridRows,
       });
 
+      // Estimativa mensal por vencimento, para TODO o período pedido — mesma
+      // regra e mesmas fontes (arEffectiveRows/apLoaded.rows, já em memória,
+      // sem round-trip extra) do "Linha do tempo mensal" do Fluxo de Caixa.
+      // O front usa isso para complementar meses que a agenda/projeção
+      // materializada (capada em 90 dias) ainda não cobre — sem isso, "tudo"
+      // (ano inteiro) parava no mês corrente.
+      const monthlyDueEstimates = resolveTreasuryCaixaMonthlyEstimateRanges(
+        dueDateFrom,
+        dueDateTo
+      ).map(({ monthKey, monthStart, monthEnd }) => ({
+        monthKey,
+        estimatedInflow: sumOfficialArOpenDueInPeriod(
+          arEffectiveRows,
+          monthStart,
+          monthEnd
+        ),
+        estimatedOutflow: sumOfficialApOpenDueInPeriod(
+          apLoaded.rows,
+          monthStart,
+          monthEnd
+        ),
+      }));
+
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
@@ -396,6 +466,7 @@ export function createTreasuryCaixaService(input: {
         overdue,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
+        monthlyDueEstimates,
       };
     },
   };

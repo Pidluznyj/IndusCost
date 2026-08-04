@@ -16,11 +16,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type {
+  TreasuryCaixaMonthlyDueEstimate,
   TreasuryCaixaTimeline,
   TreasuryCaixaTimelineMonth,
   TreasuryCaixaTimelineRow,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import {
+  appendTreasuryCaixaMonthlyDueEstimates,
   buildTreasuryCaixaMonthlyTimeline,
   detectTreasuryCaixaOutliers,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
@@ -36,6 +38,12 @@ export type TreasuryCaixaTimelineProps = {
   /** Presente quando falta gerar a projeção materializada do período. */
   onGenerateProjection?: () => void;
   generatingProjection?: boolean;
+  /**
+   * Estimativa mensal por vencimento (mesma regra do "Linha do tempo mensal"
+   * do Fluxo de Caixa) — complementa meses futuros que a agenda/projeção
+   * materializada ainda não cobre, em vez de deixá-los ausentes da tabela.
+   */
+  monthlyDueEstimates?: readonly TreasuryCaixaMonthlyDueEstimate[];
 };
 
 type ViewMode = "month" | "day";
@@ -53,7 +61,23 @@ function formatMonthKey(monthKey: string): string {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}/${y}`;
 }
 
-function MonthKindBadge({ kind }: { kind: TreasuryCaixaTimelineMonth["kind"] }) {
+function MonthKindBadge({
+  kind,
+  estimateOnly,
+}: {
+  kind: TreasuryCaixaTimelineMonth["kind"];
+  estimateOnly?: boolean;
+}) {
+  if (estimateOnly) {
+    return (
+      <span
+        className="rounded border border-dashed border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]"
+        title="Sem projeção dia a dia gerada para este mês — estimativa por vencimento dos títulos em aberto, sem saldo acumulado."
+      >
+        estimativa
+      </span>
+    );
+  }
   if (kind === "CURRENT") {
     return (
       <span className="rounded bg-[#1E3A8A] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
@@ -186,11 +210,13 @@ export function TreasuryCaixaTimeline({
   unavailableReason = null,
   onGenerateProjection,
   generatingProjection = false,
+  monthlyDueEstimates = [],
 }: TreasuryCaixaTimelineProps) {
-  const months = useMemo(
-    () => (timeline ? buildTreasuryCaixaMonthlyTimeline(timeline.rows) : []),
-    [timeline]
-  );
+  const months = useMemo(() => {
+    if (!timeline) return [];
+    const fromDays = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
+    return appendTreasuryCaixaMonthlyDueEstimates(fromDays, monthlyDueEstimates);
+  }, [timeline, monthlyDueEstimates]);
   const spansMultipleMonths = months.length > 1;
   /** Anomalias indexadas por dia+campo, para marcar a célula direto na tabela. */
   const outliers = useMemo(() => {
@@ -343,23 +369,31 @@ export function TreasuryCaixaTimeline({
               <tbody>
                 {mode === "month"
                   ? months.map((m) => {
-                      const isOpen = expanded.has(m.monthKey);
+                      const isOpen = expanded.has(m.monthKey) && !m.estimateOnly;
                       return (
                         <React.Fragment key={m.monthKey}>
                           <tr
                             className={cn(
-                              "border-b border-border/50 cursor-pointer hover:bg-muted/40",
+                              "border-b border-border/50 hover:bg-muted/40",
+                              m.estimateOnly ? "cursor-default" : "cursor-pointer",
                               m.kind === "CURRENT" && "bg-[#EFF6FF]",
                               m.kind === "FORECAST" && "text-[#475569]"
                             )}
-                            onClick={() => toggleMonth(m.monthKey)}
+                            onClick={
+                              m.estimateOnly
+                                ? undefined
+                                : () => toggleMonth(m.monthKey)
+                            }
                             data-testid={`caixa-timeline-month-${m.monthKey}`}
                             data-kind={m.kind}
+                            data-estimate-only={m.estimateOnly ? "true" : "false"}
                             data-expanded={isOpen}
                           >
                             <td className="whitespace-nowrap px-2 py-1.5 font-semibold">
                               <span className="inline-flex items-center gap-1">
-                                {isOpen ? (
+                                {m.estimateOnly ? (
+                                  <span className="inline-block h-3.5 w-3.5" aria-hidden />
+                                ) : isOpen ? (
                                   <ChevronDown
                                     className="h-3.5 w-3.5"
                                     aria-hidden
@@ -372,13 +406,14 @@ export function TreasuryCaixaTimeline({
                                 )}
                                 {formatMonthKey(m.monthKey)}
                                 <span className="font-normal text-muted-foreground">
-                                  ({m.days.length}{" "}
-                                  {m.days.length === 1 ? "dia" : "dias"})
+                                  {m.estimateOnly
+                                    ? "(estimativa por vencimento)"
+                                    : `(${m.days.length} ${m.days.length === 1 ? "dia" : "dias"})`}
                                 </span>
                               </span>
                             </td>
                             <td className="px-2 py-1.5">
-                              <MonthKindBadge kind={m.kind} />
+                              <MonthKindBadge kind={m.kind} estimateOnly={m.estimateOnly} />
                             </td>
                             <td className="px-2 py-1.5 text-right tabular-nums">
                               {money(m.opening)}
@@ -522,6 +557,19 @@ export function TreasuryCaixaTimeline({
             em aberto — esses ainda podem mudar.
             {mode === "month" ? " Clique num mês para ver os dias." : ""}
           </p>
+          {mode === "month" && months.some((m) => m.estimateOnly) ? (
+            <p
+              className="mt-1 text-[11px] leading-snug text-muted-foreground"
+              data-testid="caixa-timeline-estimate-legend"
+            >
+              <strong>Estimativa</strong> = mês sem projeção dia a dia gerada
+              ainda (a projeção materializada cobre no máximo ~90 dias).
+              Entrou/Saiu vêm do saldo em aberto por vencimento dos títulos —
+              mesma regra da &quot;Linha do tempo mensal&quot; do Fluxo de
+              Caixa — mas sem saldo acumulado (&quot;Começou&quot;/&quot;Terminou&quot;
+              ficam &quot;—&quot;), porque falta a cadeia dia a dia até lá.
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
             <strong>&quot;Começou&quot; e &quot;Terminou&quot;</strong> nos dias
             passados são <strong>calculados</strong>: partem de R$ 0,00 em

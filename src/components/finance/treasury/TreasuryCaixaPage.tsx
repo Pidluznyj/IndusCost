@@ -518,6 +518,7 @@ export function TreasuryCaixaPage() {
             unavailableReason={timelineUnavailable}
             onGenerateProjection={projectionParams ? generateProjection : undefined}
             generatingProjection={generatingProjection}
+            monthlyDueEstimates={data?.monthlyDueEstimates}
           />
         ) : null}
 
