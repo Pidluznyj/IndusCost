@@ -139,4 +139,105 @@ describe("financeBillingNfeDashboard", () => {
   it("billingTabMetricsAreFinite está disponível para validação de métricas", () => {
     assert.equal(typeof billingTabMetricsAreFinite, "function");
   });
+
+  describe("performance — regex contra xmlRaw só roda quando necessário", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src", "lib", "financeBillingNfeDashboard.ts"),
+      "utf8"
+    );
+
+    it("queryTopFiscalNfeCustomers guarda a extração via xmlRaw com CASE WHEN", () => {
+      // Antes: MAX(regexp_match(xmlRaw, ...)) rodava para TODA linha do grupo,
+      // incondicionalmente — mesmo quando Customer.tradeName/companyName já
+      // resolviam o nome. Como o COALESCE externo prioriza tradeName/companyName,
+      // essa linha só é o resultado final quando NENHUMA linha do grupo tinha
+      // nome cadastrado — logo a guarda abaixo preserva o mesmo customer_name
+      // em todos os casos, só evita computar regex desnecessário.
+      const match = src.match(
+        /MAX\(\s*CASE\s+WHEN\s+NULLIF\(TRIM\(c\."tradeName"\), ''\) IS NULL[\s\S]{0,80}NULLIF\(TRIM\(c\."companyName"\), ''\) IS NULL[\s\S]{0,200}ELSE NULL\s+END\s*\)/
+      );
+      assert.ok(
+        match,
+        "a extração via xmlRaw em queryTopFiscalNfeCustomers precisa estar protegida por CASE WHEN — sem isso, o regex volta a rodar para toda linha do ano"
+      );
+    });
+
+    it("a ordem de prioridade do COALESCE de customer_name não mudou", () => {
+      // tradeName > companyName > xmlRaw (guardado) > CNPJ cru > '—'
+      const coalesceBlock = src.match(
+        /customer_name,?\s*(?:$)|AS customer_name/
+      );
+      assert.ok(coalesceBlock);
+      const idxTrade = src.indexOf('MAX(NULLIF(TRIM(c."tradeName")');
+      const idxCompany = src.indexOf('MAX(NULLIF(TRIM(c."companyName")');
+      const idxXmlGuard = src.indexOf('NULLIF(TRIM(c."tradeName"), \'\') IS NULL');
+      const idxCnpj = src.indexOf('MAX(n."xmlDestCnpjCpf")');
+      assert.ok(idxTrade > 0 && idxCompany > idxTrade);
+      assert.ok(idxXmlGuard > idxCompany);
+      assert.ok(idxCnpj > idxXmlGuard);
+    });
+  });
+
+  describe("performance — índices casam com o predicado real das consultas", () => {
+    const migrationPath = join(
+      process.cwd(),
+      "prisma",
+      "migrations",
+      "20260831120000_billing_nfe_dashboard_perf_indexes",
+      "migration.sql"
+    );
+    const migrationSrc = readFileSync(migrationPath, "utf8");
+    const src = readFileSync(
+      join(process.cwd(), "src", "lib", "financeBillingNfeDashboard.ts"),
+      "utf8"
+    );
+
+    it("existe índice parcial para o predicado fiscal com dateBase=emissao (padrão da tela)", () => {
+      assert.match(
+        migrationSrc,
+        /COALESCE\("xmlDhEmi", "dataProcessamento"\)/
+      );
+      assert.match(migrationSrc, /"status" = 4/);
+      assert.match(migrationSrc, /"isMarketSale" = true/);
+      assert.match(
+        migrationSrc,
+        /'MARKET_REVENUE'::"NomusNfeBillingClassification"/
+      );
+      assert.match(migrationSrc, /"valorLiquido" IS NOT NULL/);
+    });
+
+    it("existe o par simétrico para dateBase=processamento", () => {
+      assert.match(
+        migrationSrc,
+        /COALESCE\("dataProcessamento", "xmlDhEmi"\)/
+      );
+    });
+
+    it("os índices de expressão da junção casam com a expressão usada no código", () => {
+      // O JOIN em queryTopFiscalNfeCustomers/queryRecentFiscalNfes usa esta
+      // expressão dos dois lados — o índice precisa ser byte-a-byte igual,
+      // senão o Postgres não o reconhece como aplicável.
+      assert.match(
+        src,
+        /regexp_replace\(COALESCE\(c\."taxId", ''\), '\[\^0-9\]', '', 'g'\)/
+      );
+      assert.match(
+        src,
+        /regexp_replace\(COALESCE\(n\."xmlDestCnpjCpf", ''\), '\[\^0-9\]', '', 'g'\)/
+      );
+      assert.match(
+        migrationSrc,
+        /regexp_replace\(COALESCE\("taxId", ''\), '\[\^0-9\]', '', 'g'\)/
+      );
+      assert.match(
+        migrationSrc,
+        /regexp_replace\(COALESCE\("xmlDestCnpjCpf", ''\), '\[\^0-9\]', '', 'g'\)/
+      );
+    });
+
+    it("a migration só cria índices — nenhum DML, nenhum DROP de dado", () => {
+      assert.equal(/DELETE|UPDATE|TRUNCATE|DROP TABLE|DROP COLUMN/i.test(migrationSrc), false);
+      assert.match(migrationSrc, /CREATE INDEX IF NOT EXISTS/);
+    });
+  });
 });

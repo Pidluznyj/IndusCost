@@ -258,7 +258,21 @@ async function queryTopFiscalNfeCustomers(
         COALESCE(
           MAX(NULLIF(TRIM(c."tradeName"), '')),
           MAX(NULLIF(TRIM(c."companyName"), '')),
-          MAX(${nfeXmlDestNameSql(Prisma.sql`n."xmlRaw"`)}),
+          -- Guarda: só extrai o nome do XML bruto (regex contra xmlRaw, coluna
+          -- TEXT sem limite) na linha em que a junção por CNPJ não achou nome
+          -- em Customer. Sem a guarda, o MAX() abaixo rodava a regex para toda
+          -- linha do grupo incondicionalmente — a linha vencedora do COALESCE
+          -- externo já vem decidida pelos dois MAX() anteriores em qualquer
+          -- grupo onde algum cliente tem nome cadastrado, então o resultado
+          -- final é idêntico; só o custo muda.
+          MAX(
+            CASE
+              WHEN NULLIF(TRIM(c."tradeName"), '') IS NULL
+               AND NULLIF(TRIM(c."companyName"), '') IS NULL
+              THEN ${nfeXmlDestNameSql(Prisma.sql`n."xmlRaw"`)}
+              ELSE NULL
+            END
+          ),
           MAX(n."xmlDestCnpjCpf"),
           '—'
         ) AS customer_name,
