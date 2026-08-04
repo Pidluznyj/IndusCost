@@ -49,10 +49,7 @@ import {
   type ReceiptClosingSellerTotals,
 } from "@/src/lib/commissions/commissionReceiptClosingSellerFilter.shared";
 import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
-import {
-  formatReceiptClosingCanonicalSellerDisplay,
-  formatReceiptClosingRawSellerDisplay,
-} from "@/src/lib/commissions/commissionReceiptSeller";
+import { formatReceiptClosingCanonicalSellerDisplay } from "@/src/lib/commissions/commissionReceiptSeller";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -180,14 +177,17 @@ function DetailTable({
   }
   return (
     <CommissionsTableScroll>
-      <table className="min-w-[1500px] text-xs" data-testid="commissions-receipt-closing-detail-table">
+      {/*
+        Largura mínima menor que a original (1500px): saíram CR, Vendedor raw e
+        Motivo, então cabe mais linha na tela sem rolagem horizontal. O motivo
+        virou tooltip da própria linha — ver `title` no <tr>.
+      */}
+      <table className="min-w-[1100px] text-xs" data-testid="commissions-receipt-closing-detail-table">
         <thead>
           <tr className="border-b text-left uppercase text-muted-foreground">
-            <th className="px-2 py-2">CR</th>
             <th className="px-2 py-2">NF</th>
             <th className="px-2 py-2">Pedido</th>
             <th className="px-2 py-2">Cliente</th>
-            <th className="px-2 py-2">Vendedor raw</th>
             <th className="px-2 py-2">Vendedor canônico</th>
             <th className="px-2 py-2 text-right">Original CR</th>
             <th className="px-2 py-2 text-right">Recebido bruto</th>
@@ -196,7 +196,6 @@ function DetailTable({
             <th className="px-2 py-2 text-right">Schedule comissão</th>
             <th className="px-2 py-2 text-right">Comissão liberada</th>
             <th className="px-2 py-2">Status</th>
-            <th className="px-2 py-2">Motivo</th>
           </tr>
         </thead>
         <tbody>
@@ -205,13 +204,22 @@ function DetailTable({
             const original = row.receivableOriginalAmount ?? null;
             const base =
               row.commissionPrincipalAmount ?? row.commissionableBaseAmount;
+            // Motivo saiu da grade e virou tooltip da linha inteira: passar o
+            // mouse em qualquer célula explica o status. Sem motivo, sem
+            // tooltip — `undefined` não renderiza atributo.
+            const reasonTooltip = row.statusReason
+              ? `${row.status}: ${row.statusReason}`
+              : undefined;
             return (
-            <tr key={row.lineKey} className="border-b">
-              <td className="px-2 py-2">{row.receivableNumber ?? row.nomusReceivableId ?? "—"}</td>
+            <tr
+              key={row.lineKey}
+              className="border-b"
+              title={reasonTooltip}
+              data-status-reason={row.statusReason ?? undefined}
+            >
               <td className="px-2 py-2">{row.nfeNumber ?? "—"}</td>
               <td className="px-2 py-2">{row.orderCode ?? "—"}</td>
               <td className="px-2 py-2">{row.customerName ?? "—"}</td>
-              <td className="px-2 py-2">{formatReceiptClosingRawSellerDisplay(row)}</td>
               <td className="px-2 py-2">{formatReceiptClosingCanonicalSellerDisplay(row)}</td>
               <td className="px-2 py-2 text-right">
                 {original != null ? formatFinanceCurrency(original) : "—"}
@@ -247,14 +255,19 @@ function DetailTable({
                   {row.status}
                 </span>
               </td>
-              <td className="px-2 py-2 text-muted-foreground">{row.statusReason ?? "—"}</td>
             </tr>
             );
           })}
         </tbody>
         <tfoot>
+          {/*
+            11 colunas: NF, Pedido, Cliente, Vendedor canônico (colSpan 4),
+            Original CR, Recebido bruto, Base, Juros ignorados, Schedule,
+            Liberada (6 células) e Status (1). Soma 11 — precisa bater com o
+            thead, senão a linha de totais desalinha das colunas de valor.
+          */}
           <tr className="border-t-2 bg-muted/20 font-semibold" data-testid="commissions-receipt-closing-detail-totals">
-            <td className="px-2 py-2" colSpan={6}>
+            <td className="px-2 py-2" colSpan={4}>
               Totais ({totals.lineCount} linha{totals.lineCount === 1 ? "" : "s"})
             </td>
             <td className="px-2 py-2 text-right">—</td>
@@ -267,7 +280,7 @@ function DetailTable({
             <td className="px-2 py-2 text-right">
               {formatFinanceCurrency(totals.releasedCommissionAmount)}
             </td>
-            <td className="px-2 py-2" colSpan={2} />
+            <td className="px-2 py-2" />
           </tr>
         </tfoot>
       </table>
