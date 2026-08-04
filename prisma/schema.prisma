@@ -2274,6 +2274,7 @@ model AppUser {
   treasuryExceptionsCancelled          TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
   treasuryExceptionsResponsible        TreasuryException[]                  @relation("TreasuryExceptionResponsible")
   treasuryAlertSettingsUpdated         TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
+  treasuryScenarioPolicyUpdated        TreasuryScenarioPolicy[]             @relation("TreasuryScenarioPolicyUpdatedBy")
   dreCostCenterMappingsUpdated         FinancialDreCostCenterMapping[]      @relation("FinancialDreCostCenterMappingUpdatedBy")
   treasuryDailyClosingsCreated         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
   treasuryDailyClosingsClosed          TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
@@ -8930,6 +8931,60 @@ model TreasuryAlertSettings {
   updatedByUserId String?  @db.Uuid
 
   updatedByUser AppUser? @relation("TreasuryAlertSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+}
+
+/// Política persistida dos cenários da Caixa (singleton — id "GLOBAL").
+/// Fonte dos parâmetros usados pelo motor Otimista/Realista/Pessimista.
+/// Alterações são auditadas via TreasuryAuditLog (entityType "MODULE",
+/// entityId "SCENARIO_POLICY:GLOBAL"). Só afetam projeções FUTURAS — o
+/// passado realizado não muda.
+model TreasuryScenarioPolicy {
+  id String @id @default("GLOBAL")
+
+  /// Ligar/desligar a projeção pessimista com atraso configurado.
+  /// Se false, o pessimista se comporta igual ao contratual (dueDate rígido)
+  /// sem aplicar delay adicional em títulos sem promessa/expected.
+  pessimisticEnabled Boolean @default(true)
+
+  /// Otimista: dias máximos que a projeção aceita antecipar um CR ainda em
+  /// aberto sem promessa/expected/confirmação. 0 = sem antecipação artificial
+  /// (default seguro): otimista só usa datas operacionais já registradas.
+  optimisticReceivableAdvanceLimitDays Int @default(0)
+
+  /// Otimista: dias máximos que a projeção aceita postergar um CP em aberto
+  /// sem programação/expected. 0 = sem postergação artificial (default).
+  /// Uma CP só ganha data mais tardia quando já houver evidência.
+  optimisticPayableDelayLimitDays Int @default(0)
+
+  /// Pessimista: atraso, em dias, aplicado a CR ainda em aberto SEM promessa
+  /// firme/expected/confirmação. 15 = default conservador da política inicial.
+  /// Nunca aplica em título já baixado nem projeta em data passada (o motor
+  /// clampa para hoje quando resultado ≤ ontem).
+  pessimisticReceivableDelayDays Int @default(15)
+
+  /// Pessimista: título vencido em aberto sem nova expectativa. Ao invés de
+  /// "hoje", aplica atraso adicional configurado após o vencimento oficial.
+  /// Se null, mesma regra de pessimisticReceivableDelayDays.
+  pessimisticOverdueReceivableDelayDays Int?
+
+  /// Pessimista: promessa quebrada (BROKEN) — mantém a data original prometida
+  /// (fatalismo) ou aplica delay? true = aplica delay, false = mantém.
+  pessimisticTreatBrokenPromiseAsDelayed Boolean @default(true)
+
+  /// Uso de comportamento histórico (dias médios de atraso por cliente/
+  /// fornecedor). Desativado até haver fonte de histórico confiável — mantido
+  /// no schema para permitir ligar depois sem migration.
+  useCustomerBehaviorHistory Boolean @default(false)
+  useSupplierBehaviorHistory Boolean @default(false)
+
+  /// Versão da política (monotônica). Incrementa a cada save com auditoria.
+  version Int @default(1)
+
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedByUserId String?  @db.Uuid
+
+  updatedByUser AppUser? @relation("TreasuryScenarioPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 }
 
 /// Status do fechamento diário da Tesouraria.
