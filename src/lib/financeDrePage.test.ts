@@ -608,12 +608,20 @@ describe("finance dre line drill-down", () => {
     assert.match(pageUi, /finance-dre-ebitda-cards/);
     assert.match(pageUi, /EBITDA/);
     assert.match(pageUi, /Parametrizar centros/);
-    assert.match(pageUi, /\/finance\/dre\/parametrizacao/);
+    assert.match(pageUi, /FinanceDreCostCenterParametrizationModal/);
     assert.doesNotMatch(pageUi, /0\.09|0\.15|20000|numberOfMonthsInPeriod/);
+
+    const paramModal = readSrc(
+      "src/components/finance/dre/FinanceDreCostCenterParametrizationModal.tsx"
+    );
+    assert.match(paramModal, /finance-dre-parametrization-modal/);
+    assert.match(paramModal, /cost-center-mappings/);
+    assert.match(paramModal, /hasPermission/);
 
     const mappingPage = readSrc("src/components/finance/FinanceDreCostCenterMappingPage.tsx");
     assert.match(mappingPage, /finance-dre-cc-mapping-page/);
     assert.match(mappingPage, /Investimento sócios|partner_investment/);
+    assert.match(mappingPage, /hasPermission/);
 
     const moduleSrc = readSrc("src/components/FinanceModule.tsx");
     assert.match(moduleSrc, /dre\/parametrizacao/);

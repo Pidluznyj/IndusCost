@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
 import { Download, Maximize2, Printer, RefreshCw, Settings2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -31,6 +30,7 @@ import { FinanceDreInformativeReport } from "@/src/components/finance/dre/Financ
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
 import { FinanceDrePrintDocument } from "@/src/components/finance/dre/FinanceDrePrintDocument";
 import { FinanceDreLineDetailModal } from "@/src/components/finance/dre/FinanceDreLineDetailModal";
+import { FinanceDreCostCenterParametrizationModal } from "@/src/components/finance/dre/FinanceDreCostCenterParametrizationModal";
 import { FinanceDreCashBridgePanel } from "@/src/components/finance/dre/FinanceDreCashBridgePanel";
 import type { FinanceDreLineId } from "@/src/lib/financeDreTypes";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -139,6 +139,7 @@ export function FinanceManagerialDrePage() {
   const [loadingCashBridge, setLoadingCashBridge] = useState(false);
   const [cashBridgeError, setCashBridgeError] = useState<string | null>(null);
   const [presentationOpen, setPresentationOpen] = useState(false);
+  const [parametrizeOpen, setParametrizeOpen] = useState(false);
   const [drillLineId, setDrillLineId] = useState<FinanceDreLineId | null>(null);
   const [drillSourceCheckId, setDrillSourceCheckId] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
@@ -324,14 +325,15 @@ export function FinanceManagerialDrePage() {
             <Maximize2 className="h-4 w-4" />
             Abrir apresentação
           </button>
-          <Link
-            to="/finance/dre/parametrizacao"
+          <button
+            type="button"
+            onClick={() => setParametrizeOpen(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
             data-testid="finance-dre-parametrize-link"
           >
             <Settings2 className="h-4 w-4" />
             Parametrizar centros
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -663,6 +665,10 @@ export function FinanceManagerialDrePage() {
     {report && typeof document !== "undefined"
       ? createPortal(<FinanceDrePrintDocument report={report} />, document.body)
       : null}
+    <FinanceDreCostCenterParametrizationModal
+      open={parametrizeOpen}
+      onClose={() => setParametrizeOpen(false)}
+    />
     </>
   );
 }

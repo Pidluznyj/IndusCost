@@ -28,13 +28,9 @@ type MappingsResponse = {
 };
 
 export function FinanceDreCostCenterMappingPage() {
-  const { user } = useAuth();
-  const canView = canViewFinanceDre({
-    hasPermission: (k) => Boolean(user?.permissions?.includes(k)),
-  });
-  const canManage = canManageFinanceDreMappings({
-    hasPermission: (k) => Boolean(user?.permissions?.includes(k)),
-  });
+  const { hasPermission } = useAuth();
+  const canView = canViewFinanceDre({ hasPermission });
+  const canManage = canManageFinanceDreMappings({ hasPermission });
 
   const [rows, setRows] = useState<FinanceDreCostCenterMappingRow[]>([]);
   const [draft, setDraft] = useState<Record<string, DreCostCenterRole>>({});
