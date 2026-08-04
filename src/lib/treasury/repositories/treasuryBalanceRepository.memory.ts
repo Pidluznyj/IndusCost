@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { TreasuryBalanceSnapshotRow } from "../mappers/treasuryBalanceMappers.js";
 import type {
+  TreasuryBalanceCancelData,
   TreasuryBalanceCreateData,
   TreasuryBalanceListFilter,
   TreasuryBalanceRepository,
@@ -30,6 +31,11 @@ export function createMemoryTreasuryBalanceRepository(
   store: TreasuryBalanceMemoryStore
 ): TreasuryBalanceRepository {
   return {
+    async findById(id) {
+      const row = store.snapshots.find((s) => s.id === id);
+      return row ? clone(row) : null;
+    },
+
     async findByIdempotency(accountId, origin, idempotencyKey) {
       const row = store.snapshots.find(
         (s) =>
@@ -42,7 +48,7 @@ export function createMemoryTreasuryBalanceRepository(
 
     async findLatest(accountId) {
       const rows = store.snapshots
-        .filter((s) => s.accountId === accountId)
+        .filter((s) => s.accountId === accountId && !s.cancelledAt)
         .sort((a, b) => {
           const ref = b.referenceAt.getTime() - a.referenceAt.getTime();
           if (ref !== 0) return ref;
@@ -115,8 +121,22 @@ export function createMemoryTreasuryBalanceRepository(
         createdByUserId: data.createdByUserId,
         previousSnapshotId: data.previousSnapshotId,
         createdAt: new Date(),
+        cancelledAt: null,
+        cancelledByUserId: null,
+        cancelReason: null,
       };
       store.snapshots.push(row);
+      return clone(row);
+    },
+
+    async cancel(id: string, data: TreasuryBalanceCancelData) {
+      const row = store.snapshots.find((s) => s.id === id);
+      if (!row) {
+        throw new Error(`TreasuryBalanceSnapshot not found: ${id}`);
+      }
+      row.cancelledAt = new Date();
+      row.cancelledByUserId = data.cancelledByUserId;
+      row.cancelReason = data.cancelReason;
       return clone(row);
     },
   };

@@ -85,9 +85,9 @@ const migrationsDir = join(repoRoot, "prisma/migrations");
 
 /** Congelamento — superfície HTTP (antes = depois da simplificação UX). */
 const EXPECTED_HTTP_HANDLERS = {
-  total: 97,
+  total: 98,
   get: 52,
-  post: 39,
+  post: 40,
   put: 4,
   patch: 2,
   delete: 0,
@@ -123,7 +123,7 @@ const EXPECTED_TREASURY_MODELS = [
   "TreasuryReconciliationAllocation",
 ] as const;
 
-const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 17;
+const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 18;
 
 const EXPECTED_LAYER_COUNTS = {
   controllersMin: 27,
@@ -293,7 +293,7 @@ function migrationsTouchingTreasury(): string[] {
 }
 
 describe("treasury advanced capabilities — API handlers", () => {
-  it("quantidade e métodos HTTP permanecem iguais (97 = 52/39/4/2/0)", () => {
+  it("quantidade e métodos HTTP permanecem iguais (98 = 52/40/4/2/0)", () => {
     const routesSrc = readFileSync(join(treasuryRoot, "treasuryRoutes.ts"), "utf8");
     const counts = countHandlers(routesSrc);
     assert.equal(counts.total, EXPECTED_HTTP_HANDLERS.total);

@@ -146,7 +146,7 @@ export function createTreasuryPredictiveCrCpByAccountService(input: {
         activeIds.length === 0
           ? []
           : await prisma.treasuryBalanceSnapshot.findMany({
-              where: { accountId: { in: activeIds } },
+              where: { accountId: { in: activeIds }, cancelledAt: null },
               orderBy: [{ referenceAt: "desc" }, { createdAt: "desc" }],
               distinct: ["accountId"],
               select: {

@@ -53,7 +53,16 @@ function mapRow(row: {
   return row as TreasuryBalanceSnapshotRow;
 }
 
+export type TreasuryBalanceCancelData = {
+  cancelledByUserId: string;
+  cancelReason: string;
+};
+
 export type TreasuryBalanceRepository = {
+  findById(
+    id: string,
+    db?: TreasuryBalanceDb
+  ): Promise<TreasuryBalanceSnapshotRow | null>;
   findByIdempotency(
     accountId: string,
     origin: string,
@@ -77,6 +86,12 @@ export type TreasuryBalanceRepository = {
     data: TreasuryBalanceCreateData,
     db?: TreasuryBalanceDb
   ): Promise<TreasuryBalanceSnapshotRow>;
+  /** Cancelamento lógico (SUPER_ADMIN) — nunca DELETE físico. */
+  cancel(
+    id: string,
+    data: TreasuryBalanceCancelData,
+    db?: TreasuryBalanceDb
+  ): Promise<TreasuryBalanceSnapshotRow>;
 };
 
 export function createTreasuryBalanceRepository(
@@ -85,6 +100,13 @@ export function createTreasuryBalanceRepository(
   const client = (db?: TreasuryBalanceDb) => db ?? prisma;
 
   return {
+    async findById(id, db) {
+      const row = await client(db).treasuryBalanceSnapshot.findUnique({
+        where: { id },
+      });
+      return row ? mapRow(row) : null;
+    },
+
     async findByIdempotency(accountId, origin, idempotencyKey, db) {
       const row = await client(db).treasuryBalanceSnapshot.findUnique({
         where: {
@@ -100,7 +122,7 @@ export function createTreasuryBalanceRepository(
 
     async findLatest(accountId, db) {
       const row = await client(db).treasuryBalanceSnapshot.findFirst({
-        where: { accountId },
+        where: { accountId, cancelledAt: null },
         orderBy: [{ referenceAt: "desc" }, { createdAt: "desc" }],
       });
       return row ? mapRow(row) : null;
@@ -148,6 +170,7 @@ export function createTreasuryBalanceRepository(
           "createdAt"
         FROM "TreasuryBalanceSnapshot"
         WHERE "accountId" = ANY(${accountIds}::uuid[])
+          AND "cancelledAt" IS NULL
         ORDER BY "accountId", "referenceAt" DESC, "createdAt" DESC
       `;
       for (const row of rows) {
@@ -200,6 +223,18 @@ export function createTreasuryBalanceRepository(
           attachmentUrl: data.attachmentUrl,
           createdByUserId: data.createdByUserId,
           previousSnapshotId: data.previousSnapshotId,
+        },
+      });
+      return mapRow(row);
+    },
+
+    async cancel(id, data, db) {
+      const row = await client(db).treasuryBalanceSnapshot.update({
+        where: { id },
+        data: {
+          cancelledAt: new Date(),
+          cancelledByUserId: data.cancelledByUserId,
+          cancelReason: data.cancelReason,
         },
       });
       return mapRow(row);

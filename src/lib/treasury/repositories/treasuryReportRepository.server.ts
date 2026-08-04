@@ -127,7 +127,7 @@ async function loadDailyPosition(
   if (!accountIds.length) return emptyFacts({ paginate: false });
 
   const snapshots = await prisma.treasuryBalanceSnapshot.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { accountId: { in: accountIds }, cancelledAt: null },
     orderBy: [{ accountId: "asc" }, { referenceAt: "desc" }],
     distinct: ["accountId"],
     select: {
@@ -734,7 +734,7 @@ async function loadPositionByAccount(
 ): Promise<TreasuryReportFacts> {
   if (!query.accountIds.length) return emptyFacts({ paginate: false });
   const snapshots = await prisma.treasuryBalanceSnapshot.findMany({
-    where: { accountId: { in: query.accountIds } },
+    where: { accountId: { in: query.accountIds }, cancelledAt: null },
     orderBy: [{ accountId: "asc" }, { referenceAt: "desc" }],
     distinct: ["accountId"],
     select: {

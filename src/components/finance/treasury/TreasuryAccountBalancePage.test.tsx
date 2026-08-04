@@ -42,6 +42,9 @@ function sampleRow(): TreasuryBalanceSnapshotDto {
     createdByUserId: "u1",
     previousSnapshotId: null,
     createdAt: "2026-07-20T15:31:00.000Z",
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancelReason: null,
   };
 }
 

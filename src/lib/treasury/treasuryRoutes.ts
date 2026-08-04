@@ -830,6 +830,15 @@ export function registerTreasuryRoutes(
     balances.createBalanceSnapshot
   );
 
+  app.post(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balance-snapshots/:snapshotId/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    balancesEnabled,
+    manageBalances,
+    balances.cancelBalanceSnapshot
+  );
+
   app.get(
     `${TREASURY_ACCOUNTS_PATH}/:id`,
     requireAppAuth,

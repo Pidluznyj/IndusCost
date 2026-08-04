@@ -85,6 +85,7 @@ export async function loadFallbackDailyClosingBankSumByCivilDate(
     where: {
       accountId: { in: accountIds },
       origin: "MANUAL",
+      cancelledAt: null,
       idempotencyKey: {
         startsWith: `${TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX}:`,
       },

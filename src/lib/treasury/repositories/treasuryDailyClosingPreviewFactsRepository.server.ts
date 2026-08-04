@@ -75,7 +75,7 @@ export function createTreasuryDailyClosingPreviewFactsRepository(
         accountIds.length === 0
           ? []
           : await prisma.treasuryBalanceSnapshot.findMany({
-              where: { accountId: { in: accountIds } },
+              where: { accountId: { in: accountIds }, cancelledAt: null },
               orderBy: { referenceAt: "desc" },
               select: {
                 accountId: true,

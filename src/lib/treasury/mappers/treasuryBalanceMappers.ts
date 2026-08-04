@@ -24,6 +24,9 @@ export type TreasuryBalanceSnapshotRow = {
   createdByUserId: string;
   previousSnapshotId: string | null;
   createdAt: Date;
+  cancelledAt?: Date | null;
+  cancelledByUserId?: string | null;
+  cancelReason?: string | null;
 };
 
 function moneyFromDecimal(
@@ -75,5 +78,8 @@ export function toTreasuryBalanceSnapshotDto(
     createdByUserId: row.createdByUserId,
     previousSnapshotId: row.previousSnapshotId,
     createdAt: formatTreasuryTimestampIso(row.createdAt),
+    cancelledAt: row.cancelledAt ? formatTreasuryTimestampIso(row.cancelledAt) : null,
+    cancelledByUserId: row.cancelledByUserId ?? null,
+    cancelReason: row.cancelReason ?? null,
   };
 }

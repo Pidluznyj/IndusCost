@@ -2244,6 +2244,7 @@ model AppUser {
   treasuryAccountAccessGrants          TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
   treasuryAccountAccessGrantedBy       TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
   treasuryBalanceSnapshotsCreated      TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
+  treasuryBalanceSnapshotsCancelled    TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCancelledBy")
   treasuryAuditLogs                    TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
   treasuryTitleComplementsCreated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
   treasuryTitleComplementsUpdated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
@@ -8142,9 +8143,16 @@ model TreasuryBalanceSnapshot {
   createdByUserId    String                @db.Uuid
   previousSnapshotId String?               @db.Uuid
   createdAt          DateTime              @default(now()) @db.Timestamptz(6)
+  /// Cancelamento lógico (SUPER_ADMIN) — nunca DELETE físico. Snapshot
+  /// cancelado fica no histórico (auditoria), mas todo consumidor filtra
+  /// cancelledAt IS NULL, então some de saldo atual/projeção/relatórios.
+  cancelledAt        DateTime?             @db.Timestamptz(6)
+  cancelledByUserId  String?               @db.Uuid
+  cancelReason       String?
 
   account          TreasuryFinancialAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdByUser    AppUser                   @relation("TreasuryBalanceSnapshotCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  cancelledByUser  AppUser?                  @relation("TreasuryBalanceSnapshotCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   previousSnapshot TreasuryBalanceSnapshot?  @relation("TreasuryBalanceSnapshotChain", fields: [previousSnapshotId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   nextSnapshots    TreasuryBalanceSnapshot[] @relation("TreasuryBalanceSnapshotChain")
 
@@ -8154,6 +8162,7 @@ model TreasuryBalanceSnapshot {
   @@index([createdByUserId])
   @@index([previousSnapshotId])
   @@index([createdAt])
+  @@index([cancelledAt])
 }
 
 /// Auditoria append-only da Tesouraria (imutável via trigger + API sem update/delete).

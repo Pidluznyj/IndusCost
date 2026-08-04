@@ -97,6 +97,9 @@ function sampleSnapshot(
     createdByUserId: "user-admin",
     previousSnapshotId: null,
     createdAt: "2026-07-20T12:01:00.000+00:00",
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancelReason: null,
     ...overrides,
   };
 }

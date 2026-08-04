@@ -125,6 +125,10 @@ export type TreasuryBalanceSnapshotDto = {
   createdByUserId: string;
   previousSnapshotId: string | null;
   createdAt: TreasuryTimestampIso;
+  /** Cancelamento lógico (SUPER_ADMIN); null = ativo. Cancelado some dos cálculos. */
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
+  cancelReason: string | null;
 };
 
 export type TreasuryBalancePositionDto = {

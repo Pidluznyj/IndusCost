@@ -34,6 +34,9 @@ function sampleLatest(
     createdByUserId: "u1",
     previousSnapshotId: null,
     createdAt: "2026-07-20T12:01:00.000Z",
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancelReason: null,
     ...overrides,
   };
 }

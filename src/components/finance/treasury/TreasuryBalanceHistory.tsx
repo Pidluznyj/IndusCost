@@ -6,12 +6,25 @@ import {
   formatTreasuryBalanceDateTimePtBr,
 } from "@/src/lib/treasury/treasuryBalancesUi.js";
 import { FinanceModuleEmptyState } from "@/src/components/finance/shared/FinanceModuleStates";
+import { cn } from "@/src/lib/utils";
 
 type Props = {
   rows: TreasuryBalanceSnapshotDto[];
+  /** Editar/excluir só aparece para SUPER_ADMIN. */
+  isSuperAdmin?: boolean;
+  onEdit?: (row: TreasuryBalanceSnapshotDto) => void;
+  onCancel?: (row: TreasuryBalanceSnapshotDto) => void;
+  /** id do snapshot com exclusão em andamento — desabilita as ações da linha. */
+  cancellingId?: string | null;
 };
 
-export function TreasuryBalanceHistory({ rows }: Props) {
+export function TreasuryBalanceHistory({
+  rows,
+  isSuperAdmin = false,
+  onEdit,
+  onCancel,
+  cancellingId = null,
+}: Props) {
   if (rows.length === 0) {
     return (
       <FinanceModuleEmptyState
@@ -54,6 +67,33 @@ export function TreasuryBalanceHistory({ rows }: Props) {
               {TREASURY_BALANCE_ORIGIN_LABELS[row.origin]}
               {row.notes ? ` · ${row.notes}` : ""}
             </p>
+            {row.cancelledAt ? (
+              <p
+                className="mt-1 text-xs font-semibold text-destructive"
+                data-testid={`treasury-balance-cancelled-${row.id}`}
+              >
+                Excluído{row.cancelReason ? ` · ${row.cancelReason}` : ""}
+              </p>
+            ) : isSuperAdmin ? (
+              <div className="mt-2 flex gap-3">
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-primary"
+                  disabled={cancellingId === row.id}
+                  onClick={() => onEdit?.(row)}
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-destructive"
+                  disabled={cancellingId === row.id}
+                  onClick={() => onCancel?.(row)}
+                >
+                  {cancellingId === row.id ? "Excluindo…" : "Excluir"}
+                </button>
+              </div>
+            ) : null}
           </li>
         ))}
       </ol>
@@ -87,11 +127,22 @@ export function TreasuryBalanceHistory({ rows }: Props) {
               <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">
                 Observação
               </th>
+              {isSuperAdmin ? (
+                <th className="px-3 py-2 text-[10px] font-bold uppercase text-muted-foreground">
+                  Ações
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-b border-border/60">
+              <tr
+                key={row.id}
+                className={cn(
+                  "border-b border-border/60",
+                  row.cancelledAt && "opacity-60"
+                )}
+              >
                 <td className="px-3 py-2 tabular-nums text-muted-foreground">
                   {formatTreasuryBalanceDateTimePtBr(row.referenceAt)}
                 </td>
@@ -118,6 +169,40 @@ export function TreasuryBalanceHistory({ rows }: Props) {
                 <td className="px-3 py-2 text-muted-foreground">
                   {row.notes || "—"}
                 </td>
+                {isSuperAdmin ? (
+                  <td className="px-3 py-2">
+                    {row.cancelledAt ? (
+                      <span
+                        className="text-xs font-semibold text-destructive"
+                        title={row.cancelReason ?? undefined}
+                        data-testid={`treasury-balance-cancelled-${row.id}`}
+                      >
+                        Excluído
+                      </span>
+                    ) : (
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-primary hover:underline"
+                          disabled={cancellingId === row.id}
+                          onClick={() => onEdit?.(row)}
+                          data-testid={`treasury-balance-edit-${row.id}`}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-destructive hover:underline disabled:opacity-60"
+                          disabled={cancellingId === row.id}
+                          onClick={() => onCancel?.(row)}
+                          data-testid={`treasury-balance-delete-${row.id}`}
+                        >
+                          {cancellingId === row.id ? "Excluindo…" : "Excluir"}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

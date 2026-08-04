@@ -1,5 +1,10 @@
 # Regras de comissão — fontes e status (IndusCost)
 
+> **Documento canônico do módulo.** As seções numeradas 1–15 são regras
+> oficiais decididas pelo negócio. Não são hipóteses e não devem ser
+> reabertas a cada tarefa. Divergências conhecidas entre estas regras e o
+> código atual estão na seção final "Divergências do código".
+
 ## Fonte oficial por superfície
 
 | Superfície | Fonte |

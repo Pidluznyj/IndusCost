@@ -125,6 +125,7 @@ async function loadRoutineBalancesByAccount(
     where: {
       accountId: { in: accountIds },
       origin: "MANUAL",
+      cancelledAt: null,
       idempotencyKey: { startsWith: prefix },
     },
     orderBy: { createdAt: "desc" },

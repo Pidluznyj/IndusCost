@@ -98,3 +98,29 @@ export async function createTreasuryBalanceSnapshot(
     }
   );
 }
+
+export type TreasuryCancelBalanceSnapshotPayload = {
+  ok: true;
+  snapshot: TreasuryBalanceSnapshotDto;
+  requestId?: string;
+};
+
+/**
+ * Cancelamento lógico (SUPER_ADMIN) — nunca DELETE físico. O saldo some de
+ * todos os cálculos, mas fica no histórico/auditoria.
+ */
+export async function cancelTreasuryBalanceSnapshot(
+  accountId: string,
+  snapshotId: string,
+  reason: string
+): Promise<TreasuryCancelBalanceSnapshotPayload> {
+  return fetchJsonOk<TreasuryCancelBalanceSnapshotPayload>(
+    `${TREASURY_ACCOUNTS_PATH}/${encodeURIComponent(accountId)}/balance-snapshots/${encodeURIComponent(snapshotId)}/cancel`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }
+  );
+}

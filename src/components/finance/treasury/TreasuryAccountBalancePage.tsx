@@ -11,6 +11,7 @@ import type {
 } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAccount } from "@/src/lib/treasury/treasuryAccountsApi.js";
 import {
+  cancelTreasuryBalanceSnapshot,
   createTreasuryBalanceSnapshot,
   fetchTreasuryAccountBalances,
   fetchTreasuryAccountLatestBalance,
@@ -39,6 +40,7 @@ import {
   FinanceModuleLoadingBlock,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { TreasuryBalanceCancelConfirmDialog } from "./TreasuryBalanceCancelConfirmDialog.js";
 import { TreasuryBalanceConfirmDialog } from "./TreasuryBalanceConfirmDialog.js";
 import { TreasuryBalanceHistory } from "./TreasuryBalanceHistory.js";
 import { TreasuryBalanceUpdateForm } from "./TreasuryBalanceUpdateForm.js";
@@ -64,6 +66,7 @@ export function TreasuryAccountBalancePage() {
   };
   const canView = canViewTreasuryBalances(permCheck);
   const canManage = canManageTreasuryBalances(permCheck);
+  const isSuperAdmin = auth.isSuperAdmin();
 
   const abortRef = useRef<AbortController | null>(null);
   const [account, setAccount] = useState<TreasuryFinancialAccountDto | null>(
@@ -82,6 +85,10 @@ export function TreasuryAccountBalancePage() {
   const [confirmPayload, setConfirmPayload] =
     useState<TreasuryCreateBalanceSnapshotBody | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cancelTarget, setCancelTarget] =
+    useState<TreasuryBalanceSnapshotDto | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!canView || !accountId) {
@@ -185,6 +192,33 @@ export function TreasuryAccountBalancePage() {
       setIsConflict(resolved.isConflict);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEdit = (row: TreasuryBalanceSnapshotDto) => {
+    setFormError(null);
+    setIsConflict(false);
+    setForm(createEmptyTreasuryBalanceForm(row));
+  };
+
+  const handleCancelRequest = (row: TreasuryBalanceSnapshotDto) => {
+    setCancelError(null);
+    setCancelTarget(row);
+  };
+
+  const handleCancelConfirm = async (reason: string) => {
+    if (!accountId || !cancelTarget) return;
+    setCancellingId(cancelTarget.id);
+    setCancelError(null);
+    try {
+      await cancelTreasuryBalanceSnapshot(accountId, cancelTarget.id, reason);
+      setCancelTarget(null);
+      await load();
+    } catch (e) {
+      const resolved = resolveTreasuryBalanceSaveError(e);
+      setCancelError(resolved.message);
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -330,7 +364,13 @@ export function TreasuryAccountBalancePage() {
               onReload={() => void load()}
             />
 
-            <TreasuryBalanceHistory rows={history} />
+            <TreasuryBalanceHistory
+              rows={history}
+              isSuperAdmin={isSuperAdmin}
+              onEdit={handleEdit}
+              onCancel={handleCancelRequest}
+              cancellingId={cancellingId}
+            />
           </>
         ) : null}
 
@@ -343,6 +383,14 @@ export function TreasuryAccountBalancePage() {
             onConfirm={() => void confirmSave()}
           />
         ) : null}
+
+        <TreasuryBalanceCancelConfirmDialog
+          row={cancelTarget}
+          busy={!!cancellingId}
+          error={cancelError}
+          onCancel={() => setCancelTarget(null)}
+          onConfirm={(reason) => void handleCancelConfirm(reason)}
+        />
       </div>
     </FinanceBiDashboardShell>
   );

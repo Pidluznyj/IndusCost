@@ -121,5 +121,17 @@ export function createTreasuryBalanceControllers(
           requestId,
         });
       }),
+
+    cancelBalanceSnapshot: (req: Request, res: Response) =>
+      withAuth(req, res, async (actor, requestId) => {
+        const id = String(req.params.id ?? "").trim();
+        const snapshotId = String(req.params.snapshotId ?? "").trim();
+        const body = asBody(req);
+        const reason = typeof body.reason === "string" ? body.reason : "";
+        const snapshot = await service.cancelBalanceSnapshot(actor, id, snapshotId, {
+          reason,
+        });
+        res.status(200).json({ ok: true, snapshot, requestId });
+      }),
   };
 }

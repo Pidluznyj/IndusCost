@@ -9,7 +9,10 @@ import type {
   TreasuryListResponse,
 } from "../contracts/treasuryDto.js";
 import { buildTreasuryPaginationMeta } from "../contracts/treasuryPagination.js";
-import { buildTreasuryBalanceSnapshotAudit } from "../treasuryAuditHelpers.js";
+import {
+  buildTreasuryBalanceSnapshotAudit,
+  buildTreasuryReversedAudit,
+} from "../treasuryAuditHelpers.js";
 import {
   canTreasuryActorMutateAccountBalance,
   canTreasuryActorViewAccountBalance,
@@ -65,6 +68,10 @@ export type TreasuryBalanceListCommand = {
 export type TreasuryCreateBalanceSnapshotResult = {
   snapshot: TreasuryBalanceSnapshotDto;
   created: boolean;
+};
+
+export type TreasuryCancelBalanceSnapshotCommand = {
+  reason: string;
 };
 
 function actorCtx(actor: TreasuryAccountActor) {
@@ -310,6 +317,103 @@ export function createTreasuryBalanceService(deps: {
         }
         throw err;
       }
+    },
+
+    /**
+     * Cancelamento lógico (nunca DELETE físico) de um snapshot de saldo.
+     * Restrito a SUPER_ADMIN — mais sensível que criar: o registro some de
+     * TODOS os cálculos (saldo atual, projeção, relatórios, linha do tempo
+     * do Caixa, fechamento diário — todos os consumidores filtram
+     * cancelledAt IS NULL), mas fica no histórico/auditoria.
+     */
+    async cancelBalanceSnapshot(
+      actor: TreasuryAccountActor,
+      accountId: string,
+      snapshotId: string,
+      command: TreasuryCancelBalanceSnapshotCommand
+    ): Promise<TreasuryBalanceSnapshotDto> {
+      if (!actor.isSuperAdmin) {
+        throw new TreasuryDomainError(
+          "FORBIDDEN",
+          "Somente SUPER_ADMIN pode excluir um saldo informado."
+        );
+      }
+      const reason = (command.reason ?? "").trim();
+      if (reason.length < 3) {
+        throw new TreasuryDomainError(
+          "VALIDATION_ERROR",
+          "Informe o motivo da exclusão (mínimo 3 caracteres).",
+          "reason"
+        );
+      }
+
+      await requireBalanceReadableAccount(actor, accountId);
+
+      const current = await balanceRepo.findById(snapshotId.trim());
+      if (!current || current.accountId !== accountId) {
+        throw new TreasuryDomainError(
+          "NOT_FOUND",
+          "Saldo informado não encontrado."
+        );
+      }
+      if (current.cancelledAt) {
+        throw new TreasuryDomainError(
+          "CONFLICT",
+          "Este saldo já foi excluído anteriormente."
+        );
+      }
+
+      const beforeDto = toTreasuryBalanceSnapshotDto(current);
+
+      const cancelled = await runInTransaction(async (tx) => {
+        const row = await balanceRepo.cancel(
+          snapshotId,
+          { cancelledByUserId: actor.userId, cancelReason: reason },
+          tx
+        );
+        const dto = toTreasuryBalanceSnapshotDto(row);
+        await writeTreasuryAuditLog(
+          tx,
+          buildTreasuryReversedAudit({
+            entityType: "BALANCE_SNAPSHOT",
+            entityId: row.id,
+            before: beforeDto,
+            after: dto,
+            justification: reason,
+            actor: actorCtx(actor),
+          })
+        );
+        return dto;
+      });
+
+      const civilDate = toCivilDateKey(current.referenceAt);
+      const account = await accountRepo.findById(accountId);
+      if (civilDate && account?.companyCode) {
+        const latestAfterCancel = await balanceRepo.findLatest(accountId);
+        const currentAmount = latestAfterCancel
+          ? toTreasuryBalanceSnapshotDto(latestAfterCancel).availableBalance
+          : "0.00";
+        void notifyTreasuryPostClosingFinancialChange(
+          {
+            companyCode: account.companyCode,
+            civilDate,
+            changeKind: "BALANCE_CHANGE",
+            entityKind: "ACCOUNT",
+            entityId: accountId,
+            accountId,
+            frozenAmount: beforeDto.availableBalance,
+            currentAmount,
+            amount: subtractTreasuryMoney(
+              currentAmount,
+              beforeDto.availableBalance
+            ),
+            changedAtIso: formatTreasuryTimestampIso(new Date()),
+          },
+          { prisma, requestId: actor.requestId ?? null }
+        );
+      }
+
+      return cancelled;
     },
   };
 }

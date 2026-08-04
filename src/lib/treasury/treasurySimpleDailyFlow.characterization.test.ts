@@ -57,7 +57,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-const EXPECTED_HTTP_HANDLERS = 97;
+const EXPECTED_HTTP_HANDLERS = 98;
 /** home + 4 primárias + 15 avançadas + hub advanced */
 const EXPECTED_UI_SECTIONS = 22;
 const EXPECTED_FEATURE_FLAGS = 15;
