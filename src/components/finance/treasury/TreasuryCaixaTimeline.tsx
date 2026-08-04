@@ -233,17 +233,22 @@ function KindBadge({
   );
 }
 
-/** Dia realizado/hoje é fato liquidado; futuro (previsto/estimado) é vencimento em aberto. */
+/**
+ * @deprecated Só usado pelo fallback quando `canonicalDays` estiver ausente.
+ * O caminho canônico (Fase B) não distingue realizado vs previsto no drill-down:
+ * o motor único-de-dia já entrega as QUATRO dimensões separadas por dia.
+ * Remoção acompanha a saída do fallback (Fase D — quando cutover no board estiver
+ * estável em produção).
+ */
 function isRealizedDayKind(kind: TreasuryCaixaTimelineRow["kind"]): boolean {
   return kind === "REALIZED" || kind === "TODAY";
 }
 
 /**
- * Títulos que compõem o dia — mesma data usada para montar o Entrou/Saiu:
- * dia realizado agrupa CR pela BAIXA (`settlementDate`) e CP pelo
- * vencimento (`effectivePaymentDate` = `dueDate` quando liquidado — regra
- * canônica); dia futuro agrupa pelo vencimento em aberto (CP pelo
- * operacional, com fallback de agendamento).
+ * @deprecated Fallback do drill-down quando `canonicalDays` estiver ausente.
+ * A fonte canônica agora é `TreasuryCaixaCanonicalDay.receivableDueTitles`
+ * (vencendo hoje em aberto) e `receivableReceivedTitles` (baixados hoje),
+ * já entregues pelo backend com os totais que fecham no centavo.
  */
 function filterCaixaDayReceivables(
   rows: readonly FinanceAccountsReceivableGridRow[],
@@ -255,6 +260,10 @@ function filterCaixaDayReceivables(
   );
 }
 
+/**
+ * @deprecated Fallback do drill-down; a fonte canônica é
+ * `TreasuryCaixaCanonicalDay.payableDueTitles` / `payablePaidTitles`.
+ */
 function filterCaixaDayPayables(
   rows: readonly FinanceAccountsPayableGridRow[],
   civilDate: string,

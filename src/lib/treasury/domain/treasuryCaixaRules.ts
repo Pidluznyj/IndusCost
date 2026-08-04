@@ -143,11 +143,17 @@ export type TreasuryCaixaDayFlow = {
   inflows: number;
   outflows: number;
   /**
-   * Previsto do dia — CR/CP em aberto com vencimento hoje (mesma regra por
-   * vencimento do Radar Diário/Fluxo de Caixa). `null`/ausente = indisponível
-   * (falha de carga), diferente de 0 (nada vence hoje).
+   * @deprecated Use `TreasuryCaixaBoardDto.canonicalDays[hoje].receivableDue`
+   * (motor único-de-dia da Fase A) — mesma regra, com a lista de títulos que
+   * fecha o total no centavo. Este campo mistura carregamento em duas
+   * chamadas (`/today/closing` + AR/AP overhead) que a nova rota já cobre.
+   * Removido em cutover — mantido só enquanto o card antigo estiver no ar.
    */
   predictedInflows?: number | null;
+  /**
+   * @deprecated Use `TreasuryCaixaBoardDto.canonicalDays[hoje].payableDue`.
+   * Mesma justificativa de `predictedInflows`.
+   */
   predictedOutflows?: number | null;
   /** Fechamento calculado pelo motor (abertura + entradas − saídas). */
   closingCalculated: number | null;
@@ -175,8 +181,17 @@ function sumNullable(values: readonly (number | null)[]): number | null {
 export function buildTreasuryCaixaDayFlow(input: {
   civilDate: string;
   accounts: readonly TreasuryCaixaDayFlowAccountInput[];
-  /** Previsto do dia (CR/CP em aberto vencendo hoje); omitido = indisponível. */
+  /**
+   * @deprecated A fonte canônica passou a ser `canonicalDays[hoje].receivableDue`
+   * do `TreasuryCaixaBoardDto`. Este campo continua sendo aceito só para não
+   * quebrar o consumidor legado do `TreasuryCaixaDayFlow`; a UI da Caixa
+   * já não lê mais daqui (ver Fase B).
+   */
   predictedInflows?: number | null;
+  /**
+   * @deprecated Ver `predictedInflows` — a fonte canônica é
+   * `canonicalDays[hoje].payableDue`.
+   */
   predictedOutflows?: number | null;
 }): TreasuryCaixaDayFlow {
   const opening = sumNullable(input.accounts.map((a) => a.openingBalance));
