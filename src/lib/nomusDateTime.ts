@@ -24,6 +24,25 @@ export type NomusDateTimeParseResult =
   | { ok: true; value: Date }
   | { ok: false; reason: string };
 
+/**
+ * Type guards explícitos.
+ *
+ * O `tsconfig` do projeto não habilita `strict`, e sem `strictNullChecks` o
+ * TypeScript não estreita união discriminada por `if (!r.ok)`. Guards nomeados
+ * funcionam em qualquer configuração e deixam o call site legível.
+ */
+export function isNomusDateTimeSuccess(
+  result: NomusDateTimeParseResult
+): result is Extract<NomusDateTimeParseResult, { ok: true }> {
+  return result.ok === true;
+}
+
+export function isNomusDateTimeFailure(
+  result: NomusDateTimeParseResult
+): result is Extract<NomusDateTimeParseResult, { ok: false }> {
+  return result.ok === false;
+}
+
 /** `DD/MM/YYYY` com hora opcional `HH:mm` ou `HH:mm:ss`. */
 const NOMUS_DATETIME_RE =
   /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
