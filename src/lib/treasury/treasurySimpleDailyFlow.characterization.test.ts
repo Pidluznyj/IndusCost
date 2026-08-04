@@ -57,7 +57,8 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-const EXPECTED_HTTP_HANDLERS = 98;
+/** +1 GET para GET /api/treasury/caixa/scenarios (consolidação Caixa Fase 4). */
+const EXPECTED_HTTP_HANDLERS = 99;
 /** home + 4 primárias + 15 avançadas + hub advanced */
 const EXPECTED_UI_SECTIONS = 22;
 const EXPECTED_FEATURE_FLAGS = 15;

@@ -83,10 +83,12 @@ const modulePath = join(
 const schemaPath = join(repoRoot, "prisma/schema.prisma");
 const migrationsDir = join(repoRoot, "prisma/migrations");
 
-/** Congelamento — superfície HTTP (antes = depois da simplificação UX). */
+/** Congelamento — superfície HTTP.
+ *  +1 GET (total 99, get 53) para GET /api/treasury/caixa/scenarios,
+ *  endpoint único dos três cenários da Caixa (Fase 4 da consolidação). */
 const EXPECTED_HTTP_HANDLERS = {
-  total: 98,
-  get: 52,
+  total: 99,
+  get: 53,
   post: 40,
   put: 4,
   patch: 2,
@@ -121,9 +123,12 @@ const EXPECTED_TREASURY_MODELS = [
   "TreasuryReconciliationMatch",
   "TreasuryReconciliationMatchMovement",
   "TreasuryReconciliationAllocation",
+  // Adicionado na consolidação dos cenários da Caixa (Fase 2 —
+  // política persistida, singleton "GLOBAL", auditada via TreasuryAuditLog).
+  "TreasuryScenarioPolicy",
 ] as const;
 
-const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 18;
+const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 19;
 
 const EXPECTED_LAYER_COUNTS = {
   controllersMin: 27,
