@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { HttpError } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -123,19 +123,73 @@ export function CommissionsTableScroll({
   /** Classes extras na `<table>` (ex.: `table-fixed` em grids densos). */
   tableClassName?: string;
 }) {
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [innerWidth, setInnerWidth] = useState(0);
+  const syncing = useRef(false);
+
+  /* Observa mudanças na largura real do conteúdo para dimensionar a barra superior. */
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const update = () => setInnerWidth(el.scrollWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    /* Quando filhos mudam (ex.: re-render de tabela) o scrollWidth pode mudar sem
+       resize do container — MutationObserver cobre esse caso. */
+    const mo = new MutationObserver(update);
+    mo.observe(el, { childList: true, subtree: true });
+    return () => { ro.disconnect(); mo.disconnect(); };
+  }, [children]);
+
+  const syncScroll = useCallback((source: "top" | "bottom") => {
+    if (syncing.current) return;
+    syncing.current = true;
+    const from = source === "top" ? topRef.current : bottomRef.current;
+    const to = source === "top" ? bottomRef.current : topRef.current;
+    if (from && to) to.scrollLeft = from.scrollLeft;
+    requestAnimationFrame(() => { syncing.current = false; });
+  }, []);
+
+  /* A barra de topo só aparece quando há overflow real. */
+  const showTopBar = bottomRef.current
+    ? innerWidth > bottomRef.current.clientWidth
+    : innerWidth > 0;
+
   return (
-    <div
-      className="overflow-x-auto rounded-xl border border-border"
-      data-testid={testId}
-    >
-      <table
-        className={cn(
-          "min-w-full divide-y divide-border text-sm",
-          tableClassName
-        )}
+    <div data-testid={testId}>
+      {/* Barra de rolagem superior — espelho discreto */}
+      {showTopBar ? (
+        <div
+          ref={topRef}
+          onScroll={() => syncScroll("top")}
+          className="overflow-x-auto"
+          style={{
+            height: 10,
+            scrollbarWidth: "thin",
+            scrollbarColor: "#b0b8c4 transparent",
+          }}
+          aria-hidden
+        >
+          <div style={{ width: innerWidth, height: 1 }} />
+        </div>
+      ) : null}
+      {/* Container real de rolagem */}
+      <div
+        ref={bottomRef}
+        onScroll={() => syncScroll("bottom")}
+        className="overflow-x-auto rounded-xl border border-border"
       >
-        {children}
-      </table>
+        <table
+          className={cn(
+            "min-w-full divide-y divide-border text-sm",
+            tableClassName
+          )}
+        >
+          {children}
+        </table>
+      </div>
     </div>
   );
 }
