@@ -20,6 +20,13 @@ export const TREASURY_ERROR_CODES = [
   "CONFLICT",
   "DAY_CLOSED",
   "RATE_LIMITED",
+  /**
+   * Falha inesperada do servidor. NÃO é erro do cliente: antes disso, qualquer
+   * exceção não prevista caía no `default` de `treasuryErrorStatus` e voltava
+   * como 400 VALIDATION_ERROR — o navegador exibia "Bad Request" para um crash
+   * interno, e o monitoramento contava como erro do cliente.
+   */
+  "INTERNAL_ERROR",
 ] as const;
 
 export type TreasuryErrorCode = (typeof TREASURY_ERROR_CODES)[number];

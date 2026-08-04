@@ -50,6 +50,8 @@ export function treasuryErrorStatus(code: string): number {
       return 403;
     case "NOT_IMPLEMENTED":
       return 501;
+    case "INTERNAL_ERROR":
+      return 500;
     default:
       return 400;
   }
@@ -95,9 +97,15 @@ export function handleTreasuryRouteError(
         : err
     )
   );
+  // Exceção não prevista é falha do SERVIDOR (500), não do cliente (400).
+  // Devolver VALIDATION_ERROR aqui fazia um crash interno aparecer como
+  // "Bad Request" no navegador, escondia a causa e contava como erro do
+  // cliente no monitoramento. O detalhe do erro fica só no log do servidor
+  // (acima, já sanitizado); o requestId vai na mensagem para permitir
+  // correlacionar tela e log sem expor interno ao usuário.
   return sendTreasuryError(res, {
     requestId,
-    error: "Erro interno na Central de Tesouraria.",
-    code: "VALIDATION_ERROR",
+    error: `Erro interno na Central de Tesouraria. Referência: ${requestId}`,
+    code: "INTERNAL_ERROR",
   });
 }

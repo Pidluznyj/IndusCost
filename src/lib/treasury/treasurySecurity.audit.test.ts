@@ -52,6 +52,19 @@ describe("treasurySecurity audit — wiring", () => {
     assert.match(http, /RATE_LIMITED/);
   });
 
+  it("INTERNAL_ERROR está no contrato e mapeia 500, não 400", () => {
+    // Exceção não prevista é falha do servidor. Antes caía no `default` e
+    // voltava 400 VALIDATION_ERROR — o navegador dizia "Bad Request" para um
+    // crash interno e o monitoramento contava como erro do cliente.
+    assert.ok((TREASURY_ERROR_CODES as readonly string[]).includes("INTERNAL_ERROR"));
+    assert.equal(treasuryErrorStatus("INTERNAL_ERROR"), 500);
+    assert.notEqual(treasuryErrorStatus("INTERNAL_ERROR"), 400);
+  });
+
+  it("código desconhecido continua 400 (entrada malformada é do cliente)", () => {
+    assert.equal(treasuryErrorStatus("QUALQUER_COISA"), 400);
+  });
+
   it("RATE_LIMITED está no contrato e mapeia 429", () => {
     assert.ok((TREASURY_ERROR_CODES as readonly string[]).includes("RATE_LIMITED"));
     assert.equal(treasuryErrorStatus("RATE_LIMITED"), 429);
