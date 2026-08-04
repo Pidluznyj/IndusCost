@@ -8,6 +8,7 @@
 import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
+import type { TreasuryCaixaCanonicalDay } from "./treasuryCaixaCanonicalDay.js";
 
 export type TreasuryCaixaPeriodInput = {
   year: number;
@@ -1261,4 +1262,14 @@ export type TreasuryCaixaBoardDto = {
    * estimar o caixa futuro quando não há projeção materializada.
    */
   dailyDueEstimates: TreasuryCaixaDailyDueEstimate[];
+  /**
+   * Motor único-de-dia canônico — seis dimensões disjuntas por dia
+   * (receivableDue / receivableReceived / payableDue / payablePaid /
+   * otherInflows / otherOutflows), cada uma com a lista de títulos que a
+   * compõe. Fonte para o card "Movimento de hoje", drill-down da Linha do
+   * tempo e qualquer futura tela que precise responder "o que aconteceu /
+   * vai acontecer neste dia?" sem ficção paralela no frontend.
+   * Ver {@link ./treasuryCaixaCanonicalDay.ts}.
+   */
+  canonicalDays: TreasuryCaixaCanonicalDay[];
 };

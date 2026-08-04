@@ -47,6 +47,7 @@ import {
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
 } from "../domain/treasuryCaixaRules.js";
+import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
 import {
   parseTreasuryDailyRoutineSnapshotKey,
   TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX,
@@ -625,6 +626,30 @@ export function createTreasuryCaixaService(input: {
           estimatedOutflow: apDueByDay.get(civilDate) ?? 0,
         }));
 
+      // Motor único-de-dia canônico: seis dimensões disjuntas por dia
+      // (a receber / recebido / a pagar / pago / outras entradas / outras
+      // saídas), com as listas de títulos que compõem cada total. Fonte para
+      // "Movimento de hoje" e drill-down do dia — sem cálculo paralelo no
+      // frontend, sem recarregar o banco (usa as MESMAS grids que já foram
+      // montadas acima). Outros movimentos (ledger/transferência) ficam de
+      // fora aqui — o service canônico de fechamento (`/today/closing`) já
+      // carrega ledger/transfer para HOJE; a extensão para dias arbitrários
+      // fica para uma iteração futura, quando a rotina cobrir dias passados.
+      const windowDays: string[] = [];
+      {
+        const cursor = new Date(dueDateFrom);
+        const end = new Date(dueDateTo);
+        while (cursor <= end) {
+          windowDays.push(toIsoDate(cursor));
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      }
+      const canonicalDays = buildTreasuryCaixaCanonicalDays({
+        civilDatesInWindow: windowDays,
+        receivables: arResult.gridRows,
+        payables: apResult.gridRows,
+      });
+
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
@@ -636,6 +661,7 @@ export function createTreasuryCaixaService(input: {
         payables: apResult.gridRows,
         monthlyDueEstimates,
         dailyDueEstimates,
+        canonicalDays,
       };
     },
   };
