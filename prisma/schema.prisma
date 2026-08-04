@@ -1096,6 +1096,14 @@ model Proposal {
   externalCompanyId       Int?
   externalMovementTypeId  Int?
   externalOpenedAt        DateTime?            @db.Timestamptz(6)
+  /// SOMENTE LEITURA — coluna GERADA pelo Postgres (migration
+  /// 20260804120000_proposal_commercial_date). Data comercial da proposta:
+  /// `externalOpenedAt` quando há origem externa, senão `createdAt` no fuso
+  /// operacional. Nunca escreva: o banco recusa INSERT/UPDATE nesta coluna.
+  /// Existe para permitir filtro, ordenação e contagem por data comercial sem
+  /// COALESCE em `orderBy` (que o Prisma não expressa) e sem ordenar em
+  /// memória, o que quebraria a paginação.
+  commercialDate          DateTime?            @db.Timestamptz(6)
   externalRawPayload      Json?
   priceTableId            String?              @db.Uuid
   priceTableVersionId     String?              @db.Uuid
@@ -1113,6 +1121,7 @@ model Proposal {
   @@index([externalProposalCode])
   @@index([expectedCloseDate])
   @@index([nextActionAt])
+  @@index([commercialDate, number])
   @@index([priceTableId])
   @@index([priceTableVersionId])
   @@index([priceSource])

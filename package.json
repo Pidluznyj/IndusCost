@@ -24,6 +24,7 @@
     "sync:nomus:proposals:apply": "tsx scripts/nomusProposalsSyncV1.ts --apply",
     "sync:nomus:proposals:hourly:dry": "bash scripts/runNomusProposalsHourlySync.sh dry",
     "sync:nomus:proposals:hourly:apply": "bash scripts/runNomusProposalsHourlySync.sh apply",
+    "audit:treasury-company-code": "tsx scripts/auditTreasuryAccountCompanyCode.ts",
     "repair:proposal-opened-at:dry": "tsx scripts/repairProposalOpenedAt.ts",
     "repair:proposal-opened-at:json": "tsx scripts/repairProposalOpenedAt.ts --json",
     "repair:proposal-opened-at:apply": "tsx scripts/repairProposalOpenedAt.ts --apply --confirm-apply=REPAIR_PROPOSAL_OPENED_AT",

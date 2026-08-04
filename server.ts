@@ -53,7 +53,9 @@ import {
   resolveProposalCommercialMarginFromItems,
 } from "./src/lib/proposalListMargin.js";
 import {
+  buildProposalListCommercialDateWhere,
   buildProposalListNetValueWhere,
+  buildProposalListOrderBy,
   parseProposalListNetValueParam,
 } from "./src/lib/proposalListQuery.js";
 import {
@@ -14816,14 +14818,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       ...(status && isValidProposalStatus(status) ? { status } : {}),
       ...(responsible ? { responsible } : {}),
       ...(customerId ? { customerId } : {}),
-      ...((startDate || endDate)
-        ? {
-            createdAt: {
-              ...(startDate ? { gte: startDate } : {}),
-              ...(endDate ? { lte: endDate } : {}),
-            },
-          }
-        : {}),
+      // Recorte por DATA COMERCIAL (coluna gerada), não por `createdAt`.
+      // Para proposta do Nomus, `createdAt` é o instante do sync: filtrar por
+      // ele fazia a CP 01350 (aberta 03/08, importada 04/08) responder ao
+      // filtro de 04/08 e sumir do de 03/08.
+      ...buildProposalListCommercialDateWhere(startDate, endDate),
       ...buildProposalListNetValueWhere(minNet, maxNet),
       ...(search
         ? {
@@ -14844,7 +14843,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
         },
-        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+        orderBy: buildProposalListOrderBy(),
       });
       return res.json(
         await withOfficialProposalListMargin(
@@ -14876,7 +14875,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
         },
-        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+        orderBy: buildProposalListOrderBy(),
         skip,
         take: pageSize,
       }),
@@ -14889,11 +14888,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           totalGrossValue: true,
         },
       }),
+      // "Propostas no ano/mês" conta pela data COMERCIAL. Por `createdAt`, uma
+      // carga do Nomus jogava propostas antigas no mês corrente.
       prisma.proposal.count({
-        where: { createdAt: { gte: currentYearStart } },
+        where: { commercialDate: { gte: currentYearStart } },
       }),
       prisma.proposal.count({
-        where: { createdAt: { gte: currentMonthStart } },
+        where: { commercialDate: { gte: currentMonthStart } },
       }),
       prisma.proposal.aggregate({
         where: {
