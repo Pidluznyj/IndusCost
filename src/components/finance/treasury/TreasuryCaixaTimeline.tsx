@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
 import type {
   TreasuryCaixaMonthlyDueEstimate,
   TreasuryCaixaTimeline,
@@ -499,21 +499,38 @@ export function TreasuryCaixaTimeline({
       {/* Aviso sobre o FUTURO — não substitui a tabela: passado e hoje são fato. */}
       {unavailableReason ? (
         <div
-          className="mb-2 rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-2 text-[11px] text-[#92400E]"
+          className="mb-3 flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-gradient-to-br from-[#FFFBEB] to-[#FEF3C7]/70 p-3.5 shadow-sm"
           data-testid="caixa-timeline-unavailable"
         >
-          <p>{unavailableReason}</p>
-          {onGenerateProjection ? (
-            <button
-              type="button"
-              onClick={onGenerateProjection}
-              disabled={generatingProjection}
-              className="mt-2 inline-flex items-center rounded-md border border-[#92400E]/30 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#92400E] hover:bg-[#FFFBEB] disabled:opacity-60"
-              data-testid="caixa-timeline-generate-projection"
-            >
-              {generatingProjection ? "Gerando projeção…" : "Gerar projeção"}
-            </button>
-          ) : null}
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F59E0B]/15">
+            <Sparkles className="h-4 w-4 text-[#B45309]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] leading-snug text-[#92400E]">
+              {unavailableReason}
+            </p>
+            {onGenerateProjection ? (
+              <button
+                type="button"
+                onClick={onGenerateProjection}
+                disabled={generatingProjection}
+                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#B45309] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#92400E] disabled:cursor-not-allowed disabled:opacity-60"
+                data-testid="caixa-timeline-generate-projection"
+              >
+                {generatingProjection ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    Gerando projeção…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                    Gerar projeção
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -525,16 +542,6 @@ export function TreasuryCaixaTimeline({
         </p>
       ) : (
         <>
-          {timeline.firstNegativeDate ? (
-            <p
-              className="mb-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1.5 text-[11px] font-medium text-[#991B1B]"
-              data-testid="caixa-timeline-negative-warning"
-            >
-              Saldo fica negativo em{" "}
-              {formatCivilDate(timeline.firstNegativeDate)}.
-            </p>
-          ) : null}
-
           <div className="overflow-x-auto">
             <table className="w-full text-xs" data-testid="caixa-timeline-table">
               <thead>
