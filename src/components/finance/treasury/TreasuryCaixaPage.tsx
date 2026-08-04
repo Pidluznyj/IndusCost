@@ -20,7 +20,6 @@ import {
 import { fetchTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosingApi.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
-import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjectionCalculateApi.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   appendTreasuryCaixaDailyDueEstimates,
@@ -35,7 +34,10 @@ import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCash
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
 import { TreasuryCaixaOverdueStrip } from "@/src/components/finance/treasury/TreasuryCaixaOverdueStrip";
-import { TreasuryCaixaTimeline } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
+import {
+  TreasuryCaixaTimeline,
+  TitleStatusBadge,
+} from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
 import { TreasuryCaixaBalanceChart } from "@/src/components/finance/treasury/TreasuryCaixaBalanceChart";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
@@ -152,16 +154,6 @@ export function TreasuryCaixaPage() {
   const [agendaDays, setAgendaDays] = useState<readonly TreasuryAgendaDayDto[]>(
     []
   );
-  const [timelineUnavailable, setTimelineUnavailable] = useState<string | null>(
-    null
-  );
-  /** Parâmetros para gerar a projeção que falta (null = não há o que gerar). */
-  const [pendingProjection, setPendingProjection] = useState<{
-    companyCode: string;
-    baseDate: string;
-    endDate: string;
-  } | null>(null);
-  const [generatingProjection, setGeneratingProjection] = useState(false);
   // Menu cascata: listas de títulos começam fechadas — a tela fica compacta e
   // quem quiser o detalhe abre por conta própria (mesmo padrão do Atrasados).
   const [receivablesOpen, setReceivablesOpen] = useState(false);
@@ -284,18 +276,15 @@ export function TreasuryCaixaPage() {
       });
       setData(payload);
 
-      // Passo 4 — linha do tempo do mesmo período, pela agenda canônica.
+      // Passo 4 — linha do tempo do mesmo período, pela agenda canônica quando
+      // existir (fica só como sinal de fundo — sem botão/aviso na tela; sem
+      // cobertura, `data.dailyDueEstimates` já preenche o futuro por vencimento).
       // A agenda exige empresa; sem companyCode configurado ela não carrega.
       const companyCode = accounts
         .map((a) => a.companyCode?.trim())
         .find((c) => c);
       if (!companyCode) {
-        // Sem empresa não há projeção — mas passado e hoje seguem válidos.
         setAgendaDays([]);
-        setPendingProjection(null);
-        setTimelineUnavailable(
-          "O futuro não aparece: defina a empresa (companyCode) em pelo menos uma conta ativa, em Tesouraria > Contas. Passado e hoje abaixo não dependem disso."
-        );
       } else {
         try {
           const agenda = await fetchTreasuryAgenda({
@@ -307,39 +296,11 @@ export function TreasuryCaixaPage() {
             consolidated: true,
             includeDayDetail: false,
           });
-          const days = agenda.days ?? [];
-          // Passado e hoje são fato e não dependem de projeção. A projeção só
-          // acrescenta o futuro — por isso a linha do tempo é montada sempre, e
-          // a ausência de projeção vira aviso, não tela vazia.
-          setAgendaDays(days);
-          // A agenda lê uma projeção MATERIALIZADA. Sem run gravado ela devolve
-          // days: [] com runId null — estado que precisa ser explicado.
-          if (agenda.runId == null) {
-            setPendingProjection({
-              companyCode,
-              baseDate: payload.dueDateFrom,
-              endDate: payload.dueDateTo,
-            });
-            setTimelineUnavailable(
-              "O futuro ainda não aparece: a projeção deste período não foi gerada. Passado e hoje abaixo são fatos e não dependem dela."
-            );
-          } else if (days.length === 0) {
-            setPendingProjection(null);
-            setTimelineUnavailable(
-              "A projeção existe, mas não cobre este período — ela é gerada de uma data-base para frente. Passado e hoje abaixo não dependem dela."
-            );
-          } else {
-            setPendingProjection(null);
-            setTimelineUnavailable(null);
-          }
-        } catch (agendaErr) {
-          // Falhou a projeção, mas passado e hoje continuam válidos.
+          setAgendaDays(agenda.days ?? []);
+        } catch {
+          // Falhou a projeção; passado e hoje continuam válidos, e o futuro
+          // cai no fallback por vencimento (dailyDueEstimates).
           setAgendaDays([]);
-          setTimelineUnavailable(
-            agendaErr instanceof Error
-              ? `Futuro indisponível: ${agendaErr.message}`
-              : "Futuro indisponível para este período."
-          );
         }
       }
     } catch (err) {
@@ -380,54 +341,6 @@ export function TreasuryCaixaPage() {
         : [],
     [timeline]
   );
-
-  /**
-   * (Re)gera a projeção do período pela rotina canônica e recarrega a busca.
-   *
-   * Sempre disponível quando há empresa configurada e uma busca feita — a
-   * projeção materializada é um retrato congelado, e sem este botão não havia
-   * como atualizá-la quando um run antigo (possivelmente defasado) já existia:
-   * o aviso de "projeção não gerada" só aparece quando NÃO existe run nenhum.
-   */
-  const projectionParams = useMemo(() => {
-    if (pendingProjection) return pendingProjection;
-    if (!data) return null;
-    const companyCode = accounts
-      .map((a) => a.companyCode?.trim())
-      .find((c) => c);
-    if (!companyCode) return null;
-    return {
-      companyCode,
-      baseDate: data.dueDateFrom,
-      endDate: data.dueDateTo,
-    };
-  }, [pendingProjection, data, accounts]);
-
-  const generateProjection = useCallback(async () => {
-    if (!projectionParams) return;
-    setGeneratingProjection(true);
-    try {
-      await calculateTreasuryProjection({
-        companyCode: projectionParams.companyCode,
-        baseDate: projectionParams.baseDate,
-        endDate: projectionParams.endDate,
-        scenario: "PROBABLE",
-        consolidated: true,
-      });
-      setPendingProjection(null);
-      await search();
-    } catch (err) {
-      setTimelineUnavailable(
-        err instanceof Error
-          ? `Não foi possível gerar a projeção: ${err.message}`
-          : "Não foi possível gerar a projeção."
-      );
-    } finally {
-      setGeneratingProjection(false);
-    }
-    // `search` é recriado a cada mudança de filtro; incluir causaria loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionParams]);
 
   function handleMonthChange(value: string) {
     setMonth(value === "" ? "" : Number(value));
@@ -527,13 +440,10 @@ export function TreasuryCaixaPage() {
 
         <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
 
-        {data || timelineUnavailable ? (
+        {data ? (
           <TreasuryCaixaTimeline
             timeline={timeline}
             loading={loading}
-            unavailableReason={timelineUnavailable}
-            onGenerateProjection={projectionParams ? generateProjection : undefined}
-            generatingProjection={generatingProjection}
             monthlyDueEstimates={data?.monthlyDueEstimates}
             receivables={data?.receivables}
             payables={data?.payables}
@@ -634,7 +544,9 @@ export function TreasuryCaixaPage() {
                             {formatCivilDate(r.dueDate)}
                           </td>
                           <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
-                          <td className="px-2 py-1.5">{r.calculatedStatus}</td>
+                          <td className="px-2 py-1.5">
+                            <TitleStatusBadge status={r.calculatedStatus} />
+                          </td>
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             {formatMoney(r.amountReceivable)}
                           </td>
@@ -706,7 +618,9 @@ export function TreasuryCaixaPage() {
                             {formatCivilDate(p.dueDate)}
                           </td>
                           <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
-                          <td className="px-2 py-1.5">{p.calculatedStatus}</td>
+                          <td className="px-2 py-1.5">
+                            <TitleStatusBadge status={p.calculatedStatus} />
+                          </td>
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             {formatMoney(p.amountPayable)}
                           </td>

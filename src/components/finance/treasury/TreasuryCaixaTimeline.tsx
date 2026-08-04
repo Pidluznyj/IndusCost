@@ -14,14 +14,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  ArrowDownCircle,
-  ArrowUpCircle,
-  ChevronDown,
-  ChevronRight,
-  RefreshCw,
-  Sparkles,
-} from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronRight } from "lucide-react";
 import type {
   TreasuryCaixaMonthlyDueEstimate,
   TreasuryCaixaTimeline,
@@ -42,11 +35,6 @@ import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPay
 export type TreasuryCaixaTimelineProps = {
   timeline: TreasuryCaixaTimeline | null;
   loading?: boolean;
-  /** Mensagem de configuração pendente (ex.: empresa não definida nas contas). */
-  unavailableReason?: string | null;
-  /** Presente quando falta gerar a projeção materializada do período. */
-  onGenerateProjection?: () => void;
-  generatingProjection?: boolean;
   /**
    * Estimativa mensal por vencimento (mesma regra do "Linha do tempo mensal"
    * do Fluxo de Caixa) — complementa meses futuros que a agenda/projeção
@@ -280,7 +268,7 @@ const TITLE_STATUS_META: Record<string, { label: string; className: string }> = 
   suspended: { label: "Suspenso", className: "bg-zinc-200 text-zinc-700" },
 };
 
-function TitleStatusBadge({ status }: { status: string }) {
+export function TitleStatusBadge({ status }: { status: string }) {
   const meta = TITLE_STATUS_META[status] ?? {
     label: status,
     className: "bg-slate-100 text-slate-700",
@@ -297,20 +285,38 @@ function TitleStatusBadge({ status }: { status: string }) {
   );
 }
 
-type DayDrilldownRow = { id: string | number; name: string | null; status: string; amount: number };
+type DayDrilldownRow = {
+  id: string | number;
+  name: string | null;
+  status: string;
+  dueDate: string | null;
+  /** Contribuição do título ao Entrou/Saiu do dia (baixa se realizado, saldo se previsto). */
+  amount: number;
+  /** "Valor" — valor original do título (bruto, igual ao grid de baixo). */
+  grossAmount: number;
+  /** "Pago"/"Recebido" — quanto já foi liquidado deste título. */
+  settledAmount: number;
+  /** "Saldo" — quanto ainda falta. */
+  balanceAmount: number;
+};
 
 /**
  * Card de um lado do drill-down (Receber ou Pagar) — cabeçalho clicável
  * (colapsa/expande só esta seção), tom suave (verde/vermelho) e lista de
- * títulos com valor e status em selo.
+ * títulos com as mesmas colunas do grid "Contas a Receber/Pagar" abaixo
+ * (Vencimento, Fornecedor/Cliente, Status, Valor, Pago/Recebido, Saldo).
  */
 function DayDrilldownCard({
   title,
+  counterpartyLabel,
+  settledLabel,
   rows,
   tone,
   defaultOpen = true,
 }: {
   title: string;
+  counterpartyLabel: string;
+  settledLabel: string;
   rows: DayDrilldownRow[];
   tone: "in" | "out";
   defaultOpen?: boolean;
@@ -370,26 +376,47 @@ function DayDrilldownCard({
               Nenhum título neste dia.
             </p>
           ) : (
-            <table className="w-full text-[11px]">
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-border/30 last:border-0">
-                    <td className="max-w-[1px] truncate py-1.5 pr-2">{row.name ?? "—"}</td>
-                    <td className="py-1.5 pr-2">
-                      <TitleStatusBadge status={row.status} />
-                    </td>
-                    <td
-                      className={cn(
-                        "whitespace-nowrap py-1.5 text-right font-medium tabular-nums",
-                        isIn ? "text-emerald-700" : "text-red-700"
-                      )}
-                    >
-                      {money(row.amount)}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[540px] text-[11px]">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1 pr-2 font-semibold">Vencimento</th>
+                    <th className="py-1 pr-2 font-semibold">{counterpartyLabel}</th>
+                    <th className="py-1 pr-2 font-semibold">Status</th>
+                    <th className="py-1 pr-2 text-right font-semibold">Valor</th>
+                    <th className="py-1 pr-2 text-right font-semibold">{settledLabel}</th>
+                    <th className="py-1 text-right font-semibold">Saldo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className="border-b border-border/30 last:border-0">
+                      <td className="whitespace-nowrap py-1.5 pr-2 tabular-nums">
+                        {row.dueDate ? formatCivilDate(row.dueDate) : "—"}
+                      </td>
+                      <td className="max-w-[220px] truncate py-1.5 pr-2">{row.name ?? "—"}</td>
+                      <td className="py-1.5 pr-2">
+                        <TitleStatusBadge status={row.status} />
+                      </td>
+                      <td className="whitespace-nowrap py-1.5 pr-2 text-right tabular-nums">
+                        {money(row.grossAmount)}
+                      </td>
+                      <td className="whitespace-nowrap py-1.5 pr-2 text-right tabular-nums">
+                        {money(row.settledAmount)}
+                      </td>
+                      <td
+                        className={cn(
+                          "whitespace-nowrap py-1.5 text-right font-medium tabular-nums",
+                          isIn ? "text-emerald-700" : "text-red-700"
+                        )}
+                      >
+                        {money(row.balanceAmount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       ) : null}
@@ -427,13 +454,21 @@ function DayDrilldown({
     id: p.externalId,
     name: p.personName,
     status: p.calculatedStatus,
+    dueDate: p.dueDate,
     amount: realized ? p.amountPaid : p.balancePayable,
+    grossAmount: p.amountPayable,
+    settledAmount: p.amountPaid,
+    balanceAmount: p.balancePayable,
   }));
   const receivableRows: DayDrilldownRow[] = dayReceivables.map((r) => ({
     id: r.externalId,
     name: r.personName,
     status: r.calculatedStatus,
+    dueDate: r.dueDate,
     amount: realized ? r.amountReceived : r.balanceReceivable,
+    grossAmount: r.amountReceivable,
+    settledAmount: r.amountReceived,
+    balanceAmount: r.balanceReceivable,
   }));
 
   return (
@@ -449,8 +484,20 @@ function DayDrilldown({
           </p>
         ) : (
           <div className="flex flex-col gap-2.5">
-            <DayDrilldownCard title="Contas a Pagar" tone="out" rows={payableRows} />
-            <DayDrilldownCard title="Contas a Receber" tone="in" rows={receivableRows} />
+            <DayDrilldownCard
+              title="Contas a Pagar"
+              counterpartyLabel="Fornecedor"
+              settledLabel="Pago"
+              tone="out"
+              rows={payableRows}
+            />
+            <DayDrilldownCard
+              title="Contas a Receber"
+              counterpartyLabel="Cliente"
+              settledLabel="Recebido"
+              tone="in"
+              rows={receivableRows}
+            />
           </div>
         )}
       </td>
@@ -461,9 +508,6 @@ function DayDrilldown({
 export function TreasuryCaixaTimeline({
   timeline,
   loading = false,
-  unavailableReason = null,
-  onGenerateProjection,
-  generatingProjection = false,
   monthlyDueEstimates = [],
   receivables = [],
   payables = [],
@@ -535,20 +579,6 @@ export function TreasuryCaixaTimeline({
               {timeline.forecastCount === 1 ? "" : "s"}
             </p>
           ) : null}
-          {/* A projeção é um retrato congelado — quando títulos/saldos mudam,
-              o futuro só acompanha depois de regenerar. Sem este botão fixo a
-              atualização era impossível quando já existia um run antigo. */}
-          {onGenerateProjection && !unavailableReason ? (
-            <button
-              type="button"
-              onClick={onGenerateProjection}
-              disabled={generatingProjection || loading}
-              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
-              data-testid="caixa-timeline-refresh-projection"
-            >
-              {generatingProjection ? "Atualizando…" : "Atualizar projeção"}
-            </button>
-          ) : null}
           {spansMultipleMonths ? (
             <div
               className="inline-flex rounded-md border border-border bg-background p-0.5"
@@ -575,44 +605,6 @@ export function TreasuryCaixaTimeline({
           ) : null}
         </div>
       </div>
-
-      {/* Aviso sobre o FUTURO — não substitui a tabela: passado e hoje são fato. */}
-      {unavailableReason ? (
-        <div
-          className="mb-3 flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-gradient-to-br from-[#FFFBEB] to-[#FEF3C7]/70 p-3.5 shadow-sm"
-          data-testid="caixa-timeline-unavailable"
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F59E0B]/15">
-            <Sparkles className="h-4 w-4 text-[#B45309]" aria-hidden />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] leading-snug text-[#92400E]">
-              {unavailableReason}
-            </p>
-            {onGenerateProjection ? (
-              <button
-                type="button"
-                onClick={onGenerateProjection}
-                disabled={generatingProjection}
-                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#B45309] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#92400E] disabled:cursor-not-allowed disabled:opacity-60"
-                data-testid="caixa-timeline-generate-projection"
-              >
-                {generatingProjection ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    Gerando projeção…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                    Gerar projeção
-                  </>
-                )}
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
 
       {loading ? (
         <p className="py-3 text-xs text-muted-foreground">Carregando…</p>
