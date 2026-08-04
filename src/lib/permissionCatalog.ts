@@ -2622,6 +2622,7 @@ export const PERMISSION_GROUP_ORDER = [
   ENG,
   COMP,
   PRC,
+  FIN,
   OPS,
   SYS,
   MNT,
