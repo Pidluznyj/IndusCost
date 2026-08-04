@@ -30,10 +30,29 @@ describe("treasuryPrismaFilters", () => {
     });
   });
 
-  it("companyCode presente usa NOT { companyCode: null } (não not: null)", () => {
+  it("companyCode presente NÃO filtra por nulo — o campo é NOT NULL", () => {
+    // Regressão: `NOT: { companyCode: null }` derrubava em runtime toda rota
+    // que usasse o helper, com PrismaClientValidationError
+    // "Argument `companyCode` must not be null". A coluna é TEXT NOT NULL:
+    // filtrar por nulo é impossível e redundante.
     assert.deepEqual(treasuryCompanyCodePresentWhere(), {
-      NOT: { companyCode: null },
+      companyCode: { not: "" },
     });
+  });
+
+  it("o filtro não menciona null em nenhuma posição", () => {
+    const serialized = JSON.stringify(treasuryCompanyCodePresentWhere());
+    assert.equal(serialized.includes("null"), false, serialized);
+    assert.equal(serialized.includes("NOT"), false, serialized);
+  });
+
+  it("exclui string vazia e mantém código válido", () => {
+    // O filtro é `not: ""` — a semântica que os consumidores já aplicam com
+    // `companyCode?.trim() || null`.
+    const where = treasuryCompanyCodePresentWhere() as {
+      companyCode: { not: string };
+    };
+    assert.equal(where.companyCode.not, "");
   });
 
   it("repos do dashboard/relatório não comparam uuid com text[]", () => {
