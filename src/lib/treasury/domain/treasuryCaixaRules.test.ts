@@ -423,10 +423,50 @@ describe("treasuryCaixaRules — appendTreasuryCaixaMonthlyDueEstimates", () => 
     assert.equal(set.estimateOnly, true);
     assert.equal(set.inflows, 1000);
     assert.equal(set.outflows, 400);
-    assert.equal(set.opening, null);
-    assert.equal(set.closing, null);
+    // Encadeia no fechamento do último mês real (julho fechou em 0).
+    assert.equal(set.opening, 0);
+    assert.equal(set.closing, 600);
     assert.equal(set.divergence, null);
     assert.equal(set.days.length, 0);
+  });
+
+  it("Começou/Terminou dos meses estimados acumulam a partir do último fechamento real", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-07-10", { closing: 500 })])
+    );
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, [
+      { monthKey: "2026-08", estimatedInflow: 1000, estimatedOutflow: 400 },
+      { monthKey: "2026-09", estimatedInflow: 200, estimatedOutflow: 800 },
+    ]);
+    const ago = merged.find((m) => m.monthKey === "2026-08")!;
+    const set = merged.find((m) => m.monthKey === "2026-09")!;
+    assert.equal(ago.opening, 500);
+    assert.equal(ago.closing, 1100);
+    // Setembro abre onde agosto estimado terminou — cadeia contínua.
+    assert.equal(set.opening, 1100);
+    assert.equal(set.closing, 500);
+  });
+
+  it("mês estimado que fecha negativo é marcado (alerta visual)", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([d("2026-07-10", { closing: 100 })])
+    );
+    const merged = appendTreasuryCaixaMonthlyDueEstimates(months, [
+      { monthKey: "2026-08", estimatedInflow: 0, estimatedOutflow: 500 },
+    ]);
+    const ago = merged.find((m) => m.monthKey === "2026-08")!;
+    assert.equal(ago.closing, -400);
+    assert.equal(ago.negative, true);
+  });
+
+  it("sem nenhum mês fechado antes não há âncora — saldo fica null, não inventa", () => {
+    const merged = appendTreasuryCaixaMonthlyDueEstimates([], [
+      { monthKey: "2026-09", estimatedInflow: 1000, estimatedOutflow: 400 },
+    ]);
+    const set = merged[0]!;
+    assert.equal(set.opening, null);
+    assert.equal(set.closing, null);
+    assert.equal(set.negative, false);
   });
 
   it("NÃO sobrescreve mês que já tem dias reais (mais preciso)", () => {

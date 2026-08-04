@@ -373,8 +373,10 @@ export type TreasuryCaixaTimelineMonth = {
    * `true` para mês complementado por {@link appendTreasuryCaixaMonthlyDueEstimates}
    * — sem nenhum dia real (a agenda/projeção materializada não cobriu), só o
    * fluxo estimado por vencimento (mesma regra do "Linha do tempo mensal" do
-   * Fluxo de Caixa). Sem saldo acumulado: `opening`/`closing` ficam `null`
-   * porque a cadeia diária tem um buraco de tamanho desconhecido até ali.
+   * Fluxo de Caixa). `opening`/`closing` são ENCADEADOS a partir do último
+   * fechamento conhecido (mês anterior), acumulando entradas − saídas
+   * estimadas — mesmo racional da acumulação do passado. Ficam `null` só
+   * quando não existe nenhum mês fechado antes para ancorar.
    */
   estimateOnly?: boolean;
 };
@@ -406,6 +408,14 @@ export type TreasuryCaixaMonthlyDueEstimate = {
  * trouxe — não mistura com a estimativa do resto do mês. Resolver isso exigiria
  * decompor a estimativa em dias, o que reintroduziria a mesma imprecisão que a
  * projeção dia a dia existe para evitar.
+ *
+ * Saldo dos meses estimados: se sabemos quanto tem para entrar e sair
+ * (CR/CP em aberto por vencimento), sabemos estimar onde cada mês futuro
+ * começa e termina — mesmo racional da acumulação do passado. O "Começou"
+ * ancora no último fechamento conhecido e o "Terminou" acumula
+ * entradas − saídas mês a mês dali em diante. Sem nenhum mês fechado antes
+ * (ex.: filtro num ano inteiramente sem dados), fica `null` — não inventamos
+ * saldo sem âncora.
  */
 export function appendTreasuryCaixaMonthlyDueEstimates(
   months: readonly TreasuryCaixaTimelineMonth[],
@@ -429,7 +439,28 @@ export function appendTreasuryCaixaMonthlyDueEstimates(
       estimateOnly: true,
     }));
   if (extra.length === 0) return [...months];
-  return [...months, ...extra].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+
+  const merged = [...months, ...extra].sort((a, b) =>
+    a.monthKey.localeCompare(b.monthKey)
+  );
+
+  // Encadeia o saldo dos meses estimados no último fechamento conhecido.
+  // Mês real no meio do caminho re-ancora a cadeia no próprio fechamento
+  // (mais preciso que a estimativa acumulada até ali).
+  let running: number | null = null;
+  return merged.map((m) => {
+    if (!m.estimateOnly) {
+      if (m.closing != null && Number.isFinite(m.closing)) {
+        running = m.closing;
+      }
+      return m;
+    }
+    if (running == null) return m;
+    const opening = roundMoney(running);
+    const closing = roundMoney(opening + m.inflows - m.outflows);
+    running = closing;
+    return { ...m, opening, closing, negative: closing < 0 };
+  });
 }
 
 function resolveMonthKind(

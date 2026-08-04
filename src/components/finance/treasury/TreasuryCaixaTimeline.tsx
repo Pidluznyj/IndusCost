@@ -72,7 +72,7 @@ function MonthKindBadge({
     return (
       <span
         className="rounded border border-dashed border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]"
-        title="Sem projeção dia a dia gerada para este mês — estimativa por vencimento dos títulos em aberto, sem saldo acumulado."
+        title="Sem projeção dia a dia gerada para este mês — estimativa por vencimento dos títulos em aberto; saldo acumulado a partir do fechamento do mês anterior."
       >
         estimativa
       </span>
@@ -566,8 +566,11 @@ export function TreasuryCaixaTimeline({
               ainda (a projeção materializada cobre no máximo ~90 dias).
               Entrou/Saiu vêm do saldo em aberto por vencimento dos títulos —
               mesma regra da &quot;Linha do tempo mensal&quot; do Fluxo de
-              Caixa — mas sem saldo acumulado (&quot;Começou&quot;/&quot;Terminou&quot;
-              ficam &quot;—&quot;), porque falta a cadeia dia a dia até lá.
+              Caixa. &quot;Começou&quot;/&quot;Terminou&quot; são{" "}
+              <strong>estimados por acumulação</strong>, como no passado: o mês
+              abre no fechamento do mês anterior e termina somando o que tem a
+              entrar e a pagar. É estimativa — títulos ainda podem mudar de
+              data e valor.
             </p>
           ) : null}
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
