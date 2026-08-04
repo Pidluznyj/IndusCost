@@ -3,6 +3,7 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { decimalToNumber } from "./commission-money.js";
+import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import {
   buildCommissionTraceNomusAudit,
   buildCommissionTraceReceipt,
@@ -83,11 +84,22 @@ async function resolveSalesOrderId(
   }
 
   if (receivableCode) {
-    const schedule = await db.commissionReceivableSchedule.findFirst({
-      where: { receivableCode },
-      orderBy: { createdAt: "desc" },
-      select: { salesOrderId: true },
-    });
+    // Resolução de IDENTIDADE (qual pedido é este título), não fonte de
+    // cálculo: `salesOrderId` é o mesmo em qualquer versão do snapshot.
+    // Prefere a versão vigente; se só houver schedule de snapshot substituído,
+    // ainda resolve — travar aqui cegaria o rastreio justamente nos títulos
+    // afetados pelo defeito, que são os que se quer investigar.
+    const schedule =
+      (await db.commissionReceivableSchedule.findFirst({
+        where: { receivableCode, ...commissionActiveSnapshotWhere() },
+        orderBy: { createdAt: "desc" },
+        select: { salesOrderId: true },
+      })) ??
+      (await db.commissionReceivableSchedule.findFirst({
+        where: { receivableCode },
+        orderBy: { createdAt: "desc" },
+        select: { salesOrderId: true },
+      }));
     if (!schedule) {
       return {
         salesOrderId: null,

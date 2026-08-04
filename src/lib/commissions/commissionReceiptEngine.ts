@@ -45,6 +45,7 @@ import type {
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
+import { keepSchedulesFromActiveSnapshot } from "./commissionScheduleVigency.js";
 import { COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON } from "../salesOrderNomusSeller.shared.js";
 import {
   COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
@@ -762,13 +763,31 @@ export function mapSnapshotItemStatusesToLedgerDiagnosis(
   return null;
 }
 
-function pickMaterializedScheduleForReceivable(
+/**
+ * Escolhe o schedule que representa a comissão VIGENTE do título.
+ *
+ * Descarta primeiro tudo que veio de snapshot substituído: o status do
+ * schedule diz o papel da linha dentro da versão, mas quem decide se a versão
+ * vale é o pai. Sem esse recorte, um schedule antigo ACTIVE e zerado vencia o
+ * correto e o título fechava como ZERO_AMOUNT/NO_MARGIN (PD 02697).
+ *
+ * O filtro também existe no `where` do Prisma
+ * (`loadMaterializedSchedulesByReceivableId`); aqui é defesa em profundidade,
+ * porque o motor puro é chamado com entradas montadas por outros caminhos.
+ */
+export function pickMaterializedScheduleForReceivable(
   schedules: MaterializedReceivableScheduleInput[]
 ): MaterializedReceivableScheduleInput | null {
   if (schedules.length === 0) return null;
-  const active = schedules.find((row) => row.scheduleStatus === "ACTIVE");
+  const current = keepSchedulesFromActiveSnapshot(schedules);
+  // Nenhum schedule da versão vigente ⇒ trata como ausência, para cair no
+  // diagnóstico explícito em vez de reaproveitar linha de versão antiga.
+  if (current.length === 0) return null;
+  const active = current.find((row) => row.scheduleStatus === "ACTIVE");
   if (active) return active;
-  return schedules[0] ?? null;
+  // Sem ACTIVE, mas dentro da versão vigente: preserva desfechos legítimos
+  // como CUSTOMER_EXCLUDED, que têm tratamento próprio adiante.
+  return current[0] ?? null;
 }
 
 function resolveReceivableExclusionReferenceDate(

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import {
   aggregateMaterializationRunSummary,
   buildMaterializationOrderResult,
@@ -392,7 +393,13 @@ async function loadMaterializationArtifactCounts(
       where: { salesOrderId: { in: salesOrderIds }, status: "ACTIVE" },
     }),
     db.commissionReceivableSchedule.count({
-      where: { salesOrderId: { in: salesOrderIds }, status: "ACTIVE" },
+      // Métrica de cobertura: órfão de snapshot substituído não é cobertura,
+      // e contá-lo inflava o número escondendo o defeito.
+      where: {
+        salesOrderId: { in: salesOrderIds },
+        status: "ACTIVE",
+        ...commissionActiveSnapshotWhere(),
+      },
     }),
   ]);
   return { activeSnapshots, activeSchedules };
@@ -620,22 +627,29 @@ async function ensureSchedulesForReceivableRefList(
   }
 
   const receivableIds = receivables.map((row) => row.receivableId);
+  // Só schedules da versão VIGENTE contam como cobertura. Sem o recorte do
+  // pai, um schedule órfão (ACTIVE sob snapshot SUPERSEDED) marcava o título
+  // como já resolvido e a auto-cura nunca reconstruía — era exatamente o caso
+  // que deixava o PD 02697 parado.
   const activeSchedules = await db.commissionReceivableSchedule.findMany({
-    where: { receivableId: { in: receivableIds }, status: "ACTIVE" },
+    where: {
+      receivableId: { in: receivableIds },
+      status: "ACTIVE",
+      ...commissionActiveSnapshotWhere(),
+    },
     select: {
       receivableId: true,
       scheduledCommissionAmount: true,
       orderSnapshot: { select: { totalFinalCommissionAmount: true, status: true } },
     },
   });
-  /** ACTIVE com comissão zerada mas snapshot oficial > 0 → precisa rebuild (não só "ensure missing"). */
+  /** Vigente com comissão zerada mas snapshot oficial > 0 → precisa rebuild (não só "ensure missing"). */
   const staleZeroAgainstSnapshot = new Set(
     activeSchedules
       .filter((row) => {
         const scheduled = Number(row.scheduledCommissionAmount);
         const snapFinal = Number(row.orderSnapshot.totalFinalCommissionAmount);
         return (
-          row.orderSnapshot.status === "ACTIVE" &&
           Number.isFinite(scheduled) &&
           scheduled <= 0 &&
           Number.isFinite(snapFinal) &&
@@ -694,7 +708,11 @@ async function ensureSchedulesForReceivableRefList(
       }
 
       const after = await db.commissionReceivableSchedule.findFirst({
-        where: { receivableId: receivable.receivableId, status: "ACTIVE" },
+        where: {
+          receivableId: receivable.receivableId,
+          status: "ACTIVE",
+          ...commissionActiveSnapshotWhere(),
+        },
         select: { id: true },
       });
       if (after) schedulesEnsured += 1;

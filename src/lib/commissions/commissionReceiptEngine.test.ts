@@ -163,6 +163,9 @@ function materializedSchedule(
     receivableNominalAmount: 10000,
     receivableSharePercent: 100,
     scheduleStatus: "ACTIVE",
+    // Por padrão o schedule pertence à versão VIGENTE do pedido. Quem quiser
+    // simular órfão de snapshot substituído sobrescreve explicitamente.
+    orderSnapshotStatus: "ACTIVE",
     sellerResolutionStatus: "OK_CANONICAL",
     exclusionRuleId: null,
     exclusionReason: null,

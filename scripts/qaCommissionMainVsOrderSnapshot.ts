@@ -51,6 +51,8 @@ function runPureQa(): void {
     receivableSharePercent: 100,
     scheduledCommissionAmount: 0,
     scheduleStatus: "ACTIVE" as const,
+    // Cenário do QA é um schedule da versão vigente do pedido.
+    orderSnapshotStatus: "ACTIVE",
     sellerResolutionStatus: "OK_CANONICAL",
     exclusionRuleId: null as string | null,
     exclusionReason: null as string | null,

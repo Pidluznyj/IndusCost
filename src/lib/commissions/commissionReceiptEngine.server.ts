@@ -11,6 +11,7 @@ import {
   resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
 import type { CommissionReceiptSellerRecordInput } from "./commissionReceiptSeller.js";
+import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
 import {
@@ -77,7 +78,13 @@ export async function loadMaterializedSchedulesByReceivableId(
   if (receivableIds.length === 0) return map;
 
   const rows = await prisma.commissionReceivableSchedule.findMany({
-    where: { receivableId: { in: receivableIds } },
+    // Só a versão VIGENTE do pedido. Schedule de snapshot substituído nunca
+    // chega ao motor — antes disso, um schedule antigo ACTIVE e zerado
+    // disputava a seleção com o correto e vencia (PD 02697).
+    where: { receivableId: { in: receivableIds }, ...commissionActiveSnapshotWhere() },
+    // Ordem determinística: sem isto a seleção seguia a ordem física do heap,
+    // que na prática entrega os mais antigos primeiro.
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     include: {
       orderSnapshot: {
         select: {

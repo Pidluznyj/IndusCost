@@ -65,6 +65,9 @@ function activeSchedule(
     receivableSharePercent: 100,
     scheduledCommissionAmount: 50,
     scheduleStatus: "ACTIVE",
+    // Schedule da versão VIGENTE do pedido — é o caso normal. Órfão de
+    // snapshot substituído se declara explicitamente no teste que o exercita.
+    orderSnapshotStatus: "ACTIVE",
     sellerResolutionStatus: "RESOLVED",
     exclusionRuleId: null,
     exclusionReason: null,
