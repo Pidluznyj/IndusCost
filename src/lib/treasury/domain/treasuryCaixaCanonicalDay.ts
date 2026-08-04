@@ -70,17 +70,33 @@ export type TreasuryCaixaCanonicalDayOtherMovement = {
   note?: string | null;
 };
 
+/** Tipos de alerta que o motor diário pode emitir por dia. */
+export type TreasuryCaixaCanonicalDayWarningCode =
+  | "NO_OPENING_BALANCE"
+  | "PARTIAL_LOAD"
+  | "OTHER_MOVEMENTS_NOT_LOADED";
+
+export type TreasuryCaixaCanonicalDayWarning = {
+  code: TreasuryCaixaCanonicalDayWarningCode;
+  message: string;
+};
+
 /**
  * Fatos elementares do dia — cada dimensão traz o total (soma dos títulos que
- * a compõem) e a lista que fecha esse total. `null` numa dimensão significa
- * "sem dado carregado para este dia" (indisponível ≠ zero); o total pode ser
- * zero legítimo quando a lista é `[]`.
+ * a compõem) e a lista que fecha esse total.
+ *
+ * Convenção null vs 0:
+ *  - Totais das dimensões elementares (receivableDue/…): número — 0 é fato
+ *    (nenhum título vencendo/baixado). Se a fonte falhou de carregar, o
+ *    campo relevante recebe warning `PARTIAL_LOAD`, não vira null.
+ *  - openingBalance/closingRealizedBalance/closingProjectedBalance: `null` =
+ *    saldo INDISPONÍVEL (nenhuma origem informou; anterior à gênese; etc).
+ *    A UI mostra "—". Nunca vira R$ 0,00 falso.
  */
 export type TreasuryCaixaCanonicalDay = {
   civilDate: string;
-  /**
-   * Fatos elementares:
-   */
+
+  // ── Fatos elementares (dimensões disjuntas) ─────────────────────────────
   receivableDue: number;
   receivableDueTitles: TreasuryCaixaCanonicalDayReceivableTitle[];
 
@@ -96,6 +112,44 @@ export type TreasuryCaixaCanonicalDay = {
   otherInflows: number;
   otherOutflows: number;
   otherMovements: TreasuryCaixaCanonicalDayOtherMovement[];
+
+  // ── Agregados derivados dos fatos elementares ───────────────────────────
+  /**
+   * realizedInflows = receivableReceived + otherInflows
+   * realizedOutflows = payablePaid + otherOutflows
+   * Reflete somente o que EFETIVAMENTE aconteceu no dia (baixas + ledger/
+   * transferência). Não inclui título em aberto vencendo.
+   */
+  realizedInflows: number;
+  realizedOutflows: number;
+  /**
+   * projectedInflows = receivableDue
+   * projectedOutflows = payableDue
+   * Reflete somente o que está PROJETADO por vencimento (títulos em aberto
+   * vencendo neste dia). Não inclui já-realizado.
+   */
+  projectedInflows: number;
+  projectedOutflows: number;
+
+  // ── Saldo do dia ────────────────────────────────────────────────────────
+  /** Saldo de abertura do dia (fechamento realizado do dia anterior). */
+  openingBalance: number | null;
+  /**
+   * Fechamento realizado: opening + realizedInflows − realizedOutflows.
+   * `null` quando `openingBalance` é `null`.
+   */
+  closingRealizedBalance: number | null;
+  /**
+   * Fechamento projetado: opening + realizedInflows + projectedInflows
+   *                    − realizedOutflows − projectedOutflows.
+   * Vale como fechamento do dia para efeito de encadeamento quando o dia
+   * é futuro (ainda não houve realização). `null` quando `openingBalance`
+   * é `null`.
+   */
+  closingProjectedBalance: number | null;
+
+  /** Alertas do dia — indisponibilidades, cargas parciais, etc. */
+  warnings: TreasuryCaixaCanonicalDayWarning[];
 };
 
 /**
@@ -192,11 +246,31 @@ export type TreasuryCaixaCanonicalDayInput = {
    * Movimentos "outros" (ledger/transferência) por dia civil — o motor não
    * consulta banco, quem carrega passa. Vazio = nenhum movimento fora de
    * título; nunca vira zero silencioso: as três dimensões CR/CP ainda contam.
+   * Quando o carregamento externo falhar/for parcial, quem chama pode
+   * marcar `otherMovementsLoadStatus = "partial"` para emitir aviso do
+   * motor sem inventar zero.
    */
   otherMovementsByCivilDate?: ReadonlyMap<
     string,
     readonly TreasuryCaixaCanonicalDayOtherMovement[]
   >;
+  /**
+   * Estado do carregamento de ledger/transfer:
+   *   - "loaded" (default): motor considerou completo, ausência = zero real
+   *   - "partial": marca warning `PARTIAL_LOAD` em cada dia — a UI mostra que
+   *      "outras entradas/saídas" pode estar subestimada.
+   *   - "not_loaded": marca warning `OTHER_MOVEMENTS_NOT_LOADED` — o motor
+   *      não pergunta pela fonte porque ela é opcional (ex.: dias passados
+   *      no board, rotina só cobre hoje).
+   */
+  otherMovementsLoadStatus?: "loaded" | "partial" | "not_loaded";
+  /**
+   * Saldo inicial da janela (fechamento realizado do dia anterior ao
+   * primeiro dia). `null` = nenhuma origem informou (dia anterior à gênese,
+   * ou snapshot ausente) — a UI mostra "—" e o motor emite warning
+   * `NO_OPENING_BALANCE` no primeiro dia.
+   */
+  openingBalanceOfFirstDay?: number | null;
 };
 
 /**
@@ -237,6 +311,14 @@ export function buildTreasuryCaixaCanonicalDays(
       otherInflows: 0,
       otherOutflows: 0,
       otherMovements: [],
+      realizedInflows: 0,
+      realizedOutflows: 0,
+      projectedInflows: 0,
+      projectedOutflows: 0,
+      openingBalance: null,
+      closingRealizedBalance: null,
+      closingProjectedBalance: null,
+      warnings: [],
     };
     byDate.set(civilDate, existing);
     return existing;
@@ -309,17 +391,99 @@ export function buildTreasuryCaixaCanonicalDays(
     }
   }
 
-  return [...byDate.values()]
-    .map((d) => ({
-      ...d,
-      receivableDue: roundMoney(d.receivableDue),
-      receivableReceived: roundMoney(d.receivableReceived),
-      payableDue: roundMoney(d.payableDue),
-      payablePaid: roundMoney(d.payablePaid),
-      otherInflows: roundMoney(d.otherInflows),
-      otherOutflows: roundMoney(d.otherOutflows),
-    }))
+  // Passo 1 — normaliza os fatos elementares e deriva os agregados/dimensões.
+  const normalized = [...byDate.values()]
+    .map((d) => {
+      const receivableDue = roundMoney(d.receivableDue);
+      const receivableReceived = roundMoney(d.receivableReceived);
+      const payableDue = roundMoney(d.payableDue);
+      const payablePaid = roundMoney(d.payablePaid);
+      const otherInflows = roundMoney(d.otherInflows);
+      const otherOutflows = roundMoney(d.otherOutflows);
+      return {
+        ...d,
+        receivableDue,
+        receivableReceived,
+        payableDue,
+        payablePaid,
+        otherInflows,
+        otherOutflows,
+        realizedInflows: roundMoney(receivableReceived + otherInflows),
+        realizedOutflows: roundMoney(payablePaid + otherOutflows),
+        projectedInflows: receivableDue,
+        projectedOutflows: payableDue,
+      };
+    })
     .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+
+  // Passo 2 — encadeia o saldo dia a dia. Cadeia = fechamento REALIZADO
+  // do dia N vira abertura do dia N+1 (o motor único do Caixa, seção
+  // "Saldo diário" da spec: saldo realizado final = abertura + recebido +
+  // outras entradas realizadas − pago − outras saídas realizadas).
+  // O fechamento PROJETADO acrescenta os títulos em aberto vencendo no dia,
+  // mas NÃO propaga na cadeia (senão o dia seguinte assumiria que tudo que
+  // vencia já foi baixado).
+  const otherStatus = input.otherMovementsLoadStatus ?? "loaded";
+  let opening: number | null =
+    input.openingBalanceOfFirstDay != null &&
+    Number.isFinite(input.openingBalanceOfFirstDay)
+      ? roundMoney(input.openingBalanceOfFirstDay)
+      : null;
+
+  const result: TreasuryCaixaCanonicalDay[] = [];
+  let isFirst = true;
+  for (const d of normalized) {
+    const warnings: TreasuryCaixaCanonicalDayWarning[] = [];
+    if (isFirst && opening == null) {
+      warnings.push({
+        code: "NO_OPENING_BALANCE",
+        message:
+          "Saldo inicial da janela não informado — abertura, fechamento realizado e fechamento projetado ficam indisponíveis.",
+      });
+    }
+    if (otherStatus === "partial") {
+      warnings.push({
+        code: "PARTIAL_LOAD",
+        message:
+          "Outras entradas/saídas do dia podem estar subestimadas: fonte externa (ledger/transfer) devolveu carga parcial.",
+      });
+    } else if (otherStatus === "not_loaded") {
+      warnings.push({
+        code: "OTHER_MOVEMENTS_NOT_LOADED",
+        message:
+          "Outras entradas/saídas não foram carregadas para este dia (fonte externa opcional).",
+      });
+    }
+
+    const closingRealizedBalance =
+      opening == null
+        ? null
+        : roundMoney(opening + d.realizedInflows - d.realizedOutflows);
+    const closingProjectedBalance =
+      opening == null
+        ? null
+        : roundMoney(
+            opening +
+              d.realizedInflows +
+              d.projectedInflows -
+              d.realizedOutflows -
+              d.projectedOutflows
+          );
+
+    result.push({
+      ...d,
+      openingBalance: opening,
+      closingRealizedBalance,
+      closingProjectedBalance,
+      warnings,
+    });
+
+    // Cadeia usa SEMPRE o realizado — a projeção não vira "verdade" de saldo.
+    opening = closingRealizedBalance;
+    isFirst = false;
+  }
+
+  return result;
 }
 
 /**

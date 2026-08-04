@@ -257,6 +257,127 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
     assert.equal(day.otherMovements.length, 2);
   });
 
+  it("realizedInflows/Outflows = baixados + outros; projectedInflows/Outflows = vencendo em aberto", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04"],
+      receivables: [
+        ar({ externalId: 1, dueDate: "2026-08-04", balanceReceivable: 500 }),
+        ar({
+          externalId: 2,
+          settlementDate: "2026-08-04",
+          amountReceived: 200,
+        }),
+      ],
+      payables: [
+        ap({ externalId: 3, dueDate: "2026-08-04", balancePayable: 300 }),
+        ap({
+          externalId: 4,
+          dueDate: "2026-08-01",
+          paymentDate: "2026-08-04",
+          amountPaid: 150,
+        }),
+      ],
+      otherMovementsByCivilDate: new Map([
+        [
+          "2026-08-04",
+          [
+            { origin: "LEDGER", direction: "IN", amount: 40 },
+            { origin: "TRANSFER", direction: "OUT", amount: 25 },
+          ],
+        ],
+      ]),
+    });
+    const d = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
+    // realized = baixados + outros
+    assert.equal(d.realizedInflows, 240, "200 recebido + 40 outros");
+    assert.equal(d.realizedOutflows, 175, "150 pago + 25 outros");
+    // projected = títulos em aberto vencendo hoje
+    assert.equal(d.projectedInflows, 500);
+    assert.equal(d.projectedOutflows, 300);
+  });
+
+  it("openingBalance encadeia dia a dia; closingRealized é o próximo opening", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04", "2026-08-05", "2026-08-06"],
+      receivables: [
+        // Recebido em 04: 500; recebido em 05: 200
+        ar({ settlementDate: "2026-08-04", amountReceived: 500 }),
+        ar({ settlementDate: "2026-08-05", amountReceived: 200 }),
+      ],
+      payables: [
+        // Pago em 05: 100
+        ap({ dueDate: "2026-08-05", paymentDate: "2026-08-05", amountPaid: 100 }),
+      ],
+      openingBalanceOfFirstDay: 1000,
+    });
+    const [d04, d05, d06] = days;
+    assert.equal(d04!.openingBalance, 1000);
+    assert.equal(d04!.closingRealizedBalance, 1500, "1000 + 500");
+    assert.equal(d05!.openingBalance, 1500, "opening = realized do dia anterior");
+    assert.equal(d05!.closingRealizedBalance, 1600, "1500 + 200 − 100");
+    assert.equal(d06!.openingBalance, 1600);
+    // Sem movimento, realized fecha no que abriu.
+    assert.equal(d06!.closingRealizedBalance, 1600);
+  });
+
+  it("closingProjectedBalance inclui vencendo em aberto SEM propagar na cadeia", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04", "2026-08-05"],
+      receivables: [
+        // Em aberto vencendo em 04, valor 700 — NÃO baixado
+        ar({ dueDate: "2026-08-04", balanceReceivable: 700 }),
+      ],
+      payables: [
+        // Em aberto vencendo em 05, valor 200
+        ap({ dueDate: "2026-08-05", balancePayable: 200 }),
+      ],
+      openingBalanceOfFirstDay: 100,
+    });
+    const [d04, d05] = days;
+    // Realizado NÃO muda pelo projetado.
+    assert.equal(d04!.closingRealizedBalance, 100);
+    // Projetado = opening + realized + projected(in) − realized − projected(out)
+    assert.equal(d04!.closingProjectedBalance, 800, "100 + 700");
+    // Encadeia pelo realizado — opening de 05 = 100, não 800.
+    assert.equal(d05!.openingBalance, 100);
+    assert.equal(d05!.closingProjectedBalance, -100, "100 − 200 projetado");
+  });
+
+  it("sem openingBalanceOfFirstDay: opening/closings ficam null e emite warning NO_OPENING_BALANCE", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04"],
+      receivables: [
+        ar({ settlementDate: "2026-08-04", amountReceived: 999 }),
+      ],
+      payables: [],
+    });
+    const d = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
+    assert.equal(d.openingBalance, null);
+    assert.equal(d.closingRealizedBalance, null);
+    assert.equal(d.closingProjectedBalance, null);
+    // O fato elementar continua fato — só o SALDO fica indisponível.
+    assert.equal(d.realizedInflows, 999);
+    const codes = d.warnings.map((w) => w.code);
+    assert.ok(codes.includes("NO_OPENING_BALANCE"));
+  });
+
+  it("otherMovementsLoadStatus='not_loaded' emite warning em cada dia sem inventar zero", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04", "2026-08-05"],
+      receivables: [],
+      payables: [],
+      otherMovementsLoadStatus: "not_loaded",
+    });
+    for (const d of days) {
+      // Ausência de outros movimentos NÃO vira zero no fato: outros* continua
+      // 0 (nenhum foi entregue), mas o warning avisa que a fonte não rodou.
+      assert.equal(d.otherInflows, 0);
+      assert.equal(d.otherOutflows, 0);
+      const codes = d.warnings.map((w) => w.code);
+      assert.ok(codes.includes("OTHER_MOVEMENTS_NOT_LOADED"));
+    }
+  });
+
   it("Σ dias == totais mensais por dimensão", () => {
     const days = buildTreasuryCaixaCanonicalDays({
       civilDatesInWindow: [

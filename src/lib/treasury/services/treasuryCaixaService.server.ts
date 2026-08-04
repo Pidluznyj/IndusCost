@@ -644,10 +644,32 @@ export function createTreasuryCaixaService(input: {
           cursor.setDate(cursor.getDate() + 1);
         }
       }
+      // Saldo inicial da janela canônica: fechamento REALIZADO do último dia
+      // conhecido anterior ao primeiro dia da janela. Reaproveita `realizedDaysAll`
+      // (já com running balance encadeado desde a gênese), sem consulta nova.
+      // Sem histórico anterior → null, que emite warning `NO_OPENING_BALANCE`
+      // no primeiro dia canônico (indisponível ≠ zero falso).
+      const firstWindowDay = windowDays[0] ?? null;
+      let openingBalanceOfFirstDay: number | null = null;
+      if (firstWindowDay) {
+        for (let i = realizedDaysAll.length - 1; i >= 0; i -= 1) {
+          const rd = realizedDaysAll[i]!;
+          if (rd.civilDate < firstWindowDay && rd.closing != null) {
+            openingBalanceOfFirstDay = rd.closing;
+            break;
+          }
+        }
+      }
+
       const canonicalDays = buildTreasuryCaixaCanonicalDays({
         civilDatesInWindow: windowDays,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
+        // Ledger/transfer não são consultados para dias arbitrários (a rotina
+        // guiada só cobre HOJE). Marca explicitamente para a UI mostrar aviso
+        // em vez de fingir que "outras entradas/saídas" foi carregado.
+        otherMovementsLoadStatus: "not_loaded",
+        openingBalanceOfFirstDay,
       });
 
       return {
