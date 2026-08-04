@@ -182,7 +182,13 @@ function OutlierMark({ direction }: { direction: "HIGH" | "LOW" }) {
 }
 
 /** Rótulo textual além da cor — acessibilidade e clareza para quem é leigo. */
-function KindBadge({ kind }: { kind: TreasuryCaixaTimelineRow["kind"] }) {
+function KindBadge({
+  kind,
+  estimated,
+}: {
+  kind: TreasuryCaixaTimelineRow["kind"];
+  estimated?: boolean;
+}) {
   if (kind === "TODAY") {
     return (
       <span className="rounded bg-[#1E3A8A] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
@@ -194,6 +200,16 @@ function KindBadge({ kind }: { kind: TreasuryCaixaTimelineRow["kind"] }) {
     return (
       <span className="rounded border border-[#A7F3D0] bg-[#ECFDF5] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#065F46]">
         realizado
+      </span>
+    );
+  }
+  if (estimated) {
+    return (
+      <span
+        className="rounded border border-dashed border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]"
+        title="Estimado pelos títulos em aberto vencendo neste dia; saldo encadeado do dia anterior."
+      >
+        estimativa
       </span>
     );
   }
@@ -369,20 +385,21 @@ export function TreasuryCaixaTimeline({
               <tbody>
                 {mode === "month"
                   ? months.map((m) => {
-                      const isOpen = expanded.has(m.monthKey) && !m.estimateOnly;
+                      const expandable = m.days.length > 0;
+                      const isOpen = expanded.has(m.monthKey) && expandable;
                       return (
                         <React.Fragment key={m.monthKey}>
                           <tr
                             className={cn(
                               "border-b border-border/50 hover:bg-muted/40",
-                              m.estimateOnly ? "cursor-default" : "cursor-pointer",
+                              expandable ? "cursor-pointer" : "cursor-default",
                               m.kind === "CURRENT" && "bg-[#EFF6FF]",
                               m.kind === "FORECAST" && "text-[#475569]"
                             )}
                             onClick={
-                              m.estimateOnly
-                                ? undefined
-                                : () => toggleMonth(m.monthKey)
+                              expandable
+                                ? () => toggleMonth(m.monthKey)
+                                : undefined
                             }
                             data-testid={`caixa-timeline-month-${m.monthKey}`}
                             data-kind={m.kind}
@@ -391,7 +408,7 @@ export function TreasuryCaixaTimeline({
                           >
                             <td className="whitespace-nowrap px-2 py-1.5 font-semibold">
                               <span className="inline-flex items-center gap-1">
-                                {m.estimateOnly ? (
+                                {!expandable ? (
                                   <span className="inline-block h-3.5 w-3.5" aria-hidden />
                                 ) : isOpen ? (
                                   <ChevronDown
@@ -406,9 +423,11 @@ export function TreasuryCaixaTimeline({
                                 )}
                                 {formatMonthKey(m.monthKey)}
                                 <span className="font-normal text-muted-foreground">
-                                  {m.estimateOnly
+                                  {!expandable
                                     ? "(estimativa por vencimento)"
-                                    : `(${m.days.length} ${m.days.length === 1 ? "dia" : "dias"})`}
+                                    : m.estimateOnly
+                                      ? `(${m.days.length} ${m.days.length === 1 ? "dia" : "dias"} · estimativa)`
+                                      : `(${m.days.length} ${m.days.length === 1 ? "dia" : "dias"})`}
                                 </span>
                               </span>
                             </td>
@@ -452,7 +471,7 @@ export function TreasuryCaixaTimeline({
                                     {formatCivilDate(r.civilDate)}
                                   </td>
                                   <td className="px-2 py-1.5">
-                                    <KindBadge kind={r.kind} />
+                                    <KindBadge kind={r.kind} estimated={r.estimated} />
                                   </td>
                                   <td className="px-2 py-1.5 text-right tabular-nums">
                                     {money(r.opening)}
@@ -511,7 +530,7 @@ export function TreasuryCaixaTimeline({
                       {formatCivilDate(r.civilDate)}
                     </td>
                     <td className="px-2 py-1.5">
-                      <KindBadge kind={r.kind} />
+                      <KindBadge kind={r.kind} estimated={r.estimated} />
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
                       {money(r.opening)}
@@ -557,20 +576,20 @@ export function TreasuryCaixaTimeline({
             em aberto — esses ainda podem mudar.
             {mode === "month" ? " Clique num mês para ver os dias." : ""}
           </p>
-          {mode === "month" && months.some((m) => m.estimateOnly) ? (
+          {months.some((m) => m.estimateOnly) ||
+          timeline.rows.some((r) => r.estimated) ? (
             <p
               className="mt-1 text-[11px] leading-snug text-muted-foreground"
               data-testid="caixa-timeline-estimate-legend"
             >
-              <strong>Estimativa</strong> = mês sem projeção dia a dia gerada
-              ainda (a projeção materializada cobre no máximo ~90 dias).
-              Entrou/Saiu vêm do saldo em aberto por vencimento dos títulos —
-              mesma regra da &quot;Linha do tempo mensal&quot; do Fluxo de
-              Caixa. &quot;Começou&quot;/&quot;Terminou&quot; são{" "}
-              <strong>estimados por acumulação</strong>, como no passado: o mês
-              abre no fechamento do mês anterior e termina somando o que tem a
-              entrar e a pagar. É estimativa — títulos ainda podem mudar de
-              data e valor.
+              <strong>Estimativa</strong> = futuro sem projeção materializada,
+              estimado <strong>dia a dia</strong> pelos títulos em aberto que
+              vencem em cada dia (mesma regra da &quot;Linha do tempo
+              mensal&quot; do Fluxo de Caixa). Cada dia abre no fechamento do
+              dia anterior — a âncora é o <strong>último caixa conhecido</strong>:
+              informar o saldo de hoje recalcula toda a cadeia futura. Clique
+              no mês para ver os dias e saber em que dia o caixa aperta. É
+              estimativa — títulos ainda podem mudar de data e valor.
             </p>
           ) : null}
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">

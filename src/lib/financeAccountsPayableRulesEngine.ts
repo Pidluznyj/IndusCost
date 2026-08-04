@@ -327,6 +327,29 @@ export function sumOfficialApOpenDueInPeriod(
   );
 }
 
+/**
+ * Mesma regra de {@link sumOfficialApOpenDueInPeriod}, agrupada por dia civil
+ * do vencimento operacional em uma passada — a soma das chaves de um período
+ * é igual à soma oficial daquele período (mesma partição civil). Para
+ * consumidores que precisam do saldo aberto dia a dia (ex.: estimativa
+ * diária da Tesouraria).
+ */
+export function sumOfficialApOpenDueByCivilDay(
+  rows: FinanceApDashboardRow[],
+  scope?: OfficialApMetricScope
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of scopeRowsForOfficialApMetric(rows, scope)) {
+    if (!isFinanceApOpen(row)) continue;
+    const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+    if (!operationalDueDate) continue;
+    const key = toCivilDateKey(operationalDueDate);
+    if (!key) continue;
+    out.set(key, roundMoney((out.get(key) ?? 0) + resolveFinanceApOpenAmount(row)));
+  }
+  return out;
+}
+
 /** Contagem de títulos abertos com vencimento operacional no período. */
 export function countOfficialApOpenDueInPeriod(
   rows: FinanceApDashboardRow[],

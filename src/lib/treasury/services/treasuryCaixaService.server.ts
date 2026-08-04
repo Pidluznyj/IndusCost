@@ -11,11 +11,13 @@ import type { PrismaClient } from "@prisma/client";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import {
   buildFinanceAccountsReceivableRulesResult,
+  sumOfficialArOpenDueByCivilDay,
   sumOfficialArOpenDueInPeriod,
 } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
 import {
   buildFinanceAccountsPayableRulesResult,
+  sumOfficialApOpenDueByCivilDay,
   sumOfficialApOpenDueInPeriod,
 } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
@@ -605,6 +607,24 @@ export function createTreasuryCaixaService(input: {
         ),
       }));
 
+      // Estimativa DIÁRIA por vencimento — mesmas fontes/regra do mensal
+      // acima, agrupada por dia civil numa passada só (soma dos dias do mês
+      // = soma oficial do mês, mesma partição). Dia sem movimento fica fora
+      // do payload. O front encadeia o saldo dia a dia a partir do último
+      // caixa conhecido — informar o caixa de hoje re-ancora toda a cadeia.
+      const arDueByDay = sumOfficialArOpenDueByCivilDay(arEffectiveRows);
+      const apDueByDay = sumOfficialApOpenDueByCivilDay(apLoaded.rows);
+      const dailyDueEstimates = [
+        ...new Set([...arDueByDay.keys(), ...apDueByDay.keys()]),
+      ]
+        .filter((civilDate) => civilDate >= periodFrom && civilDate <= periodTo)
+        .sort()
+        .map((civilDate) => ({
+          civilDate,
+          estimatedInflow: arDueByDay.get(civilDate) ?? 0,
+          estimatedOutflow: apDueByDay.get(civilDate) ?? 0,
+        }));
+
       return {
         period,
         dueDateFrom: toIsoDate(dueDateFrom),
@@ -615,6 +635,7 @@ export function createTreasuryCaixaService(input: {
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
         monthlyDueEstimates,
+        dailyDueEstimates,
       };
     },
   };

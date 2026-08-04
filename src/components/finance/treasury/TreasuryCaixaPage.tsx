@@ -23,6 +23,7 @@ import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjectionCalculateApi.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
+  appendTreasuryCaixaDailyDueEstimates,
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyBalanceChart,
   buildTreasuryCaixaMonthlyTimeline,
@@ -354,10 +355,17 @@ export function TreasuryCaixaPage() {
   // `search`) garante que ela reage quando o fluxo de hoje termina de carregar
   // depois da busca — antes, um closure obsoleto congelava `todayFlow` nulo e a
   // linha de hoje ficava sem o saldo informado (a realidade).
-  const timeline = useMemo<TreasuryCaixaTimelineData | null>(
-    () => (data ? buildTimelineFromSources(data, todayFlow, agendaDays) : null),
-    [data, todayFlow, agendaDays]
-  );
+  const timeline = useMemo<TreasuryCaixaTimelineData | null>(() => {
+    if (!data) return null;
+    const base = buildTimelineFromSources(data, todayFlow, agendaDays);
+    // Futuro fora da cobertura da projeção materializada: estima dia a dia
+    // pelos CR/CP em aberto por vencimento, ancorado no último caixa
+    // conhecido — informar o caixa de hoje re-ancora toda a cadeia futura.
+    return appendTreasuryCaixaDailyDueEstimates(
+      base,
+      data.dailyDueEstimates ?? []
+    );
+  }, [data, todayFlow, agendaDays]);
 
   /**
    * Série do gráfico — mesmos meses da linha do tempo, então a curva e a tabela

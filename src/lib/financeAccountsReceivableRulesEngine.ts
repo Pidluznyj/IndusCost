@@ -583,6 +583,27 @@ export function sumOfficialArOpenDueInPeriod(
   return sumOpenDueInPeriod(scopeRowsForOfficialArMetric(rows, scope), startDate, endDate);
 }
 
+/**
+ * Mesma regra de {@link sumOfficialArOpenDueInPeriod}, agrupada por dia civil
+ * de vencimento em uma passada — a soma das chaves de um período é igual à
+ * soma oficial daquele período (mesma partição civil). Para consumidores que
+ * precisam do saldo aberto dia a dia (ex.: estimativa diária da Tesouraria).
+ */
+export function sumOfficialArOpenDueByCivilDay(
+  rows: FinanceArDashboardRow[],
+  scope?: OfficialArMetricScope
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of scopeRowsForOfficialArMetric(rows, scope)) {
+    if (isFinanceArReceivedOrSettled(row)) continue;
+    if (!isFinanceArOpen(row) || !row.dueDate) continue;
+    const key = toCivilDateKey(row.dueDate);
+    if (!key) continue;
+    out.set(key, roundMoney((out.get(key) ?? 0) + row.balanceReceivable));
+  }
+  return out;
+}
+
 /** Contagem de títulos abertos com vencimento no período (dueDate). */
 export function countOfficialArOpenDueInPeriod(
   rows: FinanceArDashboardRow[],

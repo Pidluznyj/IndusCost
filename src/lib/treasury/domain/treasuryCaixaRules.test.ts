@@ -6,6 +6,7 @@ import type {
   TreasuryCaixaTimelineRow,
 } from "./treasuryCaixaRules.js";
 import {
+  appendTreasuryCaixaDailyDueEstimates,
   appendTreasuryCaixaMonthlyDueEstimates,
   applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaDayFlow,
@@ -467,6 +468,108 @@ describe("treasuryCaixaRules — appendTreasuryCaixaMonthlyDueEstimates", () => 
     assert.equal(set.opening, null);
     assert.equal(set.closing, null);
     assert.equal(set.negative, false);
+  });
+});
+
+describe("treasuryCaixaRules — appendTreasuryCaixaDailyDueEstimates", () => {
+  /** Linha do tempo mínima: hoje fechado num valor conhecido. */
+  function baseTimeline(todayClosing: number | null) {
+    return {
+      todayCivilDate: TODAY,
+      rows: [
+        d(TODAY, {
+          closing: todayClosing,
+          closingCalculated: todayClosing,
+        }),
+      ],
+      realizedCount: 0,
+      forecastCount: 0,
+      firstNegativeDate: null,
+    };
+  }
+
+  it("encadeia dia a dia a partir do fechamento de hoje (âncora = último caixa conhecido)", () => {
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(baseTimeline(100), [
+      { civilDate: "2026-08-05", estimatedInflow: 50, estimatedOutflow: 20 },
+      { civilDate: "2026-08-07", estimatedInflow: 0, estimatedOutflow: 80 },
+    ]);
+    const d5 = tlOut.rows.find((r) => r.civilDate === "2026-08-05")!;
+    const d7 = tlOut.rows.find((r) => r.civilDate === "2026-08-07")!;
+    assert.equal(d5.opening, 100);
+    assert.equal(d5.closing, 130);
+    assert.equal(d5.estimated, true);
+    assert.equal(d5.kind, "FORECAST");
+    // O dia 06 (sem movimento) não vira linha; o saldo atravessa o vão.
+    assert.equal(d7.opening, 130);
+    assert.equal(d7.closing, 50);
+    assert.equal(tlOut.forecastCount, 2);
+  });
+
+  it("responde 'que dia o caixa aperta': fechamento estimado negativo marca o dia", () => {
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(baseTimeline(100), [
+      { civilDate: "2026-08-05", estimatedInflow: 0, estimatedOutflow: 60 },
+      { civilDate: "2026-08-06", estimatedInflow: 0, estimatedOutflow: 70 },
+    ]);
+    const d6 = tlOut.rows.find((r) => r.civilDate === "2026-08-06")!;
+    assert.equal(d6.closing, -30);
+    assert.equal(d6.negative, true);
+    assert.equal(tlOut.firstNegativeDate, "2026-08-06");
+  });
+
+  it("não duplica dia já coberto (hoje/agenda) nem cria dia sem movimento", () => {
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(baseTimeline(100), [
+      { civilDate: TODAY, estimatedInflow: 999, estimatedOutflow: 0 },
+      { civilDate: "2026-08-01", estimatedInflow: 999, estimatedOutflow: 0 },
+      { civilDate: "2026-08-05", estimatedInflow: 0, estimatedOutflow: 0 },
+    ]);
+    assert.equal(tlOut.rows.length, 1);
+  });
+
+  it("âncora pula fechamento null no fim da linha (usa o último conhecido)", () => {
+    const tl = {
+      todayCivilDate: TODAY,
+      rows: [
+        d("2026-08-02", { closing: 200, closingCalculated: 200 }),
+        d(TODAY, { closing: null, closingCalculated: null }),
+      ],
+      realizedCount: 1,
+      forecastCount: 0,
+      firstNegativeDate: null,
+    };
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(tl, [
+      { civilDate: "2026-08-05", estimatedInflow: 10, estimatedOutflow: 0 },
+    ]);
+    const d5 = tlOut.rows.find((r) => r.civilDate === "2026-08-05")!;
+    assert.equal(d5.opening, 200);
+    assert.equal(d5.closing, 210);
+  });
+
+  it("sem nenhum fechamento conhecido, mostra o fluxo estimado com saldo null", () => {
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(baseTimeline(null), [
+      { civilDate: "2026-08-05", estimatedInflow: 10, estimatedOutflow: 5 },
+    ]);
+    const d5 = tlOut.rows.find((r) => r.civilDate === "2026-08-05")!;
+    assert.equal(d5.inflows, 10);
+    assert.equal(d5.outflows, 5);
+    assert.equal(d5.opening, null);
+    assert.equal(d5.closing, null);
+    assert.equal(d5.negative, false);
+  });
+
+  it("mês cujos dias são todos estimados herda o selo; mês misto não", () => {
+    const tlOut = appendTreasuryCaixaDailyDueEstimates(baseTimeline(100), [
+      { civilDate: "2026-09-10", estimatedInflow: 10, estimatedOutflow: 0 },
+      { civilDate: "2026-09-20", estimatedInflow: 0, estimatedOutflow: 5 },
+    ]);
+    const months = buildTreasuryCaixaMonthlyTimeline(tlOut.rows);
+    const set = months.find((m) => m.monthKey === "2026-09")!;
+    assert.equal(set.estimateOnly, true);
+    // Mês de hoje mistura dia real com nada estimado — sem selo.
+    const ago = months.find((m) => m.monthKey === "2026-08")!;
+    assert.equal(ago.estimateOnly, undefined);
+    // Saldo do mês estimado vem da cadeia diária.
+    assert.equal(set.opening, 100);
+    assert.equal(set.closing, 105);
   });
 
   it("NÃO sobrescreve mês que já tem dias reais (mais preciso)", () => {

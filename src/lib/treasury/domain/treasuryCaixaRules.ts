@@ -272,6 +272,13 @@ export type TreasuryCaixaTimelineRow = {
   divergence: number | null;
   /** Fechou negativo neste dia. */
   negative: boolean;
+  /**
+   * `true` para dia futuro ESTIMADO por vencimento dos títulos (fora da
+   * cobertura da projeção materializada) — ver
+   * {@link appendTreasuryCaixaDailyDueEstimates}. Distinto do previsto da
+   * agenda, que vem da projeção dia a dia oficial.
+   */
+  estimated?: boolean;
 };
 
 export type TreasuryCaixaTimeline = {
@@ -463,6 +470,108 @@ export function appendTreasuryCaixaMonthlyDueEstimates(
   });
 }
 
+/** Estimativa DIÁRIA de fluxo por vencimento — mesma regra do Fluxo de Caixa. */
+export type TreasuryCaixaDailyDueEstimate = {
+  civilDate: string;
+  estimatedInflow: number;
+  estimatedOutflow: number;
+};
+
+/**
+ * Passo 4b — futuro dia a dia SEM projeção materializada: se sabemos os CRs e
+ * CPs que vencem em cada dia, sabemos estimar o caixa de cada dia — igual à
+ * acumulação do passado, só que para frente. Cada dia estimado abre no
+ * fechamento do dia anterior e fecha somando entra − sai por vencimento;
+ * a âncora é o ÚLTIMO fechamento conhecido da linha do tempo (normalmente o
+ * caixa informado de hoje — informar o caixa re-ancora toda a cadeia futura).
+ * É assim que a tela responde "que dia meu caixa corre risco" e "que dia
+ * tenho R$ X na conta" mesmo sem projeção gerada.
+ *
+ * Regras:
+ * - só entra dia DEPOIS do último dia já coberto (realizado/hoje/agenda) —
+ *   nunca duplica um dia que a projeção oficial já respondeu;
+ * - dia sem movimento não vira linha (o saldo atravessa o vão implícito:
+ *   o próximo dia abre no fechamento acumulado até ali);
+ * - sem âncora (nenhum fechamento conhecido), os dias entram com o fluxo
+ *   estimado e saldos null — não inventamos saldo;
+ * - vencido no passado NÃO é jogado para frente (mesma regra da projeção
+ *   oficial — ver docs/treasury/15-PROJECTION-AND-DOUBLE-COUNTING.md).
+ */
+export function appendTreasuryCaixaDailyDueEstimates(
+  timeline: TreasuryCaixaTimeline,
+  estimates: readonly TreasuryCaixaDailyDueEstimate[]
+): TreasuryCaixaTimeline {
+  if (estimates.length === 0) return timeline;
+
+  const lastCoveredDate =
+    timeline.rows.length > 0
+      ? timeline.rows[timeline.rows.length - 1]!.civilDate
+      : timeline.todayCivilDate;
+
+  const pending = [...estimates]
+    .filter(
+      (e) =>
+        e.civilDate > lastCoveredDate &&
+        (e.estimatedInflow !== 0 || e.estimatedOutflow !== 0)
+    )
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  if (pending.length === 0) return timeline;
+
+  // Âncora: último fechamento conhecido (informar o caixa hoje re-ancora tudo).
+  let running: number | null = null;
+  for (let i = timeline.rows.length - 1; i >= 0; i -= 1) {
+    const closing = timeline.rows[i]!.closing;
+    if (closing != null && Number.isFinite(closing)) {
+      running = closing;
+      break;
+    }
+  }
+
+  const estimatedRows: TreasuryCaixaTimelineRow[] = pending.map((e) => {
+    const inflows = roundMoney(e.estimatedInflow);
+    const outflows = roundMoney(e.estimatedOutflow);
+    if (running == null) {
+      return {
+        civilDate: e.civilDate,
+        kind: "FORECAST" as const,
+        opening: null,
+        inflows,
+        outflows,
+        closing: null,
+        closingCalculated: null,
+        closingInformed: null,
+        divergence: null,
+        negative: false,
+        estimated: true,
+      };
+    }
+    const opening = roundMoney(running);
+    const closing = roundMoney(opening + inflows - outflows);
+    running = closing;
+    return {
+      civilDate: e.civilDate,
+      kind: "FORECAST" as const,
+      opening,
+      inflows,
+      outflows,
+      closing,
+      closingCalculated: closing,
+      closingInformed: null,
+      divergence: null,
+      negative: closing < 0,
+      estimated: true,
+    };
+  });
+
+  const rows = [...timeline.rows, ...estimatedRows];
+  return {
+    ...timeline,
+    rows,
+    forecastCount: rows.filter((r) => r.kind === "FORECAST").length,
+    firstNegativeDate: rows.find((r) => r.negative)?.civilDate ?? null,
+  };
+}
+
 function resolveMonthKind(
   days: readonly TreasuryCaixaTimelineRow[]
 ): TreasuryCaixaMonthKind {
@@ -512,6 +621,9 @@ export function buildTreasuryCaixaMonthlyTimeline(
         negative: negativeDay != null,
         firstNegativeDate: negativeDay?.civilDate ?? null,
         days,
+        // Mês cujos dias são TODOS estimados por vencimento herda o selo de
+        // estimativa — a UI o distingue da projeção materializada.
+        estimateOnly: days.every((d) => d.estimated === true) || undefined,
       };
     });
 }
@@ -1142,4 +1254,11 @@ export type TreasuryCaixaBoardDto = {
    * meses que a agenda/projeção materializada ainda não cobre.
    */
   monthlyDueEstimates: TreasuryCaixaMonthlyDueEstimate[];
+  /**
+   * Fluxo estimado por vencimento, DIA a dia (só dias com movimento) — mesma
+   * regra e mesmas fontes do mensal acima. O front encadeia esses dias após o
+   * último dia coberto (ver {@link appendTreasuryCaixaDailyDueEstimates}) para
+   * estimar o caixa futuro quando não há projeção materializada.
+   */
+  dailyDueEstimates: TreasuryCaixaDailyDueEstimate[];
 };
