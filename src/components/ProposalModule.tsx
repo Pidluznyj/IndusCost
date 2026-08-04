@@ -67,6 +67,11 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
+import {
+  formatProposalCommercialDate,
+  isProposalCommercialDateFallback,
+  resolveProposalCommercialDate,
+} from "@/src/lib/proposalCommercialDate";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -129,11 +134,14 @@ function buildProposalSummaryFromRows(rows: Proposal[]): ProposalListSummary {
     totalNetAmount += net;
     totalGrossAmount += gross;
 
-    const created = p.createdAt ? new Date(p.createdAt) : null;
-    if (created && Number.isFinite(created.getTime())) {
-      if (created.getFullYear() === currentYear) {
+    // KPI de "propostas no ano/mês" conta pela data COMERCIAL, não pela data em
+    // que o sync importou — senão uma carga do Nomus joga propostas antigas no
+    // mês corrente.
+    const commercialDate = resolveProposalCommercialDate(p);
+    if (commercialDate && Number.isFinite(commercialDate.getTime())) {
+      if (commercialDate.getFullYear() === currentYear) {
         yearToDateCount += 1;
-        if (created.getMonth() === currentMonth) {
+        if (commercialDate.getMonth() === currentMonth) {
           monthToDateCount += 1;
         }
       }
@@ -2911,7 +2919,16 @@ export const ProposalModule = () => {
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" /> {new Date(p.createdAt).toLocaleDateString('pt-BR')}
+                        <Calendar className="h-3 w-3" />{" "}
+                        {formatProposalCommercialDate(p)}
+                        {isProposalCommercialDateFallback(p) ? (
+                          <span
+                            className="text-[10px] text-amber-600"
+                            title="Proposta importada sem data de abertura na origem — exibindo a data de importação no IndusCost."
+                          >
+                            *
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="p-4 font-mono text-sm font-bold">

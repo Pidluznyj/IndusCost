@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Prisma, PrismaClient, ProposalStatus } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
+import { parseNomusBrazilianDateTime } from "../src/lib/nomusDateTime.ts";
 import { runProposalCommercialMarginRecalcAfterNomusSync } from "../src/lib/proposalCommercialMarginRecalcAfterNomusSync.server.ts";
 import {
   acquireProposalsSyncLock,
@@ -178,27 +179,29 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+/**
+ * Data/hora do Nomus (`DD/MM/YYYY HH:mm:ss`).
+ *
+ * Delega ao parser explícito em `src/lib/nomusDateTime.ts`. A implementação
+ * anterior tentava `new Date(raw)` ANTES do regex brasileiro; para string com
+ * barras o JavaScript aplica MM/DD, então "03/08/2026" virava 8 de março e o
+ * regex correto abaixo nunca era alcançado (CP 01350 e CP 01351). O ramo do
+ * regex também montava com `Date.UTC`, o que em UTC-3 exibia o dia anterior.
+ *
+ * Aceita ISO real (`2026-08-03T...`) como segunda tentativa, para o caso de a
+ * origem mudar de formato — mas nunca para string com barras, que é sempre
+ * interpretada como brasileira.
+ */
 function parseNomusDateTime(input: unknown): Date | null {
-  if (input instanceof Date && !Number.isNaN(input.getTime())) return input;
-  if (typeof input !== "string") return null;
-  const raw = input.trim();
-  if (!raw) return null;
+  const brazilian = parseNomusBrazilianDateTime(input);
+  if (brazilian.ok) return brazilian.value;
 
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso;
-
-  const m = raw.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
-  );
-  if (!m) return null;
-  const dd = Number.parseInt(m[1], 10);
-  const mm = Number.parseInt(m[2], 10);
-  const yyyy = Number.parseInt(m[3], 10);
-  const hh = Number.parseInt(m[4] ?? "0", 10);
-  const mi = Number.parseInt(m[5] ?? "0", 10);
-  const ss = Number.parseInt(m[6] ?? "0", 10);
-  const parsed = new Date(Date.UTC(yyyy, mm - 1, dd, hh, mi, ss));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  // ISO sem ambiguidade (não contém barra): seguro delegar ao runtime.
+  if (typeof input === "string" && !input.includes("/")) {
+    const iso = new Date(input.trim());
+    if (!Number.isNaN(iso.getTime())) return iso;
+  }
+  return null;
 }
 
 function parseDateOnlyUtc(input: string): Date | null {
