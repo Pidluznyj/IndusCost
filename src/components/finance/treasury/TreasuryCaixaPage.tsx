@@ -39,6 +39,11 @@ import {
   TitleStatusBadge,
 } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
 import { TreasuryCaixaBalanceChart } from "@/src/components/finance/treasury/TreasuryCaixaBalanceChart";
+import { TreasuryCaixaScenariosChart } from "@/src/components/finance/treasury/TreasuryCaixaScenariosChart";
+import {
+  fetchTreasuryCaixaScenarios,
+  type TreasuryCaixaScenariosPayload,
+} from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import {
@@ -159,6 +164,36 @@ export function TreasuryCaixaPage() {
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [payablesOpen, setPayablesOpen] = useState(false);
   const accountsAbortRef = useRef<AbortController | null>(null);
+
+  // Cenários (Otimista/Realista/Pessimista) — endpoint único.
+  const [scenarios, setScenarios] =
+    useState<TreasuryCaixaScenariosPayload | null>(null);
+  const [scenariosLoading, setScenariosLoading] = useState(false);
+  const [scenariosHorizon, setScenariosHorizon] = useState<number>(30);
+  const scenariosAbortRef = useRef<AbortController | null>(null);
+
+  const loadScenarios = useCallback(async () => {
+    scenariosAbortRef.current?.abort();
+    const controller = new AbortController();
+    scenariosAbortRef.current = controller;
+    setScenariosLoading(true);
+    try {
+      const payload = await fetchTreasuryCaixaScenarios({
+        horizonDays: scenariosHorizon,
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) setScenarios(payload);
+    } catch {
+      if (!controller.signal.aborted) setScenarios(null);
+    } finally {
+      if (!controller.signal.aborted) setScenariosLoading(false);
+    }
+  }, [scenariosHorizon]);
+
+  useEffect(() => {
+    void loadScenarios();
+    return () => scenariosAbortRef.current?.abort();
+  }, [loadScenarios]);
 
   /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
   const loadAccounts = useCallback(async () => {
@@ -460,6 +495,14 @@ export function TreasuryCaixaPage() {
         ) : null}
 
         <TreasuryCaixaBalanceChart points={balanceChartPoints} />
+
+        <TreasuryCaixaScenariosChart
+          data={scenarios}
+          loading={scenariosLoading}
+          horizonDays={scenariosHorizon}
+          onHorizonChange={setScenariosHorizon}
+          onRefresh={() => void loadScenarios()}
+        />
 
         {error ? (
           <div
