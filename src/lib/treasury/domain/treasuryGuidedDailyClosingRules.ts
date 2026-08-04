@@ -292,6 +292,9 @@ export function buildTreasuryGuidedDailyClosingWorkspace(input: {
   asOf?: Date | string;
   accounts: readonly TreasuryGuidedDailyClosingAccountSeed[];
   preview: TreasuryDailyClosingPreviewDto | null;
+  /** Previsto do dia (CR/CP vencendo na data); null/ausente = indisponível. */
+  predictedTodayInflows?: TreasuryMoneyString | null;
+  predictedTodayOutflows?: TreasuryMoneyString | null;
 }): TreasuryGuidedDailyClosingWorkspaceDto {
   const accounts = input.accounts.map((seed) => {
     const dto = buildTreasuryGuidedDailyClosingAccountDto({
@@ -335,6 +338,8 @@ export function buildTreasuryGuidedDailyClosingWorkspace(input: {
       .length,
     investigationActions: [...TREASURY_GUIDED_DAILY_CLOSING_INVESTIGATION_ACTIONS],
     closeGates,
+    predictedTodayInflows: input.predictedTodayInflows ?? null,
+    predictedTodayOutflows: input.predictedTodayOutflows ?? null,
   };
 }
 

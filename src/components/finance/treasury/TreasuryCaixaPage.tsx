@@ -233,6 +233,14 @@ export function TreasuryCaixaPage() {
                       ? null
                       : treasuryMoneyToNumber(a.informedClosingBalance),
                 })),
+              predictedInflows:
+                closing.predictedTodayInflows == null
+                  ? null
+                  : treasuryMoneyToNumber(closing.predictedTodayInflows),
+              predictedOutflows:
+                closing.predictedTodayOutflows == null
+                  ? null
+                  : treasuryMoneyToNumber(closing.predictedTodayOutflows),
             })
           : null
       );

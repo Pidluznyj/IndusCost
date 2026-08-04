@@ -141,6 +141,13 @@ export type TreasuryCaixaDayFlow = {
   opening: number | null;
   inflows: number;
   outflows: number;
+  /**
+   * Previsto do dia — CR/CP em aberto com vencimento hoje (mesma regra por
+   * vencimento do Radar Diário/Fluxo de Caixa). `null`/ausente = indisponível
+   * (falha de carga), diferente de 0 (nada vence hoje).
+   */
+  predictedInflows?: number | null;
+  predictedOutflows?: number | null;
   /** Fechamento calculado pelo motor (abertura + entradas − saídas). */
   closingCalculated: number | null;
   /** Fechamento informado no extrato; null se ninguém informou ainda. */
@@ -167,6 +174,9 @@ function sumNullable(values: readonly (number | null)[]): number | null {
 export function buildTreasuryCaixaDayFlow(input: {
   civilDate: string;
   accounts: readonly TreasuryCaixaDayFlowAccountInput[];
+  /** Previsto do dia (CR/CP em aberto vencendo hoje); omitido = indisponível. */
+  predictedInflows?: number | null;
+  predictedOutflows?: number | null;
 }): TreasuryCaixaDayFlow {
   const opening = sumNullable(input.accounts.map((a) => a.openingBalance));
   const inflows = roundMoney(
@@ -193,6 +203,15 @@ export function buildTreasuryCaixaDayFlow(input: {
     opening,
     inflows,
     outflows,
+    predictedInflows:
+      input.predictedInflows != null && Number.isFinite(input.predictedInflows)
+        ? roundMoney(input.predictedInflows)
+        : null,
+    predictedOutflows:
+      input.predictedOutflows != null &&
+      Number.isFinite(input.predictedOutflows)
+        ? roundMoney(input.predictedOutflows)
+        : null,
     closingCalculated,
     closingInformed,
     divergence:

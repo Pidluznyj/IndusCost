@@ -55,6 +55,7 @@ import {
   addTreasuryMoney,
   normalizeTreasuryMoneyString,
 } from "../treasuryMoney.js";
+import { loadTreasuryOpenDueTotals } from "./treasuryCaixaService.server.js";
 import {
   buildTreasuryDailyClosingPreviewActor,
   createTreasuryDailyClosingPreviewService,
@@ -480,11 +481,36 @@ export function createTreasuryGuidedDailyClosingService(deps: {
       );
       const preview = await loadPreview(actor, civilDate, companyCode);
 
+      // Previsto do dia (CR/CP vencendo hoje, motor canônico por vencimento).
+      // Falha aqui não derruba o workspace — os campos ficam null e a tela
+      // mostra "—" (indisponível ≠ zero).
+      let predictedTodayInflows: string | null = null;
+      let predictedTodayOutflows: string | null = null;
+      try {
+        const dayDate = civilDateToLocalDate(civilDate);
+        const predicted = await loadTreasuryOpenDueTotals(
+          prisma,
+          new Date(),
+          dayDate,
+          dayDate
+        );
+        predictedTodayInflows = normalizeTreasuryMoneyString(
+          predicted.estimatedInflow.toFixed(2)
+        );
+        predictedTodayOutflows = normalizeTreasuryMoneyString(
+          predicted.estimatedOutflow.toFixed(2)
+        );
+      } catch {
+        // mantém null
+      }
+
       return buildTreasuryGuidedDailyClosingWorkspace({
         civilDate,
         asOf: new Date(),
         accounts: seeds,
         preview,
+        predictedTodayInflows,
+        predictedTodayOutflows,
       });
     },
 

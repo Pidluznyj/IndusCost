@@ -221,6 +221,72 @@ export async function loadFallbackGenericManualBalanceSumByCivilDate(
   return sumByDay;
 }
 
+/**
+ * Saldo aberto por vencimento (CR/CP), num range qualquer — mesmo motor
+ * canônico (`sumOfficialArOpenDueInPeriod`/`sumOfficialApOpenDueInPeriod`) e
+ * mesmo tratamento FIN-08 do CR (`buildFinanceCashFlowEffectiveArPortfolio`,
+ * inclui previsão do Pedido de Venda ainda sem CR emitido) usados por
+ * `getBoard()` e pela "Linha do tempo mensal" do Fluxo de Caixa.
+ *
+ * Reutilizável por qualquer tela que precise de "quanto tem para
+ * entrar/sair" num período sem duplicar a regra — ex.: o previsto de hoje no
+ * card "Movimento de hoje" (`treasuryGuidedDailyClosingService.server.ts`).
+ * CR sempre carrega o ano inteiro de `dueDateFrom` (mesma exigência do FIN-08
+ * já aceita em `getBoard()`), mesmo que o range pedido seja um único dia.
+ */
+export async function loadTreasuryOpenDueTotals(
+  prisma: PrismaClient,
+  referenceDate: Date,
+  dueDateFrom: Date,
+  dueDateTo: Date
+): Promise<{ estimatedInflow: number; estimatedOutflow: number }> {
+  const arPortfolioFilters = {
+    status: "all",
+    year: dueDateFrom.getFullYear(),
+  } as const;
+
+  const [arLoaded, apLoaded] = await Promise.all([
+    loadFinanceArManagementRowsFromPrisma(
+      prisma,
+      arPortfolioFilters,
+      referenceDate
+    ),
+    loadFinanceApManagementRowsFromPrisma(
+      prisma,
+      { status: "all", dueDateFrom, dueDateTo },
+      referenceDate
+    ),
+  ]);
+
+  const arRows = arLoaded.rows as FinanceCashFlowArRow[];
+  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
+    prisma,
+    arRows,
+    referenceDate
+  );
+  const arEffectiveRows = buildFinanceCashFlowEffectiveArPortfolio({
+    rows: arRows,
+    filters: arPortfolioFilters,
+    orderContexts,
+    nfeOrderLinks,
+    referenceDate,
+    syncCutoff: arLoaded.syncCutoff,
+  });
+
+  return {
+    estimatedInflow: sumOfficialArOpenDueInPeriod(
+      arEffectiveRows,
+      dueDateFrom,
+      dueDateTo
+    ),
+    estimatedOutflow: sumOfficialApOpenDueInPeriod(
+      apLoaded.rows,
+      dueDateFrom,
+      dueDateTo
+    ),
+  };
+}
+
 export function createTreasuryCaixaService(input: {
   prisma: PrismaClient;
 }): TreasuryCaixaService {

@@ -241,6 +241,34 @@ describe("treasuryCaixaRules — buildTreasuryCaixaDayFlow", () => {
     assert.equal(flow.pendingClosingCount, 1);
   });
 
+  it("previsto do dia (CR/CP vencendo hoje) passa arredondado; ausente vira null", () => {
+    const withPredicted = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [],
+      predictedInflows: 35303.404,
+      predictedOutflows: 20248.585,
+    });
+    assert.equal(withPredicted.predictedInflows, 35303.4);
+    assert.equal(withPredicted.predictedOutflows, 20248.59);
+
+    const without = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [],
+    });
+    assert.equal(without.predictedInflows, null);
+    assert.equal(without.predictedOutflows, null);
+
+    // Zero explícito é informação (nada vence hoje), não ausência.
+    const zero = buildTreasuryCaixaDayFlow({
+      civilDate: "2026-08-03",
+      accounts: [],
+      predictedInflows: 0,
+      predictedOutflows: 0,
+    });
+    assert.equal(zero.predictedInflows, 0);
+    assert.equal(zero.predictedOutflows, 0);
+  });
+
   it("divergência = informado − calculado (dinheiro sem lastro)", () => {
     const flow = buildTreasuryCaixaDayFlow({
       civilDate: "2026-08-03",

@@ -92,8 +92,26 @@ export function TreasuryCaixaTodayFlow({
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Cell label="Começou com" value={money(flow.opening)} />
-            <Cell label="Entrou" value={money(flow.inflows)} tone="in" />
-            <Cell label="Saiu" value={money(flow.outflows)} tone="out" />
+            <Cell
+              label="Entrou"
+              value={money(flow.inflows)}
+              tone="in"
+              hint={
+                flow.predictedInflows != null
+                  ? `previsto hoje: ${money(flow.predictedInflows)}`
+                  : undefined
+              }
+            />
+            <Cell
+              label="Saiu"
+              value={money(flow.outflows)}
+              tone="out"
+              hint={
+                flow.predictedOutflows != null
+                  ? `previsto hoje: ${money(flow.predictedOutflows)}`
+                  : undefined
+              }
+            />
             <Cell
               label="Terminou com"
               value={money(flow.closingInformed ?? flow.closingCalculated)}
@@ -104,6 +122,25 @@ export function TreasuryCaixaTodayFlow({
               }
             />
           </div>
+
+          {flow.predictedInflows != null || flow.predictedOutflows != null ? (
+            <p
+              className="mt-2 text-[11px] leading-snug text-muted-foreground"
+              data-testid="caixa-today-flow-predicted"
+            >
+              <strong>Previsto para hoje</strong> (títulos em aberto vencendo
+              hoje — mesma regra do Fluxo de Caixa): a entrar{" "}
+              <span className="font-semibold text-[#065F46]">
+                {money(flow.predictedInflows ?? null)}
+              </span>{" "}
+              · a pagar{" "}
+              <span className="font-semibold text-[#991B1B]">
+                {money(flow.predictedOutflows ?? null)}
+              </span>
+              . &quot;Entrou&quot;/&quot;Saiu&quot; acima mostram só o que já
+              foi baixado de fato.
+            </p>
+          ) : null}
 
           {flow.pendingClosingCount > 0 ? (
             <p

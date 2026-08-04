@@ -509,6 +509,13 @@ export type TreasuryGuidedDailyClosingWorkspaceDto = {
   divergenceCount: number;
   investigationActions: TreasuryGuidedDailyClosingInvestigationActionDto[];
   closeGates: TreasuryGuidedDailyClosingGateSummaryDto;
+  /**
+   * Previsto do dia — CR/CP em aberto vencendo na data do workspace, pela
+   * mesma regra por vencimento do Radar Diário/Fluxo de Caixa (consolidado
+   * da empresa, não por conta). `null`/ausente = indisponível, ≠ zero.
+   */
+  predictedTodayInflows?: TreasuryMoneyString | null;
+  predictedTodayOutflows?: TreasuryMoneyString | null;
 };
 
 export type TreasuryGuidedDailyClosingSaveItemResultDto = {
