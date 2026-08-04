@@ -27,6 +27,10 @@ import {
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
 } from "../domain/treasuryCaixaRules.js";
+import {
+  parseTreasuryDailyRoutineSnapshotKey,
+  TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX,
+} from "../domain/treasuryDailyAccountRoutineRules.js";
 
 export type TreasuryCaixaService = {
   getBoard(period: TreasuryCaixaPeriodInput): Promise<TreasuryCaixaBoardDto>;
@@ -55,6 +59,58 @@ export function civilDateUtcRange(
     gte: new Date(Date.UTC(fy!, fm! - 1, fd!)),
     lt: new Date(Date.UTC(ty!, tm! - 1, td! + 1)),
   };
+}
+
+/**
+ * Fallback do saldo informado quando o dia NÃO tem fechamento formal
+ * (`TreasuryDailyClosing` CLOSED): soma, por dia civil, o snapshot
+ * `daily-closing-bank` mais recente de cada conta ativa da empresa.
+ *
+ * Sem isso, "Saldos do Dia" (o atalho rápido — grava só em
+ * `TreasuryBalanceSnapshot`) fica invisível na linha do tempo do Caixa até
+ * alguém repetir a informação via fechamento formal. O fechamento formal
+ * continua tendo prioridade quando os dois existirem para o mesmo dia (é o
+ * dado imutável/reconciliado); este fallback só preenche o que falta.
+ */
+export async function loadFallbackDailyClosingBankSumByCivilDate(
+  prisma: PrismaClient,
+  accountIds: string[],
+  fromCivilDate: string,
+  toCivilDate: string
+): Promise<Map<string, number>> {
+  const sumByDay = new Map<string, number>();
+  if (accountIds.length === 0) return sumByDay;
+
+  const rows = await prisma.treasuryBalanceSnapshot.findMany({
+    where: {
+      accountId: { in: accountIds },
+      origin: "MANUAL",
+      idempotencyKey: {
+        startsWith: `${TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX}:`,
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { accountId: true, idempotencyKey: true, availableBalance: true },
+  });
+
+  // orderBy createdAt desc + primeira ocorrência vista = versão mais recente
+  // por conta+dia (reabertura/correção grava idempotencyKey com versão nova).
+  const seenAccountDay = new Set<string>();
+  for (const row of rows) {
+    const parsed = parseTreasuryDailyRoutineSnapshotKey(row.idempotencyKey);
+    if (!parsed || parsed.kind !== "closingBank") continue;
+    if (parsed.civilDate < fromCivilDate || parsed.civilDate > toCivilDate) continue;
+
+    const accountDayKey = `${row.accountId}:${parsed.civilDate}`;
+    if (seenAccountDay.has(accountDayKey)) continue;
+    seenAccountDay.add(accountDayKey);
+
+    const value = Number(row.availableBalance);
+    if (!Number.isFinite(value)) continue;
+    sumByDay.set(parsed.civilDate, (sumByDay.get(parsed.civilDate) ?? 0) + value);
+  }
+
+  return sumByDay;
 }
 
 export function createTreasuryCaixaService(input: {
@@ -165,12 +221,12 @@ export function createTreasuryCaixaService(input: {
       // só CLOSED e, por dia, a versão mais alta (reabertura gera nova versão).
       // `observedBalance` é o saldo do extrato; `closingBalance` é o calculado.
       // A divergência entre os dois é apurada no domínio, não aqui.
-      const companyAccount = await prisma.treasuryFinancialAccount.findFirst({
+      const companyAccounts = await prisma.treasuryFinancialAccount.findMany({
         where: { isActive: true, ...treasuryCompanyCodePresentWhere() },
-        select: { companyCode: true },
+        select: { id: true, companyCode: true },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       });
-      const companyCode = companyAccount?.companyCode?.trim() || null;
+      const companyCode = companyAccounts[0]?.companyCode?.trim() || null;
 
       const informedClosingByCivilDate = new Map<string, number>();
       if (companyCode) {
@@ -192,6 +248,21 @@ export function createTreasuryCaixaService(input: {
           const value = Number(c.observedBalance);
           if (!Number.isFinite(value)) continue;
           informedClosingByCivilDate.set(toIsoDate(c.civilDate), value);
+        }
+
+        // Fallback: dia sem fechamento formal, mas com saldo informado via
+        // "Saldos do Dia" — não sobrepõe o fechamento formal, só preenche o
+        // que falta (evita que o atalho rápido fique invisível na tela).
+        const accountIds = companyAccounts.map((a) => a.id);
+        const fallbackByCivilDate = await loadFallbackDailyClosingBankSumByCivilDate(
+          prisma,
+          accountIds,
+          settlementWindowFromCivilDate,
+          periodTo
+        );
+        for (const [civilDate, value] of fallbackByCivilDate) {
+          if (informedClosingByCivilDate.has(civilDate)) continue;
+          informedClosingByCivilDate.set(civilDate, value);
         }
       }
 
