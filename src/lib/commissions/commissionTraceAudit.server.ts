@@ -21,6 +21,7 @@ import {
 } from "./commissionReceiptEngine.server.js";
 import {
   mapMaterializedScheduleToLedgerStatus,
+  pickMaterializedScheduleForReceivable,
   type CommissionReceiptReceivableInput,
   type MaterializedReceivableScheduleInput,
 } from "./commissionReceiptEngine.js";
@@ -296,7 +297,12 @@ export async function buildCommissionTraceAudit(
   const arById = new Map(arRows.map((row) => [row.externalId, row]));
 
   const receivables: CommissionTraceReceivable[] = schedules.map((row) => {
-    const materialized = materializedByReceivableId.get(row.receivableId)?.[0] ?? null;
+    // Seletor OFICIAL, não `[0]`: a escolha do schedule vigente é uma regra só,
+    // e duplicá-la aqui fazia a auditoria depender da ordem da consulta —
+    // podendo relatar versão diferente da que o fechamento usaria.
+    const materialized = pickMaterializedScheduleForReceivable(
+      materializedByReceivableId.get(row.receivableId) ?? []
+    );
     const ledger = materialized
       ? mapMaterializedScheduleToLedgerStatus(materialized)
       : { status: "NO_SCHEDULE", reason: null };
@@ -338,7 +344,12 @@ export async function buildCommissionTraceAudit(
           cancelled: false,
           suspended: false,
         };
-    const materialized = materializedByReceivableId.get(row.receivableId)?.[0] ?? null;
+    // Seletor OFICIAL, não `[0]`: a escolha do schedule vigente é uma regra só,
+    // e duplicá-la aqui fazia a auditoria depender da ordem da consulta —
+    // podendo relatar versão diferente da que o fechamento usaria.
+    const materialized = pickMaterializedScheduleForReceivable(
+      materializedByReceivableId.get(row.receivableId) ?? []
+    );
     return buildCommissionTraceReceipt({ schedule: materialized, receivable: receivableInput });
   });
 

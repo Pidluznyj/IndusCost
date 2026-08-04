@@ -53,6 +53,9 @@ function schedule(
     receivableNominalAmount: 10000,
     receivableSharePercent: 100,
     scheduleStatus: "ACTIVE",
+    // Schedule da versão VIGENTE do pedido — caso normal. Órfão de snapshot
+    // substituído se declara explicitamente no teste que o exercita.
+    orderSnapshotStatus: "ACTIVE",
     sellerResolutionStatus: "OK_CANONICAL",
     exclusionRuleId: null,
     exclusionReason: null,

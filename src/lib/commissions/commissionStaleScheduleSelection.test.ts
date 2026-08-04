@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCommissionReceiptPreview,
+  mapMaterializedScheduleToLedgerStatus,
   pickMaterializedScheduleForReceivable,
   type CommissionReceiptReceivableInput,
   type MaterializedReceivableScheduleInput,
@@ -274,6 +275,32 @@ describe("vigência de schedule — demais cenários obrigatórios", () => {
       line.statusReason && line.statusReason.length > 0,
       "diagnóstico precisa dizer o motivo"
     );
+  });
+
+  it("o mapeador de status rejeita pai substituído na última milha", () => {
+    // Defesa em profundidade: mapMaterializedScheduleToLedgerStatus é exportado
+    // e usado também pela auditoria de rastreio. Se um órfão chegasse até ele,
+    // antes caía em NO_MARGIN lendo os itens da versão ANTIGA.
+    const mapped = mapMaterializedScheduleToLedgerStatus({
+      ...staleZero(7),
+      itemSnapshotStatuses: ["NO_COMMERCIAL_PRICE_TABLE"],
+    });
+    assert.equal(mapped.status, "STALE_SCHEDULE");
+    assert.notEqual(mapped.status, "NO_MARGIN");
+  });
+
+  it("o mapeador preserva o diagnóstico de mérito quando o pai é vigente", () => {
+    // NO_MARGIN real continua válido — a guarda não pode engolir o caso legítimo.
+    const mapped = mapMaterializedScheduleToLedgerStatus(
+      schedule({
+        receivableId: 8,
+        scheduledCommissionAmount: 0,
+        orderSnapshotStatus: "ACTIVE",
+        orderSnapshotFinalCommissionAmount: 0,
+        itemSnapshotStatuses: ["NO_COMMERCIAL_PRICE_TABLE"],
+      })
+    );
+    assert.equal(mapped.status, "NO_MARGIN");
   });
 
   it("status desconhecido do pai não é tratado como vigente (fail-closed)", () => {

@@ -45,7 +45,10 @@ import type {
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
-import { keepSchedulesFromActiveSnapshot } from "./commissionScheduleVigency.js";
+import {
+  isCommissionScheduleFromActiveSnapshot,
+  keepSchedulesFromActiveSnapshot,
+} from "./commissionScheduleVigency.js";
 import { COMMISSION_NOMUS_SELLER_NOT_INFORMED_REASON } from "../salesOrderNomusSeller.shared.js";
 import {
   COMMISSION_GROUP_COMPANY_EXCLUSION_REASON,
@@ -662,6 +665,18 @@ export function forecastCommissionFromMaterializedSchedule(input: {
 export function mapMaterializedScheduleToLedgerStatus(
   schedule: MaterializedReceivableScheduleInput
 ): { status: CommissionReceiptLedgerLineStatus; reason: string | null } {
+  // Última milha da regra oficial: schedule de snapshot substituído nunca
+  // produz diagnóstico de mérito. Sem esta guarda, um órfão que chegasse aqui
+  // por outro caminho (esta função é exportada e usada também pela auditoria de
+  // rastreio) cairia adiante em NO_MARGIN/ZERO_AMOUNT lendo os itens da versão
+  // ANTIGA — que foi exatamente como o PD 02697 fechou zerado.
+  if (!isCommissionScheduleFromActiveSnapshot(schedule)) {
+    return {
+      status: "STALE_SCHEDULE",
+      reason:
+        "Schedule de snapshot substituído — rematerializar antes de usar como fonte",
+    };
+  }
   if (schedule.scheduleStatus === "STALE" || schedule.scheduleStatus === "SUPERSEDED") {
     return {
       status: "STALE_SCHEDULE",
