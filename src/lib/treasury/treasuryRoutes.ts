@@ -23,6 +23,7 @@ import { createTreasuryGuidedDailyClosingControllers } from "./controllers/treas
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryPredictiveCrCpByAccountControllers } from "./controllers/treasuryPredictiveCrCpByAccountController.js";
 import { createTreasuryCaixaControllers } from "./controllers/treasuryCaixaController.js";
+import { createTreasuryCaixaScenariosControllers } from "./controllers/treasuryCaixaScenariosController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
 import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
@@ -41,6 +42,7 @@ import {
   TREASURY_AGENDA_PATH,
   TREASURY_PREDICTIVE_CRCP_BY_ACCOUNT_PATH,
   TREASURY_CAIXA_PATH,
+  TREASURY_CAIXA_SCENARIOS_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_ALERTS_PATH,
   TREASURY_AUDIT_PATH,
@@ -128,6 +130,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const caixa = createTreasuryCaixaControllers({ getCurrentAppUser });
+  const caixaScenarios = createTreasuryCaixaScenariosControllers({
+    getCurrentAppUser,
+  });
   const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
   const exceptions = createTreasuryExceptionControllers({ getCurrentAppUser });
   const alertSettings = createTreasuryAlertSettingsControllers({
@@ -774,6 +779,15 @@ export function registerTreasuryRoutes(
     viewOfficialReceivables,
     viewOfficialPayables,
     caixa.getBoard
+  );
+
+  app.get(
+    TREASURY_CAIXA_SCENARIOS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewOfficialReceivables,
+    viewOfficialPayables,
+    caixaScenarios.getBoard
   );
 
   app.get(

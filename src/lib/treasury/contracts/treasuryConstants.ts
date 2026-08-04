@@ -62,6 +62,10 @@ export const TREASURY_PREDICTIVE_CRCP_BY_ACCOUNT_PATH =
 export const TREASURY_CAIXA_PATH =
   `${TREASURY_API_PREFIX}/caixa` as const;
 
+/** Gráfico dos 3 cenários da Caixa — Otimista / Realista / Pessimista. */
+export const TREASURY_CAIXA_SCENARIOS_PATH =
+  `${TREASURY_API_PREFIX}/caixa/scenarios` as const;
+
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 
