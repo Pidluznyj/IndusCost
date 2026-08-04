@@ -535,6 +535,8 @@ export function TreasuryCaixaPage() {
             onGenerateProjection={projectionParams ? generateProjection : undefined}
             generatingProjection={generatingProjection}
             monthlyDueEstimates={data?.monthlyDueEstimates}
+            receivables={data?.receivables}
+            payables={data?.payables}
           />
         ) : null}
 

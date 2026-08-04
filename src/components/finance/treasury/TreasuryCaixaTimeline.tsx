@@ -29,6 +29,8 @@ import {
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
+import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
+import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 
 export type TreasuryCaixaTimelineProps = {
   timeline: TreasuryCaixaTimeline | null;
@@ -44,6 +46,13 @@ export type TreasuryCaixaTimelineProps = {
    * materializada ainda não cobre, em vez de deixá-los ausentes da tabela.
    */
   monthlyDueEstimates?: readonly TreasuryCaixaMonthlyDueEstimate[];
+  /**
+   * Carteira aberta do período (mesmos dados dos cards "Contas a
+   * Receber"/"Contas a Pagar" abaixo) — clicar num dia mostra os títulos
+   * daquele dia sem recarregar nada, filtrando estas listas em memória.
+   */
+  receivables?: readonly FinanceAccountsReceivableGridRow[];
+  payables?: readonly FinanceAccountsPayableGridRow[];
 };
 
 type ViewMode = "month" | "day";
@@ -220,6 +229,155 @@ function KindBadge({
   );
 }
 
+/** Dia realizado/hoje é fato liquidado; futuro (previsto/estimado) é vencimento em aberto. */
+function isRealizedDayKind(kind: TreasuryCaixaTimelineRow["kind"]): boolean {
+  return kind === "REALIZED" || kind === "TODAY";
+}
+
+/**
+ * Títulos que compõem o dia — mesma data usada para montar o Entrou/Saiu:
+ * dia realizado agrupa CR pela BAIXA (`settlementDate`) e CP pelo
+ * vencimento (`effectivePaymentDate` = `dueDate` quando liquidado — regra
+ * canônica); dia futuro agrupa pelo vencimento em aberto (CP pelo
+ * operacional, com fallback de agendamento).
+ */
+function filterCaixaDayReceivables(
+  rows: readonly FinanceAccountsReceivableGridRow[],
+  civilDate: string,
+  realized: boolean
+): FinanceAccountsReceivableGridRow[] {
+  return rows.filter((r) =>
+    realized ? r.settlementDate === civilDate : r.dueDate === civilDate
+  );
+}
+
+function filterCaixaDayPayables(
+  rows: readonly FinanceAccountsPayableGridRow[],
+  civilDate: string,
+  realized: boolean
+): FinanceAccountsPayableGridRow[] {
+  return rows.filter((p) =>
+    realized
+      ? p.dueDate === civilDate
+      : (p.operationalDueDate ?? p.dueDate) === civilDate
+  );
+}
+
+function DayDrilldownTable({
+  title,
+  amountLabel,
+  rows,
+  amount,
+  tone,
+}: {
+  title: string;
+  amountLabel: string;
+  rows: Array<{ id: string | number; name: string | null; status: string; amount: number }>;
+  amount: (row: { id: string | number; name: string | null; status: string; amount: number }) => number;
+  tone: "in" | "out";
+}) {
+  const toneClass = tone === "in" ? "text-[#065F46]" : "text-[#991B1B]";
+  return (
+    <div className="min-w-0 flex-1">
+      <p className={cn("mb-1 text-[10px] font-bold uppercase tracking-wide", toneClass)}>
+        {title} ({rows.length})
+      </p>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">Nenhum título neste dia.</p>
+      ) : (
+        <table className="w-full text-[11px]">
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-b border-border/30 last:border-0">
+                <td className="py-1 pr-2 truncate max-w-[1px]">{row.name ?? "—"}</td>
+                <td className="py-1 pr-2 whitespace-nowrap text-muted-foreground">
+                  {row.status}
+                </td>
+                <td
+                  className={cn(
+                    "py-1 text-right tabular-nums font-medium whitespace-nowrap",
+                    toneClass
+                  )}
+                >
+                  {money(amount(row))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="sr-only">{amountLabel}</p>
+    </div>
+  );
+}
+
+/** Drill-down inline de um dia: títulos a receber/pagar por trás do Entrou/Saiu. */
+function DayDrilldown({
+  civilDate,
+  colSpan,
+  receivables,
+  payables,
+  realized,
+}: {
+  civilDate: string;
+  colSpan: number;
+  receivables: readonly FinanceAccountsReceivableGridRow[];
+  payables: readonly FinanceAccountsPayableGridRow[];
+  realized: boolean;
+}) {
+  const dayReceivables = useMemo(
+    () => filterCaixaDayReceivables(receivables, civilDate, realized),
+    [receivables, civilDate, realized]
+  );
+  const dayPayables = useMemo(
+    () => filterCaixaDayPayables(payables, civilDate, realized),
+    [payables, civilDate, realized]
+  );
+
+  return (
+    <tr
+      className="border-b border-border/30 bg-background"
+      data-testid={`caixa-timeline-day-drilldown-${civilDate}`}
+    >
+      <td colSpan={colSpan} className="px-2 py-2 pl-7">
+        {dayReceivables.length === 0 && dayPayables.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            Nenhum título de CR/CP explica o movimento deste dia — pode ser
+            lançamento manual, transferência ou saldo informado diretamente.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+            <DayDrilldownTable
+              title="Contas a Receber"
+              amountLabel="Saldo a receber"
+              tone="in"
+              rows={dayReceivables.map((r) => ({
+                id: r.externalId,
+                name: r.personName,
+                status: r.calculatedStatus,
+                amount: realized ? r.amountReceived : r.balanceReceivable,
+              }))}
+              amount={(row) => row.amount}
+            />
+            <DayDrilldownTable
+              title="Contas a Pagar"
+              amountLabel="Saldo a pagar"
+              tone="out"
+              rows={dayPayables.map((p) => ({
+                id: p.externalId,
+                name: p.personName,
+                status: p.calculatedStatus,
+                amount: realized ? p.amountPaid : p.balancePayable,
+              }))}
+              amount={(row) => row.amount}
+            />
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export function TreasuryCaixaTimeline({
   timeline,
   loading = false,
@@ -227,6 +385,8 @@ export function TreasuryCaixaTimeline({
   onGenerateProjection,
   generatingProjection = false,
   monthlyDueEstimates = [],
+  receivables = [],
+  payables = [],
 }: TreasuryCaixaTimelineProps) {
   const months = useMemo(() => {
     if (!timeline) return [];
@@ -246,11 +406,15 @@ export function TreasuryCaixaTimeline({
   const outlierCount = outliers.size;
   const [mode, setMode] = useState<ViewMode>("day");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [expandedDays, setExpandedDays] = useState<ReadonlySet<string>>(
+    new Set()
+  );
 
   // Período de vários meses → começa agrupado; um mês só → dia a dia direto.
   useEffect(() => {
     setMode(spansMultipleMonths ? "month" : "day");
     setExpanded(new Set());
+    setExpandedDays(new Set());
   }, [spansMultipleMonths, timeline]);
 
   function toggleMonth(monthKey: string) {
@@ -258,6 +422,15 @@ export function TreasuryCaixaTimeline({
       const next = new Set(prev);
       if (next.has(monthKey)) next.delete(monthKey);
       else next.add(monthKey);
+      return next;
+    });
+  }
+
+  function toggleDay(civilDate: string) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(civilDate)) next.delete(civilDate);
+      else next.add(civilDate);
       return next;
     });
   }
@@ -457,115 +630,159 @@ export function TreasuryCaixaTimeline({
                             />
                           </tr>
                           {isOpen
-                            ? m.days.map((r) => (
-                                <tr
-                                  key={r.civilDate}
-                                  className={cn(
-                                    "border-b border-border/30 bg-muted/20",
-                                    r.kind === "FORECAST" && "text-[#475569]"
-                                  )}
-                                  data-testid={`caixa-timeline-row-${r.civilDate}`}
-                                  data-kind={r.kind}
-                                >
-                                  <td className="whitespace-nowrap py-1.5 pl-7 pr-2 tabular-nums">
-                                    {formatCivilDate(r.civilDate)}
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    <KindBadge kind={r.kind} estimated={r.estimated} />
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right tabular-nums">
-                                    {money(r.opening)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
-                                    {r.inflows === 0 ? "—" : money(r.inflows)}
-                                    {outliers.has(`${r.civilDate}|inflows`) ? (
-                                      <OutlierMark
-                                        direction={
-                                          outliers.get(`${r.civilDate}|inflows`)!
-                                        }
+                            ? m.days.map((r) => {
+                                const dayOpen = expandedDays.has(r.civilDate);
+                                return (
+                                  <React.Fragment key={r.civilDate}>
+                                    <tr
+                                      className={cn(
+                                        "border-b border-border/30 bg-muted/20 cursor-pointer hover:bg-muted/40",
+                                        r.kind === "FORECAST" && "text-[#475569]"
+                                      )}
+                                      onClick={() => toggleDay(r.civilDate)}
+                                      data-testid={`caixa-timeline-row-${r.civilDate}`}
+                                      data-kind={r.kind}
+                                      data-day-expanded={dayOpen}
+                                    >
+                                      <td className="whitespace-nowrap py-1.5 pl-7 pr-2 tabular-nums">
+                                        <span className="inline-flex items-center gap-1">
+                                          {dayOpen ? (
+                                            <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+                                          ) : (
+                                            <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+                                          )}
+                                          {formatCivilDate(r.civilDate)}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        <KindBadge kind={r.kind} estimated={r.estimated} />
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums">
+                                        {money(r.opening)}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
+                                        {r.inflows === 0 ? "—" : money(r.inflows)}
+                                        {outliers.has(`${r.civilDate}|inflows`) ? (
+                                          <OutlierMark
+                                            direction={
+                                              outliers.get(`${r.civilDate}|inflows`)!
+                                            }
+                                          />
+                                        ) : null}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
+                                        {r.outflows === 0 ? "—" : money(r.outflows)}
+                                        {outliers.has(`${r.civilDate}|outflows`) ? (
+                                          <OutlierMark
+                                            direction={
+                                              outliers.get(`${r.civilDate}|outflows`)!
+                                            }
+                                          />
+                                        ) : null}
+                                      </td>
+                                      <td
+                                        className={cn(
+                                          "px-2 py-1.5 text-right tabular-nums font-semibold",
+                                          r.negative && "text-[#DC2626]"
+                                        )}
+                                      >
+                                        {money(r.closing)}
+                                      </td>
+                                      <DivergenceCell
+                                        value={r.divergence}
+                                        informed={r.closingInformed}
+                                        scope="day"
+                                      />
+                                    </tr>
+                                    {dayOpen ? (
+                                      <DayDrilldown
+                                        civilDate={r.civilDate}
+                                        colSpan={7}
+                                        receivables={receivables}
+                                        payables={payables}
+                                        realized={isRealizedDayKind(r.kind)}
                                       />
                                     ) : null}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
-                                    {r.outflows === 0 ? "—" : money(r.outflows)}
-                                    {outliers.has(`${r.civilDate}|outflows`) ? (
-                                      <OutlierMark
-                                        direction={
-                                          outliers.get(`${r.civilDate}|outflows`)!
-                                        }
-                                      />
-                                    ) : null}
-                                  </td>
-                                  <td
-                                    className={cn(
-                                      "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                      r.negative && "text-[#DC2626]"
-                                    )}
-                                  >
-                                    {money(r.closing)}
-                                  </td>
-                                  <DivergenceCell
-                                    value={r.divergence}
-                                    informed={r.closingInformed}
-                                    scope="day"
-                                  />
-                                </tr>
-                              ))
+                                  </React.Fragment>
+                                );
+                              })
                             : null}
                         </React.Fragment>
                       );
                     })
-                  : timeline.rows.map((r) => (
-                  <tr
-                    key={r.civilDate}
-                    className={cn(
-                      "border-b border-border/50",
-                      r.kind === "TODAY" && "bg-[#EFF6FF]",
-                      r.kind === "FORECAST" && "text-[#475569]"
-                    )}
-                    data-testid={`caixa-timeline-row-${r.civilDate}`}
-                    data-kind={r.kind}
-                  >
-                    <td className="whitespace-nowrap px-2 py-1.5 tabular-nums font-medium">
-                      {formatCivilDate(r.civilDate)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <KindBadge kind={r.kind} estimated={r.estimated} />
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
-                      {money(r.opening)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
-                      {r.inflows === 0 ? "—" : money(r.inflows)}
-                      {outliers.has(`${r.civilDate}|inflows`) ? (
-                        <OutlierMark
-                          direction={outliers.get(`${r.civilDate}|inflows`)!}
-                        />
-                      ) : null}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
-                      {r.outflows === 0 ? "—" : money(r.outflows)}
-                      {outliers.has(`${r.civilDate}|outflows`) ? (
-                        <OutlierMark
-                          direction={outliers.get(`${r.civilDate}|outflows`)!}
-                        />
-                      ) : null}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-2 py-1.5 text-right tabular-nums font-semibold",
-                        r.negative && "text-[#DC2626]"
-                      )}
-                    >
-                      {money(r.closing)}
-                    </td>
-                    <DivergenceCell
-                      value={r.divergence}
-                      informed={r.closingInformed}
-                      scope="day"
-                    />
-                  </tr>
-                    ))}
+                  : timeline.rows.map((r) => {
+                      const dayOpen = expandedDays.has(r.civilDate);
+                      return (
+                        <React.Fragment key={r.civilDate}>
+                          <tr
+                            className={cn(
+                              "border-b border-border/50 cursor-pointer hover:bg-muted/40",
+                              r.kind === "TODAY" && "bg-[#EFF6FF]",
+                              r.kind === "FORECAST" && "text-[#475569]"
+                            )}
+                            onClick={() => toggleDay(r.civilDate)}
+                            data-testid={`caixa-timeline-row-${r.civilDate}`}
+                            data-kind={r.kind}
+                            data-day-expanded={dayOpen}
+                          >
+                            <td className="whitespace-nowrap px-2 py-1.5 tabular-nums font-medium">
+                              <span className="inline-flex items-center gap-1">
+                                {dayOpen ? (
+                                  <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+                                )}
+                                {formatCivilDate(r.civilDate)}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <KindBadge kind={r.kind} estimated={r.estimated} />
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">
+                              {money(r.opening)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
+                              {r.inflows === 0 ? "—" : money(r.inflows)}
+                              {outliers.has(`${r.civilDate}|inflows`) ? (
+                                <OutlierMark
+                                  direction={outliers.get(`${r.civilDate}|inflows`)!}
+                                />
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
+                              {r.outflows === 0 ? "—" : money(r.outflows)}
+                              {outliers.has(`${r.civilDate}|outflows`) ? (
+                                <OutlierMark
+                                  direction={outliers.get(`${r.civilDate}|outflows`)!}
+                                />
+                              ) : null}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1.5 text-right tabular-nums font-semibold",
+                                r.negative && "text-[#DC2626]"
+                              )}
+                            >
+                              {money(r.closing)}
+                            </td>
+                            <DivergenceCell
+                              value={r.divergence}
+                              informed={r.closingInformed}
+                              scope="day"
+                            />
+                          </tr>
+                          {dayOpen ? (
+                            <DayDrilldown
+                              civilDate={r.civilDate}
+                              colSpan={7}
+                              receivables={receivables}
+                              payables={payables}
+                              realized={isRealizedDayKind(r.kind)}
+                            />
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
               </tbody>
             </table>
           </div>
@@ -574,7 +791,9 @@ export function TreasuryCaixaTimeline({
             Dias passados mostram o que foi <strong>realmente</strong> pago e
             recebido. Dias futuros mostram <strong>previsão</strong> pelos títulos
             em aberto — esses ainda podem mudar.
-            {mode === "month" ? " Clique num mês para ver os dias." : ""}
+            {mode === "month" ? " Clique num mês para ver os dias." : ""} Clique
+            num dia para ver os títulos de Contas a Receber/Pagar por trás do
+            Entrou/Saiu daquele dia.
           </p>
           {months.some((m) => m.estimateOnly) ||
           timeline.rows.some((r) => r.estimated) ? (
