@@ -31,6 +31,7 @@ import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
+import type { TreasuryCaixaCanonicalDay } from "@/src/lib/treasury/domain/treasuryCaixaCanonicalDay.js";
 
 export type TreasuryCaixaTimelineProps = {
   timeline: TreasuryCaixaTimeline | null;
@@ -42,12 +43,20 @@ export type TreasuryCaixaTimelineProps = {
    */
   monthlyDueEstimates?: readonly TreasuryCaixaMonthlyDueEstimate[];
   /**
-   * Carteira aberta do período (mesmos dados dos cards "Contas a
-   * Receber"/"Contas a Pagar" abaixo) — clicar num dia mostra os títulos
-   * daquele dia sem recarregar nada, filtrando estas listas em memória.
+   * @deprecated — mantido só para compatibilidade retroativa do drill-down
+   * quando o backend ainda não trouxer `canonicalDays`. A fonte canônica
+   * (com A receber / Recebido / A pagar / Pago já separados por dimensão)
+   * agora é {@link canonicalDays}. Ver Fase C.
    */
   receivables?: readonly FinanceAccountsReceivableGridRow[];
   payables?: readonly FinanceAccountsPayableGridRow[];
+  /**
+   * Motor único-de-dia canônico — quando presente, o drill-down de dia
+   * mostra as QUATRO dimensões (A receber / Recebido / A pagar / Pago) já
+   * separadas pelo backend, com as listas de títulos que fecham cada total
+   * no centavo. Elimina o filtro por `dueDate` no frontend.
+   */
+  canonicalDays?: readonly TreasuryCaixaCanonicalDay[];
 };
 
 type ViewMode = "month" | "day";
@@ -425,30 +434,138 @@ function DayDrilldownCard({
 }
 
 /**
- * Drill-down inline de um dia: títulos a pagar (em cima) e a receber (embaixo)
- * por trás do Entrou/Saiu — cada card abre/fecha independente.
+ * Drill-down inline canônico de um dia — QUATRO dimensões vindas do backend
+ * (`canonicalDays`), cada uma com os títulos que fecham o seu total:
+ *   A pagar / Pago / A receber / Recebido.
+ * O frontend não filtra por data nem escolhe realizado/previsto — o motor
+ * único-de-dia já entregou tudo separado.
+ *
+ * Fallback: quando `canonicalDay` estiver ausente (board antigo ou dia fora
+ * da janela canônica), volta ao filtro em memória por `dueDate`/`settlementDate`
+ * usando as grids — mesmo comportamento anterior, sem regredir o que já
+ * funcionava.
  */
 function DayDrilldown({
   civilDate,
   colSpan,
+  canonicalDay,
   receivables,
   payables,
   realized,
 }: {
   civilDate: string;
   colSpan: number;
+  canonicalDay: TreasuryCaixaCanonicalDay | null;
   receivables: readonly FinanceAccountsReceivableGridRow[];
   payables: readonly FinanceAccountsPayableGridRow[];
   realized: boolean;
 }) {
-  const dayReceivables = useMemo(
-    () => filterCaixaDayReceivables(receivables, civilDate, realized),
-    [receivables, civilDate, realized]
-  );
-  const dayPayables = useMemo(
-    () => filterCaixaDayPayables(payables, civilDate, realized),
-    [payables, civilDate, realized]
-  );
+  // ── Caminho canônico (Fase B) ──────────────────────────────────────────
+  if (canonicalDay) {
+    const payableDueRows: DayDrilldownRow[] = canonicalDay.payableDueTitles.map(
+      (p) => ({
+        id: p.externalId,
+        name: p.personName,
+        status: p.calculatedStatus,
+        dueDate: p.dueDate,
+        amount: p.balancePayable,
+        grossAmount: p.amountPayable,
+        settledAmount: p.amountPaid,
+        balanceAmount: p.balancePayable,
+      })
+    );
+    const payablePaidRows: DayDrilldownRow[] =
+      canonicalDay.payablePaidTitles.map((p) => ({
+        id: p.externalId,
+        name: p.personName,
+        status: p.calculatedStatus,
+        dueDate: p.dueDate,
+        amount: p.amountPaid,
+        grossAmount: p.amountPayable,
+        settledAmount: p.amountPaid,
+        balanceAmount: p.balancePayable,
+      }));
+    const receivableDueRows: DayDrilldownRow[] =
+      canonicalDay.receivableDueTitles.map((r) => ({
+        id: r.externalId,
+        name: r.personName,
+        status: r.calculatedStatus,
+        dueDate: r.dueDate,
+        amount: r.balanceReceivable,
+        grossAmount: r.amountReceivable,
+        settledAmount: r.amountReceived,
+        balanceAmount: r.balanceReceivable,
+      }));
+    const receivableReceivedRows: DayDrilldownRow[] =
+      canonicalDay.receivableReceivedTitles.map((r) => ({
+        id: r.externalId,
+        name: r.personName,
+        status: r.calculatedStatus,
+        dueDate: r.dueDate,
+        amount: r.amountReceived,
+        grossAmount: r.amountReceivable,
+        settledAmount: r.amountReceived,
+        balanceAmount: r.balanceReceivable,
+      }));
+
+    const allEmpty =
+      payableDueRows.length === 0 &&
+      payablePaidRows.length === 0 &&
+      receivableDueRows.length === 0 &&
+      receivableReceivedRows.length === 0;
+
+    return (
+      <tr
+        className="border-b border-border/30 bg-background"
+        data-testid={`caixa-timeline-day-drilldown-${civilDate}`}
+        data-source="canonical"
+      >
+        <td colSpan={colSpan} className="px-2 py-2.5 pl-7">
+          {allEmpty ? (
+            <p className="text-[11px] text-muted-foreground">
+              Nenhum título de CR/CP explica o movimento deste dia — pode ser
+              lançamento manual, transferência ou saldo informado diretamente.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <DayDrilldownCard
+                title="A pagar (vencendo hoje, em aberto)"
+                counterpartyLabel="Fornecedor"
+                settledLabel="Pago"
+                tone="out"
+                rows={payableDueRows}
+              />
+              <DayDrilldownCard
+                title="Pago hoje (baixados)"
+                counterpartyLabel="Fornecedor"
+                settledLabel="Pago"
+                tone="out"
+                rows={payablePaidRows}
+              />
+              <DayDrilldownCard
+                title="A receber (vencendo hoje, em aberto)"
+                counterpartyLabel="Cliente"
+                settledLabel="Recebido"
+                tone="in"
+                rows={receivableDueRows}
+              />
+              <DayDrilldownCard
+                title="Recebido hoje (baixados)"
+                counterpartyLabel="Cliente"
+                settledLabel="Recebido"
+                tone="in"
+                rows={receivableReceivedRows}
+              />
+            </div>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
+  // ── Fallback (compatibilidade retroativa) ──────────────────────────────
+  const dayReceivables = filterCaixaDayReceivables(receivables, civilDate, realized);
+  const dayPayables = filterCaixaDayPayables(payables, civilDate, realized);
 
   const payableRows: DayDrilldownRow[] = dayPayables.map((p) => ({
     id: p.externalId,
@@ -475,6 +592,7 @@ function DayDrilldown({
     <tr
       className="border-b border-border/30 bg-background"
       data-testid={`caixa-timeline-day-drilldown-${civilDate}`}
+      data-source="fallback"
     >
       <td colSpan={colSpan} className="px-2 py-2.5 pl-7">
         {receivableRows.length === 0 && payableRows.length === 0 ? (
@@ -511,7 +629,13 @@ export function TreasuryCaixaTimeline({
   monthlyDueEstimates = [],
   receivables = [],
   payables = [],
+  canonicalDays = [],
 }: TreasuryCaixaTimelineProps) {
+  const canonicalByDay = useMemo(() => {
+    const map = new Map<string, TreasuryCaixaCanonicalDay>();
+    for (const d of canonicalDays) map.set(d.civilDate, d);
+    return map;
+  }, [canonicalDays]);
   const months = useMemo(() => {
     if (!timeline) return [];
     const fromDays = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
@@ -777,6 +901,9 @@ export function TreasuryCaixaTimeline({
                                       <DayDrilldown
                                         civilDate={r.civilDate}
                                         colSpan={7}
+                                        canonicalDay={
+                                          canonicalByDay.get(r.civilDate) ?? null
+                                        }
                                         receivables={receivables}
                                         payables={payables}
                                         realized={isRealizedDayKind(r.kind)}
@@ -854,6 +981,9 @@ export function TreasuryCaixaTimeline({
                             <DayDrilldown
                               civilDate={r.civilDate}
                               colSpan={7}
+                              canonicalDay={
+                                canonicalByDay.get(r.civilDate) ?? null
+                              }
                               receivables={receivables}
                               payables={payables}
                               realized={isRealizedDayKind(r.kind)}

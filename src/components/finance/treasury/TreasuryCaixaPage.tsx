@@ -436,7 +436,15 @@ export function TreasuryCaixaPage() {
           }}
         />
 
-        <TreasuryCaixaTodayFlow flow={todayFlow} loading={accountsLoading} />
+        <TreasuryCaixaTodayFlow
+          flow={todayFlow}
+          canonicalToday={
+            data?.canonicalDays?.find(
+              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
+            ) ?? null
+          }
+          loading={accountsLoading}
+        />
 
         <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
 
@@ -447,6 +455,7 @@ export function TreasuryCaixaPage() {
             monthlyDueEstimates={data?.monthlyDueEstimates}
             receivables={data?.receivables}
             payables={data?.payables}
+            canonicalDays={data?.canonicalDays}
           />
         ) : null}
 
