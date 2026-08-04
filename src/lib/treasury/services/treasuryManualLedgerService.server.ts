@@ -202,6 +202,22 @@ export function createTreasuryManualLedgerService(deps: {
     }
   }
 
+  /**
+   * Reverter um lançamento manual (e removê-lo de todos os cálculos) é mais
+   * sensível que criar um: exige SUPER_ADMIN, não basta a permissão genérica
+   * `manageManualEntries` (que outros perfis podem ter). Mesmo padrão de
+   * `reverseReconciliation` — reverse é capacidade própria, mais restrita que
+   * manage.
+   */
+  function assertCanReverse(actor: TreasuryManualLedgerActor) {
+    if (!actor.isSuperAdmin) {
+      throw new TreasuryDomainError(
+        "FORBIDDEN",
+        "Somente SUPER_ADMIN pode reverter lançamentos manuais."
+      );
+    }
+  }
+
   async function assertAccountAccess(
     actor: TreasuryManualLedgerActor,
     accountId: string,
@@ -345,7 +361,7 @@ export function createTreasuryManualLedgerService(deps: {
     },
 
     async reverse(actor, id, input) {
-      assertCanManage(actor);
+      assertCanReverse(actor);
       if (!input.justification?.trim()) {
         throw new TreasuryDomainError(
           "VALIDATION_ERROR",
