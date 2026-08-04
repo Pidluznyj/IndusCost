@@ -114,6 +114,73 @@ export async function loadFallbackDailyClosingBankSumByCivilDate(
   return sumByDay;
 }
 
+/**
+ * Fallback do saldo informado pela tela genérica "Saldo"
+ * (`TreasuryAccountBalancePage` → `POST .../balance-snapshots`) — o mesmo
+ * `TreasuryBalanceSnapshot` origem MANUAL, mas sem a chave especial da rotina
+ * "Saldos do Dia". Cobre o caso de informar saldo inicial/final retroativo de
+ * um mês inteiro sem passar pela rotina diária guiada.
+ *
+ * Diferença crucial em relação ao fallback acima: aqui o dia civil vem de
+ * `referenceAt` (a data que o usuário escolheu no formulário), não de uma
+ * chave — porque este fluxo não embute a data civil na idempotencyKey. Por
+ * isso os dois fallbacks são mutuamente exclusivos (o parse da chave da
+ * rotina é usado para pular linhas que pertencem ao outro fallback).
+ */
+export async function loadFallbackGenericManualBalanceSumByCivilDate(
+  prisma: PrismaClient,
+  accountIds: string[],
+  fromCivilDate: string,
+  toCivilDate: string
+): Promise<Map<string, number>> {
+  const sumByDay = new Map<string, number>();
+  if (accountIds.length === 0) return sumByDay;
+
+  const rangeFrom = civilDateToLocalDate(fromCivilDate);
+  const rangeToExclusive = new Date(
+    civilDateToLocalDate(toCivilDate).getTime() + 24 * 60 * 60 * 1000
+  );
+
+  const rows = await prisma.treasuryBalanceSnapshot.findMany({
+    where: {
+      accountId: { in: accountIds },
+      origin: "MANUAL",
+      cancelledAt: null,
+      referenceAt: { gte: rangeFrom, lt: rangeToExclusive },
+    },
+    orderBy: [{ referenceAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      accountId: true,
+      idempotencyKey: true,
+      referenceAt: true,
+      availableBalance: true,
+    },
+  });
+
+  // orderBy referenceAt/createdAt desc + primeira ocorrência vista = versão
+  // mais recente informada por conta+dia civil.
+  const seenAccountDay = new Set<string>();
+  for (const row of rows) {
+    // Snapshot da rotina "Saldos do Dia": referenceAt é o instante do
+    // registro (agora), não o dia civil sendo fechado — já coberto pelo
+    // fallback dedicado acima, que lê o dia certo embutido na chave.
+    if (parseTreasuryDailyRoutineSnapshotKey(row.idempotencyKey)) continue;
+
+    const civilDate = toIsoDate(row.referenceAt);
+    if (civilDate < fromCivilDate || civilDate > toCivilDate) continue;
+
+    const accountDayKey = `${row.accountId}:${civilDate}`;
+    if (seenAccountDay.has(accountDayKey)) continue;
+    seenAccountDay.add(accountDayKey);
+
+    const value = Number(row.availableBalance);
+    if (!Number.isFinite(value)) continue;
+    sumByDay.set(civilDate, (sumByDay.get(civilDate) ?? 0) + value);
+  }
+
+  return sumByDay;
+}
+
 export function createTreasuryCaixaService(input: {
   prisma: PrismaClient;
 }): TreasuryCaixaService {
@@ -262,6 +329,22 @@ export function createTreasuryCaixaService(input: {
           periodTo
         );
         for (const [civilDate, value] of fallbackByCivilDate) {
+          if (informedClosingByCivilDate.has(civilDate)) continue;
+          informedClosingByCivilDate.set(civilDate, value);
+        }
+
+        // Fallback: saldo informado pela tela genérica "Saldo" (fora da
+        // rotina diária guiada) — cobre backfill retroativo de saldo
+        // inicial/final por mês. Só preenche o que os dois anteriores não
+        // cobriram (fechamento formal e "Saldos do Dia" continuam prioritários).
+        const genericByCivilDate =
+          await loadFallbackGenericManualBalanceSumByCivilDate(
+            prisma,
+            accountIds,
+            settlementWindowFromCivilDate,
+            periodTo
+          );
+        for (const [civilDate, value] of genericByCivilDate) {
           if (informedClosingByCivilDate.has(civilDate)) continue;
           informedClosingByCivilDate.set(civilDate, value);
         }
