@@ -19,6 +19,24 @@ import { shouldIncludeSalesOrderInOperationalReceivables } from "@/src/lib/finan
 const DEFAULT_ORDER_LIMIT = 24;
 /** Teto de pedidos distintos por portfólio AR (descrição + NF). */
 const PORTFOLIO_ORDER_LIMIT = 80;
+/**
+ * Mitigação de latência do Fluxo de Caixa (FC): quantas chamadas a
+ * `getOrderFullAudit` (auditoria 360º completa — ~28 consultas por pedido)
+ * rodam em paralelo ao montar o contexto efetivo do portfólio.
+ *
+ * NÃO reduz o trabalho total do banco — só reduz o número de ONDAS
+ * sequenciais (PORTFOLIO_ORDER_LIMIT / CONCURRENCY). Antes: 80/4 = 20 ondas.
+ * Agora: 80/8 = 10 ondas. É seguro por construção: o conjunto de pedidos
+ * processados (`orders`) e o resultado final (`mergeFinanceArEffectiveOrderContexts`,
+ * que funde por `salesOrderId` num Map) não dependem da ordem nem do tamanho
+ * do lote — só da timing de execução. Ver
+ * financeAccountsReceivableEffectiveTitlesConcurrency.test.ts para a prova.
+ *
+ * Se a carga no banco piorar (mais conexões concorrentes competindo pelo pool
+ * do Prisma) em vez de melhorar, reverta este número para 4 — é a única
+ * mudança desta mitigação.
+ */
+const EFFECTIVE_ORDER_AUDIT_CONCURRENCY = 8;
 
 export type FinanceArPortfolioSalesOrderRefs = {
   orderCodes: string[];
@@ -196,7 +214,7 @@ async function buildFinanceArEffectiveContextsForOrders(
   }>,
   referenceDate: Date
 ): Promise<FinanceArEffectiveOrderContext[]> {
-  const CONCURRENCY = 4;
+  const CONCURRENCY = EFFECTIVE_ORDER_AUDIT_CONCURRENCY;
   const contexts: FinanceArEffectiveOrderContext[] = [];
 
   for (let i = 0; i < orders.length; i += CONCURRENCY) {
