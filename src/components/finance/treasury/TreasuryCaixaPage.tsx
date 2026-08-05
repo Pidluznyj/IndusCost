@@ -41,6 +41,10 @@ import {
 import { TreasuryCaixaBalanceChart } from "@/src/components/finance/treasury/TreasuryCaixaBalanceChart";
 import { TreasuryCaixaScenariosChart } from "@/src/components/finance/treasury/TreasuryCaixaScenariosChart";
 import {
+  TreasuryCaixaTotalizerAuditModal,
+  type TreasuryCaixaTotalizerAuditKind,
+} from "@/src/components/finance/treasury/TreasuryCaixaTotalizerAuditModal";
+import {
   fetchTreasuryCaixaScenarios,
   type TreasuryCaixaScenariosPayload,
 } from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
@@ -112,10 +116,13 @@ function TotalizerCard({
   label,
   value,
   tone = "neutral",
+  onClick,
 }: {
   label: string;
   value: string;
   tone?: "receivable" | "payable" | "net" | "neutral";
+  /** Quando informado, o card vira clicável e abre a auditoria. */
+  onClick?: () => void;
 }) {
   const toneClass =
     tone === "receivable"
@@ -125,20 +132,43 @@ function TotalizerCard({
         : tone === "net"
           ? "border-[#BFDBFE] text-[#1E3A8A]"
           : "border-border text-foreground";
-  return (
-    <div
-      className={cn(
-        "rounded-lg border bg-card px-3 py-2.5 shadow-sm",
-        toneClass
-      )}
-      data-testid={`caixa-card-${label}`}
-    >
+  const interactive = onClick != null;
+  const commonClass = cn(
+    "rounded-lg border bg-card px-3 py-2.5 text-left shadow-sm",
+    toneClass,
+    interactive &&
+      "cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[#93C5FD]"
+  );
+  const inner = (
+    <>
       <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
         {label}
+        {interactive ? (
+          <span className="ml-1 text-[9px] font-semibold text-[#2563EB]">
+            (ver títulos)
+          </span>
+        ) : null}
       </p>
       <p className="mt-1 text-lg font-extrabold tabular-nums tracking-tight">
         {value}
       </p>
+    </>
+  );
+  if (interactive) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={commonClass}
+        data-testid={`caixa-card-${label}`}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className={commonClass} data-testid={`caixa-card-${label}`}>
+      {inner}
     </div>
   );
 }
@@ -163,6 +193,9 @@ export function TreasuryCaixaPage() {
   // quem quiser o detalhe abre por conta própria (mesmo padrão do Atrasados).
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [payablesOpen, setPayablesOpen] = useState(false);
+  // Modal de auditoria dos totalizadores — abre ao clicar num card.
+  const [auditKind, setAuditKind] =
+    useState<TreasuryCaixaTotalizerAuditKind | null>(null);
   const accountsAbortRef = useRef<AbortController | null>(null);
 
   // Cenários (Otimista/Realista/Pessimista) — endpoint único.
@@ -520,31 +553,37 @@ export function TreasuryCaixaPage() {
                 label="Já Recebido"
                 value={formatMoney(data.totals.totalReceived)}
                 tone="receivable"
+                onClick={() => setAuditKind("totalReceived")}
               />
               <TotalizerCard
                 label="Já Pago"
                 value={formatMoney(data.totals.totalPaid)}
                 tone="payable"
+                onClick={() => setAuditKind("totalPaid")}
               />
               <TotalizerCard
                 label="Saldo Realizado"
                 value={formatMoney(data.totals.netRealized)}
                 tone="net"
+                onClick={() => setAuditKind("netRealized")}
               />
               <TotalizerCard
                 label="A Receber (em aberto)"
                 value={formatMoney(data.totals.totalReceivable)}
                 tone="receivable"
+                onClick={() => setAuditKind("totalReceivable")}
               />
               <TotalizerCard
                 label="A Pagar (em aberto)"
                 value={formatMoney(data.totals.totalPayable)}
                 tone="payable"
+                onClick={() => setAuditKind("totalPayable")}
               />
               <TotalizerCard
                 label="Saldo em Aberto"
                 value={formatMoney(data.totals.netBalance)}
                 tone="net"
+                onClick={() => setAuditKind("netBalance")}
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -706,6 +745,48 @@ export function TreasuryCaixaPage() {
           </div>
         ) : null}
       </div>
+
+      {data ? (
+        <TreasuryCaixaTotalizerAuditModal
+          kind={auditKind}
+          periodLabel={formatCaixaPeriodLabel(year, month, day)}
+          cardValue={resolveTotalizerCardValue(data.totals, auditKind)}
+          receivables={data.receivables ?? []}
+          payables={data.payables ?? []}
+          onClose={() => setAuditKind(null)}
+        />
+      ) : null}
     </FinanceBiDashboardShell>
   );
+}
+
+/** Rótulo pt-BR do período consultado — reuso do próprio filtro da tela. */
+function formatCaixaPeriodLabel(
+  year: number,
+  month: number | "",
+  day: number | ""
+): string {
+  const monthLabel =
+    month === ""
+      ? "Ano inteiro"
+      : MONTH_OPTIONS.find((m) => m.value === month)?.label ??
+        String(month).padStart(2, "0");
+  if (day === "") return `${monthLabel}/${year}`;
+  return `${String(day).padStart(2, "0")} · ${monthLabel}/${year}`;
+}
+
+/** Valor do card que a modal está auditando — mesma fonte que os cards usam. */
+function resolveTotalizerCardValue(
+  totals: {
+    totalReceived: number;
+    totalPaid: number;
+    netRealized: number;
+    totalReceivable: number;
+    totalPayable: number;
+    netBalance: number;
+  },
+  kind: TreasuryCaixaTotalizerAuditKind | null
+): number {
+  if (kind == null) return 0;
+  return totals[kind];
 }
