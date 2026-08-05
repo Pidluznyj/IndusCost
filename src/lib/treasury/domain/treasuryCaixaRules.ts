@@ -1287,4 +1287,25 @@ export type TreasuryCaixaBoardDto = {
    * Ver {@link ./treasuryCaixaCanonicalDay.ts}.
    */
   canonicalDays: TreasuryCaixaCanonicalDay[];
+  /**
+   * Âncora oficial de saldo de HOJE — o número que o card "Caixa hoje"
+   * mostra, com origem auditável. O motor único-de-dia já re-ancora a
+   * cadeia neste valor; este campo é publicado no board para que a UI
+   * dos cenários possa mostrar "Fonte: XX/XX/YYYY às HH:MM" e a
+   * confiabilidade calcular a partir dele.
+   */
+  officialTodayBalance: {
+    amount: number | null;
+    source:
+      | "DAILY_CLOSING"
+      | "DAILY_ROUTINE_SNAPSHOT"
+      | "GENERIC_MANUAL_SNAPSHOT"
+      | "ACCOUNT_LATEST_BALANCE"
+      | "NONE";
+    civilDate: string;
+    informedAt: string | null;
+    accountsCovered: number;
+    accountsWithoutBalance: number;
+    sourceLabel: string;
+  };
 };

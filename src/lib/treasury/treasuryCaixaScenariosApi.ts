@@ -19,12 +19,28 @@ export type TreasuryCaixaScenariosFetchParams = {
   signal?: AbortSignal;
 };
 
+export type TreasuryCaixaScenariosOfficialBalance = {
+  amount: number | null;
+  source:
+    | "DAILY_CLOSING"
+    | "DAILY_ROUTINE_SNAPSHOT"
+    | "GENERIC_MANUAL_SNAPSHOT"
+    | "ACCOUNT_LATEST_BALANCE"
+    | "NONE";
+  civilDate: string;
+  informedAt: string | null;
+  accountsCovered: number;
+  accountsWithoutBalance: number;
+  sourceLabel: string;
+};
+
 export type TreasuryCaixaScenariosPayload = TreasuryScenarioComputationResult & {
   period: { year: number; month?: number; day?: number };
   dueDateFrom: string;
   dueDateTo: string;
   policy: TreasuryScenarioPolicyDto;
   accountIds: string[] | null;
+  officialTodayBalance: TreasuryCaixaScenariosOfficialBalance;
   requestId?: string;
 };
 

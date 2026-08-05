@@ -378,6 +378,94 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
     }
   });
 
+  it("âncora oficial de saldo re-ancora a cadeia no dia da âncora e propaga para frente", () => {
+    // opening 0 na gênese, cadeia acumularia -700 até 05/08 (só saída).
+    // Mas a âncora em 05/08 informa R$ 416.945 — a cadeia se re-ancora.
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04", "2026-08-05", "2026-08-06"],
+      receivables: [],
+      payables: [
+        ap({
+          externalId: 1,
+          dueDate: "2026-08-04",
+          paymentDate: "2026-08-04",
+          amountPaid: 700,
+        }),
+        ap({ externalId: 2, dueDate: "2026-08-06", balancePayable: 200 }),
+      ],
+      openingBalanceOfFirstDay: 0,
+      officialTodayBalance: {
+        civilDate: "2026-08-05",
+        amount: 416945,
+        sourceLabel: "Rotina 'Saldos do Dia' de 05/08/2026",
+        strength: "STRONG",
+      },
+    });
+    const [d04, d05, d06] = days;
+    // 04: cadeia normal — opening 0, saiu 700 → -700
+    assert.equal(d04!.closingRealizedBalance, -700);
+    // 05: RE-ANCORA — closing realizado = valor da âncora
+    assert.equal(d05!.closingRealizedBalance, 416945);
+    // 06: opening = closing de 05 (416945), sem movimento realizado → 416945
+    assert.equal(d06!.openingBalance, 416945);
+    assert.equal(d06!.closingRealizedBalance, 416945);
+    // Projetado de 06 subtrai o AP em aberto (200)
+    assert.equal(d06!.closingProjectedBalance, 416745);
+  });
+
+  it("âncora WEAK emite warning OPENING_BALANCE_FROM_WEAK_SOURCE", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-05"],
+      receivables: [],
+      payables: [],
+      openingBalanceOfFirstDay: null,
+      officialTodayBalance: {
+        civilDate: "2026-08-05",
+        amount: 416945,
+        sourceLabel: "Saldo mais recente das contas (Nomus)",
+        strength: "WEAK",
+      },
+    });
+    const d = days[0]!;
+    assert.equal(d.closingRealizedBalance, 416945);
+    const codes = d.warnings.map((w) => w.code);
+    assert.ok(codes.includes("OPENING_BALANCE_FROM_WEAK_SOURCE"));
+  });
+
+  it("âncora com cobertura parcial de contas emite OFFICIAL_BALANCE_PARTIAL_ACCOUNTS", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-05"],
+      receivables: [],
+      payables: [],
+      officialTodayBalance: {
+        civilDate: "2026-08-05",
+        amount: 214345,
+        sourceLabel: "Rotina 'Saldos do Dia' (1/2 contas)",
+        strength: "STRONG",
+        accountsPartial: true,
+      },
+    });
+    const d = days[0]!;
+    const codes = d.warnings.map((w) => w.code);
+    assert.ok(codes.includes("OFFICIAL_BALANCE_PARTIAL_ACCOUNTS"));
+  });
+
+  it("sem opening E sem âncora no primeiro dia → warning NO_OPENING_BALANCE (regressão)", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-04"],
+      receivables: [
+        ar({ settlementDate: "2026-08-04", amountReceived: 100 }),
+      ],
+      payables: [],
+      openingBalanceOfFirstDay: null,
+    });
+    const d = days[0]!;
+    assert.equal(d.openingBalance, null);
+    assert.equal(d.closingRealizedBalance, null);
+    const codes = d.warnings.map((w) => w.code);
+    assert.ok(codes.includes("NO_OPENING_BALANCE"));
+  });
+
   it("Σ dias == totais mensais por dimensão", () => {
     const days = buildTreasuryCaixaCanonicalDays({
       civilDatesInWindow: [

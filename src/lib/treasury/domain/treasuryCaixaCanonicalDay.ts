@@ -74,7 +74,9 @@ export type TreasuryCaixaCanonicalDayOtherMovement = {
 export type TreasuryCaixaCanonicalDayWarningCode =
   | "NO_OPENING_BALANCE"
   | "PARTIAL_LOAD"
-  | "OTHER_MOVEMENTS_NOT_LOADED";
+  | "OTHER_MOVEMENTS_NOT_LOADED"
+  | "OPENING_BALANCE_FROM_WEAK_SOURCE"
+  | "OFFICIAL_BALANCE_PARTIAL_ACCOUNTS";
 
 export type TreasuryCaixaCanonicalDayWarning = {
   code: TreasuryCaixaCanonicalDayWarningCode;
@@ -271,6 +273,27 @@ export type TreasuryCaixaCanonicalDayInput = {
    * `NO_OPENING_BALANCE` no primeiro dia.
    */
   openingBalanceOfFirstDay?: number | null;
+  /**
+   * Âncora oficial de SALDO DE HOJE — quando presente, RE-ANCORA a cadeia
+   * no dia informado (não substitui `openingBalanceOfFirstDay`; se o dia da
+   * âncora estiver dentro da janela, ele passa a ser o fechamento realizado
+   * daquele dia, e o dia seguinte abre nele).
+   *
+   * A força da âncora depende da fonte (ver `officialTodayBalanceSource`):
+   * DAILY_CLOSING é imutável; ACCOUNT_LATEST_BALANCE emite warning para a UI
+   * mostrar que o saldo pode não bater centavo a centavo com um extrato
+   * conciliado.
+   */
+  officialTodayBalance?: {
+    civilDate: string;
+    amount: number;
+    /** Rótulo pt-BR curto para exibir na UI (fonte legível). */
+    sourceLabel: string;
+    /** Força da fonte — governa o warning por dia. */
+    strength: "STRONG" | "MEDIUM" | "WEAK";
+    /** Cobertura de contas incompleta emite warning à parte. */
+    accountsPartial?: boolean;
+  } | null;
 };
 
 /**
@@ -417,13 +440,19 @@ export function buildTreasuryCaixaCanonicalDays(
     .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
 
   // Passo 2 — encadeia o saldo dia a dia. Cadeia = fechamento REALIZADO
-  // do dia N vira abertura do dia N+1 (o motor único do Caixa, seção
-  // "Saldo diário" da spec: saldo realizado final = abertura + recebido +
-  // outras entradas realizadas − pago − outras saídas realizadas).
-  // O fechamento PROJETADO acrescenta os títulos em aberto vencendo no dia,
-  // mas NÃO propaga na cadeia (senão o dia seguinte assumiria que tudo que
-  // vencia já foi baixado).
+  // do dia N vira abertura do dia N+1 (spec: saldo realizado final =
+  // abertura + recebido + outras entradas realizadas − pago − outras
+  // saídas realizadas). O fechamento PROJETADO acrescenta os títulos em
+  // aberto vencendo no dia, mas NÃO propaga na cadeia (projeção não vira
+  // verdade de saldo).
+  //
+  // Se houver âncora oficial de saldo (`officialTodayBalance`) dentro da
+  // janela, o dia da âncora RE-ANCORA a cadeia: o fechamento REALIZADO
+  // daquele dia passa a ser o valor da âncora, e o dia seguinte abre nele.
+  // Isso libera o motor da fragilidade da cadeia inteira desde a gênese —
+  // basta ter o saldo oficial de hoje (que o card superior já mostra).
   const otherStatus = input.otherMovementsLoadStatus ?? "loaded";
+  const anchor = input.officialTodayBalance ?? null;
   let opening: number | null =
     input.openingBalanceOfFirstDay != null &&
     Number.isFinite(input.openingBalanceOfFirstDay)
@@ -434,11 +463,11 @@ export function buildTreasuryCaixaCanonicalDays(
   let isFirst = true;
   for (const d of normalized) {
     const warnings: TreasuryCaixaCanonicalDayWarning[] = [];
-    if (isFirst && opening == null) {
+    if (isFirst && opening == null && !(anchor && anchor.civilDate <= d.civilDate)) {
       warnings.push({
         code: "NO_OPENING_BALANCE",
         message:
-          "Saldo inicial da janela não informado — abertura, fechamento realizado e fechamento projetado ficam indisponíveis.",
+          "Saldo inicial da janela não informado — abertura, fechamento realizado e fechamento projetado ficam indisponíveis até que ao menos uma origem informe saldo.",
       });
     }
     if (otherStatus === "partial") {
@@ -455,20 +484,38 @@ export function buildTreasuryCaixaCanonicalDays(
       });
     }
 
-    const closingRealizedBalance =
-      opening == null
+    // Se este dia é o dia da âncora, o fechamento realizado passa a ser o
+    // valor oficial — a cadeia se re-ancora aqui.
+    const isAnchorDay = anchor != null && d.civilDate === anchor.civilDate;
+    const closingRealizedBalance = isAnchorDay
+      ? roundMoney(anchor!.amount)
+      : opening == null
         ? null
         : roundMoney(opening + d.realizedInflows - d.realizedOutflows);
+    // Projetado usa o realizado como base + projeções do próprio dia.
     const closingProjectedBalance =
-      opening == null
+      closingRealizedBalance == null
         ? null
         : roundMoney(
-            opening +
-              d.realizedInflows +
+            closingRealizedBalance +
               d.projectedInflows -
-              d.realizedOutflows -
               d.projectedOutflows
           );
+
+    if (isAnchorDay) {
+      if (anchor!.strength === "WEAK") {
+        warnings.push({
+          code: "OPENING_BALANCE_FROM_WEAK_SOURCE",
+          message: `Saldo de ${d.civilDate} veio de fonte fraca (${anchor!.sourceLabel}) — pode não bater centavo com um extrato conciliado.`,
+        });
+      }
+      if (anchor!.accountsPartial) {
+        warnings.push({
+          code: "OFFICIAL_BALANCE_PARTIAL_ACCOUNTS",
+          message: `Nem todas as contas do consolidado tinham saldo informado — ${anchor!.sourceLabel}.`,
+        });
+      }
+    }
 
     result.push({
       ...d,

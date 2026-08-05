@@ -63,6 +63,8 @@ export type TreasuryCaixaScenariosResponse = TreasuryScenarioComputationResult &
   policy: TreasuryScenarioPolicyDto;
   /** Contas incluídas — placeholder de contrato; expansão nas próximas fases. */
   accountIds: string[] | null;
+  /** Fonte do saldo inicial usado pelos cenários — auditabilidade da UI. */
+  officialTodayBalance: TreasuryCaixaBoardDto["officialTodayBalance"];
 };
 
 const DEFAULT_HORIZON_DAYS = 90;
@@ -299,24 +301,41 @@ export function createTreasuryCaixaScenariosService(deps: {
       }
       const fullWindow = [...past, ...civilDatesInWindow];
 
-      // Saldo inicial da janela: o canonicalDays já carrega dessa forma;
-      // aqui buscamos o do PRIMEIRO dia do fullWindow no próprio board.
-      const firstWindowDay = fullWindow[0] ?? asOfCivilDate;
-      const canonicalFirst = board.canonicalDays.find(
-        (d) => d.civilDate === firstWindowDay
-      );
-      let openingBalanceOfFirstDay = canonicalFirst?.openingBalance ?? null;
-      // Fallback: procurar realizedDays anteriores (mesmo caminho do service
-      // do board).
-      if (openingBalanceOfFirstDay == null) {
-        for (let i = board.realizedDays.length - 1; i >= 0; i -= 1) {
-          const rd = board.realizedDays[i]!;
-          if (rd.civilDate < firstWindowDay && rd.closing != null) {
-            openingBalanceOfFirstDay = rd.closing;
-            break;
+      // Saldo inicial da janela — precedência:
+      //   1. Âncora oficial de saldo de HOJE (a mais confiável — fechamento
+      //      CLOSED, snapshots ou availableBalance do Nomus). Quando existir,
+      //      o primeiro dia da projeção passa a ser HOJE e o saldo abre com
+      //      a âncora — o gráfico não depende mais da cadeia calculada desde
+      //      a gênese (que começa em zero, ignora aportes sem título).
+      //   2. openingBalance do canonicalDays[firstWindow] (cadeia calculada).
+      //   3. Fallback: último realizedDays.closing conhecido.
+      let firstWindowDay = fullWindow[0] ?? asOfCivilDate;
+      let openingBalanceOfFirstDay: number | null = null;
+
+      if (board.officialTodayBalance.amount != null) {
+        // Ancora em hoje: recorta a janela para começar EM asOf (descarta o
+        // passado curto), assim o "opening" da janela é o próprio saldo real.
+        firstWindowDay = asOfCivilDate;
+        openingBalanceOfFirstDay = board.officialTodayBalance.amount;
+      } else {
+        const canonicalFirst = board.canonicalDays.find(
+          (d) => d.civilDate === firstWindowDay
+        );
+        openingBalanceOfFirstDay = canonicalFirst?.openingBalance ?? null;
+        if (openingBalanceOfFirstDay == null) {
+          for (let i = board.realizedDays.length - 1; i >= 0; i -= 1) {
+            const rd = board.realizedDays[i]!;
+            if (rd.civilDate < firstWindowDay && rd.closing != null) {
+              openingBalanceOfFirstDay = rd.closing;
+              break;
+            }
           }
         }
       }
+      const projectedWindow =
+        board.officialTodayBalance.amount != null
+          ? civilDatesInWindow
+          : fullWindow;
 
       const openReceivables = await loadReceivablesWithComplements(
         prisma,
@@ -331,7 +350,7 @@ export function createTreasuryCaixaScenariosService(deps: {
 
       const result = computeTreasuryCaixaScenarios({
         asOfCivilDate,
-        civilDatesInWindow: fullWindow,
+        civilDatesInWindow: projectedWindow,
         canonicalDays: board.canonicalDays,
         openReceivables,
         openPayables,
@@ -346,6 +365,7 @@ export function createTreasuryCaixaScenariosService(deps: {
         dueDateTo: board.dueDateTo,
         policy: policyDto,
         accountIds: null,
+        officialTodayBalance: board.officialTodayBalance,
       };
     },
   };

@@ -404,6 +404,35 @@ export function TreasuryCaixaScenariosChart({
             Otimista · Realista · Pessimista — a partir de{" "}
             {data ? formatCivilDate(data.asOfCivilDate) : "—"}
           </p>
+          {data?.officialTodayBalance?.amount != null ? (
+            <p
+              className="mt-0.5 text-[11px] text-muted-foreground"
+              data-testid="caixa-scenarios-anchor-source"
+            >
+              Saldo inicial:{" "}
+              <span className="font-semibold text-foreground tabular-nums">
+                {money(data.officialTodayBalance.amount)}
+              </span>{" "}
+              · Fonte: {data.officialTodayBalance.sourceLabel}
+              {data.officialTodayBalance.accountsWithoutBalance > 0 ? (
+                <span className="ml-1 text-amber-700">
+                  ({data.officialTodayBalance.accountsWithoutBalance} conta
+                  {data.officialTodayBalance.accountsWithoutBalance === 1
+                    ? ""
+                    : "s"}{" "}
+                  sem saldo informado)
+                </span>
+              ) : null}
+            </p>
+          ) : data?.officialTodayBalance?.source === "NONE" ? (
+            <p
+              className="mt-0.5 text-[11px] text-amber-700"
+              data-testid="caixa-scenarios-anchor-source"
+            >
+              Sem saldo oficial informado — cenários usam a cadeia calculada
+              (pode divergir do banco).
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {data ? <ConfidenceBadge confidence={data.confidence} /> : null}

@@ -49,6 +49,11 @@ import {
 } from "../domain/treasuryCaixaRules.js";
 import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
 import {
+  loadTreasuryOfficialTodayBalance,
+  type TreasuryOfficialTodayBalance,
+} from "./treasuryOfficialTodayBalance.server.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
+import {
   parseTreasuryDailyRoutineSnapshotKey,
   TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX,
 } from "../domain/treasuryDailyAccountRoutineRules.js";
@@ -661,6 +666,29 @@ export function createTreasuryCaixaService(input: {
         }
       }
 
+      // Âncora oficial de saldo de HOJE — a mais confiável dentre as fontes
+      // disponíveis (fechamento CLOSED → snapshots do dia → snapshots
+      // genéricos → availableBalance do Nomus). Sem ela o motor caía na
+      // cadeia calculada desde a gênese (fragil, começa em zero, ignora
+      // aportes/transferências sem título).
+      const todayCivilDate = todayTreasuryCivilDateInSaoPaulo();
+      const officialToday = await loadTreasuryOfficialTodayBalance(
+        prisma,
+        todayCivilDate
+      );
+
+      const anchor =
+        officialToday.amount != null &&
+        windowDays.some((d) => d === todayCivilDate)
+          ? {
+              civilDate: todayCivilDate,
+              amount: officialToday.amount,
+              sourceLabel: officialToday.sourceLabel,
+              strength: officialTodayStrength(officialToday.source),
+              accountsPartial: officialToday.accountsWithoutBalance > 0,
+            }
+          : null;
+
       const canonicalDays = buildTreasuryCaixaCanonicalDays({
         civilDatesInWindow: windowDays,
         receivables: arResult.gridRows,
@@ -670,6 +698,7 @@ export function createTreasuryCaixaService(input: {
         // em vez de fingir que "outras entradas/saídas" foi carregado.
         otherMovementsLoadStatus: "not_loaded",
         openingBalanceOfFirstDay,
+        officialTodayBalance: anchor,
       });
 
       return {
@@ -684,7 +713,21 @@ export function createTreasuryCaixaService(input: {
         monthlyDueEstimates,
         dailyDueEstimates,
         canonicalDays,
+        officialTodayBalance: officialToday,
       };
     },
   };
+}
+
+/**
+ * Classifica a força da fonte da âncora oficial. STRONG = fechamento
+ * imutável; MEDIUM = snapshots informados manualmente; WEAK = snapshot
+ * automático do Nomus, que pode não bater centavo com um extrato conciliado.
+ */
+function officialTodayStrength(
+  source: TreasuryOfficialTodayBalance["source"]
+): "STRONG" | "MEDIUM" | "WEAK" {
+  if (source === "DAILY_CLOSING") return "STRONG";
+  if (source === "DAILY_ROUTINE_SNAPSHOT" || source === "GENERIC_MANUAL_SNAPSHOT") return "MEDIUM";
+  return "WEAK";
 }
