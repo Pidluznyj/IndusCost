@@ -427,4 +427,72 @@ describe("computeTreasuryCaixaScenarios — invariantes centrais", () => {
     assert.equal(result.confidence, "LOW");
     assert.ok(d.warnings.some((w) => /Saldo inicial/i.test(w)));
   });
+
+  it("com dailyDueEstimatesByDate presente, Realista bate no CENTAVO com a base da Linha do tempo (fecha o critério #3 da spec)", () => {
+    // Simula a base "Linha do tempo — por mês": 20/08 tem uma saída grande
+    // (352k) e um recebimento pequeno (151k). Isso é fato do dailyEstimates
+    // canônico. O motor NÃO deve recomputar via título — deve usar direto.
+    const timelineBase = new Map<
+      string,
+      { estimatedInflow: number; estimatedOutflow: number }
+    >([
+      ["2026-08-19", { estimatedInflow: 4973.76, estimatedOutflow: 27436.74 }],
+      ["2026-08-20", { estimatedInflow: 151415.9, estimatedOutflow: 351151.17 }],
+      ["2026-08-21", { estimatedInflow: 29018.54, estimatedOutflow: 15617.88 }],
+    ]);
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: "2026-08-05",
+      civilDatesInWindow: ["2026-08-19", "2026-08-20", "2026-08-21"],
+      canonicalDays: [
+        canonicalDay("2026-08-19"),
+        canonicalDay("2026-08-20"),
+        canonicalDay("2026-08-21"),
+      ],
+      // Motor puro receberia títulos, mas AGORA o Realista IGNORA e usa a base.
+      openReceivables: [
+        ar({ externalId: 999, dueDate: "2026-08-20", balanceReceivable: 99999 }),
+      ],
+      openPayables: [
+        ap({ externalId: 888, dueDate: "2026-08-20", balancePayable: 888888 }),
+      ],
+      policy: policy(),
+      openingBalanceOfFirstDay: 436075.51,
+      dailyDueEstimatesByDate: timelineBase,
+    });
+    // Realista usa a BASE (não os títulos ar/ap acima):
+    const real19 = result.days.find((d) => d.civilDate === "2026-08-19")!;
+    const real20 = result.days.find((d) => d.civilDate === "2026-08-20")!;
+    const real21 = result.days.find((d) => d.civilDate === "2026-08-21")!;
+    assert.equal(real19.realistic.receivableInflows, 4973.76);
+    assert.equal(real19.realistic.payableOutflows, 27436.74);
+    assert.equal(real20.realistic.receivableInflows, 151415.9);
+    assert.equal(real20.realistic.payableOutflows, 351151.17);
+    assert.equal(real21.realistic.receivableInflows, 29018.54);
+    assert.equal(real21.realistic.payableOutflows, 15617.88);
+    // Cadeia do Realista:
+    // 19: 436075.51 + 4973.76 − 27436.74 = 413612.53
+    // 20: 413612.53 + 151415.90 − 351151.17 = 213877.26
+    // 21: 213877.26 + 29018.54 − 15617.88 = 227277.92
+    assert.equal(real19.realistic.closingBalance, 413612.53);
+    assert.equal(real20.realistic.closingBalance, 213877.26);
+    assert.equal(real21.realistic.closingBalance, 227277.92);
+  });
+
+  it("sem dailyDueEstimatesByDate, Realista mantém comportamento legado (projeta por título)", () => {
+    // Retrocompatibilidade — não passa base, motor continua projetando com PROBABLE.
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: "2026-08-04",
+      civilDatesInWindow: ["2026-08-04", "2026-08-05"],
+      canonicalDays: [canonicalDay("2026-08-04"), canonicalDay("2026-08-05")],
+      openReceivables: [
+        ar({ externalId: 1, dueDate: "2026-08-05", balanceReceivable: 100 }),
+      ],
+      openPayables: [],
+      policy: policy(),
+      openingBalanceOfFirstDay: 0,
+    });
+    // Sem base, projeção por título PROBABLE (dueDate = 05/08 futuro).
+    const d05 = result.days.find((d) => d.civilDate === "2026-08-05")!;
+    assert.equal(d05.realistic.receivableInflows, 100);
+  });
 });

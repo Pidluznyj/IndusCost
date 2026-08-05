@@ -348,6 +348,23 @@ export function createTreasuryCaixaScenariosService(deps: {
         asOfCivilDate
       );
 
+      // Base do Realista = MESMA fonte da Linha do tempo — por mês
+      // (dailyDueEstimates do board). Isso GARANTE por construção que o
+      // Realista fecha no centavo com a "Linha do tempo — por mês" do
+      // Fluxo de Caixa. Sem essa base, o motor projetava título a título
+      // com regras PROBABLE e divergia matematicamente da Linha do tempo,
+      // mesmo com o mesmo saldo inicial.
+      const dailyDueEstimatesByDate = new Map<
+        string,
+        { estimatedInflow: number; estimatedOutflow: number }
+      >();
+      for (const entry of board.dailyDueEstimates ?? []) {
+        dailyDueEstimatesByDate.set(entry.civilDate, {
+          estimatedInflow: entry.estimatedInflow,
+          estimatedOutflow: entry.estimatedOutflow,
+        });
+      }
+
       const result = computeTreasuryCaixaScenarios({
         asOfCivilDate,
         civilDatesInWindow: projectedWindow,
@@ -356,6 +373,7 @@ export function createTreasuryCaixaScenariosService(deps: {
         openPayables,
         policy: policyDto,
         openingBalanceOfFirstDay,
+        dailyDueEstimatesByDate,
       });
 
       return {

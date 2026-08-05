@@ -190,6 +190,21 @@ export type TreasuryScenarioComputationInput = {
   policy: TreasuryScenarioPolicyDto;
   /** Saldo de abertura da janela (do último realized day conhecido). */
   openingBalanceOfFirstDay: number | null;
+  /**
+   * BASE DO REALISTA — quando presente, o cenário Realista consome
+   * DIRETO estas somas por dia (mesma fonte da "Linha do tempo — por mês"
+   * do Fluxo de Caixa: `sumOfficialArOpenDueByCivilDay`/
+   * `sumOfficialApOpenDueByCivilDay`), garantindo conciliação matemática
+   * no centavo com aquela tela. Otimista e Pessimista aplicam DELTA
+   * (movem valor de dia) sobre essa base — Σ preservado.
+   *
+   * Ausente = comportamento legado (projeta cada título por PROBABLE).
+   * Mantido só para retrocompatibilidade dos testes puros.
+   */
+  dailyDueEstimatesByDate?: ReadonlyMap<
+    string,
+    { estimatedInflow: number; estimatedOutflow: number }
+  > | null;
 };
 
 function receivableMovementInput(
@@ -652,6 +667,14 @@ export function computeTreasuryCaixaScenarios(
     });
   }
 
+  // ── Base do Realista = dailyDueEstimates (mesma fonte da Linha do tempo) ─
+  // Quando essa base está presente, o Realista NÃO usa o loop de títulos
+  // (arReal/apReal); usa diretamente as somas por dia. Isso GARANTE por
+  // construção que o Realista fecha no centavo com a "Linha do tempo — por
+  // mês". Otimista/Pessimista continuam projetando por título, mas o total
+  // do horizonte é o mesmo (só desloca datas).
+  const useTimelineBase = input.dailyDueEstimatesByDate != null;
+
   // ── Encadeia saldo dia a dia por cenário ───────────────────────────────
   const sortedDays = [...input.civilDatesInWindow].sort();
   const days: TreasuryScenarioDay[] = [];
@@ -677,16 +700,39 @@ export function computeTreasuryCaixaScenarios(
 
     // Passado: apenas realized (sem projeção). Futuro: soma projeções do cenário.
     const isFuture = compareCivilDates(civilDate, asOf) >= 0;
+    // Base do dia vinda da Linha do tempo (mesma fonte oficial), quando
+    // disponível. Zero legítimo quando não há título vencendo naquele dia.
+    const timelineBase = useTimelineBase
+      ? input.dailyDueEstimatesByDate!.get(civilDate) ?? {
+          estimatedInflow: 0,
+          estimatedOutflow: 0,
+        }
+      : null;
 
     function facts(
       arBucket: ArProjBucket,
       apBucket: ApProjBucket,
-      opening: number | null
+      opening: number | null,
+      /**
+       * "realistic-timeline": usa direto o `timelineBase` como total do dia
+       * (mesma fonte da Linha do tempo). As listas de títulos vêm do arBucket
+       * (para drill-down/tooltip), mas o TOTAL apresentado no gráfico é o
+       * `timelineBase` — não a Σ dos títulos, que pode divergir por edge
+       * cases de arredondamento/filtros do motor canônico.
+       */
+      mode: "sum-titles" | "realistic-timeline"
     ): TreasuryScenarioDayFacts {
       const arList = isFuture ? arBucket.get(civilDate) ?? [] : [];
       const apList = isFuture ? apBucket.get(civilDate) ?? [] : [];
-      const receivableInflows = arList.reduce((s, x) => s + x.amount, 0);
-      const payableOutflows = apList.reduce((s, x) => s + x.amount, 0);
+      let receivableInflows: number;
+      let payableOutflows: number;
+      if (mode === "realistic-timeline" && timelineBase && isFuture) {
+        receivableInflows = timelineBase.estimatedInflow;
+        payableOutflows = timelineBase.estimatedOutflow;
+      } else {
+        receivableInflows = arList.reduce((s, x) => s + x.amount, 0);
+        payableOutflows = apList.reduce((s, x) => s + x.amount, 0);
+      }
       const projected = opening == null
         ? null
         : roundMoney(
@@ -719,9 +765,14 @@ export function computeTreasuryCaixaScenarios(
       );
     }
 
-    const optimistic = facts(arOpt, apOpt, openOpt);
-    const realistic = facts(arReal, apReal, openReal);
-    const pessimistic = facts(arPes, apPes, openPes);
+    const optimistic = facts(arOpt, apOpt, openOpt, "sum-titles");
+    const realistic = facts(
+      arReal,
+      apReal,
+      openReal,
+      useTimelineBase ? "realistic-timeline" : "sum-titles"
+    );
+    const pessimistic = facts(arPes, apPes, openPes, "sum-titles");
 
     // Confiança global: só considera dias FUTUROS.
     if (isFuture) {
