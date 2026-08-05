@@ -194,6 +194,39 @@ function OutlierMark({ direction }: { direction: "HIGH" | "LOW" }) {
   );
 }
 
+/**
+ * Célula de saldo com cor por sinal (positivo → verde; negativo → vermelho;
+ * zero/null → neutro). Usada em "Começou" e "Terminou" — dá leitura visual
+ * imediata do sinal do saldo, mantendo tabular-nums e alinhamento à direita.
+ *
+ * O parâmetro `boldWhenNegative` reproduz o comportamento anterior das
+ * células "Terminou" (que já eram bold + vermelho ao ficar negativas via
+ * flag `row.negative` do domínio); passe `false` para "Começou" (peso normal).
+ */
+function BalanceCell({
+  value,
+  boldWhenNegative = true,
+}: {
+  value: number | null;
+  boldWhenNegative?: boolean;
+}) {
+  const isPositive = value != null && value > 0;
+  const isNegative = value != null && value < 0;
+  return (
+    <td
+      className={cn(
+        "px-2 py-1.5 text-right tabular-nums",
+        isPositive && "text-[#059669]",
+        isNegative && "text-[#DC2626]",
+        isNegative && boldWhenNegative && "font-semibold",
+        !isNegative && !isPositive && "text-foreground"
+      )}
+    >
+      {money(value)}
+    </td>
+  );
+}
+
 /** Rótulo textual além da cor — acessibilidade e clareza para quem é leigo. */
 function KindBadge({
   kind,
@@ -819,9 +852,7 @@ export function TreasuryCaixaTimeline({
                             <td className="px-2 py-1.5">
                               <MonthKindBadge kind={m.kind} estimateOnly={m.estimateOnly} />
                             </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums">
-                              {money(m.opening)}
-                            </td>
+                            <BalanceCell value={m.opening} boldWhenNegative={false} />
                             <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                               {m.inflows === 0 ? "—" : money(m.inflows)}
                             </td>
@@ -831,7 +862,8 @@ export function TreasuryCaixaTimeline({
                             <td
                               className={cn(
                                 "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                m.negative && "text-[#DC2626]"
+                                m.closing != null && m.closing > 0 && "text-[#059669]",
+                                m.closing != null && m.closing < 0 && "text-[#DC2626]"
                               )}
                             >
                               {money(m.closing)}
@@ -869,9 +901,7 @@ export function TreasuryCaixaTimeline({
                                       <td className="px-2 py-1.5">
                                         <KindBadge kind={r.kind} estimated={r.estimated} />
                                       </td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums">
-                                        {money(r.opening)}
-                                      </td>
+                                      <BalanceCell value={r.opening} boldWhenNegative={false} />
                                       <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                                         {r.inflows === 0 ? "—" : money(r.inflows)}
                                         {outliers.has(`${r.civilDate}|inflows`) ? (
@@ -895,7 +925,8 @@ export function TreasuryCaixaTimeline({
                                       <td
                                         className={cn(
                                           "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                          r.negative && "text-[#DC2626]"
+                                          r.closing != null && r.closing > 0 && "text-[#059669]",
+                                          r.closing != null && r.closing < 0 && "text-[#DC2626]"
                                         )}
                                       >
                                         {money(r.closing)}
@@ -953,9 +984,7 @@ export function TreasuryCaixaTimeline({
                             <td className="px-2 py-1.5">
                               <KindBadge kind={r.kind} estimated={r.estimated} />
                             </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums">
-                              {money(r.opening)}
-                            </td>
+                            <BalanceCell value={r.opening} boldWhenNegative={false} />
                             <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                               {r.inflows === 0 ? "—" : money(r.inflows)}
                               {outliers.has(`${r.civilDate}|inflows`) ? (
@@ -975,7 +1004,8 @@ export function TreasuryCaixaTimeline({
                             <td
                               className={cn(
                                 "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                r.negative && "text-[#DC2626]"
+                                r.closing != null && r.closing > 0 && "text-[#059669]",
+                                r.closing != null && r.closing < 0 && "text-[#DC2626]"
                               )}
                             >
                               {money(r.closing)}
@@ -1005,72 +1035,87 @@ export function TreasuryCaixaTimeline({
             </table>
           </div>
 
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            Dias passados mostram o que foi <strong>realmente</strong> pago e
-            recebido. Dias futuros mostram <strong>previsão</strong> pelos títulos
-            em aberto — esses ainda podem mudar.
-            {mode === "month" ? " Clique num mês para ver os dias." : ""} Clique
-            num dia para ver os títulos de Contas a Receber/Pagar por trás do
-            Entrou/Saiu daquele dia.
-          </p>
-          {months.some((m) => m.estimateOnly) ||
-          timeline.rows.some((r) => r.estimated) ? (
-            <p
-              className="mt-1 text-[11px] leading-snug text-muted-foreground"
-              data-testid="caixa-timeline-estimate-legend"
-            >
-              <strong>Estimativa</strong> = futuro sem projeção materializada,
-              estimado <strong>dia a dia</strong> pelos títulos em aberto que
-              vencem em cada dia (mesma regra da &quot;Linha do tempo
-              mensal&quot; do Fluxo de Caixa). Cada dia abre no fechamento do
-              dia anterior — a âncora é o <strong>último caixa conhecido</strong>:
-              informar o saldo de hoje recalcula toda a cadeia futura. Clique
-              no mês para ver os dias e saber em que dia o caixa aperta. É
-              estimativa — títulos ainda podem mudar de data e valor.
-            </p>
-          ) : null}
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            <strong>&quot;Começou&quot; e &quot;Terminou&quot;</strong> nos dias
-            passados são <strong>calculados</strong>: partem de R$ 0,00 em
-            01/01/2026 e acumulam entrada/saída dia a dia. Quando existe
-            fechamento do dia, o <strong>saldo informado no extrato vale</strong>{" "}
-            — o dia fecha nele e o dia seguinte começa nele.
-          </p>
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            <strong>Divergência</strong> é o saldo informado menos o calculado
-            pelos títulos: é o dinheiro que andou sem título por trás.{" "}
-            <span className="text-[#0369A1]">Azul</span> = entrou a mais que o
-            esperado; <span className="text-[#B45309]">âmbar</span> = saiu a
-            mais. <span className="text-[#059669]">✓</span> = bate exatamente.{" "}
-            <strong>&quot;—&quot;</strong> = ninguém informou saldo naquele dia,
-            então não há o que comparar.
-          </p>
-          {outlierCount > 0 ? (
-            <p
-              className="mt-1 text-[11px] leading-snug text-muted-foreground"
-              data-testid="caixa-timeline-outlier-legend"
-            >
-              <span className="font-bold text-[#B45309]">▲▼</span> marcam{" "}
-              <strong>
-                {outlierCount} valor{outlierCount === 1 ? "" : "es"} fora do
-                padrão
-              </strong>{" "}
-              do período — muito acima ou muito abaixo do dia típico. Não é erro:
-              é um convite a conferir (pode ser um pagamento grande legítimo ou
-              um lançamento errado).
-            </p>
-          ) : null}
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            Entrou/Saiu dos dias passados seguem <strong>as mesmas regras</strong>{" "}
-            da &quot;Linha do tempo mensal&quot; do Fluxo de Caixa (os totais do
-            mês batem 1:1 com aquela tela): contas a receber entram no dia da{" "}
-            <strong>baixa</strong> — recebimento adiantado ou atrasado aparece
-            no dia em que o dinheiro andou; contas a pagar valem pelo{" "}
-            <strong>vencimento</strong> (regra canônica — o Nomus raramente
-            informa a data real do pagamento). Títulos previstos para hoje só
-            entram quando forem de fato baixados; o saldo informado das contas é
-            sempre a referência, e o futuro parte dele.
-          </p>
+          {/*
+           * Legenda longa consolidada em um menu cascata (<details>) — a
+           * tela fica limpa; quem quiser entender clica pra ler. Semântico
+           * puro (sem JS extra) e acessível.
+           */}
+          <details
+            className="mt-2 rounded-md border border-dashed border-border/60 bg-muted/20 text-[11px] text-muted-foreground"
+            data-testid="caixa-timeline-legend"
+          >
+            <summary className="cursor-pointer select-none px-2.5 py-1.5 font-semibold text-foreground/80 hover:text-foreground">
+              Como ler esta tabela (regras, cores, ✓/—/▲▼)
+            </summary>
+            <div className="space-y-2 border-t border-border/60 px-2.5 py-2 leading-snug">
+              <p>
+                Dias passados mostram o que foi <strong>realmente</strong> pago
+                e recebido. Dias futuros mostram <strong>previsão</strong> pelos
+                títulos em aberto — esses ainda podem mudar.
+                {mode === "month" ? " Clique num mês para ver os dias." : ""}{" "}
+                Clique num dia para ver os títulos de Contas a Receber/Pagar por
+                trás do Entrou/Saiu daquele dia.
+              </p>
+              {months.some((m) => m.estimateOnly) ||
+              timeline.rows.some((r) => r.estimated) ? (
+                <p data-testid="caixa-timeline-estimate-legend">
+                  <strong>Estimativa</strong> = futuro sem projeção
+                  materializada, estimado <strong>dia a dia</strong> pelos
+                  títulos em aberto que vencem em cada dia (mesma regra da
+                  &quot;Linha do tempo mensal&quot; do Fluxo de Caixa). Cada dia
+                  abre no fechamento do dia anterior — a âncora é o{" "}
+                  <strong>último caixa conhecido</strong>: informar o saldo de
+                  hoje recalcula toda a cadeia futura. É estimativa — títulos
+                  ainda podem mudar de data e valor.
+                </p>
+              ) : null}
+              <p>
+                <strong>&quot;Começou&quot; e &quot;Terminou&quot;</strong>{" "}
+                aparecem em <span className="text-[#059669]">verde</span> quando
+                positivos e <span className="text-[#DC2626]">vermelho</span>{" "}
+                quando negativos. Nos dias passados são{" "}
+                <strong>calculados</strong>: partem de R$ 0,00 em 01/01/2026 e
+                acumulam entrada/saída dia a dia. Quando existe fechamento do
+                dia, o <strong>saldo informado no extrato vale</strong> — o dia
+                fecha nele e o dia seguinte começa nele.
+              </p>
+              <p>
+                <strong>Divergência</strong> é o saldo informado menos o
+                calculado pelos títulos: é o dinheiro que andou sem título por
+                trás. <span className="text-[#0369A1]">Azul</span> = entrou a
+                mais que o esperado;{" "}
+                <span className="text-[#B45309]">âmbar</span> = saiu a mais.{" "}
+                <span className="text-[#059669]">✓</span> = bate exatamente.{" "}
+                <strong>&quot;—&quot;</strong> = ninguém informou saldo naquele
+                dia, então não há o que comparar.
+              </p>
+              {outlierCount > 0 ? (
+                <p data-testid="caixa-timeline-outlier-legend">
+                  <span className="font-bold text-[#B45309]">▲▼</span> marcam{" "}
+                  <strong>
+                    {outlierCount} valor{outlierCount === 1 ? "" : "es"} fora do
+                    padrão
+                  </strong>{" "}
+                  do período — muito acima ou muito abaixo do dia típico. Não é
+                  erro: é um convite a conferir (pode ser um pagamento grande
+                  legítimo ou um lançamento errado).
+                </p>
+              ) : null}
+              <p>
+                Entrou/Saiu dos dias passados seguem{" "}
+                <strong>as mesmas regras</strong> da &quot;Linha do tempo
+                mensal&quot; do Fluxo de Caixa (os totais do mês batem 1:1 com
+                aquela tela): contas a receber entram no dia da{" "}
+                <strong>baixa</strong> — recebimento adiantado ou atrasado
+                aparece no dia em que o dinheiro andou; contas a pagar valem
+                pelo <strong>vencimento</strong> (regra canônica — o Nomus
+                raramente informa a data real do pagamento). Títulos previstos
+                para hoje só entram quando forem de fato baixados; o saldo
+                informado das contas é sempre a referência, e o futuro parte
+                dele.
+              </p>
+            </div>
+          </details>
         </>
       )}
     </section>
