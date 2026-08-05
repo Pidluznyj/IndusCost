@@ -19,18 +19,26 @@
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
 
+  /*
+   * Coluna da logo do tamanho do próprio desenho (não 36mm) — coluna de
+   * grid não encolhe pro conteúdo sozinha, então uma coluna mais larga que
+   * a logo real deixa um vão morto antes do texto da empresa começar.
+   */
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-header-grid {
-    grid-template-columns: 36mm minmax(0, 1fr) 68mm !important;
-    column-gap: 4mm !important;
+    grid-template-columns: 26mm minmax(0, 1fr) 68mm !important;
+    column-gap: 3mm !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo {
-    max-height: 28mm !important;
-    max-width: 36mm !important;
+    max-height: 24mm !important;
+    max-width: 26mm !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo-wrap {
-    min-height: 26mm !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    min-height: 0 !important;
   }
 
   /* Colunas do analítico — proporções para retrato (210mm úteis). Sem coluna Obs. */
