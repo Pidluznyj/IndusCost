@@ -21,6 +21,12 @@ import type { TreasuryCaixaCanonicalDay } from "@/src/lib/treasury/domain/treasu
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 
+export type TreasuryCaixaTodayFlowAuditKind =
+  | "receivableDue"
+  | "receivableReceived"
+  | "payableDue"
+  | "payablePaid";
+
 export type TreasuryCaixaTodayFlowProps = {
   flow: TreasuryCaixaDayFlow | null;
   /**
@@ -31,6 +37,12 @@ export type TreasuryCaixaTodayFlowProps = {
    */
   canonicalToday?: TreasuryCaixaCanonicalDay | null;
   loading?: boolean;
+  /**
+   * Quando informado, os 4 cards CR/CP viram clicáveis e abrem a modal de
+   * auditoria com os títulos que compõem o valor. Ausente = comportamento
+   * anterior (cards estáticos).
+   */
+  onOpenAudit?: (kind: TreasuryCaixaTodayFlowAuditKind) => void;
 };
 
 /** "—" para ausência: saldo/dado não informado nunca vira R$ 0,00 na tela. */
@@ -50,11 +62,16 @@ function SubCell({
   value,
   tone = "neutral",
   count,
+  onClick,
+  testId,
 }: {
   label: string;
   value: string;
   tone?: "neutral" | "in" | "out";
   count?: number;
+  /** Quando informado, o card do sub-cell vira clicável (auditoria). */
+  onClick?: () => void;
+  testId?: string;
 }) {
   const valueClass =
     tone === "in"
@@ -62,8 +79,8 @@ function SubCell({
       : tone === "out"
         ? "text-[#991B1B]"
         : "text-[#111827]";
-  return (
-    <div className="min-w-0">
+  const inner = (
+    <>
       <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
         {tone === "in" ? (
           <ArrowDownLeft className="h-3 w-3 text-[#059669]" aria-hidden />
@@ -71,6 +88,11 @@ function SubCell({
           <ArrowUpRight className="h-3 w-3 text-[#DC2626]" aria-hidden />
         ) : null}
         {label}
+        {onClick ? (
+          <span className="ml-1 text-[9px] font-semibold text-[#2563EB]">
+            (ver títulos)
+          </span>
+        ) : null}
       </p>
       <p
         className={`mt-0.5 truncate text-base font-extrabold tabular-nums tracking-tight ${valueClass}`}
@@ -82,6 +104,23 @@ function SubCell({
           {count} {count === 1 ? "título" : "títulos"}
         </p>
       ) : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="min-w-0 rounded-md text-left transition hover:bg-white/50 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 -mx-1 px-1 py-0.5"
+        data-testid={testId}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className="min-w-0" data-testid={testId}>
+      {inner}
     </div>
   );
 }
@@ -128,6 +167,7 @@ export function TreasuryCaixaTodayFlow({
   flow,
   canonicalToday = null,
   loading = false,
+  onOpenAudit,
 }: TreasuryCaixaTodayFlowProps) {
   const hasCanonical = canonicalToday != null;
   return (
@@ -164,6 +204,12 @@ export function TreasuryCaixaTodayFlow({
                 count={
                   hasCanonical ? canonicalToday!.receivableDueTitles.length : undefined
                 }
+                onClick={
+                  hasCanonical && onOpenAudit
+                    ? () => onOpenAudit("receivableDue")
+                    : undefined
+                }
+                testId="caixa-today-cell-receivable-due"
               />
               <SubCell
                 label="Recebido hoje"
@@ -174,6 +220,12 @@ export function TreasuryCaixaTodayFlow({
                     ? canonicalToday!.receivableReceivedTitles.length
                     : undefined
                 }
+                onClick={
+                  hasCanonical && onOpenAudit
+                    ? () => onOpenAudit("receivableReceived")
+                    : undefined
+                }
+                testId="caixa-today-cell-receivable-received"
               />
             </Block>
 
@@ -185,6 +237,12 @@ export function TreasuryCaixaTodayFlow({
                 count={
                   hasCanonical ? canonicalToday!.payableDueTitles.length : undefined
                 }
+                onClick={
+                  hasCanonical && onOpenAudit
+                    ? () => onOpenAudit("payableDue")
+                    : undefined
+                }
+                testId="caixa-today-cell-payable-due"
               />
               <SubCell
                 label="Pago hoje"
@@ -193,6 +251,12 @@ export function TreasuryCaixaTodayFlow({
                 count={
                   hasCanonical ? canonicalToday!.payablePaidTitles.length : undefined
                 }
+                onClick={
+                  hasCanonical && onOpenAudit
+                    ? () => onOpenAudit("payablePaid")
+                    : undefined
+                }
+                testId="caixa-today-cell-payable-paid"
               />
             </Block>
 

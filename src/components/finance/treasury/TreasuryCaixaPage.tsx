@@ -512,6 +512,16 @@ export function TreasuryCaixaPage() {
             ) ?? null
           }
           loading={accountsLoading}
+          onOpenAudit={(kind) => {
+            // Mapa "dimensão do dia" → kind da modal de auditoria.
+            const map = {
+              receivableDue: "todayReceivableDue",
+              receivableReceived: "todayReceivableReceived",
+              payableDue: "todayPayableDue",
+              payablePaid: "todayPayablePaid",
+            } as const;
+            setAuditKind(map[kind]);
+          }}
         />
 
         <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
@@ -749,10 +759,25 @@ export function TreasuryCaixaPage() {
       {data ? (
         <TreasuryCaixaTotalizerAuditModal
           kind={auditKind}
-          periodLabel={formatCaixaPeriodLabel(year, month, day)}
-          cardValue={resolveTotalizerCardValue(data.totals, auditKind)}
+          periodLabel={
+            auditKind && auditKind.startsWith("today")
+              ? `Hoje · ${formatCivilDate(todayTreasuryCivilDateInSaoPaulo())}`
+              : formatCaixaPeriodLabel(year, month, day)
+          }
+          cardValue={resolveAuditCardValue(
+            data.totals,
+            auditKind,
+            data.canonicalDays?.find(
+              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
+            ) ?? null
+          )}
           receivables={data.receivables ?? []}
           payables={data.payables ?? []}
+          canonicalToday={
+            data.canonicalDays?.find(
+              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
+            ) ?? null
+          }
           onClose={() => setAuditKind(null)}
         />
       ) : null}
@@ -775,8 +800,10 @@ function formatCaixaPeriodLabel(
   return `${String(day).padStart(2, "0")} · ${monthLabel}/${year}`;
 }
 
-/** Valor do card que a modal está auditando — mesma fonte que os cards usam. */
-function resolveTotalizerCardValue(
+/** Valor do card que a modal está auditando — mesma fonte que os cards usam.
+ *  Totalizadores do período vêm de `data.totals`; cards do "Movimento de
+ *  hoje" vêm do canonicalDay do dia (mesmo dado que o próprio card mostra). */
+function resolveAuditCardValue(
   totals: {
     totalReceived: number;
     totalPaid: number;
@@ -785,8 +812,25 @@ function resolveTotalizerCardValue(
     totalPayable: number;
     netBalance: number;
   },
-  kind: TreasuryCaixaTotalizerAuditKind | null
+  kind: TreasuryCaixaTotalizerAuditKind | null,
+  canonicalToday: {
+    receivableDue: number;
+    receivableReceived: number;
+    payableDue: number;
+    payablePaid: number;
+  } | null
 ): number {
   if (kind == null) return 0;
-  return totals[kind];
+  switch (kind) {
+    case "todayReceivableDue":
+      return canonicalToday?.receivableDue ?? 0;
+    case "todayReceivableReceived":
+      return canonicalToday?.receivableReceived ?? 0;
+    case "todayPayableDue":
+      return canonicalToday?.payableDue ?? 0;
+    case "todayPayablePaid":
+      return canonicalToday?.payablePaid ?? 0;
+    default:
+      return totals[kind];
+  }
 }

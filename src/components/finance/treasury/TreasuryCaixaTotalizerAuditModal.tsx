@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { CostCenterDialog } from "@/src/components/finance/cost-centers/financeUnclassifiedModalUi";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
+import type { TreasuryCaixaCanonicalDay } from "@/src/lib/treasury/domain/treasuryCaixaCanonicalDay.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TitleStatusBadge } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
@@ -22,12 +23,26 @@ import { cn } from "@/src/lib/utils";
 
 /** Identifica qual card acionou a modal — governa filtro, colunas e rótulos. */
 export type TreasuryCaixaTotalizerAuditKind =
+  // Totalizadores do período (cards do meio da tela) — filtram receivables/payables.
   | "totalReceived"
   | "totalPaid"
   | "netRealized"
   | "totalReceivable"
   | "totalPayable"
-  | "netBalance";
+  | "netBalance"
+  // Cards do "Movimento de hoje" — consomem canonicalDay direto (já filtrado
+  // pelo motor único-de-dia, listas prontas por dimensão).
+  | "todayReceivableDue"
+  | "todayReceivableReceived"
+  | "todayPayableDue"
+  | "todayPayablePaid";
+
+const TODAY_KINDS = new Set<TreasuryCaixaTotalizerAuditKind>([
+  "todayReceivableDue",
+  "todayReceivableReceived",
+  "todayPayableDue",
+  "todayPayablePaid",
+]);
 
 export type TreasuryCaixaTotalizerAuditModalProps = {
   kind: TreasuryCaixaTotalizerAuditKind | null;
@@ -35,6 +50,12 @@ export type TreasuryCaixaTotalizerAuditModalProps = {
   cardValue: number;
   receivables: readonly FinanceAccountsReceivableGridRow[];
   payables: readonly FinanceAccountsPayableGridRow[];
+  /**
+   * Dia canônico de HOJE — obrigatório para os kinds `today*` (as listas de
+   * títulos já vêm prontas por dimensão do motor único-de-dia; não precisa
+   * refiltrar receivables/payables por data).
+   */
+  canonicalToday?: TreasuryCaixaCanonicalDay | null;
   onClose: () => void;
 };
 
@@ -119,6 +140,39 @@ const KIND_META: Record<
     criteria:
       "Diferença entre o saldo aberto de CR e o saldo aberto de CP — dois lados exibidos separadamente.",
   },
+  // ── Cards do "Movimento de hoje" ────────────────────────────────────────
+  todayReceivableDue: {
+    title: "A Receber hoje",
+    subtitleSuffix: "CR em aberto vencendo hoje",
+    tone: "receivable",
+    reconcileLabel: "Soma do saldo em aberto",
+    criteria:
+      "Contas a Receber com saldo em aberto e vencimento oficial no dia de hoje (não suspensas).",
+  },
+  todayReceivableReceived: {
+    title: "Recebido hoje",
+    subtitleSuffix: "CR baixados hoje",
+    tone: "receivable",
+    reconcileLabel: "Soma dos recebidos",
+    criteria:
+      "Contas a Receber baixadas hoje (settlementDate = hoje, respeitando a regra dos N dias de conciliação).",
+  },
+  todayPayableDue: {
+    title: "A Pagar hoje",
+    subtitleSuffix: "CP em aberto vencendo hoje",
+    tone: "payable",
+    reconcileLabel: "Soma do saldo em aberto",
+    criteria:
+      "Contas a Pagar com saldo em aberto e vencimento oficial no dia de hoje (não suspensas).",
+  },
+  todayPayablePaid: {
+    title: "Pago hoje",
+    subtitleSuffix: "CP baixados hoje",
+    tone: "payable",
+    reconcileLabel: "Soma dos pagos",
+    criteria:
+      "Contas a Pagar baixadas hoje (paymentDate/fallback dueDate, respeitando a regra dos N dias de conciliação).",
+  },
 };
 
 function money(value: number): string {
@@ -127,6 +181,80 @@ function money(value: number): string {
 
 function centsClose(a: number, b: number): boolean {
   return Math.abs(a - b) < 0.005;
+}
+
+/**
+ * Para os kinds `today*`, o motor único-de-dia já entregou as listas de
+ * títulos por dimensão em `canonicalDay.*Titles` — não precisa refiltrar
+ * `receivables[]` por data. As listas do canonicalDay já respeitam a
+ * regra dos N dias de conciliação e a exclusão de suspensos.
+ */
+function filterArFromCanonicalToday(
+  kind: TreasuryCaixaTotalizerAuditKind,
+  canonicalToday: TreasuryCaixaCanonicalDay | null | undefined
+): FilteredArRow[] {
+  if (!canonicalToday) return [];
+  if (kind === "todayReceivableDue") {
+    return canonicalToday.receivableDueTitles.map((t) => ({
+      externalId: t.externalId,
+      personName: t.personName,
+      dueDate: t.dueDate,
+      settlementDate: t.settlementDate,
+      calculatedStatus: t.calculatedStatus,
+      amountReceivable: t.amountReceivable,
+      amountReceived: t.amountReceived,
+      balanceReceivable: t.balanceReceivable,
+      auditAmount: t.balanceReceivable,
+    }));
+  }
+  if (kind === "todayReceivableReceived") {
+    return canonicalToday.receivableReceivedTitles.map((t) => ({
+      externalId: t.externalId,
+      personName: t.personName,
+      dueDate: t.dueDate,
+      settlementDate: t.settlementDate,
+      calculatedStatus: t.calculatedStatus,
+      amountReceivable: t.amountReceivable,
+      amountReceived: t.amountReceived,
+      balanceReceivable: t.balanceReceivable,
+      auditAmount: t.amountReceived,
+    }));
+  }
+  return [];
+}
+
+function filterApFromCanonicalToday(
+  kind: TreasuryCaixaTotalizerAuditKind,
+  canonicalToday: TreasuryCaixaCanonicalDay | null | undefined
+): FilteredApRow[] {
+  if (!canonicalToday) return [];
+  if (kind === "todayPayableDue") {
+    return canonicalToday.payableDueTitles.map((t) => ({
+      externalId: t.externalId,
+      personName: t.personName,
+      dueDate: t.dueDate,
+      paymentDate: t.paymentDate,
+      calculatedStatus: t.calculatedStatus,
+      amountPayable: t.amountPayable,
+      amountPaid: t.amountPaid,
+      balancePayable: t.balancePayable,
+      auditAmount: t.balancePayable,
+    }));
+  }
+  if (kind === "todayPayablePaid") {
+    return canonicalToday.payablePaidTitles.map((t) => ({
+      externalId: t.externalId,
+      personName: t.personName,
+      dueDate: t.dueDate,
+      paymentDate: t.paymentDate,
+      calculatedStatus: t.calculatedStatus,
+      amountPayable: t.amountPayable,
+      amountPaid: t.amountPaid,
+      balancePayable: t.balancePayable,
+      auditAmount: t.amountPaid,
+    }));
+  }
+  return [];
 }
 
 function filterAr(
@@ -370,32 +498,49 @@ export function TreasuryCaixaTotalizerAuditModal({
   cardValue,
   receivables,
   payables,
+  canonicalToday = null,
   onClose,
 }: TreasuryCaixaTotalizerAuditModalProps) {
   if (kind == null) return null;
   const meta = KIND_META[kind];
+  const isTodayKind = TODAY_KINDS.has(kind);
 
-  const arRows = useMemo(() => filterAr(kind, receivables), [kind, receivables]);
-  const apRows = useMemo(() => filterAp(kind, payables), [kind, payables]);
+  // Para today* usamos as listas já filtradas do motor único-de-dia; para
+  // os totalizadores do período, filtramos em memória a mesma fonte que
+  // alimenta os cards (receivables/payables do board).
+  const arRows = useMemo(
+    () =>
+      isTodayKind
+        ? filterArFromCanonicalToday(kind, canonicalToday)
+        : filterAr(kind, receivables),
+    [isTodayKind, kind, receivables, canonicalToday]
+  );
+  const apRows = useMemo(
+    () =>
+      isTodayKind
+        ? filterApFromCanonicalToday(kind, canonicalToday)
+        : filterAp(kind, payables),
+    [isTodayKind, kind, payables, canonicalToday]
+  );
 
   const arTotal = arRows.reduce((s, r) => s + r.auditAmount, 0);
   const apTotal = apRows.reduce((s, r) => s + r.auditAmount, 0);
   const detailTotal =
-    kind === "totalReceived" || kind === "totalReceivable"
+    kind === "totalReceived" ||
+    kind === "totalReceivable" ||
+    kind === "todayReceivableDue" ||
+    kind === "todayReceivableReceived"
       ? arTotal
-      : kind === "totalPaid" || kind === "totalPayable"
+      : kind === "totalPaid" ||
+          kind === "totalPayable" ||
+          kind === "todayPayableDue" ||
+          kind === "todayPayablePaid"
         ? apTotal
         : arTotal - apTotal;
 
   const totalsMatch = centsClose(detailTotal, cardValue);
   const twoSided = isTwoSided(kind);
-  const rowCount =
-    (kind === "totalReceived" || kind === "totalReceivable" || twoSided
-      ? arRows.length
-      : 0) +
-    (kind === "totalPaid" || kind === "totalPayable" || twoSided
-      ? apRows.length
-      : 0);
+  const rowCount = arRows.length + apRows.length;
 
   const subtitle = `${periodLabel} · ${rowCount} ${
     rowCount === 1 ? "título" : "títulos"
@@ -445,52 +590,86 @@ export function TreasuryCaixaTotalizerAuditModal({
         <strong>Critério:</strong> {meta.criteria}
       </p>
       <div className="flex flex-col gap-3">
-        {(kind === "totalReceived" ||
-          kind === "totalReceivable" ||
-          twoSided) && (
+        {arRows.length > 0 || (twoSided && kind === "netRealized") || (twoSided && kind === "netBalance") ? (
           <ArTable
-            title={
-              kind === "totalReceived"
-                ? "Recebimentos no período"
-                : kind === "totalReceivable"
-                  ? "A Receber (saldo em aberto)"
-                  : kind === "netRealized"
-                    ? "Recebidos (+)"
-                    : "A Receber (+)"
-            }
+            title={arTableTitle(kind)}
             counterpartyLabel="Cliente"
-            amountColLabel={
-              kind === "totalReceived" || kind === "netRealized"
-                ? "Auditado (Recebido)"
-                : "Auditado (Saldo)"
-            }
+            amountColLabel={arAmountColLabel(kind)}
             rows={arRows}
             tone="in"
           />
-        )}
-        {(kind === "totalPaid" || kind === "totalPayable" || twoSided) && (
+        ) : null}
+        {apRows.length > 0 || (twoSided && kind === "netRealized") || (twoSided && kind === "netBalance") ? (
           <ApTable
-            title={
-              kind === "totalPaid"
-                ? "Pagamentos no período"
-                : kind === "totalPayable"
-                  ? "A Pagar (saldo em aberto)"
-                  : kind === "netRealized"
-                    ? "Pagos (−)"
-                    : "A Pagar (−)"
-            }
+            title={apTableTitle(kind)}
             counterpartyLabel="Fornecedor"
-            amountColLabel={
-              kind === "totalPaid" || kind === "netRealized"
-                ? "Auditado (Pago)"
-                : "Auditado (Saldo)"
-            }
+            amountColLabel={apAmountColLabel(kind)}
             rows={apRows}
             tone="out"
           />
-        )}
+        ) : null}
       </div>
     </CostCenterDialog>,
     document.body
   );
+}
+
+function arTableTitle(kind: TreasuryCaixaTotalizerAuditKind): string {
+  switch (kind) {
+    case "totalReceived":
+      return "Recebimentos no período";
+    case "totalReceivable":
+      return "A Receber (saldo em aberto)";
+    case "netRealized":
+      return "Recebidos (+)";
+    case "netBalance":
+      return "A Receber (+)";
+    case "todayReceivableReceived":
+      return "Recebido hoje (baixados)";
+    case "todayReceivableDue":
+      return "A Receber hoje (em aberto vencendo)";
+    default:
+      return "Contas a Receber";
+  }
+}
+
+function apTableTitle(kind: TreasuryCaixaTotalizerAuditKind): string {
+  switch (kind) {
+    case "totalPaid":
+      return "Pagamentos no período";
+    case "totalPayable":
+      return "A Pagar (saldo em aberto)";
+    case "netRealized":
+      return "Pagos (−)";
+    case "netBalance":
+      return "A Pagar (−)";
+    case "todayPayablePaid":
+      return "Pago hoje (baixados)";
+    case "todayPayableDue":
+      return "A Pagar hoje (em aberto vencendo)";
+    default:
+      return "Contas a Pagar";
+  }
+}
+
+function arAmountColLabel(kind: TreasuryCaixaTotalizerAuditKind): string {
+  if (
+    kind === "totalReceived" ||
+    kind === "netRealized" ||
+    kind === "todayReceivableReceived"
+  ) {
+    return "Auditado (Recebido)";
+  }
+  return "Auditado (Saldo)";
+}
+
+function apAmountColLabel(kind: TreasuryCaixaTotalizerAuditKind): string {
+  if (
+    kind === "totalPaid" ||
+    kind === "netRealized" ||
+    kind === "todayPayablePaid"
+  ) {
+    return "Auditado (Pago)";
+  }
+  return "Auditado (Saldo)";
 }
