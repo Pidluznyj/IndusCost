@@ -4875,17 +4875,46 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             status: { not: "CANCELLED" },
           },
           orderBy: [{ quoteDate: "asc" }, { createdAt: "asc" }],
+          include: {
+            FinancialSupplier: { select: { displayName: true } },
+          },
         });
 
-        const usdDates = collectUsdQuoteDatesForPtax(quotes, parsed.range);
+        // Nome resolvido (texto livre ou cadastro de fornecedor) — mesma
+        // resolução usada pela rota /suppliers, para o gráfico agrupar por
+        // fornecedor com o mesmo nome que aparece na comparação.
+        const quotesWithResolvedSupplierName = quotes.map((quote) => ({
+          ...quote,
+          supplierName: quote.supplierName ?? quote.FinancialSupplier?.displayName ?? null,
+        }));
+
+        const usdDates = collectUsdQuoteDatesForPtax(
+          quotesWithResolvedSupplierName,
+          parsed.range
+        );
         const exchangeRatesByDate =
           usdDates.length > 0 ? await resolvePtaxRatesByDate(usdDates) : new Map();
 
+        // Ranking por fornecedor (menor preço médio + cotação atualizada) do
+        // MESMO conjunto de cotações já filtrado pelo período do gráfico;
+        // period="all" porque o corte de data já foi aplicado na query acima.
+        const supplierRanking = buildMaterialMarketSupplierComparison(
+          quotesWithResolvedSupplierName.map((quote) => ({
+            id: quote.id,
+            supplierId: quote.supplierId,
+            supplierName: quote.supplierName,
+            quoteDate: quote.quoteDate,
+            netPrice: Number(quote.netPrice),
+          })),
+          { period: "all" }
+        ).items;
+
         res.json(
           buildMaterialMarketPriceHistoryResponse({
-            rows: quotes,
+            rows: quotesWithResolvedSupplierName,
             range: parsed.range,
             exchangeRatesByDate,
+            supplierRanking,
           })
         );
       } catch (error) {

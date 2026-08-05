@@ -18,6 +18,7 @@
 import type { MaterialMarketQuoteSourceRow } from "./materialMarketQuote.js";
 import {
   computeMaterialQuotePriceBRL,
+  UNKNOWN_SUPPLIER_KEY,
   type MaterialMarketPriceHistoryPoint,
 } from "./materialMarketPriceHistory.js";
 import {
@@ -26,6 +27,7 @@ import {
   type MaterialMarketQuoteAnalyticsPeriod,
 } from "./materialMarketQuoteAnalytics.js";
 import { formatMaterialIntelligenceQuoteDate } from "./materialIntelligence360Sections.js";
+import { resolveSupplierKey } from "./materialMarketSupplierComparison.js";
 
 export type MaterialMarketFxDecompositionQuoteRef = {
   quoteDate: string;
@@ -266,6 +268,10 @@ function mapRowToPoint(
     id: row.id,
     date,
     dateLabel: formatMaterialIntelligenceQuoteDate(date),
+    supplierId: row.supplierId?.trim() || null,
+    supplierKey:
+      resolveSupplierKey({ supplierId: row.supplierId, supplierName: row.supplierName }) ??
+      "unknown",
     supplierName: row.supplierName?.trim() || null,
     originalCurrency: currency,
     originalPrice: netPrice,

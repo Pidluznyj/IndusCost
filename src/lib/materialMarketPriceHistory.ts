@@ -3,6 +3,16 @@
  */
 import type { MaterialMarketQuoteSourceRow } from "./materialMarketQuote.js";
 import { formatMaterialIntelligenceQuoteDate } from "./materialIntelligence360Sections.js";
+import {
+  resolveSupplierKey,
+  type MaterialMarketSupplierComparisonRow,
+} from "./materialMarketSupplierComparison.js";
+
+/** Quantas linhas de fornecedor o gráfico de histórico mostra no máximo. */
+export const MATERIAL_MARKET_PRICE_HISTORY_MAX_SUPPLIER_LINES = 3;
+
+/** Chave estável para cotações sem fornecedor identificável (sem supplierId nem supplierName). */
+export const UNKNOWN_SUPPLIER_KEY = "unknown";
 
 export const MATERIAL_MARKET_PRICE_HISTORY_PERIOD_VALUES = [
   "30d",
@@ -38,6 +48,8 @@ export type MaterialMarketPriceHistoryPoint = {
   id: string;
   date: string;
   dateLabel: string;
+  supplierId: string | null;
+  supplierKey: string;
   supplierName: string | null;
   originalCurrency: string;
   originalPrice: number;
@@ -46,9 +58,24 @@ export type MaterialMarketPriceHistoryPoint = {
   notes: string | null;
 };
 
+/** Uma linha do gráfico — todas as cotações de UM fornecedor no período. */
+export type MaterialMarketPriceHistorySeries = {
+  supplierKey: string;
+  supplierId: string | null;
+  supplierName: string;
+  averagePrice: number;
+  isStale: boolean;
+  points: MaterialMarketPriceHistoryPoint[];
+};
+
 export type MaterialMarketPriceHistoryResponse = {
   period: MaterialMarketPriceHistoryPeriodRange;
+  /** Mantido para compatibilidade (export CSV/XLSX/PDF) — todas as cotações, sem corte. */
   points: MaterialMarketPriceHistoryPoint[];
+  /** Até MATERIAL_MARKET_PRICE_HISTORY_MAX_SUPPLIER_LINES linhas — ver buildMaterialMarketPriceHistorySupplierSeries. */
+  series: MaterialMarketPriceHistorySeries[];
+  /** Quantos fornecedores distintos têm cotação no período (antes do corte de linhas). */
+  totalSuppliers: number;
   total: number;
 };
 
@@ -229,6 +256,10 @@ export function mapMaterialMarketQuoteToPriceHistoryPoint(
     id: row.id,
     date,
     dateLabel: formatMaterialIntelligenceQuoteDate(date),
+    supplierId: row.supplierId?.trim() || null,
+    supplierKey:
+      resolveSupplierKey({ supplierId: row.supplierId, supplierName: row.supplierName }) ??
+      UNKNOWN_SUPPLIER_KEY,
     supplierName: row.supplierName?.trim() || null,
     originalCurrency: currency,
     originalPrice: netPrice,
@@ -247,10 +278,64 @@ export function sortPriceHistoryPointsChronologically(
   });
 }
 
+/**
+ * Escolhe, dentre os fornecedores com cotação no período, as até
+ * MATERIAL_MARKET_PRICE_HISTORY_MAX_SUPPLIER_LINES linhas do gráfico.
+ *
+ * Regra: com 3 fornecedores ou menos, mostra todos (nada a escolher). Com
+ * mais de 3, filtra primeiro por "cotação atualizada" (isStale=false, vindo
+ * do ranking) e, dentre os atualizados, pega os de menor preço médio — a
+ * MESMA ordenação de compareMaterialMarketSuppliersForRanking (ranking já
+ * vem ordenado ascendente por averagePrice). Se sobrarem menos de 3
+ * atualizados, mostra só esses — nunca completa com fornecedor desatualizado.
+ */
+export function buildMaterialMarketPriceHistorySupplierSeries(
+  points: ReadonlyArray<MaterialMarketPriceHistoryPoint>,
+  supplierRanking: ReadonlyArray<
+    Pick<
+      MaterialMarketSupplierComparisonRow,
+      "supplierKey" | "supplierId" | "supplierName" | "averagePrice" | "isStale"
+    >
+  >,
+  maxLines: number = MATERIAL_MARKET_PRICE_HISTORY_MAX_SUPPLIER_LINES
+): { series: MaterialMarketPriceHistorySeries[]; totalSuppliers: number } {
+  const keysInPeriod = new Set(points.map((p) => p.supplierKey));
+  const eligible = supplierRanking.filter((s) => keysInPeriod.has(s.supplierKey));
+
+  const selected =
+    eligible.length > maxLines
+      ? eligible.filter((s) => !s.isStale).slice(0, maxLines)
+      : eligible;
+
+  const pointsByKey = new Map<string, MaterialMarketPriceHistoryPoint[]>();
+  for (const point of points) {
+    const bucket = pointsByKey.get(point.supplierKey);
+    if (bucket) bucket.push(point);
+    else pointsByKey.set(point.supplierKey, [point]);
+  }
+
+  const series: MaterialMarketPriceHistorySeries[] = selected.map((s) => ({
+    supplierKey: s.supplierKey,
+    supplierId: s.supplierId,
+    supplierName: s.supplierName,
+    averagePrice: s.averagePrice,
+    isStale: s.isStale,
+    points: pointsByKey.get(s.supplierKey) ?? [],
+  }));
+
+  return { series, totalSuppliers: eligible.length };
+}
+
 export function buildMaterialMarketPriceHistoryResponse(input: {
   rows: MaterialMarketQuoteSourceRow[];
   range: MaterialMarketPriceHistoryPeriodRange;
   exchangeRatesByDate?: Map<string, number | null>;
+  supplierRanking?: ReadonlyArray<
+    Pick<
+      MaterialMarketSupplierComparisonRow,
+      "supplierKey" | "supplierId" | "supplierName" | "averagePrice" | "isStale"
+    >
+  >;
 }): MaterialMarketPriceHistoryResponse {
   const rates = input.exchangeRatesByDate ?? new Map<string, number | null>();
 
@@ -270,9 +355,16 @@ export function buildMaterialMarketPriceHistoryResponse(input: {
       .filter((p): p is MaterialMarketPriceHistoryPoint => p != null)
   );
 
+  const { series, totalSuppliers } = buildMaterialMarketPriceHistorySupplierSeries(
+    points,
+    input.supplierRanking ?? []
+  );
+
   return {
     period: input.range,
     points,
+    series,
+    totalSuppliers,
     total: points.length,
   };
 }

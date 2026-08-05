@@ -123,7 +123,10 @@ function hasSupplierIdentity(quote: MaterialMarketSupplierQuoteInput): boolean {
   return Boolean(quote.supplierId?.trim() || quote.supplierName?.trim());
 }
 
-function resolveSupplierKey(quote: MaterialMarketSupplierQuoteInput): string | null {
+/** Exportado para uso fora deste arquivo (ex.: agrupar séries por fornecedor no histórico de preços) — mesma convenção de chave em todo o módulo. */
+export function resolveSupplierKey(
+  quote: Pick<MaterialMarketSupplierQuoteInput, "supplierId" | "supplierName">
+): string | null {
   const supplierId = quote.supplierId?.trim();
   if (supplierId) return `id:${supplierId}`;
   const supplierName = quote.supplierName?.trim();

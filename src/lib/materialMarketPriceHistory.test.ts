@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildMaterialMarketPriceHistoryResponse,
+  buildMaterialMarketPriceHistorySupplierSeries,
   computeMaterialQuotePriceBRL,
   parseMaterialMarketPriceHistoryQuery,
   resolveMaterialMarketPriceHistoryPeriodRange,
+  type MaterialMarketPriceHistoryPoint,
 } from "./materialMarketPriceHistory.js";
+import type { MaterialMarketSupplierComparisonRow } from "./materialMarketSupplierComparison.js";
 
 const REF = new Date("2026-07-08T12:00:00Z");
 
@@ -128,5 +131,132 @@ describe("materialMarketPriceHistory", () => {
     assert.equal(response.points[1]?.priceBRL, 67.6);
     assert.equal(response.points[1]?.exchangeRateUsed, 5.2);
     assert.equal(response.points[1]?.supplierName, "Fornecedor B");
+    assert.equal(response.points[0]?.supplierKey, "name:fornecedor a");
+    assert.equal(response.points[1]?.supplierKey, "name:fornecedor b");
+  });
+
+  it("cotação sem fornecedor cai numa chave estável 'unknown'", () => {
+    const range = resolveMaterialMarketPriceHistoryPeriodRange("90d", undefined, undefined, REF)!;
+    const response = buildMaterialMarketPriceHistoryResponse({
+      range,
+      rows: [
+        {
+          id: "q1",
+          materialId: "m1",
+          quoteDate: "2026-06-01",
+          price: 10,
+          currency: "BRL",
+          unit: "kg",
+          netPrice: 10,
+          status: "ACTIVE",
+          createdAt: "2026-06-02T10:00:00Z",
+          updatedAt: "2026-06-02T10:00:00Z",
+        },
+      ],
+    });
+    assert.equal(response.points[0]?.supplierKey, "unknown");
+    assert.equal(response.points[0]?.supplierId, null);
+  });
+});
+
+function point(supplierKey: string, date: string, priceBRL: number): MaterialMarketPriceHistoryPoint {
+  return {
+    id: `${supplierKey}-${date}`,
+    date,
+    dateLabel: date,
+    supplierId: null,
+    supplierKey,
+    supplierName: supplierKey,
+    originalCurrency: "BRL",
+    originalPrice: priceBRL,
+    priceBRL,
+    exchangeRateUsed: null,
+    notes: null,
+  };
+}
+
+function rankRow(
+  supplierKey: string,
+  averagePrice: number,
+  isStale: boolean
+): Pick<
+  MaterialMarketSupplierComparisonRow,
+  "supplierKey" | "supplierId" | "supplierName" | "averagePrice" | "isStale"
+> {
+  return { supplierKey, supplierId: null, supplierName: supplierKey, averagePrice, isStale };
+}
+
+describe("buildMaterialMarketPriceHistorySupplierSeries — seleção das linhas do gráfico", () => {
+  it("com 3 fornecedores ou menos, mostra todos (mesmo com algum desatualizado)", () => {
+    const points = [point("a", "2026-01-01", 10), point("b", "2026-01-01", 8)];
+    // ranking já vem ordenado ascendente por preço médio (contrato real do caller).
+    const ranking = [rankRow("b", 8, true), rankRow("a", 10, false)];
+    const { series, totalSuppliers } = buildMaterialMarketPriceHistorySupplierSeries(
+      points,
+      ranking
+    );
+    assert.equal(totalSuppliers, 2);
+    assert.deepEqual(
+      series.map((s) => s.supplierKey),
+      ["b", "a"] // ordem do ranking recebido, preservada — nenhum corte com só 2 fornecedores
+    );
+  });
+
+  it("com mais de 3, corta para os 3 com melhor preço médio E cotação atualizada", () => {
+    const points = [
+      point("a", "2026-01-01", 10),
+      point("b", "2026-01-01", 8),
+      point("c", "2026-01-01", 6),
+      point("d", "2026-01-01", 5),
+      point("e", "2026-01-01", 4),
+    ];
+    // ranking já ordenado por menor preço médio: e < d < c < b < a
+    const ranking = [
+      rankRow("e", 4, true), // mais barato, mas desatualizado — não pode entrar
+      rankRow("d", 5, false),
+      rankRow("c", 6, false),
+      rankRow("b", 8, false),
+      rankRow("a", 10, false),
+    ];
+    const { series, totalSuppliers } = buildMaterialMarketPriceHistorySupplierSeries(
+      points,
+      ranking
+    );
+    assert.equal(totalSuppliers, 5);
+    assert.deepEqual(
+      series.map((s) => s.supplierKey),
+      ["d", "c", "b"] // pula "e" (desatualizado), pega os 3 seguintes mais baratos
+    );
+  });
+
+  it("se sobrarem menos de 3 atualizados após o corte, mostra só esses (nunca completa com desatualizado)", () => {
+    const points = [
+      point("a", "2026-01-01", 10),
+      point("b", "2026-01-01", 8),
+      point("c", "2026-01-01", 6),
+      point("d", "2026-01-01", 5),
+    ];
+    const ranking = [
+      rankRow("d", 5, true),
+      rankRow("c", 6, true),
+      rankRow("b", 8, false),
+      rankRow("a", 10, false),
+    ];
+    const { series } = buildMaterialMarketPriceHistorySupplierSeries(points, ranking);
+    assert.deepEqual(
+      series.map((s) => s.supplierKey),
+      ["b", "a"]
+    );
+  });
+
+  it("ignora do ranking fornecedores sem cotação no período filtrado dos pontos", () => {
+    const points = [point("a", "2026-01-01", 10)];
+    const ranking = [rankRow("a", 10, false), rankRow("z", 1, false)];
+    const { series, totalSuppliers } = buildMaterialMarketPriceHistorySupplierSeries(
+      points,
+      ranking
+    );
+    assert.equal(totalSuppliers, 1);
+    assert.deepEqual(series.map((s) => s.supplierKey), ["a"]);
   });
 });
