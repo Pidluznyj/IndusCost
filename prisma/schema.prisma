@@ -8977,6 +8977,23 @@ model TreasuryScenarioPolicy {
   useCustomerBehaviorHistory Boolean @default(false)
   useSupplierBehaviorHistory Boolean @default(false)
 
+  /// Regra dos N dias de conciliação — captura o padrão real de baixa:
+  /// o Nomus (paymentDate/settlementDate) grava a data em que a operação
+  /// clicou "baixar", não o dia real do dinheiro. Como a conciliação é
+  /// feita pela manhã com as movimentações da véspera, uma defasagem de
+  /// até `settlementReconciliationToleranceDays` dias entre baixa e
+  /// vencimento é tratada como "baixa preguiçosa" — a data efetiva do
+  /// caixa vira `dueDate`. Defasagem maior é atraso real e mantém a data
+  /// de baixa. Pagamento/recebimento antes do vencimento sempre respeita
+  /// a data original (dinheiro saiu antes é fato bancário).
+  ///
+  /// Quando `settlementReconciliationEnabled` é false, o motor volta ao
+  /// comportamento histórico: AP baixado usa `dueDate` (Nomus raramente
+  /// preenche paymentDate confiável para CP) e AR baixado usa
+  /// `settlementDate` cru — sem tolerância nem detecção de atraso.
+  settlementReconciliationEnabled       Boolean @default(true)
+  settlementReconciliationToleranceDays Int     @default(3)
+
   /// Versão da política (monotônica). Incrementa a cada save com auditoria.
   version Int @default(1)
 

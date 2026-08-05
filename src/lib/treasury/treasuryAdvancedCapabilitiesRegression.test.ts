@@ -128,7 +128,7 @@ const EXPECTED_TREASURY_MODELS = [
   "TreasuryScenarioPolicy",
 ] as const;
 
-const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 19;
+const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 20;
 
 const EXPECTED_LAYER_COUNTS = {
   controllersMin: 27,

@@ -20,6 +20,15 @@ export type TreasuryScenarioPolicyDto = {
   pessimisticTreatBrokenPromiseAsDelayed: boolean;
   useCustomerBehaviorHistory: boolean;
   useSupplierBehaviorHistory: boolean;
+  /**
+   * Regra de conciliação:
+   *   • Baixa dentro da tolerância vs vencimento → data efetiva = dueDate
+   *   • Baixa antes do vencimento → mantém data de baixa (dinheiro andou antes)
+   *   • Baixa fora da tolerância vs vencimento → atraso real, mantém data
+   * Ver comentário do schema Prisma.
+   */
+  settlementReconciliationEnabled: boolean;
+  settlementReconciliationToleranceDays: number;
   version: number;
   updatedAt: TreasuryTimestampIso;
   createdAt: TreasuryTimestampIso;
@@ -37,6 +46,8 @@ export type TreasuryScenarioPolicyPatch = Partial<
     | "pessimisticTreatBrokenPromiseAsDelayed"
     | "useCustomerBehaviorHistory"
     | "useSupplierBehaviorHistory"
+    | "settlementReconciliationEnabled"
+    | "settlementReconciliationToleranceDays"
   >
 >;
 
@@ -55,6 +66,11 @@ export const TREASURY_SCENARIO_POLICY_DEFAULTS = {
   pessimisticTreatBrokenPromiseAsDelayed: true,
   useCustomerBehaviorHistory: false,
   useSupplierBehaviorHistory: false,
+  /** Regra dos N dias de conciliação — ligada por padrão. */
+  settlementReconciliationEnabled: true,
+  /** 3 dias corridos: cobre fim de semana normal (venceu sexta, concilia
+   *  segunda = 3 dias). Feriadão prolongado precisa ajuste manual. */
+  settlementReconciliationToleranceDays: 3,
 } as const;
 
 /**

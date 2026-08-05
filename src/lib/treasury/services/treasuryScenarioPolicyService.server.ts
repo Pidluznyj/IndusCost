@@ -58,6 +58,8 @@ function toDto(row: TreasuryScenarioPolicy): TreasuryScenarioPolicyDto {
     pessimisticTreatBrokenPromiseAsDelayed: row.pessimisticTreatBrokenPromiseAsDelayed,
     useCustomerBehaviorHistory: row.useCustomerBehaviorHistory,
     useSupplierBehaviorHistory: row.useSupplierBehaviorHistory,
+    settlementReconciliationEnabled: row.settlementReconciliationEnabled,
+    settlementReconciliationToleranceDays: row.settlementReconciliationToleranceDays,
     version: row.version,
     updatedAt: formatTreasuryTimestampIso(row.updatedAt),
     createdAt: formatTreasuryTimestampIso(row.createdAt),
@@ -100,6 +102,8 @@ function auditPayload(row: TreasuryScenarioPolicy) {
     pessimisticTreatBrokenPromiseAsDelayed: row.pessimisticTreatBrokenPromiseAsDelayed,
     useCustomerBehaviorHistory: row.useCustomerBehaviorHistory,
     useSupplierBehaviorHistory: row.useSupplierBehaviorHistory,
+    settlementReconciliationEnabled: row.settlementReconciliationEnabled,
+    settlementReconciliationToleranceDays: row.settlementReconciliationToleranceDays,
     version: row.version,
   };
 }

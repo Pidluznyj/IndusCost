@@ -53,6 +53,7 @@ import {
   type TreasuryOfficialTodayBalance,
 } from "./treasuryOfficialTodayBalance.server.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
+import { createTreasuryScenarioPolicyService } from "./treasuryScenarioPolicyService.server.js";
 import {
   parseTreasuryDailyRoutineSnapshotKey,
   TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX,
@@ -689,6 +690,17 @@ export function createTreasuryCaixaService(input: {
             }
           : null;
 
+      // Política de conciliação — carrega direto do banco. O motor único-de-dia
+      // delega à função canônica ao resolver a data efetiva de cada baixa.
+      // Sem política/ausência do singleton → motor mantém comportamento
+      // histórico (dueDate p/ AP baixado; settlementDate cru p/ AR).
+      const policyService = createTreasuryScenarioPolicyService({ prisma });
+      const policy = await policyService.getForEngine();
+      const reconciliationPolicy = {
+        enabled: policy.settlementReconciliationEnabled,
+        toleranceDays: policy.settlementReconciliationToleranceDays,
+      };
+
       const canonicalDays = buildTreasuryCaixaCanonicalDays({
         civilDatesInWindow: windowDays,
         receivables: arResult.gridRows,
@@ -699,6 +711,7 @@ export function createTreasuryCaixaService(input: {
         otherMovementsLoadStatus: "not_loaded",
         openingBalanceOfFirstDay,
         officialTodayBalance: anchor,
+        reconciliationPolicy,
       });
 
       return {

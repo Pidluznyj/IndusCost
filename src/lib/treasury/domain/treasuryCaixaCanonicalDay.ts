@@ -30,6 +30,9 @@
 
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
+import { resolveFinanceApEffectivePaymentDate } from "@/src/lib/financeAccountsPayableRules.js";
+import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
+import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -155,29 +158,64 @@ export type TreasuryCaixaCanonicalDay = {
 };
 
 /**
- * Fallback canônico da data efetiva de pagamento do CP — mesma regra usada por
- * `buildTreasuryCaixaRealizedDays`, extraída aqui para o motor único também
- * consumir. Nomus quase nunca preenche `paymentDate`; quando o título foi
- * baixado (`amountPaid > 0`) o `dueDate` vale como data em que o dinheiro
- * andou.
+ * Data efetiva do CP baixado — quando há política de conciliação, delega ao
+ * canônico `resolveFinanceApEffectivePaymentDate`; sem política, mantém o
+ * fallback histórico (`paymentDate ?? dueDate`) para preservar 100% do
+ * comportamento anterior. Nomus raramente preenche `paymentDate` para CP.
  */
 function resolveApRealizedCivilDate(
-  row: Pick<FinanceAccountsPayableGridRow, "dueDate" | "paymentDate" | "amountPaid">
+  row: Pick<
+    FinanceAccountsPayableGridRow,
+    "dueDate" | "paymentDate" | "amountPaid"
+  >,
+  reconciliation?: FinanceSettlementReconciliationPolicy | null
 ): string | null {
   if (!(row.amountPaid > 0)) return null;
+  if (reconciliation && reconciliation.enabled) {
+    const effective = resolveFinanceApEffectivePaymentDate(
+      {
+        dueDate: row.dueDate ? new Date(`${row.dueDate}T12:00:00Z`) : null,
+        paymentDate: row.paymentDate
+          ? new Date(`${row.paymentDate}T12:00:00Z`)
+          : null,
+        amountPaid: row.amountPaid,
+        balancePayable: 0,
+      },
+      { reconciliation }
+    );
+    return effective ? effective.toISOString().slice(0, 10) : null;
+  }
   const key = row.paymentDate ?? row.dueDate;
   return key ? key.slice(0, 10) : null;
 }
 
 /**
- * Se o CR foi baixado (`amountReceived > 0`), a data que conta é a
- * liquidação — sem fallback: o motor oficial só considera CR realizado
- * quando `settlementDate` existe.
+ * Data efetiva do CR baixado — quando há política de conciliação, delega ao
+ * canônico `resolveFinanceArEffectiveSettlementDate`; sem política, usa
+ * `settlementDate` cru (comportamento histórico).
  */
 function resolveArRealizedCivilDate(
-  row: Pick<FinanceAccountsReceivableGridRow, "settlementDate" | "amountReceived">
+  row: Pick<
+    FinanceAccountsReceivableGridRow,
+    "settlementDate" | "amountReceived" | "dueDate" | "balanceReceivable"
+  >,
+  reconciliation?: FinanceSettlementReconciliationPolicy | null
 ): string | null {
   if (!(row.amountReceived > 0)) return null;
+  if (reconciliation && reconciliation.enabled) {
+    const effective = resolveFinanceArEffectiveSettlementDate(
+      {
+        dueDate: row.dueDate ? new Date(`${row.dueDate}T12:00:00Z`) : null,
+        settlementDate: row.settlementDate
+          ? new Date(`${row.settlementDate}T12:00:00Z`)
+          : null,
+        amountReceived: row.amountReceived,
+        balanceReceivable: row.balanceReceivable,
+      },
+      { reconciliation }
+    );
+    return effective ? effective.toISOString().slice(0, 10) : null;
+  }
   return row.settlementDate ? row.settlementDate.slice(0, 10) : null;
 }
 
@@ -274,6 +312,14 @@ export type TreasuryCaixaCanonicalDayInput = {
    */
   openingBalanceOfFirstDay?: number | null;
   /**
+   * Política de conciliação (regra dos N dias). Quando presente e ligada,
+   * o motor delega ao canônico para resolver a data efetiva de cada baixa
+   * (AR settlementDate / AP paymentDate). Sem política ou desligada,
+   * mantém o comportamento histórico do próprio motor
+   * (settlementDate cru para AR; paymentDate ?? dueDate para AP).
+   */
+  reconciliationPolicy?: FinanceSettlementReconciliationPolicy | null;
+  /**
    * Âncora oficial de SALDO DE HOJE — quando presente, RE-ANCORA a cadeia
    * no dia informado (não substitui `openingBalanceOfFirstDay`; se o dia da
    * âncora estiver dentro da janela, ele passa a ser o fechamento realizado
@@ -353,11 +399,13 @@ export function buildTreasuryCaixaCanonicalDays(
     bucket(civilDate);
   }
 
+  const reconciliation = input.reconciliationPolicy ?? null;
+
   // Dimensão AR — receivableDue e receivableReceived são DISJUNTAS por título
   // no mesmo dia: se baixou hoje, entra em Received; se está aberto vencendo
   // hoje, entra em Due. Nunca as duas — o motor oficial só marca uma delas.
   for (const row of input.receivables) {
-    const settledOn = resolveArRealizedCivilDate(row);
+    const settledOn = resolveArRealizedCivilDate(row, reconciliation);
     if (settledOn) {
       const day = bucket(settledOn);
       if (day) {
@@ -378,7 +426,7 @@ export function buildTreasuryCaixaCanonicalDays(
   }
 
   for (const row of input.payables) {
-    const paidOn = resolveApRealizedCivilDate(row);
+    const paidOn = resolveApRealizedCivilDate(row, reconciliation);
     if (paidOn) {
       const day = bucket(paidOn);
       if (day) {

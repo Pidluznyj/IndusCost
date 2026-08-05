@@ -28,6 +28,8 @@ function policy(
     pessimisticTreatBrokenPromiseAsDelayed: true,
     useCustomerBehaviorHistory: false,
     useSupplierBehaviorHistory: false,
+    settlementReconciliationEnabled: true,
+    settlementReconciliationToleranceDays: 3,
     version: 1,
     updatedAt: "2026-08-04T00:00:00.000-03:00",
     createdAt: "2026-08-04T00:00:00.000-03:00",

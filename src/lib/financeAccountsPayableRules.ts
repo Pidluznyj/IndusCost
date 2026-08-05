@@ -5,6 +5,12 @@
  * paymentDate/settlementDate permanecem apenas para auditoria operacional.
  */
 
+import {
+  FINANCE_SETTLEMENT_RECONCILIATION_LEGACY,
+  resolveFinanceEffectiveSettlementDate,
+  type FinanceSettlementReconciliationPolicy,
+} from "@/src/lib/finance/financeSettlementReconciliation.js";
+
 export type FinanceApSettlementKind = "NORMAL" | "WITHOUT_CASH" | "FORCED";
 
 export type FinanceApEffectiveStatus = "OPEN" | "SETTLED" | "CANCELLED";
@@ -121,8 +127,19 @@ export function isFinanceApSpecialWriteOff(row: FinanceApRulesInput): boolean {
   return kind === "WITHOUT_CASH" || kind === "FORCED";
 }
 
+export type NormalizeAccountsPayableTitleOptions = {
+  /**
+   * Política de conciliação — governa `effectivePaymentDate` quando o
+   * título estiver liquidado. Sem opções → comportamento LEGADO (dueDate
+   * sempre), preservando 100% do comportamento histórico até que o
+   * chamador explicitamente ative a regra dos N dias.
+   */
+  reconciliation?: FinanceSettlementReconciliationPolicy;
+};
+
 export function normalizeAccountsPayableTitle(
-  row: FinanceApRulesInput
+  row: FinanceApRulesInput,
+  options: NormalizeAccountsPayableTitleOptions = {}
 ): NormalizedAccountsPayableTitle {
   const amountPayable = roundMoney(safeMoney(row.amountPayable));
   const amountPaid = roundMoney(safeMoney(row.amountPaid));
@@ -158,7 +175,13 @@ export function normalizeAccountsPayableTitle(
 
   let effectivePaymentDate: Date | null = null;
   if (!isCancelled && (isSettled || amountPaid > 0)) {
-    effectivePaymentDate = dueDate;
+    // Sem opções → legado (dueDate sempre). Com política → aplica a regra
+    // dos N dias sobre paymentDate/settlementDate (o que existir).
+    const settledOn = originalPaymentDate ?? originalSettlementDate ?? null;
+    effectivePaymentDate = resolveFinanceEffectiveSettlementDate(
+      { dueDate, settledOn, isSettled: isSettled || amountPaid > 0 },
+      options.reconciliation ?? FINANCE_SETTLEMENT_RECONCILIATION_LEGACY
+    );
   }
 
   const effectiveStatus: FinanceApEffectiveStatus = isCancelled
@@ -200,8 +223,11 @@ export function resolveFinanceApEffectiveDashboardDate(row: FinanceApRulesInput)
   return normalizeAccountsPayableTitle(row).effectiveDashboardDate;
 }
 
-export function resolveFinanceApEffectivePaymentDate(row: FinanceApRulesInput): Date | null {
-  return normalizeAccountsPayableTitle(row).effectivePaymentDate;
+export function resolveFinanceApEffectivePaymentDate(
+  row: FinanceApRulesInput,
+  options: NormalizeAccountsPayableTitleOptions = {}
+): Date | null {
+  return normalizeAccountsPayableTitle(row, options).effectivePaymentDate;
 }
 
 export function resolveFinanceApRealizedAmount(row: FinanceApRulesInput): number {
