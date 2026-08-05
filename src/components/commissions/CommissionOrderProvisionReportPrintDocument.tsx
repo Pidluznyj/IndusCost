@@ -145,7 +145,6 @@ export function CommissionOrderProvisionReportPrintDocument({
                 <th className="comm-order-provision-col-nfe">NF-e</th>
                 <th className="comm-order-provision-col-base col-money">Base</th>
                 <th className="comm-order-provision-col-commission col-money">Comissão</th>
-                <th className="comm-order-provision-col-obs">Obs.</th>
               </tr>
             </thead>
             <tbody>
@@ -154,7 +153,7 @@ export function CommissionOrderProvisionReportPrintDocument({
                   <td>
                     {formatSalesOrderDisplayCode(row.orderCode) || row.orderCode || "—"}
                   </td>
-                  <td>{formatDatePt(row.saleDate)}</td>
+                  <td className="comm-order-provision-col-date">{formatDatePt(row.saleDate)}</td>
                   <td>{displayFinanceText(row.customerName)}</td>
                   <td>
                     {displayFinanceText(row.canonicalSellerName ?? row.rawSellerName)}
@@ -165,13 +164,6 @@ export function CommissionOrderProvisionReportPrintDocument({
                   </td>
                   <td className="sales-orders-print-money col-money">
                     {formatFinanceCurrency(row.totalFinalCommissionAmount)}
-                  </td>
-                  <td>
-                    {row.hasCustomerExcludedItems
-                      ? "Cliente excluído"
-                      : row.totalFinalCommissionAmount <= 0.009
-                        ? "Comissão zero"
-                        : "—"}
                   </td>
                 </tr>
               ))}

@@ -33,21 +33,22 @@
     min-height: 26mm !important;
   }
 
-  /* Colunas do analítico — proporções para retrato (210mm úteis). */
+  /* Colunas do analítico — proporções para retrato (210mm úteis). Sem coluna Obs. */
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-order {
     width: 12% !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-date {
-    width: 9% !important;
+    width: 11% !important;
+    white-space: nowrap !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-customer {
-    width: 22% !important;
+    width: 26% !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-seller {
-    width: 16% !important;
+    width: 18% !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-nfe {
@@ -55,14 +56,10 @@
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-base {
-    width: 11% !important;
+    width: 12% !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-commission {
-    width: 11% !important;
-  }
-
-  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-obs {
-    width: 10% !important;
+    width: 12% !important;
   }
 }
