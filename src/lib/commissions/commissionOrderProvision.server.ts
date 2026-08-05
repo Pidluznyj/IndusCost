@@ -2,14 +2,20 @@
  * Loader Prisma — provisão de comissão por pedido (CommissionOrderSnapshot ACTIVE).
  */
 import type { Prisma } from "@prisma/client";
+import * as XLSX from "xlsx";
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber } from "./commission-money.js";
 import {
   assembleCommissionOrderProvisionPayload,
+  assembleCommissionOrderProvisionReportPayload,
+  buildCommissionOrderProvisionExportFilename,
+  buildCommissionOrderProvisionExportWorkbook,
   parseCommissionOrderProvisionQuery,
   resolveCommissionOrderProvisionSaleDateFilter,
   type CommissionOrderProvisionPayload,
+  type CommissionOrderProvisionQuery,
+  type CommissionOrderProvisionReportPayload,
   type CommissionOrderProvisionSnapshotInput,
 } from "./commissionOrderProvision.shared.js";
 
@@ -66,10 +72,13 @@ function buildSaleDateWhere(
   return { saleDate: { gte: filter.gte, lte: filter.lte } };
 }
 
-export async function getCommissionOrderProvisionPage(
+async function loadCommissionOrderProvisionSnapshots(
   queryInput: Record<string, unknown>,
   scope: CommissionAccessScope
-): Promise<CommissionOrderProvisionPayload> {
+): Promise<{
+  query: CommissionOrderProvisionQuery;
+  snapshots: CommissionOrderProvisionSnapshotInput[];
+}> {
   const query = parseCommissionOrderProvisionQuery(queryInput);
   const saleDateWhere = buildSaleDateWhere(query);
 
@@ -141,5 +150,35 @@ export async function getCommissionOrderProvisionPage(
     hasCustomerExcludedItems: row.items.length > 0,
   }));
 
+  return { query, snapshots };
+}
+
+export async function getCommissionOrderProvisionPage(
+  queryInput: Record<string, unknown>,
+  scope: CommissionAccessScope
+): Promise<CommissionOrderProvisionPayload> {
+  const { query, snapshots } = await loadCommissionOrderProvisionSnapshots(queryInput, scope);
   return assembleCommissionOrderProvisionPayload({ query, snapshots });
+}
+
+/** Todas as linhas do filtro (sem paginação) — usado por print/PDF. */
+export async function getCommissionOrderProvisionReport(
+  queryInput: Record<string, unknown>,
+  scope: CommissionAccessScope
+): Promise<CommissionOrderProvisionReportPayload> {
+  const { query, snapshots } = await loadCommissionOrderProvisionSnapshots(queryInput, scope);
+  return assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+}
+
+export async function exportCommissionOrderProvisionXlsx(
+  queryInput: Record<string, unknown>,
+  scope: CommissionAccessScope
+): Promise<{ buffer: Buffer; filename: string }> {
+  const { query, snapshots } = await loadCommissionOrderProvisionSnapshots(queryInput, scope);
+  const payload = assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+  const wb = buildCommissionOrderProvisionExportWorkbook(payload);
+  return {
+    buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer,
+    filename: buildCommissionOrderProvisionExportFilename(query),
+  };
 }

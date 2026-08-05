@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, Search } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Download, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
@@ -27,10 +28,13 @@ import {
   buildCommissionOrderProvisionClientQuery,
   isCommissionOrderProvisionSellerChipActive,
   type CommissionOrderProvisionPayload,
+  type CommissionOrderProvisionReportPayload,
 } from "@/src/lib/commissions/commissionOrderProvision.shared";
 import type { CommissionReportsMonthsFilter } from "@/src/lib/commissions/commissionReports.shared";
 import type { CommissionsPersonsPayload } from "@/src/components/commissions/commissionsTypes";
 import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { CommissionOrderProvisionReportPrintDocument } from "@/src/components/commissions/CommissionOrderProvisionReportPrintDocument";
 
 function formatDatePt(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -66,6 +70,99 @@ export function CommissionsOrderProvisionPage() {
   const [payload, setPayload] = useState<CommissionOrderProvisionPayload | null>(
     null
   );
+
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const [reportPrintPayload, setReportPrintPayload] =
+    useState<CommissionOrderProvisionReportPayload | null>(null);
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
+
+  useEffect(() => {
+    if (printRequestId === 0) return;
+    document.body.classList.add("sales-orders-print-route");
+
+    // Força A4 retrato mesmo com @page landscape de outros CSS globais.
+    const style = document.createElement("style");
+    style.setAttribute("data-commission-order-provision-print-page", "1");
+    style.textContent = "@page { size: A4 portrait; margin: 8mm; }";
+    document.head.appendChild(style);
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      style.remove();
+      setPrintRequestId(0);
+      setReportPrintPayload(null);
+    };
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    const timer = window.setTimeout(() => window.print(), 350);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+      style.remove();
+    };
+  }, [printRequestId]);
+
+  const currentQueryString = useCallback(
+    () =>
+      buildCommissionOrderProvisionClientQuery({
+        year,
+        months,
+        sellerId,
+        selectedRawSellerId,
+        customer,
+        orderCode,
+        includeZeroCommission: includeZero,
+        onlyZeroCommission: onlyZero,
+        page: 1,
+        pageSize: 50,
+      }),
+    [year, months, sellerId, selectedRawSellerId, customer, orderCode, includeZero, onlyZero]
+  );
+
+  async function handlePrintOrExportPdf() {
+    setExportingPdf(true);
+    setError(null);
+    try {
+      const data = await fetchJsonOk<CommissionOrderProvisionReportPayload>(
+        `/api/commissions/order-provision/report?${currentQueryString()}`
+      );
+      setReportPrintPayload(data);
+      setPrintRequestId((n) => n + 1);
+    } catch (err) {
+      setError(formatCommissionsApiError(err, "Não foi possível gerar o PDF."));
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
+  async function handleExportXlsx() {
+    setExportingXlsx(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/commissions/order-provision/export.xlsx?${currentQueryString()}`
+      );
+      if (!res.ok) throw new Error("Falha ao exportar XLSX.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `comissao-provisao-pedido-${year}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(formatCommissionsApiError(err, "Não foi possível exportar o XLSX."));
+    } finally {
+      setExportingXlsx(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -340,6 +437,34 @@ export function CommissionsOrderProvisionPage() {
               >
                 Limpar filtros
               </button>
+              <button
+                type="button"
+                className={cn(financeBiButtonOutlineClass, "inline-flex items-center gap-2")}
+                onClick={() => void handleExportXlsx()}
+                disabled={exportingXlsx}
+                title="Exportar Excel (.xlsx) com o filtro atual"
+              >
+                {exportingXlsx ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Excel
+              </button>
+              <button
+                type="button"
+                className={cn(financeBiButtonOutlineClass, "inline-flex items-center gap-2")}
+                onClick={() => void handlePrintOrExportPdf()}
+                disabled={exportingPdf}
+                title="Imprimir / exportar PDF (A4 retrato) com o filtro atual"
+              >
+                {exportingPdf ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="h-4 w-4" />
+                )}
+                PDF
+              </button>
             </div>
           </div>
         </div>
@@ -535,6 +660,16 @@ export function CommissionsOrderProvisionPage() {
           ) : null}
         </>
       ) : null}
+
+      {reportPrintPayload
+        ? createPortal(
+            <CommissionOrderProvisionReportPrintDocument
+              payload={reportPrintPayload}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
     </div>
   );
 }

@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import * as XLSX from "xlsx";
 import {
   aggregateCommissionOrderProvisionRows,
   assembleCommissionOrderProvisionPayload,
+  assembleCommissionOrderProvisionReportPayload,
   buildCommissionOrderProvisionCards,
   buildCommissionOrderProvisionClientQuery,
+  buildCommissionOrderProvisionExportFilename,
+  buildCommissionOrderProvisionExportWorkbook,
+  buildCommissionOrderProvisionFilterSummary,
+  filterCommissionOrderProvisionZeroRows,
   isCommissionOrderProvisionSellerChipActive,
   parseCommissionOrderProvisionQuery,
   resolveCommissionOrderProvisionMonthRanges,
@@ -631,5 +637,114 @@ describe("commissionOrderProvision — client query + seller sync", () => {
   it("resolveCommissionOrderProvisionMonths é determinístico", () => {
     assert.deepEqual(resolveCommissionOrderProvisionMonths([3, 1, 3, 2]), [1, 2, 3]);
     assert.deepEqual(resolveCommissionOrderProvisionMonths("all").length, 12);
+  });
+});
+
+describe("commissionOrderProvision — relatório completo (print/XLSX)", () => {
+  const query = parseCommissionOrderProvisionQuery({ year: "2026", months: "all" });
+  const snapshots = [
+    snap({
+      id: "s1",
+      salesOrderId: "o1",
+      orderCode: "PD 00001",
+      saleDate: new Date(2026, 0, 10),
+      totalFinalCommissionAmount: 50,
+    }),
+    snap({
+      id: "s2",
+      salesOrderId: "o2",
+      orderCode: "PD 00002",
+      saleDate: new Date(2026, 1, 5),
+      canonicalSellerId: SELLER_B,
+      canonicalSellerName: "João",
+      rawSellerId: 20,
+      rawSellerName: "João",
+      totalFinalCommissionAmount: 30,
+    }),
+    snap({
+      id: "s3",
+      salesOrderId: "o3",
+      orderCode: "PD 00003",
+      saleDate: new Date(2026, 2, 1),
+      totalFinalCommissionAmount: 0,
+      hasCustomerExcludedItems: true,
+    }),
+  ];
+
+  it("filterCommissionOrderProvisionZeroRows é a MESMA regra usada pela página paginada", () => {
+    const rows = aggregateCommissionOrderProvisionRows(snapshots);
+    const filtered = filterCommissionOrderProvisionZeroRows(rows, {
+      includeZeroCommission: false,
+      onlyZeroCommission: false,
+    });
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.every((r) => r.totalFinalCommissionAmount > 0.009));
+
+    const onlyZero = filterCommissionOrderProvisionZeroRows(rows, {
+      includeZeroCommission: false,
+      onlyZeroCommission: true,
+    });
+    assert.equal(onlyZero.length, 1);
+    assert.equal(onlyZero[0]!.salesOrderId, "o3");
+  });
+
+  it("assembleCommissionOrderProvisionReportPayload devolve TODAS as linhas (sem paginação)", () => {
+    const report = assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+    assert.equal(report.rows.length, 2); // exclui o3 (comissão zero) por padrão
+    assert.equal(report.cards.orderCount, 2);
+    assert.equal(report.cards.totalFinalCommissionAmount, 80);
+    assert.match(report.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("relatório completo e página paginada concordam nos cards (mesma regra de zero)", () => {
+    const paged = assembleCommissionOrderProvisionPayload({
+      query: { ...query, page: 1, pageSize: 50 },
+      snapshots,
+    });
+    const report = assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+    assert.deepEqual(paged.cards, report.cards);
+  });
+
+  it("buildCommissionOrderProvisionFilterSummary inclui período, vendedor e filtros ativos", () => {
+    const withSeller = assembleCommissionOrderProvisionReportPayload({
+      query: { ...query, canonicalSellerId: SELLER_B },
+      snapshots,
+    });
+    const summary = buildCommissionOrderProvisionFilterSummary(withSeller);
+    assert.match(summary, /Período:/);
+    assert.match(summary, /Vendedor: João/);
+    assert.match(summary, /Exclui comissão zero/);
+  });
+
+  it("buildCommissionOrderProvisionFilterSummary mostra 'Todos os vendedores' sem filtro de vendedor", () => {
+    const report = assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+    assert.match(buildCommissionOrderProvisionFilterSummary(report), /Vendedor: Todos os vendedores/);
+  });
+
+  it("buildCommissionOrderProvisionExportWorkbook gera as 3 abas com as linhas certas", () => {
+    const report = assembleCommissionOrderProvisionReportPayload({ query, snapshots });
+    const wb = buildCommissionOrderProvisionExportWorkbook(report);
+    assert.deepEqual(wb.SheetNames, ["Por vendedor", "Pedidos", "Filtros"]);
+
+    const detail = XLSX.utils.sheet_to_json(wb.Sheets["Pedidos"]!, { header: 1 }) as unknown[][];
+    // header + 2 linhas (o3 fica de fora por comissão zero, mesma regra da tela)
+    assert.equal(detail.length, 3);
+    assert.equal(detail[0]![0], "Pedido");
+
+    const bySeller = XLSX.utils.sheet_to_json(wb.Sheets["Por vendedor"]!, {
+      header: 1,
+    }) as unknown[][];
+    assert.equal(bySeller.length, 3); // header + 2 vendedores
+  });
+
+  it("buildCommissionOrderProvisionExportFilename varia com o filtro de meses", () => {
+    assert.equal(
+      buildCommissionOrderProvisionExportFilename({ year: 2026, months: "all" }),
+      "comissao-provisao-pedido-2026-todos-os-meses.xlsx"
+    );
+    assert.equal(
+      buildCommissionOrderProvisionExportFilename({ year: 2026, months: [1, 2] }),
+      "comissao-provisao-pedido-2026-1-2.xlsx"
+    );
   });
 });

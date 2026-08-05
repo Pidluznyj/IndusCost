@@ -7,6 +7,7 @@
  * Cliente excluído → final do item = 0 (reflete no total do pedido).
  */
 
+import * as XLSX from "xlsx";
 import {
   formatCommissionReportMonthsLabel,
   type CommissionReportsMonthsFilter,
@@ -585,19 +586,34 @@ export function paginateCommissionOrderProvisionRows(
   };
 }
 
+/**
+ * Filtro de comissão zerada — regra única compartilhada entre a página
+ * paginada e o relatório completo (print/XLSX), para nunca divergir.
+ */
+export function filterCommissionOrderProvisionZeroRows(
+  rows: ReadonlyArray<CommissionOrderProvisionRow>,
+  query: Pick<CommissionOrderProvisionQuery, "includeZeroCommission" | "onlyZeroCommission">
+): CommissionOrderProvisionRow[] {
+  if (query.onlyZeroCommission) {
+    // Filtro exclusivo: SÓ pedidos com comissão final zerada (rateio anulado,
+    // cliente excluído, snapshot sem base). Ignora `includeZeroCommission`
+    // por definição — o resultado já é composto só de zeros.
+    return rows.filter((r) => r.totalFinalCommissionAmount <= 0.009);
+  }
+  if (!query.includeZeroCommission) {
+    return rows.filter((r) => r.totalFinalCommissionAmount > 0.009);
+  }
+  return [...rows];
+}
+
 export function assembleCommissionOrderProvisionPayload(input: {
   query: CommissionOrderProvisionQuery;
   snapshots: ReadonlyArray<CommissionOrderProvisionSnapshotInput>;
 }): CommissionOrderProvisionPayload {
-  let rows = aggregateCommissionOrderProvisionRows(input.snapshots);
-  if (input.query.onlyZeroCommission) {
-    // Filtro exclusivo: SÓ pedidos com comissão final zerada (rateio anulado,
-    // cliente excluído, snapshot sem base). Ignora `includeZeroCommission`
-    // por definição — o resultado já é composto só de zeros.
-    rows = rows.filter((r) => r.totalFinalCommissionAmount <= 0.009);
-  } else if (!input.query.includeZeroCommission) {
-    rows = rows.filter((r) => r.totalFinalCommissionAmount > 0.009);
-  }
+  const rows = filterCommissionOrderProvisionZeroRows(
+    aggregateCommissionOrderProvisionRows(input.snapshots),
+    input.query
+  );
   const cards = buildCommissionOrderProvisionCards(rows);
   const sellerOptions = buildCommissionOrderProvisionSellerOptions(cards.sellers);
   const page = paginateCommissionOrderProvisionRows(
@@ -619,4 +635,164 @@ export function assembleCommissionOrderProvisionPayload(input: {
         ? "Nenhum pedido com snapshot ACTIVE de comissão no período."
         : null,
   };
+}
+
+export type CommissionOrderProvisionReportPayload = {
+  source: "COMMISSION_ORDER_SNAPSHOT_ACTIVE";
+  generatedAt: string;
+  periodLabel: string;
+  filters: CommissionOrderProvisionQuery;
+  cards: CommissionOrderProvisionCards;
+  rows: CommissionOrderProvisionRow[];
+  message: string | null;
+};
+
+/**
+ * Mesma montagem/filtro da página paginada (`assembleCommissionOrderProvisionPayload`),
+ * mas devolve TODAS as linhas — usado pelo relatório impresso/PDF e pela
+ * exportação XLSX, que não podem mostrar só a página atual.
+ */
+export function assembleCommissionOrderProvisionReportPayload(input: {
+  query: CommissionOrderProvisionQuery;
+  snapshots: ReadonlyArray<CommissionOrderProvisionSnapshotInput>;
+}): CommissionOrderProvisionReportPayload {
+  const rows = filterCommissionOrderProvisionZeroRows(
+    aggregateCommissionOrderProvisionRows(input.snapshots),
+    input.query
+  );
+  const cards = buildCommissionOrderProvisionCards(rows);
+
+  return {
+    source: "COMMISSION_ORDER_SNAPSHOT_ACTIVE",
+    generatedAt: new Date().toISOString(),
+    periodLabel: formatCommissionOrderProvisionPeriodLabel(input.query),
+    filters: input.query,
+    cards,
+    rows,
+    message:
+      rows.length === 0
+        ? "Nenhum pedido com snapshot ACTIVE de comissão no período."
+        : null,
+  };
+}
+
+/**
+ * Nome do vendedor filtrado — busca por id/chave em `cards.sellers` em vez de
+ * assumir `[0]`, porque `cards.sellers` reflete quem apareceu nas linhas
+ * agregadas e não é, por si só, garantia de que o filtro selecionou um único
+ * vendedor (ex.: uso direto da função de montagem sem o `where` do server já
+ * ter restringido os snapshots por vendedor).
+ */
+export function resolveCommissionOrderProvisionFilterSellerLabel(
+  filters: Pick<CommissionOrderProvisionQuery, "canonicalSellerId" | "rawSellerId">,
+  sellers: ReadonlyArray<CommissionOrderProvisionSellerCard>
+): string {
+  if (filters.canonicalSellerId) {
+    const match = sellers.find((s) => s.canonicalSellerId === filters.canonicalSellerId);
+    if (match) return match.sellerName;
+  }
+  if (filters.rawSellerId != null) {
+    const match = sellers.find((s) => s.key === `raw:${filters.rawSellerId}`);
+    if (match) return match.sellerName;
+  }
+  if (filters.canonicalSellerId || filters.rawSellerId != null) {
+    return sellers[0]?.sellerName ?? "Vendedor não identificado";
+  }
+  return "Todos os vendedores";
+}
+
+/** "Filtros aplicados" legível — mesma linha no print e na aba Filtros do XLSX. */
+export function buildCommissionOrderProvisionFilterSummary(
+  payload: Pick<CommissionOrderProvisionReportPayload, "periodLabel" | "filters" | "cards">
+): string {
+  const { filters, cards } = payload;
+  const sellerLabel = resolveCommissionOrderProvisionFilterSellerLabel(filters, cards.sellers);
+  const parts = [
+    `Período: ${payload.periodLabel}`,
+    `Vendedor: ${sellerLabel}`,
+    filters.customer ? `Cliente: ${filters.customer}` : null,
+    filters.orderCode ? `Pedido: ${filters.orderCode}` : null,
+    filters.onlyZeroCommission
+      ? "Somente comissões zeradas"
+      : filters.includeZeroCommission
+        ? "Inclui comissão zero"
+        : "Exclui comissão zero",
+  ];
+  return parts.filter((p): p is string => Boolean(p)).join(" · ");
+}
+
+function formatCommissionOrderProvisionDateBr(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+export function buildCommissionOrderProvisionExportWorkbook(
+  payload: CommissionOrderProvisionReportPayload
+): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+
+  const sellerRows = [
+    ["Vendedor canônico", "Pedidos", "Comissão final"],
+    ...payload.cards.sellers.map((s) => [
+      s.sellerName,
+      s.orderCount,
+      s.totalFinalCommissionAmount,
+    ]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sellerRows), "Por vendedor");
+
+  const detailRows = [
+    [
+      "Pedido",
+      "Data venda",
+      "Cliente",
+      "Vendedor",
+      "NF-e",
+      "Base vendida",
+      "Comissão bruta",
+      "Comissão final",
+      "Cliente excluído",
+    ],
+    ...payload.rows.map((r) => [
+      r.orderCode ?? r.salesOrderId,
+      formatCommissionOrderProvisionDateBr(r.saleDate),
+      r.customerName,
+      r.canonicalSellerName || r.rawSellerName || "—",
+      r.nfeIds.join(", "),
+      r.totalSoldAmount,
+      r.totalGrossCommissionAmount,
+      r.totalFinalCommissionAmount,
+      r.hasCustomerExcludedItems ? "Sim" : "Não",
+    ]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), "Pedidos");
+
+  const meta = XLSX.utils.aoa_to_sheet([
+    ["Provisão de comissão por pedido"],
+    ["Período", payload.periodLabel],
+    ["Filtros aplicados", buildCommissionOrderProvisionFilterSummary(payload)],
+    ["Gerado em", payload.generatedAt],
+    ["Pedidos", payload.cards.orderCount],
+    ["Base vendida", payload.cards.totalSoldAmount],
+    ["Comissão bruta (antes exclusão)", payload.cards.totalGrossCommissionAmount],
+    ["Comissão acumulada", payload.cards.totalFinalCommissionAmount],
+  ]);
+  XLSX.utils.book_append_sheet(wb, meta, "Filtros");
+
+  return wb;
+}
+
+export function buildCommissionOrderProvisionExportFilename(
+  query: Pick<CommissionOrderProvisionQuery, "year" | "months">
+): string {
+  const year = query.year ?? new Date().getFullYear();
+  if (isCommissionOrderProvisionAllMonths(query.months)) {
+    return `comissao-provisao-pedido-${year}-todos-os-meses.xlsx`;
+  }
+  const months = resolveCommissionOrderProvisionMonths(query.months);
+  if (months.length === 0 || months.length > 3) {
+    return `comissao-provisao-pedido-${year}-${months.length || 12}-meses.xlsx`;
+  }
+  return `comissao-provisao-pedido-${year}-${months.join("-")}.xlsx`;
 }

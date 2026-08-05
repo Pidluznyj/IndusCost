@@ -163,7 +163,11 @@ import {
   exportCommissionReportsXlsx,
   getCommissionReportsPage,
 } from "@/src/lib/commissions/commissionReports.server.js";
-import { getCommissionOrderProvisionPage } from "@/src/lib/commissions/commissionOrderProvision.server.js";
+import {
+  exportCommissionOrderProvisionXlsx,
+  getCommissionOrderProvisionPage,
+  getCommissionOrderProvisionReport,
+} from "@/src/lib/commissions/commissionOrderProvision.server.js";
 import {
   buildCommissionClosingSellerXlsx,
   buildCommissionClosingSellerXlsxFilename,
@@ -491,6 +495,57 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       }
     }
   });
+
+  app.get("/api/commissions/order-provision/report", ...reportsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommissionOrderProvisionReport(
+        req.query as Record<string, unknown>,
+        ctx.scope
+      );
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/order-provision/report", error);
+        return res.status(500).json({
+          error: "Erro ao gerar relatório de provisão por pedido.",
+        });
+      }
+    }
+  });
+
+  app.get(
+    "/api/commissions/order-provision/export.xlsx",
+    ...exportReportsGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const { buffer, filename } = await exportCommissionOrderProvisionXlsx(
+          req.query as Record<string, unknown>,
+          ctx.scope
+        );
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(buffer);
+      } catch (error) {
+        try {
+          return handleQueryError(res, error);
+        } catch {
+          console.error("GET /api/commissions/order-provision/export.xlsx", error);
+          return res.status(500).json({
+            error: "Erro ao exportar provisão de comissão por pedido.",
+          });
+        }
+      }
+    }
+  );
 
   app.get("/api/commissions/reports/export.xlsx", ...exportReportsGuard, async (req, res) => {
     try {

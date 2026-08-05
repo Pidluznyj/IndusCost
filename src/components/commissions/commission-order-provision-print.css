@@ -1,0 +1,68 @@
+/**
+ * Provisão de comissão por pedido — A4 retrato (folha de pé).
+ * Mesma técnica de commission-closing-print.css: classe modificadora no
+ * root compartilhado (#sales-orders-print-root) + @page portrait reforçado
+ * via style inject na página (ver CommissionsOrderProvisionPage.tsx).
+ */
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .sales-orders-print-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .print-doc-header-grid {
+    grid-template-columns: 36mm minmax(0, 1fr) 68mm !important;
+    column-gap: 4mm !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo {
+    max-height: 28mm !important;
+    max-width: 36mm !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo-wrap {
+    min-height: 26mm !important;
+  }
+
+  /* Colunas do analítico — proporções para retrato (210mm úteis). */
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-order {
+    width: 12% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-date {
+    width: 9% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-customer {
+    width: 22% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-seller {
+    width: 16% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-nfe {
+    width: 9% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-base {
+    width: 11% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-commission {
+    width: 11% !important;
+  }
+
+  #sales-orders-print-root.comm-order-provision-print-root .comm-order-provision-col-obs {
+    width: 10% !important;
+  }
+}

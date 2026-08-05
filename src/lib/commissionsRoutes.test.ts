@@ -99,6 +99,9 @@ describe("commissionsRoutes", () => {
       "/api/commissions/receipt-closing/reprocess-apply",
       "/api/commissions/reports",
       "/api/commissions/reports/export.xlsx",
+      "/api/commissions/order-provision",
+      "/api/commissions/order-provision/report",
+      "/api/commissions/order-provision/export.xlsx",
       "/api/commissions/receivable-forecast",
       "/api/commissions/receivable-forecast/export",
       "/api/commissions/payable",
@@ -136,6 +139,27 @@ describe("commissionsRoutes", () => {
 
   it("POST recalculate delega calculateCommissions", () => {
     assert.match(routes(), /calculateCommissions\(prisma/);
+  });
+
+  it("relatório e XLSX de Provisão por pedido delegam ao service e usam os guards certos", () => {
+    const src = routes();
+    const reportBlock = src.slice(
+      src.indexOf('"/api/commissions/order-provision/report"'),
+      src.indexOf('"/api/commissions/order-provision/export.xlsx"')
+    );
+    assert.match(reportBlock, /\.\.\.reportsGuard/);
+    assert.match(reportBlock, /getCommissionOrderProvisionReport\(/);
+
+    const xlsxBlock = src.slice(
+      src.indexOf('"/api/commissions/order-provision/export.xlsx"'),
+      src.indexOf('"/api/commissions/order-provision/export.xlsx"') + 900
+    );
+    assert.match(xlsxBlock, /\.\.\.exportReportsGuard/);
+    assert.match(xlsxBlock, /exportCommissionOrderProvisionXlsx\(/);
+    assert.match(
+      xlsxBlock,
+      /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/
+    );
   });
 
   it("POST audit/rerun delega rerunCommissionAudit", () => {
