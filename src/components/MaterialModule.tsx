@@ -24,6 +24,7 @@ import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import {
   computeMaterialTotalValue,
   countMaterialsWithStockQuantity,
+  normalizeMaterialQuantity,
   sumMaterialCatalogStockValue,
 } from "@/src/lib/materialQuantityTotal";
 import { Material, CreateMaterialInput } from "@/src/types/material";
@@ -459,7 +460,7 @@ export const MaterialModule = () => {
             <thead>
               <tr className="bg-accent/50 border-b border-border">
                 <th className="p-4 font-semibold text-sm">Material</th>
-                <th className="p-4 font-semibold text-sm">Categoria / Unid.</th>
+                <th className="p-4 font-semibold text-sm">Estoque / Unidade</th>
                 <th className="p-4 font-semibold text-sm">Custo Atual</th>
                 <th className="p-4 font-semibold text-sm">Mercado</th>
                 <th className="p-4 font-semibold text-sm">Status</th>
@@ -495,7 +496,11 @@ export const MaterialModule = () => {
                       </div>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm font-medium">{mat.category.replace("_", " ")}</p>
+                      <p className="text-sm font-medium">
+                        {normalizeMaterialQuantity(mat.quantity) > 0
+                          ? formatNumber(mat.quantity)
+                          : "N/A"}
+                      </p>
                       <p className="text-xs text-muted-foreground">{mat.unit}</p>
                     </td>
                     <td className="p-4">
