@@ -151,6 +151,107 @@ describe("commissionOrderProvision", () => {
     assert.equal(payload.rows.length, 1);
     assert.equal(payload.rows[0]?.orderCode, "PD 1");
   });
+
+  it("onlyZeroCommission devolve APENAS pedidos com comissão zerada (auditoria)", () => {
+    const payload = assembleCommissionOrderProvisionPayload({
+      query: parseCommissionOrderProvisionQuery({
+        year: "2026",
+        onlyZeroCommission: "true",
+      }),
+      snapshots: [
+        snap({
+          id: "s1",
+          salesOrderId: "o1",
+          orderCode: "PD 1",
+          saleDate: new Date(2026, 6, 1),
+          canonicalSellerId: null,
+          canonicalSellerName: "João",
+          rawSellerId: 1,
+          rawSellerName: "João",
+          totalFinalCommissionAmount: 10,
+        }),
+        snap({
+          id: "s2",
+          salesOrderId: "o2",
+          orderCode: "PD 2",
+          saleDate: new Date(2026, 6, 2),
+          canonicalSellerId: null,
+          canonicalSellerName: "João",
+          rawSellerId: 1,
+          rawSellerName: "João",
+          totalFinalCommissionAmount: 0,
+          hasCustomerExcludedItems: true,
+        }),
+        snap({
+          id: "s3",
+          salesOrderId: "o3",
+          orderCode: "PD 3",
+          saleDate: new Date(2026, 6, 3),
+          canonicalSellerId: null,
+          canonicalSellerName: "João",
+          rawSellerId: 1,
+          rawSellerName: "João",
+          totalFinalCommissionAmount: 0,
+        }),
+      ],
+    });
+    assert.equal(payload.rows.length, 2, "só PD 2 e PD 3 (zerados)");
+    for (const r of payload.rows) {
+      assert.ok(r.totalFinalCommissionAmount <= 0.009);
+    }
+  });
+
+  it("onlyZeroCommission tem precedência sobre includeZeroCommission (mutuamente exclusivos)", () => {
+    // Mesmo com includeZero=true, onlyZero=true filtra só zeros.
+    const payload = assembleCommissionOrderProvisionPayload({
+      query: parseCommissionOrderProvisionQuery({
+        year: "2026",
+        includeZeroCommission: "true",
+        onlyZeroCommission: "true",
+      }),
+      snapshots: [
+        snap({
+          id: "s1",
+          salesOrderId: "o1",
+          orderCode: "PD 1",
+          saleDate: new Date(2026, 6, 1),
+          canonicalSellerId: null,
+          canonicalSellerName: "João",
+          rawSellerId: 1,
+          rawSellerName: "João",
+          totalFinalCommissionAmount: 10,
+        }),
+        snap({
+          id: "s2",
+          salesOrderId: "o2",
+          orderCode: "PD 2",
+          saleDate: new Date(2026, 6, 2),
+          canonicalSellerId: null,
+          canonicalSellerName: "João",
+          rawSellerId: 1,
+          rawSellerName: "João",
+          totalFinalCommissionAmount: 0,
+        }),
+      ],
+    });
+    assert.equal(payload.rows.length, 1);
+    assert.equal(payload.rows[0]?.orderCode, "PD 2");
+  });
+
+  it("client query serializa onlyZeroCommission=true quando ligado", () => {
+    const qs = buildCommissionOrderProvisionClientQuery({
+      year: "2026",
+      months: "all",
+      sellerId: "all",
+      selectedRawSellerId: null,
+      customer: "",
+      orderCode: "",
+      includeZeroCommission: false,
+      onlyZeroCommission: true,
+      page: 1,
+    });
+    assert.equal(new URLSearchParams(qs).get("onlyZeroCommission"), "true");
+  });
 });
 
 describe("commissionOrderProvision — months parsing", () => {

@@ -54,6 +54,12 @@ export function CommissionsOrderProvisionPage() {
   const [customer, setCustomer] = useState("");
   const [orderCode, setOrderCode] = useState("");
   const [includeZero, setIncludeZero] = useState(false);
+  /**
+   * Filtro exclusivo: SÓ pedidos com comissão zerada. Útil para auditar
+   * cliente excluído/regra sem base. Ao ligar, desliga o `includeZero`
+   * (não faz sentido combinar — o resultado já é composto só de zeros).
+   */
+  const [onlyZero, setOnlyZero] = useState(false);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +103,7 @@ export function CommissionsOrderProvisionPage() {
         customer,
         orderCode,
         includeZeroCommission: includeZero,
+        onlyZeroCommission: onlyZero,
         page,
         pageSize: 50,
       });
@@ -112,7 +119,7 @@ export function CommissionsOrderProvisionPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, months, customer, orderCode, includeZero, page, sellerId, selectedRawSellerId]);
+  }, [year, months, customer, orderCode, includeZero, onlyZero, page, sellerId, selectedRawSellerId]);
 
   useEffect(() => {
     void load();
@@ -274,12 +281,32 @@ export function CommissionsOrderProvisionPage() {
               <input
                 type="checkbox"
                 checked={includeZero}
+                disabled={onlyZero}
                 onChange={(e) => {
                   setIncludeZero(e.target.checked);
                   setPage(1);
                 }}
               />
               Incluir comissão zero (ex.: cliente excluído)
+            </label>
+            <label
+              className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+              data-testid="commissions-order-provision-only-zero-toggle"
+            >
+              <input
+                type="checkbox"
+                checked={onlyZero}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setOnlyZero(next);
+                  // Mutuamente exclusivo: ao ligar "somente zeradas",
+                  // desliga o includeZero (o resultado já é composto
+                  // exclusivamente por zeros — combinar não faz sentido).
+                  if (next) setIncludeZero(false);
+                  setPage(1);
+                }}
+              />
+              Somente comissões zeradas (auditoria de exclusão/rateio anulado)
             </label>
             <div className="flex flex-wrap gap-2">
               <button

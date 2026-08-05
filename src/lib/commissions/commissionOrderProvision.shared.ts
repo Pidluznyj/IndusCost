@@ -26,6 +26,16 @@ export type CommissionOrderProvisionQuery = {
   customer: string | null;
   orderCode: string | null;
   includeZeroCommission: boolean;
+  /**
+   * Quando `true`, o backend devolve SOMENTE pedidos com
+   * `totalFinalCommissionAmount ≤ 0` (comissão zerada — normalmente cliente
+   * excluído, snapshot com regra sem base, ou rateio anulado). É mutuamente
+   * exclusivo com `includeZeroCommission`: se `onlyZeroCommission=true`, o
+   * `includeZeroCommission` é ignorado (o resultado só tem zeros por
+   * definição). Útil para o gestor auditar quais pedidos ficaram sem comissão
+   * e por quê.
+   */
+  onlyZeroCommission: boolean;
   page: number;
   pageSize: number;
 };
@@ -227,6 +237,7 @@ export function parseCommissionOrderProvisionQuery(
     customer: asTrimmed(query.customer ?? query.customerName),
     orderCode: asTrimmed(query.orderCode ?? query.order),
     includeZeroCommission: asBool(query.includeZeroCommission, false),
+    onlyZeroCommission: asBool(query.onlyZeroCommission, false),
     page: clampPage(asInt(query.page), 1),
     pageSize: clampPageSize(asInt(query.pageSize)),
   };
@@ -339,6 +350,7 @@ export function buildCommissionOrderProvisionClientQuery(input: {
   customer: string;
   orderCode: string;
   includeZeroCommission: boolean;
+  onlyZeroCommission?: boolean;
   page: number;
   pageSize?: number;
 }): string {
@@ -359,6 +371,7 @@ export function buildCommissionOrderProvisionClientQuery(input: {
   if (input.customer.trim()) params.set("customer", input.customer.trim());
   if (input.orderCode.trim()) params.set("orderCode", input.orderCode.trim());
   if (input.includeZeroCommission) params.set("includeZeroCommission", "true");
+  if (input.onlyZeroCommission) params.set("onlyZeroCommission", "true");
   if (input.sellerId && input.sellerId !== "all") {
     params.set("canonicalSellerId", input.sellerId);
     params.set("sellerId", input.sellerId);
@@ -577,7 +590,12 @@ export function assembleCommissionOrderProvisionPayload(input: {
   snapshots: ReadonlyArray<CommissionOrderProvisionSnapshotInput>;
 }): CommissionOrderProvisionPayload {
   let rows = aggregateCommissionOrderProvisionRows(input.snapshots);
-  if (!input.query.includeZeroCommission) {
+  if (input.query.onlyZeroCommission) {
+    // Filtro exclusivo: SÓ pedidos com comissão final zerada (rateio anulado,
+    // cliente excluído, snapshot sem base). Ignora `includeZeroCommission`
+    // por definição — o resultado já é composto só de zeros.
+    rows = rows.filter((r) => r.totalFinalCommissionAmount <= 0.009);
+  } else if (!input.query.includeZeroCommission) {
     rows = rows.filter((r) => r.totalFinalCommissionAmount > 0.009);
   }
   const cards = buildCommissionOrderProvisionCards(rows);
