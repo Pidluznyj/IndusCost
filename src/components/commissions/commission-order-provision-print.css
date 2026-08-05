@@ -20,18 +20,24 @@
   }
 
   /*
-   * Coluna da logo do tamanho do próprio desenho (não 36mm) — coluna de
-   * grid não encolhe pro conteúdo sozinha, então uma coluna mais larga que
-   * a logo real deixa um vão morto antes do texto da empresa começar.
+   * Coluna da logo em "auto": uma largura fixa em mm só acerta por
+   * coincidência, porque a logo é um arquivo enviado em Identidade Visual
+   * com proporção própria (aqui é um ícone + texto empilhados, bem mais
+   * estreito que alto) — coluna de grid não encolhe pro conteúdo sozinha
+   * quando a largura é fixa, então qualquer valor mais largo que a logo
+   * renderizada deixa um vão morto antes do texto da empresa começar.
+   * "auto" mede o tamanho real da imagem (já limitada por max-height) e
+   * acerta pra qualquer logo, não só a de hoje.
    */
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-header-grid {
-    grid-template-columns: 26mm minmax(0, 1fr) 68mm !important;
+    grid-template-columns: auto minmax(0, 1fr) 68mm !important;
     column-gap: 3mm !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo {
     max-height: 24mm !important;
-    max-width: 26mm !important;
+    max-width: 36mm !important;
+    width: auto !important;
   }
 
   #sales-orders-print-root.comm-order-provision-print-root .print-doc-logo-wrap {
