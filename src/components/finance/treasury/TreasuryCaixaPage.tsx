@@ -545,6 +545,11 @@ export function TreasuryCaixaPage() {
           horizonDays={scenariosHorizon}
           onHorizonChange={setScenariosHorizon}
           onRefresh={() => void loadScenarios()}
+          // FONTE ÚNICA: a MESMA série que alimenta a tabela "Linha do tempo"
+          // alimenta a linha Realista do gráfico. Não é uma segunda conta que
+          // "deveria" bater — é o mesmo array. Otimista/Pessimista preservam
+          // o delta que o motor canônico do backend calculou.
+          timelineRows={timeline?.rows}
         />
 
         {error ? (

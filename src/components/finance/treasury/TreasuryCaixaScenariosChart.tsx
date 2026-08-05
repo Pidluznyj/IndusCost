@@ -48,6 +48,18 @@ export type TreasuryCaixaScenariosChartProps = {
   onRefresh?: () => void;
   horizonDays?: number;
   onHorizonChange?: (days: number) => void;
+  /**
+   * Série de saldos da "Linha do tempo" (mesma `timeline.rows` que alimenta a
+   * tabela). Quando informada, a linha Realista do gráfico passa a EXIBIR
+   * exatamente esses saldos — não uma recomputação que "deveria" bater.
+   * Otimista/Pessimista preservam o delta calculado pelo motor canônico.
+   * Ver `buildRows` para o porquê arquitetural.
+   */
+  timelineRows?: readonly {
+    civilDate: string;
+    opening: number | null;
+    closing: number | null;
+  }[];
 };
 
 /** Tokens de cor por cenário (usados TAMBÉM em estilo de linha para acessibilidade). */
@@ -89,6 +101,12 @@ type ChartRow = {
   bandLow: number | null;
   bandRange: number | null; // p/ empilhar a área "banda"
   isPast: boolean;
+  /**
+   * Saldo de abertura EXIBIDO — vem da Linha do tempo quando disponível
+   * (fonte única) e cai no `day.openingBalance` do backend caso contrário.
+   * O tooltip usa este valor para não contradizer a linha desenhada.
+   */
+  openingShown: number | null;
 };
 
 function money(value: number | null): string {
@@ -101,14 +119,59 @@ function shortDate(civilDate: string): string {
   return `${d}/${m}`;
 }
 
+/**
+ * Monta as linhas do gráfico.
+ *
+ * FONTE ÚNICA DO REALISTA — quando `timelineClosingByDate` é informado, a
+ * linha Realista usa EXATAMENTE o mesmo `closing` que a tabela "Linha do
+ * tempo" exibe naquele dia. Não é uma segunda conta que "deveria dar igual":
+ * é o mesmo número, lido da mesma variável (`timeline.rows` do
+ * TreasuryCaixaPage). Divergir passa a ser estruturalmente impossível.
+ *
+ * Motivo: a Linha do tempo é montada no FRONTEND a partir de três fontes
+ * (board.realizedDays + /today/closing + /agenda materializada, com
+ * `dailyDueEstimates` só complementando o que a agenda não cobre), enquanto o
+ * motor de cenários roda no BACKEND usando `dailyDueEstimates` para todos os
+ * dias. Nos dias em que a agenda materializada existe, as duas fontes
+ * divergem — e a diferença acumulava dia após dia.
+ *
+ * Otimista e Pessimista preservam o DELTA que o motor canônico calculou em
+ * relação ao Realista dele. Assim a distância entre cenários (o "Intervalo de
+ * cenário") continua vindo 100% do backend; só o ponto de ancoragem passa a
+ * ser o saldo oficial da Linha do tempo. Não há cálculo financeiro novo aqui
+ * — apenas reposicionamento de uma série já calculada.
+ */
 function buildRows(
   days: readonly TreasuryScenarioDay[],
-  asOf: string
+  asOf: string,
+  timelineByDate?: ReadonlyMap<
+    string,
+    { opening: number | null; closing: number | null }
+  > | null
 ): ChartRow[] {
   return days.map((d) => {
-    const opt = d.optimistic.closingBalance;
-    const real = d.realistic.closingBalance;
-    const pes = d.pessimistic.closingBalance;
+    const backendReal = d.realistic.closingBalance;
+    const backendOpt = d.optimistic.closingBalance;
+    const backendPes = d.pessimistic.closingBalance;
+
+    // Realista = saldo da Linha do tempo quando disponível para o dia.
+    const fromTimeline = timelineByDate?.get(d.civilDate) ?? null;
+    const timelineReal = fromTimeline?.closing ?? null;
+    const real = timelineReal != null ? timelineReal : backendReal;
+    const openingShown =
+      fromTimeline?.opening != null ? fromTimeline.opening : d.openingBalance;
+
+    // Deltas do motor canônico preservados sobre a nova âncora.
+    const optDelta =
+      backendOpt != null && backendReal != null ? backendOpt - backendReal : null;
+    const pesDelta =
+      backendPes != null && backendReal != null ? backendPes - backendReal : null;
+
+    const opt =
+      real != null && optDelta != null ? real + optDelta : backendOpt;
+    const pes =
+      real != null && pesDelta != null ? real + pesDelta : backendPes;
+
     let bandLow: number | null = null;
     let bandRange: number | null = null;
     if (opt != null && pes != null) {
@@ -125,6 +188,7 @@ function buildRows(
       bandLow,
       bandRange,
       isPast: d.civilDate < asOf,
+      openingShown,
     };
   });
 }
@@ -309,26 +373,28 @@ function ScenarioTooltip({
       <div className="mb-2 text-[11px]">
         <span className="text-[#6B7280]">Saldo inicial:</span>{" "}
         <span className="font-semibold tabular-nums">
-          {money(day.openingBalance)}
+          {money(row.openingShown)}
         </span>
       </div>
+      {/* Valores vindos do ChartRow (o que a linha desenha), não do payload
+          bruto do backend — assim tooltip e gráfico nunca se contradizem. */}
       <div className="space-y-0.5 border-t border-[#E5E7EB]/60 pt-1.5">
         <Line
           label="Otimista"
           color={SCENARIO_STYLE.optimistic.color}
-          value={day.optimistic.closingBalance}
+          value={row.opt}
           count={day.optimistic.receivableCount + day.optimistic.payableCount}
         />
         <Line
           label="Realista"
           color={SCENARIO_STYLE.realistic.color}
-          value={day.realistic.closingBalance}
+          value={row.real}
           count={day.realistic.receivableCount + day.realistic.payableCount}
         />
         <Line
           label="Pessimista"
           color={SCENARIO_STYLE.pessimistic.color}
-          value={day.pessimistic.closingBalance}
+          value={row.pes}
           count={
             day.pessimistic.receivableCount + day.pessimistic.payableCount
           }
@@ -533,6 +599,7 @@ export function TreasuryCaixaScenariosChart({
   onRefresh,
   horizonDays,
   onHorizonChange,
+  timelineRows,
 }: TreasuryCaixaScenariosChartProps) {
   const [drilldownDate, setDrilldownDate] = useState<string | null>(null);
   /**
@@ -548,9 +615,23 @@ export function TreasuryCaixaScenariosChart({
   const toggleSeries = (key: SeriesKey) =>
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  /** Índice civilDate → saldos da Linha do tempo (fonte única do Realista). */
+  const timelineByDate = useMemo(() => {
+    if (!timelineRows || timelineRows.length === 0) return null;
+    const map = new Map<
+      string,
+      { opening: number | null; closing: number | null }
+    >();
+    for (const r of timelineRows) {
+      map.set(r.civilDate, { opening: r.opening, closing: r.closing });
+    }
+    return map;
+  }, [timelineRows]);
+
   const rows = useMemo(
-    () => (data ? buildRows(data.days, data.asOfCivilDate) : []),
-    [data]
+    () =>
+      data ? buildRows(data.days, data.asOfCivilDate, timelineByDate) : [],
+    [data, timelineByDate]
   );
 
   const daysByLabel = useMemo(() => {
@@ -559,16 +640,70 @@ export function TreasuryCaixaScenariosChart({
     return map;
   }, [data]);
 
+  /**
+   * Resumos derivados da MESMA série que o gráfico desenha. Quando a linha
+   * Realista é ancorada na Linha do tempo, os sumários do backend passariam a
+   * descrever outra curva — os cards contradiriam o próprio gráfico. Aqui não
+   * há cálculo financeiro novo: apenas mínimo, saldo final, primeiro negativo
+   * e contagem sobre pontos já calculados.
+   */
+  const summaries = useMemo(() => {
+    if (!data) return null;
+    if (!timelineByDate) return data.summaries; // sem âncora → backend manda.
+
+    function summarize(
+      pick: (r: ChartRow) => number | null,
+      base: TreasuryScenarioSummary
+    ): TreasuryScenarioSummary {
+      let finalBalance: number | null = null;
+      let minBalance: number | null = null;
+      let minBalanceDate: string | null = null;
+      let firstNegativeDate: string | null = null;
+      let negativeDaysCount = 0;
+      for (const r of rows) {
+        const v = pick(r);
+        if (v == null) continue;
+        finalBalance = v;
+        if (minBalance == null || v < minBalance) {
+          minBalance = v;
+          minBalanceDate = r.civilDate;
+        }
+        if (v < 0) {
+          negativeDaysCount += 1;
+          if (firstNegativeDate == null) firstNegativeDate = r.civilDate;
+        }
+      }
+      return {
+        ...base,
+        finalBalance,
+        minBalance,
+        minBalanceDate,
+        firstNegativeDate,
+        negativeDaysCount,
+        maxCashNeed:
+          minBalance != null && minBalance < 0
+            ? Math.round(-minBalance * 100) / 100
+            : 0,
+      };
+    }
+
+    return {
+      optimistic: summarize((r) => r.opt, data.summaries.optimistic),
+      realistic: summarize((r) => r.real, data.summaries.realistic),
+      pessimistic: summarize((r) => r.pes, data.summaries.pessimistic),
+    };
+  }, [data, rows, timelineByDate]);
+
   const diffs = useMemo(() => {
-    if (!data) return { opt: null, pes: null };
-    const realFinal = data.summaries.realistic.finalBalance;
-    const optFinal = data.summaries.optimistic.finalBalance;
-    const pesFinal = data.summaries.pessimistic.finalBalance;
+    if (!summaries) return { opt: null, pes: null };
+    const realFinal = summaries.realistic.finalBalance;
+    const optFinal = summaries.optimistic.finalBalance;
+    const pesFinal = summaries.pessimistic.finalBalance;
     return {
       opt: realFinal != null && optFinal != null ? optFinal - realFinal : null,
       pes: realFinal != null && pesFinal != null ? pesFinal - realFinal : null,
     };
-  }, [data]);
+  }, [summaries]);
 
   const drilldownDay = drilldownDate ? daysByLabel.get(drilldownDate) : null;
 
@@ -695,19 +830,19 @@ export function TreasuryCaixaScenariosChart({
             <SummaryCard
               title="Otimista"
               color={SCENARIO_STYLE.optimistic.color}
-              summary={data.summaries.optimistic}
+              summary={(summaries ?? data.summaries).optimistic}
               diffToRealistic={diffs.opt}
             />
             <SummaryCard
               title="Realista (principal)"
               color={SCENARIO_STYLE.realistic.color}
-              summary={data.summaries.realistic}
+              summary={(summaries ?? data.summaries).realistic}
               diffToRealistic={null}
             />
             <SummaryCard
               title="Pessimista"
               color={SCENARIO_STYLE.pessimistic.color}
-              summary={data.summaries.pessimistic}
+              summary={(summaries ?? data.summaries).pessimistic}
               diffToRealistic={diffs.pes}
             />
           </div>
