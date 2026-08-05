@@ -149,15 +149,91 @@ viewOfficialPayables` (mesma auth do TREASURY_CAIXA_PATH).
 
 **"Intervalo de cenário" nunca é chamado de intervalo estatístico.**
 
-## 6. Migrations
+## 6. Âncora oficial de saldo de hoje
+
+**Arquivo:** [treasuryOfficialTodayBalance.server.ts](../../src/lib/treasury/services/treasuryOfficialTodayBalance.server.ts).
+
+Todos os motores de gráfico (Movimento de hoje, Linha do tempo, Cenários)
+consomem uma **âncora oficial** em vez de reconstruir o saldo do zero
+desde a gênese pela cadeia de baixas.
+
+Precedência (do mais confiável ao menos):
+
+| # | Fonte | Rótulo pt-BR |
+|---|---|---|
+| 1 | `TreasuryDailyClosing.observedBalance` (CLOSED, versão mais alta) | "Fechamento CLOSED de DD/MM/YYYY" |
+| 2 | `TreasuryBalanceSnapshot` da rotina "Saldos do Dia" por conta | "Rotina 'Saldos do Dia' de DD/MM/YYYY" |
+| 3 | `TreasuryBalanceSnapshot` MANUAL genérico (tela "Saldo") do dia | "Saldo informado de DD/MM/YYYY" |
+| 4 | `TreasuryFinancialAccount.availableBalance` mais recente por conta | "Saldo mais recente das contas (Nomus)" |
+| 5 | Nenhuma → cadeia calculada com warning | "Sem saldo informado — motor cai na cadeia calculada." |
+
+O motor único-de-dia **re-ancora** o fechamento realizado no dia da âncora;
+o dia seguinte abre nele. Isso desacopla os gráficos da cadeia histórica
+completa — basta o saldo oficial de hoje para os cenários funcionarem.
+
+Fontes 2/3 (informadas por humano) → `strength = MEDIUM`; fonte 4 (só Nomus)
+→ `strength = WEAK` e emite warning `OPENING_BALANCE_FROM_WEAK_SOURCE`.
+Cobertura parcial (só algumas contas com saldo) emite
+`OFFICIAL_BALANCE_PARTIAL_ACCOUNTS`.
+
+## 7. Regra dos N dias de conciliação (AR/AP)
+
+**Arquivo:** [financeSettlementReconciliation.ts](../../src/lib/finance/financeSettlementReconciliation.ts).
+
+Motivo: o Nomus grava em `paymentDate` (CP) e `settlementDate` (CR) o dia
+em que a operação clicou "baixar", não o dia real do dinheiro. Como a
+conciliação é feita pela manhã com as movimentações da véspera, uma
+defasagem de poucos dias entre baixa e vencimento é **baixa preguiçosa**,
+não é atraso. Sem essa regra, os gráficos apresentam como atraso o que na
+verdade é fluxo administrativo.
+
+**Regra canônica (mesma para AR e AP):**
+
+```
+efetivo(settledOn, dueDate, isSettled, policy):
+  se !isSettled && settledOn == null              → null (não realizado)
+  se !policy.enabled                              → LEGADO (dueDate ?? settledOn)
+  se settledOn == null                            → dueDate
+  se dueDate == null                              → settledOn
+  se settledOn ≤ dueDate                          → settledOn (pago antes)
+  se (settledOn − dueDate) ≤ toleranceDays        → dueDate (conciliação)
+  senão                                           → settledOn (atraso real)
+```
+
+**Parâmetros persistidos em `TreasuryScenarioPolicy`:**
+
+| Campo | Default | Efeito |
+|---|---|---|
+| `settlementReconciliationEnabled` | `true` | Liga/desliga a regra. `false` = comportamento LEGADO (AP baixado usa `dueDate` sempre; AR baixado usa `settlementDate` cru) |
+| `settlementReconciliationToleranceDays` | `3` | Dias corridos de tolerância. Cobre fim de semana normal (venceu sexta, concilia segunda = 3 dias). Feriadão >3d vira atraso real (sinal para operação afrouxar se necessário) |
+
+**Consumidores canonizados** — mesma coluna vertebral, cascata automática:
+- `financeAccountsPayableRules.normalizeAccountsPayableTitle(row, { reconciliation })` → AP
+- `financeAccountsReceivableRules.resolveFinanceArEffectiveSettlementDate(row, { reconciliation })` → AR (novo módulo)
+- `treasuryCaixaCanonicalDay` recebe `reconciliationPolicy` e delega para os canônicos
+- `treasuryCaixaService.getBoard` carrega a política e passa para o motor
+
+**Não altera dados oficiais** — só a data com que o dinheiro aparece nos
+gráficos. Alteração da política é auditada no `TreasuryAuditLog`.
+
+## 8. Migrations
 - `20260901120000_treasury_scenario_policy` — additiva pura: cria tabela +
   FK SetNull para AppUser + INSERT `ON CONFLICT DO NOTHING`. Rerun local
   não sobrescreve config.
-- Não altera títulos, não faz backfill inventado.
+- `20260902120000_treasury_scenario_policy_reconciliation` — ADD COLUMN
+  IF NOT EXISTS de `settlementReconciliationEnabled` (default `true`) e
+  `settlementReconciliationToleranceDays` (default `3`). Aditiva pura;
+  nenhum backfill, nenhum toque em títulos.
 
-## 7. Rollback conceitual
+## 9. Rollback conceitual
 - Componente/rota/service podem ser removidos sem tocar em dados.
-- Migration da política é aditiva; drop opcional, mas sem urgência (uma
-  linha, não afeta motor de outras telas).
+- Migrations da política são aditivas; drop opcional, mas sem urgência
+  (um singleton, não afeta motor de outras telas).
 - Motor único-de-dia continua fonte canônica mesmo sem cenários — outras
   telas dependem dele agora.
+- Regra dos N dias pode ser DESLIGADA na UI de admin
+  (`settlementReconciliationEnabled = false`): o motor volta ao
+  comportamento LEGADO por cascata canônica, sem redeploy.
+- Âncora oficial cai para cadeia calculada quando nenhuma fonte estiver
+  disponível — mecânica prevista com warning explícito, não é fallback
+  silencioso.
