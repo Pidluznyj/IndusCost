@@ -553,6 +553,7 @@ import {
 } from "./src/lib/adminUserEmployeeLink.js";
 import { resolveNewUserInitialAccess } from "./src/lib/adminUserCreationPolicy.js";
 import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
+import { syncCommissionPersonFromAppUserSellerLink } from "./src/lib/commissions/commissionPersonAppUserSync.server.js";
 import { evaluateAppUserDeleteGuard } from "./src/lib/adminUserDelete.js";
 import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
 import {
@@ -2560,6 +2561,15 @@ async function startServer() {
             actorSessionId: isEditingSelf ? req.appAuth?.sessionId ?? null : null,
           });
         }
+        // Vínculo login↔vendedor (Admin > Usuários) também precisa existir como
+        // CommissionPerson.nomusPersonId — é isso que Propostas/Pedidos/Comissões/CRM
+        // realmente consultam para mostrar o nome do vendedor. Ver
+        // commissionPersonAppUserSync.server.ts.
+        await syncCommissionPersonFromAppUserSellerLink(tx, {
+          role: updated.role,
+          primaryExternalSellerId: updated.externalSellerId,
+          sellerResponsibleName: updated.sellerResponsibleName,
+        });
         return updated;
       });
       return res.json({
