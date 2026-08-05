@@ -9,6 +9,7 @@ import type {
   TreasuryScenarioSummary,
 } from "./domain/treasuryCaixaScenariosTypes.js";
 import type { TreasuryScenarioPolicyDto } from "./contracts/treasuryScenarioPolicyContracts.js";
+import type { TreasuryScenarioDeltasResult } from "./domain/treasuryCaixaScenarioDeltas.js";
 
 export type TreasuryCaixaScenariosFetchParams = {
   asOfCivilDate?: string | null;
@@ -41,6 +42,12 @@ export type TreasuryCaixaScenariosPayload = TreasuryScenarioComputationResult & 
   policy: TreasuryScenarioPolicyDto;
   accountIds: string[] | null;
   officialTodayBalance: TreasuryCaixaScenariosOfficialBalance;
+  /**
+   * Deltas Otimista/Pessimista sobre a série canônica + memória de cálculo.
+   * Opcional para compatibilidade: o gráfico mantém o fallback antigo
+   * (re-ancoragem por diferença) quando ausente.
+   */
+  scenarioDeltas?: TreasuryScenarioDeltasResult;
   requestId?: string;
 };
 

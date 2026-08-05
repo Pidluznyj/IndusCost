@@ -33,6 +33,12 @@ import type {
   TreasuryScenarioDay,
   TreasuryScenarioSummary,
 } from "@/src/lib/treasury/domain/treasuryCaixaScenariosTypes.js";
+import {
+  applyScenarioDeltasToClosings,
+  buildTreasuryScenarioExecutiveLines,
+  type TreasuryScenarioDeltaMemoryEntry,
+  type TreasuryScenarioDeltasResult,
+} from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
@@ -135,11 +141,18 @@ function shortDate(civilDate: string): string {
  * dias. Nos dias em que a agenda materializada existe, as duas fontes
  * divergem — e a diferença acumulava dia após dia.
  *
- * Otimista e Pessimista preservam o DELTA que o motor canônico calculou em
- * relação ao Realista dele. Assim a distância entre cenários (o "Intervalo de
- * cenário") continua vindo 100% do backend; só o ponto de ancoragem passa a
- * ser o saldo oficial da Linha do tempo. Não há cálculo financeiro novo aqui
- * — apenas reposicionamento de uma série já calculada.
+ * OTIMISTA/PESSIMISTA POR DELTA (motor `treasuryCaixaScenarioDeltas`) —
+ * quando o payload traz `scenarioDeltas`, cada cenário é literalmente
+ * "Linha do tempo + delta acumulado do dia": por título em aberto o backend
+ * calculou quanto a data do cenário difere da data Realista individual, e
+ * aqui só somamos essas diferenças sobre a MESMA série que a tabela exibe.
+ * O Realista nunca é recalculado; valores nunca mudam — apenas datas.
+ * Como a Linha do tempo só tem linha em dia com movimento, os dias sem
+ * linha herdam o último fechamento conhecido (forward-fill) antes do delta.
+ *
+ * Fallback (payload antigo, sem `scenarioDeltas`): preserva o delta diário
+ * que o motor antigo calculou em relação ao Realista dele, re-ancorado na
+ * Linha do tempo. Não há cálculo financeiro novo em nenhum dos caminhos.
  */
 function buildRows(
   days: readonly TreasuryScenarioDay[],
@@ -147,8 +160,40 @@ function buildRows(
   timelineByDate?: ReadonlyMap<
     string,
     { opening: number | null; closing: number | null }
-  > | null
+  > | null,
+  scenarioDeltas?: TreasuryScenarioDeltasResult | null
 ): ChartRow[] {
+  // ── Caminho novo: cenário = série canônica + delta acumulado ──────────
+  let optByDate: Map<string, number | null> | null = null;
+  let pesByDate: Map<string, number | null> | null = null;
+  const realShownByDate = new Map<string, number | null>();
+  if (timelineByDate) {
+    // Forward-fill: a Linha do tempo só tem linha em dia com movimento; nos
+    // demais dias o saldo é o último fechamento conhecido.
+    let lastTimelineClosing: number | null = null;
+    for (const d of days) {
+      const t = timelineByDate.get(d.civilDate);
+      if (t?.closing != null) lastTimelineClosing = t.closing;
+      realShownByDate.set(
+        d.civilDate,
+        t?.closing ?? lastTimelineClosing ?? d.realistic.closingBalance
+      );
+    }
+    if (scenarioDeltas) {
+      const orderedCivilDates = days.map((d) => d.civilDate);
+      optByDate = applyScenarioDeltasToClosings({
+        orderedCivilDates,
+        realisticClosingByDay: realShownByDate,
+        deltas: scenarioDeltas.optimistic,
+      });
+      pesByDate = applyScenarioDeltasToClosings({
+        orderedCivilDates,
+        realisticClosingByDay: realShownByDate,
+        deltas: scenarioDeltas.pessimistic,
+      });
+    }
+  }
+
   return days.map((d) => {
     const backendReal = d.realistic.closingBalance;
     const backendOpt = d.optimistic.closingBalance;
@@ -156,21 +201,31 @@ function buildRows(
 
     // Realista = saldo da Linha do tempo quando disponível para o dia.
     const fromTimeline = timelineByDate?.get(d.civilDate) ?? null;
-    const timelineReal = fromTimeline?.closing ?? null;
-    const real = timelineReal != null ? timelineReal : backendReal;
+    const real = timelineByDate
+      ? realShownByDate.get(d.civilDate) ?? backendReal
+      : backendReal;
     const openingShown =
       fromTimeline?.opening != null ? fromTimeline.opening : d.openingBalance;
 
-    // Deltas do motor canônico preservados sobre a nova âncora.
-    const optDelta =
-      backendOpt != null && backendReal != null ? backendOpt - backendReal : null;
-    const pesDelta =
-      backendPes != null && backendReal != null ? backendPes - backendReal : null;
-
-    const opt =
-      real != null && optDelta != null ? real + optDelta : backendOpt;
-    const pes =
-      real != null && pesDelta != null ? real + pesDelta : backendPes;
+    let opt: number | null;
+    let pes: number | null;
+    if (optByDate && pesByDate) {
+      // Caminho novo — deltas do motor canônico sobre a série da tabela.
+      opt = optByDate.get(d.civilDate) ?? null;
+      pes = pesByDate.get(d.civilDate) ?? null;
+    } else {
+      // Fallback antigo — re-ancoragem por diferença dia a dia.
+      const optDelta =
+        backendOpt != null && backendReal != null
+          ? backendOpt - backendReal
+          : null;
+      const pesDelta =
+        backendPes != null && backendReal != null
+          ? backendPes - backendReal
+          : null;
+      opt = real != null && optDelta != null ? real + optDelta : backendOpt;
+      pes = real != null && pesDelta != null ? real + pesDelta : backendPes;
+    }
 
     let bandLow: number | null = null;
     let bandRange: number | null = null;
@@ -630,7 +685,14 @@ export function TreasuryCaixaScenariosChart({
 
   const rows = useMemo(
     () =>
-      data ? buildRows(data.days, data.asOfCivilDate, timelineByDate) : [],
+      data
+        ? buildRows(
+            data.days,
+            data.asOfCivilDate,
+            timelineByDate,
+            data.scenarioDeltas ?? null
+          )
+        : [],
     [data, timelineByDate]
   );
 
@@ -704,6 +766,43 @@ export function TreasuryCaixaScenariosChart({
       pes: realFinal != null && pesFinal != null ? pesFinal - realFinal : null,
     };
   }, [summaries]);
+
+  /**
+   * Principais movimentos por cenário — memória de cálculo do motor de
+   * deltas ordenada por |valor|. Só apresentação: o texto vem pronto
+   * ("explanation" determinística em pt-BR).
+   */
+  const topMovers = useMemo(() => {
+    const memory = data?.scenarioDeltas?.memory;
+    if (!memory || memory.length === 0) return null;
+    const pick = (scenario: "OPTIMISTIC" | "PESSIMISTIC") =>
+      memory
+        .filter((m) => m.scenario === scenario && m.scenarioDate != null)
+        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+        .slice(0, 5);
+    return { optimistic: pick("OPTIMISTIC"), pessimistic: pick("PESSIMISTIC") };
+  }, [data]);
+
+  /** Frases executivas determinísticas (templates fixos sobre os números). */
+  const executiveLines = useMemo(() => {
+    if (!data?.scenarioDeltas || !summaries) return null;
+    const asInput = (s: TreasuryScenarioSummary) => ({
+      minBalance: s.minBalance,
+      minBalanceDate: s.minBalanceDate,
+      firstNegativeDate: s.firstNegativeDate,
+      maxCashNeed: s.maxCashNeed,
+      finalBalance: s.finalBalance,
+    });
+    return buildTreasuryScenarioExecutiveLines({
+      realistic: asInput(summaries.realistic),
+      optimistic: asInput(summaries.optimistic),
+      pessimistic: asInput(summaries.pessimistic),
+      optimisticTopMovers: (topMovers?.optimistic ?? []).map(
+        (m) =>
+          `${m.counterpartyName ?? m.documentNumber ?? `título ${m.sourceId}`} (${money(m.amount)})`
+      ),
+    });
+  }, [data, summaries, topMovers]);
 
   const drilldownDay = drilldownDate ? daysByLabel.get(drilldownDate) : null;
 
@@ -847,6 +946,47 @@ export function TreasuryCaixaScenariosChart({
             />
           </div>
 
+          {executiveLines && executiveLines.length > 0 ? (
+            <div
+              className="mt-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[11px] text-[#111827]"
+              data-testid="caixa-scenarios-executive"
+            >
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+                Resumo executivo
+              </p>
+              <ul className="space-y-0.5">
+                {executiveLines.map((l, i) => (
+                  <li key={i}>• {l}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <OutOfHorizonNote deltas={data.scenarioDeltas} />
+
+          {topMovers ? (
+            <details
+              className="mt-2 text-[11px] text-muted-foreground"
+              data-testid="caixa-scenarios-top-movers"
+            >
+              <summary className="cursor-pointer font-semibold">
+                Principais movimentos por cenário (memória de cálculo)
+              </summary>
+              <div className="mt-1 grid grid-cols-1 gap-2 md:grid-cols-2">
+                <TopMoversList
+                  title="Otimista"
+                  color={SCENARIO_STYLE.optimistic.color}
+                  entries={topMovers.optimistic}
+                />
+                <TopMoversList
+                  title="Pessimista"
+                  color={SCENARIO_STYLE.pessimistic.color}
+                  entries={topMovers.pessimistic}
+                />
+              </div>
+            </details>
+          ) : null}
+
           {data.alerts.length > 0 ? (
             <div
               className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
@@ -940,6 +1080,94 @@ export function TreasuryCaixaScenariosChart({
         </FinanceBiChartExpandModal>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Valores deslocados para DEPOIS do horizonte visível — a spec proíbe
+ * empilhá-los no último dia do gráfico; são reportados à parte.
+ */
+function OutOfHorizonNote({
+  deltas,
+}: {
+  deltas: TreasuryScenarioDeltasResult | undefined;
+}) {
+  if (!deltas) return null;
+  const parts: string[] = [];
+  if (deltas.optimistic.outOfHorizonInflow > 0)
+    parts.push(
+      `Otimista: ${money(deltas.optimistic.outOfHorizonInflow)} de entradas`
+    );
+  if (deltas.optimistic.outOfHorizonOutflow > 0)
+    parts.push(
+      `Otimista: ${money(deltas.optimistic.outOfHorizonOutflow)} de saídas`
+    );
+  if (deltas.pessimistic.outOfHorizonInflow > 0)
+    parts.push(
+      `Pessimista: ${money(deltas.pessimistic.outOfHorizonInflow)} de entradas`
+    );
+  if (deltas.pessimistic.outOfHorizonOutflow > 0)
+    parts.push(
+      `Pessimista: ${money(deltas.pessimistic.outOfHorizonOutflow)} de saídas`
+    );
+  if (parts.length === 0) return null;
+  return (
+    <p
+      className="mt-2 flex items-start gap-1 text-[11px] text-muted-foreground"
+      data-testid="caixa-scenarios-out-of-horizon"
+    >
+      <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+      <span>
+        Movimentos projetados para <strong>depois do horizonte</strong> (não
+        aparecem no gráfico): {parts.join(" · ")}. Amplie o horizonte para
+        vê-los.
+      </span>
+    </p>
+  );
+}
+
+function TopMoversList({
+  title,
+  color,
+  entries,
+}: {
+  title: string;
+  color: string;
+  entries: readonly TreasuryScenarioDeltaMemoryEntry[];
+}) {
+  return (
+    <div className="rounded-lg border border-[#E5E7EB] bg-white p-2">
+      <p className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+        <span
+          className="h-2 w-4 rounded"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        {title}
+      </p>
+      {entries.length === 0 ? (
+        <p className="text-[11px]">Nenhum título muda de data neste cenário.</p>
+      ) : (
+        <ul className="space-y-1">
+          {entries.map((m) => (
+            <li
+              key={`${m.sourceType}-${m.sourceId}`}
+              className="border-t border-black/5 pt-1 first:border-t-0 first:pt-0"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="max-w-[180px] truncate font-semibold text-[#111827]">
+                  {m.counterpartyName ?? m.documentNumber ?? `Título ${m.sourceId}`}
+                </span>
+                <span className="tabular-nums font-semibold text-[#111827]">
+                  {money(m.amount)}
+                </span>
+              </div>
+              <p className="text-[10px] leading-snug">{m.explanation}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

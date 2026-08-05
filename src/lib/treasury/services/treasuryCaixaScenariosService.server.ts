@@ -21,6 +21,10 @@ import {
   type TreasuryScenarioOpenReceivable,
 } from "../domain/treasuryCaixaScenarios.js";
 import {
+  computeTreasuryCaixaScenarioDeltas,
+  type TreasuryScenarioDeltasResult,
+} from "../domain/treasuryCaixaScenarioDeltas.js";
+import {
   isTreasuryCivilDate,
   parseTreasuryCivilDate,
   todayTreasuryCivilDateInSaoPaulo,
@@ -65,6 +69,12 @@ export type TreasuryCaixaScenariosResponse = TreasuryScenarioComputationResult &
   accountIds: string[] | null;
   /** Fonte do saldo inicial usado pelos cenários — auditabilidade da UI. */
   officialTodayBalance: TreasuryCaixaBoardDto["officialTodayBalance"];
+  /**
+   * Deltas Otimista/Pessimista sobre a série canônica (Linha do tempo) +
+   * memória de cálculo por título. O Realista NÃO é recalculado — o gráfico
+   * soma esses deltas sobre a mesma série da tabela.
+   */
+  scenarioDeltas: TreasuryScenarioDeltasResult;
 };
 
 const DEFAULT_HORIZON_DAYS = 90;
@@ -376,6 +386,23 @@ export function createTreasuryCaixaScenariosService(deps: {
         dailyDueEstimatesByDate,
       });
 
+      // Motor de DELTAS Otimista/Pessimista sobre a série canônica: para
+      // cada título em aberto, calcula quanto a data do cenário difere da
+      // data Realista individual e devolve apenas a DIFERENÇA diária. O
+      // frontend soma esses deltas sobre a série da Linha do tempo — o
+      // Realista nunca é recalculado. Sem mapa de histórico por cliente por
+      // enquanto (pendência documentada): o motor usa o parâmetro global
+      // configurável da TreasuryScenarioPolicy.
+      const horizonEndCivilDate =
+        projectedWindow[projectedWindow.length - 1] ?? asOfCivilDate;
+      const scenarioDeltas = computeTreasuryCaixaScenarioDeltas({
+        asOfCivilDate,
+        horizonEndCivilDate,
+        openReceivables,
+        openPayables,
+        policy: policyDto,
+      });
+
       return {
         ...result,
         period,
@@ -384,6 +411,7 @@ export function createTreasuryCaixaScenariosService(deps: {
         policy: policyDto,
         accountIds: null,
         officialTodayBalance: board.officialTodayBalance,
+        scenarioDeltas,
       };
     },
   };
