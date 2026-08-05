@@ -27,7 +27,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, ArrowDown, Info, RefreshCw } from "lucide-react";
+import { AlertTriangle, Info, RefreshCw } from "lucide-react";
 import type { TreasuryCaixaScenariosPayload } from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
 import type {
   TreasuryScenarioDay,
@@ -36,6 +36,11 @@ import type {
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
+import { FinanceBiChartExpandButton } from "@/src/components/finance/bi/FinanceBiChartExpandButton";
+import {
+  FinanceBiChartExpandModal,
+  useFinanceBiExpandedChartHeight,
+} from "@/src/components/finance/bi/FinanceBiChartExpandModal";
 
 export type TreasuryCaixaScenariosChartProps = {
   data: TreasuryCaixaScenariosPayload | null;
@@ -357,6 +362,171 @@ function ScenarioTooltip({
   );
 }
 
+type SeriesKey = "optimistic" | "realistic" | "pessimistic" | "band";
+
+/** Nome da série na legenda → chave interna de visibilidade. */
+const LEGEND_NAME_TO_SERIES: Record<string, SeriesKey> = {
+  [SCENARIO_STYLE.optimistic.label]: "optimistic",
+  [SCENARIO_STYLE.realistic.label]: "realistic",
+  [SCENARIO_STYLE.pessimistic.label]: "pessimistic",
+  "Intervalo de cenário": "band",
+};
+
+/**
+ * Renderiza o gráfico canônico dos cenários. Extraído do componente para
+ * reuso entre o card embutido (h=320) e o modo apresentação (~72vh).
+ * Visibilidade das séries governada por `visible[SeriesKey]`; ocultar
+ * mantém o payload no dataset (o Tooltip continua descrevendo o dia
+ * inteiro), só remove a linha/área do desenho.
+ */
+function renderScenariosChart(params: {
+  rows: ChartRow[];
+  daysByLabel: Map<string, TreasuryScenarioDay>;
+  heightPx: number;
+  visible: Record<SeriesKey, boolean>;
+  onLegendClick: (key: SeriesKey) => void;
+  onPointClick: (civilDate: string) => void;
+}) {
+  const { rows, daysByLabel, heightPx, visible, onLegendClick, onPointClick } = params;
+  return (
+    <div style={{ height: `${heightPx}px` }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart
+          data={rows}
+          margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+          onClick={(state: unknown) => {
+            const s = state as
+              | { activePayload?: Array<{ payload?: ChartRow }> }
+              | null;
+            const payload = s?.activePayload?.[0]?.payload;
+            if (payload) onPointClick(payload.civilDate);
+          }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: "#6B7280", fontSize: 11 }}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            tick={{ fill: "#6B7280", fontSize: 11 }}
+            tickFormatter={(v: number) => money(v)}
+          />
+          <Tooltip
+            content={(props) => (
+              <ScenarioTooltip {...props} daysByLabel={daysByLabel} />
+            )}
+          />
+          <ReferenceLine
+            y={0}
+            stroke="#DC2626"
+            strokeDasharray="4 4"
+            ifOverflow="extendDomain"
+            label={{
+              value: "R$ 0,00",
+              fill: "#DC2626",
+              fontSize: 10,
+              position: "insideBottomRight",
+            }}
+          />
+          {/* Faixa "Intervalo de cenário" — empilhamento: base transparente
+              (bandLow) + range para desenhar apenas a diferença. Área
+              discreta em cinza para não competir com as linhas. */}
+          <Area
+            type="monotone"
+            dataKey="bandLow"
+            stackId="band"
+            stroke="none"
+            fill="transparent"
+            isAnimationActive={false}
+            legendType="none"
+            hide={!visible.band}
+          />
+          <Area
+            type="monotone"
+            dataKey="bandRange"
+            stackId="band"
+            stroke="none"
+            fill="#6B7280"
+            fillOpacity={0.08}
+            isAnimationActive={false}
+            name="Intervalo de cenário"
+            hide={!visible.band}
+          />
+          <Line
+            type="monotone"
+            dataKey="opt"
+            name={SCENARIO_STYLE.optimistic.label}
+            stroke={SCENARIO_STYLE.optimistic.color}
+            strokeWidth={SCENARIO_STYLE.optimistic.strokeWidth}
+            strokeDasharray={SCENARIO_STYLE.optimistic.strokeDasharray}
+            dot={false}
+            isAnimationActive={false}
+            hide={!visible.optimistic}
+          />
+          <Line
+            type="monotone"
+            dataKey="pes"
+            name={SCENARIO_STYLE.pessimistic.label}
+            stroke={SCENARIO_STYLE.pessimistic.color}
+            strokeWidth={SCENARIO_STYLE.pessimistic.strokeWidth}
+            strokeDasharray={SCENARIO_STYLE.pessimistic.strokeDasharray}
+            dot={false}
+            isAnimationActive={false}
+            hide={!visible.pessimistic}
+          />
+          <Line
+            type="monotone"
+            dataKey="real"
+            name={SCENARIO_STYLE.realistic.label}
+            stroke={SCENARIO_STYLE.realistic.color}
+            strokeWidth={SCENARIO_STYLE.realistic.strokeWidth}
+            dot={false}
+            isAnimationActive={false}
+            hide={!visible.realistic}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
+            onClick={(entry: { value?: string; dataKey?: string }) => {
+              const raw =
+                typeof entry?.value === "string" ? entry.value : entry?.dataKey;
+              if (!raw) return;
+              const key = LEGEND_NAME_TO_SERIES[raw];
+              if (key) onLegendClick(key);
+            }}
+            formatter={(value: string) => {
+              const key = LEGEND_NAME_TO_SERIES[value];
+              const off = key ? !visible[key] : false;
+              return (
+                <span
+                  style={{
+                    color: off ? "#9CA3AF" : "#111827",
+                    textDecoration: off ? "line-through" : "none",
+                  }}
+                  title={
+                    off
+                      ? `${value} — oculto (clique para mostrar)`
+                      : `${value} — clique para ocultar`
+                  }
+                >
+                  {value}
+                </span>
+              );
+            }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+const DEFAULT_VISIBLE: Record<SeriesKey, boolean> = {
+  optimistic: true,
+  realistic: true,
+  pessimistic: true,
+  band: true,
+};
+
 export function TreasuryCaixaScenariosChart({
   data,
   loading = false,
@@ -365,6 +535,18 @@ export function TreasuryCaixaScenariosChart({
   onHorizonChange,
 }: TreasuryCaixaScenariosChartProps) {
   const [drilldownDate, setDrilldownDate] = useState<string | null>(null);
+  /**
+   * Visibilidade por série — controlada pela legenda clicável (Recharts
+   * repassa o evento). Ocultar a série mantém o payload, só some do desenho;
+   * o Realista permanece "principal" independente do estado, mas pode ser
+   * escondido para inspeção isolada de Otimista/Pessimista.
+   */
+  const [visible, setVisible] = useState<Record<SeriesKey, boolean>>(DEFAULT_VISIBLE);
+  const [expanded, setExpanded] = useState(false);
+  const expandedHeight = useFinanceBiExpandedChartHeight();
+
+  const toggleSeries = (key: SeriesKey) =>
+    setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const rows = useMemo(
     () => (data ? buildRows(data.days, data.asOfCivilDate) : []),
@@ -471,6 +653,13 @@ export function TreasuryCaixaScenariosChart({
               Atualizar
             </button>
           ) : null}
+          {data ? (
+            <FinanceBiChartExpandButton
+              onClick={() => setExpanded(true)}
+              testId="caixa-scenarios-expand"
+              label="Ampliar em modo apresentação"
+            />
+          ) : null}
         </div>
       </header>
 
@@ -484,101 +673,14 @@ export function TreasuryCaixaScenariosChart({
         </p>
       ) : (
         <>
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={rows}
-                margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-                onClick={(state: unknown) => {
-                  const s = state as
-                    | { activePayload?: Array<{ payload?: ChartRow }> }
-                    | null;
-                  const payload = s?.activePayload?.[0]?.payload;
-                  if (payload) setDrilldownDate(payload.civilDate);
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill: "#6B7280", fontSize: 11 }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fill: "#6B7280", fontSize: 11 }}
-                  tickFormatter={(v: number) => money(v)}
-                />
-                <Tooltip
-                  content={(props) => (
-                    <ScenarioTooltip {...props} daysByLabel={daysByLabel} />
-                  )}
-                />
-                <ReferenceLine
-                  y={0}
-                  stroke="#DC2626"
-                  strokeDasharray="4 4"
-                  ifOverflow="extendDomain"
-                  label={{
-                    value: "R$ 0,00",
-                    fill: "#DC2626",
-                    fontSize: 10,
-                    position: "insideBottomRight",
-                  }}
-                />
-                {/* Faixa "Intervalo de cenário" — empilhamento: base transparente
-                    (bandLow) + range para desenhar apenas a diferença. Área
-                    discreta em cinza para não competir com as linhas. */}
-                <Area
-                  type="monotone"
-                  dataKey="bandLow"
-                  stackId="band"
-                  stroke="none"
-                  fill="transparent"
-                  isAnimationActive={false}
-                  legendType="none"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="bandRange"
-                  stackId="band"
-                  stroke="none"
-                  fill="#6B7280"
-                  fillOpacity={0.08}
-                  isAnimationActive={false}
-                  name="Intervalo de cenário"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="opt"
-                  name={SCENARIO_STYLE.optimistic.label}
-                  stroke={SCENARIO_STYLE.optimistic.color}
-                  strokeWidth={SCENARIO_STYLE.optimistic.strokeWidth}
-                  strokeDasharray={SCENARIO_STYLE.optimistic.strokeDasharray}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="pes"
-                  name={SCENARIO_STYLE.pessimistic.label}
-                  stroke={SCENARIO_STYLE.pessimistic.color}
-                  strokeWidth={SCENARIO_STYLE.pessimistic.strokeWidth}
-                  strokeDasharray={SCENARIO_STYLE.pessimistic.strokeDasharray}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="real"
-                  name={SCENARIO_STYLE.realistic.label}
-                  stroke={SCENARIO_STYLE.realistic.color}
-                  strokeWidth={SCENARIO_STYLE.realistic.strokeWidth}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          {renderScenariosChart({
+            rows,
+            daysByLabel,
+            heightPx: 320,
+            visible,
+            onLegendClick: toggleSeries,
+            onPointClick: (civilDate) => setDrilldownDate(civilDate),
+          })}
 
           <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
             <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
@@ -654,6 +756,54 @@ export function TreasuryCaixaScenariosChart({
           ) : null}
         </>
       )}
+
+      {data ? (
+        <FinanceBiChartExpandModal
+          open={expanded}
+          onClose={() => setExpanded(false)}
+          eyebrow="Financeiro · Tesouraria · Caixa"
+          title="Projeção do caixa — cenários"
+          subtitle={`Otimista · Realista · Pessimista — a partir de ${formatCivilDate(data.asOfCivilDate)}${
+            data.officialTodayBalance?.amount != null
+              ? ` · Saldo inicial ${money(data.officialTodayBalance.amount)} (${data.officialTodayBalance.sourceLabel})`
+              : ""
+          }`}
+          testId="caixa-scenarios-expand-modal"
+        >
+          {renderScenariosChart({
+            rows,
+            daysByLabel,
+            heightPx: expandedHeight,
+            visible,
+            onLegendClick: toggleSeries,
+            onPointClick: (civilDate) => setDrilldownDate(civilDate),
+          })}
+          {data.alerts.length > 0 ? (
+            <div
+              className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900"
+              data-testid="caixa-scenarios-expand-alerts"
+            >
+              <p className="mb-1 flex items-center gap-1 font-bold uppercase text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                Alertas
+              </p>
+              <ul className="space-y-0.5">
+                {data.alerts.map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <p className="mt-3 flex items-start gap-1 text-[12px] text-muted-foreground">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              A faixa cinza é o <strong>Intervalo de cenário</strong> — distância
+              entre a hipótese operacional favorável e a conservadora. Clique
+              numa entrada da legenda para mostrar/ocultar cada série.
+            </span>
+          </p>
+        </FinanceBiChartExpandModal>
+      ) : null}
     </section>
   );
 }
