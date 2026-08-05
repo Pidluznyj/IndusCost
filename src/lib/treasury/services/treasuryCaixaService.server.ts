@@ -554,10 +554,35 @@ export function createTreasuryCaixaService(input: {
         }
       }
 
+      // Âncora oficial de saldo de HOJE — mesma precedência que o motor
+      // único-de-dia consome. Carregada aqui (e não depois) para também
+      // re-ancorar a cadeia da Linha do tempo mensal / gráfico de saldo
+      // por mês, que é montada por `applyTreasuryCaixaRunningBalance`.
+      // Sem esta injeção, a linha do tempo mensal e os cenários apresentam
+      // saldos divergentes para o mesmo dia (a linha do tempo reconstruía
+      // do zero desde a gênese, ignorando o saldo real no banco).
+      const todayCivilDate = todayTreasuryCivilDateInSaoPaulo();
+      const officialToday = await loadTreasuryOfficialTodayBalance(
+        prisma,
+        todayCivilDate
+      );
+      // Só injeta se ainda não houver fonte mais forte para o dia (a
+      // precedência foi resolvida por `loadTreasuryOfficialTodayBalance`,
+      // e os mapas anteriores — TreasuryDailyClosing CLOSED e snapshots —
+      // podem já ter posto valor). Prevalência coerente com a precedência
+      // canônica: CLOSED > rotina > genérico > Nomus.
+      if (
+        officialToday.amount != null &&
+        !informedClosingByCivilDate.has(todayCivilDate)
+      ) {
+        informedClosingByCivilDate.set(todayCivilDate, officialToday.amount);
+      }
+
       // Acumula saldo desde a gênese ANTES de cortar pelo período filtrado —
       // senão um filtro de março recomeçaria a soma do zero em março e
       // perderia o efeito de janeiro/fevereiro. O saldo informado sobrepõe o
-      // calculado e re-ancora a cadeia a partir dali.
+      // calculado e re-ancora a cadeia a partir dali. Agora com a âncora
+      // oficial de HOJE, a cadeia mensal converge com o gráfico dos cenários.
       const realizedDays = applyTreasuryCaixaRunningBalance(realizedDaysAll, {
         informedClosingByCivilDate,
       }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
@@ -667,17 +692,9 @@ export function createTreasuryCaixaService(input: {
         }
       }
 
-      // Âncora oficial de saldo de HOJE — a mais confiável dentre as fontes
-      // disponíveis (fechamento CLOSED → snapshots do dia → snapshots
-      // genéricos → availableBalance do Nomus). Sem ela o motor caía na
-      // cadeia calculada desde a gênese (fragil, começa em zero, ignora
-      // aportes/transferências sem título).
-      const todayCivilDate = todayTreasuryCivilDateInSaoPaulo();
-      const officialToday = await loadTreasuryOfficialTodayBalance(
-        prisma,
-        todayCivilDate
-      );
-
+      // Âncora oficial já foi carregada acima (linha ~561) para injetar no
+      // running balance da Linha do tempo mensal. Reusa a mesma instância
+      // aqui — o motor único-de-dia também re-ancora no dia da âncora.
       const anchor =
         officialToday.amount != null &&
         windowDays.some((d) => d === todayCivilDate)
