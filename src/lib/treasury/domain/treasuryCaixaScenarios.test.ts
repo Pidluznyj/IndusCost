@@ -495,4 +495,94 @@ describe("computeTreasuryCaixaScenarios — invariantes centrais", () => {
     const d05 = result.days.find((d) => d.civilDate === "2026-08-05")!;
     assert.equal(d05.realistic.receivableInflows, 100);
   });
+
+  it("REGRESSÃO — dia futuro NÃO soma realizado + estimativa (dupla-contagem)", () => {
+    // Bug real: título com settlementDate anômalo no futuro (dado do Nomus)
+    // fazia o Realista somar DUAS VEZES o mesmo dinheiro no mesmo dia —
+    // uma vez como "realizado" (canon.realizedInflows) e outra como "em
+    // aberto" (timelineBase.estimatedInflow). A Linha do tempo mensal
+    // (`appendTreasuryCaixaDailyDueEstimates`) NUNCA soma as duas coisas no
+    // mesmo dia futuro — só usa a estimativa. O Realista tem que fazer o
+    // mesmo, senão diverge da Linha do tempo por acumulação (o que o
+    // usuário reportou: saldo inicial do dia 20/08 batendo R$ 128k a menos
+    // no gráfico do que na Linha do tempo).
+    const timelineBase = new Map([
+      ["2026-08-10", { estimatedInflow: 5000, estimatedOutflow: 0 }],
+    ]);
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: "2026-08-05",
+      civilDatesInWindow: ["2026-08-05", "2026-08-10"],
+      canonicalDays: [
+        canonicalDay("2026-08-05"),
+        // Anomalia: settlementDate no futuro fez o motor único-de-dia
+        // registrar realizedInflows > 0 num dia estritamente futuro.
+        canonicalDay("2026-08-10", { realizedInflows: 30000 }),
+      ],
+      openReceivables: [],
+      openPayables: [],
+      policy: policy(),
+      openingBalanceOfFirstDay: 100000,
+      dailyDueEstimatesByDate: timelineBase,
+    });
+    const d10 = result.days.find((d) => d.civilDate === "2026-08-10")!;
+    // DEVE usar só a estimativa (5000), NUNCA 5000 + 30000.
+    assert.equal(d10.realistic.receivableInflows, 5000);
+    assert.equal(d10.realistic.closingBalance, 105000, "100000 + 5000, não 135000");
+  });
+
+  it("dia HOJE (civilDate === asOf) usa só o realizado, NÃO soma dailyDueEstimates em cima", () => {
+    // "Hoje" é fato (kind TODAY = realizado), não projeção. "A receber hoje"
+    // (em aberto) é dimensão SEPARADA de "Recebido hoje" (baixado) — aqui
+    // só o baixado deve entrar na cadeia de saldo do Realista.
+    const timelineBase = new Map([
+      ["2026-08-05", { estimatedInflow: 11030.66, estimatedOutflow: 55138.7 }],
+    ]);
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: "2026-08-05",
+      civilDatesInWindow: ["2026-08-05"],
+      canonicalDays: [
+        canonicalDay("2026-08-05", {
+          realizedInflows: 487.5, // "Recebido hoje" (baixado)
+          realizedOutflows: 0, // "Pago hoje" (baixado)
+        }),
+      ],
+      openReceivables: [],
+      openPayables: [],
+      policy: policy(),
+      openingBalanceOfFirstDay: 4007850.08,
+      dailyDueEstimatesByDate: timelineBase,
+    });
+    const today = result.days[0]!;
+    // Só o realizado (487.50) — NÃO soma os 11.030,66 em aberto.
+    assert.equal(today.realistic.receivableInflows, 0);
+    assert.equal(today.realistic.payableOutflows, 0);
+    assert.equal(today.realistic.closingBalance, 4008337.58, "4007850.08 + 487.50");
+  });
+
+  it("Σ dos dias futuros do Realista == Σ dailyDueEstimates do período (fecha com a Linha do tempo)", () => {
+    const timelineBase = new Map([
+      ["2026-08-06", { estimatedInflow: 1000, estimatedOutflow: 2000 }],
+      ["2026-08-07", { estimatedInflow: 3000, estimatedOutflow: 500 }],
+      ["2026-08-08", { estimatedInflow: 0, estimatedOutflow: 1500 }],
+    ]);
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: "2026-08-05",
+      civilDatesInWindow: ["2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08"],
+      canonicalDays: [
+        canonicalDay("2026-08-05"),
+        // Anomalias de realizado em dias futuros — não podem contaminar.
+        canonicalDay("2026-08-06", { realizedInflows: 999999 }),
+        canonicalDay("2026-08-07", { realizedOutflows: 999999 }),
+        canonicalDay("2026-08-08"),
+      ],
+      openReceivables: [],
+      openPayables: [],
+      policy: policy(),
+      openingBalanceOfFirstDay: 0,
+      dailyDueEstimatesByDate: timelineBase,
+    });
+    const finalBalance = result.summaries.realistic.finalBalance;
+    // Σ inflow − Σ outflow = (1000+3000+0) − (2000+500+1500) = 4000 − 4000 = 0
+    assert.equal(finalBalance, 0);
+  });
 });

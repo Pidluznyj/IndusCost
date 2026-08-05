@@ -700,6 +700,10 @@ export function computeTreasuryCaixaScenarios(
 
     // Passado: apenas realized (sem projeção). Futuro: soma projeções do cenário.
     const isFuture = compareCivilDates(civilDate, asOf) >= 0;
+    // Estritamente depois de hoje — dia que ainda NÃO aconteceu. Distinto de
+    // `isFuture`, que inclui o próprio "hoje" (kind TODAY é tratado como
+    // realizado, ver `isRealizedDayKind`/`classifyTreasuryCaixaTimelineDay`).
+    const isStrictlyFuture = compareCivilDates(civilDate, asOf) > 0;
     // Base do dia vinda da Linha do tempo (mesma fonte oficial), quando
     // disponível. Zero legítimo quando não há título vencendo naquele dia.
     const timelineBase = useTimelineBase
@@ -724,11 +728,37 @@ export function computeTreasuryCaixaScenarios(
     ): TreasuryScenarioDayFacts {
       const arList = isFuture ? arBucket.get(civilDate) ?? [] : [];
       const apList = isFuture ? apBucket.get(civilDate) ?? [] : [];
+      const isRealisticTimeline = mode === "realistic-timeline" && timelineBase;
+
       let receivableInflows: number;
       let payableOutflows: number;
-      if (mode === "realistic-timeline" && timelineBase && isFuture) {
-        receivableInflows = timelineBase.estimatedInflow;
-        payableOutflows = timelineBase.estimatedOutflow;
+      // Dia REALIZADO (dia efetivamente já ocorrido — canonicalDay.realized*)
+      // usado na soma; dia PROJETADO usa dailyDueEstimates (Linha do tempo).
+      // Nunca os dois juntos — a Linha do tempo (`appendTreasuryCaixaDailyDueEstimates`)
+      // também nunca soma realizado a estimativa no mesmo dia; um dia é uma
+      // coisa ou é a outra.
+      let dayRealizedInflows = realizedInflows;
+      let dayRealizedOutflows = realizedOutflows;
+      if (isRealisticTimeline && isStrictlyFuture) {
+        // Dia futuro de verdade: só a estimativa da Linha do tempo conta.
+        // Ignora deliberadamente `canon.realizedInflows/Outflows` — se
+        // existir uma baixa com data futura por anomalia de dado (Nomus),
+        // ela NÃO é somada aqui, exatamente como a Linha do tempo mensal
+        // faz (dias futuros vêm só de `dailyDueEstimates`, nunca de
+        // realizado). Sem isto, título baixado com data futura duplicava
+        // o valor: uma vez como "realizado" e outra como "em aberto".
+        receivableInflows = timelineBase!.estimatedInflow;
+        payableOutflows = timelineBase!.estimatedOutflow;
+        dayRealizedInflows = 0;
+        dayRealizedOutflows = 0;
+      } else if (isRealisticTimeline) {
+        // Dia HOJE (civilDate === asOf): é fato, não projeção — usa só o
+        // realizado do canonicalDay (mesma regra que classifica "hoje" como
+        // kind TODAY = realizado). Não soma dailyDueEstimates em cima —
+        // "A receber/pagar hoje" (em aberto) é dimensão separada de
+        // "Recebido/Pago hoje" (baixado), e aqui só a baixada conta.
+        receivableInflows = 0;
+        payableOutflows = 0;
       } else {
         receivableInflows = arList.reduce((s, x) => s + x.amount, 0);
         payableOutflows = apList.reduce((s, x) => s + x.amount, 0);
@@ -737,9 +767,9 @@ export function computeTreasuryCaixaScenarios(
         ? null
         : roundMoney(
             opening +
-              realizedInflows +
+              dayRealizedInflows +
               receivableInflows -
-              realizedOutflows -
+              dayRealizedOutflows -
               payableOutflows
           );
       return {
