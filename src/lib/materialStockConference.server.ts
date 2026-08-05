@@ -14,6 +14,7 @@ import {
 } from "./materialStockConferenceRules.js";
 import { resolveMaterialStockStatus } from "./materialStockLevelRules.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
+import { captureMaterialStockValueSnapshotBestEffort } from "./materialStockValueSnapshot.server.js";
 import { roundMaterialStockQuantity } from "./materialStockConferenceMath.js";
 import { snapshotStockLevels } from "./materialStockParametersRules.js";
 
@@ -376,6 +377,18 @@ export async function recordMaterialStockConference(
         await enqueueMaterialStockSpreadsheetMirrorBestEffort(db, {
           materialId: result.material.id,
           eventType: "CONFERENCE",
+        });
+        // Foto do valor total de MP para o gráfico de flutuação semanal.
+        // A conferência mudou a quantidade desta MP e, portanto, o total.
+        // Best-effort e pós-commit pelo mesmo motivo do espelho acima:
+        // perder um ponto do gráfico jamais pode derrubar a conferência.
+        // Replay idempotente não gera foto nova (só entra em `created`).
+        await captureMaterialStockValueSnapshotBestEffort(db, {
+          source: "CONFERENCE",
+          conferenceId: result.conference.id,
+          materialId: result.material.id,
+          userId: input.actor.id,
+          userName: actorName,
         });
       }
       return result;

@@ -624,6 +624,7 @@ import { initializeMaterialMarketQuoteReliability, MaterialMarketQuoteReliabilit
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
 import { registerMaterialStockTabletRoutes } from "./src/lib/materialStockTabletRoutes.js";
+import { registerMaterialStockValueRoutes } from "./src/lib/materialStockValueRoutes.js";
 import { registerMaterialStockSpreadsheetMirrorAdminRoutes } from "./src/lib/materialStockSpreadsheetMirror/adminRoutes.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./src/lib/materialStockSpreadsheetMirror/enqueue.server.js";
 import {
@@ -8290,6 +8291,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     { requireAppAuth, requireResource, getCurrentAppUser },
     { prisma }
   );
+
+  registerMaterialStockValueRoutes(app, {
+    prisma,
+    requireAppAuth,
+    requireResource,
+  });
 
   registerMaterialStockSpreadsheetMirrorAdminRoutes(
     app,

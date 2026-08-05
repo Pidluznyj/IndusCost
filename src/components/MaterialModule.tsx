@@ -41,6 +41,7 @@ import {
 } from "@/src/lib/materialMarketMonitoring";
 import { getMaterialMarketIntelligenceDetailPath } from "@/src/lib/materialsNavigation";
 import { MaterialMarketMonitoringBadge } from "@/src/components/materials/MaterialMarketMonitoringBadge";
+import { MaterialStockValueTrendChart } from "@/src/components/materials/MaterialStockValueTrendChart";
 import { MaterialMarketSituationBadge } from "@/src/components/materials/MaterialMarketSituationBadge";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -351,6 +352,10 @@ export const MaterialModule = () => {
           }
         />
       </SummaryKpiGrid>
+
+      {/* Histórico do card acima: como o valor flutuou semana a semana.
+          Alimentado pelas fotos capturadas a cada conferência de estoque. */}
+      <MaterialStockValueTrendChart />
 
       {/* Header Actions */}
       <div

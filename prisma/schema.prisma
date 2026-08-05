@@ -319,6 +319,62 @@ model MaterialStockConference {
   @@index([source, recordedAt(sort: Desc)])
 }
 
+/// O que disparou a captura do valor de estoque de MP.
+enum MaterialStockValueSnapshotSource {
+  /// Conferência de estoque registrada (fluxo semanal do usuário).
+  CONFERENCE
+  /// Captura manual sob demanda (botão/rota administrativa).
+  MANUAL
+  /// Carga inicial ou reconstrução controlada.
+  BACKFILL
+}
+
+/// Foto append-only do VALOR TOTAL de matéria-prima em estoque.
+///
+/// Motivo: o card "Valor em estoque (MP)" é calculado ao vivo
+/// (Σ quantity × currentCost) e nunca foi persistido — sem histórico não há
+/// como plotar a flutuação ao longo das semanas. Cada conferência de estoque
+/// muda a quantidade de uma MP e, portanto, o total; a captura acontece logo
+/// após o commit da conferência (best-effort, jamais reverte o estoque
+/// oficial).
+///
+/// Append-only: nunca atualizar nem apagar linha. O gráfico agrega (último
+/// snapshot de cada semana), então vários pontos por semana são esperados e
+/// preservam a auditoria de como o total evoluiu dentro da semana.
+model MaterialStockValueSnapshot {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Instante exato da captura (relógio do servidor).
+  capturedAt DateTime @default(now()) @db.Timestamptz(6)
+  /// Data civil (America/Sao_Paulo) — chave estável de agregação do gráfico,
+  /// imune a virada de fuso na hora de agrupar por semana.
+  civilDate  DateTime @db.Date
+
+  /// Σ (quantity × currentCost) — MESMA fórmula do card
+  /// (`sumMaterialCatalogStockValue`), sem filtro de status, como a tela faz.
+  totalValue          Decimal @db.Decimal(20, 6)
+  /// Quantos materiais tinham quantidade > 0 na captura (contexto do total).
+  materialsWithStock  Int
+  /// Quantos materiais foram considerados no somatório (denominador).
+  materialsConsidered Int
+
+  source MaterialStockValueSnapshotSource
+
+  /// Conferência que originou a captura (quando source = CONFERENCE).
+  /// Sem FK: a conferência é append-only e o snapshot sobrevive a ela.
+  conferenceId String? @db.Uuid
+  /// MP conferida que disparou a captura (contexto, não é o escopo do total).
+  materialId   String? @db.Uuid
+  userId       String? @db.Uuid
+  userName     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([civilDate])
+  @@index([capturedAt(sort: Desc)])
+  @@index([source, capturedAt(sort: Desc)])
+  @@index([conferenceId])
+}
+
 /// Status da fila de espelho assíncrono IndusCost → planilha (Power Automate).
 enum MaterialStockSpreadsheetMirrorStatus {
   PENDING
