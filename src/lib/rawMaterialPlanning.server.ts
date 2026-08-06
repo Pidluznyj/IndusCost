@@ -423,12 +423,51 @@ export async function buildRawMaterialPlanningPayload(
       minimumQuantity: true,
       contingencyQuantity: true,
       lastStockConferenceAt: true,
+      isPlanningMonitored: true,
     },
   });
   const materialById = new Map(materials.map((m) => [m.id, m]));
 
+  // Exclui materiais que o usuário marcou como não monitorados no cadastro,
+  // antes da computação pesada de projeção/timeline.
+  for (const [mid, mat] of materialById) {
+    if (mat.isPlanningMonitored === false) {
+      materialById.delete(mid);
+      demandByMaterial.delete(mid);
+      consumingOrdersByMaterial.delete(mid);
+      materialMeta.delete(mid);
+    }
+  }
+
+  // Recalcula a lista efetiva após exclusão dos não-monitorados.
+  const monitoredMaterialIds = [...materialMeta.keys()];
+  if (monitoredMaterialIds.length === 0) {
+    return {
+      appliedFilters: filters,
+      asOfDate,
+      horizon: filters.horizon,
+      horizonEndDate,
+      generatedAt: now.toISOString(),
+      summary: {
+        buyNowCount: 0,
+        buyWithin7DaysCount: 0,
+        materialsAtRiskCount: 0,
+        ordersAtRiskCount: 0,
+        estimatedPurchaseValue: null,
+        estimatedPurchaseValueIsPartial: false,
+        staleStockCountMaterials: 0,
+        missingLeadTimeMaterials: 0,
+        unitConversionErrorMaterials: 0,
+        totalMaterials: 0,
+      },
+      materials: [],
+      dataQuality: { ordersWithoutNeedDate, itemsWithoutFulfillmentStatus, purchaseOrdersWithoutExpectedDate: 0 },
+      warnings: [],
+    };
+  }
+
   const purchaseOrderItems = await prisma.purchaseOrderItem.findMany({
-    where: { materialId: { in: materialIds } },
+    where: { materialId: { in: monitoredMaterialIds } },
     select: {
       materialId: true,
       quantityOrdered: true,
@@ -499,7 +538,7 @@ export async function buildRawMaterialPlanningPayload(
   let missingLeadTimeMaterials = 0;
   let unitConversionErrorMaterials = 0;
 
-  for (const materialId of materialIds) {
+  for (const materialId of monitoredMaterialIds) {
     const material = materialById.get(materialId);
     const meta = materialMeta.get(materialId)!;
     if (!material) continue;

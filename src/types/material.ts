@@ -24,6 +24,7 @@ export interface Material {
   standardLoss: number;
   conversionFactor: number;
   status: "ACTIVE" | "INACTIVE";
+  isPlanningMonitored?: boolean;
   isMarketMonitored?: boolean;
   marketCriticality?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
   marketMonitoringFrequencyDays?: number | null;
@@ -60,6 +61,7 @@ export interface CreateMaterialInput {
   freight: number;
   standardLoss: number;
   conversionFactor: number;
+  isPlanningMonitored?: boolean;
   isMarketMonitored?: boolean;
   marketCriticality?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
   marketMonitoringFrequencyDays?: number | null;

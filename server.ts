@@ -5593,6 +5593,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           freight: parsedNumeric.freight,
           standardLoss: parsedNumeric.standardLoss,
           conversionFactor: conversion.value,
+          isPlanningMonitored: body.isPlanningMonitored !== false,
           ...marketParsed.value,
           MaterialPriceHistory: {
             create: {
@@ -5713,6 +5714,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           quantity,
           currentCost,
           freight,
+          isPlanningMonitored:
+            typeof body.isPlanningMonitored === "boolean"
+              ? body.isPlanningMonitored
+              : oldMaterial.isPlanningMonitored,
           ...marketParsed.value,
         },
       });

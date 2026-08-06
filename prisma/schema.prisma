@@ -245,6 +245,9 @@ model Material {
   standardLoss                  Decimal?                     @default(0) @db.Decimal(10, 6)
   conversionFactor              Decimal?                     @default(1) @db.Decimal(20, 6)
   status                        String?                      @default("ACTIVE")
+  /// Se true, este material aparece no Planejamento de Matéria-Prima.
+  /// default true — todos monitorados até o usuário desativar explicitamente.
+  isPlanningMonitored           Boolean                      @default(true)
   isMarketMonitored             Boolean                      @default(false)
   marketCriticality             MaterialMarketCriticality?
   marketMonitoringFrequencyDays Int?

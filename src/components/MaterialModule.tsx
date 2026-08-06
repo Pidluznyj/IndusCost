@@ -104,6 +104,7 @@ export const MaterialModule = () => {
     freight: 0,
     standardLoss: 0,
     conversionFactor: 1,
+    isPlanningMonitored: true,
     isMarketMonitored: false,
     marketCriticality: DEFAULT_MATERIAL_MARKET_CRITICALITY,
     marketMonitoringFrequencyDays: DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
@@ -158,6 +159,7 @@ export const MaterialModule = () => {
         freight: Number(material.freight),
         standardLoss: Number(material.standardLoss),
         conversionFactor: Number(material.conversionFactor),
+        isPlanningMonitored: material.isPlanningMonitored !== false,
         isMarketMonitored: material.isMarketMonitored === true,
         marketCriticality:
           material.marketCriticality ?? DEFAULT_MATERIAL_MARKET_CRITICALITY,
@@ -181,6 +183,7 @@ export const MaterialModule = () => {
         freight: 0,
         standardLoss: 0,
         conversionFactor: 1,
+        isPlanningMonitored: true,
         isMarketMonitored: false,
         marketCriticality: DEFAULT_MATERIAL_MARKET_CRITICALITY,
         marketMonitoringFrequencyDays: DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
@@ -844,6 +847,34 @@ export const MaterialModule = () => {
                       {formatCurrency(totalMaterialValue)}
                     </p>
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-accent/20 p-5 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Truck className="h-4 w-4" /> Planejamento de Compra
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+                      Se ativo, este material aparecerá no Planejamento de Matéria-Prima com análise de necessidade, sugestão de compra e cobertura de estoque.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                      checked={formData.isPlanningMonitored !== false}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          isPlanningMonitored: e.target.checked,
+                        })
+                      }
+                      data-testid="material-form-planning-monitored"
+                    />
+                    Monitorar no Planejamento
+                  </label>
                 </div>
               </div>
 
