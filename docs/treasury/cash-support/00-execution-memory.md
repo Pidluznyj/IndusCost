@@ -59,17 +59,41 @@ origin, idempotencyKey, cancelledAt) + precedência em `loadTreasuryOfficialToda
 - Evento canônico não expõe `lineKind`/`orderCode`/`revision`/`fingerprint`/`ruleVersion`.
 - `otherMovements` (ledger/transfer) não carregados para dias arbitrários (`not_loaded`).
 
-## Bloqueios
-- Bloqueio de identidade da Etapa 1 **resolvido pela ADR 001**: escopo reduzido a títulos reais.
-- Persistem parciais: empresa (#41) e conta (#42) ausentes no lado canônico — ver matriz.
+## Matriz — números finais (Etapa 3)
+48 requisitos: **25 REUTILIZAR · 14 REUTILIZAR COM ADAPTADOR · 6 LACUNA REAL ·
+1 FORA DO ESCOPO · 2 BLOQUEADO parcial**.
+Lacunas reais: #4 correções OFX · #6 saldo available · #8 cobertura de extrato ·
+#27 rejeição de sugestão · **#30 concorrência (P0)** · #32 maker-checker.
+(#31 idempotência foi reclassificada — o padrão `idempotencyKey` já existe na Tesouraria.)
 
-## Lacunas reais confirmadas (matriz §B)
-#4 correções OFX · #6 saldo available · #8 cobertura de extrato · #27 rejeição de sugestão ·
-**#30 capacidade validada fora da transação (mais grave)** · #31 idempotência no accept ·
-#32 maker-checker.
+## Estado da branch — aceito e congelado
+- `feat/treasury-cash-support` aponta para descendente de `f0821d7` que também contém commits
+  recentes de `main`. **Autorizado.**
+- **Proibido** redefinir a branch para `f0821d7`, resetar, force push ou reescrever histórico
+  publicado. `f0821d7` já está em `origin/main`.
+- Ponto exato protegido em `backup/cash-support-audit-f0821d7`.
+
+## DEFEITO CASH-SUPPORT-P0-CONCURRENCY-001 (permanente até resolução)
+- Severidade **P0 — integridade financeira**. BLOQUEADOR PARA OPERAÇÕES DE ESCRITA.
+- `treasuryReconciliationMatchService.server.ts` → `accept()`: capacidade lida fora da
+  transação e reusada dentro dela.
+- **Pode continuar:** documentação, contratos, adaptadores read-only, read model, API
+  read-only, workspace read-only, sugestões sem aceite (CS-001…CS-010).
+- **Bloqueado:** aceite, rejeição mutável, conciliação manual, parcial, 1:N, N:1, ajustes,
+  transferências, reversões dependentes de capacidade, maker-checker, liberação produtiva
+  de escrita (CS-011…CS-016, CS-019).
+- **Obrigações:** corrigir no **motor oficial**; proibido contorno no frontend; proibido
+  segundo motor; testes de **concorrência real** obrigatórios antes de liberar escrita.
+- Mecanismo de correção é **reuso**: advisory lock já usado no fechamento diário
+  (`pg_try_advisory_lock`) e `idempotencyKey` institucional.
+
+## Bloqueios parciais remanescentes
+Empresa (#41) e conta (#42): entregar com `null` + warning estruturado. **Não inventar** — em
+especial, proibido casar título↔conta por semelhança de nome.
 
 ## Etapa concluída
-Etapa 2 — ADR, identidades, matriz de lacunas e read model proposto.
+Etapa 3 — revalidação das lacunas, registro do P0, backlog, trilhas, gates e MVP.
 
 ## Próxima etapa autorizada
-Etapa 3 — validar as 7 lacunas reais e produzir backlog (`05`) e MVP (`06`). Somente docs.
+Etapa 4 — CS-001, contratos do read model (somente tipos/interfaces, sem persistência).
+CS-000 (correção P0) pode ser antecipado a qualquer momento.

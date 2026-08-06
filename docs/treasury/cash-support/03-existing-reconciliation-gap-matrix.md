@@ -124,7 +124,7 @@ Status: `REUTILIZAR` · `REUTILIZAR COM ADAPTADOR` · `LACUNA REAL` · `FORA DO 
 | 28 | Auditoria | `TreasuryAuditLog` append-only | `treasuryAuditService.server.ts` | REUTILIZAR | before/after/justification | — | Nenhuma |
 | 29 | Concorrência (locking) | `expectedVersion` | `assertTreasuryReconciliationMatchVersion` | REUTILIZAR | Em unmatch/reverse | **`accept` sem locking** | Ver #33 |
 | 30 | Concorrência (capacidade) | — | `matchService:369-425` | **LACUNA REAL** | Capacidade lida **antes** da transação | Dois aceites simultâneos podem exceder o movimento | **Alta prioridade** — revalidar dentro da tx |
-| 31 | Idempotência | `idempotencyKey` existe em snapshot/batch | — | **LACUNA REAL** | Ausente no `accept` | Duplo clique cria dois matches | Etapa 12 |
+| 31 | Idempotência | `idempotencyKey` institucional (limite 128) | `contracts/treasuryConstants.ts:177`; unique em `TreasuryBalanceSnapshot` | REUTILIZAR COM ADAPTADOR ¹ | Padrão existe; falta aplicar ao `accept` | Duplo clique cria dois matches | Aplicar o padrão em CS-000 |
 | 32 | Maker-checker | — | — | **LACUNA REAL** | Inexistente | Sem segregação criador/aprovador | Etapa 18 (só se a matriz confirmar necessidade) |
 | 33 | Fechamento de período | `TreasuryDailyClosing` | `schema.prisma:9076` | REUTILIZAR | `status`, `version` | — | Leitura |
 | 34 | Reabertura | `TreasuryDailyClosingReopening` + `postClosingChangeService` | `schema.prisma:9249` | REUTILIZAR | `reverse` já notifica | — | Leitura |
@@ -148,10 +148,14 @@ Status: `REUTILIZAR` · `REUTILIZAR COM ADAPTADOR` · `LACUNA REAL` · `FORA DO 
 | Status | Qtd |
 |---|---|
 | REUTILIZAR | 25 |
-| REUTILIZAR COM ADAPTADOR | 13 |
-| LACUNA REAL | 7 (#4, #6, #8, #27, #30, #31, #32) |
+| REUTILIZAR COM ADAPTADOR | 14 |
+| LACUNA REAL | 6 (#4, #6, #8, #27, #30, #32) |
 | FORA DO ESCOPO | 1 (#37) |
 | BLOQUEADO (parcial) | 2 (#41, #42) |
+
+¹ **Reclassificado na Etapa 3.** Revalidação encontrou `idempotencyKey` como padrão
+institucional da Tesouraria — deixa de ser lacuna de infraestrutura. Ver
+`06-implementation-backlog.md` Parte A.
 
 **Lacuna mais grave: #30** — a capacidade do movimento é validada fora da transação. Dois
 aceites concorrentes podem alocar mais do que o movimento comporta. É defeito do motor
