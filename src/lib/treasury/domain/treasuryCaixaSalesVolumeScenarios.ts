@@ -184,6 +184,13 @@ export type TreasurySalesVolumeScenariosResult = {
   assumptions: string[];
   coverage: TreasurySalesVolumeCoverage;
   baseline: TreasurySalesVolumeBaseline;
+  /**
+   * Eco dos insumos usados no cálculo — servem de DEFAULT editável para o
+   * simulador interativo da tela (que reexecuta este MESMO motor puro com
+   * parâmetros do usuário; nada é persistido).
+   */
+  receiptLagProfile: TreasuryReceiptLagProfile;
+  variableCosts: readonly TreasuryVariableCostInput[];
 };
 
 // ── Utilitários ──────────────────────────────────────────────────────────
@@ -626,6 +633,8 @@ export function computeTreasurySalesVolumeScenarios(
     assumptions,
     coverage,
     baseline: input.baseline,
+    receiptLagProfile: input.receiptLagProfile,
+    variableCosts: input.variableCosts,
   };
 }
 

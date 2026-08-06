@@ -14,7 +14,7 @@
  * recebimentos. Nenhuma correção artificial de ordenação é aplicada.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   CartesianGrid,
@@ -33,13 +33,18 @@ import type {
   TreasuryScenarioDay,
   TreasuryScenarioSummary,
 } from "@/src/lib/treasury/domain/treasuryCaixaScenariosTypes.js";
-import { applyScenarioDeltasToClosings } from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
+import {
+  applyScenarioDeltasToClosings,
+  type TreasuryScenarioDeltaSet,
+} from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
 import {
   buildTreasurySalesVolumeExecutiveLines,
+  computeTreasurySalesVolumeScenarios,
   type TreasurySalesVolumeMemoryEntry,
   type TreasurySalesVolumeScenarioIndicators,
   type TreasurySalesVolumeScenariosResult,
 } from "@/src/lib/treasury/domain/treasuryCaixaSalesVolumeScenarios.js";
+import { TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS } from "@/src/lib/treasury/contracts/treasurySalesVolumeScenarioPolicy.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
@@ -122,6 +127,17 @@ type ChartRow = {
   opt: number | null;
   real: number | null;
   pes: number | null;
+  /**
+   * Trechos em ZONA VERMELHA (saldo tocando/abaixo de R$ 0,00) — inclui os
+   * vizinhos imediatos para o segmento de cruzamento também ficar vermelho.
+   * Desenhados como overlay sobre a linha base; null fora da zona.
+   */
+  optNeg: number | null;
+  realNeg: number | null;
+  pesNeg: number | null;
+  /** Linha "Simulação" (what-if do usuário) e sua zona vermelha. */
+  sim: number | null;
+  simNeg: number | null;
   bandLow: number | null;
   bandRange: number | null; // p/ empilhar a área "banda"
   isPast: boolean;
@@ -179,7 +195,9 @@ function buildRows(
     string,
     { opening: number | null; closing: number | null }
   > | null,
-  sales?: TreasurySalesVolumeScenariosResult | null
+  sales?: TreasurySalesVolumeScenariosResult | null,
+  /** Deltas da simulação what-if aplicada pelo usuário (mesmo motor puro). */
+  simDeltas?: TreasuryScenarioDeltaSet | null
 ): ChartRow[] {
   // Realista mostrado: Linha do tempo com forward-fill; fallback = backend.
   const realShownByDate = new Map<string, number | null>();
@@ -195,6 +213,7 @@ function buildRows(
 
   let optByDate: Map<string, number | null> | null = null;
   let pesByDate: Map<string, number | null> | null = null;
+  let simByDate: Map<string, number | null> | null = null;
   if (sales) {
     const orderedCivilDates = days.map((d) => d.civilDate);
     optByDate = applyScenarioDeltasToClosings({
@@ -207,9 +226,16 @@ function buildRows(
       realisticClosingByDay: realShownByDate,
       deltas: sales.pessimistic,
     });
+    if (simDeltas) {
+      simByDate = applyScenarioDeltasToClosings({
+        orderedCivilDates,
+        realisticClosingByDay: realShownByDate,
+        deltas: simDeltas,
+      });
+    }
   }
 
-  return days.map((d) => {
+  const rows: ChartRow[] = days.map((d) => {
     const fromTimeline = timelineByDate?.get(d.civilDate) ?? null;
     const real = realShownByDate.get(d.civilDate) ?? null;
     const openingShown =
@@ -217,6 +243,7 @@ function buildRows(
 
     const opt = optByDate?.get(d.civilDate) ?? null;
     const pes = pesByDate?.get(d.civilDate) ?? null;
+    const sim = simByDate?.get(d.civilDate) ?? null;
 
     let bandLow: number | null = null;
     let bandRange: number | null = null;
@@ -231,12 +258,41 @@ function buildRows(
       opt,
       real,
       pes,
+      sim,
+      optNeg: null,
+      realNeg: null,
+      pesNeg: null,
+      simNeg: null,
       bandLow,
       bandRange,
       isPast: d.civilDate < asOf,
       openingShown,
     };
   });
+
+  // Zona vermelha: saldo tocando/abaixo de R$ 0,00. Inclui os vizinhos
+  // imediatos para que o SEGMENTO de cruzamento (positivo → negativo)
+  // também seja desenhado em vermelho, não só a partir do primeiro ponto
+  // negativo.
+  const inRedZone = (v: number | null | undefined) => v != null && v <= 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    const cur = rows[i]!;
+    const prev = rows[i - 1];
+    const next = rows[i + 1];
+    if (inRedZone(cur.opt) || inRedZone(prev?.opt) || inRedZone(next?.opt)) {
+      cur.optNeg = cur.opt;
+    }
+    if (inRedZone(cur.real) || inRedZone(prev?.real) || inRedZone(next?.real)) {
+      cur.realNeg = cur.real;
+    }
+    if (inRedZone(cur.pes) || inRedZone(prev?.pes) || inRedZone(next?.pes)) {
+      cur.pesNeg = cur.pes;
+    }
+    if (inRedZone(cur.sim) || inRedZone(prev?.sim) || inRedZone(next?.sim)) {
+      cur.simNeg = cur.sim;
+    }
+  }
+  return rows;
 }
 
 function ConfidenceBadge({
@@ -438,6 +494,7 @@ function ScenarioTooltip({
           color={SCENARIO_STYLE.pessimistic.color}
           value={row.pes}
         />
+        <Line label="Simulação" color={SIMULATION_COLOR} value={row.sim} />
       </div>
       {!row.isPast ? (
         <div className="mt-2 border-t border-[#E5E7EB]/60 pt-1.5 text-[10px] text-[#6B7280]">
@@ -467,7 +524,7 @@ function ScenarioTooltip({
   );
 }
 
-type SeriesKey = "optimistic" | "realistic" | "pessimistic" | "band";
+type SeriesKey = "optimistic" | "realistic" | "pessimistic" | "band" | "simulation";
 
 /** dataKey da série no Recharts → chave interna de visibilidade (os nomes
  *  visuais agora são dinâmicos — vêm da política via payload). */
@@ -476,7 +533,10 @@ const LEGEND_DATAKEY_TO_SERIES: Record<string, SeriesKey> = {
   real: "realistic",
   pes: "pessimistic",
   bandRange: "band",
+  sim: "simulation",
 };
+
+const SIMULATION_COLOR = "#7C3AED"; // violeta — distinto dos 3 cenários
 
 /**
  * Renderiza o gráfico canônico dos cenários. Extraído do componente para
@@ -493,8 +553,19 @@ function renderScenariosChart(params: {
   onLegendClick: (key: SeriesKey) => void;
   onPointClick: (civilDate: string) => void;
   labels: { optimistic: string; realistic: string; pessimistic: string };
+  /** true quando o usuário aplicou uma simulação (linha + legenda entram). */
+  hasSimulation: boolean;
 }) {
-  const { rows, daysByLabel, heightPx, visible, onLegendClick, onPointClick, labels } = params;
+  const {
+    rows,
+    daysByLabel,
+    heightPx,
+    visible,
+    onLegendClick,
+    onPointClick,
+    labels,
+    hasSimulation,
+  } = params;
   return (
     <div style={{ height: `${heightPx}px` }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -515,9 +586,13 @@ function renderScenariosChart(params: {
             tick={{ fill: "#6B7280", fontSize: 11 }}
             interval="preserveStartEnd"
           />
+          {/* padding inferior descola a linha de R$ 0,00 do piso do eixo —
+              sem ele, quando todos os valores são positivos o zero coincide
+              com a borda e a linha "some". */}
           <YAxis
             tick={{ fill: "#6B7280", fontSize: 11 }}
             tickFormatter={(v: number) => money(v)}
+            padding={{ bottom: 16 }}
           />
           <Tooltip
             content={(props) => (
@@ -528,15 +603,19 @@ function renderScenariosChart(params: {
               />
             )}
           />
+          {/* Linha mediana do ZERO — sempre visível (extendDomain + padding
+              do eixo). Abaixo dela, os trechos das linhas ficam vermelhos. */}
           <ReferenceLine
             y={0}
             stroke="#DC2626"
+            strokeWidth={1.5}
             strokeDasharray="4 4"
             ifOverflow="extendDomain"
             label={{
               value: "R$ 0,00",
               fill: "#DC2626",
               fontSize: 10,
+              fontWeight: 700,
               position: "insideBottomRight",
             }}
           />
@@ -596,6 +675,69 @@ function renderScenariosChart(params: {
             isAnimationActive={false}
             hide={!visible.realistic}
           />
+          {hasSimulation ? (
+            <Line
+              type="monotone"
+              dataKey="sim"
+              name="Simulação"
+              stroke={SIMULATION_COLOR}
+              strokeWidth={2.5}
+              strokeDasharray="8 4"
+              dot={false}
+              isAnimationActive={false}
+              hide={!visible.simulation}
+            />
+          ) : null}
+          {/* Overlays de ZONA VERMELHA — trechos onde o saldo toca ou cruza
+              R$ 0,00 ficam vermelhos sólidos por cima da linha base. Fora da
+              zona os pontos são null (nada é desenhado). Sem entrada na
+              legenda; seguem a visibilidade da série correspondente. */}
+          {hasSimulation ? (
+            <Line
+              type="monotone"
+              dataKey="simNeg"
+              stroke="#B91C1C"
+              strokeWidth={3.5}
+              dot={false}
+              isAnimationActive={false}
+              legendType="none"
+              connectNulls={false}
+              hide={!visible.simulation}
+            />
+          ) : null}
+          <Line
+            type="monotone"
+            dataKey="optNeg"
+            stroke="#B91C1C"
+            strokeWidth={SCENARIO_STYLE.optimistic.strokeWidth + 1}
+            dot={false}
+            isAnimationActive={false}
+            legendType="none"
+            connectNulls={false}
+            hide={!visible.optimistic}
+          />
+          <Line
+            type="monotone"
+            dataKey="pesNeg"
+            stroke="#B91C1C"
+            strokeWidth={SCENARIO_STYLE.pessimistic.strokeWidth + 1}
+            dot={false}
+            isAnimationActive={false}
+            legendType="none"
+            connectNulls={false}
+            hide={!visible.pessimistic}
+          />
+          <Line
+            type="monotone"
+            dataKey="realNeg"
+            stroke="#B91C1C"
+            strokeWidth={SCENARIO_STYLE.realistic.strokeWidth + 1}
+            dot={false}
+            isAnimationActive={false}
+            legendType="none"
+            connectNulls={false}
+            hide={!visible.realistic}
+          />
           <Legend
             wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
             onClick={(entry: { value?: string; dataKey?: unknown }) => {
@@ -635,6 +777,7 @@ const DEFAULT_VISIBLE: Record<SeriesKey, boolean> = {
   realistic: true,
   pessimistic: true,
   band: true,
+  simulation: true,
 };
 
 export function TreasuryCaixaScenariosChart({
@@ -672,6 +815,124 @@ export function TreasuryCaixaScenariosChart({
     return map;
   }, [timelineRows]);
 
+  /**
+   * SIMULADOR WHAT-IF — campos acima do gráfico pré-preenchidos com os
+   * defaults do Realista/base; "Aplicar" reexecuta o MESMO motor puro de
+   * cenários (client-safe) com os parâmetros do usuário e desenha a linha
+   * "Simulação". Nada é persistido; nenhum título é tocado.
+   */
+  const [simFields, setSimFields] = useState<{
+    monthlyBase: string;
+    variationPct: string;
+    receiptLagDays: string;
+    variableCostPct: string;
+  } | null>(null);
+  const [simDeltas, setSimDeltas] = useState<TreasuryScenarioDeltaSet | null>(
+    null
+  );
+
+  const simDefaults = useMemo(() => {
+    const sales = data?.salesVolumeScenarios;
+    if (!sales) return null;
+    const buckets = sales.receiptLagProfile.buckets;
+    const wSum = buckets.reduce((s, b) => s + b.weight, 0);
+    const avgLag =
+      wSum > 0
+        ? Math.round(
+            buckets.reduce((s, b) => s + b.lagDays * b.weight, 0) / wSum
+          )
+        : TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS.defaultReceiptLagDays;
+    const costPct = Math.round(sales.coverage.variableCostRatioTotal * 1000) / 10;
+    return {
+      monthlyBase: String(Math.round(sales.baseline.monthlyAverageAmount)),
+      variationPct: "0",
+      receiptLagDays: String(avgLag),
+      variableCostPct: String(costPct),
+    };
+  }, [data]);
+
+  useEffect(() => {
+    // Re-preenche os defaults quando o payload muda; descarta simulação velha.
+    setSimFields(simDefaults);
+    setSimDeltas(null);
+  }, [simDefaults]);
+
+  const applySimulation = useCallback(() => {
+    const sales = data?.salesVolumeScenarios;
+    if (!sales || !simFields) return;
+    const parse = (s: string) => {
+      const n = Number(String(s).replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    };
+    const monthlyBase = parse(simFields.monthlyBase);
+    const variationPct = parse(simFields.variationPct);
+    const receiptLagDays = parse(simFields.receiptLagDays);
+    const variableCostPct = parse(simFields.variableCostPct);
+    if (monthlyBase == null || variationPct == null) return;
+
+    // Prazo: mantém o perfil real (parcelas) quando o usuário não mudou a
+    // média; se mudou, vira prazo único informado.
+    const defaultLag = simDefaults ? Number(simDefaults.receiptLagDays) : null;
+    const receiptLagProfile =
+      receiptLagDays != null && receiptLagDays !== defaultLag
+        ? {
+            buckets: [{ lagDays: Math.max(0, Math.round(receiptLagDays)), weight: 1 }],
+            source: `simulação manual (${Math.round(receiptLagDays)} dias)`,
+            isFallback: true,
+          }
+        : sales.receiptLagProfile;
+
+    // Custos: reescala as razões oficiais proporcionalmente para o total
+    // informado — preserva o PRAZO de cada categoria (MP/imposto/comissão/
+    // frete continuam saindo nas suas datas).
+    const currentTotal = sales.variableCosts.reduce((s, c) => s + c.ratio, 0);
+    const targetTotal =
+      variableCostPct != null ? Math.max(0, variableCostPct) / 100 : currentTotal;
+    const variableCosts =
+      currentTotal > 0
+        ? sales.variableCosts.map((c) => ({
+            ...c,
+            ratio: c.ratio * (targetTotal / currentTotal),
+          }))
+        : targetTotal > 0
+          ? [
+              {
+                kind: "RAW_MATERIAL" as const,
+                ratio: targetTotal,
+                ratioSource: "simulação manual (custo variável agregado)",
+                outflowLagDays:
+                  TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS.defaultRawMaterialLagDays,
+                lagSource: "parâmetro configurável",
+                isFallbackLag: true,
+              },
+            ]
+          : [];
+
+    const result = computeTreasurySalesVolumeScenarios({
+      asOfCivilDate: sales.asOfCivilDate,
+      horizonEndCivilDate: sales.horizonEndCivilDate,
+      policy: {
+        ...TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS,
+        optimisticSalesVariationPct: variationPct,
+        pessimisticSalesVariationPct: 0,
+      },
+      baseline: {
+        ...sales.baseline,
+        monthlyAverageAmount: monthlyBase,
+        description: `simulação manual sobre ${sales.baseline.description}`,
+      },
+      receiptLagProfile,
+      variableCosts,
+      coverageWarnings: [],
+    });
+    setSimDeltas(result.optimistic);
+  }, [data, simFields, simDefaults]);
+
+  const clearSimulation = useCallback(() => {
+    setSimFields(simDefaults);
+    setSimDeltas(null);
+  }, [simDefaults]);
+
   const rows = useMemo(
     () =>
       data
@@ -679,11 +940,32 @@ export function TreasuryCaixaScenariosChart({
             data.days,
             data.asOfCivilDate,
             timelineByDate,
-            data.salesVolumeScenarios ?? null
+            data.salesVolumeScenarios ?? null,
+            simDeltas
           )
         : [],
-    [data, timelineByDate]
+    [data, timelineByDate, simDeltas]
   );
+
+  /** Resumo da simulação — seleção simples sobre a série já desenhada. */
+  const simSummary = useMemo(() => {
+    if (!simDeltas) return null;
+    let min: number | null = null;
+    let minDate: string | null = null;
+    let firstNegative: string | null = null;
+    let final: number | null = null;
+    for (const r of rows) {
+      if (r.sim == null) continue;
+      final = r.sim;
+      if (min == null || r.sim < min) {
+        min = r.sim;
+        minDate = r.civilDate;
+      }
+      if (firstNegative == null && r.sim < 0) firstNegative = r.civilDate;
+    }
+    if (min == null) return null;
+    return { min, minDate, firstNegative, final };
+  }, [rows, simDeltas]);
 
   const labels = useMemo(
     () => buildScenarioLabels(data?.salesVolumeScenarios),
@@ -914,6 +1196,95 @@ export function TreasuryCaixaScenariosChart({
         </p>
       ) : (
         <>
+          {data.salesVolumeScenarios && simFields ? (
+            <div
+              className="mb-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2"
+              data-testid="caixa-scenarios-simulator"
+            >
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+                Simular caixa{" "}
+                <span className="font-normal normal-case">
+                  — parâmetros pré-preenchidos com a base real; a linha{" "}
+                  <span style={{ color: SIMULATION_COLOR }} className="font-semibold">
+                    Simulação
+                  </span>{" "}
+                  usa o mesmo motor dos cenários. Nada é gravado.
+                </span>
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                {(
+                  [
+                    ["monthlyBase", "Vendas mensais (R$)", "caixa-sim-base"],
+                    ["variationPct", "Variação de vendas (%)", "caixa-sim-pct"],
+                    ["receiptLagDays", "Prazo médio receb. (dias)", "caixa-sim-lag"],
+                    ["variableCostPct", "Custos variáveis (%)", "caixa-sim-cost"],
+                  ] as const
+                ).map(([field, label, testId]) => (
+                  <label key={field} className="flex flex-col gap-0.5 text-[10px] font-semibold text-[#6B7280]">
+                    {label}
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={simFields[field]}
+                      onChange={(e) =>
+                        setSimFields((prev) =>
+                          prev ? { ...prev, [field]: e.target.value } : prev
+                        )
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applySimulation();
+                      }}
+                      className="w-36 rounded-md border border-[#D1D5DB] bg-white px-2 py-1 text-[12px] font-normal tabular-nums text-[#111827]"
+                      data-testid={testId}
+                    />
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={applySimulation}
+                  className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#6D28D9]"
+                  data-testid="caixa-sim-apply"
+                >
+                  Aplicar
+                </button>
+                {simDeltas ? (
+                  <button
+                    type="button"
+                    onClick={clearSimulation}
+                    className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                    data-testid="caixa-sim-clear"
+                  >
+                    Limpar
+                  </button>
+                ) : null}
+              </div>
+              {simSummary ? (
+                <p className="mt-1.5 text-[11px]" data-testid="caixa-sim-summary">
+                  <span className="font-semibold" style={{ color: SIMULATION_COLOR }}>
+                    Simulação:
+                  </span>{" "}
+                  menor saldo{" "}
+                  <span
+                    className={cn(
+                      "font-bold tabular-nums",
+                      simSummary.min < 0 ? "text-red-700" : "text-[#111827]"
+                    )}
+                  >
+                    {money(simSummary.min)}
+                  </span>
+                  {simSummary.minDate ? ` em ${formatCivilDate(simSummary.minDate)}` : ""}
+                  {simSummary.firstNegative
+                    ? ` · fica negativo em ${formatCivilDate(simSummary.firstNegative)}`
+                    : " · não fica negativo no período"}
+                  {" · saldo final "}
+                  <span className="font-bold tabular-nums">
+                    {money(simSummary.final)}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {renderScenariosChart({
             rows,
             daysByLabel,
@@ -922,6 +1293,7 @@ export function TreasuryCaixaScenariosChart({
             onLegendClick: toggleSeries,
             onPointClick: (civilDate) => setDrilldownDate(civilDate),
             labels,
+            hasSimulation: simDeltas != null,
           })}
 
           <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
@@ -1090,6 +1462,7 @@ export function TreasuryCaixaScenariosChart({
             onLegendClick: toggleSeries,
             onPointClick: (civilDate) => setDrilldownDate(civilDate),
             labels,
+            hasSimulation: simDeltas != null,
           })}
           {data.alerts.length > 0 ? (
             <div
