@@ -221,59 +221,59 @@ model EmployeePayrollComponent {
 }
 
 model Material {
-  id                            String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                          String                       @unique
-  description                   String
-  unit                          String
-  category                      String
-  supplier                      String?
-  currentCost                   Decimal                      @db.Decimal(20, 6)
-  averageCost                   Decimal                      @db.Decimal(20, 6)
-  standardCost                  Decimal                      @db.Decimal(20, 6)
+  id                             String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                           String                           @unique
+  description                    String
+  unit                           String
+  category                       String
+  supplier                       String?
+  currentCost                    Decimal                          @db.Decimal(20, 6)
+  averageCost                    Decimal                          @db.Decimal(20, 6)
+  standardCost                   Decimal                          @db.Decimal(20, 6)
   /// Quantidade de referência no cadastro (Suprimentos). Total = quantity × currentCost.
   /// Fonte oficial do estoque atual — Conferência de Estoque atualiza este campo (não substitui).
-  quantity                      Decimal                      @default(0) @db.Decimal(20, 6)
+  quantity                       Decimal                          @default(0) @db.Decimal(20, 6)
   /// Parâmetros de nível (Conferência tablet). null = não configurado. Não entram em custos.
-  contingencyQuantity           Decimal?                     @db.Decimal(20, 6)
-  minimumQuantity               Decimal?                     @db.Decimal(20, 6)
-  recommendedQuantity           Decimal?                     @db.Decimal(20, 6)
-  lastStockConferenceAt         DateTime?                    @db.Timestamptz(6)
-  lastStockConferenceUserId     String?                      @db.Uuid
+  contingencyQuantity            Decimal?                         @db.Decimal(20, 6)
+  minimumQuantity                Decimal?                         @db.Decimal(20, 6)
+  recommendedQuantity            Decimal?                         @db.Decimal(20, 6)
+  lastStockConferenceAt          DateTime?                        @db.Timestamptz(6)
+  lastStockConferenceUserId      String?                          @db.Uuid
   /// Optimistic lock da Conferência de Estoque (independente de updatedAt genérico).
-  stockConferenceVersion        Int                          @default(1)
-  freight                       Decimal?                     @default(0) @db.Decimal(20, 6)
-  standardLoss                  Decimal?                     @default(0) @db.Decimal(10, 6)
-  conversionFactor              Decimal?                     @default(1) @db.Decimal(20, 6)
-  status                        String?                      @default("ACTIVE")
+  stockConferenceVersion         Int                              @default(1)
+  freight                        Decimal?                         @default(0) @db.Decimal(20, 6)
+  standardLoss                   Decimal?                         @default(0) @db.Decimal(10, 6)
+  conversionFactor               Decimal?                         @default(1) @db.Decimal(20, 6)
+  status                         String?                          @default("ACTIVE")
   /// Se true, este material aparece no Planejamento de Matéria-Prima.
   /// default true — todos monitorados até o usuário desativar explicitamente.
-  isPlanningMonitored           Boolean                      @default(true)
-  isMarketMonitored             Boolean                      @default(false)
-  marketCriticality             MaterialMarketCriticality?
-  marketMonitoringFrequencyDays Int?
-  marketNotes                   String?
-  createdAt                     DateTime?                    @default(now()) @db.Timestamptz(6)
-  updatedAt                     DateTime?                    @default(now()) @updatedAt @db.Timestamptz(6)
-  MaterialPriceHistory          MaterialPriceHistory[]
-  MaterialMarketQuote           MaterialMarketQuote[]
-  MaterialOfficialQuoteAudit    MaterialOfficialQuoteAudit[]
-  MaterialMarketAuditEvent      MaterialMarketAuditEvent[]
-  MaterialMarketAlert           MaterialMarketAlert[]
-  MaterialMarketAlertConfig     MaterialMarketAlertConfig?
-  MaterialMarketPurchaseLink    MaterialMarketPurchaseLink[]
-  MaterialStockConference              MaterialStockConference[]
-  MaterialStockLevelAudit              MaterialStockLevelAudit[]
-  MaterialStockSpreadsheetOutbox       MaterialStockSpreadsheetOutbox[]
-  ProductBOM                           ProductBOM[]
-  PurchaseRequestItem           PurchaseRequestItem[]
-  ProjectStructureLine          ProjectStructureLine[]
-  MaterialCostTableItem         MaterialCostTableItem[]
+  isPlanningMonitored            Boolean                          @default(true)
+  isMarketMonitored              Boolean                          @default(false)
+  marketCriticality              MaterialMarketCriticality?
+  marketMonitoringFrequencyDays  Int?
+  marketNotes                    String?
+  createdAt                      DateTime?                        @default(now()) @db.Timestamptz(6)
+  updatedAt                      DateTime?                        @default(now()) @updatedAt @db.Timestamptz(6)
+  MaterialPriceHistory           MaterialPriceHistory[]
+  MaterialMarketQuote            MaterialMarketQuote[]
+  MaterialOfficialQuoteAudit     MaterialOfficialQuoteAudit[]
+  MaterialMarketAuditEvent       MaterialMarketAuditEvent[]
+  MaterialMarketAlert            MaterialMarketAlert[]
+  MaterialMarketAlertConfig      MaterialMarketAlertConfig?
+  MaterialMarketPurchaseLink     MaterialMarketPurchaseLink[]
+  MaterialStockConference        MaterialStockConference[]
+  MaterialStockLevelAudit        MaterialStockLevelAudit[]
+  MaterialStockSpreadsheetOutbox MaterialStockSpreadsheetOutbox[]
+  ProductBOM                     ProductBOM[]
+  PurchaseRequestItem            PurchaseRequestItem[]
+  ProjectStructureLine           ProjectStructureLine[]
+  MaterialCostTableItem          MaterialCostTableItem[]
   /// Itens logísticos locais (SC) — vínculo read-only ao cadastro oficial de MP.
-  InventoryItem                 InventoryItem[]
+  InventoryItem                  InventoryItem[]
   /// Domínio aditivo de Compras SC — linhas referenciam MP oficial (read-only).
-  PurchaseQuotationItem         PurchaseQuotationItem[]
-  PurchaseOrderItem             PurchaseOrderItem[]
-  PurchaseReceiptItem           PurchaseReceiptItem[]
+  PurchaseQuotationItem          PurchaseQuotationItem[]
+  PurchaseOrderItem              PurchaseOrderItem[]
+  PurchaseReceiptItem            PurchaseReceiptItem[]
 }
 
 enum MaterialMarketCriticality {
@@ -293,27 +293,27 @@ enum MaterialStockConferenceSource {
 /// Histórico append-only de conferências de estoque de matéria-prima.
 /// Não substitui Material.quantity; a atualização do saldo + insert devem ser transacionais.
 model MaterialStockConference {
-  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  materialId           String                        @db.Uuid
-  previousQuantity     Decimal                       @db.Decimal(20, 6)
-  reportedQuantity     Decimal                       @db.Decimal(20, 6)
-  difference           Decimal                       @db.Decimal(20, 6)
+  id                String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId        String                        @db.Uuid
+  previousQuantity  Decimal                       @db.Decimal(20, 6)
+  reportedQuantity  Decimal                       @db.Decimal(20, 6)
+  difference        Decimal                       @db.Decimal(20, 6)
   /// Unidade do Material no momento da conferência (snapshot).
-  unitSnapshot         String
-  reason               String
-  notes                String?
-  userId               String                        @db.Uuid
-  userName             String?
+  unitSnapshot      String
+  reason            String
+  notes             String?
+  userId            String                        @db.Uuid
+  userName          String?
   /// Data/hora registrada pelo servidor no momento da conferência.
-  recordedAt           DateTime                      @default(now()) @db.Timestamptz(6)
-  source               MaterialStockConferenceSource
+  recordedAt        DateTime                      @default(now()) @db.Timestamptz(6)
+  source            MaterialStockConferenceSource
   /// Versão de concorrência do Material imediatamente antes da atualização.
-  previousVersion      Int?
+  previousVersion   Int?
   /// updatedAt do Material imediatamente antes da atualização.
-  previousUpdatedAt    DateTime?                     @db.Timestamptz(6)
+  previousUpdatedAt DateTime?                     @db.Timestamptz(6)
   /// Idempotência HTTP (header Idempotency-Key) — evita duplo clique.
-  idempotencyKey       String?                       @unique
-  createdAt            DateTime                      @default(now()) @db.Timestamptz(6)
+  idempotencyKey    String?                       @unique
+  createdAt         DateTime                      @default(now()) @db.Timestamptz(6)
 
   Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -345,7 +345,7 @@ enum MaterialStockValueSnapshotSource {
 /// snapshot de cada semana), então vários pontos por semana são esperados e
 /// preservam a auditoria de como o total evoluiu dentro da semana.
 model MaterialStockValueSnapshot {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Instante exato da captura (relógio do servidor).
   capturedAt DateTime @default(now()) @db.Timestamptz(6)
   /// Data civil (America/Sao_Paulo) — chave estável de agregação do gráfico,
@@ -396,32 +396,32 @@ enum MaterialStockSpreadsheetMirrorEventType {
 /// Outbox unidirecional — IndusCost → planilha online (nunca o inverso).
 /// Falha externa não reverte estoque/parâmetros oficiais.
 model MaterialStockSpreadsheetOutbox {
-  id               String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  materialId       String                                 @db.Uuid
+  id               String                                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId       String                                  @db.Uuid
   /// Código denormalizado para admin/ops (chave de upsert junto com materialId).
   materialCode     String
   eventType        MaterialStockSpreadsheetMirrorEventType
-  status           MaterialStockSpreadsheetMirrorStatus   @default(PENDING)
+  status           MaterialStockSpreadsheetMirrorStatus    @default(PENDING)
   /// Colapsa eventos do mesmo material enquanto PENDING/PROCESSING.
   deduplicationKey String
   /// Identidade estável da mensagem para o receptor (Automate).
-  idempotencyKey   String                                 @unique
+  idempotencyKey   String                                  @unique
   payloadJson      Json
-  attempts         Int                                    @default(0)
-  maxAttempts      Int                                    @default(5)
+  attempts         Int                                     @default(0)
+  maxAttempts      Int                                     @default(5)
   /// Próxima tentativa elegível (backoff).
-  availableAt      DateTime                               @default(now()) @db.Timestamptz(6)
-  lastAttemptAt    DateTime?                              @db.Timestamptz(6)
-  lockedAt         DateTime?                              @db.Timestamptz(6)
+  availableAt      DateTime                                @default(now()) @db.Timestamptz(6)
+  lastAttemptAt    DateTime?                               @db.Timestamptz(6)
+  lockedAt         DateTime?                               @db.Timestamptz(6)
   lockedBy         String?
   lockToken        String?
   lastErrorCode    String?
   /// Erro resumido (sem secret/payload sensível).
   lastErrorMessage String?
-  syncedAt         DateTime?                              @db.Timestamptz(6)
+  syncedAt         DateTime?                               @db.Timestamptz(6)
   requestId        String?
-  createdAt        DateTime                               @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime                               @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt        DateTime                                @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime                                @default(now()) @updatedAt @db.Timestamptz(6)
 
   Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -1187,42 +1187,42 @@ model Proposal {
 }
 
 model ProposalItem {
-  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  proposalId              String           @db.Uuid
-  productId               String           @db.Uuid
-  quantity                Decimal          @db.Decimal(20, 6)
-  unit                    String?
-  unitCost                Decimal          @db.Decimal(20, 6)
-  suggestedPrice          Decimal          @db.Decimal(20, 6)
-  negotiatedPrice         Decimal          @db.Decimal(20, 6)
-  discountPerc            Decimal          @default(0) @db.Decimal(10, 6)
-  discountValue           Decimal          @default(0) @db.Decimal(20, 6)
-  marginValue             Decimal          @db.Decimal(20, 6)
-  marginPerc              Decimal          @db.Decimal(10, 6)
-  taxesPerc               Decimal          @default(0) @db.Decimal(10, 6)
-  taxesValue              Decimal          @default(0) @db.Decimal(20, 6)
-  commissionPerc          Decimal          @default(0) @db.Decimal(10, 6)
-  commissionValue         Decimal          @default(0) @db.Decimal(20, 6)
-  freightValue            Decimal          @default(0) @db.Decimal(20, 6)
-  notes                   String?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @default(now()) @updatedAt
-  externalItemId          Int?
-  externalProductId       Int?
-  externalItemStatus      String?
-  externalRawPayload      Json?
-  priceTableItemId        String?          @db.Uuid
-  priceSource             String?
-  pricingSnapshotJson     Json?
+  id                            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposalId                    String           @db.Uuid
+  productId                     String           @db.Uuid
+  quantity                      Decimal          @db.Decimal(20, 6)
+  unit                          String?
+  unitCost                      Decimal          @db.Decimal(20, 6)
+  suggestedPrice                Decimal          @db.Decimal(20, 6)
+  negotiatedPrice               Decimal          @db.Decimal(20, 6)
+  discountPerc                  Decimal          @default(0) @db.Decimal(10, 6)
+  discountValue                 Decimal          @default(0) @db.Decimal(20, 6)
+  marginValue                   Decimal          @db.Decimal(20, 6)
+  marginPerc                    Decimal          @db.Decimal(10, 6)
+  taxesPerc                     Decimal          @default(0) @db.Decimal(10, 6)
+  taxesValue                    Decimal          @default(0) @db.Decimal(20, 6)
+  commissionPerc                Decimal          @default(0) @db.Decimal(10, 6)
+  commissionValue               Decimal          @default(0) @db.Decimal(20, 6)
+  freightValue                  Decimal          @default(0) @db.Decimal(20, 6)
+  notes                         String?
+  createdAt                     DateTime         @default(now())
+  updatedAt                     DateTime         @default(now()) @updatedAt
+  externalItemId                Int?
+  externalProductId             Int?
+  externalItemStatus            String?
+  externalRawPayload            Json?
+  priceTableItemId              String?          @db.Uuid
+  priceSource                   String?
+  pricingSnapshotJson           Json?
   /// Snapshot comercial versionado (schemaVersion + formação/faixas/margem). Null = legado sem freeze.
   commercialPricingSnapshotJson Json?
-  priceTableId            String?          @db.Uuid
-  priceTableVersionId     String?          @db.Uuid
-  priceTableCode          String?
-  priceTableVersionNumber Int?
-  Product                 Product          @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Proposal                Proposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salesOrderItems         SalesOrderItem[]
+  priceTableId                  String?          @db.Uuid
+  priceTableVersionId           String?          @db.Uuid
+  priceTableCode                String?
+  priceTableVersionNumber       Int?
+  Product                       Product          @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Proposal                      Proposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salesOrderItems               SalesOrderItem[]
 
   @@unique([proposalId, externalItemId])
   @@index([productId])
@@ -1662,32 +1662,32 @@ model CostCenter {
 }
 
 model PurchaseRequest {
-  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  number              Int                   @unique @default(autoincrement())
-  requester           String
-  department          String
-  requestCategory     String?
-  priority            PurchasePriority      @default(NORMAL)
-  status              PurchaseRequestStatus @default(RASCUNHO)
-  justification       String
-  defaultCostCenterId String                @db.Uuid
-  notes               String?
+  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number               Int                           @unique @default(autoincrement())
+  requester            String
+  department           String
+  requestCategory      String?
+  priority             PurchasePriority              @default(NORMAL)
+  status               PurchaseRequestStatus         @default(RASCUNHO)
+  justification        String
+  defaultCostCenterId  String                        @db.Uuid
+  notes                String?
   /// Projeto oficial (read-only) — opcional.
-  projectId           String?               @db.Uuid
-  projectCodeSnapshot String?
+  projectId            String?                       @db.Uuid
+  projectCodeSnapshot  String?
   projectTitleSnapshot String?
   /// Referência livre (OS, contrato, etc.) quando não há projeto.
-  externalReference   String?
-  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
-  defaultCostCenter   CostCenter            @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
-  project             Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  items               PurchaseRequestItem[]
+  externalReference    String?
+  createdAt            DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  defaultCostCenter    CostCenter                    @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
+  project              Project?                      @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items                PurchaseRequestItem[]
   /// Cotações SC originadas desta solicitação (domínio aditivo OP-13).
-  quotations          PurchaseQuotation[]
-  purchaseOrders      PurchaseOrder[]
-  historyEvents       PurchaseRequestHistoryEvent[]
-  approvals           PurchaseApproval[]    @relation("PurchaseApprovalRequest")
+  quotations           PurchaseQuotation[]
+  purchaseOrders       PurchaseOrder[]
+  historyEvents        PurchaseRequestHistoryEvent[]
+  approvals            PurchaseApproval[]            @relation("PurchaseApprovalRequest")
 
   @@index([status])
   @@index([defaultCostCenterId])
@@ -1695,28 +1695,28 @@ model PurchaseRequest {
 }
 
 model PurchaseRequestItem {
-  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  purchaseRequestId     String                 @db.Uuid
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseRequestId     String                  @db.Uuid
   lineType              PurchaseLineType
-  materialId            String?                @db.Uuid
+  materialId            String?                 @db.Uuid
   description           String
-  quantity              Decimal                @db.Decimal(20, 6)
+  quantity              Decimal                 @db.Decimal(20, 6)
   unit                  String
-  costCenterId          String?                @db.Uuid
-  desiredDate           DateTime?              @db.Timestamptz(6)
+  costCenterId          String?                 @db.Uuid
+  desiredDate           DateTime?               @db.Timestamptz(6)
   priority              PurchasePriority?
   notes                 String?
   suggestedSupplier     String?
-  lineStatus            PurchaseItemLineStatus @default(ABERTA)
+  lineStatus            PurchaseItemLineStatus  @default(ABERTA)
   /// Referência/código no fornecedor (prepara cotação; não altera cadastro de Material)
   supplierReference     String?
   /// Embalagem ou apresentação desejada na compra
   packagingPresentation String?
   /// Quantidade mínima de pedido sugerida (MOQ) — apenas demanda; não é política de estoque
-  minOrderQtySuggested  Decimal?               @db.Decimal(20, 6)
-  costCenter            CostCenter?            @relation(fields: [costCenterId], references: [id], onUpdate: NoAction)
-  material              Material?              @relation(fields: [materialId], references: [id], onUpdate: NoAction)
-  purchaseRequest       PurchaseRequest        @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  minOrderQtySuggested  Decimal?                @db.Decimal(20, 6)
+  costCenter            CostCenter?             @relation(fields: [costCenterId], references: [id], onUpdate: NoAction)
+  material              Material?               @relation(fields: [materialId], references: [id], onUpdate: NoAction)
+  purchaseRequest       PurchaseRequest         @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   quotationItems        PurchaseQuotationItem[]
   purchaseOrderItems    PurchaseOrderItem[]
 
@@ -2270,78 +2270,78 @@ model AccessProfile {
 }
 
 model AppUser {
-  id                                   String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                                 String
-  email                                String                               @unique
-  passwordHash                         String
-  role                                 AppUserRole                          @default(VIEWER)
-  permissions                          String[]                             @default([])
+  id                                     String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                   String
+  email                                  String                               @unique
+  passwordHash                           String
+  role                                   AppUserRole                          @default(VIEWER)
+  permissions                            String[]                             @default([])
   /// Incrementado a cada mutação de ACL (P21). Sessões com epoch desatualizado são invalidadas.
-  permissionsVersion                   Int                                  @default(0)
-  accessProfileId                      String?                              @db.Uuid
+  permissionsVersion                     Int                                  @default(0)
+  accessProfileId                        String?                              @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
-  employeeId                           String?                              @unique @db.Uuid
+  employeeId                             String?                              @unique @db.Uuid
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
-  personId                             String?                              @unique @db.Uuid
-  isActive                             Boolean                              @default(true)
-  externalSellerId                     Int?
+  personId                               String?                              @unique @db.Uuid
+  isActive                               Boolean                              @default(true)
+  externalSellerId                       Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
-  externalSellerIds                    Int[]                                @default([])
-  sellerResponsibleName                String?
-  lastLoginAt                          DateTime?                            @db.Timestamptz(6)
-  createdAt                            DateTime                             @default(now()) @db.Timestamptz(6)
-  updatedAt                            DateTime                             @updatedAt @db.Timestamptz(6)
-  accessProfile                        AccessProfile?                       @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  employee                             Employee?                            @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  person                               Person?                              @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  sessions                             AppSession[]
-  permissionOverrides                  UserPermissionOverride[]
-  permissionAuditsAsActor              PermissionAuditLog[]                 @relation("PermissionAuditActor")
-  permissionAuditsAsTarget             PermissionAuditLog[]                 @relation("PermissionAuditTarget")
-  treasuryAccountsCreated              TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
-  treasuryAccountsDeactivated          TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
-  treasuryAccountAccessGrants          TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
-  treasuryAccountAccessGrantedBy       TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
-  treasuryBalanceSnapshotsCreated      TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
-  treasuryBalanceSnapshotsCancelled    TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCancelledBy")
-  treasuryAuditLogs                    TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
-  treasuryTitleComplementsCreated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
-  treasuryTitleComplementsUpdated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
-  treasuryTitleComplementsCancelled    TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
-  treasuryTitleComplementsResponsible  TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
-  treasuryPaymentPromisesCreated       TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCreatedBy")
-  treasuryPaymentPromisesUpdated       TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
-  treasuryPaymentPromisesCancelled     TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
-  treasuryPaymentPromisesResponsible   TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
-  treasuryCollectionActionsCreated     TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCreatedBy")
-  treasuryCollectionActionsUpdated     TreasuryCollectionAction[]           @relation("TreasuryCollectionActionUpdatedBy")
-  treasuryCollectionActionsCancelled   TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCancelledBy")
-  treasuryCollectionActionsResponsible TreasuryCollectionAction[]           @relation("TreasuryCollectionActionResponsible")
-  treasuryDisputesCreated              TreasuryDispute[]                    @relation("TreasuryDisputeCreatedBy")
-  treasuryDisputesUpdated              TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
-  treasuryDisputesCancelled            TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
-  treasuryDisputesResponsible          TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
-  treasuryProjectionRunsCreated        TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
-  treasuryProjectionRunsUpdated        TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
-  treasuryTransfersCreated             TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
-  treasuryTransfersUpdated             TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
-  treasuryTransfersCancelled           TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
-  treasuryLedgerEntriesCreated         TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryCreatedBy")
-  treasuryLedgerEntriesUpdated         TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryUpdatedBy")
-  treasuryExceptionsCreated            TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
-  treasuryExceptionsUpdated            TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
-  treasuryExceptionsCancelled          TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
-  treasuryExceptionsResponsible        TreasuryException[]                  @relation("TreasuryExceptionResponsible")
-  treasuryAlertSettingsUpdated         TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
-  treasuryScenarioPolicyUpdated        TreasuryScenarioPolicy[]             @relation("TreasuryScenarioPolicyUpdatedBy")
-  dreCostCenterMappingsUpdated         FinancialDreCostCenterMapping[]      @relation("FinancialDreCostCenterMappingUpdatedBy")
-  treasuryDailyClosingsCreated         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
-  treasuryDailyClosingsClosed          TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
-  treasuryDailyClosingReopenings       TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
-  treasuryBankImportBatchesCreated     TreasuryBankImportBatch[]            @relation("TreasuryBankImportBatchCreatedBy")
-  treasuryReconciliationMatchesCreated TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchCreatedBy")
-  treasuryReconciliationMatchesUpdated TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUpdatedBy")
-  treasuryReconciliationMatchesUnmatched TreasuryReconciliationMatch[]      @relation("TreasuryReconciliationMatchUnmatchedBy")
+  externalSellerIds                      Int[]                                @default([])
+  sellerResponsibleName                  String?
+  lastLoginAt                            DateTime?                            @db.Timestamptz(6)
+  createdAt                              DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt                              DateTime                             @updatedAt @db.Timestamptz(6)
+  accessProfile                          AccessProfile?                       @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee                               Employee?                            @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                                 Person?                              @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                               AppSession[]
+  permissionOverrides                    UserPermissionOverride[]
+  permissionAuditsAsActor                PermissionAuditLog[]                 @relation("PermissionAuditActor")
+  permissionAuditsAsTarget               PermissionAuditLog[]                 @relation("PermissionAuditTarget")
+  treasuryAccountsCreated                TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
+  treasuryAccountsDeactivated            TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
+  treasuryAccountAccessGrants            TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
+  treasuryAccountAccessGrantedBy         TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
+  treasuryBalanceSnapshotsCreated        TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
+  treasuryBalanceSnapshotsCancelled      TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCancelledBy")
+  treasuryAuditLogs                      TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
+  treasuryTitleComplementsCreated        TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
+  treasuryTitleComplementsUpdated        TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
+  treasuryTitleComplementsCancelled      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
+  treasuryTitleComplementsResponsible    TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
+  treasuryPaymentPromisesCreated         TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCreatedBy")
+  treasuryPaymentPromisesUpdated         TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
+  treasuryPaymentPromisesCancelled       TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
+  treasuryPaymentPromisesResponsible     TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
+  treasuryCollectionActionsCreated       TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCreatedBy")
+  treasuryCollectionActionsUpdated       TreasuryCollectionAction[]           @relation("TreasuryCollectionActionUpdatedBy")
+  treasuryCollectionActionsCancelled     TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCancelledBy")
+  treasuryCollectionActionsResponsible   TreasuryCollectionAction[]           @relation("TreasuryCollectionActionResponsible")
+  treasuryDisputesCreated                TreasuryDispute[]                    @relation("TreasuryDisputeCreatedBy")
+  treasuryDisputesUpdated                TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
+  treasuryDisputesCancelled              TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
+  treasuryDisputesResponsible            TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
+  treasuryProjectionRunsCreated          TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
+  treasuryProjectionRunsUpdated          TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
+  treasuryTransfersCreated               TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
+  treasuryTransfersUpdated               TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
+  treasuryTransfersCancelled             TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
+  treasuryLedgerEntriesCreated           TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryCreatedBy")
+  treasuryLedgerEntriesUpdated           TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryUpdatedBy")
+  treasuryExceptionsCreated              TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
+  treasuryExceptionsUpdated              TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
+  treasuryExceptionsCancelled            TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
+  treasuryExceptionsResponsible          TreasuryException[]                  @relation("TreasuryExceptionResponsible")
+  treasuryAlertSettingsUpdated           TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
+  treasuryScenarioPolicyUpdated          TreasuryScenarioPolicy[]             @relation("TreasuryScenarioPolicyUpdatedBy")
+  dreCostCenterMappingsUpdated           FinancialDreCostCenterMapping[]      @relation("FinancialDreCostCenterMappingUpdatedBy")
+  treasuryDailyClosingsCreated           TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
+  treasuryDailyClosingsClosed            TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
+  treasuryDailyClosingReopenings         TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
+  treasuryBankImportBatchesCreated       TreasuryBankImportBatch[]            @relation("TreasuryBankImportBatchCreatedBy")
+  treasuryReconciliationMatchesCreated   TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchCreatedBy")
+  treasuryReconciliationMatchesUpdated   TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUpdatedBy")
+  treasuryReconciliationMatchesUnmatched TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUnmatchedBy")
 
   @@index([role])
   @@index([isActive])
@@ -5043,12 +5043,12 @@ model FinancialSupplier {
   createdAt          DateTime                @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
 
-  aliases              FinancialSupplierAlias[]
-  costCenterRules      SupplierCostCenterRule[]
-  classificationRules  FinancialCostCenterClassificationRule[]
-  allocations          AccountsPayableCostCenterAllocation[]
-  materialMarketQuotes MaterialMarketQuote[]
-  serviceTerminations  SupplierServiceTermination[]
+  aliases                    FinancialSupplierAlias[]
+  costCenterRules            SupplierCostCenterRule[]
+  classificationRules        FinancialCostCenterClassificationRule[]
+  allocations                AccountsPayableCostCenterAllocation[]
+  materialMarketQuotes       MaterialMarketQuote[]
+  serviceTerminations        SupplierServiceTermination[]
   /// Compras SC — convites/ofertas/PO usam ID oficial (sem cadastro paralelo).
   purchaseQuotationSuppliers PurchaseQuotationSupplier[]
   purchaseOrders             PurchaseOrder[]
@@ -5557,58 +5557,58 @@ enum InventoryCountSessionStatus {
 }
 
 model InventoryItem {
-  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                  String              @unique
-  description           String
-  itemType              InventoryItemType
+  id                          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                        String              @unique
+  description                 String
+  itemType                    InventoryItemType
   /// Unidade oficial operacional do item logístico (espelha Material.unit quando materialId estiver vinculado).
-  unit                  String
-  family                String?
-  group                 String?
-  status                InventoryItemStatus @default(ACTIVE)
-  controlsLot           Boolean             @default(false)
-  controlsExpiration    Boolean             @default(false)
-  controlsLocation      Boolean             @default(false)
-  controlsQuality       Boolean             @default(false)
+  unit                        String
+  family                      String?
+  group                       String?
+  status                      InventoryItemStatus @default(ACTIVE)
+  controlsLot                 Boolean             @default(false)
+  controlsExpiration          Boolean             @default(false)
+  controlsLocation            Boolean             @default(false)
+  controlsQuality             Boolean             @default(false)
   /// Controla saldo físico no ledger local.
-  controlsStock         Boolean             @default(true)
-  allowsReservation     Boolean             @default(true)
-  allowsBlock           Boolean             @default(true)
-  minimumStock          Decimal?            @db.Decimal(20, 6)
+  controlsStock               Boolean             @default(true)
+  allowsReservation           Boolean             @default(true)
+  allowsBlock                 Boolean             @default(true)
+  minimumStock                Decimal?            @db.Decimal(20, 6)
   /// Estoque de segurança (alerta operacional).
-  safetyStock           Decimal?            @db.Decimal(20, 6)
-  maximumStock          Decimal?            @db.Decimal(20, 6)
-  reorderPoint          Decimal?            @db.Decimal(20, 6)
-  preferredSupplierName String?
-  averageCost           Decimal?            @db.Decimal(20, 6)
-  lastKnownCost         Decimal?            @db.Decimal(20, 6)
-  productId             String?             @db.Uuid
+  safetyStock                 Decimal?            @db.Decimal(20, 6)
+  maximumStock                Decimal?            @db.Decimal(20, 6)
+  reorderPoint                Decimal?            @db.Decimal(20, 6)
+  preferredSupplierName       String?
+  averageCost                 Decimal?            @db.Decimal(20, 6)
+  lastKnownCost               Decimal?            @db.Decimal(20, 6)
+  productId                   String?             @db.Uuid
   /// Vínculo ao cadastro oficial de matéria-prima (sem duplicar MP).
-  materialId            String?             @db.Uuid
+  materialId                  String?             @db.Uuid
   /// Snapshots históricos do cadastro oficial no momento do vínculo/atualização logística.
   materialCodeSnapshot        String?
   materialDescriptionSnapshot String?
   materialUnitSnapshot        String?
   materialCategorySnapshot    String?
-  defaultWarehouseId    String?             @db.Uuid
-  defaultLocationId     String?             @db.Uuid
-  nomusProductCode      String?
-  nomusProductId        String?
-  notes                 String?
-  createdAt             DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
-  createdByUserId       String?
-  updatedByUserId       String?
+  defaultWarehouseId          String?             @db.Uuid
+  defaultLocationId           String?             @db.Uuid
+  nomusProductCode            String?
+  nomusProductId              String?
+  notes                       String?
+  createdAt                   DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId             String?
+  updatedByUserId             String?
 
-  Product           Product?                     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  Material          Material?                    @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  defaultWarehouse  InventoryWarehouse?          @relation("InventoryItemDefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  defaultLocation   InventoryLocation?           @relation("InventoryItemDefaultLocation", fields: [defaultLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  balances          InventoryBalance[]
-  movements         InventoryMovement[]
-  reservations      InventoryReservation[]
-  blocks            InventoryBlock[]
-  countLines        InventoryCountLine[]
+  Product            Product?                     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  Material           Material?                    @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  defaultWarehouse   InventoryWarehouse?          @relation("InventoryItemDefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  defaultLocation    InventoryLocation?           @relation("InventoryItemDefaultLocation", fields: [defaultLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  balances           InventoryBalance[]
+  movements          InventoryMovement[]
+  reservations       InventoryReservation[]
+  blocks             InventoryBlock[]
+  countLines         InventoryCountLine[]
   stockSnapshotLines InventoryStockSnapshotLine[]
 
   @@index([itemType])
@@ -5635,51 +5635,51 @@ model InventoryWarehouse {
 
   locations            InventoryLocation[]
   balances             InventoryBalance[]
-  sourceMovements      InventoryMovement[]     @relation("MovementSourceWarehouse")
-  destinationMovements InventoryMovement[]     @relation("MovementDestinationWarehouse")
+  sourceMovements      InventoryMovement[]          @relation("MovementSourceWarehouse")
+  destinationMovements InventoryMovement[]          @relation("MovementDestinationWarehouse")
   reservations         InventoryReservation[]
   blocks               InventoryBlock[]
   countSessions        InventoryCountSession[]
   countLines           InventoryCountLine[]
   stockSnapshotLines   InventoryStockSnapshotLine[]
-  defaultForItems      InventoryItem[]         @relation("InventoryItemDefaultWarehouse")
+  defaultForItems      InventoryItem[]              @relation("InventoryItemDefaultWarehouse")
 
   @@index([status])
 }
 
 model InventoryLocation {
-  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  warehouseId     String                  @db.Uuid
-  code            String
-  name            String
-  status          InventoryLocationStatus @default(ACTIVE)
+  id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  warehouseId      String                  @db.Uuid
+  code             String
+  name             String
+  status           InventoryLocationStatus @default(ACTIVE)
   /// Físico, quarentena ou produção.
-  locationType    InventoryLocationType   @default(PHYSICAL)
+  locationType     InventoryLocationType   @default(PHYSICAL)
   /// Único local padrão ativo por almoxarifado (garantido em serviço + índice parcial).
-  isDefault       Boolean                 @default(false)
+  isDefault        Boolean                 @default(false)
   /// Hierarquia opcional (ex.: corredor → estante → posição).
-  parentLocationId String?                @db.Uuid
+  parentLocationId String?                 @db.Uuid
   /// Endereçamento: corredor / estante / posição (quando modelado).
-  aisle           String?
-  shelf           String?
-  position        String?
-  notes           String?
-  createdAt       DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
-  createdByUserId String?
-  updatedByUserId String?
+  aisle            String?
+  shelf            String?
+  position         String?
+  notes            String?
+  createdAt        DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId  String?
+  updatedByUserId  String?
 
-  warehouse            InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  parentLocation       InventoryLocation?     @relation("InventoryLocationHierarchy", fields: [parentLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  childLocations       InventoryLocation[]    @relation("InventoryLocationHierarchy")
+  warehouse            InventoryWarehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parentLocation       InventoryLocation?           @relation("InventoryLocationHierarchy", fields: [parentLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  childLocations       InventoryLocation[]          @relation("InventoryLocationHierarchy")
   balances             InventoryBalance[]
-  sourceMovements      InventoryMovement[]    @relation("MovementSourceLocation")
-  destinationMovements InventoryMovement[]    @relation("MovementDestinationLocation")
+  sourceMovements      InventoryMovement[]          @relation("MovementSourceLocation")
+  destinationMovements InventoryMovement[]          @relation("MovementDestinationLocation")
   reservations         InventoryReservation[]
   blocks               InventoryBlock[]
   countLines           InventoryCountLine[]
   stockSnapshotLines   InventoryStockSnapshotLine[]
-  defaultForItems      InventoryItem[]        @relation("InventoryItemDefaultLocation")
+  defaultForItems      InventoryItem[]              @relation("InventoryItemDefaultLocation")
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
@@ -5691,75 +5691,75 @@ model InventoryLocation {
 
 /// Movimento imutável (ledger). Sem updatedAt de negócio — correção só via REVERSAL.
 model InventoryMovement {
-  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId                    String                      @db.Uuid
-  sourceWarehouseId         String?                     @db.Uuid
-  destinationWarehouseId    String?                     @db.Uuid
-  sourceLocationId          String?                     @db.Uuid
-  destinationLocationId     String?                     @db.Uuid
-  movementType              InventoryMovementType
-  quantity                  Decimal                     @db.Decimal(20, 6)
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId                      String                      @db.Uuid
+  sourceWarehouseId           String?                     @db.Uuid
+  destinationWarehouseId      String?                     @db.Uuid
+  sourceLocationId            String?                     @db.Uuid
+  destinationLocationId       String?                     @db.Uuid
+  movementType                InventoryMovementType
+  quantity                    Decimal                     @db.Decimal(20, 6)
   /// Unidade oficial do fato (cópia imutável no lançamento).
-  unit                      String
-  reason                    String
-  notes                     String?
-  responsibleUserId         String?
-  createdByUserId           String?
-  movementDate              DateTime                    @default(now()) @db.Timestamptz(6)
-  originType                InventoryMovementOriginType @default(MANUAL)
-  originId                  String?
-  documentNumber            String?
+  unit                        String
+  reason                      String
+  notes                       String?
+  responsibleUserId           String?
+  createdByUserId             String?
+  movementDate                DateTime                    @default(now()) @db.Timestamptz(6)
+  originType                  InventoryMovementOriginType @default(MANUAL)
+  originId                    String?
+  documentNumber              String?
   /// Referência de evidência (doc/path/URL) — opcional enquanto não há store de anexos de estoque.
-  evidenceRef               String?
-  costCenterId              String?                     @db.Uuid
-  financialCostCenterId     String?                     @db.Uuid
-  purchaseOrderId           String?                     @db.Uuid
-  purchaseOrderCode         String?
-  salesOrderId              String?                     @db.Uuid
-  salesOrderCode            String?
-  productionOrderId         String?                     @db.Uuid
-  productionOrderCode       String?
-  bomId                     String?                     @db.Uuid
-  productId                 String?                     @db.Uuid
+  evidenceRef                 String?
+  costCenterId                String?                     @db.Uuid
+  financialCostCenterId       String?                     @db.Uuid
+  purchaseOrderId             String?                     @db.Uuid
+  purchaseOrderCode           String?
+  salesOrderId                String?                     @db.Uuid
+  salesOrderCode              String?
+  productionOrderId           String?                     @db.Uuid
+  productionOrderCode         String?
+  bomId                       String?                     @db.Uuid
+  productId                   String?                     @db.Uuid
   /// Snapshot do vínculo oficial de MP no momento do fato (não atualiza se Material mudar).
-  materialId                String?                     @db.Uuid
-  materialCodeSnapshot      String?
+  materialId                  String?                     @db.Uuid
+  materialCodeSnapshot        String?
   materialDescriptionSnapshot String?
-  nfeId                     String?
-  nfeNumber                 String?
+  nfeId                       String?
+  nfeNumber                   String?
   /// Rastreabilidade operacional (lote / série / validade).
-  lotNumber                 String?
-  serialNumber              String?
-  expirationDate            DateTime?                   @db.Timestamptz(6)
-  previousPhysicalBalance   Decimal                     @db.Decimal(20, 6)
-  nextPhysicalBalance       Decimal                     @db.Decimal(20, 6)
-  previousReservedBalance   Decimal                     @default(0) @db.Decimal(20, 6)
-  nextReservedBalance       Decimal                     @default(0) @db.Decimal(20, 6)
-  previousBlockedBalance    Decimal                     @default(0) @db.Decimal(20, 6)
-  nextBlockedBalance        Decimal                     @default(0) @db.Decimal(20, 6)
-  previousQuarantineBalance Decimal                     @default(0) @db.Decimal(20, 6)
-  nextQuarantineBalance     Decimal                     @default(0) @db.Decimal(20, 6)
-  previousAvailableBalance  Decimal                     @db.Decimal(20, 6)
-  nextAvailableBalance      Decimal                     @db.Decimal(20, 6)
+  lotNumber                   String?
+  serialNumber                String?
+  expirationDate              DateTime?                   @db.Timestamptz(6)
+  previousPhysicalBalance     Decimal                     @db.Decimal(20, 6)
+  nextPhysicalBalance         Decimal                     @db.Decimal(20, 6)
+  previousReservedBalance     Decimal                     @default(0) @db.Decimal(20, 6)
+  nextReservedBalance         Decimal                     @default(0) @db.Decimal(20, 6)
+  previousBlockedBalance      Decimal                     @default(0) @db.Decimal(20, 6)
+  nextBlockedBalance          Decimal                     @default(0) @db.Decimal(20, 6)
+  previousQuarantineBalance   Decimal                     @default(0) @db.Decimal(20, 6)
+  nextQuarantineBalance       Decimal                     @default(0) @db.Decimal(20, 6)
+  previousAvailableBalance    Decimal                     @db.Decimal(20, 6)
+  nextAvailableBalance        Decimal                     @db.Decimal(20, 6)
   /// Custo unitário informativo (não fiscal) no momento do fato.
-  unitCost                  Decimal?                    @db.Decimal(20, 6)
+  unitCost                    Decimal?                    @db.Decimal(20, 6)
   /// Chave de idempotência explícita (alternativa a originType+originId).
-  idempotencyKey            String?
-  reversedMovementId        String?                     @db.Uuid
-  reservationId             String?                     @db.Uuid
-  blockId                   String?                     @db.Uuid
-  createdAt                 DateTime                    @default(now()) @db.Timestamptz(6)
+  idempotencyKey              String?
+  reversedMovementId          String?                     @db.Uuid
+  reservationId               String?                     @db.Uuid
+  blockId                     String?                     @db.Uuid
+  createdAt                   DateTime                    @default(now()) @db.Timestamptz(6)
 
-  item                 InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  sourceWarehouse      InventoryWarehouse?   @relation("MovementSourceWarehouse", fields: [sourceWarehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  destinationWarehouse InventoryWarehouse?   @relation("MovementDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  sourceLocation       InventoryLocation?    @relation("MovementSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  destinationLocation  InventoryLocation?    @relation("MovementDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  costCenter           CostCenter?           @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  reversedMovement     InventoryMovement?    @relation("MovementReversal", fields: [reversedMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  reversalMovements    InventoryMovement[]   @relation("MovementReversal")
-  reservation          InventoryReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  block                InventoryBlock?       @relation(fields: [blockId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  item                 InventoryItem                @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sourceWarehouse      InventoryWarehouse?          @relation("MovementSourceWarehouse", fields: [sourceWarehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  destinationWarehouse InventoryWarehouse?          @relation("MovementDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sourceLocation       InventoryLocation?           @relation("MovementSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  destinationLocation  InventoryLocation?           @relation("MovementDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  costCenter           CostCenter?                  @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reversedMovement     InventoryMovement?           @relation("MovementReversal", fields: [reversedMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reversalMovements    InventoryMovement[]          @relation("MovementReversal")
+  reservation          InventoryReservation?        @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  block                InventoryBlock?              @relation(fields: [blockId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   countLine            InventoryCountLine?
   stockSnapshotLines   InventoryStockSnapshotLine[]
 
@@ -5813,25 +5813,25 @@ model InventoryBalance {
 }
 
 model InventoryReservation {
-  id               String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId           String                      @db.Uuid
-  warehouseId      String                      @db.Uuid
-  locationId       String?                     @db.Uuid
-  quantity         Decimal                     @db.Decimal(20, 6)
-  reservationType  InventoryReservationType
-  status           InventoryReservationStatus  @default(ACTIVE)
-  reason           String
-  originType       InventoryMovementOriginType @default(MANUAL)
-  originId         String?
+  id                String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId            String                      @db.Uuid
+  warehouseId       String                      @db.Uuid
+  locationId        String?                     @db.Uuid
+  quantity          Decimal                     @db.Decimal(20, 6)
+  reservationType   InventoryReservationType
+  status            InventoryReservationStatus  @default(ACTIVE)
+  reason            String
+  originType        InventoryMovementOriginType @default(MANUAL)
+  originId          String?
   /// Responsável pela reserva (pode diferir do criador técnico).
   responsibleUserId String?
   /// Validade opcional da reserva.
-  expiresAt        DateTime?                   @db.Timestamptz(6)
-  createdByUserId  String?
-  canceledByUserId String?
-  createdAt        DateTime                    @default(now()) @db.Timestamptz(6)
-  canceledAt       DateTime?                   @db.Timestamptz(6)
-  notes            String?
+  expiresAt         DateTime?                   @db.Timestamptz(6)
+  createdByUserId   String?
+  canceledByUserId  String?
+  createdAt         DateTime                    @default(now()) @db.Timestamptz(6)
+  canceledAt        DateTime?                   @db.Timestamptz(6)
+  notes             String?
 
   item      InventoryItem       @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   warehouse InventoryWarehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -5850,22 +5850,22 @@ model InventoryReservation {
 
 /// Bloqueio tipado (qualidade/auditoria) — espelha reserva; saldo bloqueado só via movimentos BLOCK/UNBLOCK.
 model InventoryBlock {
-  id              String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  itemId          String                      @db.Uuid
-  warehouseId     String                      @db.Uuid
-  locationId      String?                     @db.Uuid
-  quantity        Decimal                     @db.Decimal(20, 6)
-  reasonType      InventoryBlockReasonType    @default(MANUAL)
-  status          InventoryBlockStatus        @default(ACTIVE)
-  reason          String
-  originType      InventoryMovementOriginType @default(MANUAL)
-  originId        String?
+  id                String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId            String                      @db.Uuid
+  warehouseId       String                      @db.Uuid
+  locationId        String?                     @db.Uuid
+  quantity          Decimal                     @db.Decimal(20, 6)
+  reasonType        InventoryBlockReasonType    @default(MANUAL)
+  status            InventoryBlockStatus        @default(ACTIVE)
+  reason            String
+  originType        InventoryMovementOriginType @default(MANUAL)
+  originId          String?
   responsibleUserId String?
-  createdByUserId String?
-  releasedByUserId String?
-  createdAt       DateTime                    @default(now()) @db.Timestamptz(6)
-  releasedAt      DateTime?                   @db.Timestamptz(6)
-  notes           String?
+  createdByUserId   String?
+  releasedByUserId  String?
+  createdAt         DateTime                    @default(now()) @db.Timestamptz(6)
+  releasedAt        DateTime?                   @db.Timestamptz(6)
+  notes             String?
 
   item      InventoryItem       @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   warehouse InventoryWarehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -5883,13 +5883,13 @@ model InventoryBlock {
 
 /// Snapshot pontual de saldos (auditoria / recálculo a partir do ledger). Não substitui InventoryBalance.
 model InventoryStockSnapshot {
-  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  asOfAt          DateTime                     @db.Timestamptz(6)
-  source          InventoryStockSnapshotSource @default(RECALCULATION)
-  reason          String?
-  createdByUserId String?
+  id                String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asOfAt            DateTime                     @db.Timestamptz(6)
+  source            InventoryStockSnapshotSource @default(RECALCULATION)
+  reason            String?
+  createdByUserId   String?
   createdByUserName String?
-  createdAt       DateTime                     @default(now()) @db.Timestamptz(6)
+  createdAt         DateTime                     @default(now()) @db.Timestamptz(6)
 
   lines InventoryStockSnapshotLine[]
 
@@ -5900,29 +5900,29 @@ model InventoryStockSnapshot {
 }
 
 model InventoryStockSnapshotLine {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  snapshotId         String   @db.Uuid
-  itemId             String   @db.Uuid
-  warehouseId        String   @db.Uuid
-  locationId         String?  @db.Uuid
-  balanceKey         String
-  physicalQuantity   Decimal  @db.Decimal(20, 6)
-  reservedQuantity   Decimal  @default(0) @db.Decimal(20, 6)
-  blockedQuantity    Decimal  @default(0) @db.Decimal(20, 6)
-  quarantineQuantity Decimal  @default(0) @db.Decimal(20, 6)
-  availableQuantity  Decimal  @db.Decimal(20, 6)
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  snapshotId           String   @db.Uuid
+  itemId               String   @db.Uuid
+  warehouseId          String   @db.Uuid
+  locationId           String?  @db.Uuid
+  balanceKey           String
+  physicalQuantity     Decimal  @db.Decimal(20, 6)
+  reservedQuantity     Decimal  @default(0) @db.Decimal(20, 6)
+  blockedQuantity      Decimal  @default(0) @db.Decimal(20, 6)
+  quarantineQuantity   Decimal  @default(0) @db.Decimal(20, 6)
+  availableQuantity    Decimal  @db.Decimal(20, 6)
   /// Unidade oficial congelada no snapshot.
-  unit               String
-  materialId         String?  @db.Uuid
+  unit                 String
+  materialId           String?  @db.Uuid
   materialCodeSnapshot String?
-  lastMovementId     String?  @db.Uuid
-  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  lastMovementId       String?  @db.Uuid
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
 
-  snapshot    InventoryStockSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  item        InventoryItem          @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  warehouse   InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  location    InventoryLocation?     @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  lastMovement InventoryMovement?    @relation(fields: [lastMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  snapshot     InventoryStockSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  item         InventoryItem          @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouse    InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  location     InventoryLocation?     @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  lastMovement InventoryMovement?     @relation(fields: [lastMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([snapshotId])
   @@index([itemId, balanceKey])
@@ -6142,12 +6142,12 @@ model PurchaseQuotation {
   createdAt         DateTime                @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
 
-  purchaseRequest PurchaseRequest?             @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  purchaseRequest PurchaseRequest?            @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   items           PurchaseQuotationItem[]
   suppliers       PurchaseQuotationSupplier[]
   offers          PurchaseQuotationOffer[]
   rounds          PurchaseNegotiationRound[]
-  approvals       PurchaseApproval[]           @relation("PurchaseApprovalQuotation")
+  approvals       PurchaseApproval[]          @relation("PurchaseApprovalQuotation")
   awards          PurchaseQuotationAward[]
   purchaseOrders  PurchaseOrder[]
 
@@ -6159,24 +6159,24 @@ model PurchaseQuotation {
 
 /// Itens solicitados na cotação (demanda) — snapshot de MP oficial.
 model PurchaseQuotationItem {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId           String   @db.Uuid
-  purchaseRequestItemId String?  @db.Uuid
-  lineNumber            Int
-  materialId            String?  @db.Uuid
-  materialCodeSnapshot  String?
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId                 String   @db.Uuid
+  purchaseRequestItemId       String?  @db.Uuid
+  lineNumber                  Int
+  materialId                  String?  @db.Uuid
+  materialCodeSnapshot        String?
   materialDescriptionSnapshot String?
-  materialUnitSnapshot  String?
-  description           String
-  quantity              Decimal  @db.Decimal(20, 6)
-  unit                  String
-  notes                 String?
-  createdAt             DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  materialUnitSnapshot        String?
+  description                 String
+  quantity                    Decimal  @db.Decimal(20, 6)
+  unit                        String
+  notes                       String?
+  createdAt                   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  quotation           PurchaseQuotation         @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  purchaseRequestItem PurchaseRequestItem?      @relation(fields: [purchaseRequestItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  material            Material?                 @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  quotation           PurchaseQuotation                  @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseRequestItem PurchaseRequestItem?               @relation(fields: [purchaseRequestItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  material            Material?                          @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   offerItems          PurchaseQuotationOfferItem[]
   purchaseOrderItems  PurchaseOrderItem[]
   awardAllocations    PurchaseQuotationAwardAllocation[]
@@ -6189,20 +6189,20 @@ model PurchaseQuotationItem {
 
 /// Fornecedor convidado na cotação — ID oficial FinancialSupplier + snapshots.
 model PurchaseQuotationSupplier {
-  id                         String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId                String                         @db.Uuid
-  supplierId                 String                         @db.Uuid
-  status                     PurchaseQuotationSupplierStatus @default(CONVIDADO)
+  id                          String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId                 String                          @db.Uuid
+  supplierId                  String                          @db.Uuid
+  status                      PurchaseQuotationSupplierStatus @default(CONVIDADO)
   supplierDisplayNameSnapshot String
-  supplierDocumentSnapshot   String?
-  invitedAt                  DateTime                       @default(now()) @db.Timestamptz(6)
-  respondedAt                DateTime?                      @db.Timestamptz(6)
-  notes                      String?
-  createdAt                  DateTime                       @default(now()) @db.Timestamptz(6)
-  updatedAt                  DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+  supplierDocumentSnapshot    String?
+  invitedAt                   DateTime                        @default(now()) @db.Timestamptz(6)
+  respondedAt                 DateTime?                       @db.Timestamptz(6)
+  notes                       String?
+  createdAt                   DateTime                        @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
 
-  quotation PurchaseQuotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  supplier  FinancialSupplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  quotation PurchaseQuotation        @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  supplier  FinancialSupplier        @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   offers    PurchaseQuotationOffer[]
 
   @@unique([quotationId, supplierId])
@@ -6213,44 +6213,44 @@ model PurchaseQuotationSupplier {
 
 /// Cotação por fornecedor (oferta). Condições iniciais ≠ finais adjudicadas.
 model PurchaseQuotationOffer {
-  id                      String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId             String                      @db.Uuid
-  quotationSupplierId     String                      @db.Uuid
-  status                  PurchaseQuotationOfferStatus @default(RASCUNHO)
-  currency                String                      @default("BRL")
+  id                         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId                String                       @db.Uuid
+  quotationSupplierId        String                       @db.Uuid
+  status                     PurchaseQuotationOfferStatus @default(RASCUNHO)
+  currency                   String                       @default("BRL")
   /// Condições da primeira resposta — não sobrescrever na negociação.
-  initialPaymentTerms     String?
-  initialDeliveryTerms    String?
-  initialFreightValue     Decimal?                    @db.Decimal(20, 6)
-  initialNonRecoverableTaxes Decimal?                 @db.Decimal(20, 6)
-  initialExpenses         Decimal?                    @db.Decimal(20, 6)
-  initialDiscounts        Decimal?                    @db.Decimal(20, 6)
-  initialMinOrderQty      Decimal?                    @db.Decimal(20, 6)
-  initialValidityDate     DateTime?                   @db.Date
-  initialLeadTimeDays     Int?
+  initialPaymentTerms        String?
+  initialDeliveryTerms       String?
+  initialFreightValue        Decimal?                     @db.Decimal(20, 6)
+  initialNonRecoverableTaxes Decimal?                     @db.Decimal(20, 6)
+  initialExpenses            Decimal?                     @db.Decimal(20, 6)
+  initialDiscounts           Decimal?                     @db.Decimal(20, 6)
+  initialMinOrderQty         Decimal?                     @db.Decimal(20, 6)
+  initialValidityDate        DateTime?                    @db.Date
+  initialLeadTimeDays        Int?
   /// Proposta comercial recebida (anexo/registro) — distinta de adjudicação.
-  proposalReceived        Boolean                     @default(false)
-  proposalReceivedAt      DateTime?                   @db.Timestamptz(6)
-  proposalReceivedNotes   String?
+  proposalReceived           Boolean                      @default(false)
+  proposalReceivedAt         DateTime?                    @db.Timestamptz(6)
+  proposalReceivedNotes      String?
   /// Condições adjudicadas — preenchidas só na adjudicação (cópia da rodada vencedora).
-  awardedPaymentTerms     String?
-  awardedDeliveryTerms    String?
-  awardedFreightValue     Decimal?                    @db.Decimal(20, 6)
-  awardedValidityDate     DateTime?                   @db.Date
-  awardedLeadTimeDays     Int?
-  awardedAt               DateTime?                   @db.Timestamptz(6)
-  submittedAt             DateTime?                   @db.Timestamptz(6)
-  notes                   String?
+  awardedPaymentTerms        String?
+  awardedDeliveryTerms       String?
+  awardedFreightValue        Decimal?                     @db.Decimal(20, 6)
+  awardedValidityDate        DateTime?                    @db.Date
+  awardedLeadTimeDays        Int?
+  awardedAt                  DateTime?                    @db.Timestamptz(6)
+  submittedAt                DateTime?                    @db.Timestamptz(6)
+  notes                      String?
   /// Escolha humana do vencedor — nunca auto pelo menor preço (OP-18).
-  selectionJustification  String?
-  selectedAt              DateTime?                   @db.Timestamptz(6)
-  selectedByUserId        String?
-  selectedByUserName      String?
-  createdAt               DateTime                    @default(now()) @db.Timestamptz(6)
-  updatedAt               DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+  selectionJustification     String?
+  selectedAt                 DateTime?                    @db.Timestamptz(6)
+  selectedByUserId           String?
+  selectedByUserName         String?
+  createdAt                  DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
 
-  quotation         PurchaseQuotation           @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  quotationSupplier PurchaseQuotationSupplier   @relation(fields: [quotationSupplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotation         PurchaseQuotation                  @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationSupplier PurchaseQuotationSupplier          @relation(fields: [quotationSupplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   items             PurchaseQuotationOfferItem[]
   purchaseOrders    PurchaseOrder[]
   awardAllocations  PurchaseQuotationAwardAllocation[]
@@ -6264,35 +6264,35 @@ model PurchaseQuotationOffer {
 
 /// Item da oferta: preço inicial imutável + awarded* separado; histórico nas rodadas.
 model PurchaseQuotationOfferItem {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  offerId            String   @db.Uuid
-  quotationItemId    String   @db.Uuid
+  id                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  offerId                    String    @db.Uuid
+  quotationItemId            String    @db.Uuid
   /// Preço unitário da primeira resposta — imutável após RECEBIDA / início de negociação.
-  initialUnitPrice   Decimal  @db.Decimal(20, 6)
-  initialQuantity    Decimal? @db.Decimal(20, 6)
-  initialLeadTimeDays Int?
-  initialFreightValue Decimal? @db.Decimal(20, 6)
-  initialNonRecoverableTaxes Decimal? @db.Decimal(20, 6)
-  initialExpenses    Decimal? @db.Decimal(20, 6)
-  initialDiscounts   Decimal? @db.Decimal(20, 6)
-  initialMinOrderQty Decimal? @db.Decimal(20, 6)
-  initialNotes       String?
+  initialUnitPrice           Decimal   @db.Decimal(20, 6)
+  initialQuantity            Decimal?  @db.Decimal(20, 6)
+  initialLeadTimeDays        Int?
+  initialFreightValue        Decimal?  @db.Decimal(20, 6)
+  initialNonRecoverableTaxes Decimal?  @db.Decimal(20, 6)
+  initialExpenses            Decimal?  @db.Decimal(20, 6)
+  initialDiscounts           Decimal?  @db.Decimal(20, 6)
+  initialMinOrderQty         Decimal?  @db.Decimal(20, 6)
+  initialNotes               String?
   /// Preço/qtd adjudicados — nunca sobrescrevem initial*; preenchidos só na adjudicação.
-  awardedUnitPrice   Decimal? @db.Decimal(20, 6)
-  awardedQuantity    Decimal? @db.Decimal(20, 6)
-  awardedLeadTimeDays Int?
-  awardedFreightValue Decimal? @db.Decimal(20, 6)
-  awardedAt          DateTime? @db.Timestamptz(6)
+  awardedUnitPrice           Decimal?  @db.Decimal(20, 6)
+  awardedQuantity            Decimal?  @db.Decimal(20, 6)
+  awardedLeadTimeDays        Int?
+  awardedFreightValue        Decimal?  @db.Decimal(20, 6)
+  awardedAt                  DateTime? @db.Timestamptz(6)
   /// Rodada de origem do preço adjudicado (rastreio).
-  awardedRoundLineId String?  @unique @db.Uuid
-  notes              String?
-  createdAt          DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  awardedRoundLineId         String?   @unique @db.Uuid
+  notes                      String?
+  createdAt                  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  offer            PurchaseQuotationOffer        @relation(fields: [offerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  quotationItem    PurchaseQuotationItem         @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  offer            PurchaseQuotationOffer             @relation(fields: [offerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationItem    PurchaseQuotationItem              @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   roundLines       PurchaseNegotiationRoundLine[]
-  awardedRoundLine PurchaseNegotiationRoundLine? @relation("OfferItemAwardedRoundLine", fields: [awardedRoundLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  awardedRoundLine PurchaseNegotiationRoundLine?      @relation("OfferItemAwardedRoundLine", fields: [awardedRoundLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   awardAllocations PurchaseQuotationAwardAllocation[]
 
   @@unique([offerId, quotationItemId])
@@ -6302,24 +6302,24 @@ model PurchaseQuotationOfferItem {
 
 /// Rodada de negociação — cabeçalho append-friendly (número monotônico por cotação).
 model PurchaseNegotiationRound {
-  id                   String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId          String                         @db.Uuid
-  roundNumber          Int
-  status               PurchaseNegotiationRoundStatus @default(ABERTA)
-  openedAt             DateTime                       @default(now()) @db.Timestamptz(6)
-  closedAt             DateTime?                      @db.Timestamptz(6)
-  openedByUserId       String?
-  closedByUserId       String?
+  id                  String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId         String                         @db.Uuid
+  roundNumber         Int
+  status              PurchaseNegotiationRoundStatus @default(ABERTA)
+  openedAt            DateTime                       @default(now()) @db.Timestamptz(6)
+  closedAt            DateTime?                      @db.Timestamptz(6)
+  openedByUserId      String?
+  closedByUserId      String?
   /// Relato do comprador nesta rodada.
-  buyerReport          String?
+  buyerReport         String?
   /// Responsável (nome exibido; ID em openedByUserId).
-  responsibleUserName  String?
-  notes                String?
-  createdAt            DateTime                       @default(now()) @db.Timestamptz(6)
+  responsibleUserName String?
+  notes               String?
+  createdAt           DateTime                       @default(now()) @db.Timestamptz(6)
 
-  quotation PurchaseQuotation              @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  lines     PurchaseNegotiationRoundLine[]
-  awardsAsFinalRound PurchaseQuotationAward[] @relation("AwardFinalRound")
+  quotation          PurchaseQuotation              @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lines              PurchaseNegotiationRoundLine[]
+  awardsAsFinalRound PurchaseQuotationAward[]       @relation("AwardFinalRound")
 
   @@unique([quotationId, roundNumber])
   @@index([quotationId])
@@ -6329,40 +6329,40 @@ model PurchaseNegotiationRound {
 /// Proposta de preço/condição na rodada — append-only (sem updatedAt).
 /// previous* = snapshot do estado anterior; campos sem prefixo = novos valores.
 model PurchaseNegotiationRoundLine {
-  id                           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  roundId                      String                   @db.Uuid
-  offerItemId                  String                   @db.Uuid
-  unitPrice                    Decimal                  @db.Decimal(20, 6)
-  quantity                     Decimal?                 @db.Decimal(20, 6)
-  leadTimeDays                 Int?
-  freightValue                 Decimal?                 @db.Decimal(20, 6)
-  nonRecoverableTaxes          Decimal?                 @db.Decimal(20, 6)
-  expenses                     Decimal?                 @db.Decimal(20, 6)
-  discounts                    Decimal?                 @db.Decimal(20, 6)
-  minOrderQty                  Decimal?                 @db.Decimal(20, 6)
+  id                          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId                     String                   @db.Uuid
+  offerItemId                 String                   @db.Uuid
+  unitPrice                   Decimal                  @db.Decimal(20, 6)
+  quantity                    Decimal?                 @db.Decimal(20, 6)
+  leadTimeDays                Int?
+  freightValue                Decimal?                 @db.Decimal(20, 6)
+  nonRecoverableTaxes         Decimal?                 @db.Decimal(20, 6)
+  expenses                    Decimal?                 @db.Decimal(20, 6)
+  discounts                   Decimal?                 @db.Decimal(20, 6)
+  minOrderQty                 Decimal?                 @db.Decimal(20, 6)
   /// CIF | FOB | OTHER — CIF não entra no custo comparável do comprador.
-  freightIncoterm              String?
-  paymentTerms                 String?
-  deliveryTerms                String?
-  previousUnitPrice            Decimal?                 @db.Decimal(20, 6)
-  previousQuantity             Decimal?                 @db.Decimal(20, 6)
-  previousLeadTimeDays         Int?
-  previousFreightValue         Decimal?                 @db.Decimal(20, 6)
-  previousNonRecoverableTaxes  Decimal?                 @db.Decimal(20, 6)
-  previousExpenses             Decimal?                 @db.Decimal(20, 6)
-  previousDiscounts            Decimal?                 @db.Decimal(20, 6)
-  previousMinOrderQty          Decimal?                 @db.Decimal(20, 6)
-  previousPaymentTerms         String?
-  previousDeliveryTerms        String?
-  previousFreightIncoterm      String?
-  proposedBy                   PurchaseNegotiationActor
-  notes                        String?
-  createdAt                    DateTime                 @default(now()) @db.Timestamptz(6)
-  createdByUserId              String?
+  freightIncoterm             String?
+  paymentTerms                String?
+  deliveryTerms               String?
+  previousUnitPrice           Decimal?                 @db.Decimal(20, 6)
+  previousQuantity            Decimal?                 @db.Decimal(20, 6)
+  previousLeadTimeDays        Int?
+  previousFreightValue        Decimal?                 @db.Decimal(20, 6)
+  previousNonRecoverableTaxes Decimal?                 @db.Decimal(20, 6)
+  previousExpenses            Decimal?                 @db.Decimal(20, 6)
+  previousDiscounts           Decimal?                 @db.Decimal(20, 6)
+  previousMinOrderQty         Decimal?                 @db.Decimal(20, 6)
+  previousPaymentTerms        String?
+  previousDeliveryTerms       String?
+  previousFreightIncoterm     String?
+  proposedBy                  PurchaseNegotiationActor
+  notes                       String?
+  createdAt                   DateTime                 @default(now()) @db.Timestamptz(6)
+  createdByUserId             String?
 
-  round                   PurchaseNegotiationRound    @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  offerItem               PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  awardedForOfferItem     PurchaseQuotationOfferItem? @relation("OfferItemAwardedRoundLine")
+  round               PurchaseNegotiationRound    @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offerItem           PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  awardedForOfferItem PurchaseQuotationOfferItem? @relation("OfferItemAwardedRoundLine")
 
   @@unique([roundId, offerItemId])
   @@index([roundId])
@@ -6372,26 +6372,26 @@ model PurchaseNegotiationRoundLine {
 
 /// Aprovação formal (cotação / PO / recebimento).
 model PurchaseApproval {
-  id                String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   targetType        PurchaseApprovalTargetType
-  status            PurchaseApprovalStatus   @default(PENDENTE)
-  purchaseRequestId String?                  @db.Uuid
-  quotationId       String?                  @db.Uuid
-  purchaseOrderId   String?                  @db.Uuid
-  receiptId         String?                  @db.Uuid
-  sequence          Int                      @default(1)
+  status            PurchaseApprovalStatus     @default(PENDENTE)
+  purchaseRequestId String?                    @db.Uuid
+  quotationId       String?                    @db.Uuid
+  purchaseOrderId   String?                    @db.Uuid
+  receiptId         String?                    @db.Uuid
+  sequence          Int                        @default(1)
   requestedByUserId String?
   decidedByUserId   String?
-  decidedAt         DateTime?                @db.Timestamptz(6)
+  decidedAt         DateTime?                  @db.Timestamptz(6)
   reason            String?
   notes             String?
-  createdAt         DateTime                 @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
 
-  purchaseRequest PurchaseRequest?   @relation("PurchaseApprovalRequest", fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  quotation       PurchaseQuotation? @relation("PurchaseApprovalQuotation", fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  purchaseOrder   PurchaseOrder?     @relation("PurchaseApprovalPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  receipt         PurchaseReceipt?   @relation("PurchaseApprovalReceipt", fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseRequest PurchaseRequest?        @relation("PurchaseApprovalRequest", fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotation       PurchaseQuotation?      @relation("PurchaseApprovalQuotation", fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseOrder   PurchaseOrder?          @relation("PurchaseApprovalPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  receipt         PurchaseReceipt?        @relation("PurchaseApprovalReceipt", fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   quotationAward  PurchaseQuotationAward? @relation("AwardPurchaseApproval")
 
   @@index([targetType, status])
@@ -6404,38 +6404,38 @@ model PurchaseApproval {
 
 /// Pacote formal de adjudicação (OP-19) — escolha + aprovação; sem PO/recebimento.
 model PurchaseQuotationAward {
-  id                         String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId                String                      @db.Uuid
-  status                     PurchaseQuotationAwardStatus @default(PENDENTE_APROVACAO)
-  mode                       PurchaseQuotationAwardMode  @default(SINGLE)
-  finalRoundId               String?                     @db.Uuid
-  justification              String
-  responsibleUserId          String?
-  responsibleUserName        String?
-  approverUserId             String?
-  approverUserName           String?
-  submittedAt                DateTime                    @default(now()) @db.Timestamptz(6)
-  decidedAt                  DateTime?                   @db.Timestamptz(6)
-  decisionReason             String?
-  currency                   String                      @default("BRL")
-  initialComparableTotal     Decimal?                    @db.Decimal(20, 6)
-  awardedComparableTotal     Decimal?                    @db.Decimal(20, 6)
-  totalGain                  Decimal?                    @db.Decimal(20, 6)
-  percentGain                Decimal?                    @db.Decimal(20, 6)
-  evidenceCountSnapshot      Int                         @default(0)
-  usedEvidenceException      Boolean                     @default(false)
-  commercialConditionsJson   Json?
-  notes                      String?
-  approvalId                 String?                     @unique @db.Uuid
-  createdAt                  DateTime                    @default(now()) @db.Timestamptz(6)
-  updatedAt                  DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+  id                       String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId              String                       @db.Uuid
+  status                   PurchaseQuotationAwardStatus @default(PENDENTE_APROVACAO)
+  mode                     PurchaseQuotationAwardMode   @default(SINGLE)
+  finalRoundId             String?                      @db.Uuid
+  justification            String
+  responsibleUserId        String?
+  responsibleUserName      String?
+  approverUserId           String?
+  approverUserName         String?
+  submittedAt              DateTime                     @default(now()) @db.Timestamptz(6)
+  decidedAt                DateTime?                    @db.Timestamptz(6)
+  decisionReason           String?
+  currency                 String                       @default("BRL")
+  initialComparableTotal   Decimal?                     @db.Decimal(20, 6)
+  awardedComparableTotal   Decimal?                     @db.Decimal(20, 6)
+  totalGain                Decimal?                     @db.Decimal(20, 6)
+  percentGain              Decimal?                     @db.Decimal(20, 6)
+  evidenceCountSnapshot    Int                          @default(0)
+  usedEvidenceException    Boolean                      @default(false)
+  commercialConditionsJson Json?
+  notes                    String?
+  approvalId               String?                      @unique @db.Uuid
+  createdAt                DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
 
-  quotation   PurchaseQuotation                 @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  finalRound  PurchaseNegotiationRound?         @relation("AwardFinalRound", fields: [finalRoundId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  approval    PurchaseApproval?                 @relation("AwardPurchaseApproval", fields: [approvalId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  allocations PurchaseQuotationAwardAllocation[]
-  rejections  PurchaseQuotationAwardRejection[]
-  history     PurchaseQuotationAwardHistoryEvent[]
+  quotation      PurchaseQuotation                    @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  finalRound     PurchaseNegotiationRound?            @relation("AwardFinalRound", fields: [finalRoundId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  approval       PurchaseApproval?                    @relation("AwardPurchaseApproval", fields: [approvalId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  allocations    PurchaseQuotationAwardAllocation[]
+  rejections     PurchaseQuotationAwardRejection[]
+  history        PurchaseQuotationAwardHistoryEvent[]
   purchaseOrders PurchaseOrder[]
 
   @@index([quotationId])
@@ -6445,34 +6445,34 @@ model PurchaseQuotationAward {
 }
 
 model PurchaseQuotationAwardAllocation {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  awardId            String   @db.Uuid
-  offerId            String   @db.Uuid
-  offerItemId        String   @db.Uuid
-  quotationItemId    String   @db.Uuid
-  supplierId         String   @db.Uuid
-  supplierNameSnapshot String
-  quantityAwarded    Decimal  @db.Decimal(20, 6)
-  unitPriceAwarded   Decimal  @db.Decimal(20, 6)
-  lineTotalAwarded   Decimal  @db.Decimal(20, 6)
-  roundLineId        String?  @db.Uuid
-  paymentTermsSnapshot String?
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  awardId               String    @db.Uuid
+  offerId               String    @db.Uuid
+  offerItemId           String    @db.Uuid
+  quotationItemId       String    @db.Uuid
+  supplierId            String    @db.Uuid
+  supplierNameSnapshot  String
+  quantityAwarded       Decimal   @db.Decimal(20, 6)
+  unitPriceAwarded      Decimal   @db.Decimal(20, 6)
+  lineTotalAwarded      Decimal   @db.Decimal(20, 6)
+  roundLineId           String?   @db.Uuid
+  paymentTermsSnapshot  String?
   deliveryTermsSnapshot String?
-  freightValueSnapshot Decimal? @db.Decimal(20, 6)
-  leadTimeDaysSnapshot Int?
-  validityDateSnapshot DateTime? @db.Date
-  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  freightValueSnapshot  Decimal?  @db.Decimal(20, 6)
+  leadTimeDaysSnapshot  Int?
+  validityDateSnapshot  DateTime? @db.Date
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
 
-  award         PurchaseQuotationAward      @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  offer         PurchaseQuotationOffer      @relation(fields: [offerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  offerItem     PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  quotationItem PurchaseQuotationItem       @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  award         PurchaseQuotationAward     @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offer         PurchaseQuotationOffer     @relation(fields: [offerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  offerItem     PurchaseQuotationOfferItem @relation(fields: [offerItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  quotationItem PurchaseQuotationItem      @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
+  @@unique([awardId, offerItemId])
   @@index([awardId])
   @@index([offerId])
   @@index([offerItemId])
   @@index([quotationItemId])
-  @@unique([awardId, offerItemId])
 }
 
 model PurchaseQuotationAwardRejection {
@@ -6494,14 +6494,14 @@ model PurchaseQuotationAwardRejection {
 }
 
 model PurchaseQuotationAwardHistoryEvent {
-  id        String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  awardId   String                             @db.Uuid
+  id        String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  awardId   String                              @db.Uuid
   action    PurchaseQuotationAwardHistoryAction
   reason    String?
   userId    String?
   userName  String?
   metaJson  Json?
-  createdAt DateTime                           @default(now()) @db.Timestamptz(6)
+  createdAt DateTime                            @default(now()) @db.Timestamptz(6)
 
   award PurchaseQuotationAward @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -6511,62 +6511,62 @@ model PurchaseQuotationAwardHistoryEvent {
 
 /// Pedido de compra formal — preços congelados; não movimenta estoque nem cria AP sozinho.
 model PurchaseOrder {
-  id                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                       String              @unique
-  status                     PurchaseOrderStatus @default(RASCUNHO)
-  purchaseRequestId          String?             @db.Uuid
-  quotationId                String?             @db.Uuid
-  awardedOfferId             String?             @db.Uuid
+  id                                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                              String              @unique
+  status                            PurchaseOrderStatus @default(RASCUNHO)
+  purchaseRequestId                 String?             @db.Uuid
+  quotationId                       String?             @db.Uuid
+  awardedOfferId                    String?             @db.Uuid
   /// Adjudicação de origem (OP-19/OP-20).
-  awardId                    String?             @db.Uuid
-  finalRoundId               String?             @db.Uuid
-  approvalId                 String?             @db.Uuid
-  supplierId                 String              @db.Uuid
-  supplierDisplayNameSnapshot String
-  supplierDocumentSnapshot   String?
-  currency                   String              @default("BRL")
-  paymentTermsSnapshot       String?
-  deliveryTermsSnapshot      String?
-  freightValueSnapshot       Decimal?            @db.Decimal(20, 6)
-  nonRecoverableTaxesSnapshot Decimal?           @db.Decimal(20, 6)
-  discountsSnapshot          Decimal?            @db.Decimal(20, 6)
-  leadTimeDaysSnapshot       Int?
-  totalAmountSnapshot        Decimal?            @db.Decimal(20, 6)
-  initialComparableTotalSnapshot Decimal?        @db.Decimal(20, 6)
-  negotiatedComparableTotalSnapshot Decimal?     @db.Decimal(20, 6)
-  totalGainSnapshot          Decimal?            @db.Decimal(20, 6)
-  quotationCodeSnapshot      String?
-  awardJustificationSnapshot String?
-  evidenceCountSnapshot      Int                 @default(0)
-  evidenceIdsJson            Json?
+  awardId                           String?             @db.Uuid
+  finalRoundId                      String?             @db.Uuid
+  approvalId                        String?             @db.Uuid
+  supplierId                        String              @db.Uuid
+  supplierDisplayNameSnapshot       String
+  supplierDocumentSnapshot          String?
+  currency                          String              @default("BRL")
+  paymentTermsSnapshot              String?
+  deliveryTermsSnapshot             String?
+  freightValueSnapshot              Decimal?            @db.Decimal(20, 6)
+  nonRecoverableTaxesSnapshot       Decimal?            @db.Decimal(20, 6)
+  discountsSnapshot                 Decimal?            @db.Decimal(20, 6)
+  leadTimeDaysSnapshot              Int?
+  totalAmountSnapshot               Decimal?            @db.Decimal(20, 6)
+  initialComparableTotalSnapshot    Decimal?            @db.Decimal(20, 6)
+  negotiatedComparableTotalSnapshot Decimal?            @db.Decimal(20, 6)
+  totalGainSnapshot                 Decimal?            @db.Decimal(20, 6)
+  quotationCodeSnapshot             String?
+  awardJustificationSnapshot        String?
+  evidenceCountSnapshot             Int                 @default(0)
+  evidenceIdsJson                   Json?
   /// Compromisso operacional (sem estoque / sem AP).
-  operationalCommitmentAt    DateTime?           @db.Timestamptz(6)
-  futureEntryPending         Boolean             @default(false)
-  futureEntryMarkedAt        DateTime?           @db.Timestamptz(6)
-  expectedDeliveryDate       DateTime?           @db.Date
-  approvedAt                 DateTime?           @db.Timestamptz(6)
-  approvedByUserId           String?
-  approvedByUserName         String?
-  issuedAt                   DateTime?           @db.Timestamptz(6)
-  sentAt                     DateTime?           @db.Timestamptz(6)
-  confirmedAt                DateTime?           @db.Timestamptz(6)
-  cancelledAt                DateTime?           @db.Timestamptz(6)
-  cancelReason               String?
-  issuedByUserId             String?
-  createdByUserId            String?
-  createdByUserName          String?
-  notes                      String?
-  createdAt                  DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt                  DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  operationalCommitmentAt           DateTime?           @db.Timestamptz(6)
+  futureEntryPending                Boolean             @default(false)
+  futureEntryMarkedAt               DateTime?           @db.Timestamptz(6)
+  expectedDeliveryDate              DateTime?           @db.Date
+  approvedAt                        DateTime?           @db.Timestamptz(6)
+  approvedByUserId                  String?
+  approvedByUserName                String?
+  issuedAt                          DateTime?           @db.Timestamptz(6)
+  sentAt                            DateTime?           @db.Timestamptz(6)
+  confirmedAt                       DateTime?           @db.Timestamptz(6)
+  cancelledAt                       DateTime?           @db.Timestamptz(6)
+  cancelReason                      String?
+  issuedByUserId                    String?
+  createdByUserId                   String?
+  createdByUserName                 String?
+  notes                             String?
+  createdAt                         DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt                         DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
 
-  purchaseRequest PurchaseRequest?      @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  quotation       PurchaseQuotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  awardedOffer    PurchaseQuotationOffer? @relation(fields: [awardedOfferId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  award           PurchaseQuotationAward? @relation(fields: [awardId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  supplier        FinancialSupplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  purchaseRequest PurchaseRequest?            @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  quotation       PurchaseQuotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  awardedOffer    PurchaseQuotationOffer?     @relation(fields: [awardedOfferId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  award           PurchaseQuotationAward?     @relation(fields: [awardId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supplier        FinancialSupplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items           PurchaseOrderItem[]
   receipts        PurchaseReceipt[]
-  approvals       PurchaseApproval[]    @relation("PurchaseApprovalPurchaseOrder")
+  approvals       PurchaseApproval[]          @relation("PurchaseApprovalPurchaseOrder")
   history         PurchaseOrderHistoryEvent[]
 
   @@index([status])
@@ -6579,35 +6579,35 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  purchaseOrderId       String   @db.Uuid
-  lineNumber            Int
-  purchaseRequestItemId String?  @db.Uuid
-  quotationItemId       String?  @db.Uuid
-  offerItemId           String?  @db.Uuid
-  awardAllocationId     String?  @db.Uuid
-  materialId            String?  @db.Uuid
-  materialCodeSnapshot  String?
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId             String   @db.Uuid
+  lineNumber                  Int
+  purchaseRequestItemId       String?  @db.Uuid
+  quotationItemId             String?  @db.Uuid
+  offerItemId                 String?  @db.Uuid
+  awardAllocationId           String?  @db.Uuid
+  materialId                  String?  @db.Uuid
+  materialCodeSnapshot        String?
   materialDescriptionSnapshot String?
-  materialUnitSnapshot  String?
-  description           String
-  quantityOrdered       Decimal  @db.Decimal(20, 6)
-  unit                  String
+  materialUnitSnapshot        String?
+  description                 String
+  quantityOrdered             Decimal  @db.Decimal(20, 6)
+  unit                        String
   /// Preço unitário inicial (primeira oferta) — congelado.
-  initialUnitPriceSnapshot Decimal? @db.Decimal(20, 6)
+  initialUnitPriceSnapshot    Decimal? @db.Decimal(20, 6)
   /// Preço negociado/adjudicado — congelado na emissão do PO.
-  unitPriceSnapshot     Decimal  @db.Decimal(20, 6)
-  lineTotalSnapshot     Decimal  @db.Decimal(20, 6)
-  lineGainSnapshot      Decimal? @db.Decimal(20, 6)
-  freightValueSnapshot  Decimal? @db.Decimal(20, 6)
+  unitPriceSnapshot           Decimal  @db.Decimal(20, 6)
+  lineTotalSnapshot           Decimal  @db.Decimal(20, 6)
+  lineGainSnapshot            Decimal? @db.Decimal(20, 6)
+  freightValueSnapshot        Decimal? @db.Decimal(20, 6)
   nonRecoverableTaxesSnapshot Decimal? @db.Decimal(20, 6)
-  discountsSnapshot     Decimal? @db.Decimal(20, 6)
-  leadTimeDaysSnapshot  Int?
+  discountsSnapshot           Decimal? @db.Decimal(20, 6)
+  leadTimeDaysSnapshot        Int?
   /// Soft link futuro ao item logístico local.
-  inventoryItemId       String?  @db.Uuid
-  notes                 String?
-  createdAt             DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  inventoryItemId             String?  @db.Uuid
+  notes                       String?
+  createdAt                   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   purchaseOrder       PurchaseOrder          @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   purchaseRequestItem PurchaseRequestItem?   @relation(fields: [purchaseRequestItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -6624,8 +6624,8 @@ model PurchaseOrderItem {
 }
 
 model PurchaseOrderHistoryEvent {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  purchaseOrderId String   @db.Uuid
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId String               @db.Uuid
   action          String
   fromStatus      PurchaseOrderStatus?
   toStatus        PurchaseOrderStatus?
@@ -6634,7 +6634,7 @@ model PurchaseOrderHistoryEvent {
   userId          String?
   userName        String?
   metaJson        Json?
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  createdAt       DateTime             @default(now()) @db.Timestamptz(6)
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -6682,9 +6682,9 @@ model PurchaseReceipt {
   createdAt             DateTime              @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
 
-  purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  purchaseOrder PurchaseOrder                 @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items         PurchaseReceiptItem[]
-  approvals     PurchaseApproval[]    @relation("PurchaseApprovalReceipt")
+  approvals     PurchaseApproval[]            @relation("PurchaseApprovalReceipt")
   history       PurchaseReceiptHistoryEvent[]
 
   @@index([purchaseOrderId])
@@ -6695,28 +6695,28 @@ model PurchaseReceipt {
 }
 
 model PurchaseReceiptItem {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  receiptId             String   @db.Uuid
-  purchaseOrderItemId   String   @db.Uuid
-  materialId            String?  @db.Uuid
-  materialCodeSnapshot  String?
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptId                   String   @db.Uuid
+  purchaseOrderItemId         String   @db.Uuid
+  materialId                  String?  @db.Uuid
+  materialCodeSnapshot        String?
   materialDescriptionSnapshot String?
-  quantityReceived      Decimal  @db.Decimal(20, 6)
-  quantityAccepted      Decimal  @db.Decimal(20, 6)
-  quantityRejected      Decimal  @default(0) @db.Decimal(20, 6)
-  unit                  String
-  lotNumber             String?
+  quantityReceived            Decimal  @db.Decimal(20, 6)
+  quantityAccepted            Decimal  @db.Decimal(20, 6)
+  quantityRejected            Decimal  @default(0) @db.Decimal(20, 6)
+  unit                        String
+  lotNumber                   String?
   /// Custo unitário efetivo recebido (informativo SC — não publica custo oficial).
-  unitCostSnapshot      Decimal? @db.Decimal(20, 6)
-  effectiveUnitCost     Decimal? @db.Decimal(20, 6)
-  effectiveLineCost     Decimal? @db.Decimal(20, 6)
+  unitCostSnapshot            Decimal? @db.Decimal(20, 6)
+  effectiveUnitCost           Decimal? @db.Decimal(20, 6)
+  effectiveLineCost           Decimal? @db.Decimal(20, 6)
   /// Soft link ao movimento PURCHASE_RECEIPT da linha.
-  inventoryMovementId   String?  @db.Uuid
+  inventoryMovementId         String?  @db.Uuid
   /// Soft link ao REVERSAL da linha (cancelamento não apaga o original).
-  reversalMovementId    String?  @db.Uuid
-  notes                 String?
-  createdAt             DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  reversalMovementId          String?  @db.Uuid
+  notes                       String?
+  createdAt                   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   receipt           PurchaseReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   purchaseOrderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -6732,17 +6732,17 @@ model PurchaseReceiptItem {
 
 /// Histórico append-only de recebimentos (OP-22).
 model PurchaseReceiptHistoryEvent {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  receiptId String   @db.Uuid
-  action    String
+  id         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptId  String                 @db.Uuid
+  action     String
   fromStatus PurchaseReceiptStatus?
   toStatus   PurchaseReceiptStatus?
-  reason    String?
-  notes     String?
-  userId    String?
-  userName  String?
-  metaJson  Json?
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  reason     String?
+  notes      String?
+  userId     String?
+  userName   String?
+  metaJson   Json?
+  createdAt  DateTime               @default(now()) @db.Timestamptz(6)
 
   receipt PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -6752,9 +6752,9 @@ model PurchaseReceiptHistoryEvent {
 
 /// Evidências / anexos polimórficos do domínio de Compras SC.
 model PurchaseEvidence {
-  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id               String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType       PurchaseEvidenceEntityType
-  entityId         String                    @db.Uuid
+  entityId         String                     @db.Uuid
   fileName         String
   originalFileName String
   mimeType         String
@@ -6762,20 +6762,20 @@ model PurchaseEvidence {
   storageKey       String
   /// SHA-256 do conteúdo (identificação/integridade).
   contentHash      String?
-  evidenceType     PurchaseEvidenceType      @default(OTHER)
+  evidenceType     PurchaseEvidenceType       @default(OTHER)
   /// Descrição operacional do anexo.
   description      String?
   notes            String?
   uploadedBy       String?
   uploadedByName   String?
-  uploadedAt       DateTime                  @default(now()) @db.Timestamptz(6)
+  uploadedAt       DateTime                   @default(now()) @db.Timestamptz(6)
   /// Soft-delete / substituição com auditoria (sem apagar silenciosamente).
-  deletedAt        DateTime?                 @db.Timestamptz(6)
+  deletedAt        DateTime?                  @db.Timestamptz(6)
   deletedBy        String?
   deleteReason     String?
   /// Evidência anterior que esta substitui (cadeia de histórico).
-  replacesId       String?                   @db.Uuid
-  lockedAt         DateTime?                 @db.Timestamptz(6)
+  replacesId       String?                    @db.Uuid
+  lockedAt         DateTime?                  @db.Timestamptz(6)
   lockedReason     String?
 
   replaces      PurchaseEvidence?              @relation("PurchaseEvidenceReplace", fields: [replacesId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -6792,14 +6792,14 @@ model PurchaseEvidence {
 
 /// Histórico append-only de evidências de Compras SC.
 model PurchaseEvidenceHistoryEvent {
-  id          String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  evidenceId  String                        @db.Uuid
-  action      PurchaseEvidenceHistoryAction
-  reason      String?
-  userId      String?
-  userName    String?
-  metaJson    Json?
-  createdAt   DateTime                      @default(now()) @db.Timestamptz(6)
+  id         String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evidenceId String                        @db.Uuid
+  action     PurchaseEvidenceHistoryAction
+  reason     String?
+  userId     String?
+  userName   String?
+  metaJson   Json?
+  createdAt  DateTime                      @default(now()) @db.Timestamptz(6)
 
   evidence PurchaseEvidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -8755,19 +8755,19 @@ model TreasuryLedgerEntry {
   companyCode String
   accountId   String @db.Uuid
 
-  civilDate DateTime              @db.Date
-  amount    Decimal               @db.Decimal(20, 2)
-  currency  TreasuryCurrencyCode  @default(BRL)
+  civilDate DateTime                @db.Date
+  amount    Decimal                 @db.Decimal(20, 2)
+  currency  TreasuryCurrencyCode    @default(BRL)
   direction TreasuryLedgerDirection
   nature    TreasuryLedgerNature
-  status    TreasuryLedgerStatus  @default(ACTIVE)
+  status    TreasuryLedgerStatus    @default(ACTIVE)
 
-  memo           String?
-  counterpartRef String?
+  memo            String?
+  counterpartRef  String?
   transferGroupId String? @db.Uuid
 
   /// Lançamento que este registro reverte (quando nature=REVERSAL).
-  reversesEntryId String? @db.Uuid
+  reversesEntryId   String? @db.Uuid
   /// Lançamento de reversão que invalidou este (quando status=REVERSED).
   reversedByEntryId String? @unique @db.Uuid
 
@@ -8778,13 +8778,13 @@ model TreasuryLedgerEntry {
   updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
   updatedByUserId String?  @db.Uuid
 
-  account         TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  createdByUser   AppUser                  @relation("TreasuryLedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  updatedByUser   AppUser?                 @relation("TreasuryLedgerEntryUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  reversesEntry     TreasuryLedgerEntry?  @relation("TreasuryLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  reversalEntries   TreasuryLedgerEntry[] @relation("TreasuryLedgerReversal")
-  reversedByEntry   TreasuryLedgerEntry?  @relation("TreasuryLedgerReversedBy", fields: [reversedByEntryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  reversesThisEntry TreasuryLedgerEntry?  @relation("TreasuryLedgerReversedBy")
+  account           TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser     AppUser                  @relation("TreasuryLedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser     AppUser?                 @relation("TreasuryLedgerEntryUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reversesEntry     TreasuryLedgerEntry?     @relation("TreasuryLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reversalEntries   TreasuryLedgerEntry[]    @relation("TreasuryLedgerReversal")
+  reversedByEntry   TreasuryLedgerEntry?     @relation("TreasuryLedgerReversedBy", fields: [reversedByEntryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reversesThisEntry TreasuryLedgerEntry?     @relation("TreasuryLedgerReversedBy")
 
   @@index([companyCode, accountId, civilDate])
   @@index([accountId, status, civilDate])
@@ -9369,8 +9369,8 @@ model TreasuryBankMovement {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  batch   TreasuryBankImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  account TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  batch                        TreasuryBankImportBatch               @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account                      TreasuryFinancialAccount              @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   reconciliationMatchMovements TreasuryReconciliationMatchMovement[]
 
   @@unique([accountId, fingerprint])
@@ -9417,16 +9417,16 @@ model TreasuryReconciliationMatch {
   status TreasuryReconciliationMatchStatus @default(MATCHED)
 
   /// Soma dos valores alocados aos movimentos (= covering net das allocations).
-  matchedAmount    Decimal             @db.Decimal(20, 2)
+  matchedAmount    Decimal              @db.Decimal(20, 2)
   currency         TreasuryCurrencyCode @default(BRL)
-  matchedCivilDate DateTime            @db.Date
+  matchedCivilDate DateTime             @db.Date
   justification    String?
 
-  suggestionKey          String?
-  algorithmVersion       String?
-  suggestionScore        Int?
-  suggestionConfidence   String?
-  suggestionReasonsJson  Json?
+  suggestionKey         String?
+  algorithmVersion      String?
+  suggestionScore       Int?
+  suggestionConfidence  String?
+  suggestionReasonsJson Json?
 
   version Int @default(1)
 
@@ -9438,12 +9438,12 @@ model TreasuryReconciliationMatch {
   unmatchedByUserId String?   @db.Uuid
   unmatchReason     String?
 
-  account           TreasuryFinancialAccount             @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  createdByUser     AppUser                              @relation("TreasuryReconciliationMatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  updatedByUser     AppUser?                             @relation("TreasuryReconciliationMatchUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  unmatchedByUser   AppUser?                             @relation("TreasuryReconciliationMatchUnmatchedBy", fields: [unmatchedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  movements         TreasuryReconciliationMatchMovement[]
-  allocations       TreasuryReconciliationAllocation[]
+  account         TreasuryFinancialAccount              @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser   AppUser                               @relation("TreasuryReconciliationMatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser?                              @relation("TreasuryReconciliationMatchUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  unmatchedByUser AppUser?                              @relation("TreasuryReconciliationMatchUnmatchedBy", fields: [unmatchedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  movements       TreasuryReconciliationMatchMovement[]
+  allocations     TreasuryReconciliationAllocation[]
 
   @@index([companyCode, status])
   @@index([accountId, matchedCivilDate])
@@ -9455,12 +9455,12 @@ model TreasuryReconciliationMatch {
 
 /// Ligação N:N lógica movimento↔match (permite vários movimentos → um título).
 model TreasuryReconciliationMatchMovement {
-  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId        String  @db.Uuid
-  bankMovementId String  @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId        String   @db.Uuid
+  bankMovementId String   @db.Uuid
   /// Parcela do movimento coberta por este match (absoluta, >= 0).
-  amount         Decimal @db.Decimal(20, 2)
-  sortOrder      Int     @default(0)
+  amount         Decimal  @db.Decimal(20, 2)
+  sortOrder      Int      @default(0)
   createdAt      DateTime @default(now()) @db.Timestamptz(6)
 
   match        TreasuryReconciliationMatch @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -9474,11 +9474,11 @@ model TreasuryReconciliationMatchMovement {
 /// Pernas de alocação do match (título, tarifa, juros, desconto, etc.).
 /// TITLE referencia título oficial Nomus somente por id/externalId — sem mutar Nomus.
 model TreasuryReconciliationAllocation {
-  id      String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId String                              @db.Uuid
+  id      String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId String                               @db.Uuid
   kind    TreasuryReconciliationAllocationKind
   /// Valor absoluto (> 0). DISCOUNT/ABATEMENT reduzem o covering net.
-  amount  Decimal                             @db.Decimal(20, 2)
+  amount  Decimal                              @db.Decimal(20, 2)
   memo    String?
 
   /// AR | AP — só para TITLE.
