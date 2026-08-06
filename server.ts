@@ -13158,6 +13158,22 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           refRaw == null || String(refRaw).trim() === ""
             ? null
             : String(refRaw).trim().slice(0, 80);
+        const qtyRaw = body.purchasedQuantity;
+        let purchasedQuantity: number | null = null;
+        if (qtyRaw != null && String(qtyRaw).trim() !== "") {
+          // String em pt-BR ("1.234,56") ou en ("1234.56"); número JSON direto.
+          const s = String(qtyRaw).trim();
+          const normalized = s.includes(",")
+            ? s.replace(/\./g, "").replace(",", ".")
+            : s;
+          const direct = typeof qtyRaw === "number" ? qtyRaw : Number(normalized);
+          if (!Number.isFinite(direct) || direct < 0) {
+            return res
+              .status(400)
+              .json({ error: "purchasedQuantity deve ser um número maior ou igual a zero." });
+          }
+          purchasedQuantity = Math.round(direct * 1e6) / 1e6;
+        }
 
         const material = await prisma.material.findUnique({
           where: { id: materialId },
@@ -13171,6 +13187,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           purchaseDate,
           expectedArrivalDate,
           purchaseOrderRef,
+          purchasedQuantity,
           updatedByUserId: user?.id ?? null,
         };
         const saved = await prisma.materialPurchasePlan.upsert({
@@ -13186,6 +13203,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
               ? saved.expectedArrivalDate.toISOString().slice(0, 10)
               : null,
             purchaseOrderRef: saved.purchaseOrderRef,
+            purchasedQuantity:
+              saved.purchasedQuantity != null ? Number(saved.purchasedQuantity) : null,
           },
         });
       } catch (error) {

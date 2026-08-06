@@ -300,7 +300,17 @@ export type RawMaterialPurchasePlanPatch = {
   purchaseDate: string | null;
   expectedArrivalDate: string | null;
   purchaseOrderRef: string | null;
+  purchasedQuantity: number | null;
 };
+
+/** "1.234,56" / "1234.56" → número; vazio/inválido → null. */
+function parseQuantityInput(raw: string): number | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const normalized = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
+  const n = Number(normalized);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 /**
  * Células editáveis de compra (Data da compra / Previsão de chegada /
@@ -321,12 +331,23 @@ function PurchasePlanCells({
   const [purchaseDate, setPurchaseDate] = React.useState(plan?.purchaseDate ?? "");
   const [arrivalDate, setArrivalDate] = React.useState(plan?.expectedArrivalDate ?? "");
   const [orderRef, setOrderRef] = React.useState(plan?.purchaseOrderRef ?? "");
+  const [purchasedQty, setPurchasedQty] = React.useState(
+    plan?.purchasedQuantity != null ? String(plan.purchasedQuantity) : ""
+  );
 
   React.useEffect(() => {
     setPurchaseDate(plan?.purchaseDate ?? "");
     setArrivalDate(plan?.expectedArrivalDate ?? "");
     setOrderRef(plan?.purchaseOrderRef ?? "");
-  }, [plan?.purchaseDate, plan?.expectedArrivalDate, plan?.purchaseOrderRef]);
+    setPurchasedQty(
+      plan?.purchasedQuantity != null ? String(plan.purchasedQuantity) : ""
+    );
+  }, [
+    plan?.purchaseDate,
+    plan?.expectedArrivalDate,
+    plan?.purchaseOrderRef,
+    plan?.purchasedQuantity,
+  ]);
 
   const save = (patch: Partial<RawMaterialPurchasePlanPatch>) => {
     if (!onSave) return;
@@ -334,9 +355,32 @@ function PurchasePlanCells({
       purchaseDate: purchaseDate || null,
       expectedArrivalDate: arrivalDate || null,
       purchaseOrderRef: orderRef.trim() || null,
+      purchasedQuantity: parseQuantityInput(purchasedQty),
       ...patch,
     });
   };
+
+  // Saldo APÓS a compra = menor saldo projetado no horizonte + qtde comprada.
+  // Positivo = a compra cobre a necessidade; negativo = ainda falta.
+  // Usa o valor digitado (feedback imediato, antes mesmo de salvar).
+  const liveQty = parseQuantityInput(purchasedQty);
+  const balanceAfter =
+    liveQty != null ? row.lowestProjectedBalance + liveQty : null;
+  const balanceAfterCell = (
+    <td
+      className={cn(
+        "p-3 text-right tabular-nums whitespace-nowrap font-semibold",
+        balanceAfter == null
+          ? "text-muted-foreground"
+          : balanceAfter >= 0
+            ? "text-emerald-700 dark:text-emerald-400"
+            : "text-red-700 dark:text-red-400"
+      )}
+      title="Menor saldo projetado no horizonte + quantidade comprada. Positivo = compra cobre a necessidade."
+    >
+      {balanceAfter == null ? "—" : num(balanceAfter)}
+    </td>
+  );
 
   if (!onSave) {
     return (
@@ -344,6 +388,10 @@ function PurchasePlanCells({
         <td className="p-3 whitespace-nowrap">{formatYmdPtBr(plan?.purchaseDate ?? null)}</td>
         <td className="p-3 whitespace-nowrap">{formatYmdPtBr(plan?.expectedArrivalDate ?? null)}</td>
         <td className="p-3 whitespace-nowrap">{plan?.purchaseOrderRef ?? "—"}</td>
+        <td className="p-3 text-right tabular-nums whitespace-nowrap">
+          {plan?.purchasedQuantity != null ? num(plan.purchasedQuantity) : "—"}
+        </td>
+        {balanceAfterCell}
       </>
     );
   }
@@ -402,9 +450,34 @@ function PurchasePlanCells({
             aria-label="Número do pedido de compra"
             data-testid={`rmp-order-ref-${row.materialId}`}
           />
+        </div>
+      </td>
+      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={purchasedQty}
+            disabled={saving}
+            placeholder="0,00"
+            onChange={(e) => setPurchasedQty(e.target.value)}
+            onBlur={() => {
+              const next = parseQuantityInput(purchasedQty);
+              if (next !== (plan?.purchasedQuantity ?? null)) {
+                save({ purchasedQuantity: next });
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            className={cn(inputClass, "min-w-[6rem] text-right")}
+            aria-label="Quantidade comprada"
+            data-testid={`rmp-purchased-qty-${row.materialId}`}
+          />
           {saving ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden /> : null}
         </div>
       </td>
+      {balanceAfterCell}
     </>
   );
 }
@@ -412,12 +485,13 @@ function PurchasePlanCells({
 function RawMaterialPlanningExpandedDetail({ row }: { row: RawMaterialPlanningRow }) {
   return (
     <tr>
-      <td colSpan={10} className="bg-muted/10 p-4">
+      <td colSpan={11} className="bg-muted/10 p-4">
         <div className="space-y-4">
-          {/* Situação saiu do grid (deu lugar às datas de compra) e vive aqui,
-              junto com a data-limite calculada. */}
+          {/* Situação e Confiança saíram do grid (deram lugar aos campos de
+              compra) e vivem aqui, junto com a data-limite calculada. */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <StatusBadge situation={row.situation} />
+            <ConfidenceBadge confidence={row.confidence} />
             <span className="text-muted-foreground">
               Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
               {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
@@ -510,8 +584,9 @@ export function RawMaterialPlanningTable({
             <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Data da compra</th>
             <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Previsão de chegada</th>
             <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Pedido de compra</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Qtde comprada</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Saldo após compra</th>
             <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Valor estimado</th>
-            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Confiança</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -541,9 +616,6 @@ export function RawMaterialPlanningTable({
                     saving={savingPlanMaterialId === row.materialId}
                   />
                   <td className="p-3 text-right tabular-nums whitespace-nowrap">{money(row.estimatedPurchaseValue)}</td>
-                  <td className="p-3">
-                    <ConfidenceBadge confidence={row.confidence} />
-                  </td>
                 </tr>
                 {expanded ? <RawMaterialPlanningExpandedDetail row={row} /> : null}
               </React.Fragment>

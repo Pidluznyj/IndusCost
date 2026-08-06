@@ -6,6 +6,7 @@ CREATE TABLE "MaterialPurchasePlan" (
     "purchaseDate" DATE,
     "expectedArrivalDate" DATE,
     "purchaseOrderRef" TEXT,
+    "purchasedQuantity" DECIMAL(20,6),
     "updatedByUserId" UUID,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,

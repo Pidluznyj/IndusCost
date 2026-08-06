@@ -100,6 +100,7 @@ export type RawMaterialPlanningPurchasePlan = {
   purchaseDate: string | null;
   expectedArrivalDate: string | null;
   purchaseOrderRef: string | null;
+  purchasedQuantity: number | null;
 };
 
 export type RawMaterialPlanningSummary = {

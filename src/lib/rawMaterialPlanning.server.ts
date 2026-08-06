@@ -144,6 +144,7 @@ export type RawMaterialPlanningPurchasePlan = {
   purchaseDate: string | null;
   expectedArrivalDate: string | null;
   purchaseOrderRef: string | null;
+  purchasedQuantity: number | null;
 };
 
 export type RawMaterialPlanningSummary = {
@@ -460,6 +461,7 @@ export async function buildRawMaterialPlanningPayload(
           purchaseDate: true,
           expectedArrivalDate: true,
           purchaseOrderRef: true,
+          purchasedQuantity: true,
         },
       })
     : [];
@@ -470,6 +472,8 @@ export async function buildRawMaterialPlanningPayload(
         purchaseDate: formatYmd(p.purchaseDate),
         expectedArrivalDate: formatYmd(p.expectedArrivalDate),
         purchaseOrderRef: p.purchaseOrderRef,
+        purchasedQuantity:
+          p.purchasedQuantity != null ? Number(p.purchasedQuantity) : null,
       } satisfies RawMaterialPlanningPurchasePlan,
     ])
   );

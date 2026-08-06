@@ -287,6 +287,8 @@ model MaterialPurchasePlan {
   purchaseDate        DateTime? @db.Date
   expectedArrivalDate DateTime? @db.Date
   purchaseOrderRef    String?
+  /// Quantidade comprada (informada na tela) — base do "saldo após compra".
+  purchasedQuantity   Decimal?  @db.Decimal(20, 6)
   updatedByUserId     String?   @db.Uuid
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
