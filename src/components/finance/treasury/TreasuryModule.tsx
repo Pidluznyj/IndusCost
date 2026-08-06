@@ -134,9 +134,12 @@ export function TreasuryModule() {
     TREASURY_UI_PRIMARY_SECTIONS,
     flags
   );
+  // A Central abre SEMPRE na aba Caixa quando liberada (pedido do produto);
+  // "accounts" segue primeira na barra, mas o pouso inicial é o Caixa.
   const landingPath = resolveTreasuryUiEnabledLandingPath(
     TREASURY_UI_PRIMARY_SECTIONS,
-    flags
+    flags,
+    "caixa"
   );
   const showAdvancedEntry = canAccessTreasuryAdvancedNavigation(
     auth.authUser?.role

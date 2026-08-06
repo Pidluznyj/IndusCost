@@ -81,6 +81,34 @@ describe("treasuryRollout", () => {
     );
   });
 
+  it("landing preferida (Caixa) vence quando liberada; senão cai na primeira visível", () => {
+    const flags = Object.fromEntries(
+      TREASURY_FEATURE_FLAG_IDS.map((id) => [id, false])
+    ) as Record<(typeof TREASURY_FEATURE_FLAG_IDS)[number], boolean>;
+    flags["treasury.enabled"] = true;
+    flags["treasury.accounts.enabled"] = true;
+    const sections = [
+      { id: "accounts", path: "/finance/treasury/accounts" },
+      { id: "caixa", path: "/finance/treasury/caixa" },
+    ];
+    // Central de Tesouraria: abre SEMPRE no Caixa quando liberado, mesmo
+    // com "accounts" primeiro na barra.
+    assert.equal(
+      resolveTreasuryUiEnabledLandingPath(sections, flags, "caixa"),
+      "/finance/treasury/caixa"
+    );
+    // Preferida não visível → comportamento original (primeira seção).
+    assert.equal(
+      resolveTreasuryUiEnabledLandingPath(sections, flags, "bank"),
+      "/finance/treasury/accounts"
+    );
+    // Sem preferida → intacto.
+    assert.equal(
+      resolveTreasuryUiEnabledLandingPath(sections, flags),
+      "/finance/treasury/accounts"
+    );
+  });
+
   it("enabled landing é null quando nenhuma seção está liberada (anti-loop)", () => {
     const flags = Object.fromEntries(
       TREASURY_FEATURE_FLAG_IDS.map((id) => [id, false])

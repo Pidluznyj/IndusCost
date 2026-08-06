@@ -380,6 +380,20 @@ export function TreasuryCaixaPage() {
     }
   }, [year, month, day, accounts]);
 
+  /**
+   * A tela abre JÁ pesquisada: ano atual + todos os meses (estado inicial dos
+   * filtros) sem exigir clique em Pesquisar. Dispara uma única vez, depois que
+   * as contas terminam de carregar — assim a primeira busca automática se
+   * comporta exatamente como um clique manual (companyCode disponível para a
+   * agenda canônica). Buscas seguintes continuam manuais.
+   */
+  const didAutoSearchRef = useRef(false);
+  useEffect(() => {
+    if (accountsLoading || didAutoSearchRef.current) return;
+    didAutoSearchRef.current = true;
+    void search();
+  }, [accountsLoading, search]);
+
   // A linha do tempo é DERIVADA das três fontes. Montá-la aqui (e não dentro de
   // `search`) garante que ela reage quando o fluxo de hoje termina de carregar
   // depois da busca — antes, um closure obsoleto congelava `todayFlow` nulo e a

@@ -124,9 +124,19 @@ export function resolveTreasuryUiLandingPath(
  */
 export function resolveTreasuryUiEnabledLandingPath(
   sections: readonly { id: string; path: string }[],
-  flags: Partial<TreasuryFeatureFlagsMap> | null | undefined
+  flags: Partial<TreasuryFeatureFlagsMap> | null | undefined,
+  /**
+   * Seção preferida como pouso inicial (ex.: "caixa" na Central de
+   * Tesouraria). Só vence quando está liberada pelas flags; caso contrário
+   * cai na primeira seção visível — comportamento original preservado.
+   */
+  preferredSectionId?: string
 ): string | null {
   const visible = filterTreasuryUiSections(sections, flags);
+  if (preferredSectionId) {
+    const preferred = visible.find((s) => s.id === preferredSectionId);
+    if (preferred) return preferred.path;
+  }
   return visible[0]?.path ?? null;
 }
 
