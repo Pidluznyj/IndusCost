@@ -103,9 +103,19 @@ agregadas antes de validar. 6 testes de concorrência + 20 de regressão passam.
 2. **Idempotência ausente** no `accept`: exige coluna nova; adiada porque `prisma/schema.prisma`
    tem alterações não commitadas de outro trabalho (Planejamento de MP).
 
-## Etapa concluída
-Etapas 1–3 (documentação) + CS-000 (correção do P0, parcial conforme acima).
+## Cobertura das 24 etapas (ver `13-full-implementation-checklist.md`)
+3 CONCLUÍDAS (1,2,3) · 2 COM LIMITAÇÃO (20 + P0 transversal) · 5 BLOQUEADAS (12–16) ·
+14 NÃO INICIADAS · 0 sem evidência. **A funcionalidade não está concluída.**
 
-## Próxima etapa autorizada
-CS-000b — fechar os dois resíduos do gate de escrita (lock de residual do título + idempotência),
-**após** o schema de MP ser commitado. Em paralelo, Trilha A pode seguir por CS-001 (contratos).
+## Grupos (checkpoint)
+- **Grupo A** (docs, backlog, P0): CONCLUÍDO COM LIMITAÇÃO — 2 resíduos do P0.
+- **Grupos B a F**: não iniciados.
+
+## Etapa concluída
+Etapas 1–3 (documentação) + CS-000 (correção do P0, parcial) + checklist de cobertura.
+
+## Próxima etapa autorizada — duas frentes independentes
+1. **CS-000b** (fecha o Grupo A e destrava 5 etapas): advisory lock por `officialTitleKey` +
+   coluna `idempotencyKey` (migration aditiva nullable). O impedimento do schema **já não
+   existe** — working tree limpo desde `d0d5a45`.
+2. **CS-001** (inicia o Grupo B): contratos do read model. Não depende do P0.
