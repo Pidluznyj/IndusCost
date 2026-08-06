@@ -1,5 +1,6 @@
 import "./raw-material-planning-print.css";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Ban, Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
@@ -223,6 +224,26 @@ export function RawMaterialPlanningPage() {
   );
 
   const handleRetry = useCallback(() => setRetryNonce((n) => n + 1), []);
+
+  // Pré-carrega o branding assim que há dados: o documento de impressão fica
+  // montado (oculto) e o primeiro "Imprimir / PDF" não depende de nenhuma
+  // corrida de fetch/render.
+  useEffect(() => {
+    if (!data || branding) return;
+    let cancelled = false;
+    void fetchUiSessionCachedJson<BrandingSettingsDTO>("/api/branding-settings", {
+      ttlMs: 300_000,
+    })
+      .then((next) => {
+        if (!cancelled) setBranding(next);
+      })
+      .catch((e) => {
+        console.error("[RawMaterialPlanning] prefetch branding", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, branding]);
 
   /**
    * Salva as anotações de compra (data/previsão/nº do pedido) e reflete o
@@ -654,6 +675,22 @@ export function RawMaterialPlanningPage() {
           </div>
         </>
       ) : null}
+
+      {/* Documento de impressão — SEMPRE montado (oculto em tela pelo CSS
+          base de #rmp-print-root) e PORTALIZADO direto no <body>: o CSS de
+          impressão esconde o #root inteiro, então dentro da árvore normal o
+          relatório sairia em branco (era exatamente o defeito — o documento
+          nunca era renderizado). */}
+      {data && branding
+        ? createPortal(
+            <RawMaterialPlanningPrintDocument
+              data={data}
+              branding={branding}
+              filterChips={filterChips}
+            />,
+            document.body
+          )
+        : null}
     </div>
   );
 }
