@@ -291,17 +291,17 @@ export function RawMaterialPlanningTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead className="bg-muted/50 border-b-2 border-border dark:bg-muted/40">
+        <thead className="bg-slate-100 border-b-2 border-slate-300 dark:bg-slate-800 dark:border-slate-600">
           <tr>
             <th className="px-3 py-3.5 text-left w-8" />
-            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Matéria-prima</th>
-            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Situação</th>
-            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Saldo atual</th>
-            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Necessidade técnica</th>
-            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Qtde sugerida</th>
-            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Comprar até</th>
-            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Valor estimado</th>
-            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Confiança</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Matéria-prima</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Situação</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Saldo atual</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Necessidade técnica</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Qtde sugerida</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Comprar até</th>
+            <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Valor estimado</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Confiança</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
