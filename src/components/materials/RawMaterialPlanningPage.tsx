@@ -1,6 +1,6 @@
 import "./raw-material-planning-print.css";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Ban, Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
@@ -19,6 +19,7 @@ import { RawMaterialPlanningTable } from "@/src/components/materials/RawMaterial
 import {
   RAW_MATERIAL_PLANNING_HORIZON_LABELS,
   RAW_MATERIAL_PLANNING_STATUS_LABELS,
+  STATUS_TONE_CLASSES,
   type RawMaterialPlanningResponse,
   type RawMaterialPlanningRow,
 } from "@/src/components/materials/rawMaterialPlanningUi";
@@ -322,14 +323,38 @@ export function RawMaterialPlanningPage() {
             </button>
           </div>
         </div>
-        {exportError ? <p className="text-xs text-destructive">{exportError}</p> : null}
+        {exportError ? (
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm",
+              STATUS_TONE_CLASSES.danger
+            )}
+            role="alert"
+          >
+            <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              <span className="font-bold">Erro:</span> {exportError}
+            </span>
+          </div>
+        ) : null}
         <InfoBanner />
         {data?.warnings && data.warnings.length > 0 ? (
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-4">
-            <p className="text-sm font-semibold text-foreground mb-1">Avisos de qualidade de dados</p>
-            <ul className="list-disc pl-4 space-y-0.5 text-xs text-amber-800 dark:text-amber-300">
+          <div
+            className={cn(
+              "rounded-xl border p-4 shadow-sm",
+              STATUS_TONE_CLASSES.warning
+            )}
+          >
+            <p className="mb-2 flex items-center gap-2 text-sm font-bold">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+              Avisos de qualidade de dados
+            </p>
+            <ul className="space-y-1 text-xs font-medium">
               {data.warnings.map((w, idx) => (
-                <li key={idx}>{w}</li>
+                <li key={idx} className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                  <span>{w}</span>
+                </li>
               ))}
             </ul>
           </div>
@@ -487,9 +512,18 @@ export function RawMaterialPlanningPage() {
       </section>
 
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center">
-          <p className="text-base font-semibold text-foreground">Não foi possível carregar o planejamento de matéria-prima</p>
-          <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+        <div
+          className={cn(
+            "rounded-xl border px-6 py-10 text-center shadow-sm",
+            STATUS_TONE_CLASSES.danger
+          )}
+          role="alert"
+        >
+          <p className="flex items-center justify-center gap-2 text-base font-bold">
+            <Ban className="h-5 w-5 shrink-0" aria-hidden />
+            Não foi possível carregar o planejamento de matéria-prima
+          </p>
+          <p className="mt-2 text-sm font-medium">{error}</p>
           <button
             type="button"
             onClick={handleRetry}

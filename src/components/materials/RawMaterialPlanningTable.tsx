@@ -152,8 +152,15 @@ function RawMaterialPlanningConsumingOrdersTable({ row }: { row: RawMaterialPlan
               <td className="p-2 whitespace-nowrap">
                 {formatYmdPtBr(order.needByDate)}
                 {order.needByDateSource === "none" ? (
-                  <span className="ml-1 text-amber-600 dark:text-amber-400" title="Sem data de entrega prevista — tratado como necessidade imediata">
-                    ⚠
+                  <span
+                    className={cn(
+                      "ml-1.5 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold align-middle",
+                      STATUS_TONE_CLASSES.warning
+                    )}
+                    title="Sem data de entrega prevista — tratado como necessidade imediata"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                    Sem data
                   </span>
                 ) : null}
               </td>
@@ -189,20 +196,53 @@ function RawMaterialPlanningInboundTable({ row }: { row: RawMaterialPlanningRow 
               <td className="p-2 text-right tabular-nums">
                 {num(inbound.quantity)} {inbound.unit}
                 {inbound.unitMismatch ? (
-                  <span className="ml-1 text-red-600 dark:text-red-400" title="Unidade diferente da cadastrada no material — não somada à cobertura">
-                    ⚠
+                  <span
+                    className={cn(
+                      "ml-1.5 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold align-middle",
+                      STATUS_TONE_CLASSES.danger
+                    )}
+                    title="Unidade diferente da cadastrada no material — não somada à cobertura"
+                  >
+                    <Ban className="h-3 w-3 shrink-0" aria-hidden />
+                    Unidade
                   </span>
                 ) : null}
               </td>
               <td className="p-2 whitespace-nowrap">{formatYmdPtBr(inbound.expectedDeliveryDate)}</td>
               <td className="p-2">
-                {inbound.unitMismatch
-                  ? "—"
-                  : inbound.arrivesBeforeRisk == null
-                    ? "Sem risco"
-                    : inbound.arrivesBeforeRisk
-                      ? "Sim"
-                      : "Não (atrasada)"}
+                {inbound.unitMismatch ? (
+                  "—"
+                ) : inbound.arrivesBeforeRisk == null ? (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+                      STATUS_TONE_CLASSES.neutral
+                    )}
+                  >
+                    <Minus className="h-3 w-3 shrink-0" aria-hidden />
+                    Sem risco
+                  </span>
+                ) : inbound.arrivesBeforeRisk ? (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+                      STATUS_TONE_CLASSES.success
+                    )}
+                  >
+                    <Check className="h-3 w-3 shrink-0" aria-hidden />
+                    Sim
+                  </span>
+                ) : (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+                      STATUS_TONE_CLASSES.danger
+                    )}
+                  >
+                    <Ban className="h-3 w-3 shrink-0" aria-hidden />
+                    Não (atrasada)
+                  </span>
+                )}
               </td>
             </tr>
           ))}
@@ -262,10 +302,20 @@ function RawMaterialPlanningExpandedDetail({ row }: { row: RawMaterialPlanningRo
       <td colSpan={9} className="bg-muted/10 p-4">
         <div className="space-y-4">
           {row.alerts.length > 0 ? (
-            <div className="rounded-lg border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-3">
-              <ul className="list-disc pl-4 space-y-1 text-xs text-amber-800 dark:text-amber-300">
+            <div
+              className={cn(
+                "rounded-lg border p-3 shadow-sm",
+                STATUS_TONE_CLASSES.warning
+              )}
+            >
+              <ul className="space-y-1.5 text-xs font-medium">
                 {row.alerts.map((alert, idx) => (
-                  <li key={idx}>{alert}</li>
+                  <li key={idx} className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span>
+                      <span className="font-bold">Aviso:</span> {alert}
+                    </span>
+                  </li>
                 ))}
               </ul>
             </div>
