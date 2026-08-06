@@ -1,17 +1,17 @@
 /**
- * Caixa — Gráfico de cenários (Otimista / Realista / Pessimista).
+ * Caixa — Gráfico de cenários por SENSIBILIDADE DE VENDAS.
+ *
+ * CONCEITO: Otimista = vendas +20% · Realista = projeção atual (Linha do
+ * tempo canônica, intocada) · Pessimista = vendas −20%. Percentuais vêm da
+ * política central via payload — nunca hardcoded aqui.
  *
  * Tudo vem pronto do backend (`GET /api/treasury/caixa/scenarios`):
- * o componente só formata e desenha. Sem cálculo financeiro paralelo.
+ * o componente só formata e desenha. Sem cálculo financeiro paralelo —
+ * apenas soma dos deltas diários prontos sobre a série da tabela.
  *
- * - 3 linhas: Otimista (verde suave), Realista (azul destacado, mais grosso),
- *   Pessimista (vermelho suave). Linha em R$ 0,00 sempre visível.
- * - Faixa "Intervalo de cenário" (área discreta entre Otimista e Pessimista):
- *   é a distância entre a hipótese favorável e a conservadora, NÃO um
- *   intervalo estatístico de confiança.
- * - Tooltip vem do backend (saldo, entradas/saídas por cenário, alertas).
- * - Cards de resumo por cenário: menor saldo, primeiro negativo, necessidade
- *   máxima de caixa, saldo final, diferença para o Realista.
+ * As linhas PODEM se cruzar: crescer consome caixa (MP/insumos antes dos
+ * recebimentos) e vender menos alivia desembolsos antes de reduzir
+ * recebimentos. Nenhuma correção artificial de ordenação é aplicada.
  */
 
 import React, { useMemo, useState } from "react";
@@ -33,12 +33,13 @@ import type {
   TreasuryScenarioDay,
   TreasuryScenarioSummary,
 } from "@/src/lib/treasury/domain/treasuryCaixaScenariosTypes.js";
+import { applyScenarioDeltasToClosings } from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
 import {
-  applyScenarioDeltasToClosings,
-  buildTreasuryScenarioExecutiveLines,
-  type TreasuryScenarioDeltaMemoryEntry,
-  type TreasuryScenarioDeltasResult,
-} from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
+  buildTreasurySalesVolumeExecutiveLines,
+  type TreasurySalesVolumeMemoryEntry,
+  type TreasurySalesVolumeScenarioIndicators,
+  type TreasurySalesVolumeScenariosResult,
+} from "@/src/lib/treasury/domain/treasuryCaixaSalesVolumeScenarios.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 import { cn } from "@/src/lib/utils";
@@ -71,24 +72,41 @@ export type TreasuryCaixaScenariosChartProps = {
 /** Tokens de cor por cenário (usados TAMBÉM em estilo de linha para acessibilidade). */
 const SCENARIO_STYLE = {
   optimistic: {
-    label: "Otimista",
     color: "#059669", // emerald
     strokeDasharray: "6 3",
     strokeWidth: 2,
   },
   realistic: {
-    label: "Realista",
     color: "#2563EB", // blue-600 (destaque)
     strokeDasharray: undefined,
     strokeWidth: 3,
   },
   pessimistic: {
-    label: "Pessimista",
     color: "#DC2626", // red-600
     strokeDasharray: "2 3",
     strokeWidth: 2,
   },
 } as const;
+
+/**
+ * Nomes visuais do CONCEITO ATUAL (sensibilidade de vendas). Os percentuais
+ * vêm da política central via payload — nunca hardcoded aqui.
+ */
+function buildScenarioLabels(
+  sales: TreasurySalesVolumeScenariosResult | undefined
+): { optimistic: string; realistic: string; pessimistic: string } {
+  const optPct = sales?.optimisticIndicators.variationPct;
+  const pesPct = sales?.pessimisticIndicators.variationPct;
+  return {
+    optimistic:
+      optPct != null
+        ? `Otimista — vendas ${optPct > 0 ? "+" : ""}${optPct}%`
+        : "Otimista",
+    realistic: "Realista — projeção atual",
+    pessimistic:
+      pesPct != null ? `Pessimista — vendas ${pesPct}%` : "Pessimista",
+  };
+}
 
 const HORIZON_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 7, label: "7 dias" },
@@ -141,18 +159,18 @@ function shortDate(civilDate: string): string {
  * dias. Nos dias em que a agenda materializada existe, as duas fontes
  * divergem — e a diferença acumulava dia após dia.
  *
- * OTIMISTA/PESSIMISTA POR DELTA (motor `treasuryCaixaScenarioDeltas`) —
- * quando o payload traz `scenarioDeltas`, cada cenário é literalmente
- * "Linha do tempo + delta acumulado do dia": por título em aberto o backend
- * calculou quanto a data do cenário difere da data Realista individual, e
- * aqui só somamos essas diferenças sobre a MESMA série que a tabela exibe.
- * O Realista nunca é recalculado; valores nunca mudam — apenas datas.
- * Como a Linha do tempo só tem linha em dia com movimento, os dias sem
- * linha herdam o último fechamento conhecido (forward-fill) antes do delta.
+ * OTIMISTA/PESSIMISTA POR VOLUME DE VENDAS — cada cenário é literalmente
+ * "Linha do tempo + delta acumulado do dia": o backend converteu a variação
+ * de ±pct% nas vendas de referência em diferenças diárias de entradas
+ * (recebimentos simulados) e saídas variáveis (MP, impostos, comissões,
+ * fretes), e aqui só somamos essas diferenças sobre a MESMA série que a
+ * tabela exibe. O Realista nunca é recalculado. Como a Linha do tempo só
+ * tem linha em dia com movimento, os dias sem linha herdam o último
+ * fechamento conhecido (forward-fill) antes do delta.
  *
- * Fallback (payload antigo, sem `scenarioDeltas`): preserva o delta diário
- * que o motor antigo calculou em relação ao Realista dele, re-ancorado na
- * Linha do tempo. Não há cálculo financeiro novo em nenhum dos caminhos.
+ * Sem `salesVolumeScenarios` no payload (cache antigo), apenas o Realista é
+ * desenhado — o conceito anterior de antecipação/postergação foi removido e
+ * NUNCA volta por fallback.
  */
 function buildRows(
   days: readonly TreasuryScenarioDay[],
@@ -161,71 +179,44 @@ function buildRows(
     string,
     { opening: number | null; closing: number | null }
   > | null,
-  scenarioDeltas?: TreasuryScenarioDeltasResult | null
+  sales?: TreasurySalesVolumeScenariosResult | null
 ): ChartRow[] {
-  // ── Caminho novo: cenário = série canônica + delta acumulado ──────────
+  // Realista mostrado: Linha do tempo com forward-fill; fallback = backend.
+  const realShownByDate = new Map<string, number | null>();
+  let lastTimelineClosing: number | null = null;
+  for (const d of days) {
+    const t = timelineByDate?.get(d.civilDate);
+    if (t?.closing != null) lastTimelineClosing = t.closing;
+    realShownByDate.set(
+      d.civilDate,
+      t?.closing ?? lastTimelineClosing ?? d.realistic.closingBalance
+    );
+  }
+
   let optByDate: Map<string, number | null> | null = null;
   let pesByDate: Map<string, number | null> | null = null;
-  const realShownByDate = new Map<string, number | null>();
-  if (timelineByDate) {
-    // Forward-fill: a Linha do tempo só tem linha em dia com movimento; nos
-    // demais dias o saldo é o último fechamento conhecido.
-    let lastTimelineClosing: number | null = null;
-    for (const d of days) {
-      const t = timelineByDate.get(d.civilDate);
-      if (t?.closing != null) lastTimelineClosing = t.closing;
-      realShownByDate.set(
-        d.civilDate,
-        t?.closing ?? lastTimelineClosing ?? d.realistic.closingBalance
-      );
-    }
-    if (scenarioDeltas) {
-      const orderedCivilDates = days.map((d) => d.civilDate);
-      optByDate = applyScenarioDeltasToClosings({
-        orderedCivilDates,
-        realisticClosingByDay: realShownByDate,
-        deltas: scenarioDeltas.optimistic,
-      });
-      pesByDate = applyScenarioDeltasToClosings({
-        orderedCivilDates,
-        realisticClosingByDay: realShownByDate,
-        deltas: scenarioDeltas.pessimistic,
-      });
-    }
+  if (sales) {
+    const orderedCivilDates = days.map((d) => d.civilDate);
+    optByDate = applyScenarioDeltasToClosings({
+      orderedCivilDates,
+      realisticClosingByDay: realShownByDate,
+      deltas: sales.optimistic,
+    });
+    pesByDate = applyScenarioDeltasToClosings({
+      orderedCivilDates,
+      realisticClosingByDay: realShownByDate,
+      deltas: sales.pessimistic,
+    });
   }
 
   return days.map((d) => {
-    const backendReal = d.realistic.closingBalance;
-    const backendOpt = d.optimistic.closingBalance;
-    const backendPes = d.pessimistic.closingBalance;
-
-    // Realista = saldo da Linha do tempo quando disponível para o dia.
     const fromTimeline = timelineByDate?.get(d.civilDate) ?? null;
-    const real = timelineByDate
-      ? realShownByDate.get(d.civilDate) ?? backendReal
-      : backendReal;
+    const real = realShownByDate.get(d.civilDate) ?? null;
     const openingShown =
       fromTimeline?.opening != null ? fromTimeline.opening : d.openingBalance;
 
-    let opt: number | null;
-    let pes: number | null;
-    if (optByDate && pesByDate) {
-      // Caminho novo — deltas do motor canônico sobre a série da tabela.
-      opt = optByDate.get(d.civilDate) ?? null;
-      pes = pesByDate.get(d.civilDate) ?? null;
-    } else {
-      // Fallback antigo — re-ancoragem por diferença dia a dia.
-      const optDelta =
-        backendOpt != null && backendReal != null
-          ? backendOpt - backendReal
-          : null;
-      const pesDelta =
-        backendPes != null && backendReal != null
-          ? backendPes - backendReal
-          : null;
-      opt = real != null && optDelta != null ? real + optDelta : backendOpt;
-      pes = real != null && pesDelta != null ? real + pesDelta : backendPes;
-    }
+    const opt = optByDate?.get(d.civilDate) ?? null;
+    const pes = pesByDate?.get(d.civilDate) ?? null;
 
     let bandLow: number | null = null;
     let bandRange: number | null = null;
@@ -381,11 +372,13 @@ function ScenarioTooltip({
   payload,
   label,
   daysByLabel,
+  labels,
 }: {
   active?: boolean;
   payload?: Array<{ payload?: ChartRow }>;
   label?: string;
   daysByLabel: Map<string, TreasuryScenarioDay>;
+  labels: { optimistic: string; realistic: string; pessimistic: string };
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload;
@@ -397,28 +390,24 @@ function ScenarioTooltip({
     label,
     color,
     value,
-    count,
   }: {
     label: string;
     color: string;
     value: number | null;
-    count?: number;
-  }) => (
-    <div className="flex items-center gap-2 text-[11px]">
-      <span
-        className="inline-block h-2 w-2 rounded-full"
-        style={{ backgroundColor: color }}
-        aria-hidden
-      />
-      <span className="font-semibold" style={{ color }}>
-        {label}
-      </span>
-      <span className="ml-auto tabular-nums">{money(value)}</span>
-      {count != null ? (
-        <span className="text-[10px] text-[#6B7280]">({count} tít)</span>
-      ) : null}
-    </div>
-  );
+  }) =>
+    value == null ? null : (
+      <div className="flex items-center gap-2 text-[11px]">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <span className="font-semibold" style={{ color }}>
+          {label}
+        </span>
+        <span className="ml-auto tabular-nums">{money(value)}</span>
+      </div>
+    );
 
   return (
     <div className="min-w-[280px] rounded-lg border border-[#E5E7EB] bg-white p-2.5 shadow-md text-[#111827]">
@@ -435,24 +424,19 @@ function ScenarioTooltip({
           bruto do backend — assim tooltip e gráfico nunca se contradizem. */}
       <div className="space-y-0.5 border-t border-[#E5E7EB]/60 pt-1.5">
         <Line
-          label="Otimista"
+          label={labels.optimistic}
           color={SCENARIO_STYLE.optimistic.color}
           value={row.opt}
-          count={day.optimistic.receivableCount + day.optimistic.payableCount}
         />
         <Line
-          label="Realista"
+          label={labels.realistic}
           color={SCENARIO_STYLE.realistic.color}
           value={row.real}
-          count={day.realistic.receivableCount + day.realistic.payableCount}
         />
         <Line
-          label="Pessimista"
+          label={labels.pessimistic}
           color={SCENARIO_STYLE.pessimistic.color}
           value={row.pes}
-          count={
-            day.pessimistic.receivableCount + day.pessimistic.payableCount
-          }
         />
       </div>
       {!row.isPast ? (
@@ -485,12 +469,13 @@ function ScenarioTooltip({
 
 type SeriesKey = "optimistic" | "realistic" | "pessimistic" | "band";
 
-/** Nome da série na legenda → chave interna de visibilidade. */
-const LEGEND_NAME_TO_SERIES: Record<string, SeriesKey> = {
-  [SCENARIO_STYLE.optimistic.label]: "optimistic",
-  [SCENARIO_STYLE.realistic.label]: "realistic",
-  [SCENARIO_STYLE.pessimistic.label]: "pessimistic",
-  "Intervalo de cenário": "band",
+/** dataKey da série no Recharts → chave interna de visibilidade (os nomes
+ *  visuais agora são dinâmicos — vêm da política via payload). */
+const LEGEND_DATAKEY_TO_SERIES: Record<string, SeriesKey> = {
+  opt: "optimistic",
+  real: "realistic",
+  pes: "pessimistic",
+  bandRange: "band",
 };
 
 /**
@@ -507,8 +492,9 @@ function renderScenariosChart(params: {
   visible: Record<SeriesKey, boolean>;
   onLegendClick: (key: SeriesKey) => void;
   onPointClick: (civilDate: string) => void;
+  labels: { optimistic: string; realistic: string; pessimistic: string };
 }) {
-  const { rows, daysByLabel, heightPx, visible, onLegendClick, onPointClick } = params;
+  const { rows, daysByLabel, heightPx, visible, onLegendClick, onPointClick, labels } = params;
   return (
     <div style={{ height: `${heightPx}px` }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -535,7 +521,11 @@ function renderScenariosChart(params: {
           />
           <Tooltip
             content={(props) => (
-              <ScenarioTooltip {...props} daysByLabel={daysByLabel} />
+              <ScenarioTooltip
+                {...props}
+                daysByLabel={daysByLabel}
+                labels={labels}
+              />
             )}
           />
           <ReferenceLine
@@ -577,7 +567,7 @@ function renderScenariosChart(params: {
           <Line
             type="monotone"
             dataKey="opt"
-            name={SCENARIO_STYLE.optimistic.label}
+            name={labels.optimistic}
             stroke={SCENARIO_STYLE.optimistic.color}
             strokeWidth={SCENARIO_STYLE.optimistic.strokeWidth}
             strokeDasharray={SCENARIO_STYLE.optimistic.strokeDasharray}
@@ -588,7 +578,7 @@ function renderScenariosChart(params: {
           <Line
             type="monotone"
             dataKey="pes"
-            name={SCENARIO_STYLE.pessimistic.label}
+            name={labels.pessimistic}
             stroke={SCENARIO_STYLE.pessimistic.color}
             strokeWidth={SCENARIO_STYLE.pessimistic.strokeWidth}
             strokeDasharray={SCENARIO_STYLE.pessimistic.strokeDasharray}
@@ -599,7 +589,7 @@ function renderScenariosChart(params: {
           <Line
             type="monotone"
             dataKey="real"
-            name={SCENARIO_STYLE.realistic.label}
+            name={labels.realistic}
             stroke={SCENARIO_STYLE.realistic.color}
             strokeWidth={SCENARIO_STYLE.realistic.strokeWidth}
             dot={false}
@@ -608,15 +598,14 @@ function renderScenariosChart(params: {
           />
           <Legend
             wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
-            onClick={(entry: { value?: string; dataKey?: string }) => {
-              const raw =
-                typeof entry?.value === "string" ? entry.value : entry?.dataKey;
-              if (!raw) return;
-              const key = LEGEND_NAME_TO_SERIES[raw];
+            onClick={(entry: { value?: string; dataKey?: unknown }) => {
+              const dk = typeof entry?.dataKey === "string" ? entry.dataKey : "";
+              const key = LEGEND_DATAKEY_TO_SERIES[dk];
               if (key) onLegendClick(key);
             }}
-            formatter={(value: string) => {
-              const key = LEGEND_NAME_TO_SERIES[value];
+            formatter={(value: string, entry: { dataKey?: unknown }) => {
+              const dk = typeof entry?.dataKey === "string" ? entry.dataKey : "";
+              const key = LEGEND_DATAKEY_TO_SERIES[dk];
               const off = key ? !visible[key] : false;
               return (
                 <span
@@ -690,10 +679,15 @@ export function TreasuryCaixaScenariosChart({
             data.days,
             data.asOfCivilDate,
             timelineByDate,
-            data.scenarioDeltas ?? null
+            data.salesVolumeScenarios ?? null
           )
         : [],
     [data, timelineByDate]
+  );
+
+  const labels = useMemo(
+    () => buildScenarioLabels(data?.salesVolumeScenarios),
+    [data]
   );
 
   const daysByLabel = useMemo(() => {
@@ -768,41 +762,52 @@ export function TreasuryCaixaScenariosChart({
   }, [summaries]);
 
   /**
-   * Principais movimentos por cenário — memória de cálculo do motor de
-   * deltas ordenada por |valor|. Só apresentação: o texto vem pronto
-   * ("explanation" determinística em pt-BR).
+   * Memória de cálculo por cenário — movimentos SIMULADOS agregados por
+   * mês/tipo, ordenados por |valor|. Só apresentação: o texto vem pronto
+   * ("explanation" determinística em pt-BR, gerada no backend).
    */
-  const topMovers = useMemo(() => {
-    const memory = data?.scenarioDeltas?.memory;
+  const memoryByScenario = useMemo(() => {
+    const memory = data?.salesVolumeScenarios?.memory;
     if (!memory || memory.length === 0) return null;
     const pick = (scenario: "OPTIMISTIC" | "PESSIMISTIC") =>
       memory
-        .filter((m) => m.scenario === scenario && m.scenarioDate != null)
-        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-        .slice(0, 5);
+        .filter((m) => m.scenario === scenario)
+        .sort(
+          (a, b) =>
+            Math.abs(b.inWindowAmount + b.beyondHorizonAmount) -
+            Math.abs(a.inWindowAmount + a.beyondHorizonAmount)
+        )
+        .slice(0, 8);
     return { optimistic: pick("OPTIMISTIC"), pessimistic: pick("PESSIMISTIC") };
   }, [data]);
 
-  /** Frases executivas determinísticas (templates fixos sobre os números). */
+  /** Frases executivas determinísticas (templates fixos, backend). */
   const executiveLines = useMemo(() => {
-    if (!data?.scenarioDeltas || !summaries) return null;
-    const asInput = (s: TreasuryScenarioSummary) => ({
-      minBalance: s.minBalance,
-      minBalanceDate: s.minBalanceDate,
-      firstNegativeDate: s.firstNegativeDate,
-      maxCashNeed: s.maxCashNeed,
-      finalBalance: s.finalBalance,
+    const sales = data?.salesVolumeScenarios;
+    if (!sales) return null;
+    const lines = buildTreasurySalesVolumeExecutiveLines({
+      optimistic: sales.optimisticIndicators,
+      pessimistic: sales.pessimisticIndicators,
     });
-    return buildTreasuryScenarioExecutiveLines({
-      realistic: asInput(summaries.realistic),
-      optimistic: asInput(summaries.optimistic),
-      pessimistic: asInput(summaries.pessimistic),
-      optimisticTopMovers: (topMovers?.optimistic ?? []).map(
-        (m) =>
-          `${m.counterpartyName ?? m.documentNumber ?? `título ${m.sourceId}`} (${money(m.amount)})`
-      ),
-    });
-  }, [data, summaries, topMovers]);
+    // Menor saldo por cenário — números já exibidos nos cards (mesma série
+    // desenhada); aqui só entram na frase fixa.
+    const s = summaries ?? data?.summaries;
+    if (s?.optimistic.minBalance != null && s.optimistic.minBalanceDate) {
+      lines.push(
+        `O menor saldo do cenário Otimista seria ${money(s.optimistic.minBalance)} em ${formatCivilDate(s.optimistic.minBalanceDate)}.`
+      );
+    }
+    if (
+      s?.pessimistic.maxCashNeed != null &&
+      s.pessimistic.maxCashNeed > 0 &&
+      s.pessimistic.minBalanceDate
+    ) {
+      lines.push(
+        `A necessidade máxima de caixa no cenário Pessimista seria de ${money(s.pessimistic.maxCashNeed)} em ${formatCivilDate(s.pessimistic.minBalanceDate)}.`
+      );
+    }
+    return lines;
+  }, [data, summaries]);
 
   const drilldownDay = drilldownDate ? daysByLabel.get(drilldownDate) : null;
 
@@ -817,8 +822,10 @@ export function TreasuryCaixaScenariosChart({
             Projeção do caixa — cenários
           </h2>
           <p className="text-xs text-muted-foreground">
-            Otimista · Realista · Pessimista — a partir de{" "}
-            {data ? formatCivilDate(data.asOfCivilDate) : "—"}
+            {data?.salesVolumeScenarios
+              ? `Sensibilidade de vendas (${data.salesVolumeScenarios.optimisticIndicators.variationPct > 0 ? "+" : ""}${data.salesVolumeScenarios.optimisticIndicators.variationPct}% / ${data.salesVolumeScenarios.pessimisticIndicators.variationPct}%) sobre o Realista`
+              : "Otimista · Realista · Pessimista"}{" "}
+            — a partir de {data ? formatCivilDate(data.asOfCivilDate) : "—"}
           </p>
           {data?.officialTodayBalance?.amount != null ? (
             <p
@@ -914,37 +921,58 @@ export function TreasuryCaixaScenariosChart({
             visible,
             onLegendClick: toggleSeries,
             onPointClick: (civilDate) => setDrilldownDate(civilDate),
+            labels,
           })}
 
           <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
             <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
             <span>
               A faixa cinza é o <strong>Intervalo de cenário</strong> — a
-              distância entre a hipótese operacional favorável e a conservadora.
-              Não é um intervalo estatístico de confiança.
+              distância entre vendas{" "}
+              {data.salesVolumeScenarios
+                ? `${data.salesVolumeScenarios.optimisticIndicators.variationPct > 0 ? "+" : ""}${data.salesVolumeScenarios.optimisticIndicators.variationPct}% e ${data.salesVolumeScenarios.pessimisticIndicators.variationPct}%`
+                : "otimistas e pessimistas"}
+              . As linhas podem se cruzar: crescer consome caixa antes de
+              devolver, e vender menos alivia desembolsos antes de reduzir
+              recebimentos. Não é um intervalo estatístico de confiança.
             </span>
           </p>
 
           <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
             <SummaryCard
-              title="Otimista"
+              title={labels.optimistic}
               color={SCENARIO_STYLE.optimistic.color}
               summary={(summaries ?? data.summaries).optimistic}
               diffToRealistic={diffs.opt}
             />
             <SummaryCard
-              title="Realista (principal)"
+              title={`${labels.realistic} (principal)`}
               color={SCENARIO_STYLE.realistic.color}
               summary={(summaries ?? data.summaries).realistic}
               diffToRealistic={null}
             />
             <SummaryCard
-              title="Pessimista"
+              title={labels.pessimistic}
               color={SCENARIO_STYLE.pessimistic.color}
               summary={(summaries ?? data.summaries).pessimistic}
               diffToRealistic={diffs.pes}
             />
           </div>
+
+          {data.salesVolumeScenarios ? (
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <SalesScenarioIndicatorCard
+                title={labels.optimistic}
+                color={SCENARIO_STYLE.optimistic.color}
+                indicators={data.salesVolumeScenarios.optimisticIndicators}
+              />
+              <SalesScenarioIndicatorCard
+                title={labels.pessimistic}
+                color={SCENARIO_STYLE.pessimistic.color}
+                indicators={data.salesVolumeScenarios.pessimisticIndicators}
+              />
+            </div>
+          ) : null}
 
           {executiveLines && executiveLines.length > 0 ? (
             <div
@@ -962,26 +990,28 @@ export function TreasuryCaixaScenariosChart({
             </div>
           ) : null}
 
-          <OutOfHorizonNote deltas={data.scenarioDeltas} />
+          <SalesScenarioAssumptions sales={data.salesVolumeScenarios} />
+          <SalesScenarioCoverage sales={data.salesVolumeScenarios} />
+          <OutOfHorizonNote sales={data.salesVolumeScenarios} />
 
-          {topMovers ? (
+          {memoryByScenario ? (
             <details
               className="mt-2 text-[11px] text-muted-foreground"
-              data-testid="caixa-scenarios-top-movers"
+              data-testid="caixa-scenarios-memory"
             >
               <summary className="cursor-pointer font-semibold">
-                Principais movimentos por cenário (memória de cálculo)
+                Memória de cálculo — movimentos simulados por cenário
               </summary>
               <div className="mt-1 grid grid-cols-1 gap-2 md:grid-cols-2">
-                <TopMoversList
-                  title="Otimista"
+                <SimulatedMemoryList
+                  title={labels.optimistic}
                   color={SCENARIO_STYLE.optimistic.color}
-                  entries={topMovers.optimistic}
+                  entries={memoryByScenario.optimistic}
                 />
-                <TopMoversList
-                  title="Pessimista"
+                <SimulatedMemoryList
+                  title={labels.pessimistic}
                   color={SCENARIO_STYLE.pessimistic.color}
-                  entries={topMovers.pessimistic}
+                  entries={memoryByScenario.pessimistic}
                 />
               </div>
             </details>
@@ -1014,12 +1044,19 @@ export function TreasuryCaixaScenariosChart({
                   <li key={i}>• {r}</li>
                 ))}
               </ul>
-              <p className="mt-1 text-[10px]">
-                Política em uso: pessimista{" "}
-                {data.policy.pessimisticEnabled ? "habilitado" : "desligado"} ·
-                atraso de CR {data.policy.pessimisticReceivableDelayDays} dias ·
-                versão {data.policy.version}.
-              </p>
+              {data.salesVolumeScenarios ? (
+                <p className="mt-1 text-[10px]">
+                  Política de cenários: vendas{" "}
+                  {data.salesVolumeScenarios.optimisticIndicators.variationPct >
+                  0
+                    ? "+"
+                    : ""}
+                  {data.salesVolumeScenarios.optimisticIndicators.variationPct}%
+                  /{" "}
+                  {data.salesVolumeScenarios.pessimisticIndicators.variationPct}
+                  % · base {data.salesVolumeScenarios.baseline.description}.
+                </p>
+              ) : null}
             </details>
           ) : null}
 
@@ -1038,7 +1075,7 @@ export function TreasuryCaixaScenariosChart({
           onClose={() => setExpanded(false)}
           eyebrow="Financeiro · Tesouraria · Caixa"
           title="Projeção do caixa — cenários"
-          subtitle={`Otimista · Realista · Pessimista — a partir de ${formatCivilDate(data.asOfCivilDate)}${
+          subtitle={`${labels.optimistic} · ${labels.realistic} · ${labels.pessimistic} — a partir de ${formatCivilDate(data.asOfCivilDate)}${
             data.officialTodayBalance?.amount != null
               ? ` · Saldo inicial ${money(data.officialTodayBalance.amount)} (${data.officialTodayBalance.sourceLabel})`
               : ""
@@ -1052,6 +1089,7 @@ export function TreasuryCaixaScenariosChart({
             visible,
             onLegendClick: toggleSeries,
             onPointClick: (civilDate) => setDrilldownDate(civilDate),
+            labels,
           })}
           {data.alerts.length > 0 ? (
             <div
@@ -1072,9 +1110,9 @@ export function TreasuryCaixaScenariosChart({
           <p className="mt-3 flex items-start gap-1 text-[12px] text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>
-              A faixa cinza é o <strong>Intervalo de cenário</strong> — distância
-              entre a hipótese operacional favorável e a conservadora. Clique
-              numa entrada da legenda para mostrar/ocultar cada série.
+              A faixa cinza é o <strong>Intervalo de cenário</strong> —
+              distância entre os cenários de vendas otimista e pessimista.
+              Clique numa entrada da legenda para mostrar/ocultar cada série.
             </span>
           </p>
         </FinanceBiChartExpandModal>
@@ -1084,31 +1122,107 @@ export function TreasuryCaixaScenariosChart({
 }
 
 /**
+ * "Premissas do cenário" — SOMENTE o que foi realmente aplicado (as frases
+ * vêm prontas do backend; nada é inferido aqui).
+ */
+function SalesScenarioAssumptions({
+  sales,
+}: {
+  sales: TreasurySalesVolumeScenariosResult | undefined;
+}) {
+  if (!sales || sales.assumptions.length === 0) return null;
+  return (
+    <details
+      className="mt-2 text-[11px] text-muted-foreground"
+      data-testid="caixa-scenarios-assumptions"
+      open
+    >
+      <summary className="cursor-pointer font-semibold">
+        Premissas do cenário
+      </summary>
+      <ul className="mt-1 space-y-0.5">
+        {sales.assumptions.map((a, i) => (
+          <li key={i}>• {a}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Cobertura da simulação — lacunas declaradas, nunca escondidas. */
+function SalesScenarioCoverage({
+  sales,
+}: {
+  sales: TreasurySalesVolumeScenariosResult | undefined;
+}) {
+  if (!sales) return null;
+  const c = sales.coverage;
+  const kindLabel: Record<string, string> = {
+    RAW_MATERIAL: "matéria-prima",
+    TAX: "impostos",
+    COMMISSION: "comissões",
+    FREIGHT: "fretes",
+  };
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-lg border px-3 py-2 text-[11px]",
+        c.isPartial
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-[#E5E7EB] bg-[#F9FAFB] text-[#111827]"
+      )}
+      data-testid="caixa-scenarios-coverage"
+    >
+      <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide">
+        Cobertura da simulação
+      </p>
+      <p>
+        Custos variáveis identificados:{" "}
+        {Math.round(c.variableCostRatioTotal * 100)}% do valor vendido (
+        {c.includedCostKinds.length > 0
+          ? c.includedCostKinds.map((k) => kindLabel[k] ?? k).join(", ")
+          : "nenhum"}
+        )
+        {c.excludedCostKinds.length > 0
+          ? ` · fora da simulação: ${c.excludedCostKinds.map((k) => kindLabel[k] ?? k).join(", ")}`
+          : ""}
+        .
+      </p>
+      {c.isPartial ? (
+        <p className="mt-0.5 font-semibold">
+          Esta simulação não possui cobertura completa dos custos variáveis. O
+          saldo apresentado pode estar otimista.
+        </p>
+      ) : null}
+      {c.warnings.map((w, i) => (
+        <p key={i} className="mt-0.5">
+          ⚠ {w}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Valores deslocados para DEPOIS do horizonte visível — a spec proíbe
  * empilhá-los no último dia do gráfico; são reportados à parte.
  */
 function OutOfHorizonNote({
-  deltas,
+  sales,
 }: {
-  deltas: TreasuryScenarioDeltasResult | undefined;
+  sales: TreasurySalesVolumeScenariosResult | undefined;
 }) {
-  if (!deltas) return null;
+  if (!sales) return null;
   const parts: string[] = [];
-  if (deltas.optimistic.outOfHorizonInflow > 0)
+  const o = sales.optimisticIndicators;
+  const p = sales.pessimisticIndicators;
+  if (o.inflowsBeyondHorizon !== 0)
     parts.push(
-      `Otimista: ${money(deltas.optimistic.outOfHorizonInflow)} de entradas`
+      `Otimista: ${money(o.inflowsBeyondHorizon)} de recebimentos e ${money(o.outflowsBeyondHorizon)} de saídas variáveis`
     );
-  if (deltas.optimistic.outOfHorizonOutflow > 0)
+  if (p.inflowsBeyondHorizon !== 0)
     parts.push(
-      `Otimista: ${money(deltas.optimistic.outOfHorizonOutflow)} de saídas`
-    );
-  if (deltas.pessimistic.outOfHorizonInflow > 0)
-    parts.push(
-      `Pessimista: ${money(deltas.pessimistic.outOfHorizonInflow)} de entradas`
-    );
-  if (deltas.pessimistic.outOfHorizonOutflow > 0)
-    parts.push(
-      `Pessimista: ${money(deltas.pessimistic.outOfHorizonOutflow)} de saídas`
+      `Pessimista: ${money(p.inflowsBeyondHorizon)} de recebimentos e ${money(p.outflowsBeyondHorizon)} de saídas variáveis`
     );
   if (parts.length === 0) return null;
   return (
@@ -1118,22 +1232,142 @@ function OutOfHorizonNote({
     >
       <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
       <span>
-        Movimentos projetados para <strong>depois do horizonte</strong> (não
-        aparecem no gráfico): {parts.join(" · ")}. Amplie o horizonte para
-        vê-los.
+        Parte das vendas simuladas será recebida <strong>após o período
+        exibido</strong>: {parts.join(" · ")}. Amplie o horizonte para vê-los.
       </span>
     </p>
   );
 }
 
-function TopMoversList({
+/** Indicadores do cenário de vendas (valores prontos do backend). */
+function SalesScenarioIndicatorCard({
+  title,
+  color,
+  indicators,
+}: {
+  title: string;
+  color: string;
+  indicators: TreasurySalesVolumeScenarioIndicators;
+}) {
+  const isOptimistic = indicators.variationPct > 0;
+  return (
+    <div
+      className="rounded-xl border border-[#E5E7EB] bg-white p-3 text-[11px]"
+      data-testid={`caixa-scenarios-sales-indicators-${indicators.scenario.toLowerCase()}`}
+    >
+      <div className="mb-1.5 flex items-center gap-2">
+        <span
+          className="h-2.5 w-6 rounded"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#6B7280]">
+          {title} — efeito das vendas
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[#6B7280]">
+            {isOptimistic ? "Vendas adicionais" : "Perda de vendas"}
+          </p>
+          <p className="font-bold tabular-nums text-[#111827]">
+            {money(indicators.incrementalSalesInWindow)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[#6B7280]">
+            {isOptimistic
+              ? "Recebimentos adicionais"
+              : "Redução de recebimentos"}
+          </p>
+          <p className="font-bold tabular-nums text-[#111827]">
+            {money(indicators.inflowsInWindow)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[#6B7280]">
+            {isOptimistic
+              ? "Saídas variáveis adicionais"
+              : "Economia em custos variáveis"}
+          </p>
+          <p className="font-bold tabular-nums text-[#111827]">
+            {money(indicators.outflowsInWindow)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[#6B7280]">Efeito líquido no horizonte</p>
+          <p
+            className={cn(
+              "font-bold tabular-nums",
+              indicators.netEffectInWindow >= 0
+                ? "text-emerald-700"
+                : "text-red-700"
+            )}
+          >
+            {money(indicators.netEffectInWindow)}
+          </p>
+        </div>
+        {isOptimistic ? (
+          <>
+            <div>
+              <p className="text-[#6B7280]">Capital de giro p/ crescer</p>
+              <p className="font-bold tabular-nums text-[#111827]">
+                {money(indicators.peakCashConsumed)}
+                {indicators.peakCashConsumedDate ? (
+                  <span className="ml-1 text-[10px] font-normal text-[#6B7280]">
+                    (pico em {formatCivilDate(indicators.peakCashConsumedDate)})
+                  </span>
+                ) : null}
+              </p>
+            </div>
+            <div>
+              <p className="text-[#6B7280]">Crescimento vira caixa positivo</p>
+              <p className="font-bold tabular-nums text-[#111827]">
+                {indicators.firstNetPositiveDate
+                  ? formatCivilDate(indicators.firstNetPositiveDate)
+                  : "após o horizonte"}
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <p className="text-[#6B7280]">Alívio temporário máximo</p>
+              <p className="font-bold tabular-nums text-[#111827]">
+                {money(indicators.peakCashReleased)}
+                {indicators.peakCashReleasedDate ? (
+                  <span className="ml-1 text-[10px] font-normal text-[#6B7280]">
+                    (em {formatCivilDate(indicators.peakCashReleasedDate)})
+                  </span>
+                ) : null}
+              </p>
+            </div>
+            <div>
+              <p className="text-[#6B7280]">Queda pressiona o caixa em</p>
+              <p className="font-bold tabular-nums text-[#111827]">
+                {indicators.firstNetNegativeDate
+                  ? formatCivilDate(indicators.firstNetNegativeDate)
+                  : "sem pressão no horizonte"}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+      <p className="mt-1.5 text-[10px] text-[#6B7280]">
+        Custos fixos não são alterados em nenhum cenário.
+      </p>
+    </div>
+  );
+}
+
+function SimulatedMemoryList({
   title,
   color,
   entries,
 }: {
   title: string;
   color: string;
-  entries: readonly TreasuryScenarioDeltaMemoryEntry[];
+  entries: readonly TreasurySalesVolumeMemoryEntry[];
 }) {
   return (
     <div className="rounded-lg border border-[#E5E7EB] bg-white p-2">
@@ -1144,22 +1378,25 @@ function TopMoversList({
           aria-hidden
         />
         {title}
+        <span className="ml-auto font-normal normal-case">
+          movimentos simulados — nunca títulos oficiais
+        </span>
       </p>
       {entries.length === 0 ? (
-        <p className="text-[11px]">Nenhum título muda de data neste cenário.</p>
+        <p className="text-[11px]">Nenhum movimento simulado neste cenário.</p>
       ) : (
         <ul className="space-y-1">
           {entries.map((m) => (
             <li
-              key={`${m.sourceType}-${m.sourceId}`}
+              key={`${m.baselinePeriod}-${m.movementType}`}
               className="border-t border-black/5 pt-1 first:border-t-0 first:pt-0"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="max-w-[180px] truncate font-semibold text-[#111827]">
-                  {m.counterpartyName ?? m.documentNumber ?? `Título ${m.sourceId}`}
+                <span className="font-semibold text-[#111827]">
+                  {m.baselinePeriod} · {m.cashDirection === "IN" ? "entrada" : "saída"}
                 </span>
                 <span className="tabular-nums font-semibold text-[#111827]">
-                  {money(m.amount)}
+                  {money(m.inWindowAmount)}
                 </span>
               </div>
               <p className="text-[10px] leading-snug">{m.explanation}</p>
@@ -1171,6 +1408,11 @@ function TopMoversList({
   );
 }
 
+/**
+ * Composição do dia — SOMENTE o Realista (títulos oficiais). Os cenários de
+ * vendas não têm títulos por dia: são movimentos simulados agregados,
+ * auditáveis na "Memória de cálculo" acima.
+ */
 function ScenarioDayDrilldown({
   day,
   onClose,
@@ -1178,10 +1420,7 @@ function ScenarioDayDrilldown({
   day: TreasuryScenarioDay;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"realistic" | "optimistic" | "pessimistic">(
-    "realistic"
-  );
-  const facts = day[tab];
+  const facts = day.realistic;
   return (
     <div
       className="mt-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3"
@@ -1189,7 +1428,7 @@ function ScenarioDayDrilldown({
     >
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[11px] font-bold uppercase text-[#6B7280]">
-          Composição — {formatCivilDate(day.civilDate)}
+          Composição Realista — {formatCivilDate(day.civilDate)}
         </p>
         <button
           type="button"
@@ -1198,31 +1437,6 @@ function ScenarioDayDrilldown({
         >
           Fechar
         </button>
-      </div>
-      <div
-        className="mb-2 inline-flex rounded-md border border-[#E5E7EB] bg-white p-0.5"
-        role="group"
-      >
-        {(["realistic", "optimistic", "pessimistic"] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setTab(s)}
-            className={cn(
-              "rounded px-2 py-1 text-[11px] font-semibold",
-              tab === s
-                ? "bg-[#2563EB] text-white"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            data-testid={`caixa-scenarios-drilldown-tab-${s}`}
-          >
-            {s === "realistic"
-              ? "Realista"
-              : s === "optimistic"
-                ? "Otimista"
-                : "Pessimista"}
-          </button>
-        ))}
       </div>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <DrilldownTable
@@ -1240,6 +1454,11 @@ function ScenarioDayDrilldown({
           rows={facts.payableProjections}
         />
       </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Otimista/Pessimista somam a este dia apenas movimentos SIMULADOS de
+        vendas (ver "Memória de cálculo") — títulos oficiais nunca são
+        multiplicados.
+      </p>
     </div>
   );
 }

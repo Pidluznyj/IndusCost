@@ -21,9 +21,11 @@ import {
   type TreasuryScenarioOpenReceivable,
 } from "../domain/treasuryCaixaScenarios.js";
 import {
-  computeTreasuryCaixaScenarioDeltas,
-  type TreasuryScenarioDeltasResult,
-} from "../domain/treasuryCaixaScenarioDeltas.js";
+  computeTreasurySalesVolumeScenarios,
+  type TreasurySalesVolumeScenariosResult,
+} from "../domain/treasuryCaixaSalesVolumeScenarios.js";
+import { TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS } from "../contracts/treasurySalesVolumeScenarioPolicy.js";
+import { loadTreasurySalesVolumeProfile } from "./treasurySalesVolumeProfile.server.js";
 import {
   isTreasuryCivilDate,
   parseTreasuryCivilDate,
@@ -70,11 +72,14 @@ export type TreasuryCaixaScenariosResponse = TreasuryScenarioComputationResult &
   /** Fonte do saldo inicial usado pelos cenários — auditabilidade da UI. */
   officialTodayBalance: TreasuryCaixaBoardDto["officialTodayBalance"];
   /**
-   * Deltas Otimista/Pessimista sobre a série canônica (Linha do tempo) +
-   * memória de cálculo por título. O Realista NÃO é recalculado — o gráfico
-   * soma esses deltas sobre a mesma série da tabela.
+   * CONCEITO ATUAL dos cenários: sensibilidade ao volume de vendas.
+   * Otimista = vendas +20% · Pessimista = vendas −20% (política central).
+   * Deltas diários incrementais sobre a série canônica da Linha do tempo +
+   * premissas, cobertura, indicadores e memória de cálculo. O Realista NÃO
+   * é recalculado — o gráfico soma esses deltas sobre a mesma série da
+   * tabela. Nenhum movimento simulado é persistido como título oficial.
    */
-  scenarioDeltas: TreasuryScenarioDeltasResult;
+  salesVolumeScenarios: TreasurySalesVolumeScenariosResult;
 };
 
 const DEFAULT_HORIZON_DAYS = 90;
@@ -386,21 +391,30 @@ export function createTreasuryCaixaScenariosService(deps: {
         dailyDueEstimatesByDate,
       });
 
-      // Motor de DELTAS Otimista/Pessimista sobre a série canônica: para
-      // cada título em aberto, calcula quanto a data do cenário difere da
-      // data Realista individual e devolve apenas a DIFERENÇA diária. O
-      // frontend soma esses deltas sobre a série da Linha do tempo — o
-      // Realista nunca é recalculado. Sem mapa de histórico por cliente por
-      // enquanto (pendência documentada): o motor usa o parâmetro global
-      // configurável da TreasuryScenarioPolicy.
+      // CENÁRIOS POR VOLUME DE VENDAS (conceito atual): Otimista/Pessimista
+      // são a resposta a "e se as vendas variarem ±20% sobre a base de
+      // referência?". O carregador monta o perfil com fontes oficiais (base
+      // histórica de Pedidos, razões de custo por pedido, prazo real
+      // venda→recebimento) e o motor puro converte a variação em deltas
+      // diários incrementais. Somente vendas NOVAS estatísticas são
+      // simuladas — títulos oficiais nunca são multiplicados e o Realista
+      // nunca é recalculado. Nada é persistido.
       const horizonEndCivilDate =
         projectedWindow[projectedWindow.length - 1] ?? asOfCivilDate;
-      const scenarioDeltas = computeTreasuryCaixaScenarioDeltas({
+      const salesPolicy = TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS;
+      const salesProfile = await loadTreasurySalesVolumeProfile(
+        prisma,
+        asOfCivilDate,
+        salesPolicy
+      );
+      const salesVolumeScenarios = computeTreasurySalesVolumeScenarios({
         asOfCivilDate,
         horizonEndCivilDate,
-        openReceivables,
-        openPayables,
-        policy: policyDto,
+        policy: salesPolicy,
+        baseline: salesProfile.baseline,
+        receiptLagProfile: salesProfile.receiptLagProfile,
+        variableCosts: salesProfile.variableCosts,
+        coverageWarnings: salesProfile.coverageWarnings,
       });
 
       return {
@@ -411,7 +425,7 @@ export function createTreasuryCaixaScenariosService(deps: {
         policy: policyDto,
         accountIds: null,
         officialTodayBalance: board.officialTodayBalance,
-        scenarioDeltas,
+        salesVolumeScenarios,
       };
     },
   };

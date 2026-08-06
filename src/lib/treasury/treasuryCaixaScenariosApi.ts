@@ -9,7 +9,7 @@ import type {
   TreasuryScenarioSummary,
 } from "./domain/treasuryCaixaScenariosTypes.js";
 import type { TreasuryScenarioPolicyDto } from "./contracts/treasuryScenarioPolicyContracts.js";
-import type { TreasuryScenarioDeltasResult } from "./domain/treasuryCaixaScenarioDeltas.js";
+import type { TreasurySalesVolumeScenariosResult } from "./domain/treasuryCaixaSalesVolumeScenarios.js";
 
 export type TreasuryCaixaScenariosFetchParams = {
   asOfCivilDate?: string | null;
@@ -43,11 +43,14 @@ export type TreasuryCaixaScenariosPayload = TreasuryScenarioComputationResult & 
   accountIds: string[] | null;
   officialTodayBalance: TreasuryCaixaScenariosOfficialBalance;
   /**
-   * Deltas Otimista/Pessimista sobre a série canônica + memória de cálculo.
-   * Opcional para compatibilidade: o gráfico mantém o fallback antigo
-   * (re-ancoragem por diferença) quando ausente.
+   * CONCEITO ATUAL: cenários por sensibilidade ao volume de vendas
+   * (Otimista = vendas +20%, Pessimista = vendas −20%, política central).
+   * Impactos incrementais sobre o Realista canônico, com premissas,
+   * cobertura, indicadores, memória e fora-do-horizonte. Opcional apenas
+   * para payloads antigos em cache — sem este campo o gráfico exibe
+   * somente o Realista (nenhum conceito antigo é desenhado).
    */
-  scenarioDeltas?: TreasuryScenarioDeltasResult;
+  salesVolumeScenarios?: TreasurySalesVolumeScenariosResult;
   requestId?: string;
 };
 
