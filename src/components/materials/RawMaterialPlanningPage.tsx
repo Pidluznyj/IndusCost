@@ -1,6 +1,9 @@
+import "./raw-material-planning-print.css";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Info, Loader2, RefreshCw } from "lucide-react";
+import { Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { cn } from "@/src/lib/utils";
 import {
   ContextualDashboardKpiCard,
@@ -11,6 +14,7 @@ import {
   type MaterialDemandFilterChip,
   MaterialDemandTablePagination,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
+import { RawMaterialPlanningPrintDocument } from "@/src/components/materials/RawMaterialPlanningPrintDocument";
 import { RawMaterialPlanningTable } from "@/src/components/materials/RawMaterialPlanningTable";
 import {
   RAW_MATERIAL_PLANNING_HORIZON_LABELS,
@@ -131,6 +135,9 @@ export function RawMaterialPlanningPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
 
+  const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+
   const filterKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
 
   useEffect(() => {
@@ -237,6 +244,28 @@ export function RawMaterialPlanningPage() {
     }
   }, [appliedFilters]);
 
+  const handlePrint = useCallback(async () => {
+    setIsPrinting(true);
+    try {
+      if (!branding) {
+        const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>(
+          "/api/branding-settings",
+          { ttlMs: 300_000 }
+        );
+        setBranding(next);
+      }
+      document.body.classList.add("raw-material-planning-print-route");
+      setTimeout(() => {
+        window.print();
+        document.body.classList.remove("raw-material-planning-print-route");
+        setIsPrinting(false);
+      }, 300);
+    } catch (e) {
+      console.error("[RawMaterialPlanning] load branding", e);
+      setIsPrinting(false);
+    }
+  }, [branding]);
+
   const rows: RawMaterialPlanningRow[] = data?.materials ?? [];
   const totalItems = rows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -272,6 +301,15 @@ export function RawMaterialPlanningPage() {
             >
               {exportingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Exportar CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePrint()}
+              disabled={isPrinting || loading || rows.length === 0}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-accent disabled:opacity-50"
+            >
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              Imprimir / PDF
             </button>
             <button
               type="button"
@@ -348,7 +386,6 @@ export function RawMaterialPlanningPage() {
               type="date"
               value={filters.asOfDate}
               onChange={(e) => setFilters((p) => ({ ...p, asOfDate: e.target.value }))}
-              onBlur={handleApplyText}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
@@ -359,7 +396,7 @@ export function RawMaterialPlanningPage() {
             <select
               id="rmp-horizon"
               value={filters.horizon}
-              onChange={(e) => commitFilters({ ...filters, horizon: e.target.value as RawMaterialPlanningHorizon })}
+              onChange={(e) => setFilters((p) => ({ ...p, horizon: e.target.value as RawMaterialPlanningHorizon }))}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             >
               {RAW_MATERIAL_PLANNING_HORIZON_VALUES.map((h) => (
@@ -379,7 +416,6 @@ export function RawMaterialPlanningPage() {
                 type="date"
                 value={filters.horizonEndDate}
                 onChange={(e) => setFilters((p) => ({ ...p, horizonEndDate: e.target.value }))}
-                onBlur={handleApplyText}
                 className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
@@ -394,7 +430,6 @@ export function RawMaterialPlanningPage() {
               placeholder="Código ou descrição"
               value={filters.search}
               onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
-              onBlur={handleApplyText}
               onKeyDown={(e) => e.key === "Enter" && handleApplyText()}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             />
@@ -409,7 +444,6 @@ export function RawMaterialPlanningPage() {
               placeholder="Nome do fornecedor"
               value={filters.supplier}
               onChange={(e) => setFilters((p) => ({ ...p, supplier: e.target.value }))}
-              onBlur={handleApplyText}
               onKeyDown={(e) => e.key === "Enter" && handleApplyText()}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             />
@@ -424,7 +458,6 @@ export function RawMaterialPlanningPage() {
               placeholder="Empresa emissora"
               value={filters.companyIssuer}
               onChange={(e) => setFilters((p) => ({ ...p, companyIssuer: e.target.value }))}
-              onBlur={handleApplyText}
               onKeyDown={(e) => e.key === "Enter" && handleApplyText()}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
             />
@@ -434,11 +467,21 @@ export function RawMaterialPlanningPage() {
               <input
                 type="checkbox"
                 checked={filters.onlyWithPurchaseNeed}
-                onChange={(e) => commitFilters({ ...filters, onlyWithPurchaseNeed: e.target.checked })}
+                onChange={(e) => setFilters((p) => ({ ...p, onlyWithPurchaseNeed: e.target.checked }))}
                 className="rounded border-border"
               />
               Só com necessidade de compra
             </label>
+          </div>
+          <div className="flex flex-col gap-1.5 justify-end">
+            <button
+              type="button"
+              onClick={handleApplyText}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <Search className="h-4 w-4" />
+              Pesquisar
+            </button>
           </div>
         </div>
       </section>
