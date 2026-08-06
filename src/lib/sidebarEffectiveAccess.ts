@@ -99,6 +99,13 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
     "finance.accounts_receivable",
     "finance.cost_centers",
   ],
+  /**
+   * Central de Tesouraria — entrada AUSENTE até 08/2026: "sem mapeamento →
+   * negado" escondia o menu de todo usuário não-SUPER_ADMIN mesmo com
+   * finance.treasury concedido (o admin dava a permissão e a pessoa seguia
+   * sem ver a tela). 1:1 com o recurso do contrato (finance.view não abre).
+   */
+  treasury: ["finance.treasury"],
   suppliers: ["finance.suppliers"],
   "portfolio-reconciliation": ["finance.portfolio_reconciliation"],
   guide: ["admin.guide"],
@@ -129,7 +136,14 @@ export function projectSidebarContractKeysFromLegacyBag(
     if (actions?.view) granted.add(resourceKey);
   }
 
-  for (const moduleId of SIDEBAR_MODULE_ORDER) {
+  // Itera o MAPA (não SIDEBAR_MODULE_ORDER): módulo mapeado mas fora da
+  // ordem do menu (ex.: "reports") sumia da projeção e o alias legado
+  // deixava de revelar o recurso — mesma família do bug da Tesouraria.
+  const mappedModuleIds = Object.keys(
+    SIDEBAR_MODULE_CONTRACT_KEYS
+  ) as AppModuleId[];
+
+  for (const moduleId of mappedModuleIds) {
     for (const contractKey of SIDEBAR_MODULE_CONTRACT_KEYS[moduleId] ?? []) {
       const resource = CONTRACT_BY_KEY.get(contractKey);
       if (!resource) continue;
@@ -144,7 +158,7 @@ export function projectSidebarContractKeysFromLegacyBag(
   // Mega/bleed legado que o contrato restringiu a um único recurso do mapa sidebar
   // (ex.: costs.view → só finance.opex após P09).
   const legacyOwners = new Map<string, Set<string>>();
-  for (const moduleId of SIDEBAR_MODULE_ORDER) {
+  for (const moduleId of mappedModuleIds) {
     for (const contractKey of SIDEBAR_MODULE_CONTRACT_KEYS[moduleId] ?? []) {
       const view = CONTRACT_BY_KEY.get(contractKey)?.actions.find(
         (a) => a.action === "view"

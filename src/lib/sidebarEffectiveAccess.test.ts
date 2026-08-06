@@ -89,6 +89,21 @@ describe("sidebarEffectiveAccess — personas", () => {
     assert.equal(ids.includes("employees"), false);
   });
 
+  it("Tesouraria concedida (finance.treasury.view) revela o menu — e SÓ ele", () => {
+    // Regressão do defeito real: admin dava a permissão e a pessoa seguia
+    // sem ver a tela (mapa da sidebar não tinha a entrada "treasury").
+    const keys = projectSidebarContractKeysFromLegacyBag([
+      "finance.treasury.view",
+    ]);
+    assert.ok(keys.includes("finance.treasury"));
+    const c = ctx("VIEWER", ["finance.treasury.view"]);
+    assert.equal(canViewModule("treasury", c), true);
+    assert.equal(canViewModule("finance", c), false, "não vaza p/ Financeiro");
+    const nav = buildResourceAwareSidebarNavigation(c);
+    const ids = nav.flatAccessibleItems.map((i) => i.id);
+    assert.ok(ids.includes("treasury"));
+  });
+
   it("VIEWER vazio: sidebar vazia", () => {
     const c = ctx("VIEWER", []);
     const nav = buildResourceAwareSidebarNavigation(c);

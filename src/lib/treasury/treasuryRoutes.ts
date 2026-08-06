@@ -210,6 +210,18 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEY,
     TREASURY_ACTIONS.export
   );
+  /**
+   * Visão do módulo (finance.treasury view). O Caixa é a tela principal da
+   * Tesouraria: até 08/2026 essas rotas exigiam CR+CP do Financeiro e
+   * NENHUMA permissão de Tesouraria — quem recebia só "Central de
+   * Tesouraria" via o menu (quando visível) mas o board respondia 403.
+   * O recurso é sensível por si (risk: sensitive no catálogo) e cobre a
+   * leitura consolidada de CR/CP DENTRO da Tesouraria.
+   */
+  const viewTreasury = requireResource(
+    TREASURY_RESOURCE_KEY,
+    TREASURY_ACTIONS.view
+  );
   const viewAgenda = requireResource(
     TREASURY_RESOURCE_KEYS.agenda,
     TREASURY_ACTIONS.view
@@ -776,8 +788,7 @@ export function registerTreasuryRoutes(
     TREASURY_CAIXA_PATH,
     requireAppAuth,
     moduleEnabled,
-    viewOfficialReceivables,
-    viewOfficialPayables,
+    viewTreasury,
     caixa.getBoard
   );
 
@@ -785,8 +796,7 @@ export function registerTreasuryRoutes(
     TREASURY_CAIXA_SCENARIOS_PATH,
     requireAppAuth,
     moduleEnabled,
-    viewOfficialReceivables,
-    viewOfficialPayables,
+    viewTreasury,
     caixaScenarios.getBoard
   );
 
