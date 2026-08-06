@@ -27,7 +27,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, Info, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Info, RefreshCw } from "lucide-react";
 import type { TreasuryCaixaScenariosPayload } from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
 import type {
   TreasuryScenarioDay,
@@ -1332,34 +1332,38 @@ export function TreasuryCaixaScenariosChart({
           </div>
 
           {data.salesVolumeScenarios ? (
-            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-              <SalesScenarioIndicatorCard
-                title={labels.optimistic}
-                color={SCENARIO_STYLE.optimistic.color}
-                indicators={data.salesVolumeScenarios.optimisticIndicators}
-              />
-              <SalesScenarioIndicatorCard
-                title={labels.pessimistic}
-                color={SCENARIO_STYLE.pessimistic.color}
-                indicators={data.salesVolumeScenarios.pessimisticIndicators}
-              />
-            </div>
+            <DiscreteSection
+              title="Efeito das vendas por cenário"
+              hint={`líquido no horizonte: Otimista ${money(data.salesVolumeScenarios.optimisticIndicators.netEffectInWindow)} · Pessimista ${money(data.salesVolumeScenarios.pessimisticIndicators.netEffectInWindow)}`}
+              testId="caixa-scenarios-sales-effect"
+            >
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <SalesScenarioIndicatorCard
+                  title={labels.optimistic}
+                  color={SCENARIO_STYLE.optimistic.color}
+                  indicators={data.salesVolumeScenarios.optimisticIndicators}
+                />
+                <SalesScenarioIndicatorCard
+                  title={labels.pessimistic}
+                  color={SCENARIO_STYLE.pessimistic.color}
+                  indicators={data.salesVolumeScenarios.pessimisticIndicators}
+                />
+              </div>
+            </DiscreteSection>
           ) : null}
 
           {executiveLines && executiveLines.length > 0 ? (
-            <div
-              className="mt-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[11px] text-[#111827]"
-              data-testid="caixa-scenarios-executive"
+            <DiscreteSection
+              title="Resumo executivo"
+              hint={`${executiveLines.length} conclusões do período`}
+              testId="caixa-scenarios-executive"
             >
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
-                Resumo executivo
-              </p>
               <ul className="space-y-0.5">
                 {executiveLines.map((l, i) => (
                   <li key={i}>• {l}</li>
                 ))}
               </ul>
-            </div>
+            </DiscreteSection>
           ) : null}
 
           <SalesScenarioAssumptions sales={data.salesVolumeScenarios} />
@@ -1367,14 +1371,12 @@ export function TreasuryCaixaScenariosChart({
           <OutOfHorizonNote sales={data.salesVolumeScenarios} />
 
           {memoryByScenario ? (
-            <details
-              className="mt-2 text-[11px] text-muted-foreground"
-              data-testid="caixa-scenarios-memory"
+            <DiscreteSection
+              title="Memória de cálculo"
+              hint="movimentos simulados por cenário"
+              testId="caixa-scenarios-memory"
             >
-              <summary className="cursor-pointer font-semibold">
-                Memória de cálculo — movimentos simulados por cenário
-              </summary>
-              <div className="mt-1 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <SimulatedMemoryList
                   title={labels.optimistic}
                   color={SCENARIO_STYLE.optimistic.color}
@@ -1386,38 +1388,36 @@ export function TreasuryCaixaScenariosChart({
                   entries={memoryByScenario.pessimistic}
                 />
               </div>
-            </details>
+            </DiscreteSection>
           ) : null}
 
           {data.alerts.length > 0 ? (
-            <div
-              className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
-              data-testid="caixa-scenarios-alerts"
+            <DiscreteSection
+              title="Alertas"
+              tone="warning"
+              hint={`${data.alerts.length} ${data.alerts.length === 1 ? "aviso" : "avisos"}`}
+              testId="caixa-scenarios-alerts"
             >
-              <p className="mb-1 flex items-center gap-1 font-bold uppercase text-amber-800">
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                Alertas
-              </p>
-              <ul className="space-y-0.5">
+              <ul className="space-y-0.5 text-amber-900">
                 {data.alerts.map((a, i) => (
-                  <li key={i}>{a}</li>
+                  <li key={i}>⚠ {a}</li>
                 ))}
               </ul>
-            </div>
+            </DiscreteSection>
           ) : null}
 
           {data.confidenceReasons.length > 0 ? (
-            <details className="mt-2 text-[11px] text-muted-foreground">
-              <summary className="cursor-pointer font-semibold">
-                Por que essa confiabilidade?
-              </summary>
-              <ul className="mt-1 space-y-0.5">
+            <DiscreteSection
+              title="Por que essa confiabilidade?"
+              testId="caixa-scenarios-confidence-reasons"
+            >
+              <ul className="space-y-0.5 text-muted-foreground">
                 {data.confidenceReasons.map((r, i) => (
                   <li key={i}>• {r}</li>
                 ))}
               </ul>
               {data.salesVolumeScenarios ? (
-                <p className="mt-1 text-[10px]">
+                <p className="mt-1 text-[10px] text-muted-foreground">
                   Política de cenários: vendas{" "}
                   {data.salesVolumeScenarios.optimisticIndicators.variationPct >
                   0
@@ -1429,7 +1429,7 @@ export function TreasuryCaixaScenariosChart({
                   % · base {data.salesVolumeScenarios.baseline.description}.
                 </p>
               ) : null}
-            </details>
+            </DiscreteSection>
           ) : null}
 
           {drilldownDay ? (
@@ -1498,6 +1498,65 @@ export function TreasuryCaixaScenariosChart({
  * "Premissas do cenário" — SOMENTE o que foi realmente aplicado (as frases
  * vêm prontas do backend; nada é inferido aqui).
  */
+/**
+ * Seção colapsável DISCRETA — padrão único de todos os blocos de texto
+ * abaixo do gráfico. Fechada por padrão; o `hint` resume o conteúdo numa
+ * linha para o usuário decidir se vale abrir.
+ */
+function DiscreteSection({
+  title,
+  hint,
+  tone,
+  testId,
+  children,
+}: {
+  title: string;
+  hint?: React.ReactNode;
+  tone?: "warning" | "danger";
+  testId?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      className={cn(
+        "group mt-2 rounded-lg border bg-white text-[11px]",
+        tone === "warning"
+          ? "border-amber-200"
+          : tone === "danger"
+            ? "border-red-200"
+            : "border-[#E5E7EB]"
+      )}
+      data-testid={testId}
+    >
+      <summary
+        className={cn(
+          "flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2 font-bold uppercase tracking-wide",
+          tone === "warning"
+            ? "text-amber-800"
+            : tone === "danger"
+              ? "text-red-800"
+              : "text-[#6B7280] hover:text-foreground"
+        )}
+      >
+        <ChevronDown
+          className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+        {tone ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+        <span className="text-[10px]">{title}</span>
+        {hint ? (
+          <span className="font-normal normal-case tracking-normal text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
+      </summary>
+      <div className="border-t border-black/5 px-3 py-2 text-[#111827]">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function SalesScenarioAssumptions({
   sales,
 }: {
@@ -1505,20 +1564,17 @@ function SalesScenarioAssumptions({
 }) {
   if (!sales || sales.assumptions.length === 0) return null;
   return (
-    <details
-      className="mt-2 text-[11px] text-muted-foreground"
-      data-testid="caixa-scenarios-assumptions"
-      open
+    <DiscreteSection
+      title="Premissas do cenário"
+      hint={`vendas ${sales.optimisticIndicators.variationPct > 0 ? "+" : ""}${sales.optimisticIndicators.variationPct}% / ${sales.pessimisticIndicators.variationPct}% · ${sales.baseline.description}`}
+      testId="caixa-scenarios-assumptions"
     >
-      <summary className="cursor-pointer font-semibold">
-        Premissas do cenário
-      </summary>
-      <ul className="mt-1 space-y-0.5">
+      <ul className="space-y-0.5 text-muted-foreground">
         {sales.assumptions.map((a, i) => (
           <li key={i}>• {a}</li>
         ))}
       </ul>
-    </details>
+    </DiscreteSection>
   );
 }
 
@@ -1537,18 +1593,12 @@ function SalesScenarioCoverage({
     FREIGHT: "fretes",
   };
   return (
-    <div
-      className={cn(
-        "mt-2 rounded-lg border px-3 py-2 text-[11px]",
-        c.isPartial
-          ? "border-amber-200 bg-amber-50 text-amber-900"
-          : "border-[#E5E7EB] bg-[#F9FAFB] text-[#111827]"
-      )}
-      data-testid="caixa-scenarios-coverage"
+    <DiscreteSection
+      title="Cobertura da simulação"
+      tone={c.isPartial ? "warning" : undefined}
+      hint={`${Math.round(c.variableCostRatioTotal * 100)}% dos custos variáveis identificados${c.isPartial ? " · parcial" : ""}`}
+      testId="caixa-scenarios-coverage"
     >
-      <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide">
-        Cobertura da simulação
-      </p>
       <p>
         Custos variáveis identificados:{" "}
         {Math.round(c.variableCostRatioTotal * 100)}% do valor vendido (
@@ -1562,17 +1612,17 @@ function SalesScenarioCoverage({
         .
       </p>
       {c.isPartial ? (
-        <p className="mt-0.5 font-semibold">
+        <p className="mt-0.5 font-semibold text-amber-900">
           Esta simulação não possui cobertura completa dos custos variáveis. O
           saldo apresentado pode estar otimista.
         </p>
       ) : null}
       {c.warnings.map((w, i) => (
-        <p key={i} className="mt-0.5">
+        <p key={i} className="mt-0.5 text-amber-900">
           ⚠ {w}
         </p>
       ))}
-    </div>
+    </DiscreteSection>
   );
 }
 
@@ -1599,16 +1649,17 @@ function OutOfHorizonNote({
     );
   if (parts.length === 0) return null;
   return (
-    <p
-      className="mt-2 flex items-start gap-1 text-[11px] text-muted-foreground"
-      data-testid="caixa-scenarios-out-of-horizon"
+    <DiscreteSection
+      title="Após o período exibido"
+      hint={`${money(o.inflowsBeyondHorizon)} de recebimentos ficam fora do gráfico`}
+      testId="caixa-scenarios-out-of-horizon"
     >
-      <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
-      <span>
-        Parte das vendas simuladas será recebida <strong>após o período
-        exibido</strong>: {parts.join(" · ")}. Amplie o horizonte para vê-los.
-      </span>
-    </p>
+      <p className="text-muted-foreground">
+        Parte das vendas simuladas será recebida{" "}
+        <strong>após o período exibido</strong>: {parts.join(" · ")}. Amplie o
+        horizonte para vê-los.
+      </p>
+    </DiscreteSection>
   );
 }
 
