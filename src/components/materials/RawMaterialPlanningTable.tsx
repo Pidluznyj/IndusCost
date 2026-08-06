@@ -291,21 +291,21 @@ export function RawMaterialPlanningTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead className="bg-muted/15 border-b border-border">
+        <thead className="bg-muted/50 border-b-2 border-border dark:bg-muted/40">
           <tr>
-            <th className="p-3 text-left font-semibold w-8" />
-            <th className="p-3 text-left font-semibold">Matéria-prima</th>
-            <th className="p-3 text-left font-semibold">Situação</th>
-            <th className="p-3 text-right font-semibold">Saldo atual</th>
-            <th className="p-3 text-right font-semibold">Necessidade técnica</th>
-            <th className="p-3 text-right font-semibold">Qtde sugerida</th>
-            <th className="p-3 text-left font-semibold">Comprar até</th>
-            <th className="p-3 text-right font-semibold">Valor estimado</th>
-            <th className="p-3 text-left font-semibold">Confiança</th>
+            <th className="px-3 py-3.5 text-left w-8" />
+            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Matéria-prima</th>
+            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Situação</th>
+            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Saldo atual</th>
+            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Necessidade técnica</th>
+            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Qtde sugerida</th>
+            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Comprar até</th>
+            <th className="px-3 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">Valor estimado</th>
+            <th className="px-3 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-foreground">Confiança</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {rows.map((row) => {
+          {[...rows].sort((a, b) => (b.technicalNeed ?? 0) - (a.technicalNeed ?? 0)).map((row) => {
             const expanded = expandedMaterialId === row.materialId;
             return (
               <React.Fragment key={row.materialId}>
