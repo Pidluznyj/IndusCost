@@ -70,7 +70,10 @@ function accountRow(code: string) {
   };
 }
 
-async function createHarness(movementAmount: string) {
+async function createHarness(
+  movementAmount: string,
+  extraMovements: { id: string; amount: string }[] = []
+) {
   const accountStore = createEmptyTreasuryAccountMemoryStore();
   const accountRepo = createMemoryTreasuryAccountRepository(accountStore);
   await accountRepo.create(accountRow("CXA"));
@@ -98,6 +101,16 @@ async function createHarness(movementAmount: string) {
     reconciliationStatus: "PENDING",
     reconciledAmount: "0.00",
   });
+  for (const extra of extraMovements) {
+    seedMemoryBankMovement(matchStore, {
+      id: extra.id,
+      companyCode: "EMP1",
+      accountId: "acc-1",
+      amount: extra.amount,
+      reconciliationStatus: "PENDING",
+      reconciledAmount: "0.00",
+    });
+  }
 
   const fakeTx = {
     treasuryAuditLog: {
@@ -286,6 +299,174 @@ describe("CASH-SUPPORT-P0-CONCURRENCY-001", () => {
     const movement = matchStore.movements.find((m) => m.id === "mov-1")!;
     assert.equal(movement.reconciledAmount, "0.00", "nada pode ter sido gravado");
     assert.equal(totalAllocatedToMovement(matchStore, "mov-1"), "0.00");
+  });
+
+  it("resíduo (a): mesmo título por movimentos diferentes não excede o saldo aberto", async () => {
+    // mov-1 e mov-2 são recursos distintos — não disputam o lock de movimento.
+    // Sem o advisory lock do título, ambos passariam e o título de 1.000
+    // ficaria com 1.200 conciliados.
+    const { service, matchStore } = await createHarness("1000.00", [
+      { id: "mov-2", amount: "1000.00" },
+    ]);
+
+    function inputOn(movementId: string, amount: string) {
+      return {
+        companyCode: "EMP1",
+        accountId: "acc-1",
+        matchedCivilDate: "2026-07-20",
+        justification: "Mesmo título, movimentos diferentes",
+        movements: [{ bankMovementId: movementId, amount }],
+        allocations: [
+          {
+            kind: "TITLE" as const,
+            amount,
+            memo: null,
+            nomusSide: "AR" as const,
+            officialTitleId: "title-SHARED",
+            nomusExternalId: 3001,
+            openBalance: "1000.00",
+            transferId: null,
+            transferGroupId: null,
+            ledgerEntryId: null,
+            differenceCode: null,
+          },
+        ],
+      };
+    }
+
+    const results = await Promise.allSettled([
+      service.accept(actor, inputOn("mov-1", "600.00") as never),
+      service.accept(actor, inputOn("mov-2", "600.00") as never),
+    ]);
+
+    assert.equal(
+      results.filter((r) => r.status === "fulfilled").length,
+      1,
+      "só um aceite pode caber no saldo aberto do título"
+    );
+    const rejected = results.find((r) => r.status === "rejected");
+    assert.ok(
+      (rejected as PromiseRejectedResult).reason instanceof TreasuryDomainError
+    );
+
+    // Soma das pernas TITLE ativas sobre o título compartilhado.
+    const allocated: string[] = [];
+    for (const match of matchStore.matches) {
+      if (match.status !== "MATCHED" && match.status !== "PENDING") continue;
+      for (const alloc of match.allocations) {
+        if (alloc.kind === "TITLE" && alloc.officialTitleId === "title-SHARED") {
+          allocated.push(String(alloc.amount));
+        }
+      }
+    }
+    assert.equal(sumTreasuryMoney(allocated), "600.00");
+  });
+
+  it("resíduo (a): aceites sequenciais no mesmo título respeitam o residual", async () => {
+    const { service } = await createHarness("1000.00", [
+      { id: "mov-2", amount: "1000.00" },
+    ]);
+
+    function inputOn(movementId: string, amount: string) {
+      return {
+        companyCode: "EMP1",
+        accountId: "acc-1",
+        matchedCivilDate: "2026-07-20",
+        justification: "Sequencial mesmo título",
+        movements: [{ bankMovementId: movementId, amount }],
+        allocations: [
+          {
+            kind: "TITLE" as const,
+            amount,
+            memo: null,
+            nomusSide: "AR" as const,
+            officialTitleId: "title-SEQ",
+            nomusExternalId: 3002,
+            openBalance: "1000.00",
+            transferId: null,
+            transferGroupId: null,
+            ledgerEntryId: null,
+            differenceCode: null,
+          },
+        ],
+      };
+    }
+
+    await service.accept(actor, inputOn("mov-1", "400.00") as never);
+    await service.accept(actor, inputOn("mov-2", "600.00") as never);
+
+    await assert.rejects(
+      () => service.accept(actor, inputOn("mov-2", "0.01") as never),
+      (err: unknown) => err instanceof TreasuryDomainError,
+      "título esgotado deve rejeitar nova alocação"
+    );
+  });
+
+  it("resíduo (b): mesma Idempotency-Key e mesmo payload não duplica", async () => {
+    const { service, matchStore } = await createHarness("1000.00");
+    const payload = {
+      ...acceptInput("400.00", "title-IDEM"),
+      idempotencyKey: "key-abc",
+    };
+
+    const first = await service.accept(actor, payload as never);
+    const second = await service.accept(actor, payload as never);
+
+    assert.equal(first.match.id, second.match.id, "deve devolver o mesmo match");
+    assert.equal(matchStore.matches.length, 1, "só um match gravado");
+
+    const movement = matchStore.movements.find((m) => m.id === "mov-1")!;
+    assert.equal(
+      movement.reconciledAmount,
+      "400.00",
+      "capacidade não pode ser consumida duas vezes"
+    );
+  });
+
+  it("resíduo (b): mesma Idempotency-Key com payload diferente é conflito", async () => {
+    const { service, matchStore } = await createHarness("1000.00");
+
+    await service.accept(actor, {
+      ...acceptInput("400.00", "title-IDEM"),
+      idempotencyKey: "key-xyz",
+    } as never);
+
+    await assert.rejects(
+      () =>
+        service.accept(actor, {
+          ...acceptInput("500.00", "title-IDEM"),
+          idempotencyKey: "key-xyz",
+        } as never),
+      (err: unknown) =>
+        err instanceof TreasuryDomainError && err.code === "CONFLICT",
+      "reaproveitar a chave com outro conteúdo deve dar CONFLICT"
+    );
+
+    assert.equal(matchStore.matches.length, 1);
+  });
+
+  it("resíduo (b): aceites concorrentes com a mesma chave criam um só match", async () => {
+    const { service, matchStore } = await createHarness("1000.00");
+    const payload = {
+      ...acceptInput("400.00", "title-IDEM"),
+      idempotencyKey: "key-race",
+    };
+
+    await Promise.allSettled([
+      service.accept(actor, payload as never),
+      service.accept(actor, payload as never),
+    ]);
+
+    assert.equal(matchStore.matches.length, 1, "duplo clique não pode duplicar");
+    const movement = matchStore.movements.find((m) => m.id === "mov-1")!;
+    assert.equal(movement.reconciledAmount, "400.00");
+  });
+
+  it("sem Idempotency-Key o comportamento anterior é preservado", async () => {
+    const { service, matchStore } = await createHarness("1000.00");
+    await service.accept(actor, acceptInput("300.00", "t-a") as never);
+    await service.accept(actor, acceptInput("300.00", "t-b") as never);
+    assert.equal(matchStore.matches.length, 2);
   });
 
   it("falha na validação não deixa gravação parcial", async () => {

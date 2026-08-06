@@ -9447,6 +9447,11 @@ model TreasuryReconciliationMatch {
   suggestionConfidence  String?
   suggestionReasonsJson Json?
 
+  /// Idempotência do aceite (CASH-SUPPORT-P0-CONCURRENCY-001): repetir o mesmo
+  /// comando com a mesma chave não cria um segundo match. Nullable para não
+  /// invalidar matches anteriores à coluna.
+  idempotencyKey String?
+
   version Int @default(1)
 
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
@@ -9464,6 +9469,7 @@ model TreasuryReconciliationMatch {
   movements       TreasuryReconciliationMatchMovement[]
   allocations     TreasuryReconciliationAllocation[]
 
+  @@unique([companyCode, idempotencyKey])
   @@index([companyCode, status])
   @@index([accountId, matchedCivilDate])
   @@index([status])

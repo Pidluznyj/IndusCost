@@ -109,6 +109,7 @@ export type TreasuryReconciliationMatchCreateData = {
   currency?: string;
   matchedCivilDate: string;
   justification?: string | null;
+  idempotencyKey?: string | null;
   suggestionKey?: string | null;
   algorithmVersion?: string | null;
   suggestionScore?: number | null;
@@ -167,6 +168,27 @@ export type TreasuryReconciliationMatchRepository = {
     movementIds: readonly string[],
     db?: TreasuryReconciliationMatchDb
   ): Promise<void>;
+  /**
+   * Advisory lock transacional por título oficial. O título é do Nomus e não
+   * tem linha local a bloquear com `FOR UPDATE` — o lock é nomeado.
+   * `pg_advisory_xact_lock` é liberado no commit/rollback, sem unlock manual.
+   * Chaves aplicadas em ordem determinística.
+   */
+  lockTitlesForUpdate(
+    keys: readonly { key1: number; key2: number }[],
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<void>;
+  /** Match já criado com esta chave de idempotência (qualquer status). */
+  findByIdempotencyKey(
+    companyCode: string,
+    idempotencyKey: string,
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<TreasuryReconciliationMatchRow | null>;
+  /** Já alocado (kind TITLE) por matches ativos, por `officialTitleId`. */
+  sumActiveAllocatedByTitleIds(
+    titleIds: readonly string[],
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<Map<string, string>>;
   sumActiveAllocatedByMovementIds(
     movementIds: readonly string[],
     db?: TreasuryReconciliationMatchDb
@@ -216,6 +238,7 @@ export function createTreasuryReconciliationMatchRepository(
           currency: (data.currency ?? "BRL") as never,
           matchedCivilDate: civilDateToUtcDate(data.matchedCivilDate),
           justification: data.justification ?? null,
+          idempotencyKey: data.idempotencyKey ?? null,
           suggestionKey: data.suggestionKey ?? null,
           algorithmVersion: data.algorithmVersion ?? null,
           suggestionScore: data.suggestionScore ?? null,
@@ -307,6 +330,49 @@ export function createTreasuryReconciliationMatchRepository(
         ORDER BY id
         FOR UPDATE
       `;
+    },
+
+    async lockTitlesForUpdate(keys, db = prisma) {
+      const ordered = [...keys].sort(
+        (a, b) => a.key1 - b.key1 || a.key2 - b.key2
+      );
+      for (const { key1, key2 } of ordered) {
+        await db.$queryRaw`SELECT pg_advisory_xact_lock(${key1}::int, ${key2}::int)`;
+      }
+    },
+
+    async findByIdempotencyKey(companyCode, idempotencyKey, db = prisma) {
+      const row = await db.treasuryReconciliationMatch.findFirst({
+        where: {
+          companyCode: companyCode.trim(),
+          idempotencyKey: idempotencyKey.trim(),
+        },
+        include: includeAll,
+      });
+      return row ? mapRow(row as never) : null;
+    },
+
+    async sumActiveAllocatedByTitleIds(titleIds, db = prisma) {
+      const ids = [...new Set(titleIds.map((i) => i.trim()).filter(Boolean))];
+      const map = new Map<string, string>();
+      if (ids.length === 0) return map;
+      const rows = await db.treasuryReconciliationAllocation.findMany({
+        where: {
+          kind: "TITLE",
+          officialTitleId: { in: ids },
+          match: { status: { in: ["MATCHED", "PENDING"] } },
+        },
+        select: { officialTitleId: true, amount: true },
+      });
+      for (const row of rows) {
+        if (!row.officialTitleId) continue;
+        const prev = map.get(row.officialTitleId) ?? "0.00";
+        map.set(
+          row.officialTitleId,
+          new Prisma.Decimal(prev).add(row.amount).toFixed(2)
+        );
+      }
+      return map;
     },
 
     async sumActiveAllocatedByMovementIds(movementIds, db = prisma) {

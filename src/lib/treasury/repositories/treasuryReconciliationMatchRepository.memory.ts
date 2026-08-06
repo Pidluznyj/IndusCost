@@ -86,6 +86,7 @@ export function createMemoryTreasuryReconciliationMatchRepository(
         currency: data.currency ?? "BRL",
         matchedCivilDate: parseCivil(data.matchedCivilDate),
         justification: data.justification ?? null,
+        idempotencyKey: data.idempotencyKey ?? null,
         suggestionKey: data.suggestionKey ?? null,
         algorithmVersion: data.algorithmVersion ?? null,
         suggestionScore: data.suggestionScore ?? null,
@@ -152,6 +153,36 @@ export function createMemoryTreasuryReconciliationMatchRepository(
     // A garantia de capacidade continua vindo da revalidação dentro da
     // transação, que o serviço executa em qualquer repositório.
     async lockMovementsForUpdate() {},
+    async lockTitlesForUpdate() {},
+
+    async findByIdempotencyKey(companyCode, idempotencyKey) {
+      const row = store.matches.find(
+        (m) =>
+          m.companyCode === companyCode.trim() &&
+          m.idempotencyKey === idempotencyKey.trim()
+      );
+      return row ? cloneMatch(row) : null;
+    },
+
+    async sumActiveAllocatedByTitleIds(titleIds) {
+      const map = new Map<string, string>();
+      for (const match of store.matches) {
+        if (match.status !== "MATCHED" && match.status !== "PENDING") continue;
+        for (const alloc of match.allocations) {
+          if (alloc.kind !== "TITLE" || !alloc.officialTitleId) continue;
+          if (!titleIds.includes(alloc.officialTitleId)) continue;
+          const prev = map.get(alloc.officialTitleId) ?? "0.00";
+          map.set(
+            alloc.officialTitleId,
+            addTreasuryMoney(
+              prev,
+              normalizeTreasuryMoneyString(String(alloc.amount))
+            )
+          );
+        }
+      }
+      return map;
+    },
 
     async sumActiveAllocatedByMovementIds(movementIds) {
       const map = new Map<string, string>();

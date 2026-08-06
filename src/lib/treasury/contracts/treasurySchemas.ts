@@ -3332,6 +3332,8 @@ export type TreasuryReconciliationAcceptInput = {
   justification: string | null;
   movements: TreasuryReconciliationAcceptMovementInput[];
   allocations: TreasuryReconciliationAcceptAllocationInput[];
+  /** Idempotência do aceite — repetir com a mesma chave não cria outro match. */
+  idempotencyKey?: string | null;
   suggestionKey: string | null;
   algorithmVersion: string | null;
   suggestionScore: number | null;
@@ -3504,6 +3506,11 @@ export function parseTreasuryReconciliationAcceptInput(
     justification,
     movements,
     allocations,
+    idempotencyKey: parseTreasuryBoundedString(
+      body.idempotencyKey,
+      "idempotencyKey",
+      { required: false }
+    ),
     suggestionKey: parseTreasuryBoundedString(
       body.suggestionKey,
       "suggestionKey",

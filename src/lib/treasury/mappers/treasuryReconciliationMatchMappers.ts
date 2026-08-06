@@ -54,6 +54,7 @@ export type TreasuryReconciliationMatchRow = {
   currency: string;
   matchedCivilDate: Date | string;
   justification: string | null;
+  idempotencyKey?: string | null;
   suggestionKey: string | null;
   algorithmVersion: string | null;
   suggestionScore: number | null;

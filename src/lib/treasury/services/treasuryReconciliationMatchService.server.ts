@@ -26,9 +26,11 @@ import {
   assertTreasuryReconciliationMovementCapacity,
   assertTreasuryReconciliationReverseConfirmPhrase,
   assertTreasuryReconciliationTitleOpenBalances,
+  assertTreasuryReconciliationTitleResidual,
   deriveTreasuryBankMovementReconciliationStatus,
   TREASURY_RECONCILIATION_DOES_NOT_REALIZE_OFFICIAL,
 } from "../domain/treasuryReconciliationMatchRules.js";
+import { buildTreasuryReconciliationTitleAdvisoryLockKeys } from "../domain/treasuryReconciliationTitleLock.js";
 import { toTreasuryReconciliationMatchDto } from "../mappers/treasuryReconciliationMatchMappers.js";
 import type { TreasuryReconciliationMatchRow } from "../mappers/treasuryReconciliationMatchMappers.js";
 import {
@@ -163,6 +165,38 @@ function assertCanReverse(actor: TreasuryReconciliationMatchActor) {
       "Sem permissão específica para reverter conciliação bancária."
     );
   }
+}
+
+/**
+ * Assinatura financeira do aceite, para decidir se uma repetição com a mesma
+ * Idempotency-Key é o MESMO comando (devolve o anterior) ou outro comando
+ * reaproveitando a chave (conflito). Considera só o que muda dinheiro:
+ * conta, data, movimentos e alocações. Ordena para não depender da ordem
+ * em que o cliente montou as listas.
+ */
+function buildTreasuryReconciliationAcceptFingerprint(input: {
+  accountId: string;
+  matchedCivilDate: string;
+  movements: readonly { bankMovementId: string; amount: string }[];
+  allocations: readonly {
+    kind: string;
+    amount: string;
+    nomusSide?: string | null;
+    officialTitleId?: string | null;
+  }[];
+}): string {
+  const movements = input.movements
+    .map((m) => `${m.bankMovementId.trim()}:${normalizeTreasuryMoneyString(m.amount)}`)
+    .sort()
+    .join(",");
+  const allocations = input.allocations
+    .map(
+      (a) =>
+        `${a.kind}:${normalizeTreasuryMoneyString(a.amount)}:${a.nomusSide ?? ""}:${a.officialTitleId?.trim() ?? ""}`
+    )
+    .sort()
+    .join(",");
+  return `${input.accountId.trim()}|${input.matchedCivilDate}|${movements}|${allocations}`;
 }
 
 function actorCtx(actor: TreasuryReconciliationMatchActor) {
@@ -366,8 +400,38 @@ export function createTreasuryReconciliationMatchService(deps: {
       assertTreasuryReconciliationTitleOpenBalances(input.allocations);
 
       const movementIds = input.movements.map((m) => m.bankMovementId.trim());
+      const idempotencyKey = input.idempotencyKey?.trim() || null;
+      const requestFingerprint = idempotencyKey
+        ? buildTreasuryReconciliationAcceptFingerprint(input)
+        : null;
 
       const created = await runInTransaction(async (tx) => {
+        // Idempotência: repetir o mesmo comando não pode criar outro match.
+        // Mesma chave + mesmo payload devolve o resultado anterior; mesma
+        // chave com payload diferente é conflito — não é retry, é outro
+        // comando reaproveitando a chave.
+        if (idempotencyKey) {
+          const existing = await matchRepo.findByIdempotencyKey(
+            input.companyCode.trim(),
+            idempotencyKey,
+            tx as never
+          );
+          if (existing) {
+            const existingDto = toTreasuryReconciliationMatchDto(existing);
+            if (
+              buildTreasuryReconciliationAcceptFingerprint(existingDto) !==
+              requestFingerprint
+            ) {
+              throw new TreasuryDomainError(
+                "CONFLICT",
+                "Idempotency-Key já usada com outro conteúdo.",
+                "idempotencyKey"
+              );
+            }
+            return existingDto;
+          }
+        }
+
         // CASH-SUPPORT-P0-CONCURRENCY-001 — a capacidade só vale se for lida
         // DEPOIS do lock e DENTRO da transação que grava. Ler antes (como era)
         // deixa dois aceites concorrentes enxergarem a mesma capacidade livre
@@ -375,6 +439,48 @@ export function createTreasuryReconciliationMatchService(deps: {
         // determinística de id, então requisições que disputam o mesmo
         // conjunto de movimentos serializam sem deadlock.
         await matchRepo.lockMovementsForUpdate(movementIds, tx as never);
+
+        // Resíduo "a" do mesmo P0: o título é oficial do Nomus e não tem linha
+        // local para `FOR UPDATE`. Sem advisory lock nomeado, dois aceites
+        // sobre o MESMO título com movimentos DIFERENTES não disputam recurso
+        // algum e estouram o saldo aberto quando somados.
+        const titleAllocations = input.allocations.filter(
+          (a) => a.kind === "TITLE" && a.officialTitleId
+        );
+        const requestedByTitle = new Map<string, string>();
+        const openBalanceByTitle = new Map<string, string | null>();
+        for (const alloc of titleAllocations) {
+          const titleId = alloc.officialTitleId!.trim();
+          requestedByTitle.set(
+            titleId,
+            addTreasuryMoney(requestedByTitle.get(titleId) ?? "0.00", alloc.amount)
+          );
+          if (!openBalanceByTitle.has(titleId)) {
+            openBalanceByTitle.set(titleId, alloc.openBalance ?? null);
+          }
+        }
+
+        if (requestedByTitle.size > 0) {
+          await matchRepo.lockTitlesForUpdate(
+            titleAllocations.map((a) =>
+              buildTreasuryReconciliationTitleAdvisoryLockKeys(
+                input.companyCode.trim(),
+                a.nomusSide ?? "",
+                a.officialTitleId!.trim()
+              )
+            ),
+            tx as never
+          );
+
+          assertTreasuryReconciliationTitleResidual({
+            requestedByTitle,
+            openBalanceByTitle,
+            alreadyAllocatedByTitle: await matchRepo.sumActiveAllocatedByTitleIds(
+              [...requestedByTitle.keys()],
+              tx as never
+            ),
+          });
+        }
 
         const already = await matchRepo.sumActiveAllocatedByMovementIds(
           movementIds,
@@ -456,6 +562,7 @@ export function createTreasuryReconciliationMatchService(deps: {
             matchedAmount: balanced.matchedAmount,
             matchedCivilDate: input.matchedCivilDate,
             justification: input.justification,
+            idempotencyKey,
             suggestionKey: input.suggestionKey,
             algorithmVersion: input.algorithmVersion,
             suggestionScore: input.suggestionScore,

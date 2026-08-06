@@ -339,6 +339,39 @@ export function assertTreasuryReconciliationTitleOpenBalances(
   }
 }
 
+/**
+ * Anti-excesso do título considerando o que JÁ está alocado por outros matches
+ * ativos — complementa `assertTreasuryReconciliationTitleOpenBalances`, que só
+ * enxerga as pernas do próprio draft.
+ *
+ * Exigido por CASH-SUPPORT-P0-CONCURRENCY-001 (resíduo "a"): sem isto, dois
+ * aceites concorrentes sobre o mesmo título com movimentos diferentes passam
+ * individualmente e estouram o saldo aberto quando somados. Deve rodar DENTRO
+ * da transação, depois do advisory lock do título.
+ */
+export function assertTreasuryReconciliationTitleResidual(input: {
+  /** Chave do título → soma pedida neste draft. */
+  requestedByTitle: ReadonlyMap<string, TreasuryMoneyString>;
+  /** Chave do título → saldo aberto informado. */
+  openBalanceByTitle: ReadonlyMap<string, TreasuryMoneyString | null>;
+  /** Chave do título → já alocado por matches ativos (lido sob lock). */
+  alreadyAllocatedByTitle: ReadonlyMap<string, TreasuryMoneyString>;
+}): void {
+  for (const [titleId, requested] of input.requestedByTitle) {
+    const open = input.openBalanceByTitle.get(titleId) ?? null;
+    if (open == null || open === "") continue;
+    const already = input.alreadyAllocatedByTitle.get(titleId) ?? "0.00";
+    const total = addTreasuryMoney(already, requested);
+    if (compareTreasuryMoney(total, normalizeTreasuryMoneyString(open)) > 0) {
+      throw new TreasuryDomainError(
+        "VALIDATION_ERROR",
+        `Título ${titleId} já possui ${already} conciliado; alocar ${requested} excede o saldo aberto de ${open}.`,
+        "allocations"
+      );
+    }
+  }
+}
+
 export function assertTreasuryReconciliationMatchVersion(
   currentVersion: number,
   expectedVersion: number
