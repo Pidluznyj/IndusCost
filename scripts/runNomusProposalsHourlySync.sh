@@ -47,6 +47,9 @@ echo "STARTED_AT=$(date -Iseconds)"
 cd "$APP_DIR"
 
 export NOMUS_SYNC_LOG_DIR="$LOG_DIR"
+# Mesma convenção de NOMUS_AR_RUNNER_LOG: dá ao processo Node o caminho do
+# próprio log, para o IntegrationRun apontar pro log real desta execução.
+export NOMUS_PROPOSALS_RUNNER_LOG="$RUN_LOG"
 
 echo
 echo "=== EXECUÇÃO (orquestrador --only=proposals; reusa sync:nomus:proposals:${MODE}) ==="

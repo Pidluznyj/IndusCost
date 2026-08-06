@@ -95,26 +95,101 @@ export type FetchNomusJsonOptions = {
   maxRetries?: number;
   retryBaseMs?: number;
   logPrefix?: string;
-  /** Timeout por tentativa (ms). `0` desliga. Default: `NOMUS_HTTP_TIMEOUT_MS` ou sem timeout. */
+  /**
+   * Timeout por tentativa (ms). Passar explicitamente sobrepõe
+   * `NOMUS_HTTP_TIMEOUT_MS`. Sem valor válido em nenhum dos dois, usa
+   * `NOMUS_HTTP_TIMEOUT_DEFAULT_MS` — nunca fica sem timeout por omissão.
+   */
   timeoutMs?: number;
   /** Injetável em testes (ex.: sleep mock). */
   sleepFn?: (ms: number) => Promise<void>;
   /** Chamado quando um status recuperável dispara retry (ex.: 429). */
   onRetryableStatus?: (info: { status: number; attempt: number }) => void;
+  /** Contexto de log opcional (ex.: recurso/página) — aparece nas linhas HTTP_*. */
+  logContext?: Record<string, string | number>;
 };
 
-function resolveNomusHttpTimeoutMs(optionsTimeout?: number): number {
-  if (optionsTimeout != null && Number.isFinite(optionsTimeout)) {
-    return Math.max(0, Math.trunc(optionsTimeout));
+/** Limites de `NOMUS_HTTP_TIMEOUT_MS` — nenhuma tentativa HTTP pode esperar indefinidamente. */
+export const NOMUS_HTTP_TIMEOUT_MIN_MS = 1000;
+export const NOMUS_HTTP_TIMEOUT_DEFAULT_MS = 60000;
+export const NOMUS_HTTP_TIMEOUT_MAX_MS = 300000;
+
+/**
+ * Resolve e valida o timeout por tentativa. Nunca retorna 0/desligado por
+ * omissão — ausência ou valor inválido caem no default seguro (60s), com
+ * aviso técnico (sem valores de env sensíveis) quando o valor informado era
+ * inválido (não quando estava simplesmente ausente).
+ */
+export function resolveNomusHttpTimeoutMs(
+  optionsTimeout?: number,
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const clamp = (n: number) =>
+    Math.min(NOMUS_HTTP_TIMEOUT_MAX_MS, Math.max(NOMUS_HTTP_TIMEOUT_MIN_MS, Math.trunc(n)));
+
+  if (optionsTimeout != null) {
+    if (Number.isFinite(optionsTimeout) && optionsTimeout > 0) return clamp(optionsTimeout);
+    console.warn(
+      `[nomus] timeoutMs inválido passado por opção (${JSON.stringify(optionsTimeout)}); usando padrão de ${NOMUS_HTTP_TIMEOUT_DEFAULT_MS}ms.`
+    );
+    return NOMUS_HTTP_TIMEOUT_DEFAULT_MS;
   }
-  const fromEnv = Number.parseInt((process.env.NOMUS_HTTP_TIMEOUT_MS ?? "").trim(), 10);
-  return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : 0;
+
+  const raw = (env.NOMUS_HTTP_TIMEOUT_MS ?? "").trim();
+  if (!raw) return NOMUS_HTTP_TIMEOUT_DEFAULT_MS;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(parsed) !== raw) {
+    console.warn(
+      `[nomus] NOMUS_HTTP_TIMEOUT_MS inválido (não é inteiro positivo); usando padrão de ${NOMUS_HTTP_TIMEOUT_DEFAULT_MS}ms.`
+    );
+    return NOMUS_HTTP_TIMEOUT_DEFAULT_MS;
+  }
+  return clamp(parsed);
 }
 
 function isAbortError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const name = (error as { name?: unknown }).name;
   return name === "AbortError" || name === "TimeoutError";
+}
+
+/** Códigos de erro de socket/DNS considerados transitórios — elegíveis a retry, nunca permanentes. */
+const TRANSIENT_NETWORK_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EPIPE",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function errorCode(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+/**
+ * Erro transitório de rede (reset de conexão, DNS temporário, etc.) — nunca
+ * um AbortError (esse é tratado por `isAbortError`, que sempre tem origem no
+ * timeout interno desta função, já que nenhum outro AbortSignal externo é
+ * encaminhado ao fetch aqui).
+ */
+function isTransientNetworkError(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  const direct = errorCode(error);
+  if (direct && TRANSIENT_NETWORK_ERROR_CODES.has(direct)) return true;
+  const cause = error && typeof error === "object" ? (error as { cause?: unknown }).cause : null;
+  const causeCode = errorCode(cause);
+  return causeCode != null && TRANSIENT_NETWORK_ERROR_CODES.has(causeCode);
+}
+
+function formatLogContext(context?: Record<string, string | number>): string {
+  if (!context) return "";
+  const parts = Object.entries(context).map(([k, v]) => `${k}=${v}`);
+  return parts.length > 0 ? ` ${parts.join(" ")}` : "";
 }
 
 export async function fetchNomusJson(
@@ -129,23 +204,35 @@ export async function fetchNomusJson(
     options.retryBaseMs ??
     (Number.isFinite(envRetryBase) && envRetryBase >= 0 ? envRetryBase : 700);
   const logPrefix = options.logPrefix ?? "[nomus]";
+  // `timeoutMs` nunca é 0 aqui — resolveNomusHttpTimeoutMs sempre devolve um
+  // valor positivo (default 60000ms), então TODA tentativa tem AbortController.
   const timeoutMs = resolveNomusHttpTimeoutMs(options.timeoutMs);
   const sleepFn = options.sleepFn ?? sleep;
   const headers = buildNomusHeaders();
+  const ctx = formatLogContext(options.logContext);
+  const safeUrl = redactNomusUrlForLog(url);
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const controller = timeoutMs > 0 ? new AbortController() : null;
-    const timer =
-      controller != null
-        ? setTimeout(() => controller.abort(), timeoutMs)
-        : null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const attemptStartedAt = Date.now();
+    console.log(
+      `${logPrefix} HTTP_START url=${safeUrl}${ctx} attempt=${attempt + 1}/${maxRetries + 1} timeoutMs=${timeoutMs}`
+    );
     try {
       const res = await fetch(url, {
         method: "GET",
         headers,
-        signal: controller?.signal,
+        signal: controller.signal,
       });
-      if (res.ok) return res.json();
+      if (res.ok) {
+        const json = await res.json();
+        const elapsedMs = Date.now() - attemptStartedAt;
+        console.log(
+          `${logPrefix} HTTP_SUCCESS url=${safeUrl}${ctx} status=${res.status} elapsedMs=${elapsedMs}`
+        );
+        return json;
+      }
 
       const body = await res.text().catch(() => "");
       if (res.status === 429 && attempt < maxRetries) {
@@ -167,7 +254,7 @@ export async function fetchNomusJson(
               : retryBaseMs * Math.pow(2, attempt);
         }
         console.warn(
-          `${logPrefix} rate limit 429 em ${redactNomusUrlForLog(url)}; aguardando ${(waitMs / 1000).toFixed(0)}s.`
+          `${logPrefix} HTTP_RETRY url=${safeUrl}${ctx} reason=rate_limit_429 nextAttempt=${attempt + 2}/${maxRetries + 1} waitMs=${waitMs}`
         );
         await sleepFn(waitMs);
         continue;
@@ -176,28 +263,46 @@ export async function fetchNomusJson(
       const retryable = res.status === 429 || res.status >= 500;
       if (!retryable || attempt === maxRetries) {
         const safeBody = sanitizeNomusErrorBody(body);
+        console.warn(
+          `${logPrefix} HTTP_FAILED url=${safeUrl}${ctx} reason=http_${res.status} attempts=${attempt + 1}`
+        );
         throw new Error(
-          `Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${safeBody || "(sem corpo)"}`
+          `Falha HTTP ${res.status} em ${safeUrl}: ${safeBody || "(sem corpo)"}`
         );
       }
       options.onRetryableStatus?.({ status: res.status, attempt });
+      console.warn(
+        `${logPrefix} HTTP_RETRY url=${safeUrl}${ctx} reason=http_${res.status} nextAttempt=${attempt + 2}/${maxRetries + 1} waitMs=${retryBaseMs * Math.pow(2, attempt)}`
+      );
       await sleepFn(retryBaseMs * Math.pow(2, attempt));
     } catch (error) {
-      if (isAbortError(error)) {
+      if (error instanceof Error && error.message.startsWith("Falha HTTP")) throw error;
+
+      const timeout = isAbortError(error);
+      const transientNetwork = !timeout && isTransientNetworkError(error);
+      if (timeout || transientNetwork) {
+        const reason = timeout ? "timeout" : `network_${errorCode(error) ?? errorCode((error as { cause?: unknown })?.cause) ?? "transient"}`;
         if (attempt < maxRetries) {
           console.warn(
-            `${logPrefix} timeout após ${timeoutMs}ms em ${redactNomusUrlForLog(url)}; retry ${attempt + 1}/${maxRetries}.`
+            `${logPrefix} HTTP_RETRY url=${safeUrl}${ctx} reason=${reason} nextAttempt=${attempt + 2}/${maxRetries + 1} waitMs=${retryBaseMs * Math.pow(2, attempt)}`
           );
           await sleepFn(retryBaseMs * Math.pow(2, attempt));
           continue;
         }
+        console.warn(
+          `${logPrefix} HTTP_FAILED url=${safeUrl}${ctx} reason=${reason} attempts=${attempt + 1}`
+        );
         throw new Error(
-          `Timeout HTTP após ${timeoutMs}ms em ${redactNomusUrlForLog(url)}`
+          timeout
+            ? `Timeout HTTP após ${timeoutMs}ms em ${safeUrl}`
+            : `Falha de rede transitória (${reason}) em ${safeUrl} após ${attempt + 1} tentativa(s)`
         );
       }
+      // Erro permanente (ex.: TypeError de programação, DNS inexistente sem
+      // código transitório) — nunca faz retry indiscriminado.
       throw error;
     } finally {
-      if (timer != null) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
 

@@ -8,6 +8,16 @@ import {
   formatProposalsLockBlockedLog,
   releaseProposalsSyncLock,
 } from "../src/lib/nomusProposalsSyncLock.ts";
+import { NOMUS_PROPOSALS_LOG_PREFIX } from "../src/lib/nomusProposalsSyncConstants.ts";
+import {
+  disconnectProposalsIntegrationPrisma,
+  persistProposalsIntegrationRun,
+} from "../src/lib/nomusProposalsIntegrationRun.ts";
+import {
+  buildNomusUrl,
+  fetchNomusJson,
+  resolveNomusHttpTimeoutMs,
+} from "../src/lib/nomusRestClient.ts";
 
 const prisma = new PrismaClient();
 
@@ -16,6 +26,7 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_RETRIES = 6;
 const DEFAULT_RETRY_BASE_MS = 700;
 const KNOWN_MISSING_SKU = "660.01AA";
+const LOG_PREFIX = NOMUS_PROPOSALS_LOG_PREFIX;
 
 type JsonObject = Record<string, unknown>;
 
@@ -236,65 +247,34 @@ function isProposalOnOrAfterStartDate(proposal: JsonObject, startDate: Date | nu
   return openedAt.getTime() >= startDate.getTime();
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/**
+ * Timeout aplicado a cada tentativa HTTP do sync de propostas — nunca fica
+ * pendurado indefinidamente esperando o Nomus responder (ver
+ * NOMUS_HTTP_TIMEOUT_MS em nomusRestClient.ts, mesma configuração central
+ * usada por AR/AP/NF-e/pedidos, agora também por propostas).
+ */
+const HTTP_TIMEOUT_MS = resolveNomusHttpTimeoutMs();
 
-function buildNomusHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  const token = (process.env.NOMUS_TOKEN ?? "").trim();
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const customHeaderName = (process.env.NOMUS_AUTH_HEADER_NAME ?? "").trim();
-  const customHeaderValue = (process.env.NOMUS_AUTH_HEADER_VALUE ?? "").trim();
-  if (customHeaderName && customHeaderValue) {
-    headers[customHeaderName] = customHeaderValue;
-  }
-  return headers;
-}
-
-function buildNomusUrl(baseUrl: string, resource: string): URL {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const normalizedResource = resource.replace(/^\/+/, "");
-  return new URL(normalizedResource, normalizedBase);
-}
-
-async function fetchJsonWithRetry(url: URL, maxRetries: number, retryBaseMs: number): Promise<unknown> {
-  const headers = buildNomusHeaders();
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, { method: "GET", headers });
-    if (res.ok) return res.json();
-
-    const body = await res.text().catch(() => "");
-    const isRetryable = res.status === 429 || res.status >= 500;
-    if (!isRetryable || attempt === maxRetries) {
-      throw new Error(`Falha HTTP ${res.status} em ${url.toString()}: ${body.slice(0, 300)}`);
-    }
-
-    const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
-    let tempoAteLiberarSec: number | null = null;
-
-    if (res.status === 429 && body) {
-      try {
-        const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
-        const parsedTempo = toInt(parsed.tempoAteLiberar);
-        if (parsedTempo != null && parsedTempo > 0) tempoAteLiberarSec = parsedTempo;
-      } catch {
-        tempoAteLiberarSec = null;
-      }
-    }
-
-    const waitMs =
-      tempoAteLiberarSec != null
-        ? (tempoAteLiberarSec + 2) * 1000
-        : Number.isFinite(retryAfterSec) && retryAfterSec > 0
-          ? retryAfterSec * 1000
-          : retryBaseMs * Math.pow(2, attempt);
-
-    await sleep(waitMs);
-  }
-
-  throw new Error("Estado inesperado no retry HTTP.");
+/**
+ * Wrapper fino sobre `fetchNomusJson` (helper compartilhado com
+ * AbortController/timeout já embutido) — mantém a assinatura antiga
+ * (url, maxRetries, retryBaseMs) para minimizar o diff nos call sites,
+ * mas delega toda a lógica de timeout/retry/HTTP 429/5xx/erro transitório
+ * de rede ao motor único em nomusRestClient.ts. Não é um segundo motor.
+ */
+async function fetchJsonWithRetry(
+  url: URL,
+  maxRetries: number,
+  retryBaseMs: number,
+  logContext?: Record<string, string | number>
+): Promise<unknown> {
+  return fetchNomusJson(url, {
+    maxRetries,
+    retryBaseMs,
+    timeoutMs: HTTP_TIMEOUT_MS,
+    logPrefix: LOG_PREFIX,
+    logContext,
+  });
 }
 
 function pickArrayFromUnknown(payload: unknown): unknown[] {
@@ -344,7 +324,11 @@ async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
     url.searchParams.set("pagina", String(page));
     url.searchParams.set("tamanhoPagina", String(pageSize));
 
-    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
+      resource: "propostas",
+      page,
+      pageSize,
+    });
     const arr = pickArrayFromUnknown(payload).filter(
       (entry): entry is JsonObject => !!entry && typeof entry === "object"
     );
@@ -390,7 +374,11 @@ async function fetchAllNomusProducts(baseUrl: string): Promise<JsonObject[]> {
     url.searchParams.set("pagina", String(page));
     url.searchParams.set("tamanhoPagina", String(pageSize));
 
-    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
+      resource: "produtos",
+      page,
+      pageSize,
+    });
     const arr = pickArrayFromUnknown(payload).filter(
       (entry): entry is JsonObject => !!entry && typeof entry === "object"
     );
@@ -449,11 +437,18 @@ async function mapPessoaBridgeByExternalCustomerId(
   const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
   const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
 
+  console.log(`${LOG_PREFIX} PESSOAS_BRIDGE_START totalClientes=${uniqueIds.length}`);
+  let processed = 0;
   for (const idCliente of uniqueIds) {
     const url = buildNomusUrl(baseUrl, "pessoas");
     url.searchParams.set("query", `id==${idCliente}`);
 
-    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
+      resource: "pessoas",
+      index: processed + 1,
+      total: uniqueIds.length,
+    });
+    processed += 1;
     const arr = pickArrayFromUnknown(payload);
     const pessoa =
       (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
@@ -471,8 +466,18 @@ async function fetchPricingSnapshotUnitCost(productId: string): Promise<number> 
   const baseUrl = (process.env.INDUSCOST_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
   const url = `${baseUrl}/api/products/${encodeURIComponent(productId)}/pricing-snapshot`;
 
+  // Chamada interna (IndusCost → IndusCost, não Nomus) — sem retry (não é
+  // idempotente demais nem crítica: fallback já é 0), mas ainda com timeout
+  // por tentativa. Sem isso, um hang aqui teria o MESMO sintoma do bug
+  // original: processo vivo, sem CPU, aguardando HTTP para sempre.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
     if (!res.ok) return 0;
 
     const payload = (await res.json()) as JsonObject;
@@ -480,6 +485,8 @@ async function fetchPricingSnapshotUnitCost(productId: string): Promise<number> 
     return Number.isFinite(unitCost) && unitCost > 0 ? unitCost : 0;
   } catch {
     return 0;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1000,6 +1007,11 @@ async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
   const mode: "dry" | "apply" = isApply ? "apply" : "dry";
   const startedAt = new Date();
+  // Setado pelo shell runner horário (mesma convenção de NOMUS_AR_RUNNER_LOG)
+  // para que o IntegrationRun aponte pro log real da execução. Ausente em
+  // invocação direta (`npm run sync:nomus:proposals:apply`) — tudo bem, o
+  // registro ainda é criado, só sem link de log.
+  const runnerLogFile = (process.env.NOMUS_PROPOSALS_RUNNER_LOG ?? "").trim() || null;
 
   // Concorrência (SYNC-07): serializa qualquer execução do sync de propostas —
   // CLI direto, orquestrador diário (02:00) via --only=proposals, ou cron horário.
@@ -1030,6 +1042,21 @@ async function main(): Promise<void> {
         2
       )
     );
+    // Execução ignorada por lock NUNCA é sucesso — registro oficial com
+    // status SKIPPED (não RUNNING, não SUCCESS), consistente com o critério
+    // de aceitação #12 (execução ignorada por lock não pode aparecer como
+    // sincronização bem-sucedida).
+    await persistProposalsIntegrationRun({
+      mode,
+      status: "SKIPPED",
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: 0,
+      logFile: runnerLogFile,
+      skipReason: blocked.code,
+      errorMessage: blocked.message,
+    });
     return;
   }
 
@@ -1059,6 +1086,17 @@ async function main(): Promise<void> {
           2
         )
       );
+      await persistProposalsIntegrationRun({
+        mode,
+        status: "SUCCESS",
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        exitCode: 0,
+        logFile: runnerLogFile,
+        summary: dry as unknown as Record<string, unknown>,
+        applied: null,
+      });
       return;
     }
 
@@ -1133,6 +1171,35 @@ async function main(): Promise<void> {
         2
       )
     );
+    await persistProposalsIntegrationRun({
+      mode,
+      status: "SUCCESS",
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: 0,
+      logFile: runnerLogFile,
+      summary: dry as unknown as Record<string, unknown>,
+      applied: result as unknown as Record<string, unknown>,
+    });
+  } catch (error) {
+    // Registra a falha ANTES de propagar — garante que toda execução termine
+    // num estado final auditável (nunca fica RUNNING indefinidamente), e
+    // ainda assim relança para preservar exit code != 0 (critério de
+    // aceitação #3).
+    const finishedAt = new Date();
+    const message = error instanceof Error ? error.message : String(error);
+    await persistProposalsIntegrationRun({
+      mode,
+      status: "FAILED",
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: 1,
+      logFile: runnerLogFile,
+      errorMessage: message,
+    });
+    throw error;
   } finally {
     // Sempre libera — sucesso ou erro real (que continua propagando para o
     // catch abaixo, preservando exit code != 0 em falha genuína).
@@ -1147,5 +1214,6 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await disconnectProposalsIntegrationPrisma();
   });
 

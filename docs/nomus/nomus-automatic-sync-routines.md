@@ -178,6 +178,67 @@ Instalação no crontab do host:
 37 * * * * INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusProposalsHourlySync.sh apply >> /var/log/induscost-nomus-proposals-cron.log 2>&1
 ```
 
+### Robustez HTTP (timeout por tentativa)
+
+Incidente real: em produção, uma execução ficou presa por mais de 20 minutos
+com o processo Node vivo, ~0% de CPU, conexão HTTPS estabelecida com o Nomus
+e sem log novo — o `fetch` original não tinha timeout nem `AbortSignal`, então
+uma conexão que ficasse aberta sem responder nunca disparava o retry. O cron
+horário ficou pausado até a correção abaixo.
+
+Correção: `nomusProposalsSyncV1.ts` não reimplementa mais o fetch/retry
+localmente — passou a usar o cliente HTTP compartilhado Nomus
+(`src/lib/nomusRestClient.ts::fetchNomusJson`, o mesmo já usado por AR/AP/
+NF-e/pedidos/Documentos de Saída). Esse cliente:
+
+- cria um `AbortController` por tentativa e aborta em `NOMUS_HTTP_TIMEOUT_MS`
+  (padrão **60000ms**; nunca fica sem timeout — ausente/inválido cai no
+  padrão, nunca em "desligado"; limites: mínimo 1000ms, máximo 300000ms,
+  fora da faixa é ajustado com aviso no log, nunca lança exceção nem vaza o
+  valor bruto de env);
+- trata timeout (`AbortError` interno) e erros transitórios de rede
+  (`ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, `ECONNREFUSED`, `EPIPE`,
+  `UND_ERR_SOCKET`, `UND_ERR_CONNECT_TIMEOUT` — via `error.code`/
+  `error.cause.code`) com o mesmo backoff exponencial já usado para HTTP
+  429/5xx — nunca retry indiscriminado: erro HTTP 4xx permanente continua
+  falhando na hora;
+- preserva 100% do tratamento de HTTP 429 (`tempoAteLiberar`, `Retry-After`)
+  e HTTP 5xx já existente;
+- loga progresso estruturado por tentativa: `HTTP_START` / `HTTP_SUCCESS` /
+  `HTTP_RETRY` (com motivo e próxima espera) / `HTTP_FAILED`, sempre com
+  `logPrefix=[nomus-proposals]`, sem token/Authorization no log;
+- o timer é sempre limpo (`clearTimeout` em `finally`) em sucesso, erro HTTP
+  e timeout — nunca deixa um handle pendurado.
+
+A chamada de `fetchPricingSnapshotUnitCost` (API interna do próprio
+IndusCost, não do Nomus) também ganhou `AbortController`/timeout — o mesmo
+sintoma (processo vivo, sem CPU, esperando HTTP para sempre) poderia
+acontecer ali também, mesmo não sendo uma chamada Nomus.
+
+Toda execução agora grava um `IntegrationRun` (`target="proposals"`) em
+`SUCCESS`, `FAILED` ou `SKIPPED` — nunca fica `RUNNING` indefinidamente:
+
+- **SKIPPED** — lock (próprio ou global) ocupado; `exitCode=0`,
+  `success=false` (nunca conta como sincronização bem-sucedida);
+- **SUCCESS** — dry-run ou apply concluído; contadores extraídos do próprio
+  `summary`/`applied` já produzidos pelo motor (nada recalculado só para o
+  registro);
+- **FAILED** — qualquer erro real (inclusive timeout esgotado); gravado
+  ANTES de relançar o erro, preservando `exitCode=1` para o shell/orquestrador.
+
+O runner horário (`runNomusProposalsHourlySync.sh`) agora exporta
+`NOMUS_PROPOSALS_RUNNER_LOG=$RUN_LOG` (mesma convenção de
+`NOMUS_AR_RUNNER_LOG`), para o `IntegrationRun.logFile` apontar pro log real
+da execução.
+
+**Limite total do runner**: não implementado nesta correção — não há dados
+históricos de duração normal desta rotina disponíveis nesta sessão (sem
+acesso a produção) para calibrar um valor seguro sem arriscar matar
+execuções longas legítimas. Recomendação: uma vez reativado o cron, coletar
+alguns ciclos reais de duração (via os novos `IntegrationRun.durationMs`) e
+só então avaliar um `timeout --signal=TERM --kill-after=30s` no runner
+horário, calibrado pela duração observada + margem.
+
 ## Comandos manuais equivalentes
 
 ```bash
@@ -198,5 +259,7 @@ npm run sync:nomus:proposals:hourly:apply   # roda o runner horário localmente 
 | Testes | `src/lib/nomus/nomusCanonicalSyncContract.test.ts` |
 | Runbook lifecycle | `docs/nomus/nomus-source-reconciliation-runbook.md` |
 | Propostas — constantes/lock | `src/lib/nomusProposalsSyncConstants.ts`, `src/lib/nomusProposalsSyncLock.ts` (+ `.test.ts`) |
-| Propostas — script oficial (reusado) | `scripts/nomusProposalsSyncV1.ts` |
+| Propostas — script oficial (reusado) | `scripts/nomusProposalsSyncV1.ts` (+ `nomusProposalsSyncV1Wiring.test.ts`) |
 | Propostas — runner horário | `scripts/runNomusProposalsHourlySync.sh` |
+| Propostas — auditoria (IntegrationRun) | `src/lib/nomusProposalsIntegrationRun.ts` (+ `.test.ts`) |
+| Cliente HTTP compartilhado (timeout/retry central) | `src/lib/nomusRestClient.ts` (+ `.test.ts`) |
