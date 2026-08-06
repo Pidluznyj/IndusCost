@@ -153,6 +153,20 @@ export type TreasuryReconciliationMatchRepository = {
     },
     db?: TreasuryReconciliationMatchDb
   ): Promise<TreasuryReconciliationMatchRow>;
+  /**
+   * Bloqueia as linhas dos movimentos até o fim da transação corrente
+   * (`SELECT ... FOR UPDATE`), em ordem determinística de id para não gerar
+   * deadlock entre requisições que disputem o mesmo conjunto.
+   *
+   * Exigido por CASH-SUPPORT-P0-CONCURRENCY-001: sem o lock, dois aceites
+   * concorrentes leem a mesma capacidade livre e ambos gravam, estourando o
+   * valor do movimento. Só faz sentido dentro de `$transaction` — fora dela o
+   * lock é liberado imediatamente.
+   */
+  lockMovementsForUpdate(
+    movementIds: readonly string[],
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<void>;
   sumActiveAllocatedByMovementIds(
     movementIds: readonly string[],
     db?: TreasuryReconciliationMatchDb
@@ -281,6 +295,18 @@ export function createTreasuryReconciliationMatchRepository(
         }
         throw err;
       }
+    },
+
+    async lockMovementsForUpdate(movementIds, db = prisma) {
+      const ids = [...new Set(movementIds.map((i) => i.trim()).filter(Boolean))]
+        .sort();
+      if (ids.length === 0) return;
+      await db.$queryRaw`
+        SELECT id FROM "TreasuryBankMovement"
+        WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+        ORDER BY id
+        FOR UPDATE
+      `;
     },
 
     async sumActiveAllocatedByMovementIds(movementIds, db = prisma) {

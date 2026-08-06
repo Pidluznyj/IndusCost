@@ -366,63 +366,88 @@ export function createTreasuryReconciliationMatchService(deps: {
       assertTreasuryReconciliationTitleOpenBalances(input.allocations);
 
       const movementIds = input.movements.map((m) => m.bankMovementId.trim());
-      const already =
-        await matchRepo.sumActiveAllocatedByMovementIds(movementIds);
 
-      for (const mov of input.movements) {
-        const snap = await matchRepo.findMovementSnapshot(
-          mov.bankMovementId.trim()
+      const created = await runInTransaction(async (tx) => {
+        // CASH-SUPPORT-P0-CONCURRENCY-001 — a capacidade só vale se for lida
+        // DEPOIS do lock e DENTRO da transação que grava. Ler antes (como era)
+        // deixa dois aceites concorrentes enxergarem a mesma capacidade livre
+        // e estourarem o valor do movimento. O lock é adquirido em ordem
+        // determinística de id, então requisições que disputam o mesmo
+        // conjunto de movimentos serializam sem deadlock.
+        await matchRepo.lockMovementsForUpdate(movementIds, tx as never);
+
+        const already = await matchRepo.sumActiveAllocatedByMovementIds(
+          movementIds,
+          tx as never
         );
-        if (!snap) {
-          throw new TreasuryDomainError(
-            "NOT_FOUND",
-            "Movimento bancário não encontrado.",
-            "movements"
+
+        // O mesmo movimento pode aparecer em mais de uma perna da requisição.
+        // Validar cada perna isoladamente contra a mesma base deixaria passar
+        // um total que estoura a capacidade — por isso agrega antes de validar
+        // e grava uma vez por movimento.
+        const requestedByMovement = new Map<string, string>();
+        for (const mov of input.movements) {
+          const id = mov.bankMovementId.trim();
+          requestedByMovement.set(
+            id,
+            addTreasuryMoney(requestedByMovement.get(id) ?? "0.00", mov.amount)
           );
         }
-        if (snap.accountId !== account.id) {
-          throw new TreasuryDomainError(
-            "VALIDATION_ERROR",
-            "Movimento não pertence à conta do match.",
-            "movements"
+
+        for (const [movementId, requestedAmount] of requestedByMovement) {
+          const snap = await matchRepo.findMovementSnapshot(
+            movementId,
+            tx as never
           );
-        }
-        if (snap.companyCode !== input.companyCode.trim()) {
-          throw new TreasuryDomainError(
-            "VALIDATION_ERROR",
-            "Movimento de outra empresa.",
-            "movements"
-          );
-        }
-        if (snap.reconciliationStatus === "IGNORED") {
-          throw new TreasuryDomainError(
-            "VALIDATION_ERROR",
-            "Movimento ignorado não pode ser conciliado.",
-            "movements"
-          );
-        }
-        if (snap.reconciliationStatus === "MATCHED") {
-          const used = already.get(snap.id) ?? "0.00";
-          if (
-            normalizeTreasuryMoneyString(used) ===
-            normalizeTreasuryMoneyString(snap.amount)
-          ) {
+          if (!snap) {
             throw new TreasuryDomainError(
-              "VALIDATION_ERROR",
-              "Movimento já integralmente conciliado.",
+              "NOT_FOUND",
+              "Movimento bancário não encontrado.",
               "movements"
             );
           }
+          if (snap.accountId !== account.id) {
+            throw new TreasuryDomainError(
+              "VALIDATION_ERROR",
+              "Movimento não pertence à conta do match.",
+              "movements"
+            );
+          }
+          if (snap.companyCode !== input.companyCode.trim()) {
+            throw new TreasuryDomainError(
+              "VALIDATION_ERROR",
+              "Movimento de outra empresa.",
+              "movements"
+            );
+          }
+          if (snap.reconciliationStatus === "IGNORED") {
+            throw new TreasuryDomainError(
+              "VALIDATION_ERROR",
+              "Movimento ignorado não pode ser conciliado.",
+              "movements"
+            );
+          }
+          if (snap.reconciliationStatus === "MATCHED") {
+            const used = already.get(snap.id) ?? "0.00";
+            if (
+              normalizeTreasuryMoneyString(used) ===
+              normalizeTreasuryMoneyString(snap.amount)
+            ) {
+              throw new TreasuryDomainError(
+                "VALIDATION_ERROR",
+                "Movimento já integralmente conciliado.",
+                "movements"
+              );
+            }
+          }
+          assertTreasuryReconciliationMovementCapacity({
+            movementAmount: snap.amount,
+            alreadyReconciledActive: already.get(snap.id) ?? "0.00",
+            allocateAmount: requestedAmount,
+            field: "movements.amount",
+          });
         }
-        assertTreasuryReconciliationMovementCapacity({
-          movementAmount: snap.amount,
-          alreadyReconciledActive: already.get(snap.id) ?? "0.00",
-          allocateAmount: mov.amount,
-          field: "movements.amount",
-        });
-      }
 
-      const created = await runInTransaction(async (tx) => {
         const row = await matchRepo.create(
           {
             companyCode: input.companyCode.trim(),
@@ -459,11 +484,10 @@ export function createTreasuryReconciliationMatchService(deps: {
           tx as never
         );
 
-        for (const mov of input.movements) {
-          const id = mov.bankMovementId.trim();
+        for (const [id, requestedAmount] of requestedByMovement) {
           const snap = (await matchRepo.findMovementSnapshot(id, tx as never))!;
           const prevActive = already.get(id) ?? "0.00";
-          const nextReconciled = addTreasuryMoney(prevActive, mov.amount);
+          const nextReconciled = addTreasuryMoney(prevActive, requestedAmount);
           const status = deriveTreasuryBankMovementReconciliationStatus({
             amount: snap.amount,
             reconciledAmount: nextReconciled,

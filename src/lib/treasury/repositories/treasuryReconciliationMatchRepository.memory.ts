@@ -148,6 +148,11 @@ export function createMemoryTreasuryReconciliationMatchRepository(
       return cloneMatch(row);
     },
 
+    // Sem banco não há linha a bloquear; o store em memória é single-threaded.
+    // A garantia de capacidade continua vindo da revalidação dentro da
+    // transação, que o serviço executa em qualquer repositório.
+    async lockMovementsForUpdate() {},
+
     async sumActiveAllocatedByMovementIds(movementIds) {
       const map = new Map<string, string>();
       for (const match of store.matches) {
