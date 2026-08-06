@@ -18,6 +18,7 @@ import { MaterialStockConferencePage } from "@/src/components/materials/Material
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
 import { MaterialsMarketIntelligenceReportsPage } from "@/src/components/materials/MaterialsMarketIntelligenceReportsPage";
+import { RawMaterialPlanningPage } from "@/src/components/materials/RawMaterialPlanningPage";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { usePermissions } from "@/src/hooks/usePermissions";
 
@@ -68,9 +69,11 @@ export function MaterialsModule() {
     !location.pathname.endsWith("/reports");
   const onCatalog = location.pathname === "/materials" || location.pathname === "/materials/";
   const onStockConference = location.pathname.startsWith("/materials/stock-conference");
+  const onPlanning = location.pathname.startsWith("/materials/planning");
   const canCatalog = visibleIds.has("catalog");
   const canStockConference = visibleIds.has("stockConference");
   const canMi = visibleIds.has("marketIntelligence");
+  const canPlanning = visibleIds.has("planning");
 
   if (onCatalog && !canCatalog) {
     return <UnauthorizedAccessGate forceDenied />;
@@ -85,6 +88,9 @@ export function MaterialsModule() {
     onMiDetail &&
     !permissions.canViewTabResource(MARKET_INTELLIGENCE_SECTION_KEYS.material360)
   ) {
+    return <UnauthorizedAccessGate forceDenied />;
+  }
+  if (onPlanning && !canPlanning) {
     return <UnauthorizedAccessGate forceDenied />;
   }
 
@@ -105,7 +111,8 @@ export function MaterialsModule() {
                 cn(
                   "inline-flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap",
                   (section.id === "marketIntelligence" ||
-                  section.id === "stockConference"
+                  section.id === "stockConference" ||
+                  section.id === "planning"
                     ? location.pathname.startsWith(section.path)
                     : isActive)
                     ? "bg-primary text-primary-foreground shadow-sm"
@@ -177,6 +184,16 @@ export function MaterialsModule() {
           element={
             canMi ? (
               <MaterialsMarketIntelligencePage />
+            ) : (
+              <UnauthorizedAccessGate forceDenied />
+            )
+          }
+        />
+        <Route
+          path="planning"
+          element={
+            canPlanning ? (
+              <RawMaterialPlanningPage />
             ) : (
               <UnauthorizedAccessGate forceDenied />
             )

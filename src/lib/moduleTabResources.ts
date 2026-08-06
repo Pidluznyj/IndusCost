@@ -23,6 +23,7 @@ export const TabResourceKeys = {
   COMISSOES_AUDITORIA: "comissoes.tab.auditoria",
   COMISSOES_CONFIG: "comissoes.tab.configuracoes",
   SUPRIMENTOS_CATALOGO: "suprimentos.tab.catalogo",
+  SUPRIMENTOS_PLANEJAMENTO: "suprimentos.tab.planejamento_materia_prima",
   MI_HOME: "suprimentos.inteligencia_mercado.tab.home",
   MI_360: "suprimentos.inteligencia_mercado.tab.materia_prima_360",
   MI_FORNECEDORES: "suprimentos.inteligencia_mercado.tab.fornecedores",
@@ -116,7 +117,8 @@ export const COMMISSIONS_CATALOG_TAB_RESOURCE_BY_LEGACY: Record<string, string> 
 export type MaterialsUiSectionId =
   | "catalog"
   | "stockConference"
-  | "marketIntelligence";
+  | "marketIntelligence"
+  | "planning";
 
 export const MATERIALS_UI_SECTIONS: ReadonlyArray<{
   id: MaterialsUiSectionId;
@@ -138,6 +140,11 @@ export const MATERIALS_UI_SECTIONS: ReadonlyArray<{
     id: "marketIntelligence",
     resourceKey: TabResourceKeys.MI_HOME,
     label: "Inteligência de Mercado",
+  },
+  {
+    id: "planning",
+    resourceKey: TabResourceKeys.SUPRIMENTOS_PLANEJAMENTO,
+    label: "Planejamento de Matéria-Prima",
   },
 ];
 

@@ -311,14 +311,22 @@ import {
   type ExcludedBomLineRecord,
 } from "./src/lib/costAnalysisPartial.js";
 import {
-  addDirectMaterialRow,
-  cloneExplosionMap,
   finalizeRowsForOpenBook,
-  mergeExplosionMaps,
   naturePercentages,
   sumExplosionTotalCost,
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
+import { buildOpenBookRawMaterialExplosionPerUnit as buildOpenBookRawMaterialExplosionPerUnitImpl } from "./src/lib/openBookMaterialExplosion.server.js";
+import {
+  buildRawMaterialPlanningPayload,
+  type RawMaterialPlanningFilters,
+} from "./src/lib/rawMaterialPlanning.server.js";
+import {
+  RAW_MATERIAL_PLANNING_HORIZON_VALUES,
+  RAW_MATERIAL_PLANNING_STATUSES,
+  type RawMaterialPlanningHorizon,
+  type RawMaterialPlanningStatus,
+} from "./src/lib/rawMaterialPlanning.shared.js";
 import { normalizeMaterialUnitKey } from "./src/lib/materialDemandUnits.js";
 import {
   buildMaterialDemandSalesOrderWhere,
@@ -11395,78 +11403,21 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
    * Explosão recursiva só de matéria-prima (MP), consolidando por materialId.
    * Respeita as mesmas exclusões de linha que getProductCostAnalysis (filho não custeado = ramo ignorado).
    */
+  // Implementação real vive em src/lib/openBookMaterialExplosion.server.ts —
+  // extraída pra ser reaproveitada fora deste arquivo (ex.: Orquestrador de
+  // Matéria-Prima) sem duplicar a lógica de explosão de BOM. Wrapper fino
+  // aqui só liga prisma/engine locais como dependências.
   async function buildOpenBookRawMaterialExplosionPerUnit(
     productId: string,
     cache: AnalysisCache,
     pathStack: Set<string>,
     memo: Map<string, Map<string, ExplosionRowCore>>
   ): Promise<Map<string, ExplosionRowCore> | { error: string; message?: string }> {
-    if (memo.has(productId)) {
-      return cloneExplosionMap(memo.get(productId)!);
-    }
-    if (pathStack.has(productId)) {
-      return { error: "BOM_CYCLE", message: "Ciclo na BOM ao explodir matérias-primas." };
-    }
-    pathStack.add(productId);
-    try {
-      const product = await prisma.product.findUnique({
-        where: { id: productId },
-        include: {
-          ProductBOM: { orderBy: { id: "asc" }, include: { Material: true } },
-        },
-      });
-      if (!product) {
-        return { error: "NOT_FOUND", message: "Produto não encontrado." };
-      }
-
-      const into = new Map<string, ExplosionRowCore>();
-
-      for (const item of product.ProductBOM) {
-        if (item.Material) {
-          const mat = item.Material;
-          const landedCost = Number(mat.currentCost) + Number(mat.freight ?? 0);
-          const matStandardLoss = Number(mat.standardLoss ?? 0) / 100;
-          const bomLoss = Number(item.lossPercentage ?? 0) / 100;
-          const requiredQty = Number(item.quantity) / (1 - bomLoss);
-          const matEffectiveCost = landedCost / (1 - matStandardLoss);
-          const lineTotal = matEffectiveCost * requiredQty;
-          addDirectMaterialRow(into, {
-            materialId: mat.id,
-            code: mat.code,
-            description: mat.description,
-            unit: mat.unit,
-            quantity: requiredQty,
-            totalCost: lineTotal,
-          });
-          continue;
-        }
-
-        if (item.childProductId) {
-          const childAnalysis = await getProductCostAnalysis(item.childProductId, cache, false, pathStack);
-          if (childAnalysis === null || isCostAnalysisFailure(childAnalysis)) {
-            continue;
-          }
-          const sub = await buildOpenBookRawMaterialExplosionPerUnit(
-            item.childProductId,
-            cache,
-            pathStack,
-            memo
-          );
-          if (!(sub instanceof Map)) {
-            return sub;
-          }
-          const bomLoss = Number(item.lossPercentage ?? 0) / 100;
-          const requiredQty = Number(item.quantity) / (1 - bomLoss);
-          mergeExplosionMaps(into, sub, requiredQty);
-          continue;
-        }
-      }
-
-      memo.set(productId, cloneExplosionMap(into));
-      return into;
-    } finally {
-      pathStack.delete(productId);
-    }
+    return buildOpenBookRawMaterialExplosionPerUnitImpl(productId, cache, pathStack, memo, {
+      prisma,
+      getProductCostAnalysis,
+      isCostAnalysisFailure,
+    });
   }
 
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
@@ -13014,6 +12965,157 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       handleMaterialDemandPlannedVsRealizedDetails
     );
   }
+
+  // --- API: Planejamento de Matéria-Prima (Orquestrador de compra) ---
+  const rawMaterialPlanningCostEngine = {
+    initAnalysisCache,
+    getProductCostAnalysis,
+    isCostAnalysisFailure,
+    describeCostAnalysisFailure,
+  };
+
+  function parseRawMaterialPlanningFilters(query: Record<string, unknown>): RawMaterialPlanningFilters {
+    const horizonRaw = typeof query.horizon === "string" ? query.horizon : "60";
+    const horizon: RawMaterialPlanningHorizon = (
+      RAW_MATERIAL_PLANNING_HORIZON_VALUES as readonly string[]
+    ).includes(horizonRaw)
+      ? (horizonRaw as RawMaterialPlanningHorizon)
+      : "60";
+    const situationsRaw = query.situation ?? query.situations;
+    const situations = (Array.isArray(situationsRaw) ? situationsRaw : situationsRaw ? [situationsRaw] : [])
+      .map((s) => String(s))
+      .filter((s): s is RawMaterialPlanningStatus =>
+        (RAW_MATERIAL_PLANNING_STATUSES as readonly string[]).includes(s)
+      );
+    const asString = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+    return {
+      companyIssuer: asString(query.companyIssuer),
+      customerId: asString(query.customerId),
+      productId: asString(query.productId),
+      materialId: asString(query.materialId),
+      materialSearch: asString(query.search ?? query.materialSearch),
+      supplier: asString(query.supplier),
+      situations,
+      onlyWithPurchaseNeed: query.onlyWithPurchaseNeed === "true" || query.onlyWithPurchaseNeed === "1",
+      horizon,
+      customHorizonEndDate: asString(query.horizonEndDate),
+      asOfDate: asString(query.asOfDate),
+    };
+  }
+
+  const rawMaterialPlanningGuard = [
+    requireAppAuth,
+    requireResource("engineering.materials.planning", "view"),
+  ] as const;
+
+  app.get("/api/materials/planning", ...rawMaterialPlanningGuard, async (req, res) => {
+    try {
+      const filters = parseRawMaterialPlanningFilters(req.query as Record<string, unknown>);
+      const payload = await buildRawMaterialPlanningPayload(
+        prisma,
+        rawMaterialPlanningCostEngine,
+        filters,
+        new Date()
+      );
+      res.json(payload);
+    } catch (error) {
+      console.error("GET /api/materials/planning", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Erro ao montar planejamento de matéria-prima.",
+      });
+    }
+  });
+
+  app.get("/api/materials/planning/:materialId", ...rawMaterialPlanningGuard, async (req, res) => {
+    try {
+      const filters = parseRawMaterialPlanningFilters(req.query as Record<string, unknown>);
+      const payload = await buildRawMaterialPlanningPayload(
+        prisma,
+        rawMaterialPlanningCostEngine,
+        { ...filters, materialId: req.params.materialId },
+        new Date()
+      );
+      const material = payload.materials.find((m) => m.materialId === req.params.materialId);
+      if (!material) {
+        return res.status(404).json({ error: "Matéria-prima sem necessidade de planejamento nos filtros informados." });
+      }
+      res.json({
+        asOfDate: payload.asOfDate,
+        horizon: payload.horizon,
+        horizonEndDate: payload.horizonEndDate,
+        generatedAt: payload.generatedAt,
+        material,
+      });
+    } catch (error) {
+      console.error("GET /api/materials/planning/:materialId", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Erro ao montar detalhe do planejamento.",
+      });
+    }
+  });
+
+  app.get("/api/materials/planning/export.csv", ...rawMaterialPlanningGuard, async (req, res) => {
+    try {
+      const filters = parseRawMaterialPlanningFilters(req.query as Record<string, unknown>);
+      const payload = await buildRawMaterialPlanningPayload(
+        prisma,
+        rawMaterialPlanningCostEngine,
+        filters,
+        new Date()
+      );
+      const header = [
+        "Codigo",
+        "Descricao",
+        "Unidade",
+        "Situacao",
+        "Confianca",
+        "Saldo contado",
+        "Data de risco",
+        "Comprar ate",
+        "Necessidade tecnica",
+        "Quantidade sugerida",
+        "Fornecedor",
+        "Lead time (dias)",
+        "Alertas",
+      ];
+      const escapeCsv = (v: string) =>
+        /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      const lines = [header.join(";")];
+      for (const m of payload.materials) {
+        lines.push(
+          [
+            m.code ?? "",
+            m.description,
+            m.unit,
+            m.situation,
+            m.confidence,
+            String(m.countedBalance),
+            m.firstRiskDate ?? "",
+            m.buyByDate ?? "",
+            String(m.technicalNeed),
+            String(m.suggestedQuantity),
+            m.supplier ?? "",
+            m.leadTimeDays != null ? String(m.leadTimeDays) : "",
+            m.alerts.join(" | "),
+          ]
+            .map(escapeCsv)
+            .join(";")
+        );
+      }
+      const csv = "﻿" + lines.join("\n");
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="planejamento-materia-prima-${stamp}.csv"`
+      );
+      res.send(csv);
+    } catch (error) {
+      console.error("GET /api/materials/planning/export.csv", error);
+      res.status(500).json({ error: "Erro ao exportar planejamento de matéria-prima." });
+    }
+  });
 
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
   app.get("/api/reports/data", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.reports, FINANCE_MODULE_ACTIONS.view), async (req, res) => {

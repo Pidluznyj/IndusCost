@@ -8,6 +8,7 @@ export const MATERIALS_SECTION_IDS = [
   "catalog",
   "stockConference",
   "marketIntelligence",
+  "planning",
 ] as const;
 
 export type MaterialsSectionId = (typeof MATERIALS_SECTION_IDS)[number];
@@ -16,7 +17,45 @@ export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
   catalog: MATERIALS_BASE_PATH,
   stockConference: `${MATERIALS_BASE_PATH}/stock-conference`,
   marketIntelligence: `${MATERIALS_BASE_PATH}/market-intelligence`,
+  planning: `${MATERIALS_BASE_PATH}/planning`,
 };
+
+export const MATERIALS_PLANNING_API = "/api/materials/planning" as const;
+
+export function getMaterialsPlanningApiPath(query?: Record<string, string | undefined>): string {
+  if (!query) return MATERIALS_PLANNING_API;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value.trim()) params.set(key, value.trim());
+  }
+  const qs = params.toString();
+  return qs ? `${MATERIALS_PLANNING_API}?${qs}` : MATERIALS_PLANNING_API;
+}
+
+export function getMaterialsPlanningDetailApiPath(
+  materialId: string,
+  query?: Record<string, string | undefined>
+): string {
+  const base = `${MATERIALS_PLANNING_API}/${encodeURIComponent(materialId)}`;
+  if (!query) return base;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value.trim()) params.set(key, value.trim());
+  }
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
+export function getMaterialsPlanningExportApiPath(query?: Record<string, string | undefined>): string {
+  const base = `${MATERIALS_PLANNING_API}/export.csv`;
+  if (!query) return base;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value.trim()) params.set(key, value.trim());
+  }
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
 
 export const MATERIALS_MARKET_INTELLIGENCE_MONITORED_API =
   "/api/materials/market-intelligence/monitored" as const;
@@ -325,6 +364,13 @@ export const MATERIALS_SECTIONS: MaterialsSectionDef[] = [
     path: MATERIALS_SECTION_PATHS.marketIntelligence,
     description: "Monitoramento de matérias-primas e sinais de mercado para decisões de compra.",
   },
+  {
+    id: "planning",
+    label: "Planejamento de Matéria-Prima",
+    path: MATERIALS_SECTION_PATHS.planning,
+    description:
+      "Cruza saldo de estoque, proteção mínima/contingência, demanda de pedidos e entradas de compra confirmadas para indicar o que comprar, quanto e até quando.",
+  },
 ];
 
 export function getMaterialStockConferenceDetailPath(materialId: string): string {
@@ -347,6 +393,7 @@ export function getMaterialsDefaultPath(): string {
 export function parseMaterialsSectionFromPath(pathname: string): MaterialsSectionId | null {
   if (pathname.includes("/materials/stock-conference")) return "stockConference";
   if (pathname.includes("/materials/market-intelligence")) return "marketIntelligence";
+  if (pathname.includes("/materials/planning")) return "planning";
   if (pathname === MATERIALS_BASE_PATH || pathname.startsWith(`${MATERIALS_BASE_PATH}/`)) {
     return "catalog";
   }
@@ -375,6 +422,7 @@ export function isMaterialsCanonicalPath(pathname: string): boolean {
   if (pathname === MATERIALS_SECTION_PATHS.marketIntelligence) return true;
   if (isMaterialMarketIntelligenceReportsPath(pathname)) return true;
   if (isMaterialMarketIntelligenceDetailPath(pathname)) return true;
+  if (pathname === MATERIALS_SECTION_PATHS.planning) return true;
   return false;
 }
 
@@ -385,5 +433,6 @@ export function resolveMaterialsCanonicalPath(pathname: string): string {
   const section = parseMaterialsSectionFromPath(pathname);
   if (section === "stockConference") return MATERIALS_SECTION_PATHS.stockConference;
   if (section === "marketIntelligence") return MATERIALS_SECTION_PATHS.marketIntelligence;
+  if (section === "planning") return MATERIALS_SECTION_PATHS.planning;
   return getMaterialsDefaultPath();
 }

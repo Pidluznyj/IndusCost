@@ -18,6 +18,7 @@ export const ENGINEERING_RESOURCE_KEYS = {
   marketIntelligenceHome: "engineering.materials.market_intelligence.home",
   marketIntelligenceMaterial360: "engineering.materials.market_intelligence.material_360",
   marketIntelligenceQuotes: "engineering.materials.market_intelligence.quotes",
+  materialsPlanning: "engineering.materials.planning",
   simulations: "engineering.simulations",
   projects: "engineering.projects",
   projectsDetail: "engineering.projects.detail",
@@ -79,6 +80,8 @@ export const ENGINEERING_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/materials/:id/market*", resourceKey: "engineering.materials.market_intelligence.material_360", action: "view" },
   { method: "POST", path: "/api/materials/*/quotes*", resourceKey: "engineering.materials.market_intelligence.quotes", action: "update" },
   { method: "POST", path: "/api/materials/*/quotes/*/approve*", resourceKey: "engineering.materials.market_intelligence.quotes", action: "approve" },
+
+  { method: "GET", path: "/api/materials/planning*", resourceKey: "engineering.materials.planning", action: "view" },
 
   { method: "GET", path: "/api/simulations*", resourceKey: "engineering.simulations", action: "view" },
   { method: "POST", path: "/api/simulations*", resourceKey: "engineering.simulations", action: "create" },
