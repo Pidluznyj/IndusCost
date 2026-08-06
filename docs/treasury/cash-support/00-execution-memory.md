@@ -1,9 +1,10 @@
 # Apoio ao Caixa — memória de execução
 
 ## Git
-- Branch: `feat/treasury-cash-support` (criada a partir de `main` @ `24c11f8`)
-- Último commit da funcionalidade: (este — docs da Etapa 1)
-- Working tree na abertura da Etapa 1: limpo
+- Branch: `feat/treasury-cash-support`
+- Backup protegido: `backup/cash-support-audit-f0821d7` → `f0821d7`
+- Etapa 1: `f0821d7` (já publicada em `origin/main` por fluxo externo — não reescrever)
+- Etapa 2: docs de ADR, matriz e read model
 
 ## Caminhos principais
 | Papel | Caminho |
@@ -40,10 +41,18 @@ reconciliationStatus, reconciledAmount).
 `TreasuryBalanceSnapshot` (accountId, referenceAt, availableBalance/blocked/investments/usedLimit,
 origin, idempotencyKey, cancelledAt) + precedência em `loadTreasuryOfficialTodayBalance`.
 
-## Decisões técnicas aprovadas
-1. Reusar `TreasuryReconciliationMatch/Allocation` — já existe e cobre o modelo de alocação exigido.
-2. Reusar `treasuryMoney.ts` (string + cents bigint) como transporte monetário.
-3. Não tocar em `treasuryCaixaService.server.ts` sem teste de caracterização.
+## Decisões técnicas aprovadas (permanentes — ADR 001)
+1. **Nenhum segundo motor.** `TreasuryReconciliation*` é a autoridade de conciliação.
+2. **Somente títulos reais conciliáveis** (`externalId > 0`, lado AR/AP).
+3. **Previsões são contexto**: nunca recebem allocation, nunca marcadas como pagas/recebidas.
+4. Três identidades distintas e não intercambiáveis: `officialTitleKey`, `bankMovementKey`,
+   `forecastContextKey` (esta proibida em qualquer escrita).
+5. `bankDate` (`postedCivilDate`) determina o realizado; `dueDate` determina previsão/atraso.
+6. Movimento válido afeta a posição bancária mesmo sem classificação.
+7. Transferência interna: consolidado zero.
+8. Reusar `treasuryMoney.ts` (string + cents bigint); proibido float no caminho monetário.
+9. Reusar `resolveAuthorizedAccountIds` (ACL anti-IDOR) e `TreasuryAuditLog`.
+10. Não tocar em `treasuryCaixaService.server.ts` sem teste de caracterização.
 
 ## Limitações
 - Board Caixa não filtra por empresa nem por conta; `currency` inexistente no evento canônico.
@@ -51,13 +60,16 @@ origin, idempotencyKey, cancelledAt) + precedência em `loadTreasuryOfficialToda
 - `otherMovements` (ledger/transfer) não carregados para dias arbitrários (`not_loaded`).
 
 ## Bloqueios
-**BLOQUEIO CRÍTICO — identidade econômica** (ver `01-current-state-audit.md` §9).
-`economicEventKey`/`canonicalRepresentationKey` não são deriváveis exclusivamente do resultado canônico
-atual, e o id sintético das previsões é instável na evolução PV → DS → NF-e → CR.
+- Bloqueio de identidade da Etapa 1 **resolvido pela ADR 001**: escopo reduzido a títulos reais.
+- Persistem parciais: empresa (#41) e conta (#42) ausentes no lado canônico — ver matriz.
+
+## Lacunas reais confirmadas (matriz §B)
+#4 correções OFX · #6 saldo available · #8 cobertura de extrato · #27 rejeição de sugestão ·
+**#30 capacidade validada fora da transação (mais grave)** · #31 idempotência no accept ·
+#32 maker-checker.
 
 ## Etapa concluída
-Etapa 1 — Auditoria técnica das fontes existentes.
+Etapa 2 — ADR, identidades, matriz de lacunas e read model proposto.
 
 ## Próxima etapa autorizada
-Nenhuma. Etapa 2 depende de decisão do usuário sobre o bloqueio de identidade
-(escopo reduzido a títulos reais x propagação de identidade FIN-08).
+Etapa 3 — validar as 7 lacunas reais e produzir backlog (`05`) e MVP (`06`). Somente docs.
