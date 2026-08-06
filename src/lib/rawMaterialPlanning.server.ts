@@ -136,6 +136,14 @@ export type RawMaterialPlanningRow = {
   timeline: ReturnType<typeof projectRawMaterialBalance>["timeline"];
   consumingOrders: RawMaterialPlanningConsumingOrderRow[];
   confirmedInbound: RawMaterialPlanningInboundRow[];
+  /** Anotações manuais de compra (tela) — null quando nunca preenchidas. */
+  purchasePlan: RawMaterialPlanningPurchasePlan | null;
+};
+
+export type RawMaterialPlanningPurchasePlan = {
+  purchaseDate: string | null;
+  expectedArrivalDate: string | null;
+  purchaseOrderRef: string | null;
 };
 
 export type RawMaterialPlanningSummary = {
@@ -441,6 +449,30 @@ export async function buildRawMaterialPlanningPayload(
 
   // Recalcula a lista efetiva após exclusão dos não-monitorados.
   const monitoredMaterialIds = [...materialMeta.keys()];
+
+  // Anotações manuais de compra (data da compra / previsão de chegada /
+  // nº do pedido) — uma por material, editadas na própria tela.
+  const purchasePlansRaw = monitoredMaterialIds.length
+    ? await prisma.materialPurchasePlan.findMany({
+        where: { materialId: { in: monitoredMaterialIds } },
+        select: {
+          materialId: true,
+          purchaseDate: true,
+          expectedArrivalDate: true,
+          purchaseOrderRef: true,
+        },
+      })
+    : [];
+  const purchasePlanByMaterial = new Map(
+    purchasePlansRaw.map((p) => [
+      p.materialId,
+      {
+        purchaseDate: formatYmd(p.purchaseDate),
+        expectedArrivalDate: formatYmd(p.expectedArrivalDate),
+        purchaseOrderRef: p.purchaseOrderRef,
+      } satisfies RawMaterialPlanningPurchasePlan,
+    ])
+  );
   if (monitoredMaterialIds.length === 0) {
     return {
       appliedFilters: filters,
@@ -709,6 +741,7 @@ export async function buildRawMaterialPlanningPayload(
       timeline: projection.timeline,
       consumingOrders,
       confirmedInbound: finalInboundRows,
+      purchasePlan: purchasePlanByMaterial.get(materialId) ?? null,
     });
   }
 

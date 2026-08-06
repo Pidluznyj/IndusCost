@@ -13122,6 +13122,79 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
+  /**
+   * Anotações manuais de compra do Planejamento de MP — upsert por material.
+   * Campos livres da tela (data da compra, previsão de chegada, nº do pedido
+   * de compra alfanumérico). Não altera saldo/planejamento calculado.
+   */
+  app.put(
+    "/api/materials/planning/purchase-plan/:materialId",
+    requireAppAuth,
+    requireResource("engineering.materials.planning", "update"),
+    async (req, res) => {
+      try {
+        const { materialId } = req.params;
+        if (!/^[0-9a-f-]{36}$/i.test(materialId)) {
+          return res.status(400).json({ error: "materialId inválido." });
+        }
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const parseYmd = (v: unknown, field: string): Date | null => {
+          if (v == null || v === "") return null;
+          if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+            throw new Error(`${field} deve ser uma data YYYY-MM-DD.`);
+          }
+          return new Date(`${v}T00:00:00.000Z`);
+        };
+        let purchaseDate: Date | null;
+        let expectedArrivalDate: Date | null;
+        try {
+          purchaseDate = parseYmd(body.purchaseDate, "purchaseDate");
+          expectedArrivalDate = parseYmd(body.expectedArrivalDate, "expectedArrivalDate");
+        } catch (e) {
+          return res.status(400).json({ error: e instanceof Error ? e.message : "Data inválida." });
+        }
+        const refRaw = body.purchaseOrderRef;
+        const purchaseOrderRef =
+          refRaw == null || String(refRaw).trim() === ""
+            ? null
+            : String(refRaw).trim().slice(0, 80);
+
+        const material = await prisma.material.findUnique({
+          where: { id: materialId },
+          select: { id: true },
+        });
+        if (!material) {
+          return res.status(404).json({ error: "Matéria-prima não encontrada." });
+        }
+        const user = await getCurrentAppUser(req);
+        const data = {
+          purchaseDate,
+          expectedArrivalDate,
+          purchaseOrderRef,
+          updatedByUserId: user?.id ?? null,
+        };
+        const saved = await prisma.materialPurchasePlan.upsert({
+          where: { materialId },
+          create: { materialId, ...data },
+          update: data,
+        });
+        res.json({
+          ok: true,
+          plan: {
+            purchaseDate: saved.purchaseDate ? saved.purchaseDate.toISOString().slice(0, 10) : null,
+            expectedArrivalDate: saved.expectedArrivalDate
+              ? saved.expectedArrivalDate.toISOString().slice(0, 10)
+              : null,
+            purchaseOrderRef: saved.purchaseOrderRef,
+          },
+        });
+      } catch (error) {
+        console.error("PUT /api/materials/planning/purchase-plan/:materialId", error);
+        res.status(500).json({ error: "Erro ao salvar anotações de compra." });
+      }
+    }
+  );
+
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
   app.get("/api/reports/data", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.reports, FINANCE_MODULE_ACTIONS.view), async (req, res) => {
     try {

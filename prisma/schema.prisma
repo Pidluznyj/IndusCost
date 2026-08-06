@@ -274,6 +274,25 @@ model Material {
   PurchaseQuotationItem          PurchaseQuotationItem[]
   PurchaseOrderItem              PurchaseOrderItem[]
   PurchaseReceiptItem            PurchaseReceiptItem[]
+  purchasePlan                   MaterialPurchasePlan?
+}
+
+/// Anotações manuais de compra do Planejamento de Matéria-Prima (uma por
+/// material): data em que a compra foi feita, previsão de chegada e número
+/// do pedido de compra (alfanumérico, livre — pode referenciar Nomus ou
+/// fornecedor). Não altera saldo/planejamento; é registro operacional.
+model MaterialPurchasePlan {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId          String    @unique @db.Uuid
+  purchaseDate        DateTime? @db.Date
+  expectedArrivalDate DateTime? @db.Date
+  purchaseOrderRef    String?
+  updatedByUserId     String?   @db.Uuid
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  material            Material  @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([purchaseOrderRef])
 }
 
 enum MaterialMarketCriticality {

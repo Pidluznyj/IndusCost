@@ -82,6 +82,7 @@ export const ENGINEERING_PILOT_ENDPOINTS = [
   { method: "POST", path: "/api/materials/*/quotes/*/approve*", resourceKey: "engineering.materials.market_intelligence.quotes", action: "approve" },
 
   { method: "GET", path: "/api/materials/planning*", resourceKey: "engineering.materials.planning", action: "view" },
+  { method: "PUT", path: "/api/materials/planning/purchase-plan/*", resourceKey: "engineering.materials.planning", action: "update" },
 
   { method: "GET", path: "/api/simulations*", resourceKey: "engineering.simulations", action: "view" },
   { method: "POST", path: "/api/simulations*", resourceKey: "engineering.simulations", action: "create" },

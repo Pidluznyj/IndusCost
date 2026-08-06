@@ -242,7 +242,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "engineering",
     route: "/materials/planning",
     sortOrder: 232,
-    actions: [V(["materials.planning.view", "materials.view"])],
+    actions: [
+      V(["materials.planning.view", "materials.view"]),
+      U(["materials.edit"], "anotações de compra (data, previsão de chegada, nº do pedido)"),
+    ],
     relatedEndpoints: ["/api/materials/planning"],
     sensitivity: "medium",
     appearsInSidebar: false,

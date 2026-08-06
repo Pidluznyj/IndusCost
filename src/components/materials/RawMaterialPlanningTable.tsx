@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Ban, Check, ChevronDown, Info, Minus } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChevronDown, Info, Loader2, Minus } from "lucide-react";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import {
   buyByBlockedReasonLabel,
@@ -296,11 +296,133 @@ function RawMaterialPlanningCalculationMemory({ row }: { row: RawMaterialPlannin
   );
 }
 
+export type RawMaterialPurchasePlanPatch = {
+  purchaseDate: string | null;
+  expectedArrivalDate: string | null;
+  purchaseOrderRef: string | null;
+};
+
+/**
+ * Células editáveis de compra (Data da compra / Previsão de chegada /
+ * Pedido de compra). Salvam direto no blur/troca; sem `onSave` (impressão)
+ * renderizam somente leitura. stopPropagation: a linha inteira faz o
+ * drilldown no clique.
+ */
+function PurchasePlanCells({
+  row,
+  onSave,
+  saving,
+}: {
+  row: RawMaterialPlanningRow;
+  onSave?: (materialId: string, patch: RawMaterialPurchasePlanPatch) => Promise<void>;
+  saving: boolean;
+}) {
+  const plan = row.purchasePlan;
+  const [purchaseDate, setPurchaseDate] = React.useState(plan?.purchaseDate ?? "");
+  const [arrivalDate, setArrivalDate] = React.useState(plan?.expectedArrivalDate ?? "");
+  const [orderRef, setOrderRef] = React.useState(plan?.purchaseOrderRef ?? "");
+
+  React.useEffect(() => {
+    setPurchaseDate(plan?.purchaseDate ?? "");
+    setArrivalDate(plan?.expectedArrivalDate ?? "");
+    setOrderRef(plan?.purchaseOrderRef ?? "");
+  }, [plan?.purchaseDate, plan?.expectedArrivalDate, plan?.purchaseOrderRef]);
+
+  const save = (patch: Partial<RawMaterialPurchasePlanPatch>) => {
+    if (!onSave) return;
+    void onSave(row.materialId, {
+      purchaseDate: purchaseDate || null,
+      expectedArrivalDate: arrivalDate || null,
+      purchaseOrderRef: orderRef.trim() || null,
+      ...patch,
+    });
+  };
+
+  if (!onSave) {
+    return (
+      <>
+        <td className="p-3 whitespace-nowrap">{formatYmdPtBr(plan?.purchaseDate ?? null)}</td>
+        <td className="p-3 whitespace-nowrap">{formatYmdPtBr(plan?.expectedArrivalDate ?? null)}</td>
+        <td className="p-3 whitespace-nowrap">{plan?.purchaseOrderRef ?? "—"}</td>
+      </>
+    );
+  }
+
+  const inputClass =
+    "h-8 w-full min-w-[8.5rem] rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60";
+  return (
+    <>
+      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="date"
+          value={purchaseDate}
+          disabled={saving}
+          onChange={(e) => {
+            setPurchaseDate(e.target.value);
+            save({ purchaseDate: e.target.value || null });
+          }}
+          className={inputClass}
+          aria-label="Data da compra"
+          data-testid={`rmp-purchase-date-${row.materialId}`}
+        />
+      </td>
+      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="date"
+          value={arrivalDate}
+          disabled={saving}
+          onChange={(e) => {
+            setArrivalDate(e.target.value);
+            save({ expectedArrivalDate: e.target.value || null });
+          }}
+          className={inputClass}
+          aria-label="Previsão de chegada"
+          data-testid={`rmp-arrival-date-${row.materialId}`}
+        />
+      </td>
+      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={orderRef}
+            disabled={saving}
+            placeholder="Nº pedido"
+            maxLength={80}
+            onChange={(e) => setOrderRef(e.target.value)}
+            onBlur={() => {
+              const next = orderRef.trim() || null;
+              if (next !== (plan?.purchaseOrderRef ?? null)) {
+                save({ purchaseOrderRef: next });
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            className={cn(inputClass, "min-w-[7rem]")}
+            aria-label="Número do pedido de compra"
+            data-testid={`rmp-order-ref-${row.materialId}`}
+          />
+          {saving ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden /> : null}
+        </div>
+      </td>
+    </>
+  );
+}
+
 function RawMaterialPlanningExpandedDetail({ row }: { row: RawMaterialPlanningRow }) {
   return (
     <tr>
-      <td colSpan={9} className="bg-muted/10 p-4">
+      <td colSpan={10} className="bg-muted/10 p-4">
         <div className="space-y-4">
+          {/* Situação saiu do grid (deu lugar às datas de compra) e vive aqui,
+              junto com a data-limite calculada. */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <StatusBadge situation={row.situation} />
+            <span className="text-muted-foreground">
+              Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
+              {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
+            </span>
+          </div>
           {row.alerts.length > 0 ? (
             <div
               className={cn(
@@ -320,10 +442,18 @@ function RawMaterialPlanningExpandedDetail({ row }: { row: RawMaterialPlanningRo
               </ul>
             </div>
           ) : null}
-          <div>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Memória do cálculo</h4>
-            <RawMaterialPlanningCalculationMemory row={row} />
-          </div>
+          {/* Memória do cálculo em drilldown próprio — fechada por padrão,
+              abre só quando o usuário quer auditar os números. */}
+          <details className="group rounded-lg border border-border/70">
+            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+              Memória do cálculo
+              <span className="font-normal normal-case tracking-normal">— como chegamos nesses números</span>
+            </summary>
+            <div className="border-t border-border/70 p-3">
+              <RawMaterialPlanningCalculationMemory row={row} />
+            </div>
+          </details>
           <div>
             <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Linha do tempo projetada</h4>
             <RawMaterialPlanningTimelineTable row={row} />
@@ -346,10 +476,18 @@ export function RawMaterialPlanningTable({
   rows,
   expandedMaterialId,
   onToggleRow,
+  onSavePurchasePlan,
+  savingPlanMaterialId,
 }: {
   rows: RawMaterialPlanningRow[];
   expandedMaterialId: string | null;
   onToggleRow: (materialId: string) => void;
+  /** Ausente (ex.: impressão) → colunas de compra ficam somente leitura. */
+  onSavePurchasePlan?: (
+    materialId: string,
+    patch: RawMaterialPurchasePlanPatch
+  ) => Promise<void>;
+  savingPlanMaterialId?: string | null;
 }) {
   if (rows.length === 0) {
     return (
@@ -366,11 +504,12 @@ export function RawMaterialPlanningTable({
           <tr>
             <th className="px-3 py-3.5 text-left w-8" />
             <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Matéria-prima</th>
-            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Situação</th>
             <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Saldo atual</th>
             <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Necessidade técnica</th>
             <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Qtde sugerida</th>
-            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Comprar até</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Data da compra</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Previsão de chegada</th>
+            <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Pedido de compra</th>
             <th className="px-3 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Valor estimado</th>
             <th className="px-3 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Confiança</th>
           </tr>
@@ -393,15 +532,14 @@ export function RawMaterialPlanningTable({
                     {row.description}
                     <span className="ml-1 text-muted-foreground font-normal">· {row.unit}</span>
                   </td>
-                  <td className="p-3">
-                    <div className="flex flex-col items-start gap-1">
-                      <StatusBadge situation={row.situation} />
-                    </div>
-                  </td>
                   <td className="p-3 text-right tabular-nums whitespace-nowrap">{num(row.countedBalance)}</td>
                   <td className="p-3 text-right tabular-nums whitespace-nowrap">{num(row.technicalNeed)}</td>
                   <td className="p-3 text-right tabular-nums font-semibold whitespace-nowrap">{num(row.suggestedQuantity)}</td>
-                  <td className="p-3 whitespace-nowrap">{formatYmdPtBr(row.buyByDate)}</td>
+                  <PurchasePlanCells
+                    row={row}
+                    onSave={onSavePurchasePlan}
+                    saving={savingPlanMaterialId === row.materialId}
+                  />
                   <td className="p-3 text-right tabular-nums whitespace-nowrap">{money(row.estimatedPurchaseValue)}</td>
                   <td className="p-3">
                     <ConfidenceBadge confidence={row.confidence} />

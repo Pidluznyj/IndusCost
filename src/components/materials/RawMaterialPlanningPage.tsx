@@ -15,7 +15,10 @@ import {
   MaterialDemandTablePagination,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { RawMaterialPlanningPrintDocument } from "@/src/components/materials/RawMaterialPlanningPrintDocument";
-import { RawMaterialPlanningTable } from "@/src/components/materials/RawMaterialPlanningTable";
+import {
+  RawMaterialPlanningTable,
+  type RawMaterialPurchasePlanPatch,
+} from "@/src/components/materials/RawMaterialPlanningTable";
 import {
   RAW_MATERIAL_PLANNING_HORIZON_LABELS,
   RAW_MATERIAL_PLANNING_STATUS_LABELS,
@@ -134,6 +137,8 @@ export function RawMaterialPlanningPage() {
   const [data, setData] = useState<RawMaterialPlanningResponse | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [savingPlanMaterialId, setSavingPlanMaterialId] = useState<string | null>(null);
+  const [planSaveError, setPlanSaveError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
 
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
@@ -218,6 +223,54 @@ export function RawMaterialPlanningPage() {
   );
 
   const handleRetry = useCallback(() => setRetryNonce((n) => n + 1), []);
+
+  /**
+   * Salva as anotações de compra (data/previsão/nº do pedido) e reflete o
+   * retorno do servidor na linha local — sem recarregar o planejamento
+   * inteiro (o cálculo pesado não muda por causa dessas anotações).
+   */
+  const handleSavePurchasePlan = useCallback(
+    async (materialId: string, patch: RawMaterialPurchasePlanPatch) => {
+      setSavingPlanMaterialId(materialId);
+      setPlanSaveError(null);
+      try {
+        const res = await fetch(
+          `${PLANNING_API}/purchase-plan/${materialId}`,
+          {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          }
+        );
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? "Não foi possível salvar as anotações de compra.");
+        }
+        const payload = (await res.json()) as {
+          plan: RawMaterialPlanningRow["purchasePlan"];
+        };
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                materials: prev.materials.map((m) =>
+                  m.materialId === materialId ? { ...m, purchasePlan: payload.plan } : m
+                ),
+              }
+            : prev
+        );
+      } catch (e) {
+        console.error("[RawMaterialPlanning] save purchase plan", e);
+        setPlanSaveError(
+          e instanceof Error ? e.message : "Não foi possível salvar as anotações de compra."
+        );
+      } finally {
+        setSavingPlanMaterialId(null);
+      }
+    },
+    []
+  );
 
   const handleExportCsv = useCallback(async () => {
     setExportingCsv(true);
@@ -571,10 +624,26 @@ export function RawMaterialPlanningPage() {
                 {new Date(data.generatedAt).toLocaleString("pt-BR")}
               </p>
             </div>
+            {planSaveError ? (
+              <div
+                className={cn(
+                  "mx-4 mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm",
+                  STATUS_TONE_CLASSES.danger
+                )}
+                role="alert"
+              >
+                <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  <span className="font-bold">Erro:</span> {planSaveError}
+                </span>
+              </div>
+            ) : null}
             <RawMaterialPlanningTable
               rows={pageRows}
               expandedMaterialId={expandedMaterialId}
               onToggleRow={(id) => setExpandedMaterialId((prev) => (prev === id ? null : id))}
+              onSavePurchasePlan={handleSavePurchasePlan}
+              savingPlanMaterialId={savingPlanMaterialId}
             />
             <MaterialDemandTablePagination
               pagination={pagination}

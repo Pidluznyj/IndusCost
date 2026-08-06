@@ -51,7 +51,7 @@ export function RawMaterialPlanningPrintDocument({
             <RawMaterialPlanningTable
               rows={data.materials}
               expandedMaterialId={null}
-              onToggleExpand={() => {}}
+              onToggleRow={() => {}}
             />
           )}
         </section>

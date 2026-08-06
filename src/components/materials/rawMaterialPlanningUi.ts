@@ -92,6 +92,14 @@ export type RawMaterialPlanningRow = {
   timeline: RawMaterialPlanningTimelinePoint[];
   consumingOrders: RawMaterialPlanningConsumingOrderRow[];
   confirmedInbound: RawMaterialPlanningInboundRow[];
+  /** Anotações manuais de compra — null quando nunca preenchidas. */
+  purchasePlan: RawMaterialPlanningPurchasePlan | null;
+};
+
+export type RawMaterialPlanningPurchasePlan = {
+  purchaseDate: string | null;
+  expectedArrivalDate: string | null;
+  purchaseOrderRef: string | null;
 };
 
 export type RawMaterialPlanningSummary = {
