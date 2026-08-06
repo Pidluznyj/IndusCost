@@ -91,9 +91,21 @@ Lacunas reais: #4 correções OFX · #6 saldo available · #8 cobertura de extra
 Empresa (#41) e conta (#42): entregar com `null` + warning estruturado. **Não inventar** — em
 especial, proibido casar título↔conta por semelhança de nome.
 
+## CS-000 — correção do P0 (commit `92f50d6`)
+Capacidade do movimento agora é relida e validada **dentro** da transação, após
+`SELECT ... FOR UPDATE` em ordem determinística de id. Pernas repetidas do mesmo movimento são
+agregadas antes de validar. 6 testes de concorrência + 20 de regressão passam. Sem migration.
+
+**Gate de escrita ainda NÃO totalmente liberado** — dois resíduos (ver `08`):
+1. **Residual do título sem lock**: valida contra o `openBalance` do payload, não contra saldo
+   relido sob lock. Concorrência sobre o mesmo título via movimentos diferentes ainda pode
+   exceder. Exige decisão de modelo (advisory lock por `officialTitleKey`).
+2. **Idempotência ausente** no `accept`: exige coluna nova; adiada porque `prisma/schema.prisma`
+   tem alterações não commitadas de outro trabalho (Planejamento de MP).
+
 ## Etapa concluída
-Etapa 3 — revalidação das lacunas, registro do P0, backlog, trilhas, gates e MVP.
+Etapas 1–3 (documentação) + CS-000 (correção do P0, parcial conforme acima).
 
 ## Próxima etapa autorizada
-Etapa 4 — CS-001, contratos do read model (somente tipos/interfaces, sem persistência).
-CS-000 (correção P0) pode ser antecipado a qualquer momento.
+CS-000b — fechar os dois resíduos do gate de escrita (lock de residual do título + idempotência),
+**após** o schema de MP ser commitado. Em paralelo, Trilha A pode seguir por CS-001 (contratos).
