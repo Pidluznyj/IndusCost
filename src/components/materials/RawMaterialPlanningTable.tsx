@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChevronDown, Info, Minus } from "lucide-react";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import {
   buyByBlockedReasonLabel,
@@ -22,15 +22,33 @@ function money(v: number | null | undefined): string {
   return formatCurrencyAdaptive(v);
 }
 
+/** Ícone por tom — mesma linguagem dos alerts Info/Warning/Error/Success. */
+const TONE_ICON: Record<
+  ReturnType<typeof toneOf>,
+  React.ComponentType<{ className?: string }>
+> = {
+  info: Info,
+  warning: AlertTriangle,
+  danger: Ban,
+  success: Check,
+  neutral: Minus,
+};
+
+function toneOf(situation: RawMaterialPlanningRow["situation"]) {
+  return RAW_MATERIAL_PLANNING_STATUS_TONE[situation];
+}
+
 function StatusBadge({ situation }: { situation: RawMaterialPlanningRow["situation"] }) {
   const tone = RAW_MATERIAL_PLANNING_STATUS_TONE[situation];
+  const IconEl = TONE_ICON[tone];
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-semibold shadow-sm",
         STATUS_TONE_CLASSES[tone]
       )}
     >
+      <IconEl className="h-3.5 w-3.5 shrink-0" aria-hidden />
       {RAW_MATERIAL_PLANNING_STATUS_LABELS[situation]}
     </span>
   );
@@ -38,15 +56,18 @@ function StatusBadge({ situation }: { situation: RawMaterialPlanningRow["situati
 
 function ConfidenceBadge({ confidence }: { confidence: RawMaterialPlanningRow["confidence"] }) {
   const tone = RAW_MATERIAL_PLANNING_CONFIDENCE_TONE[confidence];
+  const IconEl = TONE_ICON[tone];
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] shadow-sm",
         STATUS_TONE_CLASSES[tone]
       )}
       title="Confiança operacional — qualidade dos dados usados no cálculo, não é estatística."
     >
-      Confiança: {RAW_MATERIAL_PLANNING_CONFIDENCE_LABELS[confidence]}
+      <IconEl className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="font-bold">Confiança:</span>
+      {RAW_MATERIAL_PLANNING_CONFIDENCE_LABELS[confidence]}
     </span>
   );
 }

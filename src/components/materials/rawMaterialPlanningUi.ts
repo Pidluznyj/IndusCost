@@ -153,16 +153,20 @@ export const RAW_MATERIAL_PLANNING_STATUS_TONE: Record<RawMaterialPlanningStatus
   UNIT_CONVERSION_ERROR: "danger",
 };
 
+/**
+ * Estilo "alert pill" (mesma linguagem dos avisos Info/Warning/Error/Success):
+ * preenchimento suave bem legível + borda no tom + texto escuro do tom.
+ */
 export const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   danger:
-    "border-red-200/80 bg-red-50/70 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300",
+    "border-red-300 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200",
   warning:
-    "border-amber-200/80 bg-amber-50/70 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
+    "border-yellow-300 bg-yellow-100 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-200",
   success:
-    "border-emerald-200/80 bg-emerald-50/70 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300",
-  info: "border-sky-200/80 bg-sky-50/70 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300",
+    "border-green-300 bg-green-100 text-green-800 dark:border-green-800 dark:bg-green-950/60 dark:text-green-200",
+  info: "border-sky-300 bg-sky-100 text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200",
   neutral:
-    "border-border bg-muted/40 text-muted-foreground",
+    "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200",
 };
 
 export const RAW_MATERIAL_PLANNING_CONFIDENCE_LABELS: Record<RawMaterialPlanningConfidence, string> = {
