@@ -20,6 +20,7 @@ import {
   buildTreasuryCaixaUnifiedTimeline,
   computeTreasuryCaixaTotals,
   detectTreasuryCaixaOutliers,
+  resolveTreasuryCaixaCanonicalWindow,
   resolveTreasuryCaixaDueDateRange,
   TreasuryCaixaFilterError,
 } from "./treasuryCaixaRules.js";
@@ -132,6 +133,79 @@ describe("treasuryCaixaRules — resolveTreasuryCaixaDueDateRange", () => {
       () => resolveTreasuryCaixaDueDateRange({ year: 1800 }),
       TreasuryCaixaFilterError
     );
+  });
+});
+
+describe("treasuryCaixaRules — resolveTreasuryCaixaCanonicalWindow", () => {
+  it("hoje já dentro do filtro → janela devolvida como veio, sem ampliar", () => {
+    const result = resolveTreasuryCaixaCanonicalWindow({
+      windowDays: ["2026-08-01", "2026-08-02", "2026-08-07", "2026-08-31"],
+      todayCivilDate: "2026-08-07",
+    });
+    assert.equal(result.todayOutsideWindow, false);
+    assert.deepEqual(result.canonicalWindowDays, [
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-07",
+      "2026-08-31",
+    ]);
+    assert.equal(result.widenedFromCivilDate, "2026-08-01");
+    assert.equal(result.widenedToCivilDate, "2026-08-31");
+  });
+
+  it("filtro para um mês passado (hoje é 07/08, filtro é março) → hoje entra na janela", () => {
+    const result = resolveTreasuryCaixaCanonicalWindow({
+      windowDays: ["2026-03-01", "2026-03-15", "2026-03-31"],
+      todayCivilDate: "2026-08-07",
+    });
+    assert.equal(result.todayOutsideWindow, true);
+    assert.ok(result.canonicalWindowDays.includes("2026-08-07"));
+    assert.equal(result.widenedToCivilDate, "2026-08-07");
+  });
+
+  it("filtro para um mês futuro (hoje é 07/08, filtro é dezembro) → hoje entra na janela", () => {
+    const result = resolveTreasuryCaixaCanonicalWindow({
+      windowDays: ["2026-12-01", "2026-12-31"],
+      todayCivilDate: "2026-08-07",
+    });
+    assert.equal(result.todayOutsideWindow, true);
+    assert.ok(result.canonicalWindowDays.includes("2026-08-07"));
+    assert.equal(result.widenedFromCivilDate, "2026-08-07");
+  });
+
+  it("R09 — mesmos dados, filtros diferentes → hoje SEMPRE presente na janela canônica", () => {
+    const filters = [
+      ["2026-01-01", "2026-12-31"], // ano inteiro
+      ["2026-03-01", "2026-03-31"], // mês passado
+      ["2026-08-07", "2026-08-07"], // só hoje
+      ["2026-12-01", "2026-12-31"], // mês futuro
+    ];
+    for (const [from, to] of filters) {
+      const windowDays: string[] = [];
+      const cursor = new Date(`${from}T00:00:00`);
+      const end = new Date(`${to}T00:00:00`);
+      while (cursor <= end) {
+        windowDays.push(cursor.toISOString().slice(0, 10));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      const result = resolveTreasuryCaixaCanonicalWindow({
+        windowDays,
+        todayCivilDate: "2026-08-07",
+      });
+      assert.ok(
+        result.canonicalWindowDays.includes("2026-08-07"),
+        `filtro ${from}..${to} deveria incluir hoje na janela canônica`
+      );
+    }
+  });
+
+  it("janela vazia + hoje → janela com só hoje", () => {
+    const result = resolveTreasuryCaixaCanonicalWindow({
+      windowDays: [],
+      todayCivilDate: "2026-08-07",
+    });
+    assert.deepEqual(result.canonicalWindowDays, ["2026-08-07"]);
+    assert.equal(result.todayOutsideWindow, true);
   });
 });
 
@@ -1554,5 +1628,148 @@ describe("treasuryCaixaRules — assimetria CR/CP na data de caixa", () => {
     });
     assert.equal(days[0]!.inflows, 900);
     assert.equal(days[0]!.outflows, 400);
+  });
+});
+
+describe("treasuryCaixaRules — invariância temporal (R08): dueDate=05/08, settlementDate=07/08, R$100", () => {
+  // A regra dos 3 dias já resolveu a data efetiva ANTES deste ponto (é o que
+  // `buildTreasuryCaixaCanonicalRealizedInputs` prova em
+  // treasuryCaixaServiceCanonicalRealized.test.ts — R01..R07): o título entra
+  // em `buildTreasuryCaixaRealizedDays` já com `settlementDate: "2026-08-05"`
+  // (dueDate), NUNCA "2026-08-07" (a data real da baixa). Nenhuma função deste
+  // arquivo recebe "hoje" como parâmetro na hora de resolver a data efetiva —
+  // por isso a invariância é garantida por CONSTRUÇÃO, não por um caso de
+  // sorte. Este teste prova a ponta final: montar a Timeline com "hoje"
+  // avançando de 05/08 até 15/08 nunca desloca o valor de 05/08 para 07/08.
+  const realizedDaysAll = applyTreasuryCaixaRunningBalance(
+    buildTreasuryCaixaRealizedDays({
+      receivables: [{ settlementDate: "2026-08-05", amountReceived: 100 }],
+      payables: [],
+    }),
+    { informedClosingByCivilDate: new Map() }
+  );
+
+  for (const today of [
+    "2026-08-05",
+    "2026-08-06",
+    "2026-08-07",
+    "2026-08-08",
+    "2026-08-15",
+  ]) {
+    it(`today=${today} — 05/08 continua com R$100, 07/08 continua com R$0`, () => {
+      const timeline = buildTreasuryCaixaUnifiedTimeline({
+        todayCivilDate: today,
+        realizedDays: realizedDaysAll,
+        todayFlow: null,
+        forecastDays: [],
+      });
+      const day0508 = timeline.rows.find((r) => r.civilDate === "2026-08-05");
+      const day0708 = timeline.rows.find((r) => r.civilDate === "2026-08-07");
+
+      // 05/08 só aparece como linha quando já é passado ou é o próprio "hoje"
+      // (sem todayFlow, "hoje" não gera linha — ver fallback da agenda); para
+      // today >= 05/08 a linha existe e vale R$100.
+      if (today > "2026-08-05") {
+        assert.ok(day0508, `esperava linha de 05/08 para today=${today}`);
+        assert.equal(day0508!.inflows, 100);
+      }
+      // 07/08 NUNCA tem entrada própria — o título não duplicou nem migrou
+      // para lá em nenhum cenário de "hoje".
+      assert.equal(day0708, undefined);
+    });
+  }
+});
+
+describe("treasuryCaixaRules — mensal = soma dos dias, sem duplicação (R10, R11)", () => {
+  it("dueDate 05/08, baixa 07/08 (dentro da tolerância) — agosto soma R$100 UMA única vez, nunca R$200", () => {
+    const realizedDaysAll = applyTreasuryCaixaRunningBalance(
+      buildTreasuryCaixaRealizedDays({
+        // Já com a data efetiva resolvida (05/08) — não a data real da baixa.
+        receivables: [{ settlementDate: "2026-08-05", amountReceived: 100 }],
+        payables: [],
+      }),
+      { informedClosingByCivilDate: new Map() }
+    );
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: "2026-08-31",
+      realizedDays: realizedDaysAll,
+      todayFlow: null,
+      forecastDays: [],
+    });
+    const months = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
+    const august = months.find((m) => m.monthKey === "2026-08");
+
+    assert.ok(august);
+    assert.equal(august!.inflows, 100);
+
+    // Soma dos dias == mês (a mesma invariante que a UI usa para não ter uma
+    // segunda verdade mensal).
+    const sumOfDays = timeline.rows
+      .filter((r) => r.civilDate.startsWith("2026-08"))
+      .reduce((s, r) => s + r.inflows, 0);
+    assert.equal(august!.inflows, sumOfDays);
+  });
+
+  it("dois títulos, o mesmo mês, nenhum duplica: mensal = soma exata dos diários canônicos", () => {
+    const realizedDaysAll = applyTreasuryCaixaRunningBalance(
+      buildTreasuryCaixaRealizedDays({
+        receivables: [
+          { settlementDate: "2026-08-05", amountReceived: 100 }, // dueDate 05/08, baixa 07/08 (já resolvida)
+          { settlementDate: "2026-08-20", amountReceived: 250 }, // título independente, no vencimento
+        ],
+        payables: [{ dueDate: "2026-08-10", amountPaid: 60 }],
+      }),
+      { informedClosingByCivilDate: new Map() }
+    );
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: "2026-08-31",
+      realizedDays: realizedDaysAll,
+      todayFlow: null,
+      forecastDays: [],
+    });
+    const months = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
+    const august = months.find((m) => m.monthKey === "2026-08");
+
+    assert.equal(august!.inflows, 350);
+    assert.equal(august!.outflows, 60);
+  });
+});
+
+describe("treasuryCaixaRules — isolamento de fonte (SRC04, SRC05, SRC06)", () => {
+  it("SRC04 — saldo manual (opening/closingInformed) continua funcionando após a correção canônica", () => {
+    const flow: TreasuryCaixaDayFlow = {
+      civilDate: "2026-08-07",
+      opening: 1000,
+      inflows: 0,
+      outflows: 0,
+      closingCalculated: 1000,
+      closingInformed: 950,
+      divergence: -50,
+      accountCount: 1,
+      pendingClosingCount: 0,
+    };
+    const day = canonicalDay({ receivableReceived: 40, payablePaid: 10 });
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+    // Âncora manual preservada; só o cálculo derivado muda.
+    assert.equal(corrected.opening, 1000);
+    assert.equal(corrected.closingInformed, 950);
+  });
+
+  it("SRC05 — AP altera apenas saídas (outflows), nunca inflows", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [],
+      payables: [{ dueDate: "2026-08-05", amountPaid: 500 }],
+    });
+    assert.equal(days[0]!.outflows, 500);
+    assert.equal(days[0]!.inflows, 0);
+  });
+
+  it("SRC06 — AR altera apenas entradas (inflows), nunca outflows", () => {
+    const days = buildTreasuryCaixaRealizedDays({
+      receivables: [{ settlementDate: "2026-08-05", amountReceived: 700 }],
+      payables: [],
+    });
+    assert.equal(days[0]!.inflows, 700);
+    assert.equal(days[0]!.outflows, 0);
   });
 });
