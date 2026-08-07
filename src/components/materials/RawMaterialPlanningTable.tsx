@@ -133,7 +133,10 @@ function RawMaterialPlanningConsumingOrdersTable({ row }: { row: RawMaterialPlan
             <th className="p-2 text-left font-semibold">Produto</th>
             <th className="p-2 text-right font-semibold">Qtde produto (aberto)</th>
             <th className="p-2 text-right font-semibold">Qtde MP</th>
-            <th className="p-2 text-left font-semibold">Data de necessidade</th>
+            <th className="p-2 text-left font-semibold">Entrega prevista</th>
+            <th className="p-2 text-left font-semibold" title="Entrega prevista − 10 dias úteis (prazo industrial)">
+              Data de necessidade
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
@@ -149,6 +152,7 @@ function RawMaterialPlanningConsumingOrdersTable({ row }: { row: RawMaterialPlan
               <td className="p-2 text-right tabular-nums font-semibold">
                 {num(order.materialQuantity)} {order.unit}
               </td>
+              <td className="p-2 whitespace-nowrap text-muted-foreground">{formatYmdPtBr(order.deliveryDate)}</td>
               <td className="p-2 whitespace-nowrap">
                 {formatYmdPtBr(order.needByDate)}
                 {order.needByDateSource === "none" ? (
@@ -265,6 +269,11 @@ function RawMaterialPlanningCalculationMemory({ row }: { row: RawMaterialPlannin
         {row.minimumQuantity != null || row.contingencyQuantity != null
           ? ` — mínimo ${num(row.minimumQuantity)} + contingência ${num(row.contingencyQuantity)}`
           : ""}
+      </p>
+      <p>
+        <span className="font-semibold text-foreground">Data de necessidade da matéria-prima:</span> entrega prevista
+        de cada pedido − 10 dias úteis (prazo industrial) — nunca a data de entrega crua, nunca a data de criação do
+        pedido. Ver a coluna "Entrega prevista" x "Data de necessidade" nos pedidos consumidores abaixo.
       </p>
       <p>
         <span className="font-semibold text-foreground">Menor saldo projetado no horizonte:</span> {num(row.lowestProjectedBalance)} {row.unit}

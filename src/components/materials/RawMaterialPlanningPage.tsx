@@ -160,6 +160,8 @@ function InfoBanner() {
             O saldo contado vem da última conferência de estoque registrada — não é atualizado em tempo real por
             movimentações de fábrica. A necessidade vem dos pedidos de venda ainda em aberto (líquida de
             atendimento/corte) explodidos pela mesma composição (BOM) usada na Inteligência de Matéria-Prima.
+            A matéria-prima precisa estar disponível 10 dias úteis antes da entrega prevista ao cliente — a data de
+            necessidade nunca é a própria data de entrega, e a data de criação do pedido nunca entra nessa conta.
             Quando faltar um dado confiável (lead time, contagem recente, data de entrega), a situação aparece como
             "Dados incompletos" em vez de um número inventado.
           </p>

@@ -229,6 +229,28 @@ function daysBetween(fromIso: string, toIso: string): number {
   return Math.round((to - from) / 86_400_000);
 }
 
+/**
+ * Retrocede `businessDays` dias úteis (segunda a sexta) COMPLETOS a partir de
+ * `ymd` — a própria data de partida nunca conta como um dos dias
+ * retrocedidos. Data-only via UTC (evita deslocamento de timezone: nunca lê
+ * o relógio local, sempre ancora em T00:00:00.000Z).
+ *
+ * Sem calendário de feriados corporativo cadastrado no projeto no momento
+ * desta implementação (auditado — ver rawMaterialPlanning.shared.ts §need
+ * date) — considera somente sábado/domingo como não úteis. Se um calendário
+ * de feriados oficial for introduzido, este é o único ponto a atualizar.
+ */
+export function subtractBusinessDaysFromYmd(ymd: string, businessDays: number): string {
+  const cursor = new Date(`${ymd}T00:00:00.000Z`);
+  let remaining = businessDays;
+  while (remaining > 0) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) remaining -= 1;
+  }
+  return cursor.toISOString().slice(0, 10);
+}
+
 export type RawMaterialPlanningClassificationInput = {
   asOfDate: string;
   firstRiskDate: string | null;
@@ -345,18 +367,37 @@ export type NeedByDateResolution =
   | { date: string; source: "expectedDeliveryDate" }
   | { date: null; source: "none" };
 
+/** Prazo industrial: quanto antes da entrega ao cliente a MP precisa estar disponível. */
+export const RAW_MATERIAL_PLANNING_NEED_DATE_LEAD_BUSINESS_DAYS = 10;
+
 /**
- * Prioridade real disponível hoje no IndusCost (documentada no plano):
+ * ÚNICA autoridade de "data de necessidade da matéria-prima" — alimenta
+ * timeline, saldo projetado, ruptura, buy-by-date, tabela, memória do
+ * cálculo, impressão e exportação. Nenhum outro ponto do módulo deve
+ * recalcular esta regra.
+ *
+ * Regra oficial:
+ *   materialNeedDate = dataDeEntregaPrevistaDaDemanda − 10 dias úteis
+ *
+ * Fonte da data de entrega — prioridade real disponível hoje no IndusCost:
  * 1. data planejada oficial de produção — NÃO EXISTE ainda no sistema;
- * 2. data de entrega do pedido — única fonte confiável hoje;
+ * 2. data de entrega prevista da demanda (SalesOrder.expectedDeliveryDate)
+ *    — única fonte confiável hoje, mesma granularidade por pedido (não há
+ *    entrega por item/parcela distinta cadastrada no sistema);
  * 3. sem data confiável.
- * Nunca cai para "hoje" como fallback silencioso.
+ *
+ * A data de CRIAÇÃO/EMISSÃO do pedido NUNCA participa deste cálculo.
+ * Nunca cai para "hoje" como fallback silencioso quando a entrega é ausente.
  */
 export function resolveRawMaterialNeedByDate(input: {
   expectedDeliveryDate: string | null;
 }): NeedByDateResolution {
-  if (input.expectedDeliveryDate) return { date: input.expectedDeliveryDate, source: "expectedDeliveryDate" };
-  return { date: null, source: "none" };
+  if (!input.expectedDeliveryDate) return { date: null, source: "none" };
+  const date = subtractBusinessDaysFromYmd(
+    input.expectedDeliveryDate,
+    RAW_MATERIAL_PLANNING_NEED_DATE_LEAD_BUSINESS_DAYS
+  );
+  return { date, source: "expectedDeliveryDate" };
 }
 
 export function resolveStockCountAgeDays(

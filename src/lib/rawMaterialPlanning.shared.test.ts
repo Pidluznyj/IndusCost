@@ -6,9 +6,11 @@ import {
   calculatePurchaseRecommendation,
   classifyRawMaterialPlanningStatus,
   projectRawMaterialBalance,
+  RAW_MATERIAL_PLANNING_NEED_DATE_LEAD_BUSINESS_DAYS,
   resolveRawMaterialNeedByDate,
   resolveRawMaterialPlanningHorizonEndDate,
   resolveStockCountAgeDays,
+  subtractBusinessDaysFromYmd,
   type RawMaterialTimelineEvent,
 } from "./rawMaterialPlanning.shared.js";
 
@@ -354,15 +356,171 @@ describe("calculatePlanningConfidence — indicador operacional, não estatísti
   });
 });
 
-describe("resolveRawMaterialNeedByDate — nunca cai pro relógio como fallback silencioso", () => {
-  it("usa data de entrega do pedido quando disponível", () => {
-    assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-08-20" }), {
-      date: "2026-08-20",
+describe("subtractBusinessDaysFromYmd — regra dos 10 dias úteis (TEST-01..04)", () => {
+  it("TEST-01: semana normal — entrega terça 25/08/2026 retrocede para terça 11/08/2026", () => {
+    // A própria entrega nunca conta como o 1º dia subtraído (ver mission §4):
+    // 24/08=1, 21/08=2, 20/08=3, 19/08=4, 18/08=5, 17/08=6, 14/08=7, 13/08=8,
+    // 12/08=9, 11/08=10.
+    assert.equal(subtractBusinessDaysFromYmd("2026-08-25", 10), "2026-08-11");
+  });
+
+  it("TEST-02: atravessa finais de semana — sábado e domingo nunca contam", () => {
+    // Entre 25/08 e 11/08 existem 2 fins de semana completos (15-16 e 22-23);
+    // se contassem, o resultado seria 14 dias corridos, não 14.
+    const deliveryDate = "2026-08-25";
+    const needDate = subtractBusinessDaysFromYmd(deliveryDate, 10);
+    const calendarDaysBetween = Math.round(
+      (new Date(`${deliveryDate}T00:00:00.000Z`).getTime() -
+        new Date(`${needDate}T00:00:00.000Z`).getTime()) /
+        86_400_000
+    );
+    assert.equal(needDate, "2026-08-11");
+    assert.equal(calendarDaysBetween, 14, "10 dias úteis == 14 dias corridos quando cruza 2 fins de semana");
+  });
+
+  it("TEST-03: virada de mês — retrocede corretamente de agosto para julho", () => {
+    assert.equal(subtractBusinessDaysFromYmd("2026-08-03", 10), "2026-07-20");
+  });
+
+  it("TEST-04: virada de ano — retrocede corretamente de janeiro/2026 para dezembro/2025", () => {
+    assert.equal(subtractBusinessDaysFromYmd("2026-01-05", 10), "2025-12-22");
+  });
+
+  it("TEST-13 (N/A): sem calendário oficial de feriados no projeto — usa apenas seg-sex", () => {
+    // Auditoria não encontrou calendário de feriados corporativo/industrial
+    // no IndusCost (ver src/lib/executiveDashboardWorkdays.ts — mesma
+    // ressalva "sem feriados nesta fase"). Uma sexta-feira sempre conta como
+    // dia útil até que um calendário oficial seja introduzido.
+    assert.equal(subtractBusinessDaysFromYmd("2026-08-21", 1), "2026-08-20"); // sexta -> quinta
+  });
+});
+
+describe("resolveRawMaterialNeedByDate — data de necessidade = entrega − 10 dias úteis (nunca a data do pedido)", () => {
+  it("usa entrega − 10 dias úteis, nunca a data de entrega crua", () => {
+    assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-08-25" }), {
+      date: "2026-08-11",
       source: "expectedDeliveryDate",
     });
   });
 
-  it("sem data de entrega → sem data confiável (nunca usa hoje)", () => {
+  it("sem data de entrega → sem data confiável (nunca usa hoje, nunca inventa)", () => {
+    assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: null }), {
+      date: null,
+      source: "none",
+    });
+  });
+
+  it("TEST-05: pedido antigo criado muito antes — createdAt NÃO é parâmetro da função (só entrega importa)", () => {
+    // A assinatura de resolveRawMaterialNeedByDate só aceita expectedDeliveryDate —
+    // não há como um createdAt de 01/01/2026 influenciar o resultado abaixo,
+    // mesmo que o pedido tenha sido criado meses antes da entrega.
+    assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-08-25" }), {
+      date: "2026-08-11",
+      source: "expectedDeliveryDate",
+    });
+  });
+
+  it("TEST-06: pedido criado recentemente com entrega distante — usa só a entrega, nunca createdAt + X dias", () => {
+    assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-11-30" }), {
+      date: "2026-11-16",
+      source: "expectedDeliveryDate",
+    });
+  });
+
+  it("TEST-08: timezone — data civil não sofre deslocamento de um dia (âncora UTC-only)", () => {
+    const r = resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-08-25" });
+    assert.equal(r.date, "2026-08-11");
+    // Reforça que o cálculo é puramente por componentes de data (yyyy-mm-dd),
+    // nunca por Date local que poderia deslocar em fusos negativos (America/Sao_Paulo).
+    assert.equal(r.date!.length, 10);
+  });
+
+  it("constante do prazo industrial é 10 dias úteis", () => {
+    assert.equal(RAW_MATERIAL_PLANNING_NEED_DATE_LEAD_BUSINESS_DAYS, 10);
+  });
+});
+
+describe("TEST-09/10/11 — timeline debita a demanda na materialNeedDate, não na entrega, sem alterar quantidade total", () => {
+  it("TEST-09: demanda é debitada na data de necessidade (11/08), zero na data de entrega (25/08)", () => {
+    const deliveryDate = "2026-08-25";
+    const need = resolveRawMaterialNeedByDate({ expectedDeliveryDate: deliveryDate });
+    const projection = projectRawMaterialBalance({
+      countedBalance: 1000,
+      minimumQuantity: null,
+      contingencyQuantity: null,
+      events: [demand(need.date!, 315)],
+      asOfDate: AS_OF,
+      horizonEndDate: HORIZON_END,
+    });
+    const needDatePoint = projection.timeline.find((p) => p.date === need.date);
+    const deliveryDatePoint = projection.timeline.find((p) => p.date === deliveryDate);
+    assert.equal(need.date, "2026-08-11");
+    assert.equal(needDatePoint?.outbound, 315);
+    assert.equal(deliveryDatePoint, undefined, "nenhum evento deve existir na data de entrega crua");
+  });
+
+  it("TEST-10: duas demandas com entregas diferentes usam, cada uma, sua própria data de necessidade", () => {
+    const need1 = resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-08-25" });
+    const need2 = resolveRawMaterialNeedByDate({ expectedDeliveryDate: "2026-09-21" });
+    const projection = projectRawMaterialBalance({
+      countedBalance: 1000,
+      minimumQuantity: null,
+      contingencyQuantity: null,
+      events: [demand(need1.date!, 100, "PD 00001"), demand(need2.date!, 200, "PD 00002")],
+      asOfDate: AS_OF,
+      horizonEndDate: HORIZON_END,
+    });
+    assert.equal(need1.date, "2026-08-11");
+    assert.equal(need2.date, "2026-09-07");
+    assert.equal(projection.timeline.find((p) => p.date === "2026-08-11")?.outbound, 100);
+    assert.equal(projection.timeline.find((p) => p.date === "2026-09-07")?.outbound, 200);
+  });
+
+  it("TEST-11: reconciliação — antecipar a data não altera a quantidade total demandada", () => {
+    const deliveryDate = "2026-08-25";
+    const quantity = 315;
+    const beforeTotal = quantity; // regra antiga: debitava direto em deliveryDate
+    const need = resolveRawMaterialNeedByDate({ expectedDeliveryDate: deliveryDate });
+    const projection = projectRawMaterialBalance({
+      countedBalance: 1000,
+      minimumQuantity: null,
+      contingencyQuantity: null,
+      events: [demand(need.date!, quantity)],
+      asOfDate: AS_OF,
+      horizonEndDate: HORIZON_END,
+    });
+    const afterTotal = projection.timeline.reduce((sum, p) => sum + p.outbound, 0);
+    assert.equal(afterTotal, beforeTotal, "SUM(demand quantity) antes == depois — só o bucket temporal muda");
+  });
+});
+
+describe("TEST-12 — data limite de compra deriva da data de necessidade (já antecipada), não da entrega crua", () => {
+  it("buy-by-date usa firstRiskDate (que já reflete a demanda em materialNeedDate)", () => {
+    const deliveryDate = "2026-08-25";
+    const need = resolveRawMaterialNeedByDate({ expectedDeliveryDate: deliveryDate });
+    const projection = projectRawMaterialBalance({
+      countedBalance: 100, // insuficiente: dispara ruptura
+      minimumQuantity: null,
+      contingencyQuantity: null,
+      events: [demand(need.date!, 315)],
+      asOfDate: AS_OF,
+      horizonEndDate: HORIZON_END,
+    });
+    assert.equal(projection.firstRiskDate, "2026-08-11", "ruptura aparece na data de necessidade, não na entrega");
+    const buyBy = calculateBuyByDate({
+      firstRiskDate: projection.firstRiskDate,
+      leadTimeDays: 3,
+      approvalDays: 2,
+      logisticsMarginDays: 2,
+    });
+    // 11/08 - (3+2+2) = 11/08 - 7 dias corridos = 04/08.
+    assert.equal(buyBy.buyByDate, "2026-08-04");
+    assert.notEqual(buyBy.buyByDate, deliveryDate, "nunca deriva diretamente da entrega ao cliente");
+  });
+});
+
+describe("resolveRawMaterialNeedByDate — nunca cai pro relógio como fallback silencioso (TEST-07)", () => {
+  it("TEST-07: ausência de deliveryDate → sem data fabricada, source explícito 'none'", () => {
     assert.deepEqual(resolveRawMaterialNeedByDate({ expectedDeliveryDate: null }), {
       date: null,
       source: "none",
