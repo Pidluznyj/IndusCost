@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { FinanceApDashboardRow } from "./financeAccountsPayableDashboard.js";
 import {
   buildFinanceApTitlesPayload,
+  computeFinanceApTitlesSummary,
   parseFinanceApTitlesQuery,
 } from "./financeAccountsPayableTitles.js";
 
@@ -54,6 +55,28 @@ describe("financeAccountsPayableTitles", () => {
     assert.equal(payload.totalPages, 3);
     assert.equal(payload.page, 2);
     assert.equal(payload.items.length, 2);
+  });
+
+  it("summary reflete TODO o conjunto filtrado, não só a página atual", () => {
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      row({ externalId: i + 1, amountPayable: 100, balancePayable: 100, dueDate: new Date(2026, 5, 10 + i) })
+    );
+    const payload = buildFinanceApTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 2,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all" },
+        localFilter: "all",
+      },
+      REF
+    );
+    assert.equal(payload.items.length, 2);
+    assert.equal(payload.summary.totalTitles, 5);
+    assert.equal(payload.summary.totalOriginalValue, 500);
+    assert.equal(payload.summary.totalOpenValue, 500);
   });
 
   it("filtra overdueOnly e busca por NF", () => {
@@ -236,5 +259,65 @@ describe("financeAccountsPayableTitles", () => {
   it("parseFinanceApTitlesQuery interpreta documentQuery", () => {
     const q = parseFinanceApTitlesQuery({ documentQuery: "NF-10", page: "1" });
     assert.equal(q.filters.documentQuery, "NF-10");
+  });
+});
+
+describe("computeFinanceApTitlesSummary", () => {
+  const item = (partial: Partial<Parameters<typeof computeFinanceApTitlesSummary>[0][number]>) => ({
+    externalId: 1,
+    companyName: null,
+    personName: null,
+    personCnpj: null,
+    description: null,
+    sourceInvoiceId: null,
+    documentNumber: null,
+    dueDate: null,
+    scheduleDate: null,
+    operationalDueDate: null,
+    settlementDate: null,
+    paymentDate: null,
+    amountPayable: 0,
+    amountPaid: 0,
+    balancePayable: 0,
+    paymentMethodName: null,
+    bankAccountName: null,
+    calculatedStatus: "open",
+    nomusStatus: null,
+    daysOverdue: 0,
+    suspendPayment: null,
+    type: null,
+    exclusionReason: null,
+    isPurchaseOrderSchedule: false,
+    syncedAt: "2026-06-06T12:00:00.000Z",
+    ...partial,
+  });
+
+  it("lista vazia → tudo zerado, sem NaN no ticket médio", () => {
+    const s = computeFinanceApTitlesSummary([]);
+    assert.equal(s.totalTitles, 0);
+    assert.equal(s.averageTicket, 0);
+  });
+
+  it("soma original/pago/aberto e separa vencido de a vencer por status", () => {
+    const s = computeFinanceApTitlesSummary([
+      item({ amountPayable: 100, amountPaid: 40, balancePayable: 60, calculatedStatus: "overdue" }),
+      item({ amountPayable: 200, amountPaid: 0, balancePayable: 200, calculatedStatus: "upcoming" }),
+      item({ amountPayable: 50, amountPaid: 50, balancePayable: 0, calculatedStatus: "settled" }),
+    ]);
+    assert.equal(s.totalTitles, 3);
+    assert.equal(s.totalOriginalValue, 350);
+    assert.equal(s.totalPaidValue, 90);
+    assert.equal(s.totalOpenValue, 260);
+    assert.equal(s.totalOverdueValue, 60);
+    assert.equal(s.totalDueValue, 200);
+    assert.equal(s.averageTicket, Math.round((350 / 3) * 100) / 100);
+  });
+
+  it("dueToday conta como a vencer (mesmo bucket de upcoming)", () => {
+    const s = computeFinanceApTitlesSummary([
+      item({ amountPayable: 100, balancePayable: 100, calculatedStatus: "dueToday" }),
+    ]);
+    assert.equal(s.totalDueValue, 100);
+    assert.equal(s.totalOverdueValue, 0);
   });
 });

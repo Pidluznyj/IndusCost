@@ -98,6 +98,16 @@ export type FinanceApTitleListItem = {
   isClassified?: boolean;
 };
 
+export type FinanceApTitlesSummary = {
+  totalTitles: number;
+  totalOriginalValue: number;
+  totalPaidValue: number;
+  totalOpenValue: number;
+  totalOverdueValue: number;
+  totalDueValue: number;
+  averageTicket: number;
+};
+
 export type FinanceApTitlesPayload = {
   page: number;
   limit: number;
@@ -105,10 +115,39 @@ export type FinanceApTitlesPayload = {
   totalPages: number;
   sortBy: FinanceApTitlesSortBy;
   sortDirection: FinanceApTitlesSortDirection;
+  /** Totais sobre TODO o conjunto filtrado (antes da paginação) — não só a página atual. */
+  summary: FinanceApTitlesSummary;
   items: FinanceApTitleListItem[];
   selectedBucket?: FinanceAgingBucketSelectionMeta;
   bucketTotals?: FinanceTitlesBucketTotals;
 };
+
+/** Mesmo padrão de src/lib/financeAccountsReceivableTitles.ts — totais em memória sobre o conjunto já filtrado. */
+export function computeFinanceApTitlesSummary(items: FinanceApTitleListItem[]): FinanceApTitlesSummary {
+  let totalOriginalValue = 0;
+  let totalPaidValue = 0;
+  let totalOpenValue = 0;
+  let totalOverdueValue = 0;
+  let totalDueValue = 0;
+  for (const item of items) {
+    totalOriginalValue += item.amountPayable;
+    totalPaidValue += item.amountPaid;
+    totalOpenValue += item.balancePayable;
+    const status = item.calculatedStatus;
+    if (status === "overdue") totalOverdueValue += item.balancePayable;
+    if (status === "upcoming" || status === "dueToday") totalDueValue += item.balancePayable;
+  }
+  const totalTitles = items.length;
+  return {
+    totalTitles,
+    totalOriginalValue: roundMoney(totalOriginalValue),
+    totalPaidValue: roundMoney(totalPaidValue),
+    totalOpenValue: roundMoney(totalOpenValue),
+    totalOverdueValue: roundMoney(totalOverdueValue),
+    totalDueValue: roundMoney(totalDueValue),
+    averageTicket: totalTitles > 0 ? roundMoney(totalOriginalValue / totalTitles) : 0,
+  };
+}
 
 function parsePositiveInt(value: unknown, fallback: number, max: number): number {
   const n = Number.parseInt(String(value ?? ""), 10);
@@ -373,6 +412,7 @@ export function buildFinanceApTitlesPayload(
     totalPages,
     sortBy: query.sortBy,
     sortDirection: query.sortDirection,
+    summary: computeFinanceApTitlesSummary(mapped),
     items,
     selectedBucket: query.agingBucket
       ? resolveFinanceAgingBucketMeta(query.agingBucket)

@@ -10,6 +10,14 @@ import type {
 export const FINANCE_AP_SUPPLIER_RANKING_LIMIT = 100;
 export const FINANCE_AP_COMPANY_SUMMARY_LIMIT = 50;
 
+/** Abas de nível de página — Visão Geral vs Grid Analítico de Títulos (mesma ideia de Contas a Receber). */
+export const FINANCE_AP_PAGE_VIEWS = [
+  { id: "overview", label: "Visão Geral" },
+  { id: "titles-analytical", label: "Títulos" },
+] as const;
+
+export type FinanceApPageViewId = (typeof FINANCE_AP_PAGE_VIEWS)[number]["id"];
+
 export type FinanceApDashboardFiltersApplied = {
   companyName?: string;
   personName?: string;

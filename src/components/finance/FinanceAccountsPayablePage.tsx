@@ -32,6 +32,7 @@ import {
   FINANCE_AP_STATUS_OPTIONS,
   FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS,
   FINANCE_AP_EXECUTIVE_TABS,
+  FINANCE_AP_PAGE_VIEWS,
   FINANCE_AP_SECONDARY_TABS,
   normalizeFinanceApUiFilters,
   type FinanceApAgingBucket,
@@ -40,6 +41,7 @@ import {
   type FinanceApDataQualityAlertItem,
   type FinanceApDataQualityAlertKey,
   type FinanceApExecutiveTabId,
+  type FinanceApPageViewId,
   type FinanceApPurchaseOrderScheduleAudit,
   type FinanceApSecondaryTabId,
   type FinanceApTopDebtor,
@@ -84,6 +86,7 @@ import { FinanceActionCenterShell } from "@/src/components/finance/shared/Financ
 import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
 import { FinanceAccountsPayableSyncPanel } from "@/src/components/finance/FinanceAccountsPayableSyncPanel";
 import { FinanceApTitlesTab } from "@/src/components/finance/FinanceAccountsPayableTitlesTab";
+import { FinanceApAnalyticalTitlesTab } from "@/src/components/finance/FinanceApAnalyticalTitlesTab";
 import {
   FinanceApAgingChart,
   FinanceApTopDebtorsChart,
@@ -500,6 +503,7 @@ export function FinanceAccountsPayablePage() {
     canManageFinanceApAllocations(auth) ||
     permissions.canPerformAction("finance.accounts_payable", "manage");
 
+  const [pageView, setPageView] = useState<FinanceApPageViewId>("overview");
   const [executiveTab, setExecutiveTab] = useState<FinanceApExecutiveTabId>("titles");
   const [secondaryTab, setSecondaryTab] = useState<FinanceApSecondaryTabId>("schedule");
   const [titlesLocalFilter, setTitlesLocalFilter] = useState<FinanceApTitlesLocalFilter>("all");
@@ -761,7 +765,18 @@ export function FinanceAccountsPayablePage() {
         </div>
       </FinanceDataAuditDrawer>
 
+      <FinanceDetailTabs
+        tabs={FINANCE_AP_PAGE_VIEWS}
+        activeId={pageView}
+        onChange={setPageView}
+        className="mb-2"
+      />
+
       <main data-testid="finance-main-content">
+      {pageView === "titles-analytical" ? (
+        <FinanceApAnalyticalTitlesTab canExport={canExport} />
+      ) : (
+        <>
       {dashboardError ? (
         <FinanceApErrorBanner
           message={dashboardError}
@@ -1214,6 +1229,8 @@ export function FinanceAccountsPayablePage() {
         </div>
       </section>
       <FinanceDueRadar mode="payable" dashboardQuery={queryString} />
+        </>
+      )}
       </main>
     </FinanceBiDashboardShell>
   );
