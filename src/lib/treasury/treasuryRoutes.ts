@@ -24,6 +24,7 @@ import { createTreasuryProjectionControllers } from "./controllers/treasuryProje
 import { createTreasuryPredictiveCrCpByAccountControllers } from "./controllers/treasuryPredictiveCrCpByAccountController.js";
 import { createTreasuryCaixaControllers } from "./controllers/treasuryCaixaController.js";
 import { createTreasuryCaixaScenariosControllers } from "./controllers/treasuryCaixaScenariosController.js";
+import { createCashSupportControllers } from "./controllers/cashSupportController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
 import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
@@ -43,6 +44,8 @@ import {
   TREASURY_PREDICTIVE_CRCP_BY_ACCOUNT_PATH,
   TREASURY_CAIXA_PATH,
   TREASURY_CAIXA_SCENARIOS_PATH,
+  TREASURY_CASH_SUPPORT_PATH,
+  TREASURY_CASH_SUPPORT_SUMMARY_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_ALERTS_PATH,
   TREASURY_AUDIT_PATH,
@@ -130,6 +133,7 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const caixa = createTreasuryCaixaControllers({ getCurrentAppUser });
+  const cashSupport = createCashSupportControllers({ getCurrentAppUser });
   const caixaScenarios = createTreasuryCaixaScenariosControllers({
     getCurrentAppUser,
   });
@@ -790,6 +794,28 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewTreasury,
     caixa.getBoard
+  );
+
+  // Apoio ao Caixa (read-only) — RBAC/ACL/flag reaproveitados da conciliação
+  // (07-mvp-scope.md): o read model inclui movimento bancário, mais sensível
+  // que o Caixa canônico puro. requireResource nega por padrão; ACL por
+  // conta é aplicada dentro do orquestrador via treasuryBankMovementQueryService.
+  app.get(
+    TREASURY_CASH_SUPPORT_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    cashSupport.getReadModel
+  );
+
+  app.get(
+    TREASURY_CASH_SUPPORT_SUMMARY_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    cashSupport.getSummary
   );
 
   app.get(

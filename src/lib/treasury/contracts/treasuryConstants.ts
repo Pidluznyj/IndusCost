@@ -66,6 +66,14 @@ export const TREASURY_CAIXA_PATH =
 export const TREASURY_CAIXA_SCENARIOS_PATH =
   `${TREASURY_API_PREFIX}/caixa/scenarios` as const;
 
+/** Apoio ao Caixa — read model unificado (canônico + banco + conciliação). */
+export const TREASURY_CASH_SUPPORT_PATH =
+  `${TREASURY_API_PREFIX}/cash-support` as const;
+
+/** Apoio ao Caixa — resumo isolado (sem linhas), para cabeçalho/painel leve. */
+export const TREASURY_CASH_SUPPORT_SUMMARY_PATH =
+  `${TREASURY_API_PREFIX}/cash-support/summary` as const;
+
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 
