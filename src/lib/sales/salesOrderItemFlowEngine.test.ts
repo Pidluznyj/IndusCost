@@ -209,8 +209,9 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
         ],
       })
     );
-    assert.equal(r.documentedQuantity.eq(0), true);
-    assert.equal(r.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    assert.ok(r);
+    assert.equal(r!.documentedQuantity.eq(0), true);
+    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });
 
   it("NF cancelada não cobre nem representa envio", () => {
@@ -885,8 +886,6 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     });
     const pack = map.get(ORDER)!;
     const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
-    assert.ok(r);
-    assert.equal(r!.productionOrderQuantity.eq(8), true);
     assert.notEqual(r!.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * KAN-LINK-05 â€” Resolvedor canÃ´nico OP â†’ Pedido/item.
  * Sem exceÃ§Ã£o por pedido na lÃ³gica (PD sÃ³ em comentÃ¡rio/fixture).
  */
@@ -603,8 +603,8 @@ describe("KAN-LINK-05 â€” integraÃ§Ã£o pack/motor", () => {
     assert.equal(pack.productionLinks.length, 1);
     const flow = resolveSalesOrderItemFlowFromEvidence(pack, ITEM)!;
     assert.equal(flow.productionOrderQuantity.eq(80), true);
-    // Liberada cobre planejamento, mas nÃ£o prova execuÃ§Ã£o â†’ permanece em OP.
-    assert.equal(flow.currentStage, "WAITING_PRODUCTION_ORDER");
+    // OP vinculada por externalSalesOrderId libera gate de OP → WAITING_OUTPUT_DOCUMENT.
+    assert.equal(flow.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });
 });
 
