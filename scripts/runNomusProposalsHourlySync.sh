@@ -52,9 +52,9 @@ export NOMUS_SYNC_LOG_DIR="$LOG_DIR"
 export NOMUS_PROPOSALS_RUNNER_LOG="$RUN_LOG"
 
 echo
-echo "=== EXECUÇÃO (orquestrador --only=proposals; reusa sync:nomus:proposals:${MODE}) ==="
+echo "=== EXECUÇÃO (orquestrador --only=proposals --incremental; reusa sync:nomus:proposals:${MODE}) ==="
 set +e
-npm run "sync:nomus:all:${MODE}" -- --only=proposals
+npm run "sync:nomus:all:${MODE}" -- --only=proposals --incremental
 EXIT_CODE=$?
 set -e
 

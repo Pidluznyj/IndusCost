@@ -52,13 +52,14 @@ type BomAutoApplyStep = {
 const ALL_TARGETS: SyncTarget[] = ["customers", "products", "bom-components", "proposals", "sales-orders"];
 const prisma = new PrismaClient();
 
-function parseArgs(): { mode: SyncMode; only: SyncTarget[] } {
+function parseArgs(): { mode: SyncMode; only: SyncTarget[]; isIncremental: boolean } {
   const args = process.argv.slice(2);
 
   const mode: SyncMode = args.includes("--apply") ? "apply" : "dry";
+  const isIncremental = args.includes("--incremental");
 
   const onlyArg = args.find((arg) => arg.startsWith("--only="));
-  if (!onlyArg) return { mode, only: ALL_TARGETS };
+  if (!onlyArg) return { mode, only: ALL_TARGETS, isIncremental };
 
   const values = onlyArg
     .replace("--only=", "")
@@ -71,7 +72,7 @@ function parseArgs(): { mode: SyncMode; only: SyncTarget[] } {
     throw new Error(`Targets inválidos em --only: ${invalid.join(", ")}`);
   }
 
-  return { mode, only: values };
+  return { mode, only: values, isIncremental };
 }
 
 function nowStamp(): string {
@@ -307,7 +308,12 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
   }
 }
 
-function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecution {
+function runStep(
+  target: SyncTarget,
+  mode: SyncMode,
+  logDir: string,
+  isIncremental = false
+): StepExecution {
   const startedAt = nowStamp();
   const started = Date.now();
 
@@ -333,7 +339,8 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecut
   }
 
   const logFile = join(logDir, `${target}_${mode}_${fileStamp()}.log`);
-  const command = `npm run ${npmScript}`;
+  const spawnArgs = isIncremental ? ["run", npmScript, "--", "--incremental"] : ["run", npmScript];
+  const command = `npm ${spawnArgs.join(" ")}`;
 
   // SYNC-07 — Pedidos via orquestrador: estratégia explícita RECENT_WINDOW (sem ausência).
   const childEnv =
@@ -348,7 +355,7 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecut
         }
       : { ...process.env, NOMUS_CANONICAL_SOURCE_TRIGGER: "ORCHESTRATOR" };
 
-  const result = spawnSync("npm", ["run", npmScript], {
+  const result = spawnSync("npm", spawnArgs, {
     cwd: process.cwd(),
     env: childEnv,
     encoding: "utf8",
@@ -438,7 +445,7 @@ async function runBomAutoApplyStep(mode: SyncMode): Promise<BomAutoApplyStep> {
 
 async function main() {
   try {
-    const { mode, only } = parseArgs();
+    const { mode, only, isIncremental } = parseArgs();
 
     const logDir = process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync";
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
@@ -479,7 +486,7 @@ async function main() {
         continue;
       }
 
-      const execution = runStep(target, mode, logDir);
+      const execution = runStep(target, mode, logDir, isIncremental);
       results.push(execution.step);
       await persistIntegrationRunBestEffort(execution.step, execution.stdout, execution.stderr);
 
