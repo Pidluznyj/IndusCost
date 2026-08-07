@@ -26,6 +26,11 @@
 import type { PrismaClient } from "@prisma/client";
 import { loadSalesOrderIndustrialResultReportPayload } from "../sales/salesOrderIndustrialResultReportService.server.js";
 import type { SalesOrderIndustrialResultReportRow } from "../sales/salesOrderIndustrialResultReport.js";
+import {
+  parseSalesOrderListQuery,
+  resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
+} from "../salesOrderListQuery.server.js";
 import { loadFinanceArManagementRowsFromPrisma } from "../financeAccountsReceivableManagement.server.js";
 import { resolveFinanceArNfeOrderLinksFromRows } from "./financeAccountsReceivableEffectiveTitles.server.js";
 import {
@@ -99,11 +104,22 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const todayCivilDate = toCivilDateKey(referenceDate) ?? referenceDate.toISOString().slice(0, 10);
 
   // 1) População de Pedidos + custo industrial oficial já resolvido — mesmo
-  //    filtro/paginação da tela de Resultado Industrial (uma consulta).
+  //    filtro/paginação da tela de Resultado Industrial (uma consulta), MENOS
+  //    empresas do grupo econômico (Lazarios/Koppetel/SM). Operação intercompany
+  //    não representa exposição comercial externa — exclusão ocorre ANTES de
+  //    qualquer cálculo de capital investido/recebimento (ver `financeInternalGroupExclusions.ts`,
+  //    mesma autoridade canônica já usada em AR/AP/DRE).
   const industrialReport = await loadSalesOrderIndustrialResultReportPayload(prisma, {
     query: input.query,
     referenceDate,
+    excludeEconomicGroupCustomers: true,
   });
+
+  await logInvestedCapitalRecoveryPopulationDiagnostics(
+    prisma,
+    input.query,
+    industrialReport.totalOrdersInScope
+  );
 
   const orderCodes = industrialReport.rows.map((r) => r.orderCode);
   const orderCodeToSalesOrderId = new Map<string, string>();
@@ -255,6 +271,40 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     topCustomers,
     rows,
   };
+}
+
+/**
+ * Observabilidade (seção 26 da missão intercompany) — não é obrigatório expor
+ * na UI. Duas contagens leves (`count()`, sem a carga pesada de itens/custo/
+ * imposto do relatório): população candidata (antes da exclusão de grupo) e
+ * população elegível (depois — igual ao `totalOrdersInScope` já calculado).
+ */
+async function logInvestedCapitalRecoveryPopulationDiagnostics(
+  prisma: PrismaClient,
+  query: Record<string, unknown>,
+  eligibleOrders: number
+): Promise<void> {
+  try {
+    const parsed = parseSalesOrderListQuery(query);
+    const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
+      sellerKeyRaw: parsed.sellerKeyRaw,
+      sellerText: parsed.sellerText,
+    });
+    const candidateWhere = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere, {
+      excludeEconomicGroupCustomers: false,
+    });
+    const totalCandidates = await prisma.salesOrder.count({ where: candidateWhere });
+    console.info(
+      "[invested-capital-recovery] population",
+      JSON.stringify({
+        totalCandidates,
+        intercompanyExcluded: Math.max(0, totalCandidates - eligibleOrders),
+        eligibleOrders,
+      })
+    );
+  } catch {
+    // Diagnóstico não pode derrubar a rota — falha aqui é apenas observabilidade perdida.
+  }
 }
 
 function sum<T>(items: readonly T[], pick: (item: T) => number): number {
