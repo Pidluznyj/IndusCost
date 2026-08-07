@@ -6,6 +6,7 @@
 
 import React, { useState } from "react";
 import type { TreasuryReconciliationMatchDto } from "@/src/lib/treasury/contracts/index.js";
+import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 
 export function CashSupportUnmatchDialog(props: {
@@ -22,9 +23,9 @@ export function CashSupportUnmatchDialog(props: {
   if (!open || !match) return null;
   const canSubmit = reason.trim().length >= 3 && !busy;
 
-  return (
+  return renderInPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       data-testid="cash-support-unmatch-dialog"
       role="dialog"
       aria-modal="true"

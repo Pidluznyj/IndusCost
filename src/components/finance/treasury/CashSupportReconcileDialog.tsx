@@ -11,6 +11,7 @@
  */
 
 import React, { useMemo, useState } from "react";
+import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 import type {
   TreasuryReconciliationAllocationKind,
@@ -187,9 +188,9 @@ export function CashSupportReconcileDialog({
 
   if (!open) return null;
 
-  return (
+  return renderInPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       data-testid="cash-support-reconcile-dialog"
       role="dialog"
       aria-modal="true"
