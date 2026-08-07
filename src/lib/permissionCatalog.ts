@@ -132,6 +132,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     risk: "sensitive",
   }),
   perm({
+    key: "finance.investedCapitalRecovery.view",
+    label: "Financeiro — Recuperação do Dinheiro Investido",
+    group: FIN,
+    module: "invested-capital-recovery",
+    description:
+      "Acessar a tela analítica de Recuperação do Dinheiro Investido (somente leitura). finance.view NÃO abre este módulo.",
+    type: "section",
+    parentKey: "finance.view",
+    requires: ["finance.view"],
+    risk: "sensitive",
+  }),
+  perm({
     key: "finance.treasury.dashboard.view",
     label: "Tesouraria — Dashboard",
     group: FIN,

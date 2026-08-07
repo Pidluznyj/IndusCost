@@ -39,6 +39,7 @@ export type AppModuleId =
   | "simulations"
   | "finance"
   | "treasury"
+  | "invested-capital-recovery"
   | "suppliers"
   | "portfolio-reconciliation"
   | "guide"
@@ -87,6 +88,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "simulations",
   "finance",
   "treasury",
+  "invested-capital-recovery",
   "suppliers",
   "portfolio-reconciliation",
   "guide",
@@ -190,6 +192,10 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "treasury":
       // finance.view NÃO abre Tesouraria (contrato finance.treasury).
       return check.hasPermission("finance.treasury.view");
+    case "invested-capital-recovery":
+      // finance.view NÃO abre a Recuperação do Dinheiro Investido (mesmo
+      // contrato de isolamento da Tesouraria).
+      return check.hasPermission("finance.investedCapitalRecovery.view");
     case "suppliers":
       // PERM-41/42: Fornecedores isolado de Centros de Custo / finance.view
       return check.hasPermission("finance.suppliers.view");
@@ -338,6 +344,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   ) {
     return "treasury";
   }
+  if (
+    normalized === "/finance/invested-capital-recovery" ||
+    normalized.startsWith("/finance/invested-capital-recovery/")
+  ) {
+    return "invested-capital-recovery";
+  }
   if (normalized === "/finance" || normalized.startsWith("/finance/")) {
     return "finance";
   }
@@ -385,6 +397,8 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";
       if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
       if (moduleId === "treasury") return "/finance/treasury";
+      if (moduleId === "invested-capital-recovery")
+        return "/finance/invested-capital-recovery";
       return `/${moduleId}`;
     }
   }
@@ -424,6 +438,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   simulations: "Simulações",
   finance: "Financeiro",
   treasury: "Tesouraria",
+  "invested-capital-recovery": "Recuperação do Dinheiro Investido",
   suppliers: "Fornecedores",
   "portfolio-reconciliation": "Conciliação de Carteira",
   guide: "Guia do Sistema",

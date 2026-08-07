@@ -18,6 +18,7 @@ import { FinanceModule } from "./components/FinanceModule";
 import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage";
 import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
+import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
@@ -1286,6 +1287,17 @@ export default function App() {
               description="Contas financeiras locais, saldos e operações de caixa — distinto do Fluxo de Caixa e da Conciliação de Carteira."
             >
               <TreasuryModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="finance/invested-capital-recovery"
+          element={
+            <ModulePageShell
+              title="Recuperação do Dinheiro Investido"
+              description="Quanto do capital aplicado nos pedidos já retornou e quanto ainda está na rua."
+            >
+              <InvestedCapitalRecoveryPage />
             </ModulePageShell>
           }
         />

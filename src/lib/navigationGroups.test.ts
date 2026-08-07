@@ -48,6 +48,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   commissions: "comercial",
   finance: "financeiro",
   treasury: "financeiro",
+  "invested-capital-recovery": "financeiro",
   suppliers: "financeiro",
   "portfolio-reconciliation": "financeiro",
   opex: "financeiro",
@@ -90,6 +91,9 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       let expected = `/${moduleId}`;
       if (moduleId === "suppliers") expected = "/finance/suppliers";
       if (moduleId === "treasury") expected = "/finance/treasury";
+      if (moduleId === "invested-capital-recovery") {
+        expected = "/finance/invested-capital-recovery";
+      }
       if (moduleId === "portfolio-reconciliation") {
         expected = "/finance/portfolio-reconciliation";
       }

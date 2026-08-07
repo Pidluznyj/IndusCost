@@ -9,6 +9,7 @@ export const FINANCE_MODULE_RESOURCE_KEYS = {
   home: "finance",
   cashFlow: "finance.cash_flow",
   accountsReceivable: "finance.accounts_receivable",
+  investedCapitalRecovery: "finance.invested_capital_recovery",
   billing: "finance.billing",
   salesOrders: "finance.sales_orders",
   costCenters: "finance.cost_centers",

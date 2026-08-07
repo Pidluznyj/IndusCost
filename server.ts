@@ -398,6 +398,7 @@ import {
   registerFinanceApDueRadarRoutes,
 } from "./src/lib/financeDueRadarRoutes.js";
 import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
+import { registerFinanceInvestedCapitalRecoveryRoutes } from "./src/lib/financeInvestedCapitalRecoveryRoutes.js";
 import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
 import { registerFinanceSuppliersRoutes } from "./src/lib/financeSuppliersRoutes.js";
 import { registerSupplierServiceTerminationRoutes } from "./src/lib/suppliers/supplierServiceTerminationRoutes.js";
@@ -16352,6 +16353,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerFinanceAccountsReceivableRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  registerFinanceInvestedCapitalRecoveryRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
