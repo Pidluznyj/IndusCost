@@ -50,9 +50,18 @@ export type CashSupportService = {
   ): Promise<CashSupportReadModel>;
 };
 
-function civilDateToPeriod(civilDateFrom: string): { year: number; month: number } {
-  const [y, m] = civilDateFrom.split("-").map(Number);
-  return { year: y!, month: m! };
+/**
+ * `treasuryCaixaService.getBoard` só aceita ano OU ano+mês OU ano+mês+dia —
+ * nunca um intervalo arbitrário. Pedir só o ano de `civilDateFrom` (sem mês)
+ * carrega o ANO INTEIRO como superset; `buildCashSupportReadModel` (CS-005)
+ * já filtra as linhas pelo intervalo exato `civilDateFrom..civilDateTo`
+ * depois. Passar o mês aqui truncaria os títulos ao mês de `civilDateFrom`
+ * mesmo quando o usuário pediu "todos os meses" ou um intervalo mais amplo —
+ * os movimentos bancários continuariam cobrindo o período inteiro (usam
+ * from/to diretamente), gerando dado inconsistente entre as duas fontes.
+ */
+function civilDateToYear(civilDateFrom: string): number {
+  return Number(civilDateFrom.slice(0, 4));
 }
 
 export function createCashSupportService(deps: {
@@ -72,10 +81,10 @@ export function createCashSupportService(deps: {
       const reconciliationActor: TreasuryReconciliationMatchActor =
         buildTreasuryReconciliationMatchActor(actor.appUser, actor.requestId ?? undefined);
 
-      const { year, month } = civilDateToPeriod(filters.civilDateFrom);
+      const year = civilDateToYear(filters.civilDateFrom);
 
       const [board, movementsPage, companyAccounts] = await Promise.all([
-        caixaService.getBoard({ year, month }),
+        caixaService.getBoard({ year }),
         bankMovementService.listMovements(bankActor, {
           page: 1,
           pageSize: 200,

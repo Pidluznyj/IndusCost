@@ -42,9 +42,39 @@ function pad2(n: number): string {
 }
 
 /** Ano/(Mês) → primeiro dia do período (mês, ou 1º de janeiro se "todos os meses"). */
-function firstDayOf(state: CashSupportPeriodFilterState): string {
+export function firstDayOf(state: CashSupportPeriodFilterState): string {
   const month = state.month === "" ? 1 : state.month;
   return `${state.year}-${pad2(month)}-01`;
+}
+
+export function lastDayOfMonth(year: number, month: number): string {
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${pad2(month)}-${pad2(lastDay)}`;
+}
+
+/**
+ * "Até" padrão para Ano/Mês recém-escolhidos: fecha no fim do período (mês
+ * ou ano) quando ele já passou; usa "hoje" quando o período ainda está em
+ * curso. Sem isto, trocar só o Ano deixava o "Até" antigo (de outro ano)
+ * parado, e um ano passado continuava puxando dados até a data de hoje do
+ * ano corrente — o filtro de Ano ficava sem efeito real.
+ */
+export function defaultUntilFor(year: number, month: number | "", today: string): string {
+  const todayYear = Number(today.slice(0, 4));
+  const todayMonth = Number(today.slice(5, 7));
+  if (month === "") {
+    // Ano estritamente futuro também fecha em 31/12: usar "hoje" ali
+    // produziria civilDateTo anterior a civilDateFrom (1º de janeiro
+    // daquele ano), um intervalo invertido.
+    return year === todayYear ? today : `${year}-12-31`;
+  }
+  if (year > todayYear || (year === todayYear && month > todayMonth)) {
+    return lastDayOfMonth(year, month);
+  }
+  if (year === todayYear && month === todayMonth) {
+    return today;
+  }
+  return lastDayOfMonth(year, month);
 }
 
 function candidateTitlesFor(
@@ -198,13 +228,25 @@ export function CashSupportWorkspacePage({
     }
   }
 
+  function handlePeriodChange(next: CashSupportPeriodFilterState) {
+    // Recalcula "Até" só quando Ano/Mês mudam — se o usuário editou "Até" na
+    // mão (mesmo Ano/Mês), a escolha dele prevalece.
+    const yearOrMonthChanged =
+      next.year !== period.year || next.month !== period.month;
+    setPeriod(
+      yearOrMonthChanged
+        ? { ...next, until: defaultUntilFor(next.year, next.month, today) }
+        : next
+    );
+  }
+
   return (
     <>
       <div className="mb-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
         <CashSupportPeriodFilters
           value={period}
           yearOptions={yearOptions}
-          onChange={setPeriod}
+          onChange={handlePeriodChange}
         />
       </div>
 

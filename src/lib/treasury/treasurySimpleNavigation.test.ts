@@ -32,17 +32,18 @@ function allFlagsOn() {
 }
 
 describe("treasurySimpleNavigation — navegação principal", () => {
-  it("expõe exatamente 2 abas principais com linguagem simples", () => {
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 2);
+  it("expõe exatamente 3 abas principais com linguagem simples", () => {
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 3);
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Contas", "Caixa"]
+      ["Contas", "Caixa", "Apoio ao Caixa"]
     );
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path),
       [
         `${TREASURY_UI_BASE_PATH}/accounts`,
         `${TREASURY_UI_BASE_PATH}/caixa`,
+        `${TREASURY_UI_BASE_PATH}/cash-support`,
       ]
     );
   });
@@ -72,13 +73,13 @@ describe("treasurySimpleNavigation — navegação principal", () => {
     );
   });
 
-  it("subflag de contas desligada deixa só Caixa (que segue a mestra)", () => {
+  it("subflag de contas desligada deixa Caixa e Apoio ao Caixa (que seguem outras flags)", () => {
     const flags = allFlagsOn();
     flags["treasury.accounts.enabled"] = false;
     const visible = filterTreasuryUiSections(TREASURY_UI_PRIMARY_SECTIONS, flags);
     assert.deepEqual(
       visible.map((s) => s.id),
-      ["caixa"]
+      ["caixa", "cash-support"]
     );
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "reconcile"));
     assert.ok(TREASURY_UI_ADVANCED_SECTIONS.some((s) => s.id === "projections"));
