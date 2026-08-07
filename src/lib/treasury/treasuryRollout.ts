@@ -42,6 +42,7 @@ export type TreasuryRolloutUiSectionId =
   | "bank"
   | "ofx"
   | "reconcile"
+  | "cash-support"
   | "exceptions"
   | "alert-settings"
   | "closing"
@@ -76,6 +77,8 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   bank: "treasury.ofxImport.enabled",
   ofx: "treasury.ofxImport.enabled",
   reconcile: "treasury.reconciliation.enabled",
+  /** Apoio ao Caixa: mesma flag/RBAC da conciliação — read model inclui banco. */
+  "cash-support": "treasury.reconciliation.enabled",
   exceptions: "treasury.exceptions.enabled",
   "alert-settings": "treasury.exceptions.enabled",
   closing: "treasury.dailyClosing.enabled",

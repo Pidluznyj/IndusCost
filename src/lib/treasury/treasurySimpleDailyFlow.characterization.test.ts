@@ -57,10 +57,10 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-/** +1 GET para GET /api/treasury/caixa/scenarios (consolidação Caixa Fase 4). */
-const EXPECTED_HTTP_HANDLERS = 99;
-/** home + 4 primárias + 15 avançadas + hub advanced */
-const EXPECTED_UI_SECTIONS = 22;
+/** +3 GET: cash-support, cash-support/summary, cash-support/suggestions (CS-006/008). */
+const EXPECTED_HTTP_HANDLERS = 102;
+/** home + 4 primárias + 16 avançadas (+1: cash-support) + hub advanced */
+const EXPECTED_UI_SECTIONS = 23;
 const EXPECTED_FEATURE_FLAGS = 15;
 const EXPECTED_RESOURCE_KEYS = 18;
 const EXPECTED_LEGACY_BAGS = 28;

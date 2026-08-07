@@ -107,6 +107,11 @@ export const TREASURY_UI_ADVANCED_SECTIONS = [
     label: "Conciliação avançada",
   },
   {
+    id: "cash-support",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/cash-support`,
+    label: "Apoio ao Caixa",
+  },
+  {
     id: "exceptions",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/exceptions`,
     label: "Exceções",
