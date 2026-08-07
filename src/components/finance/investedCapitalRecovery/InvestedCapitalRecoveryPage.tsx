@@ -3,8 +3,15 @@
  * leitura. Backend é autoridade: este componente só envia filtros e
  * renderiza o DTO; nenhum capitalRecovered/moneyOnStreet/percent/status/
  * aging/KPI é recalculado aqui.
+ *
+ * Filtros: seguem o padrão draft/applied já usado em Contas a Receber >
+ * Títulos — os inputs só alteram estado local (`draftFilters`); a busca
+ * (rede) só dispara quando o usuário clica "Pesquisar" (ou no primeiro
+ * carregamento). `economicStatus` também é filtro de backend (não só da
+ * tabela) — assim cards, aging e top clientes ficam sempre consistentes com
+ * a mesma população da tabela.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FinanceModuleEmptyState,
   FinanceModuleErrorBanner,
@@ -17,54 +24,16 @@ import {
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { financePersonFieldsFromSelection } from "@/src/lib/customerSearch";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { InvestedCapitalRecoveryPrintDocument } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPrintDocument";
+import type {
+  InvestedCapitalRecoveryPayload,
+  InvestedCapitalRecoveryRow,
+  InvestedCapitalRecoveryStatus,
+} from "@/src/components/finance/investedCapitalRecovery/investedCapitalRecoveryTypes";
+import "@/src/components/sales/sales-order-report-print.css";
 import { cn } from "@/src/lib/utils";
-
-type InvestedCapitalRecoveryStatus =
-  | "SEM_RECUPERACAO"
-  | "EM_RECUPERACAO"
-  | "CAPITAL_RECUPERADO"
-  | "DADOS_INSUFICIENTES";
-
-type InvestedCapitalRecoveryRow = {
-  salesOrderId: string;
-  orderCode: string;
-  customerName: string | null;
-  sellerName: string | null;
-  saleValue: number;
-  investedCapital: number | null;
-  investedCapitalSource: "INDUSTRIAL_RESULT";
-  investedCapitalUnavailableReason: string | null;
-  actualReceived: number;
-  outstandingReceivable: number;
-  capitalRecovered: number | null;
-  moneyOnStreet: number | null;
-  recoveryPercent: number | null;
-  status: InvestedCapitalRecoveryStatus;
-  capitalRecoveryDate: string | null;
-  forecastCapitalRecoveryDate: string | null;
-  forecastSource: "REAL_RECEIVABLES" | "REAL_AND_FORECAST" | "FORECAST_ONLY" | "NONE";
-  orderStatusLabel: string;
-};
-
-type InvestedCapitalRecoveryPayload = {
-  ok: true;
-  generatedAt: string;
-  totalOrdersInScope: number;
-  truncated: boolean;
-  kpis: {
-    moneyOnStreetToday: number;
-    capitalRecoveredTotal: number;
-    investedCapitalAnalyzedTotal: number;
-    totalOutstandingReceivable: number;
-    ordersFullyRecoveredCount: number;
-    ordersPartiallyRecoveredCount: number;
-    ordersInsufficientDataCount: number;
-    averageDaysToRecoverCapital: number | null;
-  };
-  agingBuckets: Array<{ key: string; label: string; amount: number }>;
-  topCustomers: Array<{ customerName: string; moneyOnStreet: number; percentOfTotal: number }>;
-  rows: InvestedCapitalRecoveryRow[];
-};
 
 const STATUS_META: Record<InvestedCapitalRecoveryStatus, { label: string; className: string }> = {
   SEM_RECUPERACAO: { label: "Sem recuperação", className: "bg-red-100 text-red-800" },
@@ -107,18 +76,65 @@ function KpiCard({ label, value, tone = "neutral" }: { label: string; value: str
   );
 }
 
+type InvestedCapitalRecoveryUiFilters = {
+  startDate: string;
+  endDate: string;
+  q: string;
+  year: string;
+  month: string;
+  customerId: string;
+  customerName: string;
+  customerCnpj: string;
+  economicStatus: InvestedCapitalRecoveryStatus | "";
+};
+
+function defaultFilters(): InvestedCapitalRecoveryUiFilters {
+  return {
+    startDate: "",
+    endDate: "",
+    q: "",
+    year: String(new Date().getFullYear()),
+    month: "",
+    customerId: "",
+    customerName: "",
+    customerCnpj: "",
+    economicStatus: "",
+  };
+}
+
+function buildQuery(filters: InvestedCapitalRecoveryUiFilters): string {
+  const params = new URLSearchParams();
+  if (filters.startDate) params.set("startDate", filters.startDate);
+  if (filters.endDate) params.set("endDate", filters.endDate);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.year) params.set("year", filters.year);
+  if (filters.month) params.set("month", filters.month);
+  if (filters.customerId) params.set("customerId", filters.customerId);
+  if (filters.economicStatus) params.set("economicStatus", filters.economicStatus);
+  return params.toString();
+}
+
+function buildFilterLabels(filters: InvestedCapitalRecoveryUiFilters): string {
+  const lines: string[] = [];
+  if (filters.year) lines.push(`Ano: ${filters.year}`);
+  if (filters.month) {
+    const label = FINANCE_AR_MONTH_OPTIONS.find((o) => o.value === filters.month)?.label;
+    if (label) lines.push(`Mês: ${label}`);
+  }
+  if (filters.startDate || filters.endDate) {
+    lines.push(`Emissão: ${filters.startDate || "…"} — ${filters.endDate || "…"}`);
+  }
+  if (filters.customerName) lines.push(`Cliente: ${filters.customerName}`);
+  if (filters.q) lines.push(`Busca: ${filters.q}`);
+  if (filters.economicStatus) lines.push(`Status econômico: ${STATUS_META[filters.economicStatus].label}`);
+  return lines.join(" · ");
+}
+
 const PAGE_SIZE = 25;
 
 export function InvestedCapitalRecoveryPage() {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [q, setQ] = useState("");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [month, setMonth] = useState("");
-  const [customerId, setCustomerId] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerCnpj, setCustomerCnpj] = useState("");
-  const [statusFilter, setStatusFilter] = useState<InvestedCapitalRecoveryStatus | "">("");
+  const [draftFilters, setDraftFilters] = useState<InvestedCapitalRecoveryUiFilters>(defaultFilters());
+  const [appliedFilters, setAppliedFilters] = useState<InvestedCapitalRecoveryUiFilters>(defaultFilters());
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<keyof InvestedCapitalRecoveryRow>("moneyOnStreet");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -127,18 +143,20 @@ export function InvestedCapitalRecoveryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const brandingLoadedRef = useRef(false);
+  const [printPayload, setPrintPayload] = useState<InvestedCapitalRecoveryPayload | null>(null);
+  const [printFilterLabels, setPrintFilterLabels] = useState("");
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const query = useMemo(() => buildQuery(appliedFilters), [appliedFilters]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      if (q) params.set("q", q);
-      if (year) params.set("year", year);
-      if (month) params.set("month", month);
-      if (customerId) params.set("customerId", customerId);
-      const res = await fetch(`/api/finance/invested-capital-recovery?${params.toString()}`, {
+      const res = await fetch(`/api/finance/invested-capital-recovery?${query}`, {
         credentials: "include",
       });
       const json = (await res.json()) as InvestedCapitalRecoveryPayload | { ok: false; message?: string };
@@ -146,26 +164,97 @@ export function InvestedCapitalRecoveryPage() {
         throw new Error("message" in json ? (json.message ?? "Erro ao carregar dados.") : "Erro ao carregar dados.");
       }
       setData(json);
-      setPage(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar Recuperação do Dinheiro Investido.");
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, q, year, month, customerId]);
+  }, [query]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const filteredRows = useMemo(() => {
-    if (!data) return [];
-    return statusFilter ? data.rows.filter((r) => r.status === statusFilter) : data.rows;
-  }, [data, statusFilter]);
+  const ensureBranding = useCallback(async () => {
+    if (brandingLoadedRef.current) return branding;
+    try {
+      const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>("/api/branding-settings", {
+        ttlMs: 300_000,
+      });
+      brandingLoadedRef.current = true;
+      setBranding(next);
+      return next;
+    } catch {
+      brandingLoadedRef.current = true;
+      setBranding(DEFAULT_BRANDING);
+      return DEFAULT_BRANDING;
+    }
+  }, [branding]);
+
+  const handleApplyFilters = useCallback(() => {
+    setAppliedFilters(draftFilters);
+    setPage(1);
+  }, [draftFilters]);
+
+  const handleClearFilters = useCallback(() => {
+    const defaults = defaultFilters();
+    setDraftFilters(defaults);
+    setAppliedFilters(defaults);
+    setPage(1);
+  }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      await ensureBranding();
+      const res = await fetch(`/api/finance/invested-capital-recovery?${query}`, {
+        credentials: "include",
+      });
+      const json = (await res.json()) as InvestedCapitalRecoveryPayload | { ok: false; message?: string };
+      if (!res.ok || json.ok !== true) {
+        throw new Error("message" in json ? (json.message ?? "Erro ao gerar PDF.") : "Erro ao gerar PDF.");
+      }
+      setPrintFilterLabels(buildFilterLabels(appliedFilters));
+      setPrintPayload(json);
+      setPrintRequestId((id) => id + 1);
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível gerar o PDF de Recuperação do Dinheiro Investido.");
+      setExportingPdf(false);
+    }
+  }, [appliedFilters, ensureBranding, exportingPdf, query]);
+
+  useEffect(() => {
+    if (printRequestId === 0 || !printPayload) return;
+
+    document.body.classList.add("sales-orders-print-route");
+    document.body.classList.add("sales-orders-icr-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      document.body.classList.remove("sales-orders-icr-print-route");
+      setPrintPayload(null);
+      setPrintRequestId(0);
+      setExportingPdf(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, printPayload]);
 
   const sortedRows = useMemo(() => {
-    const rows = [...filteredRows];
+    if (!data) return [];
+    const rows = [...data.rows];
     rows.sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
@@ -176,7 +265,7 @@ export function InvestedCapitalRecoveryPage() {
       return 0;
     });
     return rows;
-  }, [filteredRows, sortKey, sortDir]);
+  }, [data, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   const pageRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -214,8 +303,8 @@ export function InvestedCapitalRecoveryPage() {
             <input
               type="date"
               className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              value={draftFilters.startDate}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, startDate: e.target.value }))}
             />
           </label>
           <label className="space-y-0.5">
@@ -223,8 +312,8 @@ export function InvestedCapitalRecoveryPage() {
             <input
               type="date"
               className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              value={draftFilters.endDate}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, endDate: e.target.value }))}
             />
           </label>
           <label className="min-w-[12rem] space-y-0.5">
@@ -232,8 +321,11 @@ export function InvestedCapitalRecoveryPage() {
             <input
               type="text"
               className="block h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
+              value={draftFilters.q}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, q: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleApplyFilters();
+              }}
               placeholder="PD 1234 ou nome do cliente"
             />
           </label>
@@ -241,8 +333,8 @@ export function InvestedCapitalRecoveryPage() {
             <span className="text-[11px] font-semibold text-muted-foreground">Ano</span>
             <select
               className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
+              value={draftFilters.year}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, year: e.target.value }))}
             >
               {yearOptions.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -255,8 +347,8 @@ export function InvestedCapitalRecoveryPage() {
             <span className="text-[11px] font-semibold text-muted-foreground">Mês</span>
             <select
               className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
+              value={draftFilters.month}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, month: e.target.value }))}
             >
               {FINANCE_AR_MONTH_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -269,19 +361,25 @@ export function InvestedCapitalRecoveryPage() {
             <CustomerAutocompleteFilter
               label="Cliente"
               compact
-              personName={customerName}
-              personCnpj={customerCnpj}
-              customerId={customerId}
+              personName={draftFilters.customerName}
+              personCnpj={draftFilters.customerCnpj}
+              customerId={draftFilters.customerId}
               onChange={(selection) => {
                 const fields = financePersonFieldsFromSelection(selection);
-                setCustomerName(fields.personName);
-                setCustomerCnpj(fields.personCnpj);
-                setCustomerId(fields.customerId);
+                setDraftFilters((p) => ({
+                  ...p,
+                  customerName: fields.personName,
+                  customerCnpj: fields.personCnpj,
+                  customerId: fields.customerId,
+                }));
               }}
               onClear={() => {
-                setCustomerName("");
-                setCustomerCnpj("");
-                setCustomerId("");
+                setDraftFilters((p) => ({
+                  ...p,
+                  customerName: "",
+                  customerCnpj: "",
+                  customerId: "",
+                }));
               }}
             />
           </div>
@@ -289,8 +387,13 @@ export function InvestedCapitalRecoveryPage() {
             <span className="text-[11px] font-semibold text-muted-foreground">Status econômico</span>
             <select
               className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as InvestedCapitalRecoveryStatus | "")}
+              value={draftFilters.economicStatus}
+              onChange={(e) =>
+                setDraftFilters((p) => ({
+                  ...p,
+                  economicStatus: e.target.value as InvestedCapitalRecoveryStatus | "",
+                }))
+              }
             >
               <option value="">Todos</option>
               <option value="SEM_RECUPERACAO">Sem recuperação</option>
@@ -301,10 +404,25 @@ export function InvestedCapitalRecoveryPage() {
           </label>
           <button
             type="button"
-            onClick={() => void load()}
-            className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-muted/40"
+            onClick={handleApplyFilters}
+            className="inline-flex h-8 items-center rounded-md border border-primary bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90"
           >
             Pesquisar
+          </button>
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-muted/40"
+          >
+            Limpar
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportPdf()}
+            disabled={exportingPdf || loading || !data}
+            className="sales-orders-no-print inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-muted/40 disabled:opacity-50"
+          >
+            {exportingPdf ? "Gerando PDF…" : "Imprimir PDF"}
           </button>
         </div>
       </section>
@@ -487,6 +605,14 @@ export function InvestedCapitalRecoveryPage() {
           </section>
         </>
       )}
+
+      {printPayload ? (
+        <InvestedCapitalRecoveryPrintDocument
+          payload={printPayload}
+          branding={branding}
+          filterLabels={printFilterLabels}
+        />
+      ) : null}
     </div>
   );
 }
