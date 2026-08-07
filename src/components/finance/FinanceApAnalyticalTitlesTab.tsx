@@ -1,5 +1,6 @@
 import "@/src/components/print/print-document.css";
 import "./finance-ap-titles-print.css";
+import "./finance-ap-analytical-titles-table.css";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -55,8 +56,6 @@ import { StatusBadge } from "@/src/components/finance/FinanceAccountsPayableTabP
 import {
   FinanceApErrorBanner,
   FinanceApLoadingBlock,
-  FinanceApScrollableTable,
-  FinanceApStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { FinanceAccountsPayableTitlesPrintDocument } from "@/src/components/finance/FinanceAccountsPayableTitlesPrintDocument";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
@@ -587,52 +586,113 @@ export function FinanceApAnalyticalTitlesTab({ canExport }: { canExport: boolean
 
       {data?.items.length ? (
         <>
-          <FinanceApScrollableTable tableClassName="min-w-[1280px]">
-            <FinanceApStickyTableHead>
-              <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
-                <th className="p-2 whitespace-nowrap">ID Nomus</th>
-                <th className="p-2 min-w-[100px]">Empresa</th>
-                <th className="p-2 min-w-[140px]">Fornecedor</th>
-                <th className="p-2 whitespace-nowrap">CNPJ</th>
-                <th className="p-2 min-w-[160px]">Descrição</th>
-                <th className="p-2 whitespace-nowrap">Vencimento</th>
-                <th className="p-2 whitespace-nowrap">Baixa/Pagamento</th>
-                <th className="p-2 text-right whitespace-nowrap">Original</th>
-                <th className="p-2 text-right whitespace-nowrap">Pago</th>
-                <th className="p-2 text-right whitespace-nowrap">Saldo</th>
-                <th className="p-2">Forma pag.</th>
-                <th className="p-2">Status</th>
-                <th className="p-2 text-right">Dias</th>
-              </tr>
-            </FinanceApStickyTableHead>
-            <tbody>
-              {data.items.map((row) => (
-                <tr key={row.externalId} className="border-b border-border/60 hover:bg-muted/20">
-                  <td className="p-2 font-mono text-xs">{row.externalId}</td>
-                  <td className="p-2">{displayFinanceText(row.companyName)}</td>
-                  <td className="p-2">{displayFinanceText(row.personName)}</td>
-                  <td className="p-2 font-mono text-xs">{displayFinanceText(row.personCnpj)}</td>
-                  <td className="p-2 max-w-[200px] truncate" title={row.description ?? undefined}>
-                    {displayFinanceText(row.description)}
-                  </td>
-                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
-                  <td className="p-2 whitespace-nowrap">
-                    {formatFinanceDate(row.paymentDate ?? row.settlementDate)}
-                  </td>
-                  <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountPayable)}</td>
-                  <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountPaid)}</td>
-                  <td className="p-2 text-right tabular-nums font-semibold">
-                    {formatFinanceCurrency(row.balancePayable)}
-                  </td>
-                  <td className="p-2">{displayFinanceText(row.paymentMethodName)}</td>
-                  <td className="p-2">
-                    <StatusBadge status={row.calculatedStatus} />
-                  </td>
-                  <td className="p-2 text-right tabular-nums">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </FinanceApScrollableTable>
+          <div
+            className="finance-ap-titles-list-section"
+            data-testid="finance-ap-analytical-titles-table-wrap"
+          >
+            <div className="finance-ap-titles-list-grid-title">Títulos</div>
+            <div className="finance-ap-titles-list-table-wrap">
+              <table
+                className="finance-ap-titles-list-table"
+                data-testid="finance-ap-analytical-titles-table"
+              >
+                <thead>
+                  <tr>
+                    <th>Título</th>
+                    <th>Fornecedor</th>
+                    <th>CNPJ</th>
+                    <th>Descrição</th>
+                    <th>Vencimento</th>
+                    <th>Baixa/Pagamento</th>
+                    <th>Status</th>
+                    <th className="ap-value-cell">Original</th>
+                    <th className="ap-value-cell">Pago</th>
+                    <th className="ap-value-cell">Saldo</th>
+                    <th>Forma pag.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((row) => {
+                    const companyName = row.companyName?.trim() || null;
+                    return (
+                      <tr key={row.externalId} title={row.description ?? undefined}>
+                        <td>
+                          <div className="ap-cell-title-code">#{row.externalId}</div>
+                        </td>
+                        <td className="max-w-[14rem]">
+                          <span className="ap-cell-ellipsis block" title={displayFinanceText(row.personName)}>
+                            {displayFinanceText(row.personName)}
+                          </span>
+                          {companyName ? (
+                            <div className="ap-cell-meta ap-cell-ellipsis" title={companyName}>
+                              {companyName}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="font-mono whitespace-nowrap">
+                          {displayFinanceText(row.personCnpj)}
+                        </td>
+                        <td>
+                          <span
+                            className="ap-cell-ellipsis block max-w-[12rem]"
+                            title={row.description ?? undefined}
+                          >
+                            {displayFinanceText(row.description)}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="whitespace-nowrap tabular-nums">
+                            {formatFinanceDate(row.dueDate)}
+                          </div>
+                          {row.daysOverdue > 0 ? (
+                            <div className="ap-cell-meta">
+                              {formatFinanceDaysOverdue(row.daysOverdue)} atraso
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap tabular-nums">
+                          {formatFinanceDate(row.paymentDate ?? row.settlementDate)}
+                        </td>
+                        <td>
+                          <StatusBadge status={row.calculatedStatus} />
+                        </td>
+                        <td className="ap-value-cell">{formatFinanceCurrency(row.amountPayable)}</td>
+                        <td className="ap-value-cell">{formatFinanceCurrency(row.amountPaid)}</td>
+                        <td className="ap-value-cell ap-value-cell--emphasis">
+                          {formatFinanceCurrency(row.balancePayable)}
+                        </td>
+                        <td>
+                          <span
+                            className="ap-cell-ellipsis block max-w-[8rem]"
+                            title={row.paymentMethodName ?? undefined}
+                          >
+                            {displayFinanceText(row.paymentMethodName)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={7}>
+                      Total ({formatFinanceInteger(summary?.totalTitles ?? 0)} títulos)
+                    </td>
+                    <td className="ap-value-cell">
+                      {formatFinanceCurrency(summary?.totalOriginalValue ?? 0)}
+                    </td>
+                    <td className="ap-value-cell">
+                      {formatFinanceCurrency(summary?.totalPaidValue ?? 0)}
+                    </td>
+                    <td className="ap-value-cell">
+                      {formatFinanceCurrency(summary?.totalOpenValue ?? 0)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <p className="text-muted-foreground tabular-nums">

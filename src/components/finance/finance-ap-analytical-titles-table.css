@@ -1,0 +1,105 @@
+/* Espelha finance-ar-analytical-titles-table.css — mesmo padrão visual do
+   grid de Contas a Receber > Títulos, aplicado ao grid de Contas a Pagar. */
+
+.finance-ap-titles-list-section {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.finance-ap-titles-list-grid-title {
+  padding: 9px 10px 7px;
+  color: #1e3a8a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.finance-ap-titles-list-table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 640px);
+}
+
+.finance-ap-titles-list-table {
+  width: 100%;
+  min-width: 960px;
+  border-collapse: collapse;
+  color: #111827;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.finance-ap-titles-list-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #dbeafe;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 1px 0 0 #cbd5e1;
+}
+
+.finance-ap-titles-list-table th {
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #1e3a8a;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.finance-ap-titles-list-table td {
+  padding: 6px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.finance-ap-titles-list-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.finance-ap-titles-list-table tbody tr:hover {
+  background: #eff6ff;
+}
+
+.finance-ap-titles-list-table .ap-cell-ellipsis {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-ap-titles-list-table .ap-cell-title-code {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #1e3a8a;
+  white-space: nowrap;
+}
+
+.finance-ap-titles-list-table .ap-cell-meta {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 0.125rem;
+}
+
+.finance-ap-titles-list-table .ap-value-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.finance-ap-titles-list-table .ap-value-cell--emphasis {
+  font-weight: 700;
+}
+
+.finance-ap-titles-list-table tfoot td {
+  padding: 7px 8px;
+  background: #f1f5f9;
+  border-top: 1px solid #cbd5e1;
+  font-weight: 700;
+  font-size: 11px;
+}
