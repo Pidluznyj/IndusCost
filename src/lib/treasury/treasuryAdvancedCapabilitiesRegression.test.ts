@@ -421,7 +421,7 @@ describe("treasury advanced capabilities — rotas frontend e deep-links", () =>
     const primaryPaths = new Set<string>(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path)
     );
-    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 2);
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 3);
     for (const section of TREASURY_UI_ADVANCED_SECTIONS) {
       assert.ok(!primaryPaths.has(section.path), section.path);
       assert.equal(isTreasuryAdvancedPath(section.path), true);

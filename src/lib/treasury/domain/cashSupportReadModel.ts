@@ -174,7 +174,16 @@ export function buildCashSupportReadModel(
   const pageRows = allRows.slice(start, start + pageSize);
 
   const bankPosition = summarizeCashSupportBankPosition(input.bankMovements);
-  const canonicalPosition = summarizeCanonicalPosition(input.canonicalDays);
+  // `canonicalDays` pode chegar com um superset (ex.: o ano inteiro, quando
+  // o motor de origem só aceita ano/mês/dia, nunca um intervalo arbitrário —
+  // ver cashSupportService.server.ts). Sem este filtro, o resumo canônico
+  // vazaria dados de fora do período pedido enquanto a posição bancária
+  // (já carregada com from/to exatos) ficaria corretamente restrita —
+  // inconsistência visível entre os dois grupos de cartões.
+  const canonicalDaysInWindow = input.canonicalDays.filter(
+    (d) => d.civilDate >= input.filters.civilDateFrom && d.civilDate <= input.filters.civilDateTo
+  );
+  const canonicalPosition = summarizeCanonicalPosition(canonicalDaysInWindow);
 
   // Balance real (posição bancária consolidada) não é recomputado aqui —
   // nenhuma fonte de saldo final foi passada; fica null com warning

@@ -288,4 +288,42 @@ describe("cashSupportReadModel", () => {
     });
     assert.ok(model.warnings.some((w) => w.code === "COMPANY_CONTEXT_UNAVAILABLE"));
   });
+
+  it("BUG CORRIGIDO: canonicalDays fora do período (superset do orquestrador) não vaza para linhas nem resumo", () => {
+    // O orquestrador (cashSupportService.server.ts) pode carregar o ANO
+    // INTEIRO de canonicalDays quando treasuryCaixaService.getBoard so aceita
+    // ano/mes/dia, nunca um intervalo arbitrario. O read model precisa
+    // filtrar por conta propria — tanto nas linhas quanto no resumo.
+    const daysWholeYear = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-01-15", "2026-08-10"],
+      receivables: [
+        receivable({ externalId: 1, dueDate: "2026-01-15", balanceReceivable: 500 }),
+        receivable({ externalId: 2, dueDate: "2026-08-10", balanceReceivable: 700 }),
+      ],
+      payables: [],
+      openingBalanceOfFirstDay: 0,
+    });
+
+    const model = buildCashSupportReadModel({
+      canonicalDays: daysWholeYear,
+      companyCode: "EMP1",
+      bankMovements: [],
+      activeMatchesByMovementId: new Map(),
+      filters: baseFilters({ civilDateFrom: "2026-08-01", civilDateTo: "2026-08-31" }),
+      analysisAsOfDateTime: "2026-08-10T12:00:00.000Z",
+    });
+
+    const janeiroRow = model.rows.find((r) => r.displayId.includes(":1:"));
+    assert.equal(janeiroRow, undefined, "título de janeiro não pode aparecer num filtro de agosto");
+
+    const agostoRow = model.rows.find((r) => r.displayId.includes(":2:"));
+    assert.ok(agostoRow, "título de agosto deve aparecer");
+
+    // Resumo (cartões) também não pode vazar o valor de janeiro.
+    assert.equal(
+      model.summary.canonicalPosition.expectedTitles,
+      "700.00",
+      "resumo canônico deve refletir só o período filtrado, não o superset carregado"
+    );
+  });
 });

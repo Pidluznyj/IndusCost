@@ -14,7 +14,7 @@ import type { TreasuryRolloutUiSectionId } from "./treasuryRollout.js";
 
 export const TREASURY_SIMPLE_UI_BASE_PATH = "/finance/treasury" as const;
 
-export type TreasurySimplePrimarySectionId = "accounts" | "caixa";
+export type TreasurySimplePrimarySectionId = "accounts" | "caixa" | "cash-support";
 
 export type TreasurySimpleNavSection = {
   id: TreasuryRolloutUiSectionId;
@@ -33,6 +33,11 @@ export const TREASURY_UI_PRIMARY_SECTIONS = [
     id: "caixa",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/caixa`,
     label: "Caixa",
+  },
+  {
+    id: "cash-support",
+    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/cash-support`,
+    label: "Apoio ao Caixa",
   },
 ] as const satisfies readonly TreasurySimpleNavSection[];
 
@@ -107,11 +112,6 @@ export const TREASURY_UI_ADVANCED_SECTIONS = [
     label: "Conciliação avançada",
   },
   {
-    id: "cash-support",
-    path: `${TREASURY_SIMPLE_UI_BASE_PATH}/cash-support`,
-    label: "Apoio ao Caixa",
-  },
-  {
     id: "exceptions",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/exceptions`,
     label: "Exceções",
@@ -179,4 +179,5 @@ export const TREASURY_PRIMARY_SECTION_FEATURE_FLAG: Record<
 > = {
   accounts: "treasury.accounts.enabled",
   caixa: null,
+  "cash-support": "treasury.reconciliation.enabled",
 };
