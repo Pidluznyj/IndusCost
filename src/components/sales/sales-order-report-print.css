@@ -847,4 +847,84 @@
     font-weight: 700;
     background: #f8fafc;
   }
+
+  /* Financeiro > Recuperação do Dinheiro Investido — mesmo padrão sistêmico
+     do PDF de Pedidos de Venda (sales-orders-print-route), com tabelas
+     próprias para aging/top-clientes/detalhamento. */
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table {
+    table-layout: fixed;
+    width: 100%;
+    font-size: 8px;
+    border-collapse: collapse;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 7%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 7%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 20%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller { width: 12%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 9.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 7%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 12%; }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table td {
+    padding: 3px 3px;
+    vertical-align: middle;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    border: 1px solid #cbd5e1;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table thead th {
+    background: #e2e8f0;
+    font-size: 7.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    text-align: center;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-aging-table,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-top-customers-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+    margin-bottom: 4px;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-aging-table th,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-aging-table td,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-top-customers-table th,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-top-customers-table td {
+    border: 1px solid #cbd5e1;
+    padding: 3px 4px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-aging-table th,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-top-customers-table th {
+    background: #e2e8f0;
+    font-size: 7.5px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-top-customers-table td:first-child {
+    text-align: left;
+    font-variant-numeric: normal;
+  }
 }

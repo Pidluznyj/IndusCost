@@ -58,6 +58,33 @@ const COST_SOURCE_STATUS_LABELS: Record<string, string> = {
   INCOMPLETO: "Custo incompleto para um ou mais itens do pedido",
 };
 
+const INVESTED_CAPITAL_RECOVERY_STATUS_VALUES = [
+  "SEM_RECUPERACAO",
+  "EM_RECUPERACAO",
+  "CAPITAL_RECUPERADO",
+  "DADOS_INSUFICIENTES",
+] as const;
+
+type InvestedCapitalRecoveryStatus = (typeof INVESTED_CAPITAL_RECOVERY_STATUS_VALUES)[number];
+
+/**
+ * Filtro "Status econômico" — classificação calculada por Pedido (não é um
+ * campo de `SalesOrder`, por isso não passa por `parseSalesOrderListQuery`).
+ * Aplicado sobre `rows` ANTES de KPIs/aging/top clientes (seção 5+), para que
+ * a tela inteira — cards, gráfico de aging, top clientes e tabela — reflita
+ * sempre a MESMA população filtrada.
+ */
+function parseInvestedCapitalRecoveryStatusParam(
+  value: unknown
+): InvestedCapitalRecoveryStatus | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string") return null;
+  const token = raw.trim().toUpperCase();
+  return (INVESTED_CAPITAL_RECOVERY_STATUS_VALUES as readonly string[]).includes(token)
+    ? (token as InvestedCapitalRecoveryStatus)
+    : null;
+}
+
 export type SalesOrderInvestedCapitalRecoveryQuery = {
   /** Mesmo contrato de `parseSalesOrderListQuery` — página, filtros, etc. */
   query: Record<string, unknown>;
@@ -166,7 +193,10 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   }
 
   // 4) Monta o snapshot de cada Pedido — pura, sem I/O.
-  const rows: SalesOrderInvestedCapitalRecoverySnapshot[] = industrialReport.rows.map((orderRow) => {
+  const economicStatusFilter = parseInvestedCapitalRecoveryStatusParam(
+    input.query.economicStatus
+  );
+  const allRows: SalesOrderInvestedCapitalRecoverySnapshot[] = industrialReport.rows.map((orderRow) => {
     const arRows = arRowsBySalesOrderId.get(orderRow.salesOrderId) ?? [];
     return buildSalesOrderInvestedCapitalRecoverySnapshot(
       {
@@ -191,6 +221,12 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
       todayCivilDate
     );
   });
+
+  // Status econômico filtra a POPULAÇÃO inteira (não só a tabela) — cards,
+  // aging e top clientes usam sempre a mesma base que as linhas exibidas.
+  const rows = economicStatusFilter
+    ? allRows.filter((r) => r.status === economicStatusFilter)
+    : allRows;
 
   // 5) KPIs — SOMA sobre a MESMA população que a tabela mostra (nunca uma
   //    página, sempre `rows` inteiro).
