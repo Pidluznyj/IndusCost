@@ -1139,6 +1139,11 @@ export async function executeNomusProductImportSimulation(input: {
             quantity: qty,
             lossPercentage: line.lossPercentage,
             notes: `Importado do Nomus (${line.source ?? "NOMUS"})`,
+            sourceSystem: "NOMUS",
+            isNomusControlled: true,
+            localException: false,
+            lastNomusSyncAt: new Date(),
+            nomusComponentCode: line.componentCode,
           },
         });
         createdBomLines += 1;
@@ -1232,6 +1237,11 @@ export async function executeNomusProductImportSimulation(input: {
             quantity: line.quantity ?? 1,
             lossPercentage: line.lossPercentage,
             notes: `Importado do Nomus (${line.source ?? "NOMUS"}) — subestrutura`,
+            sourceSystem: "NOMUS",
+            isNomusControlled: true,
+            localException: false,
+            lastNomusSyncAt: new Date(),
+            nomusComponentCode: line.componentCode,
           },
         });
         childBomLinesCreated += 1;
