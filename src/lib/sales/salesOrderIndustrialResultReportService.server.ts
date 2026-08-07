@@ -227,6 +227,14 @@ export type LoadSalesOrderIndustrialResultReportInput = {
   referenceDate?: Date;
   /** Quando informado, restringe aos pedidos (ex.: detalhe de um único id). */
   salesOrderIds?: string[];
+  /**
+   * Opt-in: exclui pedidos cujo cliente é empresa do grupo econômico
+   * (Lazarios/Koppetel/SM) — mesma regra canônica de `financeInternalGroupExclusions.ts`
+   * já usada em AR/AP/DRE. Default false — preserva paridade com a listagem
+   * Comercial de Pedidos (Resultado Industrial). Domínios que medem exposição
+   * comercial externa (ex.: Recuperação do Dinheiro Investido) passam `true`.
+   */
+  excludeEconomicGroupCustomers?: boolean;
 };
 
 export async function loadSalesOrderIndustrialResultReportPayload(
@@ -239,7 +247,9 @@ export async function loadSalesOrderIndustrialResultReportPayload(
     sellerKeyRaw: parsed.sellerKeyRaw,
     sellerText: parsed.sellerText,
   });
-  const baseWhere = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere);
+  const baseWhere = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere, {
+    excludeEconomicGroupCustomers: input.excludeEconomicGroupCustomers === true,
+  });
   const scopedIds = (input.salesOrderIds ?? [])
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
@@ -400,8 +410,8 @@ export async function loadSalesOrderIndustrialResultReportPayload(
     status: parsed.status ?? "",
     sellerKey: parsed.sellerKeyRaw ?? "",
     sellerLabel,
-    startDate: parsed.startDate ?? null,
-    endDate: parsed.endDate ?? null,
+    startDate: civilDateKey(parsed.startDate),
+    endDate: civilDateKey(parsed.endDate),
     year: parsed.year ?? null,
     month: parsed.month ?? null,
     search: parsed.q ?? "",

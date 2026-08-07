@@ -24,6 +24,12 @@ describe("salesOrderIndustrialResultReport wiring", () => {
     assert.match(server, /registerSalesOrderIndustrialResultReportRoutes/);
   });
 
+  it("filters.startDate/endDate usam civilDateKey (nunca Date bruto — SalesOrderReportAppliedFilters é string)", () => {
+    const service = read("src/lib/sales/salesOrderIndustrialResultReportService.server.ts");
+    assert.match(service, /startDate:\s*civilDateKey\(parsed\.startDate\)/);
+    assert.match(service, /endDate:\s*civilDateKey\(parsed\.endDate\)/);
+  });
+
   it("UI reutiliza listExportQuery e botão PDF Resultado Industrial", () => {
     const ui = read("src/components/SalesOrdersModule.tsx");
     assert.match(ui, /sales-orders-export-industrial-result-pdf/);

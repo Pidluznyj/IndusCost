@@ -203,6 +203,7 @@ export function InvestedCapitalRecoveryPage() {
         <p className="mt-1 rounded-md border border-dashed border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground">
           Fonte oficial: motor de Pedido de Venda (custo industrial oficial + Contas a Receber reais).
           Esta tela apenas consolida dados oficiais — não cria títulos, não dá baixa, não altera o Pedido.
+          Operações com empresas do grupo não são consideradas nesta análise.
         </p>
       </div>
 
