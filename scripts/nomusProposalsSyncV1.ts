@@ -18,6 +18,12 @@ import {
   fetchNomusJson,
   resolveNomusHttpTimeoutMs,
 } from "../src/lib/nomusRestClient.ts";
+import {
+  calculateProposalsIncrementalWindow,
+  getLatestProposalsSuccessfulCheckpoint,
+  isProposalPlanEqual,
+  type ProposalPlanComparisonData,
+} from "../src/lib/nomusProposalsIncremental.ts";
 
 const prisma = new PrismaClient();
 
@@ -104,10 +110,6 @@ type DryRunResult = {
   blockedCount: number;
   ignoredCount: number;
   ignoredInactiveSkuCount: number;
-  /**
-   * Soma de linhas brutas em `itensProposta` nas propostas ignoradas (só preenchido para ignoradas com `rawLineItemCount`;
-   * hoje: SKU inativo no Nomus).
-   */
   ignoredItemsCount: number;
   unresolvedCustomers: number;
   unresolvedProducts: number;
@@ -116,24 +118,16 @@ type DryRunResult = {
   blockedProposalCodes: string[];
   ignoredProposalCodes: string[];
   inactiveSkus: string[];
-  /** Propostas novas que seriam criadas no apply (total real). */
+  /** Propostas novas que seriam criadas no apply. */
   createCount: number;
-  /** Propostas existentes que seriam atualizadas no apply (total real). */
+  /** Propostas existentes com alteração real que seriam atualizadas. */
   updateCount: number;
-  /**
-   * Sempre null: o apply reescreve cabeçalho e substitui todos os ProposalItem (deleteMany + createMany).
-   * Não há detecção de “sem mudança” sem diff profundo — fora do escopo deste dry-run.
-   */
-  noChangeCount: null;
-  /** Soma de `plan.items.length` nas propostas elegíveis (linhas planejadas localmente). */
+  /** Propostas sem alteração em relação ao banco de dados. */
+  noChangeCount: number;
+  /** Soma de `plan.items.length` nas propostas elegíveis. */
   totalItemsPlanned: number;
-  /** Itens que seriam gravados em propostas novas (uma linha ProposalItem por item planejado). */
   createItemsCount: number;
-  /**
-   * Mesmo valor que `replaceItemsCount`: no apply, cada atualização apaga todos os itens e recria a partir do plano.
-   */
   updateItemsCount: number;
-  /** Itens que seriam recriados após deleteMany em propostas já existentes. */
   replaceItemsCount: number;
   preservedProposalsDueToSalesOrderLinkCount: number;
   preservedProposalItemsCount: number;
@@ -162,12 +156,11 @@ type DryRunResult = {
   }>;
 };
 
-type ExistingProposalLinkStats = {
+type ExistingProposalStatsRow = ExistingProposalRef & {
   existingItemsCount: number;
   linkedSalesOrderItemCount: number;
+  dbData: ProposalPlanComparisonData;
 };
-
-type ExistingProposalStatsRow = ExistingProposalRef & ExistingProposalLinkStats;
 
 function getRequiredEnv(name: string): string {
   const value = (process.env[name] ?? "").trim();
@@ -190,24 +183,10 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-/**
- * Data/hora do Nomus (`DD/MM/YYYY HH:mm:ss`).
- *
- * Delega ao parser explícito em `src/lib/nomusDateTime.ts`. A implementação
- * anterior tentava `new Date(raw)` ANTES do regex brasileiro; para string com
- * barras o JavaScript aplica MM/DD, então "03/08/2026" virava 8 de março e o
- * regex correto abaixo nunca era alcançado (CP 01350 e CP 01351). O ramo do
- * regex também montava com `Date.UTC`, o que em UTC-3 exibia o dia anterior.
- *
- * Aceita ISO real (`2026-08-03T...`) como segunda tentativa, para o caso de a
- * origem mudar de formato — mas nunca para string com barras, que é sempre
- * interpretada como brasileira.
- */
 function parseNomusDateTime(input: unknown): Date | null {
   const brazilian = parseNomusBrazilianDateTime(input);
   if (brazilian.ok) return brazilian.value;
 
-  // ISO sem ambiguidade (não contém barra): seguro delegar ao runtime.
   if (typeof input === "string" && !input.includes("/")) {
     const iso = new Date(input.trim());
     if (!Number.isNaN(iso.getTime())) return iso;
@@ -242,26 +221,13 @@ function isProposalOnOrAfterStartDate(proposal: JsonObject, startDate: Date | nu
   if (!startDate) return true;
 
   const openedAt = parseNomusDateTime(proposal.dataHoraAbertura);
-  if (!openedAt) return false;
+  if (!openedAt) return true; // Se dataHoraAbertura ausente, não descarta precipitadamente
 
   return openedAt.getTime() >= startDate.getTime();
 }
 
-/**
- * Timeout aplicado a cada tentativa HTTP do sync de propostas — nunca fica
- * pendurado indefinidamente esperando o Nomus responder (ver
- * NOMUS_HTTP_TIMEOUT_MS em nomusRestClient.ts, mesma configuração central
- * usada por AR/AP/NF-e/pedidos, agora também por propostas).
- */
 const HTTP_TIMEOUT_MS = resolveNomusHttpTimeoutMs();
 
-/**
- * Wrapper fino sobre `fetchNomusJson` (helper compartilhado com
- * AbortController/timeout já embutido) — mantém a assinatura antiga
- * (url, maxRetries, retryBaseMs) para minimizar o diff nos call sites,
- * mas delega toda a lógica de timeout/retry/HTTP 429/5xx/erro transitório
- * de rede ao motor único em nomusRestClient.ts. Não é um segundo motor.
- */
 async function fetchJsonWithRetry(
   url: URL,
   maxRetries: number,
@@ -309,14 +275,20 @@ function hasNextPage(payload: unknown, page: number, pageSize: number, currentLe
   return currentLen > 0;
 }
 
-async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
+/**
+ * Busca propostas no Nomus. Se `startDate` for fornecido em modo incremental,
+ * para a paginação quando as propostas da página forem mais antigas que a janela.
+ */
+async function fetchAllNomusProposals(
+  baseUrl: string,
+  startDate: Date | null
+): Promise<{ proposals: JsonObject[]; pagesProcessed: number }> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
   const proposals: JsonObject[] = [];
   let page = 1;
-
   const maxPages = Math.max(1, toInt(process.env.NOMUS_MAX_PAGES) ?? 200);
 
   while (true) {
@@ -337,6 +309,23 @@ async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
 
     proposals.push(...arr);
 
+    // Otimização incremental: se startDate está definido e todas as propostas da página são anteriores,
+    // podemos interromper a busca para não percorrer dezenas de páginas antigas.
+    if (startDate) {
+      const pageOpenedDates = arr
+        .map((p) => parseNomusDateTime(p.dataHoraAbertura))
+        .filter((d): d is Date => d !== null);
+      if (pageOpenedDates.length > 0) {
+        const newestOnPage = Math.max(...pageOpenedDates.map((d) => d.getTime()));
+        if (newestOnPage < startDate.getTime()) {
+          console.log(
+            `${LOG_PREFIX} INCREMENTAL_PAGINATION_STOP page=${page} newestOnPage=${new Date(newestOnPage).toISOString()} < startDate=${startDate.toISOString()}`
+          );
+          break;
+        }
+      }
+    }
+
     if (page >= maxPages) {
       console.warn(`[sync-v1] limite de segurança NOMUS_MAX_PAGES=${maxPages} atingido em propostas.`);
       break;
@@ -346,7 +335,7 @@ async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
     page += 1;
   }
 
-  return proposals;
+  return { proposals, pagesProcessed: page };
 }
 
 function nomusProductSku(product: JsonObject): string | null {
@@ -359,6 +348,8 @@ function nomusProductIsActive(product: JsonObject): boolean {
   if (typeof ativo === "string") return ativo.trim().toLowerCase() !== "false";
   return true;
 }
+
+let cachedProductActiveBySkuMap: Map<string, boolean> | null = null;
 
 async function fetchAllNomusProducts(baseUrl: string): Promise<JsonObject[]> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
@@ -400,6 +391,8 @@ async function fetchAllNomusProducts(baseUrl: string): Promise<JsonObject[]> {
 }
 
 async function mapNomusProductActiveBySku(baseUrl: string): Promise<Map<string, boolean>> {
+  if (cachedProductActiveBySkuMap) return cachedProductActiveBySkuMap;
+
   const products = await fetchAllNomusProducts(baseUrl);
   const map = new Map<string, boolean>();
 
@@ -410,66 +403,160 @@ async function mapNomusProductActiveBySku(baseUrl: string): Promise<Map<string, 
     const active = nomusProductIsActive(product);
     const current = map.get(sku);
 
-    // Se houver duplicidade, produto ativo prevalece sobre inativo.
     if (current === true) continue;
     map.set(sku, active);
   }
 
+  cachedProductActiveBySkuMap = map;
   return map;
 }
 
+const customerBridgeCache = new Map<number, { taxId: string | null; customerId: string | null }>();
+
+/**
+ * Mapeia externalCustomerId -> customerId local SEM N+1 HTTP.
+ * 1. Primeiro consulta o banco local `Customer` por `sourceExternalId` / `taxId`.
+ * 2. Para IDs não resolvidos localmente, faz busca paginada em lote (`id=in=(...)`) ou busca direta.
+ * 3. Reutiliza cache em memória para a mesma execução.
+ */
 async function mapPessoaBridgeByExternalCustomerId(
   baseUrl: string,
   externalCustomerIds: number[]
-): Promise<Map<number, { taxId: string | null; customerId: string | null }>> {
+): Promise<{
+  bridge: Map<number, { taxId: string | null; customerId: string | null }>;
+  peopleRequests: number;
+}> {
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
+  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
+  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
+
+  let peopleRequests = 0;
+
+  const missingFromCache: number[] = [];
+  for (const id of uniqueIds) {
+    if (customerBridgeCache.has(id)) {
+      bridge.set(id, customerBridgeCache.get(id)!);
+    } else {
+      missingFromCache.push(id);
+    }
+  }
+
+  if (missingFromCache.length === 0) {
+    return { bridge, peopleRequests: 0 };
+  }
+
+  // 1. Tenta resolver clientes via banco local primeiro
   const localCustomers = await prisma.customer.findMany({
-    select: { id: true, taxId: true },
+    select: { id: true, taxId: true, sourceExternalId: true },
   });
+
+  const localByExternalId = new Map<number, string>();
   const localByTaxId = new Map<string, string>();
+
   for (const customer of localCustomers) {
+    const extId = toInt(customer.sourceExternalId);
+    if (extId != null) localByExternalId.set(extId, customer.id);
     const taxId = normalizeTaxId(customer.taxId);
     if (taxId) localByTaxId.set(taxId, customer.id);
   }
 
-  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
-  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
+  const unmappedExternalIds: number[] = [];
 
-  console.log(`${LOG_PREFIX} PESSOAS_BRIDGE_START totalClientes=${uniqueIds.length}`);
-  let processed = 0;
-  for (const idCliente of uniqueIds) {
-    const url = buildNomusUrl(baseUrl, "pessoas");
-    url.searchParams.set("query", `id==${idCliente}`);
-
-    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
-      resource: "pessoas",
-      index: processed + 1,
-      total: uniqueIds.length,
-    });
-    processed += 1;
-    const arr = pickArrayFromUnknown(payload);
-    const pessoa =
-      (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
-      ((payload && typeof payload === "object" ? (payload as JsonObject) : undefined) as JsonObject | undefined);
-
-    const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
-    const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
-    bridge.set(idCliente, { taxId, customerId });
+  for (const idCliente of missingFromCache) {
+    const customerId = localByExternalId.get(idCliente);
+    if (customerId) {
+      const entry = { taxId: null, customerId };
+      bridge.set(idCliente, entry);
+      customerBridgeCache.set(idCliente, entry);
+    } else {
+      unmappedExternalIds.push(idCliente);
+    }
   }
 
-  return bridge;
+  if (unmappedExternalIds.length === 0) {
+    return { bridge, peopleRequests: 0 };
+  }
+
+  console.log(
+    `${LOG_PREFIX} PESSOAS_BRIDGE_START totalClientesNecessarios=${uniqueIds.length} naoResolvidosLocalmente=${unmappedExternalIds.length}`
+  );
+
+  // 2. Para IDs ainda não resolvidos localmente, agrupa em lotes de 50 para evitar N+1 HTTP
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < unmappedExternalIds.length; i += BATCH_SIZE) {
+    const batch = unmappedExternalIds.slice(i, i + BATCH_SIZE);
+    peopleRequests += 1;
+
+    let payload: unknown = null;
+    try {
+      const url = buildNomusUrl(baseUrl, "pessoas");
+      if (batch.length === 1) {
+        url.searchParams.set("query", `id==${batch[0]}`);
+      } else {
+        url.searchParams.set("query", `id=in=(${batch.join(",")})`);
+      }
+      payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
+        resource: "pessoas",
+        batchIndex: Math.floor(i / BATCH_SIZE) + 1,
+        batchTotal: Math.ceil(unmappedExternalIds.length / BATCH_SIZE),
+      });
+    } catch {
+      // Se lote falhar com query in, faz fallback pontual por id
+      for (const idCliente of batch) {
+        try {
+          peopleRequests += 1;
+          const singleUrl = buildNomusUrl(baseUrl, "pessoas");
+          singleUrl.searchParams.set("query", `id==${idCliente}`);
+          const singlePayload = await fetchJsonWithRetry(singleUrl, maxRetries, retryBaseMs, {
+            resource: "pessoas",
+            idCliente,
+          });
+          const arr = pickArrayFromUnknown(singlePayload);
+          const pessoa = (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
+            ((singlePayload && typeof singlePayload === "object" ? (singlePayload as JsonObject) : undefined) as JsonObject | undefined);
+          const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
+          const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
+          const entry = { taxId, customerId };
+          bridge.set(idCliente, entry);
+          customerBridgeCache.set(idCliente, entry);
+        } catch {
+          const entry = { taxId: null, customerId: null };
+          bridge.set(idCliente, entry);
+          customerBridgeCache.set(idCliente, entry);
+        }
+      }
+      continue;
+    }
+
+    const arr = pickArrayFromUnknown(payload).filter(
+      (entry): entry is JsonObject => !!entry && typeof entry === "object"
+    );
+
+    const pessoaByNomusId = new Map<number, JsonObject>();
+    for (const p of arr) {
+      const pId = toInt(p.id);
+      if (pId != null) pessoaByNomusId.set(pId, p);
+    }
+
+    for (const idCliente of batch) {
+      const pessoa = pessoaByNomusId.get(idCliente);
+      const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
+      const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
+      const entry = { taxId, customerId };
+      bridge.set(idCliente, entry);
+      customerBridgeCache.set(idCliente, entry);
+    }
+  }
+
+  return { bridge, peopleRequests };
 }
 
 async function fetchPricingSnapshotUnitCost(productId: string): Promise<number> {
   const baseUrl = (process.env.INDUSCOST_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
   const url = `${baseUrl}/api/products/${encodeURIComponent(productId)}/pricing-snapshot`;
 
-  // Chamada interna (IndusCost → IndusCost, não Nomus) — sem retry (não é
-  // idempotente demais nem crítica: fallback já é 0), mas ainda com timeout
-  // por tentativa. Sem isso, um hang aqui teria o MESMO sintoma do bug
-  // original: processo vivo, sem CPU, aguardando HTTP para sempre.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
   try {
@@ -532,7 +619,10 @@ function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
-async function buildPlans(): Promise<{
+async function buildPlans(options: {
+  isIncremental: boolean;
+  startDate: Date | null;
+}): Promise<{
   plans: ProposalPlan[];
   blocked: BlockedProposal[];
   ignored: IgnoredProposal[];
@@ -541,17 +631,27 @@ async function buildPlans(): Promise<{
   inactiveSkus: Set<string>;
   rawProposalsCount: number;
   totalItemsRead: number;
+  pagesProcessed: number;
+  peopleRequests: number;
 }> {
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
-  const proposalStartDate = getProposalStartDate();
-  const rawProposalsAll = await fetchAllNomusProposals(nomusBaseUrl);
-  const rawProposals = rawProposalsAll.filter((proposal) => isProposalOnOrAfterStartDate(proposal, proposalStartDate));
+  const { proposals: rawProposalsAll, pagesProcessed } = await fetchAllNomusProposals(
+    nomusBaseUrl,
+    options.isIncremental ? options.startDate : null
+  );
+
+  const rawProposals = rawProposalsAll.filter((proposal) =>
+    isProposalOnOrAfterStartDate(proposal, options.startDate)
+  );
   const nomusProductActiveBySku = await mapNomusProductActiveBySku(nomusBaseUrl);
 
   const externalCustomerIds = rawProposals
     .map((proposal) => toInt(proposal.idCliente))
     .filter((id): id is number => id != null);
-  const customerBridge = await mapPessoaBridgeByExternalCustomerId(nomusBaseUrl, externalCustomerIds);
+  const { bridge: customerBridge, peopleRequests } = await mapPessoaBridgeByExternalCustomerId(
+    nomusBaseUrl,
+    externalCustomerIds
+  );
 
   const allSkus = new Set<string>();
   for (const proposal of rawProposals) {
@@ -718,6 +818,8 @@ async function buildPlans(): Promise<{
     inactiveSkus,
     rawProposalsCount: rawProposals.length,
     totalItemsRead,
+    pagesProcessed,
+    peopleRequests,
   };
 }
 
@@ -733,7 +835,30 @@ async function runDry(
       sourceSystem: SOURCE_SYSTEM,
       externalProposalId: { in: plans.map((p) => p.externalProposalId) },
     },
-    select: { id: true, externalProposalId: true, externalProposalCode: true, items: { select: { id: true } } },
+    select: {
+      id: true,
+      externalProposalId: true,
+      externalProposalCode: true,
+      customerId: true,
+      status: true,
+      totalItems: true,
+      totalGrossValue: true,
+      totalNetValue: true,
+      totalCost: true,
+      totalMarginValue: true,
+      totalTaxes: true,
+      items: {
+        select: {
+          id: true,
+          productId: true,
+          quantity: true,
+          unitCost: true,
+          negotiatedPrice: true,
+          marginValue: true,
+          externalItemId: true,
+        },
+      },
+    },
   });
 
   const proposalItemIdToProposalId = new Map<string, string>();
@@ -766,11 +891,25 @@ async function runDry(
       externalProposalCode: row.externalProposalCode,
       existingItemsCount: row.items.length,
       linkedSalesOrderItemCount: linkedCountByProposalId.get(row.id) ?? 0,
+      dbData: {
+        externalProposalId: row.externalProposalId,
+        externalProposalCode: row.externalProposalCode ?? "",
+        customerId: row.customerId ?? "",
+        status: row.status,
+        totalItems: row.totalItems,
+        totalGrossValue: row.totalGrossValue,
+        totalNetValue: row.totalNetValue,
+        totalCost: row.totalCost,
+        totalMarginValue: row.totalMarginValue,
+        totalTaxes: row.totalTaxes,
+        items: row.items,
+      },
     });
   }
 
   const createsFull: DryRunResult["createsPreview"] = [];
   const updatesFull: DryRunResult["updatesPreview"] = [];
+  let noChangeCount = 0;
   let totalItemsPlanned = 0;
   let createItemsCount = 0;
   let replaceItemsCount = 0;
@@ -790,11 +929,19 @@ async function runDry(
       });
       continue;
     }
+
+    // Detecção de propostas sem alteração (UNCHANGED)
+    if (isProposalPlanEqual(plan, current.dbData)) {
+      noChangeCount += 1;
+      continue;
+    }
+
     updatesFull.push({
       externalProposalId: plan.externalProposalId,
       externalProposalCode: plan.externalProposalCode,
       id: current.id,
     });
+
     if (current.linkedSalesOrderItemCount > 0) {
       preservedProposalsDueToSalesOrderLinkCount += 1;
       preservedProposalItemsCount += current.existingItemsCount;
@@ -846,7 +993,7 @@ async function runDry(
     inactiveSkus: [...new Set(ignored.flatMap((b) => b.inactiveSkus))].sort(),
     createCount,
     updateCount,
-    noChangeCount: null,
+    noChangeCount,
     totalItemsPlanned,
     createItemsCount,
     updateItemsCount: replaceItemsCount,
@@ -869,33 +1016,87 @@ async function runDry(
 async function applyPlans(plans: ProposalPlan[]): Promise<{
   created: number;
   updated: number;
+  unchanged: number;
   replacedItemsCount: number;
   preservedProposalsDueToSalesOrderLinkCount: number;
   preservedProposalItemsCount: number;
   preservedItemsDueToSalesOrderLinkCount: number;
+  changedProposalIds: string[];
 }> {
   const existing = await prisma.proposal.findMany({
     where: {
       sourceSystem: SOURCE_SYSTEM,
       externalProposalId: { in: plans.map((p) => p.externalProposalId) },
     },
-    select: { id: true, externalProposalId: true },
+    select: {
+      id: true,
+      externalProposalId: true,
+      externalProposalCode: true,
+      customerId: true,
+      status: true,
+      totalItems: true,
+      totalGrossValue: true,
+      totalNetValue: true,
+      totalCost: true,
+      totalMarginValue: true,
+      totalTaxes: true,
+      items: {
+        select: {
+          id: true,
+          productId: true,
+          quantity: true,
+          unitCost: true,
+          negotiatedPrice: true,
+          marginValue: true,
+          externalItemId: true,
+        },
+      },
+    },
   });
-  const existingByExternalId = new Map<number, ExistingProposalRef>();
+
+  const existingByExternalId = new Map<number, ExistingProposalStatsRow>();
   for (const row of existing) {
     if (row.externalProposalId == null) continue;
-    existingByExternalId.set(row.externalProposalId, { id: row.id, externalProposalId: row.externalProposalId, externalProposalCode: null });
+    existingByExternalId.set(row.externalProposalId, {
+      id: row.id,
+      externalProposalId: row.externalProposalId,
+      externalProposalCode: row.externalProposalCode,
+      existingItemsCount: row.items.length,
+      linkedSalesOrderItemCount: 0,
+      dbData: {
+        externalProposalId: row.externalProposalId,
+        externalProposalCode: row.externalProposalCode ?? "",
+        customerId: row.customerId ?? "",
+        status: row.status,
+        totalItems: row.totalItems,
+        totalGrossValue: row.totalGrossValue,
+        totalNetValue: row.totalNetValue,
+        totalCost: row.totalCost,
+        totalMarginValue: row.totalMarginValue,
+        totalTaxes: row.totalTaxes,
+        items: row.items,
+      },
+    });
   }
 
   let created = 0;
   let updated = 0;
+  let unchanged = 0;
   let replacedItemsCount = 0;
   let preservedProposalsDueToSalesOrderLinkCount = 0;
   let preservedProposalItemsCount = 0;
   let preservedItemsDueToSalesOrderLinkCount = 0;
+  const changedProposalIds: string[] = [];
 
   for (const plan of plans) {
     const current = existingByExternalId.get(plan.externalProposalId);
+
+    // Se já existe e a proposta plan é 100% igual ao banco, ignora a escrita (UNCHANGED)
+    if (current && isProposalPlanEqual(plan, current.dbData)) {
+      unchanged += 1;
+      continue;
+    }
+
     await prisma.$transaction(async (tx) => {
       const proposalCreateData: Prisma.ProposalUncheckedCreateInput = {
         sourceSystem: SOURCE_SYSTEM,
@@ -927,6 +1128,7 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
       if (!current) {
         const createdProposal = await tx.proposal.create({ data: proposalCreateData, select: { id: true } });
         proposalId = createdProposal.id;
+        changedProposalIds.push(proposalId);
       } else {
         const proposalUpdateData: Prisma.ProposalUncheckedUpdateInput = proposalCreateData;
         const updatedProposal = await tx.proposal.update({
@@ -935,6 +1137,7 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
           select: { id: true },
         });
         proposalId = updatedProposal.id;
+        changedProposalIds.push(proposalId);
       }
 
       let canReplaceItems = true;
@@ -996,31 +1199,25 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
   return {
     created,
     updated,
+    unchanged,
     replacedItemsCount,
     preservedProposalsDueToSalesOrderLinkCount,
     preservedProposalItemsCount,
     preservedItemsDueToSalesOrderLinkCount,
+    changedProposalIds,
   };
 }
 
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
+  const isIncremental = process.argv.includes("--incremental");
+  const forceFull = process.argv.includes("--full");
   const mode: "dry" | "apply" = isApply ? "apply" : "dry";
   const startedAt = new Date();
-  // Setado pelo shell runner horário (mesma convenção de NOMUS_AR_RUNNER_LOG)
-  // para que o IntegrationRun aponte pro log real da execução. Ausente em
-  // invocação direta (`npm run sync:nomus:proposals:apply`) — tudo bem, o
-  // registro ainda é criado, só sem link de log.
   const runnerLogFile = (process.env.NOMUS_PROPOSALS_RUNNER_LOG ?? "").trim() || null;
 
-  // Concorrência (SYNC-07): serializa qualquer execução do sync de propostas —
-  // CLI direto, orquestrador diário (02:00) via --only=proposals, ou cron horário.
-  // Também respeita o lock global Nomus (diário/pedidos) sem adquiri-lo.
   const lock = acquireProposalsSyncLock({ mode });
   if (!lock.ok) {
-    // `as` explícito: narrowing de union discriminada por `!lock.ok` não é
-    // inferido pelo tsconfig deste projeto (strict desligado) — já validado
-    // em runtime pela checagem acima, então o cast é seguro.
     const blocked = lock as Extract<typeof lock, { ok: false }>;
     console.warn(formatProposalsLockBlockedLog(blocked));
     const finishedAt = new Date();
@@ -1028,6 +1225,7 @@ async function main(): Promise<void> {
       JSON.stringify(
         {
           mode: isApply ? "apply" : "dry-run",
+          syncKind: isIncremental ? "incremental" : "full",
           status: "SKIPPED",
           skipReason: blocked.code,
           skipMessage: blocked.message,
@@ -1042,10 +1240,6 @@ async function main(): Promise<void> {
         2
       )
     );
-    // Execução ignorada por lock NUNCA é sucesso — registro oficial com
-    // status SKIPPED (não RUNNING, não SUCCESS), consistente com o critério
-    // de aceitação #12 (execução ignorada por lock não pode aparecer como
-    // sincronização bem-sucedida).
     await persistProposalsIntegrationRun({
       mode,
       status: "SKIPPED",
@@ -1061,8 +1255,34 @@ async function main(): Promise<void> {
   }
 
   try {
-    const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount, totalItemsRead } =
-      await buildPlans();
+    const lastCheckpoint = await getLatestProposalsSuccessfulCheckpoint(prisma);
+    const window = calculateProposalsIncrementalWindow({
+      lastCheckpoint,
+      now: startedAt,
+      envStartDate: getProposalStartDate(),
+      forceFull,
+    });
+
+    console.log(
+      `${LOG_PREFIX} CONFIG syncKind=${window.isIncremental ? "incremental" : "full"} lastCheckpoint=${window.lastSuccessfulCheckpoint?.toISOString() ?? "none"} overlapFrom=${window.overlapFrom?.toISOString() ?? "none"} startDate=${window.startDate.toISOString()}`
+    );
+
+    const {
+      plans,
+      blocked,
+      ignored,
+      missingSkus,
+      missingCustomers,
+      inactiveSkus,
+      rawProposalsCount,
+      totalItemsRead,
+      pagesProcessed,
+      peopleRequests,
+    } = await buildPlans({
+      isIncremental: window.isIncremental,
+      startDate: window.startDate,
+    });
+
     const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead);
 
     if (missingSkus.has(KNOWN_MISSING_SKU)) {
@@ -1071,21 +1291,27 @@ async function main(): Promise<void> {
 
     if (!isApply) {
       const finishedAt = new Date();
-      console.log(
-        JSON.stringify(
-          {
-            mode: "dry-run",
-            status: "SUCCESS",
-            startedAt: startedAt.toISOString(),
-            finishedAt: finishedAt.toISOString(),
-            durationMs: finishedAt.getTime() - startedAt.getTime(),
-            summary: dry,
-            applied: null,
-          },
-          null,
-          2
-        )
-      );
+      const dryJson = {
+        mode: "dry-run",
+        syncKind: window.isIncremental ? "incremental" : "full",
+        status: "SUCCESS",
+        checkpointBefore: window.lastSuccessfulCheckpoint?.toISOString() ?? null,
+        checkpointAfter: window.lastSuccessfulCheckpoint?.toISOString() ?? null,
+        overlapFrom: window.overlapFrom?.toISOString() ?? null,
+        startedAt: startedAt.toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        discovery: {
+          candidatesFound: rawProposalsCount,
+          pagesProcessed,
+        },
+        dependencies: {
+          peopleRequests,
+        },
+        summary: dry,
+        applied: null,
+      };
+      console.log(JSON.stringify(dryJson, null, 2));
       await persistProposalsIntegrationRun({
         mode,
         status: "SUCCESS",
@@ -1102,75 +1328,98 @@ async function main(): Promise<void> {
 
     const result = await applyPlans(plans);
 
-    // Pós-sync: recalcula margem comercial (tabela vigente na data da proposta).
-    // Default = dry-run; apply só com confirmação (env/flags). Falha do hook não aborta o sync.
+    // Scoped Recálculo de Margem Comercial pós-sync:
+    // Se 0 propostas foram criadas/atualizadas (tudo UNCHANGED), não recalcula.
     let marginRecalc: Awaited<
       ReturnType<typeof runProposalCommercialMarginRecalcAfterNomusSync>
     > | null = null;
-    try {
-      marginRecalc = await runProposalCommercialMarginRecalcAfterNomusSync(prisma, {
-        syncMode: "apply",
-        argv: process.argv.slice(2),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `[proposal-margin-recalc-after-sync] falhou (sync oficial preservado): ${message}`
+
+    if (result.changedProposalIds.length === 0) {
+      console.log(
+        `${LOG_PREFIX} MARGIN_RECALC_SKIPPED reason=no_proposals_changed created=${result.created} updated=${result.updated} unchanged=${result.unchanged}`
       );
-      marginRecalc = {
-        enabled: true,
-        skipped: false,
-        mode: "dry-run",
-        applyDowngradedToDryRun: false,
-        error: message,
-      };
+    } else {
+      try {
+        marginRecalc = await runProposalCommercialMarginRecalcAfterNomusSync(prisma, {
+          syncMode: "apply",
+          argv: process.argv.slice(2),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[proposal-margin-recalc-after-sync] falhou (sync oficial preservado): ${message}`
+        );
+        marginRecalc = {
+          enabled: true,
+          skipped: false,
+          mode: "dry-run",
+          applyDowngradedToDryRun: false,
+          error: message,
+        };
+      }
     }
 
     const finishedAt = new Date();
-    console.log(
-      JSON.stringify(
-        {
-          mode: "apply",
-          status: "SUCCESS",
-          startedAt: startedAt.toISOString(),
-          finishedAt: finishedAt.toISOString(),
-          durationMs: finishedAt.getTime() - startedAt.getTime(),
-          summary: dry,
-          applied: result,
-          marginRecalc: marginRecalc
-            ? {
-                mode: marginRecalc.mode,
-                skipped: marginRecalc.skipped,
-                skipReason: marginRecalc.skipReason ?? null,
-                applyDowngradedToDryRun: marginRecalc.applyDowngradedToDryRun,
-                error: marginRecalc.error ?? null,
-                preview: marginRecalc.preview
-                  ? {
-                      pagesProcessed: marginRecalc.preview.pagesProcessed ?? null,
-                      proposalsAnalyzed: marginRecalc.preview.proposalsAnalyzed,
-                      itemsAnalyzed: marginRecalc.preview.itemsAnalyzed,
-                      itemsComplete: marginRecalc.preview.itemsComplete,
-                      itemsChanged: marginRecalc.preview.itemsChanged,
-                      itemsUnavailable: marginRecalc.preview.itemsUnavailable,
-                      coveragePercent: marginRecalc.preview.coveragePercent,
-                      bySource: marginRecalc.preview.bySource,
-                    }
-                  : null,
-              }
-            : null,
-          skippedBlockedProposals: blocked.map((b) => ({
-            externalProposalId: b.externalProposalId,
-            externalProposalCode: b.externalProposalCode,
-            reasons: b.reasons,
-          })),
-          missingSkus: [...missingSkus].sort(),
-          missingCustomers: [...missingCustomers].sort((a, b) => a - b),
-          ignoredInactiveSkus: [...inactiveSkus].sort(),
-        },
-        null,
-        2
-      )
-    );
+    const applyJson = {
+      mode: "apply",
+      syncKind: window.isIncremental ? "incremental" : "full",
+      status: "SUCCESS",
+      checkpointBefore: window.lastSuccessfulCheckpoint?.toISOString() ?? null,
+      checkpointAfter: finishedAt.toISOString(),
+      overlapFrom: window.overlapFrom?.toISOString() ?? null,
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      discovery: {
+        candidatesFound: rawProposalsCount,
+        pagesProcessed,
+      },
+      dependencies: {
+        peopleRequests,
+      },
+      summary: dry,
+      applied: {
+        created: result.created,
+        updated: result.updated,
+        unchanged: result.unchanged,
+        replacedItemsCount: result.replacedItemsCount,
+        preservedProposalsDueToSalesOrderLinkCount: result.preservedProposalsDueToSalesOrderLinkCount,
+        preservedProposalItemsCount: result.preservedProposalItemsCount,
+        preservedItemsDueToSalesOrderLinkCount: result.preservedItemsDueToSalesOrderLinkCount,
+      },
+      marginRecalc: marginRecalc
+        ? {
+            mode: marginRecalc.mode,
+            skipped: marginRecalc.skipped,
+            skipReason: marginRecalc.skipReason ?? null,
+            applyDowngradedToDryRun: marginRecalc.applyDowngradedToDryRun,
+            error: marginRecalc.error ?? null,
+            preview: marginRecalc.preview
+              ? {
+                  pagesProcessed: marginRecalc.preview.pagesProcessed ?? null,
+                  proposalsAnalyzed: marginRecalc.preview.proposalsAnalyzed,
+                  itemsAnalyzed: marginRecalc.preview.itemsAnalyzed,
+                  itemsComplete: marginRecalc.preview.itemsComplete,
+                  itemsChanged: marginRecalc.preview.itemsChanged,
+                  itemsUnavailable: marginRecalc.preview.itemsUnavailable,
+                  coveragePercent: marginRecalc.preview.coveragePercent,
+                  bySource: marginRecalc.preview.bySource,
+                }
+              : null,
+          }
+        : null,
+      skippedBlockedProposals: blocked.map((b) => ({
+        externalProposalId: b.externalProposalId,
+        externalProposalCode: b.externalProposalCode,
+        reasons: b.reasons,
+      })),
+      missingSkus: [...missingSkus].sort(),
+      missingCustomers: [...missingCustomers].sort((a, b) => a - b),
+      ignoredInactiveSkus: [...inactiveSkus].sort(),
+    };
+
+    console.log(JSON.stringify(applyJson, null, 2));
+
     await persistProposalsIntegrationRun({
       mode,
       status: "SUCCESS",
@@ -1183,10 +1432,6 @@ async function main(): Promise<void> {
       applied: result as unknown as Record<string, unknown>,
     });
   } catch (error) {
-    // Registra a falha ANTES de propagar — garante que toda execução termine
-    // num estado final auditável (nunca fica RUNNING indefinidamente), e
-    // ainda assim relança para preservar exit code != 0 (critério de
-    // aceitação #3).
     const finishedAt = new Date();
     const message = error instanceof Error ? error.message : String(error);
     await persistProposalsIntegrationRun({
@@ -1201,8 +1446,6 @@ async function main(): Promise<void> {
     });
     throw error;
   } finally {
-    // Sempre libera — sucesso ou erro real (que continua propagando para o
-    // catch abaixo, preservando exit code != 0 em falha genuína).
     releaseProposalsSyncLock({ lockFile: lock.lockFile, token: lock.token });
   }
 }
@@ -1216,4 +1459,3 @@ main()
     await prisma.$disconnect();
     await disconnectProposalsIntegrationPrisma();
   });
-
