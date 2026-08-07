@@ -13,8 +13,19 @@ import {
   buildFinanceAccountsReceivableRulesResult,
   sumOfficialArOpenDueByCivilDay,
   sumOfficialArOpenDueInPeriod,
+  type FinanceAccountsReceivableGridRow,
 } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
-import { loadFinanceApManagementRowsFromPrisma } from "@/src/lib/financeAccountsPayableDashboard.js";
+import {
+  buildFinanceApPrismaWhere,
+  loadFinanceApManagementRowsFromPrisma,
+  mapPrismaRowToFinanceApDashboardRow,
+  type FinanceApDashboardRow,
+} from "@/src/lib/financeAccountsPayableDashboard.js";
+import { FINANCE_AP_TITLE_SELECT } from "@/src/lib/financeAccountsPayableTitles.js";
+import {
+  resolveNomusApReportSyncCutoffFromPrisma,
+  type NomusApReportSyncCutoff,
+} from "@/src/lib/financeNomusApReportFreshness.js";
 import {
   buildFinanceAccountsPayableRulesResult,
   sumOfficialApOpenDueByCivilDay,
@@ -46,6 +57,7 @@ import {
   computeTreasuryCaixaTotals,
   resolveTreasuryCaixaCanonicalWindow,
   resolveTreasuryCaixaDueDateRange,
+  selectTreasuryCaixaCanonicalPopulation,
   TREASURY_CAIXA_GENESIS_CIVIL_DATE,
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
@@ -408,6 +420,57 @@ export async function loadTreasuryOpenDueTotals(
   };
 }
 
+/**
+ * CP LIQUIDADO dentro da janela, com VENCIMENTO fora dela — a metade que
+ * `loadFinanceApManagementRowsFromPrisma` (escopado só por `dueDate`) não
+ * enxerga. Sem esta consulta, um título vencido muito antes da janela mas
+ * pago DENTRO dela (ou vencendo bem depois mas pago antecipadamente dentro
+ * dela) fica invisível ao motor canônico — mesmo contribuindo
+ * financeiramente para um dos dias da janela (regra dos N dias:
+ * `effectiveSettlementDate` pode ser a data da baixa, não o vencimento).
+ *
+ * Consulta ESCOPADA pela janela (settlementDate OU paymentDate dentro dela)
+ * — nunca a história inteira da empresa. `status: "settled"` restringe a
+ * títulos com baixa (balancePayable <= 0); título em aberto não tem data de
+ * liquidação para comparar.
+ */
+async function loadTreasuryCaixaApSettledOutsideDueWindow(
+  prisma: PrismaClient,
+  windowFrom: Date,
+  windowToExclusive: Date,
+  syncCutoff: NomusApReportSyncCutoff | null
+): Promise<FinanceApDashboardRow[]> {
+  const baseWhere = buildFinanceApPrismaWhere(
+    { status: "settled", suspendPayment: "all" },
+    syncCutoff
+  );
+  const rows = await prisma.nomusAccountsPayable.findMany({
+    where: {
+      AND: [
+        baseWhere,
+        {
+          OR: [
+            { settlementDate: { gte: windowFrom, lt: windowToExclusive } },
+            { paymentDate: { gte: windowFrom, lt: windowToExclusive } },
+          ],
+        },
+      ],
+    },
+    select: FINANCE_AP_TITLE_SELECT,
+    orderBy: { dueDate: "asc" },
+  });
+  return rows.map(mapPrismaRowToFinanceApDashboardRow);
+}
+
+/** Dedup por `externalId` — a mesma linha pode ter vindo de duas consultas (vencimento e liquidação). */
+function dedupeFinanceApRowsByExternalId(
+  rows: readonly FinanceApDashboardRow[]
+): FinanceApDashboardRow[] {
+  const byId = new Map<number, FinanceApDashboardRow>();
+  for (const row of rows) byId.set(row.externalId, row);
+  return [...byId.values()];
+}
+
 export function createTreasuryCaixaService(input: {
   prisma: PrismaClient;
 }): TreasuryCaixaService {
@@ -719,72 +782,111 @@ export function createTreasuryCaixaService(input: {
       }
 
       // HOJE tem que existir SEMPRE no motor único-de-dia — a regra
-      // financeira não pode depender do filtro Ano/Mês/Dia da tela. Quando o
-      // filtro já cobre hoje (o caso comum: ano corrente, todos os meses),
-      // reusa `arResult`/`apResult` como estavam, sem custo extra. Quando o
-      // filtro EXCLUI hoje (ex.: usuário escolhe só um mês passado), amplia
-      // pontualmente só a carga usada pelo motor canônico — a grade visível
-      // (`totals`/`receivables`/`payables` do DTO) continua vindo de
-      // `arResult`/`apResult` originais, respeitando o filtro do usuário.
+      // financeira não pode depender do filtro Ano/Mês/Dia da tela.
       const canonicalWindow = resolveTreasuryCaixaCanonicalWindow({
         windowDays,
         todayCivilDate,
       });
-      let canonicalWindowDays = canonicalWindow.canonicalWindowDays;
-      let canonicalReceivables = arResult.gridRows;
-      let canonicalPayables = apResult.gridRows;
-      if (canonicalWindow.todayOutsideWindow) {
-        const todayYear = Number(todayCivilDate.slice(0, 4));
-        const widenedFilters = {
-          status: "all" as const,
-          dueDateFrom: civilDateToLocalDate(canonicalWindow.widenedFromCivilDate),
-          dueDateTo: civilDateToLocalDate(canonicalWindow.widenedToCivilDate),
-        };
+      const canonicalWindowDays = canonicalWindow.canonicalWindowDays;
+      const canonicalWindowRange = {
+        fromCivilDate: canonicalWindow.widenedFromCivilDate,
+        toCivilDate: canonicalWindow.widenedToCivilDate,
+      };
+      const canonicalWindowFromDate = civilDateToLocalDate(
+        canonicalWindow.widenedFromCivilDate
+      );
+      const canonicalWindowToExclusiveDate = new Date(
+        civilDateToLocalDate(canonicalWindow.widenedToCivilDate).getTime() +
+          24 * 60 * 60 * 1000
+      );
+      const todayYear = Number(todayCivilDate.slice(0, 4));
 
-        // AR: `arEffectiveRows` já cobre o ANO INTEIRO de `period.year` — se
-        // hoje cai no mesmo ano do filtro, só reaplica o motor oficial com o
-        // range ampliado, sem round-trip novo. Só recarrega do banco quando
-        // hoje cai num ano diferente do filtrado (caso raro).
-        if (todayYear === period.year) {
-          canonicalReceivables = buildFinanceAccountsReceivableRulesResult(
-            arEffectiveRows,
-            { referenceDate, syncCutoff: arLoaded.syncCutoff, filters: widenedFilters }
-          ).gridRows;
-        } else {
-          const todayArLoaded = await loadFinanceArManagementRowsFromPrisma(
-            prisma,
-            { status: "all", year: todayYear },
-            referenceDate
-          );
-          const todayArRows = todayArLoaded.rows as FinanceCashFlowArRow[];
-          const { orderContexts: todayOrderContexts, nfeOrderLinks: todayNfeOrderLinks } =
-            await enrichFinanceCashFlowArLoadBundle(prisma, todayArRows, referenceDate);
-          const todayArEffectiveRows = buildFinanceCashFlowEffectiveArPortfolio({
-            rows: todayArRows,
-            filters: { status: "all", year: todayYear },
-            orderContexts: todayOrderContexts,
-            nfeOrderLinks: todayNfeOrderLinks,
-            referenceDate,
-            syncCutoff: todayArLoaded.syncCutoff,
-          });
-          canonicalReceivables = buildFinanceAccountsReceivableRulesResult(
-            todayArEffectiveRows,
-            { referenceDate, syncCutoff: todayArLoaded.syncCutoff, filters: widenedFilters }
-          ).gridRows;
-        }
-
-        // AP: a carga já é escopada por dueDateFrom/dueDateTo na consulta —
-        // sempre recarrega no range ampliado (inclui hoje).
-        const widenedApLoaded = await loadFinanceApManagementRowsFromPrisma(
+      // POPULAÇÃO RELEVANTE = vencimento na janela OU liquidação na janela
+      // (nunca só vencimento) — um título vencido bem antes da janela mas
+      // baixado DENTRO dela (ou vencendo bem depois mas baixado
+      // antecipadamente dentro dela) contribui financeiramente para um dos
+      // dias da janela mesmo sem vencer nela. `selectTreasuryCaixaCanonicalPopulation`
+      // aplica a mesma regra e deduplica por identidade oficial (o título
+      // pode ter vindo das duas metades da união).
+      //
+      // AR: `arEffectiveRows`/`todayArEffectiveRows` já cobrem o ANO INTEIRO
+      // (sem recorte por mês/dia) — a união devolve o mesmo custo de round-trip
+      // de antes; só o filtro final muda (vencimento OU baixa, não só vencimento).
+      const arRowsForCanonical: FinanceAccountsReceivableGridRow[] = [
+        ...buildFinanceAccountsReceivableRulesResult(arEffectiveRows, {
+          referenceDate,
+          syncCutoff: arLoaded.syncCutoff,
+          filters: { status: "all" },
+        }).gridRows,
+      ];
+      if (todayYear !== period.year) {
+        const todayArLoaded = await loadFinanceArManagementRowsFromPrisma(
           prisma,
-          widenedFilters,
+          { status: "all", year: todayYear },
           referenceDate
         );
-        canonicalPayables = buildFinanceAccountsPayableRulesResult(
-          widenedApLoaded.rows,
-          { referenceDate, syncCutoff: widenedApLoaded.syncCutoff, filters: widenedFilters }
-        ).gridRows;
+        const todayArRows = todayArLoaded.rows as FinanceCashFlowArRow[];
+        const { orderContexts: todayOrderContexts, nfeOrderLinks: todayNfeOrderLinks } =
+          await enrichFinanceCashFlowArLoadBundle(prisma, todayArRows, referenceDate);
+        const todayArEffectiveRows = buildFinanceCashFlowEffectiveArPortfolio({
+          rows: todayArRows,
+          filters: { status: "all", year: todayYear },
+          orderContexts: todayOrderContexts,
+          nfeOrderLinks: todayNfeOrderLinks,
+          referenceDate,
+          syncCutoff: todayArLoaded.syncCutoff,
+        });
+        arRowsForCanonical.push(
+          ...buildFinanceAccountsReceivableRulesResult(todayArEffectiveRows, {
+            referenceDate,
+            syncCutoff: todayArLoaded.syncCutoff,
+            filters: { status: "all" },
+          }).gridRows
+        );
       }
+      const canonicalReceivables = selectTreasuryCaixaCanonicalPopulation(
+        arRowsForCanonical,
+        canonicalWindowRange,
+        (row) => (row.amountReceived > 0 ? row.settlementDate : null)
+      );
+
+      // AP: duas consultas escopadas pela MESMA janela — vencimento na janela
+      // (a carga oficial já usada por `apResult`/etc., sem recorte extra) UNIDA
+      // com liquidação na janela sem exigir vencimento na janela
+      // (`loadTreasuryCaixaApSettledOutsideDueWindow`). Nenhuma das duas busca
+      // a história inteira da empresa — ambas escopadas em [from, toExclusive).
+      const apSyncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(prisma);
+      const [apDueWindowLoaded, apSettledOutsideDueWindow] = await Promise.all([
+        loadFinanceApManagementRowsFromPrisma(
+          prisma,
+          {
+            status: "all",
+            dueDateFrom: canonicalWindowFromDate,
+            dueDateTo: civilDateToLocalDate(canonicalWindow.widenedToCivilDate),
+          },
+          referenceDate
+        ),
+        loadTreasuryCaixaApSettledOutsideDueWindow(
+          prisma,
+          canonicalWindowFromDate,
+          canonicalWindowToExclusiveDate,
+          apSyncCutoff
+        ),
+      ]);
+      const apRowsForCanonical = dedupeFinanceApRowsByExternalId([
+        ...apDueWindowLoaded.rows,
+        ...apSettledOutsideDueWindow,
+      ]);
+      const apGridRowsForCanonical = buildFinanceAccountsPayableRulesResult(
+        apRowsForCanonical,
+        { referenceDate, syncCutoff: apSyncCutoff, filters: { status: "all" } }
+      ).gridRows;
+      const canonicalPayables = selectTreasuryCaixaCanonicalPopulation(
+        apGridRowsForCanonical,
+        canonicalWindowRange,
+        (row) =>
+          row.amountPaid > 0 ? (row.paymentDate ?? row.settlementDate ?? null) : null
+      );
 
       // Saldo inicial da janela canônica: fechamento REALIZADO do último dia
       // conhecido anterior ao primeiro dia da janela. Reaproveita `realizedDaysAll`

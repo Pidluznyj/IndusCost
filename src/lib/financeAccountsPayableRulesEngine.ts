@@ -501,6 +501,7 @@ export function buildAccountsPayableGridRows(
         dueDate: row.dueDate ? toCivilDateKey(row.dueDate) : null,
         operationalDueDate: operationalDueDate ? toCivilDateKey(operationalDueDate) : null,
         paymentDate: row.paymentDate ? toCivilDateKey(row.paymentDate) : null,
+        settlementDate: row.settlementDate ? toCivilDateKey(row.settlementDate) : null,
         amountPayable: roundMoney(row.amountPayable),
         amountPaid: roundMoney(row.amountPaid),
         balancePayable: roundMoney(row.balancePayable),

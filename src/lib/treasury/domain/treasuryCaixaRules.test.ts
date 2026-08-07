@@ -22,6 +22,7 @@ import {
   detectTreasuryCaixaOutliers,
   resolveTreasuryCaixaCanonicalWindow,
   resolveTreasuryCaixaDueDateRange,
+  selectTreasuryCaixaCanonicalPopulation,
   TreasuryCaixaFilterError,
 } from "./treasuryCaixaRules.js";
 
@@ -206,6 +207,65 @@ describe("treasuryCaixaRules — resolveTreasuryCaixaCanonicalWindow", () => {
     });
     assert.deepEqual(result.canonicalWindowDays, ["2026-08-07"]);
     assert.equal(result.todayOutsideWindow, true);
+  });
+});
+
+describe("treasuryCaixaRules — selectTreasuryCaixaCanonicalPopulation (POP-01..POP-06, POP-10)", () => {
+  const WINDOW = { fromCivilDate: "2026-08-01", toCivilDate: "2026-08-31" };
+  type Row = { externalId: number; dueDate: string | null; settled: string | null };
+  const settledOf = (r: Row) => r.settled;
+
+  it("POP-01 — dueDate dentro, aberto (sem liquidação) → entra", () => {
+    const rows: Row[] = [{ externalId: 1, dueDate: "2026-08-15", settled: null }];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 1);
+  });
+
+  it("POP-02 — dueDate dentro, liquidação em D+2 → entra (o vencimento já basta)", () => {
+    const rows: Row[] = [{ externalId: 2, dueDate: "2026-08-05", settled: "2026-08-07" }];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 1);
+  });
+
+  it("POP-03 — dueDate ANTES da janela, liquidação DENTRO (além da tolerância) → entra pela liquidação", () => {
+    const rows: Row[] = [{ externalId: 3, dueDate: "2026-07-10", settled: "2026-08-07" }];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]!.externalId, 3);
+  });
+
+  it("POP-04 — dueDate DEPOIS da janela, liquidação DENTRO (antecipada) → entra pela liquidação", () => {
+    const rows: Row[] = [{ externalId: 4, dueDate: "2026-09-10", settled: "2026-08-07" }];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]!.externalId, 4);
+  });
+
+  it("POP-05 / POP-10 — dueDate dentro E liquidação dentro, título repetido na entrada → conta uma única vez", () => {
+    const rows: Row[] = [
+      { externalId: 5, dueDate: "2026-08-05", settled: "2026-08-07" },
+      { externalId: 5, dueDate: "2026-08-05", settled: "2026-08-07" }, // mesma identidade, veio de duas consultas
+    ];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 1);
+  });
+
+  it("POP-06 — dueDate fora E liquidação fora (ou ausente) → não entra", () => {
+    const rows: Row[] = [
+      { externalId: 6, dueDate: "2026-06-01", settled: "2026-06-03" },
+      { externalId: 7, dueDate: "2026-10-01", settled: null },
+    ];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.deepEqual(result, []);
+  });
+
+  it("limites inclusivos: dueDate exatamente no primeiro/último dia da janela entra", () => {
+    const rows: Row[] = [
+      { externalId: 8, dueDate: "2026-08-01", settled: null },
+      { externalId: 9, dueDate: "2026-08-31", settled: null },
+    ];
+    const result = selectTreasuryCaixaCanonicalPopulation(rows, WINDOW, settledOf);
+    assert.equal(result.length, 2);
   });
 });
 

@@ -93,6 +93,13 @@ export type FinanceAccountsPayableGridRow = {
   dueDate: string | null;
   operationalDueDate: string | null;
   paymentDate: string | null;
+  /**
+   * Data de liquidação bruta do Nomus (campo separado de `paymentDate`, que
+   * o Nomus raramente preenche) — necessária para a regra dos N dias
+   * (`resolveFinanceApEffectivePaymentDate`) enxergar a baixa real quando
+   * `paymentDate` está ausente.
+   */
+  settlementDate: string | null;
   amountPayable: number;
   amountPaid: number;
   balancePayable: number;
