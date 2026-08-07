@@ -383,7 +383,7 @@ export function TreasuryModule() {
           />
           <Route
             path="cash-support"
-            element={gate("reconcile", <CashSupportRoutePage />)}
+            element={gate("cash-support", <CashSupportRoutePage />)}
           />
           <Route
             path="exceptions"
