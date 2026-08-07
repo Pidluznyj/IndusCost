@@ -46,6 +46,7 @@ import {
   TREASURY_CAIXA_SCENARIOS_PATH,
   TREASURY_CASH_SUPPORT_PATH,
   TREASURY_CASH_SUPPORT_SUMMARY_PATH,
+  TREASURY_CASH_SUPPORT_SUGGESTIONS_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_ALERTS_PATH,
   TREASURY_AUDIT_PATH,
@@ -816,6 +817,16 @@ export function registerTreasuryRoutes(
     reconciliationEnabled,
     viewReconciliation,
     cashSupport.getSummary
+  );
+
+  // CS-008 — sugestões somente leitura, mesmo gate de leitura (viewReconciliation).
+  app.get(
+    TREASURY_CASH_SUPPORT_SUGGESTIONS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    cashSupport.getSuggestions
   );
 
   app.get(

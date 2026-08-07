@@ -138,5 +138,24 @@ export function createCashSupportControllers(deps: CashSupportControllerDeps) {
         handleTreasuryRouteError(res, requestId, err);
       }
     },
+
+    // CS-008 — somente leitura. Nunca aceita nem rejeita (isso é CS-011/12).
+    getSuggestions: async (req: Request, res: Response) => {
+      const requestId = resolveTreasuryRequestId(req);
+      res.setHeader("x-request-id", requestId);
+      try {
+        const user = await requireUser(req, res, requestId);
+        if (!user) return;
+
+        const filters = parseCashSupportFilters(req.query as Record<string, unknown>);
+        const result = await service.getSuggestions(
+          { appUser: user, requestId },
+          filters
+        );
+        res.status(200).json({ ...result, requestId });
+      } catch (err) {
+        handleTreasuryRouteError(res, requestId, err);
+      }
+    },
   };
 }

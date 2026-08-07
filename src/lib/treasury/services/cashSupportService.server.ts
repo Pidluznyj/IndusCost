@@ -27,6 +27,8 @@ import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import type { TreasuryReconciliationMatchDto } from "../contracts/treasuryDto.js";
 import { buildCashSupportReadModel } from "../domain/cashSupportReadModel.js";
+import { buildCashSupportSuggestions } from "../domain/cashSupportSuggestionsAdapter.js";
+import type { TreasuryReconciliationSuggestionEngineResult } from "../domain/treasuryReconciliationSuggestionEngine.js";
 import type {
   CashSupportFilters,
   CashSupportReadModel,
@@ -38,6 +40,10 @@ export type CashSupportServiceActor = {
 };
 
 export type CashSupportService = {
+  getSuggestions(
+    actor: CashSupportServiceActor,
+    filters: CashSupportFilters
+  ): Promise<TreasuryReconciliationSuggestionEngineResult>;
   getReadModel(
     actor: CashSupportServiceActor,
     filters: CashSupportFilters
@@ -57,7 +63,7 @@ export function createCashSupportService(deps: {
   const bankMovementService = createTreasuryBankMovementQueryService({ prisma });
   const reconciliationService = createTreasuryReconciliationMatchService({ prisma });
 
-  return {
+  const service: CashSupportService = {
     async getReadModel(actor, filters) {
       const bankActor: TreasuryBankMovementQueryActor = buildTreasuryBankMovementQueryActor(
         actor.appUser,
@@ -121,5 +127,25 @@ export function createCashSupportService(deps: {
         analysisAsOfDateTime: new Date().toISOString(),
       });
     },
+
+    async getSuggestions(actor, filters) {
+      // Reusa o mesmo pipeline de getReadModel (sem duplicar carga/adaptação)
+      // com o teto de página já usado na listagem de movimentos (200) — o
+      // motor de sugestões não precisa de mais linhas do que isso por janela.
+      const readModel = await service.getReadModel(actor, {
+        ...filters,
+        page: 1,
+        pageSize: 200,
+      });
+      const companyCode = readModel.rows.find((r) => r.companyContext)
+        ?.companyContext?.companyCode;
+      return buildCashSupportSuggestions({
+        rows: readModel.rows,
+        companyCode: filters.companyCode ?? companyCode ?? "",
+        asOfCivilDate: filters.civilDateTo,
+      });
+    },
   };
+
+  return service;
 }

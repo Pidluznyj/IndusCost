@@ -11,6 +11,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { createCashSupportControllers } from "./cashSupportController.js";
 import type { CashSupportService } from "../services/cashSupportService.server.js";
 import type { CashSupportReadModel } from "../contracts/cashSupportContracts.js";
+import type { TreasuryReconciliationSuggestionEngineResult } from "../domain/treasuryReconciliationSuggestionEngine.js";
 
 type MockRes = {
   statusCode: number;
@@ -73,6 +74,16 @@ function emptyReadModel(): CashSupportReadModel {
   };
 }
 
+function emptySuggestions(): TreasuryReconciliationSuggestionEngineResult {
+  return {
+    algorithmVersion: "1.0.0",
+    suggestions: [],
+    unmatchedMovementIds: [],
+    excludedTitleIds: [],
+    autoMatched: false,
+  };
+}
+
 const fakeUser = { id: "u1", name: "Ops", role: "ADMIN", sessionId: "s1" } as AppAuthContext;
 
 function fakeReq(query: Record<string, unknown>): Request {
@@ -84,7 +95,10 @@ function fakeReq(query: Record<string, unknown>): Request {
 
 describe("cashSupportController — wiring", () => {
   it("401 sem usuário autenticado", async () => {
-    const service: CashSupportService = { getReadModel: async () => emptyReadModel() };
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => null,
       service,
@@ -96,7 +110,10 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("400 quando civilDateFrom/civilDateTo ausentes", async () => {
-    const service: CashSupportService = { getReadModel: async () => emptyReadModel() };
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -108,7 +125,10 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("400 quando civilDateTo é anterior a civilDateFrom", async () => {
-    const service: CashSupportService = { getReadModel: async () => emptyReadModel() };
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -126,6 +146,7 @@ describe("cashSupportController — wiring", () => {
         calledWithFilters = filters;
         return emptyReadModel();
       },
+      getSuggestions: async () => emptySuggestions(),
     };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
@@ -144,6 +165,7 @@ describe("cashSupportController — wiring", () => {
       getReadModel: async () => {
         throw new Error("boom");
       },
+      getSuggestions: async () => emptySuggestions(),
     };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
@@ -156,7 +178,10 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("getSummary retorna apenas summary/warnings, não as linhas", async () => {
-    const service: CashSupportService = { getReadModel: async () => emptyReadModel() };
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -171,7 +196,10 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("resposta inclui x-request-id", async () => {
-    const service: CashSupportService = { getReadModel: async () => emptyReadModel() };
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -180,5 +208,42 @@ describe("cashSupportController — wiring", () => {
     const res = createMockRes();
     await controllers.getReadModel(req, res as unknown as Response);
     assert.ok(res.headers["x-request-id"]);
+  });
+
+  it("getSuggestions: 401 sem usuário", async () => {
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => emptySuggestions(),
+    };
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => null,
+      service,
+    });
+    const req = fakeReq({});
+    const res = createMockRes();
+    await controllers.getSuggestions(req, res as unknown as Response);
+    assert.equal(res.statusCode, 401);
+  });
+
+  it("getSuggestions: 200 delega ao orquestrador e nunca grava nada", async () => {
+    let called = false;
+    const service: CashSupportService = {
+      getReadModel: async () => emptyReadModel(),
+      getSuggestions: async () => {
+        called = true;
+        return emptySuggestions();
+      },
+    };
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => fakeUser,
+      service,
+    });
+    const req = fakeReq({ civilDateFrom: "2026-07-01", civilDateTo: "2026-07-31" });
+    const res = createMockRes();
+    await controllers.getSuggestions(req, res as unknown as Response);
+    assert.equal(res.statusCode, 200);
+    assert.ok(called);
+    const body = res.body as TreasuryReconciliationSuggestionEngineResult;
+    assert.equal(body.autoMatched, false);
   });
 });
