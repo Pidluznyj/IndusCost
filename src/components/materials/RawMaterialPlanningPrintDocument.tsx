@@ -27,7 +27,7 @@ export function RawMaterialPlanningPrintDocument({
   }, [data]);
 
   return (
-    <div id="rmp-print-root">
+    <div id="rmp-print-root" className="rmp-print-root">
       <div className="rmp-print-document">
         <PrintHeader
           branding={branding}

@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Ban, Check, ChevronDown, Info, Loader2, Minus } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChevronDown, Info, Loader2, Minus, Printer } from "lucide-react";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import {
   buyByBlockedReasonLabel,
@@ -491,65 +491,108 @@ function PurchasePlanCells({
   );
 }
 
-function RawMaterialPlanningExpandedDetail({ row }: { row: RawMaterialPlanningRow }) {
+/**
+ * Conteúdo do detalhe de uma matéria-prima — reaproveitado tanto na linha
+ * expansível da tela quanto no PDF de impressão por material (mesmo
+ * racional, mesmo layout, sem duplicar markup/lógica).
+ */
+export function RawMaterialPlanningDetailContent({
+  row,
+  defaultOpenMemory = false,
+}: {
+  row: RawMaterialPlanningRow;
+  /** Impressão: a memória do cálculo é o motivo do PDF — sempre aberta, nunca escondida atrás de um clique. */
+  defaultOpenMemory?: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Situação e Confiança saíram do grid (deram lugar aos campos de
+          compra) e vivem aqui, junto com a data-limite calculada. */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <StatusBadge situation={row.situation} />
+        <ConfidenceBadge confidence={row.confidence} />
+        <span className="text-muted-foreground">
+          Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
+          {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
+        </span>
+      </div>
+      {row.alerts.length > 0 ? (
+        <div className={cn("rounded-lg border p-3 shadow-sm", STATUS_TONE_CLASSES.warning)}>
+          <ul className="space-y-1.5 text-xs font-medium">
+            {row.alerts.map((alert, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  <span className="font-bold">Aviso:</span> {alert}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {/* Memória do cálculo em drilldown próprio — fechada por padrão na
+          tela; na impressão (defaultOpenMemory) fica sempre aberta, é o
+          motivo do PDF existir. */}
+      <details className="group rounded-lg border border-border/70" open={defaultOpenMemory || undefined}>
+        <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+          Memória do cálculo
+          <span className="font-normal normal-case tracking-normal">— como chegamos nesses números</span>
+        </summary>
+        <div className="border-t border-border/70 p-3">
+          <RawMaterialPlanningCalculationMemory row={row} />
+        </div>
+      </details>
+      <div>
+        <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Linha do tempo projetada</h4>
+        <RawMaterialPlanningTimelineTable row={row} />
+      </div>
+      <div>
+        <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Pedidos de venda que consomem esta matéria-prima</h4>
+        <RawMaterialPlanningConsumingOrdersTable row={row} />
+      </div>
+      <div>
+        <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Entradas de compra confirmadas</h4>
+        <RawMaterialPlanningInboundTable row={row} />
+      </div>
+    </div>
+  );
+}
+
+function RawMaterialPlanningExpandedDetail({
+  row,
+  onPrint,
+  printing,
+}: {
+  row: RawMaterialPlanningRow;
+  onPrint?: (materialId: string) => void;
+  printing?: boolean;
+}) {
   return (
     <tr>
       <td colSpan={11} className="bg-muted/10 p-4">
-        <div className="space-y-4">
-          {/* Situação e Confiança saíram do grid (deram lugar aos campos de
-              compra) e vivem aqui, junto com a data-limite calculada. */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <StatusBadge situation={row.situation} />
-            <ConfidenceBadge confidence={row.confidence} />
-            <span className="text-muted-foreground">
-              Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
-              {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
-            </span>
-          </div>
-          {row.alerts.length > 0 ? (
-            <div
-              className={cn(
-                "rounded-lg border p-3 shadow-sm",
-                STATUS_TONE_CLASSES.warning
-              )}
+        {onPrint ? (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPrint(row.materialId);
+              }}
+              disabled={printing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-accent disabled:opacity-60"
+              title="Imprimir só esta matéria-prima (memória do cálculo, linha do tempo, pedidos e entradas)"
             >
-              <ul className="space-y-1.5 text-xs font-medium">
-                {row.alerts.map((alert, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    <span>
-                      <span className="font-bold">Aviso:</span> {alert}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {/* Memória do cálculo em drilldown próprio — fechada por padrão,
-              abre só quando o usuário quer auditar os números. */}
-          <details className="group rounded-lg border border-border/70">
-            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground">
-              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
-              Memória do cálculo
-              <span className="font-normal normal-case tracking-normal">— como chegamos nesses números</span>
-            </summary>
-            <div className="border-t border-border/70 p-3">
-              <RawMaterialPlanningCalculationMemory row={row} />
-            </div>
-          </details>
-          <div>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Linha do tempo projetada</h4>
-            <RawMaterialPlanningTimelineTable row={row} />
+              {printing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Printer className="h-3.5 w-3.5" aria-hidden />
+              )}
+              Imprimir esta matéria-prima
+            </button>
           </div>
-          <div>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Pedidos de venda que consomem esta matéria-prima</h4>
-            <RawMaterialPlanningConsumingOrdersTable row={row} />
-          </div>
-          <div>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Entradas de compra confirmadas</h4>
-            <RawMaterialPlanningInboundTable row={row} />
-          </div>
-        </div>
+        ) : null}
+        <RawMaterialPlanningDetailContent row={row} />
       </td>
     </tr>
   );
@@ -561,6 +604,8 @@ export function RawMaterialPlanningTable({
   onToggleRow,
   onSavePurchasePlan,
   savingPlanMaterialId,
+  onPrintMaterial,
+  printingMaterialId,
 }: {
   rows: RawMaterialPlanningRow[];
   expandedMaterialId: string | null;
@@ -571,6 +616,9 @@ export function RawMaterialPlanningTable({
     patch: RawMaterialPurchasePlanPatch
   ) => Promise<void>;
   savingPlanMaterialId?: string | null;
+  /** Ausente (ex.: dentro do próprio PDF) → botão "Imprimir esta matéria-prima" não aparece. */
+  onPrintMaterial?: (materialId: string) => void;
+  printingMaterialId?: string | null;
 }) {
   if (rows.length === 0) {
     return (
@@ -628,7 +676,13 @@ export function RawMaterialPlanningTable({
                   />
                   <td className="p-3 text-right tabular-nums whitespace-nowrap">{money(row.estimatedPurchaseValue)}</td>
                 </tr>
-                {expanded ? <RawMaterialPlanningExpandedDetail row={row} /> : null}
+                {expanded ? (
+                  <RawMaterialPlanningExpandedDetail
+                    row={row}
+                    onPrint={onPrintMaterial}
+                    printing={printingMaterialId === row.materialId}
+                  />
+                ) : null}
               </React.Fragment>
             );
           })}

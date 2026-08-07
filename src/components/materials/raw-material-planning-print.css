@@ -1,4 +1,4 @@
-#rmp-print-root {
+.rmp-print-root {
   display: none;
 }
 
@@ -22,12 +22,12 @@
     display: none !important;
   }
 
-  body.raw-material-planning-print-route > *:not(#rmp-print-root) {
+  body.raw-material-planning-print-route > *:not(.rmp-print-root) {
     display: none !important;
   }
 
-  body.raw-material-planning-print-route #rmp-print-root,
-  body.raw-material-planning-print-route #rmp-print-root * {
+  body.raw-material-planning-print-route .rmp-print-root,
+  body.raw-material-planning-print-route .rmp-print-root * {
     visibility: visible !important;
   }
 
@@ -52,7 +52,7 @@
     padding: 0 !important;
   }
 
-  #rmp-print-root {
+  .rmp-print-root {
     display: block !important;
     position: static !important;
     left: auto !important;
@@ -70,18 +70,18 @@
     border-radius: 0 !important;
   }
 
-  #rmp-print-root,
-  #rmp-print-root .rmp-print-document,
-  #rmp-print-root .rmp-print-section {
+  .rmp-print-root,
+  .rmp-print-root .rmp-print-document,
+  .rmp-print-root .rmp-print-section {
     overflow: visible !important;
     max-height: none !important;
   }
 
-  #rmp-print-root * {
+  .rmp-print-root * {
     box-shadow: none !important;
   }
 
-  #rmp-print-root .rmp-print-document {
+  .rmp-print-root .rmp-print-document {
     font-family: Arial, Helvetica, sans-serif;
     font-size: 8px;
     line-height: 1.35;
@@ -89,24 +89,24 @@
   }
 
   /* Header adjustments for print */
-  #rmp-print-root .print-doc-header {
+  .rmp-print-root .print-doc-header {
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 4mm;
   }
 
-  #rmp-print-root .print-doc-header-grid {
+  .rmp-print-root .print-doc-header-grid {
     display: grid !important;
     grid-template-columns: 28mm minmax(0, 1fr) 58mm !important;
     column-gap: 4mm !important;
     align-items: start !important;
   }
 
-  #rmp-print-root .print-doc-logo-wrap {
+  .rmp-print-root .print-doc-logo-wrap {
     display: block !important;
   }
 
-  #rmp-print-root .print-doc-logo {
+  .rmp-print-root .print-doc-logo {
     max-height: 22mm !important;
     max-width: 28mm !important;
     width: auto !important;
@@ -115,51 +115,51 @@
     object-position: left top !important;
   }
 
-  #rmp-print-root .print-doc-company-text {
+  .rmp-print-root .print-doc-company-text {
     font-size: 7pt !important;
     line-height: 1.35 !important;
   }
 
-  #rmp-print-root .print-doc-company-name {
+  .rmp-print-root .print-doc-company-name {
     font-size: 9.5pt !important;
     font-weight: 700 !important;
     margin-bottom: 1mm !important;
   }
 
-  #rmp-print-root .print-doc-company-slogan {
+  .rmp-print-root .print-doc-company-slogan {
     font-size: 6.5pt !important;
   }
 
-  #rmp-print-root .print-doc-meta {
+  .rmp-print-root .print-doc-meta {
     border-left: 1px solid #cbd5e1 !important;
     padding-left: 3mm !important;
     font-size: 7pt !important;
     line-height: 1.35 !important;
   }
 
-  #rmp-print-root .print-doc-meta-title {
+  .rmp-print-root .print-doc-meta-title {
     font-size: 9pt !important;
     font-weight: 800 !important;
     margin-bottom: 1.5mm !important;
     white-space: normal !important;
   }
 
-  #rmp-print-root .print-doc-meta-line {
+  .rmp-print-root .print-doc-meta-line {
     margin-bottom: 0.8mm !important;
   }
 
-  #rmp-print-root .print-doc-subtitle {
+  .rmp-print-root .print-doc-subtitle {
     margin: 2mm 0 0 !important;
     font-size: 7pt !important;
     color: #64748b !important;
   }
 
-  #rmp-print-root .print-doc-header-rule {
+  .rmp-print-root .print-doc-header-rule {
     margin-top: 2.5mm !important;
     border-top: 1px solid #94a3b8 !important;
   }
 
-  #rmp-print-root .rmp-print-filter-band {
+  .rmp-print-root .rmp-print-filter-band {
     margin-top: 3px;
     margin-bottom: 6px;
     padding: 3px 5px;
@@ -168,7 +168,7 @@
     border-left: 3px solid #1d4ed8;
   }
 
-  #rmp-print-root .rmp-print-filter-band-label {
+  .rmp-print-root .rmp-print-filter-band-label {
     font-size: 6.5px;
     font-weight: 700;
     text-transform: uppercase;
@@ -177,7 +177,7 @@
     margin: 0 0 1px;
   }
 
-  #rmp-print-root .rmp-print-filter-band-value {
+  .rmp-print-root .rmp-print-filter-band-value {
     font-size: 7px;
     color: #334155;
     margin: 0;
@@ -185,7 +185,7 @@
   }
 
   /* Table Adjustments for Print */
-  #rmp-print-root table {
+  .rmp-print-root table {
     width: 100% !important;
     max-width: 100% !important;
     border-collapse: collapse !important;
@@ -193,28 +193,28 @@
     page-break-inside: auto;
   }
 
-  #rmp-print-root thead {
+  .rmp-print-root thead {
     display: table-header-group;
   }
 
-  #rmp-print-root tfoot {
+  .rmp-print-root tfoot {
     display: table-row-group;
   }
 
-  #rmp-print-root tbody tr {
+  .rmp-print-root tbody tr {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
-  #rmp-print-root th,
-  #rmp-print-root td {
+  .rmp-print-root th,
+  .rmp-print-root td {
     border: 1px solid #cbd5e1 !important;
     padding: 3px 4px !important;
     vertical-align: middle !important;
     background: #fff !important;
   }
 
-  #rmp-print-root thead th {
+  .rmp-print-root thead th {
     background: #e2e8f0 !important;
     font-weight: 700 !important;
     color: #0f172a !important;
@@ -222,12 +222,12 @@
     font-size: 7px !important;
   }
 
-  #rmp-print-root tbody tr:nth-child(even) td {
+  .rmp-print-root tbody tr:nth-child(even) td {
     background: #f8fafc !important;
   }
 
   /* Ensure our status badges print well */
-  #rmp-print-root .rounded-md {
+  .rmp-print-root .rounded-md {
     border-radius: 2px !important;
   }
 }

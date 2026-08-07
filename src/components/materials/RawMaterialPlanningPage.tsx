@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ArrowUp,
   Ban,
+  ChevronDown,
   Download,
   Info,
   Loader2,
@@ -27,6 +28,7 @@ import {
   MaterialDemandTablePagination,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { RawMaterialPlanningPrintDocument } from "@/src/components/materials/RawMaterialPlanningPrintDocument";
+import { RawMaterialPlanningMaterialPrintDocument } from "@/src/components/materials/RawMaterialPlanningMaterialPrintDocument";
 import {
   RawMaterialPlanningTable,
   type RawMaterialPurchasePlanPatch,
@@ -143,31 +145,32 @@ function money(v: number | null | undefined): string {
 
 function InfoBanner() {
   return (
-    <div
-      className="relative overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25 pl-4 pr-4 py-4 shadow-sm"
-      role="status"
-    >
+    <details className="group relative overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25 shadow-sm">
       <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-sky-500/80" aria-hidden />
-      <div className="flex gap-3 pl-2">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-white/80 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+      <summary className="flex cursor-pointer items-center gap-3 pl-5 pr-4 py-3 list-none">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-white/80 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
           <Info className="h-4 w-4" aria-hidden />
         </div>
-        <div className="min-w-0 space-y-1">
-          <p className="text-sm font-semibold text-foreground">
-            Cruza saldo de estoque com demanda dos pedidos e entradas de compra confirmadas
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            O saldo contado vem da última conferência de estoque registrada — não é atualizado em tempo real por
-            movimentações de fábrica. A necessidade vem dos pedidos de venda ainda em aberto (líquida de
-            atendimento/corte) explodidos pela mesma composição (BOM) usada na Inteligência de Matéria-Prima.
-            A matéria-prima precisa estar disponível 10 dias úteis antes da entrega prevista ao cliente — a data de
-            necessidade nunca é a própria data de entrega, e a data de criação do pedido nunca entra nessa conta.
-            Quando faltar um dado confiável (lead time, contagem recente, data de entrega), a situação aparece como
-            "Dados incompletos" em vez de um número inventado.
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 text-sm font-semibold text-foreground">
+          Cruza saldo de estoque com demanda dos pedidos e entradas de compra confirmadas
+        </p>
+        <ChevronDown
+          className="h-4 w-4 shrink-0 text-sky-700 transition-transform group-open:rotate-180 dark:text-sky-200"
+          aria-hidden
+        />
+      </summary>
+      <div className="pl-16 pr-4 pb-4">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          O saldo contado vem da última conferência de estoque registrada — não é atualizado em tempo real por
+          movimentações de fábrica. A necessidade vem dos pedidos de venda ainda em aberto (líquida de
+          atendimento/corte) explodidos pela mesma composição (BOM) usada na Inteligência de Matéria-Prima.
+          A matéria-prima precisa estar disponível 10 dias úteis antes da entrega prevista ao cliente — a data de
+          necessidade nunca é a própria data de entrega, e a data de criação do pedido nunca entra nessa conta.
+          Quando faltar um dado confiável (lead time, contagem recente, data de entrega), a situação aparece como
+          "Dados incompletos" em vez de um número inventado.
+        </p>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -190,6 +193,7 @@ export function RawMaterialPlanningPage() {
 
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printingMaterialId, setPrintingMaterialId] = useState<string | null>(null);
 
   const filterKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
 
@@ -387,6 +391,37 @@ export function RawMaterialPlanningPage() {
     }
   }, [branding]);
 
+  /**
+   * Imprime só UMA matéria-prima (o racional por trás dos números daquela
+   * linha) — mesmo mecanismo do relatório geral (window.print(), sem lib
+   * nova), mas monta o documento só quando pedido em vez de sempre, já que
+   * é por material e não faz sentido manter N documentos ocultos no DOM.
+   */
+  const handlePrintMaterial = useCallback(
+    async (materialId: string) => {
+      setPrintingMaterialId(materialId);
+      try {
+        if (!branding) {
+          const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>(
+            "/api/branding-settings",
+            { ttlMs: 300_000 }
+          );
+          setBranding(next);
+        }
+        document.body.classList.add("raw-material-planning-print-route");
+        setTimeout(() => {
+          window.print();
+          document.body.classList.remove("raw-material-planning-print-route");
+          setPrintingMaterialId(null);
+        }, 300);
+      } catch (e) {
+        console.error("[RawMaterialPlanning] print material", e);
+        setPrintingMaterialId(null);
+      }
+    },
+    [branding]
+  );
+
   const rows: RawMaterialPlanningRow[] = data?.materials ?? [];
 
   /**
@@ -416,6 +451,11 @@ export function RawMaterialPlanningPage() {
   const printData = useMemo(
     () => (data ? { ...data, materials: sortedRows } : null),
     [data, sortedRows]
+  );
+
+  const printingMaterial = useMemo(
+    () => (printingMaterialId ? rows.find((r) => r.materialId === printingMaterialId) ?? null : null),
+    [printingMaterialId, rows]
   );
 
   return (
@@ -784,6 +824,8 @@ export function RawMaterialPlanningPage() {
               onToggleRow={(id) => setExpandedMaterialId((prev) => (prev === id ? null : id))}
               onSavePurchasePlan={handleSavePurchasePlan}
               savingPlanMaterialId={savingPlanMaterialId}
+              onPrintMaterial={(id) => void handlePrintMaterial(id)}
+              printingMaterialId={printingMaterialId}
             />
             <MaterialDemandTablePagination
               pagination={pagination}
@@ -795,18 +837,28 @@ export function RawMaterialPlanningPage() {
         </>
       ) : null}
 
-      {/* Documento de impressão — SEMPRE montado (oculto em tela pelo CSS
-          base de #rmp-print-root) e PORTALIZADO direto no <body>: o CSS de
+      {/* Documento de impressão — PORTALIZADO direto no <body>: o CSS de
           impressão esconde o #root inteiro, então dentro da árvore normal o
-          relatório sairia em branco (era exatamente o defeito — o documento
-          nunca era renderizado). */}
-      {printData && branding
+          relatório sairia em branco (era exatamente o defeito original — o
+          documento nunca era renderizado). Montado só durante a impressão
+          (isPrinting): como o PDF por material também portaliza pra body,
+          manter os dois sempre montados imprimiria os dois juntos. */}
+      {isPrinting && printData && branding
         ? createPortal(
             <RawMaterialPlanningPrintDocument
               data={printData}
               branding={branding}
               filterChips={filterChips}
             />,
+            document.body
+          )
+        : null}
+
+      {/* PDF de uma única matéria-prima — mesma lógica, disparado pelo
+          botão "Imprimir esta matéria-prima" dentro da linha expandida. */}
+      {printingMaterial && branding
+        ? createPortal(
+            <RawMaterialPlanningMaterialPrintDocument row={printingMaterial} branding={branding} />,
             document.body
           )
         : null}
