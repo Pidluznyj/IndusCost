@@ -15,6 +15,14 @@ import {
   resolveCatalogEntityByCode,
 } from "../src/lib/nomusCatalogEntityResolve.ts";
 import { normalizeSku } from "../src/lib/nomusBomComparison.ts";
+import {
+  buildProductMatchIndex,
+  extractInactiveLifecycleRows,
+  planProductSyncMutation,
+  type ExistingProductSnapshot,
+  type ProductLifecycleRow,
+  type ProductSyncMutation,
+} from "../src/lib/nomusProductsSyncPlan.ts";
 
 const prisma = new PrismaClient();
 
@@ -399,9 +407,24 @@ async function runDry(eligible: EligibleProduct[]) {
   };
 }
 
-async function runApply(eligible: EligibleProduct[]): Promise<{
-  created: number;
-  updated: number;
+function eligibleToLifecycleRow(p: EligibleProduct): ProductLifecycleRow {
+  return {
+    externalId: p.externalId,
+    sku: p.sku,
+    chosenName: p.chosenName,
+    nameLooksLikeSku: p.nameLooksLikeSku,
+    description: p.description,
+    type: p.type,
+    typeInferenceConfidence: p.typeInferenceConfidence,
+    ativo: true,
+    raw: p.raw,
+  };
+}
+
+type LifecyclePlanEntry = { row: ProductLifecycleRow; mutation: ProductSyncMutation };
+
+type LifecyclePlanResult = {
+  plans: LifecyclePlanEntry[];
   recognizedAsMaterial: number;
   inactiveMaterialsBlocked: number;
   historicalClassificationConflicts: number;
@@ -411,24 +434,28 @@ async function runApply(eligible: EligibleProduct[]): Promise<{
     decision: string;
     message: string;
   }>;
-}> {
-  let created = 0;
-  let updated = 0;
+};
+
+/**
+ * Constrói as mutações de Product (create/update/inativação/reativação) para
+ * as linhas PRESENTES na resposta Nomus. Ausência nunca gera mutação —
+ * paginação incompleta ou erro de API não podem inativar nada.
+ */
+async function buildLifecyclePlans(
+  eligible: EligibleProduct[],
+  inactiveRows: ProductLifecycleRow[]
+): Promise<LifecyclePlanResult> {
   let recognizedAsMaterial = 0;
   let inactiveMaterialsBlocked = 0;
   let historicalClassificationConflicts = 0;
-  const materialPrecedenceSkipped: Array<{
-    sku: string;
-    materialId: string | null;
-    decision: string;
-    message: string;
-  }> = [];
+  const materialPrecedenceSkipped: LifecyclePlanResult["materialPrecedenceSkipped"] = [];
 
   const maps = await loadCatalogEntityLookupMaps(
     prisma,
     eligible.map((p) => p.sku)
   );
 
+  const gated: ProductLifecycleRow[] = [];
   for (const p of eligible) {
     const resolution = resolveCatalogEntityByCode(p.sku, maps);
     if (materialBlocksProductMutation(resolution)) {
@@ -443,71 +470,222 @@ async function runApply(eligible: EligibleProduct[]): Promise<{
       });
       continue;
     }
+    gated.push(eligibleToLifecycleRow(p));
+  }
 
-    const current = await prisma.product.findFirst({
-      where: { sku: { in: [p.sku, normalizeSku(p.sku)] } },
-      select: { id: true, type: true, name: true },
-    });
-    const baseData = {
-      description: p.description,
-      status: "ACTIVE" as const,
-    };
-    if (current) {
-      const willUpdateName =
-        !p.nameLooksLikeSku && p.chosenName.length > 0 && (current.name ?? "") !== p.chosenName;
-      const data = {
-        ...baseData,
-        ...(willUpdateName ? { name: p.chosenName } : {}),
-      };
-      await prisma.product.update({ where: { id: current.id }, data });
-      updated += 1;
-    } else {
-      // Gate final: Material pode ter sido criado entre preview/lote e create.
-      const again = resolveCatalogEntityByCode(
-        p.sku,
-        await loadCatalogEntityLookupMaps(prisma, [p.sku])
+  const allRows = [...gated, ...inactiveRows];
+  const externalIds = [...new Set(allRows.map((r) => String(r.externalId)))];
+  const skus = [...new Set(allRows.flatMap((r) => [r.sku, normalizeSku(r.sku)]))];
+  const existing: ExistingProductSnapshot[] =
+    allRows.length === 0
+      ? []
+      : await prisma.product.findMany({
+          where: {
+            OR: [{ sourceExternalId: { in: externalIds } }, { sku: { in: skus } }],
+          },
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            description: true,
+            type: true,
+            status: true,
+            sourceSystem: true,
+            sourceExternalId: true,
+            isNomusControlled: true,
+          },
+        });
+  const index = buildProductMatchIndex(existing);
+
+  const plans: LifecyclePlanEntry[] = allRows.map((row) => ({
+    row,
+    mutation: planProductSyncMutation(row, index),
+  }));
+
+  return {
+    plans,
+    recognizedAsMaterial,
+    inactiveMaterialsBlocked,
+    historicalClassificationConflicts,
+    materialPrecedenceSkipped,
+  };
+}
+
+function summarizeLifecyclePlans(result: LifecyclePlanResult) {
+  const deactivatePreview: Array<{ sku: string; productId: string; previousStatus: string | null }> = [];
+  const skuChangePreview: Array<{ productId: string; oldSku: string; newSku: string }> = [];
+  const ambiguousIdentityPreview: Array<{ sku: string; externalId: string; reason: string }> = [];
+  const typeMismatchPreview: Array<{ sku: string; current: string; inferred: string }> = [];
+  let createCount = 0;
+  let updateCount = 0;
+  let deactivateCount = 0;
+  let reactivateCount = 0;
+  let alreadyInactiveCount = 0;
+  let notFoundInactiveCount = 0;
+
+  for (const { mutation } of result.plans) {
+    if (mutation.kind === "CREATE") createCount += 1;
+    else if (mutation.kind === "UPDATE") {
+      updateCount += 1;
+      if (mutation.changedFields.includes("status")) reactivateCount += 1;
+      if (mutation.data.sku && skuChangePreview.length < 50) {
+        skuChangePreview.push({
+          productId: mutation.productId,
+          oldSku: mutation.sku,
+          newSku: mutation.data.sku,
+        });
+      }
+      if (mutation.typeMismatch && typeMismatchPreview.length < 50) {
+        typeMismatchPreview.push({
+          sku: mutation.sku,
+          current: mutation.typeMismatch.current,
+          inferred: mutation.typeMismatch.inferred,
+        });
+      }
+    } else if (mutation.kind === "DEACTIVATE") {
+      deactivateCount += 1;
+      if (deactivatePreview.length < 50) {
+        deactivatePreview.push({
+          sku: mutation.sku,
+          productId: mutation.productId,
+          previousStatus: mutation.previousStatus,
+        });
+      }
+    } else if (mutation.kind === "SKIP_ALREADY_INACTIVE") alreadyInactiveCount += 1;
+    else if (mutation.kind === "SKIP_NOT_FOUND_INACTIVE") notFoundInactiveCount += 1;
+    else if (mutation.kind === "SKIP_AMBIGUOUS_IDENTITY" && ambiguousIdentityPreview.length < 50) {
+      ambiguousIdentityPreview.push({
+        sku: mutation.sku,
+        externalId: mutation.externalId,
+        reason: mutation.reason,
+      });
+    }
+  }
+
+  const ambiguousIdentityCount = result.plans.filter(
+    (p) => p.mutation.kind === "SKIP_AMBIGUOUS_IDENTITY"
+  ).length;
+
+  return {
+    createCount,
+    updateCount,
+    deactivateCount,
+    reactivateCount,
+    alreadyInactiveCount,
+    notFoundInactiveCount,
+    ambiguousIdentityCount,
+    deactivatePreview,
+    skuChangePreview,
+    ambiguousIdentityPreview,
+    typeMismatchPreview,
+  };
+}
+
+async function executeLifecyclePlans(result: LifecyclePlanResult): Promise<{
+  created: number;
+  updated: number;
+  deactivated: number;
+  reactivated: number;
+  skippedAmbiguousIdentity: number;
+  recognizedAsMaterial: number;
+  inactiveMaterialsBlocked: number;
+  historicalClassificationConflicts: number;
+  materialPrecedenceSkipped: LifecyclePlanResult["materialPrecedenceSkipped"];
+}> {
+  let created = 0;
+  let updated = 0;
+  let deactivated = 0;
+  let reactivated = 0;
+  let skippedAmbiguousIdentity = 0;
+  let recognizedAsMaterial = result.recognizedAsMaterial;
+  let inactiveMaterialsBlocked = result.inactiveMaterialsBlocked;
+  let historicalClassificationConflicts = result.historicalClassificationConflicts;
+  const materialPrecedenceSkipped = [...result.materialPrecedenceSkipped];
+
+  for (const { row, mutation } of result.plans) {
+    if (mutation.kind === "SKIP_AMBIGUOUS_IDENTITY") {
+      skippedAmbiguousIdentity += 1;
+      console.warn(
+        `[nomus-products-v1] identidade ambígua — nenhuma escrita: sku=${mutation.sku} externalId=${mutation.externalId} (${mutation.reason})`
       );
-      if (materialBlocksProductMutation(again)) {
-        if (again.status === "material_inactive") inactiveMaterialsBlocked += 1;
-        else recognizedAsMaterial += 1;
-        if (again.hasHistoricalConflict) historicalClassificationConflicts += 1;
+      continue;
+    }
+    if (mutation.kind === "SKIP_ALREADY_INACTIVE" || mutation.kind === "SKIP_NOT_FOUND_INACTIVE") {
+      continue;
+    }
+
+    if (mutation.kind === "DEACTIVATE") {
+      await prisma.product.update({
+        where: { id: mutation.productId },
+        data: { ...mutation.data, lastNomusSyncAt: new Date() },
+      });
+      deactivated += 1;
+      continue;
+    }
+
+    if (mutation.kind === "UPDATE") {
+      await prisma.product.update({
+        where: { id: mutation.productId },
+        data: { ...mutation.data, lastNomusSyncAt: new Date() },
+      });
+      updated += 1;
+      if (mutation.changedFields.includes("status")) reactivated += 1;
+      continue;
+    }
+
+    // CREATE — gate final: Material pode ter sido criado entre preview/lote e create.
+    const again = resolveCatalogEntityByCode(
+      row.sku,
+      await loadCatalogEntityLookupMaps(prisma, [row.sku])
+    );
+    if (materialBlocksProductMutation(again)) {
+      if (again.status === "material_inactive") inactiveMaterialsBlocked += 1;
+      else recognizedAsMaterial += 1;
+      if (again.hasHistoricalConflict) historicalClassificationConflicts += 1;
+      materialPrecedenceSkipped.push({
+        sku: row.sku,
+        materialId: again.materialId,
+        decision: again.importDecision,
+        message: again.message,
+      });
+      continue;
+    }
+    try {
+      await prisma.product.create({
+        data: {
+          sku: mutation.sku,
+          name: mutation.name,
+          description: mutation.description,
+          type: mutation.type,
+          status: "ACTIVE",
+          sourceSystem: "NOMUS",
+          sourceExternalId: mutation.sourceExternalId,
+          nomusPayloadHash: mutation.nomusPayloadHash,
+          lastNomusSyncAt: new Date(),
+        },
+      });
+      created += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/unique|Unique constraint/i.test(msg)) {
         materialPrecedenceSkipped.push({
-          sku: p.sku,
-          materialId: again.materialId,
-          decision: again.importDecision,
-          message: again.message,
+          sku: row.sku,
+          materialId: null,
+          decision: "UNIQUE_CONFLICT",
+          message: `Create ignorado por unique constraint: ${msg}`,
         });
         continue;
       }
-      try {
-        await prisma.product.create({
-          data: {
-            ...baseData,
-            sku: p.sku,
-            name: p.chosenName,
-            type: p.type,
-          },
-        });
-        created += 1;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (/unique|Unique constraint/i.test(msg)) {
-          materialPrecedenceSkipped.push({
-            sku: p.sku,
-            materialId: null,
-            decision: "UNIQUE_CONFLICT",
-            message: `Create ignorado por unique constraint: ${msg}`,
-          });
-          continue;
-        }
-        throw err;
-      }
+      throw err;
     }
   }
 
   return {
     created,
     updated,
+    deactivated,
+    reactivated,
+    skippedAmbiguousIdentity,
     recognizedAsMaterial,
     inactiveMaterialsBlocked,
     historicalClassificationConflicts,
@@ -539,7 +717,21 @@ async function main(): Promise<void> {
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) for (const r of b.reasons) blockedReasons[r] = (blockedReasons[r] ?? 0) + 1;
 
-  const applied = isApply ? await runApply(eligible) : null;
+  // Ciclo de vida: linhas EXPLICITAMENTE inativas no payload (ativo=false).
+  // Ausência na resposta nunca inativa nada.
+  const rawBySkuKey = new Map<string, JsonObject>();
+  for (const r of raw) {
+    const sku = nomusProductSkuFromRow(r);
+    if (sku) {
+      rawBySkuKey.set(sku, r);
+      rawBySkuKey.set(normalizeSku(sku), r);
+    }
+  }
+  const inactiveRows = extractInactiveLifecycleRows(blocked, rawBySkuKey);
+  const lifecyclePlans = await buildLifecyclePlans(eligible, inactiveRows);
+  const lifecyclePreview = summarizeLifecyclePlans(lifecyclePlans);
+
+  const applied = isApply ? await executeLifecyclePlans(lifecyclePlans) : null;
   console.log(
     JSON.stringify(
       {
@@ -585,6 +777,7 @@ async function main(): Promise<void> {
           typeInferenceSummary: diagnostics.typeInferenceSummary,
           safeUpdateFields: diagnostics.safeUpdateFields,
           blockedBusinessRules: diagnostics.blockedBusinessRules,
+          lifecyclePreview,
         },
         applied,
       },

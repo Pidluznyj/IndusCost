@@ -682,57 +682,46 @@ export type ApplyEngineeringSyncInput = {
   approvedBy?: string | null;
 };
 
-export async function applyNomusEngineeringSync(
-  input: ApplyEngineeringSyncInput
-): Promise<EngineeringSyncApplyResult> {
-  const plan = await buildNomusEngineeringReconciliationPlan({
-    scope: input.scope,
-    parentCode: input.parentCode,
-    recursive: input.recursive,
-    maxDepth: input.maxDepth,
-  });
+/**
+ * Subconjunto estrutural do Prisma.TransactionClient usado pelo apply — as
+ * mutações rodam SEMPRE dentro de uma transação (ou tudo entra, ou nada).
+ * Tipado estruturalmente para permitir fakes nos testes de atomicidade.
+ */
+export type EngineeringApplyDbClient = Pick<
+  Prisma.TransactionClient,
+  "product" | "productBOM" | "engineeringChangeLog" | "engineeringSyncRun"
+>;
 
-  if (plan.planHash !== input.planHash.trim()) {
-    throw new Error("Plano desatualizado. Gere o preview novamente antes de aplicar.");
-  }
-  if (!plan.canApply) {
-    throw new Error(
-      plan.blockingReasons.join(" ") || "Aplicação bloqueada pelos gates de segurança."
-    );
-  }
-  if (input.confirmationText.trim() !== plan.confirmationRequiredText) {
-    throw new Error(`Confirmação inválida. Digite exatamente: ${plan.confirmationRequiredText}`);
-  }
+export type EngineeringApplyMutationTotals = {
+  productsCreated: number;
+  productsUpdated: number;
+  bomLinesCreated: number;
+  bomLinesUpdated: number;
+  bomLinesRemoved: number;
+};
 
-  const warnings = [...plan.warnings];
-  const errors: string[] = [];
+/**
+ * Executa as mutações de um plano de engenharia já validado (hash +
+ * confirmação + gates). Deve rodar dentro de prisma.$transaction — qualquer
+ * falha no meio aborta a transação inteira (nenhuma mutação parcial fica).
+ */
+export async function applyEngineeringPlanMutations(
+  db: EngineeringApplyDbClient,
+  plan: EngineeringSyncPlan,
+  ctx: { runId: string; approvedBy: string | null; warnings: string[] }
+): Promise<EngineeringApplyMutationTotals> {
+  const { runId, approvedBy, warnings } = ctx;
   let productsCreated = 0;
   let productsUpdated = 0;
   let bomLinesCreated = 0;
   let bomLinesUpdated = 0;
   let bomLinesRemoved = 0;
-  let bomLinesKept = plan.summary.bomLinesKept + plan.summary.localExceptionsKept;
 
-  const startedAt = new Date();
-
-  const run = await prisma.engineeringSyncRun.create({
-    data: {
-      mode: plan.scope === "ONE_PRODUCT" ? "ONE_PRODUCT" : "ALL_NOMUS_PRODUCTS",
-      status: "PREVIEWED",
-      parentCode: plan.parentCodes[0] ?? null,
-      planHash: plan.planHash,
-      confirmationText: input.confirmationText.trim(),
-      approvedBy: input.approvedBy?.trim() || null,
-      startedAt,
-      summaryJson: { summary: plan.summary, warnings: plan.warnings },
-    },
-  });
-
-  try {
+  {
     for (const prodAction of plan.productActions) {
       const sku = normalizeSku(prodAction.parentCode);
       if (prodAction.actionType === "CREATE_PRODUCT_FROM_NOMUS") {
-        const created = await prisma.product.create({
+        const created = await db.product.create({
           data: {
             sku,
             name: prodAction.parentDescription ?? sku,
@@ -748,7 +737,7 @@ export async function applyNomusEngineeringSync(
         });
         productsCreated += 1;
         prodAction.indusProductId = created.id;
-        await prisma.engineeringChangeLog.create({
+        await db.engineeringChangeLog.create({
           data: {
             entityType: "PRODUCT",
             entityId: created.id,
@@ -762,8 +751,8 @@ export async function applyNomusEngineeringSync(
               name: prodAction.parentDescription,
               isNomusControlled: true,
             },
-            changedBy: input.approvedBy?.trim() || null,
-            runId: run.id,
+            changedBy: approvedBy,
+            runId,
             planHash: plan.planHash,
             reason: prodAction.reason,
           },
@@ -773,7 +762,7 @@ export async function applyNomusEngineeringSync(
         prodAction.actionType === "UPDATE_PRODUCT_FROM_NOMUS"
       ) {
         if (!prodAction.indusProductId) continue;
-        const before = await prisma.product.findUnique({
+        const before = await db.product.findUnique({
           where: { id: prodAction.indusProductId },
           select: {
             id: true,
@@ -798,14 +787,14 @@ export async function applyNomusEngineeringSync(
         );
         if (sourceExtChange) updateData.sourceExternalId = sourceExtChange.newValue;
 
-        await prisma.product.update({
+        await db.product.update({
           where: { id: prodAction.indusProductId },
           data: updateData,
         });
         productsUpdated += 1;
 
         for (const change of prodAction.fieldChanges) {
-          await prisma.engineeringChangeLog.create({
+          await db.engineeringChangeLog.create({
             data: {
               entityType: "PRODUCT",
               entityId: before.id,
@@ -816,8 +805,8 @@ export async function applyNomusEngineeringSync(
               fieldName: change.field,
               oldValue: change.oldValue,
               newValue: change.newValue,
-              changedBy: input.approvedBy?.trim() || null,
-              runId: run.id,
+              changedBy: approvedBy,
+              runId,
               planHash: plan.planHash,
               reason: prodAction.reason,
             },
@@ -845,7 +834,7 @@ export async function applyNomusEngineeringSync(
           );
           continue;
         }
-        const created = await prisma.productBOM.create({
+        const created = await db.productBOM.create({
           data: {
             productId,
             materialId: action.materialId,
@@ -864,7 +853,7 @@ export async function applyNomusEngineeringSync(
           select: { id: true },
         });
         bomLinesCreated += 1;
-        await prisma.engineeringChangeLog.create({
+        await db.engineeringChangeLog.create({
           data: {
             entityType: "PRODUCT_BOM",
             entityId: created.id,
@@ -881,26 +870,27 @@ export async function applyNomusEngineeringSync(
               lossPercentage: action.newLossPercentage ?? 0,
               isNomusControlled: true,
             },
-            changedBy: input.approvedBy?.trim() || null,
-            runId: run.id,
+            changedBy: approvedBy,
+            runId,
             planHash: plan.planHash,
             reason: action.reason,
           },
         });
       } else if (action.actionType === "UPDATE_PRODUCT_BOM_LINE_QUANTITY") {
         if (!action.productBomLineId || action.newQuantity == null) continue;
-        await prisma.productBOM.update({
+        await db.productBOM.update({
           where: { id: action.productBomLineId },
           data: {
             quantity: action.newQuantity,
             isNomusControlled: true,
             sourceSystem: "NOMUS",
+            localException: false,
             lastNomusSyncAt: new Date(),
             nomusComponentCode: action.componentCode,
           },
         });
         bomLinesUpdated += 1;
-        await prisma.engineeringChangeLog.create({
+        await db.engineeringChangeLog.create({
           data: {
             entityType: "PRODUCT_BOM",
             entityId: action.productBomLineId,
@@ -911,15 +901,15 @@ export async function applyNomusEngineeringSync(
             fieldName: "quantity",
             oldValue: action.oldQuantity != null ? String(action.oldQuantity) : null,
             newValue: String(action.newQuantity),
-            changedBy: input.approvedBy?.trim() || null,
-            runId: run.id,
+            changedBy: approvedBy,
+            runId,
             planHash: plan.planHash,
             reason: action.reason,
           },
         });
       } else if (action.actionType === "UPDATE_PRODUCT_BOM_LINE_COMPONENT") {
         if (!action.productBomLineId) continue;
-        await prisma.productBOM.update({
+        await db.productBOM.update({
           where: { id: action.productBomLineId },
           data: {
             materialId: action.materialId,
@@ -927,12 +917,13 @@ export async function applyNomusEngineeringSync(
             quantity: action.newQuantity ?? undefined,
             isNomusControlled: true,
             sourceSystem: "NOMUS",
+            localException: false,
             lastNomusSyncAt: new Date(),
             nomusComponentCode: action.componentCode,
           },
         });
         bomLinesUpdated += 1;
-        await prisma.engineeringChangeLog.create({
+        await db.engineeringChangeLog.create({
           data: {
             entityType: "PRODUCT_BOM",
             entityId: action.productBomLineId,
@@ -946,21 +937,21 @@ export async function applyNomusEngineeringSync(
               materialId: action.materialId,
               childProductId: action.childProductId,
             },
-            changedBy: input.approvedBy?.trim() || null,
-            runId: run.id,
+            changedBy: approvedBy,
+            runId,
             planHash: plan.planHash,
             reason: action.reason,
           },
         });
       } else if (action.actionType === "REMOVE_PRODUCT_BOM_LINE_NOT_IN_NOMUS") {
         if (!action.productBomLineId) continue;
-        const before = await prisma.productBOM.findUnique({
+        const before = await db.productBOM.findUnique({
           where: { id: action.productBomLineId },
           select: { id: true, materialId: true, childProductId: true, quantity: true },
         });
-        await prisma.productBOM.delete({ where: { id: action.productBomLineId } });
+        await db.productBOM.delete({ where: { id: action.productBomLineId } });
         bomLinesRemoved += 1;
-        await prisma.engineeringChangeLog.create({
+        await db.engineeringChangeLog.create({
           data: {
             entityType: "PRODUCT_BOM",
             entityId: action.productBomLineId,
@@ -977,53 +968,113 @@ export async function applyNomusEngineeringSync(
                 }
               : null,
             newValueJson: { removed: true },
-            changedBy: input.approvedBy?.trim() || null,
-            runId: run.id,
+            changedBy: approvedBy,
+            runId,
             planHash: plan.planHash,
             reason: action.reason,
           },
         });
       } else if (action.actionType === "KEEP_PRODUCT_BOM_LINE" && action.productBomLineId) {
-        await prisma.productBOM.update({
+        await db.productBOM.update({
           where: { id: action.productBomLineId },
           data: {
             isNomusControlled: true,
             sourceSystem: "NOMUS",
+            localException: false,
             lastNomusSyncAt: new Date(),
             nomusComponentCode: action.componentCode,
           },
         });
-        bomLinesKept += 0;
       }
     }
+  }
 
-    await prisma.engineeringSyncRun.update({
-      where: { id: run.id },
-      data: {
-        status: errors.length > 0 ? "PARTIAL" : "APPLIED",
-        finishedAt: new Date(),
-        summaryJson: {
-          productsCreated,
-          productsUpdated,
-          bomLinesCreated,
-          bomLinesUpdated,
-          bomLinesRemoved,
-          bomLinesKept,
-        },
-        warningsJson: warnings,
-        errorsJson: errors,
+  return { productsCreated, productsUpdated, bomLinesCreated, bomLinesUpdated, bomLinesRemoved };
+}
+
+export async function applyNomusEngineeringSync(
+  input: ApplyEngineeringSyncInput
+): Promise<EngineeringSyncApplyResult> {
+  const plan = await buildNomusEngineeringReconciliationPlan({
+    scope: input.scope,
+    parentCode: input.parentCode,
+    recursive: input.recursive,
+    maxDepth: input.maxDepth,
+  });
+
+  if (plan.planHash !== input.planHash.trim()) {
+    throw new Error("Plano desatualizado. Gere o preview novamente antes de aplicar.");
+  }
+  if (!plan.canApply) {
+    throw new Error(
+      plan.blockingReasons.join(" ") || "Aplicação bloqueada pelos gates de segurança."
+    );
+  }
+  if (input.confirmationText.trim() !== plan.confirmationRequiredText) {
+    throw new Error(`Confirmação inválida. Digite exatamente: ${plan.confirmationRequiredText}`);
+  }
+
+  const warnings = [...plan.warnings];
+  const errors: string[] = [];
+  const bomLinesKept = plan.summary.bomLinesKept + plan.summary.localExceptionsKept;
+  const approvedBy = input.approvedBy?.trim() || null;
+  const startedAt = new Date();
+
+  const run = await prisma.engineeringSyncRun.create({
+    data: {
+      mode: plan.scope === "ONE_PRODUCT" ? "ONE_PRODUCT" : "ALL_NOMUS_PRODUCTS",
+      status: "PREVIEWED",
+      parentCode: plan.parentCodes[0] ?? null,
+      planHash: plan.planHash,
+      confirmationText: input.confirmationText.trim(),
+      approvedBy,
+      startedAt,
+      summaryJson: { summary: plan.summary, warnings: plan.warnings },
+    },
+  });
+
+  try {
+    // Atomicidade: OU o plano inteiro é aplicado, OU nada é (falha em
+    // qualquer mutação → rollback total). Nada de HTTP/preview aqui dentro —
+    // o plano já foi calculado e validado por hash antes.
+    const totals = await prisma.$transaction(
+      async (tx) => {
+        const applied = await applyEngineeringPlanMutations(tx, plan, {
+          runId: run.id,
+          approvedBy,
+          warnings,
+        });
+        await tx.engineeringSyncRun.update({
+          where: { id: run.id },
+          data: {
+            status: "APPLIED",
+            finishedAt: new Date(),
+            summaryJson: {
+              productsCreated: applied.productsCreated,
+              productsUpdated: applied.productsUpdated,
+              bomLinesCreated: applied.bomLinesCreated,
+              bomLinesUpdated: applied.bomLinesUpdated,
+              bomLinesRemoved: applied.bomLinesRemoved,
+              bomLinesKept,
+            },
+            warningsJson: warnings,
+            errorsJson: errors,
+          },
+        });
+        return applied;
       },
-    });
+      { maxWait: 15_000, timeout: 120_000 }
+    );
 
     return {
       runId: run.id,
-      status: errors.length > 0 ? "PARTIAL" : "APPLIED",
+      status: "APPLIED",
       appliedAt: new Date().toISOString(),
-      productsCreated,
-      productsUpdated,
-      bomLinesCreated,
-      bomLinesUpdated,
-      bomLinesRemoved,
+      productsCreated: totals.productsCreated,
+      productsUpdated: totals.productsUpdated,
+      bomLinesCreated: totals.bomLinesCreated,
+      bomLinesUpdated: totals.bomLinesUpdated,
+      bomLinesRemoved: totals.bomLinesRemoved,
       bomLinesKept,
       warnings,
       errors,

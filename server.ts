@@ -573,6 +573,10 @@ import { fetchAdminSellerOptionsFromDb } from "./src/lib/adminSellerOptions.js";
 import { enrichAppAuthSellerCommercialLink } from "./src/lib/crmSellerIdentityConsolidation.js";
 import { buildBomComparisonForProductId } from "./src/lib/nomusBomComparisonLoad.js";
 import {
+  createBomOwnershipResolver,
+  isParentNomusControlled,
+} from "./src/lib/productBomLocalOwnership.js";
+import {
   buildNomusBomBatchReport,
   buildNomusBomClassificationReport,
   clampBatchLimit,
@@ -6460,13 +6464,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
         const products = await tx.product.findMany({
           where: { sku: { in: allSkus } },
-          select: { id: true, sku: true, type: true }
+          select: { id: true, sku: true, type: true, isNomusControlled: true, sourceSystem: true }
         });
         const skuToId = new Map<string, string>(
           products.map((p) => [p.sku, p.id] as [string, string])
         );
         const skuToType = new Map<string, string>(
           products.map((p) => [p.sku, String(p.type)] as [string, string])
+        );
+        const productOwnershipById = new Map(
+          products.map((p) => [p.id, isParentNomusControlled(p)] as [string, boolean])
         );
 
         const matCodes = [
@@ -6496,6 +6503,51 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         ).filter((s: string) => s.length > 0);
         const parentSkusInFile: string[] = [...new Set(parentSkuList)];
 
+        // Ownership por linha ANTES do delete — a reimportação preserva a
+        // marca Nomus/exceção local das linhas que continuam existindo e marca
+        // linha genuinamente nova como exceção local em produto Nomus-controlled.
+        const parentIdsInFile = parentSkusInFile
+          .map((ps) => skuToId.get(ps))
+          .filter((pid): pid is string => Boolean(pid));
+        const previousLinesByParent = new Map<string, Array<{
+          materialId: string | null;
+          childProductId: string | null;
+          sourceSystem: string | null;
+          isNomusControlled: boolean;
+          localException: boolean;
+          lastNomusSyncAt: Date | null;
+          nomusComponentCode: string | null;
+        }>>();
+        if (parentIdsInFile.length > 0) {
+          const previousLines = await tx.productBOM.findMany({
+            where: { productId: { in: parentIdsInFile } },
+            select: {
+              productId: true,
+              materialId: true,
+              childProductId: true,
+              sourceSystem: true,
+              isNomusControlled: true,
+              localException: true,
+              lastNomusSyncAt: true,
+              nomusComponentCode: true,
+            },
+          });
+          for (const line of previousLines) {
+            const list = previousLinesByParent.get(line.productId) ?? [];
+            list.push(line);
+            previousLinesByParent.set(line.productId, list);
+          }
+        }
+        const bomOwnershipByParent = new Map(
+          parentIdsInFile.map((pid) => [
+            pid,
+            createBomOwnershipResolver({
+              previousLines: previousLinesByParent.get(pid) ?? [],
+              parentIsNomusControlled: productOwnershipById.get(pid) ?? false,
+            }),
+          ])
+        );
+
         let bomParentsStructureReplaced = 0;
         for (const ps of parentSkusInFile) {
           const pid = skuToId.get(ps);
@@ -6521,6 +6573,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           quantity: number;
           lossPercentage: number;
           notes: string | null;
+          sourceSystem: string | null;
+          isNomusControlled: boolean;
+          localException: boolean;
+          lastNomusSyncAt: Date | null;
+          nomusComponentCode: string | null;
         }> = [];
 
         for (let idx = 0; idx < estrutura.length; idx++) {
@@ -6638,6 +6695,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           }
           seenBomKeys.add(dedupeKey);
 
+          const ownership = bomOwnershipByParent.get(parentId)?.resolve({ materialId, childProductId }) ?? {
+            sourceSystem: "INDUSCOST",
+            isNomusControlled: false,
+            localException: false,
+            lastNomusSyncAt: null,
+            nomusComponentCode: null,
+          };
           bomData.push({
             productId: parentId,
             materialId,
@@ -6645,7 +6709,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             quantity: qty,
             lossPercentage:
               item.lossPercentage !== undefined ? Number(item.lossPercentage) : 0,
-            notes: item.notes ? String(item.notes) : null
+            notes: item.notes ? String(item.notes) : null,
+            ...ownership
           });
         }
 
@@ -8708,7 +8773,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       // effectiveType: usa o tipo do banco se o payload não trouxer type
       const currentProduct = await prisma.product.findUnique({
         where: { id },
-        select: { type: true, costingMode: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
+        select: { type: true, costingMode: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true, isNomusControlled: true, sourceSystem: true }
       });
       if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
 
@@ -8833,6 +8898,25 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
 
       const product = await prisma.$transaction(async (tx) => {
+        // Reescrita da BOM preserva ownership Nomus/exceção local por linha —
+        // sem isso, salvar a composição apagaria localException e o próximo
+        // sync Nomus removeria as linhas locais (Furação/Montagem etc.).
+        const previousBomLines = await tx.productBOM.findMany({
+          where: { productId: id },
+          select: {
+            materialId: true,
+            childProductId: true,
+            sourceSystem: true,
+            isNomusControlled: true,
+            localException: true,
+            lastNomusSyncAt: true,
+            nomusComponentCode: true,
+          },
+        });
+        const bomOwnership = createBomOwnershipResolver({
+          previousLines: previousBomLines,
+          parentIsNomusControlled: isParentNomusControlled(currentProduct),
+        });
         await tx.productBOM.deleteMany({ where: { productId: id } });
         await tx.productRouting.deleteMany({ where: { productId: id } });
         return await tx.product.update({
@@ -8856,6 +8940,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
                 quantity: item.quantity,
                 lossPercentage: item.lossPercentage,
                 notes: item.notes,
+                ...bomOwnership.resolve(item),
               }))
             },
             ProductRouting: {
