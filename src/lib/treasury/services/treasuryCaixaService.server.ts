@@ -31,6 +31,8 @@ import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApRealizedAmount,
 } from "@/src/lib/financeAccountsPayableRules.js";
+import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
+import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -42,6 +44,7 @@ import {
   buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   computeTreasuryCaixaTotals,
+  resolveTreasuryCaixaCanonicalWindow,
   resolveTreasuryCaixaDueDateRange,
   TREASURY_CAIXA_GENESIS_CIVIL_DATE,
   type TreasuryCaixaBoardDto,
@@ -119,20 +122,31 @@ export function resolveTreasuryCaixaChainYears(
 
 /**
  * Converte os conjuntos canônicos do Fluxo de Caixa (por ano) nas entradas de
- * dia de `buildTreasuryCaixaRealizedDays` — MESMAS regras da "Linha do tempo
- * mensal" do Fluxo:
+ * dia de `buildTreasuryCaixaRealizedDays` — usando a MESMA autoridade
+ * canônica de data efetiva que o motor único-de-dia (`canonicalDay`) e o
+ * fluxo de HOJE já usam:
  *
- * - CR entra no dia da BAIXA (`settlementDate`), valor `amountReceived`;
- * - CP entra pela data canônica `resolveFinanceApEffectivePaymentDate`
- *   (= vencimento — o Nomus raramente informa a data real do pagamento),
- *   valor `resolveFinanceApRealizedAmount`, cancelados fora;
+ * - CR e CP entram pela DATA EFETIVA (`resolveFinanceArEffectiveSettlementDate`
+ *   / `resolveFinanceApEffectivePaymentDate`) sob a política de conciliação
+ *   informada — dueDate <= settlementDate <= dueDate+N dias vira dueDate;
+ *   além da tolerância, vira a data real da baixa. `reconciliation` é
+ *   OBRIGATÓRIO (não tem default oculto): quem chama decide a política, sem
+ *   comportamento implícito.
+ * - CP usa `resolveFinanceApRealizedAmount`, cancelados fora;
  * - o dia precisa cair DENTRO do ano do contexto: cada tabela anual do Fluxo
  *   só enxerga títulos daquele ano-vencimento baixados naquele ano. Baixa
- *   cruzando ano (título de um ano pago no outro) fica fora — é exatamente o
- *   recorte da tela de referência, e é o que faz os números baterem 1:1.
+ *   cruzando ano ALÉM da tolerância (raríssimo: só quando a data efetiva sai
+ *   do ano em que o título foi carregado) fica fora — mesma limitação que já
+ *   existia (ver `resolveTreasuryCaixaChainYears`), não introduzida aqui.
+ *
+ * Esta função é exclusiva da Tesouraria > Caixa (não é chamada pela "Linha do
+ * tempo mensal" do Fluxo de Caixa, que tem sua própria composição em
+ * `financeCashFlowExecutiveSummary.ts`) — mudar a regra aqui não altera
+ * aquela tela; as duas autoridades são deliberadamente desacopladas.
  */
 export function buildTreasuryCaixaCanonicalRealizedInputs(
-  contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[]
+  contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
+  reconciliation: FinanceSettlementReconciliationPolicy
 ): {
   receivables: { settlementDate: string | null; amountReceived: number }[];
   payables: {
@@ -154,10 +168,19 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
 
     for (const row of ctx.arReceivedRows as readonly Pick<
       FinanceCashFlowArRow,
-      "settlementDate" | "amountReceived"
+      "dueDate" | "settlementDate" | "amountReceived" | "balanceReceivable"
     >[]) {
-      if (!row.settlementDate) continue;
-      const key = toCivilDateKey(row.settlementDate);
+      const effective = resolveFinanceArEffectiveSettlementDate(
+        {
+          dueDate: row.dueDate,
+          settlementDate: row.settlementDate,
+          amountReceived: row.amountReceived,
+          balanceReceivable: row.balanceReceivable,
+        },
+        { reconciliation }
+      );
+      if (!effective) continue;
+      const key = toCivilDateKey(effective);
       if (!key || !key.startsWith(yearPrefix)) continue;
       const amount = Number(row.amountReceived);
       if (!Number.isFinite(amount) || amount === 0) continue;
@@ -166,7 +189,7 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
 
     for (const row of ctx.apPaidRows as readonly FinanceCashFlowApRow[]) {
       if (isFinanceApCancelledTitle(row)) continue;
-      const paidAt = resolveFinanceApEffectivePaymentDate(row);
+      const paidAt = resolveFinanceApEffectivePaymentDate(row, { reconciliation });
       const realized = resolveFinanceApRealizedAmount(row);
       if (!paidAt || realized <= 0) continue;
       const key = toCivilDateKey(paidAt);
@@ -395,6 +418,19 @@ export function createTreasuryCaixaService(input: {
       const { dueDateFrom, dueDateTo } = resolveTreasuryCaixaDueDateRange(period);
       const referenceDate = new Date();
 
+      // Política de conciliação — carregada uma única vez aqui (não depende
+      // de AR/AP) e reusada por TODOS os regimes da Timeline (Realizado via
+      // `buildTreasuryCaixaCanonicalRealizedInputs` mais abaixo, e o motor
+      // único-de-dia `canonicalDays`): a mesma autoridade de data efetiva
+      // rege passado E hoje, sem duas fontes de verdade. Sem
+      // política/ausência do singleton → LEGACY (comportamento histórico).
+      const policyService = createTreasuryScenarioPolicyService({ prisma });
+      const policy = await policyService.getForEngine();
+      const reconciliationPolicy: FinanceSettlementReconciliationPolicy = {
+        enabled: policy.settlementReconciliationEnabled,
+        toleranceDays: policy.settlementReconciliationToleranceDays,
+      };
+
       // CR carrega o ano inteiro: o motor FIN-08 precisa do portfólio sem recorte
       // para casar CR real x previsão do Pedido. O recorte do período é aplicado
       // depois, pelo motor oficial, via dueDateFrom/dueDateTo.
@@ -449,12 +485,15 @@ export function createTreasuryCaixaService(input: {
         payables: apResult.gridRows.filter((r) => !r.suspendPayment),
       });
 
-      // Passado da linha do tempo: MESMOS conjuntos e MESMAS regras da
-      // "Linha do tempo mensal" do Fluxo de Caixa (Recebido/Pago), ano a ano
-      // da gênese até o ano filtrado — os totais mensais batem 1:1 com aquela
-      // tela por construção; aqui só particionamos por dia. CR entra no dia da
-      // baixa; CP pela data canônica (vencimento — o Nomus raramente informa
-      // o pagamento real). Baixa cruzando ano fica fora, como lá.
+      // Passado da linha do tempo: MESMA população de títulos (CR/CP) que a
+      // "Linha do tempo mensal" do Fluxo de Caixa carrega, ano a ano da
+      // gênese até o ano filtrado — mas agora com a MESMA autoridade de data
+      // efetiva do motor único-de-dia (`reconciliationPolicy`, dueDate <=
+      // settlementDate <= dueDate+N dias → dueDate), não mais a regra antiga
+      // (CR por settlementDate cru; CP sempre por vencimento). As duas telas
+      // passam a ser autoridades DESACOPLADAS: mudar a regra aqui não altera
+      // o Fluxo de Caixa, que mantém sua própria composição. Baixa cruzando
+      // ano além da tolerância fica fora, como já era.
       const chainYears = resolveTreasuryCaixaChainYears(period.year);
       const canonicalContexts: FinanceCashFlowCanonicalRealizedYearSets[] = [];
       for (const year of chainYears) {
@@ -479,7 +518,10 @@ export function createTreasuryCaixaService(input: {
       const periodFrom = toIsoDate(dueDateFrom);
       const periodTo = toIsoDate(dueDateTo);
       const realizedDaysAll = buildTreasuryCaixaRealizedDays(
-        buildTreasuryCaixaCanonicalRealizedInputs(canonicalContexts)
+        buildTreasuryCaixaCanonicalRealizedInputs(
+          canonicalContexts,
+          reconciliationPolicy
+        )
       );
       // Janela dos saldos informados (fechamentos/snapshots): da gênese (ou do
       // ano filtrado, se anterior a ela) até o fim do período — independe do
@@ -675,12 +717,81 @@ export function createTreasuryCaixaService(input: {
           cursor.setDate(cursor.getDate() + 1);
         }
       }
+
+      // HOJE tem que existir SEMPRE no motor único-de-dia — a regra
+      // financeira não pode depender do filtro Ano/Mês/Dia da tela. Quando o
+      // filtro já cobre hoje (o caso comum: ano corrente, todos os meses),
+      // reusa `arResult`/`apResult` como estavam, sem custo extra. Quando o
+      // filtro EXCLUI hoje (ex.: usuário escolhe só um mês passado), amplia
+      // pontualmente só a carga usada pelo motor canônico — a grade visível
+      // (`totals`/`receivables`/`payables` do DTO) continua vindo de
+      // `arResult`/`apResult` originais, respeitando o filtro do usuário.
+      const canonicalWindow = resolveTreasuryCaixaCanonicalWindow({
+        windowDays,
+        todayCivilDate,
+      });
+      let canonicalWindowDays = canonicalWindow.canonicalWindowDays;
+      let canonicalReceivables = arResult.gridRows;
+      let canonicalPayables = apResult.gridRows;
+      if (canonicalWindow.todayOutsideWindow) {
+        const todayYear = Number(todayCivilDate.slice(0, 4));
+        const widenedFilters = {
+          status: "all" as const,
+          dueDateFrom: civilDateToLocalDate(canonicalWindow.widenedFromCivilDate),
+          dueDateTo: civilDateToLocalDate(canonicalWindow.widenedToCivilDate),
+        };
+
+        // AR: `arEffectiveRows` já cobre o ANO INTEIRO de `period.year` — se
+        // hoje cai no mesmo ano do filtro, só reaplica o motor oficial com o
+        // range ampliado, sem round-trip novo. Só recarrega do banco quando
+        // hoje cai num ano diferente do filtrado (caso raro).
+        if (todayYear === period.year) {
+          canonicalReceivables = buildFinanceAccountsReceivableRulesResult(
+            arEffectiveRows,
+            { referenceDate, syncCutoff: arLoaded.syncCutoff, filters: widenedFilters }
+          ).gridRows;
+        } else {
+          const todayArLoaded = await loadFinanceArManagementRowsFromPrisma(
+            prisma,
+            { status: "all", year: todayYear },
+            referenceDate
+          );
+          const todayArRows = todayArLoaded.rows as FinanceCashFlowArRow[];
+          const { orderContexts: todayOrderContexts, nfeOrderLinks: todayNfeOrderLinks } =
+            await enrichFinanceCashFlowArLoadBundle(prisma, todayArRows, referenceDate);
+          const todayArEffectiveRows = buildFinanceCashFlowEffectiveArPortfolio({
+            rows: todayArRows,
+            filters: { status: "all", year: todayYear },
+            orderContexts: todayOrderContexts,
+            nfeOrderLinks: todayNfeOrderLinks,
+            referenceDate,
+            syncCutoff: todayArLoaded.syncCutoff,
+          });
+          canonicalReceivables = buildFinanceAccountsReceivableRulesResult(
+            todayArEffectiveRows,
+            { referenceDate, syncCutoff: todayArLoaded.syncCutoff, filters: widenedFilters }
+          ).gridRows;
+        }
+
+        // AP: a carga já é escopada por dueDateFrom/dueDateTo na consulta —
+        // sempre recarrega no range ampliado (inclui hoje).
+        const widenedApLoaded = await loadFinanceApManagementRowsFromPrisma(
+          prisma,
+          widenedFilters,
+          referenceDate
+        );
+        canonicalPayables = buildFinanceAccountsPayableRulesResult(
+          widenedApLoaded.rows,
+          { referenceDate, syncCutoff: widenedApLoaded.syncCutoff, filters: widenedFilters }
+        ).gridRows;
+      }
+
       // Saldo inicial da janela canônica: fechamento REALIZADO do último dia
       // conhecido anterior ao primeiro dia da janela. Reaproveita `realizedDaysAll`
       // (já com running balance encadeado desde a gênese), sem consulta nova.
       // Sem histórico anterior → null, que emite warning `NO_OPENING_BALANCE`
       // no primeiro dia canônico (indisponível ≠ zero falso).
-      const firstWindowDay = windowDays[0] ?? null;
+      const firstWindowDay = canonicalWindowDays[0] ?? null;
       let openingBalanceOfFirstDay: number | null = null;
       if (firstWindowDay) {
         for (let i = realizedDaysAll.length - 1; i >= 0; i -= 1) {
@@ -697,7 +808,7 @@ export function createTreasuryCaixaService(input: {
       // aqui — o motor único-de-dia também re-ancora no dia da âncora.
       const anchor =
         officialToday.amount != null &&
-        windowDays.some((d) => d === todayCivilDate)
+        canonicalWindowDays.some((d) => d === todayCivilDate)
           ? {
               civilDate: todayCivilDate,
               amount: officialToday.amount,
@@ -707,21 +818,13 @@ export function createTreasuryCaixaService(input: {
             }
           : null;
 
-      // Política de conciliação — carrega direto do banco. O motor único-de-dia
-      // delega à função canônica ao resolver a data efetiva de cada baixa.
-      // Sem política/ausência do singleton → motor mantém comportamento
-      // histórico (dueDate p/ AP baixado; settlementDate cru p/ AR).
-      const policyService = createTreasuryScenarioPolicyService({ prisma });
-      const policy = await policyService.getForEngine();
-      const reconciliationPolicy = {
-        enabled: policy.settlementReconciliationEnabled,
-        toleranceDays: policy.settlementReconciliationToleranceDays,
-      };
-
+      // Política de conciliação já carregada no topo de `getBoard()` — a
+      // MESMA instância que corrigiu `realizedDaysAll` alimenta o motor
+      // único-de-dia aqui, sem round-trip duplicado nem risco de divergir.
       const canonicalDays = buildTreasuryCaixaCanonicalDays({
-        civilDatesInWindow: windowDays,
-        receivables: arResult.gridRows,
-        payables: apResult.gridRows,
+        civilDatesInWindow: canonicalWindowDays,
+        receivables: canonicalReceivables,
+        payables: canonicalPayables,
         // Ledger/transfer não são consultados para dias arbitrários (a rotina
         // guiada só cobre HOJE). Marca explicitamente para a UI mostrar aviso
         // em vez de fingir que "outras entradas/saídas" foi carregado.

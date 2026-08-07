@@ -71,6 +71,44 @@ export function resolveTreasuryCaixaDueDateRange(
   };
 }
 
+export type TreasuryCaixaCanonicalWindow = {
+  /** Dias a computar no motor único-de-dia — SEMPRE inclui hoje. */
+  canonicalWindowDays: string[];
+  /** true quando o filtro visual (Ano/Mês/Dia) não cobria hoje. */
+  todayOutsideWindow: boolean;
+  /** Primeiro/último dia da janela ampliada — para recarregar AR/AP quando `todayOutsideWindow`. */
+  widenedFromCivilDate: string;
+  widenedToCivilDate: string;
+};
+
+/**
+ * Garante que HOJE sempre exista no motor único-de-dia canônico, mesmo
+ * quando o filtro Ano/Mês/Dia da tela não cobre a data atual — a regra
+ * financeira não pode depender do filtro visual. Quando o filtro já cobre
+ * hoje, devolve a janela como veio (nenhum recarregamento é necessário).
+ * Quando não, amplia a janela pontualmente para incluir hoje — o chamador
+ * usa `widenedFromCivilDate`/`widenedToCivilDate` para recarregar SÓ o
+ * necessário para o motor canônico, sem alterar a grade visível
+ * (totals/receivables/payables) que continua respeitando o filtro do usuário.
+ */
+export function resolveTreasuryCaixaCanonicalWindow(input: {
+  windowDays: readonly string[];
+  todayCivilDate: string;
+}): TreasuryCaixaCanonicalWindow {
+  const todayOutsideWindow = !input.windowDays.includes(input.todayCivilDate);
+  const canonicalWindowDays = todayOutsideWindow
+    ? [...input.windowDays, input.todayCivilDate].sort()
+    : [...input.windowDays];
+
+  return {
+    canonicalWindowDays,
+    todayOutsideWindow,
+    widenedFromCivilDate: canonicalWindowDays[0] ?? input.todayCivilDate,
+    widenedToCivilDate:
+      canonicalWindowDays[canonicalWindowDays.length - 1] ?? input.todayCivilDate,
+  };
+}
+
 export type TreasuryCaixaTotals = {
   /** Saldo em aberto (ainda não liquidado) — o que falta receber/pagar. */
   totalReceivable: number;
