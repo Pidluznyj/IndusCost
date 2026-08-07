@@ -1419,6 +1419,30 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     notes: "Caixa bancário / OFX / fechamento — distinto de Fluxo de Caixa e Conciliação de Carteira.",
   },
   {
+    resourceKey: "finance.invested_capital_recovery",
+    label: "Recuperação do Dinheiro Investido",
+    parentKey: "finance",
+    groupId: "finance",
+    route: "/finance/invested-capital-recovery",
+    sortOrder: 477,
+    actions: [
+      V(
+        ["finance.investedCapitalRecovery.view"],
+        "1:1 — finance.view NÃO abre este módulo (mesmo contrato de Tesouraria)"
+      ),
+    ],
+    relatedEndpoints: ["/api/finance/invested-capital-recovery"],
+    sensitivity: "high",
+    appearsInSidebar: true,
+    isTab: false,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+    moduleId: "invested-capital-recovery",
+    notes:
+      "Tela analítica somente leitura sobre Pedido de Venda (custo industrial + Contas a Receber reais).",
+  },
+  {
     resourceKey: "finance.treasury.dashboard",
     label: "Tesouraria — Dashboard",
     parentKey: "finance.treasury",
