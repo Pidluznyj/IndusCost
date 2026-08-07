@@ -22,7 +22,16 @@
   - CS-004 `c05bd7c` — adaptador de conciliação (11 testes; achou e corrigiu bug real de soma em desconto)
   - CS-005 `f18f200` — read model unificado, função pura (11 testes)
   - Total: 61/61 testes passando em conjunto; zero erro de typecheck nos arquivos novos.
-- **Grupo C** (API, workspace, sugestões) — em andamento.
+- **Grupo C** (API, workspace, sugestões) — **COMPLETO**:
+  - CS-006 `2e0b7a4` — API read-only (`GET /cash-support`, `/summary`)
+  - CS-007 `7dd93c3` — workspace read-only (`CashSupportPanel` + `CashSupportWorkspacePage`)
+  - CS-008 `a3188a4` — sugestões somente leitura (reusa motor oficial, zero algoritmo novo)
+- **Grupo D** (ações de escrita) — **COMPLETO**:
+  - CS-000 residual (idempotencyKey no client) + CS-011/012/013/014/015/016 `b8fc237` —
+    conciliação manual 1:1/1:N/N:1/parcial + ajustes + unmatch + reverse, tudo delegando
+    ao motor oficial já corrigido pelo P0. Transferências: link para tela madura existente
+    em vez de duplicar. Rota registrada em `/finance/treasury/cash-support`.
+  - Regressão: 72/72 testes (P0 + conciliação + Cash Support completo).
 
 ## Caminhos principais
 | Papel | Caminho |

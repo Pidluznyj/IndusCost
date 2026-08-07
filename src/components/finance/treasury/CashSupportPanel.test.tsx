@@ -201,3 +201,49 @@ describe("CashSupportPanel — renderização", () => {
     assert.ok(html.includes('data-testid="cash-support-row-bank-movement:mov-1"'));
   });
 });
+
+describe("CashSupportPanel — ações de escrita (CS-012/013/016)", () => {
+  it("sem onReconcileSelected, nenhuma checkbox aparece (permanece read-only)", () => {
+    const html = renderToStaticMarkup(
+      <CashSupportPanel civilDateFrom="2026-07-01" civilDateTo="2026-07-31" data={readModel([bankRow()])} />
+    );
+    assert.ok(!html.includes('data-testid="cash-support-checkbox-bank-movement:mov-1"'));
+  });
+
+  it("com onReconcileSelected, movimento bancário ganha checkbox; previsão não", () => {
+    const html = renderToStaticMarkup(
+      <CashSupportPanel
+        civilDateFrom="2026-07-01"
+        civilDateTo="2026-07-31"
+        data={readModel([bankRow(), forecastRow()])}
+        onReconcileSelected={() => {}}
+      />
+    );
+    assert.ok(html.includes('data-testid="cash-support-checkbox-bank-movement:mov-1"'));
+    assert.ok(!html.includes('data-testid="cash-support-checkbox-receivable:due:-123:2026-07-20"'));
+  });
+
+  it("botão 'Conciliar selecionados' só aparece com seleção (SSR: nunca, pois estado inicial é vazio)", () => {
+    const html = renderToStaticMarkup(
+      <CashSupportPanel
+        civilDateFrom="2026-07-01"
+        civilDateTo="2026-07-31"
+        data={readModel([bankRow()])}
+        onReconcileSelected={() => {}}
+      />
+    );
+    assert.ok(!html.includes('data-testid="cash-support-reconcile-selected"'));
+  });
+
+  it("linha com match ativo mostra referência auditável em sourceReferences", () => {
+    const withMatch = bankRow();
+    withMatch.sourceReferences = [
+      { source: "TreasuryReconciliationMatch", id: "match-1", label: null },
+    ];
+    const model = readModel([withMatch]);
+    assert.equal(
+      model.rows[0]!.sourceReferences.find((r) => r.source === "TreasuryReconciliationMatch")?.id,
+      "match-1"
+    );
+  });
+});

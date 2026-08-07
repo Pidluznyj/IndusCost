@@ -47,6 +47,8 @@ export async function acceptTreasuryReconciliation(input: {
   accountId: string;
   matchedCivilDate?: string;
   justification?: string | null;
+  /** Duplo clique com a mesma chave devolve o match anterior (CASH-SUPPORT-P0-CONCURRENCY-001). */
+  idempotencyKey?: string | null;
   movements: Array<{ bankMovementId: string; amount: string }>;
   allocations: Array<{
     kind: string;
@@ -75,6 +77,7 @@ export async function acceptTreasuryReconciliation(input: {
       matchedCivilDate:
         input.matchedCivilDate ?? todayTreasuryCivilDateInSaoPaulo(),
       justification: input.justification ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
       movements: input.movements,
       allocations: input.allocations,
     }),

@@ -74,6 +74,10 @@ export const TREASURY_CASH_SUPPORT_PATH =
 export const TREASURY_CASH_SUPPORT_SUMMARY_PATH =
   `${TREASURY_API_PREFIX}/cash-support/summary` as const;
 
+/** Apoio ao Caixa — sugestões de conciliação (CS-008), somente leitura. */
+export const TREASURY_CASH_SUPPORT_SUGGESTIONS_PATH =
+  `${TREASURY_API_PREFIX}/cash-support/suggestions` as const;
+
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 
