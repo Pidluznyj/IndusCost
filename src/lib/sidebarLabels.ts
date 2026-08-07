@@ -61,6 +61,8 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   simulations: "Simul.",
   reports: "Relat.",
   finance: "Financ.",
+  treasury: "Tesour.",
+  "invested-capital-recovery": "Cap. Invest.",
   suppliers: "Forn.",
   "portfolio-reconciliation": "Conc.",
   guide: "Guia",

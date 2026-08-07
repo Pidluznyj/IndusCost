@@ -136,6 +136,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   simulations: Layers,
   finance: Banknote,
   treasury: Landmark,
+  "invested-capital-recovery": TrendingUp,
   suppliers: Building2,
   "portfolio-reconciliation": GitCompare,
   reports: FileText,
@@ -180,7 +181,7 @@ function SidebarNavLink({
   const label = item.label;
   const shortLabel = resolveModuleShortLabel(moduleId);
   const path = item.path;
-  const Icon = MENU_ITEM_ICONS[moduleId];
+  const Icon = MENU_ITEM_ICONS[moduleId] ?? HelpCircle;
 
   return (
     <NavLink
