@@ -109,6 +109,39 @@ export function resolveTreasuryCaixaCanonicalWindow(input: {
   };
 }
 
+/**
+ * População RELEVANTE de um título para a janela canônica: um título
+ * pertence à janela quando o vencimento OU a data de liquidação (baixa/
+ * pagamento) cai dentro dela — nunca só o vencimento. Sem isso, um título
+ * vencido MUITO antes da janela mas baixado DENTRO dela (ou vencendo bem
+ * depois mas baixado antecipadamente dentro dela) fica invisível ao motor
+ * canônico, mesmo contribuindo financeiramente para um dos dias da janela.
+ *
+ * Deduplica por `externalId` — o MESMO título pode ter vindo de duas
+ * consultas (uma por vencimento, outra por liquidação); aqui ele conta uma
+ * única vez, nunca duas. `resolveSettledCivilDate` devolve `null` quando o
+ * título ainda não foi liquidado (nada a comparar contra a janela pelo lado
+ * da baixa) — nesse caso só o vencimento decide.
+ */
+export function selectTreasuryCaixaCanonicalPopulation<
+  T extends { externalId: number; dueDate: string | null },
+>(
+  rows: readonly T[],
+  window: { fromCivilDate: string; toCivilDate: string },
+  resolveSettledCivilDate: (row: T) => string | null
+): T[] {
+  const inWindow = (d: string | null): boolean =>
+    d != null && d >= window.fromCivilDate && d <= window.toCivilDate;
+
+  const byId = new Map<number, T>();
+  for (const row of rows) {
+    if (inWindow(row.dueDate) || inWindow(resolveSettledCivilDate(row))) {
+      byId.set(row.externalId, row);
+    }
+  }
+  return [...byId.values()];
+}
+
 export type TreasuryCaixaTotals = {
   /** Saldo em aberto (ainda não liquidado) — o que falta receber/pagar. */
   totalReceivable: number;

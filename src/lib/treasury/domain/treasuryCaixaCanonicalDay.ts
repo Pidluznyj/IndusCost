@@ -166,18 +166,22 @@ export type TreasuryCaixaCanonicalDay = {
 function resolveApRealizedCivilDate(
   row: Pick<
     FinanceAccountsPayableGridRow,
-    "dueDate" | "paymentDate" | "amountPaid"
+    "dueDate" | "paymentDate" | "settlementDate" | "amountPaid"
   >,
   reconciliation?: FinanceSettlementReconciliationPolicy | null
 ): string | null {
   if (!(row.amountPaid > 0)) return null;
+  // Realidade primeiro: `paymentDate` quando o Nomus informa; `settlementDate`
+  // como fallback (o Nomus raramente preenche o primeiro, mas quase sempre
+  // preenche o segundo numa baixa real) — sem isso a regra dos N dias nunca
+  // enxergava a baixa real de boa parte dos títulos e caía sempre no
+  // vencimento, mesmo com a política ligada.
+  const settledOnKey = row.paymentDate ?? row.settlementDate;
   if (reconciliation && reconciliation.enabled) {
     const effective = resolveFinanceApEffectivePaymentDate(
       {
         dueDate: row.dueDate ? new Date(`${row.dueDate}T12:00:00Z`) : null,
-        paymentDate: row.paymentDate
-          ? new Date(`${row.paymentDate}T12:00:00Z`)
-          : null,
+        paymentDate: settledOnKey ? new Date(`${settledOnKey}T12:00:00Z`) : null,
         amountPaid: row.amountPaid,
         balancePayable: 0,
       },
@@ -185,7 +189,7 @@ function resolveApRealizedCivilDate(
     );
     return effective ? effective.toISOString().slice(0, 10) : null;
   }
-  const key = row.paymentDate ?? row.dueDate;
+  const key = settledOnKey ?? row.dueDate;
   return key ? key.slice(0, 10) : null;
 }
 

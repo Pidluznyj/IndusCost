@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
+import { FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import {
   aggregateTreasuryCaixaCanonicalDaysByMonth,
   buildTreasuryCaixaCanonicalDays,
@@ -54,6 +55,7 @@ function ap(
     dueDate: null,
     operationalDueDate: null,
     paymentDate: null,
+    settlementDate: null,
     amountPayable: 0,
     amountPaid: 0,
     balancePayable: 0,
@@ -490,5 +492,106 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
     assert.equal(ago.payableDue, 60);
     assert.equal(set.receivableDue, 400);
     assert.equal(set.payableDue, 300);
+  });
+});
+
+describe("buildTreasuryCaixaCanonicalDays — CASE-01/CASE-02: título fora da janela por vencimento, dentro por liquidação", () => {
+  const POLICY = FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS;
+
+  it("CASE-01 — CP vencido MUITO antes da janela, pago DENTRO dela além da tolerância → conta na data da baixa (settlementDate)", () => {
+    // dueDate=10/07, settlementDate=07/08 (>D+3) — mesmo sem `paymentDate`
+    // preenchido pelo Nomus, a baixa real fica visível via `settlementDate`.
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-07"],
+      receivables: [],
+      payables: [
+        ap({
+          externalId: 100,
+          dueDate: "2026-07-10",
+          paymentDate: null,
+          settlementDate: "2026-08-07",
+          amountPayable: 100,
+          amountPaid: 100,
+          balancePayable: 0,
+        }),
+      ],
+      reconciliationPolicy: POLICY,
+    });
+    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(day.payablePaid, 100);
+    assert.equal(day.payablePaidTitles.length, 1);
+    assert.equal(day.payablePaidTitles[0]!.externalId, 100);
+  });
+
+  it("CASE-02 — CP vencendo bem DEPOIS da janela, pago DENTRO dela antecipadamente → conta na data da baixa (settlementDate)", () => {
+    // dueDate=10/09, settlementDate=07/08 (antecipado) — mesma proteção.
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-07"],
+      receivables: [],
+      payables: [
+        ap({
+          externalId: 200,
+          dueDate: "2026-09-10",
+          paymentDate: null,
+          settlementDate: "2026-08-07",
+          amountPayable: 100,
+          amountPaid: 100,
+          balancePayable: 0,
+        }),
+      ],
+      reconciliationPolicy: POLICY,
+    });
+    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(day.payablePaid, 100);
+    assert.equal(day.payablePaidTitles.length, 1);
+    assert.equal(day.payablePaidTitles[0]!.externalId, 200);
+  });
+
+  it("POP-07 — equivalente para AR: CR vencido muito antes, recebido dentro da janela além da tolerância → conta na baixa", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-07"],
+      receivables: [
+        ar({
+          externalId: 300,
+          dueDate: "2026-07-10",
+          settlementDate: "2026-08-07",
+          amountReceivable: 100,
+          amountReceived: 100,
+          balanceReceivable: 0,
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: POLICY,
+    });
+    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(day.receivableReceived, 100);
+    assert.equal(day.receivableReceivedTitles.length, 1);
+  });
+
+  it("dentro da tolerância (D+2), mesmo sem paymentDate: settlementDate ainda assim atribui a D, não à data da baixa", () => {
+    // dueDate=05/08, settlementDate=07/08 (D+2, dentro da tolerância) →
+    // effectiveDate = dueDate (05/08), não 07/08 — prova que o fallback para
+    // settlementDate não quebra a regra dos 3 dias, só preenche a lacuna
+    // quando paymentDate está ausente.
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-05", "2026-08-07"],
+      receivables: [],
+      payables: [
+        ap({
+          externalId: 400,
+          dueDate: "2026-08-05",
+          paymentDate: null,
+          settlementDate: "2026-08-07",
+          amountPayable: 100,
+          amountPaid: 100,
+          balancePayable: 0,
+        }),
+      ],
+      reconciliationPolicy: POLICY,
+    });
+    const day05 = findTreasuryCaixaCanonicalDay(days, "2026-08-05")!;
+    const day07 = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(day05.payablePaid, 100);
+    assert.equal(day07.payablePaid, 0);
   });
 });
