@@ -611,6 +611,11 @@ function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
+import {
+  selectNomusProposalCandidates,
+  type CandidateSelectionResult,
+} from "../src/lib/nomusProposalsCandidateSelection.ts";
+
 async function buildPlans(options: {
   isIncremental: boolean;
   startDate: Date | null;
@@ -625,6 +630,7 @@ async function buildPlans(options: {
   totalItemsRead: number;
   pagesProcessed: number;
   peopleRequests: number;
+  discoveryMetrics: CandidateSelectionResult;
 }> {
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const { proposals: rawProposalsAll, pagesProcessed } = await fetchAllNomusProposals(
@@ -632,9 +638,55 @@ async function buildPlans(options: {
     options.isIncremental ? options.startDate : null
   );
 
-  const rawProposals = rawProposalsAll.filter((proposal) =>
-    isProposalOnOrAfterStartDate(proposal, options.startDate)
+  const discoveredExternalIds = rawProposalsAll
+    .map((p) => toInt(p.id))
+    .filter((id): id is number => id != null);
+
+  // 1. Consulta em lote no banco local quais externalProposalId já existem no IndusCost (Zero N+1)
+  const existingProposals = await prisma.proposal.findMany({
+    where: {
+      sourceSystem: SOURCE_SYSTEM,
+      externalProposalId: { in: discoveredExternalIds },
+    },
+    select: { externalProposalId: true },
+  });
+  const existingExternalIds = new Set(
+    existingProposals.map((p) => p.externalProposalId).filter((id): id is number => id != null)
   );
+
+  // 2. Seleciona candidatos: propostas INEXISTENTES localmente são SEMPRE candidatas (missing_locally)
+  const discoveryMetrics = selectNomusProposalCandidates({
+    discoveredProposals: rawProposalsAll,
+    existingExternalIds,
+    isIncremental: options.isIncremental,
+    startDate: options.startDate,
+  });
+
+  const rawProposals = discoveryMetrics.candidates;
+
+  console.log(
+    `${LOG_PREFIX} DISCOVERY candidatesFound=${discoveryMetrics.candidatesFound} totalDiscovered=${discoveryMetrics.totalDiscovered} missingLocally=${discoveryMetrics.missingLocallyCount} changedInWindow=${discoveryMetrics.changedInWindowCount} existingOutsideWindow=${discoveryMetrics.existingOutsideWindowCount}`
+  );
+
+  // 3. OTIMIZAÇÃO OBRIGATÓRIA — ZERO CANDIDATOS:
+  // Se nenhum candidato foi selecionado, NÃO carregar produtos, pessoas nem montar dependências.
+  if (rawProposals.length === 0) {
+    console.log(`${LOG_PREFIX} DEPENDENCY_LOAD_SKIPPED reason=no_candidates`);
+    return {
+      plans: [],
+      blocked: [],
+      ignored: [],
+      missingSkus: new Set(),
+      missingCustomers: new Set(),
+      inactiveSkus: new Set(),
+      rawProposalsCount: discoveryMetrics.totalDiscovered,
+      totalItemsRead: 0,
+      pagesProcessed,
+      peopleRequests: 0,
+      discoveryMetrics,
+    };
+  }
+
   const nomusProductActiveBySku = await mapNomusProductActiveBySku(nomusBaseUrl);
 
   const externalCustomerIds = rawProposals
@@ -808,10 +860,11 @@ async function buildPlans(options: {
     missingSkus,
     missingCustomers,
     inactiveSkus,
-    rawProposalsCount: rawProposals.length,
+    rawProposalsCount: discoveryMetrics.totalDiscovered,
     totalItemsRead,
     pagesProcessed,
     peopleRequests,
+    discoveryMetrics,
   };
 }
 
@@ -1270,6 +1323,7 @@ async function main(): Promise<void> {
       totalItemsRead,
       pagesProcessed,
       peopleRequests,
+      discoveryMetrics,
     } = await buildPlans({
       isIncremental: window.isIncremental,
       startDate: window.startDate,
@@ -1294,8 +1348,14 @@ async function main(): Promise<void> {
         finishedAt: finishedAt.toISOString(),
         durationMs: finishedAt.getTime() - startedAt.getTime(),
         discovery: {
-          candidatesFound: rawProposalsCount,
+          candidatesFound: discoveryMetrics.candidatesFound,
+          totalDiscovered: discoveryMetrics.totalDiscovered,
+          missingLocally: discoveryMetrics.missingLocallyCount,
+          changedInWindow: discoveryMetrics.changedInWindowCount,
+          existingOutsideWindow: discoveryMetrics.existingOutsideWindowCount,
           pagesProcessed,
+          missingLocallyPreview: discoveryMetrics.missingLocallyPreview,
+          changedInWindowPreview: discoveryMetrics.changedInWindowPreview,
         },
         dependencies: {
           peopleRequests,
@@ -1363,8 +1423,14 @@ async function main(): Promise<void> {
       finishedAt: finishedAt.toISOString(),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       discovery: {
-        candidatesFound: rawProposalsCount,
+        candidatesFound: discoveryMetrics.candidatesFound,
+        totalDiscovered: discoveryMetrics.totalDiscovered,
+        missingLocally: discoveryMetrics.missingLocallyCount,
+        changedInWindow: discoveryMetrics.changedInWindowCount,
+        existingOutsideWindow: discoveryMetrics.existingOutsideWindowCount,
         pagesProcessed,
+        missingLocallyPreview: discoveryMetrics.missingLocallyPreview,
+        changedInWindowPreview: discoveryMetrics.changedInWindowPreview,
       },
       dependencies: {
         peopleRequests,
