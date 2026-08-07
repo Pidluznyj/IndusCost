@@ -6,6 +6,7 @@
 import React, { useMemo, useState } from "react";
 import type { TreasuryReconciliationMatchDto } from "@/src/lib/treasury/contracts/index.js";
 import { TREASURY_RECONCILIATION_REVERSE_CONFIRM_PHRASE } from "@/src/lib/treasury/contracts/index.js";
+import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 
 export function TreasuryReconciliationReverseConfirmDialog(props: {
@@ -30,9 +31,9 @@ export function TreasuryReconciliationReverseConfirmDialog(props: {
 
   if (!open || !match) return null;
 
-  return (
+  return renderInPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       data-testid="treasury-reconciliation-reverse-dialog"
       role="dialog"
       aria-modal="true"

@@ -6,7 +6,7 @@
  * Tesouraria) — nenhum cálculo financeiro acontece neste arquivo.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchCashSupport,
   type CashSupportFetchParams,
@@ -17,9 +17,14 @@ import {
   reverseTreasuryReconciliation,
   unmatchTreasuryReconciliation,
 } from "@/src/lib/treasury/treasuryReconciliationApi.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/treasuryContracts.js";
 import type { TreasuryReconciliationMatchDto } from "@/src/lib/treasury/contracts/index.js";
 import type { CashSupportReadModel, CashSupportUnifiedRow } from "@/src/lib/treasury/contracts/cashSupportContracts.js";
 import { CashSupportPanel } from "./CashSupportPanel.js";
+import {
+  CashSupportPeriodFilters,
+  type CashSupportPeriodFilterState,
+} from "./CashSupportPeriodFilters.js";
 import {
   CashSupportReconcileDialog,
   type CashSupportReconcileSubmitPayload,
@@ -28,11 +33,19 @@ import { CashSupportUnmatchDialog } from "./CashSupportUnmatchDialog.js";
 import { TreasuryReconciliationReverseConfirmDialog } from "./TreasuryReconciliationReverseConfirmDialog.js";
 
 export type CashSupportWorkspacePageProps = {
-  civilDateFrom: string;
-  civilDateTo: string;
   /** Injeção para teste — em produção usa `fetchCashSupport`. */
   fetcher?: typeof fetchCashSupport;
 };
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Ano/(Mês) → primeiro dia do período (mês, ou 1º de janeiro se "todos os meses"). */
+function firstDayOf(state: CashSupportPeriodFilterState): string {
+  const month = state.month === "" ? 1 : state.month;
+  return `${state.year}-${pad2(month)}-01`;
+}
 
 function candidateTitlesFor(
   movements: CashSupportUnifiedRow[],
@@ -50,10 +63,24 @@ function candidateTitlesFor(
 }
 
 export function CashSupportWorkspacePage({
-  civilDateFrom,
-  civilDateTo,
   fetcher = fetchCashSupport,
 }: CashSupportWorkspacePageProps) {
+  const today = useMemo(() => todayTreasuryCivilDateInSaoPaulo(), []);
+  const [period, setPeriod] = useState<CashSupportPeriodFilterState>(() => ({
+    year: Number(today.slice(0, 4)),
+    month: Number(today.slice(5, 7)),
+    until: today,
+  }));
+  const yearOptions = useMemo(() => {
+    const base = Number(today.slice(0, 4));
+    const out: number[] = [];
+    for (let y = base - 3; y <= base + 3; y += 1) out.push(y);
+    return out;
+  }, [today]);
+
+  const civilDateFrom = useMemo(() => firstDayOf(period), [period]);
+  const civilDateTo = period.until;
+
   const [data, setData] = useState<CashSupportReadModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +200,14 @@ export function CashSupportWorkspacePage({
 
   return (
     <>
+      <div className="mb-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+        <CashSupportPeriodFilters
+          value={period}
+          yearOptions={yearOptions}
+          onChange={setPeriod}
+        />
+      </div>
+
       <CashSupportPanel
         civilDateFrom={civilDateFrom}
         civilDateTo={civilDateTo}

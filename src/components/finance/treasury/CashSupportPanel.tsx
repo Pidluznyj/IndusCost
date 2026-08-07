@@ -7,6 +7,7 @@
 import React, { useMemo, useState } from "react";
 import { ArrowDownCircle, ArrowUpCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 import {
   financeModuleFilterFieldClass,
@@ -365,9 +366,9 @@ export function CashSupportPanel({
         </>
       )}
 
-      {selected ? (
+      {selected ? renderInPortal(
         <aside
-          className="fixed inset-y-0 right-0 w-full max-w-sm overflow-y-auto border-l border-border bg-background p-4 shadow-xl"
+          className="fixed inset-y-0 right-0 z-[100] w-full max-w-sm overflow-y-auto border-l border-border bg-background p-4 shadow-xl"
           data-testid="cash-support-detail-drawer"
         >
           <button
