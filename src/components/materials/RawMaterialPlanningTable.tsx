@@ -498,51 +498,59 @@ function PurchasePlanCells({
  */
 export function RawMaterialPlanningDetailContent({
   row,
-  defaultOpenMemory = false,
+  hideTopSummary = false,
 }: {
   row: RawMaterialPlanningRow;
-  /** Impressão: a memória do cálculo é o motivo do PDF — sempre aberta, nunca escondida atrás de um clique. */
-  defaultOpenMemory?: boolean;
+  /**
+   * Impressão de uma única matéria-prima: o PDF traz só o racional
+   * operacional (linha do tempo, pedidos, entradas) — badges de
+   * situação/confiança, "Comprar até", avisos e memória do cálculo ficam
+   * de fora, a pedido do usuário.
+   */
+  hideTopSummary?: boolean;
 }) {
   return (
     <div className="space-y-4">
-      {/* Situação e Confiança saíram do grid (deram lugar aos campos de
-          compra) e vivem aqui, junto com a data-limite calculada. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <StatusBadge situation={row.situation} />
-        <ConfidenceBadge confidence={row.confidence} />
-        <span className="text-muted-foreground">
-          Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
-          {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
-        </span>
-      </div>
-      {row.alerts.length > 0 ? (
-        <div className={cn("rounded-lg border p-3 shadow-sm", STATUS_TONE_CLASSES.warning)}>
-          <ul className="space-y-1.5 text-xs font-medium">
-            {row.alerts.map((alert, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                <span>
-                  <span className="font-bold">Aviso:</span> {alert}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {!hideTopSummary ? (
+        <>
+          {/* Situação e Confiança saíram do grid (deram lugar aos campos de
+              compra) e vivem aqui, junto com a data-limite calculada. */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <StatusBadge situation={row.situation} />
+            <ConfidenceBadge confidence={row.confidence} />
+            <span className="text-muted-foreground">
+              Comprar até: <span className="font-semibold text-foreground">{formatYmdPtBr(row.buyByDate)}</span>
+              {row.buyByBlockedReason ? ` — ${buyByBlockedReasonLabel(row.buyByBlockedReason)}` : ""}
+            </span>
+          </div>
+          {row.alerts.length > 0 ? (
+            <div className={cn("rounded-lg border p-3 shadow-sm", STATUS_TONE_CLASSES.warning)}>
+              <ul className="space-y-1.5 text-xs font-medium">
+                {row.alerts.map((alert, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span>
+                      <span className="font-bold">Aviso:</span> {alert}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {/* Memória do cálculo em drilldown próprio — fechada por padrão,
+              some inteiramente na impressão por matéria-prima. */}
+          <details className="group rounded-lg border border-border/70">
+            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+              Memória do cálculo
+              <span className="font-normal normal-case tracking-normal">— como chegamos nesses números</span>
+            </summary>
+            <div className="border-t border-border/70 p-3">
+              <RawMaterialPlanningCalculationMemory row={row} />
+            </div>
+          </details>
+        </>
       ) : null}
-      {/* Memória do cálculo em drilldown próprio — fechada por padrão na
-          tela; na impressão (defaultOpenMemory) fica sempre aberta, é o
-          motivo do PDF existir. */}
-      <details className="group rounded-lg border border-border/70" open={defaultOpenMemory || undefined}>
-        <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground">
-          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
-          Memória do cálculo
-          <span className="font-normal normal-case tracking-normal">— como chegamos nesses números</span>
-        </summary>
-        <div className="border-t border-border/70 p-3">
-          <RawMaterialPlanningCalculationMemory row={row} />
-        </div>
-      </details>
       <div>
         <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Linha do tempo projetada</h4>
         <RawMaterialPlanningTimelineTable row={row} />
