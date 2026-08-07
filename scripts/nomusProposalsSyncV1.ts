@@ -217,13 +217,23 @@ function getProposalStartDate(): Date | null {
   return parsed;
 }
 
+function parseProposalEventDate(proposal: JsonObject): Date | null {
+  const rawDate =
+    proposal.dataHoraAlteracao ??
+    proposal.dataAlteracao ??
+    proposal.dataHoraUltimaAlteracao ??
+    proposal.dataHoraModificacao ??
+    proposal.dataHoraAbertura;
+  return parseNomusDateTime(rawDate);
+}
+
 function isProposalOnOrAfterStartDate(proposal: JsonObject, startDate: Date | null): boolean {
   if (!startDate) return true;
 
-  const openedAt = parseNomusDateTime(proposal.dataHoraAbertura);
-  if (!openedAt) return true; // Se dataHoraAbertura ausente, não descarta precipitadamente
+  const eventDate = parseProposalEventDate(proposal);
+  if (!eventDate) return true; // Se data ausente, não descarta precipitadamente
 
-  return openedAt.getTime() >= startDate.getTime();
+  return eventDate.getTime() >= startDate.getTime();
 }
 
 const HTTP_TIMEOUT_MS = resolveNomusHttpTimeoutMs();
@@ -276,8 +286,7 @@ function hasNextPage(payload: unknown, page: number, pageSize: number, currentLe
 }
 
 /**
- * Busca propostas no Nomus. Se `startDate` for fornecido em modo incremental,
- * para a paginação quando as propostas da página forem mais antigas que a janela.
+ * Busca propostas no Nomus.
  */
 async function fetchAllNomusProposals(
   baseUrl: string,
@@ -308,23 +317,6 @@ async function fetchAllNomusProposals(
     if (arr.length === 0) break;
 
     proposals.push(...arr);
-
-    // Otimização incremental: se startDate está definido e todas as propostas da página são anteriores,
-    // podemos interromper a busca para não percorrer dezenas de páginas antigas.
-    if (startDate) {
-      const pageOpenedDates = arr
-        .map((p) => parseNomusDateTime(p.dataHoraAbertura))
-        .filter((d): d is Date => d !== null);
-      if (pageOpenedDates.length > 0) {
-        const newestOnPage = Math.max(...pageOpenedDates.map((d) => d.getTime()));
-        if (newestOnPage < startDate.getTime()) {
-          console.log(
-            `${LOG_PREFIX} INCREMENTAL_PAGINATION_STOP page=${page} newestOnPage=${new Date(newestOnPage).toISOString()} < startDate=${startDate.toISOString()}`
-          );
-          break;
-        }
-      }
-    }
 
     if (page >= maxPages) {
       console.warn(`[sync-v1] limite de segurança NOMUS_MAX_PAGES=${maxPages} atingido em propostas.`);

@@ -32,6 +32,25 @@ export async function getLatestProposalsSuccessfulCheckpoint(
   return lastRun?.finishedAt ?? lastRun?.startedAt ?? null;
 }
 
+import { parseNomusBrazilianDateTime } from "./nomusDateTime.js";
+
+export function parseProposalEventDate(proposal: Record<string, unknown>): Date | null {
+  const rawDate =
+    proposal.dataHoraAlteracao ??
+    proposal.dataAlteracao ??
+    proposal.dataHoraUltimaAlteracao ??
+    proposal.dataHoraModificacao ??
+    proposal.dataHoraAbertura;
+  if (!rawDate) return null;
+  const brazilian = parseNomusBrazilianDateTime(rawDate);
+  if (brazilian.ok) return brazilian.value;
+  if (typeof rawDate === "string" && !rawDate.includes("/")) {
+    const iso = new Date(rawDate.trim());
+    if (!Number.isNaN(iso.getTime())) return iso;
+  }
+  return null;
+}
+
 /**
  * Calcula a janela incremental com sobreposição de segurança (safety overlap).
  */

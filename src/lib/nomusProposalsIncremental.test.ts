@@ -3,9 +3,39 @@ import assert from "node:assert/strict";
 import {
   calculateProposalsIncrementalWindow,
   isProposalPlanEqual,
+  parseProposalEventDate,
   type ExistingProposalDbData,
   type ProposalPlanComparisonData,
 } from "./nomusProposalsIncremental.js";
+
+describe("nomusProposalsIncremental — campo temporal e alteração recente", () => {
+  it("proposta criada há 60 dias mas alterada hoje → detecta pela dataHoraAlteracao", () => {
+    const proposal = {
+      proposta: "NOMUS-001000",
+      dataHoraAbertura: "07/06/2026 10:00:00", // 60 dias atrás
+      dataHoraAlteracao: "07/08/2026 09:30:00", // Hoje!
+    };
+
+    const eventDate = parseProposalEventDate(proposal);
+    assert.ok(eventDate);
+    assert.equal(eventDate.toISOString(), new Date("2026-08-07T12:30:00.000Z").toISOString());
+
+    // Janela incremental desde 07/08/2026 09:00:00
+    const startDate = new Date("2026-08-07T09:00:00.000Z");
+    assert.ok(eventDate.getTime() >= startDate.getTime(), "Proposta alterada hoje entra na janela incremental");
+  });
+
+  it("proposta sem dataHoraAlteracao → usa dataHoraAbertura como fallback", () => {
+    const proposal = {
+      proposta: "NOMUS-001001",
+      dataHoraAbertura: "07/08/2026 10:00:00",
+    };
+
+    const eventDate = parseProposalEventDate(proposal);
+    assert.ok(eventDate);
+    assert.equal(eventDate.toISOString(), new Date("2026-08-07T13:00:00.000Z").toISOString());
+  });
+});
 
 describe("nomusProposalsIncremental — janela incremental", () => {
   it("sem checkpoint prévio → usa data de início padrão ou fallback (7 dias)", () => {
