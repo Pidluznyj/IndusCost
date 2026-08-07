@@ -45,6 +45,8 @@ import { TreasuryReportsPage } from "./TreasuryReportsPage.js";
 import { TreasuryManualEntriesPage } from "./TreasuryManualEntriesPage.js";
 import { TreasuryPaymentSchedulePage } from "./TreasuryPaymentSchedulePage.js";
 import { TreasuryReconcileWorkspacePage } from "./TreasuryReconcileWorkspacePage.js";
+import { CashSupportWorkspacePage } from "./CashSupportWorkspacePage.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/treasuryContracts.js";
 import { TreasuryAuditPage } from "./TreasuryAuditPage.js";
 import { TreasuryAlertSettingsPage } from "./TreasuryAlertSettingsPage.js";
 
@@ -83,6 +85,13 @@ function TreasuryFlagGate(props: {
     return null;
   }
   return <>{children}</>;
+}
+
+/** Apoio ao Caixa (CS-007) — período padrão: mês corrente até hoje. */
+function CashSupportRoutePage() {
+  const today = todayTreasuryCivilDateInSaoPaulo();
+  const civilDateFrom = `${today.slice(0, 7)}-01`;
+  return <CashSupportWorkspacePage civilDateFrom={civilDateFrom} civilDateTo={today} />;
 }
 
 /**
@@ -371,6 +380,10 @@ export function TreasuryModule() {
           <Route
             path="reconcile"
             element={gate("reconcile", <TreasuryReconcileWorkspacePage />)}
+          />
+          <Route
+            path="cash-support"
+            element={gate("reconcile", <CashSupportRoutePage />)}
           />
           <Route
             path="exceptions"
