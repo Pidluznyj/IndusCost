@@ -138,6 +138,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "settings.view",
   ],
   treasury: ["finance.treasury.view"],
+  "invested-capital-recovery": ["finance.investedCapitalRecovery.view"],
   suppliers: [
     "finance.suppliers.view",
     "finance.cost_centers.view",
@@ -209,6 +210,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     itemIds: [
       "finance",
       "treasury",
+      "invested-capital-recovery",
       "suppliers",
       "portfolio-reconciliation",
       "opex",
@@ -262,6 +264,8 @@ export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
   if (moduleId === "treasury") return "/finance/treasury";
+  if (moduleId === "invested-capital-recovery")
+    return "/finance/invested-capital-recovery";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
   if (moduleId === "commercial-price-table") return "/commercial/price-table";
   if (moduleId === "sc-purchases") return "/supply-chain/purchases";
