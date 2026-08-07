@@ -1,7 +1,18 @@
 import "./raw-material-planning-print.css";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Ban, Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Ban,
+  Download,
+  Info,
+  Loader2,
+  Printer,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
@@ -35,6 +46,37 @@ import {
 
 const PLANNING_API = "/api/materials/planning";
 const PAGE_SIZE = 25;
+
+/** Ordenação do grid — vale para a tela E para Imprimir/PDF. */
+type GridSortField =
+  | "technicalNeed"
+  | "suggestedQuantity"
+  | "countedBalance"
+  | "estimatedPurchaseValue"
+  | "description";
+
+const GRID_SORT_OPTIONS: Array<{ value: GridSortField; label: string }> = [
+  { value: "technicalNeed", label: "Necessidade técnica" },
+  { value: "suggestedQuantity", label: "Qtde sugerida" },
+  { value: "countedBalance", label: "Saldo atual" },
+  { value: "estimatedPurchaseValue", label: "Valor estimado" },
+  { value: "description", label: "Matéria-prima (A–Z)" },
+];
+
+function gridSortValue(row: RawMaterialPlanningRow, field: GridSortField): number | string {
+  switch (field) {
+    case "technicalNeed":
+      return row.technicalNeed ?? Number.NEGATIVE_INFINITY;
+    case "suggestedQuantity":
+      return row.suggestedQuantity ?? Number.NEGATIVE_INFINITY;
+    case "countedBalance":
+      return row.countedBalance ?? Number.NEGATIVE_INFINITY;
+    case "estimatedPurchaseValue":
+      return row.estimatedPurchaseValue ?? Number.NEGATIVE_INFINITY;
+    case "description":
+      return `${row.code ?? ""} ${row.description}`.trim().toLowerCase();
+  }
+}
 
 type FiltersState = {
   asOfDate: string;
@@ -140,6 +182,8 @@ export function RawMaterialPlanningPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [savingPlanMaterialId, setSavingPlanMaterialId] = useState<string | null>(null);
   const [planSaveError, setPlanSaveError] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<GridSortField>("technicalNeed");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [retryNonce, setRetryNonce] = useState(0);
 
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
@@ -342,11 +386,35 @@ export function RawMaterialPlanningPage() {
   }, [branding]);
 
   const rows: RawMaterialPlanningRow[] = data?.materials ?? [];
-  const totalItems = rows.length;
+
+  /**
+   * Ordena a lista INTEIRA antes de paginar (antes a tabela ordenava só a
+   * página atual). A mesma lista ordenada alimenta o Imprimir/PDF — tela e
+   * relatório sempre na mesma ordem, sobre os mesmos filtros.
+   */
+  const sortedRows = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...(data?.materials ?? [])].sort((a, b) => {
+      const va = gridSortValue(a, sortField);
+      const vb = gridSortValue(b, sortField);
+      if (typeof va === "string" || typeof vb === "string") {
+        return String(va).localeCompare(String(vb), "pt-BR") * dir;
+      }
+      return (va - vb) * dir;
+    });
+  }, [data, sortField, sortDir]);
+
+  const totalItems = sortedRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const pageStart = (page - 1) * PAGE_SIZE;
-  const pageRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageRows = sortedRows.slice(pageStart, pageStart + PAGE_SIZE);
   const pagination = { page, pageSize: PAGE_SIZE, totalItems, totalPages };
+
+  /** Payload do relatório impresso — mesma ordem/filtros da tela. */
+  const printData = useMemo(
+    () => (data ? { ...data, materials: sortedRows } : null),
+    [data, sortedRows]
+  );
 
   return (
     <div className="space-y-6" data-testid="raw-material-planning-page">
@@ -637,13 +705,62 @@ export function RawMaterialPlanningPage() {
           </ContextualDashboardKpiGrid>
 
           <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-border bg-muted/20">
-              <h3 className="text-sm font-bold text-foreground">Matérias-primas ({data.summary.totalMaterials})</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Data-base {data.asOfDate.split("-").reverse().join("/")} · horizonte até{" "}
-                {data.horizonEndDate.split("-").reverse().join("/")} · gerado em{" "}
-                {new Date(data.generatedAt).toLocaleString("pt-BR")}
-              </p>
+            <div className="flex flex-wrap items-end justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Matérias-primas ({data.summary.totalMaterials})</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Data-base {data.asOfDate.split("-").reverse().join("/")} · horizonte até{" "}
+                  {data.horizonEndDate.split("-").reverse().join("/")} · gerado em{" "}
+                  {new Date(data.generatedAt).toLocaleString("pt-BR")}
+                </p>
+              </div>
+              {/* Ordenação do grid — vale também para Imprimir/PDF. */}
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="rmp-sort-field"
+                  className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                >
+                  Ordenar por
+                </label>
+                <select
+                  id="rmp-sort-field"
+                  value={sortField}
+                  onChange={(e) => {
+                    setSortField(e.target.value as GridSortField);
+                    setPage(1);
+                  }}
+                  className="h-9 rounded-lg border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-primary/20"
+                  data-testid="rmp-sort-field"
+                >
+                  {GRID_SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                    setPage(1);
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold hover:bg-accent"
+                  title={sortDir === "asc" ? "Crescente — clique para decrescente" : "Decrescente — clique para crescente"}
+                  data-testid="rmp-sort-dir"
+                >
+                  {sortDir === "asc" ? (
+                    <>
+                      <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                      Crescente
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDown className="h-3.5 w-3.5" aria-hidden />
+                      Decrescente
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
             {planSaveError ? (
               <div
@@ -681,10 +798,10 @@ export function RawMaterialPlanningPage() {
           impressão esconde o #root inteiro, então dentro da árvore normal o
           relatório sairia em branco (era exatamente o defeito — o documento
           nunca era renderizado). */}
-      {data && branding
+      {printData && branding
         ? createPortal(
             <RawMaterialPlanningPrintDocument
-              data={data}
+              data={printData}
               branding={branding}
               filterChips={filterChips}
             />,

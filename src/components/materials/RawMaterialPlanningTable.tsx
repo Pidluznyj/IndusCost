@@ -590,7 +590,9 @@ export function RawMaterialPlanningTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {[...rows].sort((a, b) => (b.technicalNeed ?? 0) - (a.technicalNeed ?? 0)).map((row) => {
+          {/* Ordem vem pronta do chamador (controle de ordenação da página);
+              ordenar aqui de novo quebraria a paginação e a impressão. */}
+          {rows.map((row) => {
             const expanded = expandedMaterialId === row.materialId;
             return (
               <React.Fragment key={row.materialId}>
