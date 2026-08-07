@@ -1,10 +1,28 @@
 # Apoio ao Caixa — memória de execução
 
 ## Git
-- Branch: `feat/treasury-cash-support`
-- Backup protegido: `backup/cash-support-audit-f0821d7` → `f0821d7`
-- Etapa 1: `f0821d7` (já publicada em `origin/main` por fluxo externo — não reescrever)
-- Etapa 2: docs de ADR, matriz e read model
+- **Branch de trabalho atual: `feat/treasury-cash-support-v2`**, em worktree isolado:
+  `C:\Users\paulo\...\IndusCost-cash-support` (separado de `C:\...\IndusCost`, onde
+  roda o trabalho concorrente de materiais/Nomus). Estratégia oficial enquanto houver
+  concorrência no repo principal — não remover o worktree entre sessões.
+- `feat/treasury-cash-support` (v1, sem worktree) foi abandonada: acumulou commit de
+  outro trabalho por cima. **Não usar, não apagar.**
+- Base da v2: HEAD de `main` em `c8def01c2ebf15f1cf2a5cfc8588bafcfc3a2c32`, que já
+  contém os 6 commits válidos (f0821d7, 24431e0, da55038, 92f50d6, 71a9a80, 9833277)
+  mais docs/checklist (19f7169).
+- Backups protegidos: `backup/cash-support-audit-f0821d7`,
+  `backup/cash-support-before-full-implementation-20260806-da55038`.
+
+## Grupos concluídos nesta branch (worktree)
+- **Grupo A** (docs, backlog, P0): herdado de `main`, completo com os 2 resíduos fechados.
+- **Grupo B** (contratos + adaptadores + read model) — **COMPLETO**:
+  - CS-001 `4b5a618` — `cashSupportContracts.ts`/`.test.ts` (17 testes)
+  - CS-002 `c981633` — adaptador canônico (8 testes)
+  - CS-003 `104a386` — adaptador bancário/OFX (14 testes)
+  - CS-004 `c05bd7c` — adaptador de conciliação (11 testes; achou e corrigiu bug real de soma em desconto)
+  - CS-005 `f18f200` — read model unificado, função pura (11 testes)
+  - Total: 61/61 testes passando em conjunto; zero erro de typecheck nos arquivos novos.
+- **Grupo C** (API, workspace, sugestões) — em andamento.
 
 ## Caminhos principais
 | Papel | Caminho |
