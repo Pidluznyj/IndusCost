@@ -403,146 +403,24 @@ async function mapNomusProductActiveBySku(baseUrl: string): Promise<Map<string, 
   return map;
 }
 
-const customerBridgeCache = new Map<number, { taxId: string | null; customerId: string | null }>();
+import { resolveNomusCustomerBridge, type CustomerResolutionMetrics } from "../src/lib/nomusCustomerBridgeResolution.ts";
 
-/**
- * Mapeia externalCustomerId -> customerId local SEM N+1 HTTP.
- * 1. Primeiro consulta o banco local `Customer` por `sourceExternalId` / `taxId`.
- * 2. Para IDs não resolvidos localmente, faz busca paginada em lote (`id=in=(...)`) ou busca direta.
- * 3. Reutiliza cache em memória para a mesma execução.
- */
 async function mapPessoaBridgeByExternalCustomerId(
   baseUrl: string,
   externalCustomerIds: number[]
 ): Promise<{
-  bridge: Map<number, { taxId: string | null; customerId: string | null }>;
+  bridge: Map<number, { taxId: string | null; customerId: string | null; conflict?: boolean }>;
   peopleRequests: number;
+  metrics: CustomerResolutionMetrics;
 }> {
-  const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
-  const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
-
-  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
-  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
-
-  let peopleRequests = 0;
-
-  const missingFromCache: number[] = [];
-  for (const id of uniqueIds) {
-    if (customerBridgeCache.has(id)) {
-      bridge.set(id, customerBridgeCache.get(id)!);
-    } else {
-      missingFromCache.push(id);
-    }
-  }
-
-  if (missingFromCache.length === 0) {
-    return { bridge, peopleRequests: 0 };
-  }
-
-  // 1. Tenta resolver clientes via banco local primeiro
-  const localCustomers = await prisma.customer.findMany({
-    select: { id: true, taxId: true, sourceExternalId: true },
+  const result = await resolveNomusCustomerBridge(prisma, baseUrl, externalCustomerIds, {
+    logPrefix: LOG_PREFIX,
   });
-
-  const localByExternalId = new Map<number, string>();
-  const localByTaxId = new Map<string, string>();
-
-  for (const customer of localCustomers) {
-    const extId = toInt(customer.sourceExternalId);
-    if (extId != null) localByExternalId.set(extId, customer.id);
-    const taxId = normalizeTaxId(customer.taxId);
-    if (taxId) localByTaxId.set(taxId, customer.id);
-  }
-
-  const unmappedExternalIds: number[] = [];
-
-  for (const idCliente of missingFromCache) {
-    const customerId = localByExternalId.get(idCliente);
-    if (customerId) {
-      const entry = { taxId: null, customerId };
-      bridge.set(idCliente, entry);
-      customerBridgeCache.set(idCliente, entry);
-    } else {
-      unmappedExternalIds.push(idCliente);
-    }
-  }
-
-  if (unmappedExternalIds.length === 0) {
-    return { bridge, peopleRequests: 0 };
-  }
-
-  console.log(
-    `${LOG_PREFIX} PESSOAS_BRIDGE_START totalClientesNecessarios=${uniqueIds.length} naoResolvidosLocalmente=${unmappedExternalIds.length}`
-  );
-
-  // 2. Para IDs ainda não resolvidos localmente, agrupa em lotes de 50 para evitar N+1 HTTP
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < unmappedExternalIds.length; i += BATCH_SIZE) {
-    const batch = unmappedExternalIds.slice(i, i + BATCH_SIZE);
-    peopleRequests += 1;
-
-    let payload: unknown = null;
-    try {
-      const url = buildNomusUrl(baseUrl, "pessoas");
-      if (batch.length === 1) {
-        url.searchParams.set("query", `id==${batch[0]}`);
-      } else {
-        url.searchParams.set("query", `id=in=(${batch.join(",")})`);
-      }
-      payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs, {
-        resource: "pessoas",
-        batchIndex: Math.floor(i / BATCH_SIZE) + 1,
-        batchTotal: Math.ceil(unmappedExternalIds.length / BATCH_SIZE),
-      });
-    } catch {
-      // Se lote falhar com query in, faz fallback pontual por id
-      for (const idCliente of batch) {
-        try {
-          peopleRequests += 1;
-          const singleUrl = buildNomusUrl(baseUrl, "pessoas");
-          singleUrl.searchParams.set("query", `id==${idCliente}`);
-          const singlePayload = await fetchJsonWithRetry(singleUrl, maxRetries, retryBaseMs, {
-            resource: "pessoas",
-            idCliente,
-          });
-          const arr = pickArrayFromUnknown(singlePayload);
-          const pessoa = (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
-            ((singlePayload && typeof singlePayload === "object" ? (singlePayload as JsonObject) : undefined) as JsonObject | undefined);
-          const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
-          const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
-          const entry = { taxId, customerId };
-          bridge.set(idCliente, entry);
-          customerBridgeCache.set(idCliente, entry);
-        } catch {
-          const entry = { taxId: null, customerId: null };
-          bridge.set(idCliente, entry);
-          customerBridgeCache.set(idCliente, entry);
-        }
-      }
-      continue;
-    }
-
-    const arr = pickArrayFromUnknown(payload).filter(
-      (entry): entry is JsonObject => !!entry && typeof entry === "object"
-    );
-
-    const pessoaByNomusId = new Map<number, JsonObject>();
-    for (const p of arr) {
-      const pId = toInt(p.id);
-      if (pId != null) pessoaByNomusId.set(pId, p);
-    }
-
-    for (const idCliente of batch) {
-      const pessoa = pessoaByNomusId.get(idCliente);
-      const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
-      const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
-      const entry = { taxId, customerId };
-      bridge.set(idCliente, entry);
-      customerBridgeCache.set(idCliente, entry);
-    }
-  }
-
-  return { bridge, peopleRequests };
+  return {
+    bridge: result.bridge,
+    peopleRequests: result.metrics.peopleBatchRequests + result.metrics.peopleFallbackRequests,
+    metrics: result.metrics,
+  };
 }
 
 async function fetchPricingSnapshotUnitCost(productId: string): Promise<number> {
