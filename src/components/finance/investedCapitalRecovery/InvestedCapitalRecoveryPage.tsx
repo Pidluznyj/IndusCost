@@ -11,6 +11,12 @@ import {
   FinanceModulePageLoading,
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { formatFinanceCurrency, formatFinanceDate } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  buildFinanceArYearOptions,
+  FINANCE_AR_MONTH_OPTIONS,
+} from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { financePersonFieldsFromSelection } from "@/src/lib/customerSearch";
 import { cn } from "@/src/lib/utils";
 
 type InvestedCapitalRecoveryStatus =
@@ -107,6 +113,11 @@ export function InvestedCapitalRecoveryPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [q, setQ] = useState("");
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [month, setMonth] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerCnpj, setCustomerCnpj] = useState("");
   const [statusFilter, setStatusFilter] = useState<InvestedCapitalRecoveryStatus | "">("");
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<keyof InvestedCapitalRecoveryRow>("moneyOnStreet");
@@ -124,6 +135,9 @@ export function InvestedCapitalRecoveryPage() {
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
       if (q) params.set("q", q);
+      if (year) params.set("year", year);
+      if (month) params.set("month", month);
+      if (customerId) params.set("customerId", customerId);
       const res = await fetch(`/api/finance/invested-capital-recovery?${params.toString()}`, {
         credentials: "include",
       });
@@ -139,7 +153,7 @@ export function InvestedCapitalRecoveryPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, q]);
+  }, [startDate, endDate, q, year, month, customerId]);
 
   useEffect(() => {
     void load();
@@ -177,6 +191,7 @@ export function InvestedCapitalRecoveryPage() {
   }
 
   const maxAging = data ? Math.max(1, ...data.agingBuckets.map((b) => b.amount)) : 1;
+  const yearOptions = useMemo(() => buildFinanceArYearOptions(), []);
 
   return (
     <div className="flex flex-col gap-3" data-testid="invested-capital-recovery-page">
@@ -221,6 +236,54 @@ export function InvestedCapitalRecoveryPage() {
               placeholder="PD 1234 ou nome do cliente"
             />
           </label>
+          <label className="space-y-0.5">
+            <span className="text-[11px] font-semibold text-muted-foreground">Ano</span>
+            <select
+              className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+            >
+              {yearOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[11px] font-semibold text-muted-foreground">Mês</span>
+            <select
+              className="block h-8 rounded-md border border-border bg-background px-2 text-xs"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+            >
+              {FINANCE_AR_MONTH_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="min-w-[14rem]">
+            <CustomerAutocompleteFilter
+              label="Cliente"
+              compact
+              personName={customerName}
+              personCnpj={customerCnpj}
+              customerId={customerId}
+              onChange={(selection) => {
+                const fields = financePersonFieldsFromSelection(selection);
+                setCustomerName(fields.personName);
+                setCustomerCnpj(fields.personCnpj);
+                setCustomerId(fields.customerId);
+              }}
+              onClear={() => {
+                setCustomerName("");
+                setCustomerCnpj("");
+                setCustomerId("");
+              }}
+            />
+          </div>
           <label className="space-y-0.5">
             <span className="text-[11px] font-semibold text-muted-foreground">Status econômico</span>
             <select
