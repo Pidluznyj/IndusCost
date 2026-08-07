@@ -23,6 +23,7 @@ import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   appendTreasuryCaixaDailyDueEstimates,
+  applyTreasuryCaixaCanonicalTodayFlow,
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyBalanceChart,
   buildTreasuryCaixaMonthlyTimeline,
@@ -394,13 +395,36 @@ export function TreasuryCaixaPage() {
     void search();
   }, [accountsLoading, search]);
 
+  // Dia canônico de hoje (motor único-de-dia) — mesma fonte que o drill-down
+  // e o card "Movimento de hoje" já usam para A receber/Recebido/A pagar/Pago.
+  const canonicalToday = useMemo(
+    () =>
+      data?.canonicalDays?.find(
+        (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
+      ) ?? null,
+    [data]
+  );
+
+  // Corrige `todayFlow.inflows/outflows` (fechamento bancário bruto de
+  // `/today/closing`, sem a regra dos 3 dias) para a MESMA autoridade AR/AP
+  // canônica do drill-down — é essa versão corrigida que alimenta tanto o
+  // card "Movimento de hoje" quanto a linha "hoje" da linha do tempo, para os
+  // dois nunca mais divergirem entre si.
+  const correctedTodayFlow = useMemo(
+    () =>
+      todayFlow
+        ? applyTreasuryCaixaCanonicalTodayFlow(todayFlow, canonicalToday)
+        : null,
+    [todayFlow, canonicalToday]
+  );
+
   // A linha do tempo é DERIVADA das três fontes. Montá-la aqui (e não dentro de
   // `search`) garante que ela reage quando o fluxo de hoje termina de carregar
   // depois da busca — antes, um closure obsoleto congelava `todayFlow` nulo e a
   // linha de hoje ficava sem o saldo informado (a realidade).
   const timeline = useMemo<TreasuryCaixaTimelineData | null>(() => {
     if (!data) return null;
-    const base = buildTimelineFromSources(data, todayFlow, agendaDays);
+    const base = buildTimelineFromSources(data, correctedTodayFlow, agendaDays);
     // Futuro fora da cobertura da projeção materializada: estima dia a dia
     // pelos CR/CP em aberto por vencimento, ancorado no último caixa
     // conhecido — informar o caixa de hoje re-ancora toda a cadeia futura.
@@ -408,7 +432,7 @@ export function TreasuryCaixaPage() {
       base,
       data.dailyDueEstimates ?? []
     );
-  }, [data, todayFlow, agendaDays]);
+  }, [data, correctedTodayFlow, agendaDays]);
 
   /**
    * Série do gráfico — mesmos meses da linha do tempo, então a curva e a tabela
@@ -519,12 +543,8 @@ export function TreasuryCaixaPage() {
         />
 
         <TreasuryCaixaTodayFlow
-          flow={todayFlow}
-          canonicalToday={
-            data?.canonicalDays?.find(
-              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
-            ) ?? null
-          }
+          flow={correctedTodayFlow}
+          canonicalToday={canonicalToday}
           loading={accountsLoading}
           onOpenAudit={(kind) => {
             // Mapa "dimensão do dia" → kind da modal de auditoria.
@@ -783,20 +803,10 @@ export function TreasuryCaixaPage() {
               ? `Hoje · ${formatCivilDate(todayTreasuryCivilDateInSaoPaulo())}`
               : formatCaixaPeriodLabel(year, month, day)
           }
-          cardValue={resolveAuditCardValue(
-            data.totals,
-            auditKind,
-            data.canonicalDays?.find(
-              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
-            ) ?? null
-          )}
+          cardValue={resolveAuditCardValue(data.totals, auditKind, canonicalToday)}
           receivables={data.receivables ?? []}
           payables={data.payables ?? []}
-          canonicalToday={
-            data.canonicalDays?.find(
-              (d) => d.civilDate === todayTreasuryCivilDateInSaoPaulo()
-            ) ?? null
-          }
+          canonicalToday={canonicalToday}
           onClose={() => setAuditKind(null)}
         />
       ) : null}
