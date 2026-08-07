@@ -242,6 +242,47 @@ export function buildTreasuryCaixaDayFlow(input: {
 }
 
 /**
+ * Corrige a autoridade financeira de HOJE: troca `inflows`/`outflows` do
+ * fechamento bancário bruto (`/today/closing`, que agrupa CR/CP por
+ * settlementDate cru — sem a regra dos 3 dias — e é o mesmo lugar por onde
+ * ledger/transferência entram no saldo calculado da conta) pelas MESMAS duas
+ * dimensões de título que o drill-down e o card "Movimento de hoje" já usam:
+ * `canonicalDay.receivableReceived` (CR) e `canonicalDay.payablePaid` (CP) —
+ * ambas do motor único-de-dia, já cientes da regra dos 3 dias.
+ *
+ * `opening` e `closingInformed` NÃO mudam — são âncora (saldo de conta), não
+ * fluxo. `closingCalculated`/`divergence` são recompostos para continuar
+ * batendo com os novos `inflows`/`outflows` (mesma fórmula do motor:
+ * abertura + entradas − saídas).
+ *
+ * Sem `canonicalDay` (hoje fora do período consultado — a janela canônica do
+ * board segue o filtro Ano/Mês/Dia da tela): devolve o flow como veio, sem
+ * regredir o comportamento anterior.
+ */
+export function applyTreasuryCaixaCanonicalTodayFlow(
+  flow: TreasuryCaixaDayFlow,
+  canonicalDay: TreasuryCaixaCanonicalDay | null
+): TreasuryCaixaDayFlow {
+  if (!canonicalDay) return flow;
+
+  const inflows = roundMoney(canonicalDay.receivableReceived);
+  const outflows = roundMoney(canonicalDay.payablePaid);
+  const closingCalculated =
+    flow.opening != null ? roundMoney(flow.opening + inflows - outflows) : null;
+
+  return {
+    ...flow,
+    inflows,
+    outflows,
+    closingCalculated,
+    divergence:
+      flow.closingInformed != null && closingCalculated != null
+        ? roundMoney(flow.closingInformed - closingCalculated)
+        : null,
+  };
+}
+
+/**
  * Passo 4 — linha do tempo: um dia por linha, com o "hoje" separando o que já
  * aconteceu do que é previsão.
  *

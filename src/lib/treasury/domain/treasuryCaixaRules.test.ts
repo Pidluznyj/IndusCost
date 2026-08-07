@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import type { TreasuryCaixaCanonicalDay } from "./treasuryCaixaCanonicalDay.js";
 import type {
+  TreasuryCaixaDayFlow,
   TreasuryCaixaRealizedDay,
   TreasuryCaixaTimelineRow,
 } from "./treasuryCaixaRules.js";
 import {
   appendTreasuryCaixaDailyDueEstimates,
   appendTreasuryCaixaMonthlyDueEstimates,
+  applyTreasuryCaixaCanonicalTodayFlow,
   applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyBalanceChart,
@@ -322,6 +325,133 @@ describe("treasuryCaixaRules — buildTreasuryCaixaDayFlow", () => {
     assert.equal(flow.outflows, 0);
     assert.equal(flow.divergence, null);
     assert.equal(flow.accountCount, 0);
+  });
+});
+
+/** Flow de hoje mínimo; o teste sobrescreve o que importa. */
+function todayFlow(over: Partial<TreasuryCaixaDayFlow> = {}): TreasuryCaixaDayFlow {
+  return {
+    civilDate: "2026-08-07",
+    opening: 0,
+    inflows: 0,
+    outflows: 0,
+    closingCalculated: 0,
+    closingInformed: null,
+    divergence: null,
+    accountCount: 1,
+    pendingClosingCount: 0,
+    ...over,
+  };
+}
+
+/** Dia canônico mínimo (motor único-de-dia); o teste sobrescreve o que importa. */
+function canonicalDay(
+  over: Partial<TreasuryCaixaCanonicalDay> = {}
+): TreasuryCaixaCanonicalDay {
+  return {
+    civilDate: "2026-08-07",
+    receivableDue: 0,
+    receivableDueTitles: [],
+    receivableReceived: 0,
+    receivableReceivedTitles: [],
+    payableDue: 0,
+    payableDueTitles: [],
+    payablePaid: 0,
+    payablePaidTitles: [],
+    otherInflows: 0,
+    otherOutflows: 0,
+    otherMovements: [],
+    realizedInflows: 0,
+    realizedOutflows: 0,
+    projectedInflows: 0,
+    projectedOutflows: 0,
+    openingBalance: null,
+    closingRealizedBalance: null,
+    closingProjectedBalance: null,
+    warnings: [],
+    ...over,
+  };
+}
+
+describe("treasuryCaixaRules — applyTreasuryCaixaCanonicalTodayFlow", () => {
+  it("troca inflows/outflows do fechamento bancário bruto pelos do motor único-de-dia (CR/CP)", () => {
+    // Reprodução do defeito observado em 07/08/2026: o fechamento bancário
+    // bruto (`/today/closing`) soma CP por settlementDate cru — sem a regra
+    // dos 3 dias — e mistura títulos de dias diferentes. O motor único-de-dia
+    // (canonicalDay), a MESMA fonte que o drill-down usa, mostra "Pago hoje"
+    // = R$ 0,00 porque nenhuma baixa de hoje tem data EFETIVA hoje (todas
+    // caíram dentro da janela de 3 dias e foram atribuídas ao vencimento).
+    const flow = todayFlow({
+      opening: 500000,
+      inflows: 80000,
+      outflows: 199286.45,
+      closingCalculated: 500000 + 80000 - 199286.45,
+      closingInformed: null,
+      divergence: null,
+    });
+    const day = canonicalDay({
+      receivableDue: 15000,
+      payableDue: 22418.89,
+      receivableReceived: 12000,
+      payablePaid: 0,
+    });
+
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+
+    assert.equal(corrected.outflows, 0);
+    assert.equal(corrected.inflows, 12000);
+    // Fechamento recomposto: abertura + entradas canônicas − saídas canônicas.
+    assert.equal(corrected.closingCalculated, 512000);
+  });
+
+  it("preserva abertura e saldo informado (âncora manual, não vira fluxo)", () => {
+    const flow = todayFlow({
+      opening: 1000,
+      inflows: 999,
+      outflows: 999,
+      closingInformed: 900,
+    });
+    const day = canonicalDay({ receivableReceived: 50, payablePaid: 20 });
+
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+
+    assert.equal(corrected.opening, 1000);
+    assert.equal(corrected.closingInformed, 900);
+    // Divergência recomposta contra o calculado NOVO (1000+50-20=1030): 900-1030.
+    assert.equal(corrected.closingCalculated, 1030);
+    assert.equal(corrected.divergence, -130);
+  });
+
+  it("ignora ledger/transferência (otherInflows/otherOutflows) — só título CR/CP", () => {
+    const flow = todayFlow({ opening: 0, inflows: 0, outflows: 0 });
+    const day = canonicalDay({
+      receivableReceived: 100,
+      payablePaid: 40,
+      // Movimento de banco/ledger avulso — não pode vazar para inflows/outflows.
+      otherInflows: 500000,
+      otherOutflows: 500000,
+      realizedInflows: 500100,
+      realizedOutflows: 500040,
+    });
+
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+
+    assert.equal(corrected.inflows, 100);
+    assert.equal(corrected.outflows, 40);
+  });
+
+  it("sem canonicalDay (hoje fora do período consultado) — devolve o flow como veio", () => {
+    const flow = todayFlow({ inflows: 111, outflows: 222 });
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, null);
+    assert.deepEqual(corrected, flow);
+  });
+
+  it("idempotente — aplicar duas vezes com o mesmo canonicalDay não muda o resultado", () => {
+    const flow = todayFlow({ opening: 200, inflows: 999, outflows: 999 });
+    const day = canonicalDay({ receivableReceived: 30, payablePaid: 10 });
+    const once = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+    const twice = applyTreasuryCaixaCanonicalTodayFlow(once, day);
+    assert.deepEqual(once, twice);
   });
 });
 
