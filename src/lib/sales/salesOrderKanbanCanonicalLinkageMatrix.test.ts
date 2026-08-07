@@ -1,4 +1,4 @@
-﻿/**
+/**
  * KAN-LINK-09 — Matriz completa de qualidade e regressão
  * Pedido → Item → OP → DS → NF-e → Envio → Kanban.
  */
@@ -128,8 +128,8 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
     });
     const item = resolveSalesOrderItemFlowFromEvidence(pack, MATRIX_ITEM_10)!;
     assert.ok(item.productionOrderQuantity.gte(114));
-    // Planejada suficiente sem Encerrada/producedQuantity real permanece em Aguardando OP.
-    assert.equal(item.currentStage, "WAITING_PRODUCTION_ORDER");
+    // Planejada suficiente libera o gate de OP → WAITING_OUTPUT_DOCUMENT.
+    assert.equal(item.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });
 
   it("#03 Pedido com OP parcial", () => {

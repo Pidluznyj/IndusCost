@@ -33,6 +33,7 @@ import {
   type SalesOrderItemProductCommercialClass,
 } from "./salesOrderItemProductionRequirement.js";
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
+import { adaptPackItemToMotorAllocations } from "./salesOrderOperationalEvidenceFromPack.js";
 
 export type QtyDecimal = Prisma.Decimal;
 
@@ -608,6 +609,10 @@ export function resolveSalesOrderItemFlow(
       );
     }
 
+    const hasFullPostProductionCoverage =
+      documentedQuantity.gte(activeObligationQuantity) ||
+      invoicedQuantity.gte(activeObligationQuantity);
+
     if (postProductionStage === "SHIPPED_COMPLETED") {
       currentStage = "SHIPPED_COMPLETED";
       stageReason = stageReasonFor(currentStage, {
@@ -618,6 +623,11 @@ export function resolveSalesOrderItemFlow(
         completedWithoutProductionOrder:
           needsProduction && productionOrderQuantity.lt(activeObligationQuantity),
         fulfilledWithoutProduction: fulfilledWithoutProductionFlag,
+      });
+    } else if (hasFullPostProductionCoverage) {
+      currentStage = postProductionStage;
+      stageReason = stageReasonFor(currentStage, {
+        usedProductionProxy: producedQuantity == null && hasOfficialOpLink,
       });
     } else if (needsProduction && productionCoverageTarget.gt(0)) {
       if (productionOrderQuantity.lt(productionCoverageTarget)) {
@@ -778,24 +788,10 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const item = pack.items.find((i) => i.id === salesOrderItemId);
   if (!item) return null;
 
-  const links = pack.productionLinks.filter((l) => {
-    if (l.salesOrderItemId === item.id) return true;
-    if (
-      item.nomusItemExternalId != null &&
-      l.externalSalesOrderItemId === item.nomusItemExternalId
-    ) {
-      return true;
-    }
-    // Fallback: itemNumber do vínculo OP == sequência Nomus do item.
-    const seq = item.nomusItemSequence?.trim();
-    const itemNumber = l.itemNumber?.trim();
-    return Boolean(seq && itemNumber && seq === itemNumber);
-  });
+  // 1. Obter alocações do Grafo Canônico (KAN-LINK-07 / KAN-LINK-04)
+  const canonical = adaptPackItemToMotorAllocations(pack, salesOrderItemId);
 
-  const allocations = pack.allocations.filter(
-    (a) => a.salesOrderItemId === item.id
-  );
-
+  // 2. Processamento de Documentos de Saída (DS):
   const canceledDocIds = new Set(
     pack.stockDocuments
       .filter((d) => {
@@ -806,57 +802,95 @@ export function resolveSalesOrderItemFlowFromEvidence(
       .map((d) => d.externalId)
   );
 
+  const itemAllocations = pack.allocations.filter(
+    (a) => a.salesOrderItemId === item.id
+  );
   const orderedQtyFallback = item.quantity ?? 0;
-  const documentAllocations: SalesOrderItemFlowDocumentAllocationInput[] =
-    allocations
-      .filter((a) => a.stockDocumentExternalId != null)
-      .map((a) => {
-        const canceled = canceledDocIds.has(a.stockDocumentExternalId!);
-        const rawQty = a.quantityUsedForOrder;
-        const qtyPositive = rawQty != null && Number(rawQty) > 0;
-        // O2C sem qty: fallback conservador para não travar em WAITING_OUTPUT_DOCUMENT.
-        const useFallback = !qtyPositive && !canceled;
-        return {
-          allocationKey: a.auditKey,
-          quantity: useFallback ? orderedQtyFallback : (rawQty ?? 0),
-          isCanceled: canceled,
-          isValid: !canceled,
-          quantityNotNormalized: useFallback,
-        };
+
+  const docAllocationsMap = new Map<string, SalesOrderItemFlowDocumentAllocationInput>();
+
+  for (const d of canonical.documentAllocations) {
+    docAllocationsMap.set(d.allocationKey, d);
+  }
+
+  for (const a of itemAllocations) {
+    if (a.stockDocumentExternalId == null) continue;
+    const canceled = canceledDocIds.has(a.stockDocumentExternalId);
+    const rawQty = a.quantityUsedForOrder;
+    const qtyPositive = rawQty != null && Number(rawQty) > 0;
+    const useFallback = !qtyPositive && !canceled;
+
+    const key = a.auditKey;
+    if (!docAllocationsMap.has(key)) {
+      docAllocationsMap.set(key, {
+        allocationKey: key,
+        quantity: useFallback ? orderedQtyFallback : (rawQty ?? 0),
+        isCanceled: canceled,
+        isValid: !canceled,
+        quantityNotNormalized: useFallback,
       });
+    } else if (useFallback) {
+      const existing = docAllocationsMap.get(key)!;
+      if (Number(existing.quantity) === 0 && !canceled) {
+        docAllocationsMap.set(key, {
+          ...existing,
+          quantity: orderedQtyFallback,
+          quantityNotNormalized: true,
+        });
+      }
+    }
+  }
+
+  const documentAllocations = [...docAllocationsMap.values()];
+
+  // 3. Processamento de NF-e:
+  const activeItems = pack.items.filter(
+    (i) => i.nomusIsCanceled !== true && i.nomusIsStale !== true
+  );
+  const monoItemOrder = activeItems.length === 1;
 
   const nfeById = new Map(pack.nfes.map((n) => [n.externalId, n]));
-  const nfeAllocations: SalesOrderItemFlowNfeAllocationInput[] = [];
+  const nfeAllocationsMap = new Map<number, SalesOrderItemFlowNfeAllocationInput>();
   const seenNfe = new Set<number>();
-  for (const a of allocations) {
+
+  for (const n of canonical.nfeAllocations) {
+    const rawQty = n.quantity;
+    const qtyPositive = rawQty != null && Number(rawQty) > 0;
+    const effectiveQty = (!qtyPositive && monoItemOrder && n.isValidForBilling && !n.isCanceled)
+      ? item.quantity
+      : rawQty;
+
+    nfeAllocationsMap.set(n.nfeExternalId, {
+      ...n,
+      quantity: effectiveQty,
+    });
+    if (qtyPositive || (monoItemOrder && n.isValidForBilling)) {
+      seenNfe.add(n.nfeExternalId);
+    }
+  }
+
+  for (const a of itemAllocations) {
     if (a.nfeExternalId == null || seenNfe.has(a.nfeExternalId)) continue;
     const nfe = nfeById.get(a.nfeExternalId);
     const qtyRaw = a.quantityUsedForOrder;
-    const qtyPositive =
-      qtyRaw != null && Number(qtyRaw) > 0;
+    const qtyPositive = qtyRaw != null && Number(qtyRaw) > 0;
     const canceled = nfe?.isCanceled === true;
-    // Qty 0/nula em NF não-cancelada: não “envenena” seenNfe — deixa o
-    // fallback validNfes cobrir quando seguro (pedido mono-item).
-    if (!qtyPositive && !canceled) continue;
+    if (!qtyPositive && !canceled && !monoItemOrder) continue;
 
+    const effectiveQty = (!qtyPositive && monoItemOrder && !canceled) ? item.quantity : qtyRaw;
     seenNfe.add(a.nfeExternalId);
     const hasDocument = pack.stockDocuments.some(
       (d) => d.idNfe === a.nfeExternalId && d.isCancelled !== true
     );
-    nfeAllocations.push({
+    nfeAllocationsMap.set(a.nfeExternalId, {
       nfeExternalId: a.nfeExternalId,
-      quantity: qtyRaw,
+      quantity: effectiveQty,
       isCanceled: canceled,
       isValidForBilling: nfe?.isValidForBilling !== false && !canceled,
       hasDocument,
       hasShipDate: false,
     });
   }
-
-  const activeItems = pack.items.filter(
-    (i) => i.nomusIsCanceled !== true && i.nomusIsStale !== true
-  );
-  const monoItemOrder = activeItems.length === 1;
 
   for (const nfe of pack.validNfes) {
     if (seenNfe.has(nfe.externalId)) continue;
@@ -867,8 +901,7 @@ export function resolveSalesOrderItemFlowFromEvidence(
       );
     if (!linkedToOrder) continue;
     seenNfe.add(nfe.externalId);
-    // Multi-item sem O2C por item: não inventar cobertura com qty do item.
-    nfeAllocations.push({
+    nfeAllocationsMap.set(nfe.externalId, {
       nfeExternalId: nfe.externalId,
       quantity: monoItemOrder ? item.quantity : null,
       isCanceled: false,
@@ -881,6 +914,62 @@ export function resolveSalesOrderItemFlowFromEvidence(
     });
   }
 
+  const nfeAllocations = [...nfeAllocationsMap.values()];
+
+  // 4. Processamento de Ordens de Produção (OP):
+  const prodByExtId = new Map(pack.productionOrders.map((o) => [o.externalId, o]));
+  const prodById = new Map(pack.productionOrders.map((o) => [o.id, o]));
+
+  const prodLinkMap = new Map<string, SalesOrderItemFlowProductionLinkInput>();
+
+  for (const p of canonical.productionLinks) {
+    const opRow = (p.productionOrderExternalId != null ? prodByExtId.get(p.productionOrderExternalId) : null) ?? (p.productionOrderId ? prodById.get(p.productionOrderId) : null);
+    const rawStatus = opRow?.status ?? p.status ?? null;
+    const isCanceled = p.isCanceled || (rawStatus ?? "").toLowerCase().includes("cancel");
+    if (isCanceled) continue;
+
+    const key = p.productionOrderExternalId
+      ? String(p.productionOrderExternalId)
+      : p.productionOrderId ?? String(Math.random());
+    prodLinkMap.set(key, {
+      ...p,
+      status: rawStatus,
+    });
+  }
+
+  const rawPackLinks = pack.productionLinks.filter((l) => {
+    if (l.salesOrderItemId === item.id) return true;
+    if (
+      item.nomusItemExternalId != null &&
+      l.externalSalesOrderItemId === item.nomusItemExternalId
+    ) {
+      return true;
+    }
+    const seq = item.nomusItemSequence?.trim();
+    const itemNumber = l.itemNumber?.trim();
+    return Boolean(seq && itemNumber && seq === itemNumber);
+  });
+
+  for (const l of rawPackLinks) {
+    const opRow = (l.productionOrderExternalId != null ? prodByExtId.get(l.productionOrderExternalId) : null) ?? (l.productionOrderId ? prodById.get(l.productionOrderId) : null);
+    const rawStatus = opRow?.status ?? null;
+    const isCanceled = (rawStatus ?? "").toLowerCase().includes("cancel");
+    if (isCanceled) continue;
+
+    const key = String(l.productionOrderExternalId);
+    if (!prodLinkMap.has(key)) {
+      prodLinkMap.set(key, {
+        linkedQuantity: l.linkedQuantity,
+        isCurrent: l.isCurrent,
+        status: rawStatus,
+        productionOrderExternalId: l.productionOrderExternalId,
+        productionOrderId: l.productionOrderId,
+      });
+    }
+  }
+
+  const productionOrderLinks = [...prodLinkMap.values()];
+
   return resolveSalesOrderItemFlow({
     salesOrderItemId: item.id,
     status: item.nomusItemStatusRaw,
@@ -892,16 +981,14 @@ export function resolveSalesOrderItemFlowFromEvidence(
     orderedQuantity: item.quantity,
     fulfilledQuantity: item.nomusQuantityFulfilled,
     producedQuantity: null,
-    productionOrderLinks: links.map((l) => ({
-      linkedQuantity: l.linkedQuantity,
-      isCurrent: l.isCurrent,
-    })),
+    productionOrderLinks,
     documentAllocations,
     nfeAllocations,
     promisedDeliveryAt: pack.order.expectedDeliveryDate,
     referenceDate: options?.referenceDate ?? pack.meta.loadedAt,
     productType: item.productType as "PRODUCT" | "COMPONENT" | "MATERIAL" | null,
     costingMode: item.productCostingMode,
+    productCommercialClass: item.productCommercialClass,
     hasProductRouting: item.hasProductRouting,
     hasProductBom: item.hasProductBom,
   });
