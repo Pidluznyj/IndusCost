@@ -126,9 +126,20 @@ export function SalesOrderFlowKanbanExportButtons({ filters, branding }: Props) 
       // Wait for React to render the portal
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          document.body.classList.add("sales-orders-print-route");
+          
+          const cleanup = () => {
+            document.body.classList.remove("sales-orders-print-route");
+            setPrintPayload(null);
+            window.removeEventListener("afterprint", cleanup);
+          };
+          
+          window.addEventListener("afterprint", cleanup);
+          
           triggerBrowserPrint();
-          // Clear after printing dialog closes
-          setTimeout(() => setPrintPayload(null), 1000);
+          
+          // Fallback seguro em caso de falha do evento afterprint (1 minuto)
+          setTimeout(cleanup, 60000);
         });
       });
     } catch (e) {

@@ -1,4 +1,5 @@
 import React from "react";
+import "@/src/components/sales/sales-order-report-print.css";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import {
   displayFinanceText,
