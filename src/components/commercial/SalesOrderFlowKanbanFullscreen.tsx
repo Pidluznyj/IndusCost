@@ -10,6 +10,7 @@ import {
   SalesOrderFlowKanbanBoard,
   type SalesOrderFlowKanbanColumnView,
 } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
+import { SalesOrderFlowKanbanExportButtons } from "@/src/components/commercial/SalesOrderFlowKanbanExportButtons";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -291,13 +292,24 @@ export function SalesOrderFlowKanbanFullscreen({
                 </div>
               </div>
 
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent sm:text-sm",
-                  PRESSABLE_CLASS
-                )}
-                data-testid="sales-order-flow-kanban-toggle-minimize"
+              <div className="flex shrink-0 items-center gap-1.5">
+                <SalesOrderFlowKanbanExportButtons 
+                  filters={{
+                    ...createDefaultSalesOrderFlowFilters(),
+                    q: orderSearch,
+                    customerId,
+                    year,
+                    month,
+                  }} 
+                  branding={branding} 
+                />
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent sm:text-sm",
+                    PRESSABLE_CLASS
+                  )}
+                  data-testid="sales-order-flow-kanban-toggle-minimize"
                 onClick={onToggleCardsMinimized}
               >
                 {cardsMinimized ? (
@@ -324,6 +336,7 @@ export function SalesOrderFlowKanbanFullscreen({
                 <X className="h-3.5 w-3.5" aria-hidden="true" />
                 Fechar
               </button>
+              </div>
             </div>
 
             <div
