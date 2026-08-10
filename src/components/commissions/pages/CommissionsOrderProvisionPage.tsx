@@ -36,6 +36,12 @@ import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { CommissionOrderProvisionReportPrintDocument } from "@/src/components/commissions/CommissionOrderProvisionReportPrintDocument";
 
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
+
 function formatDatePt(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
   if (!y || !m || !d) return iso;
@@ -77,6 +83,23 @@ export function CommissionsOrderProvisionPage() {
   const [printRequestId, setPrintRequestId] = useState(0);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingXlsx, setExportingXlsx] = useState(false);
+
+  /**
+   * Detalhe do Pedido — mesmo modal (quase fullscreen, portalizado no
+   * document.body) usado em Comercial > Pedidos de venda. É um toggle de
+   * estado local: a lista, filtros e página desta tela nunca desmontam, então
+   * fechar o modal sempre volta exatamente no mesmo estado.
+   */
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [detailOrderCode, setDetailOrderCode] = useState<string | null>(null);
+  const openOrderDetail = useCallback((salesOrderId: string, code: string | null) => {
+    setDetailOrderId(salesOrderId);
+    setDetailOrderCode(code);
+  }, []);
+  const closeOrderDetail = useCallback(() => {
+    setDetailOrderId(null);
+    setDetailOrderCode(null);
+  }, []);
 
   useEffect(() => {
     void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
@@ -589,9 +612,16 @@ export function CommissionsOrderProvisionPage() {
                       data-testid={`commissions-order-provision-row-${row.salesOrderId}`}
                     >
                       <td className="px-3 py-2 font-medium">
-                        {formatSalesOrderDisplayCode(row.orderCode) ||
-                          row.orderCode ||
-                          "—"}
+                        <button
+                          type="button"
+                          className="underline decoration-dotted underline-offset-2 hover:text-primary"
+                          onClick={() => openOrderDetail(row.salesOrderId, row.orderCode)}
+                          data-testid={`commissions-order-provision-open-detail-${row.salesOrderId}`}
+                        >
+                          {formatSalesOrderDisplayCode(row.orderCode) ||
+                            row.orderCode ||
+                            "—"}
+                        </button>
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {formatDatePt(row.saleDate)}
@@ -670,6 +700,17 @@ export function CommissionsOrderProvisionPage() {
             document.body
           )
         : null}
+
+      {detailOrderId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={detailOrderId}
+            orderCode={detailOrderCode}
+            onClose={closeOrderDetail}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 }
