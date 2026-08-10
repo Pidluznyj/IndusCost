@@ -15,6 +15,7 @@ import type {
   TreasurySide,
 } from "../contracts/treasuryEnums.js";
 import {
+  addTreasuryMoney,
   compareTreasuryMoney,
   normalizeTreasuryMoneyString,
   subtractTreasuryMoney,
@@ -91,13 +92,18 @@ export type TreasuryReconciliationSuggestionScoreBreakdown = {
   HISTORY_MATCH: number;
 };
 
-export type TreasuryReconciliationSuggestionCandidate = {
-  suggestionKey: string;
-  movementId: string;
+export type TreasuryReconciliationSuggestionAllocation = {
   side: TreasurySide;
   officialTitleId: string;
   externalId: number;
   suggestedAmount: TreasuryMoneyString;
+};
+
+export type TreasuryReconciliationSuggestionCandidate = {
+  suggestionKey: string;
+  movementId: string;
+  allocations: TreasuryReconciliationSuggestionAllocation[];
+  totalSuggestedAmount: TreasuryMoneyString;
   /** Pontuação 0..100 (inteiro). */
   score: number;
   confidence: TreasuryReconciliationSuggestionConfidenceBand;
@@ -425,15 +431,129 @@ function scorePair(
   return {
     suggestionKey,
     movementId: movement.id,
-    side: title.side,
-    officialTitleId: title.officialTitleId,
-    externalId: title.externalId,
-    suggestedAmount: remaining,
+    allocations: [
+      {
+        side: title.side,
+        officialTitleId: title.officialTitleId,
+        externalId: title.externalId,
+        suggestedAmount: remaining,
+      }
+    ],
+    totalSuggestedAmount: remaining,
     score,
     confidence,
     reasons,
     scoreBreakdown: breakdown,
   };
+}
+
+
+function findExactCombinations(
+  movement: TreasuryReconciliationMovementSeed,
+  eligibleTitles: TreasuryReconciliationTitleSeed[],
+  options: Required<TreasuryReconciliationSuggestionEngineOptions>
+): TreasuryReconciliationSuggestionCandidate[] {
+  const candidates: TreasuryReconciliationSuggestionCandidate[] = [];
+  const remaining = movementRemainingAmount(movement);
+  if (compareTreasuryMoney(remaining, "0.00") <= 0) return [];
+
+  // Group by counterparty (taxId primarily, name secondarily)
+  const groups = new Map<string, TreasuryReconciliationTitleSeed[]>();
+  for (const title of eligibleTitles) {
+    if (!directionCompatible(movement.direction, title.side)) continue;
+    const taxId = normalizeTaxIdDigits(title.counterpartyTaxId);
+    const name = normalizeLooseText(title.counterpartyName);
+    const key = taxId || name || "UNKNOWN";
+    if (key === "UNKNOWN") continue;
+    
+    let arr = groups.get(key);
+    if (!arr) {
+      arr = [];
+      groups.set(key, arr);
+    }
+    arr.push(title);
+  }
+
+  const movementTaxId = extractDigitsBlob([movement.description, movement.counterpartyName, movement.documentNumber]);
+  const movementName = normalizeLooseText(movement.counterpartyName ?? movement.description);
+
+  for (const [groupKey, titles] of groups.entries()) {
+    let hasMatch = false;
+    if (movementTaxId && groupKey.length >= 11 && movementTaxId.includes(groupKey)) hasMatch = true;
+    if (!hasMatch && movementName && treasuryNameSimilarity(movementName, groupKey) >= 0.5) hasMatch = true;
+    
+    // Skip if completely unrelated
+    if (!hasMatch && (movementTaxId || movementName)) continue;
+    if (titles.length > 15) continue; // Performance limit
+
+    // Generate subsets of size 2 to 5
+    for (let k = 2; k <= Math.min(5, titles.length); k++) {
+       const subsets: TreasuryReconciliationTitleSeed[][] = [];
+       const combine = (start: number, combo: TreasuryReconciliationTitleSeed[]) => {
+         if (combo.length === k) {
+           subsets.push([...combo]);
+           return;
+         }
+         for (let i = start; i < titles.length; i++) {
+           combine(i + 1, [...combo, titles[i]]);
+         }
+       };
+       combine(0, []);
+
+       for (const subset of subsets) {
+         let sum = "0.00";
+         for (const t of subset) {
+           sum = addTreasuryMoney(sum, normalizeTreasuryMoneyString(t.openBalance));
+         }
+         if (compareTreasuryMoney(sum, remaining) === 0) {
+           let score = TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.AMOUNT_EXACT;
+           let docMatch = false;
+           for (const t of subset) {
+             if (documentMatches(movement, t)) docMatch = true;
+           }
+           if (docMatch) score += TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.DOCUMENT_MATCH;
+           if (hasMatch && movementTaxId && movementTaxId.includes(normalizeTaxIdDigits(subset[0].counterpartyTaxId))) {
+              score += TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.TAX_ID_MATCH;
+           }
+           
+           // Boost score slightly for combination exact match
+           score += 10;
+           
+           const confidence = classifyConfidence(score, options);
+           if (confidence) {
+              const allocations = subset.map(t => ({
+                side: t.side,
+                officialTitleId: t.officialTitleId,
+                externalId: t.externalId,
+                suggestedAmount: normalizeTreasuryMoneyString(t.openBalance)
+              }));
+              
+              const suggestionKey = [movement.id, "COMBINATION", ...subset.map(t => t.officialTitleId)].join("|");
+              
+              candidates.push({
+                suggestionKey,
+                movementId: movement.id,
+                allocations,
+                totalSuggestedAmount: remaining,
+                score,
+                confidence,
+                reasons: ["AMOUNT_COMBINATION_EXACT"],
+                scoreBreakdown: {
+                   AMOUNT_EXACT: TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.AMOUNT_EXACT + 10,
+                   DOCUMENT_MATCH: docMatch ? TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.DOCUMENT_MATCH : 0,
+                   TAX_ID_MATCH: (hasMatch && movementTaxId) ? TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.TAX_ID_MATCH : 0,
+                   DATE_PROXIMITY: 0,
+                   NAME_SIMILAR: 0,
+                   HISTORY_MATCH: 0
+                }
+              });
+           }
+         }
+       }
+    }
+  }
+
+  return candidates;
 }
 
 function compareSuggestions(

@@ -67,7 +67,7 @@ describe("treasuryReconciliationSuggestionEngine — ranking", () => {
     assert.equal(result.algorithmVersion, "1.0.0");
     assert.ok(result.suggestions.length >= 1);
     const top = result.suggestions[0]!;
-    assert.equal(top.officialTitleId, "title-ar-1");
+    assert.equal(top.allocations[0].officialTitleId, "title-ar-1");
     assert.equal(top.confidence, "HIGH");
     assert.ok(top.score >= 80);
     assert.ok(top.reasons.includes("AMOUNT_EXACT"));
@@ -77,7 +77,7 @@ describe("treasuryReconciliationSuggestionEngine — ranking", () => {
     assert.ok(top.reasons.includes("NAME_SIMILAR"));
     assert.ok(top.reasons.includes("HISTORY_MATCH"));
     assert.ok(top.reasons.includes("DIRECTION_COMPATIBLE"));
-    assert.equal(top.suggestedAmount, "1500.00");
+    assert.equal(top.totalSuggestedAmount, "1500.00");
   });
 
   it("classifica alta / média / baixa confiança por faixas", () => {
@@ -194,7 +194,7 @@ describe("treasuryReconciliationSuggestionEngine — falsos positivos", () => {
         result.excludedTitleIds.includes("title-settled")
     );
     assert.equal(result.suggestions.length, 1);
-    assert.equal(result.suggestions[0]!.officialTitleId, "title-ar-1");
+    assert.equal(result.suggestions[0]!.allocations[0].officialTitleId, "title-ar-1");
   });
 
   it("não marca AMOUNT_EXACT em valor próximo (falso positivo de centavos)", () => {
@@ -306,7 +306,7 @@ describe("treasuryReconciliationSuggestionEngine — débito/AP", () => {
     };
     const result = run({ movements: [debit], titles: [ap] });
     assert.equal(result.suggestions.length, 1);
-    assert.equal(result.suggestions[0]!.side, "AP");
+    assert.equal(result.suggestions[0]!.allocations[0].side, "AP");
     assert.ok(result.suggestions[0]!.reasons.includes("DIRECTION_COMPATIBLE"));
     assert.ok(result.suggestions[0]!.reasons.includes("AMOUNT_EXACT"));
     assert.ok(result.suggestions[0]!.reasons.includes("DOCUMENT_MATCH"));

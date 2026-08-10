@@ -25,10 +25,13 @@ export async function confirmTreasurySimpleOfxTitleMatch(input: {
   bankMovementId: string;
   amount: string;
   matchedCivilDate: string;
-  officialTitleId: string;
-  nomusExternalId?: number | null;
-  nomusSide: "RECEIVABLE" | "PAYABLE";
-  openBalance?: string | null;
+  allocations: {
+    officialTitleId: string;
+    nomusExternalId?: number | null;
+    nomusSide: "RECEIVABLE" | "PAYABLE";
+    amount: string;
+    openBalance?: string | null;
+  }[];
   justification?: string | null;
 }): Promise<void> {
   await acceptTreasuryReconciliation({
@@ -40,17 +43,15 @@ export async function confirmTreasurySimpleOfxTitleMatch(input: {
     movements: [
       { bankMovementId: input.bankMovementId, amount: input.amount },
     ],
-    allocations: [
-      {
-        kind: "TITLE",
-        amount: input.amount,
-        officialTitleId: input.officialTitleId,
-        nomusExternalId: input.nomusExternalId ?? null,
-        nomusSide: input.nomusSide,
-        openBalance: input.openBalance ?? null,
-        memo: "Título confirmado pelo usuário",
-      },
-    ],
+    allocations: input.allocations.map(a => ({
+      kind: "TITLE",
+      amount: a.amount,
+      officialTitleId: a.officialTitleId,
+      nomusExternalId: a.nomusExternalId ?? null,
+      nomusSide: a.nomusSide,
+      openBalance: a.openBalance ?? null,
+      memo: "Título confirmado pelo usuário",
+    })),
   });
 }
 
