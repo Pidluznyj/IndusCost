@@ -1156,6 +1156,7 @@ async function main(): Promise<void> {
           finishedAt: finishedAt.toISOString(),
           durationMs: finishedAt.getTime() - startedAt.getTime(),
           lockFile: blocked.lockFile,
+          wait: blocked.wait ?? null,
           summary: null,
           applied: null,
         },
@@ -1225,6 +1226,7 @@ async function main(): Promise<void> {
         startedAt: startedAt.toISOString(),
         finishedAt: finishedAt.toISOString(),
         durationMs: finishedAt.getTime() - startedAt.getTime(),
+        wait: lock.wait ?? null,
         discovery: {
           candidatesFound: discoveryMetrics.candidatesFound,
           totalDiscovered: discoveryMetrics.totalDiscovered,
@@ -1300,6 +1302,7 @@ async function main(): Promise<void> {
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
+      wait: lock.wait ?? null,
       discovery: {
         candidatesFound: discoveryMetrics.candidatesFound,
         totalDiscovered: discoveryMetrics.totalDiscovered,
@@ -1382,6 +1385,7 @@ async function main(): Promise<void> {
     });
     throw error;
   } finally {
+    // Sempre libera o lock, independente do resultado (SUCCESS/FAILED/throw).
     releaseProposalsSyncLock({ lockFile: lock.lockFile, token: lock.token });
   }
 }

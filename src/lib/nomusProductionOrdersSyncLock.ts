@@ -117,6 +117,34 @@ export function probeGlobalNomusSyncLockHeld(
   }
 }
 
+/**
+ * Aguarda o lock global Nomus ficar livre, de forma bloqueante (kernel wait
+ * via `flock -w`, sem polling/busy-wait) e com timeout. Igual ao probe acima,
+ * NÃO adquire o lock de fato — abre um fd próprio, tenta o flock com timeout
+ * e libera imediatamente (subshell `-c true`) assim que consegue. É só uma
+ * espera segura; quem efetivamente protege dados continua sendo o dono real
+ * do lock (pipeline diário / runner que já detém `flock` nesse arquivo).
+ *
+ * `timeoutSeconds <= 0` → não espera (equivalente ao probe não-bloqueante).
+ * Sem o binário `flock` (Windows / ausente) → não bloqueia (mesmo fallback
+ * do probe acima).
+ */
+export function waitForGlobalNomusSyncLockToFree(
+  timeoutSeconds: number,
+  lockFile: string = NOMUS_SYNC_GLOBAL_LOCK_FILE_DEFAULT
+): boolean {
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return false;
+  try {
+    const probe = spawnSync("flock", ["-w", String(Math.trunc(timeoutSeconds)), lockFile, "-c", "true"], {
+      stdio: "ignore",
+    });
+    if (probe.error) return true; // Windows / flock ausente → não bloqueia, segue como se tivesse liberado
+    return !isGlobalNomusSyncLockHeldFromFlockProbe(probe.status);
+  } catch {
+    return true;
+  }
+}
+
 /** Probe do flock companion do shell (`lockFile.flock`). */
 export function probeProductionOrdersShellFlockHeld(lockFile: string): boolean {
   return probeGlobalNomusSyncLockHeld(`${lockFile}.flock`);

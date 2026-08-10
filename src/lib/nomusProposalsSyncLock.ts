@@ -6,17 +6,30 @@
  * - PID morto → lock órfão reclaimado.
  * - Respeita o lock global Nomus (`nomus-orchestrator-global`, usado pelo
  *   pipeline diário das 02:00 e pelo runner de Pedidos) via probe externo
- *   (não adquire — apenas verifica), evitando propostas rodarem em paralelo
- *   com o pipeline diário. Mesmo mecanismo de `nomusProductionOrdersSyncLock.ts`.
+ *   (não adquire — apenas verifica). Mesmo mecanismo de
+ *   `nomusProductionOrdersSyncLock.ts`.
+ * - Quando o global está ocupado, NÃO desiste na hora: espera de forma
+ *   segura (flock bloqueante com timeout — zero polling) até liberar ou
+ *   estourar `NOMUS_PROPOSALS_GLOBAL_LOCK_WAIT_SECONDS` (default 45min).
+ *   Um lock dedicado (`hourlyWaiterLock`) garante no máximo um "waiter"
+ *   por vez — não protege dados, só evita dois crons esperando em paralelo.
+ * - Sem deadlock: o pipeline diário (`runNomusDailySync.sh`) já roda sua
+ *   etapa de propostas com `NOMUS_PROPOSALS_RESPECT_GLOBAL_LOCK=0` — nunca
+ *   entra neste fluxo de espera, então nunca espera por si mesmo.
  */
 
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { probeGlobalNomusSyncLockHeld } from "@/src/lib/nomusProductionOrdersSyncLock.js";
+import {
+  probeGlobalNomusSyncLockHeld,
+  waitForGlobalNomusSyncLockToFree,
+} from "@/src/lib/nomusProductionOrdersSyncLock.js";
 import {
   NOMUS_PROPOSALS_LOG_PREFIX,
+  resolveProposalsGlobalLockWaitSeconds,
+  resolveProposalsHourlyWaiterLockFile,
   resolveProposalsSyncLockFile,
   shouldRespectGlobalNomusLock,
   type ProposalsSyncRunMode,
@@ -31,19 +44,32 @@ export type ProposalsSyncLockPayload = {
   hostname: string | null;
 };
 
+/** Metadados de espera pelo lock global — presente quando houve espera (bem-sucedida ou não). */
+export type ProposalsGlobalLockWaitInfo = {
+  reason: "GLOBAL_LOCK_HELD";
+  waitStartedAt: string;
+  waitFinishedAt: string;
+  waitDurationMs: number;
+  timeoutSeconds: number;
+};
+
 export type ProposalsSyncLockAcquireResult =
   | {
       ok: true;
       lockFile: string;
       token: string;
       payload: ProposalsSyncLockPayload;
+      /** Presente quando a aquisição precisou esperar o lock global liberar. */
+      wait: ProposalsGlobalLockWaitInfo | null;
     }
   | {
       ok: false;
-      code: "LOCK_HELD" | "GLOBAL_LOCK_HELD";
+      code: "LOCK_HELD" | "GLOBAL_LOCK_HELD" | "GLOBAL_LOCK_WAIT_TIMEOUT" | "HOURLY_WAITER_ALREADY_ACTIVE";
       message: string;
       lockFile: string;
       holder: ProposalsSyncLockPayload | null;
+      /** Presente em GLOBAL_LOCK_WAIT_TIMEOUT — quanto tempo esperou antes de desistir. */
+      wait?: ProposalsGlobalLockWaitInfo | null;
     };
 
 export type ProposalsSyncLockHandle = {
@@ -121,9 +147,100 @@ function tryRemoveStaleLock(lockFile: string, holder: ProposalsSyncLockPayload |
   }
 }
 
+// ---------------------------------------------------------------------------
+// Waiter lock — dedup de "hourly waiters" (seção 6/20 da missão). NÃO protege
+// dados: só impede que dois disparos horários fiquem esperando o lock global
+// ao mesmo tempo. Nunca usado pelo sync diário nem pelo CLI fora do fluxo de
+// espera. Mesmo padrão de orphan-reclaim (PID morto) do lock principal.
+// ---------------------------------------------------------------------------
+
+type HourlyWaiterLockPayload = {
+  version: 1;
+  token: string;
+  pid: number;
+  startedAt: string;
+};
+
+function readHourlyWaiterLockFile(lockFile: string): HourlyWaiterLockPayload | null {
+  try {
+    if (!existsSync(lockFile)) return null;
+    const raw = JSON.parse(readFileSync(lockFile, "utf8")) as Partial<HourlyWaiterLockPayload>;
+    if (raw.version !== 1 || typeof raw.token !== "string" || typeof raw.pid !== "number") return null;
+    return {
+      version: 1,
+      token: raw.token,
+      pid: Math.trunc(raw.pid),
+      startedAt: typeof raw.startedAt === "string" ? raw.startedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function tryAcquireHourlyWaiterLock(
+  lockFile: string,
+  now: () => Date,
+  pid: number
+): { ok: true; token: string } | { ok: false } {
+  ensureLockDir(lockFile);
+  const payload: HourlyWaiterLockPayload = {
+    version: 1,
+    token: randomUUID(),
+    pid,
+    startedAt: now().toISOString(),
+  };
+  const tryCreate = (): boolean => {
+    try {
+      const fd = openSync(lockFile, "wx");
+      try {
+        writeFileSync(fd, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+      } finally {
+        closeSync(fd);
+      }
+      return true;
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "EEXIST") return false;
+      throw error;
+    }
+  };
+  if (tryCreate()) return { ok: true, token: payload.token };
+
+  const holder = readHourlyWaiterLockFile(lockFile);
+  const staleOrOrphan = !holder || !isPidAlive(holder.pid);
+  if (staleOrOrphan) {
+    try {
+      unlinkSync(lockFile);
+    } catch {
+      /* concorrência residual — próxima tentativa (ou o próximo cron) resolve */
+    }
+    if (tryCreate()) return { ok: true, token: payload.token };
+  }
+  return { ok: false };
+}
+
+function releaseHourlyWaiterLock(lockFile: string, token: string): void {
+  const current = readHourlyWaiterLockFile(lockFile);
+  if (!current || current.token !== token) return;
+  try {
+    unlinkSync(lockFile);
+  } catch {
+    /* melhor esforço — PID morto detectado no próximo waiter reclaima */
+  }
+}
+
 /**
  * Adquire lock exclusivo do sync de propostas. Não mata processo válido.
- * Lock órfão (PID morto) é reclaimado. Verifica lock global antes (não adquire).
+ * Lock órfão (PID morto) é reclaimado.
+ *
+ * Lock global (`respectGlobalLock`): antes só VERIFICAVA (não adquiria) e, se
+ * ocupado, retornava GLOBAL_LOCK_HELD na hora — a execução horária era
+ * perdida até o próximo cron. Agora, quando ocupado, espera de forma segura
+ * (flock bloqueante com timeout, zero polling) até liberar ou estourar
+ * `globalLockWaitSeconds` (default 45 min, `0` = comportamento legado).
+ * Um lock dedicado (`waiterLockFile`) garante no máximo um "waiter" horário
+ * por vez — uma segunda execução concorrente não fica esperando em paralelo,
+ * volta imediatamente como HOURLY_WAITER_ALREADY_ACTIVE.
  */
 export function acquireProposalsSyncLock(args: {
   mode: ProposalsSyncRunMode;
@@ -131,6 +248,10 @@ export function acquireProposalsSyncLock(args: {
   env?: NodeJS.ProcessEnv;
   respectGlobalLock?: boolean;
   probeGlobalLock?: () => boolean;
+  globalLockWaitSeconds?: number;
+  waiterLockFile?: string;
+  /** Espera bloqueante pelo lock global; retorna true se liberou dentro do timeout. Injetável para testes. */
+  waitForGlobalLock?: (timeoutSeconds: number) => boolean;
   now?: () => Date;
   pid?: number;
 }): ProposalsSyncLockAcquireResult {
@@ -138,15 +259,69 @@ export function acquireProposalsSyncLock(args: {
   const lockFile = args.lockFile ?? resolveProposalsSyncLockFile(env);
   const respectGlobal = args.respectGlobalLock ?? shouldRespectGlobalNomusLock(env);
   const probeGlobal = args.probeGlobalLock ?? (() => probeGlobalNomusSyncLockHeld());
+  const now = args.now ?? (() => new Date());
+  const pid = args.pid ?? process.pid;
+
+  let waitInfo: ProposalsGlobalLockWaitInfo | null = null;
 
   if (respectGlobal && probeGlobal()) {
-    return {
-      ok: false,
-      code: "GLOBAL_LOCK_HELD",
-      message: `${NOMUS_PROPOSALS_LOG_PREFIX} SKIPPED: sync global Nomus (diário 02:00 / pedidos) em andamento — propostas horário adiado para evitar conflito.`,
-      lockFile,
-      holder: null,
+    const waitSeconds = args.globalLockWaitSeconds ?? resolveProposalsGlobalLockWaitSeconds(env);
+
+    if (waitSeconds <= 0) {
+      return {
+        ok: false,
+        code: "GLOBAL_LOCK_HELD",
+        message: `${NOMUS_PROPOSALS_LOG_PREFIX} SKIPPED: sync global Nomus (diário 02:00 / pedidos) em andamento — propostas horário adiado para evitar conflito.`,
+        lockFile,
+        holder: null,
+      };
+    }
+
+    const waiterLockFile = args.waiterLockFile ?? resolveProposalsHourlyWaiterLockFile(env);
+    const waiter = tryAcquireHourlyWaiterLock(waiterLockFile, now, pid);
+    if (!waiter.ok) {
+      return {
+        ok: false,
+        code: "HOURLY_WAITER_ALREADY_ACTIVE",
+        message: `${NOMUS_PROPOSALS_LOG_PREFIX} SKIPPED: já existe uma execução horária de propostas aguardando o lock global (waiterLockFile=${waiterLockFile}).`,
+        lockFile,
+        holder: null,
+      };
+    }
+
+    const waitStartedAt = now();
+    console.log(
+      `${NOMUS_PROPOSALS_LOG_PREFIX} WAITING_FOR_GLOBAL_LOCK startedWaitingAt=${waitStartedAt.toISOString()} timeoutSeconds=${waitSeconds}`
+    );
+    let acquired: boolean;
+    try {
+      const wait = args.waitForGlobalLock ?? ((timeoutSeconds: number) => waitForGlobalNomusSyncLockToFree(timeoutSeconds));
+      acquired = wait(waitSeconds);
+    } finally {
+      releaseHourlyWaiterLock(waiterLockFile, waiter.token);
+    }
+    const waitFinishedAt = now();
+    waitInfo = {
+      reason: "GLOBAL_LOCK_HELD",
+      waitStartedAt: waitStartedAt.toISOString(),
+      waitFinishedAt: waitFinishedAt.toISOString(),
+      waitDurationMs: waitFinishedAt.getTime() - waitStartedAt.getTime(),
+      timeoutSeconds: waitSeconds,
     };
+    console.log(
+      `${NOMUS_PROPOSALS_LOG_PREFIX} ${acquired ? "GLOBAL_LOCK_AVAILABLE" : "GLOBAL_LOCK_WAIT_TIMEOUT"} globalLockAvailableAt=${waitFinishedAt.toISOString()} waitDurationMs=${waitInfo.waitDurationMs}`
+    );
+
+    if (!acquired) {
+      return {
+        ok: false,
+        code: "GLOBAL_LOCK_WAIT_TIMEOUT",
+        message: `${NOMUS_PROPOSALS_LOG_PREFIX} SKIPPED: sync global Nomus continuou ocupado após ${waitSeconds}s de espera — propostas horário adiado para o próximo cron.`,
+        lockFile,
+        holder: null,
+        wait: waitInfo,
+      };
+    }
   }
 
   ensureLockDir(lockFile);
@@ -154,9 +329,9 @@ export function acquireProposalsSyncLock(args: {
   const payload: ProposalsSyncLockPayload = {
     version: 1,
     token: randomUUID(),
-    pid: args.pid ?? process.pid,
+    pid,
     mode: args.mode,
-    startedAt: (args.now ?? (() => new Date()))().toISOString(),
+    startedAt: now().toISOString(),
     hostname: hostname() || null,
   };
 
@@ -177,12 +352,12 @@ export function acquireProposalsSyncLock(args: {
   };
 
   if (tryCreate()) {
-    return { ok: true, lockFile, token: payload.token, payload };
+    return { ok: true, lockFile, token: payload.token, payload, wait: waitInfo };
   }
 
   const holder = readProposalsSyncLockFile(lockFile);
   if (tryRemoveStaleLock(lockFile, holder) && tryCreate()) {
-    return { ok: true, lockFile, token: payload.token, payload };
+    return { ok: true, lockFile, token: payload.token, payload, wait: waitInfo };
   }
 
   const live = readProposalsSyncLockFile(lockFile);

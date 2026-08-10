@@ -7,10 +7,16 @@
 # Não é um segundo motor de sincronização.
 #
 # Concorrência: nomusProposalsSyncV1.ts adquire lock próprio
-# (/tmp/induscost-nomus-proposals.lock por padrão) e também verifica — sem
-# adquirir — o lock global Nomus usado pelo pipeline diário das 02:00
-# (/tmp/induscost-nomus-sync-global.lock). Se qualquer um estiver ativo,
-# a execução termina como SKIPPED (exit 0), sem matar a execução em curso.
+# (/tmp/induscost-nomus-proposals.lock por padrão) e verifica — sem adquirir —
+# o lock global Nomus usado pelo pipeline diário das 02:00
+# (/tmp/induscost-nomus-sync-global.lock). Se o próprio lock de propostas
+# estiver ativo (outra execução em andamento), a execução termina como
+# SKIPPED (exit 0) na hora, sem matar a execução em curso. Se o GLOBAL estiver
+# ativo, a execução NÃO é perdida: espera de forma segura (flock bloqueante,
+# zero polling) até liberar ou até NOMUS_PROPOSALS_GLOBAL_LOCK_WAIT_SECONDS
+# (default 45min) estourar — só então GLOBAL_LOCK_WAIT_TIMEOUT/exit 0. No
+# máximo um "waiter" horário por vez (lock próprio, dedup — ver
+# src/lib/nomusProposalsSyncLock.ts).
 #
 # Cadência: cron: 37 * * * * (a cada hora; minuto livre no inventário atual —
 # NF-e=0, AR/CP=17, Documentos de Saída=23, diário=02:00).
