@@ -378,12 +378,16 @@ export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWh
   customerOr.push({ companyName: { contains: "SM Comércio", mode: "insensitive" } });
   customerOr.push({ tradeName: { contains: "SM Comércio", mode: "insensitive" } });
 
+  // `isNot` (não `NOT: { Customer: { is: {...} } }`) — a negação explícita do
+  // Prisma para relação a filtro é o idioma correto aqui; a forma com `NOT`
+  // envolvendo `is` é a suspeita nº 1 do zeramento em produção (ver commit
+  // "diag(finance): surface population counts on empty ICR result": 804
+  // candidatos, 804 excluídos, 0 elegíveis — 100% de exclusão é implausível
+  // para clientes reais, sinal de que a cláusula nunca deixa passar ninguém).
   return {
-    NOT: {
-      Customer: {
-        is: {
-          OR: customerOr,
-        },
+    Customer: {
+      isNot: {
+        OR: customerOr,
       },
     },
   };
