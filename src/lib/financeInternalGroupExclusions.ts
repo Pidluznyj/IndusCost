@@ -356,6 +356,19 @@ export function classifyIntercompanySalesOrder(order: {
 }
 
 /**
+ * `tradeName` é nullable — um `contains` cru sobre NULL dentro de um OR
+ * posteriormente negado (`isNot`) vira UNKNOWN em SQL de três valores e
+ * elimina o registro do `WHERE`. Protege explicitamente com `tradeName: not null`
+ * antes do `contains`, para que clientes externos com `tradeName = null`
+ * nunca caiam nesse ramo do OR.
+ */
+function tradeNameContainsNullSafe(term: string): Prisma.CustomerWhereInput {
+  return {
+    AND: [{ tradeName: { not: null } }, { tradeName: { contains: term, mode: "insensitive" } }],
+  };
+}
+
+/**
  * Cláusula Prisma: exclui pedidos cujo Customer é empresa do grupo (CNPJ formatado/dígitos ou nome).
  * Usada na população operacional oficial (listagem Comercial / Financeiro Pedidos).
  */
@@ -370,20 +383,22 @@ export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWh
     customerOr.push({ taxId: { contains: formattedCore } });
   }
   customerOr.push({ companyName: { contains: "Lazarios", mode: "insensitive" } });
-  customerOr.push({ tradeName: { contains: "Lazarios", mode: "insensitive" } });
+  customerOr.push(tradeNameContainsNullSafe("Lazarios"));
   customerOr.push({ companyName: { contains: "Koppetel", mode: "insensitive" } });
-  customerOr.push({ tradeName: { contains: "Koppetel", mode: "insensitive" } });
+  customerOr.push(tradeNameContainsNullSafe("Koppetel"));
   customerOr.push({ companyName: { contains: "SM Comercio", mode: "insensitive" } });
-  customerOr.push({ tradeName: { contains: "SM Comercio", mode: "insensitive" } });
+  customerOr.push(tradeNameContainsNullSafe("SM Comercio"));
   customerOr.push({ companyName: { contains: "SM Comércio", mode: "insensitive" } });
-  customerOr.push({ tradeName: { contains: "SM Comércio", mode: "insensitive" } });
+  customerOr.push(tradeNameContainsNullSafe("SM Comércio"));
 
-  // `isNot` (não `NOT: { Customer: { is: {...} } }`) — a negação explícita do
-  // Prisma para relação a filtro é o idioma correto aqui; a forma com `NOT`
-  // envolvendo `is` é a suspeita nº 1 do zeramento em produção (ver commit
-  // "diag(finance): surface population counts on empty ICR result": 804
-  // candidatos, 804 excluídos, 0 elegíveis — 100% de exclusão é implausível
-  // para clientes reais, sinal de que a cláusula nunca deixa passar ninguém).
+  // `Customer.tradeName` é nullable (String?). Um predicate `contains` sobre
+  // NULL dentro de um OR que depois é negado (`isNot`) produz UNKNOWN em SQL
+  // de três valores — e UNKNOWN dentro de `WHERE` nunca passa, eliminando
+  // clientes externos legítimos com tradeName null (bug real confirmado em
+  // produção via Prisma/PostgreSQL: 127 pedidos externos zerados). Por isso
+  // cada ramo de `tradeName` precisa ser explicitamente null-safe
+  // (`tradeNameContainsNullSafe`) antes de entrar no OR. `taxId`/`companyName`
+  // são obrigatórios no schema — não precisam da mesma proteção.
   return {
     Customer: {
       isNot: {
