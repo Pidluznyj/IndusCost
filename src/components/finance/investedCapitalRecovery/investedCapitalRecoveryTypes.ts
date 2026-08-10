@@ -49,4 +49,11 @@ export type InvestedCapitalRecoveryPayload = {
   agingBuckets: Array<{ key: string; label: string; amount: number }>;
   topCustomers: Array<{ customerName: string; moneyOnStreet: number; percentOfTotal: number }>;
   rows: InvestedCapitalRecoveryRow[];
+  /** Diagnóstico temporário — investigação da tela vazia. Ver serviço backend. */
+  populationDiagnostics: {
+    rawTotalSalesOrders: number;
+    totalCandidates: number;
+    intercompanyExcluded: number;
+    eligibleOrders: number;
+  } | null;
 };

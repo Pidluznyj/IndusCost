@@ -42,8 +42,9 @@ describe("Recuperação do Dinheiro Investido — exclusão intercompany", () =>
 
   it("diagnóstico de população não é obrigatório na UI e não derruba a rota se falhar", () => {
     const service = read("src/lib/finance/salesOrderInvestedCapitalRecoveryService.server.ts");
-    assert.match(service, /logInvestedCapitalRecoveryPopulationDiagnostics/);
-    assert.match(service, /catch\s*\{/);
+    assert.match(service, /computeInvestedCapitalRecoveryPopulationDiagnostics/);
+    assert.match(service, /catch \(err\) \{/);
+    assert.match(service, /return null;/);
   });
 
   it("nota informativa discreta na UI (sem modal, sem poluir a tela)", () => {

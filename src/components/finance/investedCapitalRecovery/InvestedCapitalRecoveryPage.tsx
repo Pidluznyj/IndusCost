@@ -432,7 +432,17 @@ export function InvestedCapitalRecoveryPage() {
       ) : error ? (
         <FinanceModuleErrorBanner message={error} onRetry={() => void load()} />
       ) : !data || data.rows.length === 0 ? (
-        <FinanceModuleEmptyState />
+        <>
+          <FinanceModuleEmptyState />
+          {data?.populationDiagnostics ? (
+            <p className="mt-1 rounded-md border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+              Diagnóstico (temporário): {data.populationDiagnostics.rawTotalSalesOrders} pedido(s) na
+              base · {data.populationDiagnostics.totalCandidates} candidato(s) após status/presença
+              operacional · {data.populationDiagnostics.intercompanyExcluded} excluído(s) por grupo
+              econômico · {data.populationDiagnostics.eligibleOrders} elegível(is) para esta análise.
+            </p>
+          ) : null}
+        </>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

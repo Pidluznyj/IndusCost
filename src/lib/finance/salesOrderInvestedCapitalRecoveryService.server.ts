@@ -116,6 +116,18 @@ export type SalesOrderInvestedCapitalRecoveryPayload = {
   agingBuckets: Array<{ key: InvestedCapitalAgingBucketKey; label: string; amount: number }>;
   topCustomers: SalesOrderInvestedCapitalRecoveryTopCustomer[];
   rows: SalesOrderInvestedCapitalRecoverySnapshot[];
+  /**
+   * Diagnóstico temporário (investigação da tela vazia após o filtro de
+   * grupo econômico). Camada em que a população zera:
+   * rawTotalSalesOrders (tabela inteira) → totalCandidates (+ status/presença
+   * operacional) → eligibleOrders (+ exclusão intercompany, = totalOrdersInScope).
+   */
+  populationDiagnostics: {
+    rawTotalSalesOrders: number;
+    totalCandidates: number;
+    intercompanyExcluded: number;
+    eligibleOrders: number;
+  } | null;
 };
 
 function resolveCostUnavailableReason(row: SalesOrderIndustrialResultReportRow): string | null {
@@ -142,7 +154,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     excludeEconomicGroupCustomers: true,
   });
 
-  await logInvestedCapitalRecoveryPopulationDiagnostics(
+  const populationDiagnostics = await computeInvestedCapitalRecoveryPopulationDiagnostics(
     prisma,
     input.query,
     industrialReport.totalOrdersInScope
@@ -306,21 +318,27 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     })),
     topCustomers,
     rows,
+    populationDiagnostics,
   };
 }
 
 /**
  * Observabilidade (seção 26 da missão intercompany) — não é obrigatório expor
- * na UI. Duas contagens leves (`count()`, sem a carga pesada de itens/custo/
- * imposto do relatório): população candidata (antes da exclusão de grupo) e
- * população elegível (depois — igual ao `totalOrdersInScope` já calculado).
+ * na UI, mas está temporariamente no payload para investigar a tela vazia
+ * relatada em produção sem precisar de acesso a banco/logs do servidor.
+ * Três contagens leves (`count()`, sem a carga pesada de itens/custo/
+ * imposto do relatório) que isolam em qual camada a população zera:
+ *   rawTotalSalesOrders  — tabela inteira, sem where nenhum (sanity check).
+ *   totalCandidates      — + status/presença operacional (SEM exclusão de grupo).
+ *   eligibleOrders       — + exclusão intercompany (== totalOrdersInScope).
  */
-async function logInvestedCapitalRecoveryPopulationDiagnostics(
+async function computeInvestedCapitalRecoveryPopulationDiagnostics(
   prisma: PrismaClient,
   query: Record<string, unknown>,
   eligibleOrders: number
-): Promise<void> {
+): Promise<SalesOrderInvestedCapitalRecoveryPayload["populationDiagnostics"]> {
   try {
+    const rawTotalSalesOrders = await prisma.salesOrder.count();
     const parsed = parseSalesOrderListQuery(query);
     const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
       sellerKeyRaw: parsed.sellerKeyRaw,
@@ -330,16 +348,21 @@ async function logInvestedCapitalRecoveryPopulationDiagnostics(
       excludeEconomicGroupCustomers: false,
     });
     const totalCandidates = await prisma.salesOrder.count({ where: candidateWhere });
-    console.info(
-      "[invested-capital-recovery] population",
-      JSON.stringify({
-        totalCandidates,
-        intercompanyExcluded: Math.max(0, totalCandidates - eligibleOrders),
-        eligibleOrders,
-      })
+    const diagnostics = {
+      rawTotalSalesOrders,
+      totalCandidates,
+      intercompanyExcluded: Math.max(0, totalCandidates - eligibleOrders),
+      eligibleOrders,
+    };
+    console.info("[invested-capital-recovery] population", JSON.stringify(diagnostics));
+    return diagnostics;
+  } catch (err) {
+    console.warn(
+      "[invested-capital-recovery] population diagnostics failed",
+      err instanceof Error ? err.message : err
     );
-  } catch {
-    // Diagnóstico não pode derrubar a rota — falha aqui é apenas observabilidade perdida.
+    // Diagnóstico não pode derrubar a rota — falha aqui é só observabilidade perdida.
+    return null;
   }
 }
 
