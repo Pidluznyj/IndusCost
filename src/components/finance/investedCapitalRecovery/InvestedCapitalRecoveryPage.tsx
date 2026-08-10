@@ -35,6 +35,12 @@ import type {
 import "@/src/components/sales/sales-order-report-print.css";
 import { cn } from "@/src/lib/utils";
 
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
+
 const STATUS_META: Record<InvestedCapitalRecoveryStatus, { label: string; className: string }> = {
   SEM_RECUPERACAO: { label: "Sem recuperação", className: "bg-red-100 text-red-800" },
   EM_RECUPERACAO: { label: "Em recuperação", className: "bg-amber-100 text-amber-800" },
@@ -149,6 +155,25 @@ export function InvestedCapitalRecoveryPage() {
   const [printFilterLabels, setPrintFilterLabels] = useState("");
   const [printRequestId, setPrintRequestId] = useState(0);
   const [exportingPdf, setExportingPdf] = useState(false);
+
+  /**
+   * Detalhe do Pedido — mesmo modal (quase fullscreen, portalizado no
+   * document.body) usado em Comercial > Pedidos de venda e em Comissões >
+   * Provisão por pedido. Toggle de estado local: filtros e página desta
+   * tela nunca desmontam, então fechar o modal sempre volta no mesmo
+   * estado. Responde "quais são os recebíveis e seus status" (aba Geral já
+   * traz a tabela de CR real/documentos/previsão, igual ao Pedido de Venda).
+   */
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [detailOrderCode, setDetailOrderCode] = useState<string | null>(null);
+  const openOrderDetail = useCallback((salesOrderId: string, code: string | null) => {
+    setDetailOrderId(salesOrderId);
+    setDetailOrderCode(code);
+  }, []);
+  const closeOrderDetail = useCallback(() => {
+    setDetailOrderId(null);
+    setDetailOrderCode(null);
+  }, []);
 
   const query = useMemo(() => buildQuery(appliedFilters), [appliedFilters]);
 
@@ -445,12 +470,19 @@ export function InvestedCapitalRecoveryPage() {
         </>
       ) : (
         <>
+          {/*
+            Leitura executiva (visão de conselho): vendemos X, para isso
+            investimos Y (custo + imposto) e falta receber Z — respondendo
+            "onde está o dinheiro" mesmo com crescimento de pedidos.
+          */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiCard label="Vendemos (Total Vendido)" value={money(data.kpis.totalSaleValueAnalyzed)} />
+            <KpiCard label="Investimos (Capital = Custo + Imposto)" value={money(data.kpis.investedCapitalAnalyzedTotal)} tone="out" />
+            <KpiCard label="Custo Industrial Total" value={money(data.kpis.totalIndustrialCostAnalyzed)} />
+            <KpiCard label="Imposto Total (incluído no capital)" value={money(data.kpis.totalTaxesAnalyzed)} />
+            <KpiCard label="Falta Receber" value={money(data.kpis.totalOutstandingReceivable)} tone="out" />
             <KpiCard label="Dinheiro na Rua Hoje" value={money(data.kpis.moneyOnStreetToday)} tone="out" />
             <KpiCard label="Capital Recuperado" value={money(data.kpis.capitalRecoveredTotal)} tone="in" />
-            <KpiCard label="Capital Total Analisado (custo + imposto)" value={money(data.kpis.investedCapitalAnalyzedTotal)} />
-            <KpiCard label="Imposto Total (incluído no capital)" value={money(data.kpis.totalTaxesAnalyzed)} />
-            <KpiCard label="Total a Receber" value={money(data.kpis.totalOutstandingReceivable)} />
             <KpiCard label="Recuperaram capital" value={String(data.kpis.ordersFullyRecoveredCount)} />
             <KpiCard label="Parcialmente recuperados" value={String(data.kpis.ordersPartiallyRecoveredCount)} />
             <KpiCard label="Dados insuficientes" value={String(data.kpis.ordersInsufficientDataCount)} />
@@ -543,7 +575,17 @@ export function InvestedCapitalRecoveryPage() {
                 <tbody>
                   {pageRows.map((row) => (
                     <tr key={row.salesOrderId} className="border-b border-border/50">
-                      <td className="px-2 py-1.5 font-medium">{row.orderCode}</td>
+                      <td className="px-2 py-1.5 font-medium">
+                        <button
+                          type="button"
+                          className="underline decoration-dotted underline-offset-2 hover:text-primary"
+                          onClick={() => openOrderDetail(row.salesOrderId, row.orderCode)}
+                          data-testid={`invested-capital-recovery-open-detail-${row.salesOrderId}`}
+                          title="Ver recebíveis e status deste Pedido"
+                        >
+                          {row.orderCode}
+                        </button>
+                      </td>
                       <td className="px-2 py-1.5">{row.customerName ?? "—"}</td>
                       <td className="px-2 py-1.5">{row.sellerName ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{money(row.saleValue)}</td>
@@ -634,6 +676,17 @@ export function InvestedCapitalRecoveryPage() {
           branding={branding}
           filterLabels={printFilterLabels}
         />
+      ) : null}
+
+      {detailOrderId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={detailOrderId}
+            orderCode={detailOrderCode}
+            onClose={closeOrderDetail}
+          />
+        </React.Suspense>
       ) : null}
     </div>
   );

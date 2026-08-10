@@ -114,7 +114,11 @@ export type SalesOrderInvestedCapitalRecoveryKpis = {
   ordersPartiallyRecoveredCount: number;
   ordersInsufficientDataCount: number;
   averageDaysToRecoverCapital: number | null;
-  /** Imposto total da população filtrada — mesmo valor já somado a `investedCapitalAnalyzedTotal`. */
+  /** Total vendido (venda) da população filtrada — "vendemos X" na leitura executiva. */
+  totalSaleValueAnalyzed: number;
+  /** Componente de custo puro de `investedCapitalAnalyzedTotal` (sem o imposto). */
+  totalIndustrialCostAnalyzed: number;
+  /** Componente de imposto de `investedCapitalAnalyzedTotal` — totalIndustrialCostAnalyzed + totalTaxesAnalyzed == investedCapitalAnalyzedTotal. */
   totalTaxesAnalyzed: number;
 };
 
@@ -243,6 +247,15 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     const arRows = arRowsBySalesOrderId.get(orderRow.salesOrderId) ?? [];
     // SEMPRE presente (fallback na regra fiscal padrão ativa) — ver cabeçalho.
     const marginTaxAmount = marginByOrderId.get(orderRow.salesOrderId)?.marginSummary.taxAmount ?? 0;
+    const costOk = orderRow.costSourceStatus === "OK";
+    // Capital primeiro, custo por SUBTRAÇÃO do capital já arredondado — nunca
+    // dois arredondamentos independentes — para industrialCost + totalTaxes
+    // == investedCapital bater exatamente nos KPIs de totais da tela.
+    const investedCapitalValue = costOk
+      ? roundMoney(orderRow.totalIndustrialCost + marginTaxAmount)
+      : null;
+    const industrialCostValue =
+      investedCapitalValue == null ? null : roundMoney(investedCapitalValue - marginTaxAmount);
     return buildSalesOrderInvestedCapitalRecoverySnapshot(
       {
         salesOrderId: orderRow.salesOrderId,
@@ -250,10 +263,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
         customerName: orderRow.customerName || null,
         sellerName: orderRow.sellerName || null,
         saleValue: orderRow.orderCommercialValue,
-        investedCapital:
-          orderRow.costSourceStatus === "OK"
-            ? roundMoney(orderRow.totalIndustrialCost + marginTaxAmount)
-            : null,
+        investedCapital: investedCapitalValue,
         investedCapitalUnavailableReason: resolveCostUnavailableReason(orderRow),
         orderStatus: orderRow.orderStatus,
         orderStatusLabel: orderRow.orderStatusLabel,
@@ -265,6 +275,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
           amountReceived: r.amountReceived ?? 0,
           balanceReceivable: r.balanceReceivable ?? 0,
         })),
+        industrialCost: industrialCostValue,
         totalTaxes: marginTaxAmount,
         taxSourceLabel: MARGIN_TAX_SOURCE_LABEL,
       },
@@ -285,7 +296,15 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const capitalRecoveredTotal = roundMoney(sum(withCapital, (r) => r.capitalRecovered ?? 0));
   const investedCapitalAnalyzedTotal = roundMoney(sum(withCapital, (r) => r.investedCapital ?? 0));
   const totalOutstandingReceivable = roundMoney(sum(rows, (r) => r.outstandingReceivable));
-  const totalTaxesAnalyzed = roundMoney(sum(rows, (r) => r.totalTaxes ?? 0));
+  // Venda é sempre conhecida (mesmo sem custo industrial) — soma sobre TODA
+  // a população filtrada, não só `withCapital` ("vendemos X").
+  const totalSaleValueAnalyzed = roundMoney(sum(rows, (r) => r.saleValue));
+  // Custo e imposto somam sobre a MESMA população que investedCapitalAnalyzedTotal
+  // (`withCapital`) — industrialCost + totalTaxes == investedCapital por
+  // Pedido (ver serviço acima), então os 3 totais reconciliam exatamente
+  // ("investimos X" = custo + imposto), útil para apresentação executiva.
+  const totalIndustrialCostAnalyzed = roundMoney(sum(withCapital, (r) => r.industrialCost ?? 0));
+  const totalTaxesAnalyzed = roundMoney(sum(withCapital, (r) => r.totalTaxes ?? 0));
   const ordersFullyRecoveredCount = rows.filter((r) => r.status === "CAPITAL_RECUPERADO").length;
   const ordersPartiallyRecoveredCount = rows.filter((r) => r.status === "EM_RECUPERACAO").length;
   const ordersInsufficientDataCount = rows.filter((r) => r.status === "DADOS_INSUFICIENTES").length;
@@ -349,6 +368,8 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
       ordersPartiallyRecoveredCount,
       ordersInsufficientDataCount,
       averageDaysToRecoverCapital,
+      totalSaleValueAnalyzed,
+      totalIndustrialCostAnalyzed,
       totalTaxesAnalyzed,
     },
     agingBuckets: (Object.keys(agingTotals) as InvestedCapitalAgingBucketKey[]).map((key) => ({

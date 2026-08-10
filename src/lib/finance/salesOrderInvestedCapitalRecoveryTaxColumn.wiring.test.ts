@@ -32,19 +32,22 @@ describe("Recuperação do Dinheiro Investido — imposto incluído no Capital I
     assert.doesNotMatch(service, /computeSalesTaxAmount/);
   });
 
-  it("totalTaxesAnalyzed é somado sobre a MESMA população (rows) que a tabela mostra", () => {
+  it("totalTaxesAnalyzed é somado sobre withCapital — mesma população de investedCapitalAnalyzedTotal, para reconciliar exatamente", () => {
     const service = read("src/lib/finance/salesOrderInvestedCapitalRecoveryService.server.ts");
-    assert.match(service, /const totalTaxesAnalyzed = roundMoney\(sum\(rows, \(r\) => r\.totalTaxes \?\? 0\)\);/);
+    assert.match(
+      service,
+      /const totalTaxesAnalyzed = roundMoney\(sum\(withCapital, \(r\) => r\.totalTaxes \?\? 0\)\);/
+    );
   });
 
   it("investedCapital só soma o imposto quando o custo industrial está OK — nunca disfarça custo ausente", () => {
     const service = read("src/lib/finance/salesOrderInvestedCapitalRecoveryService.server.ts");
+    assert.match(service, /const costOk = orderRow\.costSourceStatus === "OK";/);
     const block = service.slice(
-      service.indexOf("investedCapital:"),
-      service.indexOf("investedCapitalUnavailableReason: resolveCostUnavailableReason")
+      service.indexOf("const investedCapitalValue = costOk"),
+      service.indexOf("const industrialCostValue =")
     );
-    assert.match(block, /orderRow\.costSourceStatus === "OK"/);
-    assert.match(block, /: null,/);
+    assert.match(block, /: null;/);
   });
 
   it("snapshot puro (por Pedido) continua sem recalcular imposto — recebe investedCapital já pronto do serviço", () => {

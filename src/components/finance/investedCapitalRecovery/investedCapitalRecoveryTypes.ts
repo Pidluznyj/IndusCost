@@ -29,6 +29,8 @@ export type InvestedCapitalRecoveryRow = {
   forecastCapitalRecoveryDate: string | null;
   forecastSource: "REAL_RECEIVABLES" | "REAL_AND_FORECAST" | "FORECAST_ONLY" | "NONE";
   orderStatusLabel: string;
+  /** Componente de custo puro de investedCapital (sem o imposto). */
+  industrialCost: number | null;
   /** Imposto usado no cálculo da margem comercial do Pedido — já incluído em investedCapital. */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
@@ -48,6 +50,8 @@ export type InvestedCapitalRecoveryPayload = {
     ordersPartiallyRecoveredCount: number;
     ordersInsufficientDataCount: number;
     averageDaysToRecoverCapital: number | null;
+    totalSaleValueAnalyzed: number;
+    totalIndustrialCostAnalyzed: number;
     totalTaxesAnalyzed: number;
   };
   agingBuckets: Array<{ key: string; label: string; amount: number }>;

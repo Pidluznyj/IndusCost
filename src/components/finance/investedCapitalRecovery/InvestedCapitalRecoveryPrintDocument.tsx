@@ -90,14 +90,16 @@ export function InvestedCapitalRecoveryPrintDocument({
         <section className="sales-orders-print-section sales-orders-print-section--summary">
           <h2 className="sales-orders-print-section-title">Resumo executivo</h2>
           <div className="sales-orders-print-summary-grid">
-            <SummaryKpiCard label="Dinheiro na Rua Hoje" value={money(kpis.moneyOnStreetToday)} />
-            <SummaryKpiCard label="Capital Recuperado" value={money(kpis.capitalRecoveredTotal)} />
+            <SummaryKpiCard label="Vendemos (Total Vendido)" value={money(kpis.totalSaleValueAnalyzed)} />
             <SummaryKpiCard
-              label="Capital Total Analisado (custo + imposto)"
+              label="Investimos (Capital = Custo + Imposto)"
               value={money(kpis.investedCapitalAnalyzedTotal)}
             />
+            <SummaryKpiCard label="Custo Industrial Total" value={money(kpis.totalIndustrialCostAnalyzed)} />
             <SummaryKpiCard label="Imposto Total (incluído no capital)" value={money(kpis.totalTaxesAnalyzed)} />
-            <SummaryKpiCard label="Total a Receber" value={money(kpis.totalOutstandingReceivable)} />
+            <SummaryKpiCard label="Falta Receber" value={money(kpis.totalOutstandingReceivable)} />
+            <SummaryKpiCard label="Dinheiro na Rua Hoje" value={money(kpis.moneyOnStreetToday)} />
+            <SummaryKpiCard label="Capital Recuperado" value={money(kpis.capitalRecoveredTotal)} />
             <SummaryKpiCard
               label="Recuperaram capital"
               value={formatFinanceInteger(kpis.ordersFullyRecoveredCount)}

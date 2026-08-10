@@ -68,6 +68,14 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   /** Todos os CR reais (não previsão) já vinculados a este Pedido. */
   realReceivables: readonly InvestedCapitalRecoveryRealReceivableInput[];
   /**
+   * Componente de custo puro de `investedCapital` (sem o imposto) — o
+   * chamador já garante `industrialCost + totalTaxes === investedCapital`
+   * por construção (subtração do imposto sobre o capital já somado, nunca
+   * arredondamentos independentes), para os KPIs de totais reconciliarem
+   * exatamente na tela.
+   */
+  industrialCost: number | null;
+  /**
    * Imposto usado no cálculo da margem comercial do Pedido de Venda (mesmo
    * motor da listagem de Pedidos de Venda) — já somado a `investedCapital`
    * pelo chamador; aqui é só ecoado para exibição lado a lado ("como estão,
@@ -99,6 +107,8 @@ export type SalesOrderInvestedCapitalRecoverySnapshot = {
   orderStatusLabel: string;
   /** Agenda de CR real em aberto vinculada a este Pedido — usada para aging. */
   openRealReceivableEvents: InvestedCapitalRecoveryEvent[];
+  /** Componente de custo puro — ver comentário no input; industrialCost + totalTaxes === investedCapital. */
+  industrialCost: number | null;
   /** Imposto usado na margem comercial — já somado a `investedCapital`, ver comentário no input. */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
@@ -169,6 +179,7 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
     orderStatus: input.orderStatus,
     orderStatusLabel: input.orderStatusLabel,
     openRealReceivableEvents: openEvents,
+    industrialCost: input.industrialCost == null ? null : roundMoney(input.industrialCost),
     totalTaxes: input.totalTaxes == null ? null : roundMoney(input.totalTaxes),
     taxSourceLabel: input.taxSourceLabel,
   };

@@ -15,6 +15,7 @@ function baseOrder() {
     investedCapitalUnavailableReason: null,
     orderStatus: "SENT_TO_NOMUS",
     orderStatusLabel: "Enviado",
+    industrialCost: null as number | null,
     totalTaxes: null as number | null,
     taxSourceLabel: null as string | null,
     realReceivables: [] as {
