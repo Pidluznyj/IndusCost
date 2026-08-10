@@ -569,23 +569,25 @@ export function InvestedCapitalRecoveryPage() {
                     <th className="px-2 py-1.5">Prev. recuperação</th>
                     <th className="px-2 py-1.5">Status Econômico</th>
                     <th className="px-2 py-1.5">Situação</th>
-                    <th className="px-2 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.map((row) => (
-                    <tr key={row.salesOrderId} className="border-b border-border/50">
-                      <td className="px-2 py-1.5 font-medium">
-                        <button
-                          type="button"
-                          className="underline decoration-dotted underline-offset-2 hover:text-primary"
-                          onClick={() => openOrderDetail(row.salesOrderId, row.orderCode)}
-                          data-testid={`invested-capital-recovery-open-detail-${row.salesOrderId}`}
-                          title="Ver recebíveis e status deste Pedido"
-                        >
-                          {row.orderCode}
-                        </button>
-                      </td>
+                    <tr
+                      key={row.salesOrderId}
+                      tabIndex={0}
+                      aria-label={`Ver recebíveis e status do Pedido ${row.orderCode}`}
+                      className="cursor-pointer border-b border-border/50 outline-none hover:bg-muted/30 focus-visible:bg-muted/40"
+                      data-testid={`invested-capital-recovery-row-${row.salesOrderId}`}
+                      onClick={() => openOrderDetail(row.salesOrderId, row.orderCode)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openOrderDetail(row.salesOrderId, row.orderCode);
+                        }
+                      }}
+                    >
+                      <td className="px-2 py-1.5 font-medium">{row.orderCode}</td>
                       <td className="px-2 py-1.5">{row.customerName ?? "—"}</td>
                       <td className="px-2 py-1.5">{row.sellerName ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{money(row.saleValue)}</td>
@@ -624,16 +626,6 @@ export function InvestedCapitalRecoveryPage() {
                         <StatusBadge status={row.status} />
                       </td>
                       <td className="px-2 py-1.5">{row.orderStatusLabel}</td>
-                      <td className="px-2 py-1.5">
-                        <a
-                          href={`/sales-orders/${row.salesOrderId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-semibold text-primary underline"
-                        >
-                          Abrir PV
-                        </a>
-                      </td>
                     </tr>
                   ))}
                 </tbody>

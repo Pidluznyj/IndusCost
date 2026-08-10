@@ -58,20 +58,29 @@ describe("Recuperação do Dinheiro Investido — totais executivos + detalhe do
     assert.match(doc, /kpis\.totalIndustrialCostAnalyzed/);
   });
 
-  it("clicar no código do Pedido abre o mesmo SalesOrderDetailDialog usado em Pedidos de Venda/Comissões (recebíveis e status)", () => {
+  it("clicar em QUALQUER PONTO da linha (drill-down) abre o mesmo SalesOrderDetailDialog usado em Pedidos de Venda/Comissões (recebíveis e status) — teclado também funciona", () => {
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
     );
     assert.match(page, /React\.lazy\(\(\) =>\s*\n\s*import\("@\/src\/components\/sales\/SalesOrderDetailDialog"\)/);
-    assert.match(page, /openOrderDetail\(row\.salesOrderId, row\.orderCode\)/);
+    // onClick está no <tr>, não num botão isolado na célula do PV — a linha inteira é o alvo.
+    const rowBlock = page.slice(
+      page.indexOf("{pageRows.map((row) => ("),
+      page.indexOf("</tr>\n                  ))}")
+    );
+    assert.match(rowBlock, /onClick=\{\(\) => openOrderDetail\(row\.salesOrderId, row\.orderCode\)\}/);
+    assert.match(rowBlock, /onKeyDown=\{/);
+    assert.match(rowBlock, /event\.key === "Enter" \|\| event\.key === " "/);
+    assert.match(rowBlock, /cursor-pointer/);
     assert.match(page, /<SalesOrderDetailDialog\s*\n\s*open\s*\n\s*salesOrderId=\{detailOrderId\}/);
     assert.match(page, /onClose=\{closeOrderDetail\}/);
   });
 
-  it("o link 'Abrir PV' (nova aba) continua disponível ao lado do modal — não remove a via alternativa", () => {
+  it("o link 'Abrir PV' (nova aba, redundante com o drill-down da linha) foi removido", () => {
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
     );
-    assert.match(page, /Abrir PV/);
+    assert.doesNotMatch(page, /Abrir PV/);
+    assert.doesNotMatch(page, /\/sales-orders\/\$\{row\.salesOrderId\}/);
   });
 });
