@@ -12,6 +12,7 @@
  * a mesma população da tabela.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   FinanceModuleEmptyState,
   FinanceModuleErrorBanner,
@@ -568,7 +569,6 @@ export function InvestedCapitalRecoveryPage() {
                     <th className="px-2 py-1.5">Pagou-se em</th>
                     <th className="px-2 py-1.5">Prev. recuperação</th>
                     <th className="px-2 py-1.5">Status Econômico</th>
-                    <th className="px-2 py-1.5">Situação</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -625,7 +625,6 @@ export function InvestedCapitalRecoveryPage() {
                       <td className="px-2 py-1.5">
                         <StatusBadge status={row.status} />
                       </td>
-                      <td className="px-2 py-1.5">{row.orderStatusLabel}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -662,13 +661,16 @@ export function InvestedCapitalRecoveryPage() {
         </>
       )}
 
-      {printPayload ? (
-        <InvestedCapitalRecoveryPrintDocument
-          payload={printPayload}
-          branding={branding}
-          filterLabels={printFilterLabels}
-        />
-      ) : null}
+      {printPayload
+        ? createPortal(
+            <InvestedCapitalRecoveryPrintDocument
+              payload={printPayload}
+              branding={branding}
+              filterLabels={printFilterLabels}
+            />,
+            document.body
+          )
+        : null}
 
       {detailOrderId != null ? (
         <React.Suspense fallback={null}>

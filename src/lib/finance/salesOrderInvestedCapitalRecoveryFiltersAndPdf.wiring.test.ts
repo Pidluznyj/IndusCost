@@ -60,6 +60,17 @@ describe("Recuperação do Dinheiro Investido — filtros gated por Pesquisar + 
     assert.match(doc, /sales-orders-icr-print-table/);
   });
 
+  it("documento de impressão é portalizado para document.body (não renderizado inline na árvore) — sem isso o CSS de print-route esconde o #root e leva o print-root junto, gerando PDF em branco", () => {
+    const page = read(
+      "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
+    );
+    assert.match(page, /import \{ createPortal \} from "react-dom";/);
+    assert.match(
+      page,
+      /createPortal\(\s*\n\s*<InvestedCapitalRecoveryPrintDocument[\s\S]{0,300}?,\s*\n\s*document\.body\s*\n\s*\)/
+    );
+  });
+
   it("botão Imprimir PDF busca com os filtros aplicados (não os rascunhos ainda não pesquisados)", () => {
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
