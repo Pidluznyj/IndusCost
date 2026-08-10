@@ -191,7 +191,7 @@ describe("buildSalesOrderInvestedCapitalRecoverySnapshot", () => {
     assert.equal(snapshot.capitalRecovered! + snapshot.moneyOnStreet!, 100);
   });
 
-  it("imposto é passthrough puramente informativo — nunca entra em capitalRecovered/moneyOnStreet/recoveryPercent", () => {
+  it("nesta função PURA, totalTaxes é só ecoado — a soma com o custo já aconteceu no investedCapital recebido (ver serviço)", () => {
     const withTax = buildSalesOrderInvestedCapitalRecoverySnapshot(
       {
         ...baseOrder(),

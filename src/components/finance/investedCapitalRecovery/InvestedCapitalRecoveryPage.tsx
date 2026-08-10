@@ -448,8 +448,8 @@ export function InvestedCapitalRecoveryPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiCard label="Dinheiro na Rua Hoje" value={money(data.kpis.moneyOnStreetToday)} tone="out" />
             <KpiCard label="Capital Recuperado" value={money(data.kpis.capitalRecoveredTotal)} tone="in" />
-            <KpiCard label="Capital Total Analisado" value={money(data.kpis.investedCapitalAnalyzedTotal)} />
-            <KpiCard label="Imposto Total (informativo)" value={money(data.kpis.totalTaxesAnalyzed)} />
+            <KpiCard label="Capital Total Analisado (custo + imposto)" value={money(data.kpis.investedCapitalAnalyzedTotal)} />
+            <KpiCard label="Imposto Total (incluído no capital)" value={money(data.kpis.totalTaxesAnalyzed)} />
             <KpiCard label="Total a Receber" value={money(data.kpis.totalOutstandingReceivable)} />
             <KpiCard label="Recuperaram capital" value={String(data.kpis.ordersFullyRecoveredCount)} />
             <KpiCard label="Parcialmente recuperados" value={String(data.kpis.ordersPartiallyRecoveredCount)} />
@@ -516,10 +516,11 @@ export function InvestedCapitalRecoveryPage() {
                     <th
                       className="px-2 py-1.5 text-right cursor-pointer"
                       onClick={() => toggleSort("investedCapital")}
+                      title="Custo industrial + imposto usado no cálculo da margem comercial do Pedido."
                     >
                       Capital Investido
                     </th>
-                    <th className="px-2 py-1.5 text-right" title="Informativo — não entra no cálculo de capital investido/recuperado.">
+                    <th className="px-2 py-1.5 text-right" title="Imposto usado no cálculo da margem comercial do Pedido — já incluído no Capital Investido ao lado.">
                       Imposto
                     </th>
                     <th className="px-2 py-1.5 text-right">Recebido</th>

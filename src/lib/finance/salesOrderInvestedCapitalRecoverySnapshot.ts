@@ -1,15 +1,22 @@
 /**
  * FIN-11b — Snapshot por Pedido de Venda da Recuperação do Dinheiro
  * Investido. Função PURA: recebe dados já carregados em lote (custo
- * industrial oficial, títulos AR reais já vinculados ao Pedido) e monta o
- * snapshot analítico — nenhuma leitura de banco, nenhuma regra de negócio
- * nova além da matemática de `salesOrderInvestedCapitalRecoveryMath.ts`.
+ * industrial oficial, imposto da margem comercial, títulos AR reais já
+ * vinculados ao Pedido) e monta o snapshot analítico — nenhuma leitura de
+ * banco, nenhuma regra de negócio nova além da matemática de
+ * `salesOrderInvestedCapitalRecoveryMath.ts`.
  *
- * Autoridade do custo: `investedCapital` = custo industrial oficial do
- * Pedido (`SalesOrderIndustrialResultReportRow.totalIndustrialCost`),
- * decisão de negócio confirmada — NUNCA o custo comercial
- * (`pricingMargin.totalCost`), que continua sendo autoridade só do
- * contexto de formação de preço/margem. Ver
+ * Autoridade do capital investido: `investedCapital` = custo industrial
+ * oficial do Pedido (`SalesOrderIndustrialResultReportRow.totalIndustrialCost`)
+ * + imposto usado no cálculo da margem comercial do Pedido de Venda (mesmo
+ * motor da listagem de Pedidos de Venda). Decisão de negócio: o imposto
+ * também foi desembolsado antecipadamente, como o custo, e só é recuperado
+ * com prazo junto do recebimento — por isso entra no capital investido. A
+ * soma é feita pelo chamador (`salesOrderInvestedCapitalRecoveryService.server.ts`)
+ * ANTES de chegar aqui — esta função recebe `investedCapital` já pronto e só
+ * ecoa `totalTaxes`/`taxSourceLabel` para exibição (não os soma de novo).
+ * NUNCA o custo comercial (`pricingMargin.totalCost`), que continua sendo
+ * autoridade só do contexto de formação de preço/margem. Ver
  * docs/finance/invested-capital-recovery.md.
  *
  * Escopo desta versão (documentado, não escondido): `forecastCapitalRecoveryDate`
@@ -48,7 +55,12 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   customerName: string | null;
   sellerName: string | null;
   saleValue: number;
-  /** null quando o custo industrial não pôde ser resolvido para este Pedido (SEM_CUSTO/dados incompletos). */
+  /**
+   * null quando o custo industrial não pôde ser resolvido para este Pedido
+   * (SEM_CUSTO/dados incompletos). JÁ INCLUI o imposto da margem comercial
+   * (custo industrial + imposto) — somado pelo chamador antes de chegar
+   * aqui, ver cabeçalho do arquivo.
+   */
   investedCapital: number | null;
   investedCapitalUnavailableReason: string | null;
   orderStatus: string;
@@ -56,12 +68,10 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   /** Todos os CR reais (não previsão) já vinculados a este Pedido. */
   realReceivables: readonly InvestedCapitalRecoveryRealReceivableInput[];
   /**
-   * Imposto total do Pedido — mesmo motor do Resultado Industrial (real via
-   * NF vinculada, estimado via TaxRule, ou combinação). Puramente
-   * informativo: NUNCA entra no cálculo de investedCapital/capitalRecovered/
-   * moneyOnStreet — decisão de negócio já fechada (capital = custo de
-   * FABRICAR o pedido). Exibido lado a lado para responder "como estão,
-   * com base em custo E imposto".
+   * Imposto usado no cálculo da margem comercial do Pedido de Venda (mesmo
+   * motor da listagem de Pedidos de Venda) — já somado a `investedCapital`
+   * pelo chamador; aqui é só ecoado para exibição lado a lado ("como estão,
+   * com base em custo + imposto").
    */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
@@ -89,7 +99,7 @@ export type SalesOrderInvestedCapitalRecoverySnapshot = {
   orderStatusLabel: string;
   /** Agenda de CR real em aberto vinculada a este Pedido — usada para aging. */
   openRealReceivableEvents: InvestedCapitalRecoveryEvent[];
-  /** Imposto total do Pedido — só informativo, ver comentário no input. */
+  /** Imposto usado na margem comercial — já somado a `investedCapital`, ver comentário no input. */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
 };

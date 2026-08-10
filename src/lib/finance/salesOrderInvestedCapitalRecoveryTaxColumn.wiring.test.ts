@@ -8,21 +8,28 @@ function read(rel: string): string {
 }
 
 /**
- * Recuperação do Dinheiro Investido — coluna "Imposto" (informativa).
- * Reutiliza o mesmo motor de imposto do Resultado Industrial (real via NF
- * vinculada / estimado via TaxRule / combinado) — nenhuma regra de imposto
- * nova nesta tela. Nunca entra no cálculo de investedCapital/
- * capitalRecovered/moneyOnStreet (decisão de negócio já fechada: capital =
- * custo de FABRICAR o pedido, não inclui imposto).
+ * Recuperação do Dinheiro Investido — coluna "Imposto" e `investedCapital`.
+ * Decisão do usuário: o imposto usado no cálculo da margem comercial do
+ * Pedido de Venda (mesmo motor da listagem de Pedidos de Venda — sempre
+ * presente, cai no percentual fiscal padrão quando o produto não tem
+ * TaxRule própria) também foi desembolsado antecipadamente, como o custo —
+ * por isso agora SOMA em `investedCapital`, substituindo o `totalTaxes` do
+ * Resultado Industrial (que pode ficar incompleto).
  */
-describe("Recuperação do Dinheiro Investido — coluna Imposto (informativa)", () => {
-  it("serviço repassa totalTaxes/taxSourceLabel do motor de Resultado Industrial — não inventa imposto novo", () => {
+describe("Recuperação do Dinheiro Investido — imposto incluído no Capital Investido", () => {
+  it("serviço soma o imposto da margem comercial ao custo industrial em investedCapital", () => {
     const service = read("src/lib/finance/salesOrderInvestedCapitalRecoveryService.server.ts");
-    assert.match(service, /totalTaxes: orderRow\.totalTaxes/);
-    assert.match(service, /taxSourceLabel: orderRow\.taxSourceLabel/);
-    // Não cria nenhuma lógica própria de imposto (sem TaxRule/NF-e aqui).
-    assert.doesNotMatch(service, /TaxRule/);
-    assert.doesNotMatch(service, /NomusNfeFiscalSummary/);
+    assert.match(service, /calculateOfficialSalesOrderMarginsForOrders/);
+    assert.match(service, /marginByOrderId\.get\(orderRow\.salesOrderId\)\?\.marginSummary\.taxAmount/);
+    assert.match(
+      service,
+      /roundMoney\(orderRow\.totalIndustrialCost \+ marginTaxAmount\)/
+    );
+    // Não mais o totalTaxes bruto do Resultado Industrial (pode ficar incompleto).
+    assert.doesNotMatch(service, /totalTaxes: orderRow\.totalTaxes/);
+    assert.doesNotMatch(service, /taxSourceLabel: orderRow\.taxSourceLabel/);
+    // Não inventa nenhuma fórmula própria de imposto — reusa o motor oficial.
+    assert.doesNotMatch(service, /computeSalesTaxAmount/);
   });
 
   it("totalTaxesAnalyzed é somado sobre a MESMA população (rows) que a tabela mostra", () => {
@@ -30,9 +37,19 @@ describe("Recuperação do Dinheiro Investido — coluna Imposto (informativa)",
     assert.match(service, /const totalTaxesAnalyzed = roundMoney\(sum\(rows, \(r\) => r\.totalTaxes \?\? 0\)\);/);
   });
 
-  it("snapshot mantém imposto como passthrough puro — não usado em nenhuma fórmula de recuperação", () => {
+  it("investedCapital só soma o imposto quando o custo industrial está OK — nunca disfarça custo ausente", () => {
+    const service = read("src/lib/finance/salesOrderInvestedCapitalRecoveryService.server.ts");
+    const block = service.slice(
+      service.indexOf("investedCapital:"),
+      service.indexOf("investedCapitalUnavailableReason: resolveCostUnavailableReason")
+    );
+    assert.match(block, /orderRow\.costSourceStatus === "OK"/);
+    assert.match(block, /: null,/);
+  });
+
+  it("snapshot puro (por Pedido) continua sem recalcular imposto — recebe investedCapital já pronto do serviço", () => {
     const snapshot = read("src/lib/finance/salesOrderInvestedCapitalRecoverySnapshot.ts");
-    // O campo só aparece na assinatura de entrada/saída e no retorno — nunca dentro de computeCapitalRecovered/computeMoneyOnStreet/computeRecoveryPercent.
+    // O campo totalTaxes é só ecoado para exibição — a soma acontece no serviço, não aqui.
     const mathCallsBlock = snapshot.slice(
       snapshot.indexOf("const capitalRecovered = computeCapitalRecovered"),
       snapshot.indexOf("return {")
@@ -40,19 +57,21 @@ describe("Recuperação do Dinheiro Investido — coluna Imposto (informativa)",
     assert.doesNotMatch(mathCallsBlock, /totalTaxes/);
   });
 
-  it("tela mostra a coluna Imposto marcada como informativa (não afeta capital investido/recuperado)", () => {
+  it("tela mostra Capital Investido e Imposto sem rótulo de 'informativo' — imposto agora compõe o capital", () => {
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
     );
     assert.match(page, />\s*Imposto\s*</);
-    assert.match(page, /informativo/);
+    assert.doesNotMatch(page, /informativo/);
+    assert.match(page, /custo \+ imposto|incluído no capital/);
   });
 
-  it("PDF reflete a mesma coluna Imposto e o mesmo total do KPI (kpis.totalTaxesAnalyzed)", () => {
+  it("PDF reflete a mesma coluna Imposto e o mesmo total do KPI (kpis.totalTaxesAnalyzed), sem 'informativo'", () => {
     const doc = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPrintDocument.tsx"
     );
     assert.match(doc, />Imposto</); // header <th>Imposto</th> tem uma linha só, sem quebra
     assert.match(doc, /kpis\.totalTaxesAnalyzed/);
+    assert.doesNotMatch(doc, /informativo/);
   });
 });

@@ -29,7 +29,7 @@ export type InvestedCapitalRecoveryRow = {
   forecastCapitalRecoveryDate: string | null;
   forecastSource: "REAL_RECEIVABLES" | "REAL_AND_FORECAST" | "FORECAST_ONLY" | "NONE";
   orderStatusLabel: string;
-  /** Imposto total do pedido — só informativo, mesmo motor do Resultado Industrial. */
+  /** Imposto usado no cálculo da margem comercial do Pedido — já incluído em investedCapital. */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
 };

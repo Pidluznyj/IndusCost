@@ -93,10 +93,10 @@ export function InvestedCapitalRecoveryPrintDocument({
             <SummaryKpiCard label="Dinheiro na Rua Hoje" value={money(kpis.moneyOnStreetToday)} />
             <SummaryKpiCard label="Capital Recuperado" value={money(kpis.capitalRecoveredTotal)} />
             <SummaryKpiCard
-              label="Capital Total Analisado"
+              label="Capital Total Analisado (custo + imposto)"
               value={money(kpis.investedCapitalAnalyzedTotal)}
             />
-            <SummaryKpiCard label="Imposto Total (informativo)" value={money(kpis.totalTaxesAnalyzed)} />
+            <SummaryKpiCard label="Imposto Total (incluído no capital)" value={money(kpis.totalTaxesAnalyzed)} />
             <SummaryKpiCard label="Total a Receber" value={money(kpis.totalOutstandingReceivable)} />
             <SummaryKpiCard
               label="Recuperaram capital"

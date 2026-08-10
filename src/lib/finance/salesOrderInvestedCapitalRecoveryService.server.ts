@@ -13,6 +13,15 @@
  *   - `resolveFinanceArNfeOrderLinksFromRows` + `buildFinanceArOrderCodeResolverWithNfeLinks`
  *     — vínculo AR → Pedido (NF-e ou pista no texto), mesma regra usada em
  *     outras telas financeiras.
+ *   - `calculateOfficialSalesOrderMarginsForOrders` — imposto usado no
+ *     cálculo da margem comercial do Pedido de Venda (mesmo motor da tela
+ *     de Pedidos de Venda / Resultado — Pedidos de Venda). Decisão do
+ *     usuário: o dinheiro do imposto também foi desembolsado como o custo,
+ *     então entra em `investedCapital`. Este valor SEMPRE existe (cai no
+ *     percentual fiscal padrão ativo quando o produto não tem TaxRule
+ *     própria) — por isso substitui o `totalTaxes` do Resultado Industrial
+ *     (que pode ficar incompleto quando a NF é compartilhada entre pedidos
+ *     ou não há regra fiscal cadastrada) como fonte do imposto aqui.
  *
  * Escopo desta versão (ver cabeçalho de `salesOrderInvestedCapitalRecoverySnapshot.ts`):
  *   - AR carregado numa janela de anos limitada (`AR_LOOKBACK_YEARS`), não a
@@ -39,6 +48,8 @@ import {
 } from "./financeArOperationalPortfolio.js";
 import type { FinanceArDashboardRow } from "../financeAccountsReceivableDashboard.js";
 import { toCivilDateKey } from "../financeCivilDate.js";
+import { loadSalesOrderItemsForMargin, type SalesOrderForMargin } from "../salesOrderMarginService.server.js";
+import { calculateOfficialSalesOrderMarginsForOrders } from "../salesMarginRulesAdapter.js";
 import {
   buildSalesOrderInvestedCapitalRecoverySnapshot,
   type SalesOrderInvestedCapitalRecoverySnapshot,
@@ -51,6 +62,9 @@ import {
 
 /** Janela de carga de CR reais — evita full scan histórico; ver cabeçalho do arquivo. */
 const AR_LOOKBACK_YEARS = 3;
+
+/** Rótulo fixo — mesmo motor sempre, sem distinção real/estimado (ver cabeçalho). */
+const MARGIN_TAX_SOURCE_LABEL = "Imposto usado no cálculo da margem comercial (Pedido de Venda)";
 
 const COST_SOURCE_STATUS_LABELS: Record<string, string> = {
   CUSTO_NAO_LOCALIZADO: "Custo publicado não localizado na data do pedido",
@@ -100,7 +114,7 @@ export type SalesOrderInvestedCapitalRecoveryKpis = {
   ordersPartiallyRecoveredCount: number;
   ordersInsufficientDataCount: number;
   averageDaysToRecoverCapital: number | null;
-  /** Imposto total da população filtrada — só informativo, mesmo motor do Resultado Industrial. */
+  /** Imposto total da população filtrada — mesmo valor já somado a `investedCapitalAnalyzedTotal`. */
   totalTaxesAnalyzed: number;
 };
 
@@ -168,6 +182,21 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     orderCodeToSalesOrderId.set(row.orderCode, row.salesOrderId);
   }
 
+  // 1b) Imposto usado na margem comercial (Pedido de Venda) — uma consulta em
+  //     lote (itens) + o motor oficial de margem, mesma população desta tela.
+  //     Ver cabeçalho do arquivo: substitui o `totalTaxes` do Resultado
+  //     Industrial como fonte do imposto que compõe `investedCapital`.
+  const salesOrderIds = industrialReport.rows.map((r) => r.salesOrderId);
+  const marginItemsByOrderId = await loadSalesOrderItemsForMargin(prisma, salesOrderIds);
+  const marginOrdersForTax: SalesOrderForMargin[] = industrialReport.rows.map((r) => ({
+    id: r.salesOrderId,
+    items: marginItemsByOrderId.get(r.salesOrderId) ?? [],
+  }));
+  const marginByOrderId = await calculateOfficialSalesOrderMarginsForOrders(
+    prisma,
+    marginOrdersForTax
+  );
+
   // 2) CR reais numa janela limitada de anos (não a história inteira — ver
   //    cabeçalho do arquivo) — uma consulta, sem filtro por pedido.
   const lookbackFromYear = referenceDate.getFullYear() - AR_LOOKBACK_YEARS;
@@ -212,6 +241,8 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   );
   const allRows: SalesOrderInvestedCapitalRecoverySnapshot[] = industrialReport.rows.map((orderRow) => {
     const arRows = arRowsBySalesOrderId.get(orderRow.salesOrderId) ?? [];
+    // SEMPRE presente (fallback na regra fiscal padrão ativa) — ver cabeçalho.
+    const marginTaxAmount = marginByOrderId.get(orderRow.salesOrderId)?.marginSummary.taxAmount ?? 0;
     return buildSalesOrderInvestedCapitalRecoverySnapshot(
       {
         salesOrderId: orderRow.salesOrderId,
@@ -219,7 +250,10 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
         customerName: orderRow.customerName || null,
         sellerName: orderRow.sellerName || null,
         saleValue: orderRow.orderCommercialValue,
-        investedCapital: orderRow.costSourceStatus === "OK" ? orderRow.totalIndustrialCost : null,
+        investedCapital:
+          orderRow.costSourceStatus === "OK"
+            ? roundMoney(orderRow.totalIndustrialCost + marginTaxAmount)
+            : null,
         investedCapitalUnavailableReason: resolveCostUnavailableReason(orderRow),
         orderStatus: orderRow.orderStatus,
         orderStatusLabel: orderRow.orderStatusLabel,
@@ -231,8 +265,8 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
           amountReceived: r.amountReceived ?? 0,
           balanceReceivable: r.balanceReceivable ?? 0,
         })),
-        totalTaxes: orderRow.totalTaxes,
-        taxSourceLabel: orderRow.taxSourceLabel,
+        totalTaxes: marginTaxAmount,
+        taxSourceLabel: MARGIN_TAX_SOURCE_LABEL,
       },
       todayCivilDate
     );
