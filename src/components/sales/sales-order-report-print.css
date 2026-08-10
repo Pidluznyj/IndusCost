@@ -858,13 +858,13 @@
     border-collapse: collapse;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 7%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 7%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 20%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller { width: 12%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 9.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 7%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 12%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 6%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 6%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 17%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller { width: 10%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 6%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 10%; }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
   body.sales-orders-icr-print-route .sales-orders-icr-print-table td {

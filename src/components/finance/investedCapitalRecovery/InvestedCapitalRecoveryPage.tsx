@@ -449,6 +449,7 @@ export function InvestedCapitalRecoveryPage() {
             <KpiCard label="Dinheiro na Rua Hoje" value={money(data.kpis.moneyOnStreetToday)} tone="out" />
             <KpiCard label="Capital Recuperado" value={money(data.kpis.capitalRecoveredTotal)} tone="in" />
             <KpiCard label="Capital Total Analisado" value={money(data.kpis.investedCapitalAnalyzedTotal)} />
+            <KpiCard label="Imposto Total (informativo)" value={money(data.kpis.totalTaxesAnalyzed)} />
             <KpiCard label="Total a Receber" value={money(data.kpis.totalOutstandingReceivable)} />
             <KpiCard label="Recuperaram capital" value={String(data.kpis.ordersFullyRecoveredCount)} />
             <KpiCard label="Parcialmente recuperados" value={String(data.kpis.ordersPartiallyRecoveredCount)} />
@@ -518,6 +519,9 @@ export function InvestedCapitalRecoveryPage() {
                     >
                       Capital Investido
                     </th>
+                    <th className="px-2 py-1.5 text-right" title="Informativo — não entra no cálculo de capital investido/recuperado.">
+                      Imposto
+                    </th>
                     <th className="px-2 py-1.5 text-right">Recebido</th>
                     <th className="px-2 py-1.5 text-right">Capital Recuperado</th>
                     <th
@@ -547,6 +551,13 @@ export function InvestedCapitalRecoveryPage() {
                           <span title={row.investedCapitalUnavailableReason ?? undefined}>—</span>
                         ) : (
                           money(row.investedCapital)
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {row.totalTaxes == null ? (
+                          "—"
+                        ) : (
+                          <span title={row.taxSourceLabel ?? undefined}>{money(row.totalTaxes)}</span>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{money(row.actualReceived)}</td>

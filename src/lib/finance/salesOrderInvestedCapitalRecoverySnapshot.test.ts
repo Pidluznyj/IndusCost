@@ -15,6 +15,8 @@ function baseOrder() {
     investedCapitalUnavailableReason: null,
     orderStatus: "SENT_TO_NOMUS",
     orderStatusLabel: "Enviado",
+    totalTaxes: null as number | null,
+    taxSourceLabel: null as string | null,
     realReceivables: [] as {
       externalId: number;
       dueDate: string | null;
@@ -187,5 +189,54 @@ describe("buildSalesOrderInvestedCapitalRecoverySnapshot", () => {
       TODAY
     );
     assert.equal(snapshot.capitalRecovered! + snapshot.moneyOnStreet!, 100);
+  });
+
+  it("imposto é passthrough puramente informativo — nunca entra em capitalRecovered/moneyOnStreet/recoveryPercent", () => {
+    const withTax = buildSalesOrderInvestedCapitalRecoverySnapshot(
+      {
+        ...baseOrder(),
+        investedCapital: 100,
+        totalTaxes: 18.5,
+        taxSourceLabel: "NF vinculada",
+        realReceivables: [
+          {
+            externalId: 1,
+            dueDate: "2026-06-01",
+            settlementDate: "2026-06-03",
+            amountReceivable: 40,
+            amountReceived: 40,
+            balanceReceivable: 0,
+          },
+        ],
+      },
+      TODAY
+    );
+    const withoutTax = buildSalesOrderInvestedCapitalRecoverySnapshot(
+      {
+        ...baseOrder(),
+        investedCapital: 100,
+        totalTaxes: null,
+        taxSourceLabel: null,
+        realReceivables: [
+          {
+            externalId: 1,
+            dueDate: "2026-06-01",
+            settlementDate: "2026-06-03",
+            amountReceivable: 40,
+            amountReceived: 40,
+            balanceReceivable: 0,
+          },
+        ],
+      },
+      TODAY
+    );
+    assert.equal(withTax.totalTaxes, 18.5);
+    assert.equal(withTax.taxSourceLabel, "NF vinculada");
+    assert.equal(withoutTax.totalTaxes, null);
+    // Imposto presente ou ausente não muda NENHUM número de capital/recuperação.
+    assert.equal(withTax.capitalRecovered, withoutTax.capitalRecovered);
+    assert.equal(withTax.moneyOnStreet, withoutTax.moneyOnStreet);
+    assert.equal(withTax.recoveryPercent, withoutTax.recoveryPercent);
+    assert.equal(withTax.investedCapital, withoutTax.investedCapital);
   });
 });

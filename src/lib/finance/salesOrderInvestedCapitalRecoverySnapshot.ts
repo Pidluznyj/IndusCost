@@ -55,6 +55,16 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   orderStatusLabel: string;
   /** Todos os CR reais (não previsão) já vinculados a este Pedido. */
   realReceivables: readonly InvestedCapitalRecoveryRealReceivableInput[];
+  /**
+   * Imposto total do Pedido — mesmo motor do Resultado Industrial (real via
+   * NF vinculada, estimado via TaxRule, ou combinação). Puramente
+   * informativo: NUNCA entra no cálculo de investedCapital/capitalRecovered/
+   * moneyOnStreet — decisão de negócio já fechada (capital = custo de
+   * FABRICAR o pedido). Exibido lado a lado para responder "como estão,
+   * com base em custo E imposto".
+   */
+  totalTaxes: number | null;
+  taxSourceLabel: string | null;
 };
 
 export type SalesOrderInvestedCapitalRecoverySnapshot = {
@@ -79,6 +89,9 @@ export type SalesOrderInvestedCapitalRecoverySnapshot = {
   orderStatusLabel: string;
   /** Agenda de CR real em aberto vinculada a este Pedido — usada para aging. */
   openRealReceivableEvents: InvestedCapitalRecoveryEvent[];
+  /** Imposto total do Pedido — só informativo, ver comentário no input. */
+  totalTaxes: number | null;
+  taxSourceLabel: string | null;
 };
 
 function roundMoney(value: number): number {
@@ -146,5 +159,7 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
     orderStatus: input.orderStatus,
     orderStatusLabel: input.orderStatusLabel,
     openRealReceivableEvents: openEvents,
+    totalTaxes: input.totalTaxes == null ? null : roundMoney(input.totalTaxes),
+    taxSourceLabel: input.taxSourceLabel,
   };
 }

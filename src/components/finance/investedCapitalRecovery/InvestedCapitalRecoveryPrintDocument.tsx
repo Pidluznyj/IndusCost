@@ -96,6 +96,7 @@ export function InvestedCapitalRecoveryPrintDocument({
               label="Capital Total Analisado"
               value={money(kpis.investedCapitalAnalyzedTotal)}
             />
+            <SummaryKpiCard label="Imposto Total (informativo)" value={money(kpis.totalTaxesAnalyzed)} />
             <SummaryKpiCard label="Total a Receber" value={money(kpis.totalOutstandingReceivable)} />
             <SummaryKpiCard
               label="Recuperaram capital"
@@ -185,6 +186,7 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <th className="col-client">Cliente</th>
                   <th className="col-seller">Vendedor</th>
                   <th className="col-money">Capital Investido</th>
+                  <th className="col-money">Imposto</th>
                   <th className="col-money">Recebido</th>
                   <th className="col-money">Capital Recuperado</th>
                   <th className="col-money">Dinheiro na Rua</th>
@@ -200,6 +202,7 @@ export function InvestedCapitalRecoveryPrintDocument({
                     <td className="col-client">{displayFinanceText(row.customerName)}</td>
                     <td className="col-seller">{displayFinanceText(row.sellerName)}</td>
                     <td className="col-money">{money(row.investedCapital)}</td>
+                    <td className="col-money">{money(row.totalTaxes)}</td>
                     <td className="col-money">{money(row.actualReceived)}</td>
                     <td className="col-money">{money(row.capitalRecovered)}</td>
                     <td className="col-money">{money(row.moneyOnStreet)}</td>
@@ -215,6 +218,7 @@ export function InvestedCapitalRecoveryPrintDocument({
                 <tr className="sales-orders-print-total-row">
                   <td colSpan={3}>Total</td>
                   <td className="col-money">{money(kpis.investedCapitalAnalyzedTotal)}</td>
+                  <td className="col-money">{money(kpis.totalTaxesAnalyzed)}</td>
                   <td className="col-money">{money(totalActualReceived)}</td>
                   <td className="col-money">{money(kpis.capitalRecoveredTotal)}</td>
                   <td className="col-money">{money(kpis.moneyOnStreetToday)}</td>

@@ -100,6 +100,8 @@ export type SalesOrderInvestedCapitalRecoveryKpis = {
   ordersPartiallyRecoveredCount: number;
   ordersInsufficientDataCount: number;
   averageDaysToRecoverCapital: number | null;
+  /** Imposto total da população filtrada — só informativo, mesmo motor do Resultado Industrial. */
+  totalTaxesAnalyzed: number;
 };
 
 export type SalesOrderInvestedCapitalRecoveryTopCustomer = {
@@ -229,6 +231,8 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
           amountReceived: r.amountReceived ?? 0,
           balanceReceivable: r.balanceReceivable ?? 0,
         })),
+        totalTaxes: orderRow.totalTaxes,
+        taxSourceLabel: orderRow.taxSourceLabel,
       },
       todayCivilDate
     );
@@ -247,6 +251,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const capitalRecoveredTotal = roundMoney(sum(withCapital, (r) => r.capitalRecovered ?? 0));
   const investedCapitalAnalyzedTotal = roundMoney(sum(withCapital, (r) => r.investedCapital ?? 0));
   const totalOutstandingReceivable = roundMoney(sum(rows, (r) => r.outstandingReceivable));
+  const totalTaxesAnalyzed = roundMoney(sum(rows, (r) => r.totalTaxes ?? 0));
   const ordersFullyRecoveredCount = rows.filter((r) => r.status === "CAPITAL_RECUPERADO").length;
   const ordersPartiallyRecoveredCount = rows.filter((r) => r.status === "EM_RECUPERACAO").length;
   const ordersInsufficientDataCount = rows.filter((r) => r.status === "DADOS_INSUFICIENTES").length;
@@ -310,6 +315,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
       ordersPartiallyRecoveredCount,
       ordersInsufficientDataCount,
       averageDaysToRecoverCapital,
+      totalTaxesAnalyzed,
     },
     agingBuckets: (Object.keys(agingTotals) as InvestedCapitalAgingBucketKey[]).map((key) => ({
       key,
