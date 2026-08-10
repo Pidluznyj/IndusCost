@@ -353,7 +353,7 @@ export function SalesOrderResultPage() {
                 amountFormat="currency"
                 tone={metricVariantToTotalizerTone(resolveMarginMoneyVariant(totals.marginAmount))}
                 icon={Wallet}
-                helperText="Margem gerencial oficial (após imposto TaxRule − custo versionado)."
+                helperText="Margem comercial — mesma regra da listagem de Pedidos de Venda."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -363,7 +363,7 @@ export function SalesOrderResultPage() {
                 amountFormat="percent"
                 tone={metricVariantToTotalizerTone(resolveMarginPercentVariant(totals.marginPercent))}
                 icon={Percent}
-                helperText="Margem ponderada por receita líquida gerencial."
+                helperText="Margem comercial ponderada — mesma regra da listagem de Pedidos de Venda."
                 loading={loading}
               />
               <SystemTotalizerCard

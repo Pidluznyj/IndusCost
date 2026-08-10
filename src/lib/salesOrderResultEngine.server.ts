@@ -11,9 +11,11 @@ import {
 import { resolveOfficialSalesMarginTaxContext } from "./salesMarginNomusTaxContext.server.js";
 import {
   buildOfficialSalesMarginRulesResult,
+  buildOfficialSalesOrderListMarginSummary,
   buildOfficialSalesOrderResultMarginPayload,
   mapMarginContextToRulesOrders,
 } from "./salesMarginRulesAdapter.js";
+import { roundPricingMoney } from "./pricingCalculations.js";
 import {
   buildSalesOrderMarginContext,
   SALES_ORDER_ITEM_MARGIN_SELECT,
@@ -192,6 +194,34 @@ export async function buildSalesOrderResultDashboard(
     filters,
   });
 
+  // KPIs de cabeçalho (R$ Custo / R$ Margem / % Margem / Margem média/un.)
+  // seguem a MESMA regra da listagem de Pedidos de Venda — "Margem comercial"
+  // (buildOfficialSalesOrderListMarginSummary), não a margem gerencial com
+  // dedução de imposto. Decisão do usuário: paridade com a listagem, mesmo
+  // que a apuração fiscal detalhada continue disponível em `rules`/`source`.
+  const commercialSummary = await buildOfficialSalesOrderListMarginSummary(
+    db,
+    marginOrders,
+    { year: filters.year }
+  );
+  const totals = {
+    ...marginPayload.totals,
+    costAmount: commercialSummary.totalCost,
+    marginAmount: commercialSummary.totalMarginValue,
+    marginPercent: commercialSummary.totalMarginPercentage,
+    taxAmount: commercialSummary.taxAmount,
+    netSalesAmount: roundPricingMoney(
+      marginPayload.totals.salesAmount - commercialSummary.taxAmount
+    ),
+    averageUnitMargin:
+      marginPayload.totals.totalQuantity > 0
+        ? roundPricingMoney(
+            commercialSummary.totalMarginValue / marginPayload.totals.totalQuantity
+          )
+        : null,
+    taxSourceLabel: "Margem comercial — mesma regra da listagem de Pedidos de Venda",
+  };
+
   let monthlyCommercialMargin = marginPayload.monthlyMargin.map((row) => ({
     ...row,
     marginAmount: 0,
@@ -341,7 +371,7 @@ export async function buildSalesOrderResultDashboard(
 
   return {
     filters,
-    totals: marginPayload.totals,
+    totals,
     monthlyMargin: marginPayload.monthlyMargin,
     monthlyCommercialMargin,
     monthlySalesComparison,
