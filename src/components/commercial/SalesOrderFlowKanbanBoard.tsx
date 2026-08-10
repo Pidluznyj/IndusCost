@@ -129,7 +129,7 @@ export function SalesOrderFlowKanbanBoard({
             variants={reduceMotion ? undefined : emilColumnVariants}
             transition={columnTransition}
             className={cn(
-              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/80",
+              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-slate-50/50",
               fullscreen
                 ? "h-full max-h-none"
                 : "max-h-[min(70vh,640px)]"
@@ -390,7 +390,7 @@ export function SalesOrderFlowKanbanCard({
           animate={{ opacity: 1, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
           transition={morphTransition}
-          className="flex w-full items-stretch overflow-hidden rounded-xl border border-border/70 bg-card"
+          className="flex w-full items-stretch overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm transition-shadow hover:shadow-md"
           data-testid={`sales-order-flow-card-${card.orderId}`}
           data-minimized="true"
         >
@@ -446,15 +446,25 @@ export function SalesOrderFlowKanbanCard({
           animate={{ opacity: 1, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
           transition={morphTransition}
-          className="overflow-hidden rounded-xl border border-border/70 bg-card"
+          className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm transition-shadow hover:shadow-md"
           data-testid={`sales-order-flow-card-${card.orderId}`}
           data-minimized="false"
         >
           <div className="flex">
             <div className={cn("w-1 shrink-0 self-stretch", accentClass)} aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-1 px-2 pt-1.5">
-                <PriorityBadge priority={card.priority} />
+              <div className="flex items-center justify-between gap-1 px-2 pt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-bold tracking-tight text-foreground">
+                    {card.orderCode}
+                  </span>
+                  {card.isOverdue ? (
+                    <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-amber-900">
+                      ATRASADO
+                    </span>
+                  ) : null}
+                  <PriorityBadge priority={card.priority} />
+                </div>
                 <button
                   type="button"
                   className={cn(
@@ -481,13 +491,8 @@ export function SalesOrderFlowKanbanCard({
                 aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
               >
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-bold tracking-tight text-foreground">
-                    {card.orderCode}
-                  </p>
-                  <p className="truncate text-[11px] text-muted-foreground">
+                  <p className="truncate text-[13px] font-semibold text-foreground">
                     {card.customerName?.trim() || "Cliente não informado"}
-                    <span className="text-border"> · </span>
-                    {stageLabel}
                   </p>
                 </div>
 
