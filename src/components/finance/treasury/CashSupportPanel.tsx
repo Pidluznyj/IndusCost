@@ -15,6 +15,7 @@ import {
 } from "@/src/lib/financeModuleUiStandards.js";
 import type {
   CashSupportReadModel,
+  CashSupportReconciliationState,
   CashSupportResourceType,
   CashSupportUnifiedRow,
 } from "@/src/lib/treasury/contracts/cashSupportContracts.js";
@@ -32,6 +33,25 @@ export const CASH_SUPPORT_RESOURCE_TYPE_LABELS: Record<CashSupportResourceType, 
   INTERNAL_TRANSFER: "Transferência interna",
   ADJUSTMENT: "Ajuste",
   UNIDENTIFIED: "Não identificado",
+};
+
+/**
+ * Conciliação (MATCHED/UNMATCHED/…) só existe hoje por MOVIMENTO BANCÁRIO —
+ * títulos oficiais (CR/CP) chegam com `NOT_APPLICABLE` porque a conciliação
+ * por título ainda não foi construída (CS-008, ver
+ * cashSupportCanonicalAdapter.ts). Não inventamos "conciliado/não conciliado"
+ * para título aqui — isso mudaria o dado, não só o rótulo.
+ */
+export const CASH_SUPPORT_RECONCILIATION_STATE_LABELS: Record<
+  CashSupportReconciliationState,
+  string
+> = {
+  NOT_APPLICABLE: "Não aplicável",
+  PENDING: "Pendente",
+  PARTIAL: "Parcial",
+  MATCHED: "Conciliado",
+  UNMATCHED: "Não conciliado",
+  IGNORED: "Ignorado",
 };
 
 function ResourceTypeBadge({ type }: { type: CashSupportResourceType }) {
@@ -333,7 +353,9 @@ export function CashSupportPanel({
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
                         {money(row.residualAmount)}
                       </td>
-                      <td className="px-2 py-1.5">{row.reconciliationState}</td>
+                      <td className="px-2 py-1.5">
+                        {CASH_SUPPORT_RECONCILIATION_STATE_LABELS[row.reconciliationState]}
+                      </td>
                       <td className="px-2 py-1.5">
                         {row.resourceType === "FORECAST" ? (
                           <span
