@@ -317,7 +317,10 @@ export async function resolveCommercialPublishedTableContexts(
 }
 
 export async function buildCommercialPublishedPriceGridSnapshot(
-  db: Pick<PrismaClient, "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule">,
+  db: Pick<
+    PrismaClient,
+    "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule" | "product"
+  >,
   rawQuery: CommercialPublishedPriceGridQuery = {}
 ): Promise<CommercialPublishedPriceGridSnapshot> {
   const referenceDate = rawQuery.referenceDate ?? new Date();
@@ -382,9 +385,24 @@ export async function buildCommercialPublishedPriceGridSnapshot(
     itemsByProductId.set(item.productId, bucket);
   }
 
+  // Produto inativado DEPOIS da publicação continua com preço congelado na
+  // versão vigente — sem esta checagem ele seguiria visível na Formação de
+  // Preço e na Tabela comercial do vendedor. Exclui só quando o status atual
+  // é conhecido e diferente de ACTIVE (null legado conta como ativo).
+  const productStatuses = await db.product.findMany({
+    where: { id: { in: [...itemsByProductId.keys()] } },
+    select: { id: true, status: true },
+  });
+  const inactiveProductIds = new Set(
+    productStatuses
+      .filter((p) => p.status != null && String(p.status).toUpperCase() !== "ACTIVE")
+      .map((p) => p.id)
+  );
+
   let rows: CommercialPublishedPriceGridRow[] = [];
 
   for (const [productId, bucket] of itemsByProductId.entries()) {
+    if (inactiveProductIds.has(productId)) continue;
     if (!matchesSearch(bucket.sku, bucket.productName, search)) continue;
 
     const prices = tables.map((ctx) => {

@@ -160,6 +160,10 @@ describe("commercialPublishedPrices endpoint data contract", () => {
     }>
   ) {
     return {
+      product: {
+        findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id, status: "ACTIVE" })),
+      },
       priceTable: {
         findMany: async () => tables.map((t) => ({ ...t, status: "ACTIVE" })),
       },

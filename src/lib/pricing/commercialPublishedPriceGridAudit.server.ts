@@ -276,7 +276,7 @@ export function collectPartialProducts(
 }
 
 async function fetchAllGridRows(
-  db: Pick<PrismaClient, "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule">,
+  db: Pick<PrismaClient, "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule" | "product">,
   query: CommercialPriceGridAuditQuery
 ): Promise<CommercialPublishedPriceGridSnapshot> {
   const referenceDate = query.referenceDate ?? new Date();
@@ -336,7 +336,7 @@ async function fetchAllGridRows(
 }
 
 export async function buildCommercialPublishedPriceGridAudit(
-  db: Pick<PrismaClient, "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule">,
+  db: Pick<PrismaClient, "priceTable" | "priceTableVersion" | "priceTableItem" | "taxRule" | "product">,
   query: CommercialPriceGridAuditQuery = {}
 ): Promise<CommercialPriceGridAuditResult> {
   const referenceDate = query.referenceDate ?? new Date();

@@ -9686,6 +9686,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
+      // Produto inativado após a publicação mantém preço congelado na versão
+      // vigente — bloqueia aqui para o vendedor não vender item inativo.
+      // Status null (legado) conta como ativo, igual ao default do schema.
+      if (product.status != null && String(product.status).toUpperCase() !== "ACTIVE") {
+        return res.status(409).json({
+          code: "PRODUCT_INACTIVE",
+          message: "Produto está inativo e não pode ser adicionado com preço publicado.",
+        });
+      }
+
       const publishedVersion = await resolvePublishedPriceTableVersionForDate(
         prisma,
         priceTableId,
@@ -10682,7 +10692,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get("/api/pricing", requireAppAuth, requireResource("commercial.pricing", "view"), async (req, res) => {
     try {
       const cache = await initAnalysisCache();
+      // Produto inativo não é precificado nem listado — status null (legado)
+      // conta como ativo, igual ao default do schema.
       const pricings = await prisma.productPricing.findMany({
+        where: {
+          Product: { OR: [{ status: "ACTIVE" }, { status: null }] },
+        },
         include: { Product: true, TaxRule: { include: { TaxComponent: true } } },
       });
 

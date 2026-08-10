@@ -37,11 +37,20 @@ type ItemRow = {
 function createGridDb(
   tables: Array<{ id: string; code: string; name: string }>,
   versions: VersionRow[],
-  items: ItemRow[]
+  items: ItemRow[],
+  options?: { productStatusById?: Record<string, string | null> }
 ) {
   const taxRules = new Map([["tax-1", { name: "Mercado Interno" }]]);
+  const productStatusById = options?.productStatusById ?? {};
 
   return {
+    product: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.map((id) => ({
+          id,
+          status: id in productStatusById ? productStatusById[id] : "ACTIVE",
+        })),
+    },
     priceTable: {
       findMany: async ({
         where,
@@ -167,6 +176,62 @@ describe("commercialPublishedPrices.server", () => {
     assert.equal(snapshot.rows[0]?.prices.every((p) => p.status === "PUBLISHED"), true);
     assert.equal(snapshot.rows[0]?.prices[0]?.salePrice, 20);
     assert.equal(snapshot.rows[0]?.prices[3]?.salePrice, 23);
+  });
+
+  it("produto INATIVO com preço publicado congelado não aparece na grade (Formação de Preço e Tabela comercial)", async () => {
+    const items: ItemRow[] = [
+      {
+        id: "item-ativo",
+        priceTableVersionId: fourVersions[0]!.id,
+        productId: "p-ativo",
+        sku: "ATV-001",
+        productName: "Produto Ativo",
+        frozenTotalCost: 10,
+        marginPct: 30,
+        salePrice: 20,
+        commissionPerc: 2,
+        formulaSnapshotJson: formulaSnapshot(),
+      },
+      {
+        id: "item-inativo",
+        priceTableVersionId: fourVersions[0]!.id,
+        productId: "p-inativo",
+        sku: "INA-001",
+        productName: "Produto Inativado Depois da Publicação",
+        frozenTotalCost: 10,
+        marginPct: 30,
+        salePrice: 25,
+        commissionPerc: 2,
+        formulaSnapshotJson: formulaSnapshot(),
+      },
+      {
+        id: "item-status-null",
+        priceTableVersionId: fourVersions[0]!.id,
+        productId: "p-legado-null",
+        sku: "LEG-001",
+        productName: "Produto Legado Sem Status",
+        frozenTotalCost: 10,
+        marginPct: 30,
+        salePrice: 30,
+        commissionPerc: 2,
+        formulaSnapshotJson: formulaSnapshot(),
+      },
+    ];
+
+    const db = createGridDb(fourTables, fourVersions, items, {
+      productStatusById: {
+        "p-inativo": "INACTIVE",
+        "p-legado-null": null,
+      },
+    });
+    const snapshot = await buildCommercialPublishedPriceGridSnapshot(db as never, {
+      referenceDate: ref,
+    });
+
+    const skus = snapshot.rows.map((r) => r.sku).sort();
+    // Inativo some; ativo e legado com status null permanecem.
+    assert.deepEqual(skus, ["ATV-001", "LEG-001"]);
+    assert.equal(snapshot.pagination.total, 2);
   });
 
   it("produto sem preço em uma tabela retorna null nessa tabela", async () => {

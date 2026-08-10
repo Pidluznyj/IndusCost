@@ -752,7 +752,14 @@ export const ProposalModule = () => {
       loadOptional<PriceTableListRow[]>("/api/price-tables", [], true),
     ]);
     setCustomers(Array.isArray(c) ? c : []);
-    setProducts(Array.isArray(pr) ? pr : []);
+    // Vendedor só escolhe produto ativo — o endpoint global (/api/products)
+    // segue sem filtro porque a Engenharia precisa ver inativos; status
+    // ausente (legado) conta como ativo, igual ao default do schema.
+    setProducts(
+      Array.isArray(pr)
+        ? pr.filter((p) => p.status == null || String(p.status).toUpperCase() === "ACTIVE")
+        : []
+    );
     setPriceTables(
       Array.isArray(pt)
         ? pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE")
