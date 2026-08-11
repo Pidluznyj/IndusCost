@@ -202,6 +202,8 @@ export type FinanceDreKpiSet = {
  */
 export type FinanceDreKpis = FinanceDreKpiSet & {
   ytd: FinanceDreKpiSet;
+  /** Séries mensais de EBITDA para análise mês a mês (12 meses). */
+  ebitdaByMonth?: number[];
 };
 
 export type FinanceDreReport = {

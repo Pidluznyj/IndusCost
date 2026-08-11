@@ -26,6 +26,7 @@ import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiCardClass, financeBiShellClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
 import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
+import { FinanceDreYtdChartsSection } from "@/src/components/finance/dre/FinanceDreYtdChartsSection";
 import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
 import { FinanceDrePrintDocument } from "@/src/components/finance/dre/FinanceDrePrintDocument";
@@ -573,6 +574,8 @@ export function FinanceManagerialDrePage() {
                 />
                 <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
               </div>
+
+              <FinanceDreYtdChartsSection report={report} />
 
               <FinanceDreInformativeReport
                 report={report}

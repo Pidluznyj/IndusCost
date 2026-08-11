@@ -155,7 +155,7 @@ describe("financeDreCostCenterRoles", () => {
   });
 
   it("mapa persistido tem precedência sobre o classificador", () => {
-    const map = new Map([["cc-1", "logistics" as const]]);
+    const map = new Map([["cc-1", "logistics" as const], ["cc-none", "none" as const]]);
     const { buckets } = bucketCostCenterSpendByDreRole(
       [
         {
@@ -166,6 +166,14 @@ describe("financeDreCostCenterRoles", () => {
           name: "Aluguel",
           amount: 50,
         },
+        {
+          year: 2026,
+          month: 1,
+          costCenterId: "cc-none",
+          code: "IGN",
+          name: "Gasto ja considerado no CMV",
+          amount: 9999,
+        },
       ],
       2026,
       [],
@@ -173,7 +181,7 @@ describe("financeDreCostCenterRoles", () => {
       map
     );
     assert.equal(buckets.logistics[0], 50);
-    assert.equal(buckets.admin[0], 0);
+    assert.equal(buckets.admin[0], 0); // cc-none não entra em admin nem em logistics
   });
 });
 
@@ -655,9 +663,16 @@ describe("finance dre line drill-down", () => {
     const page = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
     assert.match(page, /drillSourceCheckId|setDrillSourceCheckId/);
     assert.match(page, /onSourceCheckClick/);
+    assert.match(page, /FinanceDreYtdChartsSection/);
 
     const modal = readSrc("src/components/finance/dre/FinanceDreLineDetailModal.tsx");
     assert.match(modal, /sourceCheckId/);
     assert.match(modal, /getFinanceDreSourceCheckDrilldownPath/);
+
+    const charts = readSrc("src/components/finance/dre/FinanceDreYtdChartsSection.tsx");
+    assert.match(charts, /buildDreYtdChartPoints/);
+    assert.match(charts, /finance-dre-ytd-charts-section/);
+    assert.match(charts, /finance-dre-cards-charts-grid/);
+    assert.match(charts, /FinanceBiChartExpandModal/);
   });
 });

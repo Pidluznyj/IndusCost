@@ -367,6 +367,9 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const investimentoSociosYtd = ytdThroughMonth(investimentoSociosSeries, m);
   const ebitdaH = roundDreMoney(resultadoH + investimentoSociosH);
   const ebitdaYtd = roundDreMoney(resultadoYtd + investimentoSociosYtd);
+  const ebitdaSeries = Array.from({ length: 12 }, (_, i) =>
+    roundDreMoney((resultado[i] ?? 0) + (investimentoSociosSeries[i] ?? 0))
+  );
 
   const provisionVals = taxLineValues(
     estimatedCorporateTaxes.provisionByMonth,
@@ -558,6 +561,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const kpis: FinanceDreKpis = {
     ...monthKpis,
     ytd: ytdKpis,
+    ebitdaByMonth: ebitdaSeries,
   };
 
   const qualityAlerts: FinanceDreQualityAlert[] = [];

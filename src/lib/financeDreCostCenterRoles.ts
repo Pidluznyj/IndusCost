@@ -5,6 +5,7 @@
  */
 
 export type DreCostCenterRole =
+  | "none"
   | "logistics"
   | "packaging"
   | "payroll"
@@ -17,19 +18,21 @@ export type DreCostCenterRole =
   | "partner_investment";
 
 export const DRE_COST_CENTER_ROLES: readonly DreCostCenterRole[] = [
+  "none",
   "logistics",
   "packaging",
+  "admin",
+  "partner_investment",
   "payroll",
   "benefits",
   "assembly",
   "labor",
   "tax",
   "raw_material",
-  "admin",
-  "partner_investment",
 ] as const;
 
 export const DRE_COST_CENTER_ROLE_LABELS: Record<DreCostCenterRole, string> = {
+  none: "Nenhum nível (Fora da DRE / Já considerado)",
   logistics: "Logística / Fretes",
   packaging: "Embalagens",
   payroll: "Folha",
@@ -38,12 +41,13 @@ export const DRE_COST_CENTER_ROLE_LABELS: Record<DreCostCenterRole, string> = {
   labor: "Mão de obra",
   tax: "Imposto",
   raw_material: "Matéria-prima",
-  admin: "Administrativo",
+  admin: "Despesas Administrativas",
   partner_investment: "Investimento sócios",
 };
 
 /** CCs que NÃO entram em Despesas Administrativas. */
 export const DRE_ADMIN_EXCLUDED_ROLES: ReadonlySet<DreCostCenterRole> = new Set([
+  "none",
   "logistics",
   "packaging",
   "payroll",
