@@ -70,7 +70,8 @@ export async function loadRawMaterialCostCenterSpotlight(
       referenceDate,
       mappingByCcId: roleMap,
     });
-  } catch {
+  } catch (error) {
+    console.error("[loadRawMaterialCostCenterSpotlight] Falha ao carregar centros de custo de matéria-prima:", error);
     return emptyRawMaterialCostCenterSpotlight(referenceDate, ytdYear);
   }
 }
