@@ -18,6 +18,7 @@
  */
 import { prisma } from "@/src/lib/prisma.js";
 import { buildSalesOrderFiscalTaxesPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxes.server.js";
+import { dedupeInFlight } from "@/src/lib/finance/requestDedupe.js";
 import { buildSalesOrderFiscalTaxesErrorPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxesContract.js";
 import { canViewSalesOrderFiscalTaxesFromAuth } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
 import {
@@ -1495,7 +1496,34 @@ export type LoadOrderFullAuditInput = {
   includeRaw?: boolean;
 };
 
+/**
+ * Coalescência de chamadas CONCORRENTES ao mesmo pedido (~28 consultas cada —
+ * ver comentário em EFFECTIVE_ORDER_AUDIT_CONCURRENCY em
+ * financeAccountsReceivableEffectiveTitles.server.ts). O Relatório Presidencial
+ * dispara 3 cargas de portfólio AR em paralelo (período, ano, comparativo
+ * histórico) que frequentemente auditam os MESMOS pedidos do ano corrente ao
+ * mesmo tempo — sem isso, o mesmo pedido é auditado 2-3x simultaneamente.
+ * Ver `dedupeInFlight` (requestDedupe.ts) para a garantia de não-obsolescência.
+ */
+const inFlightOrderFullAudits = new Map<
+  string,
+  Promise<OrderFullAuditPayload | { ok: false; error: string; status: number }>
+>();
+
 export async function loadOrderFullAudit(
+  input: LoadOrderFullAuditInput
+): Promise<OrderFullAuditPayload | { ok: false; error: string; status: number }> {
+  const salesOrderId = input.salesOrderId?.trim();
+  if (!salesOrderId) {
+    return { ok: false, status: 400, error: "salesOrderId é obrigatório." };
+  }
+  const key = `${salesOrderId}|${input.runId ?? ""}|${input.includeRaw ? "1" : "0"}`;
+  return dedupeInFlight(inFlightOrderFullAudits, key, () =>
+    loadOrderFullAuditUncached(input)
+  );
+}
+
+async function loadOrderFullAuditUncached(
   input: LoadOrderFullAuditInput
 ): Promise<OrderFullAuditPayload | { ok: false; error: string; status: number }> {
   const salesOrderId = input.salesOrderId?.trim();
