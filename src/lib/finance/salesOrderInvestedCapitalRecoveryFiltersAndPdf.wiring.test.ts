@@ -19,6 +19,19 @@ describe("Recuperação do Dinheiro Investido — filtros gated por Pesquisar + 
     assert.doesNotMatch(page, /\[startDate, endDate, q, year, month, customerId\]/);
   });
 
+  it("carrega com Ano E Mês correntes por padrão — população menor no primeiro load (carregamento rápido)", () => {
+    const page = read(
+      "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
+    );
+    const fn = page.slice(
+      page.indexOf("function defaultFilters()"),
+      page.indexOf("function buildQuery(")
+    );
+    assert.match(fn, /const now = new Date\(\);/);
+    assert.match(fn, /year: String\(now\.getFullYear\(\)\),/);
+    assert.match(fn, /month: String\(now\.getMonth\(\) \+ 1\),/);
+  });
+
   it("Status econômico é enviado ao backend (economicStatus), não só filtrado no cliente", () => {
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"

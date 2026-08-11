@@ -96,12 +96,15 @@ type InvestedCapitalRecoveryUiFilters = {
 };
 
 function defaultFilters(): InvestedCapitalRecoveryUiFilters {
+  const now = new Date();
   return {
     startDate: "",
     endDate: "",
     q: "",
-    year: String(new Date().getFullYear()),
-    month: "",
+    year: String(now.getFullYear()),
+    // Mês corrente por padrão — carregamento inicial rápido (população menor
+    // que "ano inteiro"); usuário troca para "Todos" se quiser o ano completo.
+    month: String(now.getMonth() + 1),
     customerId: "",
     customerName: "",
     customerCnpj: "",
