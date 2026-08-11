@@ -412,6 +412,13 @@ export function SalesOrderFlowKanbanCard({
                 <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-hidden="true" />
               ) : null}
             </div>
+            <p
+              className="mt-0.5 truncate text-[11px] font-semibold text-foreground/80"
+              title={card.customerName?.trim() || "Cliente não informado"}
+              data-testid={`sales-order-flow-card-customer-mini-${card.orderId}`}
+            >
+              {card.customerName?.trim() || "Cliente não informado"}
+            </p>
             <p className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">
               {stageLabel}
             </p>
