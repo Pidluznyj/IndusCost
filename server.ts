@@ -15547,13 +15547,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           createdAt: now,
         }
       );
+      // Margem comercial sempre AO VIVO (hoje) — nunca trava na data de
+      // abertura externa. Ver comentário em stampProposalItemsWithCommercialMarginsForWrite.
       const commercialStamped = await stampProposalItemsWithCommercialMarginsForWrite(
         prisma,
         stampedItems,
-        {
-          referenceDate:
-            (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt ?? now,
-        }
+        { referenceDate: now }
       );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),
@@ -15611,15 +15610,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           createdAt: existing.createdAt,
         }
       );
+      // Margem comercial sempre AO VIVO (hoje) — nunca trava na data de
+      // abertura externa/criação. Ver comentário em stampProposalItemsWithCommercialMarginsForWrite.
       const commercialStamped = await stampProposalItemsWithCommercialMarginsForWrite(
         prisma,
         stampedItems,
-        {
-          referenceDate:
-            (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt ??
-            existing.externalOpenedAt ??
-            existing.createdAt,
-        }
+        { referenceDate: new Date() }
       );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),

@@ -441,6 +441,16 @@ function buildSnapshotFromFormation(input: {
  * Recalcula e persiste snapshot comercial oficial nos itens.
  * Aceita do frontend apenas qty/preço/desconto/tabela.
  * Formação e resultados vêm do motor + histórico no banco (ou freeze já validado).
+ *
+ * SEMPRE resolve a formação vigente em `options.referenceDate` (hoje, por
+ * padrão) — nunca herda a `referenceDate` de um snapshot anteriormente
+ * congelado no item. Decisão de negócio: a Proposta recalcula "ao vivo" a
+ * cada save, igual ao Pedido de Venda (que resolve a formação comercial na
+ * data de emissão) — nunca trava na tabela comercial vigente em uma data
+ * antiga (ex.: quando o item foi formado pela primeira vez, dias/semanas
+ * antes). O snapshot congelado só é reaproveitado como último recurso,
+ * quando a formação ao vivo genuinamente falha (produto sem tabela
+ * publicada etc.) — ver fallback abaixo.
  */
 export async function stampProposalItemsWithCommercialMarginsForWrite(
   db: PrismaClient,
@@ -456,48 +466,17 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
         : new Date();
   const defaultRefOk = Number.isFinite(defaultRef.getTime()) ? defaultRef : new Date();
 
-  // Agrupa produtos por data de formação (freeze.referenceDate ou default).
-  const groups = new Map<string, { date: Date; productIds: Set<string> }>();
-  const defaultKey = toCivilDateKey(defaultRefOk)!;
-  for (const raw of items) {
-    const productId = typeof raw.productId === "string" ? raw.productId : "";
-    if (!productId) continue;
-    const parsed = parseProposalCommercialPricingSnapshot(raw.commercialPricingSnapshotJson);
-    const dateStr = parsed?.referenceDate;
-    const date =
-      dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
-        ? new Date(`${dateStr}T12:00:00`)
-        : defaultRefOk;
-    const key = toCivilDateKey(date) ?? defaultKey;
-    let group = groups.get(key);
-    if (!group) {
-      group = { date, productIds: new Set() };
-      groups.set(key, group);
-    }
-    group.productIds.add(productId);
-  }
-
-  // Sempre carrega também a data default (hoje/proposta) — fallback quando a
-  // data congelada não tem formação (paridade com hydrate do formulário).
-  if (groups.size > 0) {
-    let defaultGroup = groups.get(defaultKey);
-    if (!defaultGroup) {
-      defaultGroup = { date: defaultRefOk, productIds: new Set() };
-      groups.set(defaultKey, defaultGroup);
-    }
-    for (const [key, group] of groups) {
-      if (key === defaultKey) continue;
-      for (const productId of group.productIds) defaultGroup.productIds.add(productId);
-    }
-  }
-
-  const formationsByDate = new Map<string, Map<string, ProposalCommercialFormationResult>>();
-  for (const [key, group] of groups) {
-    formationsByDate.set(
-      key,
-      await loadProposalCommercialFormationsBatch(db, [...group.productIds], group.date)
-    );
-  }
+  const productIds = [
+    ...new Set(
+      items
+        .map((raw) => (typeof raw.productId === "string" ? raw.productId : ""))
+        .filter(Boolean)
+    ),
+  ];
+  const formations =
+    productIds.length > 0
+      ? await loadProposalCommercialFormationsBatch(db, productIds, defaultRefOk)
+      : new Map<string, ProposalCommercialFormationResult>();
 
   return items.map((raw) => {
     const item = { ...raw };
@@ -520,16 +499,9 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
       typeof item.priceTableVersionId === "string" ? item.priceTableVersionId : null;
 
     const existing = parseProposalCommercialPricingSnapshot(clientSnapshot);
-    const dateKey =
-      existing?.referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(existing.referenceDate)
-        ? existing.referenceDate
-        : defaultKey;
-    let formation = formationsByDate.get(dateKey)?.get(productId);
-    if ((!formation || !formation.ok) && dateKey !== defaultKey) {
-      formation = formationsByDate.get(defaultKey)?.get(productId);
-    }
+    const formation = formations.get(productId);
 
-    // Formação autoritativa do banco na data congelada/proposta.
+    // Formação autoritativa do banco, vigente na data de referência (hoje).
     if (formation?.ok) {
       const snapshot = buildSnapshotFromFormation({
         formation,

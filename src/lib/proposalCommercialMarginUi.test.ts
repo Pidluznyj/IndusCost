@@ -112,6 +112,49 @@ describe("proposalCommercialMargin UI — prévia em tempo real", () => {
     );
   });
 
+  it("prioriza formação AO VIVO sobre snapshot congelado — Proposta nunca trava em tabela antiga (decisão: paridade com o Pedido, que recalcula na data de emissão)", () => {
+    const staleSnapshot = {
+      schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
+      formationContextId: "stale-v1|stale-v2",
+      priceTableId: null,
+      priceTableVersionId: null,
+      referenceDate: "2024-01-01",
+      referenceTableUnitPrice: p48,
+      negotiatedGrossUnitPrice: p48,
+      informedDiscountRate: null,
+      informedDiscountValue: null,
+      finalNetUnitPrice: p48,
+      finalNetLineValue: p48,
+      // Custo/margem propositalmente absurdos — se "vazarem" para o
+      // resultado, o teste falha (prova que o congelado não é mais usado).
+      frozenCostUnit: 1,
+      taxRate: TAX,
+      freightRate: FREIGHT_RATE,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: OTHER,
+      tiers: formation.tiers,
+      calculatedCommissionRate: 0.045,
+      commercialMarginRate: 0.97,
+      commercialMarginValue: 999999,
+      calculationSource: "PROPOSAL_PRICE_FORMATION" as const,
+      warnings: [],
+    };
+
+    const withBoth = previewProposalCommercialMargins([
+      {
+        quantity: 1,
+        suggestedPrice: p48,
+        negotiatedPrice: p48,
+        priceTableId: "pt",
+        commercialPricingSnapshotJson: staleSnapshot,
+        commercialFormation: formation,
+      },
+    ]);
+
+    assert.equal(withBoth.byIndex[0]!.commercialMarginPercent, 48);
+    assert.notEqual(withBoth.byIndex[0]!.commercialMarginPercent, 97);
+  });
+
   it("comissão muda de faixa com desconto", () => {
     const at48 = previewProposalCommercialMargins([
       {
@@ -243,6 +286,38 @@ describe("proposalCommercialMargin — PDF cliente e independência", () => {
     assert.match(adapter, /delete item\.commercialMarginRate/);
     assert.match(adapter, /applyCommercialMarginDisplayScalars/);
     assert.doesNotMatch(adapter, /salesOrderCommercialMargin/);
+  });
+
+  it("save (POST/PUT) sempre recalcula a margem comercial na data de HOJE — nunca herda a data de abertura externa/criação nem a referenceDate de um snapshot já congelado (paridade com o Pedido, que resolve na data de emissão)", () => {
+    const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    const postBlock = server.slice(
+      server.indexOf('app.post("/api/proposals"'),
+      server.indexOf('app.put("/api/proposals/:id"')
+    );
+    assert.match(postBlock, /stampProposalItemsWithCommercialMarginsForWrite\(\s*\n\s*prisma,\s*\n\s*stampedItems,\s*\n\s*\{ referenceDate: now \}/);
+    assert.doesNotMatch(
+      postBlock,
+      /stampProposalItemsWithCommercialMarginsForWrite[\s\S]{0,200}externalOpenedAt/
+    );
+
+    const putStart = server.indexOf('app.put("/api/proposals/:id"');
+    const putBlock = server.slice(putStart, putStart + 3000);
+    assert.match(
+      putBlock,
+      /stampProposalItemsWithCommercialMarginsForWrite\(\s*\n\s*prisma,\s*\n\s*stampedItems,\s*\n\s*\{ referenceDate: new Date\(\) \}/
+    );
+
+    const adapter = readFileSync(
+      join(process.cwd(), "src/lib/proposalCommercialMargin.server.ts"),
+      "utf8"
+    );
+    // A formação é sempre buscada na referenceDate default (hoje) — nunca
+    // agrupada/priorizada pela referenceDate de um snapshot já existente.
+    assert.doesNotMatch(adapter, /existing\?\.referenceDate/);
+    assert.match(
+      adapter,
+      /loadProposalCommercialFormationsBatch\(db, productIds, defaultRefOk\)/
+    );
   });
 
   it("surfaces de proposta exibem margem comercial, não a de produção", () => {

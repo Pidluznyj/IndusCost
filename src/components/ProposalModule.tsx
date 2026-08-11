@@ -428,22 +428,26 @@ function proposalItemHasUsableCommercialFormation(
   );
 }
 
-/** Carrega formação comercial do produto — independente de tabela de preço. */
+/**
+ * Carrega formação comercial do produto — independente de tabela de preço.
+ * SEMPRE busca ao vivo (data de hoje), mesmo quando o item já tem um
+ * snapshot congelado "usável" — decisão de negócio: a Proposta nunca deve
+ * travar na tabela comercial vigente em uma data antiga; deve recalcular a
+ * cada abertura/edição, igual ao Pedido de Venda já faz na data de emissão.
+ * `formationHydrateAttemptedRef` (chamador) evita refetch repetido no mesmo
+ * productId dentro da mesma sessão de edição.
+ */
 async function hydrateProposalItemsCommercialFormation(
   items: ProposalItem[]
 ): Promise<ProposalItem[]> {
-  const missingProductIds = [
-    ...new Set(
-      items
-        .filter((it) => it.productId && !proposalItemHasUsableCommercialFormation(it))
-        .map((it) => it.productId as string)
-    ),
+  const productIds = [
+    ...new Set(items.filter((it) => it.productId).map((it) => it.productId as string)),
   ];
-  if (missingProductIds.length === 0) return items;
+  if (productIds.length === 0) return items;
 
   const formationByProductId = new Map<string, ProposalItem["commercialFormation"]>();
   await Promise.all(
-    missingProductIds.map(async (productId) => {
+    productIds.map(async (productId) => {
       formationByProductId.set(
         productId,
         await fetchCommercialFormationForPreview(productId)
@@ -452,8 +456,10 @@ async function hydrateProposalItemsCommercialFormation(
   );
 
   return items.map((it) => {
-    if (!it.productId || proposalItemHasUsableCommercialFormation(it)) return it;
+    if (!it.productId) return it;
     const formation = formationByProductId.get(it.productId);
+    // Fetch ao vivo falhou (produto sem formação, rede indisponível etc.) —
+    // preserva o que já havia (congelado ou nada) em vez de apagar.
     if (!formation) return it;
     return { ...it, commercialFormation: formation };
   });
@@ -1779,14 +1785,15 @@ export const ProposalModule = () => {
     };
   }, [formData.items]);
 
-  // Sem tabela: ainda assim carrega formação do produto para margem pelo preço negociado.
+  // Busca formação comercial AO VIVO (uma vez por produto por sessão de
+  // edição — ver `formationHydrateAttemptedRef`), mesmo quando o item já
+  // tem snapshot congelado: a Proposta nunca deve travar em tabela antiga.
   useEffect(() => {
     if (view !== "form") return;
     const items = formData.items ?? [];
     const pending = items.filter(
       (it) =>
         Boolean(it.productId) &&
-        !proposalItemHasUsableCommercialFormation(it) &&
         !formationHydrateAttemptedRef.current.has(it.productId as string)
     );
     if (pending.length === 0) return;
