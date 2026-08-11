@@ -110,7 +110,7 @@ export function classifyDreCostCenterRole(code: string, name: string): DreCostCe
   if (/\b(embalagem|embalagens|packing|packaging)\b/.test(hay)) {
     return "packaging";
   }
-  if (/\b(materia prima|mp|raw material)\b/.test(hay)) {
+  if (/\b(materia|materias)\s*(prima|primas)\b|\b(mp|raw\s*materials?)\b/.test(hay)) {
     return "raw_material";
   }
   if (/\b(imposto|impostos|tributo|tributos|fiscal)\b/.test(hay)) {

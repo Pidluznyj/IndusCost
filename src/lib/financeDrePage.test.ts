@@ -115,6 +115,7 @@ describe("financeDreCostCenterRoles", () => {
     assert.equal(classifyDreCostCenterRole("MO", "Mão de obra"), "labor");
     assert.equal(classifyDreCostCenterRole("IMP", "Impostos"), "tax");
     assert.equal(classifyDreCostCenterRole("MP", "Matéria prima"), "raw_material");
+    assert.equal(classifyDreCostCenterRole("01.02", "Matérias Primas"), "raw_material");
     assert.equal(classifyDreCostCenterRole("ADM", "Administrativo"), "admin");
     assert.equal(
       classifyDreCostCenterRole("INV", "Investimento socios"),
