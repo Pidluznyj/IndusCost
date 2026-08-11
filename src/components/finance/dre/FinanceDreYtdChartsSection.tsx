@@ -311,6 +311,56 @@ function CustomCardTooltip({
   );
 }
 
+function computeZeroAlignedDomains(
+  monthlyVals: number[],
+  ytdVals: number[]
+): {
+  monthlyDomain: [number, number];
+  ytdDomain: [number, number];
+  hasNegative: boolean;
+} {
+  const validM = monthlyVals.filter((v) => Number.isFinite(v));
+  const validY = ytdVals.filter((v) => Number.isFinite(v));
+
+  if (validM.length === 0 && validY.length === 0) {
+    return { monthlyDomain: [0, 100], ytdDomain: [0, 100], hasNegative: false };
+  }
+
+  const rawMinM = Math.min(0, ...validM);
+  const rawMaxM = Math.max(1, ...validM);
+  const rawMinY = Math.min(0, ...validY);
+  const rawMaxY = Math.max(1, ...validY);
+
+  const hasNegative = rawMinM < 0 || rawMinY < 0;
+
+  if (!hasNegative) {
+    // Ambas as séries são estritamente >= 0: zero fica no rodapé (0%) para ambos os eixos
+    return {
+      monthlyDomain: [0, Math.ceil(rawMaxM * 1.15)],
+      ytdDomain: [0, Math.ceil(rawMaxY * 1.15)],
+      hasNegative: false,
+    };
+  }
+
+  // Quando há valores negativos em alguma série: alinhamos o ponto zero (y=0)
+  // exatamente na mesma altura proporcional para ambos os eixos.
+  const fracM = Math.abs(rawMinM) / (rawMaxM - rawMinM);
+  const fracY = Math.abs(rawMinY) / (rawMaxY - rawMinY);
+  const targetFracBelowZero = Math.min(Math.max(fracM, fracY, 0.15), 0.5);
+
+  const maxM = rawMaxM * 1.1;
+  const minM = -(maxM * targetFracBelowZero) / (1 - targetFracBelowZero);
+
+  const maxY = rawMaxY * 1.1;
+  const minY = -(maxY * targetFracBelowZero) / (1 - targetFracBelowZero);
+
+  return {
+    monthlyDomain: [Math.floor(minM), Math.ceil(maxM)],
+    ytdDomain: [Math.floor(minY), Math.ceil(maxY)],
+    hasNegative: true,
+  };
+}
+
 function SingleCardChartBody({
   points,
   config,
@@ -325,15 +375,20 @@ function SingleCardChartBody({
   /** Modal expandido mostra os eixos numéricos; no card compacto ficam ocultos (números já estão nas caixas acima). */
   showAxes?: boolean;
 }) {
-  // Domínio calculado só sobre meses realizados (ignora null dos meses futuros).
-  const monthlyVals = points
-    .map((p) => p[config.key])
-    .filter((v): v is number => v != null);
-  const ytdVals = points
-    .map((p) => p[config.ytdKey])
-    .filter((v): v is number => v != null);
-  const hasNegativeMonthly = monthlyVals.some((v) => v < 0);
-  const hasNegativeYtd = ytdVals.some((v) => v < 0);
+  const monthlyVals = useMemo(
+    () => points.map((p) => p[config.key]).filter((v): v is number => v != null),
+    [points, config.key]
+  );
+  const ytdVals = useMemo(
+    () => points.map((p) => p[config.ytdKey]).filter((v): v is number => v != null),
+    [points, config.ytdKey]
+  );
+
+  // Calcula domínios sincronizados para que o Y=0 fique rigorosamente na mesma altura dos dois eixos
+  const domains = useMemo(
+    () => computeZeroAlignedDomains(monthlyVals, ytdVals),
+    [monthlyVals, ytdVals]
+  );
 
   return (
     <div style={{ width: "100%", height }}>
@@ -346,9 +401,10 @@ function SingleCardChartBody({
             axisLine={false}
             tickLine={false}
           />
-          {/* Eixo esquerdo: linha ACUMULADA (YTD) — escala grande. */}
+          {/* Eixo esquerdo: linha ACUMULADA (YTD) — escala grande com zero sincronizado */}
           <YAxis
             yAxisId="ytd"
+            domain={domains.ytdDomain}
             tick={{ fontSize: 9, fill: FINANCE_BI_COLORS.textSecondary }}
             tickFormatter={(v: number) => formatFinanceKpiCurrency(v)}
             width={showAxes ? 68 : 0}
@@ -356,10 +412,11 @@ function SingleCardChartBody({
             axisLine={false}
             tickLine={false}
           />
-          {/* Eixo direito (escala própria): barras NO MÊS — assim não somem sob a linha YTD. */}
+          {/* Eixo direito (escala própria): barras NO MÊS — com zero sincronizado na mesma altura */}
           <YAxis
             yAxisId="mensal"
             orientation="right"
+            domain={domains.monthlyDomain}
             tick={{ fontSize: 9, fill: FINANCE_BI_COLORS.textSecondary }}
             tickFormatter={(v: number) => formatFinanceKpiCurrency(v)}
             width={showAxes ? 60 : 0}
@@ -367,11 +424,8 @@ function SingleCardChartBody({
             axisLine={false}
             tickLine={false}
           />
-          {hasNegativeMonthly ? (
-            <ReferenceLine yAxisId="mensal" y={0} stroke={FINANCE_BI_COLORS.risk} strokeWidth={1} strokeDasharray="2 2" />
-          ) : null}
-          {hasNegativeYtd && showAxes ? (
-            <ReferenceLine yAxisId="ytd" y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1} strokeDasharray="2 2" />
+          {domains.hasNegative ? (
+            <ReferenceLine yAxisId="ytd" y={0} stroke={FINANCE_BI_COLORS.risk} strokeWidth={1} strokeDasharray="2 2" />
           ) : null}
           <Tooltip content={<CustomCardTooltip config={config} />} />
           <Legend
@@ -693,7 +747,7 @@ function MonthlyComparisonChart({
 
 export function FinanceDreYtdChartsSection({ report }: { report: FinanceDreReport }) {
   const [viewMode, setViewMode] = useState<"cards" | "consolidated" | "monthly">("cards");
-  const points = useMemo(() => buildDreYtdChartPoints(report), [report]);
+  const points = useMemo<DreYtdChartPoint[]>(() => buildDreYtdChartPoints(report), [report]);
 
   return (
     <section
