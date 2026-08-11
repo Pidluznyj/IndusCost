@@ -108,7 +108,7 @@
 
 .print-doc-header-grid {
   display: grid;
-  grid-template-columns: 28mm minmax(0, 1fr) 56mm;
+  grid-template-columns: max-content minmax(0, 1fr) 56mm;
   column-gap: 16px;
   align-items: start;
 }

@@ -104,7 +104,7 @@
 
   #sales-orders-print-root .print-doc-header-grid {
     display: grid !important;
-    grid-template-columns: 28mm minmax(0, 1fr) 58mm !important;
+    grid-template-columns: max-content minmax(0, 1fr) 58mm !important;
     column-gap: 4mm !important;
     align-items: start !important;
   }
