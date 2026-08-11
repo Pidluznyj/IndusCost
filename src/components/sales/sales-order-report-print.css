@@ -901,7 +901,6 @@
     text-align: center;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client,
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order {
     white-space: normal;
     word-break: break-word;

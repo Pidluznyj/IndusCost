@@ -214,7 +214,7 @@ export function InvestedCapitalRecoveryPrintDocument({
               <tbody>
                 {topCustomers.map((c) => (
                   <tr key={c.customerName}>
-                    <td>{displayFinanceText(c.customerName)}</td>
+                    <td>{c.customerName ? (c.customerName.length > 15 ? c.customerName.slice(0, 15) + "…" : c.customerName) : "—"}</td>
                     <td>{money(c.moneyOnStreet)}</td>
                     <td>{c.percentOfTotal.toFixed(0)}%</td>
                   </tr>
@@ -253,7 +253,9 @@ export function InvestedCapitalRecoveryPrintDocument({
                 {rows.map((row) => (
                   <tr key={row.salesOrderId}>
                     <td className="col-order">{row.orderCode}</td>
-                    <td className="col-client">{displayFinanceText(row.customerName)}</td>
+                    <td className="col-client">
+                      {row.customerName ? (row.customerName.length > 15 ? row.customerName.slice(0, 15) + "…" : row.customerName) : "—"}
+                    </td>
                     <td className="col-money">{moneyTable(row.saleValue)}</td>
                     <td className="col-money">{moneyTable(row.investedCapital)}</td>
                     <td className="col-money">{moneyTable(row.actualReceived)}</td>
