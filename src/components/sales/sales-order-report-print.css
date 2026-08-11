@@ -848,23 +848,28 @@
     background: #f8fafc;
   }
 
-  /* Financeiro > Recuperação do Dinheiro Investido — mesmo padrão sistêmico
-     do PDF de Pedidos de Venda (sales-orders-print-route), com tabelas
-     próprias para aging/top-clientes/detalhamento. */
+  /* Financeiro > Recuperação do Dinheiro Investido */
+  body.sales-orders-icr-print-route {
+    @page {
+      size: A4 landscape;
+      margin: 8mm 8mm 10mm 8mm;
+    }
+  }
+
   body.sales-orders-icr-print-route .sales-orders-icr-print-table {
     table-layout: fixed;
     width: 100%;
-    font-size: 8px;
+    font-size: 9px;
     border-collapse: collapse;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 6.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 6.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 16.0%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 6.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 7.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 7.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 17.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 4.5%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-date { width: 4.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 8.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 5.5%; }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
   body.sales-orders-icr-print-route .sales-orders-icr-print-table td {
@@ -895,10 +900,11 @@
     text-align: center;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client {
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order {
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
   }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-aging-table,
