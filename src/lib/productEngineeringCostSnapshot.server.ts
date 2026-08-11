@@ -34,6 +34,11 @@ import {
   type FrozenCostTraceStatus,
 } from "./productEngineeringCostSnapshot.js";
 import { countActiveMaterialsOutsideProductionCostDraftScope } from "./productionCostDraftItemScope.js";
+import {
+  buildBomHealthBlockMessage,
+  type ProductBomHealthIssue,
+} from "./productBomHealth.js";
+import { analyzeProductBomHealth } from "./productBomHealth.server.js";
 
 export type ProductEngineeringCostSnapshotInput = {
   productId: string;
@@ -55,7 +60,8 @@ export type ProductEngineeringCostSnapshotResult = {
     | "SKIPPED"
     | "ERROR"
     | "DRAFT_CREATED"
-    | "PUBLISHED";
+    | "PUBLISHED"
+    | "BOM_INACTIVE_COMPONENT";
   productId: string;
   productCode: string | null;
   unitProductionCost: number | null;
@@ -67,6 +73,8 @@ export type ProductEngineeringCostSnapshotResult = {
   published: boolean;
   warnings: string[];
   errors: string[];
+  /** Pendências estruturais de engenharia (componente inativo na BOM efetiva). */
+  bomHealthIssues?: ProductBomHealthIssue[];
 };
 
 export type BootstrapProductionCostPreviewRow = {
@@ -340,6 +348,21 @@ export async function refreshProductProductionCostSnapshot(
     }
 
     base.productCode = evaluated.product.sku;
+
+    // Gate estrutural ANTES de qualquer criação de rascunho/publicação:
+    // BOM efetiva com componente Product INATIVO → engenharia não está apta
+    // para congelar NOVO custo oficial. Nenhum DRAFT é criado (sem lixo),
+    // histórico já publicado permanece intacto, e o diagnóstico volta
+    // estruturado (código + componente + caminho) — nunca erro genérico.
+    const bomHealth = await analyzeProductBomHealth(db, input.productId);
+    if (!bomHealth.ok) {
+      return {
+        ...base,
+        status: "BOM_INACTIVE_COMPONENT",
+        errors: [buildBomHealthBlockMessage(bomHealth)],
+        bomHealthIssues: bomHealth.issues,
+      };
+    }
 
     if (!evaluated.calculable || !evaluated.resolved.ok) {
       return {

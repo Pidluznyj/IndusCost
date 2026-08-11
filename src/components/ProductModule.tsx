@@ -36,6 +36,13 @@ import {
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  BOM_INACTIVE_COMPONENT_DESCRIPTION,
+  BOM_INACTIVE_COMPONENT_TITLE,
+  formatBomHealthPath,
+  type EngineeringHealthFilter,
+  type ProductBomHealthResult,
+} from "@/src/lib/productBomHealth";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting, type ProductCostingMode } from "@/src/types/product";
 import {
@@ -221,6 +228,10 @@ export const ProductModule = () => {
     ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
   ]);
   const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
+  /** Saúde da BOM por produto (backend é a autoridade) — BOM_INACTIVE_COMPONENT. */
+  const [bomHealthByProductId, setBomHealthByProductId] = useState<
+    Record<string, ProductBomHealthResult>
+  >({});
   const [snapshotBulkProgress, setSnapshotBulkProgress] = useState<{
     current: number;
     total: number;
@@ -281,6 +292,12 @@ export const ProductModule = () => {
   const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
   const [appliedCiuFilter, setAppliedCiuFilter] =
     useState<ProductEngineeringListCiuFilter>("");
+  const [draftEngineeringFilter, setDraftEngineeringFilter] =
+    useState<EngineeringHealthFilter>("");
+  const [appliedEngineeringFilter, setAppliedEngineeringFilter] =
+    useState<EngineeringHealthFilter>("");
+  /** Linha com o painel "Pendências de engenharia" aberto (clique, não hover). */
+  const [openHealthDetailId, setOpenHealthDetailId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -345,10 +362,31 @@ export const ProductModule = () => {
         fetchJsonOk("/api/machines"),
         fetchJsonOk("/api/roles"),
       ]);
-      setItems(Array.isArray(productsData) ? productsData : []);
+      const productRows = Array.isArray(productsData) ? productsData : [];
+      setItems(productRows);
       setMaterials(Array.isArray(materialsData) ? materialsData : []);
       setMachines(Array.isArray(machinesData) ? machinesData : []);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
+
+      // Saúde estrutural da BOM (backend é a autoridade — recursiva, com
+      // proteção de ciclo). UMA chamada em lote para a lista inteira; falha
+      // aqui não derruba a tela (diagnóstico ausente ≠ erro fatal).
+      if (productRows.length > 0) {
+        void fetchJsonOk<{ results: Record<string, ProductBomHealthResult> }>(
+          "/api/products/bom-health-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productIds: productRows.map((p) => p.id) }),
+          }
+        )
+          .then((data) => setBomHealthByProductId(data.results ?? {}))
+          .catch((error) => {
+            console.error("Erro ao carregar saúde da BOM:", error);
+          });
+      } else {
+        setBomHealthByProductId({});
+      }
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar dados de engenharia.");
@@ -376,9 +414,18 @@ export const ProductModule = () => {
       try {
         const result = await fetchJsonOk<{
           status: string;
+          errors?: string[];
           frozenCostSummary?: ProductWithCostSummary["frozenCostSummary"];
           message?: string;
         }>(`/api/products/${productId}/production-cost-snapshot`, { method: "POST" });
+        if (result.status === "BOM_INACTIVE_COMPONENT") {
+          // Bloqueio estrutural: atualizar snapshot NÃO resolve componente
+          // inativo — mostra o diagnóstico com componente e caminho.
+          alert(
+            result.errors?.[0] ??
+              `${BOM_INACTIVE_COMPONENT_TITLE}. ${BOM_INACTIVE_COMPONENT_DESCRIPTION}`
+          );
+        }
         if (result.frozenCostSummary) {
           setItems((prev) =>
             prev.map((p) =>
@@ -1009,12 +1056,28 @@ export const ProductModule = () => {
 
   const filteredItems = useMemo(
     () =>
-      filterProductEngineeringListItems(items, {
-        search: appliedSearch,
-        status: appliedStatusFilter,
-        ciu: appliedCiuFilter,
-      }),
-    [items, appliedSearch, appliedStatusFilter, appliedCiuFilter]
+      filterProductEngineeringListItems(
+        // Anexa o resumo de saúde já RESOLVIDO pelo backend a cada item —
+        // a regra nunca é recalculada aqui; ausência = não disponível (≠ OK).
+        items.map((item) => ({
+          ...item,
+          engineeringHealth: bomHealthByProductId[item.id]?.summary ?? null,
+        })),
+        {
+          search: appliedSearch,
+          status: appliedStatusFilter,
+          ciu: appliedCiuFilter,
+          engineering: appliedEngineeringFilter,
+        }
+      ),
+    [
+      items,
+      bomHealthByProductId,
+      appliedSearch,
+      appliedStatusFilter,
+      appliedCiuFilter,
+      appliedEngineeringFilter,
+    ]
   );
 
   const selectPendingPublicationItems = useCallback(() => {
@@ -1034,6 +1097,7 @@ export const ProductModule = () => {
     setAppliedSearch(draftSearch.trim());
     setAppliedStatusFilter(draftStatusFilter);
     setAppliedCiuFilter(draftCiuFilter);
+    setAppliedEngineeringFilter(draftEngineeringFilter);
     setSelectedIds([]);
   };
 
@@ -1044,6 +1108,8 @@ export const ProductModule = () => {
     setAppliedStatusFilter("");
     setDraftCiuFilter("");
     setAppliedCiuFilter("");
+    setDraftEngineeringFilter("");
+    setAppliedEngineeringFilter("");
     setSelectedIds([]);
   };
 
@@ -1054,6 +1120,8 @@ export const ProductModule = () => {
     appliedStatus: appliedStatusFilter,
     draftCiu: draftCiuFilter,
     appliedCiu: appliedCiuFilter,
+    draftEngineering: draftEngineeringFilter,
+    appliedEngineering: appliedEngineeringFilter,
   });
 
   const handleExportEngineering = () => {
@@ -1169,10 +1237,12 @@ export const ProductModule = () => {
           const child = row?.ChildProduct || row?.childProduct;
           if (child?.sku && child?.name) {
             const isComp = child.type === "COMPONENT";
+            const isInactive = String(child.status ?? "ACTIVE").toUpperCase() === "INACTIVE";
+            const baseSublabel = isComp ? "Componente (salvo)" : "Produto (salvo)";
             return {
               value: `product:${String(row.childProductId)}`,
-              label: `${child.sku} — ${child.name}`,
-              sublabel: isComp ? "Componente (salvo)" : "Produto (salvo)",
+              label: isInactive ? `${child.sku} — ${child.name} · 🔴 INATIVO` : `${child.sku} — ${child.name}`,
+              sublabel: isInactive ? `${baseSublabel} — INATIVO` : baseSublabel,
               searchTerms: `${child.sku} ${child.name}`,
             };
           }
@@ -1499,6 +1569,23 @@ export const ProductModule = () => {
               <option value="COMPLETE">CIU completo</option>
             </select>
 
+            <select
+              className="h-10 min-w-[170px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={draftEngineeringFilter}
+              onChange={(e) =>
+                setDraftEngineeringFilter(e.target.value as EngineeringHealthFilter)
+              }
+              data-testid="products-engineering-filter"
+              aria-label="Filtrar por pendências de engenharia"
+              title="Filtrar pela coluna Engenharia (saúde resolvida pelo backend)"
+            >
+              <option value="">Engenharia: todos</option>
+              <option value="OK">Sem pendências</option>
+              <option value="HAS_ISSUES">Com pendências</option>
+              <option value="BLOCKED">Bloqueantes</option>
+              <option value="WARNING">Atenção</option>
+            </select>
+
             <button
               type="submit"
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
@@ -1700,20 +1787,21 @@ export const ProductModule = () => {
                   </th>
                 ) : null}
                 <th className="p-4 font-semibold text-sm">Status</th>
+                <th className="p-4 font-semibold text-sm whitespace-nowrap">Engenharia</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 10 : 9} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 10 : 9} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
@@ -1835,6 +1923,9 @@ export const ProductModule = () => {
                     {engineeringSegment === "PRODUCT" ? (
                       <td className="p-4 align-middle min-w-[10rem] max-w-[16rem]">
                         {(() => {
+                          // Coluna EXCLUSIVA de custo/snapshot — a saúde
+                          // estrutural da BOM vive na coluna Engenharia
+                          // (badge + painel) e no diagnóstico do modal.
                           const fc = item.frozenCostSummary;
                           if (!fc) {
                             return <span className="text-xs text-muted-foreground">—</span>;
@@ -1927,6 +2018,124 @@ export const ProductModule = () => {
                       <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
                         {item.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </Badge>
+                    </td>
+                    <td className="p-4 align-middle">
+                      {(() => {
+                        // Saúde resolvida pelo BACKEND — a UI apenas apresenta.
+                        // Ausente = não disponível (erro/carregando) ≠ OK.
+                        const health = bomHealthByProductId[item.id];
+                        if (!health) {
+                          return (
+                            <span
+                              className="text-xs text-muted-foreground whitespace-nowrap"
+                              title="Saúde da engenharia não disponível"
+                              data-testid={`engineering-health-unavailable-${item.id}`}
+                            >
+                              — Não disponível
+                            </span>
+                          );
+                        }
+                        const summary = health.summary;
+                        if (summary.status === "OK") {
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                              title="Engenharia sem pendências"
+                              data-testid={`engineering-health-ok-${item.id}`}
+                            >
+                              ✅ OK
+                            </span>
+                          );
+                        }
+                        const isBlocked = summary.status === "BLOCKED";
+                        const label = isBlocked
+                          ? `${summary.issueCount} pendência${summary.issueCount > 1 ? "s" : ""}`
+                          : `${summary.issueCount} atenção`;
+                        const isOpen = openHealthDetailId === item.id;
+                        return (
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenHealthDetailId(isOpen ? null : item.id);
+                              }}
+                              className={cn(
+                                "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold",
+                                isBlocked
+                                  ? "bg-red-100 text-red-700 hover:bg-red-200"
+                                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              )}
+                              aria-expanded={isOpen}
+                              aria-label={`Pendências de engenharia: ${label}`}
+                              title="Ver pendências de engenharia"
+                              data-testid={`engineering-health-badge-${item.id}`}
+                            >
+                              {isBlocked ? "🔴" : "🟡"} {label}
+                            </button>
+                            {isOpen ? (
+                              <div
+                                className="absolute right-0 z-30 mt-1 w-80 rounded-lg border border-border bg-card p-3 text-left shadow-lg"
+                                data-testid={`engineering-health-details-${item.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm font-bold">Pendências de engenharia</p>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-foreground"
+                                    onClick={() => setOpenHealthDetailId(null)}
+                                    aria-label="Fechar pendências"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <ul className="mt-2 space-y-2">
+                                  {health.issues.map((issue, i) => (
+                                    <li key={`${issue.componentId}-${i}`} className="text-xs">
+                                      <p
+                                        className={cn(
+                                          "font-semibold",
+                                          issue.severity === "BLOCKING"
+                                            ? "text-red-700"
+                                            : "text-amber-700"
+                                        )}
+                                      >
+                                        {issue.severity === "BLOCKING" ? "🔴" : "🟡"}{" "}
+                                        {BOM_INACTIVE_COMPONENT_TITLE}
+                                      </p>
+                                      <p className="mt-0.5">
+                                        <span className="font-medium">
+                                          {issue.componentSku} — {issue.componentName}
+                                        </span>
+                                      </p>
+                                      <p className="text-muted-foreground">Status: Inativo</p>
+                                      {issue.level > 1 ? (
+                                        <p className="text-muted-foreground">
+                                          Caminho: {formatBomHealthPath(issue.path)}
+                                        </p>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                                <p className="mt-2 text-[11px] text-muted-foreground">
+                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
+                                </p>
+                                <button
+                                  type="button"
+                                  className="mt-2 inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
+                                  onClick={() => {
+                                    setOpenHealthDetailId(null);
+                                    handleOpenModal(item);
+                                  }}
+                                >
+                                  Ver composição
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -2460,6 +2669,42 @@ export const ProductModule = () => {
                         </div>
                       ) : (
                         <>
+                          {(() => {
+                            const health = editingItem?.id
+                              ? bomHealthByProductId[editingItem.id]
+                              : undefined;
+                            const issues = health && !health.ok ? health.issues : [];
+                            if (issues.length === 0) return null;
+                            return (
+                              <div
+                                className="rounded-lg border border-red-300 bg-red-50 p-3"
+                                data-testid="bom-inactive-component-modal-alert"
+                              >
+                                <p className="text-sm font-bold text-red-700">
+                                  🔴 {BOM_INACTIVE_COMPONENT_TITLE}
+                                  {issues.length > 1 ? ` — ${issues.length} componente(s)` : ""}
+                                </p>
+                                <p className="text-xs text-red-700/90 mt-0.5">
+                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
+                                </p>
+                                <ul className="mt-2 space-y-1">
+                                  {issues.map((issue, i) => (
+                                    <li key={`${issue.componentId}-${i}`} className="text-xs text-red-800">
+                                      <span className="font-semibold">
+                                        {issue.componentSku} — {issue.componentName}
+                                      </span>{" "}
+                                      · Status: Inativo
+                                      {issue.level > 1 ? (
+                                        <span className="block text-red-700/80">
+                                          Caminho: {formatBomHealthPath(issue.path)}
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-between">
                             <div>
                               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
