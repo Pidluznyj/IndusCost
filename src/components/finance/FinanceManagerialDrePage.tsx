@@ -644,6 +644,7 @@ export function FinanceManagerialDrePage() {
                 }}
               />
               <FinanceDreLineDetailModal
+                key={`dre-drilldown-${drillLineId ?? ""}-${drillSourceCheckId ?? ""}`}
                 open={drillLineId != null || drillSourceCheckId != null}
                 lineId={drillLineId}
                 sourceCheckId={drillSourceCheckId}

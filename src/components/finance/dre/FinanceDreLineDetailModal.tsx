@@ -74,44 +74,69 @@ export function FinanceDreLineDetailModal({
   const [activeSourceCheckId, setActiveSourceCheckId] = useState<string | null>(sourceCheckId);
   const [activeScope, setActiveScope] = useState<"highlight" | "ytd">(scope ?? defaultScope);
 
+  // Sincroniza alvos internos sempre que as props mudam ao abrir ou alternar
   useEffect(() => {
     if (!open) return;
     setActiveLineId(lineId);
     setActiveSourceCheckId(sourceCheckId);
     setActiveScope(scope ?? (sourceCheckId ? "ytd" : "highlight"));
-    setPayload(null);
   }, [open, lineId, sourceCheckId, scope]);
 
-  const load = useCallback(async () => {
-    if (!open) return;
-    if (!activeSourceCheckId && !activeLineId) return;
+  // Efeito unificado de busca com limpeza imediata de payload e cancelamento de requisições obsoletas
+  useEffect(() => {
+    if (!open) {
+      setPayload(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    const currentLineId = activeLineId;
+    const currentSourceCheckId = activeSourceCheckId;
+    const currentScope = activeScope;
+
+    if (!currentSourceCheckId && !currentLineId) {
+      setPayload(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      const qs = buildFinanceDreQuery(filters);
-      const url = activeSourceCheckId
-        ? getFinanceDreSourceCheckDrilldownPath(activeSourceCheckId, qs, activeScope)
-        : getFinanceDreLineDrilldownPath(activeLineId!, qs, activeScope);
-      const data = await fetchJsonOk<FinanceDreDrilldownPayload>(url);
-      setPayload(data);
-    } catch (err) {
-      setPayload(null);
-      setError(
-        buildFinanceTabLoadError(
-          activeSourceCheckId
-            ? "Falha ao carregar detalhe da validação de fonte."
-            : "Falha ao carregar detalhe da linha do DRE.",
-          err
-        )
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [open, activeLineId, activeSourceCheckId, activeScope, filters]);
+    setPayload(null); // Limpa o payload anterior imediatamente para evitar exibir a linha errada ao carregar
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+    const qs = buildFinanceDreQuery(filters);
+    const url = currentSourceCheckId
+      ? getFinanceDreSourceCheckDrilldownPath(currentSourceCheckId, qs, currentScope)
+      : getFinanceDreLineDrilldownPath(currentLineId!, qs, currentScope);
+
+    fetchJsonOk<FinanceDreDrilldownPayload>(url)
+      .then((data) => {
+        if (!cancelled) {
+          setPayload(data);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPayload(null);
+          setError(
+            buildFinanceTabLoadError(
+              currentSourceCheckId
+                ? "Falha ao carregar detalhe da validação de fonte."
+                : "Falha ao carregar detalhe da linha do DRE.",
+              err
+            )
+          );
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeLineId, activeSourceCheckId, activeScope, filters]);
 
   useEffect(() => {
     if (!open) return;
