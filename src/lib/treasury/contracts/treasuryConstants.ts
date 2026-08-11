@@ -78,6 +78,21 @@ export const TREASURY_CASH_SUPPORT_SUMMARY_PATH =
 export const TREASURY_CASH_SUPPORT_SUGGESTIONS_PATH =
   `${TREASURY_API_PREFIX}/cash-support/suggestions` as const;
 
+/** Conciliação Bancária — grid orientado a título (CR/CP × pernas bancárias). */
+export const TREASURY_CASH_SUPPORT_TITLE_GRID_PATH =
+  `${TREASURY_API_PREFIX}/cash-support/title-grid` as const;
+
+/**
+ * Conciliação Bancária — execução da auto-conciliação conservadora.
+ * POST idempotente (idempotencyKey por sugestão); NUNCA baixa oficial.
+ */
+export const TREASURY_CASH_SUPPORT_AUTO_RECONCILE_PATH =
+  `${TREASURY_API_PREFIX}/cash-support/auto-reconcile` as const;
+
+/** Conciliação Bancária — histórico de matches por período (inclui desfeitos). */
+export const TREASURY_CASH_SUPPORT_HISTORY_PATH =
+  `${TREASURY_API_PREFIX}/cash-support/history` as const;
+
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 

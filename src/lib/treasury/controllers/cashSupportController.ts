@@ -157,5 +157,68 @@ export function createCashSupportControllers(deps: CashSupportControllerDeps) {
         handleTreasuryRouteError(res, requestId, err);
       }
     },
+
+    // Conciliação Bancária — grid orientado a título. Somente leitura.
+    getTitleGrid: async (req: Request, res: Response) => {
+      const requestId = resolveTreasuryRequestId(req);
+      res.setHeader("x-request-id", requestId);
+      try {
+        const user = await requireUser(req, res, requestId);
+        if (!user) return;
+
+        const filters = parseCashSupportFilters(req.query as Record<string, unknown>);
+        const result = await service.getTitleGrid(
+          { appUser: user, requestId },
+          filters
+        );
+        res.status(200).json({ ...result, requestId });
+      } catch (err) {
+        handleTreasuryRouteError(res, requestId, err);
+      }
+    },
+
+    /**
+     * Auto-conciliação conservadora. Escreve APENAS matches locais via
+     * matchService.accept (idempotencyKey por sugestão) — nunca baixa oficial,
+     * nunca altera CR/CP/movimento. Idempotente: repetir não duplica.
+     */
+    runAutoReconcile: async (req: Request, res: Response) => {
+      const requestId = resolveTreasuryRequestId(req);
+      res.setHeader("x-request-id", requestId);
+      try {
+        const user = await requireUser(req, res, requestId);
+        if (!user) return;
+
+        // Filtros no body (POST) com o mesmo contrato do query GET.
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const filters = parseCashSupportFilters(body);
+        const result = await service.runAutoReconciliation(
+          { appUser: user, requestId },
+          filters
+        );
+        res.status(200).json({ ...result, requestId });
+      } catch (err) {
+        handleTreasuryRouteError(res, requestId, err);
+      }
+    },
+
+    // Histórico de matches por período (inclui desfeitos). Somente leitura.
+    getHistory: async (req: Request, res: Response) => {
+      const requestId = resolveTreasuryRequestId(req);
+      res.setHeader("x-request-id", requestId);
+      try {
+        const user = await requireUser(req, res, requestId);
+        if (!user) return;
+
+        const filters = parseCashSupportFilters(req.query as Record<string, unknown>);
+        const result = await service.getHistory(
+          { appUser: user, requestId },
+          filters
+        );
+        res.status(200).json({ ...result, requestId });
+      } catch (err) {
+        handleTreasuryRouteError(res, requestId, err);
+      }
+    },
   };
 }

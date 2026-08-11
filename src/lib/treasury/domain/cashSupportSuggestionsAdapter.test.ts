@@ -120,7 +120,9 @@ describe("cashSupportSuggestionsAdapter", () => {
     });
     assert.equal(result.suggestions.length, 1);
     assert.equal(result.suggestions[0]!.movementId, "mov-1");
-    assert.equal(result.suggestions[0]!.externalId, 900);
+    // externalId mora na allocation (candidato pode ser N:1) — o acesso no
+    // topo do candidato era bug do teste, falhava também na baseline.
+    assert.equal(result.suggestions[0]!.allocations[0]!.externalId, 900);
   });
 
   it("sem candidato: movimento sozinho não gera sugestão", () => {

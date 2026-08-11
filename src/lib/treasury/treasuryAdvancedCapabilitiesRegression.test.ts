@@ -88,9 +88,11 @@ const migrationsDir = join(repoRoot, "prisma/migrations");
  *  endpoint único dos três cenários da Caixa (Fase 4 da consolidação). */
 const EXPECTED_HTTP_HANDLERS = {
   // +3 GET: cash-support, cash-support/summary, cash-support/suggestions (CS-006/008).
-  total: 102,
-  get: 56,
-  post: 40,
+  // +2 GET +1 POST: Conciliação Bancária — title-grid, history (leitura) e
+  // auto-reconcile (escrita idempotente de matches locais; nunca baixa oficial).
+  total: 105,
+  get: 58,
+  post: 41,
   put: 4,
   patch: 2,
   delete: 0,
@@ -300,7 +302,7 @@ function migrationsTouchingTreasury(): string[] {
 }
 
 describe("treasury advanced capabilities — API handlers", () => {
-  it("quantidade e métodos HTTP permanecem iguais (102 = 56/40/4/2/0)", () => {
+  it("quantidade e métodos HTTP permanecem iguais (105 = 58/41/4/2/0)", () => {
     const routesSrc = readFileSync(join(treasuryRoot, "treasuryRoutes.ts"), "utf8");
     const counts = countHandlers(routesSrc);
     assert.equal(counts.total, EXPECTED_HTTP_HANDLERS.total);

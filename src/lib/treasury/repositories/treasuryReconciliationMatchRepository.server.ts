@@ -178,6 +178,20 @@ export type TreasuryReconciliationMatchRepository = {
     keys: readonly { key1: number; key2: number }[],
     db?: TreasuryReconciliationMatchDb
   ): Promise<void>;
+  /**
+   * Histórico: matches (qualquer status, inclusive UNMATCHED) com
+   * `matchedCivilDate` no período — mais recentes primeiro.
+   */
+  listByMatchedPeriod(
+    input: {
+      companyCode?: string | null;
+      accountId?: string | null;
+      from: string;
+      to: string;
+      limit?: number;
+    },
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<TreasuryReconciliationMatchRow[]>;
   /** Match já criado com esta chave de idempotência (qualquer status). */
   findByIdempotencyKey(
     companyCode: string,
@@ -339,6 +353,25 @@ export function createTreasuryReconciliationMatchRepository(
       for (const { key1, key2 } of ordered) {
         await db.$queryRaw`SELECT pg_advisory_xact_lock(${key1}::int, ${key2}::int)`;
       }
+    },
+
+    async listByMatchedPeriod(input, db = prisma) {
+      const rows = await db.treasuryReconciliationMatch.findMany({
+        where: {
+          ...(input.companyCode?.trim()
+            ? { companyCode: input.companyCode.trim() }
+            : {}),
+          ...(input.accountId?.trim() ? { accountId: input.accountId.trim() } : {}),
+          matchedCivilDate: {
+            gte: civilDateToUtcDate(input.from),
+            lte: civilDateToUtcDate(input.to),
+          },
+        },
+        include: includeAll,
+        orderBy: [{ matchedCivilDate: "desc" }, { createdAt: "desc" }],
+        take: Math.min(Math.max(input.limit ?? 200, 1), 500),
+      });
+      return rows.map((row) => mapRow(row as never));
     },
 
     async findByIdempotencyKey(companyCode, idempotencyKey, db = prisma) {

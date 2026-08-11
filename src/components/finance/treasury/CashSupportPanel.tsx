@@ -164,7 +164,7 @@ export function CashSupportPanel({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-sm font-semibold text-foreground">Apoio ao Caixa</h1>
+          <h1 className="text-sm font-semibold text-foreground">Movimentos Bancários</h1>
           <p className="text-xs text-muted-foreground" data-testid="cash-support-period">
             {civilDateFrom} – {civilDateTo}
             {data
