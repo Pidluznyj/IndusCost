@@ -910,6 +910,9 @@ model Product {
   isNomusControlled             Boolean                         @default(false)
   lastNomusSyncAt               DateTime?                       @db.Timestamptz(6)
   nomusPayloadHash              String?
+  /// NCM cadastral ATUAL do produto — fonte: Nomus /rest/produtos (campo ncm).
+  /// TEXTO para preservar zeros à esquerda ("01234567"); NF-e NÃO é fonte deste campo.
+  ncm                           String?
   costingMode                   ProductCostingMode              @default(OWN_PROCESS)
   CostCalculationLog            CostCalculationLog[]
   UsedInBOM                     ProductBOM[]                    @relation("ChildProduct")

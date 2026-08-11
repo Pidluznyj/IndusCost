@@ -29,6 +29,7 @@ export type ExistingProductSnapshot = {
   description: string | null;
   type: ItemType;
   status: string | null;
+  ncm: string | null;
   sourceSystem: string | null;
   sourceExternalId: string | null;
   isNomusControlled: boolean;
@@ -41,6 +42,8 @@ export type ProductLifecycleRow = {
   chosenName: string;
   nameLooksLikeSku: boolean;
   description: string | null;
+  /** NCM cadastral do payload (mapper: texto trim()ado ou null) — campo Nomus-controlled. */
+  ncm: string | null;
   type: ItemType;
   typeInferenceConfidence: "HIGH" | "LOW";
   /** `ativo` explícito do payload Nomus. */
@@ -54,6 +57,7 @@ export type ProductSyncMutation =
       sku: string;
       name: string;
       description: string | null;
+      ncm: string | null;
       type: ItemType;
       sourceExternalId: string;
       nomusPayloadHash: string;
@@ -68,6 +72,7 @@ export type ProductSyncMutation =
         sku?: string;
         name?: string;
         description: string | null;
+        ncm: string | null;
         status: "ACTIVE";
         sourceExternalId: string;
         nomusPayloadHash: string;
@@ -198,6 +203,7 @@ export function planProductSyncMutation(
       sku: row.sku,
       name: row.chosenName,
       description: row.description,
+      ncm: row.ncm,
       type: row.type,
       sourceExternalId: externalId,
       nomusPayloadHash: payloadHash,
@@ -206,8 +212,12 @@ export function planProductSyncMutation(
 
   const product = match.product;
   const changedFields: string[] = [];
+  // ncm segue a MESMA política do description (campo Nomus-controlled,
+  // escrita incondicional): payload sem NCM → null sobrescreve — o cadastro
+  // mestre do Nomus é a única fonte, nunca preservamos valor local divergente.
   const data: Extract<ProductSyncMutation, { kind: "UPDATE" }>["data"] = {
     description: row.description,
+    ncm: row.ncm,
     status: "ACTIVE",
     sourceExternalId: externalId,
     nomusPayloadHash: payloadHash,
@@ -238,6 +248,7 @@ export function planProductSyncMutation(
     changedFields.push("name");
   }
   if ((product.description ?? null) !== (row.description ?? null)) changedFields.push("description");
+  if ((product.ncm ?? null) !== (row.ncm ?? null)) changedFields.push("ncm");
   if ((product.status ?? "ACTIVE") !== "ACTIVE") changedFields.push("status");
   if (product.sourceExternalId !== externalId) changedFields.push("sourceExternalId");
 
@@ -282,6 +293,7 @@ export function extractInactiveLifecycleRows(
       chosenName: b.sku,
       nameLooksLikeSku: true,
       description: null,
+      ncm: null, // DEACTIVATE não escreve ncm — irrelevante aqui.
       type: "PRODUCT",
       typeInferenceConfidence: "LOW",
       ativo: false,
