@@ -603,7 +603,7 @@ export function InvestedCapitalRecoveryPage() {
 
           <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <div className="max-h-[600px] overflow-auto relative">
-              <table className="w-full text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
+              <table className="w-full min-w-[1200px] table-fixed text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
                 <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
                   <tr className="border-b border-slate-800 text-left text-[10px] font-semibold uppercase tracking-wide">
                     <th
@@ -756,8 +756,10 @@ export function InvestedCapitalRecoveryPage() {
                       }}
                     >
                       <td className="px-1.5 py-1.5 font-medium text-foreground whitespace-nowrap">{row.orderCode}</td>
-                      <td className="px-1.5 py-1.5 max-w-[100px] truncate" title={row.customerName ?? undefined}>
-                        {row.customerName ?? "—"}
+                      <td className="px-1.5 py-1.5" title={row.customerName ?? undefined}>
+                        <div className="truncate w-full max-w-[160px]">
+                          {row.customerName ?? "—"}
+                        </div>
                       </td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">
                         {money(row.saleValue)}
