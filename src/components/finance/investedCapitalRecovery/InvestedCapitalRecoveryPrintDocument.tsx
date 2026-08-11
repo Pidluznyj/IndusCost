@@ -241,8 +241,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <th className="col-client" title="Nome do Cliente">Cliente</th>
                   <th className="col-money" title="Valor do Pedido de Venda">Venda</th>
                   <th className="col-money" title="Capital Investido (Imposto + Custo de Produção)">Cap. Invest.</th>
-                  <th className="col-money" title="Imposto">Imposto</th>
-                  <th className="col-money" title="Custo de Produção">Custo Prod.</th>
                   <th className="col-money" title="Recebido">Recebido</th>
                   <th className="col-money" title="Capital Recuperado">Cap. Recup.</th>
                   <th className="col-money" title="Capital na Rua">Cap. na Rua</th>
@@ -250,7 +248,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <th className="col-num" title="Percentual Recuperado">% Rec.</th>
                   <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou</th>
                   <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev.</th>
-                  <th className="col-status" title="Status Econômico">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -260,8 +257,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                     <td className="col-client">{displayFinanceText(row.customerName)}</td>
                     <td className="col-money">{moneyTable(row.saleValue)}</td>
                     <td className="col-money">{moneyTable(row.investedCapital)}</td>
-                    <td className="col-money">{moneyTable(row.totalTaxes)}</td>
-                    <td className="col-money">{moneyTable(row.industrialCost)}</td>
                     <td className="col-money">{moneyTable(row.actualReceived)}</td>
                     <td className="col-money text-emerald-600 font-medium">{moneyTable(row.capitalRecovered)}</td>
                     <td className="col-money text-rose-600 font-medium">{moneyTable(row.moneyOnStreet)}</td>
@@ -271,7 +266,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                     </td>
                     <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
                     <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
-                    <td className="col-status"><PrintStatusBadge status={row.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -280,13 +274,11 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <td colSpan={2}>Total</td>
                   <td className="col-money">{moneyTable(kpis.totalSaleValueAnalyzed)}</td>
                   <td className="col-money">{moneyTable(kpis.investedCapitalAnalyzedTotal)}</td>
-                  <td className="col-money">{moneyTable(kpis.totalTaxesAnalyzed)}</td>
-                  <td className="col-money">{moneyTable(kpis.totalIndustrialCostAnalyzed)}</td>
                   <td className="col-money">{moneyTable(totalActualReceived)}</td>
                   <td className="col-money text-emerald-600 font-medium">{moneyTable(kpis.capitalRecoveredTotal)}</td>
                   <td className="col-money text-rose-600 font-medium">{moneyTable(kpis.moneyOnStreetToday)}</td>
                   <td className="col-money">{moneyTable(kpis.totalOutstandingReceivable)}</td>
-                  <td className="col-num" colSpan={4} />
+                  <td className="col-num" colSpan={3} />
                 </tr>
               </tfoot>
             </table>
