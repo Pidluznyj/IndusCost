@@ -4,6 +4,8 @@
  * Regressão obrigatória: 520.22-- (industrializado comprado → Product/COMPONENT).
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   detectNomusMaterialRoutingCandidates,
@@ -340,6 +342,119 @@ describe("nomusNewMaterialRouting — gate final anti-TOCTOU", () => {
     const { toCreate, lateSkips } = finalizeNomusMaterialCreates(creates, EMPTY_MAPS);
     assert.equal(toCreate.length, 1);
     assert.equal(lateSkips.length, 0);
+  });
+});
+
+describe("GATE 2 — cadastro Nomus INATIVO nunca nasce como Material", () => {
+  it("TEST-INACTIVE-MATERIAL (Embalagem, ativo=false, sem Product/Material) → zero writes, motivo explícito", () => {
+    const inactivePackaging = {
+      id: 9100,
+      codigo: "TEST-INACTIVE-MATERIAL",
+      nome: "TEST-INACTIVE-MATERIAL",
+      descricao: "Caixa de teste inativa",
+      ativo: false,
+      nomeTipoProduto: "Embalagem",
+      nomeGrupoProduto: "Lista de materiais",
+      nomeFamiliaProduto: "Embalagem",
+      siglaUnidadeMedida: "UNID",
+      template: false,
+      servicoIndustrializacaoTerceiros: false,
+    };
+    const plan = planNomusNewMaterialRouting(detect([inactivePackaging]), EMPTY_MAPS);
+    const d = decisionFor(plan.decisions, "TEST-INACTIVE-MATERIAL");
+    assert.equal(d?.kind, "SKIP_UNSAFE");
+    if (d?.kind !== "SKIP_UNSAFE") return;
+    assert.equal(d.guard, "INATIVO_NO_NOMUS");
+    assert.equal(plan.summary.materialCreateCount, 0);
+    // Fica só como diagnóstico (target SKIP no preview) — catálogo intacto.
+    const entry = plan.preview.find((p) => p.code === "TEST-INACTIVE-MATERIAL");
+    assert.equal(entry?.target, "SKIP");
+    assert.match(entry?.reason ?? "", /INATIVO_NO_NOMUS/);
+  });
+
+  it("matéria-prima explícita inativa → mesmo comportamento (nunca Material INACTIVE automático)", () => {
+    const inactiveRaw = { ...rawMaterialRow("310.99"), ativo: false };
+    const plan = planNomusNewMaterialRouting(detect([inactiveRaw]), EMPTY_MAPS);
+    const d = decisionFor(plan.decisions, "310.99");
+    assert.equal(d?.kind, "SKIP_UNSAFE");
+    if (d?.kind !== "SKIP_UNSAFE") return;
+    assert.equal(d.guard, "INATIVO_NO_NOMUS");
+    // Prova estrutural: o único payload possível no contrato nasce ACTIVE —
+    // inativo jamais chega ao CREATE, logo não existe Material INACTIVE
+    // criado por esta feature.
+    const creates = plan.decisions.filter((x) => x.kind === "CREATE_MATERIAL");
+    assert.equal(creates.length, 0);
+  });
+});
+
+describe("GATE 3 — Material NOMUS_IMPORT aparece em Suprimentos (wiring)", () => {
+  it("GET /api/materials não filtra category/status e a tela lista com 'Todas as categorias' por default", () => {
+    const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    const apiStart = server.indexOf('app.get("/api/materials"');
+    assert.ok(apiStart > 0, "handler GET /api/materials existe");
+    const handler = server.slice(apiStart, apiStart + 1200);
+    // findMany sem where — nenhuma categoria/status é excluída na API.
+    assert.match(handler, /prisma\.material\.findMany\(\{\s*include:/);
+    assert.doesNotMatch(handler, /where:/);
+
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "MaterialModule.tsx"),
+      "utf8"
+    );
+    // Default do filtro é "" (Todas as categorias) — NOMUS_IMPORT aparece; e
+    // a categoria não alimenta nenhum lookup de label em linha da listagem
+    // (único uso fora de filtro/form é popular o formulário de edição).
+    assert.match(page, /useState<"" \| Material\["category"\]>\(""\)/);
+    assert.match(page, /Todas as categorias/);
+    assert.match(page, /mat\.code\.toLowerCase\(\)\.includes\(q\)/);
+  });
+});
+
+describe("GATE 4 — 210.30A- completo (payload final + segundo sync)", () => {
+  it("payload final exato do CREATE e zero Product (mapper bloqueia PACKAGING_NOT_PRODUCT)", () => {
+    const fixture = fixture21030A();
+    // Lado Product: mapper continua bloqueando — 0 novos Products.
+    const { eligible, blocked } = mapNomusProductsFromApiRows([fixture], new Set());
+    assert.equal(eligible.length, 0);
+    assert.ok(
+      blocked.some(
+        (b) => b.sku === "210.30A-" && b.reasons.includes("PACKAGING_NOT_PRODUCT")
+      )
+    );
+
+    // Lado Material: CREATE com payload completo.
+    const plan = planNomusNewMaterialRouting(detect([fixture]), EMPTY_MAPS);
+    const d = decisionFor(plan.decisions, "210.30A-");
+    assert.equal(d?.kind, "CREATE_MATERIAL");
+    if (d?.kind !== "CREATE_MATERIAL") return;
+    assert.deepEqual(d.payload, {
+      code: "210.30A-",
+      description: "CAIXA 258x248x560 Purificador",
+      unit: "UNID",
+      category: "NOMUS_IMPORT",
+      currentCost: 0,
+      averageCost: 0,
+      standardCost: 0,
+      freight: 0,
+      standardLoss: 0,
+      conversionFactor: 1,
+      status: "ACTIVE",
+    });
+  });
+
+  it("segundo sync (Material já criado): 0 novos Materials, 0 novos Products, 0 updates", () => {
+    const afterFirstSync = buildCatalogEntityLookupMaps({
+      materials: [{ id: "mat-21030a", code: "210.30A-", status: "ACTIVE" }],
+      products: [],
+    });
+    const plan = planNomusNewMaterialRouting(detect([fixture21030A()]), afterFirstSync);
+    assert.equal(plan.summary.materialCreateCount, 0);
+    assert.equal(plan.summary.materialAlreadyExistingCount, 1);
+    // Product: mapper segue bloqueando (nunca cria) — e o contrato do plano
+    // não possui nenhuma decisão de UPDATE: custos manuais intocados.
+    const { eligible } = mapNomusProductsFromApiRows([fixture21030A()], new Set());
+    assert.equal(eligible.length, 0);
+    assert.ok(plan.decisions.every((x) => x.kind !== ("UPDATE_MATERIAL" as never)));
   });
 });
 
