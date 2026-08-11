@@ -1923,51 +1923,15 @@ export const ProductModule = () => {
                     {engineeringSegment === "PRODUCT" ? (
                       <td className="p-4 align-middle min-w-[10rem] max-w-[16rem]">
                         {(() => {
+                          // Coluna EXCLUSIVA de custo/snapshot — a saúde
+                          // estrutural da BOM vive na coluna Engenharia
+                          // (badge + painel) e no diagnóstico do modal.
                           const fc = item.frozenCostSummary;
-                          const bomHealth = bomHealthByProductId[item.id];
-                          const bomIssues =
-                            bomHealth && !bomHealth.ok ? bomHealth.issues : [];
-                          // Prioridade visual: inconsistência ESTRUTURAL da BOM
-                          // acima dos alertas de snapshot/custo — atualizar
-                          // snapshot NÃO resolve componente inativo.
-                          const bomAlert =
-                            bomIssues.length > 0 ? (
-                              <div
-                                className="rounded-md border border-red-300 bg-red-50 p-2"
-                                data-testid="bom-inactive-component-alert"
-                              >
-                                <p className="text-[11px] font-bold text-red-700">
-                                  🔴 {BOM_INACTIVE_COMPONENT_TITLE}
-                                  {bomIssues.length > 1 ? ` (${bomIssues.length})` : ""}
-                                </p>
-                                <p className="text-[10px] text-red-700/90">
-                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
-                                </p>
-                                <ul className="mt-1 space-y-0.5">
-                                  {bomIssues.slice(0, 5).map((issue, i) => (
-                                    <li key={`${issue.componentId}-${i}`} className="text-[10px] text-red-800">
-                                      <span className="font-semibold">
-                                        {issue.componentSku} — {issue.componentName}
-                                      </span>{" "}
-                                      · Status: Inativo
-                                      {issue.level > 1 ? (
-                                        <span className="block text-red-700/80">
-                                          Caminho: {formatBomHealthPath(issue.path)}
-                                        </span>
-                                      ) : null}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ) : null;
                           if (!fc) {
-                            return (
-                              bomAlert ?? <span className="text-xs text-muted-foreground">—</span>
-                            );
+                            return <span className="text-xs text-muted-foreground">—</span>;
                           }
                           return (
                             <div className="flex max-w-[15rem] flex-col gap-1.5 break-words">
-                              {bomAlert}
                               <span
                                 className={cn(
                                   frozenCostTraceBadgeClass(fc.traceStatus),

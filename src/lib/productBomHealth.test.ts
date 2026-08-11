@@ -360,9 +360,13 @@ describe("productBomHealth — UI (T29–T36, wiring)", () => {
   const page = () =>
     readFileSync(join(process.cwd(), "src", "components", "ProductModule.tsx"), "utf8");
 
-  it("T29/T30: ProductModule mostra alerta com o título oficial", () => {
+  it("T29/T30: grid = resumo compacto (coluna Engenharia); modal = diagnóstico completo com título oficial", () => {
     const src = page();
-    assert.match(src, /bom-inactive-component-alert/);
+    // Separação conceitual: Custo congelado é só custo/snapshot — o alerta
+    // detalhado de BOM saiu de lá; o modal mantém o diagnóstico completo.
+    assert.match(src, /bom-inactive-component-modal-alert/);
+    assert.doesNotMatch(src, /data-testid="bom-inactive-component-alert"/);
+    assert.match(src, /engineering-health-badge-/);
     assert.match(src, /BOM_INACTIVE_COMPONENT_TITLE/);
     assert.equal(BOM_INACTIVE_COMPONENT_TITLE, "Composição contém componente inativo");
   });
@@ -380,10 +384,13 @@ describe("productBomHealth — UI (T29–T36, wiring)", () => {
     assert.match(src, /child\.status \?\? "ACTIVE"/);
   });
 
-  it("T35: alerta só renderiza quando health !ok (produto saudável não mostra)", () => {
+  it("T35: pendência só renderiza quando health !ok — saudável mostra ✅ OK, nunca alerta", () => {
     const src = page();
-    assert.match(src, /bomHealth && !bomHealth\.ok \? bomHealth\.issues : \[\]/);
-    assert.match(src, /bomIssues\.length > 0 \?/);
+    // Modal: issues só quando !ok.
+    assert.match(src, /health && !health\.ok \? health\.issues : \[\]/);
+    // Coluna Engenharia: OK explícito para saudável (≠ vazio, ≠ alerta).
+    assert.match(src, /summary\.status === "OK"/);
+    assert.match(src, /✅ OK/);
   });
 
   it("T36: clique em Atualizar snapshot com BOM inválida mostra o diagnóstico (não sugere que snapshot resolve)", () => {
