@@ -229,7 +229,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         arOptions
       );
       const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
-        ytdYear: filters.year ?? referenceDate.getFullYear(),
+        ytdYear: referenceDate.getFullYear(),
         companyName: filters.companyName,
         referenceDate,
       });
