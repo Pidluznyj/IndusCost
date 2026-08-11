@@ -706,6 +706,16 @@ export function InvestedCapitalRecoveryPage() {
                         <SortIcon active={sortKey === "outstandingReceivable"} dir={sortDir} />
                       </div>
                     </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("recoveryPercent")}
+                      title="Percentual de capital recuperado"
+                    >
+                      <div className="flex items-center justify-end gap-0.5">
+                        % Rec.
+                        <SortIcon active={sortKey === "recoveryPercent"} dir={sortDir} />
+                      </div>
+                    </th>
 
                     <th
                       className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none w-20"
@@ -779,6 +789,9 @@ export function InvestedCapitalRecoveryPage() {
                       </td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium">
                         {money(row.outstandingReceivable)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right whitespace-nowrap">
+                        <RecoveryProgressBar percent={row.recoveryPercent} />
                       </td>
 
                       <td className="px-1.5 py-1.5 whitespace-nowrap font-medium text-foreground">
