@@ -23,6 +23,13 @@ import {
   type ProductLifecycleRow,
   type ProductSyncMutation,
 } from "../src/lib/nomusProductsSyncPlan.ts";
+import {
+  detectNomusMaterialRoutingCandidates,
+  finalizeNomusMaterialCreates,
+  planNomusNewMaterialRouting,
+  type NomusMaterialRoutingDecision,
+  type NomusMaterialRoutingPlan,
+} from "../src/lib/nomusNewMaterialRouting.ts";
 
 const prisma = new PrismaClient();
 
@@ -696,6 +703,55 @@ async function executeLifecyclePlans(result: LifecyclePlanResult): Promise<{
   };
 }
 
+/**
+ * Aplica os CREATEs de Material do roteamento de códigos novos.
+ * Gate final anti-TOCTOU: recarrega Product/Material FRESCOS imediatamente
+ * antes da escrita — entidade que surgiu entre plano e apply cancela o create.
+ * Único write deste fluxo é CREATE (custos 0/0/0); nunca UPDATE de Material.
+ */
+async function applyMaterialRoutingCreates(plan: NomusMaterialRoutingPlan): Promise<{
+  materialCreatedCount: number;
+  materialLateSkippedCount: number;
+  lateSkips: Array<{ code: string; why: string }>;
+  errors: Array<{ code: string; message: string }>;
+}> {
+  const creates = plan.decisions.filter(
+    (d): d is Extract<NomusMaterialRoutingDecision, { kind: "CREATE_MATERIAL" }> =>
+      d.kind === "CREATE_MATERIAL"
+  );
+  if (creates.length === 0) {
+    return { materialCreatedCount: 0, materialLateSkippedCount: 0, lateSkips: [], errors: [] };
+  }
+
+  const freshMaps = await loadCatalogEntityLookupMaps(
+    prisma,
+    creates.map((c) => c.code)
+  );
+  const { toCreate, lateSkips } = finalizeNomusMaterialCreates(creates, freshMaps);
+
+  let created = 0;
+  const errors: Array<{ code: string; message: string }> = [];
+  for (const c of toCreate) {
+    try {
+      await prisma.material.create({ data: c.payload });
+      created += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/unique|Unique constraint/i.test(msg)) {
+        lateSkips.push({ code: c.code, why: `Unique constraint no create — Material concorrente.` });
+      } else {
+        errors.push({ code: c.code, message: msg });
+      }
+    }
+  }
+  return {
+    materialCreatedCount: created,
+    materialLateSkippedCount: lateSkips.length,
+    lateSkips: lateSkips.slice(0, 50),
+    errors: errors.slice(0, 50),
+  };
+}
+
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
@@ -716,6 +772,17 @@ async function main(): Promise<void> {
   }
   const catalogSync = await upsertNomusProductCatalogFromApiRows(prisma, raw, blockedBySku);
 
+  // Roteamento de Material para CÓDIGOS NOVOS (matéria-prima/embalagem/insumo
+  // explícitos no Nomus). Existência resolvida em LOTE (uma consulta por
+  // domínio para o subconjunto candidato) — sem N+1 e sem chamada extra ao
+  // Nomus. Código já em Product ou Material é sempre preservado onde está.
+  const materialCandidates = detectNomusMaterialRoutingCandidates(raw, blockedBySku);
+  const materialMaps = await loadCatalogEntityLookupMaps(
+    prisma,
+    materialCandidates.map((c) => c.code)
+  );
+  const materialRouting = planNomusNewMaterialRouting(materialCandidates, materialMaps);
+
   const dry = await runDry(eligible);
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) for (const r of b.reasons) blockedReasons[r] = (blockedReasons[r] ?? 0) + 1;
@@ -734,6 +801,11 @@ async function main(): Promise<void> {
   const lifecyclePlans = await buildLifecyclePlans(eligible, inactiveRows);
   const lifecyclePreview = summarizeLifecyclePlans(lifecyclePlans);
 
+  // APPLY: Materials novos ANTES do ciclo de Product — o gate final de CREATE
+  // de Product (resolveCatalogEntityByCode + materialBlocksProductMutation, já
+  // existente) passa a enxergar o Material recém-criado e nunca cria Product
+  // duplicado para o mesmo código.
+  const materialApplied = isApply ? await applyMaterialRoutingCreates(materialRouting) : null;
   const applied = isApply ? await executeLifecyclePlans(lifecyclePlans) : null;
   console.log(
     JSON.stringify(
@@ -781,8 +853,13 @@ async function main(): Promise<void> {
           safeUpdateFields: diagnostics.safeUpdateFields,
           blockedBusinessRules: diagnostics.blockedBusinessRules,
           lifecyclePreview,
+          materialRouting: {
+            ...materialRouting.summary,
+            preview: materialRouting.preview,
+          },
         },
         applied,
+        materialApplied,
       },
       null,
       2
