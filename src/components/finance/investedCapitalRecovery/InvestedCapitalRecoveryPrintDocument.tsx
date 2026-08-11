@@ -245,7 +245,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <th className="col-money" title="Capital Recuperado">Cap. Recup.</th>
                   <th className="col-money" title="Capital na Rua">Cap. na Rua</th>
                   <th className="col-money" title="A Receber">A Receber</th>
-                  <th className="col-num" title="Percentual Recuperado">% Rec.</th>
                   <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou</th>
                   <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev.</th>
                 </tr>
@@ -261,9 +260,6 @@ export function InvestedCapitalRecoveryPrintDocument({
                     <td className="col-money text-emerald-600 font-medium">{moneyTable(row.capitalRecovered)}</td>
                     <td className="col-money text-rose-600 font-medium">{moneyTable(row.moneyOnStreet)}</td>
                     <td className="col-money">{moneyTable(row.outstandingReceivable)}</td>
-                    <td className="col-num">
-                      <PrintProgressBar percent={row.recoveryPercent} />
-                    </td>
                     <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
                     <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
                   </tr>
@@ -278,7 +274,7 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <td className="col-money text-emerald-600 font-medium">{moneyTable(kpis.capitalRecoveredTotal)}</td>
                   <td className="col-money text-rose-600 font-medium">{moneyTable(kpis.moneyOnStreetToday)}</td>
                   <td className="col-money">{moneyTable(kpis.totalOutstandingReceivable)}</td>
-                  <td className="col-num" colSpan={3} />
+                  <td className="col-num" colSpan={2} />
                 </tr>
               </tfoot>
             </table>

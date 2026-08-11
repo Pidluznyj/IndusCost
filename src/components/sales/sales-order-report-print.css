@@ -865,9 +865,8 @@
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 8%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 8%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 32%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 38%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 6%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-date { width: 6%; }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
