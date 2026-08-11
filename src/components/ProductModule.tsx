@@ -36,6 +36,12 @@ import {
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  BOM_INACTIVE_COMPONENT_DESCRIPTION,
+  BOM_INACTIVE_COMPONENT_TITLE,
+  formatBomHealthPath,
+  type ProductBomHealthResult,
+} from "@/src/lib/productBomHealth";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting, type ProductCostingMode } from "@/src/types/product";
 import {
@@ -221,6 +227,10 @@ export const ProductModule = () => {
     ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
   ]);
   const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
+  /** Saúde da BOM por produto (backend é a autoridade) — BOM_INACTIVE_COMPONENT. */
+  const [bomHealthByProductId, setBomHealthByProductId] = useState<
+    Record<string, ProductBomHealthResult>
+  >({});
   const [snapshotBulkProgress, setSnapshotBulkProgress] = useState<{
     current: number;
     total: number;
@@ -345,10 +355,31 @@ export const ProductModule = () => {
         fetchJsonOk("/api/machines"),
         fetchJsonOk("/api/roles"),
       ]);
-      setItems(Array.isArray(productsData) ? productsData : []);
+      const productRows = Array.isArray(productsData) ? productsData : [];
+      setItems(productRows);
       setMaterials(Array.isArray(materialsData) ? materialsData : []);
       setMachines(Array.isArray(machinesData) ? machinesData : []);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
+
+      // Saúde estrutural da BOM (backend é a autoridade — recursiva, com
+      // proteção de ciclo). UMA chamada em lote para a lista inteira; falha
+      // aqui não derruba a tela (diagnóstico ausente ≠ erro fatal).
+      if (productRows.length > 0) {
+        void fetchJsonOk<{ results: Record<string, ProductBomHealthResult> }>(
+          "/api/products/bom-health-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productIds: productRows.map((p) => p.id) }),
+          }
+        )
+          .then((data) => setBomHealthByProductId(data.results ?? {}))
+          .catch((error) => {
+            console.error("Erro ao carregar saúde da BOM:", error);
+          });
+      } else {
+        setBomHealthByProductId({});
+      }
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar dados de engenharia.");
@@ -376,9 +407,18 @@ export const ProductModule = () => {
       try {
         const result = await fetchJsonOk<{
           status: string;
+          errors?: string[];
           frozenCostSummary?: ProductWithCostSummary["frozenCostSummary"];
           message?: string;
         }>(`/api/products/${productId}/production-cost-snapshot`, { method: "POST" });
+        if (result.status === "BOM_INACTIVE_COMPONENT") {
+          // Bloqueio estrutural: atualizar snapshot NÃO resolve componente
+          // inativo — mostra o diagnóstico com componente e caminho.
+          alert(
+            result.errors?.[0] ??
+              `${BOM_INACTIVE_COMPONENT_TITLE}. ${BOM_INACTIVE_COMPONENT_DESCRIPTION}`
+          );
+        }
         if (result.frozenCostSummary) {
           setItems((prev) =>
             prev.map((p) =>
@@ -1169,10 +1209,12 @@ export const ProductModule = () => {
           const child = row?.ChildProduct || row?.childProduct;
           if (child?.sku && child?.name) {
             const isComp = child.type === "COMPONENT";
+            const isInactive = String(child.status ?? "ACTIVE").toUpperCase() === "INACTIVE";
+            const baseSublabel = isComp ? "Componente (salvo)" : "Produto (salvo)";
             return {
               value: `product:${String(row.childProductId)}`,
-              label: `${child.sku} — ${child.name}`,
-              sublabel: isComp ? "Componente (salvo)" : "Produto (salvo)",
+              label: isInactive ? `${child.sku} — ${child.name} · 🔴 INATIVO` : `${child.sku} — ${child.name}`,
+              sublabel: isInactive ? `${baseSublabel} — INATIVO` : baseSublabel,
               searchTerms: `${child.sku} ${child.name}`,
             };
           }
@@ -1836,11 +1878,50 @@ export const ProductModule = () => {
                       <td className="p-4 align-middle min-w-[10rem] max-w-[16rem]">
                         {(() => {
                           const fc = item.frozenCostSummary;
+                          const bomHealth = bomHealthByProductId[item.id];
+                          const bomIssues =
+                            bomHealth && !bomHealth.ok ? bomHealth.issues : [];
+                          // Prioridade visual: inconsistência ESTRUTURAL da BOM
+                          // acima dos alertas de snapshot/custo — atualizar
+                          // snapshot NÃO resolve componente inativo.
+                          const bomAlert =
+                            bomIssues.length > 0 ? (
+                              <div
+                                className="rounded-md border border-red-300 bg-red-50 p-2"
+                                data-testid="bom-inactive-component-alert"
+                              >
+                                <p className="text-[11px] font-bold text-red-700">
+                                  🔴 {BOM_INACTIVE_COMPONENT_TITLE}
+                                  {bomIssues.length > 1 ? ` (${bomIssues.length})` : ""}
+                                </p>
+                                <p className="text-[10px] text-red-700/90">
+                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
+                                </p>
+                                <ul className="mt-1 space-y-0.5">
+                                  {bomIssues.slice(0, 5).map((issue, i) => (
+                                    <li key={`${issue.componentId}-${i}`} className="text-[10px] text-red-800">
+                                      <span className="font-semibold">
+                                        {issue.componentSku} — {issue.componentName}
+                                      </span>{" "}
+                                      · Status: Inativo
+                                      {issue.level > 1 ? (
+                                        <span className="block text-red-700/80">
+                                          Caminho: {formatBomHealthPath(issue.path)}
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null;
                           if (!fc) {
-                            return <span className="text-xs text-muted-foreground">—</span>;
+                            return (
+                              bomAlert ?? <span className="text-xs text-muted-foreground">—</span>
+                            );
                           }
                           return (
                             <div className="flex max-w-[15rem] flex-col gap-1.5 break-words">
+                              {bomAlert}
                               <span
                                 className={cn(
                                   frozenCostTraceBadgeClass(fc.traceStatus),
@@ -2460,6 +2541,42 @@ export const ProductModule = () => {
                         </div>
                       ) : (
                         <>
+                          {(() => {
+                            const health = editingItem?.id
+                              ? bomHealthByProductId[editingItem.id]
+                              : undefined;
+                            const issues = health && !health.ok ? health.issues : [];
+                            if (issues.length === 0) return null;
+                            return (
+                              <div
+                                className="rounded-lg border border-red-300 bg-red-50 p-3"
+                                data-testid="bom-inactive-component-modal-alert"
+                              >
+                                <p className="text-sm font-bold text-red-700">
+                                  🔴 {BOM_INACTIVE_COMPONENT_TITLE}
+                                  {issues.length > 1 ? ` — ${issues.length} componente(s)` : ""}
+                                </p>
+                                <p className="text-xs text-red-700/90 mt-0.5">
+                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
+                                </p>
+                                <ul className="mt-2 space-y-1">
+                                  {issues.map((issue, i) => (
+                                    <li key={`${issue.componentId}-${i}`} className="text-xs text-red-800">
+                                      <span className="font-semibold">
+                                        {issue.componentSku} — {issue.componentName}
+                                      </span>{" "}
+                                      · Status: Inativo
+                                      {issue.level > 1 ? (
+                                        <span className="block text-red-700/80">
+                                          Caminho: {formatBomHealthPath(issue.path)}
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-between">
                             <div>
                               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

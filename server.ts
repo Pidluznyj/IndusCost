@@ -74,6 +74,10 @@ import {
   getProductFrozenCostTracesBatch,
   refreshProductProductionCostSnapshot,
 } from "./src/lib/productEngineeringCostSnapshot.server.js";
+import {
+  analyzeProductBomHealth,
+  analyzeProductsBomHealthBatch,
+} from "./src/lib/productBomHealth.server.js";
 import { getProductProductionCostPublicationStatus } from "./src/lib/productProductionCostPublicationStatus.server.js";
 import {
   frozenCostTraceStatusLabel,
@@ -11785,6 +11789,50 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         return res.status(500).json({
           error: error instanceof Error ? error.message : "Erro ao gerar snapshot de custo.",
         });
+      }
+    }
+  );
+
+  // Saúde estrutural da BOM (BOM_INACTIVE_COMPONENT) — read-only, backend é
+  // a autoridade da regra (recursiva, com proteção de ciclo). Nunca altera
+  // Product.status nem a composição.
+  app.get(
+    "/api/products/:id/bom-health",
+    requireAppAuth,
+    requireResource("engineering.products", "view"),
+    async (req, res) => {
+      try {
+        const result = await analyzeProductBomHealth(prisma, req.params.id);
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/products/:id/bom-health", error);
+        return res.status(500).json({ error: "Erro ao analisar saúde da BOM." });
+      }
+    }
+  );
+
+  // Versão em lote para a listagem da Engenharia (um grafo compartilhado —
+  // uma query por nível de profundidade, sem N+1 por produto).
+  app.post(
+    "/api/products/bom-health-batch",
+    requireAppAuth,
+    requireResource("engineering.products", "view"),
+    async (req, res) => {
+      try {
+        const ids = Array.isArray(req.body?.productIds)
+          ? (req.body.productIds as unknown[]).filter((x): x is string => typeof x === "string")
+          : [];
+        if (ids.length === 0) return res.json({ results: {} });
+        if (ids.length > 1000) {
+          return res.status(400).json({ error: "Máximo de 1000 produtos por lote." });
+        }
+        const map = await analyzeProductsBomHealthBatch(prisma, ids);
+        const results: Record<string, unknown> = {};
+        for (const [productId, result] of map.entries()) results[productId] = result;
+        return res.json({ results });
+      } catch (error) {
+        console.error("POST /api/products/bom-health-batch", error);
+        return res.status(500).json({ error: "Erro ao analisar saúde da BOM em lote." });
       }
     }
   );

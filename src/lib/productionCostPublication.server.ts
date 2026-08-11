@@ -32,6 +32,11 @@ import {
   loadMaterialCostEngineCatalogForProductionDraft,
   previewMaterialCostTableSourceForProductionDraft,
 } from "./materialCostEngineResolver.js";
+import {
+  BOM_INACTIVE_COMPONENT_CODE,
+  buildBomHealthBlockMessage,
+} from "./productBomHealth.js";
+import { analyzeProductsBomHealthBatch } from "./productBomHealth.server.js";
 
 export { previewMaterialCostTableSourceForProductionDraft } from "./materialCostEngineResolver.js";
 
@@ -266,8 +271,31 @@ export async function generateProductionCostTableDraftFromProducts(
   cache.materialCostCatalog = materialCostCatalog;
   const calculatedAt = new Date();
 
+  // Saúde estrutural da BOM em LOTE (um grafo compartilhado para todos os
+  // produtos — uma query por nível de profundidade, sem N+1). Produto com
+  // componente Product INATIVO na composição efetiva NÃO recebe item nesta
+  // versão; o skip fica explícito no summary (código + componente + caminho),
+  // nunca invisível. Os demais produtos seguem normalmente.
+  const bomHealthByProductId = await analyzeProductsBomHealthBatch(
+    db,
+    selectedProducts.map((p) => p.id)
+  );
+
   for (const product of selectedProducts) {
     try {
+      const bomHealth = bomHealthByProductId.get(product.id);
+      if (bomHealth && !bomHealth.ok) {
+        summary.itemsSkipped += 1;
+        summary.errors.push({
+          code: BOM_INACTIVE_COMPONENT_CODE,
+          productId: product.id,
+          sku: product.sku,
+          productName: product.name,
+          message: buildBomHealthBlockMessage(bomHealth),
+        });
+        continue;
+      }
+
       const analysis = await engine.getProductCostAnalysis(product.id, cache, true);
       if (!analysis) {
         summary.itemsSkipped += 1;
