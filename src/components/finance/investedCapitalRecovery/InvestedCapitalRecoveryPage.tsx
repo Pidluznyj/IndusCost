@@ -68,6 +68,52 @@ function money(value: number | null): string {
   return formatFinanceCurrency(value);
 }
 
+function formatMonthYear(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== "string") return "—";
+  const trimmed = dateStr.trim();
+  if (!trimmed) return "—";
+  const match = trimmed.match(/^(\d{4})-(\d{2})/);
+  if (match) {
+    const [, year, month] = match;
+    return `${month}/${year}`;
+  }
+  const d = new Date(trimmed);
+  if (isNaN(d.getTime())) return "—";
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${month}/${year}`;
+}
+
+function RecoveryProgressBar({ percent }: { percent: number | null }) {
+  if (percent == null || !Number.isFinite(percent)) return <span className="text-muted-foreground">—</span>;
+  const clamped = Math.min(Math.max(percent, 0), 100);
+  const colorClass =
+    clamped >= 100
+      ? "bg-emerald-500"
+      : clamped > 0
+      ? "bg-amber-500"
+      : "bg-rose-400";
+
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-slate-200 border border-slate-300/60 shrink-0">
+        <div
+          className={cn("h-full rounded-full transition-all", colorClass)}
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+      <span className="font-semibold tabular-nums text-xs min-w-[28px] text-right">
+        {clamped.toFixed(0)}%
+      </span>
+    </div>
+  );
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
+  if (!active) return <span className="opacity-30 text-[10px] ml-0.5">↕</span>;
+  return <span className="text-sky-300 text-[10px] ml-0.5">{dir === "asc" ? "▲" : "▼"}</span>;
+}
+
 function KpiCard({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "in" | "out" | "neutral" }) {
   const toneClass =
     tone === "in"
@@ -538,49 +584,143 @@ export function InvestedCapitalRecoveryPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-border bg-card shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs" data-testid="invested-capital-recovery-table">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="px-2 py-1.5">PV</th>
-                    <th className="px-2 py-1.5">Cliente</th>
-                    <th className="px-2 py-1.5">Vendedor</th>
-                    <th className="px-2 py-1.5 text-right cursor-pointer" onClick={() => toggleSort("saleValue")}>
-                      Venda
+          <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="max-h-[600px] overflow-auto relative">
+              <table className="w-full text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
+                <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
+                  <tr className="border-b border-slate-800 text-left text-[11px] font-semibold uppercase tracking-wide">
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("orderCode")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Pedido de Venda
+                        <SortIcon active={sortKey === "orderCode"} dir={sortDir} />
+                      </div>
                     </th>
                     <th
-                      className="px-2 py-1.5 text-right cursor-pointer"
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("customerName")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Cliente
+                        <SortIcon active={sortKey === "customerName"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("saleValue")}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Valor Pedido
+                        <SortIcon active={sortKey === "saleValue"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("investedCapital")}
-                      title="Custo industrial + imposto usado no cálculo da margem comercial do Pedido."
+                      title="Capital Investido (imposto + custo de produção)"
                     >
-                      Capital Investido
+                      <div className="flex items-center justify-end gap-1">
+                        Capital Investido (Imposto + Custo Prod.)
+                        <SortIcon active={sortKey === "investedCapital"} dir={sortDir} />
+                      </div>
                     </th>
-                    <th className="px-2 py-1.5 text-right" title="Imposto usado no cálculo da margem comercial do Pedido — já incluído no Capital Investido ao lado.">
-                      Imposto
-                    </th>
-                    <th className="px-2 py-1.5 text-right">Recebido</th>
-                    <th className="px-2 py-1.5 text-right">Capital Recuperado</th>
                     <th
-                      className="px-2 py-1.5 text-right cursor-pointer"
-                      onClick={() => toggleSort("moneyOnStreet")}
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("totalTaxes")}
+                      title="Imposto usado no cálculo da margem comercial — já incluído no Capital Investido"
                     >
-                      Dinheiro na Rua
+                      <div className="flex items-center justify-end gap-1">
+                        Imposto
+                        <SortIcon active={sortKey === "totalTaxes"} dir={sortDir} />
+                      </div>
                     </th>
-                    <th className="px-2 py-1.5 text-right">A Receber</th>
-                    <th className="px-2 py-1.5 text-right">% Recuperado</th>
-                    <th className="px-2 py-1.5">Pagou-se em</th>
-                    <th className="px-2 py-1.5">Prev. recuperação</th>
-                    <th className="px-2 py-1.5">Status Econômico</th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("industrialCost")}
+                      title="Custo industrial de produção oficial"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Custo de Produção
+                        <SortIcon active={sortKey === "industrialCost"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("actualReceived")}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Recebido
+                        <SortIcon active={sortKey === "actualReceived"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("capitalRecovered")}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Capital Recuperado
+                        <SortIcon active={sortKey === "capitalRecovered"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none text-amber-300"
+                      onClick={() => toggleSort("moneyOnStreet")}
+                      title="Capital na Rua = Capital Investido - Capital Recuperado"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        Capital na Rua (Investido - Recuperado)
+                        <SortIcon active={sortKey === "moneyOnStreet"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("outstandingReceivable")}
+                      title="A Receber = Valor Pedido - Recebido"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        A Receber (Valor Pedido - Recebido)
+                        <SortIcon active={sortKey === "outstandingReceivable"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 text-right whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("recoveryPercent")}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        % Recuperado
+                        <SortIcon active={sortKey === "recoveryPercent"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("capitalRecoveryDate")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Pagou-se em (MES/ANO)
+                        <SortIcon active={sortKey === "capitalRecoveryDate"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th
+                      className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 whitespace-nowrap cursor-pointer select-none"
+                      onClick={() => toggleSort("forecastCapitalRecoveryDate")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Previsão de Recuperação (MES/ANO)
+                        <SortIcon active={sortKey === "forecastCapitalRecoveryDate"} dir={sortDir} />
+                      </div>
+                    </th>
+                    <th className="sticky top-0 z-20 bg-slate-900 px-3 py-2.5 whitespace-nowrap">Status Econômico</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border/60">
                   {pageRows.map((row) => (
                     <tr
                       key={row.salesOrderId}
                       tabIndex={0}
                       aria-label={`Ver recebíveis e status do Pedido ${row.orderCode}`}
-                      className="cursor-pointer border-b border-border/50 outline-none hover:bg-muted/30 focus-visible:bg-muted/40"
+                      className="cursor-pointer border-b border-border/50 outline-none hover:bg-muted/40 focus-visible:bg-muted/50 transition-colors"
                       data-testid={`invested-capital-recovery-row-${row.salesOrderId}`}
                       onClick={() => openOrderDetail(row.salesOrderId, row.orderCode)}
                       onKeyDown={(event) => {
@@ -590,42 +730,50 @@ export function InvestedCapitalRecoveryPage() {
                         }
                       }}
                     >
-                      <td className="px-2 py-1.5 font-medium">{row.orderCode}</td>
-                      <td className="px-2 py-1.5">{row.customerName ?? "—"}</td>
-                      <td className="px-2 py-1.5">{row.sellerName ?? "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{money(row.saleValue)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
+                      <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{row.orderCode}</td>
+                      <td className="px-3 py-2 max-w-[220px] truncate" title={row.customerName ?? undefined}>
+                        {row.customerName ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap">
+                        {money(row.saleValue)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap">
                         {row.investedCapital == null ? (
                           <span title={row.investedCapitalUnavailableReason ?? undefined}>—</span>
                         ) : (
                           money(row.investedCapital)
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-muted-foreground">
                         {row.totalTaxes == null ? (
                           "—"
                         ) : (
                           <span title={row.taxSourceLabel ?? undefined}>{money(row.totalTaxes)}</span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{money(row.actualReceived)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{money(row.capitalRecovered)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium text-red-700">
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                        {row.industrialCost == null ? "—" : money(row.industrialCost)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{money(row.actualReceived)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium text-emerald-700">
+                        {money(row.capitalRecovered)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-rose-700">
                         {money(row.moneyOnStreet)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{money(row.outstandingReceivable)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {row.recoveryPercent == null ? "—" : `${row.recoveryPercent.toFixed(0)}%`}
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">
+                        {money(row.outstandingReceivable)}
                       </td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {row.capitalRecoveryDate ? formatFinanceDate(row.capitalRecoveryDate) : "—"}
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <RecoveryProgressBar percent={row.recoveryPercent} />
                       </td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {row.forecastCapitalRecoveryDate
-                          ? formatFinanceDate(row.forecastCapitalRecoveryDate)
-                          : "Sem cobertura prevista"}
+                      <td className="px-3 py-2 whitespace-nowrap font-medium text-foreground">
+                        {formatMonthYear(row.capitalRecoveryDate)}
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                        {formatMonthYear(row.forecastCapitalRecoveryDate)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </td>
                     </tr>

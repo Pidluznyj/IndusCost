@@ -26,20 +26,22 @@ import { cn } from "@/src/lib/utils";
 export type DreYtdChartPoint = {
   monthIndex: number;
   monthLabel: string;
-  // Monthly values
-  receitaBruta: number;
-  receitaLiquida: number;
-  lucroBruto: number;
-  resultadoOperacional: number;
-  ebitda: number;
-  lucroLiquido: number;
-  // YTD cumulative values
-  receitaBrutaYtd: number;
-  receitaLiquidaYtd: number;
-  lucroBrutoYtd: number;
-  resultadoOperacionalYtd: number;
-  ebitdaYtd: number;
-  lucroLiquidoYtd: number;
+  /** true para meses ainda sem realização (> mês em destaque): séries ficam null. */
+  isFuture: boolean;
+  // Monthly values (null nos meses futuros — evita barra-fantasma)
+  receitaBruta: number | null;
+  receitaLiquida: number | null;
+  lucroBruto: number | null;
+  resultadoOperacional: number | null;
+  ebitda: number | null;
+  lucroLiquido: number | null;
+  // YTD cumulative values (null nos meses futuros — a linha termina no mês atual, sem flatline)
+  receitaBrutaYtd: number | null;
+  receitaLiquidaYtd: number | null;
+  lucroBrutoYtd: number | null;
+  resultadoOperacionalYtd: number | null;
+  ebitdaYtd: number | null;
+  lucroLiquidoYtd: number | null;
   // Margins %
   margemBrutaPct: number | null;
   margemBrutaYtdPct: number | null;
@@ -73,6 +75,14 @@ function buildDreYtdChartPoints(report: FinanceDreReport): DreYtdChartPoint[] {
   const lucroLiquido = findLine("lucro_liquido_aproximado")?.values.byMonth ?? Array(12).fill(0);
   const ebitdaMonthly = report.kpis.ebitdaByMonth ?? resOperacional;
 
+  // Último mês com realização = mês em destaque. Meses posteriores não têm dado:
+  // suas séries ficam null para a linha YTD terminar no mês atual (sem flatline
+  // reta até dezembro) e para não desenhar barras-fantasma.
+  const lastRealMonthIdx = Math.min(
+    Math.max((report.filters.highlightMonth ?? 12) - 1, 0),
+    11
+  );
+
   let sumRecBruta = 0;
   let sumRecLiquida = 0;
   let sumLucroBruto = 0;
@@ -80,8 +90,38 @@ function buildDreYtdChartPoints(report: FinanceDreReport): DreYtdChartPoint[] {
   let sumEbitda = 0;
   let sumLucroLiquido = 0;
 
-  return Array.from({ length: 12 }, (_, i) => {
+  return Array.from({ length: 12 }, (_, i): DreYtdChartPoint => {
     const monthLabel = report.monthLabels[i] ?? `Mês ${i + 1}`;
+    const isFuture = i > lastRealMonthIdx;
+
+    if (isFuture) {
+      return {
+        monthIndex: i,
+        monthLabel,
+        isFuture: true,
+        receitaBruta: null,
+        receitaLiquida: null,
+        lucroBruto: null,
+        resultadoOperacional: null,
+        ebitda: null,
+        lucroLiquido: null,
+        receitaBrutaYtd: null,
+        receitaLiquidaYtd: null,
+        lucroBrutoYtd: null,
+        resultadoOperacionalYtd: null,
+        ebitdaYtd: null,
+        lucroLiquidoYtd: null,
+        margemBrutaPct: null,
+        margemBrutaYtdPct: null,
+        margemOperacionalPct: null,
+        margemOperacionalYtdPct: null,
+        ebitdaPct: null,
+        ebitdaYtdPct: null,
+        margemLiquidaPct: null,
+        margemLiquidaYtdPct: null,
+      };
+    }
+
     const rb = recBruta[i] ?? 0;
     const rl = recLiquida[i] ?? 0;
     const lb = lucroBruto[i] ?? 0;
@@ -99,6 +139,7 @@ function buildDreYtdChartPoints(report: FinanceDreReport): DreYtdChartPoint[] {
     return {
       monthIndex: i,
       monthLabel,
+      isFuture: false,
       receitaBruta: rb,
       receitaLiquida: rl,
       lucroBruto: lb,
@@ -229,6 +270,10 @@ function CustomCardTooltip({
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload;
   if (!point) return null;
+  // Mês futuro (sem realização) não abre tooltip.
+  if (point.isFuture || (point[config.key] == null && point[config.ytdKey] == null)) {
+    return null;
+  }
 
   const monthlyVal = Number(point[config.key] ?? 0);
   const ytdVal = Number(point[config.ytdKey] ?? 0);
@@ -270,54 +315,90 @@ function SingleCardChartBody({
   points,
   config,
   height,
+  highlightMonthIndex,
+  showAxes = false,
 }: {
   points: DreYtdChartPoint[];
   config: CardMetricConfig;
   height: number;
+  highlightMonthIndex: number;
+  /** Modal expandido mostra os eixos numéricos; no card compacto ficam ocultos (números já estão nas caixas acima). */
+  showAxes?: boolean;
 }) {
-  const minVal = Math.min(
-    ...points.map((p) => Math.min(Number(p[config.key]), Number(p[config.ytdKey])))
-  );
-  const hasNegative = minVal < 0;
+  // Domínio calculado só sobre meses realizados (ignora null dos meses futuros).
+  const monthlyVals = points
+    .map((p) => p[config.key])
+    .filter((v): v is number => v != null);
+  const ytdVals = points
+    .map((p) => p[config.ytdKey])
+    .filter((v): v is number => v != null);
+  const hasNegativeMonthly = monthlyVals.some((v) => v < 0);
+  const hasNegativeYtd = ytdVals.some((v) => v < 0);
 
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
-          {hasNegative ? (
-            <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.risk} strokeWidth={1} strokeDasharray="2 2" />
-          ) : null}
+        <ComposedChart data={points} margin={{ top: 8, right: showAxes ? 8 : 4, left: showAxes ? 0 : 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} vertical={false} />
           <XAxis
             dataKey="monthLabel"
             tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
             axisLine={false}
             tickLine={false}
           />
+          {/* Eixo esquerdo: linha ACUMULADA (YTD) — escala grande. */}
           <YAxis
+            yAxisId="ytd"
             tick={{ fontSize: 9, fill: FINANCE_BI_COLORS.textSecondary }}
             tickFormatter={(v: number) => formatFinanceKpiCurrency(v)}
-            width={68}
+            width={showAxes ? 68 : 0}
+            hide={!showAxes}
             axisLine={false}
             tickLine={false}
           />
+          {/* Eixo direito (escala própria): barras NO MÊS — assim não somem sob a linha YTD. */}
+          <YAxis
+            yAxisId="mensal"
+            orientation="right"
+            tick={{ fontSize: 9, fill: FINANCE_BI_COLORS.textSecondary }}
+            tickFormatter={(v: number) => formatFinanceKpiCurrency(v)}
+            width={showAxes ? 60 : 0}
+            hide={!showAxes}
+            axisLine={false}
+            tickLine={false}
+          />
+          {hasNegativeMonthly ? (
+            <ReferenceLine yAxisId="mensal" y={0} stroke={FINANCE_BI_COLORS.risk} strokeWidth={1} strokeDasharray="2 2" />
+          ) : null}
+          {hasNegativeYtd && showAxes ? (
+            <ReferenceLine yAxisId="ytd" y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1} strokeDasharray="2 2" />
+          ) : null}
           <Tooltip content={<CustomCardTooltip config={config} />} />
-          <Bar dataKey={config.key} name="No Mês" maxBarSize={16} radius={[3, 3, 0, 0]}>
+          <Legend
+            wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+            iconSize={9}
+            verticalAlign="bottom"
+            height={20}
+          />
+          <Bar yAxisId="mensal" dataKey={config.key} name="No mês" maxBarSize={18} radius={[3, 3, 0, 0]}>
             {points.map((entry) => {
-              const val = Number(entry[config.key]);
-              const cellColor =
-                val < 0 ? FINANCE_BI_COLORS.risk : config.color;
-              return <Cell key={`bar-${entry.monthIndex}`} fill={cellColor} fillOpacity={0.75} />;
+              const val = entry[config.key];
+              const cellColor = val != null && val < 0 ? FINANCE_BI_COLORS.risk : config.color;
+              // Mês em destaque com opacidade cheia; demais mais suaves (liga o gráfico à caixa "Mês").
+              const opacity = entry.monthIndex === highlightMonthIndex ? 0.95 : 0.45;
+              return <Cell key={`bar-${entry.monthIndex}`} fill={cellColor} fillOpacity={opacity} />;
             })}
           </Bar>
           <Line
+            yAxisId="ytd"
             type="monotone"
             dataKey={config.ytdKey}
-            name="Acumulado (YTD)"
+            name="Acumulado YTD"
             stroke={config.ytdColor}
-            strokeWidth={2}
+            strokeWidth={2.5}
             dot={{ r: 2.5, fill: config.ytdColor }}
             activeDot={{ r: 4 }}
+            connectNulls={false}
           />
         </ComposedChart>
       </ResponsiveContainer>
@@ -429,7 +510,12 @@ function SingleCardChartBlock({
 
         {/* Gráfico no corpo do card */}
         <div className="mt-1">
-          <SingleCardChartBody points={points} config={config} height={140} />
+          <SingleCardChartBody
+            points={points}
+            config={config}
+            height={150}
+            highlightMonthIndex={highlightMonthIndex}
+          />
         </div>
       </div>
 
@@ -459,7 +545,13 @@ function SingleCardChartBlock({
               {ytdPct != null ? ` (${formatPct(ytdPct)})` : ""}
             </div>
           </div>
-          <SingleCardChartBody points={points} config={config} height={expandedHeight - 80} />
+          <SingleCardChartBody
+            points={points}
+            config={config}
+            height={expandedHeight - 80}
+            highlightMonthIndex={highlightMonthIndex}
+            showAxes
+          />
         </div>
       </FinanceBiChartExpandModal>
     </>
