@@ -602,6 +602,9 @@ export function runTreasuryReconciliationSuggestionEngine(
       const scored = scorePair(movement, title, options);
       if (scored) candidates.push(scored);
     }
+    // N títulos ↔ 1 movimento: combinações exatas (subset-sum limitado —
+    // agrupado por contraparte, máx. 15 títulos/grupo, subsets de 2 a 5).
+    candidates.push(...findExactCombinations(movement, eligibleTitles, options));
     candidates.sort(compareSuggestions);
     const top = candidates.slice(0, options.maxSuggestionsPerMovement);
     if (top.length === 0) {

@@ -217,6 +217,17 @@ export type TreasuryReconciliationMatchService = {
     actor: TreasuryReconciliationMatchActor,
     bankMovementId: string
   ): Promise<TreasuryReconciliationMatchDto[]>;
+  /** Histórico por período (inclui UNMATCHED) — respeita ACL de conta. */
+  listByMatchedPeriod(
+    actor: TreasuryReconciliationMatchActor,
+    input: {
+      companyCode?: string | null;
+      accountId?: string | null;
+      from: string;
+      to: string;
+      limit?: number;
+    }
+  ): Promise<TreasuryReconciliationMatchDto[]>;
   accept(
     actor: TreasuryReconciliationMatchActor,
     input: TreasuryReconciliationAcceptInput
@@ -373,6 +384,41 @@ export function createTreasuryReconciliationMatchService(deps: {
         bankMovementId.trim()
       );
       return rows.map(toTreasuryReconciliationMatchDto);
+    },
+
+    async listByMatchedPeriod(actor, input) {
+      assertCanView(actor);
+      if (input.accountId?.trim()) {
+        await requireOperateAccount(actor, input.accountId.trim());
+      }
+      const rows = await matchRepo.listByMatchedPeriod({
+        companyCode: input.companyCode ?? null,
+        accountId: input.accountId ?? null,
+        from: input.from,
+        to: input.to,
+        limit: input.limit,
+      });
+      if (input.accountId?.trim()) {
+        return rows.map(toTreasuryReconciliationMatchDto);
+      }
+      // Sem conta específica: filtra pelo acesso do ator, conta a conta —
+      // histórico nunca vaza match de conta que o usuário não opera.
+      const allowedByAccount = new Map<string, boolean>();
+      const result: TreasuryReconciliationMatchDto[] = [];
+      for (const row of rows) {
+        let allowed = allowedByAccount.get(row.accountId);
+        if (allowed == null) {
+          try {
+            await requireOperateAccount(actor, row.accountId);
+            allowed = true;
+          } catch {
+            allowed = false;
+          }
+          allowedByAccount.set(row.accountId, allowed);
+        }
+        if (allowed) result.push(toTreasuryReconciliationMatchDto(row));
+      }
+      return result;
     },
 
     async accept(actor, input) {

@@ -1,15 +1,27 @@
 /**
- * Apoio ao Caixa — página interativa (CS-007 leitura + CS-012/013/014/016
- * escrita). Busca dados, orquestra os diálogos e delega toda gravação ao
- * motor oficial já corrigido (`treasuryReconciliationApi.ts`, mesmas rotas
- * `POST /reconciliations` e `.../unmatch` e `.../reverse` do resto da
- * Tesouraria) — nenhum cálculo financeiro acontece neste arquivo.
+ * Central de Conciliação Bancária (ex-Apoio ao Caixa) — página interativa.
+ *
+ * Quatro abas: Conciliação por Títulos (grid operacional), Movimentos
+ * Bancários (painel original + conciliação manual), Revisar Sugestões e
+ * Histórico. Busca dados, orquestra os diálogos e delega TODA gravação ao
+ * motor oficial (`treasuryReconciliationApi.ts` / rotas cash-support) —
+ * nenhum cálculo financeiro acontece neste arquivo, e a auto-conciliação é
+ * um POST idempotente que o backend decide sozinho (frontend nunca casa).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { cn } from "@/src/lib/utils";
 import {
   fetchCashSupport,
+  fetchCashSupportHistory,
+  fetchCashSupportSuggestions,
+  fetchCashSupportTitleGrid,
+  runCashSupportAutoReconcile,
+  type CashSupportAutoReconcilePayload,
   type CashSupportFetchParams,
+  type CashSupportHistoryPayload,
+  type CashSupportSuggestionsPayload,
+  type CashSupportTitleGridPayload,
 } from "@/src/lib/treasury/cashSupportApi.js";
 import {
   acceptTreasuryReconciliation,
@@ -31,6 +43,22 @@ import {
 } from "./CashSupportReconcileDialog.js";
 import { CashSupportUnmatchDialog } from "./CashSupportUnmatchDialog.js";
 import { TreasuryReconciliationReverseConfirmDialog } from "./TreasuryReconciliationReverseConfirmDialog.js";
+import { CashSupportTitleGridTab } from "./CashSupportTitleGridTab.js";
+import { CashSupportSuggestionsTab } from "./CashSupportSuggestionsTab.js";
+import { CashSupportHistoryTab } from "./CashSupportHistoryTab.js";
+
+export type CashSupportWorkspaceTab =
+  | "titles"
+  | "movements"
+  | "suggestions"
+  | "history";
+
+const TAB_LABELS: Record<CashSupportWorkspaceTab, string> = {
+  titles: "Conciliação por Títulos",
+  movements: "Movimentos Bancários",
+  suggestions: "Revisar Sugestões",
+  history: "Histórico",
+};
 
 export type CashSupportWorkspacePageProps = {
   /** Injeção para teste — em produção usa `fetchCashSupport`. */
@@ -115,6 +143,24 @@ export function CashSupportWorkspacePage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [activeTab, setActiveTab] = useState<CashSupportWorkspaceTab>("titles");
+
+  const [titleGrid, setTitleGrid] = useState<CashSupportTitleGridPayload | null>(null);
+  const [titleGridLoading, setTitleGridLoading] = useState(true);
+  const [titleGridError, setTitleGridError] = useState<string | null>(null);
+
+  const [suggestions, setSuggestions] = useState<CashSupportSuggestionsPayload | null>(null);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+
+  const [history, setHistory] = useState<CashSupportHistoryPayload | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const [autoRunBusy, setAutoRunBusy] = useState(false);
+  const [autoRunResult, setAutoRunResult] = useState<CashSupportAutoReconcilePayload | null>(null);
+  const [autoRunError, setAutoRunError] = useState<string | null>(null);
+
   const [reconcileMovements, setReconcileMovements] = useState<CashSupportUnifiedRow[] | null>(null);
   const [reconcileBusy, setReconcileBusy] = useState(false);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
@@ -149,6 +195,111 @@ export function CashSupportWorkspacePage({
     return () => controller.abort();
   }, [load]);
 
+  const loadTitleGrid = useCallback(
+    (signal?: AbortSignal) => {
+      setTitleGridLoading(true);
+      setTitleGridError(null);
+      return fetchCashSupportTitleGrid({ civilDateFrom, civilDateTo, signal })
+        .then((res) => {
+          setTitleGrid(res);
+          setTitleGridLoading(false);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setTitleGridError(err instanceof Error ? err.message : "Falha ao carregar grid.");
+          setTitleGridLoading(false);
+        });
+    },
+    [civilDateFrom, civilDateTo]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadTitleGrid(controller.signal);
+    return () => controller.abort();
+  }, [loadTitleGrid]);
+
+  const loadSuggestions = useCallback(
+    (signal?: AbortSignal) => {
+      setSuggestionsLoading(true);
+      setSuggestionsError(null);
+      return fetchCashSupportSuggestions({ civilDateFrom, civilDateTo, signal })
+        .then((res) => {
+          setSuggestions(res);
+          setSuggestionsLoading(false);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setSuggestionsError(
+            err instanceof Error ? err.message : "Falha ao carregar sugestões."
+          );
+          setSuggestionsLoading(false);
+        });
+    },
+    [civilDateFrom, civilDateTo]
+  );
+
+  const loadHistory = useCallback(
+    (signal?: AbortSignal) => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      return fetchCashSupportHistory({ civilDateFrom, civilDateTo, signal })
+        .then((res) => {
+          setHistory(res);
+          setHistoryLoading(false);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setHistoryError(err instanceof Error ? err.message : "Falha ao carregar histórico.");
+          setHistoryLoading(false);
+        });
+    },
+    [civilDateFrom, civilDateTo]
+  );
+
+  // Abas de sugestões/histórico carregam sob demanda (e recarregam ao trocar
+  // o período enquanto abertas).
+  useEffect(() => {
+    if (activeTab !== "suggestions") return;
+    const controller = new AbortController();
+    void loadSuggestions(controller.signal);
+    return () => controller.abort();
+  }, [activeTab, loadSuggestions]);
+
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const controller = new AbortController();
+    void loadHistory(controller.signal);
+    return () => controller.abort();
+  }, [activeTab, loadHistory]);
+
+  /** Recarrega tudo que está visível após qualquer escrita. */
+  const reloadAll = useCallback(async () => {
+    await Promise.all([
+      load(),
+      loadTitleGrid(),
+      activeTab === "suggestions" ? loadSuggestions() : Promise.resolve(),
+      activeTab === "history" ? loadHistory() : Promise.resolve(),
+    ]);
+  }, [load, loadTitleGrid, loadSuggestions, loadHistory, activeTab]);
+
+  async function handleAutoReconcile() {
+    setAutoRunBusy(true);
+    setAutoRunError(null);
+    setAutoRunResult(null);
+    try {
+      const result = await runCashSupportAutoReconcile({ civilDateFrom, civilDateTo });
+      setAutoRunResult(result);
+      await reloadAll();
+    } catch (err) {
+      setAutoRunError(
+        err instanceof Error ? err.message : "Falha na conciliação automática."
+      );
+    } finally {
+      setAutoRunBusy(false);
+    }
+  }
+
   async function handleReconcileSubmit(payload: CashSupportReconcileSubmitPayload) {
     setReconcileBusy(true);
     setReconcileError(null);
@@ -165,7 +316,7 @@ export function CashSupportWorkspacePage({
         allocations: payload.allocations,
       });
       setReconcileMovements(null);
-      await load();
+      await reloadAll();
     } catch (err) {
       setReconcileError(err instanceof Error ? err.message : "Falha ao conciliar.");
     } finally {
@@ -199,7 +350,7 @@ export function CashSupportWorkspacePage({
       });
       setPendingMatch(null);
       setPendingAction(null);
-      await load();
+      await reloadAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Falha ao desfazer.");
     } finally {
@@ -220,7 +371,7 @@ export function CashSupportWorkspacePage({
       });
       setPendingMatch(null);
       setPendingAction(null);
-      await load();
+      await reloadAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Falha ao reverter.");
     } finally {
@@ -240,8 +391,66 @@ export function CashSupportWorkspacePage({
     );
   }
 
+  const movementLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of data?.rows ?? []) {
+      if (row.resourceType === "BANK_MOVEMENT" && row.bankMovementKey) {
+        map.set(
+          row.bankMovementKey.bankMovementId,
+          row.description ?? row.displayId
+        );
+      }
+    }
+    return map;
+  }, [data]);
+
   return (
     <>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Conciliação Bancária</h2>
+          <p className="text-[12px] text-muted-foreground">
+            Vincula movimentos do extrato aos títulos CR/CP como evidência
+            local — nunca dá baixa no Nomus, nunca altera o título oficial.
+          </p>
+        </div>
+        <button
+          type="button"
+          className={cn(
+            "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90",
+            autoRunBusy && "cursor-wait opacity-60"
+          )}
+          disabled={autoRunBusy}
+          onClick={() => void handleAutoReconcile()}
+          data-testid="auto-reconcile-button"
+        >
+          {autoRunBusy ? "Conciliando…" : "Conciliar automaticamente"}
+        </button>
+      </div>
+
+      {autoRunError ? (
+        <div className="mb-3 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs text-[#991B1B]">
+          {autoRunError}
+        </div>
+      ) : null}
+      {autoRunResult ? (
+        <div
+          className="mb-3 rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 text-xs text-[#065F46]"
+          data-testid="auto-reconcile-result"
+        >
+          Auto-conciliação ({autoRunResult.ruleVersion}):{" "}
+          <strong>{autoRunResult.autoAccepted}</strong> conciliado(s) agora,{" "}
+          {autoRunResult.alreadyReconciled} já existente(s),{" "}
+          {autoRunResult.needsReview} para revisar, {autoRunResult.unmatched} sem
+          candidato.
+          {autoRunResult.failures.length > 0
+            ? ` ${autoRunResult.failures.length} falha(s): ${autoRunResult.failures
+                .map((f) => f.message)
+                .join(" | ")}`
+            : ""}
+        </div>
+      ) : null}
+
       <div className="mb-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
         <CashSupportPeriodFilters
           value={period}
@@ -250,19 +459,83 @@ export function CashSupportWorkspacePage({
         />
       </div>
 
-      <CashSupportPanel
-        civilDateFrom={civilDateFrom}
-        civilDateTo={civilDateTo}
-        loading={loading}
-        error={error}
-        data={data}
-        onReconcileSelected={(movements) => {
-          setReconcileError(null);
-          setReconcileMovements(movements);
-        }}
-        onUnmatchRequested={(row, matchId) => void openMatchAction(row, matchId, "UNMATCH")}
-        onReverseRequested={(row, matchId) => void openMatchAction(row, matchId, "REVERSE")}
-      />
+      <div className="mb-3 flex flex-wrap gap-1 border-b border-border" role="tablist">
+        {(Object.keys(TAB_LABELS) as CashSupportWorkspaceTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={cn(
+              "-mb-px rounded-t-md border-b-2 px-3 py-1.5 text-xs font-medium",
+              activeTab === tab
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setActiveTab(tab)}
+            data-testid={`tab-${tab}`}
+          >
+            {TAB_LABELS[tab]}
+            {tab === "suggestions" && titleGrid
+              ? ` (${titleGrid.cards.reviewCount})`
+              : ""}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "titles" ? (
+        <CashSupportTitleGridTab
+          loading={titleGridLoading}
+          error={titleGridError}
+          titleRows={titleGrid?.titleRows ?? []}
+          unexplainedMovements={titleGrid?.unexplainedMovements ?? []}
+          cards={titleGrid?.cards ?? null}
+        />
+      ) : null}
+
+      {activeTab === "movements" ? (
+        <CashSupportPanel
+          civilDateFrom={civilDateFrom}
+          civilDateTo={civilDateTo}
+          loading={loading}
+          error={error}
+          data={data}
+          onReconcileSelected={(movements) => {
+            setReconcileError(null);
+            setReconcileMovements(movements);
+          }}
+          onUnmatchRequested={(row, matchId) => void openMatchAction(row, matchId, "UNMATCH")}
+          onReverseRequested={(row, matchId) => void openMatchAction(row, matchId, "REVERSE")}
+        />
+      ) : null}
+
+      {activeTab === "suggestions" ? (
+        <CashSupportSuggestionsTab
+          loading={suggestionsLoading}
+          error={suggestionsError}
+          suggestions={suggestions?.suggestions ?? []}
+          movementLabelById={movementLabelById}
+          onOpenManualFlow={() => setActiveTab("movements")}
+        />
+      ) : null}
+
+      {activeTab === "history" ? (
+        <CashSupportHistoryTab
+          loading={historyLoading}
+          error={historyError}
+          matches={history?.matches ?? []}
+          onUnmatchRequested={(match) => {
+            setActionError(null);
+            setPendingMatch(match);
+            setPendingAction("UNMATCH");
+          }}
+          onReverseRequested={(match) => {
+            setActionError(null);
+            setPendingMatch(match);
+            setPendingAction("REVERSE");
+          }}
+        />
+      ) : null}
 
       <CashSupportReconcileDialog
         open={reconcileMovements != null}

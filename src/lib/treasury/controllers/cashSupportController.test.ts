@@ -84,6 +84,45 @@ function emptySuggestions(): TreasuryReconciliationSuggestionEngineResult {
   };
 }
 
+/** Stub completo do orquestrador — overrides por teste. */
+function stubService(overrides: Partial<CashSupportService> = {}): CashSupportService {
+  return {
+    getReadModel: async () => emptyReadModel(),
+    getSuggestions: async () => emptySuggestions(),
+    getTitleGrid: async () => ({
+      titleRows: [],
+      unexplainedMovements: [],
+      cards: {
+        totalTitles: 0,
+        autoMatchedCount: 0,
+        manualMatchedCount: 0,
+        reviewCount: 0,
+        partialCount: 0,
+        divergenceCount: 0,
+        unreconciledCount: 0,
+        unexplainedMovementsCount: 0,
+        unexplainedMovementsTotal: "0.00",
+      },
+      analysisAsOfDateTime: "2026-07-20T12:00:00.000Z",
+    }),
+    runAutoReconciliation: async () => ({
+      algorithmVersion: "1.0.0",
+      ruleVersion: "AUTO-1.0.0",
+      analyzedMovements: 0,
+      autoAccepted: 0,
+      alreadyReconciled: 0,
+      needsReview: 0,
+      unmatched: 0,
+      failures: [],
+    }),
+    getHistory: async () => ({
+      matches: [],
+      analysisAsOfDateTime: "2026-07-20T12:00:00.000Z",
+    }),
+    ...overrides,
+  };
+}
+
 const fakeUser = { id: "u1", name: "Ops", role: "ADMIN", sessionId: "s1" } as AppAuthContext;
 
 function fakeReq(query: Record<string, unknown>): Request {
@@ -95,10 +134,7 @@ function fakeReq(query: Record<string, unknown>): Request {
 
 describe("cashSupportController — wiring", () => {
   it("401 sem usuário autenticado", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => null,
       service,
@@ -110,10 +146,7 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("400 quando civilDateFrom/civilDateTo ausentes", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -125,10 +158,7 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("400 quando civilDateTo é anterior a civilDateFrom", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -141,13 +171,12 @@ describe("cashSupportController — wiring", () => {
 
   it("200 com filtros válidos delega ao orquestrador e não acessa dado diretamente", async () => {
     let calledWithFilters: unknown = null;
-    const service: CashSupportService = {
+    const service = stubService({
       getReadModel: async (_actor, filters) => {
         calledWithFilters = filters;
         return emptyReadModel();
       },
-      getSuggestions: async () => emptySuggestions(),
-    };
+    });
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -161,12 +190,11 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("erro do orquestrador vira resposta controlada, não crash", async () => {
-    const service: CashSupportService = {
+    const service = stubService({
       getReadModel: async () => {
         throw new Error("boom");
       },
-      getSuggestions: async () => emptySuggestions(),
-    };
+    });
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -178,10 +206,7 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("getSummary retorna apenas summary/warnings, não as linhas", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -196,10 +221,7 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("resposta inclui x-request-id", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -211,10 +233,7 @@ describe("cashSupportController — wiring", () => {
   });
 
   it("getSuggestions: 401 sem usuário", async () => {
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
-      getSuggestions: async () => emptySuggestions(),
-    };
+    const service = stubService();
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => null,
       service,
@@ -227,13 +246,12 @@ describe("cashSupportController — wiring", () => {
 
   it("getSuggestions: 200 delega ao orquestrador e nunca grava nada", async () => {
     let called = false;
-    const service: CashSupportService = {
-      getReadModel: async () => emptyReadModel(),
+    const service = stubService({
       getSuggestions: async () => {
         called = true;
         return emptySuggestions();
       },
-    };
+    });
     const controllers = createCashSupportControllers({
       getCurrentAppUser: async () => fakeUser,
       service,
@@ -245,5 +263,84 @@ describe("cashSupportController — wiring", () => {
     assert.ok(called);
     const body = res.body as TreasuryReconciliationSuggestionEngineResult;
     assert.equal(body.autoMatched, false);
+  });
+
+  it("getTitleGrid: 200 delega ao orquestrador (grid vem pronto do backend)", async () => {
+    let called = false;
+    const service = stubService();
+    const base = service.getTitleGrid;
+    service.getTitleGrid = async (actor, filters) => {
+      called = true;
+      return base(actor, filters);
+    };
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => fakeUser,
+      service,
+    });
+    const req = fakeReq({ civilDateFrom: "2026-07-01", civilDateTo: "2026-07-31" });
+    const res = createMockRes();
+    await controllers.getTitleGrid(req, res as unknown as Response);
+    assert.equal(res.statusCode, 200);
+    assert.ok(called);
+    const body = res.body as Record<string, unknown>;
+    assert.ok("titleRows" in body && "cards" in body && "unexplainedMovements" in body);
+  });
+
+  it("runAutoReconcile: lê filtros do body e devolve o resumo da execução", async () => {
+    let filtersSeen: unknown = null;
+    const service = stubService({
+      runAutoReconciliation: async (_actor, filters) => {
+        filtersSeen = filters;
+        return {
+          algorithmVersion: "1.0.0",
+          ruleVersion: "AUTO-1.0.0",
+          analyzedMovements: 3,
+          autoAccepted: 1,
+          alreadyReconciled: 1,
+          needsReview: 1,
+          unmatched: 0,
+          failures: [],
+        };
+      },
+    });
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => fakeUser,
+      service,
+    });
+    const req = {
+      query: {},
+      body: { civilDateFrom: "2026-07-01", civilDateTo: "2026-07-31" },
+      header: () => null,
+    } as unknown as Request;
+    const res = createMockRes();
+    await controllers.runAutoReconcile(req, res as unknown as Response);
+    assert.equal(res.statusCode, 200);
+    assert.equal((filtersSeen as { civilDateFrom: string }).civilDateFrom, "2026-07-01");
+    assert.equal((res.body as { autoAccepted: number }).autoAccepted, 1);
+  });
+
+  it("runAutoReconcile: 400 sem período no body (não roda sem janela explícita)", async () => {
+    const service = stubService();
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => fakeUser,
+      service,
+    });
+    const req = { query: {}, body: {}, header: () => null } as unknown as Request;
+    const res = createMockRes();
+    await controllers.runAutoReconcile(req, res as unknown as Response);
+    assert.equal(res.statusCode, 400);
+  });
+
+  it("getHistory: 200 devolve matches do período", async () => {
+    const service = stubService();
+    const controllers = createCashSupportControllers({
+      getCurrentAppUser: async () => fakeUser,
+      service,
+    });
+    const req = fakeReq({ civilDateFrom: "2026-07-01", civilDateTo: "2026-07-31" });
+    const res = createMockRes();
+    await controllers.getHistory(req, res as unknown as Response);
+    assert.equal(res.statusCode, 200);
+    assert.ok("matches" in (res.body as Record<string, unknown>));
   });
 });

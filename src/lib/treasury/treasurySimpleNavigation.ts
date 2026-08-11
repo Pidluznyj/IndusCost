@@ -37,7 +37,7 @@ export const TREASURY_UI_PRIMARY_SECTIONS = [
   {
     id: "cash-support",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/cash-support`,
-    label: "Apoio ao Caixa",
+    label: "Conciliação Bancária",
   },
 ] as const satisfies readonly TreasurySimpleNavSection[];
 

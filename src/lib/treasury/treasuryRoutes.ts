@@ -47,6 +47,9 @@ import {
   TREASURY_CASH_SUPPORT_PATH,
   TREASURY_CASH_SUPPORT_SUMMARY_PATH,
   TREASURY_CASH_SUPPORT_SUGGESTIONS_PATH,
+  TREASURY_CASH_SUPPORT_TITLE_GRID_PATH,
+  TREASURY_CASH_SUPPORT_AUTO_RECONCILE_PATH,
+  TREASURY_CASH_SUPPORT_HISTORY_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_ALERTS_PATH,
   TREASURY_AUDIT_PATH,
@@ -827,6 +830,37 @@ export function registerTreasuryRoutes(
     reconciliationEnabled,
     viewReconciliation,
     cashSupport.getSuggestions
+  );
+
+  // Conciliação Bancária — grid orientado a título. Somente leitura.
+  app.get(
+    TREASURY_CASH_SUPPORT_TITLE_GRID_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    cashSupport.getTitleGrid
+  );
+
+  // Auto-conciliação conservadora: escreve matches locais (nunca baixa
+  // oficial), por isso o gate é o de GESTÃO — o mesmo do accept manual.
+  app.post(
+    TREASURY_CASH_SUPPORT_AUTO_RECONCILE_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    manageReconciliation,
+    cashSupport.runAutoReconcile
+  );
+
+  // Histórico de conciliações por período (inclui desfeitas). Leitura.
+  app.get(
+    TREASURY_CASH_SUPPORT_HISTORY_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    cashSupport.getHistory
   );
 
   app.get(

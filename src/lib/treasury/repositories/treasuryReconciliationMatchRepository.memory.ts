@@ -155,6 +155,40 @@ export function createMemoryTreasuryReconciliationMatchRepository(
     async lockMovementsForUpdate() {},
     async lockTitlesForUpdate() {},
 
+    async listByMatchedPeriod(input) {
+      const from = parseCivil(input.from).getTime();
+      const to = parseCivil(input.to).getTime();
+      const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
+      return store.matches
+        .filter((m) => {
+          if (input.companyCode?.trim() && m.companyCode !== input.companyCode.trim()) {
+            return false;
+          }
+          if (input.accountId?.trim() && m.accountId !== input.accountId.trim()) {
+            return false;
+          }
+          const civil =
+            m.matchedCivilDate instanceof Date
+              ? m.matchedCivilDate.getTime()
+              : parseCivil(String(m.matchedCivilDate)).getTime();
+          return civil >= from && civil <= to;
+        })
+        .sort((a, b) => {
+          const civilA =
+            a.matchedCivilDate instanceof Date
+              ? a.matchedCivilDate.getTime()
+              : parseCivil(String(a.matchedCivilDate)).getTime();
+          const civilB =
+            b.matchedCivilDate instanceof Date
+              ? b.matchedCivilDate.getTime()
+              : parseCivil(String(b.matchedCivilDate)).getTime();
+          if (civilA !== civilB) return civilB - civilA;
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        })
+        .slice(0, limit)
+        .map(cloneMatch);
+    },
+
     async findByIdempotencyKey(companyCode, idempotencyKey) {
       const row = store.matches.find(
         (m) =>

@@ -36,7 +36,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
     assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 3);
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Contas", "Caixa", "Apoio ao Caixa"]
+      ["Contas", "Caixa", "Conciliação Bancária"]
     );
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path),
@@ -73,7 +73,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
     );
   });
 
-  it("subflag de contas desligada deixa Caixa e Apoio ao Caixa (que seguem outras flags)", () => {
+  it("subflag de contas desligada deixa Caixa e Conciliação Bancária (que seguem outras flags)", () => {
     const flags = allFlagsOn();
     flags["treasury.accounts.enabled"] = false;
     const visible = filterTreasuryUiSections(TREASURY_UI_PRIMARY_SECTIONS, flags);
