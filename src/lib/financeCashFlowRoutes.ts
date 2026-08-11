@@ -198,7 +198,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const load = await loadCashFlowRows(filters);
+      const referenceDate = new Date();
+      const [load, rawMaterialCostCenterSpotlight] = await Promise.all([
+        loadCashFlowRows(filters),
+        loadRawMaterialCostCenterSpotlight({
+          ytdYear: filters.year ?? referenceDate.getFullYear(),
+          companyName: filters.companyName,
+          referenceDate,
+        }),
+      ]);
+
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
       const auditMode = String(req.query.audit ?? "").trim() === "1";
@@ -209,7 +218,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           filters,
           toArLoadFilters(filters),
           toApLoadFilters(filters),
-          new Date(),
+          referenceDate,
           arSyncCutoff,
           apSyncCutoff,
           arOptions
@@ -218,7 +227,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows)
         );
       }
-      const referenceDate = new Date();
+
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,
@@ -228,11 +237,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         apSyncCutoff,
         arOptions
       );
-      const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
-        ytdYear: filters.year ?? referenceDate.getFullYear(),
-        companyName: filters.companyName,
-        referenceDate,
-      });
+
       res.json({ ...payload, rawMaterialCostCenterSpotlight });
     }
   );
