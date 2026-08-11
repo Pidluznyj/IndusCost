@@ -595,9 +595,9 @@ export function InvestedCapitalRecoveryPage() {
             <div className="max-h-[600px] overflow-auto relative">
               <table className="w-full text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
                 <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
-                  <tr className="border-b border-slate-800 text-left text-[11px] font-semibold uppercase tracking-wide">
+                  <tr className="border-b border-slate-800 text-left text-[10px] font-semibold uppercase tracking-wide">
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("orderCode")}
                       title="Pedido de Venda"
                     >
@@ -607,7 +607,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("customerName")}
                       title="Nome do Cliente"
                     >
@@ -617,7 +617,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("saleValue")}
                       title="Valor do Pedido de Venda"
                     >
@@ -627,7 +627,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("investedCapital")}
                       title="Capital Investido (Imposto + Custo de Produção)"
                     >
@@ -637,7 +637,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("totalTaxes")}
                       title="Imposto usado no cálculo da margem comercial — já incluído no Capital Investido"
                     >
@@ -647,7 +647,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("industrialCost")}
                       title="Custo industrial de produção oficial"
                     >
@@ -657,7 +657,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("actualReceived")}
                       title="Valor efetivamente recebido"
                     >
@@ -667,7 +667,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("capitalRecovered")}
                       title="Capital recuperado"
                     >
@@ -677,7 +677,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none text-amber-300"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none text-amber-300"
                       onClick={() => toggleSort("moneyOnStreet")}
                       title="Capital na Rua = Capital Investido - Capital Recuperado"
                     >
@@ -687,7 +687,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("outstandingReceivable")}
                       title="A Receber = Valor Pedido - Recebido"
                     >
@@ -697,7 +697,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-right whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("recoveryPercent")}
                       title="Percentual de capital recuperado"
                     >
@@ -707,7 +707,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("capitalRecoveryDate")}
                       title="Mês/Ano em que o capital foi pago"
                     >
@@ -717,7 +717,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap cursor-pointer select-none"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("forecastCapitalRecoveryDate")}
                       title="Previsão Mês/Ano de recuperação do capital"
                     >
@@ -726,7 +726,7 @@ export function InvestedCapitalRecoveryPage() {
                         <SortIcon active={sortKey === "forecastCapitalRecoveryDate"} dir={sortDir} />
                       </div>
                     </th>
-                    <th className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-center whitespace-nowrap" title="Status Econômico">Status</th>
+                    <th className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-center whitespace-nowrap" title="Status Econômico">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -745,50 +745,50 @@ export function InvestedCapitalRecoveryPage() {
                         }
                       }}
                     >
-                      <td className="px-2 py-1.5 font-medium text-foreground whitespace-nowrap">{row.orderCode}</td>
-                      <td className="px-2 py-1.5 max-w-[160px] truncate" title={row.customerName ?? undefined}>
+                      <td className="px-1.5 py-1.5 font-medium text-foreground whitespace-nowrap">{row.orderCode}</td>
+                      <td className="px-1.5 py-1.5 max-w-[100px] truncate" title={row.customerName ?? undefined}>
                         {row.customerName ?? "—"}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">
                         {money(row.saleValue)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">
                         {row.investedCapital == null ? (
                           <span title={row.investedCapitalUnavailableReason ?? undefined}>—</span>
                         ) : (
                           money(row.investedCapital)
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
                         {row.totalTaxes == null ? (
                           "—"
                         ) : (
                           <span title={row.taxSourceLabel ?? undefined}>{money(row.totalTaxes)}</span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
                         {row.industrialCost == null ? "—" : money(row.industrialCost)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{money(row.actualReceived)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-emerald-700">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">{money(row.actualReceived)}</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-emerald-700">
                         {money(row.capitalRecovered)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-bold text-rose-700">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-bold text-rose-700">
                         {money(row.moneyOnStreet)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium">
                         {money(row.outstandingReceivable)}
                       </td>
-                      <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-right whitespace-nowrap">
                         <RecoveryProgressBar percent={row.recoveryPercent} />
                       </td>
-                      <td className="px-2 py-1.5 whitespace-nowrap font-medium text-foreground">
+                      <td className="px-1.5 py-1.5 whitespace-nowrap font-medium text-foreground">
                         {formatMonthYear(row.capitalRecoveryDate)}
                       </td>
-                      <td className="px-2 py-1.5 whitespace-nowrap text-muted-foreground">
+                      <td className="px-1.5 py-1.5 whitespace-nowrap text-muted-foreground">
                         {formatMonthYear(row.forecastCapitalRecoveryDate)}
                       </td>
-                      <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </td>
                     </tr>
