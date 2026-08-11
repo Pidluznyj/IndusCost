@@ -625,7 +625,7 @@ export function InvestedCapitalRecoveryPage() {
                       title="Capital Investido (Imposto + Custo de Produção)"
                     >
                       <div className="flex items-center justify-end gap-0.5">
-                        Cap. Investido
+                        Cap. Invest.
                         <SortIcon active={sortKey === "investedCapital"} dir={sortDir} />
                       </div>
                     </th>
@@ -665,7 +665,7 @@ export function InvestedCapitalRecoveryPage() {
                       title="Capital recuperado"
                     >
                       <div className="flex items-center justify-end gap-0.5">
-                        Cap. Recuperado
+                        Cap. Recup.
                         <SortIcon active={sortKey === "capitalRecovered"} dir={sortDir} />
                       </div>
                     </th>
@@ -719,7 +719,7 @@ export function InvestedCapitalRecoveryPage() {
                         <SortIcon active={sortKey === "forecastCapitalRecoveryDate"} dir={sortDir} />
                       </div>
                     </th>
-                    <th className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap" title="Status Econômico">Status Econômico</th>
+                    <th className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap" title="Status Econômico">Status Econ.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">

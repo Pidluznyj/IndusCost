@@ -91,7 +91,7 @@ describe("Recuperação do Dinheiro Investido — totais executivos + detalhe do
     assert.doesNotMatch(page, />Situação</);
     assert.doesNotMatch(page, /\{row\.orderStatusLabel\}/);
     // Status Econômico (badge computado) continua.
-    assert.match(page, />Status Econômico</);
+    assert.match(page, /title="Status Econômico"/);
     assert.match(page, /<StatusBadge status=\{row\.status\} \/>/);
   });
 });
