@@ -603,7 +603,7 @@ export function InvestedCapitalRecoveryPage() {
 
           <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <div className="max-h-[600px] overflow-auto relative">
-              <table className="w-full min-w-[1200px] table-fixed text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
+              <table className="w-full min-w-[1200px] text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
                 <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
                   <tr className="border-b border-slate-800 text-left text-[10px] font-semibold uppercase tracking-wide">
                     <th
@@ -617,7 +617,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none w-48"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("customerName")}
                       title="Nome do Cliente"
                     >
@@ -718,7 +718,7 @@ export function InvestedCapitalRecoveryPage() {
                     </th>
 
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none w-20"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("capitalRecoveryDate")}
                       title="Mês/Ano em que o capital foi pago"
                     >
@@ -728,7 +728,7 @@ export function InvestedCapitalRecoveryPage() {
                       </div>
                     </th>
                     <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none w-20"
+                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
                       onClick={() => toggleSort("forecastCapitalRecoveryDate")}
                       title="Previsão Mês/Ano de recuperação do capital"
                     >
