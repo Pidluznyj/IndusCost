@@ -40,6 +40,7 @@ import {
   BOM_INACTIVE_COMPONENT_DESCRIPTION,
   BOM_INACTIVE_COMPONENT_TITLE,
   formatBomHealthPath,
+  type EngineeringHealthFilter,
   type ProductBomHealthResult,
 } from "@/src/lib/productBomHealth";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
@@ -291,6 +292,12 @@ export const ProductModule = () => {
   const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
   const [appliedCiuFilter, setAppliedCiuFilter] =
     useState<ProductEngineeringListCiuFilter>("");
+  const [draftEngineeringFilter, setDraftEngineeringFilter] =
+    useState<EngineeringHealthFilter>("");
+  const [appliedEngineeringFilter, setAppliedEngineeringFilter] =
+    useState<EngineeringHealthFilter>("");
+  /** Linha com o painel "Pendências de engenharia" aberto (clique, não hover). */
+  const [openHealthDetailId, setOpenHealthDetailId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -1049,12 +1056,28 @@ export const ProductModule = () => {
 
   const filteredItems = useMemo(
     () =>
-      filterProductEngineeringListItems(items, {
-        search: appliedSearch,
-        status: appliedStatusFilter,
-        ciu: appliedCiuFilter,
-      }),
-    [items, appliedSearch, appliedStatusFilter, appliedCiuFilter]
+      filterProductEngineeringListItems(
+        // Anexa o resumo de saúde já RESOLVIDO pelo backend a cada item —
+        // a regra nunca é recalculada aqui; ausência = não disponível (≠ OK).
+        items.map((item) => ({
+          ...item,
+          engineeringHealth: bomHealthByProductId[item.id]?.summary ?? null,
+        })),
+        {
+          search: appliedSearch,
+          status: appliedStatusFilter,
+          ciu: appliedCiuFilter,
+          engineering: appliedEngineeringFilter,
+        }
+      ),
+    [
+      items,
+      bomHealthByProductId,
+      appliedSearch,
+      appliedStatusFilter,
+      appliedCiuFilter,
+      appliedEngineeringFilter,
+    ]
   );
 
   const selectPendingPublicationItems = useCallback(() => {
@@ -1074,6 +1097,7 @@ export const ProductModule = () => {
     setAppliedSearch(draftSearch.trim());
     setAppliedStatusFilter(draftStatusFilter);
     setAppliedCiuFilter(draftCiuFilter);
+    setAppliedEngineeringFilter(draftEngineeringFilter);
     setSelectedIds([]);
   };
 
@@ -1084,6 +1108,8 @@ export const ProductModule = () => {
     setAppliedStatusFilter("");
     setDraftCiuFilter("");
     setAppliedCiuFilter("");
+    setDraftEngineeringFilter("");
+    setAppliedEngineeringFilter("");
     setSelectedIds([]);
   };
 
@@ -1094,6 +1120,8 @@ export const ProductModule = () => {
     appliedStatus: appliedStatusFilter,
     draftCiu: draftCiuFilter,
     appliedCiu: appliedCiuFilter,
+    draftEngineering: draftEngineeringFilter,
+    appliedEngineering: appliedEngineeringFilter,
   });
 
   const handleExportEngineering = () => {
@@ -1541,6 +1569,23 @@ export const ProductModule = () => {
               <option value="COMPLETE">CIU completo</option>
             </select>
 
+            <select
+              className="h-10 min-w-[170px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={draftEngineeringFilter}
+              onChange={(e) =>
+                setDraftEngineeringFilter(e.target.value as EngineeringHealthFilter)
+              }
+              data-testid="products-engineering-filter"
+              aria-label="Filtrar por pendências de engenharia"
+              title="Filtrar pela coluna Engenharia (saúde resolvida pelo backend)"
+            >
+              <option value="">Engenharia: todos</option>
+              <option value="OK">Sem pendências</option>
+              <option value="HAS_ISSUES">Com pendências</option>
+              <option value="BLOCKED">Bloqueantes</option>
+              <option value="WARNING">Atenção</option>
+            </select>
+
             <button
               type="submit"
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
@@ -1742,20 +1787,21 @@ export const ProductModule = () => {
                   </th>
                 ) : null}
                 <th className="p-4 font-semibold text-sm">Status</th>
+                <th className="p-4 font-semibold text-sm whitespace-nowrap">Engenharia</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 10 : 9} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={engineeringSegment === "PRODUCT" ? 9 : 8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={engineeringSegment === "PRODUCT" ? 10 : 9} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
@@ -2008,6 +2054,124 @@ export const ProductModule = () => {
                       <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
                         {item.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </Badge>
+                    </td>
+                    <td className="p-4 align-middle">
+                      {(() => {
+                        // Saúde resolvida pelo BACKEND — a UI apenas apresenta.
+                        // Ausente = não disponível (erro/carregando) ≠ OK.
+                        const health = bomHealthByProductId[item.id];
+                        if (!health) {
+                          return (
+                            <span
+                              className="text-xs text-muted-foreground whitespace-nowrap"
+                              title="Saúde da engenharia não disponível"
+                              data-testid={`engineering-health-unavailable-${item.id}`}
+                            >
+                              — Não disponível
+                            </span>
+                          );
+                        }
+                        const summary = health.summary;
+                        if (summary.status === "OK") {
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                              title="Engenharia sem pendências"
+                              data-testid={`engineering-health-ok-${item.id}`}
+                            >
+                              ✅ OK
+                            </span>
+                          );
+                        }
+                        const isBlocked = summary.status === "BLOCKED";
+                        const label = isBlocked
+                          ? `${summary.issueCount} pendência${summary.issueCount > 1 ? "s" : ""}`
+                          : `${summary.issueCount} atenção`;
+                        const isOpen = openHealthDetailId === item.id;
+                        return (
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenHealthDetailId(isOpen ? null : item.id);
+                              }}
+                              className={cn(
+                                "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold",
+                                isBlocked
+                                  ? "bg-red-100 text-red-700 hover:bg-red-200"
+                                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              )}
+                              aria-expanded={isOpen}
+                              aria-label={`Pendências de engenharia: ${label}`}
+                              title="Ver pendências de engenharia"
+                              data-testid={`engineering-health-badge-${item.id}`}
+                            >
+                              {isBlocked ? "🔴" : "🟡"} {label}
+                            </button>
+                            {isOpen ? (
+                              <div
+                                className="absolute right-0 z-30 mt-1 w-80 rounded-lg border border-border bg-card p-3 text-left shadow-lg"
+                                data-testid={`engineering-health-details-${item.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm font-bold">Pendências de engenharia</p>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-foreground"
+                                    onClick={() => setOpenHealthDetailId(null)}
+                                    aria-label="Fechar pendências"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <ul className="mt-2 space-y-2">
+                                  {health.issues.map((issue, i) => (
+                                    <li key={`${issue.componentId}-${i}`} className="text-xs">
+                                      <p
+                                        className={cn(
+                                          "font-semibold",
+                                          issue.severity === "BLOCKING"
+                                            ? "text-red-700"
+                                            : "text-amber-700"
+                                        )}
+                                      >
+                                        {issue.severity === "BLOCKING" ? "🔴" : "🟡"}{" "}
+                                        {BOM_INACTIVE_COMPONENT_TITLE}
+                                      </p>
+                                      <p className="mt-0.5">
+                                        <span className="font-medium">
+                                          {issue.componentSku} — {issue.componentName}
+                                        </span>
+                                      </p>
+                                      <p className="text-muted-foreground">Status: Inativo</p>
+                                      {issue.level > 1 ? (
+                                        <p className="text-muted-foreground">
+                                          Caminho: {formatBomHealthPath(issue.path)}
+                                        </p>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                                <p className="mt-2 text-[11px] text-muted-foreground">
+                                  {BOM_INACTIVE_COMPONENT_DESCRIPTION}
+                                </p>
+                                <button
+                                  type="button"
+                                  className="mt-2 inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
+                                  onClick={() => {
+                                    setOpenHealthDetailId(null);
+                                    handleOpenModal(item);
+                                  }}
+                                >
+                                  Ver composição
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">

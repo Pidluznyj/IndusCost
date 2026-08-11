@@ -57,12 +57,75 @@ export type ProductBomHealthIssue = {
   path: ProductBomHealthPathStep[];
 };
 
+/**
+ * Saúde resumida para o GRID (dimensão independente do Product.status):
+ * BLOCKED > WARNING > OK. Hoje só existe issue BLOCKING
+ * (BOM_INACTIVE_COMPONENT); WARNING está previsto para issues futuros
+ * (ex.: snapshot técnico) — o backend determina a gravidade, nunca a UI.
+ */
+export type EngineeringHealthStatus = "OK" | "WARNING" | "BLOCKED";
+
+export type EngineeringHealthSummary = {
+  status: EngineeringHealthStatus;
+  issueCount: number;
+  blockingCount: number;
+  warningCount: number;
+  primaryIssueCode: string | null;
+};
+
 export type ProductBomHealthResult = {
   ok: boolean;
   productId: string;
   productSku: string | null;
   issues: ProductBomHealthIssue[];
+  /** Resumo já resolvido pelo backend — o frontend apenas apresenta. */
+  summary: EngineeringHealthSummary;
 };
+
+export function summarizeProductBomHealth(
+  issues: ProductBomHealthIssue[]
+): EngineeringHealthSummary {
+  const blockingCount = issues.filter((i) => i.severity === "BLOCKING").length;
+  const warningCount = issues.length - blockingCount;
+  const status: EngineeringHealthStatus =
+    blockingCount > 0 ? "BLOCKED" : warningCount > 0 ? "WARNING" : "OK";
+  // Prioridade do issue principal: primeiro BLOCKING, senão o primeiro.
+  const primary = issues.find((i) => i.severity === "BLOCKING") ?? issues[0] ?? null;
+  return {
+    status,
+    issueCount: issues.length,
+    blockingCount,
+    warningCount,
+    primaryIssueCode: primary?.code ?? null,
+  };
+}
+
+/** Filtro de Engenharia do grid. "" = Todos. */
+export type EngineeringHealthFilter = "" | "OK" | "HAS_ISSUES" | "BLOCKED" | "WARNING";
+
+/**
+ * Health indisponível (não analisado/erro) NUNCA vira OK: só passa no filtro
+ * "Todos" — erro de backend não pode mascarar pendência.
+ */
+export function matchesEngineeringHealthFilter(
+  summary: EngineeringHealthSummary | null | undefined,
+  filter: EngineeringHealthFilter
+): boolean {
+  if (!filter) return true;
+  if (!summary) return false;
+  switch (filter) {
+    case "OK":
+      return summary.status === "OK";
+    case "HAS_ISSUES":
+      return summary.issueCount > 0;
+    case "BLOCKED":
+      return summary.status === "BLOCKED";
+    case "WARNING":
+      return summary.status === "WARNING";
+    default:
+      return true;
+  }
+}
 
 /** Máximo de caminhos distintos reportados por componente inativo (diagnóstico legível, sem explosão). */
 const MAX_PATHS_PER_COMPONENT = 5;
@@ -91,7 +154,13 @@ export function analyzeProductBomHealthFromGraph(
 ): ProductBomHealthResult {
   const root = graph.get(rootProductId);
   if (!root) {
-    return { ok: true, productId: rootProductId, productSku: null, issues: [] };
+    return {
+      ok: true,
+      productId: rootProductId,
+      productSku: null,
+      issues: [],
+      summary: summarizeProductBomHealth([]),
+    };
   }
 
   const issues: ProductBomHealthIssue[] = [];
@@ -152,6 +221,7 @@ export function analyzeProductBomHealthFromGraph(
     productId: root.id,
     productSku: root.sku,
     issues,
+    summary: summarizeProductBomHealth(issues),
   };
 }
 

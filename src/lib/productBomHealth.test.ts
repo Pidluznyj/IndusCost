@@ -11,10 +11,14 @@ import {
   analyzeProductBomHealthFromGraph,
   buildBomHealthBlockMessage,
   formatBomHealthPath,
+  matchesEngineeringHealthFilter,
+  summarizeProductBomHealth,
   BOM_INACTIVE_COMPONENT_CODE,
   BOM_INACTIVE_COMPONENT_TITLE,
   type ProductBomGraphNode,
+  type ProductBomHealthIssue,
 } from "./productBomHealth.js";
+import { filterProductEngineeringListItems } from "./productEngineeringListFilters.js";
 
 function node(
   id: string,
@@ -185,6 +189,119 @@ describe("productBomHealth — domínio (T1–T13)", () => {
   });
 });
 
+function issueFixture(overrides: Partial<ProductBomHealthIssue> = {}): ProductBomHealthIssue {
+  return {
+    code: BOM_INACTIVE_COMPONENT_CODE,
+    severity: "BLOCKING",
+    productId: "a",
+    productSku: "620.01",
+    componentId: "c",
+    componentSku: "314.19AA",
+    componentName: "Boia Inferior",
+    componentStatus: "INACTIVE",
+    level: 1,
+    path: [
+      { productId: "a", sku: "620.01" },
+      { productId: "c", sku: "314.19AA" },
+    ],
+    ...overrides,
+  };
+}
+
+describe("engineeringHealth — resumo para o grid (backend resolve, UI apresenta)", () => {
+  it("G1: produto saudável → status OK, contadores zerados", () => {
+    const s = summarizeProductBomHealth([]);
+    assert.deepEqual(s, {
+      status: "OK",
+      issueCount: 0,
+      blockingCount: 0,
+      warningCount: 0,
+      primaryIssueCode: null,
+    });
+  });
+
+  it("G2/G3/G4/G6: BOM_INACTIVE_COMPONENT → BLOCKED com counts e primaryIssue coerentes", () => {
+    const s = summarizeProductBomHealth([issueFixture()]);
+    assert.equal(s.status, "BLOCKED");
+    assert.equal(s.issueCount, 1);
+    assert.equal(s.blockingCount, 1);
+    assert.equal(s.warningCount, 0);
+    assert.equal(s.primaryIssueCode, BOM_INACTIVE_COMPONENT_CODE);
+  });
+
+  it("G5/G7: múltiplos issues (BLOCKING + futuro WARNING) → BLOCKED tem prioridade; todos contados", () => {
+    const warning = issueFixture({
+      componentId: "w",
+      componentSku: "999.01",
+      severity: "WARNING" as ProductBomHealthIssue["severity"],
+      code: "FUTURE_WARNING" as typeof BOM_INACTIVE_COMPONENT_CODE,
+    });
+    const s = summarizeProductBomHealth([warning, issueFixture()]);
+    assert.equal(s.status, "BLOCKED"); // BLOCKED > WARNING > OK
+    assert.equal(s.issueCount, 2);
+    assert.equal(s.blockingCount, 1);
+    assert.equal(s.warningCount, 1);
+    assert.equal(s.primaryIssueCode, BOM_INACTIVE_COMPONENT_CODE); // BLOCKING primeiro
+
+    const onlyWarning = summarizeProductBomHealth([warning]);
+    assert.equal(onlyWarning.status, "WARNING");
+  });
+
+  it("summary embutido no resultado da análise (single e batch compartilham a mesma fonte)", () => {
+    const graph = graphOf(
+      node("a", "620.01", "ACTIVE", ["c"]),
+      node("c", "314.19AA", "INACTIVE")
+    );
+    const result = analyzeProductBomHealthFromGraph("a", graph);
+    assert.equal(result.summary.status, "BLOCKED");
+    assert.equal(result.summary.issueCount, 1);
+    const healthy = analyzeProductBomHealthFromGraph(
+      "a",
+      graphOf(node("a", "620.01", "ACTIVE", []))
+    );
+    assert.equal(healthy.summary.status, "OK");
+  });
+
+  it("G12–G15: filtros OK/HAS_ISSUES/BLOCKED/WARNING", () => {
+    const ok = summarizeProductBomHealth([]);
+    const blocked = summarizeProductBomHealth([issueFixture()]);
+    assert.equal(matchesEngineeringHealthFilter(ok, "OK"), true);
+    assert.equal(matchesEngineeringHealthFilter(blocked, "OK"), false);
+    assert.equal(matchesEngineeringHealthFilter(blocked, "HAS_ISSUES"), true);
+    assert.equal(matchesEngineeringHealthFilter(ok, "HAS_ISSUES"), false);
+    assert.equal(matchesEngineeringHealthFilter(blocked, "BLOCKED"), true);
+    assert.equal(matchesEngineeringHealthFilter(blocked, "WARNING"), false);
+    assert.equal(matchesEngineeringHealthFilter(ok, ""), true);
+  });
+
+  it("G17: health indisponível NUNCA vira OK — só passa em 'Todos' (erro não mascara pendência)", () => {
+    assert.equal(matchesEngineeringHealthFilter(null, ""), true);
+    assert.equal(matchesEngineeringHealthFilter(undefined, ""), true);
+    assert.equal(matchesEngineeringHealthFilter(null, "OK"), false);
+    assert.equal(matchesEngineeringHealthFilter(null, "HAS_ISSUES"), false);
+    assert.equal(matchesEngineeringHealthFilter(null, "BLOCKED"), false);
+  });
+
+  it("G16: filtro combinado com busca por SKU no pipeline real da lista", () => {
+    const blocked = summarizeProductBomHealth([issueFixture()]);
+    const ok = summarizeProductBomHealth([]);
+    const items = [
+      { name: "Produto A", sku: "620.01", status: "ACTIVE", engineeringHealth: blocked },
+      { name: "Produto B", sku: "620.02", status: "ACTIVE", engineeringHealth: ok },
+      { name: "Outro", sku: "700.01", status: "ACTIVE", engineeringHealth: blocked },
+    ];
+    const out = filterProductEngineeringListItems(items, {
+      search: "620",
+      status: "",
+      engineering: "BLOCKED",
+    });
+    assert.deepEqual(out.map((i) => i.sku), ["620.01"]);
+    // G9/G10/G11: busca e status continuam funcionando com o filtro novo vazio.
+    const plain = filterProductEngineeringListItems(items, { search: "620", status: "ACTIVE" });
+    assert.equal(plain.length, 2);
+  });
+});
+
 describe("productBomHealth — integração custo (T14–T28, wiring)", () => {
   const snapshotSrc = () =>
     readFileSync(
@@ -273,6 +390,49 @@ describe("productBomHealth — UI (T29–T36, wiring)", () => {
     const src = page();
     assert.match(src, /result\.status === "BOM_INACTIVE_COMPONENT"/);
     assert.match(src, /NÃO resolve componente/);
+  });
+
+  it("F18–F20/F32/F33: coluna Engenharia — OK, contador de pendências, texto além de cor, compacta", () => {
+    const src = page();
+    assert.match(src, />Engenharia<\/th>/);
+    assert.match(src, /✅ OK/);
+    assert.match(src, /pendência/); // texto sempre presente (não só cor)
+    assert.match(src, /atenção/);
+    assert.match(src, /summary\.issueCount > 1 \? "s" : ""/); // plural correto
+    assert.match(src, /engineering-health-badge-/);
+  });
+
+  it("F21–F26: clique abre painel 'Pendências de engenharia' com SKU, nome, status e caminho", () => {
+    const src = page();
+    assert.match(src, /Pendências de engenharia/);
+    assert.match(src, /setOpenHealthDetailId\(isOpen \? null : item\.id\)/); // clique, não hover
+    assert.match(src, /engineering-health-details-/);
+    assert.match(src, /Ver composição/);
+    assert.match(src, /aria-expanded=\{isOpen\}/);
+  });
+
+  it("F27–F30: filtro de Engenharia no pipeline aplicado (com busca/status) e nas opções da UI", () => {
+    const src = page();
+    assert.match(src, /engineering: appliedEngineeringFilter/);
+    assert.match(src, /Sem pendências<\/option>/);
+    assert.match(src, /Com pendências<\/option>/);
+    assert.match(src, /Bloqueantes<\/option>/);
+    assert.match(src, /Atenção<\/option>/);
+    assert.match(src, /products-engineering-filter/);
+  });
+
+  it("F-indisponível: health ausente mostra 'Não disponível' — nunca vira OK", () => {
+    const src = page();
+    assert.match(src, /— Não disponível/);
+    assert.match(src, /engineering-health-unavailable-/);
+  });
+
+  it("F-status: coluna Engenharia é INDEPENDENTE do Product.status (badge Ativo/Inativo intacto)", () => {
+    const src = page();
+    assert.match(src, /item\.status === "ACTIVE" \? "Ativo" : "Inativo"/);
+    // Saúde vem do backend; nenhuma decisão de negócio no front:
+    assert.match(src, /bomHealthByProductId\[item\.id\]\?\.summary \?\? null/);
+    assert.doesNotMatch(src, /ChildProduct[\s\S]{0,40}status === "INACTIVE"[\s\S]{0,80}BLOCKED/);
   });
 
   it("backend expõe endpoints read-only (single + batch) para a regra", () => {
