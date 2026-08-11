@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import * as XLSX from "xlsx";
 import {
   aggregateSoldProductsNcmByProduct,
   aggregateSoldProductsRanking,
@@ -200,6 +201,23 @@ describe("salesProductRanking", () => {
     assert.equal(rows[2]?.sku, "200.10");
   });
 
+  it("NCM x Produto: linha sem productCode/Product resolvido NÃO desaparece — SKU cai para fallback e números permanecem", () => {
+    // Estruturalmente SalesOrderItem.productId é NOT NULL (FK obrigatória),
+    // mas a agregação não pode depender disso: nenhuma linha é descartada.
+    const lines = [
+      line({ productId: "p-x", productCode: null, productNcm: null, quantity: 500, lineAmount: 4000, orderId: "o9", customerId: "c9" }),
+    ];
+    const rows = aggregateSoldProductsNcmByProduct(lines);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.sku, "—");
+    assert.equal(rows[0]?.ncm, null);
+    assert.equal(rows[0]?.quantitySold, 500);
+    assert.equal(rows[0]?.soldValue, 4000);
+    const summary = buildSoldProductsNcmSummary(rows);
+    assert.equal(summary.totalQuantity, 500);
+    assert.equal(summary.totalSoldValue, 4000);
+  });
+
   it("RECONCILIAÇÃO OBRIGATÓRIA: SUM(NCM x Produto) = totais do Produtos Vendidos, mesma população", () => {
     const lines = [
       line({ productId: "p-a", productNcm: "39269090", quantity: 100, lineAmount: 5000.25, orderId: "o1", customerId: "c1" }),
@@ -276,6 +294,14 @@ describe("salesProductRanking", () => {
           quantitySold: 10,
           soldValue: 100,
         },
+        {
+          ncm: null,
+          productId: "p2",
+          sku: "XPTO",
+          productName: "Produto Sem Cadastro",
+          quantitySold: 5,
+          soldValue: 40,
+        },
       ],
       ncmSummary: {
         totalQuantity: 10,
@@ -296,6 +322,22 @@ describe("salesProductRanking", () => {
       "Detalhamento",
       "Filtros Aplicados",
     ]);
+    // Conteúdo da aba NCM x Produto: colunas exigidas + "Sem NCM" para null.
+    const ncmSheet = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      wb.Sheets["NCM x Produto"]!
+    );
+    assert.deepEqual(Object.keys(ncmSheet[0]!), [
+      "NCM",
+      "SKU",
+      "Produto",
+      "Quantidade Vendida",
+      "Valor Vendido",
+    ]);
+    assert.equal(ncmSheet[0]!.NCM, "39269090");
+    assert.equal(ncmSheet[1]!.NCM, "Sem NCM");
+    assert.equal(ncmSheet[1]!.SKU, "XPTO");
+    assert.equal(ncmSheet[1]!["Quantidade Vendida"], 5);
+    assert.equal(ncmSheet[1]!["Valor Vendido"], 40);
     const bytes = soldProductsRankingWorkbookToBytes(wb);
     assert.ok(bytes.byteLength > 100);
     assert.match(soldProductsRankingExportFilename(REF), /^produtos-vendidos-\d{4}-\d{2}-\d{2}\.xlsx$/);
