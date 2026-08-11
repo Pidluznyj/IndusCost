@@ -28,6 +28,11 @@ const STATUS_LABELS: Record<InvestedCapitalRecoveryStatus, string> = {
   DADOS_INSUFICIENTES: "Dados insuficientes",
 };
 
+function money(value: number | null): string {
+  if (value == null) return "—";
+  return formatFinanceCurrency(value);
+}
+
 function formatMonthYear(dateStr?: string | null): string {
   if (!dateStr) return "—";
   const trimmed = dateStr.trim();
