@@ -858,27 +858,27 @@
     border-collapse: collapse;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 6%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 6%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 17%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller { width: 10%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 6%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 10%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 13%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7.2%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 4.8%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-date { width: 5.8%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 7.8%; }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
   body.sales-orders-icr-print-route .sales-orders-icr-print-table td {
-    padding: 3px 3px;
+    padding: 3px 2px;
     vertical-align: middle;
-    overflow: visible;
-    text-overflow: clip;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
     border: 1px solid #cbd5e1;
   }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table thead th {
     background: #e2e8f0;
-    font-size: 7.5px;
+    font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     text-align: center;
@@ -890,8 +890,12 @@
     font-variant-numeric: tabular-nums;
   }
 
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client,
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-seller {
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-date,
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status {
+    text-align: center;
+  }
+
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client {
     text-overflow: ellipsis;
     overflow: hidden;
     white-space: nowrap;

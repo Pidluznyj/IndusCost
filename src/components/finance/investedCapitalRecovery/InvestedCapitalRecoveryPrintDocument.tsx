@@ -28,9 +28,19 @@ const STATUS_LABELS: Record<InvestedCapitalRecoveryStatus, string> = {
   DADOS_INSUFICIENTES: "Dados insuficientes",
 };
 
-function money(value: number | null): string {
-  if (value == null) return "—";
-  return formatFinanceCurrency(value);
+function formatMonthYear(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const trimmed = dateStr.trim();
+  if (!trimmed) return "—";
+  if (trimmed.length === 7 && trimmed.includes("-")) {
+    const [year, month] = trimmed.split("-");
+    return `${month}/${year}`;
+  }
+  const d = new Date(trimmed);
+  if (isNaN(d.getTime())) return "—";
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${month}/${year}`;
 }
 
 function SummaryKpiCard({ label, value }: { label: string; value: string }) {
@@ -184,17 +194,20 @@ export function InvestedCapitalRecoveryPrintDocument({
             <table className="sales-orders-icr-print-table">
               <thead>
                 <tr>
-                  <th className="col-order">PV</th>
-                  <th className="col-client">Cliente</th>
-                  <th className="col-seller">Vendedor</th>
-                  <th className="col-money">Capital Investido</th>
-                  <th className="col-money">Imposto</th>
-                  <th className="col-money">Recebido</th>
-                  <th className="col-money">Capital Recuperado</th>
-                  <th className="col-money">Dinheiro na Rua</th>
-                  <th className="col-money">A Receber</th>
-                  <th className="col-num">% Recup.</th>
-                  <th className="col-status">Status Econômico</th>
+                  <th className="col-order" title="Pedido de Venda">PV</th>
+                  <th className="col-client" title="Nome do Cliente">Cliente</th>
+                  <th className="col-money" title="Valor do Pedido de Venda">Venda</th>
+                  <th className="col-money" title="Capital Investido (Imposto + Custo de Produção)">Cap. Invest.</th>
+                  <th className="col-money" title="Imposto">Imposto</th>
+                  <th className="col-money" title="Custo de Produção">Custo Prod.</th>
+                  <th className="col-money" title="Recebido">Recebido</th>
+                  <th className="col-money" title="Capital Recuperado">Cap. Recup.</th>
+                  <th className="col-money" title="Capital na Rua">Cap. na Rua</th>
+                  <th className="col-money" title="A Receber">A Receber</th>
+                  <th className="col-num" title="Percentual Recuperado">% Rec.</th>
+                  <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou em</th>
+                  <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev. Rec.</th>
+                  <th className="col-status" title="Status Econômico">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -202,9 +215,10 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <tr key={row.salesOrderId}>
                     <td className="col-order">{row.orderCode}</td>
                     <td className="col-client">{displayFinanceText(row.customerName)}</td>
-                    <td className="col-seller">{displayFinanceText(row.sellerName)}</td>
+                    <td className="col-money">{money(row.saleValue)}</td>
                     <td className="col-money">{money(row.investedCapital)}</td>
                     <td className="col-money">{money(row.totalTaxes)}</td>
+                    <td className="col-money">{money(row.industrialCost)}</td>
                     <td className="col-money">{money(row.actualReceived)}</td>
                     <td className="col-money">{money(row.capitalRecovered)}</td>
                     <td className="col-money">{money(row.moneyOnStreet)}</td>
@@ -212,20 +226,24 @@ export function InvestedCapitalRecoveryPrintDocument({
                     <td className="col-num">
                       {row.recoveryPercent == null ? "—" : `${row.recoveryPercent.toFixed(0)}%`}
                     </td>
+                    <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
+                    <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
                     <td className="col-status">{STATUS_LABELS[row.status]}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="sales-orders-print-total-row">
-                  <td colSpan={3}>Total</td>
+                  <td colSpan={2}>Total</td>
+                  <td className="col-money">{money(kpis.totalSaleValueAnalyzed)}</td>
                   <td className="col-money">{money(kpis.investedCapitalAnalyzedTotal)}</td>
                   <td className="col-money">{money(kpis.totalTaxesAnalyzed)}</td>
+                  <td className="col-money">{money(kpis.totalIndustrialCostAnalyzed)}</td>
                   <td className="col-money">{money(totalActualReceived)}</td>
                   <td className="col-money">{money(kpis.capitalRecoveredTotal)}</td>
                   <td className="col-money">{money(kpis.moneyOnStreetToday)}</td>
                   <td className="col-money">{money(kpis.totalOutstandingReceivable)}</td>
-                  <td className="col-num" colSpan={2} />
+                  <td className="col-num" colSpan={4} />
                 </tr>
               </tfoot>
             </table>
