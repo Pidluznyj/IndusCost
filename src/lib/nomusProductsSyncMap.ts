@@ -236,6 +236,40 @@ export function isNomusRawMaterialScope(
   return matchAny(textScope, /\bmat[ée]ria[\s-]*prima\b|\bmateria[\s-]*prima\b/i);
 }
 
+/**
+ * Embalagem explícita no cadastro Nomus (tipo/grupo/família). Mesma regra
+ * que sempre gerou PACKAGING_NOT_PRODUCT no mapper — extraída para helper
+ * para que o roteamento de Material use EXATAMENTE o mesmo critério
+ * (nunca dois classificadores divergentes).
+ */
+export function isNomusPackagingScope(
+  typeName: string | null,
+  groupName: string | null,
+  familyName: string | null
+): boolean {
+  return matchAny([typeName, groupName, familyName], /\bembalagem\b/i);
+}
+
+/**
+ * Insumo explícito no cadastro Nomus (tipo/grupo/família). Conservador:
+ * palavra inteira "insumo(s)", tolerante a acento/caixa — não confundir com
+ * o regex amplo de diagnóstico de campos BOM (que também contém "insumo").
+ */
+export function isNomusInsumoScope(
+  typeName: string | null,
+  groupName: string | null,
+  familyName: string | null
+): boolean {
+  return [typeName, groupName, familyName].some((v) => {
+    if (!v) return false;
+    const normalized = v
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toUpperCase();
+    return /\bINSUMOS?\b/.test(normalized);
+  });
+}
+
 export function isNomusBomComponentScope(
   typeName: string | null,
   groupName: string | null,
@@ -436,7 +470,11 @@ export function mapNomusProductsFromApiRows(
       meta.nomeGrupoProduto,
       meta.nomeFamiliaProduto
     );
-    const packaging = matchAny(textScope, /\bembalagem\b/i);
+    const packaging = isNomusPackagingScope(
+      meta.nomeTipoProduto,
+      meta.nomeGrupoProduto,
+      meta.nomeFamiliaProduto
+    );
     const mroOrFixedAsset = matchAny(
       textScope,
       /\bmro\b|ativo\s+imobilizado|manuten[cç][aã]o,\s*reparo\s*e\s*opera[cç][aã]o|manuten[cç][aã]o|reparo|opera[cç][aã]o/i
