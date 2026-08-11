@@ -17,6 +17,7 @@ function snapshot(overrides: Partial<ExistingProductSnapshot> = {}): ExistingPro
     description: "Fita SF 48mm",
     type: "COMPONENT",
     status: "ACTIVE",
+    ncm: null,
     sourceSystem: null,
     sourceExternalId: null,
     isNomusControlled: false,
@@ -31,6 +32,7 @@ function row(overrides: Partial<ProductLifecycleRow> = {}): ProductLifecycleRow 
     chosenName: "Fita SF 48mm",
     nameLooksLikeSku: false,
     description: "Fita SF 48mm",
+    ncm: null,
     type: "COMPONENT",
     typeInferenceConfidence: "HIGH",
     ativo: true,
@@ -77,6 +79,52 @@ describe("planProductSyncMutation — ciclo de vida e identidade", () => {
     if (m.kind !== "UPDATE") return;
     assert.equal(m.data.description, "Descrição nova");
     assert.ok(m.changedFields.includes("description"));
+  });
+
+  it("P03b: NCM do payload → CREATE persiste ncm como texto", () => {
+    const index = buildProductMatchIndex([]);
+    const m = planProductSyncMutation(row({ ncm: "39269090" }), index);
+    assert.equal(m.kind, "CREATE");
+    if (m.kind !== "CREATE") return;
+    assert.equal(m.ncm, "39269090");
+  });
+
+  it("P03c: zero à esquerda preservado — NCM nunca vira número", () => {
+    const index = buildProductMatchIndex([snapshot()]);
+    const m = planProductSyncMutation(row({ ncm: "01234567" }), index);
+    assert.equal(m.kind, "UPDATE");
+    if (m.kind !== "UPDATE") return;
+    assert.strictEqual(m.data.ncm, "01234567");
+    assert.ok(m.changedFields.includes("ncm"));
+  });
+
+  it("P03d: SOMENTE o NCM mudou (resto idêntico) → UPDATE lista 'ncm' — nunca tratado como unchanged", () => {
+    // Sync 1 gravou 39269090; sync 2 traz o mesmo produto com 39269099.
+    const index = buildProductMatchIndex([
+      snapshot({ ncm: "39269090", sourceExternalId: "52022001" }),
+    ]);
+    const m = planProductSyncMutation(row({ ncm: "39269099" }), index);
+    assert.equal(m.kind, "UPDATE");
+    if (m.kind !== "UPDATE") return;
+    assert.equal(m.data.ncm, "39269099");
+    assert.deepEqual(m.changedFields, ["ncm"]);
+  });
+
+  it("P03e: payload sem NCM → null sobrescreve (política igual à do description; Nomus é a fonte)", () => {
+    const index = buildProductMatchIndex([snapshot({ ncm: "39269090" })]);
+    const m = planProductSyncMutation(row({ ncm: null }), index);
+    assert.equal(m.kind, "UPDATE");
+    if (m.kind !== "UPDATE") return;
+    assert.strictEqual(m.data.ncm, null);
+    assert.ok(m.changedFields.includes("ncm"));
+  });
+
+  it("P03f: NCM igual nos dois lados → não entra em changedFields", () => {
+    const index = buildProductMatchIndex([snapshot({ ncm: "39269090" })]);
+    const m = planProductSyncMutation(row({ ncm: "39269090" }), index);
+    assert.equal(m.kind, "UPDATE");
+    if (m.kind !== "UPDATE") return;
+    assert.ok(!m.changedFields.includes("ncm"));
   });
 
   it("P04: type divergente com confiança HIGH → reportado, NÃO aplicado (reclassificação é workflow próprio)", () => {

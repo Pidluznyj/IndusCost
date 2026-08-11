@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import * as XLSX from "xlsx";
 import {
+  aggregateSoldProductsNcmByProduct,
   aggregateSoldProductsRanking,
   buildSoldProductsCustomerMix,
+  buildSoldProductsNcmSummary,
   buildSoldProductsSummary,
   computeSoldProductsAverageUnitPrice,
   computeSoldProductsSharePercent,
@@ -39,6 +42,7 @@ function line(partial: Partial<SoldProductsLineContext> & Pick<SoldProductsLineC
     lineId: partial.lineId ?? `line-${partial.productId}-${partial.orderId}`,
     productCode: partial.productCode ?? partial.productId,
     productName: partial.productName ?? `Produto ${partial.productId}`,
+    productNcm: partial.productNcm ?? null,
     unitPrice: partial.unitPrice ?? partial.lineAmount / Math.max(partial.quantity, 1),
     orderCode: partial.orderCode ?? partial.orderId,
     orderDate: partial.orderDate ?? new Date(2026, 2, 10),
@@ -156,6 +160,82 @@ describe("salesProductRanking", () => {
     assert.equal(summary.ordersCount, 2);
   });
 
+  it("NCM x Produto: mesmo NCM em produtos diferentes gera DUAS linhas (nunca agrega só pelo NCM)", () => {
+    const lines = [
+      line({ productId: "p-a", productCode: "100.20", productNcm: "39269090", quantity: 100, lineAmount: 5000, orderId: "o1", customerId: "c1" }),
+      line({ productId: "p-b", productCode: "100.21", productNcm: "39269090", quantity: 250, lineAmount: 15000, orderId: "o2", customerId: "c2" }),
+    ];
+    const rows = aggregateSoldProductsNcmByProduct(lines);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]?.ncm, "39269090");
+    assert.equal(rows[1]?.ncm, "39269090");
+    assert.notEqual(rows[0]?.productId, rows[1]?.productId);
+  });
+
+  it("NCM x Produto: produto sem NCM não desaparece (ncm=null, números preservados) e vai para o fim", () => {
+    const lines = [
+      line({ productId: "p-sem", productCode: "XPTO", productNcm: null, quantity: 500, lineAmount: 4000, orderId: "o3", customerId: "c3" }),
+      line({ productId: "p-com", productCode: "100.20", productNcm: "48191000", quantity: 10, lineAmount: 100, orderId: "o1", customerId: "c1" }),
+    ];
+    const rows = aggregateSoldProductsNcmByProduct(lines);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]?.ncm, "48191000");
+    assert.equal(rows[1]?.ncm, null);
+    assert.equal(rows[1]?.quantitySold, 500);
+    assert.equal(rows[1]?.soldValue, 4000);
+    const summary = buildSoldProductsNcmSummary(rows);
+    assert.equal(summary.productsWithoutNcmCount, 1);
+    assert.equal(summary.totalQuantity, 510);
+    assert.equal(summary.totalSoldValue, 4100);
+  });
+
+  it("NCM x Produto: ordenação NCM ASC depois SKU ASC; zero à esquerda intacto", () => {
+    const lines = [
+      line({ productId: "p-2", productCode: "200.10", productNcm: "39269090", quantity: 1, lineAmount: 10, orderId: "o1", customerId: "c1" }),
+      line({ productId: "p-1", productCode: "100.10", productNcm: "39269090", quantity: 1, lineAmount: 10, orderId: "o1", customerId: "c1" }),
+      line({ productId: "p-0", productCode: "300.10", productNcm: "01234567", quantity: 1, lineAmount: 10, orderId: "o1", customerId: "c1" }),
+    ];
+    const rows = aggregateSoldProductsNcmByProduct(lines);
+    assert.equal(rows[0]?.ncm, "01234567");
+    assert.equal(rows[1]?.sku, "100.10");
+    assert.equal(rows[2]?.sku, "200.10");
+  });
+
+  it("NCM x Produto: linha sem productCode/Product resolvido NÃO desaparece — SKU cai para fallback e números permanecem", () => {
+    // Estruturalmente SalesOrderItem.productId é NOT NULL (FK obrigatória),
+    // mas a agregação não pode depender disso: nenhuma linha é descartada.
+    const lines = [
+      line({ productId: "p-x", productCode: null, productNcm: null, quantity: 500, lineAmount: 4000, orderId: "o9", customerId: "c9" }),
+    ];
+    const rows = aggregateSoldProductsNcmByProduct(lines);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.sku, "—");
+    assert.equal(rows[0]?.ncm, null);
+    assert.equal(rows[0]?.quantitySold, 500);
+    assert.equal(rows[0]?.soldValue, 4000);
+    const summary = buildSoldProductsNcmSummary(rows);
+    assert.equal(summary.totalQuantity, 500);
+    assert.equal(summary.totalSoldValue, 4000);
+  });
+
+  it("RECONCILIAÇÃO OBRIGATÓRIA: SUM(NCM x Produto) = totais do Produtos Vendidos, mesma população", () => {
+    const lines = [
+      line({ productId: "p-a", productNcm: "39269090", quantity: 100, lineAmount: 5000.25, orderId: "o1", customerId: "c1" }),
+      line({ productId: "p-a", productNcm: "39269090", quantity: 50, lineAmount: 2499.75, orderId: "o2", customerId: "c2" }),
+      line({ productId: "p-b", productNcm: null, quantity: 30, lineAmount: 900.5, orderId: "o3", customerId: "c1" }),
+    ];
+    const ranking = aggregateSoldProductsRanking(lines, "quantity", null);
+    const currentReport = buildSoldProductsSummary(lines, ranking);
+    const ncmRows = aggregateSoldProductsNcmByProduct(lines);
+    const sumQty = ncmRows.reduce((acc, r) => acc + r.quantitySold, 0);
+    const sumValue = ncmRows.reduce((acc, r) => acc + r.soldValue, 0);
+    assert.equal(sumQty, currentReport.totalQuantity);
+    assert.ok(Math.abs(sumValue - currentReport.totalAmount) < 0.005);
+    const ncmSummary = buildSoldProductsNcmSummary(ncmRows);
+    assert.equal(ncmSummary.totalQuantity, currentReport.totalQuantity);
+    assert.ok(Math.abs(ncmSummary.totalSoldValue - currentReport.totalAmount) < 0.005);
+  });
+
   it("export XLSX contém abas esperadas", () => {
     const payload: SoldProductsDashboardPayload = {
       generatedAt: REF.toISOString(),
@@ -205,6 +285,30 @@ describe("salesProductRanking", () => {
       ],
       customerMix: [],
       monthlyEvolution: [],
+      ncmByProduct: [
+        {
+          ncm: "39269090",
+          productId: "p1",
+          sku: "SKU1",
+          productName: "Produto 1",
+          quantitySold: 10,
+          soldValue: 100,
+        },
+        {
+          ncm: null,
+          productId: "p2",
+          sku: "XPTO",
+          productName: "Produto Sem Cadastro",
+          quantitySold: 5,
+          soldValue: 40,
+        },
+      ],
+      ncmSummary: {
+        totalQuantity: 10,
+        totalSoldValue: 100,
+        productsCount: 1,
+        productsWithoutNcmCount: 0,
+      },
       detailRows: [],
       detailPagination: { page: 1, limit: 100, total: 0, totalPages: 1 },
     };
@@ -214,9 +318,26 @@ describe("salesProductRanking", () => {
       "Ranking",
       "Produto x Cliente",
       "Evolução Mensal",
+      "NCM x Produto",
       "Detalhamento",
       "Filtros Aplicados",
     ]);
+    // Conteúdo da aba NCM x Produto: colunas exigidas + "Sem NCM" para null.
+    const ncmSheet = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      wb.Sheets["NCM x Produto"]!
+    );
+    assert.deepEqual(Object.keys(ncmSheet[0]!), [
+      "NCM",
+      "SKU",
+      "Produto",
+      "Quantidade Vendida",
+      "Valor Vendido",
+    ]);
+    assert.equal(ncmSheet[0]!.NCM, "39269090");
+    assert.equal(ncmSheet[1]!.NCM, "Sem NCM");
+    assert.equal(ncmSheet[1]!.SKU, "XPTO");
+    assert.equal(ncmSheet[1]!["Quantidade Vendida"], 5);
+    assert.equal(ncmSheet[1]!["Valor Vendido"], 40);
     const bytes = soldProductsRankingWorkbookToBytes(wb);
     assert.ok(bytes.byteLength > 100);
     assert.match(soldProductsRankingExportFilename(REF), /^produtos-vendidos-\d{4}-\d{2}-\d{2}\.xlsx$/);

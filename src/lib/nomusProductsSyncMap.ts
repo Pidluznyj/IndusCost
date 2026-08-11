@@ -28,6 +28,8 @@ export type NomusEligibleProduct = {
   unitFromNomus: string | null;
   netWeightFromNomus: number | null;
   grossWeightFromNomus: number | null;
+  /** NCM cadastral do Nomus — TEXTO trim()ado (zeros à esquerda preservados); null quando ausente/vazio. */
+  ncmFromNomus: string | null;
   nomusRawName: string | null;
   nomusDescription: string | null;
   chosenName: string;
@@ -177,6 +179,15 @@ function isGenericNonDescriptiveText(value: string | null): boolean {
 function toNumberOrNull(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * NCM cadastral do payload Nomus. Sempre TEXTO: apenas trim() via asString —
+ * nunca parseInt/Number, para preservar zeros à esquerda ("01234567").
+ * null/undefined/"" → null (não inventa NCM).
+ */
+export function extractNomusNcm(raw: NomusProductApiRow): string | null {
+  return asString(raw.ncm);
 }
 
 export function extractNomusSupplyTypeName(raw: NomusProductApiRow): string | null {
@@ -507,6 +518,7 @@ export function mapNomusProductsFromApiRows(
       unitFromNomus: meta.unitFromNomus,
       netWeightFromNomus: meta.netWeightFromNomus,
       grossWeightFromNomus: meta.grossWeightFromNomus,
+      ncmFromNomus: extractNomusNcm(p),
       nomusRawName: asString(p.nome),
       nomusDescription: asString(p.descricao),
       chosenName: chosenNamePack.name!,

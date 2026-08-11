@@ -126,6 +126,27 @@ export type SoldProductsDetailRow = {
   orderStatusLabel: string;
 };
 
+/**
+ * Aba NCM x Produto — uma linha por PRODUTO (produtos distintos com o mesmo
+ * NCM geram linhas distintas). ncm=null → apresentado como "Sem NCM"; o
+ * produto nunca some e seus números continuam nos totais.
+ */
+export type SoldProductsNcmProductRow = {
+  ncm: string | null;
+  productId: string | null;
+  sku: string;
+  productName: string;
+  quantitySold: number;
+  soldValue: number;
+};
+
+export type SoldProductsNcmSummary = {
+  totalQuantity: number;
+  totalSoldValue: number;
+  productsCount: number;
+  productsWithoutNcmCount: number;
+};
+
 export type SoldProductsDashboardPayload = {
   generatedAt: string;
   filters: SoldProductsDashboardFiltersApplied;
@@ -133,6 +154,8 @@ export type SoldProductsDashboardPayload = {
   ranking: SoldProductsRankingRow[];
   customerMix: SoldProductsCustomerMixRow[];
   monthlyEvolution: SoldProductsMonthlyEvolutionRow[];
+  ncmByProduct: SoldProductsNcmProductRow[];
+  ncmSummary: SoldProductsNcmSummary;
   detailRows: SoldProductsDetailRow[];
   detailPagination: {
     page: number;

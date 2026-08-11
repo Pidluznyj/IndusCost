@@ -19,6 +19,8 @@ import type {
   SoldProductsDetailRow,
   SoldProductsFilterOptionsPayload,
   SoldProductsMonthlyEvolutionRow,
+  SoldProductsNcmProductRow,
+  SoldProductsNcmSummary,
   SoldProductsRankingRow,
   SoldProductsSortBy,
   SoldProductsSummary,
@@ -33,6 +35,8 @@ export type SoldProductsLineContext = {
   productId: string;
   productCode: string | null;
   productName: string;
+  /** NCM cadastral atual do Product (fonte: sync Nomus /produtos) — null vira "Sem NCM" na aba. */
+  productNcm: string | null;
   quantity: number;
   unitPrice: number;
   lineAmount: number;
@@ -340,6 +344,61 @@ export function buildSoldProductsCustomerMix(
     );
 }
 
+/**
+ * Aba NCM x Produto — agrega as MESMAS linhas do relatório (população canônica,
+ * reconciliação garantida por construção) em uma linha por PRODUTO, com o NCM
+ * cadastral atual do Product. Produto sem NCM (null) permanece com ncm=null —
+ * a UI apresenta "Sem NCM" e os números continuam nos totais.
+ * Ordenação: NCM ASC (null/Sem NCM por último), depois SKU ASC.
+ */
+export function aggregateSoldProductsNcmByProduct(
+  lines: SoldProductsLineContext[]
+): SoldProductsNcmProductRow[] {
+  const byProduct = new Map<string, SoldProductsNcmProductRow>();
+  for (const line of lines) {
+    let row = byProduct.get(line.productId);
+    if (!row) {
+      row = {
+        ncm: line.productNcm,
+        productId: line.productId,
+        sku: line.productCode ?? "—",
+        productName: line.productName,
+        quantitySold: 0,
+        soldValue: 0,
+      };
+      byProduct.set(line.productId, row);
+    }
+    row.quantitySold += line.quantity;
+    row.soldValue += line.lineAmount;
+  }
+  return [...byProduct.values()].sort((a, b) => {
+    if (a.ncm == null && b.ncm != null) return 1;
+    if (a.ncm != null && b.ncm == null) return -1;
+    const ncmCmp = (a.ncm ?? "").localeCompare(b.ncm ?? "", "pt-BR");
+    if (ncmCmp !== 0) return ncmCmp;
+    return a.sku.localeCompare(b.sku, "pt-BR", { sensitivity: "base" });
+  });
+}
+
+export function buildSoldProductsNcmSummary(
+  rows: SoldProductsNcmProductRow[]
+): SoldProductsNcmSummary {
+  let totalQuantity = 0;
+  let totalSoldValue = 0;
+  let productsWithoutNcmCount = 0;
+  for (const row of rows) {
+    totalQuantity += row.quantitySold;
+    totalSoldValue += row.soldValue;
+    if (row.ncm == null) productsWithoutNcmCount += 1;
+  }
+  return {
+    totalQuantity,
+    totalSoldValue,
+    productsCount: rows.length,
+    productsWithoutNcmCount,
+  };
+}
+
 export function buildSoldProductsMonthlyEvolution(
   lines: SoldProductsLineContext[]
 ): SoldProductsMonthlyEvolutionRow[] {
@@ -553,7 +612,7 @@ export async function loadSoldProductsLineContexts(
       quantity: true,
       negotiatedPrice: true,
       totalNetValue: true,
-      Product: { select: { sku: true, name: true } },
+      Product: { select: { sku: true, name: true, ncm: true } },
       SalesOrder: {
         select: {
           id: true,
@@ -609,6 +668,7 @@ export async function loadSoldProductsLineContexts(
       productId: item.productId,
       productCode: item.Product?.sku ?? item.skuSnapshot ?? null,
       productName: item.Product?.name ?? item.productNameSnapshot ?? "—",
+      productNcm: item.Product?.ncm ?? null,
       quantity,
       unitPrice,
       lineAmount,
@@ -664,6 +724,8 @@ export async function buildSalesProductRanking(
   const summary = buildSoldProductsSummary(lines, ranking);
   const customerMix = buildSoldProductsCustomerMix(lines, ranking);
   const monthlyEvolution = buildSoldProductsMonthlyEvolution(lines);
+  const ncmByProduct = aggregateSoldProductsNcmByProduct(lines);
+  const ncmSummary = buildSoldProductsNcmSummary(ncmByProduct);
   const allDetails = buildSoldProductsDetailRows(lines);
   const total = allDetails.length;
   const includeAll =
@@ -680,6 +742,8 @@ export async function buildSalesProductRanking(
     ranking,
     customerMix,
     monthlyEvolution,
+    ncmByProduct,
+    ncmSummary,
     detailRows,
     detailPagination: {
       page: filters.detailPage,

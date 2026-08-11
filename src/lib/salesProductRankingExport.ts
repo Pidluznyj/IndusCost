@@ -102,6 +102,20 @@ export function buildSalesProductRankingExportWorkbook(
   XLSX.utils.book_append_sheet(
     wb,
     XLSX.utils.json_to_sheet(
+      payload.ncmByProduct.map((r) => ({
+        NCM: r.ncm ?? "Sem NCM",
+        SKU: r.sku,
+        Produto: r.productName,
+        "Quantidade Vendida": r.quantitySold,
+        "Valor Vendido": r.soldValue,
+      }))
+    ),
+    "NCM x Produto"
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
       payload.detailRows.map((r) => ({
         "Data pedido": r.orderDate,
         Pedido: r.orderCode,

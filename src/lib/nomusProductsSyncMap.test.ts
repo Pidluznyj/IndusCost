@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { normalizeSku } from "./nomusBomComparison.js";
 import {
   buildNomusProductFixture52022,
+  extractNomusNcm,
   findNomusProductRowsByCode,
   inferProductTypeWithConfidence,
   isNomusBomComponentScope,
@@ -109,5 +110,31 @@ describe("nomusProductsSyncMap", () => {
     rows.push(fixture);
     const found = findNomusProductRowsByCode(rows, "520.22--");
     assert.equal(found.length, 1);
+  });
+
+  it("14. NCM do payload chega em ncmFromNomus como texto", () => {
+    const row = { ...fixture, ncm: "39269090" };
+    const { eligible } = mapNomusProductsFromApiRows([row], new Set());
+    assert.strictEqual(eligible[0]!.ncmFromNomus, "39269090");
+  });
+
+  it("15. NCM com zero à esquerda é preservado — nunca parseInt/Number", () => {
+    assert.strictEqual(extractNomusNcm({ ncm: "01234567" }), "01234567");
+    const row = { ...fixture, ncm: "01234567" };
+    const { eligible } = mapNomusProductsFromApiRows([row], new Set());
+    assert.strictEqual(eligible[0]!.ncmFromNomus, "01234567");
+  });
+
+  it("16. NCM ausente/vazio/whitespace → null (não inventa NCM)", () => {
+    assert.strictEqual(extractNomusNcm({}), null);
+    assert.strictEqual(extractNomusNcm({ ncm: null }), null);
+    assert.strictEqual(extractNomusNcm({ ncm: "" }), null);
+    assert.strictEqual(extractNomusNcm({ ncm: "   " }), null);
+    const { eligible } = mapNomusProductsFromApiRows([fixture], new Set());
+    assert.strictEqual(eligible[0]!.ncmFromNomus, null);
+  });
+
+  it("17. NCM com espaços nas bordas é trim()ado, conteúdo intacto", () => {
+    assert.strictEqual(extractNomusNcm({ ncm: " 39269090 " }), "39269090");
   });
 });

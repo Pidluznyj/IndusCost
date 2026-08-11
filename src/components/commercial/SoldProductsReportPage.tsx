@@ -102,12 +102,13 @@ import { buildSoldProductCustomersPath } from "@/src/lib/soldProductCustomersNav
 import "@/src/components/commercial/sold-products-print.css";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
-type TabId = "overview" | "customerMix" | "monthly" | "detail";
+type TabId = "overview" | "customerMix" | "monthly" | "ncm" | "detail";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Visão Geral" },
   { id: "customerMix", label: "Produto x Cliente" },
   { id: "monthly", label: "Evolução Mensal" },
+  { id: "ncm", label: "NCM x Produto" },
   { id: "detail", label: "Detalhamento" },
 ];
 
@@ -1191,6 +1192,63 @@ export function SoldProductsReportPage() {
                 </tbody>
               </table>
             </div>
+          </ReportSection>
+        ) : null}
+
+        {activeTab === "ncm" ? (
+          <ReportSection
+            title="NCM x Produto"
+            description={
+              data
+                ? `${data.ncmSummary.productsCount} produto(s) · Qtd. ${fmtQty(
+                    data.ncmSummary.totalQuantity
+                  )} · ${fmtMoney(data.ncmSummary.totalSoldValue)}${
+                    data.ncmSummary.productsWithoutNcmCount > 0
+                      ? ` · ${data.ncmSummary.productsWithoutNcmCount} produto(s) sem NCM`
+                      : ""
+                  }`
+                : "NCM cadastral atual (sync Nomus) por produto vendido no período."
+            }
+          >
+            <div className="overflow-x-auto -mx-1">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#E5E7EB] text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                    <th className="px-3 py-2.5">NCM</th>
+                    <th className="px-3 py-2.5">Produto</th>
+                    <th className="px-3 py-2.5 text-right">Quantidade Vendida</th>
+                    <th className="px-3 py-2.5 text-right">Valor Vendido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.ncmByProduct ?? []).map((r, i) => (
+                    <tr
+                      key={`${r.productId ?? r.sku}-${i}`}
+                      className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]"
+                    >
+                      <td className="px-3 py-2.5 tabular-nums">
+                        {r.ncm ?? (
+                          <span className="rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[11px] font-semibold text-[#92400E]">
+                            Sem NCM
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {r.sku} · {r.productName}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtQty(r.quantitySold)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(r.soldValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!loading && (data?.ncmByProduct ?? []).length === 0 ? (
+              <FinanceBiEmptyState
+                title="Sem produtos"
+                description="Nenhum produto vendido no período filtrado."
+              />
+            ) : null}
           </ReportSection>
         ) : null}
 
