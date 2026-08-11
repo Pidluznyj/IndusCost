@@ -42,23 +42,30 @@ const SalesOrderDetailDialog = React.lazy(() =>
   }))
 );
 
-const STATUS_META: Record<InvestedCapitalRecoveryStatus, { label: string; className: string }> = {
-  SEM_RECUPERACAO: { label: "Sem recuperação", className: "bg-red-100 text-red-800" },
-  EM_RECUPERACAO: { label: "Em recuperação", className: "bg-amber-100 text-amber-800" },
-  CAPITAL_RECUPERADO: { label: "Capital recuperado", className: "bg-emerald-100 text-emerald-800" },
-  DADOS_INSUFICIENTES: { label: "Dados insuficientes", className: "bg-zinc-200 text-zinc-700" },
+const STATUS_META: Record<
+  InvestedCapitalRecoveryStatus,
+  { label: string; dotClass: string; className: string }
+> = {
+  SEM_RECUPERACAO: { label: "Sem recuperação", dotClass: "bg-rose-500 shadow-rose-200", className: "bg-red-100 text-red-800" },
+  EM_RECUPERACAO: { label: "Em recuperação", dotClass: "bg-amber-500 shadow-amber-200", className: "bg-amber-100 text-amber-800" },
+  CAPITAL_RECUPERADO: { label: "Capital recuperado", dotClass: "bg-emerald-500 shadow-emerald-200", className: "bg-emerald-100 text-emerald-800" },
+  DADOS_INSUFICIENTES: { label: "Dados insuficientes", dotClass: "bg-zinc-400 shadow-zinc-200", className: "bg-zinc-200 text-zinc-700" },
 };
 
 function StatusBadge({ status }: { status: InvestedCapitalRecoveryStatus }) {
   const meta = STATUS_META[status];
   return (
     <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap",
-        meta.className
-      )}
+      title={meta.label}
+      aria-label={meta.label}
+      className="inline-flex items-center justify-center p-1 cursor-help"
     >
-      {meta.label}
+      <span
+        className={cn(
+          "h-2.5 w-2.5 rounded-full ring-2 ring-background shadow-xs",
+          meta.dotClass
+        )}
+      />
     </span>
   );
 }
@@ -719,7 +726,7 @@ export function InvestedCapitalRecoveryPage() {
                         <SortIcon active={sortKey === "forecastCapitalRecoveryDate"} dir={sortDir} />
                       </div>
                     </th>
-                    <th className="sticky top-0 z-20 bg-slate-900 px-2 py-2 whitespace-nowrap" title="Status Econômico">Status Econ.</th>
+                    <th className="sticky top-0 z-20 bg-slate-900 px-2 py-2 text-center whitespace-nowrap" title="Status Econômico">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -781,7 +788,7 @@ export function InvestedCapitalRecoveryPage() {
                       <td className="px-2 py-1.5 whitespace-nowrap text-muted-foreground">
                         {formatMonthYear(row.forecastCapitalRecoveryDate)}
                       </td>
-                      <td className="px-2 py-1.5 whitespace-nowrap">
+                      <td className="px-2 py-1.5 text-center whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </td>
                     </tr>
