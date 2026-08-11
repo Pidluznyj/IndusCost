@@ -865,11 +865,11 @@
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table col.col-order { width: 7.5%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-order { width: 7.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 17.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-client { width: 20%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money { width: 7%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-num { width: 4.5%; }
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-date { width: 4.5%; }
-  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 5.5%; }
+  body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-status { width: 3%; }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table th,
   body.sales-orders-icr-print-route .sales-orders-icr-print-table td {
@@ -882,11 +882,14 @@
   }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table thead th {
-    background: #e2e8f0;
+    background: #0f172a;
+    color: #f8fafc;
     font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     text-align: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   body.sales-orders-icr-print-route .sales-orders-icr-print-table .col-money,

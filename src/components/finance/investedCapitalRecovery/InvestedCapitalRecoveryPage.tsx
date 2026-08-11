@@ -167,11 +167,17 @@ function defaultFilters(): InvestedCapitalRecoveryUiFilters {
 
 function buildQuery(filters: InvestedCapitalRecoveryUiFilters): string {
   const params = new URLSearchParams();
+  const hasDateRange = !!filters.startDate || !!filters.endDate;
+
   if (filters.startDate) params.set("startDate", filters.startDate);
   if (filters.endDate) params.set("endDate", filters.endDate);
   if (filters.q) params.set("q", filters.q);
-  if (filters.year) params.set("year", filters.year);
-  if (filters.month) params.set("month", filters.month);
+  
+  if (!hasDateRange) {
+    if (filters.year) params.set("year", filters.year);
+    if (filters.month) params.set("month", filters.month);
+  }
+
   if (filters.customerId) params.set("customerId", filters.customerId);
   if (filters.economicStatus) params.set("economicStatus", filters.economicStatus);
   return params.toString();
@@ -179,14 +185,18 @@ function buildQuery(filters: InvestedCapitalRecoveryUiFilters): string {
 
 function buildFilterLabels(filters: InvestedCapitalRecoveryUiFilters): string {
   const lines: string[] = [];
-  if (filters.year) lines.push(`Ano: ${filters.year}`);
-  if (filters.month) {
-    const label = FINANCE_AR_MONTH_OPTIONS.find((o) => o.value === filters.month)?.label;
-    if (label) lines.push(`Mês: ${label}`);
-  }
-  if (filters.startDate || filters.endDate) {
+  const hasDateRange = !!filters.startDate || !!filters.endDate;
+
+  if (!hasDateRange) {
+    if (filters.year) lines.push(`Ano: ${filters.year}`);
+    if (filters.month) {
+      const label = FINANCE_AR_MONTH_OPTIONS.find((o) => o.value === filters.month)?.label;
+      if (label) lines.push(`Mês: ${label}`);
+    }
+  } else {
     lines.push(`Emissão: ${filters.startDate || "…"} — ${filters.endDate || "…"}`);
   }
+
   if (filters.customerName) lines.push(`Cliente: ${filters.customerName}`);
   if (filters.q) lines.push(`Busca: ${filters.q}`);
   if (filters.economicStatus) lines.push(`Status econômico: ${STATUS_META[filters.economicStatus].label}`);

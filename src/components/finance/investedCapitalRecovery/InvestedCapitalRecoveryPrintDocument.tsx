@@ -21,11 +21,11 @@ import type {
   InvestedCapitalRecoveryStatus,
 } from "@/src/components/finance/investedCapitalRecovery/investedCapitalRecoveryTypes";
 
-const STATUS_PRINT_LABELS: Record<InvestedCapitalRecoveryStatus, string> = {
-  SEM_RECUPERACAO: "Sem recup.",
-  EM_RECUPERACAO: "Em recup.",
-  CAPITAL_RECUPERADO: "Recuperado",
-  DADOS_INSUFFICIENTES: "Sem dados",
+const STATUS_META: Record<InvestedCapitalRecoveryStatus, { label: string; dotClass: string }> = {
+  SEM_RECUPERACAO: { label: "Sem recuperação", dotClass: "bg-rose-500 shadow-rose-200" },
+  EM_RECUPERACAO: { label: "Em recuperação", dotClass: "bg-amber-500 shadow-amber-200" },
+  CAPITAL_RECUPERADO: { label: "Capital recuperado", dotClass: "bg-emerald-500 shadow-emerald-200" },
+  DADOS_INSUFICIENTES: { label: "Dados insuficientes", dotClass: "bg-zinc-400 shadow-zinc-200" },
 };
 
 function money(value: number | null): string {
@@ -35,10 +35,40 @@ function money(value: number | null): string {
 
 function moneyTable(value: number | null): string {
   if (value == null) return "—";
-  return value.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return formatFinanceCurrency(value);
+}
+
+function PrintStatusBadge({ status }: { status: InvestedCapitalRecoveryStatus }) {
+  const meta = STATUS_META[status];
+  return (
+    <div className="flex items-center justify-center">
+      <div 
+        className={`h-2.5 w-2.5 rounded-full ${meta.dotClass}`} 
+        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} 
+        title={meta.label}
+      />
+    </div>
+  );
+}
+
+function PrintProgressBar({ percent }: { percent: number | null }) {
+  if (percent == null || !Number.isFinite(percent)) return <span>—</span>;
+  const clamped = Math.min(Math.max(percent, 0), 100);
+  const colorClass = clamped >= 100 ? "bg-emerald-500" : clamped > 0 ? "bg-amber-500" : "bg-zinc-200";
+  return (
+    <div className="flex items-center gap-1 justify-end">
+      <div 
+        className="h-1.5 w-6 bg-slate-200 rounded-full overflow-hidden shrink-0" 
+        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+      >
+        <div 
+          className={`h-full ${colorClass}`} 
+          style={{ width: `${clamped}%`, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} 
+        />
+      </div>
+      <span>{clamped.toFixed(0)}%</span>
+    </div>
+  );
 }
 
 function formatMonthYear(dateStr?: string | null): string {
@@ -47,12 +77,12 @@ function formatMonthYear(dateStr?: string | null): string {
   if (!trimmed) return "—";
   if (trimmed.length === 7 && trimmed.includes("-")) {
     const [year, month] = trimmed.split("-");
-    return `${month}/${year}`;
+    return `${month}/${year.slice(-2)}`;
   }
   const d = new Date(trimmed);
   if (isNaN(d.getTime())) return "—";
   const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
+  const year = String(d.getFullYear()).slice(-2);
   return `${month}/${year}`;
 }
 
@@ -233,15 +263,15 @@ export function InvestedCapitalRecoveryPrintDocument({
                     <td className="col-money">{moneyTable(row.totalTaxes)}</td>
                     <td className="col-money">{moneyTable(row.industrialCost)}</td>
                     <td className="col-money">{moneyTable(row.actualReceived)}</td>
-                    <td className="col-money">{moneyTable(row.capitalRecovered)}</td>
-                    <td className="col-money">{moneyTable(row.moneyOnStreet)}</td>
+                    <td className="col-money text-emerald-600 font-medium">{moneyTable(row.capitalRecovered)}</td>
+                    <td className="col-money text-rose-600 font-medium">{moneyTable(row.moneyOnStreet)}</td>
                     <td className="col-money">{moneyTable(row.outstandingReceivable)}</td>
                     <td className="col-num">
-                      {row.recoveryPercent == null ? "—" : `${row.recoveryPercent.toFixed(0)}%`}
+                      <PrintProgressBar percent={row.recoveryPercent} />
                     </td>
                     <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
                     <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
-                    <td className="col-status">{STATUS_PRINT_LABELS[row.status]}</td>
+                    <td className="col-status"><PrintStatusBadge status={row.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -253,8 +283,8 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <td className="col-money">{moneyTable(kpis.totalTaxesAnalyzed)}</td>
                   <td className="col-money">{moneyTable(kpis.totalIndustrialCostAnalyzed)}</td>
                   <td className="col-money">{moneyTable(totalActualReceived)}</td>
-                  <td className="col-money">{moneyTable(kpis.capitalRecoveredTotal)}</td>
-                  <td className="col-money">{moneyTable(kpis.moneyOnStreetToday)}</td>
+                  <td className="col-money text-emerald-600 font-medium">{moneyTable(kpis.capitalRecoveredTotal)}</td>
+                  <td className="col-money text-rose-600 font-medium">{moneyTable(kpis.moneyOnStreetToday)}</td>
                   <td className="col-money">{moneyTable(kpis.totalOutstandingReceivable)}</td>
                   <td className="col-num" colSpan={4} />
                 </tr>
