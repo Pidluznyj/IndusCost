@@ -36,19 +36,19 @@ export async function loadRawMaterialCostCenterSpotlight(
 
   try {
     const years = yearsNeededForSpotlight(ytdYear, referenceDate);
-    const [roleMap, ...dashboards] = await Promise.all([
-      loadDreCostCenterRoleMap(prisma),
-      ...years.map((year) =>
-        buildFinanceCostCenterDashboardDefault(
-          buildExecutiveReportCostCenterDashboardFilters({
-            year,
-            month: null,
-            companyName: input.companyName,
-          }),
-          referenceDate
-        )
-      ),
-    ]);
+    const roleMap = await loadDreCostCenterRoleMap(prisma);
+    const dashboards = [];
+    for (const year of years) {
+      const dashboard = await buildFinanceCostCenterDashboardDefault(
+        buildExecutiveReportCostCenterDashboardFilters({
+          year,
+          month: null,
+          companyName: input.companyName,
+        }),
+        referenceDate
+      );
+      dashboards.push(dashboard);
+    }
 
     const byCostCenter: FinanceCashFlowRawMaterialCcSpendRow[] = [];
     for (const dashboard of dashboards) {
