@@ -77,6 +77,8 @@ export type SoldProductsRankingRow = {
   productId: string;
   productCode: string | null;
   productName: string;
+  /** NCM cadastral atual do Product (sync Nomus) — null é exibido como "Sem NCM". */
+  ncm: string | null;
   quantitySold: number;
   amountSold: number;
   averageUnitPrice: number | null;

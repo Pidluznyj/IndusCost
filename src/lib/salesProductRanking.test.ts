@@ -273,6 +273,7 @@ describe("salesProductRanking", () => {
           productId: "p1",
           productCode: "SKU1",
           productName: "Produto 1",
+          ncm: "39269090",
           quantitySold: 10,
           amountSold: 100,
           averageUnitPrice: 10,

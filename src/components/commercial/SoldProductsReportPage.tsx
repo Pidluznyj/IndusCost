@@ -294,6 +294,7 @@ function buildRankingCsv(rows: SoldProductsRankingRow[]): string {
     "Posição",
     "Código",
     "Produto",
+    "NCM",
     "Quantidade vendida",
     "Valor vendido",
     "Preço médio",
@@ -308,6 +309,7 @@ function buildRankingCsv(rows: SoldProductsRankingRow[]): string {
       r.rank,
       r.productCode ?? "",
       `"${r.productName.replace(/"/g, '""')}"`,
+      r.ncm ?? "Sem NCM",
       r.quantitySold,
       r.amountSold,
       r.averageUnitPrice ?? "",
@@ -1070,7 +1072,7 @@ export function SoldProductsReportPage() {
                   label="Busca rápida no ranking"
                   value={rankingSearch}
                   onChange={setRankingSearch}
-                  placeholder="Filtrar por código ou nome do produto…"
+                  placeholder="Filtrar por código, nome ou NCM do produto…"
                 />
               </div>
               <RankingTable
@@ -1329,6 +1331,7 @@ function RankingTable({
             <SortableTh label="#" sortKey="rank" sortState={sortState} onSort={onSort} className="w-12" />
             <SortableTh label="Código" sortKey="productCode" sortState={sortState} onSort={onSort} className="w-28" />
             <SortableTh label="Produto" sortKey="productName" sortState={sortState} onSort={onSort} className="min-w-[220px]" />
+            <SortableTh label="NCM" sortKey="ncm" sortState={sortState} onSort={onSort} className="w-28" />
             <SortableTh label="Qtd vendida" sortKey="quantitySold" sortState={sortState} onSort={onSort} align="right" />
             <SortableTh label="Valor vendido" sortKey="amountSold" sortState={sortState} onSort={onSort} align="right" />
             <SortableTh label="Preço médio" sortKey="averageUnitPrice" sortState={sortState} onSort={onSort} align="right" />
@@ -1346,7 +1349,7 @@ function RankingTable({
           {loading
             ? Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-[#F3F4F6] animate-pulse">
-                  <td colSpan={12} className="px-3 py-4">
+                  <td colSpan={13} className="px-3 py-4">
                     <div className="h-4 bg-[#F3F4F6] rounded w-full" />
                   </td>
                 </tr>
@@ -1369,6 +1372,13 @@ function RankingTable({
                     >
                       {r.productName}
                     </Link>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-[#374151] whitespace-nowrap">
+                    {r.ncm ?? (
+                      <span className="rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[11px] font-semibold text-[#92400E]">
+                        Sem NCM
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-[#111827]">
                     {fmtQty(r.quantitySold)}

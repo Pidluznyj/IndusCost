@@ -55,6 +55,7 @@ export function buildSalesProductRankingExportWorkbook(
         Posição: r.rank,
         "Código produto": r.productCode ?? "",
         Produto: r.productName,
+        NCM: r.ncm ?? "Sem NCM",
         "Quantidade vendida": r.quantitySold,
         "Valor vendido": r.amountSold,
         "Preço médio": numOrBlank(r.averageUnitPrice),

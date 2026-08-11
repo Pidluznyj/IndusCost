@@ -25,6 +25,7 @@ function rankingRow(partial: Partial<SoldProductsRankingRow> & Pick<SoldProducts
     rank: partial.rank ?? 1,
     productCode: partial.productCode ?? "P1",
     productName: partial.productName ?? "Produto Alpha",
+    ncm: partial.ncm ?? null,
     quantitySold: partial.quantitySold ?? 10,
     amountSold: partial.amountSold ?? 100,
     averageUnitPrice: partial.averageUnitPrice ?? 10,
@@ -235,6 +236,18 @@ describe("soldProductsTableSort", () => {
     const result = prepareRankingTableRows(rows, "parafuso", { key: "quantitySold", direction: "desc" });
     assert.equal(result.length, 2);
     assert.deepEqual(result.map((r) => r.productId), ["b", "a"]);
+  });
+
+  it("busca rápida também localiza por NCM; ordenação pela coluna NCM funciona", () => {
+    const rows = [
+      rankingRow({ productId: "a", productName: "Tampa", ncm: "39269090" }),
+      rankingRow({ productId: "b", productName: "Caixa", ncm: "48191000" }),
+      rankingRow({ productId: "c", productName: "Sem Cadastro", ncm: null }),
+    ];
+    const found = prepareRankingTableRows(rows, "48191000", { key: "quantitySold", direction: "desc" });
+    assert.deepEqual(found.map((r) => r.productId), ["b"]);
+    const sorted = prepareRankingTableRows(rows, "", { key: "ncm", direction: "asc" });
+    assert.deepEqual(sorted.map((r) => r.ncm), ["39269090", "48191000", null]);
   });
 
   it("CSV do ranking usa lista ordenada/filtrada localmente", () => {

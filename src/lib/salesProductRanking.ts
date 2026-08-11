@@ -174,6 +174,7 @@ type ProductAgg = {
   productId: string;
   productCode: string | null;
   productName: string;
+  ncm: string | null;
   quantitySold: number;
   amountSold: number;
   orderIds: Set<string>;
@@ -199,6 +200,7 @@ export function aggregateSoldProductsRanking(
         productId: line.productId,
         productCode: line.productCode,
         productName: line.productName,
+        ncm: line.productNcm,
         quantitySold: 0,
         amountSold: 0,
         orderIds: new Set(),
@@ -221,6 +223,7 @@ export function aggregateSoldProductsRanking(
     productId: agg.productId,
     productCode: agg.productCode,
     productName: agg.productName,
+    ncm: agg.ncm,
     quantitySold: agg.quantitySold,
     amountSold: agg.amountSold,
     averageUnitPrice: computeSoldProductsAverageUnitPrice(agg.quantitySold, agg.amountSold),

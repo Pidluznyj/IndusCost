@@ -23,6 +23,7 @@ export type RankingSortKey =
   | "rank"
   | "productCode"
   | "productName"
+  | "ncm"
   | "quantitySold"
   | "amountSold"
   | "averageUnitPrice"
@@ -159,6 +160,7 @@ export const RANKING_SORT_ACCESSORS: SortAccessor<SoldProductsRankingRow, Rankin
   rank: { get: (r) => r.rank, kind: "number", defaultDirection: "asc" },
   productCode: { get: (r) => r.productCode, kind: "text", defaultDirection: "asc" },
   productName: { get: (r) => r.productName, kind: "text", defaultDirection: "asc" },
+  ncm: { get: (r) => r.ncm, kind: "text", defaultDirection: "asc" },
   quantitySold: { get: (r) => r.quantitySold, kind: "number", defaultDirection: "desc" },
   amountSold: { get: (r) => r.amountSold, kind: "number", defaultDirection: "desc" },
   averageUnitPrice: { get: (r) => r.averageUnitPrice, kind: "number", defaultDirection: "desc" },
@@ -248,7 +250,9 @@ export function filterRankingRowsBySearch(
   const term = query.trim().toLowerCase();
   if (!term) return rows;
   return rows.filter((row) => {
-    const haystack = [row.productName, row.productCode ?? ""].join(" ").toLowerCase();
+    const haystack = [row.productName, row.productCode ?? "", row.ncm ?? ""]
+      .join(" ")
+      .toLowerCase();
     return haystack.includes(term);
   });
 }
