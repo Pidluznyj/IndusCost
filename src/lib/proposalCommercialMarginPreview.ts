@@ -147,7 +147,15 @@ function commercialMarginItemFromStoredSnapshot(
 }
 
 /**
- * Calcula prévia de um item: prioriza formação congelada; senão formação em sessão.
+ * Calcula prévia de um item: prioriza formação AO VIVO (buscada nesta sessão,
+ * refletindo a tabela comercial vigente hoje); o snapshot congelado só entra
+ * como fallback temporário quando ainda não há formação em sessão (ex.: item
+ * recém-carregado, antes do hydrate buscar a formação atual). Decisão de
+ * negócio: a Proposta deve recalcular sempre "ao vivo" — igual ao Pedido de
+ * Venda já faz (resolve a tabela vigente na data de emissão) — nunca travar
+ * na tabela comercial que estava publicada quando o item foi formado pela
+ * primeira vez. Ver `hydrateProposalItemsCommercialFormation` no
+ * ProposalModule, que agora sempre busca a formação atual ao abrir/editar.
  */
 export function previewProposalItemCommercialMargin(
   item: ProposalItemCommercialPreviewInput
@@ -166,6 +174,51 @@ export function previewProposalItemCommercialMargin(
       ? Number(item.discountValue)
       : null;
 
+  const formation = item.commercialFormation;
+  if (formation && formation.tiers.length >= 2) {
+    const marginItem = calculateProposalItemCommercialMargin({
+      quantity: qty,
+      referenceTableUnitPrice: item.suggestedPrice ?? null,
+      negotiatedGrossUnitPrice: negotiated,
+      informedDiscountRate: discountPerc,
+      informedDiscountValue: discountValue,
+      frozenCostUnit: formation.frozenCostUnit,
+      taxRate: formation.taxRate,
+      freightRate: formation.freightRate,
+      freightAbsoluteUnit: formation.freightAbsoluteUnit,
+      otherVariablesRate: formation.otherVariablesRate,
+      tiers: formation.tiers,
+      formationContextId: formation.formationContextId,
+      referenceDate: formation.referenceDate,
+    });
+
+    const freeze = buildProposalCommercialMarginFreeze({
+      formationContextId: formation.formationContextId,
+      priceTableId: formation.priceTableId ?? item.priceTableId ?? null,
+      priceTableVersionId: formation.priceTableVersionId ?? item.priceTableVersionId ?? null,
+      referenceDate: formation.referenceDate,
+      productId: item.productId ?? null,
+      marginItem,
+      frozenCostUnit: { presence: "value", value: formation.frozenCostUnit },
+      taxRate: { presence: "value", value: formation.taxRate },
+      freightRate: { presence: "value", value: formation.freightRate },
+      freightAbsoluteUnit: { presence: "value", value: formation.freightAbsoluteUnit },
+      otherVariablesRate: { presence: "value", value: formation.otherVariablesRate },
+      informedDiscountRate:
+        discountPerc == null ? { presence: "null" } : { presence: "value", value: discountPerc },
+      informedDiscountValue:
+        discountValue == null ? { presence: "null" } : { presence: "value", value: discountValue },
+      tiers: formation.tiers,
+    });
+
+    return {
+      marginItem,
+      snapshot: toProposalCommercialPricingSnapshot(freeze),
+    };
+  }
+
+  // Fallback: sem formação ao vivo nesta sessão ainda — usa o snapshot
+  // congelado só para não piscar "indisponível" durante o carregamento.
   const stored = resolveProposalItemCommercialPricingSnapshot({
     commercialPricingSnapshotJson: item.commercialPricingSnapshotJson,
     pricingSnapshotJson: item.pricingSnapshotJson,
@@ -193,61 +246,18 @@ export function previewProposalItemCommercialMargin(
     return { marginItem: fromStored, snapshot: stored };
   }
 
-  const formation = item.commercialFormation;
-  if (!formation || formation.tiers.length < 2) {
-    // Tabela de preço é opcional: margem usa formação do produto + preço negociado.
-    const reason: "INCOMPLETE_MARGIN_TIERS" | "PRODUCT_WITHOUT_PRICE_FORMATION" =
-      formation && formation.tiers.length > 0
-        ? "INCOMPLETE_MARGIN_TIERS"
-        : "PRODUCT_WITHOUT_PRICE_FORMATION";
-    const marginItem = unavailableProposalCommercialMarginItem({
-      quantity: qty,
-      referenceTableUnitPrice: item.suggestedPrice ?? null,
-      negotiatedGrossUnitPrice: negotiated,
-      reasonCode: reason,
-    });
-    return { marginItem, snapshot: null };
-  }
-
-  const marginItem = calculateProposalItemCommercialMargin({
+  // Tabela de preço é opcional: margem usa formação do produto + preço negociado.
+  const reason: "INCOMPLETE_MARGIN_TIERS" | "PRODUCT_WITHOUT_PRICE_FORMATION" =
+    formation && formation.tiers.length > 0
+      ? "INCOMPLETE_MARGIN_TIERS"
+      : "PRODUCT_WITHOUT_PRICE_FORMATION";
+  const marginItem = unavailableProposalCommercialMarginItem({
     quantity: qty,
     referenceTableUnitPrice: item.suggestedPrice ?? null,
     negotiatedGrossUnitPrice: negotiated,
-    informedDiscountRate: discountPerc,
-    informedDiscountValue: discountValue,
-    frozenCostUnit: formation.frozenCostUnit,
-    taxRate: formation.taxRate,
-    freightRate: formation.freightRate,
-    freightAbsoluteUnit: formation.freightAbsoluteUnit,
-    otherVariablesRate: formation.otherVariablesRate,
-    tiers: formation.tiers,
-    formationContextId: formation.formationContextId,
-    referenceDate: formation.referenceDate,
+    reasonCode: reason,
   });
-
-  const freeze = buildProposalCommercialMarginFreeze({
-    formationContextId: formation.formationContextId,
-    priceTableId: formation.priceTableId ?? item.priceTableId ?? null,
-    priceTableVersionId: formation.priceTableVersionId ?? item.priceTableVersionId ?? null,
-    referenceDate: formation.referenceDate,
-    productId: item.productId ?? null,
-    marginItem,
-    frozenCostUnit: { presence: "value", value: formation.frozenCostUnit },
-    taxRate: { presence: "value", value: formation.taxRate },
-    freightRate: { presence: "value", value: formation.freightRate },
-    freightAbsoluteUnit: { presence: "value", value: formation.freightAbsoluteUnit },
-    otherVariablesRate: { presence: "value", value: formation.otherVariablesRate },
-    informedDiscountRate:
-      discountPerc == null ? { presence: "null" } : { presence: "value", value: discountPerc },
-    informedDiscountValue:
-      discountValue == null ? { presence: "null" } : { presence: "value", value: discountValue },
-    tiers: formation.tiers,
-  });
-
-  return {
-    marginItem,
-    snapshot: toProposalCommercialPricingSnapshot(freeze),
-  };
+  return { marginItem, snapshot: null };
 }
 
 export function previewProposalCommercialMargins(
