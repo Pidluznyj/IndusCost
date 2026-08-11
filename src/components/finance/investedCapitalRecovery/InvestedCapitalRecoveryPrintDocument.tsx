@@ -21,16 +21,24 @@ import type {
   InvestedCapitalRecoveryStatus,
 } from "@/src/components/finance/investedCapitalRecovery/investedCapitalRecoveryTypes";
 
-const STATUS_LABELS: Record<InvestedCapitalRecoveryStatus, string> = {
-  SEM_RECUPERACAO: "Sem recuperação",
-  EM_RECUPERACAO: "Em recuperação",
-  CAPITAL_RECUPERADO: "Capital recuperado",
-  DADOS_INSUFICIENTES: "Dados insuficientes",
+const STATUS_PRINT_LABELS: Record<InvestedCapitalRecoveryStatus, string> = {
+  SEM_RECUPERACAO: "Sem recup.",
+  EM_RECUPERACAO: "Em recup.",
+  CAPITAL_RECUPERADO: "Recuperado",
+  DADOS_INSUFFICIENTES: "Sem dados",
 };
 
 function money(value: number | null): string {
   if (value == null) return "—";
   return formatFinanceCurrency(value);
+}
+
+function moneyTable(value: number | null): string {
+  if (value == null) return "—";
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatMonthYear(dateStr?: string | null): string {
@@ -189,7 +197,7 @@ export function InvestedCapitalRecoveryPrintDocument({
         <section className="sales-orders-print-section sales-orders-print-section--detail">
           <h2 className="sales-orders-print-section-title">
             Detalhamento analítico ({formatFinanceInteger(rows.length)}
-            {payload.truncated ? ` de ${formatFinanceInteger(payload.totalOrdersInScope)}` : ""})
+            {payload.truncated ? ` de ${formatFinanceInteger(payload.totalOrdersInScope)}` : ""}) — Valores em R$
           </h2>
           {rows.length === 0 ? (
             <p className="sales-orders-print-empty">
@@ -210,8 +218,8 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <th className="col-money" title="Capital na Rua">Cap. na Rua</th>
                   <th className="col-money" title="A Receber">A Receber</th>
                   <th className="col-num" title="Percentual Recuperado">% Rec.</th>
-                  <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou em</th>
-                  <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev. Rec.</th>
+                  <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou</th>
+                  <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev.</th>
                   <th className="col-status" title="Status Econômico">Status</th>
                 </tr>
               </thead>
@@ -220,34 +228,34 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <tr key={row.salesOrderId}>
                     <td className="col-order">{row.orderCode}</td>
                     <td className="col-client">{displayFinanceText(row.customerName)}</td>
-                    <td className="col-money">{money(row.saleValue)}</td>
-                    <td className="col-money">{money(row.investedCapital)}</td>
-                    <td className="col-money">{money(row.totalTaxes)}</td>
-                    <td className="col-money">{money(row.industrialCost)}</td>
-                    <td className="col-money">{money(row.actualReceived)}</td>
-                    <td className="col-money">{money(row.capitalRecovered)}</td>
-                    <td className="col-money">{money(row.moneyOnStreet)}</td>
-                    <td className="col-money">{money(row.outstandingReceivable)}</td>
+                    <td className="col-money">{moneyTable(row.saleValue)}</td>
+                    <td className="col-money">{moneyTable(row.investedCapital)}</td>
+                    <td className="col-money">{moneyTable(row.totalTaxes)}</td>
+                    <td className="col-money">{moneyTable(row.industrialCost)}</td>
+                    <td className="col-money">{moneyTable(row.actualReceived)}</td>
+                    <td className="col-money">{moneyTable(row.capitalRecovered)}</td>
+                    <td className="col-money">{moneyTable(row.moneyOnStreet)}</td>
+                    <td className="col-money">{moneyTable(row.outstandingReceivable)}</td>
                     <td className="col-num">
                       {row.recoveryPercent == null ? "—" : `${row.recoveryPercent.toFixed(0)}%`}
                     </td>
                     <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
                     <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
-                    <td className="col-status">{STATUS_LABELS[row.status]}</td>
+                    <td className="col-status">{STATUS_PRINT_LABELS[row.status]}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="sales-orders-print-total-row">
                   <td colSpan={2}>Total</td>
-                  <td className="col-money">{money(kpis.totalSaleValueAnalyzed)}</td>
-                  <td className="col-money">{money(kpis.investedCapitalAnalyzedTotal)}</td>
-                  <td className="col-money">{money(kpis.totalTaxesAnalyzed)}</td>
-                  <td className="col-money">{money(kpis.totalIndustrialCostAnalyzed)}</td>
-                  <td className="col-money">{money(totalActualReceived)}</td>
-                  <td className="col-money">{money(kpis.capitalRecoveredTotal)}</td>
-                  <td className="col-money">{money(kpis.moneyOnStreetToday)}</td>
-                  <td className="col-money">{money(kpis.totalOutstandingReceivable)}</td>
+                  <td className="col-money">{moneyTable(kpis.totalSaleValueAnalyzed)}</td>
+                  <td className="col-money">{moneyTable(kpis.investedCapitalAnalyzedTotal)}</td>
+                  <td className="col-money">{moneyTable(kpis.totalTaxesAnalyzed)}</td>
+                  <td className="col-money">{moneyTable(kpis.totalIndustrialCostAnalyzed)}</td>
+                  <td className="col-money">{moneyTable(totalActualReceived)}</td>
+                  <td className="col-money">{moneyTable(kpis.capitalRecoveredTotal)}</td>
+                  <td className="col-money">{moneyTable(kpis.moneyOnStreetToday)}</td>
+                  <td className="col-money">{moneyTable(kpis.totalOutstandingReceivable)}</td>
                   <td className="col-num" colSpan={4} />
                 </tr>
               </tfoot>
