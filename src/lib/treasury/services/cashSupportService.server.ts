@@ -319,6 +319,23 @@ export function createCashSupportService(deps: {
           });
           continue;
         }
+        // companyCode do ACEITE = empresa da conta do movimento (linha do
+        // read model), nunca o global do período: ambiente multi-empresa
+        // (Lazarios/Koppetel/SM) tem contas de empresas diferentes na mesma
+        // janela, e o accept valida companyCode × conta.
+        const legCompanyCodes = new Set(
+          legRows.map(({ row }) => row!.companyContext?.companyCode ?? null)
+        );
+        const movementCompanyCode = [...legCompanyCodes][0];
+        if (legCompanyCodes.size !== 1 || !movementCompanyCode) {
+          failures.push({
+            suggestionKey: candidate.suggestionKey,
+            movementId: candidate.movementId,
+            message:
+              "Movimento sem empresa resolvida (ou combinação entre empresas) — requer conciliação manual.",
+          });
+          continue;
+        }
         // Data do match = perna mais recente (última entrada que fechou o título).
         const matchedCivilDate = legRows
           .map(({ row }) => row!.bankDate!)
@@ -326,7 +343,7 @@ export function createCashSupportService(deps: {
           .at(-1)!;
         try {
           const { match } = await reconciliationService.accept(reconciliationActor, {
-            companyCode,
+            companyCode: movementCompanyCode,
             accountId: [...accountIds][0]!,
             matchedCivilDate,
             justification: buildCashSupportAutoJustification(candidate, decision.rule),

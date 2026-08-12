@@ -351,7 +351,10 @@ export function createTreasuryReconciliationMatchRepository(
         (a, b) => a.key1 - b.key1 || a.key2 - b.key2
       );
       for (const { key1, key2 } of ordered) {
-        await db.$queryRaw`SELECT pg_advisory_xact_lock(${key1}::int, ${key2}::int)`;
+        // pg_advisory_xact_lock retorna `void` e o Prisma não deserializa
+        // coluna void em $queryRaw — o cast ::text mantém o lock e devolve
+        // um valor deserializável (bug visto em produção no auto-run).
+        await db.$queryRaw`SELECT pg_advisory_xact_lock(${key1}::int, ${key2}::int)::text AS locked`;
       }
     },
 

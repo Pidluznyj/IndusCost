@@ -435,19 +435,45 @@ export function CashSupportWorkspacePage({
       ) : null}
       {autoRunResult ? (
         <div
-          className="mb-3 rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 text-xs text-[#065F46]"
+          className={cn(
+            "mb-3 rounded-lg border px-3 py-2 text-xs",
+            autoRunResult.failures.length > 0
+              ? "border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]"
+              : "border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]"
+          )}
           data-testid="auto-reconcile-result"
         >
-          Auto-conciliação ({autoRunResult.ruleVersion}):{" "}
-          <strong>{autoRunResult.autoAccepted}</strong> conciliado(s) agora,{" "}
-          {autoRunResult.alreadyReconciled} já existente(s),{" "}
-          {autoRunResult.needsReview} para revisar, {autoRunResult.unmatched} sem
-          candidato.
-          {autoRunResult.failures.length > 0
-            ? ` ${autoRunResult.failures.length} falha(s): ${autoRunResult.failures
-                .map((f) => f.message)
-                .join(" | ")}`
-            : ""}
+          <p>
+            Auto-conciliação ({autoRunResult.ruleVersion}):{" "}
+            <strong>{autoRunResult.autoAccepted}</strong> conciliado(s) agora,{" "}
+            {autoRunResult.alreadyReconciled} já existente(s),{" "}
+            {autoRunResult.needsReview} para revisar, {autoRunResult.unmatched}{" "}
+            sem candidato.
+          </p>
+          {autoRunResult.failures.length > 0 ? (
+            <div className="mt-1">
+              <p className="font-semibold">
+                {autoRunResult.failures.length} aceite(s) falharam:
+              </p>
+              {/* Mensagens agrupadas — 44 falhas iguais viram uma linha com contador. */}
+              <ul className="mt-0.5 list-disc pl-4">
+                {[...autoRunResult.failures
+                  .reduce((acc, f) => {
+                    acc.set(f.message, (acc.get(f.message) ?? 0) + 1);
+                    return acc;
+                  }, new Map<string, number>())
+                  .entries()]
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 5)
+                  .map(([message, count]) => (
+                    <li key={message} className="break-words">
+                      {count > 1 ? `${count}× ` : ""}
+                      {message.length > 220 ? `${message.slice(0, 220)}…` : message}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
