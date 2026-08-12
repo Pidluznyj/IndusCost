@@ -2,6 +2,11 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
+import {
+  buildNomusCustomerSnapshot,
+  mergeNomusCustomerUpdate,
+  type NomusCustomerSyncedValues,
+} from "../src/lib/nomusCustomerMerge.ts";
 import { normalizeTaxId } from "./nomusNumberParser.ts";
 
 const prisma = new PrismaClient();
@@ -193,50 +198,171 @@ function mapCustomers(raw: JsonObject[]): { eligible: EligibleCustomer[]; blocke
   return { eligible, blocked };
 }
 
-async function runDry(eligible: EligibleCustomer[]) {
-  const existing = await prisma.customer.findMany({
+/** Valores THEIRS (Nomus) no vocabulário do merge. */
+function incomingValues(c: EligibleCustomer): NomusCustomerSyncedValues {
+  return {
+    companyName: c.companyName,
+    tradeName: c.tradeName,
+    contactName: c.contactName,
+    email: c.email,
+    phone: c.phone,
+    city: c.city,
+    state: c.state,
+    // Nomus não envia status próprio neste endpoint; ACTIVE é o default de
+    // criação. No update o merge preserva INACTIVE local (edição do usuário).
+    status: "ACTIVE",
+  };
+}
+
+type ExistingCustomerRow = {
+  id: string;
+  taxId: string;
+  companyName: string;
+  tradeName: string | null;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  status: string;
+  nomusSnapshotJson: unknown;
+};
+
+/** Carrega em LOTE os clientes existentes por taxId (nunca N+1). */
+async function loadExistingByTaxId(
+  eligible: EligibleCustomer[]
+): Promise<Map<string, ExistingCustomerRow>> {
+  const rows = await prisma.customer.findMany({
     where: { taxId: { in: eligible.map((c) => c.taxId) } },
-    select: { id: true, taxId: true, companyName: true },
+    select: {
+      id: true,
+      taxId: true,
+      companyName: true,
+      tradeName: true,
+      contactName: true,
+      email: true,
+      phone: true,
+      city: true,
+      state: true,
+      status: true,
+      nomusSnapshotJson: true,
+    },
   });
-  const byTaxId = new Map(existing.map((c) => [c.taxId, c]));
+  return new Map(rows.map((r) => [r.taxId, r]));
+}
+
+function mergeFor(current: ExistingCustomerRow, c: EligibleCustomer) {
+  return mergeNomusCustomerUpdate({
+    current: {
+      companyName: current.companyName,
+      tradeName: current.tradeName,
+      contactName: current.contactName,
+      email: current.email,
+      phone: current.phone,
+      city: current.city,
+      state: current.state,
+      status: current.status,
+    },
+    incoming: incomingValues(c),
+    lastSnapshot:
+      current.nomusSnapshotJson && typeof current.nomusSnapshotJson === "object"
+        ? (current.nomusSnapshotJson as NomusCustomerSyncedValues)
+        : null,
+  });
+}
+
+async function runDry(eligible: EligibleCustomer[]) {
+  const byTaxId = await loadExistingByTaxId(eligible);
   const createsPreview: Array<{ externalId: number; taxId: string; companyName: string }> = [];
-  const updatesPreview: Array<{ id: string; externalId: number; taxId: string; companyName: string }> = [];
+  const updatesPreview: Array<{
+    id: string;
+    externalId: number;
+    taxId: string;
+    companyName: string;
+    changedFields: string[];
+    preservedFields: string[];
+  }> = [];
+  let preservedFieldCount = 0;
   for (const c of eligible) {
     const current = byTaxId.get(c.taxId);
-    if (!current) createsPreview.push({ externalId: c.externalId, taxId: c.taxId, companyName: c.companyName });
-    else updatesPreview.push({ id: current.id, externalId: c.externalId, taxId: c.taxId, companyName: c.companyName });
+    if (!current) {
+      createsPreview.push({ externalId: c.externalId, taxId: c.taxId, companyName: c.companyName });
+      continue;
+    }
+    const merge = mergeFor(current, c);
+    preservedFieldCount += merge.preservedFields.length;
+    updatesPreview.push({
+      id: current.id,
+      externalId: c.externalId,
+      taxId: c.taxId,
+      companyName: c.companyName,
+      changedFields: merge.changedFields,
+      preservedFields: merge.preservedFields,
+    });
   }
-  return { createsPreview: createsPreview.slice(0, 50), updatesPreview: updatesPreview.slice(0, 50) };
+  return {
+    createsPreview: createsPreview.slice(0, 50),
+    updatesPreview: updatesPreview.slice(0, 50),
+    preservedFieldCount,
+  };
 }
 
 async function runApply(eligible: EligibleCustomer[]): Promise<{
   created: number;
   updated: number;
+  untouched: number;
+  preservedFieldCount: number;
   affectedCustomerIds: string[];
 }> {
   let created = 0;
   let updated = 0;
+  let untouched = 0;
+  let preservedFieldCount = 0;
   const affectedCustomerIds: string[] = [];
+  const byTaxId = await loadExistingByTaxId(eligible);
+  const syncedAt = new Date();
+
   for (const c of eligible) {
-    const current = await prisma.customer.findUnique({ where: { taxId: c.taxId }, select: { id: true } });
-    const data = {
-      companyName: c.companyName,
-      tradeName: c.tradeName,
-      contactName: c.contactName,
-      email: c.email,
-      phone: c.phone,
-      city: c.city,
-      state: c.state,
-      status: "ACTIVE",
-      notes: `[NOMUS] externalPersonId=${c.externalId}`,
-    };
+    const current = byTaxId.get(c.taxId);
+    const snapshot = buildNomusCustomerSnapshot(incomingValues(c));
+
     if (current) {
-      await prisma.customer.update({ where: { id: current.id }, data });
-      updated += 1;
-      affectedCustomerIds.push(current.id);
+      // MERGE de 3 vias: edições do IndusCost são preservadas; `notes` e os
+      // campos complementares NUNCA são tocados pelo sync.
+      const merge = mergeFor(current, c);
+      preservedFieldCount += merge.preservedFields.length;
+      await prisma.customer.update({
+        where: { id: current.id },
+        data: {
+          ...merge.data,
+          nomusExternalPersonId: c.externalId,
+          nomusSnapshotJson: snapshot,
+          nomusSyncedAt: syncedAt,
+        },
+      });
+      if (merge.changedFields.length > 0) {
+        updated += 1;
+        affectedCustomerIds.push(current.id);
+      } else {
+        untouched += 1;
+      }
     } else {
       const createdCustomer = await prisma.customer.create({
-        data: { ...data, taxId: c.taxId, country: "Brasil" },
+        data: {
+          taxId: c.taxId,
+          country: "Brasil",
+          companyName: c.companyName,
+          tradeName: c.tradeName,
+          contactName: c.contactName,
+          email: c.email,
+          phone: c.phone,
+          city: c.city,
+          state: c.state,
+          status: "ACTIVE",
+          nomusExternalPersonId: c.externalId,
+          nomusSnapshotJson: snapshot,
+          nomusSyncedAt: syncedAt,
+        },
         select: { id: true },
       });
       created += 1;
@@ -246,6 +372,8 @@ async function runApply(eligible: EligibleCustomer[]): Promise<{
   return {
     created,
     updated,
+    untouched,
+    preservedFieldCount,
     affectedCustomerIds: [...new Set(affectedCustomerIds)],
   };
 }
@@ -271,6 +399,7 @@ async function main(): Promise<void> {
           blockedReasons,
           createsPreview: dry.createsPreview,
           updatesPreview: dry.updatesPreview,
+          preservedFieldCount: dry.preservedFieldCount,
           blockedPreview: blocked.slice(0, 50),
         },
         applied,

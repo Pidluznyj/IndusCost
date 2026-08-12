@@ -1118,6 +1118,14 @@ model Customer {
   personId                         String?                           @db.Uuid
   /// Pessoa canônica do contato cadastral (ex.: comprador de um PJ). Não é identidade da empresa.
   contactPersonId                  String?                           @db.Uuid
+  /// Id da pessoa no Nomus (antes era um marcador destrutivo em `notes`;
+  /// backfillado na migration 20260907120000). NULL = nunca veio do Nomus.
+  nomusExternalPersonId            Int?
+  /// Último payload MAPEADO que o Nomus enviou para este cliente — base do
+  /// merge de 3 vias do sync: local ≠ snapshot ⇒ edição do usuário, preservada.
+  nomusSnapshotJson                Json?
+  /// Instante da última sincronização Nomus que tocou esta linha.
+  nomusSyncedAt                    DateTime?                         @db.Timestamptz(6)
   CommercialActivity               CommercialActivity[]
   CrmCustomerProfile               CrmCustomerProfile?
   CrmCustomerCommercialOwner       CrmCustomerCommercialOwner?
@@ -1133,6 +1141,7 @@ model Customer {
 
   @@index([personId])
   @@index([contactPersonId])
+  @@index([nomusExternalPersonId])
 }
 
 model Proposal {
