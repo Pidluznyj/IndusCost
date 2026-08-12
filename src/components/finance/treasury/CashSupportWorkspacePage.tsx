@@ -120,15 +120,32 @@ function candidateTitlesFor(
   );
 }
 
+/** Igualdade de período — decide se há filtro editado sem aplicar. */
+export function periodsEqual(
+  a: CashSupportPeriodFilterState,
+  b: CashSupportPeriodFilterState
+): boolean {
+  return a.year === b.year && a.month === b.month && a.until === b.until;
+}
+
 export function CashSupportWorkspacePage({
   fetcher = fetchCashSupport,
 }: CashSupportWorkspacePageProps) {
   const today = useMemo(() => todayTreasuryCivilDateInSaoPaulo(), []);
-  const [period, setPeriod] = useState<CashSupportPeriodFilterState>(() => ({
-    year: Number(today.slice(0, 4)),
-    month: Number(today.slice(5, 7)),
-    until: today,
-  }));
+  const initialPeriod = useMemo<CashSupportPeriodFilterState>(
+    () => ({
+      year: Number(today.slice(0, 4)),
+      month: Number(today.slice(5, 7)),
+      until: today,
+    }),
+    [today]
+  );
+  // Padrão do sistema: editar filtro NÃO dispara consulta — só o botão
+  // Aplicar. `draftPeriod` é o que o usuário edita; `period` é o aplicado
+  // (única fonte de civilDateFrom/To e portanto de todas as cargas).
+  const [draftPeriod, setDraftPeriod] = useState<CashSupportPeriodFilterState>(initialPeriod);
+  const [period, setPeriod] = useState<CashSupportPeriodFilterState>(initialPeriod);
+  const hasUnappliedFilters = !periodsEqual(draftPeriod, period);
   const yearOptions = useMemo(() => {
     const base = Number(today.slice(0, 4));
     const out: number[] = [];
@@ -380,15 +397,23 @@ export function CashSupportWorkspacePage({
   }
 
   function handlePeriodChange(next: CashSupportPeriodFilterState) {
+    // Edita SÓ o rascunho — nenhuma consulta dispara aqui (padrão do
+    // sistema: filtro pesado só aplica no botão Aplicar).
     // Recalcula "Até" só quando Ano/Mês mudam — se o usuário editou "Até" na
     // mão (mesmo Ano/Mês), a escolha dele prevalece.
     const yearOrMonthChanged =
-      next.year !== period.year || next.month !== period.month;
-    setPeriod(
+      next.year !== draftPeriod.year || next.month !== draftPeriod.month;
+    setDraftPeriod(
       yearOrMonthChanged
         ? { ...next, until: defaultUntilFor(next.year, next.month, today) }
         : next
     );
+  }
+
+  function handleApplyFilters() {
+    if (!hasUnappliedFilters) return;
+    // Aplicar troca o período efetivo — os useEffects de carga reagem a ele.
+    setPeriod(draftPeriod);
   }
 
   const movementLabelById = useMemo(() => {
@@ -477,12 +502,31 @@ export function CashSupportWorkspacePage({
         </div>
       ) : null}
 
-      <div className="mb-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
         <CashSupportPeriodFilters
-          value={period}
+          value={draftPeriod}
           yearOptions={yearOptions}
           onChange={handlePeriodChange}
         />
+        <button
+          type="button"
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-semibold",
+            hasUnappliedFilters
+              ? "bg-primary text-primary-foreground hover:opacity-90"
+              : "cursor-default border border-border bg-muted text-muted-foreground"
+          )}
+          disabled={!hasUnappliedFilters}
+          onClick={handleApplyFilters}
+          data-testid="cash-support-apply-filters"
+        >
+          Aplicar
+        </button>
+        {hasUnappliedFilters ? (
+          <span className="text-[11px] text-muted-foreground">
+            Filtros editados — clique em Aplicar para pesquisar.
+          </span>
+        ) : null}
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1 border-b border-border" role="tablist">

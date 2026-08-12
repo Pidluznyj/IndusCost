@@ -4,6 +4,7 @@ import {
   defaultUntilFor,
   firstDayOf,
   lastDayOfMonth,
+  periodsEqual,
 } from "./CashSupportWorkspacePage.js";
 
 describe("CashSupportWorkspacePage — derivação de período", () => {
@@ -73,5 +74,25 @@ describe("CashSupportWorkspacePage — derivação de período", () => {
         );
       }
     }
+  });
+});
+
+describe("periodsEqual — filtros só aplicam no botão Aplicar", () => {
+  it("períodos iguais não habilitam o Aplicar", () => {
+    assert.equal(
+      periodsEqual(
+        { year: 2026, month: 2, until: "2026-02-28" },
+        { year: 2026, month: 2, until: "2026-02-28" }
+      ),
+      true
+    );
+  });
+
+  it("qualquer campo editado marca filtro pendente (ano, mês ou até)", () => {
+    const base = { year: 2026, month: 2 as const, until: "2026-02-28" };
+    assert.equal(periodsEqual(base, { ...base, year: 2025 }), false);
+    assert.equal(periodsEqual(base, { ...base, month: 3 }), false);
+    assert.equal(periodsEqual(base, { ...base, month: "" }), false);
+    assert.equal(periodsEqual(base, { ...base, until: "2026-02-27" }), false);
   });
 });
