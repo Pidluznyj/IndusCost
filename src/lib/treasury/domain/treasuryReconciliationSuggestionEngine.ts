@@ -24,7 +24,10 @@ import {
 import { normalizeTaxIdDigits } from "./treasuryReceivableQueryRules.js";
 
 export const TREASURY_RECONCILIATION_SUGGESTION_ALGORITHM_VERSION =
-  "1.0.0" as const;
+  "1.1.0" as const;
+
+/** Máximo de movimentos numa combinação 1 título ↔ N movimentos. */
+export const TREASURY_RECONCILIATION_MAX_MOVEMENTS_PER_COMBINATION = 4;
 
 /** Pesos (soma máxima teórica 100 com todos os sinais). */
 export const TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS = {
@@ -99,9 +102,18 @@ export type TreasuryReconciliationSuggestionAllocation = {
   suggestedAmount: TreasuryMoneyString;
 };
 
+/** Perna bancária da sugestão — quanto de cada movimento cobre o(s) título(s). */
+export type TreasuryReconciliationSuggestionMovementLeg = {
+  movementId: string;
+  suggestedAmount: TreasuryMoneyString;
+};
+
 export type TreasuryReconciliationSuggestionCandidate = {
   suggestionKey: string;
+  /** Movimento primário (primeira perna) — compat com consumidores 1-movimento. */
   movementId: string;
+  /** Todas as pernas bancárias (1 para 1:1 e N-títulos; N para 1 título ↔ N movimentos). */
+  movementLegs: TreasuryReconciliationSuggestionMovementLeg[];
   allocations: TreasuryReconciliationSuggestionAllocation[];
   totalSuggestedAmount: TreasuryMoneyString;
   /** Pontuação 0..100 (inteiro). */
@@ -431,6 +443,7 @@ function scorePair(
   return {
     suggestionKey,
     movementId: movement.id,
+    movementLegs: [{ movementId: movement.id, suggestedAmount: remaining }],
     allocations: [
       {
         side: title.side,
@@ -533,6 +546,9 @@ function findExactCombinations(
               candidates.push({
                 suggestionKey,
                 movementId: movement.id,
+                movementLegs: [
+                  { movementId: movement.id, suggestedAmount: remaining },
+                ],
                 allocations,
                 totalSuggestedAmount: remaining,
                 score,
@@ -554,6 +570,161 @@ function findExactCombinations(
   }
 
   return candidates;
+}
+
+/**
+ * 1 título ↔ N movimentos: um CR/CP coberto por vários lançamentos do
+ * extrato (ex.: 20.000 = 5.000 + 10.000 + 5.000).
+ *
+ * NÃO é subset-sum ilimitado. Pré-filtros por título:
+ *   - direção compatível (CR=CREDIT, CP=DEBIT);
+ *   - movimento elegível (não MATCHED/IGNORED) com saldo disponível;
+ *   - janela de datas (|posted − vencimento| <= dateWindowDays, quando há
+ *     vencimento);
+ *   - identidade quando disponível: movimento com contraparte/descrição que
+ *     não bate com o título (CNPJ contido ou nome >= 0.5) é descartado;
+ *     movimento sem identidade nenhuma permanece elegível;
+ *   - perna nunca maior que o saldo aberto do título.
+ * Limites: máx. 15 movimentos elegíveis por título; subsets de 2 a
+ * TREASURY_RECONCILIATION_MAX_MOVEMENTS_PER_COMBINATION (4).
+ * Só soma EXATA vira candidato — nunca inventa perna que não existe.
+ */
+function findExactMovementCombinations(
+  title: TreasuryReconciliationTitleSeed,
+  eligibleMovements: readonly TreasuryReconciliationMovementSeed[],
+  options: Required<TreasuryReconciliationSuggestionEngineOptions>
+): TreasuryReconciliationSuggestionCandidate[] {
+  const open = normalizeTreasuryMoneyString(title.openBalance);
+  if (compareTreasuryMoney(open, "0.00") <= 0) return [];
+
+  const titleTaxId = normalizeTaxIdDigits(title.counterpartyTaxId);
+  const titleName = normalizeLooseText(title.counterpartyName);
+
+  const pool: Array<{
+    movement: TreasuryReconciliationMovementSeed;
+    remaining: TreasuryMoneyString;
+    identityMatched: boolean;
+  }> = [];
+  for (const movement of eligibleMovements) {
+    if (!directionCompatible(movement.direction, title.side)) continue;
+    const remaining = movementRemainingAmount(movement);
+    if (compareTreasuryMoney(remaining, "0.00") <= 0) continue;
+    // Perna individual nunca pode exceder o saldo aberto do título.
+    if (compareTreasuryMoney(remaining, open) > 0) continue;
+    if (title.dueDate) {
+      const days = Math.abs(diffCivilDays(movement.postedCivilDate, title.dueDate));
+      if (days > options.dateWindowDays) continue;
+    }
+    const movementTaxBlob = extractDigitsBlob([
+      movement.description,
+      movement.counterpartyName,
+      movement.documentNumber,
+    ]);
+    const movementName = normalizeLooseText(
+      movement.counterpartyName ?? movement.description
+    );
+    let identityMatched = false;
+    if (titleTaxId.length >= 11 && movementTaxBlob.includes(titleTaxId)) {
+      identityMatched = true;
+    } else if (
+      movementName &&
+      titleName &&
+      treasuryNameSimilarity(movementName, titleName) >= 0.5
+    ) {
+      identityMatched = true;
+    }
+    // Movimento COM identidade que não bate com o título: fora — mesma
+    // regra do N títulos ↔ 1 movimento ("skip if completely unrelated").
+    if (!identityMatched && (movementTaxBlob || movementName)) continue;
+    pool.push({ movement, remaining, identityMatched });
+  }
+
+  if (pool.length < 2 || pool.length > 15) return [];
+
+  // Ordem estável (data, id) — legs e chave determinísticas.
+  pool.sort((a, b) => {
+    const dateCmp = a.movement.postedCivilDate.localeCompare(b.movement.postedCivilDate);
+    return dateCmp !== 0 ? dateCmp : a.movement.id.localeCompare(b.movement.id);
+  });
+
+  const candidates: TreasuryReconciliationSuggestionCandidate[] = [];
+  const maxK = Math.min(
+    TREASURY_RECONCILIATION_MAX_MOVEMENTS_PER_COMBINATION,
+    pool.length
+  );
+  for (let k = 2; k <= maxK; k += 1) {
+    const combine = (start: number, combo: typeof pool) => {
+      if (combo.length === k) {
+        let sum: TreasuryMoneyString = "0.00";
+        for (const leg of combo) sum = addTreasuryMoney(sum, leg.remaining);
+        if (compareTreasuryMoney(sum, open) !== 0) return;
+
+        let score = TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.AMOUNT_EXACT + 10;
+        const anyIdentity = combo.some((leg) => leg.identityMatched);
+        if (anyIdentity && titleTaxId.length >= 11) {
+          score += TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.TAX_ID_MATCH;
+        }
+        let docMatch = false;
+        for (const leg of combo) {
+          if (documentMatches(leg.movement, title)) docMatch = true;
+        }
+        if (docMatch) score += TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.DOCUMENT_MATCH;
+
+        const confidence = classifyConfidence(score, options);
+        if (!confidence) return;
+
+        const movementLegs = combo.map((leg) => ({
+          movementId: leg.movement.id,
+          suggestedAmount: leg.remaining,
+        }));
+        const suggestionKey = [
+          "MOV-COMBINATION",
+          title.side,
+          title.officialTitleId,
+          ...movementLegs.map((l) => l.movementId),
+        ].join("|");
+
+        candidates.push({
+          suggestionKey,
+          movementId: movementLegs[0]!.movementId,
+          movementLegs,
+          allocations: [
+            {
+              side: title.side,
+              officialTitleId: title.officialTitleId,
+              externalId: title.externalId,
+              suggestedAmount: open,
+            },
+          ],
+          totalSuggestedAmount: open,
+          score,
+          confidence,
+          reasons: ["MOVEMENT_COMBINATION_EXACT"],
+          scoreBreakdown: {
+            AMOUNT_EXACT: TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.AMOUNT_EXACT + 10,
+            DOCUMENT_MATCH: docMatch
+              ? TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.DOCUMENT_MATCH
+              : 0,
+            TAX_ID_MATCH:
+              anyIdentity && titleTaxId.length >= 11
+                ? TREASURY_RECONCILIATION_SUGGESTION_WEIGHTS.TAX_ID_MATCH
+                : 0,
+            DATE_PROXIMITY: 0,
+            NAME_SIMILAR: 0,
+            HISTORY_MATCH: 0,
+          },
+        });
+        return;
+      }
+      for (let i = start; i < pool.length; i += 1) {
+        combine(i + 1, [...combo, pool[i]!]);
+      }
+    };
+    combine(0, []);
+  }
+
+  candidates.sort(compareSuggestions);
+  return candidates.slice(0, options.maxSuggestionsPerMovement);
 }
 
 function compareSuggestions(
@@ -590,12 +761,15 @@ export function runTreasuryReconciliationSuggestionEngine(
 
   const suggestions: TreasuryReconciliationSuggestionCandidate[] = [];
   const unmatchedMovementIds: string[] = [];
+  const eligibleMovements: TreasuryReconciliationMovementSeed[] = [];
+  const movementsWithoutOwnCandidate = new Set<string>();
 
   for (const movement of input.movements) {
     if (!isMovementEligible(movement)) {
       unmatchedMovementIds.push(movement.id);
       continue;
     }
+    eligibleMovements.push(movement);
 
     const candidates: TreasuryReconciliationSuggestionCandidate[] = [];
     for (const title of eligibleTitles) {
@@ -608,11 +782,24 @@ export function runTreasuryReconciliationSuggestionEngine(
     candidates.sort(compareSuggestions);
     const top = candidates.slice(0, options.maxSuggestionsPerMovement);
     if (top.length === 0) {
-      unmatchedMovementIds.push(movement.id);
+      movementsWithoutOwnCandidate.add(movement.id);
     } else {
       suggestions.push(...top);
     }
   }
+
+  // 1 título ↔ N movimentos: combinações exatas de lançamentos do extrato
+  // cobrindo um único CR/CP (pré-filtros e limites na própria função).
+  for (const title of eligibleTitles) {
+    const combos = findExactMovementCombinations(title, eligibleMovements, options);
+    for (const combo of combos) {
+      suggestions.push(combo);
+      for (const leg of combo.movementLegs) {
+        movementsWithoutOwnCandidate.delete(leg.movementId);
+      }
+    }
+  }
+  unmatchedMovementIds.push(...movementsWithoutOwnCandidate);
 
   suggestions.sort(compareSuggestions);
   unmatchedMovementIds.sort((a, b) => a.localeCompare(b));

@@ -10,6 +10,7 @@ import {
 } from "./cashSupportAutoReconcile.js";
 import {
   TREASURY_RECONCILIATION_SUGGESTION_ALGORITHM_VERSION,
+  runTreasuryReconciliationSuggestionEngine,
   type TreasuryReconciliationSuggestionCandidate,
   type TreasuryReconciliationSuggestionEngineResult,
 } from "./treasuryReconciliationSuggestionEngine.js";
@@ -17,9 +18,14 @@ import {
 function candidate(
   overrides: Partial<TreasuryReconciliationSuggestionCandidate> = {}
 ): TreasuryReconciliationSuggestionCandidate {
+  const movementId =
+    (overrides.movementLegs?.[0]?.movementId as string | undefined) ??
+    overrides.movementId ??
+    "mov-1";
   return {
     suggestionKey: "mov-1|900",
-    movementId: "mov-1",
+    movementId,
+    movementLegs: [{ movementId, suggestedAmount: "1000.00" }],
     allocations: [
       {
         side: "AR",
@@ -57,30 +63,20 @@ function engineResult(
   };
 }
 
-describe("cashSupportAutoReconcile — barreiras conservadoras", () => {
+describe("cashSupportAutoReconcile — via A (alta confiança)", () => {
   it("HIGH único vira auto-aceitável com idempotencyKey determinística", () => {
     const plan = planCashSupportAutoReconciliation(engineResult([candidate()]));
     assert.equal(plan.autoAcceptable.length, 1);
     assert.equal(plan.needsReview.length, 0);
     const decision = plan.autoAcceptable[0]!;
+    assert.equal(decision.rule, "HIGH_CONFIDENCE");
     assert.equal(
       decision.idempotencyKey,
       `AUTO|${TREASURY_RECONCILIATION_SUGGESTION_ALGORITHM_VERSION}|${CASH_SUPPORT_AUTO_RECONCILE_RULE_VERSION}|mov-1|900`
     );
-    assert.equal(decision.ruleVersion, CASH_SUPPORT_AUTO_RECONCILE_RULE_VERSION);
   });
 
-  it("MEDIUM nunca é auto — vai para revisão", () => {
-    const plan = planCashSupportAutoReconciliation(
-      engineResult([candidate({ score: 60, confidence: "MEDIUM" })])
-    );
-    assert.equal(plan.autoAcceptable.length, 0);
-    assert.equal(plan.needsReview.length, 1);
-  });
-
-  it("dois CRs de mesmo valor (dois candidatos HIGH próximos) ⇒ REVISAR, nunca auto", () => {
-    // Cenário do teste 3 da missão: CR#1 e CR#2 de R$ 500,00 para o mesmo
-    // movimento — o gap de score entre eles é < mínimo ⇒ ambíguo.
+  it("HIGH com segundo colocado próximo (gap < mínimo) ⇒ REVISAR", () => {
     const plan = planCashSupportAutoReconciliation(
       engineResult([
         candidate({ suggestionKey: "mov-1|900", score: 85 }),
@@ -97,66 +93,195 @@ describe("cashSupportAutoReconcile — barreiras conservadoras", () => {
     assert.equal(plan.needsReview.length, 2);
   });
 
-  it("segundo candidato claramente abaixo (gap >= mínimo) não bloqueia o primeiro", () => {
+  it("mesmo título disputado por dois movimentos HIGH ⇒ ambos para revisão", () => {
     const plan = planCashSupportAutoReconciliation(
       engineResult([
-        candidate({ suggestionKey: "mov-1|900", score: 90 }),
-        candidate({
-          suggestionKey: "mov-1|901",
-          score: 90 - CASH_SUPPORT_AUTO_MIN_SCORE_GAP,
-          confidence: "MEDIUM",
-          allocations: [
-            { side: "AR", officialTitleId: "901", externalId: 901, suggestedAmount: "1000.00" },
-          ],
-        }),
-      ])
-    );
-    assert.equal(plan.autoAcceptable.length, 1);
-    assert.equal(plan.autoAcceptable[0]!.candidate.suggestionKey, "mov-1|900");
-  });
-
-  it("mesmo título disputado por dois movimentos auto-aceitáveis ⇒ ambos para revisão", () => {
-    const plan = planCashSupportAutoReconciliation(
-      engineResult([
-        candidate({ suggestionKey: "mov-1|900", movementId: "mov-1" }),
-        candidate({ suggestionKey: "mov-2|900", movementId: "mov-2" }),
+        candidate({ suggestionKey: "mov-1|900", movementLegs: [{ movementId: "mov-1", suggestedAmount: "1000.00" }] }),
+        candidate({ suggestionKey: "mov-2|900", movementLegs: [{ movementId: "mov-2", suggestedAmount: "1000.00" }] }),
       ])
     );
     assert.equal(plan.autoAcceptable.length, 0);
     assert.equal(plan.needsReview.length, 2);
   });
+});
 
-  it("título com candidato HIGH de OUTRO movimento (não auto) também derruba para revisão", () => {
+describe("cashSupportAutoReconcile — via B (valor exato com unicidade comprovada)", () => {
+  it("cenário da auditoria: 17.438,27 único, LOW sem identificador ⇒ AUTOMÁTICO pela via B", () => {
+    // Motor REAL (não fixture): movimento e título de mesmo valor, direção
+    // certa, janela ok, sem documento/CNPJ/nome — score 50 LOW.
+    const engine = runTreasuryReconciliationSuggestionEngine({
+      companyCode: "EMP1",
+      asOfCivilDate: "2026-08-10",
+      movements: [
+        {
+          id: "mov-ofx-1",
+          accountId: "acc-1",
+          direction: "CREDIT",
+          amount: "17438.27",
+          postedCivilDate: "2026-08-10",
+          description: "PIX RECEBIDO 10/08",
+          reconciliationStatus: "PENDING",
+          reconciledAmount: "0.00",
+        },
+      ],
+      titles: [
+        {
+          side: "AR",
+          officialTitleId: "900",
+          externalId: 900,
+          counterpartyName: "Metalurgica Alfa Ltda",
+          dueDate: "2026-08-10",
+          openBalance: "17438.27",
+          isCancelled: false,
+          isSettled: false,
+        },
+      ],
+    });
+    assert.equal(engine.suggestions.length, 1);
+    assert.equal(engine.suggestions[0]!.confidence, "LOW");
+    assert.equal(engine.suggestions[0]!.score, 50);
+
+    const plan = planCashSupportAutoReconciliation(engine);
+    assert.equal(plan.autoAcceptable.length, 1, "único + valor exato ⇒ auto");
+    assert.equal(plan.autoAcceptable[0]!.rule, "UNIQUE_EXACT_VALUE");
+  });
+
+  it("dois CRs de mesmo valor ⇒ dois candidatos no movimento ⇒ NUNCA automático", () => {
+    const engine = runTreasuryReconciliationSuggestionEngine({
+      companyCode: "EMP1",
+      asOfCivilDate: "2026-08-10",
+      movements: [
+        {
+          id: "mov-ofx-1",
+          accountId: "acc-1",
+          direction: "CREDIT",
+          amount: "17438.27",
+          postedCivilDate: "2026-08-10",
+          description: "PIX RECEBIDO",
+          reconciliationStatus: "PENDING",
+        },
+      ],
+      titles: [
+        {
+          side: "AR",
+          officialTitleId: "900",
+          externalId: 900,
+          counterpartyName: "Cliente A",
+          dueDate: "2026-08-10",
+          openBalance: "17438.27",
+          isCancelled: false,
+          isSettled: false,
+        },
+        {
+          side: "AR",
+          officialTitleId: "901",
+          externalId: 901,
+          counterpartyName: "Cliente B",
+          dueDate: "2026-08-11",
+          openBalance: "17438.27",
+          isCancelled: false,
+          isSettled: false,
+        },
+      ],
+    });
+    assert.equal(engine.suggestions.length, 2, "ambos os títulos são candidatos");
+    const plan = planCashSupportAutoReconciliation(engine);
+    assert.equal(plan.autoAcceptable.length, 0, "ambiguidade ⇒ revisão");
+    assert.equal(plan.needsReview.length, 2);
+  });
+
+  it("valor exato mas título também candidato de outro movimento ⇒ revisão", () => {
     const plan = planCashSupportAutoReconciliation(
       engineResult([
-        candidate({ suggestionKey: "mov-1|900", movementId: "mov-1", score: 90 }),
-        // mov-2 tem dois candidatos próximos (não auto), mas um deles é HIGH
-        // sobre o título 900 — competição real pelo mesmo centavo.
-        candidate({ suggestionKey: "mov-2|900", movementId: "mov-2", score: 84 }),
         candidate({
-          suggestionKey: "mov-2|901",
-          movementId: "mov-2",
-          score: 82,
-          allocations: [
-            { side: "AR", officialTitleId: "901", externalId: 901, suggestedAmount: "1000.00" },
-          ],
+          suggestionKey: "mov-1|900",
+          score: 50,
+          confidence: "LOW",
+          reasons: ["DIRECTION_COMPATIBLE", "AMOUNT_EXACT", "DATE_PROXIMITY"],
+        }),
+        candidate({
+          suggestionKey: "mov-2|900",
+          movementLegs: [{ movementId: "mov-2", suggestedAmount: "1000.00" }],
+          score: 45,
+          confidence: "LOW",
+          reasons: ["DIRECTION_COMPATIBLE", "AMOUNT_EXACT"],
         }),
       ])
     );
-    assert.equal(
-      plan.autoAcceptable.length,
-      0,
-      "título 900 disputado por mov-2 HIGH — mov-1 não pode ser auto"
+    assert.equal(plan.autoAcceptable.length, 0);
+  });
+
+  it("sem valor exato (parcial) nunca passa pela via B", () => {
+    const plan = planCashSupportAutoReconciliation(
+      engineResult([
+        candidate({
+          score: 20,
+          confidence: "LOW",
+          reasons: ["DIRECTION_COMPATIBLE", "DATE_PROXIMITY"],
+        }),
+      ])
     );
+    assert.equal(plan.autoAcceptable.length, 0);
+  });
+});
+
+describe("cashSupportAutoReconcile — combinações e determinismo", () => {
+  it("combinação 1 título ↔ N movimentos única e exata ⇒ auto pela via B", () => {
+    const combo = candidate({
+      suggestionKey: "MOV-COMBINATION|AR|900|mov-1|mov-2",
+      movementLegs: [
+        { movementId: "mov-1", suggestedAmount: "600.00" },
+        { movementId: "mov-2", suggestedAmount: "400.00" },
+      ],
+      score: 50,
+      confidence: "LOW",
+      reasons: ["MOVEMENT_COMBINATION_EXACT"],
+    });
+    const plan = planCashSupportAutoReconciliation(engineResult([combo]));
+    assert.equal(plan.autoAcceptable.length, 1);
+    assert.equal(plan.autoAcceptable[0]!.rule, "UNIQUE_EXACT_VALUE");
+  });
+
+  it("duas combinações disputando o mesmo movimento ⇒ ambas para revisão", () => {
+    const comboA = candidate({
+      suggestionKey: "MOV-COMBINATION|AR|900|mov-1|mov-2",
+      movementLegs: [
+        { movementId: "mov-1", suggestedAmount: "600.00" },
+        { movementId: "mov-2", suggestedAmount: "400.00" },
+      ],
+      reasons: ["MOVEMENT_COMBINATION_EXACT"],
+      score: 50,
+      confidence: "LOW",
+    });
+    const comboB = candidate({
+      suggestionKey: "MOV-COMBINATION|AR|901|mov-2|mov-3",
+      movementLegs: [
+        { movementId: "mov-2", suggestedAmount: "400.00" },
+        { movementId: "mov-3", suggestedAmount: "600.00" },
+      ],
+      allocations: [
+        { side: "AR", officialTitleId: "901", externalId: 901, suggestedAmount: "1000.00" },
+      ],
+      reasons: ["MOVEMENT_COMBINATION_EXACT"],
+      score: 50,
+      confidence: "LOW",
+    });
+    const plan = planCashSupportAutoReconciliation(engineResult([comboA, comboB]));
+    assert.equal(plan.autoAcceptable.length, 0, "mov-2 disputado ⇒ nada automático");
+    assert.equal(plan.needsReview.length, 2);
   });
 
   it("plano é determinístico e idempotente (mesma entrada ⇒ mesma saída)", () => {
     const input = engineResult(
       [
-        candidate({ suggestionKey: "mov-2|902", movementId: "mov-2", allocations: [
-          { side: "AR", officialTitleId: "902", externalId: 902, suggestedAmount: "70.00" },
-        ] }),
-        candidate({ suggestionKey: "mov-1|900", movementId: "mov-1" }),
+        candidate({
+          suggestionKey: "mov-2|902",
+          movementLegs: [{ movementId: "mov-2", suggestedAmount: "70.00" }],
+          allocations: [
+            { side: "AR", officialTitleId: "902", externalId: 902, suggestedAmount: "70.00" },
+          ],
+        }),
+        candidate({ suggestionKey: "mov-1|900" }),
       ],
       ["mov-9"]
     );
@@ -172,16 +297,19 @@ describe("cashSupportAutoReconcile — barreiras conservadoras", () => {
     assert.equal(a.summary.movementsAnalyzed, 3);
   });
 
-  it("justificativa AUTO carrega o prefixo do marcador e score/motivos", () => {
-    const text = buildCashSupportAutoJustification(candidate());
-    assert.ok(text.startsWith(CASH_SUPPORT_AUTO_JUSTIFICATION_PREFIX));
-    assert.ok(text.includes("score 85"));
-    assert.ok(text.includes("AMOUNT_EXACT"));
+  it("justificativa AUTO carrega prefixo, regra aplicada e score/motivos", () => {
+    const viaA = buildCashSupportAutoJustification(candidate(), "HIGH_CONFIDENCE");
+    assert.ok(viaA.startsWith(CASH_SUPPORT_AUTO_JUSTIFICATION_PREFIX));
+    assert.ok(viaA.includes("alta confiança"));
+    assert.ok(viaA.includes("score 85"));
+    const viaB = buildCashSupportAutoJustification(candidate(), "UNIQUE_EXACT_VALUE");
+    assert.ok(viaB.includes("valor exato com candidato único"));
   });
 
   it("idempotencyKey inclui versão do algoritmo E da regra — mudar regra gera chave nova", () => {
     const key = buildCashSupportAutoIdempotencyKey(candidate());
     assert.ok(key.includes(TREASURY_RECONCILIATION_SUGGESTION_ALGORITHM_VERSION));
     assert.ok(key.includes(CASH_SUPPORT_AUTO_RECONCILE_RULE_VERSION));
+    assert.equal(CASH_SUPPORT_AUTO_RECONCILE_RULE_VERSION, "AUTO-1.1.0");
   });
 });

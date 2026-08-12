@@ -208,4 +208,27 @@ describe("CashSupportReconcileDialog — tipos do payload de submit", () => {
     assert.equal(payload.allocations[0]!.kind, "TITLE");
     assert.equal(typeof payload.movements[0]!.amount, "string");
   });
+
+  it("ajustes carregam a classificação oficial (differenceCode) junto do kind contábil", () => {
+    // Tarifa que o banco somou ao débito: kind FEE + classificação TARIFA.
+    const payload: CashSupportReconcileSubmitPayload = {
+      companyCode: "EMP1",
+      accountId: "acc-1",
+      justification: "Tarifa bancária destacada no extrato",
+      movements: [{ bankMovementId: "mov-1", amount: "1005.00" }],
+      allocations: [
+        {
+          kind: "TITLE",
+          amount: "1000.00",
+          memo: null,
+          nomusSide: "AP",
+          officialTitleId: "700",
+          nomusExternalId: 700,
+          openBalance: "1000.00",
+        },
+        { kind: "FEE", amount: "5.00", memo: null, differenceCode: "TARIFA" },
+      ],
+    };
+    assert.equal(payload.allocations[1]!.differenceCode, "TARIFA");
+  });
 });

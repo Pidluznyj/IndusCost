@@ -13,19 +13,33 @@
 import React, { useMemo, useState } from "react";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
-import type {
-  TreasuryReconciliationAllocationKind,
+import {
+  TREASURY_RECONCILIATION_DIFFERENCE_CODES,
+  TREASURY_RECONCILIATION_DIFFERENCE_CODE_LABELS,
+  TREASURY_RECONCILIATION_DIFFERENCE_DEFAULT_EFFECT,
+  resolveTreasuryReconciliationDifferenceKind,
+  type TreasuryReconciliationAllocationKind,
+  type TreasuryReconciliationDifferenceCode,
+  type TreasuryReconciliationDifferenceEffect,
 } from "@/src/lib/treasury/contracts/treasuryEnums.js";
 import type { CashSupportUnifiedRow } from "@/src/lib/treasury/contracts/cashSupportContracts.js";
 
-const ADJUSTMENT_KINDS: { kind: TreasuryReconciliationAllocationKind; label: string; needsMemo: boolean }[] = [
-  { kind: "FEE", label: "Tarifa", needsMemo: false },
-  { kind: "INTEREST", label: "Juros", needsMemo: false },
-  { kind: "DISCOUNT", label: "Desconto", needsMemo: false },
-  { kind: "ABATEMENT", label: "Abatimento", needsMemo: false },
-  { kind: "DIFFERENCE", label: "Diferença", needsMemo: true },
-  { kind: "UNIDENTIFIED", label: "Não identificado (investigação)", needsMemo: true },
-];
+/**
+ * Classificação da linha de ajuste: as 9 oficiais (vocabulário fechado do
+ * backend, persistidas em `differenceCode`) + "não identificado" (kind
+ * UNIDENTIFIED, investigação — não é diferença classificada).
+ */
+type AdjustmentCode = TreasuryReconciliationDifferenceCode | "UNIDENTIFIED";
+
+const MEMO_REQUIRED_CODES = new Set<AdjustmentCode>(["OUTRO", "UNIDENTIFIED"]);
+
+function adjustmentKindFor(
+  code: AdjustmentCode,
+  effect: TreasuryReconciliationDifferenceEffect
+): TreasuryReconciliationAllocationKind {
+  if (code === "UNIDENTIFIED") return "UNIDENTIFIED";
+  return resolveTreasuryReconciliationDifferenceKind(code, effect);
+}
 
 const NEGATIVE_KINDS = new Set<TreasuryReconciliationAllocationKind>(["DISCOUNT", "ABATEMENT"]);
 
@@ -50,6 +64,8 @@ export type CashSupportReconcileAllocationDraft = {
   officialTitleId?: string | null;
   nomusExternalId?: number | null;
   openBalance?: string | null;
+  /** Classificação oficial da diferença (vocabulário fechado do backend). */
+  differenceCode?: TreasuryReconciliationDifferenceCode | null;
 };
 
 export type CashSupportReconcileSubmitPayload = {
@@ -84,7 +100,13 @@ export function CashSupportReconcileDialog({
   );
   const [titleAllocations, setTitleAllocations] = useState<Record<string, string>>({});
   const [adjustments, setAdjustments] = useState<
-    { id: string; kind: TreasuryReconciliationAllocationKind; amount: string; memo: string }[]
+    {
+      id: string;
+      code: AdjustmentCode;
+      effect: TreasuryReconciliationDifferenceEffect;
+      amount: string;
+      memo: string;
+    }[]
   >([]);
   const [justification, setJustification] = useState("");
 
@@ -122,7 +144,9 @@ export function CashSupportReconcileDialog({
     () =>
       adjustments.reduce((sum, a) => {
         const cents = toCents(a.amount);
-        return NEGATIVE_KINDS.has(a.kind) ? sum - cents : sum + cents;
+        return NEGATIVE_KINDS.has(adjustmentKindFor(a.code, a.effect))
+          ? sum - cents
+          : sum + cents;
       }, 0),
     [adjustments]
   );
@@ -131,7 +155,7 @@ export function CashSupportReconcileDialog({
   const simulatedCoveringCents = titlesTotalCents + adjustmentsNetCents;
   const balanced = movementsTotalCents > 0 && simulatedCoveringCents === movementsTotalCents;
   const missingMemo = adjustments.some(
-    (a) => ADJUSTMENT_KINDS.find((k) => k.kind === a.kind)?.needsMemo && !a.memo.trim()
+    (a) => MEMO_REQUIRED_CODES.has(a.code) && !a.memo.trim()
   );
 
   const canSubmit =
@@ -144,7 +168,13 @@ export function CashSupportReconcileDialog({
   function addAdjustment() {
     setAdjustments((prev) => [
       ...prev,
-      { id: `adj-${prev.length}-${Date.now()}`, kind: "FEE", amount: "0.00", memo: "" },
+      {
+        id: `adj-${prev.length}-${Date.now()}`,
+        code: "TARIFA",
+        effect: TREASURY_RECONCILIATION_DIFFERENCE_DEFAULT_EFFECT.TARIFA,
+        amount: "0.00",
+        memo: "",
+      },
     ]);
   }
 
@@ -168,9 +198,11 @@ export function CashSupportReconcileDialog({
     for (const adj of adjustments) {
       if (toCents(adj.amount) <= 0) continue;
       allocations.push({
-        kind: adj.kind,
+        kind: adjustmentKindFor(adj.code, adj.effect),
         amount: adj.amount,
         memo: adj.memo.trim() || null,
+        // Classificação oficial gravada na allocation (validada no backend).
+        differenceCode: adj.code === "UNIDENTIFIED" ? null : adj.code,
       });
     }
 
@@ -269,21 +301,53 @@ export function CashSupportReconcileDialog({
             <div key={adj.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <select
                 className="rounded border border-border px-1.5 py-0.5"
-                value={adj.kind}
-                onChange={(e) =>
+                value={adj.code}
+                onChange={(e) => {
+                  const code = e.target.value as AdjustmentCode;
                   setAdjustments((prev) =>
                     prev.map((a, idx) =>
-                      idx === i ? { ...a, kind: e.target.value as TreasuryReconciliationAllocationKind } : a
+                      idx === i
+                        ? {
+                            ...a,
+                            code,
+                            effect:
+                              code === "UNIDENTIFIED"
+                                ? "ADD"
+                                : TREASURY_RECONCILIATION_DIFFERENCE_DEFAULT_EFFECT[code],
+                          }
+                        : a
                     )
-                  )
-                }
+                  );
+                }}
+                data-testid={`cash-support-reconcile-adjustment-code-${i}`}
               >
-                {ADJUSTMENT_KINDS.map((k) => (
-                  <option key={k.kind} value={k.kind}>
-                    {k.label}
+                {TREASURY_RECONCILIATION_DIFFERENCE_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {TREASURY_RECONCILIATION_DIFFERENCE_CODE_LABELS[code]}
                   </option>
                 ))}
+                <option value="UNIDENTIFIED">Não identificado (investigação)</option>
               </select>
+              {adj.code !== "UNIDENTIFIED" ? (
+                <select
+                  className="rounded border border-border px-1.5 py-0.5"
+                  value={adj.effect}
+                  onChange={(e) =>
+                    setAdjustments((prev) =>
+                      prev.map((a, idx) =>
+                        idx === i
+                          ? { ...a, effect: e.target.value as TreasuryReconciliationDifferenceEffect }
+                          : a
+                      )
+                    )
+                  }
+                  title="Efeito sobre a cobertura do extrato"
+                  data-testid={`cash-support-reconcile-adjustment-effect-${i}`}
+                >
+                  <option value="ADD">+ banco moveu a mais</option>
+                  <option value="REDUCE">− banco moveu a menos</option>
+                </select>
+              ) : null}
               <input
                 className="w-20 rounded border border-border px-1.5 py-0.5 text-right tabular-nums"
                 value={adj.amount}
@@ -295,7 +359,7 @@ export function CashSupportReconcileDialog({
               />
               <input
                 className="min-w-[140px] flex-1 rounded border border-border px-1.5 py-0.5"
-                placeholder="Motivo (obrigatório para diferença/não identificado)"
+                placeholder="Motivo (obrigatório para Outro/Não identificado)"
                 value={adj.memo}
                 onChange={(e) =>
                   setAdjustments((prev) =>

@@ -270,13 +270,17 @@ export function buildCashSupportTitleGrid(input: {
         });
       }
     }
-    const currentMove = bestSuggestionByMovement.get(suggestion.movementId);
-    if (!currentMove || suggestion.score > currentMove.score) {
-      bestSuggestionByMovement.set(suggestion.movementId, {
-        key: suggestion.suggestionKey,
-        score: suggestion.score,
-        confidence: suggestion.confidence,
-      });
+    // Todas as pernas: combinação 1 título ↔ N movimentos conta como melhor
+    // candidato de cada movimento envolvido.
+    for (const leg of suggestion.movementLegs) {
+      const currentMove = bestSuggestionByMovement.get(leg.movementId);
+      if (!currentMove || suggestion.score > currentMove.score) {
+        bestSuggestionByMovement.set(leg.movementId, {
+          key: suggestion.suggestionKey,
+          score: suggestion.score,
+          confidence: suggestion.confidence,
+        });
+      }
     }
   }
 

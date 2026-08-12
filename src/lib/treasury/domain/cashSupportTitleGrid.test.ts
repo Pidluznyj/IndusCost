@@ -149,6 +149,7 @@ function suggestion(
   return {
     suggestionKey: "mov-1|900",
     movementId: "mov-1",
+    movementLegs: [{ movementId: "mov-1", suggestedAmount: "1000.00" }],
     allocations: [
       { side: "AR", officialTitleId: "900", externalId: 900, suggestedAmount: "1000.00" },
     ],

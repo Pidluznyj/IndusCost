@@ -64,7 +64,7 @@ describe("treasuryReconciliationSuggestionEngine — ranking", () => {
     };
     const result = run({ titles: [weak, TITLE_AR_MATCH] });
     assert.equal(result.autoMatched, false);
-    assert.equal(result.algorithmVersion, "1.0.0");
+    assert.equal(result.algorithmVersion, "1.1.0");
     assert.ok(result.suggestions.length >= 1);
     const top = result.suggestions[0]!;
     assert.equal(top.allocations[0].officialTitleId, "title-ar-1");
@@ -310,5 +310,148 @@ describe("treasuryReconciliationSuggestionEngine — débito/AP", () => {
     assert.ok(result.suggestions[0]!.reasons.includes("DIRECTION_COMPATIBLE"));
     assert.ok(result.suggestions[0]!.reasons.includes("AMOUNT_EXACT"));
     assert.ok(result.suggestions[0]!.reasons.includes("DOCUMENT_MATCH"));
+  });
+});
+
+describe("treasuryReconciliationSuggestionEngine — 1 título ↔ N movimentos", () => {
+  function creditMovement(
+    id: string,
+    amount: string,
+    overrides: Partial<TreasuryReconciliationMovementSeed> = {}
+  ): TreasuryReconciliationMovementSeed {
+    return {
+      id,
+      accountId: "acc-1",
+      direction: "CREDIT",
+      amount,
+      postedCivilDate: "2026-07-15",
+      documentNumber: null,
+      counterpartyName: "Cliente Alpha Industria Ltda",
+      description: "TED RECEBIDA CLIENTE ALPHA",
+      reconciliationStatus: "PENDING",
+      reconciledAmount: "0.00",
+      ...overrides,
+    };
+  }
+
+  const BIG_TITLE: TreasuryReconciliationTitleSeed = {
+    side: "AR",
+    officialTitleId: "title-big",
+    externalId: 2001,
+    counterpartyName: "Cliente Alpha Industria LTDA",
+    counterpartyTaxId: null,
+    documentNumber: null,
+    description: null,
+    invoiceNumber: null,
+    dueDate: "2026-07-16",
+    openBalance: "20000.00",
+    isCancelled: false,
+    isSettled: false,
+  };
+
+  it("20.000 = 5.000 + 10.000 + 5.000: detecta a combinação exata", () => {
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "5000.00"),
+        creditMovement("mov-b", "10000.00"),
+        creditMovement("mov-c", "5000.00"),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 1, "uma única combinação exata (A+B+C)");
+    const combo = combos[0]!;
+    assert.equal(combo.movementLegs.length, 3);
+    assert.deepEqual(
+      combo.movementLegs.map((l) => l.movementId).sort(),
+      ["mov-a", "mov-b", "mov-c"]
+    );
+    assert.equal(combo.totalSuggestedAmount, "20000.00");
+    assert.equal(combo.allocations.length, 1);
+    assert.equal(combo.allocations[0]!.externalId, 2001);
+    // Nenhum movimento coberto pela combinação fica como unmatched.
+    assert.deepEqual(result.unmatchedMovementIds, []);
+  });
+
+  it("20.000 = 5.000 + 10.000 (sem o terceiro): NÃO inventa perna — sem combinação", () => {
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "5000.00"),
+        creditMovement("mov-b", "10000.00"),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 0, "soma 15.000 ≠ 20.000 ⇒ nada de combinação");
+  });
+
+  it("movimento já parcialmente alocado usa só o saldo disponível", () => {
+    // mov-a tem 6.000 mas 1.000 já conciliado ⇒ disponível 5.000.
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "6000.00", { reconciledAmount: "1000.00", reconciliationStatus: "PARTIAL" }),
+        creditMovement("mov-b", "10000.00"),
+        creditMovement("mov-c", "5000.00"),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 1);
+    const legA = combos[0]!.movementLegs.find((l) => l.movementId === "mov-a");
+    assert.equal(legA?.suggestedAmount, "5000.00", "usa o residual, nunca o valor cheio");
+  });
+
+  it("movimento MATCHED nunca entra em combinação", () => {
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "5000.00", { reconciliationStatus: "MATCHED", reconciledAmount: "5000.00" }),
+        creditMovement("mov-b", "10000.00"),
+        creditMovement("mov-c", "5000.00"),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 0, "sem mov-a não há soma exata");
+  });
+
+  it("movimento de contraparte não relacionada fica fora da combinação", () => {
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "5000.00"),
+        creditMovement("mov-b", "10000.00"),
+        creditMovement("mov-c", "5000.00", {
+          counterpartyName: "Empresa Totalmente Diferente SA",
+          description: "TED EMPRESA DIFERENTE",
+        }),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 0, "identidade divergente exclui a perna; sem soma exata");
+  });
+
+  it("fora da janela de datas não entra na combinação", () => {
+    const result = run({
+      movements: [
+        creditMovement("mov-a", "5000.00"),
+        creditMovement("mov-b", "10000.00"),
+        creditMovement("mov-c", "5000.00", { postedCivilDate: "2026-09-30" }),
+      ],
+      titles: [BIG_TITLE],
+    });
+    const combos = result.suggestions.filter((s) =>
+      s.reasons.includes("MOVEMENT_COMBINATION_EXACT")
+    );
+    assert.equal(combos.length, 0);
   });
 });

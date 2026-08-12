@@ -8,7 +8,16 @@ import React from "react";
 import { cn } from "@/src/lib/utils";
 import { formatTreasuryBankMoney } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 import { CASH_SUPPORT_AUTO_JUSTIFICATION_PREFIX } from "@/src/lib/treasury/domain/cashSupportAutoReconcile.js";
+import { TREASURY_RECONCILIATION_DIFFERENCE_CODE_LABELS } from "@/src/lib/treasury/contracts/treasuryEnums.js";
 import type { TreasuryReconciliationMatchDto } from "@/src/lib/treasury/contracts/treasuryDto.js";
+
+/** Rótulo da classificação oficial; cai no código cru para dado legado. */
+function differenceCodeLabel(code: string): string {
+  return (
+    (TREASURY_RECONCILIATION_DIFFERENCE_CODE_LABELS as Record<string, string>)[code] ??
+    code
+  );
+}
 
 function civilDateBr(value: string | null): string {
   if (!value) return "—";
@@ -84,6 +93,9 @@ export function CashSupportHistoryTab({
               .filter((a) => a.kind === "TITLE" && a.nomusExternalId != null)
               .map((a) => a.nomusExternalId)
               .join(", ");
+            const differences = m.allocations.filter(
+              (a) => a.kind !== "TITLE" && a.differenceCode != null
+            );
             return (
               <tr
                 key={m.id}
@@ -126,12 +138,24 @@ export function CashSupportHistoryTab({
                   )}
                 </td>
                 <td
-                  className="max-w-[260px] truncate px-2 py-2 text-[11px] text-muted-foreground"
+                  className="max-w-[260px] px-2 py-2 text-[11px] text-muted-foreground"
                   title={m.isReversed ? m.unmatchReason ?? "" : m.justification ?? ""}
                 >
-                  {m.isReversed
-                    ? `Desfeito: ${m.unmatchReason ?? "—"}`
-                    : m.justification ?? "—"}
+                  <p className="truncate">
+                    {m.isReversed
+                      ? `Desfeito: ${m.unmatchReason ?? "—"}`
+                      : m.justification ?? "—"}
+                  </p>
+                  {differences.length > 0 ? (
+                    <p className="mt-0.5 truncate text-[10px]">
+                      {differences
+                        .map(
+                          (d) =>
+                            `${differenceCodeLabel(d.differenceCode!)} ${formatTreasuryBankMoney(d.amount)}`
+                        )
+                        .join(" · ")}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-2 py-2 text-right">
                   {!m.isReversed ? (

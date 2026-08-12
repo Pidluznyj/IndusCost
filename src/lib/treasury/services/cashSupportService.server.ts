@@ -291,27 +291,49 @@ export function createCashSupportService(deps: {
       // ordem determinística (já ordenado por suggestionKey no plano).
       for (const decision of plan.autoAcceptable) {
         const { candidate } = decision;
-        const movementRow = movementRowById.get(candidate.movementId);
-        if (!movementRow?.accountContext || !movementRow.bankDate) {
+        // Todas as pernas do candidato (1:1 e combinações 1 título ↔ N
+        // movimentos) precisam existir no read model, na MESMA conta.
+        const legRows = candidate.movementLegs.map((leg) => ({
+          leg,
+          row: movementRowById.get(leg.movementId) ?? null,
+        }));
+        const invalidLeg = legRows.find(
+          ({ row }) => !row?.accountContext || !row.bankDate
+        );
+        if (invalidLeg) {
           failures.push({
             suggestionKey: candidate.suggestionKey,
-            movementId: candidate.movementId,
+            movementId: invalidLeg.leg.movementId,
             message: "Movimento sem conta/data no read model — não auto-conciliável.",
           });
           continue;
         }
+        const accountIds = new Set(
+          legRows.map(({ row }) => row!.accountContext!.accountId)
+        );
+        if (accountIds.size !== 1) {
+          failures.push({
+            suggestionKey: candidate.suggestionKey,
+            movementId: candidate.movementId,
+            message: "Combinação atravessa contas distintas — requer conciliação manual.",
+          });
+          continue;
+        }
+        // Data do match = perna mais recente (última entrada que fechou o título).
+        const matchedCivilDate = legRows
+          .map(({ row }) => row!.bankDate!)
+          .sort()
+          .at(-1)!;
         try {
           const { match } = await reconciliationService.accept(reconciliationActor, {
             companyCode,
-            accountId: movementRow.accountContext.accountId,
-            matchedCivilDate: movementRow.bankDate,
-            justification: buildCashSupportAutoJustification(candidate),
-            movements: [
-              {
-                bankMovementId: candidate.movementId,
-                amount: candidate.totalSuggestedAmount,
-              },
-            ],
+            accountId: [...accountIds][0]!,
+            matchedCivilDate,
+            justification: buildCashSupportAutoJustification(candidate, decision.rule),
+            movements: candidate.movementLegs.map((leg) => ({
+              bankMovementId: leg.movementId,
+              amount: leg.suggestedAmount,
+            })),
             allocations: candidate.allocations.map((alloc) => ({
               kind: "TITLE",
               amount: alloc.suggestedAmount,

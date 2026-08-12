@@ -32,6 +32,11 @@ import {
   CASH_SUPPORT_AUTO_RECONCILE_RULE_VERSION,
 } from "./domain/cashSupportAutoReconcile.js";
 import { TREASURY_RECONCILIATION_SUGGESTION_ALGORITHM_VERSION } from "./domain/treasuryReconciliationSuggestionEngine.js";
+import {
+  TREASURY_RECONCILIATION_DIFFERENCE_CODES,
+  resolveTreasuryReconciliationDifferenceKind,
+} from "./contracts/treasuryEnums.js";
+import { parseTreasuryReconciliationAcceptInput } from "./contracts/treasurySchemas.js";
 
 const actor: TreasuryReconciliationMatchActor = {
   userId: "user-ops",
@@ -317,5 +322,122 @@ describe("Conciliação Bancária — auto-run idempotente e histórico", () => 
     });
     assert.equal(result.length, 1, "só a conta com ACL aparece");
     assert.equal(result[0]!.accountId, "acc-1");
+  });
+});
+
+describe("Conciliação Bancária — classificações oficiais de diferença", () => {
+  it("vocabulário fechado tem as 9 classificações do requisito", () => {
+    assert.deepEqual(
+      [...TREASURY_RECONCILIATION_DIFFERENCE_CODES],
+      [
+        "DESCONTO",
+        "JUROS",
+        "MULTA",
+        "TARIFA",
+        "RETENCAO",
+        "ABATIMENTO",
+        "COMPENSACAO",
+        "ARREDONDAMENTO",
+        "OUTRO",
+      ]
+    );
+  });
+
+  it("kind contábil derivado é determinístico para cada classificação × efeito", () => {
+    // REDUCE (banco moveu a menos)
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("DESCONTO", "REDUCE"), "DISCOUNT");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("RETENCAO", "REDUCE"), "ABATEMENT");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("ABATIMENTO", "REDUCE"), "ABATEMENT");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("COMPENSACAO", "REDUCE"), "ABATEMENT");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("ARREDONDAMENTO", "REDUCE"), "ABATEMENT");
+    // ADD (banco moveu a mais)
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("JUROS", "ADD"), "INTEREST");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("MULTA", "ADD"), "INTEREST");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("TARIFA", "ADD"), "FEE");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("ARREDONDAMENTO", "ADD"), "DIFFERENCE");
+    assert.equal(resolveTreasuryReconciliationDifferenceKind("OUTRO", "ADD"), "DIFFERENCE");
+  });
+
+  it("accept aceita differenceCode do vocabulário e persiste na allocation", async () => {
+    const { service } = await createHarness();
+    // Título 1000, banco creditou 980, desconto justificado de 20.
+    const { match } = await service.accept(actor, {
+      ...autoAcceptInput({
+        idempotencyKey: `${AUTO_KEY}|desc`,
+        movements: [{ bankMovementId: "mov-1", amount: "980.00" }],
+      }),
+      allocations: [
+        {
+          kind: "TITLE" as const,
+          amount: "1000.00",
+          memo: null,
+          nomusSide: "AR" as const,
+          officialTitleId: "900",
+          nomusExternalId: 900,
+          openBalance: "1000.00",
+          transferId: null,
+          transferGroupId: null,
+          ledgerEntryId: null,
+          differenceCode: null,
+        },
+        {
+          kind: "DISCOUNT" as const,
+          amount: "20.00",
+          memo: "Desconto comercial",
+          nomusSide: null,
+          officialTitleId: null,
+          nomusExternalId: null,
+          openBalance: null,
+          transferId: null,
+          transferGroupId: null,
+          ledgerEntryId: null,
+          differenceCode: "DESCONTO",
+        },
+      ],
+    } as never);
+    const discount = match.allocations.find((a) => a.kind === "DISCOUNT");
+    assert.equal(discount?.differenceCode, "DESCONTO");
+  });
+
+  it("parse rejeita differenceCode fora do vocabulário", () => {
+    assert.throws(
+      () =>
+        parseTreasuryReconciliationAcceptInput({
+          companyCode: "EMP1",
+          accountId: "acc-1",
+          matchedCivilDate: "2026-07-20",
+          movements: [{ bankMovementId: "mov-1", amount: "10.00" }],
+          allocations: [
+            {
+              kind: "FEE",
+              amount: "10.00",
+              differenceCode: "TAXA_INVENTADA",
+            },
+          ],
+        }),
+      (err: unknown) =>
+        err instanceof Error && /differenceCode/.test(String((err as { field?: string }).field ?? err.message))
+    );
+  });
+
+  it("parse aceita cada uma das 9 classificações oficiais", () => {
+    for (const code of TREASURY_RECONCILIATION_DIFFERENCE_CODES) {
+      const parsed = parseTreasuryReconciliationAcceptInput({
+        companyCode: "EMP1",
+        accountId: "acc-1",
+        matchedCivilDate: "2026-07-20",
+        movements: [{ bankMovementId: "mov-1", amount: "10.00" }],
+        allocations: [
+          {
+            kind: "TITLE",
+            amount: "10.00",
+            nomusSide: "AR",
+            officialTitleId: "900",
+            differenceCode: code,
+          },
+        ],
+      });
+      assert.equal(parsed.allocations[0]!.differenceCode, code);
+    }
   });
 });

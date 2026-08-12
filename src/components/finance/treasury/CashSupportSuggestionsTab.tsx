@@ -12,11 +12,14 @@ import type { TreasuryReconciliationSuggestionCandidate } from "@/src/lib/treasu
 
 const REASON_LABELS: Record<string, string> = {
   AMOUNT_EXACT: "Valor exato",
+  AMOUNT_COMBINATION_EXACT: "Combinação exata de títulos",
+  MOVEMENT_COMBINATION_EXACT: "Combinação exata de movimentos",
   DOCUMENT_MATCH: "Documento",
   TAX_ID_MATCH: "CNPJ/CPF",
   DATE_PROXIMITY: "Data próxima",
   NAME_SIMILAR: "Nome similar",
   HISTORY_MATCH: "Histórico",
+  DIRECTION_COMPATIBLE: "Direção compatível",
 };
 
 const CONFIDENCE_STYLE: Record<string, string> = {
@@ -83,7 +86,9 @@ export function CashSupportSuggestionsTab({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">
-                {movementLabelById?.get(s.movementId) ?? `Movimento ${s.movementId}`}
+                {s.movementLegs.length === 1
+                  ? movementLabelById?.get(s.movementId) ?? `Movimento ${s.movementId}`
+                  : `${s.movementLegs.length} movimentos (combinação exata)`}
               </p>
               <p className="text-[11px] text-muted-foreground">
                 {s.allocations.length === 1
@@ -129,6 +134,16 @@ export function CashSupportSuggestionsTab({
                 <li key={a.officialTitleId}>
                   Título {a.externalId} ({a.side}) —{" "}
                   {formatTreasuryBankMoney(a.suggestedAmount)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {s.movementLegs.length > 1 ? (
+            <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+              {s.movementLegs.map((leg) => (
+                <li key={leg.movementId}>
+                  {movementLabelById?.get(leg.movementId) ?? `Movimento ${leg.movementId}`}{" "}
+                  — {formatTreasuryBankMoney(leg.suggestedAmount)}
                 </li>
               ))}
             </ul>

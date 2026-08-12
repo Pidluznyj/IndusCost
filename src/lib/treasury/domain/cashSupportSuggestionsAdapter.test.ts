@@ -186,6 +186,6 @@ describe("cashSupportSuggestionsAdapter", () => {
       companyCode: "EMP1",
       asOfCivilDate: "2026-07-20",
     });
-    assert.equal(result.algorithmVersion, "1.0.0");
+    assert.equal(result.algorithmVersion, "1.1.0");
   });
 });

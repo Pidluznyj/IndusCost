@@ -445,6 +445,81 @@ export const TREASURY_RECONCILIATION_ALLOCATION_NEGATIVE_KINDS = [
 ] as const satisfies readonly TreasuryReconciliationAllocationKind[];
 
 /**
+ * Classificações de negócio da diferença conciliada — vocabulário FECHADO
+ * gravado em `TreasuryReconciliationAllocation.differenceCode` (coluna já
+ * existente; sem migration). O kind contábil continua decidindo o sinal
+ * (POSITIVE/NEGATIVE_KINDS); o código diz O QUE a diferença é.
+ */
+export const TREASURY_RECONCILIATION_DIFFERENCE_CODES = [
+  "DESCONTO",
+  "JUROS",
+  "MULTA",
+  "TARIFA",
+  "RETENCAO",
+  "ABATIMENTO",
+  "COMPENSACAO",
+  "ARREDONDAMENTO",
+  "OUTRO",
+] as const;
+export type TreasuryReconciliationDifferenceCode =
+  (typeof TREASURY_RECONCILIATION_DIFFERENCE_CODES)[number];
+
+export const TREASURY_RECONCILIATION_DIFFERENCE_CODE_LABELS: Record<
+  TreasuryReconciliationDifferenceCode,
+  string
+> = {
+  DESCONTO: "Desconto",
+  JUROS: "Juros",
+  MULTA: "Multa",
+  TARIFA: "Tarifa",
+  RETENCAO: "Retenção",
+  ABATIMENTO: "Abatimento",
+  COMPENSACAO: "Compensação",
+  ARREDONDAMENTO: "Arredondamento",
+  OUTRO: "Outro",
+};
+
+/**
+ * Efeito da diferença sobre a cobertura do extrato:
+ * "ADD" = o banco moveu MAIS que o valor líquido do título (juros/multa/…);
+ * "REDUCE" = o banco moveu MENOS (desconto/retenção/compensação/…).
+ */
+export type TreasuryReconciliationDifferenceEffect = "ADD" | "REDUCE";
+
+export const TREASURY_RECONCILIATION_DIFFERENCE_DEFAULT_EFFECT: Record<
+  TreasuryReconciliationDifferenceCode,
+  TreasuryReconciliationDifferenceEffect
+> = {
+  DESCONTO: "REDUCE",
+  JUROS: "ADD",
+  MULTA: "ADD",
+  TARIFA: "ADD",
+  RETENCAO: "REDUCE",
+  ABATIMENTO: "REDUCE",
+  COMPENSACAO: "REDUCE",
+  ARREDONDAMENTO: "ADD",
+  OUTRO: "ADD",
+};
+
+/**
+ * Deriva o kind contábil (sinal) para uma classificação de diferença.
+ * Determinístico: REDUCE usa DISCOUNT para DESCONTO e ABATEMENT para o
+ * resto; ADD usa INTEREST para JUROS/MULTA, FEE para TARIFA e DIFFERENCE
+ * para o restante. O par (code, kind) é persistido junto — auditável.
+ */
+export function resolveTreasuryReconciliationDifferenceKind(
+  code: TreasuryReconciliationDifferenceCode,
+  effect: TreasuryReconciliationDifferenceEffect
+): TreasuryReconciliationAllocationKind {
+  if (effect === "REDUCE") {
+    return code === "DESCONTO" ? "DISCOUNT" : "ABATEMENT";
+  }
+  if (code === "JUROS" || code === "MULTA") return "INTEREST";
+  if (code === "TARIFA") return "FEE";
+  return "DIFFERENCE";
+}
+
+/**
  * Faixa de confiança da sugestão de conciliação bancária.
  * MVP: só sugere — nunca aplica match automático.
  */
@@ -466,6 +541,7 @@ export const TREASURY_RECONCILIATION_SUGGESTION_REASON_CODES = [
   "HISTORY_MATCH",
   "DIRECTION_COMPATIBLE",
   "AMOUNT_COMBINATION_EXACT",
+  "MOVEMENT_COMBINATION_EXACT",
   "TAX_ID_CONFLICT",
   "DATE_DISTANT",
 ] as const;

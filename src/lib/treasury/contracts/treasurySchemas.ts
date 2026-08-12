@@ -48,6 +48,7 @@ import {
   TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
   TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
   TREASURY_RECONCILIATION_ALLOCATION_KINDS,
+  TREASURY_RECONCILIATION_DIFFERENCE_CODES,
   TREASURY_REPORT_KEYS,
   TREASURY_PROMISE_STATUSES,
   TREASURY_RECONCILIATION_MATCH_STATUSES,
@@ -3483,10 +3484,14 @@ export function parseTreasuryReconciliationAcceptInput(
           `allocations[${index}].ledgerEntryId`,
           { required: false }
         ),
-        differenceCode: parseTreasuryBoundedString(
+        // Vocabulário FECHADO: quando informado, precisa ser uma das
+        // classificações oficiais (DESCONTO/JUROS/MULTA/TARIFA/RETENCAO/
+        // ABATIMENTO/COMPENSACAO/ARREDONDAMENTO/OUTRO).
+        differenceCode: parseTreasuryEnum(
           row.differenceCode,
+          TREASURY_RECONCILIATION_DIFFERENCE_CODES,
           `allocations[${index}].differenceCode`,
-          { required: false }
+          false
         ),
       };
     });

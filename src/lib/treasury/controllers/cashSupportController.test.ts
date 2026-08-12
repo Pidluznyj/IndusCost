@@ -76,7 +76,7 @@ function emptyReadModel(): CashSupportReadModel {
 
 function emptySuggestions(): TreasuryReconciliationSuggestionEngineResult {
   return {
-    algorithmVersion: "1.0.0",
+    algorithmVersion: "1.1.0",
     suggestions: [],
     unmatchedMovementIds: [],
     excludedTitleIds: [],
@@ -106,7 +106,7 @@ function stubService(overrides: Partial<CashSupportService> = {}): CashSupportSe
       analysisAsOfDateTime: "2026-07-20T12:00:00.000Z",
     }),
     runAutoReconciliation: async () => ({
-      algorithmVersion: "1.0.0",
+      algorithmVersion: "1.1.0",
       ruleVersion: "AUTO-1.0.0",
       analyzedMovements: 0,
       autoAccepted: 0,
@@ -292,7 +292,7 @@ describe("cashSupportController — wiring", () => {
       runAutoReconciliation: async (_actor, filters) => {
         filtersSeen = filters;
         return {
-          algorithmVersion: "1.0.0",
+          algorithmVersion: "1.1.0",
           ruleVersion: "AUTO-1.0.0",
           analyzedMovements: 3,
           autoAccepted: 1,
