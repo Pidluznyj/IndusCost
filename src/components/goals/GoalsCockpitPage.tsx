@@ -17,6 +17,7 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowUpRight,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
@@ -402,14 +403,6 @@ export function GoalsCockpitPage() {
                     ) : null}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="truncate text-left text-sm font-semibold hover:underline"
-                          onClick={() => toggleExpanded(goal.id)}
-                          title={expanded ? "Recolher prévia dos indicadores" : "Prévia rápida dos indicadores"}
-                        >
-                          {goal.title}
-                        </button>
                         <span
                           className={cn(
                             "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
@@ -418,11 +411,11 @@ export function GoalsCockpitPage() {
                         >
                           {GOAL_STATUS_LABELS[goal.status]}
                         </span>
+                        <span className="truncate text-sm font-semibold">{goal.title}</span>
                       </div>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         {civilDateBr(goal.startDate)} – {civilDateBr(goal.endDate)}
-                        {goal.ownerName ? ` · Resp.: ${goal.ownerName}` : ""} ·{" "}
-                        {goal.activeKeyResults} indicador(es) ativo(s)
+                        {goal.ownerName ? ` · Resp.: ${goal.ownerName}` : ""}
                       </p>
                       <div className="mt-2">
                         <ProgressBar
@@ -430,6 +423,23 @@ export function GoalsCockpitPage() {
                           invalid={goal.invalidKeyResults > 0}
                         />
                       </div>
+                      {/* Afordância explícita da prévia — antes só o título
+                          (sem nenhum sinal visual) abria isto; ninguém
+                          descobria sozinho. */}
+                      <button
+                        type="button"
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-1 -ml-1.5 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                        onClick={() => toggleExpanded(goal.id)}
+                        data-testid={`goal-toggle-expand-${goal.id}`}
+                      >
+                        <ChevronRight
+                          className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")}
+                          aria-hidden
+                        />
+                        {expanded
+                          ? "Ocultar indicadores"
+                          : `Ver ${goal.activeKeyResults} indicador(es)`}
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -480,17 +490,20 @@ export function GoalsCockpitPage() {
 
                 {expanded ? (
                   <div className="border-t border-border/60 px-3 pb-3">
-                    <p className="py-2 text-[10px] text-muted-foreground">
-                      Prévia rápida — clique em um indicador para abrir a evolução e as
-                      tarefas dele.
+                    <p className="py-2 pl-[42px] text-[10px] text-muted-foreground">
+                      Indicadores deste objetivo — clique em um para abrir a evolução e
+                      as tarefas dele.
                     </p>
                     {goal.keyResults.length === 0 ? (
-                      <p className="py-3 text-xs text-muted-foreground">
+                      <p className="py-3 pl-[42px] text-xs text-muted-foreground">
                         Nenhum indicador ainda — clique em "+ Indicador" acima para
                         adicionar o primeiro número mensurável deste objetivo.
                       </p>
                     ) : (
-                      <ul className="divide-y divide-border/60">
+                      // Recuo + linha-guia alinhados sob o título do objetivo:
+                      // mostra visualmente que estes indicadores estão DENTRO
+                      // dele (Objetivo → Indicadores), não numa lista solta.
+                      <ul className="ml-[42px] divide-y divide-border/60 border-l-2 border-border/50 pl-3">
                         {goal.keyResults.map((kr) => (
                           <li
                             key={kr.id}
