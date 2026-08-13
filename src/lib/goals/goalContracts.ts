@@ -245,6 +245,8 @@ export type GoalKeyResultCreateInput = {
   unit: string | null;
   weight: string;
   ownerAppUserId: string;
+  /** Regra dinâmica (chaves do dicionário) — null = indicador de valor manual. */
+  rule: unknown | null;
 };
 
 export function parseGoalKeyResultCreateInput(
@@ -274,6 +276,7 @@ export function parseGoalKeyResultCreateInput(
     unit: parseOptionalString(body.unit, "unit", 30),
     weight,
     ownerAppUserId: parseUuid(body.ownerAppUserId, "ownerAppUserId"),
+    rule: body.rule ?? null,
   };
 }
 
@@ -478,7 +481,7 @@ export function parseGoalInitiativeUpdateInput(
 
 export type GoalWizardInput = {
   goal: GoalCreateInput;
-  keyResult: GoalKeyResultCreateInput & { rule: unknown | null };
+  keyResult: GoalKeyResultCreateInput;
   quotas: GoalQuotaInput[];
 };
 
@@ -487,10 +490,9 @@ export function parseGoalWizardInput(body: Record<string, unknown>): GoalWizardI
   const krRaw = (body.keyResult ?? {}) as Record<string, unknown>;
   const goal = parseGoalCreateInput(goalRaw);
   const keyResult = parseGoalKeyResultCreateInput(krRaw);
-  const rule = krRaw.rule ?? null;
   const quotas =
     body.quotas === undefined || body.quotas === null
       ? []
       : parseGoalQuotasInput(body);
-  return { goal, keyResult: { ...keyResult, rule }, quotas };
+  return { goal, keyResult, quotas };
 }

@@ -184,6 +184,43 @@ describe("goalRoutes — parse e erros controlados", () => {
     assert.equal(res409.statusCode, 409);
   });
 
+  it("POST /api/goals/:id/key-results repassa rule ao service (indicador dentro do objetivo existente)", async () => {
+    let seenGoalId: unknown = null;
+    let seenInput: unknown = null;
+    const { routes } = setup(
+      stubService({
+        createKeyResult: async (goalId, input) => {
+          seenGoalId = goalId;
+          seenInput = input;
+          return {} as never;
+        },
+      })
+    );
+    const route = routes.find(
+      (r) => r.method === "POST" && r.path === "/api/goals/:id/key-results"
+    )!;
+    const res = mockRes();
+    const rule = { entityKey: "SALES_ORDERS", metricKey: "SALES_NET_TOTAL", filters: [] };
+    await route.handler(
+      {
+        params: { id: "goal-1" },
+        body: {
+          title: "Faturamento",
+          domain: "COMERCIAL",
+          trackingType: "INCREASE",
+          baseline: "0",
+          target: "100000",
+          ownerAppUserId: "3f2b8c9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+          rule,
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 201);
+    assert.equal(seenGoalId, "goal-1");
+    assert.deepEqual((seenInput as { rule: unknown }).rule, rule);
+  });
+
   it("GET /api/goals delega filtros onlyMine/status ao service", async () => {
     let seen: unknown = null;
     const { routes } = setup(
