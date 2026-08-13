@@ -10,6 +10,7 @@ import {
   HttpError,
   APP_AUTH_REQUIRED_EVENT,
 } from "./http.js";
+import { BOOTSTRAP_ADMIN_REQUIRED_CODE } from "./auth/adminElevation.shared.js";
 
 type FetchImpl = (input: unknown, init: RequestInit | undefined) => Promise<Response>;
 
@@ -91,10 +92,41 @@ test("fetchJsonOk lança AuthRequiredError e dispara evento global em 401", asyn
 
 test("fetchJsonOk com suppressAuthEvent não dispara evento global em 401", async () => {
   fetchImpl = async () =>
-    jsonResponse({ error: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." }, 401);
+    jsonResponse({ error: "UNAUTHORIZED", message: "Autenticação necessária." }, 401);
   await assert.rejects(
     fetchJsonOk("/api/auth/login", { suppressAuthEvent: true }),
     AuthRequiredError
+  );
+  assert.equal(dispatched.length, 0);
+});
+
+test("401 INVALID_CREDENTIALS não dispara logout da sessão principal", async () => {
+  fetchImpl = async () =>
+    jsonResponse({ error: "INVALID_CREDENTIALS", message: "Credenciais administrativas inválidas." }, 401);
+  await assert.rejects(
+    fetchJsonOk("/api/bootstrap-admin/login"),
+    (e: unknown) =>
+      e instanceof HttpError &&
+      !(e instanceof AuthRequiredError) &&
+      e.status === 401 &&
+      e.code === "INVALID_CREDENTIALS"
+  );
+  assert.equal(dispatched.length, 0);
+});
+
+test("401 BOOTSTRAP_ADMIN_REQUIRED não dispara logout da sessão principal", async () => {
+  fetchImpl = async () =>
+    jsonResponse(
+      { error: BOOTSTRAP_ADMIN_REQUIRED_CODE, message: "Acesso administrativo temporário necessário." },
+      401
+    );
+  await assert.rejects(
+    fetchJsonOk("/api/admin/users/bootstrap-super-admin"),
+    (e: unknown) =>
+      e instanceof HttpError &&
+      !(e instanceof AuthRequiredError) &&
+      e.status === 401 &&
+      e.code === BOOTSTRAP_ADMIN_REQUIRED_CODE
   );
   assert.equal(dispatched.length, 0);
 });

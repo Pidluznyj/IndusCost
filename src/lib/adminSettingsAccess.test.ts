@@ -6,6 +6,7 @@ import {
   ADMIN_SETTINGS_PILOT_ENDPOINTS,
   ADMIN_SETTINGS_RESOURCE_KEYS,
   ADMIN_SETTINGS_SECURITY_ALREADY_MIGRATED,
+  canOpenAdminSettingsHub,
 } from "./adminSettingsAccess.ts";
 import { authorizeRequireResource } from "./security/requireResource.ts";
 import {
@@ -138,5 +139,14 @@ describe("adminSettingsAccess — matriz P19", () => {
     const result = resolveEffectiveAccess(fixtureSuperAdmin());
     assert.equal(canEffectiveAccess(result, ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync, "execute"), true);
     assert.equal(canEffectiveAccess(result, ADMIN_SETTINGS_RESOURCE_KEYS.branding, "update"), true);
+  });
+
+  it("hub Configurações só SUPER_ADMIN", () => {
+    assert.equal(canOpenAdminSettingsHub({ role: "SUPER_ADMIN" }), true);
+    assert.equal(canOpenAdminSettingsHub({ role: "ADMIN" }), false);
+    assert.equal(canOpenAdminSettingsHub({ role: "COMMERCIAL_MANAGER" }), false);
+    assert.equal(canOpenAdminSettingsHub({ role: "SELLER" }), false);
+    assert.equal(canOpenAdminSettingsHub({ role: "VIEWER" }), false);
+    assert.equal(canOpenAdminSettingsHub(null), false);
   });
 });

@@ -246,8 +246,13 @@ describe("resourceNavigationAccess — rota e navegação segura", () => {
     assert.equal(canAccessPath("/finance", eng), false);
 
     const admin = ctx("VIEWER", ["settings.view", "dashboard.view"]);
-    assert.equal(canAccessPath("/settings", admin), true);
+    assert.equal(canAccessPath("/settings", admin), false);
     assert.equal(canAccessPath("/finance/accounts-payable", admin), false);
+
+    const superAdmin = ctx("SUPER_ADMIN", []);
+    assert.equal(canAccessPath("/settings", superAdmin), true);
+    const roleAdmin = ctx("ADMIN", ["settings.view", "dashboard.view"]);
+    assert.equal(canAccessPath("/settings", roleAdmin), false);
 
     const comercial = ctx("VIEWER", [
       "crm.view",

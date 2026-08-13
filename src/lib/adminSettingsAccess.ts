@@ -56,3 +56,10 @@ export const ADMIN_SETTINGS_FORBIDDEN_BLEED_KEYS = [
   "finance.accountsPayable.view",
   "crm.view",
 ] as const;
+
+/** Hub Administração → Configurações: somente SUPER_ADMIN autenticado. */
+export function canOpenAdminSettingsHub(user: {
+  role?: string | null;
+} | null | undefined): boolean {
+  return String(user?.role ?? "").trim().toUpperCase() === "SUPER_ADMIN";
+}

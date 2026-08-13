@@ -8,7 +8,10 @@
  *  - 401 vira erro tipado `AuthRequiredError` e dispara o evento global
  *    `app-auth-required` (a menos que `suppressAuthEvent` seja passado), para o
  *    AuthContext limpar a sessão e redirecionar ao login — sem alert, sem loop.
+ *  - 401 de bootstrap/credencial inválida NÃO derruba a sessão principal.
  */
+
+import { isNonSessionUnauthorizedCode } from "@/src/lib/auth/adminElevation.shared";
 
 export const APP_AUTH_REQUIRED_EVENT = "app-auth-required";
 export const APP_PERMISSIONS_STALE_EVENT = "app-permissions-stale";
@@ -130,9 +133,12 @@ function withCredentials(init: AppRequestInit): RequestInit {
 
 /** Lida com 401 de forma centralizada (evento global + erro tipado). */
 async function raiseForUnauthorized(res: Response, init: AppRequestInit): Promise<never> {
-  const message = (await parseApiErrorMessage(res)) || undefined;
+  const payload = await parseApiErrorPayload(res);
+  if (isNonSessionUnauthorizedCode(payload.code)) {
+    throw new HttpError(401, payload.message, payload.code);
+  }
   if (!init.suppressAuthEvent) notifyAuthRequired();
-  throw new AuthRequiredError(message ?? undefined);
+  throw new AuthRequiredError(payload.message || undefined);
 }
 
 /** GET/POST etc. que retornam JSON no sucesso; lança erro tipado se !res.ok. */

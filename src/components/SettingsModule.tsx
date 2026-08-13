@@ -35,6 +35,7 @@ import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsR
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
 import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
+import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
@@ -354,6 +355,7 @@ const HUB_SECTIONS: Array<{
 
 export const SettingsModule = () => {
   const auth = useAuth();
+  const stepUp = useAdminStepUp();
   const canManageUsersPerm = canManageUsers(auth);
   const canViewAccessProfilesPerm = canViewAccessProfiles(auth);
   const allowGenerateCommercialTables = canGenerateCommercialPriceTables(auth);
@@ -1218,6 +1220,7 @@ export const SettingsModule = () => {
 
   const handleSaveGlobals = async () => {
     try {
+      await stepUp.run(async () => {
       // Save Energy Cost
       const energyMethod = globals.energyId ? "PUT" : "POST";
       const energyUrl = globals.energyId ? `/api/indirect-costs/${globals.energyId}` : "/api/indirect-costs";
@@ -1284,6 +1287,7 @@ export const SettingsModule = () => {
       });
 
       fetchData();
+      });
     } catch (error) {
       console.error("Erro ao salvar parâmetros globais:", error);
       alert(error instanceof Error ? error.message : "Não foi possível salvar parâmetros globais.");
@@ -1317,6 +1321,12 @@ export const SettingsModule = () => {
 
   return (
     <div className="space-y-6" data-tour="settings-root">
+      {stepUp.dialog}
+      {stepUp.notice ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {stepUp.notice}
+        </div>
+      ) : null}
       <section className="rounded-2xl border border-border bg-card/40 p-6 space-y-4">
         <div className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary/80">Administração do Sistema</p>

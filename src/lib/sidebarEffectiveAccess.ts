@@ -256,6 +256,8 @@ export function canViewSidebarModuleFromDto(
 ): boolean {
   if (!dto) return false;
   if (dto.isSuperAdmin) return true;
+  // Hub Configurações: exclusivo SUPER_ADMIN (fonte oficial: dto.isSuperAdmin).
+  if (moduleId === "settings") return false;
   if (moduleId === "crm-commercial") {
     const general = dtoAllowsView(dto, "commercial.crm.general");
     const seller = dtoAllowsView(dto, "commercial.crm.seller");

@@ -144,6 +144,7 @@ src/lib/security/permissionRolePresets.test.ts
 src/lib/userPermissionsAdminUi.test.ts
 src/lib/security/permissionService.test.ts
 src/lib/security/permissionGuards.test.ts
+src/lib/auth/adminElevation.test.ts
 src/lib/security/permissionAudit.test.ts
 src/lib/security/userPermissionAdminAudit.test.ts
 src/lib/security/userPermissionAssignDiagnosis.test.ts

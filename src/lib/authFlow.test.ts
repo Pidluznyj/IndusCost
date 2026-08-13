@@ -125,3 +125,31 @@ test("server.ts: rotas Nomus sync registradas", () => {
   assert.match(routes, /\/api\/settings\/nomus-sync\/accounts-payable-status/);
   assert.match(server, /registerSettingsNomusSyncRoutes/);
 });
+
+test("admin auth: sessão principal, step-up e bootstrap são mecanismos distintos", () => {
+  const app = read("src/App.tsx");
+  const server = read("server.ts");
+  const http = read("src/lib/http.ts");
+  const login = read("src/components/AuthLoginPage.tsx");
+
+  assert.match(app, /function AdminSettingsRoute/);
+  assert.match(app, /canOpenAdminSettingsHub/);
+  assert.match(app, /\/admin\/recovery/);
+  assert.doesNotMatch(app, /Entrar no hub administrativo/);
+  assert.doesNotMatch(app, /Acesso administrativo bootstrap temporário obrigatório/);
+
+  const bootstrapLogin = server.slice(
+    server.indexOf('app.post("/api/bootstrap-admin/login"'),
+    server.indexOf('app.post("/api/bootstrap-admin/logout"')
+  );
+  assert.match(bootstrapLogin, /setBootstrapSessionCookie/);
+  assert.doesNotMatch(bootstrapLogin, /setAppSessionCookie/);
+  assert.doesNotMatch(bootstrapLogin, /clearAppSessionCookie/);
+  assert.doesNotMatch(bootstrapLogin, /setAdminElevationCookie/);
+
+  assert.match(server, /ADMIN_ELEVATION_COOKIE_NAME/);
+  assert.match(server, /clearAdminElevationCookie\(res\)/);
+  assert.match(server, /\/api\/auth\/admin-elevation\/confirm/);
+  assert.match(http, /isNonSessionUnauthorizedCode/);
+  assert.match(login, /\/admin\/recovery/);
+});

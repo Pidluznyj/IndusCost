@@ -550,6 +550,19 @@ import {
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
 import {
+  ADMIN_ELEVATION_COOKIE_NAME,
+  ADMIN_ELEVATION_REQUIRED_CODE,
+  ADMIN_ELEVATION_TTL_MS,
+} from "./src/lib/auth/adminElevation.shared.js";
+import {
+  createAdminElevationPayload,
+  decodeAdminElevationToken,
+  encodeAdminElevationToken,
+  isAdminElevationBoundToSession,
+  resolveAdminElevationSecret,
+  toAdminElevationStatus,
+} from "./src/lib/auth/adminElevation.server.js";
+import {
   bumpPermissionsVersionAndSyncSessions,
   isSessionPermissionsVersionStale,
 } from "./src/lib/permissionsVersion.js";
@@ -1019,6 +1032,7 @@ async function startServer() {
   const host = process.env.HOST || "0.0.0.0";
   const bootstrapAdminConfig = getBootstrapAdminConfig();
   const isBootstrapReady = isBootstrapAdminConfigReady(bootstrapAdminConfig);
+  const adminElevationFallbackSecret = crypto.randomBytes(32).toString("hex");
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -1684,6 +1698,8 @@ async function startServer() {
     }
   }
 
+  let enforceCriticalGlobalParamMutation: express.RequestHandler = (_req, res, next) => next();
+
   const requireBootstrapForGlobalParamMutation: express.RequestHandler = async (req, res, next) => {
     const method = req.method.toUpperCase();
     if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") return next();
@@ -1691,7 +1707,7 @@ async function startServer() {
     const bodyCategory =
       typeof req.body?.category === "string" ? req.body.category.trim().toUpperCase() : "";
     if (bodyCategory === "GLOBAL_PARAM") {
-      return requireBootstrapAdmin(req, res, next);
+      return enforceCriticalGlobalParamMutation(req, res, next);
     }
 
     const targetId = typeof req.params?.id === "string" ? req.params.id : "";
@@ -1703,7 +1719,7 @@ async function startServer() {
         select: { category: true },
       });
       if (current?.category === "GLOBAL_PARAM") {
-        return requireBootstrapAdmin(req, res, next);
+        return enforceCriticalGlobalParamMutation(req, res, next);
       }
       return next();
     } catch (error) {
@@ -1880,6 +1896,131 @@ async function startServer() {
     );
   };
 
+  function adminElevationSecret(): string {
+    return resolveAdminElevationSecret(
+      process.env.BOOTSTRAP_ADMIN_SESSION_SECRET,
+      adminElevationFallbackSecret
+    );
+  }
+
+  function readAdminElevation(req: express.Request) {
+    const cookies = parseCookiesFromHeader(req.headers.cookie);
+    const token = cookies[ADMIN_ELEVATION_COOKIE_NAME];
+    if (!token) return null;
+    return decodeAdminElevationToken(token, adminElevationSecret());
+  }
+
+  function setAdminElevationCookie(
+    res: express.Response,
+    payload: ReturnType<typeof createAdminElevationPayload>
+  ): void {
+    const token = encodeAdminElevationToken(payload, adminElevationSecret());
+    res.cookie(ADMIN_ELEVATION_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecureFor(res),
+      maxAge: ADMIN_ELEVATION_TTL_MS,
+      path: "/",
+    });
+  }
+
+  function clearAdminElevationCookie(res: express.Response): void {
+    res.clearCookie(ADMIN_ELEVATION_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecureFor(res),
+      path: "/",
+    });
+  }
+
+  const requireAdminElevation: express.RequestHandler = async (req, res, next) => {
+    if (isBootstrapAdminRequest(req)) return next();
+    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    (req as { appAuth?: AppAuthContext }).appAuth = auth;
+    if (auth.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Apenas Super Administradores podem executar esta operação crítica.",
+      });
+    }
+    const elevation = readAdminElevation(req);
+    if (!isAdminElevationBoundToSession(elevation, { userId: auth.id, sessionId: auth.sessionId })) {
+      return res.status(403).json({
+        error: ADMIN_ELEVATION_REQUIRED_CODE,
+        code: ADMIN_ELEVATION_REQUIRED_CODE,
+        message: "Confirme sua identidade para continuar esta operação administrativa.",
+      });
+    }
+    return next();
+  };
+
+  enforceCriticalGlobalParamMutation = requireAdminElevation;
+
+  app.get("/api/auth/admin-elevation/status", requireAppAuth, async (req, res) => {
+    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+    if (!auth) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    const elevation = readAdminElevation(req);
+    const bound = isAdminElevationBoundToSession(elevation, {
+      userId: auth.id,
+      sessionId: auth.sessionId,
+    })
+      ? elevation
+      : null;
+    return res.json(toAdminElevationStatus(bound));
+  });
+
+  app.post("/api/auth/admin-elevation/confirm", requireAppAuth, async (req, res) => {
+    try {
+      const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      if (!auth) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      if (auth.role !== "SUPER_ADMIN") {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "Apenas Super Administradores podem elevar o acesso administrativo.",
+        });
+      }
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const user = await prisma.appUser.findUnique({
+        where: { id: auth.id },
+        select: { passwordHash: true, isActive: true, role: true },
+      });
+      if (!user?.isActive) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const valid = await verifyPassword(password, user.passwordHash);
+      if (!valid) {
+        return res.status(403).json({
+          error: "INVALID_CREDENTIALS",
+          message: "Senha inválida.",
+        });
+      }
+      const payload = createAdminElevationPayload({
+        userId: auth.id,
+        sessionId: auth.sessionId,
+      });
+      setAdminElevationCookie(res, payload);
+      return res.json(toAdminElevationStatus(payload));
+    } catch (error) {
+      console.error("POST /api/auth/admin-elevation/confirm", error);
+      return res.status(500).json({ error: "Erro ao confirmar identidade administrativa." });
+    }
+  });
+
+  app.post("/api/auth/admin-elevation/logout", requireAppAuth, (_req, res) => {
+    clearAdminElevationCookie(res);
+    return res.json({ success: true, ...toAdminElevationStatus(null) });
+  });
+
   /** Bootstrap admin OU permissões de app (settings / RBAC). */
   function requireBootstrapOrAnyPermission(permissions: string[]): express.RequestHandler {
     return async (req, res, next) => {
@@ -2034,10 +2175,12 @@ async function startServer() {
         await revokeAppSessionById(auth.sessionId);
       }
       clearAppSessionCookie(res);
+      clearAdminElevationCookie(res);
       return res.json({ success: true });
     } catch (error) {
       console.error("POST /api/auth/logout", error);
       clearAppSessionCookie(res);
+      clearAdminElevationCookie(res);
       return res.json({ success: true });
     }
   });
@@ -16696,6 +16839,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       requireAppAuth,
       requireBootstrapOrResource,
       isBootstrapAdminRequest,
+      requireAdminElevation,
     },
     { initAnalysisCache, isUuid }
   );

@@ -116,6 +116,14 @@ describe("sidebarEffectiveAccess — personas", () => {
     const c = ctx("SUPER_ADMIN", []);
     const nav = buildResourceAwareSidebarNavigation(c);
     assert.equal(nav.flatAccessibleItems.length, SIDEBAR_MODULE_ORDER.length);
+    assert.equal(canViewModule("settings", c), true);
+  });
+
+  it("ADMIN/VIEWER com settings.view não abrem o hub Configurações", () => {
+    const admin = ctx("ADMIN", ["settings.view", "dashboard.view"]);
+    const viewer = ctx("VIEWER", ["settings.view", "dashboard.view"]);
+    assert.equal(canViewModule("settings", admin), false);
+    assert.equal(canViewModule("settings", viewer), false);
   });
 
   it("financeiro amplo: finance + filhos autorizados; sem RH", () => {

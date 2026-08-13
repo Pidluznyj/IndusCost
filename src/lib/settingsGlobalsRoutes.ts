@@ -20,6 +20,7 @@ type AuthGuards = {
     action?: string
   ) => RequestHandler;
   isBootstrapAdminRequest: (req: express.Request) => boolean;
+  requireAdminElevation?: RequestHandler;
 };
 
 type Deps = {
@@ -97,7 +98,7 @@ export function registerSettingsGlobalsRoutes(
   auth: AuthGuards,
   deps: Deps
 ) {
-  const { requireAppAuth, requireBootstrapOrResource, isBootstrapAdminRequest } = auth;
+  const { requireAppAuth, requireBootstrapOrResource, isBootstrapAdminRequest, requireAdminElevation } = auth;
   const viewGuard = [
     requireAppAuth,
     requireBootstrapOrResource(
@@ -114,7 +115,8 @@ export function registerSettingsGlobalsRoutes(
       ADMIN_SETTINGS_RESOURCE_KEYS.globalParams,
       ADMIN_SETTINGS_ACTIONS.update
     ),
-  ] as const;
+    ...(requireAdminElevation ? [requireAdminElevation] : []),
+  ];
 
   app.get("/api/settings/globals", ...viewGuard, async (_req, res) => {
     try {

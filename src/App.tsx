@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
@@ -89,18 +89,10 @@ import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { fetchJsonOk } from "@/src/lib/http";
+import { AdminRecoveryPage } from "@/src/components/AdminRecoveryPage";
+import { canOpenAdminSettingsHub } from "@/src/lib/adminSettingsAccess";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
-import { AlertCircle, BarChart3, CalendarRange, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, Percent, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
-
-type BootstrapAdminStatus = {
-  enabled: boolean;
-  authenticated: boolean;
-  mode: "bootstrap-env";
-  misconfigured: boolean;
-  username: string | null;
-  expiresAt: string | null;
-};
+import { BarChart3, CalendarRange, ClipboardList, Factory, Layers, Package, Percent, TrendingUp } from "lucide-react";
 
 function ModulePageShell({
   title,
@@ -133,228 +125,16 @@ function ModulePageShell({
   );
 }
 
-function BootstrapAdminSettingsRoute() {
+function AdminSettingsRoute() {
   const auth = useAuth();
-  const [status, setStatus] = useState<BootstrapAdminStatus | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
-  const [pendingLogin, setPendingLogin] = useState(false);
-  const [pendingLogout, setPendingLogout] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-
-  /** Hub settings: sessão App OU bootstrap autenticado — nunca os dois mal alinhados. */
-  const appCanOpenSettings =
-    auth.hasPermission("settings.view") ||
-    auth.hasPermission("users.manage") ||
-    auth.hasAnyPermission([
-      "settings.global_params.view",
-      "settings.branding.view",
-      "settings.operational.view",
-      "settings.nomus.view",
-      "settings.price_tables.view",
-      "accessProfiles.view",
-      "accessProfiles.manage",
-    ]);
-
-  const refreshStatus = async () => {
-    setLoadingStatus(true);
-    try {
-      const data = await fetchJsonOk<BootstrapAdminStatus>("/api/bootstrap-admin/status");
-      setStatus(data);
-      setErrorMessage(null);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Não foi possível validar acesso administrativo.");
-    } finally {
-      setLoadingStatus(false);
-    }
-  };
-
-  useEffect(() => {
-    refreshStatus();
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPendingLogin(true);
-    setErrorMessage(null);
-    try {
-      await fetchJsonOk("/api/bootstrap-admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      setPassword("");
-      await refreshStatus();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Falha ao autenticar acesso administrativo.");
-    } finally {
-      setPendingLogin(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setPendingLogout(true);
-    setErrorMessage(null);
-    try {
-      await fetchJsonOk("/api/bootstrap-admin/logout", { method: "POST" });
-      await refreshStatus();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Falha ao encerrar sessão administrativa.");
-    } finally {
-      setPendingLogout(false);
-    }
-  };
-
-  if (loadingStatus) {
-    return (
-      <ModulePageShell
-        title="Configurações do Sistema"
-        description="Validação de acesso administrativo temporário em andamento."
-      >
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="mt-3 text-sm text-muted-foreground">Verificando sessão administrativa...</p>
-        </div>
-      </ModulePageShell>
-    );
-  }
-
-  const bootstrapAuthenticated = Boolean(status?.enabled && status?.authenticated);
-
-  // Sessão bootstrap ativa sem grants App de settings: força logout bootstrap (não abre hub no contexto do VIEWER).
-  if (bootstrapAuthenticated && !appCanOpenSettings) {
-    return (
-      <ModulePageShell
-        title="Configurações do Sistema"
-        description="Sessão bootstrap incompatível com as permissões deste usuário."
-        headerActions={
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={pendingLogout}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
-          >
-            {pendingLogout ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
-            Logout Admin (Bootstrap)
-          </button>
-        }
-      >
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 space-y-2">
-          <p>
-            Há uma sessão administrativa temporária ativa para{" "}
-            <strong>{status?.username ?? "bootstrap"}</strong>, mas o usuário logado no IndusCost
-            não tem permissão de Configurações.
-          </p>
-          <p>
-            Use <strong>Logout Admin (Bootstrap)</strong> e continue apenas com o login principal
-            (ex.: Contas a Pagar). O bootstrap é só para recuperação / SUPER_ADMIN.
-          </p>
-        </div>
-        <AccessDenied moduleId="settings" />
-      </ModulePageShell>
-    );
-  }
-
-  if (!appCanOpenSettings) {
+  if (!canOpenAdminSettingsHub(auth.authUser)) {
     return <AccessDenied moduleId="settings" />;
   }
-
-  if (status?.enabled && !status.authenticated) {
-    return (
-      <ModulePageShell
-        title="Configurações do Sistema"
-        description="Acesso administrativo bootstrap temporário obrigatório para esta área."
-      >
-        <div className="max-w-xl rounded-2xl border border-border bg-card p-6 space-y-5">
-          <div className="flex items-start gap-3">
-            <ShieldOff className="h-5 w-5 text-amber-600 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-sm font-semibold">Acesso administrativo temporário</p>
-              <p className="text-sm text-muted-foreground">
-                Este acesso é controlado por variáveis de ambiente e existe apenas como bootstrap de recuperação.
-                O login principal do IndusCost usa usuários cadastrados em Configurações → Usuários e Permissões.
-              </p>
-            </div>
-          </div>
-          {status.misconfigured && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              Bootstrap admin habilitado no backend, mas sem configuração completa de ambiente.
-            </div>
-          )}
-          {errorMessage && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorMessage}</div>
-          )}
-          <form onSubmit={handleLogin} className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Usuário administrativo
-              </label>
-              <input
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Informe o usuário bootstrap"
-                autoComplete="username"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Senha</label>
-              <input
-                required
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Informe a senha bootstrap"
-                autoComplete="current-password"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={pendingLogin || status.misconfigured}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-            >
-              {pendingLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              Entrar no hub administrativo
-            </button>
-          </form>
-        </div>
-      </ModulePageShell>
-    );
-  }
-
-  const headerActions =
-    status?.enabled && status?.authenticated ? (
-      <button
-        type="button"
-        onClick={handleLogout}
-        disabled={pendingLogout}
-        className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
-      >
-        {pendingLogout ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
-        Logout Admin (Bootstrap)
-      </button>
-    ) : undefined;
-
   return (
     <ModulePageShell
       title="Configurações do Sistema"
-      description="Gerencie cargos, encargos e parâmetros globais."
-      headerActions={headerActions}
+      description="Acesso exclusivo para Super Administradores."
     >
-      {status?.enabled && status?.authenticated && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5" />
-            <p>
-              Sessão administrativa temporária ativa para <strong>{status.username}</strong>. Use o login principal do
-              IndusCost no dia a dia; o bootstrap permanece para recuperação e criação do super administrador.
-            </p>
-          </div>
-        </div>
-      )}
       <SettingsModule />
     </ModulePageShell>
   );
@@ -373,6 +153,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<PublicLandingRoute />} />
       <Route path="/login" element={<PublicLoginRoute />} />
+      <Route path="/admin/recovery" element={<AdminRecoveryPage />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
       <Route
         path="/proposals/:id/internal-management-print"
@@ -1372,7 +1153,7 @@ export default function App() {
         />
         <Route
           path="settings"
-          element={<BootstrapAdminSettingsRoute />}
+          element={<AdminSettingsRoute />}
         />
         <Route path="*" element={<DefaultModuleRedirect />} />
       </Route>

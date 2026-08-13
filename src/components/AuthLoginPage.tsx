@@ -175,6 +175,12 @@ export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
             Entrar
           </button>
         </form>
+        <p className="text-center text-xs text-muted-foreground">
+          Recuperação de emergência?{" "}
+          <Link to="/admin/recovery" className="font-semibold text-foreground hover:underline">
+            Acesso bootstrap
+          </Link>
+        </p>
       </div>
     </div>
   );

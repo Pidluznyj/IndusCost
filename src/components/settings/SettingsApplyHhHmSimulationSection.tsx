@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Eye, History, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
 import { formatCurrency, cn } from "@/src/lib/utils";
 import {
   APPLY_HH_HM_SIMULATION_API,
@@ -65,6 +66,7 @@ export function SettingsApplyHhHmSimulationSection({
     useState<TransformationHhHmSimulationListItem | null>(null);
   const [applying, setApplying] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const stepUp = useAdminStepUp();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,15 +97,17 @@ export function SettingsApplyHhHmSimulationSection({
     setApplying(true);
     setFeedback(null);
     try {
-      const result = await fetchJsonOk<{ message?: string }>(APPLY_HH_HM_SIMULATION_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ simulationId: pendingApply.id, confirm: true }),
+      await stepUp.run(async () => {
+        const result = await fetchJsonOk<{ message?: string }>(APPLY_HH_HM_SIMULATION_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ simulationId: pendingApply.id, confirm: true }),
+        });
+        setFeedback(result.message ?? "Aplicado com sucesso.");
+        setPendingApply(null);
+        onApplied();
+        void load();
       });
-      setFeedback(result.message ?? "Aplicado com sucesso.");
-      setPendingApply(null);
-      onApplied();
-      void load();
     } catch (err) {
       console.error("SettingsApplyHhHmSimulation: falha ao aplicar", err);
       alert(
@@ -121,6 +125,12 @@ export function SettingsApplyHhHmSimulationSection({
       className="mt-8 rounded-2xl border border-border bg-background/60 p-5"
       data-testid="settings-apply-hh-hm-simulation"
     >
+      {stepUp.dialog}
+      {stepUp.notice ? (
+        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {stepUp.notice}
+        </div>
+      ) : null}
       <div className="mb-4 flex items-start gap-3">
         <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
           <History className="h-5 w-5" aria-hidden />

@@ -35,5 +35,6 @@ describe("settingsGlobalsRoutes", () => {
     assert.ok(SETTINGS_BRANDING_VIEW_PERMISSIONS.includes("settings.branding.view"));
     assert.ok(SETTINGS_BRANDING_EDIT_PERMISSIONS.includes("settings.branding.edit"));
     assert.match(lib, /getBrandingSettingsDto/);
+    assert.match(lib, /requireAdminElevation/);
   });
 });
