@@ -472,6 +472,16 @@ export function GoalDetailPage() {
                     {selectedKr.ruleSummary ??
                       "Indicador de lançamento manual — o valor é informado pela equipe."}
                   </p>
+                  <p
+                    className="text-[11px] text-muted-foreground"
+                    data-testid="detail-kr-period"
+                  >
+                    Período medido: {civilDateBr(selectedKr.effectiveStartDate)} –{" "}
+                    {civilDateBr(selectedKr.effectiveEndDate)}
+                    {selectedKr.hasOwnPeriod
+                      ? " (recorte próprio deste indicador)"
+                      : " (mesmo período do objetivo)"}
+                  </p>
                 </div>
                 <p className="text-sm font-semibold tabular-nums">
                   {formatValue(selectedKr.achievedValue, selectedKr.unit)}{" "}
@@ -480,11 +490,13 @@ export function GoalDetailPage() {
                   </span>
                 </p>
               </div>
+              {/* A trajetória ideal segue a janela DO INDICADOR — um indicador
+                  trimestral dentro de um objetivo anual tem a própria reta. */}
               <BurnUpChart
                 keyResult={selectedKr}
                 snapshots={snapshots}
-                startDate={goal.startDate}
-                endDate={goal.endDate}
+                startDate={selectedKr.effectiveStartDate}
+                endDate={selectedKr.effectiveEndDate}
               />
               <p className="mt-1 text-[10px] text-muted-foreground">
                 Linha pontilhada: trajetória ideal. Linha azul: realizado (um retrato

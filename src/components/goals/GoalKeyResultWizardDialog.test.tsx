@@ -63,7 +63,9 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
         onCreated={() => {}}
       />
     );
-    assert.ok(html.includes("Eu quero acompanhar"));
+    // Frase na ordem natural (área primeiro), igual ao wizard de Objetivo.
+    assert.ok(html.includes("Na área de"));
+    assert.ok(html.includes("eu quero acompanhar"));
     assert.ok(html.includes("Pedidos de Venda"));
     // "join" bare demais: SVG dos ícones (lucide) usa stroke-linejoin como
     // atributo — falso positivo. Mesmo vocabulário proibido do cockpit.
@@ -73,6 +75,60 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
         `termo técnico vazou: ${forbidden}`
       );
     }
+  });
+
+  it("o indicador tem PERÍODO PRÓPRIO limitado ao período do objetivo", () => {
+    const html = renderToStaticMarkup(
+      <GoalKeyResultWizardDialog
+        goal={goal}
+        owners={[]}
+        metadataEntities={[]}
+        onCancel={() => {}}
+        onCreated={() => {}}
+      />
+    );
+    assert.ok(html.includes('data-testid="period-picker"'), "seletor de período presente");
+    assert.ok(html.includes("Qual período este indicador mede?"));
+    // Objetivo anual → atalhos de trimestre/semestre dentro dele (1 clique).
+    assert.ok(html.includes('data-testid="period-chip-Q3-2026"'), "trimestres do objetivo");
+    assert.ok(html.includes('data-testid="period-chip-S1-2026"'), "semestres do objetivo");
+    assert.ok(html.includes('data-testid="period-whole-goal"'));
+    // Limites do calendário = janela do objetivo (nunca medir fora dela).
+    assert.ok(html.includes('min="2026-01-01"'));
+    assert.ok(html.includes('max="2026-12-31"'));
+    assert.ok(html.includes("todo o período do objetivo"));
+  });
+
+  it("oferece medições prontas de 1 clique (galeria de receitas)", () => {
+    const html = renderToStaticMarkup(
+      <GoalKeyResultWizardDialog
+        goal={goal}
+        owners={[]}
+        metadataEntities={[
+          {
+            key: "SALES_ORDERS",
+            label: "Pedidos de Venda",
+            domain: "COMERCIAL",
+            supportsQuotaSplit: true,
+            metrics: [
+              {
+                key: "SALES_NET_TOTAL",
+                label: "Valor total vendido (líquido)",
+                operation: "SUM",
+                operationLabel: "Soma",
+                suggestedUnit: "R$",
+                periodLabel: "data de emissão do pedido",
+              },
+            ],
+            filterFields: [],
+          },
+        ]}
+        onCancel={() => {}}
+        onCreated={() => {}}
+      />
+    );
+    assert.ok(html.includes('data-testid="measure-recipes"'));
+    assert.ok(html.includes('data-testid="measure-recipe-REVENUE_SALES_ORDERS"'));
   });
 
   it("botão final chama a ação de adicionar (não de criar objetivo)", () => {

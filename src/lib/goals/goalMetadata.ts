@@ -61,7 +61,11 @@ export type GoalMetadataField = {
   type: GoalFilterFieldType;
   /** Nome REAL da coluna — só o backend usa; nunca exposto na API de metadados. */
   dbColumn: string;
-  /** Opções fixas quando ENUM: value persistido + label leigo. */
+  /**
+   * Opções fixas. Em ENUM são o vocabulário FECHADO (validado no motor).
+   * Em TEXT viram SUGESTÕES no wizard (datalist) — o usuário ainda pode
+   * digitar livre, e CONTAINS segue tolerante a variações de grafia.
+   */
   options?: ReadonlyArray<{ value: string; label: string }>;
   /** Operadores permitidos para o tipo. */
   operators: readonly GoalFilterOperator[];
@@ -116,8 +120,8 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         operation: "SUM",
         dbColumn: "totalNetValue",
         suggestedUnit: "R$",
-        periodDbColumn: "createdAt",
-        periodLabel: "data do pedido",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
       },
       {
         key: "SALES_GROSS_TOTAL",
@@ -125,8 +129,8 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         operation: "SUM",
         dbColumn: "totalGrossValue",
         suggestedUnit: "R$",
-        periodDbColumn: "createdAt",
-        periodLabel: "data do pedido",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
       },
       {
         key: "SALES_ORDER_COUNT",
@@ -134,8 +138,8 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         operation: "COUNT",
         dbColumn: null,
         suggestedUnit: "pedidos",
-        periodDbColumn: "createdAt",
-        periodLabel: "data do pedido",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
       },
       {
         key: "SALES_AVG_TICKET",
@@ -143,8 +147,26 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         operation: "AVG",
         dbColumn: "totalNetValue",
         suggestedUnit: "R$",
-        periodDbColumn: "createdAt",
-        periodLabel: "data do pedido",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
+      },
+      {
+        key: "SALES_DISCOUNT_TOTAL",
+        label: "Descontos concedidos",
+        operation: "SUM",
+        dbColumn: "totalDiscount",
+        suggestedUnit: "R$",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
+      },
+      {
+        key: "SALES_ITEMS_TOTAL",
+        label: "Itens vendidos (linhas de pedido)",
+        operation: "SUM",
+        dbColumn: "totalItems",
+        suggestedUnit: "itens",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
       },
     ],
     filterFields: [
@@ -168,6 +190,13 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         type: "TEXT",
         dbColumn: "companyIssuer",
         operators: TEXT_OPERATORS,
+        // Sugestões (datalist) — digitação livre continua valendo; CONTAINS
+        // tolera variações de grafia entre pedidos antigos.
+        options: [
+          { value: "Lazarios", label: "Lazarios" },
+          { value: "Koppetel", label: "Koppetel" },
+          { value: "SM", label: "SM" },
+        ],
       },
       {
         key: "SALES_RESPONSIBLE",
@@ -296,6 +325,15 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         periodDbColumn: "dueDate",
         periodLabel: "vencimento",
       },
+      {
+        key: "AR_TITLE_COUNT",
+        label: "Quantidade de títulos a receber",
+        operation: "COUNT",
+        dbColumn: null,
+        suggestedUnit: "títulos",
+        periodDbColumn: "dueDate",
+        periodLabel: "vencimento",
+      },
     ],
     filterFields: [
       {
@@ -339,6 +377,15 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         periodDbColumn: "dueDate",
         periodLabel: "vencimento",
       },
+      {
+        key: "AP_TITLE_COUNT",
+        label: "Quantidade de títulos a pagar",
+        operation: "COUNT",
+        dbColumn: null,
+        suggestedUnit: "títulos",
+        periodDbColumn: "dueDate",
+        periodLabel: "vencimento",
+      },
     ],
     filterFields: [
       {
@@ -353,6 +400,69 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         label: "fornecedor (nome)",
         type: "TEXT",
         dbColumn: "personName",
+        operators: TEXT_OPERATORS,
+      },
+    ],
+  },
+  {
+    key: "INVENTORY_MOVEMENTS",
+    label: "Movimentações de Estoque",
+    domain: "SUPRIMENTOS",
+    dbTable: "InventoryMovement",
+    employeeDbColumn: null,
+    metrics: [
+      {
+        key: "INV_QUANTITY_TOTAL",
+        label: "Quantidade movimentada",
+        operation: "SUM",
+        dbColumn: "quantity",
+        suggestedUnit: "un",
+        periodDbColumn: "movementDate",
+        periodLabel: "data da movimentação",
+      },
+      {
+        key: "INV_MOVEMENT_COUNT",
+        label: "Número de movimentações",
+        operation: "COUNT",
+        dbColumn: null,
+        suggestedUnit: "movimentações",
+        periodDbColumn: "movementDate",
+        periodLabel: "data da movimentação",
+      },
+    ],
+    filterFields: [
+      {
+        key: "INV_MOVEMENT_TYPE",
+        label: "tipo de movimentação",
+        type: "ENUM",
+        dbColumn: "movementType",
+        operators: ENUM_OPERATORS,
+        options: [
+          { value: "PURCHASE_RECEIPT", label: "Recebimento de compra" },
+          { value: "PURCHASE_ENTRY", label: "Entrada por compra" },
+          { value: "PRODUCTION_ENTRY", label: "Entrada de produção" },
+          { value: "PRODUCTION_EXIT", label: "Saída para produção" },
+          { value: "REQUISITION_EXIT", label: "Saída por requisição" },
+          { value: "MANUAL_ENTRY", label: "Entrada manual" },
+          { value: "MANUAL_EXIT", label: "Saída manual" },
+          { value: "TRANSFER", label: "Transferência" },
+          { value: "POSITIVE_ADJUSTMENT", label: "Ajuste para mais" },
+          { value: "NEGATIVE_ADJUSTMENT", label: "Ajuste para menos" },
+          { value: "LOSS", label: "Perda" },
+        ],
+      },
+      {
+        key: "INV_MATERIAL",
+        label: "matéria-prima (descrição)",
+        type: "TEXT",
+        dbColumn: "materialDescriptionSnapshot",
+        operators: TEXT_OPERATORS,
+      },
+      {
+        key: "INV_REASON",
+        label: "motivo",
+        type: "TEXT",
+        dbColumn: "reason",
         operators: TEXT_OPERATORS,
       },
     ],

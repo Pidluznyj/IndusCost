@@ -108,6 +108,32 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
     }
   });
 
+  // "Testar medição agora" — SOMENTE LEITURA: valida a regra contra o
+  // dicionário e devolve o valor atual na janela; nada é persistido.
+  app.post("/api/goals/rules/preview", requireAppAuth, view, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const startCivilDate = String(body.startDate ?? "");
+      const endCivilDate = String(body.endDate ?? "");
+      const civilDate = /^\d{4}-\d{2}-\d{2}$/;
+      if (
+        !civilDate.test(startCivilDate) ||
+        !civilDate.test(endCivilDate) ||
+        endCivilDate < startCivilDate
+      ) {
+        res.status(400).json({
+          error: "Informe o período da medição (datas de início e fim).",
+          field: "startDate",
+          code: "VALIDATION_ERROR",
+        });
+        return;
+      }
+      res.json(await service.previewRule(body.rule, { startCivilDate, endCivilDate }));
+    } catch (err) {
+      sendGoalError(res, err);
+    }
+  });
+
   // Wizard: Objetivo + KR (com regra opcional) + cotas numa transação.
   app.post("/api/goals/wizard", requireAppAuth, create, async (req, res) => {
     try {

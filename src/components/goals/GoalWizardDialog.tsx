@@ -1,31 +1,35 @@
 /**
  * Metas (OKR) — Wizard de criação em 4 passos ("Esconder a Complexidade").
  *
- * O usuário nunca lê "banco", "agregação" ou "join": o Passo 2 é um jogo de
- * completar frases cujos blocos vêm do dicionário público de metadados
- * (chaves + rótulos leigos). O JSON lógico é montado em background e o
- * backend valida tudo de novo (o front nunca é autoridade).
+ * Cadastro guiado v2: o Passo 2 usa o GoalMeasureBuilder compartilhado
+ * (galeria de receitas de 1 clique, frase na ordem natural área→medição e
+ * "Testar medição agora") e o seletor de PERÍODO do indicador — o indicador
+ * pode medir um trimestre/semestre dentro de um objetivo anual, nunca fora
+ * dele. O Passo 1 tem períodos rápidos; o Passo 3 mostra o contexto da
+ * medição + valor atual testado como sugestão de ponto de partida. O backend
+ * valida tudo de novo (o front nunca é autoridade).
  */
 
 import React, { useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { fetchJsonOk } from "@/src/lib/http.js";
+import type { GoalDto, GoalTrackingTypeValue } from "@/src/lib/goals/goalContracts.js";
 import {
-  GOAL_TRACKING_TYPES,
-  GOAL_TRACKING_TYPE_LABELS,
-  type GoalDto,
-  type GoalTrackingTypeValue,
-} from "@/src/lib/goals/goalContracts.js";
-import {
-  PhraseSelect,
+  EMPTY_MEASURE_DRAFT,
+  GoalMeasureBuilder,
+  GoalPeriodPicker,
   buildRuleFromWizardState,
   formatNumberBr,
+  goalQuickPeriods,
+  isCivilWindowWithin,
+  isMeasureDraftValid,
   wizardFieldClass as fieldClass,
   wizardLabelClass as labelClass,
+  type CivilWindow,
+  type GoalMeasureDraft,
   type GoalMetadataPublicEntity,
-  type WizardFilter,
   type WizardQuota,
 } from "./goalWizardShared.js";
 
@@ -62,12 +66,11 @@ export function GoalWizardDialog({
   const [ownerAppUserId, setOwnerAppUserId] = useState("");
   const [ownerSearch, setOwnerSearch] = useState("");
 
-  // Passo 2 — Medição (frase interativa) OU manual.
-  const [measureMode, setMeasureMode] = useState<"AUTO" | "MANUAL">("AUTO");
-  const [entityKey, setEntityKey] = useState("");
-  const [metricKey, setMetricKey] = useState("");
-  const [filters, setFilters] = useState<WizardFilter[]>([]);
-  const [krTitle, setKrTitle] = useState("");
+  // Passo 2 — Medição (builder compartilhado) + período do indicador.
+  const [measure, setMeasure] = useState<GoalMeasureDraft>(EMPTY_MEASURE_DRAFT);
+  const [previewValue, setPreviewValue] = useState<string | null>(null);
+  /** null = ainda não mexeu → segue o período do objetivo. */
+  const [krPeriod, setKrPeriod] = useState<CivilWindow | null>(null);
 
   // Passo 3 — Alvo.
   const [trackingType, setTrackingType] = useState<GoalTrackingTypeValue>("INCREASE");
@@ -79,13 +82,25 @@ export function GoalWizardDialog({
   const [quotas, setQuotas] = useState<WizardQuota[]>([]);
   const [quotaSearch, setQuotaSearch] = useState("");
 
+  const periods = useMemo(() => goalQuickPeriods(new Date()), []);
+
+  const goalWindow: CivilWindow | null =
+    startDate && endDate && endDate >= startDate ? { startDate, endDate } : null;
+  const measureWindow: CivilWindow | null = goalWindow
+    ? (krPeriod ?? goalWindow)
+    : null;
+  const measureWindowValid =
+    measureWindow != null &&
+    goalWindow != null &&
+    isCivilWindowWithin(measureWindow, goalWindow);
+
   const entity = useMemo(
-    () => metadataEntities.find((e) => e.key === entityKey) ?? null,
-    [metadataEntities, entityKey]
+    () => metadataEntities.find((e) => e.key === measure.entityKey) ?? null,
+    [metadataEntities, measure.entityKey]
   );
   const metric = useMemo(
-    () => entity?.metrics.find((m) => m.key === metricKey) ?? null,
-    [entity, metricKey]
+    () => entity?.metrics.find((m) => m.key === measure.metricKey) ?? null,
+    [entity, measure.metricKey]
   );
 
   const filteredOwners = useMemo(() => {
@@ -116,14 +131,8 @@ export function GoalWizardDialog({
     Math.abs(quotasSum - targetNumber) < 1e-9;
 
   const stepValid = [
-    Boolean(title.trim() && startDate && endDate && endDate >= startDate && ownerAppUserId),
-    measureMode === "MANUAL"
-      ? Boolean(krTitle.trim())
-      : Boolean(
-          entityKey &&
-            metricKey &&
-            filters.every((f) => f.fieldKey && f.operator && (f.operator === "IS_EMPTY" || f.value.trim()))
-        ),
+    Boolean(title.trim() && goalWindow && ownerAppUserId),
+    isMeasureDraftValid(measure) && measureWindowValid,
     Boolean(
       baseline.trim() !== "" &&
         target.trim() !== "" &&
@@ -133,23 +142,6 @@ export function GoalWizardDialog({
     ),
     !quotasOverTarget,
   ][step]!;
-
-  function addFilter() {
-    setFilters((prev) => [
-      ...prev,
-      {
-        id: `f-${Date.now()}-${prev.length}`,
-        fieldKey: "",
-        operator: "",
-        value: "",
-        connector: prev.length === 0 ? "AND" : "AND",
-      },
-    ]);
-  }
-
-  function updateFilter(id: string, patch: Partial<WizardFilter>) {
-    setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-  }
 
   function addQuota(ownerId: string) {
     setQuotas((prev) => [
@@ -163,6 +155,15 @@ export function GoalWizardDialog({
     setBusy(true);
     setError(null);
     try {
+      // Só persiste período próprio quando ele difere do período do objetivo
+      // (senão o indicador continua herdando — menos estado, menos surpresa).
+      const ownPeriod =
+        measureWindow &&
+        goalWindow &&
+        (measureWindow.startDate !== goalWindow.startDate ||
+          measureWindow.endDate !== goalWindow.endDate)
+          ? measureWindow
+          : null;
       const payload = {
         goal: {
           title,
@@ -174,9 +175,9 @@ export function GoalWizardDialog({
         },
         keyResult: {
           title:
-            measureMode === "MANUAL"
-              ? krTitle
-              : krTitle.trim() || metric?.label || "Indicador",
+            measure.mode === "MANUAL"
+              ? measure.krTitle
+              : measure.krTitle.trim() || metric?.label || "Indicador",
           domain: entity?.domain ?? "OUTROS",
           trackingType,
           baseline: baseline.replace(",", "."),
@@ -184,9 +185,11 @@ export function GoalWizardDialog({
           unit: unit || metric?.suggestedUnit || null,
           weight: "1",
           ownerAppUserId,
+          startDate: ownPeriod?.startDate ?? null,
+          endDate: ownPeriod?.endDate ?? null,
           rule:
-            measureMode === "AUTO"
-              ? buildRuleFromWizardState(entityKey, metricKey, filters)
+            measure.mode === "AUTO"
+              ? buildRuleFromWizardState(measure.entityKey, measure.metricKey, measure.filters)
               : null,
         },
         quotas: quotas
@@ -213,6 +216,13 @@ export function GoalWizardDialog({
     Number.isFinite(targetNumber) && Number.isFinite(baselineNumber)
       ? targetNumber - baselineNumber
       : null;
+
+  const measureSummary =
+    measure.mode === "MANUAL"
+      ? `"${measure.krTitle}" (lançamento manual)`
+      : metric && entity
+        ? `${metric.operationLabel} de "${metric.label}" em ${entity.label}`
+        : null;
 
   return renderInPortal(
     <div
@@ -259,25 +269,62 @@ export function GoalWizardDialog({
                 data-testid="wizard-title"
               />
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block space-y-1">
-                <span className={labelClass}>Começa em</span>
-                <input
-                  type="date"
-                  className={fieldClass}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className={labelClass}>Termina em</span>
-                <input
-                  type="date"
-                  className={fieldClass}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </label>
+            <div className="space-y-1">
+              <span className={labelClass}>Qual é o prazo?</span>
+              <div className="flex flex-wrap gap-1.5" data-testid="wizard-quick-periods">
+                {periods.map((p) => {
+                  const active = startDate === p.startDate && endDate === p.endDate;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium",
+                        active
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      )}
+                      onClick={() => {
+                        setStartDate(p.startDate);
+                        setEndDate(p.endDate);
+                        setKrPeriod(null);
+                      }}
+                      data-testid={`wizard-period-${p.key}`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+                <span className="self-center text-[10px] text-muted-foreground">
+                  ou escolha datas específicas:
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block space-y-1">
+                  <span className={labelClass}>Começa em</span>
+                  <input
+                    type="date"
+                    className={fieldClass}
+                    value={startDate}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setKrPeriod(null);
+                    }}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className={labelClass}>Termina em</span>
+                  <input
+                    type="date"
+                    className={fieldClass}
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setKrPeriod(null);
+                    }}
+                  />
+                </label>
+              </div>
             </div>
             <div className="space-y-1">
               <span className={labelClass}>Quem é o dono desse objetivo?</span>
@@ -324,194 +371,79 @@ export function GoalWizardDialog({
         ) : null}
 
         {step === 1 ? (
-          <div className="space-y-3" data-testid="wizard-step-measure">
-            <div className="flex gap-2 text-xs">
-              <button
-                type="button"
-                className={cn(
-                  "rounded-full border px-3 py-1 font-medium",
-                  measureMode === "AUTO"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground"
-                )}
-                onClick={() => setMeasureMode("AUTO")}
-              >
-                <Sparkles className="mr-1 inline h-3 w-3" aria-hidden />
-                O sistema mede sozinho
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "rounded-full border px-3 py-1 font-medium",
-                  measureMode === "MANUAL"
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground"
-                )}
-                onClick={() => setMeasureMode("MANUAL")}
-                data-testid="wizard-mode-manual"
-              >
-                Eu mesmo informo o número
-              </button>
-            </div>
-
-            {measureMode === "AUTO" ? (
-              <>
-                {/* A frase interativa (Mad Libs) */}
-                <p
-                  className="rounded-lg border border-border bg-muted/30 p-3 text-sm leading-8"
-                  data-testid="wizard-phrase"
-                >
-                  Eu quero acompanhar{" "}
-                  <PhraseSelect
-                    value={metricKey}
-                    onChange={setMetricKey}
-                    options={(entity?.metrics ?? []).map((m) => ({
-                      value: m.key,
-                      label: `${m.operationLabel} de "${m.label}"`,
-                    }))}
-                    placeholder={entity ? "escolha o indicador" : "…"}
-                    testId="wizard-metric"
-                  />{" "}
-                  olhando para a área de{" "}
-                  <PhraseSelect
-                    value={entityKey}
-                    onChange={(v) => {
-                      setEntityKey(v);
-                      setMetricKey("");
-                      setFilters([]);
-                    }}
-                    options={metadataEntities.map((e) => ({ value: e.key, label: e.label }))}
-                    placeholder="escolha a área"
-                    testId="wizard-entity"
-                  />
-                  .
-                  {metric ? (
-                    <span className="block text-[11px] text-muted-foreground">
-                      O período considerado é a {metric.periodLabel}, dentro das datas do
-                      seu objetivo.
-                    </span>
-                  ) : null}
-                </p>
-
-                {/* Regras de exceção empilhadas */}
-                {filters.map((filter, index) => {
-                  const field = entity?.filterFields.find((f) => f.key === filter.fieldKey);
-                  return (
-                    <p
-                      key={filter.id}
-                      className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm leading-8"
-                      data-testid={`wizard-filter-${index}`}
-                    >
-                      {index === 0 ? (
-                        "Mas apenas considerar quando "
-                      ) : (
-                        <PhraseSelect
-                          value={filter.connector}
-                          onChange={(v) =>
-                            updateFilter(filter.id, { connector: v as "AND" | "OR" })
-                          }
-                          options={[
-                            { value: "AND", label: "e também quando" },
-                            { value: "OR", label: "ou então quando" },
-                          ]}
-                          placeholder="…"
-                        />
-                      )}{" "}
-                      <PhraseSelect
-                        value={filter.fieldKey}
-                        onChange={(v) =>
-                          updateFilter(filter.id, { fieldKey: v, operator: "", value: "" })
-                        }
-                        options={(entity?.filterFields ?? []).map((f) => ({
-                          value: f.key,
-                          label: f.label,
-                        }))}
-                        placeholder="escolha o campo"
-                      />{" "}
-                      <PhraseSelect
-                        value={filter.operator}
-                        onChange={(v) => updateFilter(filter.id, { operator: v })}
-                        options={(field?.operators ?? []).map((op) => ({
-                          value: op.value,
-                          label: op.label,
-                        }))}
-                        placeholder="condição"
-                      />{" "}
-                      {filter.operator !== "IS_EMPTY" && field ? (
-                        field.type === "ENUM" ? (
-                          <PhraseSelect
-                            value={filter.value}
-                            onChange={(v) => updateFilter(filter.id, { value: v })}
-                            options={field.options ?? []}
-                            placeholder="escolha o valor"
-                          />
-                        ) : (
-                          <input
-                            className="mx-0.5 inline-block w-40 rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-sm font-semibold text-primary"
-                            placeholder={field.type === "NUMBER" ? "número" : "texto"}
-                            value={filter.value}
-                            onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
-                          />
-                        )
-                      ) : null}
-                      <button
-                        type="button"
-                        className="ml-2 text-[11px] text-muted-foreground hover:text-red-600"
-                        onClick={() => setFilters((prev) => prev.filter((f) => f.id !== filter.id))}
-                      >
-                        remover
-                      </button>
-                    </p>
-                  );
-                })}
-
-                {entity ? (
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-primary hover:underline"
-                    onClick={addFilter}
-                    data-testid="wizard-add-filter"
-                  >
-                    + Adicionar uma regra de exceção
-                  </button>
-                ) : null}
-
-                <label className="block space-y-1 pt-1">
-                  <span className={labelClass}>
-                    Nome do indicador (opcional — sugerimos o da medição)
-                  </span>
-                  <input
-                    className={fieldClass}
-                    placeholder={metric?.label ?? "Ex.: Faturamento físico"}
-                    value={krTitle}
-                    onChange={(e) => setKrTitle(e.target.value)}
-                  />
-                </label>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Sem medição automática: você (ou a equipe) lança o número realizado
-                  de tempos em tempos, e o painel acompanha do mesmo jeito.
-                </p>
-                <label className="block space-y-1">
-                  <span className={labelClass}>Nome do indicador</span>
-                  <input
-                    className={fieldClass}
-                    placeholder='Ex.: "Satisfação dos clientes (NPS)"'
-                    value={krTitle}
-                    onChange={(e) => setKrTitle(e.target.value)}
-                    data-testid="wizard-kr-title"
-                  />
-                </label>
+          <div className="space-y-4" data-testid="wizard-step-measure">
+            <GoalMeasureBuilder
+              metadataEntities={metadataEntities}
+              value={measure}
+              onChange={setMeasure}
+              onRecipeApplied={(recipe) => setTrackingType(recipe.suggestedTrackingType)}
+              previewWindow={measureWindow}
+              onPreviewValue={setPreviewValue}
+            />
+            {goalWindow ? (
+              <div className="rounded-lg border border-border bg-muted/20 p-3">
+                <GoalPeriodPicker
+                  bounds={goalWindow}
+                  value={measureWindow ?? goalWindow}
+                  onChange={setKrPeriod}
+                  hint={
+                    metric
+                      ? `Conta pela ${metric.periodLabel}.`
+                      : undefined
+                  }
+                />
               </div>
-            )}
+            ) : null}
           </div>
         ) : null}
 
         {step === 2 ? (
           <div className="space-y-3" data-testid="wizard-step-target">
-            <div className="grid grid-cols-3 gap-2">
+            {measureSummary ? (
+              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Medindo: <strong className="text-foreground">{measureSummary}</strong>
+                {previewValue != null ? (
+                  <span className="block">
+                    Valor atual testado:{" "}
+                    <strong className="text-foreground">
+                      {formatNumberBr(Number(previewValue) || 0)}{" "}
+                      {unit || metric?.suggestedUnit || ""}
+                    </strong>{" "}
+                    <button
+                      type="button"
+                      className="font-semibold text-primary hover:underline"
+                      onClick={() => setBaseline(previewValue)}
+                      data-testid="wizard-use-preview-as-baseline"
+                    >
+                      usar como ponto de partida
+                    </button>
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              Quero que esse número{" "}
+              <select
+                className="rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-sm font-semibold text-primary"
+                value={trackingType}
+                onChange={(e) => setTrackingType(e.target.value as GoalTrackingTypeValue)}
+                data-testid="wizard-tracking-type"
+              >
+                <option value="INCREASE">aumente</option>
+                <option value="DECREASE">diminua</option>
+              </select>{" "}
+              até chegar em{" "}
+              <input
+                className="w-32 rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-right text-sm font-semibold text-primary tabular-nums"
+                placeholder="100000"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                data-testid="wizard-target"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <label className="block space-y-1">
                 <span className={labelClass}>Nós estamos partindo de</span>
                 <input
@@ -519,16 +451,6 @@ export function GoalWizardDialog({
                   value={baseline}
                   onChange={(e) => setBaseline(e.target.value)}
                   data-testid="wizard-baseline"
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className={labelClass}>Nós queremos chegar em</span>
-                <input
-                  className={fieldClass}
-                  placeholder="Ex.: 100000"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  data-testid="wizard-target"
                 />
               </label>
               <label className="block space-y-1">
@@ -541,20 +463,7 @@ export function GoalWizardDialog({
                 />
               </label>
             </div>
-            <label className="block space-y-1">
-              <span className={labelClass}>Direção da meta</span>
-              <select
-                className={fieldClass}
-                value={trackingType}
-                onChange={(e) => setTrackingType(e.target.value as GoalTrackingTypeValue)}
-              >
-                {GOAL_TRACKING_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {GOAL_TRACKING_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </label>
+
             {gap != null && Number.isFinite(gap) && gap !== 0 ? (
               <p
                 className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-xs text-[#1E40AF]"

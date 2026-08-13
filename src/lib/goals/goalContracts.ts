@@ -73,6 +73,14 @@ export type GoalKeyResultDto = {
   invalidTargets: boolean;
   /** true quando o valor é calculado pelo motor (regra dinâmica). */
   hasRule: boolean;
+  /** Período PRÓPRIO do indicador (null = herda o período do Objetivo). */
+  startDate: string | null;
+  endDate: string | null;
+  /** Janela realmente medida (interseção com o período do Objetivo). */
+  effectiveStartDate: string;
+  effectiveEndDate: string;
+  /** true quando o indicador tem recorte próprio (≠ período do Objetivo). */
+  hasOwnPeriod: boolean;
   /** Frase leiga da regra ("Soma de Valor total vendido em Pedidos de Venda"). */
   ruleSummary: string | null;
   /** Desdobramento nominal por pessoa (US-04). */
@@ -154,6 +162,40 @@ function parseCivilDate(value: unknown, field: string): string {
     throw new GoalContractError(`${field} é obrigatório (YYYY-MM-DD).`, field);
   }
   return value.trim();
+}
+
+function parseOptionalCivilDate(value: unknown, field: string): string | null {
+  if (value == null || value === "") return null;
+  return parseCivilDate(value, field);
+}
+
+/**
+ * Janela realmente medida por um indicador.
+ *
+ * O indicador pode ter período próprio (um trimestre dentro de um objetivo
+ * anual, por exemplo). Ele NUNCA mede fora do período do Objetivo: o que vale
+ * é a interseção. Se a interseção for vazia — só acontece quando o período do
+ * Objetivo encolhe DEPOIS de o indicador ter sido criado — o Objetivo manda,
+ * porque ele é a moldura do compromisso.
+ */
+export function resolveGoalMeasurementWindow(args: {
+  goalStartDate: string;
+  goalEndDate: string;
+  keyResultStartDate?: string | null;
+  keyResultEndDate?: string | null;
+}): { startCivilDate: string; endCivilDate: string } {
+  const start =
+    args.keyResultStartDate && args.keyResultStartDate > args.goalStartDate
+      ? args.keyResultStartDate
+      : args.goalStartDate;
+  const end =
+    args.keyResultEndDate && args.keyResultEndDate < args.goalEndDate
+      ? args.keyResultEndDate
+      : args.goalEndDate;
+  if (start > end) {
+    return { startCivilDate: args.goalStartDate, endCivilDate: args.goalEndDate };
+  }
+  return { startCivilDate: start, endCivilDate: end };
 }
 
 /** Decimal como string (até 6 casas); aceita number finito por conveniência. */
@@ -247,6 +289,9 @@ export type GoalKeyResultCreateInput = {
   ownerAppUserId: string;
   /** Regra dinâmica (chaves do dicionário) — null = indicador de valor manual. */
   rule: unknown | null;
+  /** Período próprio (null = herda o do Objetivo). */
+  startDate: string | null;
+  endDate: string | null;
 };
 
 export function parseGoalKeyResultCreateInput(
@@ -267,6 +312,14 @@ export function parseGoalKeyResultCreateInput(
   if (Number(weight) <= 0) {
     throw new GoalContractError("Peso deve ser maior que zero.", "weight");
   }
+  const startDate = parseOptionalCivilDate(body.startDate, "startDate");
+  const endDate = parseOptionalCivilDate(body.endDate, "endDate");
+  if (startDate && endDate && endDate < startDate) {
+    throw new GoalContractError(
+      "A data final do indicador não pode ser anterior à inicial.",
+      "endDate"
+    );
+  }
   return {
     title: parseRequiredString(body.title, "title"),
     domain: parseEnum(body.domain, GOAL_DOMAINS, "domain"),
@@ -277,6 +330,8 @@ export function parseGoalKeyResultCreateInput(
     weight,
     ownerAppUserId: parseUuid(body.ownerAppUserId, "ownerAppUserId"),
     rule: body.rule ?? null,
+    startDate,
+    endDate,
   };
 }
 
@@ -316,6 +371,19 @@ export function parseGoalKeyResultUpdateInput(
   if (body.status !== undefined) out.status = parseEnum(body.status, GOAL_STATUSES, "status");
   if (body.ownerAppUserId !== undefined) {
     out.ownerAppUserId = parseUuid(body.ownerAppUserId, "ownerAppUserId");
+  }
+  // null limpa o período próprio (o indicador volta a herdar o do Objetivo).
+  if (body.startDate !== undefined) {
+    out.startDate = parseOptionalCivilDate(body.startDate, "startDate");
+  }
+  if (body.endDate !== undefined) {
+    out.endDate = parseOptionalCivilDate(body.endDate, "endDate");
+  }
+  if (out.startDate && out.endDate && out.endDate < out.startDate) {
+    throw new GoalContractError(
+      "A data final do indicador não pode ser anterior à inicial.",
+      "endDate"
+    );
   }
   if (Object.keys(out).length === 0) {
     throw new GoalContractError("Nenhum campo para atualizar.");
