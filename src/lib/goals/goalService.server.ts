@@ -12,12 +12,15 @@
  *    recebe "já em processamento" (RN-008, anti duplo-clique no backend);
  *  - quotas: Σ(quotas) ≤ target — BLOQUEIO, validado em micros (BigInt),
  *    nunca float (RN-006/US-04);
- *  - KR herda o período do Goal pai.
+ *  - KR herda o período do Goal pai, mas pode ter recorte PRÓPRIO (trimestre,
+ *    semestre, datas livres). A janela realmente medida é sempre a interseção
+ *    com o período do Goal — indicador nunca conta fora do período do pai.
  */
 
 import type { PrismaClient } from "@prisma/client";
 import {
   GoalContractError,
+  resolveGoalMeasurementWindow,
   type GoalAchievedValueInput,
   type GoalCreateInput,
   type GoalDto,
@@ -79,6 +82,12 @@ function civilDateToUtc(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+/** YYYY-MM-DD → DD/MM/AAAA (mensagens de erro em linguagem do usuário). */
+function formatCivilBr(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
+
 /** Decimal string → micros (6 casas) em BigInt — soma exata, nunca float. */
 export function goalDecimalToMicros(value: string): bigint {
   const match = /^(-?)(\d+)(?:\.(\d{1,6}))?$/.exec(value.trim());
@@ -132,9 +141,19 @@ type KeyResultRow = {
   ruleJson: unknown;
   status: string;
   updatedAt: Date;
+  /** Período próprio (null = herda o do Objetivo). */
+  startDate?: Date | null;
+  endDate?: Date | null;
   owner?: { name: string } | null;
   quotas?: QuotaRow[];
 };
+
+/** Janela civil do Objetivo pai — necessária para resolver o período do KR. */
+type GoalWindow = { startDate: string; endDate: string };
+
+function civilFromDate(value: Date | null | undefined): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
 
 function decimalToString(value: unknown): string {
   return value == null ? "0" : String(value);
@@ -149,11 +168,19 @@ function toQuotaDto(row: QuotaRow): GoalQuotaDto {
   };
 }
 
-function toKeyResultDto(row: KeyResultRow): GoalKeyResultDto {
+function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResultDto {
   const baseline = decimalToString(row.baseline);
   const target = decimalToString(row.target);
   const achievedValue = decimalToString(row.achievedValue);
   const progress = computeGoalKeyResultProgress({ baseline, target, achievedValue });
+  const startDate = civilFromDate(row.startDate);
+  const endDate = civilFromDate(row.endDate);
+  const window = resolveGoalMeasurementWindow({
+    goalStartDate: goalWindow.startDate,
+    goalEndDate: goalWindow.endDate,
+    keyResultStartDate: startDate,
+    keyResultEndDate: endDate,
+  });
   return {
     id: row.id,
     goalId: row.goalId,
@@ -173,6 +200,13 @@ function toKeyResultDto(row: KeyResultRow): GoalKeyResultDto {
     invalidTargets: progress.invalidTargets,
     hasRule: row.ruleJson != null,
     ruleSummary: buildGoalRuleSummary(row.ruleJson),
+    startDate,
+    endDate,
+    effectiveStartDate: window.startCivilDate,
+    effectiveEndDate: window.endCivilDate,
+    hasOwnPeriod:
+      window.startCivilDate !== goalWindow.startDate ||
+      window.endCivilDate !== goalWindow.endDate,
     quotas: (row.quotas ?? []).map(toQuotaDto),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -220,7 +254,11 @@ type GoalRow = {
 };
 
 function toGoalDto(row: GoalRow, extraInitiatives: InitiativeRow[] = []): GoalDto {
-  const keyResults = row.keyResults.map(toKeyResultDto);
+  const goalWindow: GoalWindow = {
+    startDate: row.startDate.toISOString().slice(0, 10),
+    endDate: row.endDate.toISOString().slice(0, 10),
+  };
+  const keyResults = row.keyResults.map((kr) => toKeyResultDto(kr, goalWindow));
   const rollup = computeGoalRollup(
     row.keyResults.map((kr) => ({
       status: kr.status,
@@ -344,22 +382,68 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     });
   }
 
-  /** Executa a regra do KR (janela = período do Goal) e persiste valor + snapshot. */
+  /**
+   * Janela de medição do KR: período próprio quando existe, senão o do
+   * Objetivo — sempre recortado pela janela do Objetivo (RN: o indicador
+   * nunca conta o que aconteceu fora do período do pai).
+   */
+  function keyResultWindow(kr: {
+    startDate?: Date | null;
+    endDate?: Date | null;
+    goal: { startDate: Date; endDate: Date };
+  }) {
+    return resolveGoalMeasurementWindow({
+      goalStartDate: kr.goal.startDate.toISOString().slice(0, 10),
+      goalEndDate: kr.goal.endDate.toISOString().slice(0, 10),
+      keyResultStartDate: civilFromDate(kr.startDate),
+      keyResultEndDate: civilFromDate(kr.endDate),
+    });
+  }
+
+  /**
+   * Valida o período próprio do indicador contra a janela do Objetivo —
+   * bloqueio, não aviso: um indicador fora do período do pai mediria algo que
+   * o compromisso não cobre.
+   */
+  function assertPeriodWithinGoal(
+    goal: { startDate: Date; endDate: Date; title: string },
+    startDate: string | null,
+    endDate: string | null
+  ): void {
+    const goalStart = goal.startDate.toISOString().slice(0, 10);
+    const goalEnd = goal.endDate.toISOString().slice(0, 10);
+    const outside =
+      (startDate != null && (startDate < goalStart || startDate > goalEnd)) ||
+      (endDate != null && (endDate < goalStart || endDate > goalEnd));
+    if (outside) {
+      throw new GoalDomainError(
+        "VALIDATION_ERROR",
+        `O período do indicador precisa ficar dentro do período do objetivo (${formatCivilBr(goalStart)} a ${formatCivilBr(goalEnd)}).`
+      );
+    }
+    if (startDate && endDate && endDate < startDate) {
+      throw new GoalDomainError(
+        "VALIDATION_ERROR",
+        "A data final do indicador não pode ser anterior à inicial."
+      );
+    }
+  }
+
+  /** Executa a regra do KR (janela própria ∩ período do Goal) e persiste valor + snapshot. */
   async function computeAndStoreRuleValue(
     kr: {
       id: string;
       ruleJson: unknown;
       baseline: unknown;
       target: unknown;
+      startDate?: Date | null;
+      endDate?: Date | null;
       goal: { startDate: Date; endDate: Date };
     },
     source: "ENGINE" | "REFRESH",
     now: Date
   ): Promise<string> {
-    const achievedValue = await executeGoalRule(prisma, kr.ruleJson, {
-      startCivilDate: kr.goal.startDate.toISOString().slice(0, 10),
-      endCivilDate: kr.goal.endDate.toISOString().slice(0, 10),
-    });
+    const achievedValue = await executeGoalRule(prisma, kr.ruleJson, keyResultWindow(kr));
     const progress = computeGoalKeyResultProgress({
       baseline: decimalToString(kr.baseline),
       target: decimalToString(kr.target),
@@ -470,6 +554,29 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         },
         include: GOAL_INCLUDE,
       });
+      // Encolheu o período do Objetivo? Os recortes próprios dos indicadores
+      // são aparados para dentro da nova janela — nenhum indicador mede fora
+      // do período do pai, nem sequer no histórico do que foi cadastrado.
+      if (input.startDate !== undefined || input.endDate !== undefined) {
+        await prisma.goalKeyResult.updateMany({
+          where: { goalId: id, startDate: { lt: startDate } },
+          data: { startDate },
+        });
+        await prisma.goalKeyResult.updateMany({
+          where: { goalId: id, startDate: { gt: endDate } },
+          data: { startDate: endDate },
+        });
+        await prisma.goalKeyResult.updateMany({
+          where: { goalId: id, endDate: { gt: endDate } },
+          data: { endDate },
+        });
+        await prisma.goalKeyResult.updateMany({
+          where: { goalId: id, endDate: { lt: startDate } },
+          data: { endDate: startDate },
+        });
+        const reread = await requireGoal(id);
+        return toGoalDto(reread as unknown as GoalRow);
+      }
       return toGoalDto(updated as unknown as GoalRow);
     },
 
@@ -513,6 +620,9 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         throw new GoalDomainError("CONFLICT", "Objetivo arquivado não recebe novos KRs.");
       }
       const rule = input.rule != null ? normalizeGoalRuleForPersist(input.rule) : null;
+      const startDate = input.startDate ?? null;
+      const endDate = input.endDate ?? null;
+      assertPeriodWithinGoal(goal, startDate, endDate);
       const created = await prisma.goalKeyResult.create({
         data: {
           goalId,
@@ -527,10 +637,39 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           ownerAppUserId: input.ownerAppUserId,
           manualTracking: rule == null,
           ruleJson: rule ?? undefined,
+          startDate: startDate ? civilDateToUtc(startDate) : null,
+          endDate: endDate ? civilDateToUtc(endDate) : null,
         },
         include: KR_INCLUDE,
       });
-      return toKeyResultDto(created as unknown as KeyResultRow);
+      // Primeira leitura do motor já na janela certa ("nasceu medindo").
+      if (rule != null) {
+        try {
+          await computeAndStoreRuleValue(
+            {
+              id: created.id,
+              ruleJson: created.ruleJson,
+              baseline: created.baseline,
+              target: created.target,
+              startDate: created.startDate,
+              endDate: created.endDate,
+              goal: { startDate: goal.startDate, endDate: goal.endDate },
+            },
+            "REFRESH",
+            new Date()
+          );
+        } catch {
+          // Falha da primeira leitura não desfaz a criação — o job noturno cobre.
+        }
+      }
+      const fresh = await prisma.goalKeyResult.findUniqueOrThrow({
+        where: { id: created.id },
+        include: KR_INCLUDE,
+      });
+      return toKeyResultDto(fresh as unknown as KeyResultRow, {
+        startDate: goal.startDate.toISOString().slice(0, 10),
+        endDate: goal.endDate.toISOString().slice(0, 10),
+      });
     },
 
     async updateKeyResult(
@@ -551,6 +690,13 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         ruleProvided && input.rule != null
           ? normalizeGoalRuleForPersist(input.rule)
           : null;
+      const nextStartDate =
+        input.startDate !== undefined ? input.startDate : civilFromDate(current.startDate);
+      const nextEndDate =
+        input.endDate !== undefined ? input.endDate : civilFromDate(current.endDate);
+      if (input.startDate !== undefined || input.endDate !== undefined) {
+        assertPeriodWithinGoal(current.goal, nextStartDate, nextEndDate);
+      }
       const updated = await prisma.goalKeyResult.update({
         where: { id },
         data: {
@@ -575,10 +721,19 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           ...(ruleProvided
             ? { ruleJson: rule ?? null, manualTracking: rule == null }
             : {}),
+          ...(input.startDate !== undefined
+            ? { startDate: input.startDate ? civilDateToUtc(input.startDate) : null }
+            : {}),
+          ...(input.endDate !== undefined
+            ? { endDate: input.endDate ? civilDateToUtc(input.endDate) : null }
+            : {}),
         },
         include: KR_INCLUDE,
       });
-      return toKeyResultDto(updated as unknown as KeyResultRow);
+      return toKeyResultDto(updated as unknown as KeyResultRow, {
+        startDate: current.goal.startDate.toISOString().slice(0, 10),
+        endDate: current.goal.endDate.toISOString().slice(0, 10),
+      });
     },
 
     async deleteKeyResult(id: string): Promise<{ deleted: boolean; archived: boolean }> {
@@ -629,7 +784,10 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         include: KR_INCLUDE,
       });
       await writeSnapshot(id, input.achievedValue, progress.ratio, "MANUAL", now);
-      return toKeyResultDto(updated as unknown as KeyResultRow);
+      return toKeyResultDto(updated as unknown as KeyResultRow, {
+        startDate: current.goal.startDate.toISOString().slice(0, 10),
+        endDate: current.goal.endDate.toISOString().slice(0, 10),
+      });
     },
 
     /**
@@ -659,10 +817,11 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             "Este indicador já está sendo recalculado — aguarde alguns segundos."
           );
         }
-        const achievedValue = await executeGoalRule(tx as unknown as PrismaClient, current.ruleJson, {
-          startCivilDate: current.goal.startDate.toISOString().slice(0, 10),
-          endCivilDate: current.goal.endDate.toISOString().slice(0, 10),
-        });
+        const achievedValue = await executeGoalRule(
+          tx as unknown as PrismaClient,
+          current.ruleJson,
+          keyResultWindow(current)
+        );
         const progress = computeGoalKeyResultProgress({
           baseline: decimalToString(current.baseline),
           target: decimalToString(current.target),
@@ -690,7 +849,10 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         });
       });
       const fresh = await requireKeyResult(id);
-      return toKeyResultDto(fresh as unknown as KeyResultRow);
+      return toKeyResultDto(fresh as unknown as KeyResultRow, {
+        startDate: fresh.goal.startDate.toISOString().slice(0, 10),
+        endDate: fresh.goal.endDate.toISOString().slice(0, 10),
+      });
     },
 
     /** Job diário (RN-008): calcula todos os KRs ativos com regra. */
@@ -757,7 +919,10 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         }
       });
       const fresh = await requireKeyResult(keyResultId);
-      return toKeyResultDto(fresh as unknown as KeyResultRow);
+      return toKeyResultDto(fresh as unknown as KeyResultRow, {
+        startDate: fresh.goal.startDate.toISOString().slice(0, 10),
+        endDate: fresh.goal.endDate.toISOString().slice(0, 10),
+      });
     },
 
     // ─── Iniciativas (US-05) ────────────────────────────────────────────────
@@ -823,6 +988,17 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           ? normalizeGoalRuleForPersist(input.keyResult.rule)
           : null;
       assertQuotasWithinTarget(input.keyResult.target, input.quotas);
+      // O indicador pode ter recorte próprio, mas nunca fora da moldura do
+      // Objetivo que está nascendo junto.
+      assertPeriodWithinGoal(
+        {
+          startDate: civilDateToUtc(input.goal.startDate),
+          endDate: civilDateToUtc(input.goal.endDate),
+          title: input.goal.title,
+        },
+        input.keyResult.startDate,
+        input.keyResult.endDate
+      );
 
       const goalId = await prisma.$transaction(async (tx) => {
         const goal = await tx.goal.create({
@@ -850,6 +1026,12 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             ownerAppUserId: input.keyResult.ownerAppUserId,
             manualTracking: rule == null,
             ruleJson: rule ?? undefined,
+            startDate: input.keyResult.startDate
+              ? civilDateToUtc(input.keyResult.startDate)
+              : null,
+            endDate: input.keyResult.endDate
+              ? civilDateToUtc(input.keyResult.endDate)
+              : null,
           },
         });
         for (const [index, quota] of input.quotas.entries()) {
@@ -908,6 +1090,20 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         progressRatio: decimalToString(r.progressRatio),
         source: r.source,
       }));
+    },
+
+    /**
+     * "Testar medição agora" (wizard): executa a regra em modo SOMENTE
+     * LEITURA na janela informada e devolve o valor atual — nada é
+     * persistido, nenhum snapshot é gravado. A regra passa pela mesma
+     * validação total do dicionário (resolveGoalRule) antes de virar SQL.
+     */
+    async previewRule(
+      ruleJson: unknown,
+      window: { startCivilDate: string; endCivilDate: string }
+    ): Promise<{ value: string }> {
+      const value = await executeGoalRule(prisma, ruleJson, window);
+      return { value };
     },
   };
 

@@ -123,7 +123,7 @@ describe("buildGoalRuleQuery — SQL seguro e determinístico", () => {
     const sql = query.sql;
     assert.ok(sql.includes('FROM "SalesOrder"'));
     assert.ok(sql.includes('COALESCE(SUM("SalesOrder"."totalNetValue"), 0)'));
-    assert.ok(sql.includes('"SalesOrder"."createdAt" >='), "período sempre aplicado");
+    assert.ok(sql.includes('"SalesOrder"."issueDate" >='), "período sempre aplicado");
     assert.ok(!sql.includes("SENT_TO_NOMUS"), "valor do filtro parametrizado, não inline");
     assert.ok(query.values.includes("SENT_TO_NOMUS"));
   });

@@ -25,7 +25,12 @@ import { fetchJsonOk } from "@/src/lib/http.js";
 import { useAuth } from "@/src/contexts/AuthContext.js";
 import { GoalWizardDialog } from "./GoalWizardDialog.js";
 import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
-import type { GoalMetadataPublicEntity } from "./goalWizardShared.js";
+import {
+  GoalPeriodPicker,
+  isCivilWindowWithin,
+  type CivilWindow,
+  type GoalMetadataPublicEntity,
+} from "./goalWizardShared.js";
 import {
   GOAL_DOMAIN_LABELS,
   GOAL_DOMAINS,
@@ -534,6 +539,19 @@ export function GoalsCockpitPage() {
                                     Arquivado
                                   </span>
                                 ) : null}
+                                {/* Recorte próprio (ex.: trimestre dentro de um
+                                    objetivo anual) — sem isto o número parecia
+                                    "o total de tudo". */}
+                                {kr.hasOwnPeriod ? (
+                                  <span
+                                    className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-1.5 text-[10px] font-medium text-[#1E40AF]"
+                                    title="Este indicador mede só um recorte do período do objetivo"
+                                    data-testid={`kr-period-${kr.id}`}
+                                  >
+                                    {civilDateBr(kr.effectiveStartDate)} –{" "}
+                                    {civilDateBr(kr.effectiveEndDate)}
+                                  </span>
+                                ) : null}
                               </div>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {formatValue(kr.achievedValue, kr.unit)} de{" "}
@@ -648,6 +666,7 @@ export function GoalsCockpitPage() {
       {krDialog ? (
         <KeyResultFormDialog
           keyResult={krDialog.keyResult}
+          goal={krDialog.goal}
           owners={owners}
           busy={dialogBusy}
           error={dialogError}
@@ -798,6 +817,7 @@ function GoalFormDialog({
  */
 function KeyResultFormDialog({
   keyResult,
+  goal,
   owners,
   busy,
   error,
@@ -805,6 +825,7 @@ function KeyResultFormDialog({
   onSubmit,
 }: {
   keyResult: GoalKeyResultDto;
+  goal: GoalDto;
   owners: OwnerOption[];
   busy: boolean;
   error: string | null;
@@ -819,9 +840,21 @@ function KeyResultFormDialog({
   const [unit, setUnit] = useState(keyResult.unit ?? "");
   const [weight, setWeight] = useState(keyResult.weight);
   const [ownerAppUserId, setOwnerAppUserId] = useState(keyResult.ownerAppUserId);
+  const goalWindow: CivilWindow = { startDate: goal.startDate, endDate: goal.endDate };
+  const [period, setPeriod] = useState<CivilWindow>({
+    startDate: keyResult.effectiveStartDate,
+    endDate: keyResult.effectiveEndDate,
+  });
+  const hasOwnPeriod =
+    period.startDate !== goalWindow.startDate || period.endDate !== goalWindow.endDate;
 
   const canSubmit = Boolean(
-    title.trim() && baseline !== "" && target !== "" && weight !== "" && ownerAppUserId
+    title.trim() &&
+      baseline !== "" &&
+      target !== "" &&
+      weight !== "" &&
+      ownerAppUserId &&
+      isCivilWindowWithin(period, goalWindow)
   );
 
   return (
@@ -838,6 +871,9 @@ function KeyResultFormDialog({
           unit: unit || null,
           weight,
           ownerAppUserId,
+          // null volta a herdar o período do objetivo.
+          startDate: hasOwnPeriod ? period.startDate : null,
+          endDate: hasOwnPeriod ? period.endDate : null,
         })
       }
       submitLabel="Salvar"
@@ -912,9 +948,11 @@ function KeyResultFormDialog({
           </select>
         </label>
       </div>
+      <div className="rounded-lg border border-border bg-muted/20 p-3">
+        <GoalPeriodPicker bounds={goalWindow} value={period} onChange={setPeriod} />
+      </div>
       <p className="text-[10px] text-muted-foreground">
-        O KR herda o período do Objetivo. Progresso ={" "}
-        (realizado − base) ÷ (alvo − base), limitado a 0–100%.
+        Progresso = (realizado − base) ÷ (alvo − base), limitado a 0–100%.
       </p>
     </DialogShell>
   );

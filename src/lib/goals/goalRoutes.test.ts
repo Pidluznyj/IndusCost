@@ -86,6 +86,7 @@ function stubService(overrides: Partial<GoalService> = {}): GoalService {
     setAchievedValue: async () => ({}) as never,
     listOwnerOptions: async () => [],
     listSnapshots: async () => [],
+    previewRule: async () => ({ value: "0" }),
     ...overrides,
   } as GoalService;
 }
@@ -219,6 +220,50 @@ describe("goalRoutes — parse e erros controlados", () => {
     assert.equal(res.statusCode, 201);
     assert.equal(seenGoalId, "goal-1");
     assert.deepEqual((seenInput as { rule: unknown }).rule, rule);
+  });
+
+  it("POST /api/goals/rules/preview: guard de leitura, valida a janela e delega ao service", async () => {
+    let seen = null;
+    const { routes } = setup(
+      stubService({
+        previewRule: async (rule, window) => {
+          seen = { rule, window };
+          return { value: "1234.5" };
+        },
+      })
+    );
+    const route = routes.find(
+      (r) => r.method === "POST" && r.path === "/api/goals/rules/preview"
+    )!;
+    // Somente leitura: quem enxerga metas pode testar a medição.
+    assert.ok(route.guards.includes(`${GOALS_RESOURCE_KEY}:view`));
+
+    // Sem datas válidas → 400 e o service NUNCA é chamado.
+    const bad = mockRes();
+    await route.handler({ body: { rule: { entityKey: "SALES_ORDERS" } } }, bad);
+    assert.equal(bad.statusCode, 400);
+    assert.equal(seen, null);
+
+    // Data final antes da inicial também é rejeitada.
+    const inverted = mockRes();
+    await route.handler(
+      { body: { startDate: "2026-09-30", endDate: "2026-07-01", rule: {} } },
+      inverted
+    );
+    assert.equal(inverted.statusCode, 400);
+    assert.equal(seen, null);
+
+    const ok = mockRes();
+    const rule = { entityKey: "SALES_ORDERS", metricKey: "SALES_NET_TOTAL", filters: [] };
+    await route.handler(
+      { body: { startDate: "2026-07-01", endDate: "2026-09-30", rule } },
+      ok
+    );
+    assert.equal(ok.statusCode, 200);
+    assert.deepEqual(seen, {
+      rule,
+      window: { startCivilDate: "2026-07-01", endCivilDate: "2026-09-30" },
+    });
   });
 
   it("GET /api/goals delega filtros onlyMine/status ao service", async () => {

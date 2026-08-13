@@ -9615,6 +9615,11 @@ model GoalKeyResult {
   /// Peso relativo no roll-up do Objetivo (> 0).
   weight         Decimal                   @default(1) @db.Decimal(10, 4)
   ownerAppUserId String                    @db.Uuid
+  /// Período PRÓPRIO do indicador (opcional). null = herda o período do
+  /// Objetivo; quando preenchido, o motor usa a interseção com a janela do
+  /// Objetivo (o indicador nunca mede fora do período do pai).
+  startDate      DateTime?                 @db.Date
+  endDate        DateTime?                 @db.Date
   /// true = valor digitado (MVP 1); false = calculado pelo motor (MVP 2+).
   manualTracking Boolean                   @default(true)
   /// Regra dinâmica (MVP 2+): métrica + filtros como chaves do dicionário.
