@@ -19,8 +19,14 @@
 
 import type { PrismaClient } from "@prisma/client";
 import {
+  GOAL_TARGET_COMPARISON_MODE_LABELS,
   GoalContractError,
+  computeGoalTargetFromComparison,
   resolveGoalMeasurementWindow,
+  resolveGoalTargetComparisonWindow,
+  type GoalKeyResultComparisonInput,
+  type GoalTargetBasisValue,
+  type GoalTargetComparisonModeValue,
   type GoalAchievedValueInput,
   type GoalCreateInput,
   type GoalDto,
@@ -144,6 +150,14 @@ type KeyResultRow = {
   /** Período próprio (null = herda o do Objetivo). */
   startDate?: Date | null;
   endDate?: Date | null;
+  /** Alvo comparado (congelado no cadastro). */
+  targetBasis?: string | null;
+  comparisonMode?: string | null;
+  comparisonStartDate?: Date | null;
+  comparisonEndDate?: Date | null;
+  comparisonValue?: unknown;
+  comparisonPercent?: unknown;
+  comparisonComputedAt?: Date | null;
   owner?: { name: string } | null;
   quotas?: QuotaRow[];
 };
@@ -200,6 +214,24 @@ function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResul
     invalidTargets: progress.invalidTargets,
     hasRule: row.ruleJson != null,
     ruleSummary: buildGoalRuleSummary(row.ruleJson),
+    targetBasis: (row.targetBasis ?? "MANUAL") as GoalTargetBasisValue,
+    comparison:
+      row.targetBasis === "COMPARISON" && row.comparisonMode
+        ? {
+            mode: row.comparisonMode as GoalTargetComparisonModeValue,
+            modeLabel:
+              GOAL_TARGET_COMPARISON_MODE_LABELS[
+                row.comparisonMode as GoalTargetComparisonModeValue
+              ],
+            startDate: civilFromDate(row.comparisonStartDate) ?? "",
+            endDate: civilFromDate(row.comparisonEndDate) ?? "",
+            value: decimalToString(row.comparisonValue),
+            percent: decimalToString(row.comparisonPercent),
+            computedAt: row.comparisonComputedAt
+              ? row.comparisonComputedAt.toISOString()
+              : null,
+          }
+        : null,
     startDate,
     endDate,
     effectiveStartDate: window.startCivilDate,
@@ -429,6 +461,55 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     }
   }
 
+  /**
+   * Alvo derivado de período anterior: mede a MESMA regra na janela de
+   * comparação e aplica o percentual.
+   *
+   * O valor apurado é CONGELADO junto com a janela e o instante da apuração.
+   * Recalcular a cada leitura faria o alvo mudar sozinho — e o sync do Nomus
+   * reescreve pedidos antigos, então "o ano passado" muda de valor com o
+   * tempo. Compromisso que se move não é compromisso; quem quiser atualizar
+   * salva o indicador de novo e vê o novo número antes de confirmar.
+   */
+  async function resolveComparisonTarget(args: {
+    ruleJson: unknown;
+    trackingType: GoalTrackingTypeValue;
+    measuredWindow: { startCivilDate: string; endCivilDate: string };
+    comparison: GoalKeyResultComparisonInput;
+  }): Promise<{
+    target: string;
+    comparisonValue: string;
+    window: { startCivilDate: string; endCivilDate: string };
+    computedAt: Date;
+  }> {
+    if (args.ruleJson == null) {
+      throw new GoalDomainError(
+        "VALIDATION_ERROR",
+        "Só dá para comparar com um período anterior quando o sistema mede sozinho — neste indicador o número é informado por você."
+      );
+    }
+    const window = resolveGoalTargetComparisonWindow({
+      measuredStartDate: args.measuredWindow.startCivilDate,
+      measuredEndDate: args.measuredWindow.endCivilDate,
+      mode: args.comparison.mode,
+      customStartDate: args.comparison.startDate,
+      customEndDate: args.comparison.endDate,
+    });
+    if (!window) {
+      throw new GoalDomainError(
+        "VALIDATION_ERROR",
+        "Não foi possível montar o período de comparação — revise as datas."
+      );
+    }
+    const comparisonValue = await executeGoalRule(prisma, args.ruleJson, window);
+    const target = computeGoalTargetFromComparison({
+      comparisonValue,
+      percent: args.comparison.percent,
+      trackingType: args.trackingType,
+    });
+    return { target, comparisonValue, window, computedAt: new Date() };
+  }
+
   /** Executa a regra do KR (janela própria ∩ período do Goal) e persiste valor + snapshot. */
   async function computeAndStoreRuleValue(
     kr: {
@@ -623,6 +704,44 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       const startDate = input.startDate ?? null;
       const endDate = input.endDate ?? null;
       assertPeriodWithinGoal(goal, startDate, endDate);
+
+      // Alvo comparado: apura a mesma regra na janela anterior e congela.
+      let resolvedTarget = input.target;
+      let comparisonData: Record<string, unknown> = {};
+      if (input.targetBasis === "COMPARISON" && input.comparison) {
+        const measuredWindow = resolveGoalMeasurementWindow({
+          goalStartDate: goal.startDate.toISOString().slice(0, 10),
+          goalEndDate: goal.endDate.toISOString().slice(0, 10),
+          keyResultStartDate: startDate,
+          keyResultEndDate: endDate,
+        });
+        const resolved = await resolveComparisonTarget({
+          ruleJson: rule,
+          trackingType: input.trackingType,
+          measuredWindow,
+          comparison: input.comparison,
+        });
+        resolvedTarget = resolved.target;
+        comparisonData = {
+          targetBasis: "COMPARISON",
+          comparisonMode: input.comparison.mode,
+          comparisonStartDate: civilDateToUtc(resolved.window.startCivilDate),
+          comparisonEndDate: civilDateToUtc(resolved.window.endCivilDate),
+          comparisonValue: resolved.comparisonValue,
+          comparisonPercent: input.comparison.percent,
+          comparisonComputedAt: resolved.computedAt,
+        };
+      }
+      if (resolvedTarget == null) {
+        throw new GoalDomainError("VALIDATION_ERROR", "Informe o alvo do indicador.");
+      }
+      if (Number(input.baseline) === Number(resolvedTarget)) {
+        throw new GoalDomainError(
+          "VALIDATION_ERROR",
+          "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
+        );
+      }
+
       const created = await prisma.goalKeyResult.create({
         data: {
           goalId,
@@ -630,7 +749,8 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           domain: input.domain,
           trackingType: input.trackingType,
           baseline: input.baseline,
-          target: input.target,
+          target: resolvedTarget,
+          ...comparisonData,
           achievedValue: input.baseline,
           unit: input.unit,
           weight: input.weight,
@@ -677,14 +797,6 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       input: GoalKeyResultUpdateInput & { rule?: unknown | null }
     ): Promise<GoalKeyResultDto> {
       const current = await requireKeyResult(id);
-      const baseline = input.baseline ?? decimalToString(current.baseline);
-      const target = input.target ?? decimalToString(current.target);
-      if (Number(baseline) === Number(target)) {
-        throw new GoalDomainError(
-          "VALIDATION_ERROR",
-          "Alvo não pode ser igual à linha de base (meta sem intervalo)."
-        );
-      }
       const ruleProvided = input.rule !== undefined;
       const rule =
         ruleProvided && input.rule != null
@@ -697,6 +809,57 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       if (input.startDate !== undefined || input.endDate !== undefined) {
         assertPeriodWithinGoal(current.goal, nextStartDate, nextEndDate);
       }
+
+      // Alvo comparado: reapura na janela anterior e recongela. Salvar o
+      // indicador de novo é o gesto explícito de "atualizar a base".
+      let comparisonData: Record<string, unknown> = {};
+      let resolvedTarget: string | null | undefined = input.target;
+      if (input.targetBasis === "COMPARISON" && input.comparison) {
+        const measuredWindow = resolveGoalMeasurementWindow({
+          goalStartDate: current.goal.startDate.toISOString().slice(0, 10),
+          goalEndDate: current.goal.endDate.toISOString().slice(0, 10),
+          keyResultStartDate: nextStartDate,
+          keyResultEndDate: nextEndDate,
+        });
+        const resolved = await resolveComparisonTarget({
+          ruleJson: ruleProvided ? rule : current.ruleJson,
+          trackingType: (input.trackingType ??
+            current.trackingType) as GoalTrackingTypeValue,
+          measuredWindow,
+          comparison: input.comparison,
+        });
+        resolvedTarget = resolved.target;
+        comparisonData = {
+          targetBasis: "COMPARISON",
+          comparisonMode: input.comparison.mode,
+          comparisonStartDate: civilDateToUtc(resolved.window.startCivilDate),
+          comparisonEndDate: civilDateToUtc(resolved.window.endCivilDate),
+          comparisonValue: resolved.comparisonValue,
+          comparisonPercent: input.comparison.percent,
+          comparisonComputedAt: resolved.computedAt,
+        };
+      } else if (input.targetBasis === "MANUAL") {
+        // Voltou para número digitado: a procedência antiga sai junto, senão
+        // a tela mostraria uma comparação que não define mais nada.
+        comparisonData = {
+          targetBasis: "MANUAL",
+          comparisonMode: null,
+          comparisonStartDate: null,
+          comparisonEndDate: null,
+          comparisonValue: null,
+          comparisonPercent: null,
+          comparisonComputedAt: null,
+        };
+      }
+
+      const baseline = input.baseline ?? decimalToString(current.baseline);
+      const target = resolvedTarget ?? decimalToString(current.target);
+      if (Number(baseline) === Number(target)) {
+        throw new GoalDomainError(
+          "VALIDATION_ERROR",
+          "Alvo não pode ser igual à linha de base (meta sem intervalo)."
+        );
+      }
       const updated = await prisma.goalKeyResult.update({
         where: { id },
         data: {
@@ -706,7 +869,8 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             ? { trackingType: input.trackingType }
             : {}),
           ...(input.baseline !== undefined ? { baseline: input.baseline } : {}),
-          ...(input.target !== undefined ? { target: input.target } : {}),
+          ...(resolvedTarget != null ? { target: resolvedTarget } : {}),
+          ...comparisonData,
           ...(input.unit !== undefined ? { unit: input.unit } : {}),
           ...(input.weight !== undefined ? { weight: input.weight } : {}),
           ...(input.status !== undefined
@@ -987,7 +1151,6 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         input.keyResult.rule != null
           ? normalizeGoalRuleForPersist(input.keyResult.rule)
           : null;
-      assertQuotasWithinTarget(input.keyResult.target, input.quotas);
       // O indicador pode ter recorte próprio, mas nunca fora da moldura do
       // Objetivo que está nascendo junto.
       assertPeriodWithinGoal(
@@ -999,6 +1162,45 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         input.keyResult.startDate,
         input.keyResult.endDate
       );
+
+      // Alvo comparado é apurado ANTES da transação: a leitura do período
+      // anterior é uma consulta pesada e não pode segurar a transação aberta.
+      let wizardTarget = input.keyResult.target;
+      let wizardComparison: Record<string, unknown> = {};
+      if (input.keyResult.targetBasis === "COMPARISON" && input.keyResult.comparison) {
+        const measuredWindow = resolveGoalMeasurementWindow({
+          goalStartDate: input.goal.startDate,
+          goalEndDate: input.goal.endDate,
+          keyResultStartDate: input.keyResult.startDate,
+          keyResultEndDate: input.keyResult.endDate,
+        });
+        const resolved = await resolveComparisonTarget({
+          ruleJson: rule,
+          trackingType: input.keyResult.trackingType,
+          measuredWindow,
+          comparison: input.keyResult.comparison,
+        });
+        wizardTarget = resolved.target;
+        wizardComparison = {
+          targetBasis: "COMPARISON",
+          comparisonMode: input.keyResult.comparison.mode,
+          comparisonStartDate: civilDateToUtc(resolved.window.startCivilDate),
+          comparisonEndDate: civilDateToUtc(resolved.window.endCivilDate),
+          comparisonValue: resolved.comparisonValue,
+          comparisonPercent: input.keyResult.comparison.percent,
+          comparisonComputedAt: resolved.computedAt,
+        };
+      }
+      if (wizardTarget == null) {
+        throw new GoalDomainError("VALIDATION_ERROR", "Informe o alvo do indicador.");
+      }
+      if (Number(input.keyResult.baseline) === Number(wizardTarget)) {
+        throw new GoalDomainError(
+          "VALIDATION_ERROR",
+          "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
+        );
+      }
+      assertQuotasWithinTarget(wizardTarget, input.quotas);
 
       const goalId = await prisma.$transaction(async (tx) => {
         const goal = await tx.goal.create({
@@ -1019,7 +1221,8 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             domain: input.keyResult.domain,
             trackingType: input.keyResult.trackingType,
             baseline: input.keyResult.baseline,
-            target: input.keyResult.target,
+            target: wizardTarget,
+            ...wizardComparison,
             achievedValue: input.keyResult.baseline,
             unit: input.keyResult.unit,
             weight: input.keyResult.weight,

@@ -26,6 +26,13 @@ import type {
   GoalTrackingTypeValue,
 } from "@/src/lib/goals/goalContracts.js";
 import {
+  EMPTY_TARGET_DRAFT,
+  GoalTargetBuilder,
+  buildTargetPayload,
+  isTargetDraftValid,
+  type GoalTargetDraft,
+} from "./GoalTargetBuilder.js";
+import {
   EMPTY_MEASURE_DRAFT,
   GoalMeasureBuilder,
   GoalPeriodPicker,
@@ -76,7 +83,7 @@ export function GoalKeyResultWizardDialog({
   // Passo 2 — Alvo.
   const [trackingType, setTrackingType] = useState<GoalTrackingTypeValue>("INCREASE");
   const [baseline, setBaseline] = useState("0");
-  const [target, setTarget] = useState("");
+  const [targetDraft, setTargetDraft] = useState<GoalTargetDraft>(EMPTY_TARGET_DRAFT);
   const [unit, setUnit] = useState("");
 
   // Passo 3 — Equipe (quotas) + responsável do indicador.
@@ -101,7 +108,7 @@ export function GoalKeyResultWizardDialog({
     );
   }, [owners, quotaSearch, quotas]);
 
-  const targetNumber = Number(target.replace(",", "."));
+  const targetNumber = Number(targetDraft.target.replace(",", "."));
   const baselineNumber = Number(baseline.replace(",", "."));
   const quotasSum = quotas.reduce(
     (sum, q) => sum + (Number(q.quotaValue.replace(",", ".")) || 0),
@@ -115,13 +122,8 @@ export function GoalKeyResultWizardDialog({
 
   const stepValid = [
     isMeasureDraftValid(measure) && periodValid,
-    Boolean(
-      baseline.trim() !== "" &&
-        target.trim() !== "" &&
-        Number.isFinite(baselineNumber) &&
-        Number.isFinite(targetNumber) &&
-        baselineNumber !== targetNumber
-    ),
+    Boolean(baseline.trim() !== "" && Number.isFinite(baselineNumber)) &&
+      isTargetDraftValid(targetDraft),
     Boolean(ownerAppUserId) && !quotasOverTarget,
   ][step]!;
 
@@ -147,7 +149,7 @@ export function GoalKeyResultWizardDialog({
         domain: entity?.domain ?? "OUTROS",
         trackingType,
         baseline: baseline.replace(",", "."),
-        target: target.replace(",", "."),
+        ...buildTargetPayload(targetDraft),
         unit: unit || metric?.suggestedUnit || null,
         weight: "1",
         ownerAppUserId,
@@ -274,26 +276,23 @@ export function GoalKeyResultWizardDialog({
               </p>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              Quero que esse número{" "}
-              <select
-                className="rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-sm font-semibold text-primary"
-                value={trackingType}
-                onChange={(e) => setTrackingType(e.target.value as GoalTrackingTypeValue)}
-                data-testid="kr-wizard-tracking-type"
-              >
-                <option value="INCREASE">aumente</option>
-                <option value="DECREASE">diminua</option>
-              </select>{" "}
-              até chegar em{" "}
-              <input
-                className="w-32 rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-right text-sm font-semibold text-primary tabular-nums"
-                placeholder="100000"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                data-testid="kr-wizard-target"
-              />
-            </div>
+            <GoalTargetBuilder
+              value={targetDraft}
+              onChange={setTargetDraft}
+              measuredWindow={periodValid ? period : null}
+              rule={
+                measure.mode === "AUTO"
+                  ? buildRuleFromWizardState(
+                      measure.entityKey,
+                      measure.metricKey,
+                      measure.filters
+                    )
+                  : null
+              }
+              trackingType={trackingType}
+              unit={unit || metric?.suggestedUnit || ""}
+              canCompare={measure.mode === "AUTO"}
+            />
 
             <div className="grid grid-cols-2 gap-2">
               <label className="block space-y-1">
@@ -328,9 +327,6 @@ export function GoalKeyResultWizardDialog({
                 </strong>{" "}
                 para bater a meta.
               </p>
-            ) : null}
-            {baseline.trim() !== "" && target.trim() !== "" && baselineNumber === targetNumber ? (
-              <p className="text-xs text-red-600">O alvo precisa ser diferente do ponto de partida.</p>
             ) : null}
           </div>
         ) : null}

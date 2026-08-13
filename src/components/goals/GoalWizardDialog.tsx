@@ -17,6 +17,13 @@ import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { fetchJsonOk } from "@/src/lib/http.js";
 import type { GoalDto, GoalTrackingTypeValue } from "@/src/lib/goals/goalContracts.js";
 import {
+  EMPTY_TARGET_DRAFT,
+  GoalTargetBuilder,
+  buildTargetPayload,
+  isTargetDraftValid,
+  type GoalTargetDraft,
+} from "./GoalTargetBuilder.js";
+import {
   EMPTY_MEASURE_DRAFT,
   GoalMeasureBuilder,
   GoalPeriodPicker,
@@ -75,7 +82,7 @@ export function GoalWizardDialog({
   // Passo 3 — Alvo.
   const [trackingType, setTrackingType] = useState<GoalTrackingTypeValue>("INCREASE");
   const [baseline, setBaseline] = useState("0");
-  const [target, setTarget] = useState("");
+  const [targetDraft, setTargetDraft] = useState<GoalTargetDraft>(EMPTY_TARGET_DRAFT);
   const [unit, setUnit] = useState("");
 
   // Passo 4 — Equipe (quotas).
@@ -117,7 +124,7 @@ export function GoalWizardDialog({
     );
   }, [owners, quotaSearch, quotas]);
 
-  const targetNumber = Number(target.replace(",", "."));
+  const targetNumber = Number(targetDraft.target.replace(",", "."));
   const baselineNumber = Number(baseline.replace(",", "."));
   const quotasSum = quotas.reduce(
     (sum, q) => sum + (Number(q.quotaValue.replace(",", ".")) || 0),
@@ -133,13 +140,8 @@ export function GoalWizardDialog({
   const stepValid = [
     Boolean(title.trim() && goalWindow && ownerAppUserId),
     isMeasureDraftValid(measure) && measureWindowValid,
-    Boolean(
-      baseline.trim() !== "" &&
-        target.trim() !== "" &&
-        Number.isFinite(baselineNumber) &&
-        Number.isFinite(targetNumber) &&
-        baselineNumber !== targetNumber
-    ),
+    Boolean(baseline.trim() !== "" && Number.isFinite(baselineNumber)) &&
+      isTargetDraftValid(targetDraft),
     !quotasOverTarget,
   ][step]!;
 
@@ -181,7 +183,7 @@ export function GoalWizardDialog({
           domain: entity?.domain ?? "OUTROS",
           trackingType,
           baseline: baseline.replace(",", "."),
-          target: target.replace(",", "."),
+          ...buildTargetPayload(targetDraft),
           unit: unit || metric?.suggestedUnit || null,
           weight: "1",
           ownerAppUserId,
@@ -422,26 +424,23 @@ export function GoalWizardDialog({
               </p>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              Quero que esse número{" "}
-              <select
-                className="rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-sm font-semibold text-primary"
-                value={trackingType}
-                onChange={(e) => setTrackingType(e.target.value as GoalTrackingTypeValue)}
-                data-testid="wizard-tracking-type"
-              >
-                <option value="INCREASE">aumente</option>
-                <option value="DECREASE">diminua</option>
-              </select>{" "}
-              até chegar em{" "}
-              <input
-                className="w-32 rounded-md border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-right text-sm font-semibold text-primary tabular-nums"
-                placeholder="100000"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                data-testid="wizard-target"
-              />
-            </div>
+            <GoalTargetBuilder
+              value={targetDraft}
+              onChange={setTargetDraft}
+              measuredWindow={measureWindowValid ? measureWindow : null}
+              rule={
+                measure.mode === "AUTO"
+                  ? buildRuleFromWizardState(
+                      measure.entityKey,
+                      measure.metricKey,
+                      measure.filters
+                    )
+                  : null
+              }
+              trackingType={trackingType}
+              unit={unit || metric?.suggestedUnit || ""}
+              canCompare={measure.mode === "AUTO"}
+            />
 
             <div className="grid grid-cols-2 gap-2">
               <label className="block space-y-1">
@@ -475,13 +474,6 @@ export function GoalWizardDialog({
                   {formatNumberBr(Math.abs(gap))} {unit || metric?.suggestedUnit || ""}
                 </strong>{" "}
                 para bater a meta.
-              </p>
-            ) : null}
-            {baseline.trim() !== "" &&
-            target.trim() !== "" &&
-            baselineNumber === targetNumber ? (
-              <p className="text-xs text-red-600">
-                O alvo precisa ser diferente do ponto de partida.
               </p>
             ) : null}
           </div>

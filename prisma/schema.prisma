@@ -9566,6 +9566,25 @@ enum GoalKeyResultTrackingType {
   DECREASE
 }
 
+/// Como o ALVO do indicador foi definido.
+enum GoalTargetBasis {
+  /// Número digitado pelo usuário (padrão, comportamento de sempre).
+  MANUAL
+  /// Derivado de um período de comparação + percentual.
+  COMPARISON
+}
+
+/// Qual período anterior serve de referência para o alvo comparado.
+enum GoalTargetComparisonMode {
+  /// Mesma janela, um ano antes (jul-set/2026 → jul-set/2025).
+  SAME_PERIOD_LAST_YEAR
+  /// Janela imediatamente anterior, deslocada pela PRÓPRIA duração
+  /// (trimestre → trimestre anterior; ano → ano anterior).
+  PREVIOUS_PERIOD
+  /// Datas escolhidas à mão.
+  CUSTOM
+}
+
 enum GoalDomain {
   COMERCIAL
   PRODUCAO
@@ -9623,6 +9642,21 @@ model GoalKeyResult {
   /// Objetivo (o indicador nunca mede fora do período do pai).
   startDate      DateTime?                 @db.Date
   endDate        DateTime?                 @db.Date
+  /// Origem do ALVO. MANUAL (default) = número digitado, comportamento de
+  /// sempre. COMPARISON = derivado de um período anterior ("30% a mais que
+  /// o ano passado"). Em ambos os casos `target` continua sendo a verdade
+  /// única do cálculo de progresso.
+  targetBasis          GoalTargetBasis           @default(MANUAL)
+  /// Janela de comparação e valor APURADO NELA — congelado no cadastro: um
+  /// alvo que se move sozinho não é compromisso, e o sync do Nomus reescreve
+  /// histórico. A procedência fica visível e o recálculo é explícito.
+  comparisonMode       GoalTargetComparisonMode?
+  comparisonStartDate  DateTime?                 @db.Date
+  comparisonEndDate    DateTime?                 @db.Date
+  comparisonValue      Decimal?                  @db.Decimal(20, 6)
+  /// Percentual aplicado sobre o valor de comparação (30 = 30% a mais).
+  comparisonPercent    Decimal?                  @db.Decimal(10, 4)
+  comparisonComputedAt DateTime?                 @db.Timestamptz(6)
   /// true = valor digitado (MVP 1); false = calculado pelo motor (MVP 2+).
   manualTracking Boolean                   @default(true)
   /// Regra dinâmica (MVP 2+): métrica + filtros como chaves do dicionário.

@@ -52,6 +52,18 @@ export class GoalContractError extends Error {
 
 // ─── DTOs ───────────────────────────────────────────────────────────────────
 
+/** Procedência de um alvo derivado de período anterior (somente leitura). */
+export type GoalTargetComparisonDto = {
+  mode: GoalTargetComparisonModeValue;
+  modeLabel: string;
+  startDate: string;
+  endDate: string;
+  /** Valor apurado na janela, congelado no cadastro. */
+  value: string;
+  percent: string;
+  computedAt: string | null;
+};
+
 export type GoalKeyResultDto = {
   id: string;
   goalId: string;
@@ -81,6 +93,10 @@ export type GoalKeyResultDto = {
   effectiveEndDate: string;
   /** true quando o indicador tem recorte próprio (≠ período do Objetivo). */
   hasOwnPeriod: boolean;
+  /** Origem do alvo: número digitado (padrão) ou comparação com período. */
+  targetBasis: GoalTargetBasisValue;
+  /** Procedência do alvo comparado — só preenchido em COMPARISON. */
+  comparison: GoalTargetComparisonDto | null;
   /** Frase leiga da regra ("Soma de Valor total vendido em Pedidos de Venda"). */
   ruleSummary: string | null;
   /** Desdobramento nominal por pessoa (US-04). */
@@ -198,6 +214,149 @@ export function resolveGoalMeasurementWindow(args: {
   return { startCivilDate: start, endCivilDate: end };
 }
 
+// ─── Alvo por comparação com período anterior ───────────────────────────────
+
+export const GOAL_TARGET_BASES = ["MANUAL", "COMPARISON"] as const;
+export type GoalTargetBasisValue = (typeof GOAL_TARGET_BASES)[number];
+
+export const GOAL_TARGET_COMPARISON_MODES = [
+  "SAME_PERIOD_LAST_YEAR",
+  "PREVIOUS_PERIOD",
+  "CUSTOM",
+] as const;
+export type GoalTargetComparisonModeValue =
+  (typeof GOAL_TARGET_COMPARISON_MODES)[number];
+
+export const GOAL_TARGET_COMPARISON_MODE_LABELS: Record<
+  GoalTargetComparisonModeValue,
+  string
+> = {
+  SAME_PERIOD_LAST_YEAR: "mesmo período do ano passado",
+  PREVIOUS_PERIOD: "período imediatamente anterior",
+  CUSTOM: "um período que eu escolher",
+};
+
+function daysInCivilMonth(year: number, month1: number): number {
+  return new Date(Date.UTC(year, month1, 0)).getUTCDate();
+}
+
+/** Soma meses a uma data civil, grudando no último dia quando o mês é curto. */
+function addCivilMonths(civilDate: string, months: number): string {
+  const [y, m, d] = civilDate.split("-").map(Number) as [number, number, number];
+  const totalMonths = (y * 12 + (m - 1)) + months;
+  const year = Math.floor(totalMonths / 12);
+  const month1 = (totalMonths % 12) + 1;
+  // 29/02 → 28/02 no ano não bissexto; 31/03 → 28 ou 29/02.
+  const day = Math.min(d, daysInCivilMonth(year, month1));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${year}-${pad(month1)}-${pad(day)}`;
+}
+
+function civilDaysBetween(startDate: string, endDate: string): number {
+  const ms = Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`);
+  return Math.round(ms / 86_400_000);
+}
+
+function addCivilDays(civilDate: string, days: number): string {
+  const ms = Date.parse(`${civilDate}T00:00:00.000Z`) + days * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Janela de comparação a partir da janela medida pelo indicador.
+ *
+ *  - SAME_PERIOD_LAST_YEAR: mesmas datas, um ano antes (jul-set/2026 →
+ *    jul-set/2025). É o "comparar com o ano passado" do dia a dia.
+ *  - PREVIOUS_PERIOD: desloca pela PRÓPRIA duração da janela — um indicador
+ *    trimestral compara com o trimestre anterior, um anual com o ano anterior,
+ *    sem o usuário precisar saber disso.
+ *  - CUSTOM: datas informadas à mão (devolvidas como vieram).
+ */
+export function resolveGoalTargetComparisonWindow(args: {
+  measuredStartDate: string;
+  measuredEndDate: string;
+  mode: GoalTargetComparisonModeValue;
+  customStartDate?: string | null;
+  customEndDate?: string | null;
+}): { startCivilDate: string; endCivilDate: string } | null {
+  if (args.mode === "CUSTOM") {
+    if (!args.customStartDate || !args.customEndDate) return null;
+    if (args.customEndDate < args.customStartDate) return null;
+    return {
+      startCivilDate: args.customStartDate,
+      endCivilDate: args.customEndDate,
+    };
+  }
+  if (args.measuredEndDate < args.measuredStartDate) return null;
+
+  if (args.mode === "SAME_PERIOD_LAST_YEAR") {
+    return {
+      startCivilDate: addCivilMonths(args.measuredStartDate, -12),
+      endCivilDate: addCivilMonths(args.measuredEndDate, -12),
+    };
+  }
+  // PREVIOUS_PERIOD: a janela imediatamente anterior.
+  //
+  // Quando a janela cobre MESES INTEIROS (dia 1 até o último dia do mês), o
+  // deslocamento é por MESES — senão "trimestre passado" viraria 31/03–30/06
+  // em vez de 01/04–30/06, porque os trimestres têm quantidades de dias
+  // diferentes. Fora desse caso, desloca pela duração em dias.
+  const [sy, sm, sd] = args.measuredStartDate.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const [ey, em, ed] = args.measuredEndDate.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const coversWholeMonths = sd === 1 && ed === daysInCivilMonth(ey, em);
+  if (coversWholeMonths) {
+    const months = ey * 12 + em - (sy * 12 + sm) + 1;
+    const shiftedEnd = addCivilMonths(args.measuredEndDate, -months);
+    const [ny, nm] = shiftedEnd.split("-").map(Number) as [number, number];
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return {
+      startCivilDate: addCivilMonths(args.measuredStartDate, -months),
+      endCivilDate: `${ny}-${pad(nm)}-${pad(daysInCivilMonth(ny, nm))}`,
+    };
+  }
+  const durationDays = civilDaysBetween(args.measuredStartDate, args.measuredEndDate);
+  const endCivilDate = addCivilDays(args.measuredStartDate, -1);
+  return {
+    startCivilDate: addCivilDays(endCivilDate, -durationDays),
+    endCivilDate,
+  };
+}
+
+/**
+ * Alvo = valor do período de comparação + percentual.
+ *
+ * O percentual é sempre lido como "a mais" em INCREASE e "a menos" em
+ * DECREASE — o usuário diz "quero reduzir 10%" e o alvo cai, sem ele precisar
+ * digitar número negativo.
+ */
+export function computeGoalTargetFromComparison(args: {
+  comparisonValue: string;
+  percent: string;
+  trackingType: GoalTrackingTypeValue;
+}): string {
+  const base = Number(args.comparisonValue);
+  const percent = Number(args.percent);
+  if (!Number.isFinite(base) || !Number.isFinite(percent)) {
+    throw new GoalContractError(
+      "Valor de comparação inválido para calcular o alvo.",
+      "comparisonValue"
+    );
+  }
+  const factor =
+    args.trackingType === "DECREASE" ? 1 - percent / 100 : 1 + percent / 100;
+  const target = base * factor;
+  // 6 casas = precisão do Decimal do banco; evita notação científica.
+  return target.toFixed(6);
+}
+
 /** Decimal como string (até 6 casas); aceita number finito por conveniência. */
 function parseDecimalString(value: unknown, field: string): string {
   const raw =
@@ -278,12 +437,52 @@ export function parseGoalUpdateInput(body: Record<string, unknown>): GoalUpdateI
   return out;
 }
 
+/** Configuração do alvo comparado (o valor em si é apurado no servidor). */
+export type GoalKeyResultComparisonInput = {
+  mode: GoalTargetComparisonModeValue;
+  /** Percentual sobre o período de comparação (30 = 30%). */
+  percent: string;
+  /** Datas próprias — obrigatórias apenas em CUSTOM. */
+  startDate: string | null;
+  endDate: string | null;
+};
+
+export function parseGoalTargetComparisonInput(
+  value: unknown
+): GoalKeyResultComparisonInput {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const mode = parseEnum(
+    raw.mode,
+    GOAL_TARGET_COMPARISON_MODES,
+    "comparison.mode"
+  );
+  const percent = parseDecimalString(raw.percent, "comparison.percent");
+  const startDate = parseOptionalCivilDate(raw.startDate, "comparison.startDate");
+  const endDate = parseOptionalCivilDate(raw.endDate, "comparison.endDate");
+  if (mode === "CUSTOM") {
+    if (!startDate || !endDate) {
+      throw new GoalContractError(
+        "Informe as datas do período de comparação.",
+        "comparison.startDate"
+      );
+    }
+    if (endDate < startDate) {
+      throw new GoalContractError(
+        "A data final da comparação não pode ser anterior à inicial.",
+        "comparison.endDate"
+      );
+    }
+  }
+  return { mode, percent, startDate, endDate };
+}
+
 export type GoalKeyResultCreateInput = {
   title: string;
   domain: GoalDomainValue;
   trackingType: GoalTrackingTypeValue;
   baseline: string;
-  target: string;
+  /** null quando targetBasis=COMPARISON — o servidor apura e congela. */
+  target: string | null;
   unit: string | null;
   weight: string;
   ownerAppUserId: string;
@@ -292,14 +491,27 @@ export type GoalKeyResultCreateInput = {
   /** Período próprio (null = herda o do Objetivo). */
   startDate: string | null;
   endDate: string | null;
+  /** MANUAL (padrão, número digitado) ou COMPARISON (derivado de período). */
+  targetBasis: GoalTargetBasisValue;
+  comparison: GoalKeyResultComparisonInput | null;
 };
 
 export function parseGoalKeyResultCreateInput(
   body: Record<string, unknown>
 ): GoalKeyResultCreateInput {
   const baseline = parseDecimalString(body.baseline, "baseline");
-  const target = parseDecimalString(body.target, "target");
-  if (Number(baseline) === Number(target)) {
+  const targetBasis =
+    body.targetBasis == null
+      ? "MANUAL"
+      : parseEnum(body.targetBasis, GOAL_TARGET_BASES, "targetBasis");
+  const comparison =
+    targetBasis === "COMPARISON"
+      ? parseGoalTargetComparisonInput(body.comparison)
+      : null;
+  // Em COMPARISON o alvo é apurado no servidor; digitar número não é exigido.
+  const target =
+    targetBasis === "COMPARISON" ? null : parseDecimalString(body.target, "target");
+  if (target != null && Number(baseline) === Number(target)) {
     throw new GoalContractError(
       "Alvo não pode ser igual à linha de base (meta sem intervalo).",
       "target"
@@ -332,6 +544,8 @@ export function parseGoalKeyResultCreateInput(
     rule: body.rule ?? null,
     startDate,
     endDate,
+    targetBasis,
+    comparison,
   };
 }
 
@@ -384,6 +598,28 @@ export function parseGoalKeyResultUpdateInput(
       "A data final do indicador não pode ser anterior à inicial.",
       "endDate"
     );
+  }
+  // Alvo comparado: trocar de modo é permitido nos dois sentidos. Voltar para
+  // MANUAL exige o número digitado; ir para COMPARISON exige a configuração.
+  if (body.targetBasis !== undefined) {
+    out.targetBasis = parseEnum(body.targetBasis, GOAL_TARGET_BASES, "targetBasis");
+    if (out.targetBasis === "COMPARISON") {
+      out.comparison = parseGoalTargetComparisonInput(body.comparison);
+      out.target = null;
+    } else {
+      out.comparison = null;
+      if (body.target === undefined) {
+        throw new GoalContractError(
+          "Informe o alvo ao voltar para número digitado.",
+          "target"
+        );
+      }
+    }
+  } else if (body.comparison !== undefined && body.comparison !== null) {
+    // Recalcular/ajustar a comparação sem trocar o modo.
+    out.comparison = parseGoalTargetComparisonInput(body.comparison);
+    out.targetBasis = "COMPARISON";
+    out.target = null;
   }
   if (Object.keys(out).length === 0) {
     throw new GoalContractError("Nenhum campo para atualizar.");

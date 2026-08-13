@@ -26,6 +26,13 @@ import { useAuth } from "@/src/contexts/AuthContext.js";
 import { GoalWizardDialog } from "./GoalWizardDialog.js";
 import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
 import {
+  EMPTY_TARGET_DRAFT,
+  GoalTargetBuilder,
+  buildTargetPayload,
+  isTargetDraftValid,
+  type GoalTargetDraft,
+} from "./GoalTargetBuilder.js";
+import {
   GoalPeriodPicker,
   isCivilWindowWithin,
   type CivilWindow,
@@ -542,6 +549,16 @@ export function GoalsCockpitPage() {
                                 {/* Recorte próprio (ex.: trimestre dentro de um
                                     objetivo anual) — sem isto o número parecia
                                     "o total de tudo". */}
+                                {kr.comparison ? (
+                                  <span
+                                    className="rounded-full border border-[#DDD6FE] bg-[#F5F3FF] px-1.5 text-[10px] font-medium text-[#5B21B6]"
+                                    title={`Alvo definido como ${kr.comparison.percent}% sobre ${formatValue(kr.comparison.value, kr.unit)} apurado em ${civilDateBr(kr.comparison.startDate)}–${civilDateBr(kr.comparison.endDate)}`}
+                                    data-testid={`kr-target-comparison-${kr.id}`}
+                                  >
+                                    alvo: {Number(kr.comparison.percent) >= 0 ? "+" : ""}
+                                    {kr.comparison.percent}% vs {kr.comparison.modeLabel}
+                                  </span>
+                                ) : null}
                                 {kr.hasOwnPeriod ? (
                                   <span
                                     className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-1.5 text-[10px] font-medium text-[#1E40AF]"
@@ -836,7 +853,18 @@ function KeyResultFormDialog({
   const [domain, setDomain] = useState(keyResult.domain);
   const [trackingType, setTrackingType] = useState(keyResult.trackingType);
   const [baseline, setBaseline] = useState(keyResult.baseline);
-  const [target, setTarget] = useState(keyResult.target);
+  const [targetDraft, setTargetDraft] = useState<GoalTargetDraft>(
+    keyResult.comparison
+      ? {
+          basis: "COMPARISON",
+          target: keyResult.target,
+          percent: keyResult.comparison.percent,
+          comparisonMode: keyResult.comparison.mode,
+          customStartDate: keyResult.comparison.startDate,
+          customEndDate: keyResult.comparison.endDate,
+        }
+      : { ...EMPTY_TARGET_DRAFT, target: keyResult.target }
+  );
   const [unit, setUnit] = useState(keyResult.unit ?? "");
   const [weight, setWeight] = useState(keyResult.weight);
   const [ownerAppUserId, setOwnerAppUserId] = useState(keyResult.ownerAppUserId);
@@ -851,7 +879,7 @@ function KeyResultFormDialog({
   const canSubmit = Boolean(
     title.trim() &&
       baseline !== "" &&
-      target !== "" &&
+      isTargetDraftValid(targetDraft) &&
       weight !== "" &&
       ownerAppUserId &&
       isCivilWindowWithin(period, goalWindow)
@@ -867,7 +895,7 @@ function KeyResultFormDialog({
           domain,
           trackingType,
           baseline,
-          target,
+          ...buildTargetPayload(targetDraft),
           unit: unit || null,
           weight,
           ownerAppUserId,
@@ -917,10 +945,7 @@ function KeyResultFormDialog({
           <span className={labelClass}>Linha de base *</span>
           <input className={fieldClass} value={baseline} onChange={(e) => setBaseline(e.target.value)} data-testid="kr-form-baseline" />
         </label>
-        <label className="block space-y-1">
-          <span className={labelClass}>Alvo *</span>
-          <input className={fieldClass} value={target} onChange={(e) => setTarget(e.target.value)} data-testid="kr-form-target" />
-        </label>
+
         <label className="block space-y-1">
           <span className={labelClass}>Unidade</span>
           <input className={fieldClass} placeholder="R$, un, %…" value={unit} onChange={(e) => setUnit(e.target.value)} />
@@ -947,6 +972,17 @@ function KeyResultFormDialog({
             ))}
           </select>
         </label>
+      </div>
+      <div className="rounded-lg border border-border bg-muted/20 p-3">
+        <GoalTargetBuilder
+          value={targetDraft}
+          onChange={setTargetDraft}
+          measuredWindow={period}
+          rule={null}
+          trackingType={trackingType}
+          unit={unit || ""}
+          canCompare={keyResult.hasRule}
+        />
       </div>
       <div className="rounded-lg border border-border bg-muted/20 p-3">
         <GoalPeriodPicker bounds={goalWindow} value={period} onChange={setPeriod} />
