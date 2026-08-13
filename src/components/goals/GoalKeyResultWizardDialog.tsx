@@ -1,14 +1,19 @@
 /**
- * Metas (OKR) — Wizard de criação em 4 passos ("Esconder a Complexidade").
+ * Metas (OKR) — assistente para adicionar um NOVO INDICADOR a um Objetivo
+ * já existente. Mesma experiência conversacional do wizard de criação
+ * (frase interativa dirigida pelo dicionário) — sem repetir o Passo 1
+ * (Direção), porque o Objetivo já existe.
  *
- * O usuário nunca lê "banco", "agregação" ou "join": o Passo 2 é um jogo de
- * completar frases cujos blocos vêm do dicionário público de metadados
- * (chaves + rótulos leigos). O JSON lógico é montado em background e o
- * backend valida tudo de novo (o front nunca é autoridade).
+ * Por que este componente existe: antes só havia UM jeito "bonito" de medir
+ * uma meta — o wizard "+ Novo Objetivo", que sempre cria um Objetivo NOVO.
+ * Isso empurrava quem só queria adicionar mais um indicador a usar o botão
+ * errado, criando um Objetivo duplicado sem querer. Este diálogo fecha essa
+ * lacuna: mesma linguagem leiga, resultado correto (indicador dentro do
+ * Objetivo escolhido).
  */
 
 import React, { useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { fetchJsonOk } from "@/src/lib/http.js";
@@ -16,6 +21,7 @@ import {
   GOAL_TRACKING_TYPES,
   GOAL_TRACKING_TYPE_LABELS,
   type GoalDto,
+  type GoalKeyResultDto,
   type GoalTrackingTypeValue,
 } from "@/src/lib/goals/goalContracts.js";
 import {
@@ -29,53 +35,42 @@ import {
   type WizardQuota,
 } from "./goalWizardShared.js";
 
-export type { GoalMetadataPublicEntity } from "./goalWizardShared.js";
-
 type OwnerOption = { id: string; name: string };
 
-const STEP_TITLES = [
-  "Onde queremos chegar?",
-  "Como vamos medir o sucesso disso?",
-  "Qual é a linha de chegada?",
-  "Quem vai te ajudar a bater essa meta?",
-] as const;
+const STEP_TITLES = ["Como vamos medir o sucesso disso?", "Qual é a linha de chegada?", "Quem vai te ajudar a bater essa meta?"] as const;
 
-export function GoalWizardDialog({
+export function GoalKeyResultWizardDialog({
+  goal,
   owners,
   metadataEntities,
   onCancel,
   onCreated,
 }: {
+  goal: GoalDto;
   owners: OwnerOption[];
   metadataEntities: GoalMetadataPublicEntity[];
   onCancel: () => void;
-  onCreated: (goal: GoalDto) => void;
+  onCreated: (keyResult: GoalKeyResultDto) => void;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Passo 1 — Direção.
-  const [title, setTitle] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [ownerAppUserId, setOwnerAppUserId] = useState("");
-  const [ownerSearch, setOwnerSearch] = useState("");
-
-  // Passo 2 — Medição (frase interativa) OU manual.
+  // Passo 1 — Medição (frase interativa) OU manual.
   const [measureMode, setMeasureMode] = useState<"AUTO" | "MANUAL">("AUTO");
   const [entityKey, setEntityKey] = useState("");
   const [metricKey, setMetricKey] = useState("");
   const [filters, setFilters] = useState<WizardFilter[]>([]);
   const [krTitle, setKrTitle] = useState("");
 
-  // Passo 3 — Alvo.
+  // Passo 2 — Alvo.
   const [trackingType, setTrackingType] = useState<GoalTrackingTypeValue>("INCREASE");
   const [baseline, setBaseline] = useState("0");
   const [target, setTarget] = useState("");
   const [unit, setUnit] = useState("");
 
-  // Passo 4 — Equipe (quotas).
+  // Passo 3 — Equipe (quotas) + responsável do indicador.
+  const [ownerAppUserId, setOwnerAppUserId] = useState(goal.ownerAppUserId);
   const [quotas, setQuotas] = useState<WizardQuota[]>([]);
   const [quotaSearch, setQuotaSearch] = useState("");
 
@@ -87,12 +82,6 @@ export function GoalWizardDialog({
     () => entity?.metrics.find((m) => m.key === metricKey) ?? null,
     [entity, metricKey]
   );
-
-  const filteredOwners = useMemo(() => {
-    const term = ownerSearch.trim().toLowerCase();
-    if (!term) return owners;
-    return owners.filter((o) => o.name.toLowerCase().includes(term));
-  }, [owners, ownerSearch]);
 
   const quotaCandidates = useMemo(() => {
     const term = quotaSearch.trim().toLowerCase();
@@ -108,15 +97,11 @@ export function GoalWizardDialog({
     (sum, q) => sum + (Number(q.quotaValue.replace(",", ".")) || 0),
     0
   );
-  const quotasOverTarget =
-    Number.isFinite(targetNumber) && quotasSum > targetNumber + 1e-9;
+  const quotasOverTarget = Number.isFinite(targetNumber) && quotasSum > targetNumber + 1e-9;
   const quotasExact =
-    Number.isFinite(targetNumber) &&
-    quotas.length > 0 &&
-    Math.abs(quotasSum - targetNumber) < 1e-9;
+    Number.isFinite(targetNumber) && quotas.length > 0 && Math.abs(quotasSum - targetNumber) < 1e-9;
 
   const stepValid = [
-    Boolean(title.trim() && startDate && endDate && endDate >= startDate && ownerAppUserId),
     measureMode === "MANUAL"
       ? Boolean(krTitle.trim())
       : Boolean(
@@ -131,19 +116,13 @@ export function GoalWizardDialog({
         Number.isFinite(targetNumber) &&
         baselineNumber !== targetNumber
     ),
-    !quotasOverTarget,
+    Boolean(ownerAppUserId) && !quotasOverTarget,
   ][step]!;
 
   function addFilter() {
     setFilters((prev) => [
       ...prev,
-      {
-        id: `f-${Date.now()}-${prev.length}`,
-        fieldKey: "",
-        operator: "",
-        value: "",
-        connector: prev.length === 0 ? "AND" : "AND",
-      },
+      { id: `f-${Date.now()}-${prev.length}`, fieldKey: "", operator: "", value: "", connector: "AND" },
     ]);
   }
 
@@ -164,83 +143,74 @@ export function GoalWizardDialog({
     setError(null);
     try {
       const payload = {
-        goal: {
-          title,
-          description: null,
-          startDate,
-          endDate,
-          status: "ACTIVE",
-          ownerAppUserId,
-        },
-        keyResult: {
-          title:
-            measureMode === "MANUAL"
-              ? krTitle
-              : krTitle.trim() || metric?.label || "Indicador",
-          domain: entity?.domain ?? "OUTROS",
-          trackingType,
-          baseline: baseline.replace(",", "."),
-          target: target.replace(",", "."),
-          unit: unit || metric?.suggestedUnit || null,
-          weight: "1",
-          ownerAppUserId,
-          rule:
-            measureMode === "AUTO"
-              ? buildRuleFromWizardState(entityKey, metricKey, filters)
-              : null,
-        },
-        quotas: quotas
-          .filter((q) => q.quotaValue.trim() !== "")
-          .map((q) => ({
-            assignedAppUserId: q.assignedAppUserId,
-            quotaValue: q.quotaValue.replace(",", "."),
-          })),
+        title: measureMode === "MANUAL" ? krTitle : krTitle.trim() || metric?.label || "Indicador",
+        domain: entity?.domain ?? "OUTROS",
+        trackingType,
+        baseline: baseline.replace(",", "."),
+        target: target.replace(",", "."),
+        unit: unit || metric?.suggestedUnit || null,
+        weight: "1",
+        ownerAppUserId,
+        rule: measureMode === "AUTO" ? buildRuleFromWizardState(entityKey, metricKey, filters) : null,
       };
-      const res = await fetchJsonOk<{ goal: GoalDto }>("/api/goals/wizard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      onCreated(res.goal);
+      const created = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
+        `/api/goals/${goal.id}/key-results`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const nonEmptyQuotas = quotas.filter((q) => q.quotaValue.trim() !== "");
+      let finalKr = created.keyResult;
+      if (nonEmptyQuotas.length > 0) {
+        const withQuotas = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
+          `/api/goals/key-results/${created.keyResult.id}/quotas`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quotas: nonEmptyQuotas.map((q) => ({
+                assignedAppUserId: q.assignedAppUserId,
+                quotaValue: q.quotaValue.replace(",", "."),
+              })),
+            }),
+          }
+        );
+        finalKr = withQuotas.keyResult;
+      }
+      onCreated(finalKr);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar a meta.");
+      setError(err instanceof Error ? err.message : "Falha ao salvar o indicador.");
     } finally {
       setBusy(false);
     }
   }
 
   const gap =
-    Number.isFinite(targetNumber) && Number.isFinite(baselineNumber)
-      ? targetNumber - baselineNumber
-      : null;
+    Number.isFinite(targetNumber) && Number.isFinite(baselineNumber) ? targetNumber - baselineNumber : null;
 
   return renderInPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
-      data-testid="goal-wizard"
+      data-testid="kr-wizard"
     >
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-lg">
-        {/* Barra de progresso do wizard (1 de 4) */}
         <div className="mb-4">
           <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
             <span>
-              Passo {step + 1} de 4 — {["Direção", "Medição", "Alvo", "Equipe"][step]}
+              Novo indicador em <strong className="text-foreground">{goal.title}</strong> — passo{" "}
+              {step + 1} de 3
             </span>
             <button type="button" className="hover:text-foreground" onClick={onCancel}>
               Cancelar
             </button>
           </div>
           <div className="flex gap-1">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={cn(
-                  "h-1.5 flex-1 rounded-full",
-                  i <= step ? "bg-primary" : "bg-muted"
-                )}
-              />
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={cn("h-1.5 flex-1 rounded-full", i <= step ? "bg-primary" : "bg-muted")} />
             ))}
           </div>
         </div>
@@ -248,83 +218,7 @@ export function GoalWizardDialog({
         <h2 className="mb-3 text-lg font-semibold">{STEP_TITLES[step]}</h2>
 
         {step === 0 ? (
-          <div className="space-y-3" data-testid="wizard-step-direction">
-            <label className="block space-y-1">
-              <span className={labelClass}>Dê um nome para o seu objetivo</span>
-              <input
-                className={fieldClass}
-                placeholder='Ex.: "Dominar a Tração Comercial em 2026"'
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                data-testid="wizard-title"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block space-y-1">
-                <span className={labelClass}>Começa em</span>
-                <input
-                  type="date"
-                  className={fieldClass}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className={labelClass}>Termina em</span>
-                <input
-                  type="date"
-                  className={fieldClass}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </label>
-            </div>
-            <div className="space-y-1">
-              <span className={labelClass}>Quem é o dono desse objetivo?</span>
-              <input
-                className={fieldClass}
-                placeholder="Busque pelo nome…"
-                value={ownerSearch}
-                onChange={(e) => setOwnerSearch(e.target.value)}
-              />
-              <div className="max-h-36 overflow-y-auto rounded border border-border">
-                {filteredOwners.slice(0, 8).map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted",
-                      ownerAppUserId === o.id && "bg-primary/10 font-semibold"
-                    )}
-                    onClick={() => setOwnerAppUserId(o.id)}
-                    data-testid={`wizard-owner-${o.id}`}
-                  >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
-                      {o.name
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((p) => p[0])
-                        .join("")
-                        .toUpperCase()}
-                    </span>
-                    {o.name}
-                    {ownerAppUserId === o.id ? (
-                      <Check className="ml-auto h-4 w-4 text-primary" aria-hidden />
-                    ) : null}
-                  </button>
-                ))}
-                {filteredOwners.length === 0 ? (
-                  <p className="px-2 py-2 text-xs text-muted-foreground">
-                    Ninguém encontrado com esse nome.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {step === 1 ? (
-          <div className="space-y-3" data-testid="wizard-step-measure">
+          <div className="space-y-3" data-testid="kr-wizard-step-measure">
             <div className="flex gap-2 text-xs">
               <button
                 type="button"
@@ -336,8 +230,7 @@ export function GoalWizardDialog({
                 )}
                 onClick={() => setMeasureMode("AUTO")}
               >
-                <Sparkles className="mr-1 inline h-3 w-3" aria-hidden />
-                O sistema mede sozinho
+                <Sparkles className="mr-1 inline h-3 w-3" aria-hidden />O sistema mede sozinho
               </button>
               <button
                 type="button"
@@ -348,7 +241,7 @@ export function GoalWizardDialog({
                     : "border-border text-muted-foreground"
                 )}
                 onClick={() => setMeasureMode("MANUAL")}
-                data-testid="wizard-mode-manual"
+                data-testid="kr-wizard-mode-manual"
               >
                 Eu mesmo informo o número
               </button>
@@ -356,11 +249,7 @@ export function GoalWizardDialog({
 
             {measureMode === "AUTO" ? (
               <>
-                {/* A frase interativa (Mad Libs) */}
-                <p
-                  className="rounded-lg border border-border bg-muted/30 p-3 text-sm leading-8"
-                  data-testid="wizard-phrase"
-                >
+                <p className="rounded-lg border border-border bg-muted/30 p-3 text-sm leading-8" data-testid="kr-wizard-phrase">
                   Eu quero acompanhar{" "}
                   <PhraseSelect
                     value={metricKey}
@@ -370,7 +259,7 @@ export function GoalWizardDialog({
                       label: `${m.operationLabel} de "${m.label}"`,
                     }))}
                     placeholder={entity ? "escolha o indicador" : "…"}
-                    testId="wizard-metric"
+                    testId="kr-wizard-metric"
                   />{" "}
                   olhando para a área de{" "}
                   <PhraseSelect
@@ -382,34 +271,31 @@ export function GoalWizardDialog({
                     }}
                     options={metadataEntities.map((e) => ({ value: e.key, label: e.label }))}
                     placeholder="escolha a área"
-                    testId="wizard-entity"
+                    testId="kr-wizard-entity"
                   />
                   .
                   {metric ? (
                     <span className="block text-[11px] text-muted-foreground">
-                      O período considerado é a {metric.periodLabel}, dentro das datas do
-                      seu objetivo.
+                      O período considerado são as datas do objetivo "{goal.title}" (
+                      {metric.periodLabel}).
                     </span>
                   ) : null}
                 </p>
 
-                {/* Regras de exceção empilhadas */}
                 {filters.map((filter, index) => {
                   const field = entity?.filterFields.find((f) => f.key === filter.fieldKey);
                   return (
                     <p
                       key={filter.id}
                       className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm leading-8"
-                      data-testid={`wizard-filter-${index}`}
+                      data-testid={`kr-wizard-filter-${index}`}
                     >
                       {index === 0 ? (
                         "Mas apenas considerar quando "
                       ) : (
                         <PhraseSelect
                           value={filter.connector}
-                          onChange={(v) =>
-                            updateFilter(filter.id, { connector: v as "AND" | "OR" })
-                          }
+                          onChange={(v) => updateFilter(filter.id, { connector: v as "AND" | "OR" })}
                           options={[
                             { value: "AND", label: "e também quando" },
                             { value: "OR", label: "ou então quando" },
@@ -419,22 +305,14 @@ export function GoalWizardDialog({
                       )}{" "}
                       <PhraseSelect
                         value={filter.fieldKey}
-                        onChange={(v) =>
-                          updateFilter(filter.id, { fieldKey: v, operator: "", value: "" })
-                        }
-                        options={(entity?.filterFields ?? []).map((f) => ({
-                          value: f.key,
-                          label: f.label,
-                        }))}
+                        onChange={(v) => updateFilter(filter.id, { fieldKey: v, operator: "", value: "" })}
+                        options={(entity?.filterFields ?? []).map((f) => ({ value: f.key, label: f.label }))}
                         placeholder="escolha o campo"
                       />{" "}
                       <PhraseSelect
                         value={filter.operator}
                         onChange={(v) => updateFilter(filter.id, { operator: v })}
-                        options={(field?.operators ?? []).map((op) => ({
-                          value: op.value,
-                          label: op.label,
-                        }))}
+                        options={(field?.operators ?? []).map((op) => ({ value: op.value, label: op.label }))}
                         placeholder="condição"
                       />{" "}
                       {filter.operator !== "IS_EMPTY" && field ? (
@@ -470,16 +348,14 @@ export function GoalWizardDialog({
                     type="button"
                     className="text-xs font-semibold text-primary hover:underline"
                     onClick={addFilter}
-                    data-testid="wizard-add-filter"
+                    data-testid="kr-wizard-add-filter"
                   >
                     + Adicionar uma regra de exceção
                   </button>
                 ) : null}
 
                 <label className="block space-y-1 pt-1">
-                  <span className={labelClass}>
-                    Nome do indicador (opcional — sugerimos o da medição)
-                  </span>
+                  <span className={labelClass}>Nome do indicador (opcional — sugerimos o da medição)</span>
                   <input
                     className={fieldClass}
                     placeholder={metric?.label ?? "Ex.: Faturamento físico"}
@@ -491,8 +367,8 @@ export function GoalWizardDialog({
             ) : (
               <div className="space-y-2">
                 <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Sem medição automática: você (ou a equipe) lança o número realizado
-                  de tempos em tempos, e o painel acompanha do mesmo jeito.
+                  Sem medição automática: você (ou a equipe) lança o número realizado de tempos
+                  em tempos, e o painel acompanha do mesmo jeito.
                 </p>
                 <label className="block space-y-1">
                   <span className={labelClass}>Nome do indicador</span>
@@ -501,7 +377,7 @@ export function GoalWizardDialog({
                     placeholder='Ex.: "Satisfação dos clientes (NPS)"'
                     value={krTitle}
                     onChange={(e) => setKrTitle(e.target.value)}
-                    data-testid="wizard-kr-title"
+                    data-testid="kr-wizard-title"
                   />
                 </label>
               </div>
@@ -509,8 +385,8 @@ export function GoalWizardDialog({
           </div>
         ) : null}
 
-        {step === 2 ? (
-          <div className="space-y-3" data-testid="wizard-step-target">
+        {step === 1 ? (
+          <div className="space-y-3" data-testid="kr-wizard-step-target">
             <div className="grid grid-cols-3 gap-2">
               <label className="block space-y-1">
                 <span className={labelClass}>Nós estamos partindo de</span>
@@ -518,7 +394,7 @@ export function GoalWizardDialog({
                   className={fieldClass}
                   value={baseline}
                   onChange={(e) => setBaseline(e.target.value)}
-                  data-testid="wizard-baseline"
+                  data-testid="kr-wizard-baseline"
                 />
               </label>
               <label className="block space-y-1">
@@ -528,7 +404,7 @@ export function GoalWizardDialog({
                   placeholder="Ex.: 100000"
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
-                  data-testid="wizard-target"
+                  data-testid="kr-wizard-target"
                 />
               </label>
               <label className="block space-y-1">
@@ -558,7 +434,7 @@ export function GoalWizardDialog({
             {gap != null && Number.isFinite(gap) && gap !== 0 ? (
               <p
                 className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-xs text-[#1E40AF]"
-                data-testid="wizard-gap-hint"
+                data-testid="kr-wizard-gap-hint"
               >
                 Isso significa que você precisa de{" "}
                 <strong>
@@ -568,28 +444,41 @@ export function GoalWizardDialog({
                 para bater a meta.
               </p>
             ) : null}
-            {baseline.trim() !== "" &&
-            target.trim() !== "" &&
-            baselineNumber === targetNumber ? (
-              <p className="text-xs text-red-600">
-                O alvo precisa ser diferente do ponto de partida.
-              </p>
+            {baseline.trim() !== "" && target.trim() !== "" && baselineNumber === targetNumber ? (
+              <p className="text-xs text-red-600">O alvo precisa ser diferente do ponto de partida.</p>
             ) : null}
           </div>
         ) : null}
 
-        {step === 3 ? (
-          <div className="space-y-3" data-testid="wizard-step-team">
+        {step === 2 ? (
+          <div className="space-y-3" data-testid="kr-wizard-step-team">
+            <label className="block space-y-1">
+              <span className={labelClass}>Responsável por este indicador *</span>
+              <select
+                className={fieldClass}
+                value={ownerAppUserId}
+                onChange={(e) => setOwnerAppUserId(e.target.value)}
+                data-testid="kr-wizard-owner"
+              >
+                <option value="">Selecione…</option>
+                {owners.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <p className="text-xs text-muted-foreground">
-              Opcional: divida o alvo em fatias nominais. Cada pessoa enxerga a
-              própria fatia no painel.
+              Opcional: divida o alvo em fatias nominais. Cada pessoa enxerga a própria fatia
+              no painel.
             </p>
             <input
               className={fieldClass}
               placeholder="Busque pelo nome para adicionar…"
               value={quotaSearch}
               onChange={(e) => setQuotaSearch(e.target.value)}
-              data-testid="wizard-quota-search"
+              data-testid="kr-wizard-quota-search"
             />
             {quotaSearch.trim() ? (
               <div className="max-h-28 overflow-y-auto rounded border border-border">
@@ -618,24 +507,16 @@ export function GoalWizardDialog({
                   key={quota.id}
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-2 py-1.5 text-sm"
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {person?.name ?? "—"}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{person?.name ?? "—"}</span>
                   <input
                     className="w-28 rounded border border-border px-1.5 py-0.5 text-right text-sm tabular-nums"
                     placeholder="valor"
                     value={quota.quotaValue}
                     onChange={(e) =>
-                      setQuotas((prev) =>
-                        prev.map((q) =>
-                          q.id === quota.id ? { ...q, quotaValue: e.target.value } : q
-                        )
-                      )
+                      setQuotas((prev) => prev.map((q) => (q.id === quota.id ? { ...q, quotaValue: e.target.value } : q)))
                     }
                   />
-                  <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
-                    {percent}%
-                  </span>
+                  <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">{percent}%</span>
                   <button
                     type="button"
                     className="text-[11px] text-muted-foreground hover:text-red-600"
@@ -657,7 +538,7 @@ export function GoalWizardDialog({
                       ? "border border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]"
                       : "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]"
                 )}
-                data-testid="wizard-quota-status"
+                data-testid="kr-wizard-quota-status"
               >
                 {quotasOverTarget
                   ? `A soma (${formatNumberBr(quotasSum)}) passou do alvo (${formatNumberBr(targetNumber)}) — ajuste as fatias.`
@@ -686,13 +567,13 @@ export function GoalWizardDialog({
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Voltar
           </button>
-          {step < 3 ? (
+          {step < 2 ? (
             <button
               type="button"
               className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
               disabled={!stepValid}
               onClick={() => setStep((s) => s + 1)}
-              data-testid="wizard-next"
+              data-testid="kr-wizard-next"
             >
               Avançar <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </button>
@@ -702,9 +583,9 @@ export function GoalWizardDialog({
               className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
               disabled={!stepValid || busy}
               onClick={() => void handleSubmit()}
-              data-testid="wizard-submit"
+              data-testid="kr-wizard-submit"
             >
-              {busy ? "Ligando os motores…" : "Ligar os Motores e Salvar Meta"}
+              {busy ? "Salvando…" : "Adicionar Indicador"}
             </button>
           )}
         </div>

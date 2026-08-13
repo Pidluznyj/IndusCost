@@ -92,6 +92,12 @@ describe("parseGoalKeyResultCreateInput", () => {
       parseGoalKeyResultCreateInput({ ...base, trackingType: "SIDEWAYS" })
     );
   });
+
+  it("rule ausente vira null (indicador manual); rule presente é repassada", () => {
+    assert.equal(parseGoalKeyResultCreateInput(base).rule, null);
+    const rule = { entityKey: "SALES_ORDERS", metricKey: "SALES_NET_TOTAL", filters: [] };
+    assert.deepEqual(parseGoalKeyResultCreateInput({ ...base, rule }).rule, rule);
+  });
 });
 
 describe("parseGoalUpdateInput / parseGoalKeyResultUpdateInput", () => {

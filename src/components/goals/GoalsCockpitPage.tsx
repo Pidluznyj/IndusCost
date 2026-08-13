@@ -9,15 +9,22 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Target, Plus, Pencil, Trash2, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  Target,
+  Plus,
+  Pencil,
+  Trash2,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+} from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { fetchJsonOk } from "@/src/lib/http.js";
 import { useAuth } from "@/src/contexts/AuthContext.js";
-import {
-  GoalWizardDialog,
-  type GoalMetadataPublicEntity,
-} from "./GoalWizardDialog.js";
+import { GoalWizardDialog } from "./GoalWizardDialog.js";
+import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
+import type { GoalMetadataPublicEntity } from "./goalWizardShared.js";
 import {
   GOAL_DOMAIN_LABELS,
   GOAL_DOMAINS,
@@ -161,10 +168,12 @@ export function GoalsCockpitPage() {
 
   // Dialog state (um por vez).
   const [goalDialog, setGoalDialog] = useState<{ mode: "create" } | { mode: "edit"; goal: GoalDto } | null>(null);
+  // Criação de indicador usa o assistente conversacional (mesma experiência
+  // do "+ Novo Objetivo", só que dentro de um Objetivo já existente — nunca
+  // cria um Objetivo novo). Edição continua no formulário técnico simples.
+  const [krWizardGoal, setKrWizardGoal] = useState<GoalDto | null>(null);
   const [krDialog, setKrDialog] = useState<
-    | { mode: "create"; goal: GoalDto }
-    | { mode: "edit"; goal: GoalDto; keyResult: GoalKeyResultDto }
-    | null
+    { mode: "edit"; goal: GoalDto; keyResult: GoalKeyResultDto } | null
   >(null);
   const [valueDialog, setValueDialog] = useState<{ keyResult: GoalKeyResultDto } | null>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -397,7 +406,7 @@ export function GoalsCockpitPage() {
                           type="button"
                           className="truncate text-left text-sm font-semibold hover:underline"
                           onClick={() => toggleExpanded(goal.id)}
-                          title={expanded ? "Recolher KRs" : "Expandir KRs"}
+                          title={expanded ? "Recolher prévia dos indicadores" : "Prévia rápida dos indicadores"}
                         >
                           {goal.title}
                         </button>
@@ -413,7 +422,7 @@ export function GoalsCockpitPage() {
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         {civilDateBr(goal.startDate)} – {civilDateBr(goal.endDate)}
                         {goal.ownerName ? ` · Resp.: ${goal.ownerName}` : ""} ·{" "}
-                        {goal.activeKeyResults} KR(s) ativo(s)
+                        {goal.activeKeyResults} indicador(es) ativo(s)
                       </p>
                       <div className="mt-2">
                         <ProgressBar
@@ -424,23 +433,28 @@ export function GoalsCockpitPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* Único caminho de drill-down: Objetivo → indicadores →
+                        tarefas. Botão sólido e em primeiro lugar para não se
+                        confundir com as ações secundárias ao lado. */}
                     <Link
                       to={`/goals/${goal.id}`}
-                      className="rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                      className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
                       data-testid={`goal-detail-link-${goal.id}`}
+                      title="Abrir a meta: ver indicadores, evolução e tarefas"
                     >
-                      Acompanhar
+                      Abrir meta <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                     </Link>
                     <button
                       type="button"
                       className="rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+                      title="Adicionar um novo indicador (número) dentro deste objetivo"
                       onClick={() => {
                         setDialogError(null);
-                        setKrDialog({ mode: "create", goal });
+                        setKrWizardGoal(goal);
                       }}
                       data-testid={`goal-add-kr-${goal.id}`}
                     >
-                      + KR
+                      + Indicador
                     </button>
                     <button
                       type="button"
@@ -466,9 +480,14 @@ export function GoalsCockpitPage() {
 
                 {expanded ? (
                   <div className="border-t border-border/60 px-3 pb-3">
+                    <p className="py-2 text-[10px] text-muted-foreground">
+                      Prévia rápida — clique em um indicador para abrir a evolução e as
+                      tarefas dele.
+                    </p>
                     {goal.keyResults.length === 0 ? (
                       <p className="py-3 text-xs text-muted-foreground">
-                        Nenhum KR — adicione o primeiro indicador mensurável.
+                        Nenhum indicador ainda — clique em "+ Indicador" acima para
+                        adicionar o primeiro número mensurável deste objetivo.
                       </p>
                     ) : (
                       <ul className="divide-y divide-border/60">
@@ -481,14 +500,19 @@ export function GoalsCockpitPage() {
                             )}
                             data-testid={`kr-row-${kr.id}`}
                           >
-                            <div className="min-w-0 flex-1">
+                            <Link
+                              to={`/goals/${goal.id}?kr=${kr.id}`}
+                              className="min-w-0 flex-1"
+                              title="Abrir este indicador (evolução e tarefas)"
+                              data-testid={`kr-drilldown-${kr.id}`}
+                            >
                               <div className="flex flex-wrap items-center gap-1.5 text-xs">
                                 {kr.trackingType === "INCREASE" ? (
                                   <TrendingUp className="h-3.5 w-3.5 text-[#059669]" aria-hidden />
                                 ) : (
                                   <TrendingDown className="h-3.5 w-3.5 text-[#7C3AED]" aria-hidden />
                                 )}
-                                <span className="font-medium">{kr.title}</span>
+                                <span className="font-medium hover:underline">{kr.title}</span>
                                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                                   {GOAL_DOMAIN_LABELS[kr.domain]}
                                 </span>
@@ -510,7 +534,7 @@ export function GoalsCockpitPage() {
                                   invalid={kr.invalidTargets}
                                 />
                               </div>
-                            </div>
+                            </Link>
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -527,7 +551,7 @@ export function GoalsCockpitPage() {
                               <button
                                 type="button"
                                 className="rounded-md border border-border p-1.5 hover:bg-muted"
-                                title="Editar KR"
+                                title="Editar indicador"
                                 onClick={() => {
                                   setDialogError(null);
                                   setKrDialog({ mode: "edit", goal, keyResult: kr });
@@ -538,7 +562,7 @@ export function GoalsCockpitPage() {
                               <button
                                 type="button"
                                 className="rounded-md border border-[#FECACA] p-1.5 text-[#991B1B] hover:bg-[#FEF2F2]"
-                                title="Excluir/arquivar KR"
+                                title="Excluir/arquivar indicador"
                                 onClick={() => void handleDeleteKeyResult(kr)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -594,27 +618,34 @@ export function GoalsCockpitPage() {
         />
       ) : null}
 
+      {krWizardGoal ? (
+        <GoalKeyResultWizardDialog
+          goal={krWizardGoal}
+          owners={owners}
+          metadataEntities={metadataEntities}
+          onCancel={() => setKrWizardGoal(null)}
+          onCreated={() => {
+            setKrWizardGoal(null);
+            setExpandedGoalIds((prev) => new Set(prev).add(krWizardGoal.id));
+            void load();
+          }}
+        />
+      ) : null}
+
       {krDialog ? (
         <KeyResultFormDialog
-          mode={krDialog.mode}
-          keyResult={krDialog.mode === "edit" ? krDialog.keyResult : null}
+          keyResult={krDialog.keyResult}
           owners={owners}
           busy={dialogBusy}
           error={dialogError}
           onCancel={() => setKrDialog(null)}
           onSubmit={(payload) =>
             void submitDialog(() =>
-              krDialog.mode === "create"
-                ? fetchJsonOk(`/api/goals/${krDialog.goal.id}/key-results`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                  })
-                : fetchJsonOk(`/api/goals/key-results/${krDialog.keyResult.id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                  })
+              fetchJsonOk(`/api/goals/key-results/${krDialog.keyResult.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              })
             )
           }
         />
@@ -726,7 +757,7 @@ function GoalFormDialog({
           </select>
         </label>
         <label className="block space-y-1">
-          <span className={labelClass}>Responsável (Owner) *</span>
+          <span className={labelClass}>Responsável *</span>
           <select
             className={fieldClass}
             value={ownerAppUserId}
@@ -746,8 +777,13 @@ function GoalFormDialog({
   );
 }
 
+/**
+ * Edição dos campos gerais de um indicador já existente (título, domínio,
+ * direção, base/alvo/peso/responsável). Criar um indicador novo sempre usa
+ * o assistente conversacional (GoalKeyResultWizardDialog) — este formulário
+ * só edita o que já existe, por isso não tem modo "create".
+ */
 function KeyResultFormDialog({
-  mode,
   keyResult,
   owners,
   busy,
@@ -755,22 +791,21 @@ function KeyResultFormDialog({
   onCancel,
   onSubmit,
 }: {
-  mode: "create" | "edit";
-  keyResult: GoalKeyResultDto | null;
+  keyResult: GoalKeyResultDto;
   owners: OwnerOption[];
   busy: boolean;
   error: string | null;
   onCancel: () => void;
   onSubmit: (payload: Record<string, unknown>) => void;
 }) {
-  const [title, setTitle] = useState(keyResult?.title ?? "");
-  const [domain, setDomain] = useState(keyResult?.domain ?? "COMERCIAL");
-  const [trackingType, setTrackingType] = useState(keyResult?.trackingType ?? "INCREASE");
-  const [baseline, setBaseline] = useState(keyResult?.baseline ?? "0");
-  const [target, setTarget] = useState(keyResult?.target ?? "");
-  const [unit, setUnit] = useState(keyResult?.unit ?? "");
-  const [weight, setWeight] = useState(keyResult?.weight ?? "1");
-  const [ownerAppUserId, setOwnerAppUserId] = useState(keyResult?.ownerAppUserId ?? "");
+  const [title, setTitle] = useState(keyResult.title);
+  const [domain, setDomain] = useState(keyResult.domain);
+  const [trackingType, setTrackingType] = useState(keyResult.trackingType);
+  const [baseline, setBaseline] = useState(keyResult.baseline);
+  const [target, setTarget] = useState(keyResult.target);
+  const [unit, setUnit] = useState(keyResult.unit ?? "");
+  const [weight, setWeight] = useState(keyResult.weight);
+  const [ownerAppUserId, setOwnerAppUserId] = useState(keyResult.ownerAppUserId);
 
   const canSubmit = Boolean(
     title.trim() && baseline !== "" && target !== "" && weight !== "" && ownerAppUserId
@@ -778,7 +813,7 @@ function KeyResultFormDialog({
 
   return (
     <DialogShell
-      title={mode === "create" ? "Novo Key Result" : "Editar Key Result"}
+      title="Editar indicador"
       onCancel={onCancel}
       onSubmit={() =>
         onSubmit({
@@ -792,7 +827,7 @@ function KeyResultFormDialog({
           ownerAppUserId,
         })
       }
-      submitLabel={mode === "create" ? "Criar KR" : "Salvar"}
+      submitLabel="Salvar"
       busy={busy}
       error={error}
       canSubmit={canSubmit}
@@ -848,7 +883,7 @@ function KeyResultFormDialog({
           <input className={fieldClass} value={weight} onChange={(e) => setWeight(e.target.value)} />
         </label>
         <label className="block space-y-1">
-          <span className={labelClass}>Responsável (Owner) *</span>
+          <span className={labelClass}>Responsável *</span>
           <select
             className={fieldClass}
             value={ownerAppUserId}

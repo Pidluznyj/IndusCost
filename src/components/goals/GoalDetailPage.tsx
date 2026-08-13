@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http.js";
@@ -20,6 +20,8 @@ import {
   type GoalKeyResultDto,
   type GoalSnapshotDto,
 } from "@/src/lib/goals/goalContracts.js";
+import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
+import type { GoalMetadataPublicEntity } from "./goalWizardShared.js";
 
 type OwnerOption = { id: string; name: string };
 
@@ -193,9 +195,15 @@ const KANBAN_TONES: Record<GoalInitiativeStatusValue, string> = {
 
 export function GoalDetailPage() {
   const { goalId } = useParams<{ goalId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [goal, setGoal] = useState<GoalDto | null>(null);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
-  const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
+  const [metadataEntities, setMetadataEntities] = useState<GoalMetadataPublicEntity[]>([]);
+  // Drill-down direto: /goals/:goalId?kr=:krId abre já no indicador certo
+  // (link vindo do Cockpit). Sem ?kr= cai no primeiro indicador do objetivo.
+  const [selectedKrId, setSelectedKrId] = useState<string | null>(
+    () => searchParams.get("kr")
+  );
   const [snapshots, setSnapshots] = useState<GoalSnapshotDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +211,8 @@ export function GoalDetailPage() {
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [newInitiative, setNewInitiative] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
+  const [newInitiativeScope, setNewInitiativeScope] = useState<"KR" | "GOAL">("KR");
+  const [krWizardOpen, setKrWizardOpen] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -238,8 +248,24 @@ export function GoalDetailPage() {
     })
       .then((res) => setOwners(res.owners))
       .catch(() => setOwners([]));
+    fetchJsonOk<{ entities: GoalMetadataPublicEntity[] }>("/api/goals/metadata", {
+      signal: controller.signal,
+    })
+      .then((res) => setMetadataEntities(res.entities))
+      .catch(() => setMetadataEntities([]));
     return () => controller.abort();
   }, []);
+
+  /** Selecionar outro indicador atualiza a URL — o link fica compartilhável. */
+  function selectKr(krId: string) {
+    setSelectedKrId(krId);
+    setNewInitiativeScope("KR");
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("kr", krId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!selectedKrId) {
@@ -291,11 +317,14 @@ export function GoalDetailPage() {
       await fetchJsonOk("/api/goals/initiatives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          goalId,
-          title: newInitiative,
-          assigneeAppUserId: newAssignee || null,
-        }),
+        body: JSON.stringify(
+          // Tarefa vinculada ao indicador aberto na tela (drill-down
+          // Objetivo → Indicador → Tarefas) ou geral do objetivo, conforme
+          // o par de botões abaixo — nunca os dois ao mesmo tempo (RN-007).
+          newInitiativeScope === "KR" && selectedKrId
+            ? { keyResultId: selectedKrId, title: newInitiative, assigneeAppUserId: newAssignee || null }
+            : { goalId, title: newInitiative, assigneeAppUserId: newAssignee || null }
+        ),
       });
       setNewInitiative("");
       setNewAssignee("");
@@ -402,9 +431,12 @@ export function GoalDetailPage() {
       ) : null}
 
       <div className="grid gap-3 lg:grid-cols-3">
-        {/* Coluna principal: seletor de KR + burn-up + quotas */}
+        {/* Coluna principal: seletor de indicador + burn-up + quotas */}
         <div className="space-y-3 lg:col-span-2">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              Indicadores:
+            </span>
             {goal.keyResults.map((kr) => (
               <button
                 key={kr.id}
@@ -415,12 +447,20 @@ export function GoalDetailPage() {
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border text-muted-foreground hover:text-foreground"
                 )}
-                onClick={() => setSelectedKrId(kr.id)}
+                onClick={() => selectKr(kr.id)}
                 data-testid={`detail-kr-tab-${kr.id}`}
               >
                 {kr.title} · {kr.progressPercent}%
               </button>
             ))}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/50 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/5"
+              onClick={() => setKrWizardOpen(true)}
+              data-testid="detail-add-kr"
+            >
+              <Plus className="h-3 w-3" aria-hidden /> Novo indicador
+            </button>
           </div>
 
           {selectedKr ? (
@@ -491,6 +531,36 @@ export function GoalDetailPage() {
           <h3 className="text-sm font-semibold">
             O que estamos fazendo para chegar lá?
           </h3>
+          {goal.keyResults.length > 0 ? (
+            <div className="flex gap-1 text-[10px]" data-testid="initiative-scope-toggle">
+              <button
+                type="button"
+                className={cn(
+                  "flex-1 rounded-md border px-2 py-1 font-medium",
+                  newInitiativeScope === "KR"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground"
+                )}
+                disabled={!selectedKrId}
+                onClick={() => setNewInitiativeScope("KR")}
+                title={selectedKr ? `Tarefa deste indicador: ${selectedKr.title}` : "Selecione um indicador acima"}
+              >
+                Deste indicador
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex-1 rounded-md border px-2 py-1 font-medium",
+                  newInitiativeScope === "GOAL"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground"
+                )}
+                onClick={() => setNewInitiativeScope("GOAL")}
+              >
+                Geral do objetivo
+              </button>
+            </div>
+          ) : null}
           <div className="flex gap-1.5">
             <input
               className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
@@ -544,6 +614,15 @@ export function GoalDetailPage() {
                         className="rounded-md border border-border bg-background p-2"
                         data-testid={`initiative-${initiative.id}`}
                       >
+                        <span
+                          className="mb-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground"
+                          title="A qual nível esta tarefa pertence"
+                        >
+                          {initiative.keyResultId
+                            ? (goal.keyResults.find((k) => k.id === initiative.keyResultId)
+                                ?.title ?? "Indicador")
+                            : "Objetivo (geral)"}
+                        </span>
                         <p className="text-xs font-medium">{initiative.title}</p>
                         <div className="mt-1 flex items-center justify-between gap-1">
                           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -603,6 +682,20 @@ export function GoalDetailPage() {
           })}
         </aside>
       </div>
+
+      {krWizardOpen ? (
+        <GoalKeyResultWizardDialog
+          goal={goal}
+          owners={owners}
+          metadataEntities={metadataEntities}
+          onCancel={() => setKrWizardOpen(false)}
+          onCreated={(kr) => {
+            setKrWizardOpen(false);
+            selectKr(kr.id);
+            void load();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
