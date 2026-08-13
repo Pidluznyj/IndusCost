@@ -48,6 +48,57 @@ export const GOAL_RECIPES: readonly GoalRecipe[] = [
     suggestedTrackingType: "INCREASE",
   },
   {
+    key: "REVENUE_NEW_CUSTOMERS",
+    emoji: "🌱",
+    title: "Faturamento com clientes novos",
+    description: "Valor dos pedidos que foram a PRIMEIRA compra faturada do cliente.",
+    entityKey: "SALES_ORDERS",
+    metricKey: "SALES_NET_TOTAL",
+    filters: [
+      {
+        fieldKey: "SALES_CUSTOMER_MOMENT",
+        operator: "EQ",
+        value: "NEW_CUSTOMER",
+        connector: "AND",
+      },
+      // Mede só o que virou nota — o "novo cliente" olha o passado dele;
+      // este filtro diz o que entra na conta agora (editável na frase).
+      { fieldKey: "SALES_INVOICED", operator: "EQ", value: "INVOICED", connector: "AND" },
+    ],
+    suggestedTrackingType: "INCREASE",
+  },
+  {
+    key: "REACTIVATED_CUSTOMERS",
+    emoji: "🔁",
+    title: "Clientes reativados",
+    description:
+      "Quantos pedidos vieram de clientes parados há mais de 3 meses.",
+    entityKey: "SALES_ORDERS",
+    metricKey: "SALES_ORDER_COUNT",
+    filters: [
+      {
+        fieldKey: "SALES_CUSTOMER_MOMENT",
+        operator: "EQ",
+        value: "REACTIVATION",
+        connector: "AND",
+      },
+      { fieldKey: "SALES_INVOICED", operator: "EQ", value: "INVOICED", connector: "AND" },
+    ],
+    suggestedTrackingType: "INCREASE",
+  },
+  {
+    key: "INVOICED_REVENUE",
+    emoji: "🧾",
+    title: "Faturamento com nota fiscal",
+    description: "Valor dos pedidos que já têm nota fiscal emitida.",
+    entityKey: "SALES_ORDERS",
+    metricKey: "SALES_NET_TOTAL",
+    filters: [
+      { fieldKey: "SALES_INVOICED", operator: "EQ", value: "INVOICED", connector: "AND" },
+    ],
+    suggestedTrackingType: "INCREASE",
+  },
+  {
     key: "RECEIVED_TOTAL",
     emoji: "📈",
     title: "Valor recebido no período",

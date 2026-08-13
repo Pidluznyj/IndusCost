@@ -1362,6 +1362,9 @@ model SalesOrder {
   lastSourceSyncRun             NomusSourceSyncRun?             @relation("SalesOrderLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([customerId])
+  /// Histórico do cliente em ordem de emissão — é a leitura exata das
+  /// variáveis calculadas ("primeira compra", "reativação").
+  @@index([customerId, issueDate])
   @@index([status])
   @@index([issueDate])
   @@index([createdAt(sort: Desc), issueDate(sort: Desc)])
