@@ -39,6 +39,7 @@ import {
   Table2,
   PackageCheck,
   Landmark,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -140,6 +141,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   suppliers: Building2,
   "portfolio-reconciliation": GitCompare,
   reports: FileText,
+  goals: Target,
   guide: BookOpen,
   settings: Settings,
 };

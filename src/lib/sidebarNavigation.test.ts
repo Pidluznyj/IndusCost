@@ -189,7 +189,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
   it("Administração contém Configurações e Guia", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "administracao");
-    assert.deepEqual(group?.items.map((i) => i.itemId), ["settings", "guide"]);
+    assert.deepEqual(group?.items.map((i) => i.itemId), ["goals", "settings", "guide"]);
   });
 
   it("Gestão de pessoas contém Dashboard, Pessoas/RH e Organograma", () => {

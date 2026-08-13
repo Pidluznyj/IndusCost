@@ -1,12 +1,95 @@
 {
-  "status": "OK",
-  "runAt": "2026-07-01T22:17:15.602Z",
-  "baselinePath": "C:\\Users\\paulo\\OneDrive - Lazarios Koppetel\\Documentos\\Lazarios\\TI\\IndusCost\\IndusCost\\docs\\navigation\\navigation-grouping-baseline.json",
+  "status": "BLOQUEANTE",
+  "runAt": "2026-08-12T21:46:57.694Z",
+  "baselinePath": "C:\\Users\\paulo\\OneDrive - Lazarios Koppetel\\Documentos\\Lazarios\\TI\\IndusCost\\IndusCost-goals-mvp1\\docs\\navigation\\navigation-grouping-baseline.json",
   "findings": [
     {
-      "severity": "OK",
-      "code": "ALL_CHECKS_PASSED",
-      "message": "Agrupamento visual preserva paths, labels, permissões e disponibilidade de menus."
+      "severity": "ALERTA",
+      "code": "BASELINE_NEW_ITEM",
+      "message": "Item sc-purchases não existia no baseline — revisar baseline se intencional.",
+      "details": {
+        "moduleId": "sc-purchases"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "BASELINE_NEW_ITEM",
+      "message": "Item sc-inventory não existia no baseline — revisar baseline se intencional.",
+      "details": {
+        "moduleId": "sc-inventory"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "BASELINE_NEW_ITEM",
+      "message": "Item sc-receiving não existia no baseline — revisar baseline se intencional.",
+      "details": {
+        "moduleId": "sc-receiving"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "BASELINE_NEW_ITEM",
+      "message": "Item treasury não existia no baseline — revisar baseline se intencional.",
+      "details": {
+        "moduleId": "treasury"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "BASELINE_NEW_ITEM",
+      "message": "Item invested-capital-recovery não existia no baseline — revisar baseline se intencional.",
+      "details": {
+        "moduleId": "invested-capital-recovery"
+      }
+    },
+    {
+      "severity": "BLOQUEANTE",
+      "code": "BASELINE_ITEM_REMOVED",
+      "message": "Item reports existia no baseline e sumiu.",
+      "details": {
+        "itemId": "reports"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "APP_ROUTE_MISSING",
+      "message": "App.tsx não declara path=\"sc-purchases\" (verificar sub-rotas).",
+      "details": {
+        "moduleId": "sc-purchases"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "APP_ROUTE_MISSING",
+      "message": "App.tsx não declara path=\"sc-inventory\" (verificar sub-rotas).",
+      "details": {
+        "moduleId": "sc-inventory"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "APP_ROUTE_MISSING",
+      "message": "App.tsx não declara path=\"sc-receiving\" (verificar sub-rotas).",
+      "details": {
+        "moduleId": "sc-receiving"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "APP_ROUTE_MISSING",
+      "message": "App.tsx não declara path=\"treasury\" (verificar sub-rotas).",
+      "details": {
+        "moduleId": "treasury"
+      }
+    },
+    {
+      "severity": "ALERTA",
+      "code": "APP_ROUTE_MISSING",
+      "message": "App.tsx não declara path=\"invested-capital-recovery\" (verificar sub-rotas).",
+      "details": {
+        "moduleId": "invested-capital-recovery"
+      }
     }
   ]
 }

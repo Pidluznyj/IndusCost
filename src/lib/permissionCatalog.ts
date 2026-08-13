@@ -60,6 +60,12 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
   perm({ key: "guide.view", label: "Guia do Sistema", group: G, module: "guide", description: "Acessar o guia funcional do sistema.", type: "menu" }),
 
+  // —— Metas (OKR) — docs/goal-engine-plan.md ——
+  perm({ key: "goals.view", label: "Metas (OKR)", group: G, module: "goals", description: "Acessar o cockpit de metas e ver objetivos/KRs.", type: "menu" }),
+  perm({ key: "goals.create", label: "Metas — criar", group: G, module: "goals", description: "Criar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
+  perm({ key: "goals.update", label: "Metas — editar", group: G, module: "goals", description: "Editar metas e lançar valor realizado.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
+  perm({ key: "goals.manage", label: "Metas — gerenciar", group: G, module: "goals", description: "Excluir/arquivar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
+
   // —— Financeiro ——
   perm({
     key: "finance.view",

@@ -105,7 +105,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.employees,
     MODULE_LABELS["org-chart"],
   ],
-  Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide],
+  Administração: [MODULE_LABELS.goals, MODULE_LABELS.settings, MODULE_LABELS.guide],
 };
 
 describe("validação final — estrutura de menu agrupado", () => {

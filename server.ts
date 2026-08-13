@@ -252,6 +252,7 @@ import {
   resolvePersonIdFromEmployeeBody,
 } from "./src/lib/canonicalPersonRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
+import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
 import {
   assertRoleExists,
   EmployeeRegistrationError,
@@ -14883,6 +14884,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireResource,
     requirePermission,
     requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  // Metas (OKR) — docs/goal-engine-plan.md (recurso admin.goals).
+  registerGoalRoutes(app, {
+    requireAppAuth,
+    requireResource,
     getCurrentAppUser,
   });
 

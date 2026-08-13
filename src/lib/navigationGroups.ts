@@ -152,6 +152,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "finance.portfolioReconciliation.orderStatusPedidos.view",
   ],
   guide: ["guide.view", "dashboard.view"],
+  goals: ["goals.view"],
 };
 
 /** Definição estática dos grupos oficiais da sidebar. */
@@ -242,7 +243,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Administração",
     iconKey: "Settings",
     order: 8,
-    itemIds: ["settings", "guide"],
+    itemIds: ["goals", "settings", "guide"],
   },
 ];
 
