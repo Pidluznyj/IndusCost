@@ -19,6 +19,8 @@ import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage"
 import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
+import { GoalsCockpitPage } from "./components/goals/GoalsCockpitPage";
+import { GoalDetailPage } from "./components/goals/GoalDetailPage";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
@@ -1343,6 +1345,28 @@ export default function App() {
               description="Wiki completa do IndusCost — manual navegável com passo a passo de cada módulo."
             >
               <SystemGuideModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="goals"
+          element={
+            <ModulePageShell
+              title="Metas (OKR)"
+              description="Objetivos estratégicos e Key Results com progresso calculado pelo sistema — para todos os perfis."
+            >
+              <GoalsCockpitPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="goals/:goalId"
+          element={
+            <ModulePageShell
+              title="Detalhe da Meta"
+              description="Trajetória, fatias da equipe e iniciativas do objetivo."
+            >
+              <GoalDetailPage />
             </ModulePageShell>
           }
         />

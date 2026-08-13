@@ -2375,6 +2375,10 @@ model AppUser {
   treasuryReconciliationMatchesCreated   TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchCreatedBy")
   treasuryReconciliationMatchesUpdated   TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUpdatedBy")
   treasuryReconciliationMatchesUnmatched TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUnmatchedBy")
+  goalsOwned                             Goal[]                               @relation("GoalOwner")
+  goalKeyResultsOwned                    GoalKeyResult[]                      @relation("GoalKeyResultOwner")
+  goalQuotasAssigned                     GoalKeyResultQuota[]                 @relation("GoalQuotaAssignee")
+  goalInitiativesAssigned                GoalInitiative[]                     @relation("GoalInitiativeAssignee")
 
   @@index([role])
   @@index([isActive])
@@ -9541,4 +9545,162 @@ model TreasuryReconciliationAllocation {
   @@index([nomusExternalId])
   @@index([transferId])
   @@index([ledgerEntryId])
+}
+
+// ─── Módulo de Metas (OKR & Goal Engine) — docs/goal-engine-plan.md ─────────
+
+enum GoalStatus {
+  DRAFT
+  ACTIVE
+  DONE
+  ARCHIVED
+}
+
+enum GoalKeyResultTrackingType {
+  /// Maior é melhor (faturamento, produção).
+  INCREASE
+  /// Menor é melhor (custo, refugo, inadimplência).
+  DECREASE
+}
+
+enum GoalDomain {
+  COMERCIAL
+  PRODUCAO
+  FINANCEIRO
+  SUPRIMENTOS
+  PESSOAS
+  OUTROS
+}
+
+/// Objetivo estratégico (o "O" do OKR). Progresso é DERIVADO dos KRs
+/// (roll-up ponderado) — nunca gravado à mão. Exclusão física só sem
+/// snapshots; com histórico vira ARCHIVED (soft-delete).
+model Goal {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String
+  description    String?
+  startDate      DateTime   @db.Timestamptz(6)
+  endDate        DateTime   @db.Timestamptz(6)
+  status         GoalStatus @default(DRAFT)
+  /// Responsável final (accountability) — qualquer perfil de usuário.
+  ownerAppUserId String     @db.Uuid
+  createdByUserId String?   @db.Uuid
+  archivedAt     DateTime?  @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  owner       AppUser          @relation("GoalOwner", fields: [ownerAppUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  keyResults  GoalKeyResult[]
+  initiatives GoalInitiative[]
+
+  @@index([status])
+  @@index([ownerAppUserId])
+  @@index([startDate, endDate])
+}
+
+/// Key Result quantitativo. MVP 1: manualTracking=true (valor digitado).
+/// MVP 2+: ruleJson guarda CHAVES do dicionário de metadados (nunca SQL).
+model GoalKeyResult {
+  id             String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goalId         String                    @db.Uuid
+  title          String
+  domain         GoalDomain
+  trackingType   GoalKeyResultTrackingType @default(INCREASE)
+  /// Linha de base, alvo e realizado — Decimal, nunca float.
+  baseline       Decimal                   @db.Decimal(20, 6)
+  target         Decimal                   @db.Decimal(20, 6)
+  achievedValue  Decimal                   @default(0) @db.Decimal(20, 6)
+  /// Rótulo de unidade para exibição (R$, un, %, h...).
+  unit           String?
+  /// Peso relativo no roll-up do Objetivo (> 0).
+  weight         Decimal                   @default(1) @db.Decimal(10, 4)
+  ownerAppUserId String                    @db.Uuid
+  /// true = valor digitado (MVP 1); false = calculado pelo motor (MVP 2+).
+  manualTracking Boolean                   @default(true)
+  /// Regra dinâmica (MVP 2+): métrica + filtros como chaves do dicionário.
+  ruleJson       Json?
+  status         GoalStatus                @default(ACTIVE)
+  archivedAt     DateTime?                 @db.Timestamptz(6)
+  createdAt      DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  goal        Goal                    @relation(fields: [goalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  owner       AppUser                 @relation("GoalKeyResultOwner", fields: [ownerAppUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  snapshots   GoalKeyResultSnapshot[]
+  quotas      GoalKeyResultQuota[]
+  initiatives GoalInitiative[]
+
+  @@index([goalId])
+  @@index([ownerAppUserId])
+  @@index([status])
+  @@index([domain])
+}
+
+/// Histórico imutável (RN-008/009): 1 snapshot por KR por dia civil.
+/// Dias passados NUNCA são reescritos; o dia corrente é upsertado.
+model GoalKeyResultSnapshot {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keyResultId   String   @db.Uuid
+  /// Dia civil do retrato (YYYY-MM-DD à meia-noite UTC).
+  snapshotDate  DateTime @db.Date
+  achievedValue Decimal  @db.Decimal(20, 6)
+  /// Progresso 0..1 no instante do retrato (derivado, gravado p/ gráfico).
+  progressRatio Decimal  @db.Decimal(8, 6)
+  /// MANUAL (digitado) | ENGINE (job MVP 3) | REFRESH (sob demanda MVP 3).
+  source        String   @default("MANUAL")
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  keyResult GoalKeyResult @relation(fields: [keyResultId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([keyResultId, snapshotDate])
+  @@index([snapshotDate])
+}
+
+enum GoalInitiativeStatus {
+  TODO
+  DOING
+  DONE
+}
+
+/// Quota nominal do desdobramento de um KR (RN-006 / US-04).
+/// A soma das quotas nunca pode ultrapassar o target do KR (validação de
+/// domínio no service — bloqueio, não aviso).
+model GoalKeyResultQuota {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keyResultId       String   @db.Uuid
+  assignedAppUserId String   @db.Uuid
+  /// Fatia nominal do alvo (mesma unidade do KR) — Decimal, nunca float.
+  quotaValue        Decimal  @db.Decimal(20, 6)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  keyResult GoalKeyResult @relation(fields: [keyResultId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  assignee  AppUser       @relation("GoalQuotaAssignee", fields: [assignedAppUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([keyResultId, assignedAppUserId])
+  @@index([assignedAppUserId])
+}
+
+/// Iniciativa (plano de ação) de um Objetivo ou KR — kanban simples (RN-007 / US-05).
+model GoalInitiative {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goalId            String?              @db.Uuid
+  keyResultId       String?              @db.Uuid
+  title             String
+  status            GoalInitiativeStatus @default(TODO)
+  assigneeAppUserId String?              @db.Uuid
+  dueDate           DateTime?            @db.Timestamptz(6)
+  sortOrder         Int                  @default(0)
+  createdByUserId   String?              @db.Uuid
+  createdAt         DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+
+  goal      Goal?          @relation(fields: [goalId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  keyResult GoalKeyResult? @relation(fields: [keyResultId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  assignee  AppUser?       @relation("GoalInitiativeAssignee", fields: [assigneeAppUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([goalId])
+  @@index([keyResultId])
+  @@index([status])
 }

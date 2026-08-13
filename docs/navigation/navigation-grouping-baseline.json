@@ -412,15 +412,14 @@
     },
     {
       "order": 32,
-      "itemId": "guide",
-      "label": "Guia do Sistema",
-      "path": "/guide",
+      "itemId": "goals",
+      "label": "Metas (OKR)",
+      "path": "/goals",
       "groupId": "administracao",
       "groupLabel": "Administração",
       "isDirect": false,
       "requiredPermissions": [
-        "guide.view",
-        "dashboard.view"
+        "goals.view"
       ]
     },
     {
@@ -434,6 +433,19 @@
       "requiredPermissions": [
         "settings.view",
         "users.manage"
+      ]
+    },
+    {
+      "order": 34,
+      "itemId": "guide",
+      "label": "Guia do Sistema",
+      "path": "/guide",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "guide.view",
+        "dashboard.view"
       ]
     }
   ],
@@ -469,6 +481,7 @@
     "finance": true,
     "suppliers": true,
     "portfolio-reconciliation": true,
+    "goals": true,
     "guide": true,
     "settings": true
   },
@@ -608,6 +621,9 @@
     "guide": [
       "guide.view",
       "dashboard.view"
+    ],
+    "goals": [
+      "goals.view"
     ]
   }
 }

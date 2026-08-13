@@ -1,0 +1,118 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  GoalContractError,
+  parseGoalAchievedValueInput,
+  parseGoalCreateInput,
+  parseGoalKeyResultCreateInput,
+  parseGoalKeyResultUpdateInput,
+  parseGoalUpdateInput,
+} from "./goalContracts.js";
+
+const OWNER = "3f2b8c9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+
+describe("parseGoalCreateInput", () => {
+  it("payload válido normaliza título e aplica DRAFT default", () => {
+    const input = parseGoalCreateInput({
+      title: "  Crescer receita 2026  ",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      ownerAppUserId: OWNER,
+    });
+    assert.equal(input.title, "Crescer receita 2026");
+    assert.equal(input.status, "DRAFT");
+    assert.equal(input.description, null);
+  });
+
+  it("data fim antes do início é rejeitada", () => {
+    assert.throws(
+      () =>
+        parseGoalCreateInput({
+          title: "X",
+          startDate: "2026-06-01",
+          endDate: "2026-01-01",
+          ownerAppUserId: OWNER,
+        }),
+      (e: unknown) => e instanceof GoalContractError && e.field === "endDate"
+    );
+  });
+
+  it("objetivo não pode nascer arquivado; owner precisa ser uuid", () => {
+    assert.throws(() =>
+      parseGoalCreateInput({
+        title: "X",
+        startDate: "2026-01-01",
+        endDate: "2026-02-01",
+        status: "ARCHIVED",
+        ownerAppUserId: OWNER,
+      })
+    );
+    assert.throws(() =>
+      parseGoalCreateInput({
+        title: "X",
+        startDate: "2026-01-01",
+        endDate: "2026-02-01",
+        ownerAppUserId: "nao-e-uuid",
+      })
+    );
+  });
+});
+
+describe("parseGoalKeyResultCreateInput", () => {
+  const base = {
+    title: "Faturamento",
+    domain: "COMERCIAL",
+    trackingType: "INCREASE",
+    baseline: "0",
+    target: "100000",
+    ownerAppUserId: OWNER,
+  };
+
+  it("payload válido: peso default 1, vírgula decimal aceita", () => {
+    const input = parseGoalKeyResultCreateInput({ ...base, target: "100000,50" });
+    assert.equal(input.weight, "1");
+    assert.equal(input.target, "100000.50");
+  });
+
+  it("alvo igual à linha de base é meta sem intervalo — rejeitada", () => {
+    assert.throws(
+      () => parseGoalKeyResultCreateInput({ ...base, baseline: "100", target: "100" }),
+      (e: unknown) => e instanceof GoalContractError && e.field === "target"
+    );
+  });
+
+  it("peso zero ou negativo é rejeitado", () => {
+    assert.throws(() => parseGoalKeyResultCreateInput({ ...base, weight: "0" }));
+    assert.throws(() => parseGoalKeyResultCreateInput({ ...base, weight: "-1" }));
+  });
+
+  it("domínio e direção só aceitam o vocabulário fechado", () => {
+    assert.throws(() => parseGoalKeyResultCreateInput({ ...base, domain: "MARKETING" }));
+    assert.throws(() =>
+      parseGoalKeyResultCreateInput({ ...base, trackingType: "SIDEWAYS" })
+    );
+  });
+});
+
+describe("parseGoalUpdateInput / parseGoalKeyResultUpdateInput", () => {
+  it("update vazio é rejeitado; parcial passa", () => {
+    assert.throws(() => parseGoalUpdateInput({}));
+    assert.equal(parseGoalUpdateInput({ title: "Novo" }).title, "Novo");
+    assert.equal(parseGoalKeyResultUpdateInput({ weight: "2.5" }).weight, "2.5");
+  });
+
+  it("baseline==target no mesmo update é rejeitado", () => {
+    assert.throws(() =>
+      parseGoalKeyResultUpdateInput({ baseline: "10", target: "10" })
+    );
+  });
+});
+
+describe("parseGoalAchievedValueInput", () => {
+  it("aceita decimal (incl. negativo p/ métricas de saldo) e rejeita lixo", () => {
+    assert.equal(parseGoalAchievedValueInput({ achievedValue: "1234,56" }).achievedValue, "1234.56");
+    assert.equal(parseGoalAchievedValueInput({ achievedValue: "-10" }).achievedValue, "-10");
+    assert.throws(() => parseGoalAchievedValueInput({ achievedValue: "abc" }));
+    assert.throws(() => parseGoalAchievedValueInput({ achievedValue: "" }));
+  });
+});

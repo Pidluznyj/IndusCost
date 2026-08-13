@@ -42,6 +42,7 @@ export type AppModuleId =
   | "invested-capital-recovery"
   | "suppliers"
   | "portfolio-reconciliation"
+  | "goals"
   | "guide"
   | "settings";
 
@@ -91,6 +92,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "invested-capital-recovery",
   "suppliers",
   "portfolio-reconciliation",
+  "goals",
   "guide",
   "settings",
 ];
@@ -207,6 +209,9 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("finance.portfolioReconciliation.orderToCashAudit.view") ||
         check.hasPermission("finance.portfolioReconciliation.orderStatusPedidos.view")
       );
+    case "goals":
+      // Metas (OKR) — todos os perfis com o recurso liberado (admin.goals).
+      return check.hasPermission("goals.view");
     case "guide":
       // PERM-42: sem bleed de dashboard.view
       return check.hasPermission("guide.view");
@@ -441,6 +446,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "invested-capital-recovery": "Recuperação do Dinheiro Investido",
   suppliers: "Fornecedores",
   "portfolio-reconciliation": "Conciliação de Carteira",
+  goals: "Metas (OKR)",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };

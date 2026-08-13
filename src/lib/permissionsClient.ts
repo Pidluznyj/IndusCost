@@ -129,6 +129,7 @@ export const ResourceKeys = {
   ADMIN_PESSOAS_EPI: "admin.employees.epi",
   ADMIN_GUIA: "admin.guide",
   ADMIN_SETTINGS: "admin.settings",
+  ADMIN_METAS: "admin.goals",
 } as const;
 
 export type PortfolioReconciliationUiTabId =
