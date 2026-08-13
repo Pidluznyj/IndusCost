@@ -472,6 +472,19 @@ export function GoalDetailPage() {
                     {selectedKr.ruleSummary ??
                       "Indicador de lançamento manual — o valor é informado pela equipe."}
                   </p>
+                  {selectedKr.comparison ? (
+                    <p
+                      className="text-[11px] text-muted-foreground"
+                      data-testid="detail-kr-target-origin"
+                    >
+                      Alvo: {Number(selectedKr.comparison.percent) >= 0 ? "+" : ""}
+                      {selectedKr.comparison.percent}% sobre{" "}
+                      {formatValue(selectedKr.comparison.value, selectedKr.unit)}{" "}
+                      apurado em {civilDateBr(selectedKr.comparison.startDate)} –{" "}
+                      {civilDateBr(selectedKr.comparison.endDate)} (
+                      {selectedKr.comparison.modeLabel})
+                    </p>
+                  ) : null}
                   <p
                     className="text-[11px] text-muted-foreground"
                     data-testid="detail-kr-period"
