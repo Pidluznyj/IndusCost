@@ -29,6 +29,12 @@ import {
   type GoalMetadataMetric,
 } from "./goalMetadata.js";
 import { GoalContractError } from "./goalContracts.js";
+import {
+  compileConceptFilter,
+  compileConceptSource,
+  invoicedOrderPredicateSql,
+  resolveGoalConcept,
+} from "./goalConceptCompiler.server.js";
 
 export type GoalRuleFilter = {
   fieldKey: string;
@@ -127,6 +133,18 @@ export function resolveGoalRule(ruleJson: unknown): GoalRuleResolved {
     return { field, filter: { fieldKey: field.key, operator, value, connector } };
   });
 
+  // Variáveis calculadas custam uma window function cada; acima de duas a
+  // meta virou relatório — e a frase deixa de ser legível para o usuário.
+  const conceptFilters = filters.filter(
+    ({ field }) => field.predicate === "CUSTOMER_MOMENT"
+  );
+  if (conceptFilters.length > 2) {
+    throw new GoalContractError(
+      "Use no máximo duas situações de cliente na mesma medição.",
+      "ruleJson.filters"
+    );
+  }
+
   return { entity, metric, filters };
 }
 
@@ -149,8 +167,19 @@ function filterConditionSql(
   entity: GoalMetadataEntity,
   field: GoalMetadataField,
   operator: GoalFilterOperator,
-  value: string | null
+  value: string | null,
+  periodDbColumn: string
 ): Prisma.Sql {
+  // Predicados curados (faturamento, momento do cliente) não são comparação
+  // de coluna — quem monta o SQL deles é o compilador de conceitos.
+  if (field.predicate === "INVOICED_ORDER") {
+    const invoiced = value === "INVOICED";
+    return invoicedOrderPredicateSql(entity, operator === "NEQ" ? !invoiced : invoiced);
+  }
+  if (field.predicate === "CUSTOMER_MOMENT") {
+    const concept = resolveGoalConcept(entity, String(value));
+    return compileConceptFilter(entity, concept, operator === "NEQ", periodDbColumn);
+  }
   const col = columnSql(entity.dbTable, field.dbColumn);
   switch (operator) {
     case "EQ":
@@ -235,10 +264,17 @@ export function buildGoalRuleQuery(
       resolved.entity,
       filters[0]!.field,
       filters[0]!.filter.operator,
-      filters[0]!.filter.value
+      filters[0]!.filter.value,
+      metric.periodDbColumn
     );
     for (const { field, filter } of filters.slice(1)) {
-      const condition = filterConditionSql(resolved.entity, field, filter.operator, filter.value);
+      const condition = filterConditionSql(
+        resolved.entity,
+        field,
+        filter.operator,
+        filter.value,
+        metric.periodDbColumn
+      );
       stacked =
         filter.connector === "OR"
           ? Prisma.sql`${stacked} OR ${condition}`
@@ -247,7 +283,16 @@ export function buildGoalRuleQuery(
     where = Prisma.sql`${where} AND (${stacked})`;
   }
 
-  return Prisma.sql`SELECT ${aggregate} AS value FROM ${Prisma.raw(`"${entity.dbTable}"`)} WHERE ${where}`;
+  // Variáveis calculadas exigem o histórico do cliente ANTES de cada linha:
+  // a origem do FROM passa a ser um CTE com window functions. Sem conceito
+  // no filtro, nada muda (mesma query de sempre).
+  const concepts = filters
+    .filter(({ field }) => field.predicate === "CUSTOMER_MOMENT")
+    .map(({ filter }) => resolveGoalConcept(entity, String(filter.value)));
+  const source = compileConceptSource(entity, concepts, window);
+  const prefix = source.cte ? Prisma.sql`${source.cte} ` : Prisma.empty;
+
+  return Prisma.sql`${prefix}SELECT ${aggregate} AS value FROM ${source.from} WHERE ${where}`;
 }
 
 /** Executa a regra e devolve o valor agregado como string decimal. */

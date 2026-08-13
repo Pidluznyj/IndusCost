@@ -53,6 +53,22 @@ export const GOAL_FILTER_CONNECTOR_LABELS: Record<GoalFilterConnector, string> =
 /** Tipo do campo filtrado — decide o input renderizado (RN-004). */
 export type GoalFilterFieldType = "ENUM" | "TEXT" | "NUMBER";
 
+/**
+ * Predicados CURADOS que não são "coluna comparada com valor".
+ *
+ * Existem porque conceitos de negócio reais não moram numa coluna só:
+ *  - INVOICED_ORDER: "pedido faturado" mora em SalesOrderNfeLink (NF-e
+ *    autorizada de saída) — mesma definição oficial do módulo de Comissões;
+ *  - CUSTOMER_MOMENT: "situação do cliente neste pedido" (primeira compra,
+ *    reativação, recompra) exige olhar o HISTÓRICO do cliente antes da linha
+ *    — resolvido por window function no compilador de conceitos.
+ *
+ * O usuário nunca escolhe um predicado: ele escolhe uma frase; a chave do
+ * predicado é que decide qual SQL o motor monta.
+ */
+export const GOAL_FIELD_PREDICATES = ["INVOICED_ORDER", "CUSTOMER_MOMENT"] as const;
+export type GoalFieldPredicate = (typeof GOAL_FIELD_PREDICATES)[number];
+
 export type GoalMetadataField = {
   /** Chave estável persistida no ruleJson. */
   key: string;
@@ -61,6 +77,11 @@ export type GoalMetadataField = {
   type: GoalFilterFieldType;
   /** Nome REAL da coluna — só o backend usa; nunca exposto na API de metadados. */
   dbColumn: string;
+  /**
+   * Quando presente, o filtro NÃO é uma comparação de coluna: o motor delega
+   * a montagem do SQL ao predicado curado (dbColumn fica vazio).
+   */
+  predicate?: GoalFieldPredicate;
   /**
    * Opções fixas. Em ENUM são o vocabulário FECHADO (validado no motor).
    * Em TEXT viram SUGESTÕES no wizard (datalist) — o usuário ainda pode
@@ -204,6 +225,35 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
         type: "TEXT",
         dbColumn: "responsible",
         operators: TEXT_OPERATORS,
+      },
+      {
+        // "Faturado" não é status do pedido: é ter NF-e autorizada de saída.
+        // Mesma definição oficial do módulo de Comissões (uma verdade só).
+        key: "SALES_INVOICED",
+        label: "faturamento do pedido",
+        type: "ENUM",
+        dbColumn: "",
+        predicate: "INVOICED_ORDER",
+        operators: ENUM_OPERATORS,
+        options: [
+          { value: "INVOICED", label: "Já faturado (com nota fiscal)" },
+          { value: "NOT_INVOICED", label: "Ainda não faturado" },
+        ],
+      },
+      {
+        // Variável calculada: depende do HISTÓRICO do cliente antes deste
+        // pedido (window function no compilador de conceitos).
+        key: "SALES_CUSTOMER_MOMENT",
+        label: "situação do cliente neste pedido",
+        type: "ENUM",
+        dbColumn: "",
+        predicate: "CUSTOMER_MOMENT",
+        operators: ENUM_OPERATORS,
+        options: [
+          { value: "NEW_CUSTOMER", label: "Primeira compra (cliente novo)" },
+          { value: "REACTIVATION", label: "Reativação (voltou a comprar)" },
+          { value: "REPEAT", label: "Recompra (já comprava)" },
+        ],
       },
     ],
   },
@@ -468,6 +518,42 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
     ],
   },
 ];
+
+/**
+ * Relações CURADAS entre entidades — a dependência "olhar o Cliente, mas
+ * contar os Pedidos" nunca pode vir do input do usuário (viraria identificador
+ * SQL). Aqui ela é whitelist, como tabela e coluna.
+ */
+export type GoalMetadataLink = {
+  key: string;
+  /** Frase leiga ("os pedidos deste cliente"). */
+  label: string;
+  /** Lado "um" (Cliente) e lado "muitos" (Pedido). */
+  ownerEntityKey: string;
+  eventEntityKey: string;
+  /** Coluna do evento que aponta para o dono — usada no PARTITION BY. */
+  eventOwnerDbColumn: string;
+  /** Coluna do dono referenciada (para o caminho ENTITY_STATE, fase 2). */
+  ownerDbColumn: string;
+  /** Eixo temporal do histórico (data de negócio do evento). */
+  eventPeriodDbColumn: string;
+};
+
+export const GOAL_METADATA_LINKS: readonly GoalMetadataLink[] = [
+  {
+    key: "ORDER_CUSTOMER",
+    label: "os pedidos deste cliente",
+    ownerEntityKey: "CUSTOMERS",
+    eventEntityKey: "SALES_ORDERS",
+    eventOwnerDbColumn: "customerId",
+    ownerDbColumn: "id",
+    eventPeriodDbColumn: "issueDate",
+  },
+];
+
+export function findGoalMetadataLink(linkKey: string): GoalMetadataLink | null {
+  return GOAL_METADATA_LINKS.find((l) => l.key === linkKey) ?? null;
+}
 
 export function findGoalMetadataEntity(entityKey: string): GoalMetadataEntity | null {
   return GOAL_METADATA_ENTITIES.find((e) => e.key === entityKey) ?? null;
