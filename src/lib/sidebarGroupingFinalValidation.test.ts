@@ -72,7 +72,10 @@ const EXPECTED_MENU: Record<
   "Cadeia de Suprimentos": [
     MODULE_LABELS.materials,
     MODULE_LABELS.purchases,
+    MODULE_LABELS["sc-purchases"],
     MODULE_LABELS.inventory,
+    MODULE_LABELS["sc-inventory"],
+    MODULE_LABELS["sc-receiving"],
   ],
   Comercial: [
     MODULE_LABELS["crm-commercial"],
@@ -87,11 +90,12 @@ const EXPECTED_MENU: Record<
   ],
   Financeiro: [
     MODULE_LABELS.finance,
+    MODULE_LABELS.treasury,
+    MODULE_LABELS["invested-capital-recovery"],
     MODULE_LABELS.suppliers,
     MODULE_LABELS["portfolio-reconciliation"],
     MODULE_LABELS.opex,
     MODULE_LABELS.taxes,
-    MODULE_LABELS.reports,
   ],
   Operações: [
     MODULE_LABELS.machines,
@@ -161,6 +165,16 @@ describe("validação final — rotas preservadas", () => {
               ? "/commercial/sales-order-flow"
               : moduleId === "commercial-price-table"
                 ? "/commercial/price-table"
+                : moduleId === "treasury"
+                  ? "/finance/treasury"
+                  : moduleId === "invested-capital-recovery"
+                    ? "/finance/invested-capital-recovery"
+                    : moduleId === "sc-purchases"
+                      ? "/supply-chain/purchases"
+                      : moduleId === "sc-inventory"
+                        ? "/supply-chain/inventory"
+                        : moduleId === "sc-receiving"
+                          ? "/supply-chain/receiving"
               : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
@@ -181,6 +195,26 @@ describe("validação final — rotas preservadas", () => {
       if (moduleId === "commercial-price-table") {
         assert.match(appTsx, /path=["']commercial\/price-table["']/);
         assert.match(appTsx, /CommercialPriceTableModule/);
+        continue;
+      }
+      if (moduleId === "treasury") {
+        assert.match(appTsx, /path=["']finance\/treasury(?:\/\*)?["']/);
+        continue;
+      }
+      if (moduleId === "invested-capital-recovery") {
+        assert.match(appTsx, /path=["']finance\/invested-capital-recovery["']/);
+        continue;
+      }
+      if (moduleId === "sc-purchases") {
+        assert.match(appTsx, /path=["']supply-chain\/purchases["']/);
+        continue;
+      }
+      if (moduleId === "sc-inventory") {
+        assert.match(appTsx, /path=["']supply-chain\/inventory["']/);
+        continue;
+      }
+      if (moduleId === "sc-receiving") {
+        assert.match(appTsx, /path=["']supply-chain\/receiving["']/);
         continue;
       }
       const escaped = moduleId.replace(/-/g, "\\-");

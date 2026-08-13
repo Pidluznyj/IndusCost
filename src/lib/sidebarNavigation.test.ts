@@ -65,7 +65,7 @@ describe("sidebarNavigation — filtro por permissão", () => {
   it("não expõe item que usuário não tinha acesso antes", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
     const ids = nav.flatAccessibleItems.map((item) => item.id);
-    assert.deepEqual(ids, ["dashboard", "reports"]);
+    assert.deepEqual(ids, ["dashboard"]);
     assert.equal(canAccessModule("products", checker(["dashboard.view"])), false);
     assert.ok(!ids.includes("products"));
     assert.ok(!ids.includes("guide"));
@@ -108,17 +108,26 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "materials",
       "purchases",
+      "sc-purchases",
       "inventory",
+      "sc-inventory",
+      "sc-receiving",
     ]);
     assert.deepEqual(group?.items.map((i) => i.label), [
       MODULE_LABELS.materials,
       MODULE_LABELS.purchases,
+      MODULE_LABELS["sc-purchases"],
       MODULE_LABELS.inventory,
+      MODULE_LABELS["sc-inventory"],
+      MODULE_LABELS["sc-receiving"],
     ]);
     assert.deepEqual(group?.items.map((i) => i.path), [
       "/materials",
       "/purchases",
+      "/supply-chain/purchases",
       "/inventory",
+      "/supply-chain/inventory",
+      "/supply-chain/receiving",
     ]);
   });
 
@@ -161,16 +170,17 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Financeiro contém Financeiro, Fornecedores, Conciliação, Custos Indiretos, Tributos e Relatórios", () => {
+  it("Financeiro contém Financeiro, Tesouraria, Recuperação do Dinheiro Investido, Fornecedores, Conciliação, Custos Indiretos e Tributos", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "financeiro");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "finance",
+      "treasury",
+      "invested-capital-recovery",
       "suppliers",
       "portfolio-reconciliation",
       "opex",
       "taxes",
-      "reports",
     ]);
   });
 
@@ -421,8 +431,8 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
   it("usuário com permissão parcial vê somente itens permitidos", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
     const ids = nav.flatAccessibleItems.map((item) => item.id);
-    assert.deepEqual(ids, ["dashboard", "reports"]);
-    assert.equal(nav.groups.length, 1);
+    assert.deepEqual(ids, ["dashboard"]);
+    assert.equal(nav.groups.length, 0);
     assert.ok(!ids.includes("products"));
     assert.ok(!ids.includes("guide"));
   });

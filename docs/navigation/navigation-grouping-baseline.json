@@ -114,6 +114,42 @@
     },
     {
       "order": 10,
+      "itemId": "sc-inventory",
+      "label": "Estoque SC",
+      "path": "/supply-chain/inventory",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
+      "isDirect": false,
+      "requiredPermissions": [
+        "operations.supply_chain.inventory.view"
+      ]
+    },
+    {
+      "order": 11,
+      "itemId": "sc-receiving",
+      "label": "Recebimentos",
+      "path": "/supply-chain/receiving",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
+      "isDirect": false,
+      "requiredPermissions": [
+        "operations.supply_chain.receiving.view"
+      ]
+    },
+    {
+      "order": 12,
+      "itemId": "sc-purchases",
+      "label": "Compras SC",
+      "path": "/supply-chain/purchases",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
+      "isDirect": false,
+      "requiredPermissions": [
+        "operations.supply_chain.purchases.view"
+      ]
+    },
+    {
+      "order": 13,
       "itemId": "operations-performance",
       "label": "Performance",
       "path": "/operations-performance",
@@ -127,7 +163,7 @@
       ]
     },
     {
-      "order": 11,
+      "order": 14,
       "itemId": "production-orders",
       "label": "Ordens de Produção",
       "path": "/production-orders",
@@ -139,7 +175,7 @@
       ]
     },
     {
-      "order": 12,
+      "order": 15,
       "itemId": "projects",
       "label": "Projetos",
       "path": "/projects",
@@ -151,7 +187,7 @@
       ]
     },
     {
-      "order": 13,
+      "order": 16,
       "itemId": "fleet",
       "label": "Gestão de Frota",
       "path": "/fleet",
@@ -164,7 +200,7 @@
       ]
     },
     {
-      "order": 14,
+      "order": 17,
       "itemId": "products",
       "label": "Produtos",
       "path": "/products",
@@ -176,7 +212,7 @@
       ]
     },
     {
-      "order": 15,
+      "order": 18,
       "itemId": "transformation-simulator",
       "label": "Simulador de Custo de Injeção",
       "path": "/transformation-simulator",
@@ -189,7 +225,7 @@
       ]
     },
     {
-      "order": 16,
+      "order": 19,
       "itemId": "opex",
       "label": "Custos Indiretos",
       "path": "/opex",
@@ -202,7 +238,7 @@
       ]
     },
     {
-      "order": 17,
+      "order": 20,
       "itemId": "taxes",
       "label": "Tributos",
       "path": "/taxes",
@@ -214,7 +250,7 @@
       ]
     },
     {
-      "order": 18,
+      "order": 21,
       "itemId": "pricing",
       "label": "Formação de Preço",
       "path": "/pricing",
@@ -226,7 +262,7 @@
       ]
     },
     {
-      "order": 19,
+      "order": 22,
       "itemId": "commercial-price-table",
       "label": "Tabela comercial",
       "path": "/commercial/price-table",
@@ -242,7 +278,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 23,
       "itemId": "proposals",
       "label": "Propostas",
       "path": "/proposals",
@@ -254,7 +290,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 24,
       "itemId": "sales-orders",
       "label": "Pedidos de venda",
       "path": "/sales-orders",
@@ -266,7 +302,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 25,
       "itemId": "sales-order-flow",
       "label": "Fluxo de Pedidos",
       "path": "/commercial/sales-order-flow",
@@ -278,7 +314,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 26,
       "itemId": "output-documents",
       "label": "Documentos de Saída",
       "path": "/output-documents",
@@ -290,7 +326,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 27,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -302,7 +338,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 28,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -318,7 +354,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 29,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -339,7 +375,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 30,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -351,20 +387,7 @@
       ]
     },
     {
-      "order": 28,
-      "itemId": "reports",
-      "label": "Relatórios",
-      "path": "/reports",
-      "groupId": "financeiro",
-      "groupLabel": "Financeiro",
-      "isDirect": false,
-      "requiredPermissions": [
-        "reports.view",
-        "dashboard.view"
-      ]
-    },
-    {
-      "order": 29,
+      "order": 31,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -381,7 +404,31 @@
       ]
     },
     {
-      "order": 30,
+      "order": 32,
+      "itemId": "treasury",
+      "label": "Tesouraria",
+      "path": "/finance/treasury",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "finance.treasury.view"
+      ]
+    },
+    {
+      "order": 33,
+      "itemId": "invested-capital-recovery",
+      "label": "Recuperação do Dinheiro Investido",
+      "path": "/finance/invested-capital-recovery",
+      "groupId": "financeiro",
+      "groupLabel": "Financeiro",
+      "isDirect": false,
+      "requiredPermissions": [
+        "finance.investedCapitalRecovery.view"
+      ]
+    },
+    {
+      "order": 34,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -395,7 +442,7 @@
       ]
     },
     {
-      "order": 31,
+      "order": 35,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -411,7 +458,7 @@
       ]
     },
     {
-      "order": 32,
+      "order": 36,
       "itemId": "goals",
       "label": "Metas (OKR)",
       "path": "/goals",
@@ -423,7 +470,7 @@
       ]
     },
     {
-      "order": 33,
+      "order": 37,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -436,7 +483,7 @@
       ]
     },
     {
-      "order": 34,
+      "order": 38,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -477,13 +524,17 @@
     "crm-commercial": true,
     "commissions": true,
     "simulations": true,
-    "reports": true,
     "finance": true,
     "suppliers": true,
     "portfolio-reconciliation": true,
     "goals": true,
     "guide": true,
-    "settings": true
+    "settings": true,
+    "sc-purchases": true,
+    "sc-inventory": true,
+    "sc-receiving": true,
+    "treasury": true,
+    "invested-capital-recovery": true
   },
   "permissionKeysByModule": {
     "dashboard": [
@@ -594,10 +645,6 @@
       "fleet.view",
       "fleet.manage"
     ],
-    "reports": [
-      "reports.view",
-      "dashboard.view"
-    ],
     "finance": [
       "finance.view",
       "finance.accountsReceivable.view",
@@ -624,6 +671,21 @@
     ],
     "goals": [
       "goals.view"
+    ],
+    "sc-purchases": [
+      "operations.supply_chain.purchases.view"
+    ],
+    "sc-inventory": [
+      "operations.supply_chain.inventory.view"
+    ],
+    "sc-receiving": [
+      "operations.supply_chain.receiving.view"
+    ],
+    "treasury": [
+      "finance.treasury.view"
+    ],
+    "invested-capital-recovery": [
+      "finance.investedCapitalRecovery.view"
     ]
   }
 }

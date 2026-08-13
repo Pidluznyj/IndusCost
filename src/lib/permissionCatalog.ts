@@ -44,6 +44,30 @@ const CM = "Comissões";
 const FIN = "Financeiro";
 
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
+  perm({
+    key: "operations.supply_chain.purchases.view",
+    label: "Acesso a Compras SC",
+    group: OPS,
+    module: "sc-purchases",
+    description: "Visualiza tela de Compras (Supply Chain)",
+    type: "menu",
+  }),
+  perm({
+    key: "operations.supply_chain.inventory.view",
+    label: "Acesso a Estoque SC",
+    group: OPS,
+    module: "sc-inventory",
+    description: "Visualiza tela de Estoque (Supply Chain)",
+    type: "menu",
+  }),
+  perm({
+    key: "operations.supply_chain.receiving.view",
+    label: "Acesso a Recebimentos",
+    group: OPS,
+    module: "sc-receiving",
+    description: "Visualiza tela de Recebimentos",
+    type: "menu",
+  }),
   // —— Geral ——
   perm({ key: "dashboard.view", label: "Dashboard", group: G, module: "dashboard", description: "Visualizar painel principal.", type: "menu" }),
   perm({ key: "reports.view", label: "Relatórios", group: G, module: "reports", description: "Acessar relatórios e BI.", type: "menu" }),

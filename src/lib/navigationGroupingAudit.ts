@@ -107,6 +107,21 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "commercial-price-table") {
     return /path=["']commercial\/price-table["']/.test(appTsx);
   }
+  if (moduleId === "treasury") {
+    return /path=["']finance\/treasury(?:\/\*)?["']/.test(appTsx);
+  }
+  if (moduleId === "invested-capital-recovery") {
+    return /path=["']finance\/invested-capital-recovery["']/.test(appTsx);
+  }
+  if (moduleId === "sc-purchases") {
+    return /path=["']supply-chain\/purchases["']/.test(appTsx);
+  }
+  if (moduleId === "sc-inventory") {
+    return /path=["']supply-chain\/inventory["']/.test(appTsx);
+  }
+  if (moduleId === "sc-receiving") {
+    return /path=["']supply-chain\/receiving["']/.test(appTsx);
+  }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);
 }
