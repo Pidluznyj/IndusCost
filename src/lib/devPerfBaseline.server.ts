@@ -22,6 +22,24 @@ const als = new AsyncLocalStorage<PerfStore>();
 let prismaListenerInstalled = false;
 const samples: DevPerfEndpointSample[] = [];
 
+/**
+ * Teto do buffer de amostras (janela deslizante).
+ *
+ * A flag agora pode ser ligada em produção, onde o processo vive semanas: sem
+ * teto, `samples` cresceria para sempre — uma amostra por request instrumentado,
+ * ~150 bytes cada. 500 cobre com folga uma janela de medição (o interesse é
+ * sempre o que acabou de acontecer) e custa ~75 KB no pior caso.
+ */
+export const MAX_PERF_BASELINE_SAMPLES = 500;
+
+/** Guarda a amostra descartando as mais antigas ao estourar o teto. */
+function pushSample(sample: DevPerfEndpointSample): void {
+  samples.push(sample);
+  if (samples.length > MAX_PERF_BASELINE_SAMPLES) {
+    samples.splice(0, samples.length - MAX_PERF_BASELINE_SAMPLES);
+  }
+}
+
 function newStore(): PerfStore {
   return { queryCount: 0, dbMs: 0, labels: [] };
 }
@@ -76,7 +94,7 @@ export async function measureDevPerfScenario<T>(input: {
     rowCountApprox: input.rowCountApprox?.(result) ?? null,
     notes: input.notes,
   };
-  samples.push(sample);
+  pushSample(sample);
   if (isDevPerfBaselineEnvEnabled()) {
     console.info(
       `[perf-baseline] ${sample.scenario} ${sample.path} total=${sample.totalMs}ms db=${sample.dbMs}ms queries=${sample.queryCount} bytes≈${sample.payloadBytesApprox}`
@@ -158,7 +176,7 @@ export function createDevPerfBaselineMiddleware() {
         payloadBytesApprox: payloadBytes,
         rowCountApprox: null,
       };
-      samples.push(sample);
+      pushSample(sample);
       console.info(
         `[perf-baseline:http] ${sample.method} ${sample.path} status=${sample.status} total=${sample.totalMs}ms db=${sample.dbMs}ms q=${sample.queryCount} bytes≈${sample.payloadBytesApprox ?? 0}`
       );

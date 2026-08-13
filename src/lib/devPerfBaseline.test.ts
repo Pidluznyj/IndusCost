@@ -56,20 +56,67 @@ describe("devPerfBaseline", () => {
     assert.equal(s.duplicatePaths[0]?.count, 2);
   });
 
-  it("flag só liga com INDUSCOST_PERF_BASELINE=1 fora de production", () => {
-    const prev = process.env.INDUSCOST_PERF_BASELINE;
+  /**
+   * A flag é opt-in explícito em TODO ambiente — produção inclusive, onde a
+   * instrumentação é justamente a que responde "onde o tempo foi parar".
+   * A proteção deixou de ser o NODE_ENV e passou a ser exigir o valor "1".
+   */
+  function withEnv(
+    nodeEnv: string | undefined,
+    flag: string | undefined,
+    run: () => void
+  ): void {
+    const prevFlag = process.env.INDUSCOST_PERF_BASELINE;
     const prevNode = process.env.NODE_ENV;
     try {
-      process.env.NODE_ENV = "test";
-      delete process.env.INDUSCOST_PERF_BASELINE;
-      assert.equal(isDevPerfBaselineEnvEnabled(), false);
-      process.env.INDUSCOST_PERF_BASELINE = "1";
-      assert.equal(isDevPerfBaselineEnvEnabled(), true);
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      if (flag === undefined) delete process.env.INDUSCOST_PERF_BASELINE;
+      else process.env.INDUSCOST_PERF_BASELINE = flag;
+      run();
     } finally {
-      if (prev === undefined) delete process.env.INDUSCOST_PERF_BASELINE;
-      else process.env.INDUSCOST_PERF_BASELINE = prev;
+      if (prevFlag === undefined) delete process.env.INDUSCOST_PERF_BASELINE;
+      else process.env.INDUSCOST_PERF_BASELINE = prevFlag;
       if (prevNode === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prevNode;
+    }
+  }
+
+  it("produção: DESLIGADA por padrão (sem a variável)", () => {
+    withEnv("production", undefined, () => {
+      assert.equal(isDevPerfBaselineEnvEnabled(), false);
+    });
+  });
+
+  it("produção: LIGADA somente com a flag explícita = 1", () => {
+    withEnv("production", "1", () => {
+      assert.equal(isDevPerfBaselineEnvEnabled(), true);
+    });
+  });
+
+  it("produção: qualquer valor diferente de '1' mantém DESLIGADA", () => {
+    for (const value of ["0", "false", "true", "", " 1", "1 ", "yes", "ON"]) {
+      withEnv("production", value, () => {
+        assert.equal(
+          isDevPerfBaselineEnvEnabled(),
+          false,
+          `o valor ${JSON.stringify(value)} não pode ligar a instrumentação`
+        );
+      });
+    }
+  });
+
+  it("dev/test mantêm exatamente o comportamento anterior", () => {
+    for (const env of ["test", "development", undefined]) {
+      withEnv(env, undefined, () => {
+        assert.equal(isDevPerfBaselineEnvEnabled(), false);
+      });
+      withEnv(env, "1", () => {
+        assert.equal(isDevPerfBaselineEnvEnabled(), true);
+      });
+      withEnv(env, "0", () => {
+        assert.equal(isDevPerfBaselineEnvEnabled(), false);
+      });
     }
   });
 });

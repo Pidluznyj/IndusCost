@@ -2,11 +2,15 @@
  * PERFORMANCE 02 — tipos e flags da linha de base (frontend + backend).
  *
  * Habilitar:
- * - Backend: INDUSCOST_PERF_BASELINE=1 (nunca em produção)
+ * - Backend: INDUSCOST_PERF_BASELINE=1 — DESLIGADO por padrão em QUALQUER
+ *   ambiente, produção inclusive. Ligar exige a variável explícita; ausência,
+ *   "0" ou "false" mantêm desligado.
  * - Frontend: localStorage.setItem("induscost_perf_baseline","1") em DEV
- *   ou VITE_PERF_BASELINE=1
+ *   ou VITE_PERF_BASELINE=1 (o front segue bloqueado em build de produção).
  *
- * Não altera regras de negócio nem payloads funcionais.
+ * Não altera regras de negócio nem payloads funcionais: apenas conta queries,
+ * mede tempo e estima bytes. Nenhum SQL, parâmetro, cabeçalho, cookie, token
+ * ou conteúdo de payload é registrado.
  */
 
 export const DEV_PERF_BASELINE_STORAGE_KEY = "induscost_perf_baseline";
@@ -53,9 +57,16 @@ export type DevPerfRunSummary = {
   samples: DevPerfEndpointSample[];
 };
 
+/**
+ * Opt-in explícito, sem exceção por ambiente.
+ *
+ * Antes o guard proibia produção por completo, o que tornava a instrumentação
+ * inútil justamente onde os problemas de performance aparecem. A proteção
+ * continua existindo — ela agora é a própria variável: nada liga sozinho, e
+ * só o valor exato "1" habilita.
+ */
 export function isDevPerfBaselineEnvEnabled(): boolean {
   if (typeof process === "undefined" || !process.env) return false;
-  if (process.env.NODE_ENV === "production") return false;
   return process.env[DEV_PERF_BASELINE_ENV] === "1";
 }
 
