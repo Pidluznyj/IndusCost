@@ -37,6 +37,10 @@ import {
   round2,
   toIso,
 } from "@/src/lib/finance/orderAuditItemProjection.js";
+import {
+  dedupOrderAuditReceivables,
+  projectOrderAuditReceivables,
+} from "@/src/lib/finance/orderAuditReceivableProjection.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -2062,150 +2066,23 @@ async function loadOrderFullAuditUncached(
         rawPayload: true,
       },
     });
-    const referenceDate = new Date();
-    const referenceMs = referenceDate.getTime();
     // Guarda o rawPayload de cada CR para uso posterior na montagem das baixas.
     for (const r of arRows) {
       receivableRawByExternalId.set(r.externalId, r.rawPayload);
     }
-    const parseInstallment = (
-      desc: string | null | undefined
-    ): { current: number | null; total: number | null } => {
-      if (!desc) return { current: null, total: null };
-      // padrões comuns: "1/3", "Parcela 2/4", "Parc 1 de 3".
-      const match =
-        /(\d{1,3})\s*(?:\/|\s+de\s+)\s*(\d{1,3})/i.exec(desc) ?? null;
-      if (!match) return { current: null, total: null };
-      const cur = Number(match[1]);
-      const tot = Number(match[2]);
-      if (!Number.isFinite(cur) || !Number.isFinite(tot) || tot < cur) {
-        return { current: null, total: null };
-      }
-      return { current: cur, total: tot };
-    };
-    for (const r of arRows) {
-      const amountReceivable = decimalToNumber(r.amountReceivable) ?? 0;
-      const amountScheduled = decimalToNumber(r.amountScheduled);
-      const amountReceived = decimalToNumber(r.amountReceived) ?? 0;
-      const balance =
-        decimalToNumber(r.balanceReceivable) ??
-        Math.max(0, amountReceivable - amountReceived);
-      const isReceived =
-        balance <= MONEY_TOLERANCE && amountReceived > MONEY_TOLERANCE;
-      const isPartial =
-        amountReceived > MONEY_TOLERANCE && balance > MONEY_TOLERANCE;
-      const isOverdue =
-        !isReceived &&
-        balance > MONEY_TOLERANCE &&
-        r.dueDate != null &&
-        r.dueDate.getTime() < referenceMs;
-      const daysOverdue =
-        r.dueDate != null && !isReceived
-          ? Math.floor(
-              (referenceMs - r.dueDate.getTime()) / (1000 * 60 * 60 * 24)
-            )
-          : null;
-      const installment = parseInstallment(
-        r.description ?? r.comments ?? null
-      );
-      // Referência oficial para "Abrir no Contas a Receber". Prioriza número da NF
-      // (o filtro `search` do CR aceita string livre); fallback: externalId do CR.
-      const searchRef =
-        r.sourceInvoiceNumber?.trim() ||
-        (r.sourceInvoiceId != null ? String(r.sourceInvoiceId) : "") ||
-        String(r.externalId);
 
-      const linkedNfe =
-        r.sourceInvoiceId != null ? nfeMap.get(r.sourceInvoiceId) : undefined;
-      const linkedNfeIsCanceled = linkedNfe?.isCanceled === true;
-      const status: OrderFullAuditReceivable["status"] = isReceived
-        ? "RECEIVED"
-        : isPartial
-          ? "PARTIALLY_RECEIVED"
-          : isOverdue
-            ? "OVERDUE"
-            : balance > MONEY_TOLERANCE
-              ? "OPEN"
-              : "UNKNOWN";
-
-      const alertsForLine: string[] = [];
-      if (!isReceived && balance > MONEY_TOLERANCE) {
-        alertsForLine.push("RECEIVABLE_OPEN");
-      }
-      if (isOverdue) alertsForLine.push("RECEIVABLE_OVERDUE");
-      if (r.sourceInvoiceId == null) alertsForLine.push("RECEIVABLE_WITHOUT_NFE");
-      if (r.dueDate == null) alertsForLine.push("RECEIVABLE_WITHOUT_DUE_DATE");
-      // Recebido > previsto (baixa maior que o CR).
-      if (amountReceived - amountReceivable > MONEY_TOLERANCE) {
-        alertsForLine.push("RECEIPT_GREATER_THAN_RECEIVABLE");
-      }
-      // Saldo inconsistente em baixa parcial: |amountReceivable - amountReceived - balance| > tolerância.
-      if (
-        isPartial &&
-        Math.abs(amountReceivable - amountReceived - balance) > MONEY_TOLERANCE
-      ) {
-        alertsForLine.push("PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE");
-      }
-      // Status financeiro ≠ status fiscal: CR oficial permanece; alerta se NF cancelada.
-      if (linkedNfeIsCanceled) {
-        alertsForLine.push("CANCELED_NFE_WITH_RECEIVABLE");
-        if (status === "RECEIVED" || status === "PARTIALLY_RECEIVED") {
-          alertsForLine.push("RECEIVED_CR_LINKED_TO_CANCELED_NFE");
-        }
-      }
-
-      receivables.push({
-        receivableExternalId: r.externalId,
-        receivableId: r.id ?? null,
-        companyName: r.companyName ?? null,
-        personName: r.personName ?? null,
-        personCnpj: r.personCnpj ?? null,
-        description: r.description ?? null,
-        sourceInvoiceId: r.sourceInvoiceId ?? null,
-        sourceInvoiceNumber: r.sourceInvoiceNumber ?? null,
-        issueDate: toIso(r.createdAtNomus),
-        dueDate: toIso(r.dueDate),
-        competenceDate: toIso(r.competenceDate),
-        scheduleDate: toIso(r.scheduleDate),
-        settlementDate: toIso(r.settlementDate),
-        amountReceivable,
-        amountScheduled,
-        amountReceived,
-        balanceReceivable: balance,
-        installmentNumber: installment.current,
-        totalInstallments: installment.total,
-        paymentTermsText: readNomusRawString(r.rawPayload, [
-          "condicaoPagamento",
-          "descricaoCondicaoPagamento",
-          "paymentTerms",
-          "textoCondicaoPagamento",
-        ]),
-        paymentMethodName: r.paymentMethodName ?? null,
-        bankAccountName: r.bankAccountName ?? null,
-        comments: r.comments ?? null,
-        status,
-        receivableIsReceived: status === "RECEIVED",
-        daysOverdue,
-        linkedNfeExternalIds:
-          r.sourceInvoiceId != null ? [r.sourceInvoiceId] : [],
-        linkedNfeNumber:
-          linkedNfe?.numero ?? r.sourceInvoiceNumber ?? null,
-        linkedNfeStatusLabel: linkedNfe?.statusLabel ?? null,
-        linkedNfeIsCanceled,
-        hasCanceledNfeLink: linkedNfeIsCanceled,
-        origin: r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
-        linkOrigin:
-          r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
-        alerts: alertsForLine,
-        searchReference: searchRef,
-      });
-    }
+    // Mapper extraído — o loader leve do Fluxo de Caixa usa esta MESMA função.
+    receivables.push(
+      ...projectOrderAuditReceivables({
+        rows: arRows,
+        nfeByExternalId: nfeMap,
+        referenceDate: new Date(),
+      })
+    );
   }
 
   // Deduplica receivables por externalId (findMany já garante mas mantemos defesa).
-  const dedupReceivables = [
-    ...new Map(receivables.map((r) => [r.receivableExternalId, r])).values(),
-  ];
+  const dedupReceivables = dedupOrderAuditReceivables(receivables);
 
   // Vincula CRs às NFs correspondentes por sourceInvoiceId ↔ nfeExternalId.
   for (const r of dedupReceivables) {
