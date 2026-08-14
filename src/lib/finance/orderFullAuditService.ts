@@ -29,6 +29,14 @@ import {
 } from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
 import type { OutputDocumentAllocationProjection } from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
 import { projectOutputDocumentForSalesOrder } from "@/src/lib/output-documents/salesOrderOutputDocumentAllocation.js";
+import {
+  decimalToNumber,
+  projectOrderAuditItems,
+  readNomusRawNumber,
+  readNomusRawString,
+  round2,
+  toIso,
+} from "@/src/lib/finance/orderAuditItemProjection.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -93,31 +101,6 @@ function formatReceivableDueDateSlash(
 ): string | null {
   const key = toCivilDateKey(value);
   return key ? key.replace(/-/g, "/") : null;
-}
-
-function decimalToNumber(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "object" && "toNumber" in (value as object)) {
-    try {
-      const n = (value as { toNumber: () => number }).toNumber();
-      return Number.isFinite(n) ? n : null;
-    } catch {
-      return null;
-    }
-  }
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function toIso(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1599,112 +1582,11 @@ async function loadOrderFullAuditUncached(
 
   const runId = facts[0]?.runId ?? resolvedRunId;
 
-  const items: OrderFullAuditItem[] = order.items.map((item, index) => {
-    const qty = decimalToNumber(item.quantity);
-    const unitPrice = decimalToNumber(item.negotiatedPrice);
-    const totalNet = decimalToNumber(item.totalNetValue);
-    const fulfilled = decimalToNumber(item.nomusQuantityFulfilled);
-    const pending = decimalToNumber(item.nomusQuantityPending);
-    const isCanceled = item.nomusIsCanceled === true;
-    const isCut = item.nomusIsCut === true;
-    const isStale = item.nomusIsStale === true;
-    const canceledQty = isCanceled || isStale ? (qty ?? 0) : 0;
-    const cutQty =
-      isCut && qty != null && fulfilled != null
-        ? Math.max(0, qty - fulfilled)
-        : 0;
-    const activeQty =
-      qty != null ? Math.max(0, qty - canceledQty - cutQty) : null;
-    const activePending =
-      isCanceled || isStale
-        ? 0
-        : isCut
-          ? 0
-          : pending != null
-            ? Math.max(0, pending)
-            : activeQty != null && fulfilled != null
-              ? Math.max(0, activeQty - fulfilled)
-              : activeQty;
-    const canceledValue =
-      qty && unitPrice != null && canceledQty > 0
-        ? round2(canceledQty * unitPrice)
-        : 0;
-    const cutValue =
-      qty && unitPrice != null && cutQty > 0
-        ? round2(cutQty * unitPrice)
-        : 0;
-    const activeValue = round2(Math.max(0, (totalNet ?? 0) - canceledValue - cutValue));
-
-    const rawItem = item.nomusRawItem;
-    const productionQuantity = readNomusRawNumber(rawItem, [
-      "qtdeProduzida",
-      "quantidadeProduzida",
-      "producedQuantity",
-    ]);
-    const invoicedQuantity = readNomusRawNumber(rawItem, [
-      "qtdeFaturada",
-      "quantidadeFaturada",
-      "invoicedQuantity",
-    ]);
-    const saldoAFaturar = readNomusRawNumber(rawItem, [
-      "saldoFaturar",
-      "saldoAFaturar",
-      "remainingToInvoice",
-    ]);
-    const saldoPronto = readNomusRawNumber(rawItem, [
-      "saldoPronto",
-      "saldoDisponivel",
-      "readyBalance",
-    ]);
-    const movementType = readNomusRawString(rawItem, [
-      "tipoMovimentacao",
-      "movementType",
-      "descricaoMovimentacao",
-    ]);
-    const cfop = readNomusRawString(rawItem, ["cfop", "codigoCfop", "cfopCode"]);
-
-    return {
-      salesOrderItemId: item.id,
-      externalSalesOrderItemId: item.nomusItemExternalId ?? null,
-      itemSequence: item.nomusItemSequence ?? String(index + 1),
-      productCode: item.skuSnapshot,
-      sku: item.skuSnapshot,
-      productName: item.productNameSnapshot,
-      productExternalId: item.externalProductId ?? null,
-      unit: item.unit ?? null,
-      quantity: qty,
-      unitPrice,
-      totalNetValue: totalNet,
-      nomusItemStatusRaw: item.nomusItemStatusRaw ?? null,
-      nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
-      itemStatus: item.nomusItemStatusNormalized ?? null,
-      nomusIsCanceled: isCanceled,
-      nomusIsCut: isCut,
-      nomusIsStale: isStale,
-      nomusQuantityFulfilled: fulfilled,
-      nomusQuantityPending: pending,
-      matchConfidence: item.nomusMatchConfidence ?? null,
-      proposalItemId: item.proposalItemId ?? null,
-      activeQuantity: activeQty,
-      canceledQuantity: canceledQty > 0 ? canceledQty : 0,
-      cutQuantity: cutQty > 0 ? cutQty : 0,
-      activePendingQuantity: activePending,
-      activeValue,
-      canceledValue,
-      cutValue,
-      expectedDeliveryDate: toIso(order.expectedDeliveryDate),
-      productionQuantity,
-      invoicedQuantity,
-      saldoAFaturar,
-      saldoPronto,
-      movementType,
-      cfop,
-      linkedStockDocumentExternalIds: [],
-      linkedNfeExternalIds: [],
-      linkedReceivableExternalIds: [],
-      alerts: [],
-    };
-  });
+  // Mapper extraído — o loader leve do Fluxo de Caixa usa esta MESMA função.
+  const items: OrderFullAuditItem[] = projectOrderAuditItems({
+    items: order.items,
+    expectedDeliveryDate: order.expectedDeliveryDate,
+  }) as unknown as OrderFullAuditItem[];
 
   // Dedup NFes e stockDocs a partir dos facts + nfeLinks.
   const nfeMap = new Map<number, OrderFullAuditNfe>();
@@ -4003,32 +3885,6 @@ function isOperationalSectorName(value: string | null | undefined): boolean {
  * Extrai um campo string do `nomusRawResponse` sem quebrar quando o payload
  * mudar de forma. Aceita chaves alternativas em ordem de precedência.
  */
-function readNomusRawString(
-  raw: unknown,
-  keys: readonly string[]
-): string | null {
-  if (!raw || typeof raw !== "object") return null;
-  const rec = raw as Record<string, unknown>;
-  for (const k of keys) {
-    const v = rec[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-    if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  }
-  return null;
-}
-function readNomusRawNumber(raw: unknown, keys: readonly string[]): number | null {
-  if (!raw || typeof raw !== "object") return null;
-  const rec = raw as Record<string, unknown>;
-  for (const k of keys) {
-    const v = rec[k];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string" && v.trim()) {
-      const n = Number(v.replace(",", "."));
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return null;
-}
 
 function buildSalesOrderBlock(input: {
   order: NonNullable<Awaited<ReturnType<typeof prisma.salesOrder.findUnique>>>;
