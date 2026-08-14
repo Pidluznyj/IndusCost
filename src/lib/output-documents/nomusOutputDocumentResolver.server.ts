@@ -19,7 +19,7 @@ import {
   type ResolvedOutputDocument,
 } from "@/src/lib/output-documents/nomusOutputDocumentResolver.js";
 
-type PrismaLike = Pick<
+export type OutputDocumentResolverPrismaLike = Pick<
   PrismaClient,
   | "nomusStockDocument"
   | "nomusStockDocumentItem"
@@ -31,7 +31,9 @@ type PrismaLike = Pick<
   | "nomusAccountsReceivable"
 >;
 
-const DOCUMENT_SELECT = {
+type PrismaLike = OutputDocumentResolverPrismaLike;
+
+export const DOCUMENT_SELECT = {
   id: true,
   externalId: true,
   idNfe: true,
@@ -49,7 +51,7 @@ const DOCUMENT_SELECT = {
   paymentTermsRaw: true,
 } as const;
 
-const ITEM_SELECT = {
+export const ITEM_SELECT = {
   id: true,
   externalItemId: true,
   externalProductId: true,
@@ -65,7 +67,7 @@ export type LoadOutputDocumentOptions = {
   onlySaida?: boolean;
 };
 
-function uniquePositiveInts(values: Array<number | null | undefined>): number[] {
+export function uniquePositiveInts(values: Array<number | null | undefined>): number[] {
   return [
     ...new Set(
       values.filter(
