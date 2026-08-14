@@ -44,7 +44,20 @@ export type DevPerfEndpointSample = {
   path: string;
   status: number;
   totalMs: number;
+  /**
+   * SOMA das durações das operações Prisma do request — NÃO é wall-clock.
+   *
+   * Com operações concorrentes (Promise.all), `dbMs` PODE ULTRAPASSAR
+   * `totalMs`: oito operações de 1 s em paralelo somam 8 s em ~1 s de
+   * relógio. Por isso NUNCA derive "tempo de CPU" de `totalMs - dbMs` — a
+   * conta só fecha em caminho estritamente sequencial. Para separar CPU de
+   * espera, use profiling de verdade.
+   *
+   * Mede a operação Prisma inteira (engine + rede + serialização), que é um
+   * limite SUPERIOR do tempo gasto dentro do Postgres.
+   */
   dbMs: number | null;
+  /** Operações Prisma no request (uma operação pode virar mais de um SQL). */
   queryCount: number | null;
   payloadBytesApprox: number | null;
   rowCountApprox: number | null;
