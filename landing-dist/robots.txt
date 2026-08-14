@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://induscost.grupolazarios.com.br/sitemap.xml

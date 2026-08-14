@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IndusCost Intelligence — Custeio industrial, preço e comercial em um só lugar</title>
+<meta name="description" content="O IndusCost Intelligence reúne custeio industrial, formação de preço e gestão comercial em uma experiência única, para decisões mais rápidas com números que conversam entre engenharia, financeiro e vendas." />
+<meta name="theme-color" content="#2563eb" />
+<link rel="canonical" href="https://induscost.grupolazarios.com.br/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="IndusCost Intelligence" />
+<meta property="og:description" content="O custo claro. O preço confiável. O comercial alinhado." />
+<meta property="og:url" content="https://induscost.grupolazarios.com.br/" />
+<meta property="og:locale" content="pt_BR" />
+<!-- Favicon inline (data URI): nenhuma requisição externa, nenhum arquivo extra. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232563eb'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 8h4v4' transform='translate(-1 0)'/%3E%3Cpath d='m19 8-6 6-3.5-3.5L5 15' transform='translate(-1 0)'/%3E%3C/g%3E%3C/svg%3E" />
+<style>
+/* ------------------------------------------------------------------
+   Tokens — copiados 1:1 de src/index.css do IndusCost (tema claro).
+   ------------------------------------------------------------------ */
+:root{
+  --background:hsl(0 0% 100%);
+  --foreground:hsl(222.2 84% 4.9%);
+  --card:hsl(0 0% 100%);
+  --primary:hsl(221.2 83.2% 53.3%);
+  --primary-foreground:hsl(210 40% 98%);
+  --muted:hsl(210 40% 96.1%);
+  --muted-foreground:hsl(215.4 16.3% 46.9%);
+  --accent:hsl(210 40% 96.1%);
+  --border:hsl(214.3 31.8% 91.4%);
+  --sky-500:#0ea5e9;
+  --primary-raw:221.2 83.2% 53.3%;
+  --border-raw:214.3 31.8% 91.4%;
+}
+*,*::before,*::after{box-sizing:border-box;border:0 solid var(--border)}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--background);
+  color:var(--foreground);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+  -webkit-font-smoothing:antialiased;
+  line-height:1.5;
+}
+h1,h2,h3,p{margin:0}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+
+/* ----------------------------- Layout base ----------------------------- */
+.page{position:relative;min-height:100vh;width:100%;overflow-x:hidden}
+.ambient{pointer-events:none;position:fixed;inset:0;z-index:0}
+.ambient>div{position:absolute;inset:0}
+.amb1{background:radial-gradient(ellipse 120% 80% at 50% -20%,hsl(var(--primary-raw) / .18),transparent 55%)}
+.amb2{background:radial-gradient(ellipse 80% 50% at 100% 50%,hsl(var(--primary-raw) / .08),transparent 50%)}
+.amb3{
+  opacity:.35;
+  background-image:
+    linear-gradient(hsl(var(--border-raw) / .5) 1px,transparent 1px),
+    linear-gradient(90deg,hsl(var(--border-raw) / .5) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+.content{position:relative;z-index:10}
+.wrap{margin-inline:auto;max-width:72rem;padding-inline:1.5rem}
+@media (min-width:768px){.wrap{padding-inline:2rem}}
+
+/* ------------------------------- Header -------------------------------- */
+.header{display:flex;align-items:center;justify-content:space-between;padding-block:1.5rem}
+.brand{display:flex;align-items:center;gap:.75rem}
+.brand-mark{
+  display:flex;height:2.5rem;width:2.5rem;align-items:center;justify-content:center;
+  border-radius:.75rem;background:var(--primary);
+  box-shadow:0 10px 15px -3px hsl(var(--primary-raw) / .25),0 4px 6px -4px hsl(var(--primary-raw) / .25);
+  color:var(--primary-foreground);
+}
+.brand-name{font-size:.875rem;font-weight:700;letter-spacing:-.01em}
+.brand-sub{font-size:.6875rem;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--muted-foreground)}
+.header-actions{display:flex;align-items:center;gap:.5rem}
+@media (min-width:640px){.header-actions{gap:.75rem}}
+.link-ghost{
+  display:none;border-radius:9999px;padding:.5rem 1rem;font-size:.875rem;font-weight:500;
+  color:var(--muted-foreground);transition:background-color .15s,color .15s;
+}
+.link-ghost:hover{background:var(--accent);color:var(--foreground)}
+@media (min-width:640px){.link-ghost{display:inline-flex}}
+.btn-primary-sm{
+  display:inline-flex;align-items:center;gap:.5rem;border-radius:9999px;
+  background:var(--primary);padding:.625rem 1rem;font-size:.875rem;font-weight:600;
+  color:var(--primary-foreground);
+  box-shadow:0 4px 6px -1px hsl(var(--primary-raw) / .3),0 2px 4px -2px hsl(var(--primary-raw) / .3);
+  transition:opacity .15s;
+}
+.btn-primary-sm:hover{opacity:.95}
+
+/* -------------------------------- Hero --------------------------------- */
+.hero{padding-block:1rem 4rem}
+@media (min-width:768px){.hero{padding-block:2rem 6rem}}
+.hero-inner{margin-inline:auto;max-width:48rem;text-align:center}
+.badge{
+  display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;
+  border-radius:9999px;border:1px solid hsl(var(--primary-raw) / .2);
+  background:hsl(var(--primary-raw) / .05);padding:.375rem 1rem;
+  font-size:.75rem;font-weight:600;color:var(--primary);
+}
+.hero h1{
+  text-wrap:balance;font-size:2.25rem;line-height:1.15;font-weight:700;letter-spacing:-.025em;
+}
+@media (min-width:768px){.hero h1{font-size:3rem}}
+@media (min-width:1024px){.hero h1{font-size:3.25rem;line-height:1.1}}
+.gradient-line{
+  display:block;
+  background:linear-gradient(to right,var(--primary),var(--sky-500));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.hero-lead{
+  margin:1.5rem auto 0;max-width:42rem;text-wrap:pretty;
+  font-size:1rem;line-height:1.65;color:var(--muted-foreground);
+}
+@media (min-width:768px){.hero-lead{font-size:1.125rem}}
+.hero-ctas{
+  margin-top:2.5rem;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:.75rem;
+}
+@media (min-width:640px){.hero-ctas{flex-direction:row;align-items:center}}
+.btn-primary-lg{
+  display:inline-flex;height:3rem;align-items:center;justify-content:center;gap:.5rem;
+  border-radius:.75rem;background:var(--primary);padding-inline:2rem;
+  font-size:1rem;font-weight:600;color:var(--primary-foreground);
+  box-shadow:0 20px 25px -5px hsl(var(--primary-raw) / .25),0 8px 10px -6px hsl(var(--primary-raw) / .25);
+  transition:opacity .15s;
+}
+.btn-primary-lg:hover{opacity:.95}
+.btn-secondary-lg{
+  display:inline-flex;height:3rem;align-items:center;justify-content:center;gap:.5rem;
+  border-radius:.75rem;border:1px solid var(--border);background:var(--card);padding-inline:2rem;
+  font-size:1rem;font-weight:600;color:var(--foreground);
+  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);transition:background-color .15s;
+}
+.btn-secondary-lg:hover{background:var(--accent)}
+.icon-primary{color:var(--primary)}
+
+/* --------------------------- Cards de destaque -------------------------- */
+.stats{margin:4rem auto 0;display:grid;max-width:56rem;gap:1rem}
+@media (min-width:640px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.stat{
+  border-radius:1rem;border:1px solid hsl(var(--border-raw) / .8);
+  background:hsl(0 0% 100% / .8);padding:1.25rem;text-align:left;
+  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);backdrop-filter:blur(4px);
+}
+.stat-k{font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--primary)}
+.stat-v{margin-top:.5rem;font-size:1.125rem;font-weight:700}
+.stat-sub{margin-top:.25rem;font-size:.875rem;color:var(--muted-foreground)}
+
+/* -------------------------------- Pilares ------------------------------- */
+.pillars{
+  border-top:1px solid hsl(var(--border-raw) / .8);
+  border-bottom:1px solid hsl(var(--border-raw) / .8);
+  background:hsl(210 40% 96.1% / .3);padding-block:4rem;
+}
+@media (min-width:768px){.pillars{padding-block:5rem}}
+.section-head{margin-inline:auto;max-width:42rem;text-align:center}
+.section-head h2,.strip-head h2{font-size:1.5rem;font-weight:700;letter-spacing:-.025em}
+@media (min-width:768px){.section-head h2,.strip-head h2{font-size:1.875rem}}
+.section-head p,.strip-head p{margin-top:.75rem;color:var(--muted-foreground)}
+.pillar-grid{margin-top:3rem;display:grid;gap:1.5rem}
+@media (min-width:768px){.pillar-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pillar{
+  border-radius:1rem;border:1px solid var(--border);background:var(--card);padding:1.5rem;
+  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);transition:border-color .15s,box-shadow .15s;
+}
+.pillar:hover{
+  border-color:hsl(var(--primary-raw) / .25);
+  box-shadow:0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1);
+}
+.pillar-icon{
+  display:flex;height:2.75rem;width:2.75rem;align-items:center;justify-content:center;
+  border-radius:.75rem;background:hsl(var(--primary-raw) / .1);color:var(--primary);transition:background-color .15s;
+}
+.pillar:hover .pillar-icon{background:hsl(var(--primary-raw) / .15)}
+.pillar h3{margin-top:1rem;font-size:1.125rem;font-weight:700}
+.pillar p{margin-top:.5rem;font-size:.875rem;line-height:1.65;color:var(--muted-foreground)}
+
+/* ------------------------------ Faixa módulos --------------------------- */
+.strip{padding-block:4rem}
+@media (min-width:768px){.strip{padding-block:5rem}}
+.strip-head{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:1.5rem}
+@media (min-width:768px){.strip-head{flex-direction:row;align-items:flex-end}}
+.strip-head>div:first-child{max-width:36rem}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem}
+.chip{
+  display:inline-flex;align-items:center;gap:.5rem;border-radius:9999px;
+  border:1px solid var(--border);background:var(--card);padding:.375rem .75rem;
+  font-size:.75rem;font-weight:500;
+}
+.cta-card{
+  margin-top:2.5rem;border-radius:1.5rem;border:1px solid var(--border);
+  background:linear-gradient(to bottom right,var(--card),var(--card),hsl(var(--primary-raw) / .05));
+  padding:2rem;
+}
+@media (min-width:768px){.cta-card{padding:2.5rem}}
+.cta-row{display:flex;flex-direction:column;gap:1.5rem}
+@media (min-width:768px){.cta-row{flex-direction:row;align-items:center;justify-content:space-between}}
+.cta-left{display:flex;align-items:flex-start;gap:1rem}
+.cta-icon{
+  display:flex;height:3rem;width:3rem;flex-shrink:0;align-items:center;justify-content:center;
+  border-radius:1rem;background:var(--primary);color:var(--primary-foreground);
+  box-shadow:0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1);
+}
+.cta-title{font-size:1.125rem;font-weight:700}
+.cta-body{margin-top:.25rem;max-width:32rem;font-size:.875rem;color:var(--muted-foreground)}
+.btn-primary-md{
+  display:inline-flex;flex-shrink:0;align-items:center;justify-content:center;gap:.5rem;
+  border-radius:.75rem;background:var(--primary);padding:.75rem 1.5rem;
+  font-size:.875rem;font-weight:600;color:var(--primary-foreground);transition:opacity .15s;
+}
+.btn-primary-md:hover{opacity:.95}
+
+/* -------------------------------- Rodapé -------------------------------- */
+.footer{border-top:1px solid var(--border);padding-block:2.5rem}
+.footer-row{
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:1rem;
+  text-align:center;font-size:.875rem;color:var(--muted-foreground);
+}
+@media (min-width:768px){.footer-row{flex-direction:row;text-align:left}}
+.footer-link{font-weight:500;color:var(--primary)}
+.footer-link:hover{text-decoration:underline}
+
+/* ------------------------------ Animações ------------------------------- */
+/* Entrada suave (opacity 0→1, y 24→0) — CSS puro, sem bibliotecas. */
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUpSm{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:translateY(0)}}
+.anim{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards}
+.d1{animation-delay:.05s}
+.d2{animation-delay:.13s}
+.d3{animation-delay:.21s}
+.d4{animation-delay:.29s}
+.stats{opacity:0;animation:fadeUpSm .65s cubic-bezier(.16,1,.3,1) .35s forwards}
+/* Pilares entram ao aparecer na tela. */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .45s ease-out,transform .45s ease-out}
+.reveal.is-visible{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){
+  .anim,.stats{animation:none;opacity:1}
+  .reveal{opacity:1;transform:none;transition:none}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <!-- Fundo ambiente -->
+  <div class="ambient" aria-hidden="true">
+    <div class="amb1"></div>
+    <div class="amb2"></div>
+    <div class="amb3"></div>
+  </div>
+
+  <div class="content">
+    <!-- Topo -->
+    <header class="wrap header">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>
+        </div>
+        <div>
+          <p class="brand-name">IndusCost</p>
+          <p class="brand-sub">Intelligence</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="link-ghost" href="https://app.grupolazarios.com.br/guide">Guia do sistema</a>
+        <a class="btn-primary-sm" href="https://app.grupolazarios.com.br">
+          Entrar
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="wrap hero">
+      <div class="hero-inner">
+        <div class="badge anim d1">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>
+          Inteligência para indústrias que precisam lucrar com método
+        </div>
+        <h1 class="anim d2">
+          O custo claro.
+          <span class="gradient-line">O preço confiável.</span>
+          O comercial alinhado.
+        </h1>
+        <p class="hero-lead anim d3">
+          O IndusCost Intelligence reúne custeio industrial, formação de preço e gestão comercial em uma experiência
+          única — para sua equipe tomar decisões mais rápidas, com números que conversam entre engenharia, financeiro
+          e vendas.
+        </p>
+        <div class="hero-ctas anim d4">
+          <a class="btn-primary-lg" href="https://app.grupolazarios.com.br">
+            Acessar o sistema
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+          <a class="btn-secondary-lg" href="https://app.grupolazarios.com.br/guide">
+            <svg class="icon-primary" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+            Manual funcional
+          </a>
+        </div>
+      </div>
+
+      <!-- Cards flutuantes -->
+      <div class="stats">
+        <div class="stat">
+          <p class="stat-k">Visão única</p>
+          <p class="stat-v">Custo + venda + pipeline</p>
+          <p class="stat-sub">Um só lugar para operar</p>
+        </div>
+        <div class="stat">
+          <p class="stat-k">Menos surpresa</p>
+          <p class="stat-v">Margem e tributos explícitos</p>
+          <p class="stat-sub">Antes de fechar o orçamento</p>
+        </div>
+        <div class="stat">
+          <p class="stat-k">Pronto para crescer</p>
+          <p class="stat-v">Simulações e relatórios</p>
+          <p class="stat-sub">Decisão com cenários</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pilares -->
+    <section class="pillars">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Por que o IndusCost faz diferença</h2>
+          <p>Valor real para quem fabrica, precifica e vende — sem planilhas soltas nem versões conflitantes do “custo verdadeiro”.</p>
+        </div>
+        <div class="pillar-grid">
+          <div class="pillar reveal" style="transition-delay:0s">
+            <div class="pillar-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16h.01"/><path d="M16 16h.01"/><path d="M3 19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a.5.5 0 0 0-.769-.422l-4.462 2.844A.5.5 0 0 1 15 10.5v-2a.5.5 0 0 0-.769-.422L9.77 10.922A.5.5 0 0 1 9 10.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M8 16h.01"/></svg>
+            </div>
+            <h3>Custeio industrial de ponta a ponta</h3>
+            <p>Da matéria-prima ao produto acabado, com engenharia, centros de trabalho e custos indiretos alinhados à sua operação real.</p>
+          </div>
+          <div class="pillar reveal" style="transition-delay:.06s">
+            <div class="pillar-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            </div>
+            <h3>Preço com margem que você enxerga</h3>
+            <p>Formação de preço com tributos, frete e comissão — para decidir com segurança, não com achismo.</p>
+          </div>
+          <div class="pillar reveal" style="transition-delay:.12s">
+            <div class="pillar-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            </div>
+            <h3>Comercial e funil integrados</h3>
+            <p>Propostas, clientes e indicadores em um fluxo só: do orçamento ao pipeline, com visão gerencial no dashboard.</p>
+          </div>
+          <div class="pillar reveal" style="transition-delay:.18s">
+            <div class="pillar-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
+            </div>
+            <h3>Simulações antes da decisão</h3>
+            <p>Cenários e novos produtos no ambiente certo para testar impacto sem bagunçar o cadastro até a hora de lançar.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Faixa de módulos -->
+    <section class="wrap strip">
+      <div class="strip-head">
+        <div>
+          <h2>Tudo o que a operação precisa</h2>
+          <p>Dashboard, engenharia, suprimentos, compras, tributos, propostas, clientes, simulações e relatórios — cada peça conectada ao restante do fluxo.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">
+            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
+            Máquinas e roteiros
+          </span>
+          <span class="chip">
+            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+            Relatórios e BI
+          </span>
+          <span class="chip">
+            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            Dashboard gerencial
+          </span>
+          <span class="chip">
+            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+            Simulações e cenários
+          </span>
+        </div>
+      </div>
+
+      <div class="cta-card">
+        <div class="cta-row">
+          <div class="cta-left">
+            <div class="cta-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+            </div>
+            <div>
+              <p class="cta-title">Feito para uso diário</p>
+              <p class="cta-body">Comece pelo dashboard, ajuste premissas nos cadastros e evolua para propostas e análises. O guia interno explica cada módulo — mantenha-o atualizado junto com as mudanças do sistema.</p>
+            </div>
+          </div>
+          <a class="btn-primary-md" href="https://app.grupolazarios.com.br">
+            Começar agora
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Rodapé -->
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <p>© <span id="ano">2026</span> IndusCost Intelligence. Custeio, preço e comercial em um só lugar.</p>
+        <a class="footer-link" href="https://app.grupolazarios.com.br/guide">Abrir guia do sistema</a>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script>
+// Ano corrente no rodapé.
+document.getElementById("ano").textContent = String(new Date().getFullYear());
+
+// Entrada dos pilares quando entram na área visível.
+(function () {
+  var items = document.querySelectorAll(".reveal");
+  if (!("IntersectionObserver" in window)) {
+    items.forEach(function (el) { el.classList.add("is-visible"); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("is-visible");
+        io.unobserve(entry.target);
+      }
+    });
+  }, { rootMargin: "-40px" });
+  items.forEach(function (el) { io.observe(el); });
+})();
+</script>
+</body>
+</html>
