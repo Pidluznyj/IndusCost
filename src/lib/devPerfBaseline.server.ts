@@ -48,16 +48,47 @@ export function isDevPerfBaselineServerEnabled(): boolean {
   return isDevPerfBaselineEnvEnabled();
 }
 
-/** Anexa listener de query ao Prisma (idempotente). Só com flag. */
-export function installDevPerfPrismaQueryListener(client: PrismaClient): void {
+/**
+ * Instrumentação Prisma por request (idempotente, só com a flag).
+ *
+ * POR QUE NÃO É MAIS `$on("query")`: o evento de query do Prisma é emitido
+ * pelo engine em um contexto assíncrono PRÓPRIO, que não herda o
+ * AsyncLocalStorage de quem disparou a query. `als.getStore()` devolvia
+ * undefined dentro do listener, o `if (!store) return` descartava tudo em
+ * silêncio, e todo request logava `db=0ms q=0` — inclusive endpoints de 12 s
+ * batendo pesado no banco. Foi o defeito observado em homologação em
+ * 13/08/2026.
+ *
+ * `$use` roda no MESMO contexto assíncrono do chamador: o store existe e a
+ * contagem fica presa ao request que originou a operação.
+ *
+ * O que é medido: a operação Prisma inteira (engine + rede + serialização),
+ * não apenas o tempo de execução do SQL no Postgres. É um limite superior do
+ * custo de banco por operação — ver a nota de `dbMs` em DevPerfEndpointSample.
+ *
+ * Privacidade: nada de `params` é lido — nem SQL, nem argumentos, nem nome de
+ * modelo. Só incrementa contador e soma duração.
+ */
+export function installDevPerfPrismaInstrumentation(client: PrismaClient): void {
   if (!isDevPerfBaselineEnvEnabled() || prismaListenerInstalled) return;
   prismaListenerInstalled = true;
-  client.$on("query" as never, (e: { duration: number; query?: string }) => {
+  client.$use(async (params, next) => {
     const store = als.getStore();
-    if (!store) return;
-    store.queryCount += 1;
-    store.dbMs += Number(e.duration) || 0;
+    // Fora de request instrumentado (jobs, cron, boot) não há o que somar.
+    if (!store) return next(params);
+    const startedAt = performance.now();
+    try {
+      return await next(params);
+    } finally {
+      store.queryCount += 1;
+      store.dbMs += performance.now() - startedAt;
+    }
   });
+}
+
+/** Só para teste: permite reinstalar a instrumentação numa nova instância. */
+export function resetDevPerfPrismaInstrumentationForTests(): void {
+  prismaListenerInstalled = false;
 }
 
 export async function runWithDevPerfContext<T>(fn: () => Promise<T>): Promise<{
