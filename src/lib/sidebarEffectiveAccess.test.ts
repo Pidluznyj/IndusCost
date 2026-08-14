@@ -104,6 +104,49 @@ describe("sidebarEffectiveAccess — personas", () => {
     assert.ok(ids.includes("treasury"));
   });
 
+  it("Recuperação do Dinheiro Investido concedida revela o menu — e SÓ ele", () => {
+    // Mesmo defeito da Tesouraria, repetido: o módulo estava na sidebar e no
+    // contrato, mas fora do mapa — "sem mapeamento → negado" escondia a tela
+    // de quem TINHA a permissão.
+    const keys = projectSidebarContractKeysFromLegacyBag([
+      "finance.investedCapitalRecovery.view",
+    ]);
+    assert.ok(keys.includes("finance.invested_capital_recovery"));
+    const c = ctx("VIEWER", ["finance.investedCapitalRecovery.view"]);
+    assert.equal(canViewModule("invested-capital-recovery", c), true);
+    assert.equal(canViewModule("finance", c), false, "não vaza p/ Financeiro");
+    assert.equal(canViewModule("treasury", c), false, "não vaza p/ Tesouraria");
+    const ids = buildResourceAwareSidebarNavigation(c).flatAccessibleItems.map((i) => i.id);
+    assert.ok(ids.includes("invested-capital-recovery"));
+  });
+
+  it("Metas (goals.view) revela o menu — e SÓ ele", () => {
+    const keys = projectSidebarContractKeysFromLegacyBag(["goals.view"]);
+    assert.ok(keys.includes("admin.goals"));
+    const c = ctx("VIEWER", ["goals.view"]);
+    assert.equal(canViewModule("goals", c), true);
+    assert.equal(canViewModule("settings", c), false, "não vaza p/ Configurações");
+    assert.equal(canViewModule("guide", c), false, "não vaza p/ Guia");
+    const ids = buildResourceAwareSidebarNavigation(c).flatAccessibleItems.map((i) => i.id);
+    assert.ok(ids.includes("goals"));
+  });
+
+  it("sem a permissão correspondente, os dois módulos seguem bloqueados", () => {
+    const c = ctx("VIEWER", ["finance.view"]);
+    assert.equal(
+      canViewModule("invested-capital-recovery", c),
+      false,
+      "finance.view NÃO abre Recuperação do Dinheiro Investido"
+    );
+    assert.equal(canViewModule("goals", c), false);
+  });
+
+  it("SUPER_ADMIN continua enxergando os dois módulos", () => {
+    const c = ctx("SUPER_ADMIN", []);
+    assert.equal(canViewModule("invested-capital-recovery", c), true);
+    assert.equal(canViewModule("goals", c), true);
+  });
+
   it("VIEWER vazio: sidebar vazia", () => {
     const c = ctx("VIEWER", []);
     const nav = buildResourceAwareSidebarNavigation(c);

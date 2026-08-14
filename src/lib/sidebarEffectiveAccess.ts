@@ -108,6 +108,19 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   treasury: ["finance.treasury"],
   suppliers: ["finance.suppliers"],
   "portfolio-reconciliation": ["finance.portfolio_reconciliation"],
+  /**
+   * Recuperação do Dinheiro Investido — exatamente a armadilha da Tesouraria
+   * acima, repetida: o módulo entrou na sidebar e no contrato, mas ficou fora
+   * deste mapa, e "sem mapeamento → negado" escondia o menu de quem TINHA
+   * `finance.investedCapitalRecovery.view`. 1:1 com o recurso do contrato
+   * (`finance.view` NÃO abre este módulo).
+   */
+  "invested-capital-recovery": ["finance.invested_capital_recovery"],
+  /**
+   * Metas (OKR) — 1:1 com `admin.goals`, recurso que já existia no contrato
+   * (rota /goals, legado `goals.view`). Faltava apenas a entrada aqui.
+   */
+  goals: ["admin.goals"],
   guide: ["admin.guide"],
   settings: ["admin.settings"],
 };
