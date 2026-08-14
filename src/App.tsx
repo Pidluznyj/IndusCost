@@ -89,7 +89,6 @@ import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { AdminRecoveryPage } from "@/src/components/AdminRecoveryPage";
 import { canOpenAdminSettingsHub } from "@/src/lib/adminSettingsAccess";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
 import { BarChart3, CalendarRange, ClipboardList, Factory, Layers, Package, Percent, TrendingUp } from "lucide-react";
@@ -153,7 +152,6 @@ export default function App() {
     <Routes>
       <Route path="/" element={<PublicLandingRoute />} />
       <Route path="/login" element={<PublicLoginRoute />} />
-      <Route path="/admin/recovery" element={<AdminRecoveryPage />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
       <Route
         path="/proposals/:id/internal-management-print"
