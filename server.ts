@@ -1097,24 +1097,6 @@ async function startServer() {
     });
   }
 
-  const requireBootstrapAdmin: express.RequestHandler = (req, res, next) => {
-    if (!bootstrapAdminConfig.enabled) return next();
-    if (!isBootstrapReady) {
-      return res.status(503).json({
-        error: "BOOTSTRAP_ADMIN_MISCONFIGURED",
-        message: "Acesso administrativo temporário habilitado, mas sem configuração completa de ambiente.",
-      });
-    }
-    const session = readBootstrapSession(req);
-    if (!session || !safeEqualString(session.username, bootstrapAdminConfig.username)) {
-      return res.status(401).json({
-        error: "BOOTSTRAP_ADMIN_REQUIRED",
-        message: "Acesso administrativo temporário necessário para esta operação.",
-      });
-    }
-    return next();
-  };
-
   const nomusSyncLogDir = path.resolve(process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync");
   const nomusLogDetailMaxBytes = 200 * 1024;
 
@@ -1737,59 +1719,6 @@ async function startServer() {
     res.json(resolveServerAppBuildInfo());
   });
 
-  app.get("/api/bootstrap-admin/status", (req, res) => {
-    const session = readBootstrapSession(req);
-    res.json({
-      enabled: bootstrapAdminConfig.enabled,
-      authenticated: Boolean(session),
-      mode: "bootstrap-env",
-      misconfigured: bootstrapAdminConfig.enabled && !isBootstrapReady,
-      username: session?.username ?? null,
-      expiresAt: session ? new Date(session.exp).toISOString() : null,
-    });
-  });
-
-  app.post("/api/bootstrap-admin/login", (req, res) => {
-    if (!bootstrapAdminConfig.enabled) {
-      return res.status(400).json({
-        error: "BOOTSTRAP_ADMIN_DISABLED",
-        message: "Acesso administrativo temporário está desabilitado neste ambiente.",
-      });
-    }
-    if (!isBootstrapReady) {
-      return res.status(503).json({
-        error: "BOOTSTRAP_ADMIN_MISCONFIGURED",
-        message:
-          "Acesso administrativo temporário habilitado, mas sem configuração completa de ambiente.",
-      });
-    }
-
-    const username = typeof req.body?.username === "string" ? req.body.username : "";
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-
-    const isValidUsername = safeEqualString(username, bootstrapAdminConfig.username);
-    const isValidPassword = safeEqualString(password, bootstrapAdminConfig.password);
-
-    if (!isValidUsername || !isValidPassword) {
-      return res.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Credenciais administrativas inválidas.",
-      });
-    }
-
-    const session = setBootstrapSessionCookie(res, bootstrapAdminConfig.username);
-    return res.json({
-      success: true,
-      mode: "bootstrap-env",
-      expiresAt: new Date(session.exp).toISOString(),
-    });
-  });
-
-  app.post("/api/bootstrap-admin/logout", (_req, res) => {
-    clearBootstrapSessionCookie(res);
-    res.json({ success: true });
-  });
-
   // --- API: App auth & RBAC (Fase 1K-B) ---
   const APP_USER_ROLE_VALUES = Object.values(AppUserRole);
 
@@ -1888,17 +1817,21 @@ async function startServer() {
     loadProfileSnapshot: canonicalAccessLoaders.loadProfileSnapshot,
   });
 
-  const isBootstrapAdminRequest = (req: express.Request): boolean => {
-    if (!(bootstrapAdminConfig.enabled && isBootstrapReady)) return false;
-    const bootstrap = readBootstrapSession(req);
-    return Boolean(
-      bootstrap && safeEqualString(bootstrap.username, bootstrapAdminConfig.username)
-    );
-  };
+  /**
+   * Recuperação bootstrap REMOVIDA (13/08/2026). Não existe mais rota que
+   * emita a sessão, então nenhum request pode ser "bootstrap": o predicado é
+   * constante falsa e todo guard cai na verificação real de permissão.
+   *
+   * A recuperação administrativa passou a ser feita pelo banco (acesso ao
+   * servidor) — ver docs/runbooks/recuperacao-super-admin.md. O acesso
+   * privilegiado no dia a dia é a elevação step-up ligada ao login
+   * (requireAdminElevation).
+   */
+  const isBootstrapAdminRequest = (_req: express.Request): boolean => false;
 
   function adminElevationSecret(): string {
     return resolveAdminElevationSecret(
-      process.env.BOOTSTRAP_ADMIN_SESSION_SECRET,
+      process.env.ADMIN_ELEVATION_SECRET ?? process.env.BOOTSTRAP_ADMIN_SESSION_SECRET,
       adminElevationFallbackSecret
     );
   }
@@ -2847,69 +2780,6 @@ async function startServer() {
       }
       console.error("DELETE /api/admin/users/:id", error);
       return res.status(500).json({ error: "Erro ao excluir usuário." });
-    }
-  });
-
-  app.post("/api/admin/users/bootstrap-super-admin", requireBootstrapAdmin, async (req, res) => {
-    try {
-      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
-      const password = typeof req.body?.password === "string" ? req.body.password : "";
-
-      if (!name) {
-        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
-      }
-      if (!isValidEmail(email)) {
-        return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
-      }
-      const passwordError = validatePasswordMin(password);
-      if (passwordError) {
-        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
-      }
-
-      const passwordHash = await hashPassword(password);
-      const existing = await prisma.appUser.findUnique({ where: { email } });
-
-      let user;
-      let action: "created" | "updated";
-      if (existing) {
-        user = await prisma.appUser.update({
-          where: { id: existing.id },
-          data: {
-            name,
-            passwordHash,
-            role: AppUserRole.SUPER_ADMIN,
-            permissions: [...ALL_PERMISSION_KEYS],
-            isActive: true,
-          },
-        });
-        await revokeAllUserSessions(user.id);
-        action = "updated";
-      } else {
-        user = await prisma.appUser.create({
-          data: {
-            name,
-            email,
-            passwordHash,
-            role: AppUserRole.SUPER_ADMIN,
-            permissions: [...ALL_PERMISSION_KEYS],
-            isActive: true,
-          },
-        });
-        action = "created";
-      }
-
-      return res.json({
-        action,
-        message:
-          action === "created"
-            ? "Super administrador criado com sucesso."
-            : "Super administrador existente atualizado (senha e perfil).",
-        user: toSafeAppUser(user),
-      });
-    } catch (error) {
-      console.error("POST /api/admin/users/bootstrap-super-admin", error);
-      return res.status(500).json({ error: "Erro ao criar super administrador." });
     }
   });
 

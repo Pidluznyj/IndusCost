@@ -126,7 +126,7 @@ test("server.ts: rotas Nomus sync registradas", () => {
   assert.match(server, /registerSettingsNomusSyncRoutes/);
 });
 
-test("admin auth: sessão principal, step-up e bootstrap são mecanismos distintos", () => {
+test("admin auth: sessão principal e step-up — bootstrap REMOVIDO", () => {
   const app = read("src/App.tsx");
   const server = read("server.ts");
   const http = read("src/lib/http.ts");
@@ -134,22 +134,43 @@ test("admin auth: sessão principal, step-up e bootstrap são mecanismos distint
 
   assert.match(app, /function AdminSettingsRoute/);
   assert.match(app, /canOpenAdminSettingsHub/);
-  assert.match(app, /\/admin\/recovery/);
   assert.doesNotMatch(app, /Entrar no hub administrativo/);
-  assert.doesNotMatch(app, /Acesso administrativo bootstrap temporário obrigatório/);
 
-  const bootstrapLogin = server.slice(
-    server.indexOf('app.post("/api/bootstrap-admin/login"'),
-    server.indexOf('app.post("/api/bootstrap-admin/logout"')
+  // Recuperação bootstrap removida (13/08/2026): a superfície pré-login não
+  // existe mais. Recuperação administrativa passou a ser feita pelo banco
+  // (exige acesso ao servidor) e o acesso privilegiado do dia a dia é a
+  // elevação step-up ligada ao login.
+  assert.doesNotMatch(
+    app,
+    /\/admin\/recovery/,
+    "rota pública de recuperação não pode voltar"
   );
-  assert.match(bootstrapLogin, /setBootstrapSessionCookie/);
-  assert.doesNotMatch(bootstrapLogin, /setAppSessionCookie/);
-  assert.doesNotMatch(bootstrapLogin, /clearAppSessionCookie/);
-  assert.doesNotMatch(bootstrapLogin, /setAdminElevationCookie/);
+  assert.doesNotMatch(
+    login,
+    /\/admin\/recovery/,
+    "tela de login não pode anunciar recuperação"
+  );
+  assert.doesNotMatch(
+    server,
+    /\/api\/bootstrap-admin\//,
+    "rotas de sessão bootstrap removidas"
+  );
+  assert.doesNotMatch(
+    server,
+    /bootstrap-super-admin/,
+    "rota que criava/sobrescrevia SUPER_ADMIN removida"
+  );
+  assert.doesNotMatch(
+    server,
+    /requireBootstrapAdmin/,
+    "guard fail-open removido"
+  );
 
+  // A elevação step-up continua sendo o caminho privilegiado, agora com
+  // segredo próprio (não mais acoplado à variável do bootstrap).
   assert.match(server, /ADMIN_ELEVATION_COOKIE_NAME/);
   assert.match(server, /clearAdminElevationCookie\(res\)/);
   assert.match(server, /\/api\/auth\/admin-elevation\/confirm/);
+  assert.match(server, /process\.env\.ADMIN_ELEVATION_SECRET/);
   assert.match(http, /isNonSessionUnauthorizedCode/);
-  assert.match(login, /\/admin\/recovery/);
 });
