@@ -27,12 +27,8 @@ import {
   resolveSalesOrderRelatedNfes,
   type SalesOrderRelatedNfeResolveResult,
 } from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
-import {
-  allocatedValueForSalesOrder,
-  allocationLinesFromResolvedO2c,
-  projectOutputDocumentAllocation,
-  type OutputDocumentAllocationProjection,
-} from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
+import type { OutputDocumentAllocationProjection } from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
+import { projectOutputDocumentForSalesOrder } from "@/src/lib/output-documents/salesOrderOutputDocumentAllocation.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -2457,6 +2453,10 @@ async function loadOrderFullAuditUncached(
     externalProductId: it.productExternalId,
   }));
 
+  const productExternalIdByOrderItemId = new Map(
+    items.map((it) => [it.salesOrderItemId, it.productExternalId] as const)
+  );
+
   for (const doc of stockRows) {
     let docEntry = stockMap.get(doc.externalId);
     if (!docEntry) {
@@ -2485,49 +2485,31 @@ async function loadOrderFullAuditUncached(
 
     const factsForDoc = factsByDocExternalId.get(doc.externalId) ?? [];
     const resolved = resolvedByExternalId.get(doc.externalId);
-    const allocationLines = resolved
-      ? allocationLinesFromResolvedO2c(
-          resolved.o2c.allocationLines,
-          doc.items.map((item) => ({
-            stockDocumentItemId: item.id,
-            externalProductId: item.externalProductId,
-          }))
-        )
-      : factsForDoc.map((f) => ({
-          stockDocumentItemId: f.stockDocumentItemId ?? null,
-          salesOrderId: f.salesOrderId ?? salesOrderId,
-          salesOrderItemId: f.salesOrderItemId ?? null,
-          orderCode: f.orderCode ?? order.orderCode ?? null,
-          allocatedValueByDocumentPrice: f.allocatedValueByDocumentPrice,
-          quantityUsedForOrder: f.quantityUsedForOrder,
-          externalProductId:
-            f.stockDocumentItemExternalProductId ??
-            (f.salesOrderItemId
-              ? itemByStorageId.get(f.salesOrderItemId)?.productExternalId ?? null
-              : null),
-        }));
-    const projection: OutputDocumentAllocationProjection =
-      projectOutputDocumentAllocation({
-        document: {
-          id: doc.id,
-          externalId: doc.externalId,
-          idNfe: doc.idNfe,
-          totalValue: doc.totalValue,
-          items: doc.items.map((item) => ({
-            id: item.id,
-            externalItemId: item.externalItemId,
-            externalProductId: item.externalProductId,
-            quantity: item.quantity,
-            unitValue: item.unitValue,
-            estimatedTotalValue: item.estimatedTotalValue,
-          })),
-        },
-        allocationLines,
-        orderItemHints,
-        focusSalesOrderId: salesOrderId,
-      });
-
-    const forThisOrder = allocatedValueForSalesOrder(projection, salesOrderId);
+    // Fiação extraída — o loader leve do Fluxo de Caixa usa esta MESMA função.
+    const allocated = projectOutputDocumentForSalesOrder({
+      document: {
+        id: doc.id,
+        externalId: doc.externalId,
+        idNfe: doc.idNfe,
+        totalValue: doc.totalValue,
+        items: doc.items.map((item) => ({
+          id: item.id,
+          externalItemId: item.externalItemId,
+          externalProductId: item.externalProductId,
+          quantity: item.quantity,
+          unitValue: item.unitValue,
+          estimatedTotalValue: item.estimatedTotalValue,
+        })),
+      },
+      resolvedAllocationLines: resolved ? resolved.o2c.allocationLines : null,
+      fallbackFacts: factsForDoc,
+      orderItemHints,
+      salesOrderId,
+      orderCode: order.orderCode ?? null,
+      productExternalIdBySalesOrderItemId: productExternalIdByOrderItemId,
+    });
+    const projection: OutputDocumentAllocationProjection = allocated.projection;
+    const forThisOrder = allocated;
 
     docEntry.totalValue = projection.document.totalValue;
     docEntry.allocatedValue = forThisOrder.allocatedValue;

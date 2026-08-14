@@ -297,8 +297,25 @@ describe("orderFullAuditService wiring (DS-05.6)", () => {
     assert.match(service, /loadOutputDocumentsForSalesOrder/);
     assert.match(service, /buildReceivableExternalIdByNfeMap/);
     assert.match(service, /resolveAuditDocumentReceivableExternalId/);
-    assert.match(service, /allocationLinesFromResolvedO2c/);
     assert.match(service, /stockDocumentRawByExternalId/);
+
+    // FASE 2C: a fiação da cadeia de alocação saiu de dentro do audit e virou
+    // `projectOutputDocumentForSalesOrder`, para que o auditor 360º e o loader
+    // leve do Fluxo de Caixa usem a MESMA implementação. O guard cobre agora
+    // os DOIS saltos, em vez de um:
+    //
+    //   getOrderFullAudit
+    //     → projectOutputDocumentForSalesOrder
+    //         → allocationLinesFromResolvedO2c
+    //         → projectOutputDocumentAllocation
+    //         → allocatedValueForSalesOrder
+    assert.match(service, /projectOutputDocumentForSalesOrder/);
+    const allocation = read(
+      "src/lib/output-documents/salesOrderOutputDocumentAllocation.ts"
+    );
+    assert.match(allocation, /allocationLinesFromResolvedO2c/);
+    assert.match(allocation, /projectOutputDocumentAllocation/);
+    assert.match(allocation, /allocatedValueForSalesOrder/);
     assert.doesNotMatch(
       service,
       /receivableExternalId:\s*null,\s*\n\s*lineType:/
