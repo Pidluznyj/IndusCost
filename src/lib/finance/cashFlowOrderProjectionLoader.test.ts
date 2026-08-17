@@ -277,6 +277,42 @@ describe("LIGHT LOADER — Fluxo de Caixa", () => {
     assert.equal(b?.receivables[0]?.amountReceivable, 1000);
   });
 
+  it("REGRESSÃO: a ordem dos CRs vem da consulta, não do agrupamento por NF-e", async () => {
+    // Caso real do shadow (pedido 2d017e4f-…): a consulta devolveu
+    // 18674 (NF 7788) antes de 18608 (NF 7751), mas os IDs de NF-e do pedido
+    // saem na ordem [7751, 7788]. Agrupar por NF-e invertia os dois CRs.
+    // O pertencimento vem dos nfeIds; a ORDEM vem de arRows.
+    const data = dataset();
+    data.salesOrder = [
+      order("Z", { nfeLinks: [nfeLink(7751), nfeLink(7788)] }),
+    ];
+    data.salesOrderNfeLink = [
+      { salesOrderId: "Z", orderCode: "PV-Z", nfeExternalId: 7751, nfeKey: "CHAVE-7751" },
+      { salesOrderId: "Z", orderCode: "PV-Z", nfeExternalId: 7788, nfeKey: "CHAVE-7788" },
+    ];
+    data.nomusNfe = [
+      { externalId: 7751, status: 1 },
+      { externalId: 7788, status: 1 },
+    ];
+    // Ordem da consulta AR: 7788 primeiro, 7751 depois.
+    data.nomusAccountsReceivable = [
+      cr(18674, 7788, { dueDate: new Date("2026-08-05T00:00:00.000Z") }),
+      cr(18608, 7751, { dueDate: new Date("2026-08-11T00:00:00.000Z") }),
+    ];
+
+    const { prisma } = makePrisma(data);
+    const out = await loadCashFlowOrderProjections(prisma, {
+      salesOrderIds: ["Z"],
+      referenceDate: REFERENCE_DATE,
+    });
+
+    assert.deepEqual(
+      (out.get("Z")?.receivables ?? []).map((r) => r.receivableExternalId),
+      [18674, 18608],
+      "ordem da consulta precisa sobreviver ao particionamento"
+    );
+  });
+
   it("cut e stale chegam projetados como tal", async () => {
     const data = dataset();
     data.salesOrder = [
