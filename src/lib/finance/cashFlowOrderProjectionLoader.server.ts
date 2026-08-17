@@ -114,6 +114,7 @@ const FACT_SELECT = {
   nfeHeaderValue: true,
   nfeItemMatchedOrderItem: true,
   stockDocumentExternalId: true,
+  stockDocumentDate: true,
   stockDocumentIdNfe: true,
   stockDocumentItemId: true,
   stockDocumentItemExternalProductId: true,
@@ -369,13 +370,24 @@ export async function loadCashFlowOrderProjections(
         productExternalIdBySalesOrderItemId: productExternalIdByOrderItemId,
       });
 
+      // DATAS — precedência do audit, que NÃO é a linha do stage:
+      // o laço de facts cria a entrada do documento primeiro e grava
+      // `dataDocumento` E `dataMovimentacao` a partir de
+      // `fact.stockDocumentDate`; os laços posteriores (resolver e stage) só
+      // complementam, nunca sobrescrevem essas duas. Só quando não há fact é
+      // que valem `doc.dataDocumento` / `doc.movementDate`.
+      // Usar o stage direto zerava `dataMovimentacao` em 27 dos 80 pedidos do
+      // shadow real, porque o stage tem `movementDate` nulo nesses casos.
+      const firstFact = factsByDoc.get(doc.externalId)?.[0];
+      const factDate = firstFact ? toIso(firstFact.stockDocumentDate) : null;
+
       stockDocuments.push({
         stockDocumentExternalId: doc.externalId,
         stockDocumentId: doc.id,
         documentNumber: doc.documentNumber?.trim() || null,
         tipoDocumentoEstoque: doc.tipoDocumentoEstoque ?? null,
-        dataDocumento: toIso(doc.dataDocumento),
-        dataMovimentacao: toIso(doc.movementDate),
+        dataDocumento: firstFact ? factDate : toIso(doc.dataDocumento),
+        dataMovimentacao: firstFact ? factDate : toIso(doc.movementDate),
         customerName: doc.personName ?? null,
         companyName: doc.companyName ?? null,
         idNfe: doc.idNfe ?? null,
