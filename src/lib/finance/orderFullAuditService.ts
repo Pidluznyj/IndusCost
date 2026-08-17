@@ -27,12 +27,20 @@ import {
   resolveSalesOrderRelatedNfes,
   type SalesOrderRelatedNfeResolveResult,
 } from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
+import type { OutputDocumentAllocationProjection } from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
+import { projectOutputDocumentForSalesOrder } from "@/src/lib/output-documents/salesOrderOutputDocumentAllocation.js";
 import {
-  allocatedValueForSalesOrder,
-  allocationLinesFromResolvedO2c,
-  projectOutputDocumentAllocation,
-  type OutputDocumentAllocationProjection,
-} from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
+  decimalToNumber,
+  projectOrderAuditItems,
+  readNomusRawNumber,
+  readNomusRawString,
+  round2,
+  toIso,
+} from "@/src/lib/finance/orderAuditItemProjection.js";
+import {
+  dedupOrderAuditReceivables,
+  projectOrderAuditReceivables,
+} from "@/src/lib/finance/orderAuditReceivableProjection.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -97,31 +105,6 @@ function formatReceivableDueDateSlash(
 ): string | null {
   const key = toCivilDateKey(value);
   return key ? key.replace(/-/g, "/") : null;
-}
-
-function decimalToNumber(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "object" && "toNumber" in (value as object)) {
-    try {
-      const n = (value as { toNumber: () => number }).toNumber();
-      return Number.isFinite(n) ? n : null;
-    } catch {
-      return null;
-    }
-  }
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function toIso(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1603,112 +1586,11 @@ async function loadOrderFullAuditUncached(
 
   const runId = facts[0]?.runId ?? resolvedRunId;
 
-  const items: OrderFullAuditItem[] = order.items.map((item, index) => {
-    const qty = decimalToNumber(item.quantity);
-    const unitPrice = decimalToNumber(item.negotiatedPrice);
-    const totalNet = decimalToNumber(item.totalNetValue);
-    const fulfilled = decimalToNumber(item.nomusQuantityFulfilled);
-    const pending = decimalToNumber(item.nomusQuantityPending);
-    const isCanceled = item.nomusIsCanceled === true;
-    const isCut = item.nomusIsCut === true;
-    const isStale = item.nomusIsStale === true;
-    const canceledQty = isCanceled || isStale ? (qty ?? 0) : 0;
-    const cutQty =
-      isCut && qty != null && fulfilled != null
-        ? Math.max(0, qty - fulfilled)
-        : 0;
-    const activeQty =
-      qty != null ? Math.max(0, qty - canceledQty - cutQty) : null;
-    const activePending =
-      isCanceled || isStale
-        ? 0
-        : isCut
-          ? 0
-          : pending != null
-            ? Math.max(0, pending)
-            : activeQty != null && fulfilled != null
-              ? Math.max(0, activeQty - fulfilled)
-              : activeQty;
-    const canceledValue =
-      qty && unitPrice != null && canceledQty > 0
-        ? round2(canceledQty * unitPrice)
-        : 0;
-    const cutValue =
-      qty && unitPrice != null && cutQty > 0
-        ? round2(cutQty * unitPrice)
-        : 0;
-    const activeValue = round2(Math.max(0, (totalNet ?? 0) - canceledValue - cutValue));
-
-    const rawItem = item.nomusRawItem;
-    const productionQuantity = readNomusRawNumber(rawItem, [
-      "qtdeProduzida",
-      "quantidadeProduzida",
-      "producedQuantity",
-    ]);
-    const invoicedQuantity = readNomusRawNumber(rawItem, [
-      "qtdeFaturada",
-      "quantidadeFaturada",
-      "invoicedQuantity",
-    ]);
-    const saldoAFaturar = readNomusRawNumber(rawItem, [
-      "saldoFaturar",
-      "saldoAFaturar",
-      "remainingToInvoice",
-    ]);
-    const saldoPronto = readNomusRawNumber(rawItem, [
-      "saldoPronto",
-      "saldoDisponivel",
-      "readyBalance",
-    ]);
-    const movementType = readNomusRawString(rawItem, [
-      "tipoMovimentacao",
-      "movementType",
-      "descricaoMovimentacao",
-    ]);
-    const cfop = readNomusRawString(rawItem, ["cfop", "codigoCfop", "cfopCode"]);
-
-    return {
-      salesOrderItemId: item.id,
-      externalSalesOrderItemId: item.nomusItemExternalId ?? null,
-      itemSequence: item.nomusItemSequence ?? String(index + 1),
-      productCode: item.skuSnapshot,
-      sku: item.skuSnapshot,
-      productName: item.productNameSnapshot,
-      productExternalId: item.externalProductId ?? null,
-      unit: item.unit ?? null,
-      quantity: qty,
-      unitPrice,
-      totalNetValue: totalNet,
-      nomusItemStatusRaw: item.nomusItemStatusRaw ?? null,
-      nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
-      itemStatus: item.nomusItemStatusNormalized ?? null,
-      nomusIsCanceled: isCanceled,
-      nomusIsCut: isCut,
-      nomusIsStale: isStale,
-      nomusQuantityFulfilled: fulfilled,
-      nomusQuantityPending: pending,
-      matchConfidence: item.nomusMatchConfidence ?? null,
-      proposalItemId: item.proposalItemId ?? null,
-      activeQuantity: activeQty,
-      canceledQuantity: canceledQty > 0 ? canceledQty : 0,
-      cutQuantity: cutQty > 0 ? cutQty : 0,
-      activePendingQuantity: activePending,
-      activeValue,
-      canceledValue,
-      cutValue,
-      expectedDeliveryDate: toIso(order.expectedDeliveryDate),
-      productionQuantity,
-      invoicedQuantity,
-      saldoAFaturar,
-      saldoPronto,
-      movementType,
-      cfop,
-      linkedStockDocumentExternalIds: [],
-      linkedNfeExternalIds: [],
-      linkedReceivableExternalIds: [],
-      alerts: [],
-    };
-  });
+  // Mapper extraído — o loader leve do Fluxo de Caixa usa esta MESMA função.
+  const items: OrderFullAuditItem[] = projectOrderAuditItems({
+    items: order.items,
+    expectedDeliveryDate: order.expectedDeliveryDate,
+  }) as unknown as OrderFullAuditItem[];
 
   // Dedup NFes e stockDocs a partir dos facts + nfeLinks.
   const nfeMap = new Map<number, OrderFullAuditNfe>();
@@ -2184,150 +2066,23 @@ async function loadOrderFullAuditUncached(
         rawPayload: true,
       },
     });
-    const referenceDate = new Date();
-    const referenceMs = referenceDate.getTime();
     // Guarda o rawPayload de cada CR para uso posterior na montagem das baixas.
     for (const r of arRows) {
       receivableRawByExternalId.set(r.externalId, r.rawPayload);
     }
-    const parseInstallment = (
-      desc: string | null | undefined
-    ): { current: number | null; total: number | null } => {
-      if (!desc) return { current: null, total: null };
-      // padrões comuns: "1/3", "Parcela 2/4", "Parc 1 de 3".
-      const match =
-        /(\d{1,3})\s*(?:\/|\s+de\s+)\s*(\d{1,3})/i.exec(desc) ?? null;
-      if (!match) return { current: null, total: null };
-      const cur = Number(match[1]);
-      const tot = Number(match[2]);
-      if (!Number.isFinite(cur) || !Number.isFinite(tot) || tot < cur) {
-        return { current: null, total: null };
-      }
-      return { current: cur, total: tot };
-    };
-    for (const r of arRows) {
-      const amountReceivable = decimalToNumber(r.amountReceivable) ?? 0;
-      const amountScheduled = decimalToNumber(r.amountScheduled);
-      const amountReceived = decimalToNumber(r.amountReceived) ?? 0;
-      const balance =
-        decimalToNumber(r.balanceReceivable) ??
-        Math.max(0, amountReceivable - amountReceived);
-      const isReceived =
-        balance <= MONEY_TOLERANCE && amountReceived > MONEY_TOLERANCE;
-      const isPartial =
-        amountReceived > MONEY_TOLERANCE && balance > MONEY_TOLERANCE;
-      const isOverdue =
-        !isReceived &&
-        balance > MONEY_TOLERANCE &&
-        r.dueDate != null &&
-        r.dueDate.getTime() < referenceMs;
-      const daysOverdue =
-        r.dueDate != null && !isReceived
-          ? Math.floor(
-              (referenceMs - r.dueDate.getTime()) / (1000 * 60 * 60 * 24)
-            )
-          : null;
-      const installment = parseInstallment(
-        r.description ?? r.comments ?? null
-      );
-      // Referência oficial para "Abrir no Contas a Receber". Prioriza número da NF
-      // (o filtro `search` do CR aceita string livre); fallback: externalId do CR.
-      const searchRef =
-        r.sourceInvoiceNumber?.trim() ||
-        (r.sourceInvoiceId != null ? String(r.sourceInvoiceId) : "") ||
-        String(r.externalId);
 
-      const linkedNfe =
-        r.sourceInvoiceId != null ? nfeMap.get(r.sourceInvoiceId) : undefined;
-      const linkedNfeIsCanceled = linkedNfe?.isCanceled === true;
-      const status: OrderFullAuditReceivable["status"] = isReceived
-        ? "RECEIVED"
-        : isPartial
-          ? "PARTIALLY_RECEIVED"
-          : isOverdue
-            ? "OVERDUE"
-            : balance > MONEY_TOLERANCE
-              ? "OPEN"
-              : "UNKNOWN";
-
-      const alertsForLine: string[] = [];
-      if (!isReceived && balance > MONEY_TOLERANCE) {
-        alertsForLine.push("RECEIVABLE_OPEN");
-      }
-      if (isOverdue) alertsForLine.push("RECEIVABLE_OVERDUE");
-      if (r.sourceInvoiceId == null) alertsForLine.push("RECEIVABLE_WITHOUT_NFE");
-      if (r.dueDate == null) alertsForLine.push("RECEIVABLE_WITHOUT_DUE_DATE");
-      // Recebido > previsto (baixa maior que o CR).
-      if (amountReceived - amountReceivable > MONEY_TOLERANCE) {
-        alertsForLine.push("RECEIPT_GREATER_THAN_RECEIVABLE");
-      }
-      // Saldo inconsistente em baixa parcial: |amountReceivable - amountReceived - balance| > tolerância.
-      if (
-        isPartial &&
-        Math.abs(amountReceivable - amountReceived - balance) > MONEY_TOLERANCE
-      ) {
-        alertsForLine.push("PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE");
-      }
-      // Status financeiro ≠ status fiscal: CR oficial permanece; alerta se NF cancelada.
-      if (linkedNfeIsCanceled) {
-        alertsForLine.push("CANCELED_NFE_WITH_RECEIVABLE");
-        if (status === "RECEIVED" || status === "PARTIALLY_RECEIVED") {
-          alertsForLine.push("RECEIVED_CR_LINKED_TO_CANCELED_NFE");
-        }
-      }
-
-      receivables.push({
-        receivableExternalId: r.externalId,
-        receivableId: r.id ?? null,
-        companyName: r.companyName ?? null,
-        personName: r.personName ?? null,
-        personCnpj: r.personCnpj ?? null,
-        description: r.description ?? null,
-        sourceInvoiceId: r.sourceInvoiceId ?? null,
-        sourceInvoiceNumber: r.sourceInvoiceNumber ?? null,
-        issueDate: toIso(r.createdAtNomus),
-        dueDate: toIso(r.dueDate),
-        competenceDate: toIso(r.competenceDate),
-        scheduleDate: toIso(r.scheduleDate),
-        settlementDate: toIso(r.settlementDate),
-        amountReceivable,
-        amountScheduled,
-        amountReceived,
-        balanceReceivable: balance,
-        installmentNumber: installment.current,
-        totalInstallments: installment.total,
-        paymentTermsText: readNomusRawString(r.rawPayload, [
-          "condicaoPagamento",
-          "descricaoCondicaoPagamento",
-          "paymentTerms",
-          "textoCondicaoPagamento",
-        ]),
-        paymentMethodName: r.paymentMethodName ?? null,
-        bankAccountName: r.bankAccountName ?? null,
-        comments: r.comments ?? null,
-        status,
-        receivableIsReceived: status === "RECEIVED",
-        daysOverdue,
-        linkedNfeExternalIds:
-          r.sourceInvoiceId != null ? [r.sourceInvoiceId] : [],
-        linkedNfeNumber:
-          linkedNfe?.numero ?? r.sourceInvoiceNumber ?? null,
-        linkedNfeStatusLabel: linkedNfe?.statusLabel ?? null,
-        linkedNfeIsCanceled,
-        hasCanceledNfeLink: linkedNfeIsCanceled,
-        origin: r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
-        linkOrigin:
-          r.sourceInvoiceId != null ? "SOURCE_INVOICE" : "UNKNOWN",
-        alerts: alertsForLine,
-        searchReference: searchRef,
-      });
-    }
+    // Mapper extraído — o loader leve do Fluxo de Caixa usa esta MESMA função.
+    receivables.push(
+      ...projectOrderAuditReceivables({
+        rows: arRows,
+        nfeByExternalId: nfeMap,
+        referenceDate: new Date(),
+      })
+    );
   }
 
   // Deduplica receivables por externalId (findMany já garante mas mantemos defesa).
-  const dedupReceivables = [
-    ...new Map(receivables.map((r) => [r.receivableExternalId, r])).values(),
-  ];
+  const dedupReceivables = dedupOrderAuditReceivables(receivables);
 
   // Vincula CRs às NFs correspondentes por sourceInvoiceId ↔ nfeExternalId.
   for (const r of dedupReceivables) {
@@ -2457,6 +2212,10 @@ async function loadOrderFullAuditUncached(
     externalProductId: it.productExternalId,
   }));
 
+  const productExternalIdByOrderItemId = new Map(
+    items.map((it) => [it.salesOrderItemId, it.productExternalId] as const)
+  );
+
   for (const doc of stockRows) {
     let docEntry = stockMap.get(doc.externalId);
     if (!docEntry) {
@@ -2485,49 +2244,31 @@ async function loadOrderFullAuditUncached(
 
     const factsForDoc = factsByDocExternalId.get(doc.externalId) ?? [];
     const resolved = resolvedByExternalId.get(doc.externalId);
-    const allocationLines = resolved
-      ? allocationLinesFromResolvedO2c(
-          resolved.o2c.allocationLines,
-          doc.items.map((item) => ({
-            stockDocumentItemId: item.id,
-            externalProductId: item.externalProductId,
-          }))
-        )
-      : factsForDoc.map((f) => ({
-          stockDocumentItemId: f.stockDocumentItemId ?? null,
-          salesOrderId: f.salesOrderId ?? salesOrderId,
-          salesOrderItemId: f.salesOrderItemId ?? null,
-          orderCode: f.orderCode ?? order.orderCode ?? null,
-          allocatedValueByDocumentPrice: f.allocatedValueByDocumentPrice,
-          quantityUsedForOrder: f.quantityUsedForOrder,
-          externalProductId:
-            f.stockDocumentItemExternalProductId ??
-            (f.salesOrderItemId
-              ? itemByStorageId.get(f.salesOrderItemId)?.productExternalId ?? null
-              : null),
-        }));
-    const projection: OutputDocumentAllocationProjection =
-      projectOutputDocumentAllocation({
-        document: {
-          id: doc.id,
-          externalId: doc.externalId,
-          idNfe: doc.idNfe,
-          totalValue: doc.totalValue,
-          items: doc.items.map((item) => ({
-            id: item.id,
-            externalItemId: item.externalItemId,
-            externalProductId: item.externalProductId,
-            quantity: item.quantity,
-            unitValue: item.unitValue,
-            estimatedTotalValue: item.estimatedTotalValue,
-          })),
-        },
-        allocationLines,
-        orderItemHints,
-        focusSalesOrderId: salesOrderId,
-      });
-
-    const forThisOrder = allocatedValueForSalesOrder(projection, salesOrderId);
+    // Fiação extraída — o loader leve do Fluxo de Caixa usa esta MESMA função.
+    const allocated = projectOutputDocumentForSalesOrder({
+      document: {
+        id: doc.id,
+        externalId: doc.externalId,
+        idNfe: doc.idNfe,
+        totalValue: doc.totalValue,
+        items: doc.items.map((item) => ({
+          id: item.id,
+          externalItemId: item.externalItemId,
+          externalProductId: item.externalProductId,
+          quantity: item.quantity,
+          unitValue: item.unitValue,
+          estimatedTotalValue: item.estimatedTotalValue,
+        })),
+      },
+      resolvedAllocationLines: resolved ? resolved.o2c.allocationLines : null,
+      fallbackFacts: factsForDoc,
+      orderItemHints,
+      salesOrderId,
+      orderCode: order.orderCode ?? null,
+      productExternalIdBySalesOrderItemId: productExternalIdByOrderItemId,
+    });
+    const projection: OutputDocumentAllocationProjection = allocated.projection;
+    const forThisOrder = allocated;
 
     docEntry.totalValue = projection.document.totalValue;
     docEntry.allocatedValue = forThisOrder.allocatedValue;
@@ -4021,32 +3762,6 @@ function isOperationalSectorName(value: string | null | undefined): boolean {
  * Extrai um campo string do `nomusRawResponse` sem quebrar quando o payload
  * mudar de forma. Aceita chaves alternativas em ordem de precedência.
  */
-function readNomusRawString(
-  raw: unknown,
-  keys: readonly string[]
-): string | null {
-  if (!raw || typeof raw !== "object") return null;
-  const rec = raw as Record<string, unknown>;
-  for (const k of keys) {
-    const v = rec[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-    if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  }
-  return null;
-}
-function readNomusRawNumber(raw: unknown, keys: readonly string[]): number | null {
-  if (!raw || typeof raw !== "object") return null;
-  const rec = raw as Record<string, unknown>;
-  for (const k of keys) {
-    const v = rec[k];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string" && v.trim()) {
-      const n = Number(v.replace(",", "."));
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return null;
-}
 
 function buildSalesOrderBlock(input: {
   order: NonNullable<Awaited<ReturnType<typeof prisma.salesOrder.findUnique>>>;
