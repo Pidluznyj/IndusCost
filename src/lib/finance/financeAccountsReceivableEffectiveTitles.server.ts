@@ -5,6 +5,8 @@
 import type { PrismaClient } from "@prisma/client";
 import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
 import { getOrderFullAudit } from "./orderFullAuditService.js";
+import { loadCashFlowOrderProjections } from "./cashFlowOrderProjectionLoader.server.js";
+import type { CashFlowProjectionMode } from "./cashFlowLightProjectionFlag.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import { extractFinanceArOrderCodeHint } from "./financeArOperationalPortfolio.js";
@@ -202,7 +204,13 @@ function buildSalesOrderWhereForOrderCodes(
   return { OR: orClauses };
 }
 
-async function buildFinanceArEffectiveContextsForOrders(
+/**
+ * Caminho LEVE — mesma fronteira financeira, fonte diferente.
+ *
+ * Carrega os pedidos em lote (sem auditoria 360º) e alimenta os MESMOS
+ * builders canônicos. `getOrderFullAudit` não é chamado aqui.
+ */
+async function buildFinanceArEffectiveContextsFromLightProjection(
   prisma: PrismaClient,
   orders: Array<{
     id: string;
@@ -214,8 +222,79 @@ async function buildFinanceArEffectiveContextsForOrders(
   }>,
   referenceDate: Date
 ): Promise<FinanceArEffectiveOrderContext[]> {
+  const eligible = orders.filter((order) =>
+    shouldIncludeSalesOrderInOperationalReceivables({
+      status: order.status,
+      sourcePresenceStatus: order.sourcePresenceStatus,
+    })
+  );
+  if (eligible.length === 0) return [];
+
+  const projections = await loadCashFlowOrderProjections(prisma, {
+    salesOrderIds: eligible.map((order) => order.id),
+    referenceDate,
+  });
+
+  const contexts: FinanceArEffectiveOrderContext[] = [];
+  for (const order of eligible) {
+    const projection = projections.get(order.id);
+    if (!projection) continue;
+    try {
+      const scheduleInput = buildEffectiveScheduleInputFromAudit(
+        {
+          salesOrderId: projection.salesOrderId,
+          orderCode: projection.orderCode,
+          salesOrder: { orderCode: projection.orderCode },
+          items: projection.items,
+          receivables: projection.receivables,
+          stockDocuments: projection.stockDocuments,
+          stockDocumentItems: [],
+          plannedReceivables: projection.plannedReceivables,
+        } as never,
+        referenceDate
+      );
+      const schedule = buildSalesOrderEffectiveFinancialSchedule(scheduleInput);
+      contexts.push({
+        schedule,
+        personId: order.externalCustomerId ?? null,
+        personName: projection.personName ?? order.Customer?.companyName ?? null,
+        personCnpj: projection.personCnpj ?? order.Customer?.taxId ?? null,
+        companyName: projection.companyName ?? null,
+      } satisfies FinanceArEffectiveOrderContext);
+    } catch (err) {
+      console.error(
+        "loadFinanceArEffectiveOrderContexts(light): falha no pedido",
+        order.orderCode,
+        err
+      );
+    }
+  }
+  return contexts;
+}
+
+async function buildFinanceArEffectiveContextsForOrders(
+  prisma: PrismaClient,
+  orders: Array<{
+    id: string;
+    orderCode: string;
+    status: string | null;
+    sourcePresenceStatus: string | null;
+    externalCustomerId: number | null;
+    Customer: { companyName: string | null; taxId: string | null } | null;
+  }>,
+  referenceDate: Date,
+  projectionMode: CashFlowProjectionMode = "legacy"
+): Promise<FinanceArEffectiveOrderContext[]> {
   const CONCURRENCY = EFFECTIVE_ORDER_AUDIT_CONCURRENCY;
   const contexts: FinanceArEffectiveOrderContext[] = [];
+
+  if (projectionMode === "light") {
+    return buildFinanceArEffectiveContextsFromLightProjection(
+      prisma,
+      orders,
+      referenceDate
+    );
+  }
 
   for (let i = 0; i < orders.length; i += CONCURRENCY) {
     const slice = orders.slice(i, i + CONCURRENCY);
@@ -275,7 +354,8 @@ async function buildFinanceArEffectiveContextsForOrders(
 export async function loadFinanceArEffectiveOrderContexts(
   prisma: PrismaClient,
   input: LoadFinanceArEffectiveOrderContextsInput,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  projectionMode: CashFlowProjectionMode = "legacy"
 ): Promise<FinanceArEffectiveOrderContext[]> {
   if (!shouldLoadEffectiveContexts(input)) return [];
 
@@ -330,7 +410,12 @@ export async function loadFinanceArEffectiveOrderContexts(
     take: limit,
   });
 
-  return buildFinanceArEffectiveContextsForOrders(prisma, orders, referenceDate);
+  return buildFinanceArEffectiveContextsForOrders(
+    prisma,
+    orders,
+    referenceDate,
+    projectionMode
+  );
 }
 
 /**
@@ -343,7 +428,8 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">
   >,
   referenceDate: Date = new Date(),
-  limit = PORTFOLIO_ORDER_LIMIT
+  limit = PORTFOLIO_ORDER_LIMIT,
+  projectionMode: CashFlowProjectionMode = "legacy"
 ): Promise<FinanceArEffectiveOrderContext[]> {
   const fromDescriptions = collectFinanceArOrderCodesFromPortfolioRows(rows);
   const fromLinks = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
@@ -406,7 +492,12 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
   const orders = [...priorityOrders, ...secondaryOrders];
   if (orders.length === 0) return [];
 
-  return buildFinanceArEffectiveContextsForOrders(prisma, orders, referenceDate);
+  return buildFinanceArEffectiveContextsForOrders(
+    prisma,
+    orders,
+    referenceDate,
+    projectionMode
+  );
 }
 
 export function mergeFinanceArEffectiveOrderContexts(
