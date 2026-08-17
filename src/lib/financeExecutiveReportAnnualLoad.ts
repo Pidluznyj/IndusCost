@@ -17,12 +17,15 @@ import {
 } from "./financeCashFlowDashboard.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
+import type { CashFlowProjectionMode } from "./finance/cashFlowLightProjectionFlag.js";
 import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 
 export async function loadAnnualComparisonPortfolioRows(
   db: PrismaClient,
   referenceDate = new Date(),
-  cashFlowFilters: FinanceCashFlowDashboardFilters = createAnnualComparisonBaseFilters()
+  cashFlowFilters: FinanceCashFlowDashboardFilters = createAnnualComparisonBaseFilters(),
+  /** Default legacy: só o handler /cash-flow/annual-comparison passa "light". */
+  projectionMode: CashFlowProjectionMode = "legacy"
 ) {
   const filters = cashFlowFilters;
   const arFilters = toCashFlowPortfolioArFilters(filters);
@@ -47,6 +50,7 @@ export async function loadAnnualComparisonPortfolioRows(
     {
       customerName: filters.customerName,
       personCnpj: filters.personCnpj,
+      projectionMode,
     }
   );
 
