@@ -7,6 +7,11 @@ import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffective
 import { getOrderFullAudit } from "./orderFullAuditService.js";
 import { loadCashFlowOrderProjections } from "./cashFlowOrderProjectionLoader.server.js";
 import type { CashFlowProjectionMode } from "./cashFlowLightProjectionFlag.js";
+import {
+  recordCashFlowFullAuditCall,
+  recordCashFlowLightLoaderCall,
+  recordCashFlowProjectionMode,
+} from "./cashFlowProjectionTelemetry.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import { extractFinanceArOrderCodeHint } from "./financeArOperationalPortfolio.js";
@@ -230,6 +235,7 @@ async function buildFinanceArEffectiveContextsFromLightProjection(
   );
   if (eligible.length === 0) return [];
 
+  recordCashFlowLightLoaderCall();
   const projections = await loadCashFlowOrderProjections(prisma, {
     salesOrderIds: eligible.map((order) => order.id),
     referenceDate,
@@ -288,6 +294,7 @@ async function buildFinanceArEffectiveContextsForOrders(
   const CONCURRENCY = EFFECTIVE_ORDER_AUDIT_CONCURRENCY;
   const contexts: FinanceArEffectiveOrderContext[] = [];
 
+  recordCashFlowProjectionMode(projectionMode);
   if (projectionMode === "light") {
     return buildFinanceArEffectiveContextsFromLightProjection(
       prisma,
@@ -309,6 +316,7 @@ async function buildFinanceArEffectiveContextsForOrders(
           return null;
         }
         try {
+          recordCashFlowFullAuditCall();
           const audit = await getOrderFullAudit({
             salesOrderId: order.id,
             orderCode: order.orderCode,
