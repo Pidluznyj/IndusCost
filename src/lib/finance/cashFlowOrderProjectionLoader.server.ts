@@ -283,13 +283,6 @@ export async function loadCashFlowOrderProjections(
         })
       : [];
 
-  const arByInvoice = new Map<number, (typeof arRows)[number][]>();
-  for (const row of arRows) {
-    if (row.sourceInvoiceId == null) continue;
-    const list = arByInvoice.get(row.sourceInvoiceId);
-    if (list) list.push(row);
-    else arByInvoice.set(row.sourceInvoiceId, [row]);
-  }
 
   /* -- 6. documentos de saída em lote ------------------------------------ */
   const runIdBySalesOrderId = new Map<string, string | null>(
@@ -313,8 +306,17 @@ export async function loadCashFlowOrderProjections(
     });
 
     // Recebíveis: mesma projeção e mesmo dedup do audit.
+    //
+    // ORDEM: o filtro roda sobre `arRows`, preservando a ordem em que a
+    // consulta devolveu as linhas — como o caminho legado faz. Agrupar por
+    // NF-e (`nfeIds.flatMap(...)`) reordenava os CRs por nota, o que não
+    // acontece no audit e apareceu como divergência no shadow real.
+    // O Set serve SÓ para pertencimento; iterá-lo reintroduziria o defeito.
     const nfeIds = receivableNfeIdsByOrder.get(salesOrderId) ?? [];
-    const rowsForOrder = nfeIds.flatMap((id) => arByInvoice.get(id) ?? []);
+    const nfeIdSet = new Set(nfeIds);
+    const rowsForOrder = arRows.filter(
+      (row) => row.sourceInvoiceId != null && nfeIdSet.has(row.sourceInvoiceId)
+    );
     const receivables = dedupOrderAuditReceivables(
       projectOrderAuditReceivables({
         rows: rowsForOrder,
