@@ -40,6 +40,8 @@ import {
   type GoalKeyResultUpdateInput,
   type GoalQuotaDto,
   type GoalQuotaInput,
+  type GoalKeyResultSeriesDto,
+  type GoalSeriesPointDto,
   type GoalSnapshotDto,
   type GoalStatusValue,
   type GoalTrackingTypeValue,
@@ -52,10 +54,17 @@ import {
   progressRatioToPercent,
 } from "./goalProgress.js";
 import {
+  accumulateGoalRuleMonths,
   executeGoalRule,
+  executeGoalRuleMonthly,
   normalizeGoalRuleForPersist,
   resolveGoalRule,
 } from "./goalRuleEngine.server.js";
+import {
+  goalSeriesMonthCivilDate,
+  limitGoalSeriesToMonth,
+  listGoalSeriesMonths,
+} from "./goalSeries.js";
 import {
   GOAL_METRIC_OPERATION_LABELS,
   findGoalMetadataEntity,
@@ -1293,6 +1302,74 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         progressRatio: decimalToString(r.progressRatio),
         source: r.source,
       }));
+    },
+
+    /**
+     * Curvas do gráfico: acumulado mês a mês na janela medida e, quando o alvo
+     * nasce de comparação com período anterior, a MESMA regra na janela
+     * comparada (a "evolução do ano passado").
+     *
+     * Leitura pura — nenhum snapshot é gravado. Diferente de `listSnapshots`,
+     * que só sabe do que foi retratado depois que a meta existe, aqui a regra
+     * responde o período inteiro, inclusive o que aconteceu antes do cadastro.
+     * Indicador de lançamento manual (sem regra) devolve as curvas vazias: não
+     * há de onde tirar o histórico sem inventar número.
+     */
+    async getKeyResultSeries(keyResultId: string): Promise<GoalKeyResultSeriesDto> {
+      const kr = await requireKeyResult(keyResultId);
+      const window = keyResultWindow(kr);
+      const empty: GoalKeyResultSeriesDto = {
+        keyResultId,
+        startDate: window.startCivilDate,
+        endDate: window.endCivilDate,
+        current: [],
+        comparison: null,
+      };
+      if (!kr.ruleJson) return empty;
+
+      const operation = resolveGoalRule(kr.ruleJson).metric.operation;
+
+      async function seriesFor(
+        startCivilDate: string,
+        endCivilDate: string
+      ): Promise<GoalSeriesPointDto[]> {
+        const months = listGoalSeriesMonths(startCivilDate, endCivilDate);
+        if (months.length === 0) return [];
+        const buckets = await executeGoalRuleMonthly(prisma, kr.ruleJson, {
+          startCivilDate,
+          endCivilDate,
+        });
+        return accumulateGoalRuleMonths(months, buckets, operation).map((p) => ({
+          month: p.month,
+          civilDate: goalSeriesMonthCivilDate(p.month, endCivilDate),
+          accumulated: p.accumulated,
+        }));
+      }
+
+      const todayMonth = new Date().toISOString().slice(0, 7);
+      const current = limitGoalSeriesToMonth(
+        await seriesFor(window.startCivilDate, window.endCivilDate),
+        todayMonth
+      );
+
+      const comparisonStart = civilFromDate(kr.comparisonStartDate);
+      const comparisonEnd = civilFromDate(kr.comparisonEndDate);
+      const comparison =
+        kr.targetBasis === "COMPARISON" && kr.comparisonMode && comparisonStart && comparisonEnd
+          ? {
+              startDate: comparisonStart,
+              endDate: comparisonEnd,
+              label:
+                GOAL_TARGET_COMPARISON_MODE_LABELS[
+                  kr.comparisonMode as GoalTargetComparisonModeValue
+                ],
+              // Janela comparada é sempre passado fechado: a curva vai inteira,
+              // sem corte no mês corrente.
+              points: await seriesFor(comparisonStart, comparisonEnd),
+            }
+          : null;
+
+      return { ...empty, current, comparison };
     },
 
     /**

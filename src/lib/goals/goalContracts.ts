@@ -131,6 +131,43 @@ export type GoalSnapshotDto = {
   source: string;
 };
 
+/** Um mês da curva acumulada do indicador. */
+export type GoalSeriesPointDto = {
+  /** Mês civil "YYYY-MM". */
+  month: string;
+  /** Último dia do mês dentro da janela — posiciona o ponto no eixo X. */
+  civilDate: string;
+  /** Acumulado do início da janela até o fim deste mês. */
+  accumulated: string;
+};
+
+/**
+ * Curvas do Detalhe da Meta, calculadas SOB DEMANDA a partir da mesma regra do
+ * indicador (não dos snapshots): o acumulado mês a mês da janela medida e,
+ * quando o alvo nasce de comparação com período anterior, a mesma curva na
+ * janela comparada ("evolução do ano passado").
+ *
+ * Por que não usar snapshot aqui: snapshot é retrato diário a partir do
+ * cadastro da meta — uma meta criada em agosto não teria curva de janeiro a
+ * julho. A regra, sim, sabe responder o passado inteiro.
+ */
+export type GoalKeyResultSeriesDto = {
+  keyResultId: string;
+  /** Janela medida do indicador. */
+  startDate: string;
+  endDate: string;
+  /** Acumulado mês a mês, do início da janela até o mês corrente. */
+  current: GoalSeriesPointDto[];
+  /** Mesma regra na janela de comparação; null quando o alvo não é comparado. */
+  comparison: {
+    startDate: string;
+    endDate: string;
+    /** Rótulo pt-BR do modo ("Mesmo período do ano passado", etc). */
+    label: string;
+    points: GoalSeriesPointDto[];
+  } | null;
+};
+
 // ─── Parse helpers ──────────────────────────────────────────────────────────
 
 function parseRequiredString(value: unknown, field: string, maxLen = 300): string {

@@ -306,4 +306,19 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
       }
     }
   );
+
+  // Curvas do gráfico (acumulado mês a mês + período comparado). Leitura pura:
+  // recalcula a partir da regra, não grava snapshot.
+  app.get(
+    "/api/goals/key-results/:id/series",
+    requireAppAuth,
+    view,
+    async (req, res) => {
+      try {
+        res.json({ series: await service.getKeyResultSeries(req.params.id) });
+      } catch (err) {
+        sendGoalError(res, err);
+      }
+    }
+  );
 }

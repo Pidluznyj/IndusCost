@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  accumulateGoalRuleMonths,
+  buildGoalRuleMonthlyQuery,
   buildGoalRuleQuery,
   executeGoalRule,
   normalizeGoalRuleForPersist,
@@ -210,5 +212,78 @@ describe("executeGoalRule — execução parametrizada", () => {
       $queryRaw: async () => [],
     } as unknown as PrismaClient;
     assert.equal(await executeGoalRule(emptyPrisma, VALID_RULE, WINDOW), "0");
+  });
+});
+
+describe("série mensal — mesma regra, quebrada por mês", () => {
+  it("mantém período, filtros e identificadores do dicionário, agrupando por mês", () => {
+    const query = buildGoalRuleMonthlyQuery(resolveGoalRule(VALID_RULE), WINDOW);
+    const sql = query.sql;
+    assert.ok(sql.includes(`date_trunc('month', "SalesOrder"."issueDate")`));
+    assert.ok(sql.includes('COALESCE(SUM("SalesOrder"."totalNetValue"), 0)'));
+    assert.ok(sql.includes("GROUP BY 1"), "uma linha por mês");
+    assert.ok(sql.includes('"SalesOrder"."issueDate" >='), "período sempre aplicado");
+    assert.ok(!sql.includes("SENT_TO_NOMUS"), "filtro parametrizado, não inline");
+    assert.ok(query.values.includes("SENT_TO_NOMUS"));
+  });
+
+  it("COUNT de linhas não referencia coluna agregada", () => {
+    const query = buildGoalRuleMonthlyQuery(
+      resolveGoalRule({
+        entityKey: "SALES_ORDERS",
+        metricKey: "SALES_ORDER_COUNT",
+        filters: [],
+      }),
+      WINDOW
+    );
+    assert.ok(query.sql.includes(`'0'::text AS "sum"`));
+    assert.ok(query.sql.includes('COUNT(*)::int AS "rowCount"'));
+  });
+
+  it("acumulado de SOMA soma; mês sem movimento herda o acumulado anterior", () => {
+    const acc = accumulateGoalRuleMonths(
+      ["2026-01", "2026-02", "2026-03"],
+      [
+        { month: "2026-01", sum: "100", rowCount: 2, valueCount: 2 },
+        { month: "2026-03", sum: "50", rowCount: 1, valueCount: 1 },
+      ],
+      "SUM"
+    );
+    assert.deepEqual(
+      acc.map((a) => a.accumulated),
+      ["100", "100", "150"]
+    );
+  });
+
+  it("acumulado de CONTAGEM conta linhas", () => {
+    const acc = accumulateGoalRuleMonths(
+      ["2026-01", "2026-02"],
+      [
+        { month: "2026-01", sum: "0", rowCount: 3, valueCount: 3 },
+        { month: "2026-02", sum: "0", rowCount: 4, valueCount: 4 },
+      ],
+      "COUNT"
+    );
+    assert.deepEqual(
+      acc.map((a) => a.accumulated),
+      ["3", "7"]
+    );
+  });
+
+  it("acumulado de MÉDIA é Σsoma/Σcontagem — não a média das médias", () => {
+    // Jan: 2 linhas somando 100 (média 50). Fev: 8 linhas somando 100 (média
+    // 12,5). Média do período = 200/10 = 20 — a média das médias daria 31,25.
+    const acc = accumulateGoalRuleMonths(
+      ["2026-01", "2026-02"],
+      [
+        { month: "2026-01", sum: "100", rowCount: 2, valueCount: 2 },
+        { month: "2026-02", sum: "100", rowCount: 8, valueCount: 8 },
+      ],
+      "AVG"
+    );
+    assert.deepEqual(
+      acc.map((a) => a.accumulated),
+      ["50", "20"]
+    );
   });
 });

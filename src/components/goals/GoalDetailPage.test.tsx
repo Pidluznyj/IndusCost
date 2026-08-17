@@ -40,4 +40,19 @@ describe("GoalDetailPage — drill-down e vínculo correto das tarefas", () => {
     assert.ok(src.includes("GoalKeyResultWizardDialog"));
     assert.ok(src.includes("Novo indicador"));
   });
+
+  it("gráfico traz as três curvas: ideal, acumulado mês a mês e período comparado", () => {
+    const src = source();
+    assert.ok(
+      src.includes("/series"),
+      "curvas mensais vêm da rota de série (recalculada pela regra, não do snapshot)"
+    );
+    assert.ok(src.includes("burnup-current-line"), "linha do acumulado mês a mês");
+    assert.ok(src.includes("burnup-comparison-line"), "linha do período comparado");
+    assert.ok(src.includes("burnup-legend"), "legenda identifica cada curva");
+    assert.ok(
+      src.includes("listGoalSeriesMonths"),
+      "comparação alinhada por índice de mês do período atual"
+    );
+  });
 });

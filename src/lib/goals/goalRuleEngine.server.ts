@@ -220,24 +220,18 @@ export type GoalRuleExecutionOptions = {
   employeeColumnValue?: number | string | null;
 };
 
-/** Monta a query agregada completa (exportado para teste determinístico). */
-export function buildGoalRuleQuery(
+/**
+ * Origem + filtro da regra, sem o SELECT — a parte que TODA leitura da meta
+ * compartilha (valor único e série mensal). Existe para as duas nunca
+ * divergirem: mesmo período, mesmo desdobramento, mesmos filtros, mesmo CTE de
+ * conceitos.
+ */
+function buildGoalRuleSource(
   resolved: GoalRuleResolved,
   window: GoalRuleExecutionWindow,
   options: GoalRuleExecutionOptions = {}
-): Prisma.Sql {
+): { prefix: Prisma.Sql; from: Prisma.Sql; where: Prisma.Sql } {
   const { entity, metric, filters } = resolved;
-
-  const aggregate =
-    metric.operation === "COUNT"
-      ? Prisma.raw(`COUNT(*)::text`)
-      : metric.operation === "SUM"
-        ? Prisma.raw(
-            `COALESCE(SUM("${entity.dbTable}"."${metric.dbColumn}"), 0)::text`
-          )
-        : Prisma.raw(
-            `COALESCE(AVG("${entity.dbTable}"."${metric.dbColumn}"), 0)::text`
-          );
 
   const periodCol = columnSql(entity.dbTable, metric.periodDbColumn);
   const startTs = `${window.startCivilDate}T00:00:00.000Z`;
@@ -292,7 +286,140 @@ export function buildGoalRuleQuery(
   const source = compileConceptSource(entity, concepts, window);
   const prefix = source.cte ? Prisma.sql`${source.cte} ` : Prisma.empty;
 
-  return Prisma.sql`${prefix}SELECT ${aggregate} AS value FROM ${source.from} WHERE ${where}`;
+  return { prefix, from: source.from, where };
+}
+
+/** Monta a query agregada completa (exportado para teste determinístico). */
+export function buildGoalRuleQuery(
+  resolved: GoalRuleResolved,
+  window: GoalRuleExecutionWindow,
+  options: GoalRuleExecutionOptions = {}
+): Prisma.Sql {
+  const { entity, metric } = resolved;
+
+  const aggregate =
+    metric.operation === "COUNT"
+      ? Prisma.raw(`COUNT(*)::text`)
+      : metric.operation === "SUM"
+        ? Prisma.raw(
+            `COALESCE(SUM("${entity.dbTable}"."${metric.dbColumn}"), 0)::text`
+          )
+        : Prisma.raw(
+            `COALESCE(AVG("${entity.dbTable}"."${metric.dbColumn}"), 0)::text`
+          );
+
+  const { prefix, from, where } = buildGoalRuleSource(resolved, window, options);
+  return Prisma.sql`${prefix}SELECT ${aggregate} AS value FROM ${from} WHERE ${where}`;
+}
+
+/**
+ * Mesma regra, mesmos filtros, mesma janela — só que quebrada POR MÊS civil da
+ * coluna de período da métrica. Serve à linha "onde estamos" (acumulado mês a
+ * mês) e à linha do período de comparação (ano passado) do Detalhe da Meta.
+ *
+ * Devolve os três números crus de cada mês em vez do agregado pronto porque o
+ * acumulado de uma MÉDIA não é a média dos meses: com soma e contagem dá para
+ * derivar `Σsoma / Σcontagem` corretamente (ver `accumulateGoalRuleMonths`).
+ * Meses sem nenhuma linha simplesmente não voltam — quem consome preenche o
+ * vão carregando o acumulado anterior.
+ */
+export type GoalRuleMonthlyBucket = {
+  /** Mês civil "YYYY-MM" (fuso UTC, mesma convenção do resto do motor). */
+  month: string;
+  /** Σ da coluna da métrica no mês; "0" quando a métrica é COUNT de linhas. */
+  sum: string;
+  /** Linhas do mês (base do COUNT). */
+  rowCount: number;
+  /** Linhas com valor não nulo na coluna da métrica (base do AVG). */
+  valueCount: number;
+};
+
+export function buildGoalRuleMonthlyQuery(
+  resolved: GoalRuleResolved,
+  window: GoalRuleExecutionWindow,
+  options: GoalRuleExecutionOptions = {}
+): Prisma.Sql {
+  const { entity, metric } = resolved;
+  const periodCol = columnSql(entity.dbTable, metric.periodDbColumn);
+
+  // COUNT de linhas não tem coluna agregada: soma vira 0 e o que conta é
+  // `rowCount`. Identificadores continuam vindo só do dicionário.
+  const sumExpr = metric.dbColumn
+    ? Prisma.raw(
+        `COALESCE(SUM("${entity.dbTable}"."${metric.dbColumn}"), 0)::text`
+      )
+    : Prisma.raw(`'0'::text`);
+  const valueCountExpr = metric.dbColumn
+    ? Prisma.raw(`COUNT("${entity.dbTable}"."${metric.dbColumn}")::int`)
+    : Prisma.raw(`COUNT(*)::int`);
+
+  const { prefix, from, where } = buildGoalRuleSource(resolved, window, options);
+  return Prisma.sql`${prefix}SELECT to_char(date_trunc('month', ${periodCol}), 'YYYY-MM') AS "month", ${sumExpr} AS "sum", COUNT(*)::int AS "rowCount", ${valueCountExpr} AS "valueCount" FROM ${from} WHERE ${where} GROUP BY 1 ORDER BY 1`;
+}
+
+/** Executa a série mensal da regra (mesma validação total do dicionário). */
+export async function executeGoalRuleMonthly(
+  prisma: PrismaClient,
+  ruleJson: unknown,
+  window: GoalRuleExecutionWindow,
+  options: GoalRuleExecutionOptions = {}
+): Promise<GoalRuleMonthlyBucket[]> {
+  const resolved = resolveGoalRule(ruleJson);
+  const query = buildGoalRuleMonthlyQuery(resolved, window, options);
+  const rows = await prisma.$queryRaw<
+    Array<{
+      month: string | null;
+      sum: string | null;
+      rowCount: number | null;
+      valueCount: number | null;
+    }>
+  >(query);
+  return rows
+    .filter((r) => r.month != null)
+    .map((r) => ({
+      month: String(r.month),
+      sum: r.sum == null || r.sum === "" ? "0" : String(r.sum),
+      rowCount: Number(r.rowCount ?? 0),
+      valueCount: Number(r.valueCount ?? 0),
+    }));
+}
+
+/**
+ * Acumula os meses da janela do início até cada mês — a "linha de onde
+ * estamos". Meses sem linha nenhuma não somem do gráfico: herdam o acumulado
+ * do mês anterior (o caixa não anda, mas a curva continua).
+ *
+ * O acumulado respeita a operação da métrica: SUM soma, COUNT conta linhas e
+ * AVG divide a soma acumulada pela contagem acumulada — a média do período até
+ * ali, não a média das médias mensais.
+ */
+export function accumulateGoalRuleMonths(
+  months: readonly string[],
+  buckets: readonly GoalRuleMonthlyBucket[],
+  operation: GoalMetadataMetric["operation"]
+): Array<{ month: string; accumulated: string }> {
+  const byMonth = new Map(buckets.map((b) => [b.month, b]));
+  let sum = 0;
+  let rows = 0;
+  let values = 0;
+  return months.map((month) => {
+    const bucket = byMonth.get(month);
+    if (bucket) {
+      const bucketSum = Number(bucket.sum);
+      if (Number.isFinite(bucketSum)) sum += bucketSum;
+      rows += bucket.rowCount;
+      values += bucket.valueCount;
+    }
+    const accumulated =
+      operation === "COUNT"
+        ? rows
+        : operation === "SUM"
+          ? sum
+          : values > 0
+            ? sum / values
+            : 0;
+    return { month, accumulated: String(accumulated) };
+  });
 }
 
 /** Executa a regra e devolve o valor agregado como string decimal. */

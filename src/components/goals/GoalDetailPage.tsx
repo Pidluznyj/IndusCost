@@ -18,8 +18,13 @@ import {
   type GoalInitiativeDto,
   type GoalInitiativeStatusValue,
   type GoalKeyResultDto,
+  type GoalKeyResultSeriesDto,
   type GoalSnapshotDto,
 } from "@/src/lib/goals/goalContracts.js";
+import {
+  goalSeriesMonthCivilDate,
+  listGoalSeriesMonths,
+} from "@/src/lib/goals/goalSeries.js";
 import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
 import type { GoalMetadataPublicEntity } from "./goalWizardShared.js";
 
@@ -58,22 +63,34 @@ function civilDateBr(value: string): string {
 }
 
 /**
- * Burn-up SVG puro: linha cinza pontilhada (trajetória ideal baseline→target
- * no período do objetivo) + linha azul (realizado por snapshot diário).
+ * Burn-up SVG puro com três leituras do mesmo indicador:
+ *
+ *   1. trajetória ideal (cinza pontilhada) — baseline → alvo na janela medida;
+ *   2. onde estamos (azul) — acumulado MÊS A MÊS pela regra do indicador, que
+ *      enxerga o período inteiro mesmo que a meta tenha sido criada no meio;
+ *   3. período comparado (âmbar tracejada) — a MESMA regra na janela do alvo
+ *      comparado ("+X% sobre o ano passado"), alinhada mês a mês por índice:
+ *      o 1º mês do ano passado cai no 1º mês do período atual, senão as duas
+ *      curvas não seriam comparáveis no eixo.
+ *
+ * Os retratos diários (snapshots) continuam desenhados como pontinhos: são a
+ * trilha auditável do que foi lido em cada dia, e nunca mudam.
  */
 function BurnUpChart({
   keyResult,
   snapshots,
+  series,
   startDate,
   endDate,
 }: {
   keyResult: GoalKeyResultDto;
   snapshots: GoalSnapshotDto[];
+  series: GoalKeyResultSeriesDto | null;
   startDate: string;
   endDate: string;
 }) {
   const width = 640;
-  const height = 220;
+  const height = 240;
   const pad = { top: 16, right: 16, bottom: 24, left: 56 };
 
   const startMs = new Date(`${startDate}T00:00:00Z`).getTime();
@@ -83,29 +100,59 @@ function BurnUpChart({
   const baseline = Number(keyResult.baseline);
   const target = Number(keyResult.target);
   const decrease = keyResult.trackingType === "DECREASE";
-  const values = snapshots.map((s) => Number(s.achievedValue));
-  const yMin = Math.min(baseline, target, ...(values.length ? values : [baseline]));
-  const yMax = Math.max(baseline, target, ...(values.length ? values : [target]));
+
+  const currentPoints = series?.current ?? [];
+  const comparisonPoints = series?.comparison?.points ?? [];
+  /** Meses do período atual — âncora do eixo X das duas curvas mensais. */
+  const currentMonths = useMemo(
+    () => listGoalSeriesMonths(startDate, endDate),
+    [startDate, endDate]
+  );
+
+  const seriesValues = [
+    ...currentPoints.map((p) => Number(p.accumulated)),
+    ...comparisonPoints.map((p) => Number(p.accumulated)),
+    ...snapshots.map((s) => Number(s.achievedValue)),
+  ].filter((v) => Number.isFinite(v));
+  const yMin = Math.min(baseline, target, ...(seriesValues.length ? seriesValues : [baseline]));
+  const yMax = Math.max(baseline, target, ...(seriesValues.length ? seriesValues : [target]));
   const ySpan = yMax - yMin || 1;
 
   const x = (ms: number) =>
     pad.left + ((ms - startMs) / spanMs) * (width - pad.left - pad.right);
   const y = (v: number) =>
     height - pad.bottom - ((v - yMin) / ySpan) * (height - pad.top - pad.bottom);
+  const xOfCivil = (civilDate: string) => {
+    const ms = new Date(`${civilDate}T00:00:00Z`).getTime();
+    return x(Math.min(Math.max(ms, startMs), endMs));
+  };
 
-  const realizedPoints = snapshots
-    .map((s) => {
-      const ms = new Date(`${s.snapshotDate}T00:00:00Z`).getTime();
-      return `${x(Math.min(Math.max(ms, startMs), endMs)).toFixed(1)},${y(Number(s.achievedValue)).toFixed(1)}`;
-    })
+  const currentLine = currentPoints
+    .map((p) => `${xOfCivil(p.civilDate).toFixed(1)},${y(Number(p.accumulated)).toFixed(1)}`)
     .join(" ");
+
+  // Alinhamento por índice: mês i da janela comparada ocupa o mês i da janela
+  // atual. Sobrando meses (janelas de tamanhos diferentes), o excedente fica
+  // de fora em vez de esticar a curva para além do período.
+  const comparisonLine = comparisonPoints
+    .map((p, index) => {
+      const month = currentMonths[index];
+      if (!month) return null;
+      return `${xOfCivil(goalSeriesMonthCivilDate(month, endDate)).toFixed(1)},${y(
+        Number(p.accumulated)
+      ).toFixed(1)}`;
+    })
+    .filter((v): v is string => v != null)
+    .join(" ");
+
+  const hasAnyCurve = currentPoints.length > 0 || comparisonPoints.length > 0;
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
       className="w-full"
       role="img"
-      aria-label="Gráfico de progresso da meta: trajetória ideal e realizado"
+      aria-label="Gráfico de progresso da meta: trajetória ideal, acumulado mês a mês e período comparado"
       data-testid="burnup-chart"
     >
       {/* eixo/labels */}
@@ -151,17 +198,62 @@ function BurnUpChart({
         strokeDasharray="6 4"
       />
 
-      {/* Realizado */}
-      {snapshots.length > 0 ? (
+      {/* Período comparado (ano passado): desenhado ANTES do realizado para
+          ficar por baixo quando as duas curvas se cruzarem. */}
+      {comparisonPoints.length > 1 ? (
         <polyline
-          points={realizedPoints}
+          points={comparisonLine}
           fill="none"
-          stroke="#2563EB"
-          strokeWidth={2.5}
+          stroke="#D97706"
+          strokeWidth={2}
+          strokeDasharray="5 3"
           strokeLinejoin="round"
           strokeLinecap="round"
+          data-testid="burnup-comparison-line"
         />
-      ) : (
+      ) : null}
+
+      {/* Onde estamos: acumulado mês a mês */}
+      {currentPoints.length > 0 ? (
+        <>
+          <polyline
+            points={currentLine}
+            fill="none"
+            stroke="#2563EB"
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            data-testid="burnup-current-line"
+          />
+          {currentPoints.map((p) => (
+            <circle
+              key={p.month}
+              cx={xOfCivil(p.civilDate)}
+              cy={y(Number(p.accumulated))}
+              r={2.5}
+              fill="#2563EB"
+            />
+          ))}
+        </>
+      ) : null}
+
+      {/* Retratos diários — trilha auditável, sem competir com as curvas. */}
+      {snapshots.map((s) => (
+        <circle
+          key={s.snapshotDate}
+          cx={xOfCivil(s.snapshotDate)}
+          cy={y(Number(s.achievedValue))}
+          r={1.8}
+          fill="#1E3A8A"
+          opacity={0.45}
+        >
+          <title>
+            {civilDateBr(s.snapshotDate)}: {formatValue(s.achievedValue, keyResult.unit)}
+          </title>
+        </circle>
+      ))}
+
+      {!hasAnyCurve && snapshots.length === 0 ? (
         <text
           x={width / 2}
           y={height / 2}
@@ -169,9 +261,9 @@ function BurnUpChart({
           className="fill-current text-[11px]"
           opacity={0.6}
         >
-          Ainda sem leituras — o primeiro retrato aparece após o cálculo diário.
+          Ainda sem medição — indicador manual ou período sem movimento.
         </text>
-      )}
+      ) : null}
       {decrease ? (
         <text
           x={width - pad.right}
@@ -184,6 +276,44 @@ function BurnUpChart({
         </text>
       ) : null}
     </svg>
+  );
+}
+
+/** Legenda do gráfico — uma linha por curva, na cor da curva. */
+function ChartLegend({
+  comparisonLabel,
+  comparisonRange,
+}: {
+  comparisonLabel: string | null;
+  comparisonRange: string | null;
+}) {
+  return (
+    <div
+      className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground"
+      data-testid="burnup-legend"
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <svg width="18" height="6" aria-hidden>
+          <line x1="0" y1="3" x2="18" y2="3" stroke="#94A3B8" strokeWidth="2" strokeDasharray="6 4" />
+        </svg>
+        Trajetória ideal
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <svg width="18" height="6" aria-hidden>
+          <line x1="0" y1="3" x2="18" y2="3" stroke="#2563EB" strokeWidth="2.5" />
+        </svg>
+        Onde estamos (acumulado mês a mês)
+      </span>
+      {comparisonLabel ? (
+        <span className="inline-flex items-center gap-1.5">
+          <svg width="18" height="6" aria-hidden>
+            <line x1="0" y1="3" x2="18" y2="3" stroke="#D97706" strokeWidth="2" strokeDasharray="5 3" />
+          </svg>
+          {comparisonLabel}
+          {comparisonRange ? ` (${comparisonRange})` : ""}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -205,6 +335,8 @@ export function GoalDetailPage() {
     () => searchParams.get("kr")
   );
   const [snapshots, setSnapshots] = useState<GoalSnapshotDto[]>([]);
+  const [series, setSeries] = useState<GoalKeyResultSeriesDto | null>(null);
+  const [seriesLoading, setSeriesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshBusy, setRefreshBusy] = useState(false);
@@ -270,6 +402,7 @@ export function GoalDetailPage() {
   useEffect(() => {
     if (!selectedKrId) {
       setSnapshots([]);
+      setSeries(null);
       return;
     }
     const controller = new AbortController();
@@ -279,6 +412,18 @@ export function GoalDetailPage() {
     )
       .then((res) => setSnapshots(res.snapshots))
       .catch(() => setSnapshots([]));
+    // Curvas mensais: recalculadas pela regra a cada abertura — enxergam o
+    // período inteiro, inclusive antes de a meta existir.
+    setSeriesLoading(true);
+    fetchJsonOk<{ series: GoalKeyResultSeriesDto }>(
+      `/api/goals/key-results/${selectedKrId}/series`,
+      { signal: controller.signal }
+    )
+      .then((res) => setSeries(res.series))
+      .catch(() => setSeries(null))
+      .finally(() => {
+        if (!controller.signal.aborted) setSeriesLoading(false);
+      });
     return () => controller.abort();
   }, [selectedKrId, goal]);
 
@@ -508,12 +653,26 @@ export function GoalDetailPage() {
               <BurnUpChart
                 keyResult={selectedKr}
                 snapshots={snapshots}
+                series={series}
                 startDate={selectedKr.effectiveStartDate}
                 endDate={selectedKr.effectiveEndDate}
               />
+              <ChartLegend
+                comparisonLabel={
+                  series?.comparison
+                    ? `Mesmo período anterior (${series.comparison.label})`
+                    : null
+                }
+                comparisonRange={
+                  series?.comparison
+                    ? `${civilDateBr(series.comparison.startDate)} – ${civilDateBr(series.comparison.endDate)}`
+                    : null
+                }
+              />
               <p className="mt-1 text-[10px] text-muted-foreground">
-                Linha pontilhada: trajetória ideal. Linha azul: realizado (um retrato
-                por dia — retratos antigos nunca mudam).
+                {seriesLoading
+                  ? "Calculando as curvas mensais…"
+                  : "O acumulado mês a mês é recalculado pela regra do indicador (enxerga o período inteiro, mesmo antes de a meta existir). Os pontinhos são os retratos diários — esses nunca mudam."}
               </p>
             </section>
           ) : (
