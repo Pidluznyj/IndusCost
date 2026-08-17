@@ -28,6 +28,7 @@ import {
   buildTreasuryCaixaMonthlyBalanceChart,
   buildTreasuryCaixaMonthlyTimeline,
   buildTreasuryCaixaUnifiedTimeline,
+  resolveTreasuryCaixaChainedOpeningForToday,
   type TreasuryCaixaDayFlow,
   type TreasuryCaixaTimeline as TreasuryCaixaTimelineData,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
@@ -409,12 +410,29 @@ export function TreasuryCaixaPage() {
   // canônica do drill-down — é essa versão corrigida que alimenta tanto o
   // card "Movimento de hoje" quanto a linha "hoje" da linha do tempo, para os
   // dois nunca mais divergirem entre si.
+  /**
+   * Abertura automática de hoje quando ninguém informou saldo do dia: o
+   * fechamento do último dia realizado. Sem isso, um dia sem lançamento manual
+   * mostrava "—" em Começou/Terminou e a projeção perdia a âncora, mesmo com o
+   * saldo de ontem conhecido.
+   */
+  const chainedOpeningForToday = useMemo(
+    () =>
+      resolveTreasuryCaixaChainedOpeningForToday(
+        data?.realizedDays ?? [],
+        todayTreasuryCivilDateInSaoPaulo()
+      ),
+    [data]
+  );
+
   const correctedTodayFlow = useMemo(
     () =>
       todayFlow
-        ? applyTreasuryCaixaCanonicalTodayFlow(todayFlow, canonicalToday)
+        ? applyTreasuryCaixaCanonicalTodayFlow(todayFlow, canonicalToday, {
+            fallbackOpening: chainedOpeningForToday,
+          })
         : null,
-    [todayFlow, canonicalToday]
+    [todayFlow, canonicalToday, chainedOpeningForToday]
   );
 
   // A linha do tempo é DERIVADA das três fontes. Montá-la aqui (e não dentro de

@@ -339,22 +339,62 @@ export function buildTreasuryCaixaDayFlow(input: {
  * o que ancora a cadeia futura. A partir de D+1 o dia vira passado e volta a
  * valer só o realizado (zona REALIZED da linha do tempo, intocada).
  *
- * `opening` e `closingInformed` NÃO mudam — são âncora (saldo de conta), não
- * fluxo; o saldo informado manualmente mantém o privilégio sobre o calculado
- * (quem resolve "informado ?? calculado" é a linha do tempo/card).
+ * `closingInformed` NÃO muda — é âncora (saldo de conta), não fluxo; o saldo
+ * informado manualmente mantém o privilégio sobre o calculado (quem resolve
+ * "informado ?? calculado" é a linha do tempo/card).
  * `divergence` continua medindo informado − fechamento REALIZADO: previsão em
  * aberto não é "dinheiro que andou sem título", e contá-la ali inflaria a
  * coluna Divergência todo dia.
  *
+ * `opening` também é âncora e o informado tem privilégio, mas quando NINGUÉM
+ * informou o saldo de hoje ele deixa de ficar em branco: `fallbackOpening`
+ * (fechamento do último dia realizado — ver
+ * {@link resolveTreasuryCaixaChainedOpeningForToday}) encadeia o dia corrente
+ * no dia anterior, exatamente como a cadeia faz de um dia para o outro no
+ * passado e no futuro. Sem isso, um dia sem lançamento manual zerava a
+ * abertura, o fechamento e a âncora da projeção — a tela mostrava "—" mesmo
+ * sabendo onde o caixa parou ontem.
+ *
  * Sem `canonicalDay` (hoje fora do período consultado — a janela canônica do
- * board segue o filtro Ano/Mês/Dia da tela): devolve o flow como veio, sem
- * regredir o comportamento anterior.
+ * board segue o filtro Ano/Mês/Dia da tela): não há realizado/previsto
+ * canônico para compor, então só o encadeamento da abertura é aplicado.
  */
 export function applyTreasuryCaixaCanonicalTodayFlow(
   flow: TreasuryCaixaDayFlow,
-  canonicalDay: TreasuryCaixaCanonicalDay | null
+  canonicalDay: TreasuryCaixaCanonicalDay | null,
+  options: {
+    /**
+     * Abertura a usar quando nenhuma conta informou saldo de abertura hoje —
+     * normalmente o fechamento do último dia realizado. `null`/ausente mantém
+     * o comportamento anterior (abertura indisponível, tela mostra "—").
+     */
+    fallbackOpening?: number | null;
+  } = {}
 ): TreasuryCaixaDayFlow {
-  if (!canonicalDay) return flow;
+  const opening =
+    flow.opening != null
+      ? flow.opening
+      : options.fallbackOpening != null &&
+          Number.isFinite(options.fallbackOpening)
+        ? roundMoney(options.fallbackOpening)
+        : null;
+
+  if (!canonicalDay) {
+    if (opening === flow.opening) return flow;
+    // Sem dia canônico não há como separar realizado de previsto; recompõe o
+    // fechamento com o fluxo que o flow já trazia, só para a abertura
+    // encadeada não ficar órfã de fechamento.
+    const closingRealized = roundMoney(opening! + flow.inflows - flow.outflows);
+    return {
+      ...flow,
+      opening,
+      closingCalculated: closingRealized,
+      divergence:
+        flow.closingInformed != null
+          ? roundMoney(flow.closingInformed - closingRealized)
+          : null,
+    };
+  }
 
   const inflows = roundMoney(canonicalDay.receivableReceived);
   const outflows = roundMoney(canonicalDay.payablePaid);
@@ -362,7 +402,7 @@ export function applyTreasuryCaixaCanonicalTodayFlow(
   const predictedOutflows = roundMoney(canonicalDay.payableDue);
   /** Fechamento só com o que já foi baixado — base da divergência. */
   const closingRealized =
-    flow.opening != null ? roundMoney(flow.opening + inflows - outflows) : null;
+    opening != null ? roundMoney(opening + inflows - outflows) : null;
   const closingCalculated =
     closingRealized != null
       ? roundMoney(closingRealized + predictedInflows - predictedOutflows)
@@ -370,6 +410,7 @@ export function applyTreasuryCaixaCanonicalTodayFlow(
 
   return {
     ...flow,
+    opening,
     inflows,
     outflows,
     predictedInflows,
@@ -380,6 +421,32 @@ export function applyTreasuryCaixaCanonicalTodayFlow(
         ? roundMoney(flow.closingInformed - closingRealized)
         : null,
   };
+}
+
+/**
+ * Abertura automática do dia corrente: fechamento do ÚLTIMO dia realizado
+ * antes de hoje. É a mesma premissa que a linha do tempo já usa entre dois
+ * dias quaisquer (o dia N+1 abre onde o dia N fechou) — aqui só a aplicamos ao
+ * dia de hoje, que antes dependia de alguém informar o saldo manualmente.
+ *
+ * Dias sem movimento não viram linha, então o "último dia realizado" pode ser
+ * de alguns dias atrás (fim de semana, feriado) — o saldo atravessa o vão, que
+ * é exatamente o comportamento da cadeia. `null` quando não há nenhum dia
+ * fechado antes de hoje no período consultado: aí não se inventa abertura.
+ */
+export function resolveTreasuryCaixaChainedOpeningForToday(
+  realizedDays: readonly TreasuryCaixaRealizedDay[],
+  todayCivilDate: string
+): number | null {
+  let latest: { civilDate: string; closing: number } | null = null;
+  for (const day of realizedDays) {
+    if (day.civilDate >= todayCivilDate) continue;
+    if (day.closing == null || !Number.isFinite(day.closing)) continue;
+    if (latest == null || day.civilDate > latest.civilDate) {
+      latest = { civilDate: day.civilDate, closing: day.closing };
+    }
+  }
+  return latest ? roundMoney(latest.closing) : null;
 }
 
 /**

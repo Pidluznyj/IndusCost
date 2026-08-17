@@ -21,6 +21,7 @@ import {
   computeTreasuryCaixaTotals,
   detectTreasuryCaixaOutliers,
   resolveTreasuryCaixaCanonicalWindow,
+  resolveTreasuryCaixaChainedOpeningForToday,
   resolveTreasuryCaixaDueDateRange,
   selectTreasuryCaixaCanonicalPopulation,
   TreasuryCaixaFilterError,
@@ -696,6 +697,63 @@ describe("treasuryCaixaRules — previsão do próprio dia (regra D+1)", () => {
     const today = timeline.rows.find((r) => r.kind === "TODAY")!;
     assert.equal(today.closing, 12345);
     assert.equal(today.closingInformed, 12345);
+  });
+
+  it("sem lançamento manual, hoje abre no fechamento do último dia e fecha com a previsão", () => {
+    // Cenário real de 17/08/2026: nenhum saldo informado hoje, último dia
+    // realizado (14/08) fechou em 136.244,34, e o dia tem 75.097,78 a receber
+    // e 52.805,99 a pagar vencendo. A tela mostrava "—" em Começou/Terminou.
+    const realizedDays: TreasuryCaixaRealizedDay[] = [
+      realizedDay("2026-08-13", { closing: 134919.34 }),
+      realizedDay("2026-08-14", { closing: 136244.34 }),
+    ];
+    const fallbackOpening = resolveTreasuryCaixaChainedOpeningForToday(
+      realizedDays,
+      "2026-08-17"
+    );
+    assert.equal(fallbackOpening, 136244.34);
+
+    const flow = applyTreasuryCaixaCanonicalTodayFlow(
+      todayFlow({ civilDate: "2026-08-17", opening: null }),
+      canonicalDay({
+        civilDate: "2026-08-17",
+        receivableDue: 75097.78,
+        payableDue: 52805.99,
+      }),
+      { fallbackOpening }
+    );
+
+    assert.equal(flow.opening, 136244.34);
+    assert.equal(flow.closingCalculated, 158536.13);
+
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: "2026-08-17",
+      realizedDays,
+      todayFlow: flow,
+      forecastDays: [],
+    });
+    const today = timeline.rows.find((r) => r.kind === "TODAY")!;
+    assert.equal(today.opening, 136244.34);
+    assert.equal(today.closing, 158536.13);
+  });
+
+  it("abertura informada tem privilégio sobre a encadeada", () => {
+    const flow = applyTreasuryCaixaCanonicalTodayFlow(
+      todayFlow({ civilDate: "2026-08-17", opening: 99999 }),
+      canonicalDay({ civilDate: "2026-08-17" }),
+      { fallbackOpening: 136244.34 }
+    );
+    assert.equal(flow.opening, 99999);
+  });
+
+  it("sem nenhum dia fechado antes de hoje não inventa abertura", () => {
+    assert.equal(
+      resolveTreasuryCaixaChainedOpeningForToday(
+        [realizedDay("2026-08-17", { closing: 500 })],
+        "2026-08-17"
+      ),
+      null
+    );
   });
 
   it("dia passado (D+1 em diante) segue só com o que foi realmente pago/recebido", () => {
