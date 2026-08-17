@@ -72,6 +72,14 @@ export function GoalKeyResultWizardDialog({
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Indicador JÁ criado nesta sessão do diálogo. Se a gravação passou e um
+   * passo posterior falhou (fatias, rede caindo ao ler a resposta), tentar de
+   * novo NÃO pode criar outro indicador: a retentativa retoma de onde parou.
+   * Era assim que a tela colecionava indicadores idênticos — cada clique em
+   * "criar" depois de um erro gravava mais um.
+   */
+  const [createdKeyResult, setCreatedKeyResult] = useState<GoalKeyResultDto | null>(null);
 
   const goalWindow: CivilWindow = { startDate: goal.startDate, endDate: goal.endDate };
 
@@ -138,6 +146,8 @@ export function GoalKeyResultWizardDialog({
   async function handleSubmit() {
     setBusy(true);
     setError(null);
+    /** Só chama o pai DEPOIS do try: erro do pai não é falha de gravação. */
+    let saved: GoalKeyResultDto | null = null;
     try {
       const hasOwnPeriod =
         period.startDate !== goalWindow.startDate || period.endDate !== goalWindow.endDate;
@@ -160,38 +170,58 @@ export function GoalKeyResultWizardDialog({
             ? buildRuleFromWizardState(measure.entityKey, measure.metricKey, measure.filters)
             : null,
       };
-      const created = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
-        `/api/goals/${goal.id}/key-results`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
+      // Retentativa depois de um erro NÃO recria o indicador: se ele já foi
+      // gravado nesta sessão do diálogo, reaproveita e segue para as fatias.
+      let finalKr =
+        createdKeyResult ??
+        (
+          await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
+            `/api/goals/${goal.id}/key-results`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }
+          )
+        ).keyResult;
+      setCreatedKeyResult(finalKr);
+
       const nonEmptyQuotas = quotas.filter((q) => q.quotaValue.trim() !== "");
-      let finalKr = created.keyResult;
       if (nonEmptyQuotas.length > 0) {
-        const withQuotas = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
-          `/api/goals/key-results/${created.keyResult.id}/quotas`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              quotas: nonEmptyQuotas.map((q) => ({
-                assignedAppUserId: q.assignedAppUserId,
-                quotaValue: q.quotaValue.replace(",", "."),
-              })),
-            }),
-          }
-        );
-        finalKr = withQuotas.keyResult;
+        try {
+          const withQuotas = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
+            `/api/goals/key-results/${finalKr.id}/quotas`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                quotas: nonEmptyQuotas.map((q) => ({
+                  assignedAppUserId: q.assignedAppUserId,
+                  quotaValue: q.quotaValue.replace(",", "."),
+                })),
+              }),
+            }
+          );
+          finalKr = withQuotas.keyResult;
+        } catch (quotaErr) {
+          // O indicador EXISTE — dizer "falha ao salvar o indicador" aqui é o
+          // que levava o usuário a clicar de novo e duplicar. A mensagem
+          // separa o que foi salvo do que faltou.
+          setError(
+            `O indicador foi criado, mas as fatias da equipe não foram salvas: ${
+              quotaErr instanceof Error ? quotaErr.message : "erro desconhecido"
+            } Feche e ajuste as fatias pelo indicador — não crie outro.`
+          );
+          return;
+        }
       }
-      onCreated(finalKr);
+      saved = finalKr;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao salvar o indicador.");
     } finally {
       setBusy(false);
     }
+    if (saved) onCreated(saved);
   }
 
   const gap =
@@ -466,7 +496,11 @@ export function GoalKeyResultWizardDialog({
               onClick={() => void handleSubmit()}
               data-testid="kr-wizard-submit"
             >
-              {busy ? "Salvando…" : "Adicionar Indicador"}
+              {busy
+                ? "Salvando…"
+                : createdKeyResult
+                  ? "Tentar novamente (sem duplicar)"
+                  : "Adicionar Indicador"}
             </button>
           )}
         </div>

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -142,5 +145,50 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       />
     );
     assert.ok(!html.includes("Ligar os Motores"), "não deve reusar o texto do wizard de Objetivo");
+  });
+});
+
+/**
+ * Trava de regressão do defeito relatado em 17/08/2026: o usuário viu erro ao
+ * adicionar o indicador, clicou de novo algumas vezes e a lista acabou com
+ * quatro indicadores idênticos — as tentativas "que deram erro" tinham sido
+ * gravadas assim mesmo. O comportamento vive no fluxo assíncrono do envio, que
+ * SSR estático não exercita; a prova fica no código-fonte.
+ */
+describe("GoalKeyResultWizardDialog — retentativa não duplica o indicador", () => {
+  function source(): string {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return readFileSync(join(here, "GoalKeyResultWizardDialog.tsx"), "utf8");
+  }
+
+  it("guarda o indicador já criado e reaproveita na retentativa", () => {
+    const src = source();
+    assert.ok(src.includes("createdKeyResult"), "precisa lembrar o que já foi gravado");
+    assert.ok(
+      src.includes("createdKeyResult ??"),
+      "a retentativa reaproveita o indicador em vez de POSTar de novo"
+    );
+  });
+
+  it("falha nas fatias não é anunciada como falha do indicador", () => {
+    const src = source();
+    assert.ok(
+      src.includes("O indicador foi criado, mas as fatias"),
+      "mensagem separa o que foi salvo do que faltou"
+    );
+    assert.ok(src.includes("não crie outro"), "orienta a não repetir a criação");
+  });
+
+  it("callback do pai roda fora do try — erro dele não vira 'falha ao salvar'", () => {
+    const src = source();
+    const submitStart = src.indexOf("async function handleSubmit");
+    const submitEnd = src.indexOf("\n  }", submitStart);
+    const body = src.slice(submitStart, submitEnd);
+    const catchIdx = body.indexOf("} catch (err)");
+    assert.ok(catchIdx > 0);
+    assert.ok(
+      body.indexOf("if (saved) onCreated(saved)") > catchIdx,
+      "onCreated só depois do try/catch"
+    );
   });
 });

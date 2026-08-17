@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   GoalContractError,
+  isDuplicateGoalKeyResult,
   parseGoalAchievedValueInput,
   parseGoalCreateInput,
   parseGoalKeyResultCreateInput,
@@ -205,5 +206,81 @@ describe("período próprio do indicador", () => {
       }),
       { startCivilDate: "2026-01-01", endCivilDate: "2026-03-31" }
     );
+  });
+});
+
+describe("duplicidade de indicador — assinatura do KR", () => {
+  const base = {
+    title: "Quantidade de pedidos",
+    trackingType: "INCREASE",
+    baseline: "0",
+    target: "300",
+    unit: "un",
+    ruleJson: null as unknown,
+  };
+
+  it("mesma coisa cadastrada de novo é duplicata", () => {
+    assert.ok(isDuplicateGoalKeyResult(base, { ...base }));
+  });
+
+  it("ignora caixa, espaços extras e vírgula decimal — o usuário digitou o mesmo", () => {
+    assert.ok(
+      isDuplicateGoalKeyResult(base, {
+        ...base,
+        title: "  quantidade   de PEDIDOS ",
+        baseline: "0,00",
+        target: "300,0",
+        unit: "UN",
+      })
+    );
+  });
+
+  it("mesmo título com medição diferente NÃO é duplicata (Koppetel × Lazarios)", () => {
+    const koppetel = {
+      ...base,
+      ruleJson: {
+        entityKey: "SALES_ORDERS",
+        metricKey: "SALES_ORDER_COUNT",
+        filters: [
+          { fieldKey: "SALES_COMPANY", operator: "CONTAINS", value: "Koppetel", connector: "AND" },
+        ],
+      },
+    };
+    const lazarios = {
+      ...koppetel,
+      ruleJson: {
+        entityKey: "SALES_ORDERS",
+        metricKey: "SALES_ORDER_COUNT",
+        filters: [
+          { fieldKey: "SALES_COMPANY", operator: "CONTAINS", value: "Lazarios", connector: "AND" },
+        ],
+      },
+    };
+    assert.ok(!isDuplicateGoalKeyResult(koppetel, lazarios));
+  });
+
+  it("alvo ou base diferentes não são duplicata", () => {
+    assert.ok(!isDuplicateGoalKeyResult(base, { ...base, target: "400" }));
+    assert.ok(!isDuplicateGoalKeyResult(base, { ...base, baseline: "50" }));
+  });
+
+  it("regra idêntica com chaves em outra ordem continua sendo duplicata (jsonb reordena)", () => {
+    const a = {
+      ...base,
+      ruleJson: { entityKey: "SALES_ORDERS", metricKey: "SALES_ORDER_COUNT", filters: [] },
+    };
+    const b = {
+      ...base,
+      ruleJson: { filters: [], metricKey: "SALES_ORDER_COUNT", entityKey: "SALES_ORDERS" },
+    };
+    assert.ok(isDuplicateGoalKeyResult(a, b));
+  });
+
+  it("manual × automático nunca colidem", () => {
+    const automatico = {
+      ...base,
+      ruleJson: { entityKey: "SALES_ORDERS", metricKey: "SALES_ORDER_COUNT", filters: [] },
+    };
+    assert.ok(!isDuplicateGoalKeyResult(base, automatico));
   });
 });

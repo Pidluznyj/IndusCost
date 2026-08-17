@@ -168,6 +168,69 @@ export type GoalKeyResultSeriesDto = {
   } | null;
 };
 
+// ─── Duplicidade de indicador ───────────────────────────────────────────────
+
+/**
+ * Assinatura de um indicador dentro do objetivo — o que precisa coincidir para
+ * ele ser considerado o MESMO indicador, e não um irmão legítimo.
+ *
+ * Título igual sozinho não basta: "Quantidade de pedidos" da Koppetel e da
+ * Lazarios são dois indicadores válidos com o mesmo nome e regras diferentes.
+ * Duplicata é quando título, tipo de acompanhamento, base, alvo, unidade E
+ * medição são idênticos — aí não há como o usuário distinguir os dois na tela,
+ * nem motivo para os dois existirem.
+ */
+export type GoalKeyResultSignature = {
+  title: string;
+  trackingType: string;
+  baseline: string;
+  target: string;
+  unit: string | null;
+  /** Regra normalizada do motor, ou null/undefined para lançamento manual. */
+  ruleJson: unknown;
+};
+
+function normalizeSignatureTitle(title: string): string {
+  return title.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+function normalizeSignatureNumber(value: string): string {
+  const parsed = Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) ? String(parsed) : String(value).trim();
+}
+
+/**
+ * JSON estável: jsonb do Postgres não preserva a ordem das chaves, então a
+ * regra lida do banco pode voltar com as chaves em outra ordem que a recém
+ * normalizada. Sem ordenar, duas regras idênticas pareceriam diferentes.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+export function goalKeyResultSignatureKey(kr: GoalKeyResultSignature): string {
+  return [
+    normalizeSignatureTitle(kr.title),
+    kr.trackingType,
+    normalizeSignatureNumber(kr.baseline),
+    normalizeSignatureNumber(kr.target),
+    (kr.unit ?? "").trim().toLocaleLowerCase("pt-BR"),
+    kr.ruleJson == null ? "MANUAL" : stableStringify(kr.ruleJson),
+  ].join("|");
+}
+
+export function isDuplicateGoalKeyResult(
+  a: GoalKeyResultSignature,
+  b: GoalKeyResultSignature
+): boolean {
+  return goalKeyResultSignatureKey(a) === goalKeyResultSignatureKey(b);
+}
+
 // ─── Parse helpers ──────────────────────────────────────────────────────────
 
 function parseRequiredString(value: unknown, field: string, maxLen = 300): string {

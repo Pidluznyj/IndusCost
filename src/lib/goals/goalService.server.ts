@@ -21,6 +21,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   GOAL_TARGET_COMPARISON_MODE_LABELS,
   GoalContractError,
+  isDuplicateGoalKeyResult,
   computeGoalTargetFromComparison,
   resolveGoalMeasurementWindow,
   resolveGoalTargetComparisonWindow,
@@ -748,6 +749,50 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         throw new GoalDomainError(
           "VALIDATION_ERROR",
           "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
+        );
+      }
+
+      // Trava de duplicidade: uma tentativa que falhou DEPOIS da gravação (ex.:
+      // erro ao salvar as fatias, queda de rede lendo a resposta) deixa o
+      // indicador criado, e o usuário — vendo a mensagem de erro — clica de
+      // novo. Sem esta trava, cada nova tentativa criava outro indicador
+      // idêntico e a lista virava um borrão de linhas iguais.
+      const sameTitle = await prisma.goalKeyResult.findMany({
+        where: { goalId, title: input.title },
+        select: {
+          id: true,
+          title: true,
+          trackingType: true,
+          baseline: true,
+          target: true,
+          unit: true,
+          ruleJson: true,
+        },
+      });
+      const signature = {
+        title: input.title,
+        trackingType: input.trackingType,
+        baseline: input.baseline,
+        target: resolvedTarget,
+        unit: input.unit,
+        ruleJson: rule,
+      };
+      if (
+        sameTitle.some((existing) =>
+          isDuplicateGoalKeyResult(signature, {
+            title: existing.title,
+            trackingType: existing.trackingType,
+            baseline: decimalToString(existing.baseline),
+            target: decimalToString(existing.target),
+            unit: existing.unit,
+            ruleJson: existing.ruleJson ?? null,
+          })
+        )
+      ) {
+        throw new GoalDomainError(
+          "CONFLICT",
+          "Este objetivo já tem um indicador idêntico (mesmo título, mesma medição e mesmo alvo). " +
+            "Se a tentativa anterior mostrou erro, ela pode ter sido salva mesmo assim — confira a lista antes de criar outro."
         );
       }
 
