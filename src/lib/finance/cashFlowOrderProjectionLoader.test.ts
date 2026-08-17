@@ -313,6 +313,138 @@ describe("LIGHT LOADER — Fluxo de Caixa", () => {
     );
   });
 
+  it("REGRESSÃO: datas do documento vêm do fact quando ele existe", async () => {
+    // Precedência do audit: o laço de facts cria a entrada do documento e
+    // grava dataDocumento/dataMovimentacao a partir de fact.stockDocumentDate.
+    // O stage só vale quando não há fact. Ler o stage direto zerava
+    // dataMovimentacao em 27 dos 80 pedidos do shadow real.
+    const FACT_DATE = new Date("2026-02-20T00:00:00.000Z");
+    const STAGE_DOC_DATE = new Date("2026-01-10T00:00:00.000Z");
+
+    const data = dataset();
+    data.salesOrder = [order("W", { nfeLinks: [nfeLink(900)] })];
+    data.salesOrderNfeLink = [
+      { salesOrderId: "W", orderCode: "PV-W", nfeExternalId: 900, nfeKey: "CHAVE-900" },
+    ];
+    data.orderToCashAuditFact = [
+      {
+        id: "f1",
+        salesOrderId: "W",
+        runId: "run-1",
+        createdAt: new Date("2026-02-01T00:00:00.000Z"),
+        orderItemSequence: 1,
+        salesOrderItemId: "W-I1",
+        nfeExternalId: 900,
+        nfeNumber: "900",
+        nfeKey: "CHAVE-900",
+        nfeHeaderValue: "1000",
+        nfeItemMatchedOrderItem: true,
+        stockDocumentExternalId: 7001,
+        stockDocumentDate: FACT_DATE,
+        stockDocumentIdNfe: 900,
+        stockDocumentItemId: "sdi-1",
+        stockDocumentItemExternalProductId: 11,
+        allocatedValueByDocumentPrice: "1000",
+        quantityUsedForOrder: "1",
+      },
+    ];
+    // Documento COM fact: o stage tem movementDate NULO — é o caso real.
+    // Documento SEM fact (7002): o stage prevalece.
+    data.nomusStockDocument = [
+      {
+        id: "doc-7001",
+        externalId: 7001,
+        idNfe: 900,
+        tipoDocumentoEstoque: "DocumentoSaida",
+        dataDocumento: STAGE_DOC_DATE,
+        documentNumber: "DS-7001",
+        statusRaw: "Confirmado",
+        isCancelled: false,
+        totalValue: "1000",
+        personExternalId: 1,
+        personName: "Cliente Alfa",
+        companyExternalId: 2,
+        companyName: "Koppetel",
+        movementDate: null,
+        paymentTermsRaw: "30/60",
+      },
+    ];
+    data.nomusStockDocumentItem = [
+      {
+        id: "sdi-1",
+        stockDocumentId: "doc-7001",
+        externalItemId: 1,
+        externalProductId: 11,
+        quantity: "1",
+        unitValue: "1000",
+        estimatedTotalValue: "1000",
+        createdAt: new Date("2026-01-10T00:00:00.000Z"),
+      },
+    ];
+
+    const { prisma } = makePrisma(data);
+    const out = await loadCashFlowOrderProjections(prisma, {
+      salesOrderIds: ["W"],
+      referenceDate: REFERENCE_DATE,
+    });
+
+    const doc = out.get("W")?.stockDocuments[0];
+    assert.ok(doc, "documento precisa chegar");
+    assert.equal(
+      doc.dataMovimentacao,
+      FACT_DATE.toISOString(),
+      "dataMovimentacao tem de vir do fact, não do stage (que é nulo)"
+    );
+    assert.equal(
+      doc.dataDocumento,
+      FACT_DATE.toISOString(),
+      "dataDocumento segue a mesma precedência do audit"
+    );
+  });
+
+  it("sem fact para o documento, as datas vêm do stage", async () => {
+    const STAGE_DOC = new Date("2026-01-10T00:00:00.000Z");
+    const STAGE_MOV = new Date("2026-01-11T00:00:00.000Z");
+
+    const data = dataset();
+    data.salesOrder = [order("V", { nfeLinks: [nfeLink(900)] })];
+    data.salesOrderNfeLink = [
+      { salesOrderId: "V", orderCode: "PV-V", nfeExternalId: 900, nfeKey: "CHAVE-900" },
+    ];
+    data.orderToCashAuditFact = [];
+    data.nomusStockDocument = [
+      {
+        id: "doc-7009",
+        externalId: 7009,
+        idNfe: 900,
+        tipoDocumentoEstoque: "DocumentoSaida",
+        dataDocumento: STAGE_DOC,
+        documentNumber: "DS-7009",
+        statusRaw: "Confirmado",
+        isCancelled: false,
+        totalValue: "1000",
+        personExternalId: 1,
+        personName: "Cliente Alfa",
+        companyExternalId: 2,
+        companyName: "Koppetel",
+        movementDate: STAGE_MOV,
+        paymentTermsRaw: "30/60",
+      },
+    ];
+    data.nomusStockDocumentItem = [];
+
+    const { prisma } = makePrisma(data);
+    const out = await loadCashFlowOrderProjections(prisma, {
+      salesOrderIds: ["V"],
+      referenceDate: REFERENCE_DATE,
+    });
+
+    const doc = out.get("V")?.stockDocuments[0];
+    assert.ok(doc);
+    assert.equal(doc.dataDocumento, STAGE_DOC.toISOString());
+    assert.equal(doc.dataMovimentacao, STAGE_MOV.toISOString());
+  });
+
   it("cut e stale chegam projetados como tal", async () => {
     const data = dataset();
     data.salesOrder = [
