@@ -6,6 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import type { FinanceArNfeOrderLink } from "./financeArOperationalPortfolio.js";
+import type { CashFlowProjectionMode } from "./cashFlowLightProjectionFlag.js";
 import {
   loadFinanceArEffectiveOrderContexts,
   loadFinanceArEffectiveOrderContextsForPortfolio,
@@ -16,6 +17,12 @@ import {
 export type FinanceCashFlowArEnrichInput = {
   customerName?: string | null;
   personCnpj?: string | null;
+  /**
+   * Fonte da projeção dos pedidos. Default `"legacy"`: só os três endpoints
+   * do Fluxo de Caixa passam `"light"`, e só com a flag ligada. Relatório
+   * executivo e tesouraria não informam este campo e seguem no caminho antigo.
+   */
+  projectionMode?: CashFlowProjectionMode;
 };
 
 export type FinanceCashFlowArLoadBundle = {
@@ -27,12 +34,15 @@ export type FinanceCashFlowArLoadBundle = {
 export async function loadFinanceCashFlowArOrderContexts(
   prisma: PrismaClient,
   arRows: FinanceCashFlowArRow[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  projectionMode: CashFlowProjectionMode = "legacy"
 ): Promise<FinanceArEffectiveOrderContext[]> {
   return loadFinanceArEffectiveOrderContextsForPortfolio(
     prisma,
     arRows,
-    referenceDate
+    referenceDate,
+    undefined,
+    projectionMode
   );
 }
 
@@ -42,6 +52,8 @@ export async function enrichFinanceCashFlowArLoadBundle(
   referenceDate: Date = new Date(),
   enrichInput?: FinanceCashFlowArEnrichInput
 ): Promise<FinanceCashFlowArLoadBundle> {
+  const projectionMode: CashFlowProjectionMode =
+    enrichInput?.projectionMode ?? "legacy";
   const [customerContexts, portfolioContexts, nfeOrderLinks] = await Promise.all([
     loadFinanceArEffectiveOrderContexts(
       prisma,
@@ -50,9 +62,15 @@ export async function enrichFinanceCashFlowArLoadBundle(
         customerPersonId: null,
         document: enrichInput?.personCnpj,
       },
-      referenceDate
+      referenceDate,
+      projectionMode
     ),
-    loadFinanceCashFlowArOrderContexts(prisma, arRows, referenceDate),
+    loadFinanceCashFlowArOrderContexts(
+      prisma,
+      arRows,
+      referenceDate,
+      projectionMode
+    ),
     resolveFinanceArNfeOrderLinksFromRows(prisma, arRows),
   ]);
   const orderContexts = mergeFinanceArEffectiveOrderContexts(

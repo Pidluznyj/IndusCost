@@ -65,6 +65,10 @@ import {
 } from "@/src/lib/financeCashFlowDashboard.js";
 import { loadAnnualComparisonPortfolioRows } from "@/src/lib/financeExecutiveReportAnnualLoad.js";
 import { loadFinanceArTitlesSourceBundle } from "@/src/lib/finance/financeArEffectiveTitlesSource.server.js";
+import {
+  resolveCashFlowProjectionMode,
+  type CashFlowProjectionMode,
+} from "@/src/lib/finance/cashFlowLightProjectionFlag.js";
 import type { FinanceArTitlesSourceBundle } from "@/src/lib/finance/financeArEffectiveTitlesSource.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
@@ -100,7 +104,10 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
   }
 }
 
-async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>) {
+async function loadCashFlowRows(
+  filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>,
+  projectionMode: CashFlowProjectionMode = "legacy"
+) {
   const referenceDate = new Date();
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
@@ -108,6 +115,7 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
     loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
       customerName: filters.customerName,
       personCnpj: filters.personCnpj,
+      projectionMode,
     }),
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
@@ -129,12 +137,17 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
 }
 
 /** Carrega portfólio AR/AP aberto sem recorte de período — independente dos filtros da página. */
-async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
+async function loadDailyRadarPortfolioRows(
+  referenceDate = new Date(),
+  projectionMode: CashFlowProjectionMode = "legacy"
+) {
   const filters = createDailyRadarDashboardFilters();
   const arFilters = toCashFlowPortfolioArFilters(filters);
   const apFilters = toCashFlowPortfolioApFilters(filters);
   const [arBundle, apSyncCutoff] = await Promise.all([
-    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate),
+    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
+      projectionMode,
+    }),
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
   const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
@@ -198,7 +211,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const load = await loadCashFlowRows(filters);
+      const load = await loadCashFlowRows(
+        filters,
+        resolveCashFlowProjectionMode()
+      );
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
       const auditMode = String(req.query.audit ?? "").trim() === "1";
@@ -271,7 +287,12 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       try {
         const referenceDate = new Date();
         const year = parseAnnualComparisonYear(req.query.year, referenceDate);
-        const load = await loadAnnualComparisonPortfolioRows(prisma, referenceDate);
+        const load = await loadAnnualComparisonPortfolioRows(
+          prisma,
+          referenceDate,
+          undefined,
+          resolveCashFlowProjectionMode()
+        );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts, nfeOrderLinks } = load;
         const payload = buildCashFlowAnnualComparison(
           arRows,
@@ -566,7 +587,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         }
       }
       const referenceDate = new Date();
-      const load = await loadDailyRadarPortfolioRows(referenceDate);
+      const load = await loadDailyRadarPortfolioRows(
+        referenceDate,
+        resolveCashFlowProjectionMode()
+      );
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
       const portfolio = filterDailyRadarPortfolioRows(
