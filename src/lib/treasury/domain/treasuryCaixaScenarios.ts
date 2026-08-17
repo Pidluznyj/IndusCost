@@ -14,6 +14,10 @@
  *       closingCenario(N) = opening + realizedInflows − realizedOutflows
  *                                    + projectedInInScenario
  *                                    − projectedOutInScenario
+ *   - Dia de HOJE (= asOf) soma as DUAS coisas (regra D+1): o já baixado
+ *     (realized*) e o que vence hoje ainda em aberto — a confirmação da baixa
+ *     no sistema só acontece no dia seguinte. Dimensões disjuntas, sem
+ *     duplicação; mesma composição da linha HOJE da Linha do tempo.
  *
  * Não reescreve dueDate, não dá baixa, não move dinheiro. Só recoloca o
  * saldo em aberto do título numa data operacional dentro do cenário.
@@ -752,13 +756,18 @@ export function computeTreasuryCaixaScenarios(
         dayRealizedInflows = 0;
         dayRealizedOutflows = 0;
       } else if (isRealisticTimeline) {
-        // Dia HOJE (civilDate === asOf): é fato, não projeção — usa só o
-        // realizado do canonicalDay (mesma regra que classifica "hoje" como
-        // kind TODAY = realizado). Não soma dailyDueEstimates em cima —
-        // "A receber/pagar hoje" (em aberto) é dimensão separada de
-        // "Recebido/Pago hoje" (baixado), e aqui só a baixada conta.
-        receivableInflows = 0;
-        payableOutflows = 0;
+        // Dia HOJE (civilDate === asOf) — REGRA D+1: a confirmação da baixa no
+        // sistema só acontece no dia seguinte, então o dia corrente soma o que
+        // já foi baixado (canonicalDay.realized*, mantido em dayRealized*) COM
+        // o que vence hoje e continua em aberto (base da Linha do tempo).
+        // Somar não duplica: "Recebido/Pago hoje" (baixado) e "A receber/pagar
+        // hoje" (em aberto) são dimensões disjuntas por construção — título
+        // baixado sai do saldo em aberto; baixa parcial deixa só o resto.
+        // É a MESMA composição da linha HOJE da Linha do tempo
+        // (`applyTreasuryCaixaCanonicalTodayFlow`), que o Realista precisa
+        // reproduzir no centavo.
+        receivableInflows = timelineBase!.estimatedInflow;
+        payableOutflows = timelineBase!.estimatedOutflow;
       } else {
         receivableInflows = arList.reduce((s, x) => s + x.amount, 0);
         payableOutflows = apList.reduce((s, x) => s + x.amount, 0);

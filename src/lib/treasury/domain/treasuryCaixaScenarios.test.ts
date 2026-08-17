@@ -530,10 +530,12 @@ describe("computeTreasuryCaixaScenarios — invariantes centrais", () => {
     assert.equal(d10.realistic.closingBalance, 105000, "100000 + 5000, não 135000");
   });
 
-  it("dia HOJE (civilDate === asOf) usa só o realizado, NÃO soma dailyDueEstimates em cima", () => {
-    // "Hoje" é fato (kind TODAY = realizado), não projeção. "A receber hoje"
-    // (em aberto) é dimensão SEPARADA de "Recebido hoje" (baixado) — aqui
-    // só o baixado deve entrar na cadeia de saldo do Realista.
+  it("dia HOJE (civilDate === asOf) soma realizado + previsão do dia (regra D+1)", () => {
+    // Regra D+1 (17/08/2026): a baixa só é confirmada no dia seguinte, então
+    // durante o próprio dia o Realista precisa considerar o que vence hoje e
+    // ainda está em aberto — as duas dimensões são DISJUNTAS ("Recebido hoje"
+    // = baixado; "A receber hoje" = em aberto), então somar não duplica. Sem
+    // isto o Realista divergiria da linha HOJE da Linha do tempo.
     const timelineBase = new Map([
       ["2026-08-05", { estimatedInflow: 11030.66, estimatedOutflow: 55138.7 }],
     ]);
@@ -553,10 +555,14 @@ describe("computeTreasuryCaixaScenarios — invariantes centrais", () => {
       dailyDueEstimatesByDate: timelineBase,
     });
     const today = result.days[0]!;
-    // Só o realizado (487.50) — NÃO soma os 11.030,66 em aberto.
-    assert.equal(today.realistic.receivableInflows, 0);
-    assert.equal(today.realistic.payableOutflows, 0);
-    assert.equal(today.realistic.closingBalance, 4008337.58, "4007850.08 + 487.50");
+    // Previsão do próprio dia entra; o realizado (487,50) continua na cadeia.
+    assert.equal(today.realistic.receivableInflows, 11030.66);
+    assert.equal(today.realistic.payableOutflows, 55138.7);
+    assert.equal(
+      today.realistic.closingBalance,
+      3964229.54,
+      "abertura + recebido hoje + a receber hoje − a pagar hoje"
+    );
   });
 
   it("Σ dos dias futuros do Realista == Σ dailyDueEstimates do período (fecha com a Linha do tempo)", () => {

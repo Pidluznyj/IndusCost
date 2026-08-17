@@ -534,8 +534,9 @@ describe("treasuryCaixaRules — applyTreasuryCaixaCanonicalTodayFlow", () => {
 
     assert.equal(corrected.outflows, 0);
     assert.equal(corrected.inflows, 12000);
-    // Fechamento recomposto: abertura + entradas canônicas − saídas canônicas.
-    assert.equal(corrected.closingCalculated, 512000);
+    // Fechamento recomposto: abertura + realizado canônico + previsão do dia
+    // (regra D+1): 500000 + 12000 − 0 + 15000 − 22418,89.
+    assert.equal(corrected.closingCalculated, 504581.11);
   });
 
   it("preserva abertura e saldo informado (âncora manual, não vira fluxo)", () => {
@@ -586,6 +587,143 @@ describe("treasuryCaixaRules — applyTreasuryCaixaCanonicalTodayFlow", () => {
     const once = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
     const twice = applyTreasuryCaixaCanonicalTodayFlow(once, day);
     assert.deepEqual(once, twice);
+  });
+});
+
+/**
+ * Regra D+1 (pedido do negócio, 17/08/2026): a confirmação de baixa só acontece
+ * no dia seguinte, então DURANTE o dia de hoje o caixa tem que considerar a
+ * PREVISÃO do próprio dia (títulos em aberto vencendo hoje). A partir de D+1 o
+ * dia vira passado e passa a valer só o que foi realmente pago/recebido.
+ */
+describe("treasuryCaixaRules — previsão do próprio dia (regra D+1)", () => {
+  it("hoje: previsão do dia entra como previsto e move o fechamento calculado", () => {
+    const flow = todayFlow({
+      opening: 500000,
+      inflows: 80000,
+      outflows: 199286.45,
+      closingCalculated: 500000 + 80000 - 199286.45,
+    });
+    const day = canonicalDay({
+      receivableDue: 15000,
+      payableDue: 22418.89,
+      receivableReceived: 12000,
+      payablePaid: 0,
+    });
+
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+
+    // Realizado continua separado (o card "Movimento de hoje" mostra os dois).
+    assert.equal(corrected.inflows, 12000);
+    assert.equal(corrected.outflows, 0);
+    // Previsão do dia = títulos em aberto vencendo hoje.
+    assert.equal(corrected.predictedInflows, 15000);
+    assert.equal(corrected.predictedOutflows, 22418.89);
+    // Fechamento calculado = abertura + realizado + previsto.
+    assert.equal(
+      corrected.closingCalculated,
+      500000 + 12000 - 0 + 15000 - 22418.89
+    );
+  });
+
+  it("divergência continua medindo informado − REALIZADO (previsão não vira divergência)", () => {
+    const flow = todayFlow({
+      opening: 1000,
+      closingInformed: 900,
+    });
+    const day = canonicalDay({
+      receivableReceived: 50,
+      payablePaid: 20,
+      receivableDue: 400,
+      payableDue: 700,
+    });
+
+    const corrected = applyTreasuryCaixaCanonicalTodayFlow(flow, day);
+
+    // Projetado: 1000 + 50 − 20 + 400 − 700 = 730.
+    assert.equal(corrected.closingCalculated, 730);
+    // Divergência contra o REALIZADO (1000+50−20=1030): 900 − 1030 = −130.
+    assert.equal(corrected.divergence, -130);
+  });
+
+  it("linha do tempo: HOJE soma realizado + previsto e ancora o futuro no projetado", () => {
+    const flow = applyTreasuryCaixaCanonicalTodayFlow(
+      todayFlow({ civilDate: TODAY, opening: 10000 }),
+      canonicalDay({
+        civilDate: TODAY,
+        receivableReceived: 1000,
+        payablePaid: 500,
+        receivableDue: 3000,
+        payableDue: 8000,
+      })
+    );
+
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: flow,
+      forecastDays: [],
+    });
+
+    const today = timeline.rows.find((r) => r.kind === "TODAY")!;
+    assert.equal(today.inflows, 4000); // 1000 recebido + 3000 a receber hoje
+    assert.equal(today.outflows, 8500); // 500 pago + 8000 a pagar hoje
+    // Parte prevista fica destacada para a UI separar do realizado.
+    assert.equal(today.forecastInflows, 3000);
+    assert.equal(today.forecastOutflows, 8000);
+    assert.equal(today.closing, 10000 + 4000 - 8500);
+  });
+
+  it("linha do tempo: saldo informado manual mantém o privilégio sobre o calculado", () => {
+    const flow = applyTreasuryCaixaCanonicalTodayFlow(
+      todayFlow({ civilDate: TODAY, opening: 10000, closingInformed: 12345 }),
+      canonicalDay({
+        civilDate: TODAY,
+        receivableReceived: 1000,
+        payablePaid: 500,
+        receivableDue: 3000,
+        payableDue: 8000,
+      })
+    );
+
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [],
+      todayFlow: flow,
+      forecastDays: [],
+    });
+
+    const today = timeline.rows.find((r) => r.kind === "TODAY")!;
+    assert.equal(today.closing, 12345);
+    assert.equal(today.closingInformed, 12345);
+  });
+
+  it("dia passado (D+1 em diante) segue só com o que foi realmente pago/recebido", () => {
+    const timeline = buildTreasuryCaixaUnifiedTimeline({
+      todayCivilDate: TODAY,
+      realizedDays: [
+        {
+          civilDate: "2026-08-02",
+          inflows: 700,
+          outflows: 200,
+          receivableCount: 1,
+          payableCount: 1,
+          opening: 1000,
+          closing: 1500,
+          closingCalculated: 1500,
+          closingInformed: null,
+          divergence: null,
+        },
+      ],
+      todayFlow: null,
+      forecastDays: [],
+    });
+
+    const past = timeline.rows.find((r) => r.civilDate === "2026-08-02")!;
+    assert.equal(past.kind, "REALIZED");
+    assert.equal(past.inflows, 700);
+    assert.equal(past.outflows, 200);
+    assert.equal(past.forecastInflows, undefined);
   });
 });
 

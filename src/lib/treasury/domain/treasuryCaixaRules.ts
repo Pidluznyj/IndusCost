@@ -214,19 +214,22 @@ export type TreasuryCaixaDayFlow = {
   inflows: number;
   outflows: number;
   /**
-   * @deprecated Use `TreasuryCaixaBoardDto.canonicalDays[hoje].receivableDue`
-   * (motor único-de-dia da Fase A) — mesma regra, com a lista de títulos que
-   * fecha o total no centavo. Este campo mistura carregamento em duas
-   * chamadas (`/today/closing` + AR/AP overhead) que a nova rota já cobre.
-   * Removido em cutover — mantido só enquanto o card antigo estiver no ar.
+   * PREVISÃO do próprio dia: CR em aberto vencendo hoje. Preenchido por
+   * {@link applyTreasuryCaixaCanonicalTodayFlow} a partir de
+   * `canonicalDays[hoje].receivableDue` (motor único-de-dia) — nunca calculado
+   * aqui. `null` quando hoje ficou fora do período consultado.
+   *
+   * Regra D+1 (negócio): a confirmação de baixa só acontece no dia seguinte,
+   * então durante o próprio dia o caixa considera o previsto; a partir de D+1
+   * o dia vira passado e vale só o realizado.
    */
   predictedInflows?: number | null;
-  /**
-   * @deprecated Use `TreasuryCaixaBoardDto.canonicalDays[hoje].payableDue`.
-   * Mesma justificativa de `predictedInflows`.
-   */
+  /** PREVISÃO do próprio dia: CP em aberto vencendo hoje (`payableDue`). */
   predictedOutflows?: number | null;
-  /** Fechamento calculado pelo motor (abertura + entradas − saídas). */
+  /**
+   * Fechamento calculado do dia: abertura + realizado + PREVISTO do próprio
+   * dia (regra D+1). Sem previsão preenchida, é abertura + realizado.
+   */
   closingCalculated: number | null;
   /** Fechamento informado no extrato; null se ninguém informou ainda. */
   closingInformed: number | null;
@@ -236,6 +239,11 @@ export type TreasuryCaixaDayFlow = {
   /** Quantas contas ainda não têm fechamento informado. */
   pendingClosingCount: number;
 };
+
+/** Ausência de previsão vale zero no fluxo — diferente de saldo, onde null é "—". */
+function numOrZero(value: number | null | undefined): number {
+  return value != null && Number.isFinite(value) ? roundMoney(value) : 0;
+}
 
 /** Soma tratando null como ausência: se ninguém informou, o total é null (não zero). */
 function sumNullable(values: readonly (number | null)[]): number | null {
@@ -321,10 +329,22 @@ export function buildTreasuryCaixaDayFlow(input: {
  * `canonicalDay.receivableReceived` (CR) e `canonicalDay.payablePaid` (CP) —
  * ambas do motor único-de-dia, já cientes da regra dos 3 dias.
  *
+ * REGRA D+1 (pedido do negócio, 17/08/2026): a confirmação de baixa no sistema
+ * só acontece no dia SEGUINTE. Durante o próprio dia, portanto, o realizado
+ * ainda não existe e o caixa tem que enxergar a PREVISÃO do dia — os títulos em
+ * aberto vencendo hoje (`receivableDue`/`payableDue`, dimensões DISJUNTAS do
+ * realizado por construção: título baixado sai do "em aberto"; baixa parcial
+ * soma exatamente o saldo que falta, sem dupla contagem). Ela vai para
+ * `predictedInflows`/`predictedOutflows` e entra no `closingCalculated`, que é
+ * o que ancora a cadeia futura. A partir de D+1 o dia vira passado e volta a
+ * valer só o realizado (zona REALIZED da linha do tempo, intocada).
+ *
  * `opening` e `closingInformed` NÃO mudam — são âncora (saldo de conta), não
- * fluxo. `closingCalculated`/`divergence` são recompostos para continuar
- * batendo com os novos `inflows`/`outflows` (mesma fórmula do motor:
- * abertura + entradas − saídas).
+ * fluxo; o saldo informado manualmente mantém o privilégio sobre o calculado
+ * (quem resolve "informado ?? calculado" é a linha do tempo/card).
+ * `divergence` continua medindo informado − fechamento REALIZADO: previsão em
+ * aberto não é "dinheiro que andou sem título", e contá-la ali inflaria a
+ * coluna Divergência todo dia.
  *
  * Sem `canonicalDay` (hoje fora do período consultado — a janela canônica do
  * board segue o filtro Ano/Mês/Dia da tela): devolve o flow como veio, sem
@@ -338,17 +358,26 @@ export function applyTreasuryCaixaCanonicalTodayFlow(
 
   const inflows = roundMoney(canonicalDay.receivableReceived);
   const outflows = roundMoney(canonicalDay.payablePaid);
-  const closingCalculated =
+  const predictedInflows = roundMoney(canonicalDay.receivableDue);
+  const predictedOutflows = roundMoney(canonicalDay.payableDue);
+  /** Fechamento só com o que já foi baixado — base da divergência. */
+  const closingRealized =
     flow.opening != null ? roundMoney(flow.opening + inflows - outflows) : null;
+  const closingCalculated =
+    closingRealized != null
+      ? roundMoney(closingRealized + predictedInflows - predictedOutflows)
+      : null;
 
   return {
     ...flow,
     inflows,
     outflows,
+    predictedInflows,
+    predictedOutflows,
     closingCalculated,
     divergence:
-      flow.closingInformed != null && closingCalculated != null
-        ? roundMoney(flow.closingInformed - closingCalculated)
+      flow.closingInformed != null && closingRealized != null
+        ? roundMoney(flow.closingInformed - closingRealized)
         : null,
   };
 }
@@ -407,6 +436,15 @@ export type TreasuryCaixaTimelineRow = {
    * agenda, que vem da projeção dia a dia oficial.
    */
   estimated?: boolean;
+  /**
+   * Parte de `inflows`/`outflows` que ainda é PREVISÃO no dia de HOJE (títulos
+   * em aberto vencendo hoje — regra D+1). Só a linha TODAY preenche; a UI usa
+   * para separar visualmente o que já aconteceu do que ainda vai acontecer.
+   * `undefined` quando não há previsão a destacar (dias passados e futuros,
+   * onde a linha inteira já é realizada ou já é previsão).
+   */
+  forecastInflows?: number;
+  forecastOutflows?: number;
 };
 
 export type TreasuryCaixaTimeline = {
@@ -957,12 +995,14 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
     });
   }
 
-  // Hoje: o FATO manda. O saldo informado manualmente é a realidade e sempre
-  // tem prioridade sobre qualquer número calculado/projetado — a linha de hoje
-  // mostra exatamente os 4 números do bloco "Movimento de hoje" (começou
-  // informado, entrou/saiu realizados, terminou informado ?? calculado).
-  // A projeção NÃO substitui hoje: ela é um retrato congelado que assume que
-  // todo título previsto andou — e é justamente isso que a realidade corrige.
+  // Hoje: o FATO manda, e o que ainda não virou fato entra como previsão do
+  // próprio dia (regra D+1 — a baixa só é confirmada no sistema no dia
+  // seguinte, então "Entrou/Saiu" de hoje = realizado + títulos em aberto
+  // vencendo hoje, que `applyTreasuryCaixaCanonicalTodayFlow` já separou em
+  // `predicted*`). O saldo informado manualmente continua tendo prioridade
+  // sobre qualquer número calculado/projetado.
+  // A projeção da agenda NÃO substitui hoje: ela é um retrato congelado que
+  // assume que todo título previsto andou — e é a realidade que a corrige.
   // A agenda só preenche hoje como fallback quando o fluxo do dia não carregou.
   const agendaToday = input.forecastDays.find(
     (d) => d.civilDate === input.todayCivilDate
@@ -972,17 +1012,21 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
   if (input.todayFlow) {
     const closing =
       input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
+    const forecastInflows = numOrZero(input.todayFlow.predictedInflows);
+    const forecastOutflows = numOrZero(input.todayFlow.predictedOutflows);
     rows.push({
       civilDate: input.todayFlow.civilDate,
       kind: "TODAY",
       opening: input.todayFlow.opening,
-      inflows: input.todayFlow.inflows,
-      outflows: input.todayFlow.outflows,
+      inflows: roundMoney(input.todayFlow.inflows + forecastInflows),
+      outflows: roundMoney(input.todayFlow.outflows + forecastOutflows),
       closing,
       closingCalculated: input.todayFlow.closingCalculated,
       closingInformed: input.todayFlow.closingInformed,
       divergence: input.todayFlow.divergence,
       negative: closing != null && closing < 0,
+      forecastInflows: forecastInflows > 0 ? forecastInflows : undefined,
+      forecastOutflows: forecastOutflows > 0 ? forecastOutflows : undefined,
     });
     anchorClosing = closing;
   } else if (agendaToday) {

@@ -295,14 +295,13 @@ export function TreasuryCaixaPage() {
                       ? null
                       : treasuryMoneyToNumber(a.informedClosingBalance),
                 })),
-              predictedInflows:
-                closing.predictedTodayInflows == null
-                  ? null
-                  : treasuryMoneyToNumber(closing.predictedTodayInflows),
-              predictedOutflows:
-                closing.predictedTodayOutflows == null
-                  ? null
-                  : treasuryMoneyToNumber(closing.predictedTodayOutflows),
+              // `predictedTodayInflows/Outflows` do `/today/closing` (regra de
+              // data crua) NÃO entram mais: a previsão de hoje passou a mover o
+              // caixa (regra D+1) e sua única autoridade é o motor único-de-dia
+              // — `applyTreasuryCaixaCanonicalTodayFlow` preenche `predicted*`
+              // a partir de `canonicalDays[hoje].receivableDue/payableDue`.
+              // Duas fontes para o mesmo número reabririam a divergência que a
+              // correção canônica fechou.
             })
           : null
       );

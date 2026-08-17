@@ -195,6 +195,34 @@ function OutlierMark({ direction }: { direction: "HIGH" | "LOW" }) {
 }
 
 /**
+ * Marca a parte de "Entrou/Saiu" de HOJE que ainda é previsão — títulos em
+ * aberto vencendo hoje. Existe porque a confirmação da baixa só acontece em
+ * D+1: durante o próprio dia o caixa considera o previsto, e amanhã a linha
+ * passa a mostrar só o que realmente andou.
+ */
+function ForecastPortionMark({
+  amount,
+  direction,
+}: {
+  amount: number;
+  direction: "IN" | "OUT";
+}) {
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-1 text-[9px] font-bold uppercase tracking-wide text-[#475569]"
+      title={`Inclui ${money(amount)} ainda em PREVISÃO — títulos ${
+        direction === "IN" ? "a receber" : "a pagar"
+      } que vencem hoje e ainda não foram baixados. A confirmação acontece no dia seguinte; a partir de amanhã esta linha mostra só o que foi realmente ${
+        direction === "IN" ? "recebido" : "pago"
+      }.`}
+      data-testid="caixa-timeline-forecast-portion"
+    >
+      prev.
+    </span>
+  );
+}
+
+/**
  * Célula de saldo com cor por sinal (positivo → verde; negativo → vermelho;
  * zero/null → neutro). Usada em "Começou" e "Terminou" — dá leitura visual
  * imediata do sinal do saldo, mantendo tabular-nums e alinhamento à direita.
@@ -911,6 +939,12 @@ export function TreasuryCaixaTimeline({
                                             }
                                           />
                                         ) : null}
+                                        {r.forecastInflows != null ? (
+                                          <ForecastPortionMark
+                                            amount={r.forecastInflows}
+                                            direction="IN"
+                                          />
+                                        ) : null}
                                       </td>
                                       <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
                                         {r.outflows === 0 ? "—" : money(r.outflows)}
@@ -919,6 +953,12 @@ export function TreasuryCaixaTimeline({
                                             direction={
                                               outliers.get(`${r.civilDate}|outflows`)!
                                             }
+                                          />
+                                        ) : null}
+                                        {r.forecastOutflows != null ? (
+                                          <ForecastPortionMark
+                                            amount={r.forecastOutflows}
+                                            direction="OUT"
                                           />
                                         ) : null}
                                       </td>
@@ -992,12 +1032,24 @@ export function TreasuryCaixaTimeline({
                                   direction={outliers.get(`${r.civilDate}|inflows`)!}
                                 />
                               ) : null}
+                              {r.forecastInflows != null ? (
+                                <ForecastPortionMark
+                                  amount={r.forecastInflows}
+                                  direction="IN"
+                                />
+                              ) : null}
                             </td>
                             <td className="px-2 py-1.5 text-right tabular-nums text-[#DC2626]">
                               {r.outflows === 0 ? "—" : money(r.outflows)}
                               {outliers.has(`${r.civilDate}|outflows`) ? (
                                 <OutlierMark
                                   direction={outliers.get(`${r.civilDate}|outflows`)!}
+                                />
+                              ) : null}
+                              {r.forecastOutflows != null ? (
+                                <ForecastPortionMark
+                                  amount={r.forecastOutflows}
+                                  direction="OUT"
                                 />
                               ) : null}
                             </td>
@@ -1051,7 +1103,12 @@ export function TreasuryCaixaTimeline({
               <p>
                 Dias passados mostram o que foi <strong>realmente</strong> pago
                 e recebido. Dias futuros mostram <strong>previsão</strong> pelos
-                títulos em aberto — esses ainda podem mudar.
+                títulos em aberto — esses ainda podem mudar. O dia de{" "}
+                <strong>hoje</strong> soma os dois: o que já foi baixado{" "}
+                <em>mais</em> os títulos que vencem hoje e ainda não foram
+                confirmados (marcados com <strong>prev.</strong>) — a
+                confirmação da baixa acontece no dia seguinte, e a partir de
+                amanhã a linha passa a mostrar só o realizado.
                 {mode === "month" ? " Clique num mês para ver os dias." : ""}{" "}
                 Clique num dia para ver os títulos de Contas a Receber/Pagar por
                 trás do Entrou/Saiu daquele dia.

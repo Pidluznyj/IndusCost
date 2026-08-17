@@ -12,6 +12,11 @@
  * (`buildTreasuryCaixaCanonicalDays`), mesma fonte que o drill-down. Os quatro
  * números do bloco SALDO vêm do fechamento diário canônico (`/today/closing`).
  * Saldo indisponível vira "—", nunca R$ 0,00 falso.
+ *
+ * "Terminou com" segue a mesma regra D+1 da linha do tempo: sem saldo
+ * informado, é o fechamento CALCULADO, que inclui a previsão do próprio dia
+ * (títulos vencendo hoje ainda em aberto) — a confirmação da baixa só acontece
+ * no dia seguinte. Com saldo informado, o manual tem privilégio.
  */
 
 import React from "react";
@@ -170,6 +175,17 @@ export function TreasuryCaixaTodayFlow({
   onOpenAudit,
 }: TreasuryCaixaTodayFlowProps) {
   const hasCanonical = canonicalToday != null;
+  /**
+   * Ainda há título vencendo hoje sem baixa confirmada — como a confirmação é
+   * feita em D+1, esse valor já entra no fechamento CALCULADO do dia (regra
+   * D+1, ver `applyTreasuryCaixaCanonicalTodayFlow`). Com saldo informado, o
+   * manual tem privilégio e o rótulo volta a ser simplesmente "Terminou com".
+   */
+  const hasPendingForecast =
+    hasCanonical &&
+    (canonicalToday!.receivableDue > 0 || canonicalToday!.payableDue > 0);
+  const closingIsProjected =
+    hasPendingForecast && flow != null && flow.closingInformed == null;
   return (
     <section
       className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
@@ -263,7 +279,9 @@ export function TreasuryCaixaTodayFlow({
             <Block title="Saldo" tone="neutral" testId="caixa-today-saldo-block">
               <SubCell label="Começou com" value={money(flow.opening)} />
               <SubCell
-                label="Terminou com"
+                label={
+                  closingIsProjected ? "Terminou com (previsto)" : "Terminou com"
+                }
                 value={money(flow.closingInformed ?? flow.closingCalculated)}
               />
               <SubCell
@@ -308,6 +326,19 @@ export function TreasuryCaixaTodayFlow({
               data-testid="caixa-today-flow-calc-note"
             >
               Terminou com: calculado — extrato não informado.
+            </p>
+          ) : null}
+
+          {closingIsProjected ? (
+            <p
+              className="mt-1 text-[11px] leading-snug text-muted-foreground"
+              data-testid="caixa-today-flow-projected-note"
+            >
+              O calculado já considera a <strong>previsão de hoje</strong> (
+              {moneyOrZero(canonicalToday!.receivableDue, true)} a receber e{" "}
+              {moneyOrZero(canonicalToday!.payableDue, true)} a pagar vencendo
+              hoje, ainda sem baixa) — a confirmação é feita no dia seguinte. Se
+              você informar o saldo do extrato, ele passa a valer.
             </p>
           ) : null}
         </>
