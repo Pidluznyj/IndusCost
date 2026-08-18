@@ -3,6 +3,7 @@ import {
   filterProductEngineeringListItems,
   hasProductEngineeringListFilters,
   type ProductEngineeringListCiuFilter,
+  DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER,
   type ProductEngineeringListStatusFilter,
 } from "@/src/lib/productEngineeringListFilters";
 import { 
@@ -286,9 +287,14 @@ export const ProductModule = () => {
   const [appliedSearch, setAppliedSearch] = useState("");
   /** Escopo da lista: só Produtos ou Componentes (GET /api/products?type=…). */
   const [engineeringSegment, setEngineeringSegment] = useState<"PRODUCT" | "COMPONENT">("PRODUCT");
-  const [draftStatusFilter, setDraftStatusFilter] = useState<ProductEngineeringListStatusFilter>("");
+  const [draftStatusFilter, setDraftStatusFilter] =
+    useState<ProductEngineeringListStatusFilter>(
+      DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER
+    );
   const [appliedStatusFilter, setAppliedStatusFilter] =
-    useState<ProductEngineeringListStatusFilter>("");
+    useState<ProductEngineeringListStatusFilter>(
+      DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER
+    );
   const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
   const [appliedCiuFilter, setAppliedCiuFilter] =
     useState<ProductEngineeringListCiuFilter>("");
@@ -1104,8 +1110,8 @@ export const ProductModule = () => {
   const clearListFilters = () => {
     setDraftSearch("");
     setAppliedSearch("");
-    setDraftStatusFilter("");
-    setAppliedStatusFilter("");
+    setDraftStatusFilter(DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER);
+    setAppliedStatusFilter(DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER);
     setDraftCiuFilter("");
     setAppliedCiuFilter("");
     setDraftEngineeringFilter("");

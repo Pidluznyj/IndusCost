@@ -6,6 +6,16 @@ import {
 
 export type ProductEngineeringListStatusFilter = "" | "ACTIVE" | "INACTIVE";
 
+/**
+ * Estado inicial da tela Engenharia > Produtos.
+ *
+ * A grade abre mostrando só os itens ativos: inativo é exceção, e listá-los
+ * junto por padrão fazia o usuário conferir item a item. Para ver inativos
+ * (ou todos), basta trocar no seletor de status.
+ */
+export const DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER: ProductEngineeringListStatusFilter =
+  "ACTIVE";
+
 /** Filtro do badge/status do CIU atual na grade (coluna CIU atual). */
 export type ProductEngineeringListCiuFilter = "" | "PARTIAL" | "COMPLETE";
 
