@@ -36,6 +36,12 @@ import {
   Upload,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import {
+  buildProductEngineeringPagination,
+  formatProductEngineeringDisplayRange,
+  paginateProductEngineeringItems,
+  shouldShowProductEngineeringPagination,
+} from "@/src/lib/productEngineeringListPagination";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   BOM_INACTIVE_COMPONENT_DESCRIPTION,
@@ -295,6 +301,9 @@ export const ProductModule = () => {
     useState<ProductEngineeringListStatusFilter>(
       DEFAULT_PRODUCT_ENGINEERING_STATUS_FILTER
     );
+  /** Página da grade (20 por vez). A busca NÃO é por página: filtra tudo e
+   *  só o resultado é fatiado — ver productEngineeringListPagination. */
+  const [listPage, setListPage] = useState(1);
   const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
   const [appliedCiuFilter, setAppliedCiuFilter] =
     useState<ProductEngineeringListCiuFilter>("");
@@ -1086,6 +1095,29 @@ export const ProductModule = () => {
     ]
   );
 
+  // Paginação SEMPRE depois do filtro: o usuário procura na base inteira e
+  // recebe o resultado paginado, nunca uma busca restrita à página atual.
+  const listPagination = useMemo(
+    () => buildProductEngineeringPagination(filteredItems.length, listPage),
+    [filteredItems.length, listPage]
+  );
+  const pagedItems = useMemo(
+    () => paginateProductEngineeringItems(filteredItems, listPagination),
+    [filteredItems, listPagination]
+  );
+
+  // Trocar busca/filtro/segmento volta para a primeira página — senão o
+  // usuário filtra e cai numa página que não existe mais.
+  useEffect(() => {
+    setListPage(1);
+  }, [
+    appliedSearch,
+    appliedStatusFilter,
+    appliedCiuFilter,
+    appliedEngineeringFilter,
+    engineeringSegment,
+  ]);
+
   const selectPendingPublicationItems = useCallback(() => {
     setSelectedIds(
       filteredItems
@@ -1613,8 +1645,7 @@ export const ProductModule = () => {
           </form>
 
           <p className="text-xs text-muted-foreground">
-            Exibindo <span className="font-medium text-foreground">{filteredItems.length}</span> de{" "}
-            <span className="font-medium text-foreground">{items.length}</span> item(ns).
+            {formatProductEngineeringDisplayRange(listPagination, items.length)}
             {selectedIds.length > 0 ? (
               <>
                 {" "}
@@ -1765,6 +1796,9 @@ export const ProductModule = () => {
                   <input 
                     type="checkbox" 
                     className="rounded border-border text-primary focus:ring-primary"
+                    // Seleciona TODOS os itens filtrados (todas as páginas), não só os 20
+                    // visíveis — é o que as ações em lote publicam.
+                    title="Selecionar todos os itens filtrados (todas as páginas)"
                     checked={filteredItems.length > 0 && selectedIds.length === filteredItems.length}
                     ref={el => {
                       if (el) {
@@ -1812,7 +1846,7 @@ export const ProductModule = () => {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item: ProductWithCostSummary) => (
+                pagedItems.map((item: ProductWithCostSummary) => (
                   <tr key={item.id} className={cn(
                     "hover:bg-accent/30 transition-colors group",
                     selectedIds.includes(item.id) && "bg-primary/5"
@@ -2165,6 +2199,51 @@ export const ProductModule = () => {
             </tbody>
           </table>
         </div>
+
+        {shouldShowProductEngineeringPagination(listPagination.totalPages) ? (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground"
+            data-testid="product-engineering-pagination"
+          >
+            <span>{formatProductEngineeringDisplayRange(listPagination, items.length)}</span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 hover:bg-accent disabled:opacity-50"
+                disabled={listPagination.page <= 1}
+                onClick={() => setListPage(1)}
+              >
+                Primeira
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 hover:bg-accent disabled:opacity-50"
+                disabled={listPagination.page <= 1}
+                onClick={() => setListPage((page) => Math.max(1, page - 1))}
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 hover:bg-accent disabled:opacity-50"
+                disabled={listPagination.page >= listPagination.totalPages}
+                onClick={() =>
+                  setListPage((page) => Math.min(listPagination.totalPages, page + 1))
+                }
+              >
+                Próxima
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 hover:bg-accent disabled:opacity-50"
+                disabled={listPagination.page >= listPagination.totalPages}
+                onClick={() => setListPage(listPagination.totalPages)}
+              >
+                Última
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <GuidedTour
