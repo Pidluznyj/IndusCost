@@ -1,7 +1,17 @@
 /**
- * Serviço do GET /api/crm/management-dashboard — base principal: SalesOrder.
- * KPIs de pedido: crmSalesOrderMetricsService (motor oficial Pedidos).
- * Follow-up / risco / atividades: CommercialActivity + Customer (sem propostas).
+ * Serviço do GET /api/crm/management-dashboard — cockpit do gestor comercial.
+ *
+ * ARQUITETURA (decisão de 17/08/2026):
+ *   - Tudo que é PEDIDO vem da população canônica da tela Pedidos de Venda,
+ *     via `loadCrmManagementOrderFacts` (Prisma + `buildSalesOrderListWhere`)
+ *     e `loadCrmSalesOrderMetrics` (motor oficial). O CRM não decide o que é
+ *     pedido válido, carteira, faturado, intercompany nem período.
+ *   - Tudo que é RELACIONAMENTO (contato, follow-up, atividade) é métrica
+ *     PRÓPRIA do CRM, calculada sobre `CommercialActivity` em janelas móveis
+ *     declaradas — não reconcilia com Pedidos de Venda, e não deveria mesmo.
+ *
+ * O SQL cru que existia aqui reescrevia regra de pedido (status, carteira,
+ * NF, intercompany) e foi removido: era a fonte das divergências.
  */
 
 import { Prisma } from "@prisma/client";
@@ -12,17 +22,13 @@ import {
   mgmtDaysSince,
   mgmtDisplayName,
   mgmtIso,
-  mgmtToNumber,
 } from "@/src/lib/crmManagementDashboard";
+import { orderHasFollowUpAfterCutoff } from "@/src/lib/crmOrderFollowUp";
+import { loadCrmSalesOrderMetrics } from "@/src/lib/commercial/crmSalesOrderMetricsService.js";
 import {
-  CRM_ACTIVITY_NOT_CLOSED_SQL,
-  CRM_VALID_PURCHASE_STATUS_SQL,
-  crmOpenPortfolioOrderSql,
-  crmOrderWithoutFollowUpNotExistsSql,
-} from "@/src/lib/crmOrderPortfolioSql";
-import {
-  loadCrmSalesOrderMetrics,
-} from "@/src/lib/commercial/crmSalesOrderMetricsService.js";
+  CRM_RELATIONSHIP_HORIZON_MONTHS,
+  loadCrmManagementOrderFacts,
+} from "@/src/lib/commercial/crmManagementOrderFacts.server.js";
 import {
   buildManagementDashboardSourceInfo,
   mergeOfficialOrderMetricsIntoManagementSummary,
@@ -32,10 +38,6 @@ import {
 
 const LIST_LIMIT = 10;
 
-function bigintCount(rows: { c: bigint }[] | undefined): number {
-  return Number(rows?.[0]?.c ?? 0n);
-}
-
 export type { CrmManagementDashboardRequest };
 export {
   buildManagementDashboardSourceInfo,
@@ -43,738 +45,414 @@ export {
   resolveManagementDashboardPeriod,
 };
 
+type ActivityRow = {
+  id: string;
+  customerId: string;
+  salesOrderId: string | null;
+  contactDate: Date | null;
+  createdAt: Date;
+  nextActionAt: Date | null;
+  nextActionDescription: string | null;
+  assignedTo: string | null;
+  createdByName: string | null;
+  status: string | null;
+  channel: string | null;
+  reason: string | null;
+};
+
+function activityMoment(a: ActivityRow): Date {
+  return a.contactDate ?? a.createdAt;
+}
+
+/** Mesma semântica do `CRM_ACTIVITY_NOT_CLOSED_SQL` que este serviço usava. */
+function isActivityOpen(a: ActivityRow): boolean {
+  const s = a.status?.trim().toLowerCase();
+  return !s || !["done", "closed", "cancelled", "canceled"].includes(s);
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export async function buildCrmManagementDashboardResponse(
   input: CrmManagementDashboardRequest = {},
   now = new Date()
 ) {
   const period = resolveManagementDashboardPeriod(input, now);
+  const canonicalPeriod = {
+    year: input.year ?? null,
+    month: input.month ?? null,
+    allYears: input.allYears ?? false,
+  };
   const nowMs = now.getTime();
-  const since7 = new Date(now);
-  since7.setUTCDate(since7.getUTCDate() - 7);
-  const since30 = new Date(now);
-  since30.setUTCDate(since30.getUTCDate() - 30);
-  const since60 = new Date(now);
-  since60.setUTCDate(since60.getUTCDate() - 60);
-  const since90 = new Date(now);
-  since90.setUTCDate(since90.getUTCDate() - 90);
-  const since180 = new Date(now);
-  since180.setUTCDate(since180.getUTCDate() - 180);
-  const in7 = new Date(now);
-  in7.setUTCDate(in7.getUTCDate() + 7);
-  const in30 = new Date(now);
-  in30.setUTCDate(in30.getUTCDate() + 30);
-  const twelveMonthsAgo = new Date(now);
-  twelveMonthsAgo.setUTCDate(twelveMonthsAgo.getUTCDate() - 365);
+  const shift = (days: number) => {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+  };
+  const since7 = shift(-7);
+  const since30 = shift(-30);
+  const since60 = shift(-60);
+  const since90 = shift(-90);
+  const since180 = shift(-180);
+  const in7 = shift(7);
+  const in30 = shift(30);
 
-  const openPortfolioSql = crmOpenPortfolioOrderSql("so");
-  const orderNoFollowUpSql = crmOrderWithoutFollowUpNotExistsSql("so");
-
-  const [
-    totalCustomersRow,
-    withContact30Row,
-    withoutContact30Row,
-    withoutContact60Row,
-    withoutContact90Row,
-    withoutValidPurchaseRow,
-    withoutPurchase90Row,
-    withoutPurchase180Row,
-    contacts7Row,
-    contacts30Row,
-    overdueFollowUpsRow,
-    upcoming7Row,
-    upcoming30Row,
-    openOrdersRow,
-    ordersNoFollowUpRow,
-    customersHighRiskRow,
-    riskCustomersRows,
-    opportunityTier1Rows,
-    opportunityTier2Rows,
-    opportunityTier3Rows,
-    overdueFollowUpListRows,
-    upcomingFollowUpListRows,
-    ordersWithoutFollowUpRows,
-    topCustomers12mRows,
-    breakdownChannelRows,
-    breakdownReasonRows,
-    breakdownResponsibleRows,
-    orderMetrics,
-  ] = await Promise.all([
-    prisma.$queryRaw<{ c: bigint }[]>(Prisma.sql`SELECT COUNT(*)::bigint AS c FROM "Customer"`),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(DISTINCT a."customerId")::bigint AS c
-        FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "CommercialActivity" a
-          WHERE a."customerId" = c."id"
-            AND COALESCE(a."contactDate", a."createdAt") >= ${since30}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "CommercialActivity" a
-          WHERE a."customerId" = c."id"
-            AND COALESCE(a."contactDate", a."createdAt") >= ${since60}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "CommercialActivity" a
-          WHERE a."customerId" = c."id"
-            AND COALESCE(a."contactDate", a."createdAt") >= ${since90}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "SalesOrder" so
-          WHERE so."customerId" = c."id" AND ${CRM_VALID_PURCHASE_STATUS_SQL}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "SalesOrder" so
-          WHERE so."customerId" = c."id"
-            AND ${CRM_VALID_PURCHASE_STATUS_SQL}
-            AND so."issueDate" >= ${since90}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "Customer" c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM "SalesOrder" so
-          WHERE so."customerId" = c."id"
-            AND ${CRM_VALID_PURCHASE_STATUS_SQL}
-            AND so."issueDate" >= ${since180}
-        )
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since7}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "CommercialActivity" a
-        WHERE a."nextActionAt" IS NOT NULL AND a."nextActionAt" < ${now}
-          AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "CommercialActivity" a
-        WHERE a."nextActionAt" IS NOT NULL
-          AND a."nextActionAt" >= ${now} AND a."nextActionAt" < ${in7}
-          AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c FROM "CommercialActivity" a
-        WHERE a."nextActionAt" IS NOT NULL
-          AND a."nextActionAt" >= ${now} AND a."nextActionAt" < ${in30}
-          AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-      `
-    ),
-    prisma.$queryRaw<{ cnt: bigint; val: unknown }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS cnt, COALESCE(SUM(so."totalNetValue"), 0) AS val
-        FROM "SalesOrder" so
-        WHERE ${openPortfolioSql}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(*)::bigint AS c
-        FROM "SalesOrder" so
-        WHERE ${openPortfolioSql}
-          AND ${orderNoFollowUpSql}
-      `
-    ),
-    prisma.$queryRaw<{ c: bigint }[]>(
-      Prisma.sql`
-        SELECT COUNT(DISTINCT c."id")::bigint AS c
-        FROM "Customer" c
-        WHERE EXISTS (
-          SELECT 1 FROM "SalesOrder" so
-          WHERE so."customerId" = c."id"
-            AND ${openPortfolioSql}
-            AND ${orderNoFollowUpSql}
-        )
-        OR EXISTS (
-          SELECT 1 FROM "SalesOrder" so
-          WHERE so."customerId" = c."id"
-            AND ${CRM_VALID_PURCHASE_STATUS_SQL}
-          GROUP BY so."customerId"
-          HAVING MAX(so."issueDate") < ${since90}
-        )
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        tax_id: string;
-        city: string | null;
-        state: string | null;
-        last_purchase_at: Date | null;
-        last_contact_at: Date | null;
-        open_orders_count: number;
-        open_orders_value: unknown;
-        has_order_no_fu: boolean;
-        next_followup_at: Date | null;
-        relationship_level: string | null;
-        commercial_temperature: string | null;
-        risk_level: string;
-      }[]
-    >(
-      Prisma.sql`
-        WITH last_purchase AS (
-          SELECT so."customerId", MAX(so."issueDate") AS last_at
-          FROM "SalesOrder" so
-          WHERE ${CRM_VALID_PURCHASE_STATUS_SQL}
-          GROUP BY so."customerId"
-        ),
-        last_contact AS (
-          SELECT a."customerId", MAX(COALESCE(a."contactDate", a."createdAt")) AS last_at
-          FROM "CommercialActivity" a
-          GROUP BY a."customerId"
-        ),
-        open_order_stats AS (
-          SELECT so."customerId",
-            COUNT(*)::int AS cnt,
-            COALESCE(SUM(so."totalNetValue"), 0) AS val
-          FROM "SalesOrder" so
-          WHERE ${openPortfolioSql}
-          GROUP BY so."customerId"
-        ),
-        customer_no_followup AS (
-          SELECT DISTINCT so."customerId"
-          FROM "SalesOrder" so
-          WHERE ${openPortfolioSql}
-            AND ${orderNoFollowUpSql}
-        ),
-        next_followup AS (
-          SELECT a."customerId", MIN(a."nextActionAt") AS next_at
-          FROM "CommercialActivity" a
-          WHERE a."nextActionAt" IS NOT NULL AND a."nextActionAt" > ${now}
-            AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-          GROUP BY a."customerId"
-        ),
-        scored AS (
-          SELECT
-            c."id" AS customer_id,
-            c."companyName" AS company_name,
-            c."tradeName" AS trade_name,
-            c."taxId" AS tax_id,
-            c."city" AS city,
-            c."state" AS state,
-            lp.last_at AS last_purchase_at,
-            lc.last_at AS last_contact_at,
-            COALESCE(oos.cnt, 0) AS open_orders_count,
-            COALESCE(oos.val, 0) AS open_orders_value,
-            (cnf."customerId" IS NOT NULL) AS has_order_no_fu,
-            nf.next_at AS next_followup_at,
-            prof."relationshipLevel" AS relationship_level,
-            prof."commercialTemperature" AS commercial_temperature,
-            CASE
-              WHEN cnf."customerId" IS NOT NULL
-                OR (lp.last_at IS NOT NULL AND lp.last_at < ${since90})
-              THEN 'HIGH'
-              WHEN lp.last_at IS NULL OR COALESCE(oos.cnt, 0) > 0
-              THEN 'MEDIUM'
-              ELSE 'LOW'
-            END AS risk_level
-          FROM "Customer" c
-          LEFT JOIN last_purchase lp ON lp."customerId" = c."id"
-          LEFT JOIN last_contact lc ON lc."customerId" = c."id"
-          LEFT JOIN open_order_stats oos ON oos."customerId" = c."id"
-          LEFT JOIN customer_no_followup cnf ON cnf."customerId" = c."id"
-          LEFT JOIN next_followup nf ON nf."customerId" = c."id"
-          LEFT JOIN "CrmCustomerProfile" prof ON prof."customerId" = c."id"
-        )
-        SELECT * FROM scored
-        WHERE risk_level IN ('HIGH', 'MEDIUM')
-        ORDER BY
-          CASE risk_level WHEN 'HIGH' THEN 0 ELSE 1 END,
-          has_order_no_fu DESC,
-          CASE WHEN last_purchase_at IS NULL THEN 999999
-            ELSE EXTRACT(EPOCH FROM (${now}::timestamptz - last_purchase_at)) / 86400 END DESC,
-          CASE WHEN last_contact_at IS NULL THEN 999999
-            ELSE EXTRACT(EPOCH FROM (${now}::timestamptz - last_contact_at)) / 86400 END DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        tax_id: string;
-        last_purchase_at: Date;
-        last_contact_at: Date | null;
-        total_12m: unknown;
-        open_orders_count: number;
-      }[]
-    >(
-      Prisma.sql`
-        WITH last_purchase AS (
-          SELECT so."customerId", MAX(so."issueDate") AS last_at
-          FROM "SalesOrder" so WHERE ${CRM_VALID_PURCHASE_STATUS_SQL}
-          GROUP BY so."customerId"
-        ),
-        last_contact AS (
-          SELECT a."customerId", MAX(COALESCE(a."contactDate", a."createdAt")) AS last_at
-          FROM "CommercialActivity" a GROUP BY a."customerId"
-        ),
-        purchase_12m AS (
-          SELECT so."customerId", COALESCE(SUM(so."totalNetValue"), 0) AS total_12m
-          FROM "SalesOrder" so
-          WHERE ${CRM_VALID_PURCHASE_STATUS_SQL} AND so."issueDate" >= ${twelveMonthsAgo}
-          GROUP BY so."customerId"
-        ),
-        open_order_stats AS (
-          SELECT so."customerId", COUNT(*)::int AS cnt
-          FROM "SalesOrder" so WHERE ${openPortfolioSql}
-          GROUP BY so."customerId"
-        )
-        SELECT c."id" AS customer_id, c."companyName" AS company_name, c."tradeName" AS trade_name,
-          c."taxId" AS tax_id, lp.last_at AS last_purchase_at, lc.last_at AS last_contact_at,
-          COALESCE(p12.total_12m, 0) AS total_12m, COALESCE(oos.cnt, 0) AS open_orders_count
-        FROM "Customer" c
-        INNER JOIN last_purchase lp ON lp."customerId" = c."id"
-        LEFT JOIN last_contact lc ON lc."customerId" = c."id"
-        LEFT JOIN purchase_12m p12 ON p12."customerId" = c."id"
-        LEFT JOIN open_order_stats oos ON oos."customerId" = c."id"
-        WHERE lp.last_at >= ${since30}
-        ORDER BY lp.last_at DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        tax_id: string;
-        last_purchase_at: Date | null;
-        last_contact_at: Date | null;
-        total_12m: unknown;
-        open_orders_count: number;
-      }[]
-    >(
-      Prisma.sql`
-        WITH last_purchase AS (
-          SELECT so."customerId", MAX(so."issueDate") AS last_at
-          FROM "SalesOrder" so WHERE ${CRM_VALID_PURCHASE_STATUS_SQL}
-          GROUP BY so."customerId"
-        ),
-        last_contact AS (
-          SELECT a."customerId", MAX(COALESCE(a."contactDate", a."createdAt")) AS last_at
-          FROM "CommercialActivity" a GROUP BY a."customerId"
-        ),
-        purchase_12m AS (
-          SELECT so."customerId", COALESCE(SUM(so."totalNetValue"), 0) AS total_12m
-          FROM "SalesOrder" so
-          WHERE ${CRM_VALID_PURCHASE_STATUS_SQL} AND so."issueDate" >= ${twelveMonthsAgo}
-          GROUP BY so."customerId"
-        ),
-        open_order_stats AS (
-          SELECT so."customerId", COUNT(*)::int AS cnt
-          FROM "SalesOrder" so WHERE ${openPortfolioSql}
-          GROUP BY so."customerId"
-        )
-        SELECT c."id" AS customer_id, c."companyName" AS company_name, c."tradeName" AS trade_name,
-          c."taxId" AS tax_id, lp.last_at AS last_purchase_at, lc.last_at AS last_contact_at,
-          COALESCE(p12.total_12m, 0) AS total_12m, COALESCE(oos.cnt, 0) AS open_orders_count
-        FROM "Customer" c
-        INNER JOIN open_order_stats oos ON oos."customerId" = c."id"
-        LEFT JOIN last_purchase lp ON lp."customerId" = c."id"
-        LEFT JOIN last_contact lc ON lc."customerId" = c."id"
-        LEFT JOIN purchase_12m p12 ON p12."customerId" = c."id"
-        WHERE oos.cnt > 0
-        ORDER BY COALESCE(p12.total_12m, 0) DESC, oos.cnt DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        tax_id: string;
-        last_purchase_at: Date | null;
-        last_contact_at: Date | null;
-        total_12m: unknown;
-        open_orders_count: number;
-      }[]
-    >(
-      Prisma.sql`
-        WITH last_contact AS (
-          SELECT a."customerId", MAX(COALESCE(a."contactDate", a."createdAt")) AS last_at
-          FROM "CommercialActivity" a GROUP BY a."customerId"
-        ),
-        purchase_12m AS (
-          SELECT so."customerId", COALESCE(SUM(so."totalNetValue"), 0) AS total_12m
-          FROM "SalesOrder" so
-          WHERE ${CRM_VALID_PURCHASE_STATUS_SQL} AND so."issueDate" >= ${twelveMonthsAgo}
-          GROUP BY so."customerId"
-        ),
-        last_purchase AS (
-          SELECT so."customerId", MAX(so."issueDate") AS last_at
-          FROM "SalesOrder" so WHERE ${CRM_VALID_PURCHASE_STATUS_SQL}
-          GROUP BY so."customerId"
-        ),
-        open_order_stats AS (
-          SELECT so."customerId", COUNT(*)::int AS cnt
-          FROM "SalesOrder" so WHERE ${openPortfolioSql}
-          GROUP BY so."customerId"
-        )
-        SELECT c."id" AS customer_id, c."companyName" AS company_name, c."tradeName" AS trade_name,
-          c."taxId" AS tax_id, lp.last_at AS last_purchase_at, lc.last_at AS last_contact_at,
-          p12.total_12m AS total_12m, COALESCE(ops.cnt, 0) AS open_orders_count
-        FROM "Customer" c
-        INNER JOIN purchase_12m p12 ON p12."customerId" = c."id"
-        LEFT JOIN last_contact lc ON lc."customerId" = c."id"
-        LEFT JOIN last_purchase lp ON lp."customerId" = c."id"
-        LEFT JOIN open_order_stats ops ON ops."customerId" = c."id"
-        WHERE p12.total_12m > 0
-          AND (lc.last_at IS NULL OR lc.last_at < ${since30})
-        ORDER BY p12.total_12m DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        activity_id: string;
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        next_action_at: Date;
-        next_action_description: string | null;
-        assigned_to: string | null;
-        created_by_name: string | null;
-      }[]
-    >(
-      Prisma.sql`
-        SELECT a.id AS activity_id, a."customerId" AS customer_id,
-          c."companyName" AS company_name, c."tradeName" AS trade_name,
-          a."nextActionAt" AS next_action_at, a."nextActionDescription" AS next_action_description,
-          a."assignedTo" AS assigned_to, a."createdByName" AS created_by_name
-        FROM "CommercialActivity" a
-        INNER JOIN "Customer" c ON c.id = a."customerId"
-        WHERE a."nextActionAt" IS NOT NULL AND a."nextActionAt" < ${now}
-          AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-        ORDER BY a."nextActionAt" ASC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        activity_id: string;
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        next_action_at: Date;
-        next_action_description: string | null;
-        assigned_to: string | null;
-        created_by_name: string | null;
-      }[]
-    >(
-      Prisma.sql`
-        SELECT a.id AS activity_id, a."customerId" AS customer_id,
-          c."companyName" AS company_name, c."tradeName" AS trade_name,
-          a."nextActionAt" AS next_action_at, a."nextActionDescription" AS next_action_description,
-          a."assignedTo" AS assigned_to, a."createdByName" AS created_by_name
-        FROM "CommercialActivity" a
-        INNER JOIN "Customer" c ON c.id = a."customerId"
-        WHERE a."nextActionAt" IS NOT NULL
-          AND a."nextActionAt" >= ${now} AND a."nextActionAt" < ${in7}
-          AND ${CRM_ACTIVITY_NOT_CLOSED_SQL}
-        ORDER BY a."nextActionAt" ASC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        sales_order_id: string;
-        order_code: string;
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        status: string;
-        total_net_value: unknown;
-        updated_at: Date;
-        responsible: string | null;
-      }[]
-    >(
-      Prisma.sql`
-        SELECT so.id AS sales_order_id, so."orderCode" AS order_code,
-          so."customerId" AS customer_id, c."companyName" AS company_name, c."tradeName" AS trade_name,
-          so.status::text AS status, so."totalNetValue" AS total_net_value,
-          COALESCE(so."updatedAt", so."issueDate") AS updated_at, so.responsible AS responsible
-        FROM "SalesOrder" so
-        INNER JOIN "Customer" c ON c.id = so."customerId"
-        WHERE ${openPortfolioSql}
-          AND ${orderNoFollowUpSql}
-        ORDER BY COALESCE(so."updatedAt", so."issueDate") ASC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<
-      {
-        customer_id: string;
-        company_name: string;
-        trade_name: string | null;
-        tax_id: string;
-        total_purchased: unknown;
-        orders_count: bigint;
-        last_purchase_at: Date;
-        last_contact_at: Date | null;
-      }[]
-    >(
-      Prisma.sql`
-        WITH purchase_12m AS (
-          SELECT so."customerId",
-            COALESCE(SUM(so."totalNetValue"), 0) AS total_purchased,
-            COUNT(*)::bigint AS orders_count,
-            MAX(so."issueDate") AS last_purchase_at
-          FROM "SalesOrder" so
-          WHERE ${CRM_VALID_PURCHASE_STATUS_SQL} AND so."issueDate" >= ${twelveMonthsAgo}
-          GROUP BY so."customerId"
-        ),
-        last_contact AS (
-          SELECT a."customerId", MAX(COALESCE(a."contactDate", a."createdAt")) AS last_at
-          FROM "CommercialActivity" a GROUP BY a."customerId"
-        )
-        SELECT c."id" AS customer_id, c."companyName" AS company_name, c."tradeName" AS trade_name,
-          c."taxId" AS tax_id, p12.total_purchased, p12.orders_count, p12.last_purchase_at,
-          lc.last_at AS last_contact_at
-        FROM purchase_12m p12
-        INNER JOIN "Customer" c ON c.id = p12."customerId"
-        LEFT JOIN last_contact lc ON lc."customerId" = c."id"
-        ORDER BY p12.total_purchased DESC
-        LIMIT ${LIST_LIMIT}
-      `
-    ),
-    prisma.$queryRaw<{ key: string | null; count: bigint }[]>(
-      Prisma.sql`
-        SELECT COALESCE(NULLIF(TRIM(a.channel), ''), 'Sem canal') AS key, COUNT(*)::bigint AS count
-        FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-        GROUP BY 1 ORDER BY count DESC LIMIT 20
-      `
-    ),
-    prisma.$queryRaw<{ key: string | null; count: bigint }[]>(
-      Prisma.sql`
-        SELECT COALESCE(NULLIF(TRIM(a.reason), ''), 'Sem motivo') AS key, COUNT(*)::bigint AS count
-        FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-        GROUP BY 1 ORDER BY count DESC LIMIT 20
-      `
-    ),
-    prisma.$queryRaw<{ key: string; count: bigint }[]>(
-      Prisma.sql`
-        SELECT COALESCE(NULLIF(TRIM(a."assignedTo"), ''), NULLIF(TRIM(a."createdByName"), ''), 'Sem responsável') AS key,
-          COUNT(*)::bigint AS count
-        FROM "CommercialActivity" a
-        WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-        GROUP BY 1 ORDER BY count DESC LIMIT 20
-      `
-    ),
+  const [orderFacts, orderMetrics, activities, profiles, breakdownRows] = await Promise.all([
+    loadCrmManagementOrderFacts(prisma, canonicalPeriod, now),
     loadCrmSalesOrderMetrics(
       prisma,
-      { from: period.dateFrom, to: period.dateTo },
+      {
+        year: canonicalPeriod.year,
+        month: canonicalPeriod.month,
+        allYears: canonicalPeriod.allYears,
+      },
       { referenceDate: now }
     ),
+    // Relacionamento: atividades da janela móvel mais longa do cockpit, mais
+    // as que têm próxima ação agendada (agenda não tem janela).
+    prisma.commercialActivity.findMany({
+      where: {
+        OR: [
+          { contactDate: { gte: since180 } },
+          { AND: [{ contactDate: null }, { createdAt: { gte: since180 } }] },
+          { nextActionAt: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        customerId: true,
+        salesOrderId: true,
+        contactDate: true,
+        createdAt: true,
+        nextActionAt: true,
+        nextActionDescription: true,
+        assignedTo: true,
+        createdByName: true,
+        status: true,
+        channel: true,
+        reason: true,
+      },
+    }) as unknown as Promise<ActivityRow[]>,
+    prisma.crmCustomerProfile.findMany({
+      select: { customerId: true, relationshipLevel: true, commercialTemperature: true },
+    }) as unknown as Promise<
+      Array<{
+        customerId: string;
+        relationshipLevel: string | null;
+        commercialTemperature: string | null;
+      }>
+    >,
+    prisma.$queryRaw<{ kind: string; key: string; count: bigint }[]>(Prisma.sql`
+      SELECT 'channel' AS kind, COALESCE(NULLIF(TRIM(a."channel"), ''), 'Não informado') AS key,
+        COUNT(*)::bigint AS count
+      FROM "CommercialActivity" a
+      WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
+      GROUP BY 2
+      UNION ALL
+      SELECT 'reason', COALESCE(NULLIF(TRIM(a."reason"), ''), 'Não informado'), COUNT(*)::bigint
+      FROM "CommercialActivity" a
+      WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
+      GROUP BY 2
+      UNION ALL
+      SELECT 'responsible',
+        COALESCE(NULLIF(TRIM(a."assignedTo"), ''), NULLIF(TRIM(a."createdByName"), ''), 'Sem responsável'),
+        COUNT(*)::bigint
+      FROM "CommercialActivity" a
+      WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
+      GROUP BY 2
+    `),
   ]);
 
-  const openOrdersAgg = openOrdersRow?.[0];
+  const scopedIds = new Set(orderFacts.customers.map((c) => c.id));
+  const profileById = new Map(profiles.map((p) => [p.customerId, p]));
 
-  const riskCustomers = riskCustomersRows.map((row) => {
-    const riskLevel = row.risk_level === "HIGH" ? "HIGH" : "MEDIUM";
-    return {
-      customerId: row.customer_id,
-      displayName: mgmtDisplayName(row.company_name, row.trade_name),
-      taxId: row.tax_id,
-      city: row.city ?? null,
-      state: row.state ?? null,
-      riskLevel,
-      riskReasons: buildManagementRiskReasons({
-        riskLevel,
-        hasOrderNoFollowUp: row.has_order_no_fu,
-        lastPurchaseAt: row.last_purchase_at,
-        openOrdersCount: row.open_orders_count,
-        since90,
-      }),
-      daysSinceLastPurchase: mgmtDaysSince(row.last_purchase_at, nowMs),
-      daysSinceLastContact: mgmtDaysSince(row.last_contact_at, nowMs),
-      openOrdersCount: row.open_orders_count,
-      openOrdersValue: mgmtToNumber(row.open_orders_value),
-      nextFollowUpAt: mgmtIso(row.next_followup_at),
-      relationshipLevel: row.relationship_level ?? null,
-      commercialTemperature: row.commercial_temperature ?? null,
-    };
-  });
+  // ── Relacionamento (CRM puro, janelas móveis) ───────────────────────────
+  const lastContactByCustomer = new Map<string, Date>();
+  const activitiesByCustomer = new Map<string, ActivityRow[]>();
+  const nextFollowUpByCustomer = new Map<string, Date>();
+  let contactsLast7Days = 0;
+  let contactsLast30Days = 0;
+  const contacted30 = new Set<string>();
+  const overdueFollowUpRows: ActivityRow[] = [];
+  const upcoming7Rows: ActivityRow[] = [];
+  const upcoming30Rows: ActivityRow[] = [];
 
-  type OppRow = (typeof opportunityTier1Rows)[number];
-  const opportunityMap = new Map<
-    string,
-    {
-      customerId: string;
-      displayName: string;
-      taxId: string;
-      daysSinceLastPurchase: number | null;
-      daysSinceLastContact: number | null;
-      totalPurchasedLast12Months: number;
-      openOrdersCount: number;
-      suggestedAction: string;
-      tier: number;
+  for (const a of activities) {
+    const moment = activityMoment(a);
+    const list = activitiesByCustomer.get(a.customerId) ?? [];
+    list.push(a);
+    activitiesByCustomer.set(a.customerId, list);
+
+    const current = lastContactByCustomer.get(a.customerId);
+    if (!current || moment > current) lastContactByCustomer.set(a.customerId, moment);
+
+    if (moment >= since7) contactsLast7Days += 1;
+    if (moment >= since30) {
+      contactsLast30Days += 1;
+      contacted30.add(a.customerId);
     }
-  >();
 
-  const addOpportunityRows = (rows: OppRow[], tier: number) => {
-    for (const row of rows) {
-      if (opportunityMap.has(row.customer_id)) continue;
-      opportunityMap.set(row.customer_id, {
-        customerId: row.customer_id,
-        displayName: mgmtDisplayName(row.company_name, row.trade_name),
-        taxId: row.tax_id,
-        daysSinceLastPurchase: mgmtDaysSince(row.last_purchase_at, nowMs),
-        daysSinceLastContact: mgmtDaysSince(row.last_contact_at, nowMs),
-        totalPurchasedLast12Months: mgmtToNumber(row.total_12m),
-        openOrdersCount: row.open_orders_count,
-        suggestedAction: buildManagementSuggestedAction({
-          lastPurchaseAt: row.last_purchase_at,
-          lastContactAt: row.last_contact_at,
-          openOrdersCount: row.open_orders_count,
-          tier,
-          since30,
-        }),
-        tier,
-      });
+    if (a.nextActionAt && isActivityOpen(a)) {
+      if (a.nextActionAt < now) {
+        overdueFollowUpRows.push(a);
+      } else {
+        if (a.nextActionAt < in7) upcoming7Rows.push(a);
+        if (a.nextActionAt < in30) upcoming30Rows.push(a);
+        const nextCurrent = nextFollowUpByCustomer.get(a.customerId);
+        if (!nextCurrent || a.nextActionAt < nextCurrent) {
+          nextFollowUpByCustomer.set(a.customerId, a.nextActionAt);
+        }
+      }
     }
+  }
+
+  const countScopedWithoutContactSince = (since: Date): number => {
+    let count = 0;
+    for (const id of scopedIds) {
+      const last = lastContactByCustomer.get(id);
+      if (!last || last < since) count += 1;
+    }
+    return count;
   };
 
-  addOpportunityRows(opportunityTier1Rows, 1);
-  addOpportunityRows(opportunityTier2Rows, 2);
-  addOpportunityRows(opportunityTier3Rows, 3);
+  // ── Carteira sem follow-up: população canônica × regra CRM de follow-up ──
+  const ordersWithoutFollowUpAll = orderFacts.openPortfolioOrders.filter((order) => {
+    if (!order.customerId) return true;
+    const acts = activitiesByCustomer.get(order.customerId) ?? [];
+    return !orderHasFollowUpAfterCutoff(order.id, order.updatedAt, acts);
+  });
+  const customersWithOrderNoFollowUp = new Set(
+    ordersWithoutFollowUpAll.map((o) => o.customerId).filter((id): id is string => Boolean(id))
+  );
 
-  const opportunityCustomers = [...opportunityMap.values()]
-    .sort((a, b) => a.tier - b.tier)
+  // ── Contadores e listas de cliente ──────────────────────────────────────
+  const scopedCustomers = orderFacts.customers;
+  const totalCustomers = scopedCustomers.length;
+  let customersWithoutPurchaseHorizon = 0;
+  let customersWithoutPurchase90 = 0;
+  let customersWithoutPurchase180 = 0;
+  let customersWithoutOrderInPeriod = 0;
+  let customersAtHighRisk = 0;
+
+  type ScopedCustomer = (typeof scopedCustomers)[number];
+  const riskRows: Array<{
+    customer: ScopedCustomer;
+    riskLevel: "HIGH" | "MEDIUM";
+    reasons: string[];
+    lastPurchase: Date | null;
+    lastContact: Date | null;
+    open: { orders: number; value: number };
+  }> = [];
+  const opportunityRows: Array<{
+    customer: ScopedCustomer;
+    tier: number;
+    lastPurchase: Date | null;
+    lastContact: Date | null;
+    purchased12m: number;
+    openOrders: number;
+  }> = [];
+
+  for (const customer of scopedCustomers) {
+    const lastPurchase = orderFacts.lastPurchaseByCustomer.get(customer.id) ?? null;
+    const lastContact = lastContactByCustomer.get(customer.id) ?? null;
+    const open = orderFacts.openPortfolioByCustomer.get(customer.id) ?? { orders: 0, value: 0 };
+    const purchased12m = orderFacts.purchase12mByCustomer.get(customer.id)?.value ?? 0;
+    const hasOrderNoFollowUp = customersWithOrderNoFollowUp.has(customer.id);
+
+    if (!lastPurchase) customersWithoutPurchaseHorizon += 1;
+    if (!lastPurchase || lastPurchase < since90) customersWithoutPurchase90 += 1;
+    if (!lastPurchase || lastPurchase < since180) customersWithoutPurchase180 += 1;
+    if (!orderFacts.customersWithOrderInPeriod.has(customer.id)) customersWithoutOrderInPeriod += 1;
+
+    const riskLevel: "HIGH" | "MEDIUM" | "LOW" =
+      hasOrderNoFollowUp || (lastPurchase != null && lastPurchase < since90)
+        ? "HIGH"
+        : lastPurchase == null || open.orders > 0
+          ? "MEDIUM"
+          : "LOW";
+
+    if (riskLevel !== "LOW") {
+      if (riskLevel === "HIGH") customersAtHighRisk += 1;
+      riskRows.push({
+        customer,
+        riskLevel,
+        reasons: buildManagementRiskReasons({
+          riskLevel,
+          hasOrderNoFollowUp,
+          lastPurchaseAt: lastPurchase,
+          openOrdersCount: open.orders,
+          since90,
+        }),
+        lastPurchase,
+        lastContact,
+        open,
+      });
+    }
+
+    const tier =
+      lastPurchase != null && lastPurchase >= since30
+        ? 1
+        : open.orders > 0
+          ? 2
+          : purchased12m > 0 && (lastContact == null || lastContact < since30)
+            ? 3
+            : null;
+    if (tier != null) {
+      opportunityRows.push({
+        customer,
+        tier,
+        lastPurchase,
+        lastContact,
+        purchased12m,
+        openOrders: open.orders,
+      });
+    }
+  }
+
+  const riskCustomers = riskRows
+    .sort((a, b) => {
+      if (a.riskLevel !== b.riskLevel) return a.riskLevel === "HIGH" ? -1 : 1;
+      return b.open.value - a.open.value;
+    })
     .slice(0, LIST_LIMIT)
-    .map(({ tier: _tier, ...rest }) => rest);
+    .map((row) => ({
+      customerId: row.customer.id,
+      displayName: mgmtDisplayName(row.customer.companyName, row.customer.tradeName),
+      taxId: row.customer.taxId,
+      city: row.customer.city,
+      state: row.customer.state,
+      riskLevel: row.riskLevel,
+      riskReasons: row.reasons,
+      daysSinceLastPurchase: mgmtDaysSince(row.lastPurchase, nowMs),
+      daysSinceLastContact: mgmtDaysSince(row.lastContact, nowMs),
+      openOrdersCount: row.open.orders,
+      openOrdersValue: roundMoney(row.open.value),
+      nextFollowUpAt: mgmtIso(nextFollowUpByCustomer.get(row.customer.id) ?? null),
+      relationshipLevel: profileById.get(row.customer.id)?.relationshipLevel ?? null,
+      commercialTemperature: profileById.get(row.customer.id)?.commercialTemperature ?? null,
+    }));
 
-  const overdueFollowUps = overdueFollowUpListRows.map((row) => {
-    const nextAt = row.next_action_at;
+  const opportunityCustomers = opportunityRows
+    .sort((a, b) => a.tier - b.tier || b.purchased12m - a.purchased12m)
+    .slice(0, LIST_LIMIT)
+    .map((row) => ({
+      customerId: row.customer.id,
+      displayName: mgmtDisplayName(row.customer.companyName, row.customer.tradeName),
+      taxId: row.customer.taxId,
+      daysSinceLastPurchase: mgmtDaysSince(row.lastPurchase, nowMs),
+      daysSinceLastContact: mgmtDaysSince(row.lastContact, nowMs),
+      totalPurchasedLast12Months: roundMoney(row.purchased12m),
+      openOrdersCount: row.openOrders,
+      suggestedAction: buildManagementSuggestedAction({
+        lastPurchaseAt: row.lastPurchase,
+        lastContactAt: row.lastContact,
+        openOrdersCount: row.openOrders,
+        tier: row.tier,
+        since30,
+      }),
+    }));
+
+  const followUpDto = (a: ActivityRow) => {
+    const c = orderFacts.customerById.get(a.customerId);
     return {
-      activityId: row.activity_id,
-      customerId: row.customer_id,
-      displayName: mgmtDisplayName(row.company_name, row.trade_name),
-      nextActionAt: mgmtIso(nextAt) ?? now.toISOString(),
-      nextActionDescription: row.next_action_description ?? null,
-      assignedTo: row.assigned_to ?? null,
-      createdByName: row.created_by_name ?? null,
-      daysOverdue: Math.max(0, Math.floor((nowMs - nextAt.getTime()) / 86400000)),
+      activityId: a.id,
+      customerId: a.customerId,
+      displayName: c ? mgmtDisplayName(c.companyName, c.tradeName) : "(cliente)",
+      nextActionAt: mgmtIso(a.nextActionAt) ?? now.toISOString(),
+      nextActionDescription: a.nextActionDescription,
+      assignedTo: a.assignedTo,
+      createdByName: a.createdByName,
+    };
+  };
+
+  const overdueFollowUps = overdueFollowUpRows
+    .slice()
+    .sort((a, b) => a.nextActionAt!.getTime() - b.nextActionAt!.getTime())
+    .slice(0, LIST_LIMIT)
+    .map((a) => ({
+      ...followUpDto(a),
+      daysOverdue: Math.max(0, Math.floor((nowMs - a.nextActionAt!.getTime()) / 86400000)),
+    }));
+
+  const upcomingFollowUps = upcoming7Rows
+    .slice()
+    .sort((a, b) => a.nextActionAt!.getTime() - b.nextActionAt!.getTime())
+    .slice(0, LIST_LIMIT)
+    .map((a) => ({
+      ...followUpDto(a),
+      daysUntil: Math.max(0, Math.ceil((a.nextActionAt!.getTime() - nowMs) / 86400000)),
+    }));
+
+  const ordersWithoutFollowUp = ordersWithoutFollowUpAll.slice(0, LIST_LIMIT).map((order) => {
+    const customer = order.customerId ? orderFacts.customerById.get(order.customerId) : null;
+    return {
+      salesOrderId: order.id,
+      orderCode: order.orderCode,
+      customerId: order.customerId ?? "",
+      displayName: customer
+        ? mgmtDisplayName(customer.companyName, customer.tradeName)
+        : "(sem cliente vinculado)",
+      status: order.status,
+      totalNetValue: roundMoney(order.totalNetValue),
+      updatedAt: mgmtIso(order.updatedAt) ?? now.toISOString(),
+      daysWithoutFollowUp: Math.max(0, Math.floor((nowMs - order.updatedAt.getTime()) / 86400000)),
+      responsible: order.responsible,
     };
   });
 
-  const upcomingFollowUps = upcomingFollowUpListRows.map((row) => {
-    const nextAt = row.next_action_at;
-    return {
-      activityId: row.activity_id,
-      customerId: row.customer_id,
-      displayName: mgmtDisplayName(row.company_name, row.trade_name),
-      nextActionAt: mgmtIso(nextAt) ?? now.toISOString(),
-      nextActionDescription: row.next_action_description ?? null,
-      assignedTo: row.assigned_to ?? null,
-      createdByName: row.created_by_name ?? null,
-      daysUntil: Math.max(0, Math.ceil((nextAt.getTime() - nowMs) / 86400000)),
-    };
-  });
+  const topCustomersLast12Months = [...orderFacts.purchase12mByCustomer.entries()]
+    .filter(([customerId]) => scopedIds.has(customerId))
+    .sort((a, b) => b[1].value - a[1].value)
+    .slice(0, LIST_LIMIT)
+    .map(([customerId, agg]) => {
+      const c = orderFacts.customerById.get(customerId)!;
+      return {
+        customerId,
+        displayName: mgmtDisplayName(c.companyName, c.tradeName),
+        taxId: c.taxId,
+        totalPurchasedLast12Months: roundMoney(agg.value),
+        ordersCount: agg.orders,
+        lastPurchaseAt: mgmtIso(orderFacts.lastPurchaseByCustomer.get(customerId) ?? null),
+        daysSinceLastContact: mgmtDaysSince(lastContactByCustomer.get(customerId) ?? null, nowMs),
+      };
+    });
 
-  const ordersWithoutFollowUp = ordersWithoutFollowUpRows.map((row) => {
-    const updatedAt = row.updated_at;
-    return {
-      salesOrderId: row.sales_order_id,
-      orderCode: row.order_code,
-      customerId: row.customer_id,
-      displayName: mgmtDisplayName(row.company_name, row.trade_name),
-      status: row.status,
-      totalNetValue: mgmtToNumber(row.total_net_value),
-      updatedAt: mgmtIso(updatedAt) ?? now.toISOString(),
-      daysWithoutFollowUp: Math.max(0, Math.floor((nowMs - updatedAt.getTime()) / 86400000)),
-      responsible: row.responsible ?? null,
-    };
-  });
+  const breakdownOf = (kind: string) =>
+    breakdownRows
+      .filter((r) => r.kind === kind)
+      .map((r) => ({ key: r.key, count: Number(r.count ?? 0n) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
 
-  const topCustomersLast12Months = topCustomers12mRows.map((row) => ({
-    customerId: row.customer_id,
-    displayName: mgmtDisplayName(row.company_name, row.trade_name),
-    taxId: row.tax_id,
-    totalPurchasedLast12Months: mgmtToNumber(row.total_purchased),
-    ordersCount: Number(row.orders_count ?? 0n),
-    lastPurchaseAt: mgmtIso(row.last_purchase_at),
-    daysSinceLastContact: mgmtDaysSince(row.last_contact_at, nowMs),
-  }));
+  const openPortfolioTotals = [...orderFacts.openPortfolioByCustomer.values()].reduce(
+    (acc, agg) => ({ orders: acc.orders + agg.orders, value: acc.value + agg.value }),
+    { orders: 0, value: 0 }
+  );
 
-  const mapBreakdown = (rows: { key: string | null; count: bigint }[]) =>
-    rows.map((r) => ({ key: r.key ?? "—", count: Number(r.count ?? 0n) }));
-
-  const openOrdersCount = Number(openOrdersAgg?.cnt ?? 0n);
-  const openOrdersValue = mgmtToNumber(openOrdersAgg?.val);
-
-  const totalCustomers = bigintCount(totalCustomersRow);
   const summary = mergeOfficialOrderMetricsIntoManagementSummary({
     base: {
       totalCustomers,
-      customersWithContactLast30Days: bigintCount(withContact30Row),
-      customersWithoutContactLast30Days: bigintCount(withoutContact30Row),
-      customersWithoutContactLast60Days: bigintCount(withoutContact60Row),
-      customersWithoutContactLast90Days: bigintCount(withoutContact90Row),
-      customersWithoutValidPurchase: bigintCount(withoutValidPurchaseRow),
-      customersWithoutPurchase90Days: bigintCount(withoutPurchase90Row),
-      customersWithoutPurchase180Days: bigintCount(withoutPurchase180Row),
-      contactsLast7Days: bigintCount(contacts7Row),
-      contactsLast30Days: bigintCount(contacts30Row),
-      overdueFollowUps: bigintCount(overdueFollowUpsRow),
-      upcomingFollowUpsNext7Days: bigintCount(upcoming7Row),
-      upcomingFollowUpsNext30Days: bigintCount(upcoming30Row),
-      openOrdersCount,
-      openOrdersValue,
-      ordersWithoutFollowUpCount: bigintCount(ordersNoFollowUpRow),
-      customersAtHighRisk: bigintCount(customersHighRiskRow),
+      customersWithContactLast30Days: [...contacted30].filter((id) => scopedIds.has(id)).length,
+      customersWithoutContactLast30Days: countScopedWithoutContactSince(since30),
+      customersWithoutContactLast60Days: countScopedWithoutContactSince(since60),
+      customersWithoutContactLast90Days: countScopedWithoutContactSince(since90),
+      customersWithoutValidPurchase: customersWithoutPurchaseHorizon,
+      customersWithoutPurchase90Days: customersWithoutPurchase90,
+      customersWithoutPurchase180Days: customersWithoutPurchase180,
+      contactsLast7Days,
+      contactsLast30Days,
+      overdueFollowUps: overdueFollowUpRows.length,
+      upcomingFollowUpsNext7Days: upcoming7Rows.length,
+      upcomingFollowUpsNext30Days: upcoming30Rows.length,
+      openOrdersCount: openPortfolioTotals.orders,
+      openOrdersValue: roundMoney(openPortfolioTotals.value),
+      ordersWithoutFollowUpCount: ordersWithoutFollowUpAll.length,
+      customersAtHighRisk,
     },
     metrics: orderMetrics,
     totalCustomers,
+    customersWithoutOrderInPeriod,
   });
 
   return {
@@ -789,16 +467,24 @@ export async function buildCrmManagementDashboardResponse(
     topCustomers: orderMetrics.topCustomers,
     topProducts: orderMetrics.topProducts,
     topCommercialOwners: orderMetrics.topCommercialOwners,
+    /** Agregados do ranking COMPLETO — base de reconciliação, não Top N. */
+    reconciliation: {
+      customerRanking: orderMetrics.customerRankingTotals,
+      commercialOwnerRanking: orderMetrics.commercialOwnerRankingTotals,
+    },
     activityBreakdown: {
       periodDays: 30,
-      byChannel: mapBreakdown(breakdownChannelRows),
-      byReason: mapBreakdown(breakdownReasonRows),
-      byResponsible: mapBreakdown(breakdownResponsibleRows),
+      byChannel: breakdownOf("channel"),
+      byReason: breakdownOf("reason"),
+      byResponsible: breakdownOf("responsible"),
     },
-    sourceInfo: buildManagementDashboardSourceInfo({
-      dateFrom: period.dateFrom,
-      dateTo: period.dateTo,
-      metrics: orderMetrics,
-    }),
+    sourceInfo: {
+      ...buildManagementDashboardSourceInfo({
+        dateFrom: period.dateFrom,
+        dateTo: period.dateTo,
+        metrics: orderMetrics,
+      }),
+      relationshipHorizonMonths: CRM_RELATIONSHIP_HORIZON_MONTHS,
+    },
   };
 }

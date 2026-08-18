@@ -8,6 +8,7 @@ import {
   CRM_NO_COMMERCIAL_OWNER_BUCKET,
   CRM_SALES_ORDER_METRICS_SOURCE,
   filterCrmSalesOrderMetricsUniverse,
+  RANKING_TOP_N,
   type CrmMetricsOrderInput,
 } from "./crmSalesOrderMetricsService.ts";
 import {
@@ -301,5 +302,121 @@ describe("crmSalesOrderMetricsService", () => {
     assert.equal(metrics.debug.sourceInfo, CRM_SALES_ORDER_METRICS_SOURCE);
     // Paridade: mesmo universo ativo → mesmo soldAmount do motor
     assert.equal(official.soldAmount, 5000);
+  });
+});
+
+/**
+ * Espelho do Pedidos de Venda (17/08/2026): o cockpit do gestor comercial só
+ * serve se cada número tiver a MESMA régua da tela oficial de pedidos.
+ */
+describe("crmSalesOrderMetrics — espelho da tela Pedidos de Venda", () => {
+  const intercompany = order({
+    id: "ic-1",
+    orderCode: "IC-1",
+    customerId: "cust-grupo",
+    totalNetValue: 500000,
+    Customer: {
+      companyName: "Koppetel Comercio de Plasticos LTDA",
+      tradeName: "KOPPETEL",
+      taxId: "14.055.501/0001-80",
+      CrmCustomerCommercialOwner: null,
+    },
+  });
+  const mercado = order({ id: "mk-1", orderCode: "MK-1", totalNetValue: 1000 });
+
+  it("venda intercompany não entra em ranking, cliente nem valor", () => {
+    const metrics = buildCrmSalesOrderMetrics({ orders: [mercado, intercompany] });
+    assert.equal(metrics.customersWithOrders, 1, "Koppetel não é cliente do mercado");
+    assert.ok(
+      !metrics.topCustomers.some((row) => row.label.toUpperCase().includes("KOPPETEL")),
+      "empresa do grupo não pode aparecer no Top clientes"
+    );
+    // Reconciliação é contra o ranking COMPLETO (todos os clientes).
+    // Σ do Top N só coincide por acaso quando há ≤ 10 grupos.
+    assert.equal(metrics.customerRankingTotals.value, metrics.totalOrderValue);
+    assert.equal(metrics.customerRankingTotals.orders, metrics.totalOrders);
+  });
+
+  it("ranking completo de responsáveis reconcilia com o valor vendido", () => {
+    const metrics = buildCrmSalesOrderMetrics({ orders: [mercado, intercompany] });
+    assert.equal(metrics.commercialOwnerRankingTotals.value, metrics.totalOrderValue);
+    assert.equal(metrics.commercialOwnerRankingTotals.orders, metrics.totalOrders);
+  });
+
+  it("pedido sem cliente vinculado vira qualidade de dado, não vira cliente", () => {
+    const semCliente = order({
+      id: "nc-1",
+      orderCode: "NC-1",
+      customerId: null,
+      Customer: { companyName: "Sem vínculo", tradeName: null, CrmCustomerCommercialOwner: null },
+    });
+    const metrics = buildCrmSalesOrderMetrics({ orders: [mercado, semCliente] });
+    assert.equal(metrics.customersWithOrders, 1);
+    assert.equal(metrics.ordersWithoutCustomerLink, 1);
+  });
+
+  it("só o CANCELADO sai do valor vendido — ERROR conta, como na tela Pedidos", () => {
+    // A tela Pedidos de Venda exclui apenas CANCELLED (where + motor). O CRM
+    // excluía ERROR também, o que tornava a reconciliação impossível.
+    const cancelado = order({ id: "cc-1", orderCode: "CC-1", status: "CANCELLED", totalNetValue: 9999 });
+    const erro = order({ id: "er-1", orderCode: "ER-1", status: "ERROR", totalNetValue: 700 });
+    const metrics = buildCrmSalesOrderMetrics({ orders: [mercado, cancelado, erro] });
+    assert.equal(metrics.totalOrderValue, 1700);
+    assert.equal(metrics.totalOrders, 2);
+    assert.equal(metrics.canceledOrders, 1);
+  });
+});
+
+describe("crmSalesOrderMetrics — Top N exibido × ranking de reconciliação", () => {
+  /** 13 clientes: mais grupos do que o Top N exibido (10). */
+  const many = Array.from({ length: 13 }, (_, i) =>
+    order({
+      id: `m-${i}`,
+      orderCode: `M-${i}`,
+      customerId: `cust-${i}`,
+      totalNetValue: 100 * (i + 1),
+      Customer: {
+        companyName: `Cliente ${i}`,
+        tradeName: null,
+        CrmCustomerCommercialOwner: null,
+      },
+    })
+  );
+
+  it("Σ do Top N NÃO fecha com o valor vendido quando há mais grupos que o Top", () => {
+    const metrics = buildCrmSalesOrderMetrics({ orders: many });
+    const somaTopN = metrics.topCustomers.reduce((sum, row) => sum + row.value, 0);
+    assert.equal(metrics.topCustomers.length, RANKING_TOP_N);
+    assert.ok(
+      somaTopN < metrics.totalOrderValue,
+      "afirmar Σ(Top N) = total seria matematicamente errado"
+    );
+    assert.equal(metrics.customerRankingTotals.truncatedForDisplay, true);
+  });
+
+  it("o ranking COMPLETO fecha no centavo com o valor vendido", () => {
+    const metrics = buildCrmSalesOrderMetrics({ orders: many });
+    assert.equal(metrics.customerRankingTotals.groups, 13);
+    assert.equal(metrics.customerRankingTotals.value, metrics.totalOrderValue);
+    assert.equal(metrics.customerRankingTotals.orders, metrics.totalOrders);
+  });
+
+  it("Top produtos soma LINHA e não deve ser reconciliado com o header", () => {
+    // Produto só existe na linha do pedido; o valor vendido é o header.
+    // Documentado para ninguém escrever um teste forçando igualdade.
+    const comItens = order({
+      id: "it-1",
+      orderCode: "IT-1",
+      totalNetValue: 1000,
+      items: [
+        { productId: "p1", productNameSnapshot: "Produto 1", quantity: 1, totalNetValue: 400 },
+        { productId: "p2", productNameSnapshot: "Produto 2", quantity: 1, totalNetValue: 300 },
+      ],
+    });
+    const metrics = buildCrmSalesOrderMetrics({ orders: [comItens] });
+    const somaProdutos = metrics.topProducts.reduce((sum, row) => sum + row.value, 0);
+    assert.equal(somaProdutos, 700);
+    assert.equal(metrics.totalOrderValue, 1000);
+    assert.notEqual(somaProdutos, metrics.totalOrderValue);
   });
 });

@@ -134,7 +134,10 @@ describe("crmManagementDashboard", () => {
       join(process.cwd(), "src/lib/crmManagementDashboardService.ts"),
       "utf8"
     );
-    assert.match(service, /"SalesOrder"/);
+    // A base continua sendo SalesOrder, mas agora via população canônica
+    // da tela Pedidos de Venda — o serviço não monta SQL de pedido.
+    assert.match(service, /loadCrmManagementOrderFacts/);
+    assert.ok(!service.includes('FROM "SalesOrder"'));
     assert.equal(service.includes('"Proposal"'), false);
     assert.match(service, /loadCrmSalesOrderMetrics/);
     assert.match(service, /openOrdersCount/);

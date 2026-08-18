@@ -37,6 +37,9 @@ function emptyMetrics(
     topProducts: [],
     topCommercialOwners: [],
     ordersWithoutNomusSeller: 0,
+    ordersWithoutCustomerLink: 0,
+    customerRankingTotals: { groups: 0, value: 0, orders: 0, truncatedForDisplay: false },
+    commercialOwnerRankingTotals: { groups: 0, value: 0, orders: 0, truncatedForDisplay: false },
     customersWithoutCommercialResponsible: 0,
     ordersWithResponsibleDifferentFromOrderSeller: 0,
     debug: {
@@ -74,13 +77,52 @@ const baseSummary: ManagementDashboardSummary = {
 };
 
 describe("crmManagementDashboardOfficialOrders", () => {
-  it("resolveManagementDashboardPeriod usa últimos 30 dias por padrão", () => {
+  it("abre no ANO VIGENTE — mesma régua da tela Pedidos de Venda", () => {
+    // Era "últimos 30 dias" enquanto Pedidos de Venda abre no ano: as duas
+    // telas nunca falavam do mesmo período e nenhum número batia.
     const period = resolveManagementDashboardPeriod(
       {},
       new Date("2026-07-11T12:00:00.000Z")
     );
+    assert.deepEqual(period, { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
+  });
+
+  it("ano + mês recorta o mês inteiro (respeita fim de mês e bissexto)", () => {
+    assert.deepEqual(resolveManagementDashboardPeriod({ year: 2026, month: 2 }), {
+      dateFrom: "2026-02-01",
+      dateTo: "2026-02-28",
+    });
+    assert.deepEqual(resolveManagementDashboardPeriod({ year: 2024, month: 2 }), {
+      dateFrom: "2024-02-01",
+      dateTo: "2024-02-29",
+    });
+    assert.deepEqual(resolveManagementDashboardPeriod({ year: 2026, month: 12 }), {
+      dateFrom: "2026-12-01",
+      dateTo: "2026-12-31",
+    });
+  });
+
+  it("ano sem mês pega o ano inteiro", () => {
+    assert.deepEqual(resolveManagementDashboardPeriod({ year: 2025 }), {
+      dateFrom: "2025-01-01",
+      dateTo: "2025-12-31",
+    });
+  });
+
+  it("todos os anos vai da gênese até hoje", () => {
+    const period = resolveManagementDashboardPeriod(
+      { allYears: true },
+      new Date("2026-07-11T12:00:00.000Z")
+    );
     assert.equal(period.dateTo, "2026-07-11");
-    assert.equal(period.dateFrom, "2026-06-12");
+    assert.ok(period.dateFrom < "2020-01-01");
+  });
+
+  it("mês inválido é ignorado e cai no ano inteiro", () => {
+    assert.deepEqual(resolveManagementDashboardPeriod({ year: 2026, month: 13 }), {
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
   });
 
   it("resolveManagementDashboardPeriod respeita dateFrom/dateTo", () => {
@@ -133,6 +175,9 @@ describe("crmManagementDashboardOfficialOrders", () => {
         averageTicket: 4000,
         customersWithOrders: 8,
         ordersWithoutNomusSeller: 2,
+        ordersWithoutCustomerLink: 0,
+        customerRankingTotals: { groups: 0, value: 0, orders: 0, truncatedForDisplay: false },
+        commercialOwnerRankingTotals: { groups: 0, value: 0, orders: 0, truncatedForDisplay: false },
         customersWithoutCommercialResponsible: 3,
         ordersWithResponsibleDifferentFromOrderSeller: 1,
       }),
@@ -163,13 +208,17 @@ describe("crmManagementDashboardOfficialOrders", () => {
     assert.equal(/\bprisma\.proposal\b/i.test(service), false);
   });
 
-  it("endpoint management-dashboard aceita dateFrom/dateTo", () => {
+  it("endpoint management-dashboard aceita ano/mês (vocabulário de Pedidos) e dateFrom/dateTo", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     const start = server.indexOf("/api/crm/management-dashboard");
     assert.ok(start >= 0);
-    const block = server.slice(start, start + 1200);
+    const block = server.slice(start, start + 2200);
     assert.match(block, /dateFrom/);
     assert.match(block, /dateTo/);
+    // Recorte principal do cockpit é o mesmo da tela Pedidos de Venda.
+    assert.match(block, /req\.query\.year/);
+    assert.match(block, /req\.query\.month/);
+    assert.match(block, /allYears/);
     assert.match(block, /buildCrmManagementDashboardResponse/);
     assert.equal(block.includes('"Proposal"'), false);
   });

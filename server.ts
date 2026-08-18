@@ -14280,7 +14280,21 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : null;
       const dateTo =
         typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : null;
-      const payload = await buildCrmManagementDashboardResponse({ dateFrom, dateTo });
+      // Recorte no MESMO vocabulário da tela Pedidos de Venda: ano, mês
+      // opcional e "todos". dateFrom/dateTo seguem aceitos (links antigos).
+      const yearToken =
+        typeof req.query.year === "string" ? req.query.year.trim().toLowerCase() : "";
+      const allYears = yearToken === "all" || yearToken === "todos";
+      const parsedYear = Number(yearToken);
+      const parsedMonth =
+        typeof req.query.month === "string" ? Number(req.query.month.trim()) : NaN;
+      const payload = await buildCrmManagementDashboardResponse({
+        dateFrom,
+        dateTo,
+        allYears,
+        year: Number.isFinite(parsedYear) && parsedYear > 1900 ? parsedYear : null,
+        month: Number.isFinite(parsedMonth) ? parsedMonth : null,
+      });
       res.json(payload);
     } catch (error) {
       console.error("GET /api/crm/management-dashboard", error);
