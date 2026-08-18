@@ -27,6 +27,14 @@ export const DB_GATE_PENDING =
 /** Token obrigatório no nome do banco — trava contra apontar para banco oficial. */
 export const TEMPORAL_DB_NAME_TOKEN = "inventory_temporal_gate";
 
+/** PostgreSQL oficial da infraestrutura onde este gate é executado. */
+export const EXPECTED_POSTGRES_MAJOR = 17;
+
+/** Major do PostgreSQL a partir de `server_version` (ex.: "17.2" → 17). */
+export function parsePostgresMajor(serverVersion: string | undefined | null): number {
+  return Number.parseInt(String(serverVersion ?? "").split(".")[0], 10);
+}
+
 /** URL do banco de teste. Opt-in explícito, sem fallback para DATABASE_URL. */
 export function resolveTemporalDbUrl(): string | null {
   const url = process.env.INVENTORY_TEMPORAL_DB_URL?.trim();
@@ -181,6 +189,15 @@ describe("OP-10 DB gate — guarda do banco descartável", () => {
     assert.doesNotMatch(name, /s3cr3t/);
   });
 
+  it("parsePostgresMajor extrai o major e não quebra com valor ausente", () => {
+    assert.equal(parsePostgresMajor("17.2"), EXPECTED_POSTGRES_MAJOR);
+    assert.equal(parsePostgresMajor("17.6 (Debian 17.6-1.pgdg120+1)"), 17);
+    assert.equal(parsePostgresMajor("16.4"), 16);
+    // O bug original: coluna inexistente virava undefined e estourava no split.
+    assert.equal(Number.isNaN(parsePostgresMajor(undefined)), true);
+    assert.equal(Number.isNaN(parsePostgresMajor(null)), true);
+  });
+
   it("sem INVENTORY_TEMPORAL_DB_URL não há fallback para DATABASE_URL", () => {
     const original = process.env.INVENTORY_TEMPORAL_DB_URL;
     delete process.env.INVENTORY_TEMPORAL_DB_URL;
@@ -213,16 +230,24 @@ describe("OP-10 DB gate — migration e schema em PostgreSQL real", { skip: gate
     const rows = await prisma.$queryRaw<Array<{ v: string; db: string }>>`
       SELECT version()::text AS v, current_database()::text AS db
     `;
+    // `SHOW server_version` devolve a coluna chamada `server_version`; o generic
+    // do $queryRaw não renomeia nada em runtime. Alias explícito é determinístico.
     const serverVersion = await prisma.$queryRaw<Array<{ n: string }>>`
-      SHOW server_version
+      SELECT current_setting('server_version')::text AS n
     `;
+    const major = parsePostgresMajor(serverVersion[0]?.n);
     log("postgres", {
       database: rows[0].db,
-      server_version: serverVersion[0].n,
+      server_version: serverVersion[0]?.n,
+      server_major: major,
       version: rows[0].v.split(" ").slice(0, 2).join(" "),
     });
     assert.match(rows[0].db, new RegExp(TEMPORAL_DB_NAME_TOKEN));
-    assert.equal(Number(serverVersion[0].n.split(".")[0]) >= 13, true);
+    assert.equal(
+      major,
+      EXPECTED_POSTGRES_MAJOR,
+      `DB gate roda no PostgreSQL ${EXPECTED_POSTGRES_MAJOR} oficial da infraestrutura; encontrado major ${major}`
+    );
   });
 
   it("InventoryCountLine.version e currentObservationId existem com o tipo certo", async () => {
