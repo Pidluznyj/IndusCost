@@ -185,9 +185,11 @@ describe("nomusSourcePresencePolicy — regra central", () => {
   });
 
   it("12. relatórios SQL respeitam a policy", () => {
-    const crm = read("src/lib/crmOrderPortfolioSql.ts");
+    // CRM: a presença chega pelo where canônico de Pedidos de Venda (o SQL do
+    // cockpit não reimplementa mais regra de pedido).
+    const crm = read("src/lib/commercial/crmCanonicalSalesOrderScope.server.ts");
     const billing = read("src/lib/financeBillingForecast.ts");
-    assert.match(crm, /salesOrderOperationalPresenceSql/);
+    assert.match(crm, /buildSalesOrderListWhere/);
     assert.match(billing, /salesOrderOperationalPresenceSql/);
 
     const envOn = { [NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV]: "true" };

@@ -60,7 +60,10 @@ export type {
   ManagementTopCustomer,
 };
 import { buildManagementKpiCards } from "@/src/components/crmManagementUi";
-import { CrmManagementDashboardSection } from "@/src/components/CrmManagementDashboardSection";
+import {
+  CrmManagementDashboardSection,
+  type CrmManagementPeriodFilter,
+} from "@/src/components/CrmManagementDashboardSection";
 import { CrmManagementLists } from "@/src/components/CrmManagementLists";
 import type {
   SellerDashboardResponse,
@@ -1448,6 +1451,15 @@ export const CrmModule = () => {
     useState<ManagementDashboardResponse | null>(null);
   const [managementDashboardLoading, setManagementDashboardLoading] = useState(true);
   const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
+  /**
+   * Recorte do cockpit — abre no ANO VIGENTE, igual à tela Pedidos de Venda.
+   * Antes a tela não mandava período nenhum e o backend caía em "últimos 30
+   * dias": nenhum número batia com Pedidos por construção.
+   */
+  const [managementPeriod, setManagementPeriod] = useState<CrmManagementPeriodFilter>(() => ({
+    year: String(new Date().getFullYear()),
+    month: "",
+  }));
 
   const auth = useAuth();
   const crmPersona = resolveCrmPersonaForChecker(auth);
@@ -1509,8 +1521,14 @@ export const CrmModule = () => {
     setManagementDashboardLoading(true);
     setManagementDashboardError(null);
     try {
+      // Ano/mês no mesmo vocabulário de Pedidos de Venda ("all" = todos).
+      const params = new URLSearchParams();
+      params.set("year", managementPeriod.year.trim() === "" ? "all" : managementPeriod.year.trim());
+      if (managementPeriod.year.trim() !== "" && managementPeriod.month.trim() !== "") {
+        params.set("month", managementPeriod.month.trim());
+      }
       const data = await fetchJsonOk<ManagementDashboardResponse>(
-        "/api/crm/management-dashboard"
+        `/api/crm/management-dashboard?${params.toString()}`
       );
       setManagementDashboard(data);
     } catch (e) {
@@ -1526,7 +1544,7 @@ export const CrmModule = () => {
     } finally {
       setManagementDashboardLoading(false);
     }
-  }, []);
+  }, [managementPeriod]);
 
   const loadSellerDashboard = useCallback(async (params?: SellerDashboardLoadParams) => {
     if (sellerNotLinked) {
@@ -2285,6 +2303,8 @@ export const CrmModule = () => {
             onReload={() => void loadManagementDashboard()}
             formatDateTimePt={formatDateTimePt}
             formatNumberPt={formatNumberPt}
+            period={managementPeriod}
+            onPeriodChange={setManagementPeriod}
           >
             {managementDashboard ? (
               <CrmManagementLists

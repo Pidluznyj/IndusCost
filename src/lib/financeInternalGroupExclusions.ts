@@ -372,7 +372,16 @@ function tradeNameContainsNullSafe(term: string): Prisma.CustomerWhereInput {
  * Cláusula Prisma: exclui pedidos cujo Customer é empresa do grupo (CNPJ formatado/dígitos ou nome).
  * Usada na população operacional oficial (listagem Comercial / Financeiro Pedidos).
  */
-export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWhereInput {
+/**
+ * Predicados de Customer que identificam empresa do grupo economico.
+ *
+ * EXTRAIDO de `buildEconomicGroupCustomerPrismaExclusion` sem alterar uma
+ * virgula da lista: o mesmo array passou a ser reutilizavel por quem precisa
+ * do recorte no nivel de Customer (cockpit do CRM) em vez de reescrever a
+ * regra. A funcao original continua sendo a unica porta no nivel SalesOrder
+ * e passou a consumir esta — nao ha segunda implementacao.
+ */
+export function buildEconomicGroupCustomerMatchOr(): Prisma.CustomerWhereInput[] {
   const customerOr: Prisma.CustomerWhereInput[] = [];
   for (const company of FINANCE_INTERNAL_GROUP_COMPANIES) {
     customerOr.push({ taxId: { equals: company.cnpj } });
@@ -399,6 +408,11 @@ export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWh
   // cada ramo de `tradeName` precisa ser explicitamente null-safe
   // (`tradeNameContainsNullSafe`) antes de entrar no OR. `taxId`/`companyName`
   // são obrigatórios no schema — não precisam da mesma proteção.
+  return customerOr;
+}
+
+export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWhereInput {
+  const customerOr = buildEconomicGroupCustomerMatchOr();
   return {
     Customer: {
       isNot: {

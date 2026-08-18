@@ -12,7 +12,20 @@ import {
 } from "lucide-react";
 import type { ManagementDashboardSummary } from "@/src/components/crmManagementTypes";
 
+/**
+ * Classe do indicador — o gestor precisa saber o que pode ser conferido
+ * contra a tela Pedidos de Venda e o que é métrica própria do CRM.
+ *
+ *  TRANSACIONAL  → sai da população canônica de Pedidos de Venda e TEM
+ *                  que reconciliar no centavo (pedidos, valor, carteira,
+ *                  faturado).
+ *  RELACIONAMENTO→ nasce do CRM (contato, follow-up, recência, vínculo).
+ *                  Não reconcilia com Pedidos de Venda e não deveria.
+ */
+export type ManagementKpiClass = "TRANSACIONAL" | "RELACIONAMENTO";
+
 export type ManagementKpiCard = {
+  kpiClass: ManagementKpiClass;
   label: string;
   description: string;
   value: string;
@@ -57,64 +70,72 @@ export function buildManagementKpiCards(
 ): ManagementKpiCard[] {
   return [
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Clientes em alto risco",
-      description: "Pedido em carteira sem follow-up ou sem compra há 90+ dias",
+      description: "Carteira sem follow-up ou sem compra há 90+ dias (janela móvel)",
       value: formatNumberPt(summary?.customersAtHighRisk),
       icon: AlertTriangle,
       cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/60 to-card",
       iconClass: "text-red-700 bg-red-100",
     },
     {
+      kpiClass: "TRANSACIONAL",
       label: "Pedidos em carteira",
-      description: "Carteira aberta (sem NF processada)",
+      description: "Pedidos válidos sem NF processada — mesma régua de Pedidos de Venda",
       value: formatNumberPt(summary?.openOrdersCount),
       icon: FileSpreadsheet,
       cardClass: "border-violet-200/80 bg-gradient-to-br from-violet-50/50 to-card",
       iconClass: "text-violet-800 bg-violet-100",
     },
     {
+      kpiClass: "TRANSACIONAL",
       label: "Valor em carteira",
-      description: "Soma do valor líquido em carteira aberta",
+      description: "Valor líquido do pedido (header), igual ao card da tela Pedidos",
       value: formatIntelCurrency(summary?.openOrdersValue),
       icon: TrendingUp,
       cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/50 to-card",
       iconClass: "text-emerald-800 bg-emerald-100",
     },
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Pedidos sem follow-up",
-      description: "Carteira aberta sem contato após atualização",
+      description: "Carteira aberta sem contato após a atualização (janela móvel)",
       value: formatNumberPt(summary?.ordersWithoutFollowUpCount),
       icon: Target,
       cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/50 to-card",
       iconClass: "text-amber-800 bg-amber-100",
     },
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Sem contato 30 dias",
-      description: "Clientes sem atividade recente",
+      description: "Clientes ativos sem atividade nos últimos 30 dias (janela móvel)",
       value: formatNumberPt(summary?.customersWithoutContactLast30Days),
       icon: UserX,
       cardClass: "border-orange-200/80 bg-gradient-to-br from-orange-50/50 to-card",
       iconClass: "text-orange-800 bg-orange-100",
     },
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Sem compra válida",
-      description: "Sem pedido READY_TO_SEND ou SENT_TO_NOMUS",
+      description: "Clientes ativos sem nenhum pedido válido (mesma régua dos cards)",
       value: formatNumberPt(summary?.customersWithoutValidPurchase),
       icon: ShoppingCart,
       cardClass: "border-slate-200/80 bg-gradient-to-br from-slate-50 to-card",
       iconClass: "text-slate-700 bg-slate-100",
     },
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Follow-ups atrasados",
-      description: "Ações comerciais vencidas",
+      description: "Ações comerciais vencidas (janela móvel)",
       value: formatNumberPt(summary?.overdueFollowUps),
       icon: Clock,
       cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/40 to-card",
       iconClass: "text-red-700 bg-red-100",
     },
     {
+      kpiClass: "RELACIONAMENTO",
       label: "Próximos follow-ups 7 dias",
-      description: "Agenda da semana",
+      description: "Agenda da semana (janela móvel)",
       value: formatNumberPt(summary?.upcomingFollowUpsNext7Days),
       icon: CalendarDays,
       cardClass: "border-sky-200/80 bg-gradient-to-br from-sky-50/60 to-card",

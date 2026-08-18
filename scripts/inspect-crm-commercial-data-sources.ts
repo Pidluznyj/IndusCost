@@ -21,7 +21,7 @@ import {
   buildCrmSellerPortfolioOrderScopeSql,
 } from "../src/lib/crmSellerMatchSql.ts";
 import { fetchCrmManualOwnerCustomerIds } from "../src/lib/crmCustomersList.ts";
-import { crmOrderIsInvoicedSql, CRM_VALID_PURCHASE_STATUS_SQL } from "../src/lib/crmOrderPortfolioSql.ts";
+import { crmCanonicalSalesOrderWhere } from "../src/lib/commercial/crmCanonicalSalesOrderScope.server.ts";
 
 // ─── defaults (sobrescrevíveis por CLI) ─────────────────────────────────────
 const DEFAULT_DAYS = 30;
@@ -142,7 +142,13 @@ async function main() {
     const manualOwnerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
     const hybridLegacyScope = buildCrmSellerPortfolioOrderScopeSql("so", sellerFilter, manualOwnerIds);
     const ownerOnlyScope = buildCrmCommercialOwnerOnlyOrderScopeSql("so", sellerFilter, manualOwnerIds);
-    const invoicedSql = crmOrderIsInvoicedSql("so");
+    // DIAGNÓSTICO LEGADO: predicado local, só para comparar o passado.
+    // A régua oficial vive em crmCanonicalSalesOrderScope.server.ts —
+    // para conferência PV × CRM use scripts/verify-crm-vs-sales-orders.ts.
+    const invoicedSql = Prisma.sql`EXISTS (
+      SELECT 1 FROM "SalesOrderNfeLink" nfl
+      WHERE nfl."salesOrderId" = so."id" AND nfl."dataProcessamento" IS NOT NULL
+    )`;
 
     const periodSql = Prisma.sql`so."issueDate" >= ${periodFrom} AND so."issueDate" <= ${periodTo}`;
     const validSql = Prisma.sql`so.status::text NOT IN ('CANCELLED', 'ERROR')`;
@@ -249,12 +255,12 @@ async function main() {
     const [mgmtGeneralPeriod] = await prisma.$queryRaw<{ orders: number; value: unknown }[]>(Prisma.sql`
       SELECT COUNT(*)::int AS orders, COALESCE(SUM(so."totalNetValue"), 0) AS value
       FROM "SalesOrder" so
-      WHERE ${periodSql} AND ${CRM_VALID_PURCHASE_STATUS_SQL}
+      WHERE ${periodSql} AND ${validSql}
     `);
     const [mgmtGeneralOpen] = await prisma.$queryRaw<{ orders: number; value: unknown }[]>(Prisma.sql`
       SELECT COUNT(*)::int AS orders, COALESCE(SUM(so."totalNetValue"), 0) AS value
       FROM "SalesOrder" so
-      WHERE ${CRM_VALID_PURCHASE_STATUS_SQL} AND NOT ${invoicedSql}
+      WHERE ${validSql} AND NOT ${invoicedSql}
     `);
 
     // B) CRM por responsável comercial (manual ativo)

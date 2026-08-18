@@ -14,6 +14,18 @@ export type ManagementDashboardSourceInfo = {
   metricsSource?: string;
   rulesEngineVersion?: string;
   period?: { dateFrom: string | null; dateTo: string | null };
+  /** Carga truncada pelo teto de segurança — números SUBESTIMADOS. */
+  truncated?: boolean;
+  /** Pedidos que casam o filtro no banco (antes do teto). */
+  matchedOrderCount?: number;
+  /**
+   * Contadores que NÃO seguem o período selecionado por natureza (janelas
+   * móveis de relacionamento: contato 30/60/90 dias, follow-up). A UI rotula
+   * para o gestor não somar alhos com bugalhos.
+   */
+  rollingWindowNote?: string;
+  /** Horizonte (meses) das métricas de relacionamento do CRM. */
+  relationshipHorizonMonths?: number;
 };
 
 export type ManagementDashboardSummary = {

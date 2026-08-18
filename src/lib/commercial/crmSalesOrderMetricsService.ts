@@ -10,8 +10,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { isCancelledSalesOrderStatus } from "@/src/lib/salesOrderDashboardRules.js";
 import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
+import { isSalesOrderMarketCustomer } from "@/src/lib/groupCompanyCustomer.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
-import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { crmCanonicalSalesOrderWhere } from "@/src/lib/commercial/crmCanonicalSalesOrderScope.server.js";
 import {
   CRM_OFFICIAL_UI_MESSAGES,
   CRM_PORTFOLIO_AXIS,
@@ -51,7 +52,11 @@ export type CrmSalesOrderMetricsFilters = {
   /** Auditoria opcional — não define carteira. */
   sellerName?: string | null;
   status?: string | null;
-  /** Default true = inclui cancelados no universo; métricas “válidas” ainda seguem o motor. */
+  /** Recorte canônico (mesmo vocabulário da tela Pedidos de Venda). */
+  year?: number | null;
+  month?: number | null;
+  allYears?: boolean | null;
+  /** @deprecated Sem efeito no universo — a régua de período é ano/mês canônico. */
   includeCancelled?: boolean;
   companyIssuer?: string | null;
 };
@@ -62,6 +67,27 @@ export type CrmMetricsLeadingProduct = {
   sku: string | null;
   revenue: number;
   quantity: number;
+};
+
+/** Quantos grupos a UI exibe. O ranking COMPLETO vai nos *RankingTotals. */
+export const RANKING_TOP_N = 10;
+
+/**
+ * Agregado do ranking INTEIRO (todos os grupos), não do Top N.
+ *
+ * Existe porque "Σ do Top 10 = valor vendido" é falso assim que houver mais
+ * de 10 grupos — a reconciliação tem que ser feita contra o ranking completo,
+ * e o Top N é só recorte de exibição.
+ */
+export type CrmMetricsRankingTotals = {
+  /** Quantidade de grupos no ranking completo. */
+  groups: number;
+  /** Σ do valor de TODOS os grupos. */
+  value: number;
+  /** Σ de pedidos de TODOS os grupos. */
+  orders: number;
+  /** true quando a UI mostra menos grupos do que existem. */
+  truncatedForDisplay: boolean;
 };
 
 export type CrmMetricsTopRow = {
@@ -86,7 +112,13 @@ export type CrmSalesOrderMetricsResult = {
   topProducts: CrmMetricsTopRow[];
   /** Ranking por Responsável Comercial do Cliente (eixo de carteira). */
   topCommercialOwners: CrmMetricsTopRow[];
+  /** Reconciliação: agregado de TODOS os clientes (não só o Top N exibido). */
+  customerRankingTotals: CrmMetricsRankingTotals;
+  /** Reconciliação: agregado de TODOS os responsáveis. */
+  commercialOwnerRankingTotals: CrmMetricsRankingTotals;
   ordersWithoutNomusSeller: number;
+  /** Pedidos do universo sem cliente vinculado — qualidade de dado, não cliente. */
+  ordersWithoutCustomerLink: number;
   customersWithoutCommercialResponsible: number;
   ordersWithResponsibleDifferentFromOrderSeller: number;
   debug: {
@@ -97,6 +129,14 @@ export type CrmSalesOrderMetricsResult = {
     rulesEngineVersion: string;
     filtersApplied: CrmSalesOrderMetricsFilters;
     universeOrderCount: number;
+    /**
+     * Carga truncada pelo teto de segurança do `findMany`. `true` significa
+     * número SUBESTIMADO — a UI precisa avisar em vez de exibir um total
+     * silenciosamente errado.
+     */
+    truncated?: boolean;
+    /** Pedidos que casam o filtro no banco (antes do teto). */
+    matchedOrderCount?: number;
     messages: typeof CRM_OFFICIAL_UI_MESSAGES;
   };
 };
@@ -158,6 +198,21 @@ function toFiniteNumber(value: unknown): number {
   }
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function rankingTotals(rows: readonly CrmMetricsTopRow[]): CrmMetricsRankingTotals {
+  let value = 0;
+  let orders = 0;
+  for (const row of rows) {
+    value += row.value;
+    orders += row.orders;
+  }
+  return {
+    groups: rows.length,
+    value: Math.round((value + Number.EPSILON) * 100) / 100,
+    orders,
+    truncatedForDisplay: rows.length > RANKING_TOP_N,
+  };
 }
 
 function roundMoney(value: number): number {
@@ -400,7 +455,10 @@ function buildLeadingProduct(
   return { leading, topProducts: top };
 }
 
-function buildTopCustomers(orders: readonly CrmMetricsOrderInput[]): CrmMetricsTopRow[] {
+function buildCustomerRanking(orders: readonly CrmMetricsOrderInput[]): {
+  top: CrmMetricsTopRow[];
+  totals: CrmMetricsRankingTotals;
+} {
   const byCustomer = new Map<string, { label: string; orders: number; value: number }>();
   for (const order of orders) {
     if (isCancelledSalesOrderStatus(order.status) || order.status === "ERROR") continue;
@@ -414,18 +472,21 @@ function buildTopCustomers(orders: readonly CrmMetricsOrderInput[]): CrmMetricsT
     cur.value += toFiniteNumber(order.totalNetValue);
     byCustomer.set(key, cur);
   }
-  return [...byCustomer.entries()]
+  const ranked = [...byCustomer.entries()]
     .map(([key, v]) => ({
       key,
       label: v.label,
       orders: v.orders,
       value: roundMoney(v.value),
     }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
+    .sort((a, b) => b.value - a.value);
+  return { top: ranked.slice(0, RANKING_TOP_N), totals: rankingTotals(ranked) };
 }
 
-function buildTopCommercialOwners(orders: readonly CrmMetricsOrderInput[]): CrmMetricsTopRow[] {
+function buildCommercialOwnerRanking(orders: readonly CrmMetricsOrderInput[]): {
+  top: CrmMetricsTopRow[];
+  totals: CrmMetricsRankingTotals;
+} {
   const byOwner = new Map<string, { orders: number; value: number }>();
   for (const order of orders) {
     if (isCancelledSalesOrderStatus(order.status) || order.status === "ERROR") continue;
@@ -436,15 +497,15 @@ function buildTopCommercialOwners(orders: readonly CrmMetricsOrderInput[]): CrmM
     cur.value += toFiniteNumber(order.totalNetValue);
     byOwner.set(key, cur);
   }
-  return [...byOwner.entries()]
+  const ranked = [...byOwner.entries()]
     .map(([key, v]) => ({
       key,
       label: key,
       orders: v.orders,
       value: roundMoney(v.value),
     }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
+    .sort((a, b) => b.value - a.value);
+  return { top: ranked.slice(0, RANKING_TOP_N), totals: rankingTotals(ranked) };
 }
 
 /**
@@ -458,14 +519,19 @@ export function buildCrmSalesOrderMetrics(args: {
   linkedNfeContextMap?: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>;
 }): CrmSalesOrderMetricsResult {
   const filters = args.filters ?? {};
-  const universe = filterCrmSalesOrderMetricsUniverse(args.orders, filters);
+  const universeAll = filterCrmSalesOrderMetricsUniverse(args.orders, filters);
+  // Venda intercompany não é venda de mercado: o motor oficial já a exclui dos
+  // KPIs (`excludeGroupCompanyCustomers`), então rankings e contadores daqui
+  // precisam excluir também — senão Σ(Top clientes) não fecha com o Valor
+  // vendido e a Koppetel aparece como cliente no ranking do gestor.
+  const universe = universeAll.filter((order) => isSalesOrderMarketCustomer(order));
   const from = parseBoundaryDate(filters.from ?? null, false);
   const to = parseBoundaryDate(filters.to ?? null, true);
 
-  // Universo de métricas de venda/carteira: mesma exclusão de cancelados/erro da tela Pedidos.
-  const metricsUniverse = universe.filter(
-    (o) => !isCancelledSalesOrderStatus(o.status) && o.status !== "ERROR"
-  );
+  // Universo de métricas: EXATAMENTE o da tela Pedidos de Venda — só o
+  // cancelado sai. Excluir ERROR aqui (como era antes) tornava impossível
+  // reconciliar: a tela oficial conta esses pedidos.
+  const metricsUniverse = universe.filter((o) => !isCancelledSalesOrderStatus(o.status));
 
   const rulesOrders = metricsUniverse.map((order) =>
     mapPrismaOrderToSalesOrderRulesInput({
@@ -530,10 +596,19 @@ export function buildCrmSalesOrderMetrics(args: {
     ownerDiffersFromOrderSeller(o)
   ).length;
 
+  // Cliente é contado pelo VÍNCULO (customerId). O fallback antigo pelo nome
+  // exibido criava cliente fantasma para pedido sem vínculo e fundia homônimos
+  // — os dois distorciam "Clientes com pedido" e o Top clientes. Pedido sem
+  // vínculo vira indicador de qualidade de dado, não vira cliente.
   const customerIds = new Set<string>();
   const customersWithoutOwner = new Set<string>();
+  let ordersWithoutCustomerLink = 0;
   for (const order of metricsUniverse) {
-    const cid = order.customerId || customerDisplayName(order);
+    const cid = order.customerId?.trim() || null;
+    if (!cid) {
+      ordersWithoutCustomerLink += 1;
+      continue;
+    }
     customerIds.add(cid);
     const owner = resolveActiveCommercialOwner(order);
     if (!owner.identityKey && owner.externalId == null) {
@@ -542,8 +617,8 @@ export function buildCrmSalesOrderMetrics(args: {
   }
 
   const { leading, topProducts } = buildLeadingProduct(metricsUniverse);
-  const topCustomers = buildTopCustomers(metricsUniverse);
-  const topCommercialOwners = buildTopCommercialOwners(metricsUniverse);
+  const customerRanking = buildCustomerRanking(metricsUniverse);
+  const commercialOwnerRanking = buildCommercialOwnerRanking(metricsUniverse);
 
   return {
     totalOrders: official.filteredOrders,
@@ -556,10 +631,13 @@ export function buildCrmSalesOrderMetrics(args: {
     averageTicket: official.averageTicket,
     customersWithOrders: customerIds.size,
     leadingProduct: leading,
-    topCustomers,
+    topCustomers: customerRanking.top,
     topProducts,
-    topCommercialOwners,
+    topCommercialOwners: commercialOwnerRanking.top,
+    customerRankingTotals: customerRanking.totals,
+    commercialOwnerRankingTotals: commercialOwnerRanking.totals,
     ordersWithoutNomusSeller,
+    ordersWithoutCustomerLink,
     customersWithoutCommercialResponsible: customersWithoutOwner.size,
     ordersWithResponsibleDifferentFromOrderSeller,
     debug: {
@@ -638,37 +716,35 @@ export async function loadCrmSalesOrderMetrics(
   filters: CrmSalesOrderMetricsFilters = {},
   options?: { referenceDate?: Date; take?: number }
 ): Promise<CrmSalesOrderMetricsResult> {
-  const from = parseBoundaryDate(filters.from ?? null, false);
-  const to = parseBoundaryDate(filters.to ?? null, true);
-  const includeCancelled = filters.includeCancelled !== false;
-
-  const where: Record<string, unknown> = {};
-  if (from || to) {
-    where.issueDate = {
-      ...(from ? { gte: from } : {}),
-      ...(to ? { lte: to } : {}),
-    };
-  }
-  if (!includeCancelled) {
-    where.status = { not: "CANCELLED" };
-  }
-  if (filters.status?.trim()) {
-    where.status = filters.status.trim();
-  }
-  if (filters.companyIssuer?.trim()) {
-    where.companyIssuer = filters.companyIssuer.trim();
-  }
-  if (filters.customerExternalId != null) {
-    where.externalCustomerId = filters.customerExternalId;
-  }
-
-  const rows = await prisma.salesOrder.findMany({
-    // OP-02: mesma presença operacional da listagem Comercial.
-    where: mergeSalesOrderOperationalPresenceWhere(where) as never,
-    select: CRM_SALES_ORDER_METRICS_PRISMA_SELECT as never,
-    orderBy: { issueDate: "desc" },
-    take: options?.take ?? 20000,
+  // População oficial: o CRM NÃO monta where próprio — consome o mesmo
+  // construtor da tela Pedidos de Venda (status ≠ CANCELLED, presença
+  // operacional, faixa de emissão meio-aberta e exclusão intercompany).
+  const canonicalWhere = crmCanonicalSalesOrderWhere({
+    year: filters.year ?? null,
+    month: filters.month ?? null,
+    allYears: filters.allYears ?? false,
   });
+  const where: Record<string, unknown> = { ...(canonicalWhere as Record<string, unknown>) };
+  if (filters.status?.trim()) where.status = filters.status.trim();
+  if (filters.companyIssuer?.trim()) where.companyIssuer = filters.companyIssuer.trim();
+  if (filters.customerExternalId != null) where.externalCustomerId = filters.customerExternalId;
+
+  // Presença operacional e exclusão intercompany já vêm no where canônico.
+  const presenceWhere = where;
+  const take = options?.take ?? 20000;
+
+  // Conta ANTES de carregar: com o filtro de ano (ou "todos os anos") o teto
+  // do findMany passa a ser alcançável, e truncar em silêncio entregaria um
+  // total menor que o real sem ninguém perceber.
+  const [matchedOrderCount, rows] = await Promise.all([
+    prisma.salesOrder.count({ where: presenceWhere as never }),
+    prisma.salesOrder.findMany({
+      where: presenceWhere as never,
+      select: CRM_SALES_ORDER_METRICS_PRISMA_SELECT as never,
+      orderBy: { issueDate: "desc" },
+      take,
+    }),
+  ]);
 
   const orders: CrmMetricsOrderInput[] = rows.map((row: any) => ({
     id: row.id,
@@ -731,7 +807,7 @@ export async function loadCrmSalesOrderMetrics(
     options?.referenceDate ?? new Date()
   );
 
-  return buildCrmSalesOrderMetrics({
+  const result = buildCrmSalesOrderMetrics({
     orders: filtered,
     filters: {
       from: filters.from,
@@ -743,6 +819,15 @@ export async function loadCrmSalesOrderMetrics(
     referenceDate: options?.referenceDate,
     linkedNfeContextMap: linkedMap,
   });
+
+  return {
+    ...result,
+    debug: {
+      ...result.debug,
+      matchedOrderCount,
+      truncated: matchedOrderCount > rows.length,
+    },
+  };
 }
 
 /** Agrupa totais por bucket de responsável (inclui "Sem responsável comercial"). */

@@ -227,7 +227,10 @@ describe("OP-02 paridade de consumidores (wiring)", () => {
       ["src/lib/salesOrderInternalMarginExport.server.ts", /resolveSalesOrderListWhere|buildSalesOrderListWhere/],
       ["src/lib/salesOrderResultEngine.server.ts", /resolveSalesOrderListWhere|parseSalesOrderListQuery/],
       ["src/lib/salesOrderManagement.ts", /buildSalesOrderListWhere/],
-      ["src/lib/commercial/crmSalesOrderMetricsService.ts", /mergeSalesOrderOperationalPresenceWhere/],
+      // CRM: passou a consumir o construtor canônico inteiro (que já traz a
+      // presença operacional) em vez de aplicar a policy por fora.
+      ["src/lib/commercial/crmSalesOrderMetricsService.ts", /crmCanonicalSalesOrderWhere/],
+      ["src/lib/commercial/crmCanonicalSalesOrderScope.server.ts", /buildSalesOrderListWhere/],
       ["src/lib/materialDemandFilters.ts", /mergeSalesOrderOperationalPresenceWhere/],
       ["src/lib/salesOrderMetricsEngine.ts", /buildSalesOrderListWhere/],
       ["src/lib/salesOrderOperationalPopulation.server.ts", /resolveSalesOrderListWhere/],
