@@ -16,6 +16,7 @@ import {
   parseCreateCountSessionBody,
   parseUpdateCountLineBody,
 } from "@/src/lib/inventory/inventoryCountValidation.js";
+import { recordInventoryCount } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
 import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
@@ -23,7 +24,6 @@ import {
   finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
   startInventoryCountSession,
-  updateInventoryCountLine,
 } from "@/src/lib/inventory/inventoryCountService.server.js";
 import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
@@ -1920,10 +1920,18 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       }
 
       const input = parseUpdateCountLineBody(req.body);
-      const line = await updateInventoryCountLine(prisma, id, lineId, input, {
-        userId: user.id,
-        permissions: user.effectivePermissions,
-      });
+      // OP-10: contrato HTTP inalterado — a rota humana entra no serviço de
+      // aplicação canônico, o mesmo que a futura rota DEVICE usará.
+      const { line } = await recordInventoryCount(
+        prisma,
+        {
+          sessionId: id,
+          lineId,
+          countedQuantity: input.countedQuantity,
+          justification: input.justification,
+        },
+        { userId: user.id, permissions: user.effectivePermissions }
+      );
 
       res.json({ line: serializeInventoryCountLine(line) });
     } catch (e: unknown) {

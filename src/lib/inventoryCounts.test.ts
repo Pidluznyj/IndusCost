@@ -377,6 +377,8 @@ type MockLine = {
   differencePercent?: Prisma.Decimal | null;
   justification?: string | null;
   generatedMovementId?: string | null;
+  version?: number;
+  currentObservationId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -453,6 +455,7 @@ function createCountMockPrisma(options?: {
     sessions: [...(options?.sessions ?? [])] as MockSession[],
     lines: [...(options?.lines ?? [])] as MockLine[],
     movements: [] as Array<Record<string, unknown>>,
+    observations: [] as Array<Record<string, unknown>>,
     auditLogs: [] as Array<Record<string, unknown>>,
   };
 
@@ -563,6 +566,20 @@ function createCountMockPrisma(options?: {
         return state.sessions[idx];
       },
     },
+    // OP-10: a contagem canônica grava Observation append-only.
+    inventoryCountObservation: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = {
+          ...data,
+          id: `obs-${state.observations.length + 1}`,
+          observedAt: new Date(),
+          createdAt: new Date(),
+        };
+        state.observations.push(row);
+        return row;
+      },
+      findMany: async () => [...state.observations],
+    },
     inventoryCountLine: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `line-${state.lines.length + 1}`, ...data };
@@ -576,14 +593,18 @@ function createCountMockPrisma(options?: {
         include,
       }: {
         where: { sessionId: string };
-        include?: { item?: { select: { unit: boolean } } };
+        include?: { item?: { select: { unit: boolean } }; currentObservation?: boolean };
       }) =>
         state.lines
           .filter((l) => l.sessionId === where.sessionId)
           .map((l) => ({
             ...l,
-            ...(include?.item
-              ? { item: { unit: "UN" } }
+            ...(include?.item ? { item: { unit: "UN" } } : {}),
+            ...(include?.currentObservation
+              ? {
+                  currentObservation:
+                    state.observations.find((o) => o.id === l.currentObservationId) ?? null,
+                }
               : {}),
           })),
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -599,6 +620,7 @@ function createCountMockPrisma(options?: {
     inventoryAuditLog: movementTx.inventoryAuditLog,
     inventoryCountSession: movementTx.inventoryCountSession,
     inventoryCountLine: movementTx.inventoryCountLine,
+    inventoryCountObservation: movementTx.inventoryCountObservation,
     inventoryBalance: movementTx.inventoryBalance,
     inventoryItem: movementTx.inventoryItem,
     inventoryWarehouse: movementTx.inventoryWarehouse,

@@ -3,14 +3,15 @@
  * Ajustes sempre via createInventoryMovement — nunca altera saldo diretamente.
  */
 import type { PrismaClient } from "@prisma/client";
+import { recordInventoryCount } from "./inventoryCountApplicationService.server.js";
 import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
 import { computeCountDifference, hasCountDivergence } from "./inventoryCountMath.js";
-import { canApproveInventoryCount } from "./inventoryPermissionChecks.js";
 import {
-  COUNT_SESSION_LINE_EDITABLE_STATUSES,
-  validateCountLineUpdate,
-} from "./inventoryCountValidation.js";
-import { decimalQuantity } from "./inventoryRepository.server.js";
+  COUNT_ADJUSTMENT_BASIS,
+  resolveCountAdjustmentBasis,
+} from "./inventoryCountObservation.js";
+import { logLegacyCountBasis } from "./inventoryCountTelemetry.js";
+import { canApproveInventoryCount } from "./inventoryPermissionChecks.js";
 import { inventoryDec } from "./inventorySerialization.server.js";
 import { createInventoryMovement } from "./inventoryService.server.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
@@ -133,49 +134,30 @@ export async function startInventoryCountSession(
   });
 }
 
+/**
+ * Contagem física da linha — delega ao serviço de aplicação canônico.
+ *
+ * Mantido para preservar o contrato da rota humana existente. A semântica
+ * temporal (Observation + saldo sob lock) vive em recordInventoryCount.
+ */
 export async function updateInventoryCountLine(
   prisma: PrismaClient,
   sessionId: string,
   lineId: string,
   input: { countedQuantity: number; justification?: string | null },
-  _context: CountSessionContext
+  context: CountSessionContext
 ) {
-  const session = await prisma.inventoryCountSession.findUnique({ where: { id: sessionId } });
-  if (!session) {
-    throw new InventoryValidationError("Conferência não encontrada.", "SESSION_NOT_FOUND");
-  }
-  if (!COUNT_SESSION_LINE_EDITABLE_STATUSES.has(session.status)) {
-    throw new InventoryValidationError(
-      "Conferência não permite edição de linhas neste status.",
-      "SESSION_LOCKED"
-    );
-  }
-
-  const line = await prisma.inventoryCountLine.findFirst({
-    where: { id: lineId, sessionId },
-  });
-  if (!line) {
-    throw new InventoryValidationError("Linha não encontrada.", "LINE_NOT_FOUND");
-  }
-  if (line.generatedMovementId) {
-    throw new InventoryValidationError("Linha já possui ajuste gerado.", "ADJUSTMENT_EXISTS");
-  }
-
-  const systemQty = inventoryDec(line.systemQuantity);
-  const { differenceQuantity, differencePercent } = validateCountLineUpdate(systemQty, {
-    countedQuantity: input.countedQuantity,
-    justification: input.justification ?? null,
-  });
-
-  return prisma.inventoryCountLine.update({
-    where: { id: lineId },
-    data: {
-      countedQuantity: decimalQuantity(input.countedQuantity),
-      differenceQuantity: decimalQuantity(differenceQuantity),
-      differencePercent: decimalQuantity(differencePercent),
-      justification: input.justification?.trim() || null,
+  const { line } = await recordInventoryCount(
+    prisma,
+    {
+      sessionId,
+      lineId,
+      countedQuantity: input.countedQuantity,
+      justification: input.justification ?? null,
     },
-  });
+    context
+  );
+  return line;
 }
 
 export async function finalizeInventoryCountSession(
@@ -307,7 +289,7 @@ export async function generateInventoryCountAdjustments(
 
   const lines = await prisma.inventoryCountLine.findMany({
     where: { sessionId },
-    include: { item: { select: { unit: true } } },
+    include: { item: { select: { unit: true } }, currentObservation: true },
   });
 
   for (const line of lines) {
@@ -322,16 +304,21 @@ export async function generateInventoryCountAdjustments(
   const movementsCreated: string[] = [];
 
   for (const line of lines) {
-    const diff =
-      line.differenceQuantity != null
-        ? inventoryDec(line.differenceQuantity)
-        : line.countedQuantity != null
-          ? computeCountDifference(
-              inventoryDec(line.systemQuantity),
-              inventoryDec(line.countedQuantity)
-            ).differenceQuantity
-          : 0;
+    // OP-10: a autoridade do ajuste é o delta da Observation vigente. Sessões
+    // anteriores continuam pela regra antiga — sem Observation sintética, sem
+    // reescrita de histórico.
+    const basis = resolveCountAdjustmentBasis(line);
+    if (basis.basis === COUNT_ADJUSTMENT_BASIS.legacy) {
+      logLegacyCountBasis({
+        sessionId,
+        sessionCode: session.code,
+        lineId: line.id,
+        itemId: line.itemId,
+        warehouseId: line.warehouseId,
+      });
+    }
 
+    const diff = basis.delta;
     if (!hasCountDivergence(diff)) continue;
 
     const movementType = diff > 0 ? "POSITIVE_ADJUSTMENT" : "NEGATIVE_ADJUSTMENT";
