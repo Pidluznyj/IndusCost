@@ -7,7 +7,7 @@
  * gravado na InventoryCountObservation, calculado contra o saldo materializado
  * lido SOB LOCK no instante da contagem.
  */
-import { computeCountDifference } from "./inventoryCountMath.js";
+import { computeCountDifference, hasCountDivergence } from "./inventoryCountMath.js";
 import { roundInventoryQuantity, safeInventoryNumber } from "./inventoryTypes.js";
 
 /** Base usada para decidir o ajuste de uma linha de conferência. */
@@ -86,4 +86,29 @@ export function resolveCountAdjustmentBasis(
   }
 
   return { basis: COUNT_ADJUSTMENT_BASIS.notCounted, delta: 0 };
+}
+
+/**
+ * Divergência FÍSICA efetiva da linha — autoridade única para exigir
+ * justificativa, rotear aprovação e gerar ajuste.
+ *
+ * NÃO confundir com `differenceQuantity`, que mede contra a fotografia do
+ * START da sessão e existe apenas para leitura histórica/visual: com um
+ * movimento legítimo entre o START e a contagem, as duas divergem de
+ * propósito (ex.: START 100, saldo 80, contado 80 → differenceQuantity −20,
+ * divergência efetiva 0).
+ */
+export function hasEffectiveCountDivergence(line: CountLineAdjustmentSource): boolean {
+  return hasCountDivergence(resolveCountAdjustmentBasis(line).delta);
+}
+
+/**
+ * Regra única de obrigatoriedade da justificativa: só o delta efetivo manda.
+ * Uma diferença puramente histórica contra o START nunca exige justificativa.
+ */
+export function requiresCountJustification(
+  effectiveDelta: number,
+  justification: string | null | undefined
+): boolean {
+  return hasCountDivergence(effectiveDelta) && !justification?.trim();
 }

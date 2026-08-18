@@ -5,14 +5,15 @@
 import type { PrismaClient } from "@prisma/client";
 import { recordInventoryCount } from "./inventoryCountApplicationService.server.js";
 import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
-import { computeCountDifference, hasCountDivergence } from "./inventoryCountMath.js";
+import { hasCountDivergence } from "./inventoryCountMath.js";
 import {
   COUNT_ADJUSTMENT_BASIS,
+  hasEffectiveCountDivergence,
+  requiresCountJustification,
   resolveCountAdjustmentBasis,
 } from "./inventoryCountObservation.js";
 import { logLegacyCountBasis } from "./inventoryCountTelemetry.js";
 import { canApproveInventoryCount } from "./inventoryPermissionChecks.js";
-import { inventoryDec } from "./inventorySerialization.server.js";
 import { createInventoryMovement } from "./inventoryService.server.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
 
@@ -173,7 +174,10 @@ export async function finalizeInventoryCountSession(
     throw new InventoryValidationError("Conferência não está em contagem.", "INVALID_STATUS");
   }
 
-  const lines = await prisma.inventoryCountLine.findMany({ where: { sessionId } });
+  const lines = await prisma.inventoryCountLine.findMany({
+    where: { sessionId },
+    include: { currentObservation: true },
+  });
   if (lines.length === 0) {
     throw new InventoryValidationError(
       "Conferência sem itens — inicie a contagem primeiro.",
@@ -188,10 +192,10 @@ export async function finalizeInventoryCountSession(
         "COUNTED_REQUIRED"
       );
     }
-    const systemQty = inventoryDec(line.systemQuantity);
-    const countedQty = inventoryDec(line.countedQuantity);
-    const { differenceQuantity } = computeCountDifference(systemQty, countedQty);
-    if (hasCountDivergence(differenceQuantity) && !line.justification?.trim()) {
+    // Mesma autoridade temporal do ajuste: com Observation vigente vale o
+    // adjustmentDelta; linhas anteriores ao OP-10 seguem a regra antiga.
+    const { delta } = resolveCountAdjustmentBasis(line);
+    if (requiresCountJustification(delta, line.justification)) {
       throw new InventoryValidationError(
         "Divergência exige justificativa em todas as linhas.",
         "JUSTIFICATION_REQUIRED"
@@ -199,16 +203,7 @@ export async function finalizeInventoryCountSession(
     }
   }
 
-  const hasDivergence = lines.some((line) => {
-    const diff =
-      line.differenceQuantity != null
-        ? inventoryDec(line.differenceQuantity)
-        : computeCountDifference(
-            inventoryDec(line.systemQuantity),
-            inventoryDec(line.countedQuantity)
-          ).differenceQuantity;
-    return hasCountDivergence(diff);
-  });
+  const hasDivergence = lines.some((line) => hasEffectiveCountDivergence(line));
 
   const nextStatus = hasDivergence ? "WAITING_APPROVAL" : "APPROVED";
 

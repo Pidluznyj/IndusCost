@@ -15,6 +15,8 @@ import { recordInventoryCount } from "./inventoryCountApplicationService.server.
 import {
   COUNT_ADJUSTMENT_BASIS,
   computeObservationDelta,
+  hasEffectiveCountDivergence,
+  requiresCountJustification,
   resolveCountAdjustmentBasis,
 } from "./inventoryCountObservation.js";
 import {
@@ -22,6 +24,7 @@ import {
   buildLegacyCountBasisEvent,
 } from "./inventoryCountTelemetry.js";
 import {
+  finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
   updateInventoryCountLine,
 } from "./inventoryCountService.server.js";
@@ -634,6 +637,265 @@ describe("OP-10 regressão do contrato humano", () => {
     assert.doesNotMatch(service, /persistInventoryBalanceSnapshot/);
     // Transação única.
     assert.match(service, /prisma\.\$transaction/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FASE 2A.3 — alinhamento semântico do workflow humano
+// ---------------------------------------------------------------------------
+
+describe("OP-10 divergência efetiva — regra canônica", () => {
+  it("requiresCountJustification só olha o delta efetivo", () => {
+    assert.equal(requiresCountJustification(-2, null), true);
+    assert.equal(requiresCountJustification(-2, "   "), true);
+    assert.equal(requiresCountJustification(-2, "Falta"), false);
+    // Delta efetivo zero nunca exige justificativa.
+    assert.equal(requiresCountJustification(0, null), false);
+  });
+
+  it("hasEffectiveCountDivergence ignora a diferença contra o START", () => {
+    // START 100, saldo 80, contado 80 → differenceQuantity −20, delta 0.
+    assert.equal(
+      hasEffectiveCountDivergence({
+        systemQuantity: new Prisma.Decimal(100),
+        countedQuantity: new Prisma.Decimal(80),
+        differenceQuantity: new Prisma.Decimal(-20),
+        currentObservation: { adjustmentDelta: new Prisma.Decimal(0) },
+      }),
+      false
+    );
+    assert.equal(
+      hasEffectiveCountDivergence({
+        systemQuantity: new Prisma.Decimal(100),
+        countedQuantity: new Prisma.Decimal(78),
+        differenceQuantity: new Prisma.Decimal(-22),
+        currentObservation: { adjustmentDelta: new Prisma.Decimal(-2) },
+      }),
+      true
+    );
+    // Linha legada: regra antiga intacta.
+    assert.equal(
+      hasEffectiveCountDivergence({
+        systemQuantity: new Prisma.Decimal(100),
+        countedQuantity: new Prisma.Decimal(80),
+        differenceQuantity: new Prisma.Decimal(-20),
+        currentObservation: null,
+      }),
+      true
+    );
+  });
+});
+
+describe("OP-10 2A.3 — workflow humano segue a divergência efetiva", () => {
+  it("A/B/H — START 100, saldo 80, contagem 80 SEM justificativa: passa, não vira divergência", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 80)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+
+    // A — sem justification, não pode lançar JUSTIFICATION_REQUIRED.
+    const { observation } = await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 80 },
+      { userId: "user-1" }
+    );
+    assert.equal(Number(observation.expectedQuantity), 80);
+    assert.equal(Number(observation.countedQuantity), 80);
+    assert.equal(Number(observation.adjustmentDelta), 0);
+    assert.equal(state.lines[0].justification ?? null, null);
+
+    // H — informação histórica/visual preservada.
+    assert.equal(Number(state.lines[0].systemQuantity), 100);
+    assert.equal(Number(state.lines[0].differenceQuantity), -20);
+    assert.equal(Number(state.lines[0].differencePercent), -20);
+
+    // B — finalize não trata como divergência e não pede aprovação.
+    const session = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(session.status, "APPROVED");
+    assert.equal(state.sessions[0].approvedByUserId, "user-1");
+    assert.ok(state.sessions[0].approvedAt);
+
+    // generate-adjustments não cria movimento.
+    const result = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
+    assert.equal(result.movementsCreated, 0);
+    assert.equal(state.movements.length, 0);
+  });
+
+  it("C/D/G — START 100, saldo 80, contagem 78: exige justificativa, roda rollback, depois aprova pelo fluxo", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 80)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+
+    // C/G — sem justificativa: erro e NENHUMA Observation persistida.
+    await assert.rejects(
+      () =>
+        recordInventoryCount(
+          prisma as never,
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 78 },
+          { userId: "user-1" }
+        ),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "JUSTIFICATION_REQUIRED"
+    );
+    assert.equal(state.observations.length, 0);
+    assert.equal(state.lines[0].countedQuantity ?? null, null);
+    assert.equal(state.lines[0].currentObservationId ?? null, null);
+    assert.equal(state.lines[0].version, 0);
+
+    // Agora COM justificativa.
+    const { observation } = await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 78, justification: "Falta real" },
+      { userId: "user-1" }
+    );
+    assert.equal(Number(observation.expectedQuantity), 80);
+    assert.equal(Number(observation.adjustmentDelta), -2);
+
+    // D — divergência física efetiva vai para o fluxo de aprovação existente.
+    const session = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(session.status, "WAITING_APPROVAL");
+    assert.equal(state.sessions[0].approvedByUserId ?? null, null);
+  });
+
+  it("PASSO 9 — movimento posterior não muda a decisão de aprovação", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+
+    await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 95, justification: "Falta" },
+      { userId: "user-1" }
+    );
+    // −20 legítimo depois da contagem.
+    state.balances[0].physicalQuantity = new Prisma.Decimal(80);
+
+    const session = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(session.status, "WAITING_APPROVAL");
+    // A divergência continua sendo −5, não −25.
+    assert.equal(Number(state.observations[0].adjustmentDelta), -5);
+    assert.equal(state.lines[0].justification, "Falta");
+  });
+
+  it("E — recontagem vigente com delta 0 anula a divergência da contagem anterior", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+
+    // Obs1: divergência real de −5.
+    await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 95, justification: "Falta" },
+      { userId: "user-1" }
+    );
+    // Movimento legítimo de −5: saldo real vira 95.
+    state.balances[0].physicalQuantity = new Prisma.Decimal(95);
+    // Obs2: recontagem bate com o saldo — delta 0, sem justificativa.
+    const second = await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 95 },
+      { userId: "user-1" }
+    );
+    assert.equal(Number(second.observation.adjustmentDelta), 0);
+
+    // Obs1 preservada para auditoria.
+    assert.equal(state.observations.length, 2);
+    assert.equal(Number(state.observations[0].adjustmentDelta), -5);
+    assert.equal(state.lines[0].currentObservationId, second.observation.id);
+
+    // Só a vigente decide: sessão aprovada direto.
+    const session = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(session.status, "APPROVED");
+
+    const result = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
+    assert.equal(result.movementsCreated, 0);
+  });
+
+  it("F — linha legada (sem Observation) mantém o comportamento antigo no finalize", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 80)],
+      lines: [
+        {
+          ...countLine("line-1", "sess-1", 100),
+          countedQuantity: new Prisma.Decimal(80),
+          differenceQuantity: new Prisma.Decimal(-20),
+          differencePercent: new Prisma.Decimal(-20),
+          justification: "Justificativa da época",
+        },
+      ],
+    });
+
+    // Mesmo cenário do caso A, mas SEM Observation: continua divergente.
+    const session = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(session.status, "WAITING_APPROVAL");
+    assert.equal(state.observations.length, 0);
+    assert.equal(state.lines[0].currentObservationId ?? null, null);
+  });
+
+  it("F — linha legada divergente sem justificativa continua bloqueando o finalize", async () => {
+    const { prisma } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 80)],
+      lines: [
+        {
+          ...countLine("line-1", "sess-1", 100),
+          countedQuantity: new Prisma.Decimal(80),
+          differenceQuantity: new Prisma.Decimal(-20),
+          justification: null,
+        },
+      ],
+    });
+    await assert.rejects(
+      () => finalizeInventoryCountSession(prisma as never, "sess-1", { userId: "user-1" }),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "JUSTIFICATION_REQUIRED"
+    );
+  });
+
+  it("finalize sem linha contada continua exigindo COUNTED_REQUIRED", async () => {
+    const { prisma } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await assert.rejects(
+      () => finalizeInventoryCountSession(prisma as never, "sess-1", { userId: "user-1" }),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "COUNTED_REQUIRED"
+    );
+  });
+
+  it("uma única implementação da regra — finalize não recalcula por systemQuantity", () => {
+    const service = read("src/lib/inventory/inventoryCountService.server.ts");
+    assert.match(service, /hasEffectiveCountDivergence/);
+    assert.match(service, /requiresCountJustification/);
+    // A autoridade não pode voltar a ser a diferença contra o START.
+    assert.doesNotMatch(service, /computeCountDifference/);
+    assert.doesNotMatch(service, /line\.differenceQuantity/);
+
+    const app = read("src/lib/inventory/inventoryCountApplicationService.server.ts");
+    assert.match(app, /requiresCountJustification/);
+    // A checagem tem de vir depois do lock do saldo — comparação entre os
+    // pontos de USO no corpo (lastIndexOf), não entre os imports do topo.
+    assert.ok(
+      app.lastIndexOf("getOrCreateInventoryBalanceForUpdate") <
+        app.lastIndexOf("requiresCountJustification"),
+      "justificativa não pode ser decidida antes do FOR UPDATE"
+    );
   });
 });
 

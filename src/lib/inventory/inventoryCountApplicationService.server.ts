@@ -10,11 +10,12 @@
  * exclusivamente por createInventoryMovement.
  */
 import type { PrismaClient } from "@prisma/client";
-import { computeObservationDelta } from "./inventoryCountObservation.js";
+import { computeCountDifference } from "./inventoryCountMath.js";
 import {
-  COUNT_SESSION_LINE_EDITABLE_STATUSES,
-  validateCountLineUpdate,
-} from "./inventoryCountValidation.js";
+  computeObservationDelta,
+  requiresCountJustification,
+} from "./inventoryCountObservation.js";
+import { COUNT_SESSION_LINE_EDITABLE_STATUSES } from "./inventoryCountValidation.js";
 import {
   decimalQuantity,
   getOrCreateInventoryBalanceForUpdate,
@@ -90,17 +91,30 @@ export async function recordInventoryCountInTx(
   // Ainda sob lock: saldo esperado = saldo materializado agora.
   const expectedQuantity = balance.physicalQuantity;
 
-  // Compatibilidade: a diferença exibida e a exigência de justificativa
-  // continuam medidas contra a fotografia do START da sessão.
-  const systemQuantity = inventoryDec(line.systemQuantity);
-  const { differenceQuantity, differencePercent } = validateCountLineUpdate(systemQuantity, {
-    countedQuantity: input.countedQuantity,
-    justification: input.justification ?? null,
-  });
-
   const countedQuantity = input.countedQuantity;
-  const adjustmentDelta = computeObservationDelta(expectedQuantity, countedQuantity);
   const justification = input.justification?.trim() || null;
+
+  // Divergência efetiva: contado x saldo real sob lock. É esta — e não a
+  // diferença contra a foto do START — que decide se há divergência física.
+  const adjustmentDelta = computeObservationDelta(expectedQuantity, countedQuantity);
+
+  // A decisão só acontece DEPOIS do lock: antes disso expectedQuantity não
+  // existe corretamente e a exigência sairia do systemQuantity congelado.
+  // Lançar aqui aborta a transação inteira — nenhuma Observation sobrevive.
+  if (requiresCountJustification(adjustmentDelta, justification)) {
+    throw new InventoryValidationError(
+      "Divergência exige justificativa.",
+      "JUSTIFICATION_REQUIRED"
+    );
+  }
+
+  // Campos legados: leitura histórica/visual contra a fotografia do START.
+  // Preservados como sempre foram — não são autoridade de nada.
+  const systemQuantity = inventoryDec(line.systemQuantity);
+  const { differenceQuantity, differencePercent } = computeCountDifference(
+    systemQuantity,
+    countedQuantity
+  );
 
   // Append-only: recontagem cria nova Observation, nunca edita a anterior.
   const observation = await tx.inventoryCountObservation.create({

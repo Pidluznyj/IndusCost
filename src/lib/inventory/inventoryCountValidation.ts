@@ -43,6 +43,15 @@ export function parseUpdateCountLineBody(body: unknown): UpdateCountLineInput {
   };
 }
 
+/**
+ * REGRA LEGADA — diferença contra a fotografia do START da sessão.
+ *
+ * NÃO usar como autoridade em contagens novas: desde o OP-10 a exigência de
+ * justificativa e o roteamento de aprovação seguem a divergência FÍSICA
+ * efetiva (requiresCountJustification / hasEffectiveCountDivergence, sobre o
+ * adjustmentDelta da Observation). Mantida apenas para descrever o
+ * comportamento das sessões anteriores ao OP-10.
+ */
 export function validateCountLineUpdate(
   systemQuantity: number,
   input: UpdateCountLineInput
