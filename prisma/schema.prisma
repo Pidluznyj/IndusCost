@@ -134,6 +134,7 @@ model Employee {
   Role                         Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   financialCostCenter          FinancialCostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   orgDepartment                HrDepartment?              @relation("EmployeeOrgDepartment", fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  purchaseRequestsAsRequester  PurchaseRequest[]          @relation("PurchaseRequestRequester")
   manager                      Employee?                  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   directReports                Employee[]                 @relation("EmployeeManager")
   person                       Person?                    @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -1698,36 +1699,70 @@ model CostCenter {
 }
 
 model PurchaseRequest {
-  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  number               Int                           @unique @default(autoincrement())
-  requester            String
-  department           String
-  requestCategory      String?
-  priority             PurchasePriority              @default(NORMAL)
-  status               PurchaseRequestStatus         @default(RASCUNHO)
-  justification        String
-  defaultCostCenterId  String                        @db.Uuid
-  notes                String?
+  id                           String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number                       Int                           @unique @default(autoincrement())
+  /// Snapshot do nome do solicitante (derivado de requesterEmployee quando informado).
+  requester                    String
+  /// Snapshot do setor (derivado do funcionário selecionado quando informado).
+  department                   String
+  /// Snapshot do nome da categoria (derivado de requestCategoryRef quando informado).
+  requestCategory              String?
+  /// Solicitante oficial — cadastro de funcionários.
+  requesterEmployeeId          String?                       @db.Uuid
+  /// Categoria oficial — tabela de apoio PurchaseRequestCategory.
+  requestCategoryId            String?                       @db.Uuid
+  /// Centro de custo OFICIAL (financeiro). defaultCostCenterId vira espelho de compatibilidade.
+  defaultFinancialCostCenterId String?                       @db.Uuid
+  priority                     PurchasePriority              @default(NORMAL)
+  status                       PurchaseRequestStatus         @default(RASCUNHO)
+  justification                String
+  defaultCostCenterId          String                        @db.Uuid
+  notes                        String?
   /// Projeto oficial (read-only) — opcional.
-  projectId            String?                       @db.Uuid
-  projectCodeSnapshot  String?
-  projectTitleSnapshot String?
+  projectId                    String?                       @db.Uuid
+  projectCodeSnapshot          String?
+  projectTitleSnapshot         String?
   /// Referência livre (OS, contrato, etc.) quando não há projeto.
-  externalReference    String?
-  createdAt            DateTime                      @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
-  defaultCostCenter    CostCenter                    @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
-  project              Project?                      @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  items                PurchaseRequestItem[]
+  externalReference            String?
+  createdAt                    DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  defaultCostCenter            CostCenter                    @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
+  requesterEmployee            Employee?                     @relation("PurchaseRequestRequester", fields: [requesterEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  requestCategoryRef           PurchaseRequestCategory?      @relation(fields: [requestCategoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  defaultFinancialCostCenter   FinancialCostCenter?          @relation("PurchaseRequestDefaultFcc", fields: [defaultFinancialCostCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  project                      Project?                      @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items                        PurchaseRequestItem[]
   /// Cotações SC originadas desta solicitação (domínio aditivo OP-13).
-  quotations           PurchaseQuotation[]
-  purchaseOrders       PurchaseOrder[]
-  historyEvents        PurchaseRequestHistoryEvent[]
-  approvals            PurchaseApproval[]            @relation("PurchaseApprovalRequest")
+  quotations                   PurchaseQuotation[]
+  purchaseOrders               PurchaseOrder[]
+  historyEvents                PurchaseRequestHistoryEvent[]
+  approvals                    PurchaseApproval[]            @relation("PurchaseApprovalRequest")
 
   @@index([status])
   @@index([defaultCostCenterId])
   @@index([projectId])
+  @@index([requesterEmployeeId])
+  @@index([requestCategoryId])
+  @@index([defaultFinancialCostCenterId])
+}
+
+/// Tabela de apoio — categorias oficiais da solicitação de compra.
+///
+/// Existe para tirar o "Tipo / categoria" do texto livre: seed com as famílias
+/// de Suprimentos (Matéria-Prima, Insumo, Embalagem) mais categorias
+/// administrativas. Contabilidade por categoria só funciona com lista fechada.
+model PurchaseRequestCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseRequests PurchaseRequest[]
+
+  @@index([isActive, sortOrder])
 }
 
 model PurchaseRequestItem {
@@ -1739,6 +1774,8 @@ model PurchaseRequestItem {
   quantity              Decimal                 @db.Decimal(20, 6)
   unit                  String
   costCenterId          String?                 @db.Uuid
+  /// Centro de custo OFICIAL (financeiro) da linha; costCenterId vira espelho.
+  financialCostCenterId String?                 @db.Uuid
   desiredDate           DateTime?               @db.Timestamptz(6)
   priority              PurchasePriority?
   notes                 String?
@@ -1751,6 +1788,7 @@ model PurchaseRequestItem {
   /// Quantidade mínima de pedido sugerida (MOQ) — apenas demanda; não é política de estoque
   minOrderQtySuggested  Decimal?                @db.Decimal(20, 6)
   costCenter            CostCenter?             @relation(fields: [costCenterId], references: [id], onUpdate: NoAction)
+  financialCostCenter   FinancialCostCenter?    @relation("PurchaseRequestItemFcc", fields: [financialCostCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   material              Material?               @relation(fields: [materialId], references: [id], onUpdate: NoAction)
   purchaseRequest       PurchaseRequest         @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   quotationItems        PurchaseQuotationItem[]
@@ -5299,6 +5337,8 @@ model FinancialCostCenter {
   parent                      FinancialCostCenter?                      @relation("FinancialCostCenterTree", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children                    FinancialCostCenter[]                     @relation("FinancialCostCenterTree")
   costCenterRules             SupplierCostCenterRule[]
+  purchaseRequestsDefault     PurchaseRequest[]                         @relation("PurchaseRequestDefaultFcc")
+  purchaseRequestItems        PurchaseRequestItem[]                     @relation("PurchaseRequestItemFcc")
   allocations                 AccountsPayableCostCenterAllocation[]
   reclassificationRulesTarget FinancialCostCenterReclassificationRule[]
   classificationRules         FinancialCostCenterClassificationRule[]
@@ -9598,18 +9638,18 @@ enum GoalDomain {
 /// (roll-up ponderado) — nunca gravado à mão. Exclusão física só sem
 /// snapshots; com histórico vira ARCHIVED (soft-delete).
 model Goal {
-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title          String
-  description    String?
-  startDate      DateTime   @db.Timestamptz(6)
-  endDate        DateTime   @db.Timestamptz(6)
-  status         GoalStatus @default(DRAFT)
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String
+  description     String?
+  startDate       DateTime   @db.Timestamptz(6)
+  endDate         DateTime   @db.Timestamptz(6)
+  status          GoalStatus @default(DRAFT)
   /// Responsável final (accountability) — qualquer perfil de usuário.
-  ownerAppUserId String     @db.Uuid
-  createdByUserId String?   @db.Uuid
-  archivedAt     DateTime?  @db.Timestamptz(6)
-  createdAt      DateTime   @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+  ownerAppUserId  String     @db.Uuid
+  createdByUserId String?    @db.Uuid
+  archivedAt      DateTime?  @db.Timestamptz(6)
+  createdAt       DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
 
   owner       AppUser          @relation("GoalOwner", fields: [ownerAppUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   keyResults  GoalKeyResult[]
@@ -9623,25 +9663,25 @@ model Goal {
 /// Key Result quantitativo. MVP 1: manualTracking=true (valor digitado).
 /// MVP 2+: ruleJson guarda CHAVES do dicionário de metadados (nunca SQL).
 model GoalKeyResult {
-  id             String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  goalId         String                    @db.Uuid
-  title          String
-  domain         GoalDomain
-  trackingType   GoalKeyResultTrackingType @default(INCREASE)
+  id                   String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goalId               String                    @db.Uuid
+  title                String
+  domain               GoalDomain
+  trackingType         GoalKeyResultTrackingType @default(INCREASE)
   /// Linha de base, alvo e realizado — Decimal, nunca float.
-  baseline       Decimal                   @db.Decimal(20, 6)
-  target         Decimal                   @db.Decimal(20, 6)
-  achievedValue  Decimal                   @default(0) @db.Decimal(20, 6)
+  baseline             Decimal                   @db.Decimal(20, 6)
+  target               Decimal                   @db.Decimal(20, 6)
+  achievedValue        Decimal                   @default(0) @db.Decimal(20, 6)
   /// Rótulo de unidade para exibição (R$, un, %, h...).
-  unit           String?
+  unit                 String?
   /// Peso relativo no roll-up do Objetivo (> 0).
-  weight         Decimal                   @default(1) @db.Decimal(10, 4)
-  ownerAppUserId String                    @db.Uuid
+  weight               Decimal                   @default(1) @db.Decimal(10, 4)
+  ownerAppUserId       String                    @db.Uuid
   /// Período PRÓPRIO do indicador (opcional). null = herda o período do
   /// Objetivo; quando preenchido, o motor usa a interseção com a janela do
   /// Objetivo (o indicador nunca mede fora do período do pai).
-  startDate      DateTime?                 @db.Date
-  endDate        DateTime?                 @db.Date
+  startDate            DateTime?                 @db.Date
+  endDate              DateTime?                 @db.Date
   /// Origem do ALVO. MANUAL (default) = número digitado, comportamento de
   /// sempre. COMPARISON = derivado de um período anterior ("30% a mais que
   /// o ano passado"). Em ambos os casos `target` continua sendo a verdade
@@ -9658,13 +9698,13 @@ model GoalKeyResult {
   comparisonPercent    Decimal?                  @db.Decimal(10, 4)
   comparisonComputedAt DateTime?                 @db.Timestamptz(6)
   /// true = valor digitado (MVP 1); false = calculado pelo motor (MVP 2+).
-  manualTracking Boolean                   @default(true)
+  manualTracking       Boolean                   @default(true)
   /// Regra dinâmica (MVP 2+): métrica + filtros como chaves do dicionário.
-  ruleJson       Json?
-  status         GoalStatus                @default(ACTIVE)
-  archivedAt     DateTime?                 @db.Timestamptz(6)
-  createdAt      DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
+  ruleJson             Json?
+  status               GoalStatus                @default(ACTIVE)
+  archivedAt           DateTime?                 @db.Timestamptz(6)
+  createdAt            DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
 
   goal        Goal                    @relation(fields: [goalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   owner       AppUser                 @relation("GoalKeyResultOwner", fields: [ownerAppUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)

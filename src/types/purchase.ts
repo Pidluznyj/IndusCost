@@ -52,6 +52,7 @@ export interface PurchaseRequestItemRow {
   quantity: string | number;
   unit: string;
   costCenterId: string | null;
+  financialCostCenterId?: string | null;
   desiredDate: string | null;
   priority: PurchasePriority | null;
   notes: string | null;
@@ -74,6 +75,9 @@ export interface PurchaseRequestRow {
   status: PurchaseRequestStatus;
   justification: string;
   defaultCostCenterId: string;
+  requesterEmployeeId?: string | null;
+  requestCategoryId?: string | null;
+  defaultFinancialCostCenterId?: string | null;
   notes: string | null;
   projectId?: string | null;
   projectCodeSnapshot?: string | null;
@@ -109,6 +113,8 @@ export interface PurchaseItemDraft {
   unit: string;
   /** vazio = herdar do cabeçalho */
   costCenterId: string;
+  /** Centro de custo OFICIAL (financeiro) selecionado na linha. */
+  financialCostCenterId: string;
   desiredDate: string;
   priority: PurchasePriority | "";
   notes: string;
@@ -129,6 +135,7 @@ export function emptyPurchaseItemDraft(): PurchaseItemDraft {
     quantity: 1,
     unit: "UN",
     costCenterId: "",
+    financialCostCenterId: "",
     desiredDate: "",
     priority: "",
     notes: "",
