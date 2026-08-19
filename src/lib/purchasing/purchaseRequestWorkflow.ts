@@ -16,26 +16,35 @@ export type PurchaseRequestWorkflowStatus = (typeof PURCHASE_REQUEST_STATUSES)[n
 
 export type PurchaseRequestWorkflowAction =
   | "SUBMIT"
+  | "VALIDATE"
+  | "SEND_TO_APPROVAL"
   | "APPROVE"
   | "REJECT"
   | "CANCEL"
   | "FORWARD_TO_QUOTATION"
   | "REOPEN_DRAFT"
+  | "REOPEN_QUOTING"
   | "CLOSE";
 
 const TRANSITIONS: Record<
   PurchaseRequestWorkflowAction,
   { from: readonly PurchaseRequestWorkflowStatus[]; to: PurchaseRequestWorkflowStatus }
 > = {
-  SUBMIT: { from: ["RASCUNHO", "REJEITADA"], to: "AGUARDANDO_APROVACAO" },
-  APPROVE: { from: ["AGUARDANDO_APROVACAO"], to: "ABERTA" },
+  // Fluxo simplificado: abertura -> validacao do comprador -> orcamentos ->
+  // aprovacao do gestor (que emite o pedido) -> encerrada.
+  SUBMIT: { from: ["RASCUNHO"], to: "ABERTA" },
+  VALIDATE: { from: ["ABERTA"], to: "EM_COTACAO" },
+  SEND_TO_APPROVAL: { from: ["EM_COTACAO"], to: "AGUARDANDO_APROVACAO" },
+  APPROVE: { from: ["AGUARDANDO_APROVACAO"], to: "ENCERRADA" },
   REJECT: { from: ["AGUARDANDO_APROVACAO"], to: "REJEITADA" },
   CANCEL: {
     from: ["RASCUNHO", "AGUARDANDO_APROVACAO", "ABERTA", "REJEITADA", "EM_COTACAO"],
     to: "CANCELADA",
   },
-  FORWARD_TO_QUOTATION: { from: ["ABERTA"], to: "EM_COTACAO" },
+  // Ciclo formal de cotacao SC continua disponivel a partir da fila/orcamentacao.
+  FORWARD_TO_QUOTATION: { from: ["ABERTA", "EM_COTACAO"], to: "EM_COTACAO" },
   REOPEN_DRAFT: { from: ["REJEITADA"], to: "RASCUNHO" },
+  REOPEN_QUOTING: { from: ["REJEITADA"], to: "EM_COTACAO" },
   CLOSE: { from: ["ABERTA", "EM_COTACAO"], to: "ENCERRADA" },
 };
 

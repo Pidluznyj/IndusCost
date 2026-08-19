@@ -8,26 +8,32 @@ import {
 } from "./purchaseRequestWorkflow.js";
 
 describe("purchaseRequestWorkflow (OP-14)", () => {
-  it("permite rascunho → aprovação → aberta → cotação", () => {
-    assert.equal(resolvePurchaseRequestTransition("RASCUNHO", "SUBMIT"), "AGUARDANDO_APROVACAO");
-    assert.equal(resolvePurchaseRequestTransition("AGUARDANDO_APROVACAO", "APPROVE"), "ABERTA");
-    assert.equal(resolvePurchaseRequestTransition("ABERTA", "FORWARD_TO_QUOTATION"), "EM_COTACAO");
+  it("fluxo simplificado: abertura → comprador → orçamentos → gestor → pedido", () => {
+    assert.equal(resolvePurchaseRequestTransition("RASCUNHO", "SUBMIT"), "ABERTA");
+    assert.equal(resolvePurchaseRequestTransition("ABERTA", "VALIDATE"), "EM_COTACAO");
+    assert.equal(resolvePurchaseRequestTransition("EM_COTACAO", "SEND_TO_APPROVAL"), "AGUARDANDO_APROVACAO");
+    assert.equal(resolvePurchaseRequestTransition("AGUARDANDO_APROVACAO", "APPROVE"), "ENCERRADA");
   });
 
-  it("permite rejeição, reabertura e cancelamento", () => {
+  it("ciclo formal de cotação SC continua disponível", () => {
+    assert.equal(resolvePurchaseRequestTransition("ABERTA", "FORWARD_TO_QUOTATION"), "EM_COTACAO");
+    assert.equal(resolvePurchaseRequestTransition("EM_COTACAO", "FORWARD_TO_QUOTATION"), "EM_COTACAO");
+  });
+
+  it("permite rejeição, reaberturas e cancelamento", () => {
     assert.equal(resolvePurchaseRequestTransition("AGUARDANDO_APROVACAO", "REJECT"), "REJEITADA");
     assert.equal(resolvePurchaseRequestTransition("REJEITADA", "REOPEN_DRAFT"), "RASCUNHO");
-    assert.equal(resolvePurchaseRequestTransition("REJEITADA", "SUBMIT"), "AGUARDANDO_APROVACAO");
+    assert.equal(resolvePurchaseRequestTransition("REJEITADA", "REOPEN_QUOTING"), "EM_COTACAO");
     assert.equal(resolvePurchaseRequestTransition("EM_COTACAO", "CANCEL"), "CANCELADA");
   });
 
   it("bloqueia transições inválidas", () => {
     assert.throws(
-      () => resolvePurchaseRequestTransition("ABERTA", "APPROVE"),
+      () => resolvePurchaseRequestTransition("RASCUNHO", "APPROVE"),
       (e: unknown) => e instanceof PurchaseRequestWorkflowError && e.code === "INVALID_TRANSITION"
     );
     assert.throws(
-      () => resolvePurchaseRequestTransition("RASCUNHO", "FORWARD_TO_QUOTATION"),
+      () => resolvePurchaseRequestTransition("RASCUNHO", "SEND_TO_APPROVAL"),
       PurchaseRequestWorkflowError
     );
   });

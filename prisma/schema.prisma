@@ -1724,6 +1724,9 @@ model PurchaseRequest {
   projectTitleSnapshot         String?
   /// Referência livre (OS, contrato, etc.) quando não há projeto.
   externalReference            String?
+  buyerUserId                  String?
+  buyerName                    String?
+  buyerValidatedAt             DateTime?                     @db.Timestamptz(6)
   createdAt                    DateTime                      @default(now()) @db.Timestamptz(6)
   updatedAt                    DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
   defaultCostCenter            CostCenter                    @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
@@ -1737,6 +1740,7 @@ model PurchaseRequest {
   purchaseOrders               PurchaseOrder[]
   historyEvents                PurchaseRequestHistoryEvent[]
   approvals                    PurchaseApproval[]            @relation("PurchaseApprovalRequest")
+  quotes                       PurchaseRequestQuote[]
 
   @@index([status])
   @@index([defaultCostCenterId])
@@ -1744,6 +1748,39 @@ model PurchaseRequest {
   @@index([requesterEmployeeId])
   @@index([requestCategoryId])
   @@index([defaultFinancialCostCenterId])
+}
+
+/// Orçamento simples anexado à solicitação (fluxo direto do comprador).
+///
+/// Substitui, no dia a dia, o ciclo formal de cotação SC: o comprador registra
+/// os orçamentos que já tem (fornecedor oficial + valor + condições), marca o
+/// vencedor com justificativa e envia para aprovação do gestor. Arquivos do
+/// fornecedor entram pelas evidences já existentes da solicitação.
+model PurchaseRequestQuote {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseRequestId        String    @db.Uuid
+  /// Fornecedor oficial (lista financeira). Snapshot preserva o histórico.
+  supplierId               String?   @db.Uuid
+  supplierNameSnapshot     String
+  supplierDocumentSnapshot String?
+  totalValue               Decimal   @db.Decimal(20, 2)
+  paymentTerms             String?
+  deliveryDays             Int?
+  validUntil               DateTime? @db.Timestamptz(6)
+  notes                    String?
+  isWinner                 Boolean   @default(false)
+  /// Justificativa da escolha; obrigatória ao marcar vencedor.
+  winnerReason             String?
+  createdByUserId          String?
+  createdByName            String?
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseRequest PurchaseRequest    @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  supplier        FinancialSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([purchaseRequestId])
+  @@index([supplierId])
 }
 
 /// Tabela de apoio — categorias oficiais da solicitação de compra.
@@ -5130,6 +5167,7 @@ model FinancialSupplier {
   /// Compras SC — convites/ofertas/PO usam ID oficial (sem cadastro paralelo).
   purchaseQuotationSuppliers PurchaseQuotationSupplier[]
   purchaseOrders             PurchaseOrder[]
+  purchaseRequestQuotes      PurchaseRequestQuote[]
 
   @@index([normalizedDocument])
   @@index([normalizedName])

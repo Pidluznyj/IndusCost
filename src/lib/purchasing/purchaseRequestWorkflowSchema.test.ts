@@ -50,7 +50,11 @@ describe("purchase request workflow schema/routes (OP-14)", () => {
     assert.match(ROUTES, /official-refs\/projects/);
     assert.match(SERVER, /registerPurchaseRequestWorkflowRoutes/);
     assert.doesNotMatch(SERVICE, /accountsPayable\.create|AccountsPayable\.create/i);
-    assert.doesNotMatch(SERVICE, /purchaseOrder\.create/i);
+    // Fluxo simplificado: a aprovacao do gestor EMITE o pedido (uma unica
+    // criacao, dentro do approve). Contas a Pagar continua proibido aqui.
+    const poCreates = SERVICE.match(/purchaseOrder\.create/gi) ?? [];
+    assert.equal(poCreates.length, 1, "PO deve nascer somente na aprovacao");
+    assert.doesNotMatch(SERVICE, /accountsPayable/i);
     assert.match(SERVICE, /purchaseQuotation\.create/);
   });
 
