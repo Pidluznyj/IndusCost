@@ -20,50 +20,25 @@ import { after, before, describe, it } from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { recordInventoryCountInTx } from "./inventoryCountApplicationService.server.js";
 import { buildInventoryBalanceKey } from "./inventoryTypes.js";
+import {
+  DB_GATE_PENDING,
+  EXPECTED_POSTGRES_MAJOR,
+  TEMPORAL_DB_NAME_TOKEN,
+  assertDisposableTemporalDb,
+  parsePostgresMajor,
+  resolveTemporalDbUrl,
+  temporalDbName,
+} from "./inventoryCountDbGateSupport.js";
 
-export const DB_GATE_PENDING =
-  "DB_GATE_PENDING — defina INVENTORY_TEMPORAL_DB_URL (PostgreSQL descartável) para executar";
-
-/** Token obrigatório no nome do banco — trava contra apontar para banco oficial. */
-export const TEMPORAL_DB_NAME_TOKEN = "inventory_temporal_gate";
-
-/** PostgreSQL oficial da infraestrutura onde este gate é executado. */
-export const EXPECTED_POSTGRES_MAJOR = 17;
-
-/** Major do PostgreSQL a partir de `server_version` (ex.: "17.2" → 17). */
-export function parsePostgresMajor(serverVersion: string | undefined | null): number {
-  return Number.parseInt(String(serverVersion ?? "").split(".")[0], 10);
-}
-
-/** URL do banco de teste. Opt-in explícito, sem fallback para DATABASE_URL. */
-export function resolveTemporalDbUrl(): string | null {
-  const url = process.env.INVENTORY_TEMPORAL_DB_URL?.trim();
-  return url ? url : null;
-}
-
-/** Extrai só o nome do banco — nunca devolve credencial. */
-export function temporalDbName(url: string): string {
-  const parsed = new URL(url);
-  return decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-}
-
-/**
- * Guarda de segurança: o alvo tem de ser inequivocamente descartável.
- * Lança (aborta o gate) em vez de degradar para skip.
- */
-export function assertDisposableTemporalDb(url: string): string {
-  const name = temporalDbName(url);
-  if (!name) {
-    throw new Error("INVENTORY_TEMPORAL_DB_URL sem nome de banco — ABORTADO.");
-  }
-  if (!name.includes(TEMPORAL_DB_NAME_TOKEN)) {
-    throw new Error(
-      `ABORTADO: banco "${name}" não contém "${TEMPORAL_DB_NAME_TOKEN}". ` +
-        "Os DB gates escrevem dados e só rodam em banco descartável."
-    );
-  }
-  return name;
-}
+export {
+  DB_GATE_PENDING,
+  EXPECTED_POSTGRES_MAJOR,
+  TEMPORAL_DB_NAME_TOKEN,
+  assertDisposableTemporalDb,
+  parsePostgresMajor,
+  resolveTemporalDbUrl,
+  temporalDbName,
+} from "./inventoryCountDbGateSupport.js";
 
 const dbUrl = resolveTemporalDbUrl();
 const gate = dbUrl ? false : DB_GATE_PENDING;
