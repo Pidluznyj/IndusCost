@@ -145,6 +145,16 @@ function isFutureCalendarMonth(
   return month > refMonth;
 }
 
+function emptyForwardBuckets(referenceDate: Date): Map<string, MonthBucket> {
+  const buckets = new Map<string, MonthBucket>();
+  const refYm = { year: referenceDate.getFullYear(), month: referenceDate.getMonth() + 1 };
+  for (let i = 0; i < 12; i += 1) {
+    const ym = addCalendarMonths(refYm.year, refYm.month, i);
+    buckets.set(`${ym.year}-${ym.month}`, { inflow: 0, outflow: 0 });
+  }
+  return buckets;
+}
+
 function buildForwardBuckets(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -152,33 +162,39 @@ function buildForwardBuckets(
   referenceDate: Date,
   inflowFactor: InflowFactorFn = () => 1
 ): Map<string, MonthBucket> {
+  return buildForwardBucketsForFactors(arRows, apRows, filters, referenceDate, [inflowFactor])[0]!;
+}
+
+function buildForwardBucketsForFactors(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date,
+  inflowFactors: InflowFactorFn[]
+): Map<string, MonthBucket>[] {
   const refYm = { year: referenceDate.getFullYear(), month: referenceDate.getMonth() + 1 };
-  const buckets = new Map<string, MonthBucket>();
-
-  for (let i = 0; i < 12; i += 1) {
-    const ym = addCalendarMonths(refYm.year, refYm.month, i);
-    buckets.set(`${ym.year}-${ym.month}`, { inflow: 0, outflow: 0 });
-  }
-
+  const maps = inflowFactors.map(() => emptyForwardBuckets(referenceDate));
   const modes = cashFlowViewModeSlices(filters.viewMode);
   const nullFutureRealized = filters.viewMode === "realized";
 
   for (const slice of modes) {
     for (const row of arRows) {
       if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
-      let amount = resolveCashFlowArAmount(row, slice);
-      if (amount <= 0) continue;
-      amount = roundMoney(amount * inflowFactor(row, referenceDate));
+      const rawAmount = resolveCashFlowArAmount(row, slice);
+      if (rawAmount <= 0) continue;
       const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
-      const { year, month } = { year: date.getFullYear(), month: date.getMonth() + 1 };
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
       const key = `${year}-${month}`;
-      const bucket = buckets.get(key);
-      if (!bucket) continue;
       if (nullFutureRealized && isFutureCalendarMonth(year, month, refYm.year, refYm.month)) {
         continue;
       }
-      bucket.inflow += amount;
+      for (let i = 0; i < inflowFactors.length; i += 1) {
+        const bucket = maps[i]!.get(key);
+        if (!bucket) continue;
+        bucket.inflow += roundMoney(rawAmount * inflowFactors[i]!(row, referenceDate));
+      }
     }
 
     for (const row of apRows) {
@@ -187,18 +203,21 @@ function buildForwardBuckets(
       if (amount <= 0) continue;
       const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
-      const { year, month } = { year: date.getFullYear(), month: date.getMonth() + 1 };
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
       const key = `${year}-${month}`;
-      const bucket = buckets.get(key);
-      if (!bucket) continue;
       if (nullFutureRealized && isFutureCalendarMonth(year, month, refYm.year, refYm.month)) {
         continue;
       }
-      bucket.outflow += amount;
+      for (const buckets of maps) {
+        const bucket = buckets.get(key);
+        if (!bucket) continue;
+        bucket.outflow += amount;
+      }
     }
   }
 
-  return buckets;
+  return maps;
 }
 
 function bucketsToMonthlyPoints(
@@ -318,15 +337,42 @@ function summarizeHorizon(
   };
 }
 
-export function buildCashFlowForecast(
+export function buildCashFlowForecastWithScenarios(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
-): FinanceCashFlowCashForecast {
-  const buckets = buildForwardBuckets(arRows, apRows, filters, referenceDate);
-  const monthlyPoints = bucketsToMonthlyPoints(buckets, referenceDate, filters);
+): {
+  cashForecast: FinanceCashFlowCashForecast;
+  conservativeScenario: FinanceCashFlowConservativeScenario;
+  stressScenario: FinanceCashFlowStressScenario;
+} {
+  const [baseBuckets, conservativeBuckets, stressBuckets] = buildForwardBucketsForFactors(
+    arRows,
+    apRows,
+    filters,
+    referenceDate,
+    [() => 1, conservativeInflowFactor, stressInflowFactor]
+  );
+  const cashForecast = forecastFromBuckets(baseBuckets!, referenceDate, filters);
+  return {
+    cashForecast,
+    conservativeScenario: conservativeScenarioFromMonthlyPoints(
+      bucketsToMonthlyPoints(conservativeBuckets!, referenceDate, filters),
+      cashForecast.horizons.next12Months
+    ),
+    stressScenario: stressScenarioFromMonthlyPoints(
+      bucketsToMonthlyPoints(stressBuckets!, referenceDate, filters)
+    ),
+  };
+}
 
+function forecastFromBuckets(
+  buckets: Map<string, MonthBucket>,
+  referenceDate: Date,
+  filters: FinanceCashFlowDashboardFilters
+): FinanceCashFlowCashForecast {
+  const monthlyPoints = bucketsToMonthlyPoints(buckets, referenceDate, filters);
   return {
     monthlyPoints,
     horizons: {
@@ -336,6 +382,19 @@ export function buildCashFlowForecast(
       next12Months: summarizeHorizon(monthlyPoints, 12, "Próximos 12 meses"),
     },
   };
+}
+
+export function buildCashFlowForecast(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowCashForecast {
+  return forecastFromBuckets(
+    buildForwardBuckets(arRows, apRows, filters, referenceDate),
+    referenceDate,
+    filters
+  );
 }
 
 function conservativeInflowFactor(row: FinanceCashFlowArRow, referenceDate: Date): number {
@@ -348,15 +407,10 @@ function stressInflowFactor(row: FinanceCashFlowArRow, referenceDate: Date): num
   return status === "overdue" ? STRESS_OVERDUE_RECEIVABLE_FACTOR : STRESS_OPEN_RECEIVABLE_FACTOR;
 }
 
-export function buildConservativeScenario(
-  arRows: FinanceCashFlowArRow[],
-  apRows: FinanceCashFlowApRow[],
-  filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date,
+function conservativeScenarioFromMonthlyPoints(
+  monthlyPoints: FinanceCashFlowForecastMonthPoint[],
   baseHorizon: FinanceCashFlowForecastHorizonSummary
 ): FinanceCashFlowConservativeScenario {
-  const buckets = buildForwardBuckets(arRows, apRows, filters, referenceDate, conservativeInflowFactor);
-  const monthlyPoints = bucketsToMonthlyPoints(buckets, referenceDate, filters);
   const horizon = summarizeHorizon(monthlyPoints, 12, "Conservador 12m");
   const cashNeed = horizon.projectedAccumulated < 0 ? roundMoney(Math.abs(horizon.projectedAccumulated)) : horizon.maxCashNeed;
 
@@ -376,14 +430,9 @@ export function buildConservativeScenario(
   };
 }
 
-export function buildStressScenario(
-  arRows: FinanceCashFlowArRow[],
-  apRows: FinanceCashFlowApRow[],
-  filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+function stressScenarioFromMonthlyPoints(
+  monthlyPoints: FinanceCashFlowForecastMonthPoint[]
 ): FinanceCashFlowStressScenario {
-  const buckets = buildForwardBuckets(arRows, apRows, filters, referenceDate, stressInflowFactor);
-  const monthlyPoints = bucketsToMonthlyPoints(buckets, referenceDate, filters);
   const horizon = summarizeHorizon(monthlyPoints, 12, "Crítico 12m");
   const cashNeed =
     horizon.projectedAccumulated < 0
@@ -404,6 +453,30 @@ export function buildStressScenario(
     monthsAtRiskStress: horizon.negativeMonthsCount,
     monthlyPoints,
   };
+}
+
+export function buildConservativeScenario(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date,
+  baseHorizon: FinanceCashFlowForecastHorizonSummary
+): FinanceCashFlowConservativeScenario {
+  const buckets = buildForwardBuckets(arRows, apRows, filters, referenceDate, conservativeInflowFactor);
+  return conservativeScenarioFromMonthlyPoints(
+    bucketsToMonthlyPoints(buckets, referenceDate, filters),
+    baseHorizon
+  );
+}
+
+export function buildStressScenario(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowStressScenario {
+  const buckets = buildForwardBuckets(arRows, apRows, filters, referenceDate, stressInflowFactor);
+  return stressScenarioFromMonthlyPoints(bucketsToMonthlyPoints(buckets, referenceDate, filters));
 }
 
 export function buildScenarioChartPoints(

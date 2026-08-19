@@ -1,14 +1,19 @@
 import {
   filterFinanceApManagementReportRows,
+  filterFinanceApRows,
   isFinanceApOpen,
   roundMoney,
   startOfLocalDay,
+  sumFinanceApPaidInPaymentPeriodFromFilteredRows,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  filterFinanceArManagementReportRows,
+  sumFinanceArReceivedBySettlementInFilteredRows,
+} from "./financeAccountsReceivableDashboard.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
   resolveOfficialArCashFlowExecutiveMetrics,
-  sumOfficialArReceivedBySettlementInPeriod,
 } from "./financeAccountsReceivableRulesAdapter.js";
 import { sumOfficialArOpenDueInPeriod } from "./financeAccountsReceivableRulesEngine.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
@@ -19,7 +24,6 @@ import type {
 } from "./financeCashFlowDashboard.js";
 import {
   resolveOfficialApCashFlowExecutiveMetrics,
-  sumOfficialApPaidInPaymentPeriod,
 } from "./financeAccountsPayableRulesAdapter.js";
 import { sumOfficialApOpenDueInPeriod } from "./financeAccountsPayableRulesEngine.js";
 import { toApLoadFilters, toArLoadFilters } from "./financeCashFlowDashboard.js";
@@ -389,28 +393,41 @@ export function buildExecutiveMonthlyTimeline(
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;
 
+  const officialArFiltered =
+    officialContext != null
+      ? filterFinanceArManagementReportRows(
+          arRows,
+          toArLoadFilters(officialContext.filters),
+          referenceDate,
+          officialContext.arSyncCutoff
+        )
+      : null;
+  const officialApFiltered =
+    officialContext != null
+      ? filterFinanceApRows(
+          apRows,
+          toApLoadFilters(officialContext.filters),
+          referenceDate,
+          officialContext.apSyncCutoff
+        )
+      : null;
+
   for (let m = 1; m <= 12; m += 1) {
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
     const received =
-      officialContext != null
-        ? sumOfficialArReceivedBySettlementInPeriod(
-            arRows,
-            toArLoadFilters(officialContext.filters),
-            referenceDate,
-            officialContext.arSyncCutoff,
+      officialArFiltered != null
+        ? sumFinanceArReceivedBySettlementInFilteredRows(
+            officialArFiltered,
             monthStart,
             monthEndDate
           )
         : sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
     const paid =
-      officialContext != null
-        ? sumOfficialApPaidInPaymentPeriod(
-            apRows,
-            toApLoadFilters(officialContext.filters),
-            referenceDate,
-            officialContext.apSyncCutoff,
+      officialApFiltered != null
+        ? sumFinanceApPaidInPaymentPeriodFromFilteredRows(
+            officialApFiltered,
             monthStart,
             monthEndDate
           )

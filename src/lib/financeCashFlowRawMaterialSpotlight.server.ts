@@ -1,10 +1,15 @@
 /**
  * Carrega o spotlight de Matéria-prima para o dashboard de Fluxo de Caixa.
- * Reutiliza o motor oficial de centros de custo + mapa de papéis DRE.
+ * Reutiliza as regras canônicas de alocação de centros de custo + mapa de papéis DRE.
+ * Não reconstrói o dashboard completo de CC (gráfico anual, fornecedores, diagnóstico).
  */
 
-import { buildFinanceCostCenterDashboardDefault } from "@/src/lib/financeCostCenterDashboard.js";
+import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { buildExecutiveReportCostCenterDashboardFilters } from "@/src/lib/financeCostCenterAnnualSpendingChart.js";
+import {
+  collectFinanceCostCenterMonthlyByCostCenter,
+  createDefaultFinanceCostCenterDashboardDeps,
+} from "@/src/lib/financeCostCenterDashboard.js";
 import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -48,27 +53,43 @@ export async function loadRawMaterialCostCenterSpotlight(
         const roleMap = await measureDevPerfPhase("spotlightRoleMap", () =>
           loadDreCostCenterRoleMap(prisma)
         );
-        const dashboards = await measureDevPerfPhase("spotlightCcDashboard", async () => {
-          const loaded = [];
-          for (const year of years) {
-            const dashboard = await buildFinanceCostCenterDashboardDefault(
-              buildExecutiveReportCostCenterDashboardFilters({
-                year,
-                month: null,
-                companyName: input.companyName,
-              }),
-              referenceDate
-            );
-            loaded.push(dashboard);
-          }
-          return loaded;
-        });
+        const byCostCenter = await measureDevPerfPhase("spotlightCcDashboard", async () => {
+          const deps = createDefaultFinanceCostCenterDashboardDeps();
+          const syncCutoff = await deps.resolveSyncCutoff();
+          const [costCenters, suppliers] = await Promise.all([
+            deps.loadCostCenters(),
+            deps.loadSuppliers(),
+          ]);
 
-        const byCostCenter = measureDevPerfPhaseSync("spotlightCollectRows", () => {
-          const rows: FinanceCashFlowRawMaterialCcSpendRow[] = [];
-          for (const dashboard of dashboards) {
-            for (const row of dashboard.monthlySeries.byCostCenter) {
-              rows.push({
+          const yearLoads = [];
+          for (const year of years) {
+            const filters = buildExecutiveReportCostCenterDashboardFilters({
+              year,
+              month: null,
+              companyName: input.companyName,
+            });
+            const rows = await deps.loadApRows(buildFinanceApPrismaWhere(filters, syncCutoff));
+            yearLoads.push({ filters, rows });
+          }
+
+          const allocationIds = [
+            ...new Set(yearLoads.flatMap((load) => load.rows.map((row) => row.externalId))),
+          ];
+          const allocations = await deps.loadAllocations(allocationIds);
+
+          const collected: FinanceCashFlowRawMaterialCcSpendRow[] = [];
+          for (const load of yearLoads) {
+            const monthly = collectFinanceCostCenterMonthlyByCostCenter(
+              load.rows,
+              allocations,
+              costCenters,
+              suppliers,
+              load.filters,
+              referenceDate,
+              syncCutoff
+            );
+            for (const row of monthly) {
+              collected.push({
                 month: row.month,
                 year: row.year,
                 costCenterId: row.costCenterId,
@@ -78,7 +99,7 @@ export async function loadRawMaterialCostCenterSpotlight(
               });
             }
           }
-          return rows;
+          return collected;
         });
 
         return measureDevPerfPhaseSync("spotlightBuild", () =>

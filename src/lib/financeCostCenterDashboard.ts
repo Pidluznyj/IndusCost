@@ -420,6 +420,99 @@ export function toApPortfolioFiltersFromCostCenter(
   return apFilters;
 }
 
+/**
+ * Série mensal por CC — mesmas regras de `buildFinanceCostCenterDashboard`
+ * (`monthlySeries.byCostCenter`), sem gráfico anual, fornecedores ou diagnóstico.
+ */
+export function collectFinanceCostCenterMonthlyByCostCenter(
+  rows: FinanceApDashboardRow[],
+  allocations: AllocationDashboardRow[],
+  costCenters: CostCenterMetaRow[],
+  suppliers: SupplierWithAliases[],
+  filters: FinanceCostCenterDashboardFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCostCenterDashboardMonthlyByCostCenterRow[] {
+  const apScope = resolveFinanceCostCenterDashboardApScope(filters);
+  const filteredRows = filterCostCenterDashboardRows(rows, filters, referenceDate, syncCutoff);
+  const ccMeta = new Map(costCenters.map((row) => [row.id, row]));
+
+  const allocationsByPayable = new Map<number, AllocationDashboardRow[]>();
+  for (const allocation of allocations) {
+    const list = allocationsByPayable.get(allocation.accountsPayableId) ?? [];
+    list.push(allocation);
+    allocationsByPayable.set(allocation.accountsPayableId, list);
+  }
+
+  const monthlyByCc = new Map<string, FinanceCostCenterDashboardMonthlyByCostCenterRow>();
+
+  for (const row of filteredRows) {
+    const rowAllocations = allocationsByPayable.get(row.externalId) ?? [];
+    const titleAmount = resolveCostCenterTitleAmount(row, apScope);
+    if (titleAmount <= 0) continue;
+
+    const allocatedAmount = resolveTitleAllocatedAmount(rowAllocations, titleAmount);
+    const cappedClassified = finiteMoney(Math.min(allocatedAmount, titleAmount));
+    const unallocatedGap = finiteMoney(Math.max(0, titleAmount - cappedClassified));
+    const fullyAllocated = unallocatedGap <= FINANCE_AP_ALLOCATION_AMOUNT_TOLERANCE;
+
+    if (!matchesSupplierFilter(row, rowAllocations, filters.supplierId, suppliers)) continue;
+    if (!matchesClassificationFilter(fullyAllocated, filters.classification)) continue;
+
+    const costCenterFilter = filters.costCenterId;
+    if (
+      costCenterFilter &&
+      !rowAllocations.some((allocation) => allocation.costCenterId === costCenterFilter)
+    ) {
+      continue;
+    }
+
+    const month = monthKey(row.dueDate);
+    if (!month || !row.dueDate) continue;
+
+    const metrics = computeTitleMetrics(row, referenceDate, apScope);
+    const applicableAllocations = costCenterFilter
+      ? rowAllocations.filter((allocation) => allocation.costCenterId === costCenterFilter)
+      : rowAllocations;
+
+    for (const allocation of applicableAllocations) {
+      const sharePct = decimalFieldToNumber(allocation.percentage);
+      const lineAmount = resolveAllocationShareAmount(allocation, titleAmount);
+      const lineOpen = prorateByShare(metrics.openAmount, sharePct);
+      const linePaid = prorateByShare(metrics.paidAmount, sharePct);
+      const meta = ccMeta.get(allocation.costCenterId);
+      const monthlyCcKey = `${month}:${allocation.costCenterId}`;
+      const monthlyCc = monthlyByCc.get(monthlyCcKey) ?? {
+        year: row.dueDate.getFullYear(),
+        month: row.dueDate.getMonth() + 1,
+        costCenterId: allocation.costCenterId,
+        code: meta?.code ?? allocation.costCenterId,
+        name: meta?.name ?? allocation.costCenterId,
+        amount: 0,
+        paidAmount: 0,
+        openAmount: 0,
+      };
+      monthlyCc.amount += lineAmount;
+      monthlyCc.paidAmount += linePaid;
+      monthlyCc.openAmount += lineOpen;
+      monthlyByCc.set(monthlyCcKey, monthlyCc);
+    }
+  }
+
+  return [...monthlyByCc.values()]
+    .sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      if (a.month !== b.month) return a.month - b.month;
+      return a.code.localeCompare(b.code);
+    })
+    .map((row) => ({
+      ...row,
+      amount: finiteMoney(row.amount),
+      paidAmount: finiteMoney(row.paidAmount),
+      openAmount: finiteMoney(row.openAmount),
+    }));
+}
+
 export function buildFinanceCostCenterDashboard(
   rows: FinanceApDashboardRow[],
   allocations: AllocationDashboardRow[],
