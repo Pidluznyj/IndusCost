@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { PrismaClient } from "@prisma/client";
-import { recordInventoryCount } from "./inventoryCountApplicationService.server.js";
+import { recordInventoryCount as recordInventoryCountService } from "./inventoryCountApplicationService.server.js";
 import {
   createInventoryCountSession,
   finalizeInventoryCountSession,
@@ -43,6 +43,39 @@ const OPERATOR = {
 
 function client(): PrismaClient {
   return new PrismaClient({ datasources: { db: { url: dbUrl as string } } });
+}
+
+
+/**
+ * Wrapper de teste. O CAS é obrigatório no serviço; estes cenários exercitam
+ * semântica temporal, não concorrência, então usam a versão vigente da linha.
+ * Os testes de CAS passam expectedVersion explicitamente.
+ */
+async function recordInventoryCount(
+  prisma: PrismaClient,
+  input: {
+    sessionId: string;
+    lineId: string;
+    countedQuantity: number;
+    justification?: string | null;
+    expectedVersion?: number;
+    operationId?: string | null;
+  },
+  actor: { userId: string; permissions?: readonly string[] }
+) {
+  const db = prisma as unknown as {
+    inventoryCountLine: {
+      findFirst: (args: unknown) => Promise<{ version?: number } | null>;
+    };
+  };
+  const current = await db.inventoryCountLine.findFirst({
+    where: { id: input.lineId, sessionId: input.sessionId },
+  });
+  return recordInventoryCountService(
+    prisma,
+    { ...input, expectedVersion: input.expectedVersion ?? current?.version ?? 0 },
+    actor
+  );
 }
 
 function log(label: string, payload: unknown): void {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Check, Loader2, Play, RefreshCw, X, Zap } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
   countLineHasDivergence,
@@ -32,6 +32,42 @@ type LineDraft = {
   justification: string;
 };
 
+/**
+ * FASE 2B — uma "tentativa lógica" de gravação.
+ *
+ * O operationId pertence ao PAYLOAD, não à linha: mudou countedQuantity,
+ * justification ou expectedVersion, é outra intenção e merece chave nova. Só o
+ * retry do MESMO payload (timeout, queda de rede, clique repetido) reaproveita
+ * a chave — é isso que torna o replay idempotente possível.
+ */
+type LineAttempt = {
+  fingerprint: string;
+  operationId: string;
+};
+
+type LineConflict = {
+  lineId: string;
+  attemptedQuantity: number;
+};
+
+const COUNT_LINE_VERSION_CONFLICT = "COUNT_LINE_VERSION_CONFLICT";
+const COUNT_OPERATION_IDEMPOTENCY_CONFLICT = "COUNT_OPERATION_IDEMPOTENCY_CONFLICT";
+const COUNT_LINE_VERSION_REQUIRED = "COUNT_LINE_VERSION_REQUIRED";
+
+function attemptFingerprint(input: {
+  countedQuantity: number;
+  justification: string | null;
+  expectedVersion: number;
+}): string {
+  return JSON.stringify([input.countedQuantity, input.justification ?? "", input.expectedVersion]);
+}
+
+function newOperationId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return `op-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function InventoryCountStatusBadge({ status }: { status: InventoryCountSessionStatus }) {
   return (
     <span
@@ -52,6 +88,8 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, LineDraft>>({});
+  const [attempts, setAttempts] = useState<Record<string, LineAttempt>>({});
+  const [conflict, setConflict] = useState<LineConflict | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,20 +141,69 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
       setError("Quantidade contada deve ser >= 0.");
       return;
     }
+    const justification = draft.justification.trim() || null;
+    const expectedVersion = line.version;
+
+    // Mesma intenção → mesma chave (retry). Payload diferente → chave nova.
+    const fingerprint = attemptFingerprint({ countedQuantity: counted, justification, expectedVersion });
+    const previous = attempts[line.id];
+    const operationId =
+      previous && previous.fingerprint === fingerprint ? previous.operationId : newOperationId();
+    setAttempts((prev) => ({ ...prev, [line.id]: { fingerprint, operationId } }));
+
     setActionLoading(`line-${line.id}`);
     setError(null);
+    setConflict(null);
     try {
       await fetchJsonOk(`/api/inventory/count-sessions/${sessionId}/lines/${line.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           countedQuantity: counted,
-          justification: draft.justification.trim() || null,
+          justification,
+          expectedVersion,
+          operationId,
         }),
+      });
+      // Sucesso — inclusive replay idempotente, que responde 200 normal e não
+      // pode virar falso conflito. A tentativa se encerra aqui.
+      setAttempts((prev) => {
+        const next = { ...prev };
+        delete next[line.id];
+        return next;
       });
       await load();
       onUpdated();
     } catch (e: unknown) {
+      const code = e instanceof HttpError ? e.code : undefined;
+      if (code === COUNT_LINE_VERSION_CONFLICT) {
+        // Sem sobrescrita automática e sem retry automático com a versão nova:
+        // recarrega o vigente e devolve a decisão ao operador.
+        setAttempts((prev) => {
+          const next = { ...prev };
+          delete next[line.id];
+          return next;
+        });
+        setConflict({ lineId: line.id, attemptedQuantity: counted });
+        await load();
+        onUpdated();
+        return;
+      }
+      if (code === COUNT_LINE_VERSION_REQUIRED) {
+        setError("Esta tela está desatualizada. Recarregue a página e conte novamente.");
+        return;
+      }
+      if (code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT) {
+        setAttempts((prev) => {
+          const next = { ...prev };
+          delete next[line.id];
+          return next;
+        });
+        setError("A operação foi reutilizada com outro conteúdo. Revise e salve novamente.");
+        return;
+      }
+      // Erro de rede/servidor: mantém a tentativa para que o retry reaproveite
+      // o mesmo operationId e não duplique a contagem.
       setError(formatInventoryApiError(e, "Erro ao salvar linha."));
     } finally {
       setActionLoading(null);
@@ -157,6 +244,16 @@ export function InventoryCountDetailSheet({ sessionId, open, onClose, onUpdated 
           </button>
         </div>
 
+        {conflict ? (
+        <div
+          className="mx-4 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="count-line-version-conflict"
+        >
+          <strong>Linha alterada por outra contagem.</strong> Sua tentativa de{" "}
+          {formatInventoryQuantity(conflict.attemptedQuantity)} não foi aplicada. O valor vigente
+          está na tabela — confira e decida novamente antes de salvar.
+        </div>
+      ) : null}
         {error ? (
           <div className="mx-4 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {error}

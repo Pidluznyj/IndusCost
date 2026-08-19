@@ -11,7 +11,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
-import { recordInventoryCount } from "./inventoryCountApplicationService.server.js";
+import {
+  COUNT_LINE_VERSION_CONFLICT,
+  COUNT_OPERATION_IDEMPOTENCY_CONFLICT,
+  recordInventoryCount as recordInventoryCountService,
+} from "./inventoryCountApplicationService.server.js";
+import {
+  buildCountRequestHash,
+  canonicalCountQuantity,
+} from "./inventoryCountRequestHash.js";
 import {
   COUNT_ADJUSTMENT_BASIS,
   computeObservationDelta,
@@ -26,13 +34,45 @@ import {
 import {
   finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
-  updateInventoryCountLine,
 } from "./inventoryCountService.server.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
+
+/**
+ * Wrapper de teste. O CAS é obrigatório no serviço; estes cenários exercitam
+ * semântica temporal, não concorrência, então usam a versão vigente da linha.
+ * Os testes de CAS passam expectedVersion explicitamente.
+ */
+async function recordInventoryCount(
+  prisma: never,
+  input: {
+    sessionId: string;
+    lineId: string;
+    countedQuantity: number;
+    justification?: string | null;
+    expectedVersion?: number;
+    operationId?: string | null;
+  },
+  actor: { userId: string; permissions?: readonly string[] }
+) {
+  const db = prisma as unknown as {
+    inventoryCountLine: {
+      findFirst: (args: unknown) => Promise<{ version?: number } | null>;
+    };
+  };
+  const current = await db.inventoryCountLine.findFirst({
+    where: { id: input.lineId, sessionId: input.sessionId },
+  });
+  return recordInventoryCountService(
+    prisma,
+    { ...input, expectedVersion: input.expectedVersion ?? current?.version ?? 0 },
+    actor
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Motor puro
@@ -528,20 +568,18 @@ describe("OP-10 generate-adjustments", () => {
 // ---------------------------------------------------------------------------
 
 describe("OP-10 regressão do contrato humano", () => {
-  it("PATCH normal: payload antigo (sem operationId/version/device) continua válido", async () => {
+  it("PATCH normal: grava e devolve a linha com a versão nova", async () => {
     const { prisma, state } = createTemporalMockPrisma({
       balances: [balanceRow("item-1", "wh-1", 10)],
       lines: [countLine("line-1", "sess-1", 10)],
     });
 
-    const line = await updateInventoryCountLine(
-      prisma as never,
-      "sess-1",
-      "line-1",
-      { countedQuantity: 12, justification: "Sobra física" },
-      { userId: "user-1" }
-    );
-    assert.equal(Number(line.countedQuantity), 12);
+    const { line } = await recordInventoryCount(
+          prisma as never,
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 12, justification: "Sobra física" },
+          { userId: "user-1" }
+        );
+    assert.equal(Number(line?.countedQuantity), 12);
     assert.equal(Number(state.lines[0].differenceQuantity), 2);
     assert.ok(state.lines[0].currentObservationId);
   });
@@ -553,11 +591,9 @@ describe("OP-10 regressão do contrato humano", () => {
     });
     await assert.rejects(
       () =>
-        updateInventoryCountLine(
+        recordInventoryCount(
           prisma as never,
-          "sess-1",
-          "line-1",
-          { countedQuantity: 8, justification: null },
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 8, justification: null },
           { userId: "user-1" }
         ),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "JUSTIFICATION_REQUIRED"
@@ -572,11 +608,9 @@ describe("OP-10 regressão do contrato humano", () => {
     state.sessions[0].status = "WAITING_APPROVAL";
     await assert.rejects(
       () =>
-        updateInventoryCountLine(
+        recordInventoryCount(
           prisma as never,
-          "sess-1",
-          "line-1",
-          { countedQuantity: 8, justification: "x" },
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 8, justification: "x" },
           { userId: "user-1" }
         ),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "SESSION_LOCKED"
@@ -590,11 +624,9 @@ describe("OP-10 regressão do contrato humano", () => {
     });
     await assert.rejects(
       () =>
-        updateInventoryCountLine(
+        recordInventoryCount(
           prisma as never,
-          "sess-1",
-          "line-1",
-          { countedQuantity: 8, justification: "x" },
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 8, justification: "x" },
           { userId: "user-1" }
         ),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "LINE_NOT_FOUND"
@@ -608,11 +640,9 @@ describe("OP-10 regressão do contrato humano", () => {
     });
     await assert.rejects(
       () =>
-        updateInventoryCountLine(
+        recordInventoryCount(
           prisma as never,
-          "sess-1",
-          "line-1",
-          { countedQuantity: 8, justification: "x" },
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 8, justification: "x" },
           { userId: "user-1" }
         ),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "ADJUSTMENT_EXISTS"
@@ -623,13 +653,17 @@ describe("OP-10 regressão do contrato humano", () => {
     const routes = read("src/lib/inventoryRoutes.ts");
     assert.match(routes, /recordInventoryCount/);
     assert.match(routes, /count-sessions\/:id\/lines\/:lineId/);
-    // Contrato preservado: nada de campo novo obrigatório vindo do frontend.
-    assert.doesNotMatch(routes, /expectedVersion/);
+    // FASE 2B: a rota repassa o CAS e fixa o ator server-side.
+    assert.match(routes, /expectedVersion: input\.expectedVersion/);
+    assert.match(routes, /actorType: "USER"/);
+    assert.match(routes, /deviceId: null/);
+    // O ator jamais pode vir do corpo da requisição.
+    assert.doesNotMatch(routes, /actorType: input\./);
+    assert.doesNotMatch(routes, /req\.body\.actorType/);
 
     const service = read("src/lib/inventory/inventoryCountApplicationService.server.ts");
     const legacy = read("src/lib/inventory/inventoryCountService.server.ts");
-    // Uma única implementação: o serviço antigo delega.
-    assert.match(legacy, /recordInventoryCount/);
+    // Uma única implementação: o serviço de sessão não grava contagem.
     assert.doesNotMatch(legacy, /inventoryCountObservation\.create/);
     assert.match(service, /inventoryCountObservation\.create/);
     // recordCount nunca escreve saldo.
@@ -900,8 +934,568 @@ describe("OP-10 2A.3 — workflow humano segue a divergência efetiva", () => {
 });
 
 // ---------------------------------------------------------------------------
+// FASE 2B — CAS, idempotência, ator e auditoria
+// ---------------------------------------------------------------------------
+
+const OP_ACTOR = { userId: "user-1" } as const;
+
+function auditCountRecorded(state: { auditLogs: Array<Record<string, unknown>> }) {
+  return state.auditLogs.filter((a) => a.action === "COUNT_RECORDED");
+}
+
+describe("2B — hash canônico do request", () => {
+  it("18/19/20 — Decimal(20,6): 1, 1.0 e 1.000000 são o MESMO request", () => {
+    assert.equal(canonicalCountQuantity(1), "1.000000");
+    assert.equal(canonicalCountQuantity(1.0), "1.000000");
+    assert.equal(canonicalCountQuantity(1.000000), "1.000000");
+    assert.equal(canonicalCountQuantity(0.000001), "0.000001");
+
+    const base = {
+      lineId: "line-1",
+      justification: "Falta",
+      expectedVersion: 3,
+      actorType: "USER" as const,
+      userId: "user-1",
+      deviceId: null,
+    };
+    const a = buildCountRequestHash({ ...base, countedQuantity: 1 });
+    const b = buildCountRequestHash({ ...base, countedQuantity: 1.0 });
+    const c = buildCountRequestHash({ ...base, countedQuantity: 1.000000 });
+    assert.equal(a, b);
+    assert.equal(b, c);
+    // 1e-6 é significativo na precisão do Inventory.
+    assert.notEqual(a, buildCountRequestHash({ ...base, countedQuantity: 1.000001 }));
+  });
+
+  it("qualquer campo que muda a operação muda o hash", () => {
+    const base = {
+      lineId: "line-1",
+      countedQuantity: 10,
+      justification: "Falta",
+      expectedVersion: 3,
+      actorType: "USER" as const,
+      userId: "user-1",
+      deviceId: null,
+    };
+    const h = buildCountRequestHash(base);
+    assert.notEqual(h, buildCountRequestHash({ ...base, lineId: "line-2" }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, countedQuantity: 11 }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, justification: "Outra" }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, expectedVersion: 4 }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, actorType: "DEVICE" }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, userId: "user-2" }));
+    assert.notEqual(h, buildCountRequestHash({ ...base, deviceId: "dev-1" }));
+    // Normalização: trim não é campo novo.
+    assert.equal(h, buildCountRequestHash({ ...base, justification: "  Falta  " }));
+  });
+
+  it("delimitador dentro do texto não confunde payloads distintos", () => {
+    const base = {
+      lineId: "line-1",
+      countedQuantity: 10,
+      expectedVersion: 0,
+      actorType: "USER" as const,
+      userId: "user-1",
+      deviceId: null,
+    };
+    // Concatenação com "|" faria estes dois colidirem.
+    assert.notEqual(
+      buildCountRequestHash({ ...base, justification: "a|b" }),
+      buildCountRequestHash({ ...base, justification: "a" })
+    );
+  });
+});
+
+describe("2B — CAS (concorrência otimista)", () => {
+  it("1/3 — expectedVersion correto grava e incrementa exatamente 1", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    const result = await recordInventoryCountService(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 10, expectedVersion: 0 },
+      OP_ACTOR
+    );
+    assert.equal(result.replayed, false);
+    assert.equal(result.snapshot.previousVersion, 0);
+    assert.equal(result.snapshot.version, 1);
+    assert.equal(state.lines[0].version, 1);
+  });
+
+  it("2 — expectedVersion antigo perde o CAS com COUNT_LINE_VERSION_CONFLICT", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 10, expectedVersion: 0 },
+      OP_ACTOR
+    );
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 9, justification: "x", expectedVersion: 0 },
+          OP_ACTOR
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === COUNT_LINE_VERSION_CONFLICT
+    );
+    assert.equal(state.lines[0].version, 1);
+  });
+
+  it("4/5 — CAS perdido não deixa Observation nem auditoria", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 10, expectedVersion: 0 },
+      OP_ACTOR
+    );
+    const observationsBefore = state.observations.length;
+    const auditsBefore = auditCountRecorded(state).length;
+
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          {
+            sessionId: "sess-1",
+            lineId: "line-1",
+            countedQuantity: 9,
+            justification: "x",
+            expectedVersion: 0,
+            operationId: "op-perdedor",
+          },
+          OP_ACTOR
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === COUNT_LINE_VERSION_CONFLICT
+    );
+
+    assert.equal(state.observations.length, observationsBefore);
+    assert.equal(auditCountRecorded(state).length, auditsBefore);
+    // 13 — a chave do perdedor não fica envenenada: sumiu com o rollback.
+    assert.equal(state.operations.some((o) => o.operationId === "op-perdedor"), false);
+  });
+
+  /**
+   * O mock tem UMA conexão: não modela duas transações isoladas, e tentar
+   * simular isso aqui produziria rigor falso. O que ele prova de verdade é o
+   * determinismo do CAS — duas intenções partindo da MESMA versão só podem
+   * resultar em um vencedor. A simultaneidade real (duas conexões PostgreSQL
+   * disparadas juntas) é o gate DB-1.
+   */
+  it("6 — duas intenções na mesma versão: exatamente 1 sucesso e 1 conflito", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    const attempt = (counted: number, operationId: string) =>
+      recordInventoryCountService(
+        prisma as never,
+        {
+          sessionId: "sess-1",
+          lineId: "line-1",
+          countedQuantity: counted,
+          justification: "concorrente",
+          expectedVersion: 0,
+          operationId,
+        },
+        OP_ACTOR
+      );
+
+    const settled: Array<{ ok: boolean; code?: string }> = [];
+    for (const [counted, opId] of [
+      [9, "op-a"],
+      [8, "op-b"],
+    ] as const) {
+      try {
+        await attempt(counted, opId);
+        settled.push({ ok: true });
+      } catch (e: unknown) {
+        settled.push({
+          ok: false,
+          code: e instanceof InventoryValidationError ? e.code : "OUTRO",
+        });
+      }
+    }
+
+    assert.equal(settled.filter((r) => r.ok).length, 1);
+    assert.equal(
+      settled.filter((r) => !r.ok && r.code === COUNT_LINE_VERSION_CONFLICT).length,
+      1
+    );
+    assert.equal(state.lines[0].version, 1);
+    assert.equal(state.observations.length, 1);
+    // O perdedor não deixou rastro.
+    assert.equal(state.operations.length, 1);
+  });
+
+  it("6b — a simultaneidade real é coberta pelo DB gate, não pelo mock", () => {
+    const gate = read("src/lib/inventory/inventoryCountConcurrencyIdempotencyDbGate.test.ts");
+    assert.match(gate, /DB-1/);
+    assert.match(gate, /DB-4/);
+    // Duas conexões independentes é o que caracteriza a prova.
+    assert.match(gate, /clientA/);
+    assert.match(gate, /clientB/);
+  });
+});
+
+describe("2B — idempotência", () => {
+  const input = (over: Record<string, unknown> = {}) => ({
+    sessionId: "sess-1",
+    lineId: "line-1",
+    countedQuantity: 9,
+    justification: "Falta",
+    expectedVersion: 0,
+    operationId: "op-retry",
+    ...over,
+  });
+
+  it("7/8/9/10 — retry com mesmo payload faz replay sem novo efeito", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+
+    const first = await recordInventoryCountService(prisma as never, input(), OP_ACTOR);
+    assert.equal(first.replayed, false);
+
+    const second = await recordInventoryCountService(prisma as never, input(), OP_ACTOR);
+    assert.equal(second.replayed, true);
+    // 7 — mesmo resultado lógico.
+    assert.deepEqual(second.snapshot, first.snapshot);
+    // 8 — nenhuma Observation nova.
+    assert.equal(state.observations.length, 1);
+    // 9 — version não incrementa de novo.
+    assert.equal(state.lines[0].version, 1);
+    // 10 — auditoria não duplica.
+    assert.equal(auditCountRecorded(state).length, 1);
+  });
+
+  it("2 (ajuste do plano) — replay devolve o resultado ORIGINAL, não o estado atual", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+
+    // op X grava 80 / version 1
+    const original = await recordInventoryCountService(
+      prisma as never,
+      input({ countedQuantity: 80, justification: "Primeira", operationId: "op-X" }),
+      OP_ACTOR
+    );
+    assert.equal(original.snapshot.countedQuantity, 80);
+    assert.equal(original.snapshot.version, 1);
+
+    // recontagem posterior grava 79 / version 2
+    await recordInventoryCountService(
+      prisma as never,
+      input({ countedQuantity: 79, justification: "Recontagem", expectedVersion: 1, operationId: "op-Y" }),
+      OP_ACTOR
+    );
+    assert.equal(state.lines[0].version, 2);
+    assert.equal(Number(state.lines[0].countedQuantity), 79);
+
+    // retry atrasado de X: precisa responder 80/version 1, não 79/version 2.
+    const replay = await recordInventoryCountService(
+      prisma as never,
+      input({ countedQuantity: 80, justification: "Primeira", operationId: "op-X" }),
+      OP_ACTOR
+    );
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.snapshot.countedQuantity, 80);
+    assert.equal(replay.snapshot.version, 1);
+    assert.deepEqual(replay.snapshot, original.snapshot);
+    // E o estado atual continua sendo o da recontagem.
+    assert.equal(Number(state.lines[0].countedQuantity), 79);
+    assert.equal(state.lines[0].version, 2);
+  });
+
+  it("11 — mesmo operationId com payload diferente é conflito", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    await recordInventoryCountService(prisma as never, input(), OP_ACTOR);
+
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          input({ countedQuantity: 7, expectedVersion: 1 }),
+          OP_ACTOR
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError &&
+        e.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT
+    );
+    // Nenhuma alteração adicional.
+    assert.equal(state.observations.length, 1);
+    assert.equal(state.lines[0].version, 1);
+    assert.equal(auditCountRecorded(state).length, 1);
+  });
+
+  it("11b — mesma chave e payload, ator diferente, também é conflito", async () => {
+    const { prisma } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    await recordInventoryCountService(prisma as never, input(), OP_ACTOR);
+    await assert.rejects(
+      () => recordInventoryCountService(prisma as never, input(), { userId: "outro-user" }),
+      (e: unknown) =>
+        e instanceof InventoryValidationError &&
+        e.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT
+    );
+  });
+
+  /**
+   * Mesma limitação do teste 6: aqui provamos que a MESMA chave nunca produz
+   * dois efeitos, qualquer que seja a ordem. A corrida real entre duas conexões
+   * (que o PostgreSQL resolve bloqueando no índice único) é o gate DB-4.
+   */
+  it("12 — a mesma chave nunca executa duas vezes", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    const results = [
+      await recordInventoryCountService(prisma as never, input(), OP_ACTOR),
+      await recordInventoryCountService(prisma as never, input(), OP_ACTOR),
+      await recordInventoryCountService(prisma as never, input(), OP_ACTOR),
+    ];
+    assert.equal(results.filter((r) => !r.replayed).length, 1);
+    assert.equal(results.filter((r) => r.replayed).length, 2);
+    for (const r of results) assert.deepEqual(r.snapshot, results[0].snapshot);
+    assert.equal(state.observations.length, 1);
+    assert.equal(state.lines[0].version, 1);
+    assert.equal(auditCountRecorded(state).length, 1);
+    assert.equal(state.operations.length, 1);
+  });
+
+  it("13 — falha antes do commit não envenena o operationId", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    // Divergência sem justificativa → aborta tudo.
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          input({ justification: null, countedQuantity: 8 }),
+          OP_ACTOR
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === "JUSTIFICATION_REQUIRED"
+    );
+    assert.equal(state.operations.length, 0);
+    assert.equal(state.observations.length, 0);
+
+    // O mesmo operationId funciona normalmente depois.
+    const retry = await recordInventoryCountService(
+      prisma as never,
+      input({ justification: "Agora com justificativa", countedQuantity: 8 }),
+      OP_ACTOR
+    );
+    assert.equal(retry.replayed, false);
+    assert.equal(state.lines[0].version, 1);
+    assert.equal(state.observations.length, 1);
+  });
+});
+
+describe("2B — ator e auditoria", () => {
+  it("14/16/17 — rota humana grava USER, userId autenticado e deviceId null", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      lines: [countLine("line-1", "sess-1", 10)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 10, expectedVersion: 0, operationId: "op-1" },
+      { userId: "user-42" }
+    );
+    assert.equal(state.observations[0].actorType, "USER");
+    assert.equal(state.observations[0].userId, "user-42");
+    assert.equal(state.observations[0].deviceId, null);
+    assert.equal(state.operations[0].actorType, "USER");
+    assert.equal(state.operations[0].userId, "user-42");
+    assert.equal(state.operations[0].deviceId, null);
+  });
+
+  it("15 — o browser não consegue forjar ator: a rota não lê actorType do corpo", () => {
+    const routes = read("src/lib/inventoryRoutes.ts");
+    const validation = read("src/lib/inventory/inventoryCountValidation.ts");
+    // O parser do corpo humano sequer conhece actorType/deviceId/userId.
+    assert.doesNotMatch(validation, /actorType/);
+    assert.doesNotMatch(validation, /deviceId/);
+    // E a rota fixa o ator server-side.
+    assert.match(routes, /actorType: "USER"/);
+    assert.match(routes, /deviceId: null/);
+    assert.doesNotMatch(routes, /actorType: input\./);
+    assert.doesNotMatch(routes, /actorType: req\./);
+  });
+
+  it("auditoria responde às 12 perguntas obrigatórias", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 95,
+        justification: "Falta apurada",
+        expectedVersion: 0,
+        operationId: "op-audit",
+      },
+      { userId: "user-42" }
+    );
+
+    const observation = state.observations[0];
+    const operation = state.operations[0];
+    const audit = auditCountRecorded(state)[0];
+    const after = audit.afterJson as Record<string, unknown>;
+    const before = audit.beforeJson as Record<string, unknown>;
+
+    // quem contou / ator / device
+    assert.equal(observation.userId, "user-42");
+    assert.equal(observation.actorType, "USER");
+    assert.equal(observation.deviceId, null);
+    // quando
+    assert.ok(observation.observedAt);
+    // linha e sessão
+    assert.equal(observation.lineId, "line-1");
+    assert.equal(after.sessionId, "sess-1");
+    // versão anterior e nova
+    assert.equal(before.version, 0);
+    assert.equal(after.version, 1);
+    assert.equal(operation.expectedVersion, 0);
+    assert.equal(operation.resultVersion, 1);
+    // quantidades e delta
+    assert.equal(Number(observation.expectedQuantity), 100);
+    assert.equal(Number(observation.countedQuantity), 95);
+    assert.equal(Number(observation.adjustmentDelta), -5);
+    // justificativa e operationId
+    assert.equal(observation.justification, "Falta apurada");
+    assert.equal(observation.operationId, "op-audit");
+    assert.equal(after.operationId, "op-audit");
+    // a auditoria aponta para a Observation em vez de duplicar quantidades
+    assert.equal(after.observationId, observation.id);
+    assert.equal(Object.prototype.hasOwnProperty.call(after, "countedQuantity"), false);
+  });
+});
+
+describe("2B — recontagem e contrato HTTP", () => {
+  it("21/22/23 — recontagem exige a versão seguinte e preserva a Observation antiga", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const first = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 95,
+        justification: "Primeira",
+        expectedVersion: 0,
+        operationId: "op-1",
+      },
+      OP_ACTOR
+    );
+
+    // 22 — reutilizar a versão anterior é conflito.
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          {
+            sessionId: "sess-1",
+            lineId: "line-1",
+            countedQuantity: 94,
+            justification: "Segunda",
+            expectedVersion: 0,
+            operationId: "op-2",
+          },
+          OP_ACTOR
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === COUNT_LINE_VERSION_CONFLICT
+    );
+
+    // 21 — nova intenção: nova chave + versão vigente.
+    const second = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 94,
+        justification: "Segunda",
+        expectedVersion: 1,
+        operationId: "op-2",
+      },
+      OP_ACTOR
+    );
+    assert.equal(second.snapshot.version, 2);
+    // 23 — append-only preservado.
+    assert.equal(state.observations.length, 2);
+    assert.equal(state.observations[0].id, first.snapshot.observationId);
+    assert.equal(state.lines[0].currentObservationId, second.snapshot.observationId);
+  });
+
+  it("24/25/26 — mapeamento HTTP dos conflitos e do replay", () => {
+    const routes = read("src/lib/inventoryRoutes.ts");
+    // 409 para os dois conflitos canônicos.
+    assert.match(routes, /COUNT_LINE_VERSION_CONFLICT/);
+    assert.match(routes, /COUNT_OPERATION_IDEMPOTENCY_CONFLICT/);
+    const statusBlock = routes.slice(
+      routes.indexOf("function handleInventoryValidation"),
+      routes.indexOf("function decimalOrNull")
+    );
+    assert.match(statusBlock, /COUNT_LINE_VERSION_CONFLICT[\s\S]*\? 409/);
+    // 26 — replay responde 200 normal.
+    assert.match(routes, /result\.replayed/);
+    assert.doesNotMatch(routes, /replayed[\s\S]{0,80}status\(409\)/);
+
+    // A UI não pode fazer retry automático nem sobrescrever sozinha.
+    const sheet = read("src/components/inventory/InventoryCountDetailSheet.tsx");
+    assert.match(sheet, /COUNT_LINE_VERSION_CONFLICT/);
+    assert.match(sheet, /expectedVersion/);
+    assert.match(sheet, /operationId/);
+    assert.doesNotMatch(sheet, /setTimeout\([\s\S]{0,120}saveLine/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Mock Prisma
 // ---------------------------------------------------------------------------
+
+
+/** Aplica data do Prisma numa linha do mock, entendendo { increment }. */
+function applyMockUpdate<T extends Record<string, unknown>>(
+  row: T,
+  data: Record<string, unknown>
+): T {
+  const next: Record<string, unknown> = { ...row };
+  for (const [key, value] of Object.entries(data)) {
+    if (value && typeof value === "object" && "increment" in (value as object)) {
+      const inc = Number((value as { increment: number }).increment);
+      next[key] = Number(next[key] ?? 0) + inc;
+      continue;
+    }
+    next[key] = value;
+  }
+  return next as T;
+}
 
 function captureWarnings() {
   const lines: string[] = [];
@@ -991,6 +1585,7 @@ function createTemporalMockPrisma(options?: { balances?: MockBalance[]; lines?: 
     balances: [...(options?.balances ?? [])],
     lines: [...(options?.lines ?? [])],
     observations: [] as MockObservation[],
+    operations: [] as Array<Record<string, unknown>>,
     sessions: [
       {
         id: "sess-1",
@@ -1120,8 +1715,10 @@ function createTemporalMockPrisma(options?: { balances?: MockBalance[]; lines?: 
         state.lines.push(row);
         return row;
       },
-      findFirst: async ({ where }: { where: { id: string; sessionId: string } }) =>
-        state.lines.find((l) => l.id === where.id && l.sessionId === where.sessionId) ?? null,
+      findFirst: async ({ where }: { where: { id: string; sessionId?: string } }) =>
+        state.lines.find(
+          (l) => l.id === where.id && (where.sessionId === undefined || l.sessionId === where.sessionId)
+        ) ?? null,
       findMany: async ({
         where,
         include,
@@ -1143,14 +1740,92 @@ function createTemporalMockPrisma(options?: { balances?: MockBalance[]; lines?: 
           })),
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const idx = state.lines.findIndex((l) => l.id === where.id);
-        state.lines[idx] = { ...state.lines[idx], ...data } as MockLine;
+        state.lines[idx] = applyMockUpdate(state.lines[idx], data);
         return state.lines[idx];
+      },
+      // CAS: filtra por version e devolve count, igual ao UPDATE condicional.
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; version?: number };
+        data: Record<string, unknown>;
+      }) => {
+        const matches = state.lines.filter(
+          (l) => l.id === where.id && (where.version === undefined || (l.version ?? 0) === where.version)
+        );
+        for (const match of matches) {
+          const idx = state.lines.findIndex((l) => l.id === match.id);
+          state.lines[idx] = applyMockUpdate(state.lines[idx], data);
+        }
+        return { count: matches.length };
+      },
+    },
+    // FASE 2B: aquisição por INSERT ... ON CONFLICT DO NOTHING.
+    inventoryCountOperation: {
+      createMany: async ({
+        data,
+        skipDuplicates,
+      }: {
+        data: Array<Record<string, unknown>>;
+        skipDuplicates?: boolean;
+      }) => {
+        let count = 0;
+        for (const row of data) {
+          const exists = state.operations.some((o) => o.operationId === row.operationId);
+          if (exists && skipDuplicates) continue;
+          state.operations.push({ id: `op-${state.operations.length + 1}`, ...row });
+          count += 1;
+        }
+        return { count };
+      },
+      findUnique: async ({ where }: { where: { operationId: string } }) =>
+        state.operations.find((o) => o.operationId === where.operationId) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { operationId: string };
+        data: Record<string, unknown>;
+      }) => {
+        const idx = state.operations.findIndex((o) => o.operationId === where.operationId);
+        state.operations[idx] = { ...state.operations[idx], ...data };
+        return state.operations[idx];
       },
     },
   };
 
+  // Transação com rollback de verdade: sem isso o mock declararia
+  // atomicidade que não tem, e os testes de CAS/idempotência ficariam falsos.
+  const snapshotState = () => ({
+    balances: state.balances.map((r) => ({ ...r })),
+    lines: state.lines.map((r) => ({ ...r })),
+    observations: state.observations.map((r) => ({ ...r })),
+    operations: state.operations.map((r) => ({ ...r })),
+    sessions: state.sessions.map((r) => ({ ...r })),
+    movements: state.movements.map((r) => ({ ...r })),
+    auditLogs: state.auditLogs.map((r) => ({ ...r })),
+  });
+  const restoreState = (snap: ReturnType<typeof snapshotState>) => {
+    state.balances.splice(0, state.balances.length, ...snap.balances);
+    state.lines.splice(0, state.lines.length, ...snap.lines);
+    state.observations.splice(0, state.observations.length, ...snap.observations);
+    state.operations.splice(0, state.operations.length, ...snap.operations);
+    state.sessions.splice(0, state.sessions.length, ...snap.sessions);
+    state.movements.splice(0, state.movements.length, ...snap.movements);
+    state.auditLogs.splice(0, state.auditLogs.length, ...snap.auditLogs);
+  };
+
   const prisma = {
-    $transaction: async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx),
+    $transaction: async (fn: (inner: typeof tx) => Promise<unknown>) => {
+      const snap = snapshotState();
+      try {
+        return await fn(tx);
+      } catch (e) {
+        restoreState(snap);
+        throw e;
+      }
+    },
     ...tx,
   };
 

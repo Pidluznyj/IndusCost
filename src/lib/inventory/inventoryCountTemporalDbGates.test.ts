@@ -456,6 +456,7 @@ describe("OP-10 DB gate — concorrência real FOR UPDATE", { skip: gate }, () =
             lineId: f.lineId,
             countedQuantity: 80,
             justification: "Contagem sob concorrência",
+            expectedVersion: 0,
           },
           { userId: "op10-user" }
         );
@@ -502,6 +503,7 @@ describe("OP-10 DB gate — concorrência real FOR UPDATE", { skip: gate }, () =
             lineId: f.lineId,
             countedQuantity: 95,
             justification: "Contagem antes do movimento",
+            expectedVersion: 0,
           },
           { userId: "op10-user" }
         );
@@ -638,6 +640,7 @@ describe("OP-10 DB gate — rollback transacional real", { skip: gate }, () => {
                 lineId: f.lineId,
                 countedQuantity: 95,
                 justification: "Vai falhar",
+                expectedVersion: 0,
               },
               { userId: "op10-user" }
             );

@@ -14,6 +14,42 @@ export type InventoryAuditInput = {
   reason?: string | null;
 };
 
+/** Cliente mínimo capaz de gravar auditoria — PrismaClient ou transação. */
+type InventoryAuditWriter = {
+  inventoryAuditLog: { create: (args: { data: Record<string, unknown> }) => Promise<unknown> };
+};
+
+/**
+ * Grava auditoria dentro de uma transação JÁ ABERTA.
+ *
+ * Necessário quando o evento precisa desaparecer junto com a operação em caso
+ * de rollback (ex.: CAS perdido na contagem) — auditar fora da transação
+ * deixaria rastro de algo que nunca aconteceu.
+ */
+export async function writeInventoryAuditLogInTx(
+  tx: InventoryAuditWriter,
+  input: InventoryAuditInput
+): Promise<void> {
+  await tx.inventoryAuditLog.create({
+    data: {
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: input.action,
+      beforeJson:
+        input.beforeJson === undefined
+          ? undefined
+          : (input.beforeJson as Prisma.InputJsonValue),
+      afterJson:
+        input.afterJson === undefined
+          ? undefined
+          : (input.afterJson as Prisma.InputJsonValue),
+      userId: input.userId ?? null,
+      userName: input.userName ?? null,
+      reason: input.reason ?? null,
+    },
+  });
+}
+
 export async function writeInventoryAuditLog(
   prisma: PrismaClient,
   input: InventoryAuditInput

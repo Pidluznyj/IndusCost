@@ -16,7 +16,11 @@ import {
   parseCreateCountSessionBody,
   parseUpdateCountLineBody,
 } from "@/src/lib/inventory/inventoryCountValidation.js";
-import { recordInventoryCount } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
+import {
+  COUNT_LINE_VERSION_CONFLICT,
+  COUNT_OPERATION_IDEMPOTENCY_CONFLICT,
+  recordInventoryCount,
+} from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
 import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
@@ -127,7 +131,9 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
-        : error.code === "LOCATION_CODE_DUPLICATE" ||
+        : error.code === COUNT_LINE_VERSION_CONFLICT ||
+            error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
+            error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
             error.code === "INVENTORY_CODE_CONFLICT" ||
             error.code === "ALREADY_REVERSED" ||
@@ -1920,20 +1926,41 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       }
 
       const input = parseUpdateCountLineBody(req.body);
-      // OP-10: contrato HTTP inalterado — a rota humana entra no serviço de
-      // aplicação canônico, o mesmo que a futura rota DEVICE usará.
-      const { line } = await recordInventoryCount(
+      // OP-10: a rota humana entra no serviço de aplicação canônico, o mesmo
+      // que a futura rota DEVICE usará.
+      //
+      // FASE 2B: actorType/userId/deviceId são definidos AQUI, server-side. O
+      // browser não escolhe ator — nada do corpo da requisição alimenta esses
+      // campos, mesmo que o cliente tente enviá-los.
+      const result = await recordInventoryCount(
         prisma,
         {
           sessionId: id,
           lineId,
           countedQuantity: input.countedQuantity,
           justification: input.justification,
+          expectedVersion: input.expectedVersion,
+          operationId: input.operationId,
+          actorType: "USER",
+          deviceId: null,
         },
         { userId: user.id, permissions: user.effectivePermissions }
       );
 
-      res.json({ line: serializeInventoryCountLine(line) });
+      // Replay de retry: 200 normal, com o resultado ORIGINAL da operação.
+      if (result.replayed || !result.line) {
+        return res.json({
+          line: null,
+          replayed: true,
+          result: result.snapshot,
+        });
+      }
+
+      res.json({
+        line: serializeInventoryCountLine(result.line),
+        replayed: false,
+        result: result.snapshot,
+      });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("PATCH /api/inventory/count-sessions/:id/lines/:lineId", e);

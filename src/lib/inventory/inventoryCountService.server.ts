@@ -3,7 +3,6 @@
  * Ajustes sempre via createInventoryMovement — nunca altera saldo diretamente.
  */
 import type { PrismaClient } from "@prisma/client";
-import { recordInventoryCount } from "./inventoryCountApplicationService.server.js";
 import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
 import { hasCountDivergence } from "./inventoryCountMath.js";
 import {
@@ -133,32 +132,6 @@ export async function startInventoryCountSession(
 
     return updated;
   });
-}
-
-/**
- * Contagem física da linha — delega ao serviço de aplicação canônico.
- *
- * Mantido para preservar o contrato da rota humana existente. A semântica
- * temporal (Observation + saldo sob lock) vive em recordInventoryCount.
- */
-export async function updateInventoryCountLine(
-  prisma: PrismaClient,
-  sessionId: string,
-  lineId: string,
-  input: { countedQuantity: number; justification?: string | null },
-  context: CountSessionContext
-) {
-  const { line } = await recordInventoryCount(
-    prisma,
-    {
-      sessionId,
-      lineId,
-      countedQuantity: input.countedQuantity,
-      justification: input.justification ?? null,
-    },
-    context
-  );
-  return line;
 }
 
 export async function finalizeInventoryCountSession(
