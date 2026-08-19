@@ -168,6 +168,7 @@ function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
     quantity: Number.isFinite(q) ? q : 1,
     unit: row.unit,
     costCenterId: row.costCenterId || "",
+    financialCostCenterId: row.financialCostCenterId || "",
     desiredDate: row.desiredDate ? row.desiredDate.slice(0, 10) : "",
     priority: row.priority || "",
     notes: row.notes || "",
@@ -205,6 +206,13 @@ export const PurchaseModule = () => {
   const [requester, setRequester] = useState("");
   const [department, setDepartment] = useState("");
   const [requestCategory, setRequestCategory] = useState("");
+  // Seleções OFICIAIS — o texto acima vira snapshot derivado no servidor.
+  const [requesterEmployeeId, setRequesterEmployeeId] = useState("");
+  const [requestCategoryId, setRequestCategoryId] = useState("");
+  const [defaultFinancialCostCenterId, setDefaultFinancialCostCenterId] = useState("");
+  const [employees, setEmployees] = useState<Array<{ id: string; name: string; department: string }>>([]);
+  const [financialCcs, setFinancialCcs] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [requestCategories, setRequestCategories] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [priority, setPriority] = useState<PurchasePriority>("NORMAL");
   const [status, setStatus] = useState<PurchaseRequestStatus>("RASCUNHO");
   const [justification, setJustification] = useState("");
@@ -271,9 +279,38 @@ export const PurchaseModule = () => {
   }, [costCenters]);
 
   const headerCc = useMemo(
-    () => costCenters.find((c) => c.id === defaultCostCenterId),
-    [costCenters, defaultCostCenterId]
+    () => financialCcs.find((c) => c.id === defaultFinancialCostCenterId),
+    [financialCcs, defaultFinancialCostCenterId]
   );
+
+  const employeeOptions: SelectOption[] = useMemo(
+    () =>
+      employees.map((e) => ({
+        value: e.id,
+        label: e.name,
+        sublabel: e.department,
+        searchTerms: `${e.name} ${e.department}`,
+      })),
+    [employees]
+  );
+
+  const financialCcOptions: SelectOption[] = useMemo(
+    () =>
+      financialCcs.map((c) => ({
+        value: c.id,
+        label: `${c.code} — ${c.name}`,
+        searchTerms: `${c.code} ${c.name}`,
+      })),
+    [financialCcs]
+  );
+
+  /** Selecionar o funcionário preenche solicitante e setor — sem digitação. */
+  const handleRequesterSelect = (employeeId: string) => {
+    setRequesterEmployeeId(employeeId);
+    const emp = employees.find((e) => e.id === employeeId);
+    setRequester(emp?.name ?? "");
+    setDepartment(emp?.department ?? "");
+  };
 
   const refreshMaterials = useCallback(async () => {
     try {
@@ -287,12 +324,21 @@ export const PurchaseModule = () => {
   const loadLists = useCallback(async () => {
     setLoadingList(true);
     try {
-      const [reqs, mats, ccs, projectsRes] = await Promise.all([
+      const [reqs, mats, ccs, projectsRes, employeesRes, fccRes, categoriesRes] = await Promise.all([
         fetchJsonOk<PurchaseRequestRow[]>("/api/purchase-requests"),
         fetchJsonOk<Material[]>("/api/materials"),
         fetchJsonOk<CostCenterRow[]>("/api/cost-centers"),
         fetchJsonOk<{ rows?: Array<{ id: string; code: string; title: string }> }>(
           "/api/purchase-requests/official-refs/projects"
+        ).catch(() => ({ rows: [] })),
+        fetchJsonOk<{ rows?: Array<{ id: string; name: string; department: string }> }>(
+          "/api/purchase-requests/official-refs/employees"
+        ).catch(() => ({ rows: [] })),
+        fetchJsonOk<{ rows?: Array<{ id: string; code: string; name: string }> }>(
+          "/api/purchase-requests/official-refs/financial-cost-centers"
+        ).catch(() => ({ rows: [] })),
+        fetchJsonOk<{ rows?: Array<{ id: string; code: string; name: string }> }>(
+          "/api/purchase-requests/official-refs/request-categories"
         ).catch(() => ({ rows: [] })),
       ]);
       setRequests(Array.isArray(reqs) ? reqs : []);
@@ -305,6 +351,9 @@ export const PurchaseModule = () => {
           searchTerms: `${p.code} ${p.title}`,
         }))
       );
+      setEmployees(employeesRes.rows ?? []);
+      setFinancialCcs(fccRes.rows ?? []);
+      setRequestCategories(categoriesRes.rows ?? []);
     } catch (e) {
       console.error(e);
       alert(e instanceof Error ? e.message : "Erro ao carregar dados de compras.");
@@ -325,6 +374,9 @@ export const PurchaseModule = () => {
     setStatus("RASCUNHO");
     setJustification("");
     setDefaultCostCenterId("");
+    setRequesterEmployeeId("");
+    setRequestCategoryId("");
+    setDefaultFinancialCostCenterId("");
     setNotes("");
     setProjectId("");
     setExternalReference("");
@@ -356,6 +408,14 @@ export const PurchaseModule = () => {
       setRequester(row.requester);
       setDepartment(row.department);
       setRequestCategory(row.requestCategory || "");
+      setRequesterEmployeeId(row.requesterEmployeeId || "");
+      setRequestCategoryId(row.requestCategoryId || "");
+      // Linha legada sem FK: tenta casar pelo code do CC espelhado.
+      setDefaultFinancialCostCenterId(
+        row.defaultFinancialCostCenterId ||
+          financialCcs.find((f) => f.code === row.defaultCostCenter?.code)?.id ||
+          ""
+      );
       setPriority(row.priority);
       setStatus(row.status);
       setJustification(row.justification);
@@ -429,6 +489,9 @@ export const PurchaseModule = () => {
       requester,
       department,
       requestCategory: requestCategory.trim() || null,
+      requesterEmployeeId: requesterEmployeeId || null,
+      requestCategoryId: requestCategoryId || null,
+      defaultFinancialCostCenterId: defaultFinancialCostCenterId || null,
       priority,
       justification,
       defaultCostCenterId,
@@ -444,6 +507,10 @@ export const PurchaseModule = () => {
           quantity: it.quantity,
           unit: it.unit.trim(),
           costCenterId: it.costCenterId && it.costCenterId.length ? it.costCenterId : null,
+          financialCostCenterId:
+            it.financialCostCenterId && it.financialCostCenterId.length
+              ? it.financialCostCenterId
+              : null,
           desiredDate: it.desiredDate ? `${it.desiredDate}T12:00:00.000Z` : null,
           priority: it.priority || null,
           notes: it.notes.trim() || null,
@@ -525,10 +592,9 @@ export const PurchaseModule = () => {
   };
 
   const validateClient = (): string | null => {
-    if (!requester.trim()) return "Informe o solicitante.";
-    if (!department.trim()) return "Informe o departamento / área.";
+    if (!requesterEmployeeId) return "Selecione o solicitante na lista de funcionários.";
     if (!justification.trim()) return "Informe a justificativa.";
-    if (!defaultCostCenterId) return "Selecione o centro de custo do cabeçalho.";
+    if (!defaultFinancialCostCenterId) return "Selecione o centro de custo do cabeçalho.";
     if (items.length === 0) return "Inclua ao menos um item na solicitação.";
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
@@ -618,10 +684,14 @@ export const PurchaseModule = () => {
       label: "— Herdar do cabeçalho —",
       searchTerms: "herdar cabeçalho",
     };
-    return [inherit, ...costCenterOptions];
-  }, [costCenterOptions]);
+    return [inherit, ...financialCcOptions];
+  }, [financialCcOptions]);
 
   const resolvedCcLabel = (item: PurchaseItemDraft) => {
+    if (item.financialCostCenterId) {
+      const f = financialCcs.find((x) => x.id === item.financialCostCenterId);
+      return f ? `${f.code} — ${f.name}` : "—";
+    }
     if (item.costCenterId) {
       const c = costCenters.find((x) => x.id === item.costCenterId);
       return c ? `${c.code} — ${c.name}` : "—";
@@ -957,31 +1027,50 @@ export const PurchaseModule = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Solicitante *</label>
-            <input
+            <SearchableSelect
+              options={employeeOptions}
+              value={requesterEmployeeId}
+              onChange={handleRequesterSelect}
+              placeholder="Selecione o funcionário..."
               disabled={fieldsDisabled}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={requester}
-              onChange={(e) => setRequester(e.target.value)}
+              required
             />
+            {!requesterEmployeeId && requester ? (
+              <p className="text-[11px] text-muted-foreground">
+                Registro antigo: {requester}. Selecione o funcionário para oficializar.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / área *</label>
             <input
-              disabled={fieldsDisabled}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+              disabled
+              readOnly
+              className="w-full p-2 rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground"
               value={department}
-              onChange={(e) => setDepartment(e.target.value)}
+              placeholder="Definido pelo funcionário selecionado"
+              title="Preenchido automaticamente a partir do setor do funcionário"
             />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Tipo / categoria (opcional)</label>
-            <input
+            <select
               disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              placeholder="Ex.: reforma, projeto X, consumo geral"
-              value={requestCategory}
-              onChange={(e) => setRequestCategory(e.target.value)}
-            />
+              value={requestCategoryId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setRequestCategoryId(id);
+                setRequestCategory(requestCategories.find((c) => c.id === id)?.name ?? "");
+              }}
+            >
+              <option value="">— Sem categoria —</option>
+              {requestCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Prioridade</label>
@@ -1057,23 +1146,16 @@ export const PurchaseModule = () => {
                   Centro de custo (cabeçalho) *
                 </label>
                 <SearchableSelect
-                  options={costCenterOptions}
-                  value={defaultCostCenterId}
-                  onChange={setDefaultCostCenterId}
+                  options={financialCcOptions}
+                  value={defaultFinancialCostCenterId}
+                  onChange={setDefaultFinancialCostCenterId}
                   placeholder="Selecione o centro de custo..."
                   disabled={fieldsDisabled}
                   required
                 />
               </div>
-              {!fieldsDisabled && (
-                <button
-                  type="button"
-                  onClick={() => setCcModalOpen(true)}
-                  className="text-sm text-primary hover:underline whitespace-nowrap px-2 py-2"
-                >
-                  + Novo centro de custo
-                </button>
-              )}
+              {/* Cadastro de CC agora é exclusivo do módulo financeiro —
+                  sem atalho que crie centro de custo fora da lista oficial. */}
             </div>
           </div>
           <div className="space-y-1.5 md:col-span-2">
@@ -1480,8 +1562,8 @@ export const PurchaseModule = () => {
                   </label>
                   <SearchableSelect
                     options={itemCcOptions}
-                    value={it.costCenterId}
-                    onChange={(v) => updateItem(it.tempId, { costCenterId: v })}
+                    value={it.financialCostCenterId}
+                    onChange={(v) => updateItem(it.tempId, { financialCostCenterId: v })}
                     placeholder="Herdar ou sobrescrever..."
                     disabled={fieldsDisabled}
                   />

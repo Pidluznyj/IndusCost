@@ -489,6 +489,10 @@ import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseRece
 import { registerShadowPurchasePlanningRoutes } from "./src/lib/purchasing/shadowPurchasePlanningRoutes.js";
 import { registerSupplyChainIndicatorsRoutes } from "./src/lib/purchasing/supplyChainIndicatorsRoutes.js";
 import { createOfficialDataProviders } from "./src/lib/supply-chain/officialDataProviders.server.js";
+import {
+  mirrorFinancialCostCenter,
+  resolveOfficialHeaderSelections,
+} from "./src/lib/purchasing/purchaseRequestOfficialSelections.server.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
@@ -5972,10 +5976,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   function validatePurchaseRequestPayload(body: any): string | null {
     if (!body || typeof body !== "object") return "Payload inválido.";
-    if (!body.requester || !String(body.requester).trim()) return "Solicitante é obrigatório.";
-    if (!body.department || !String(body.department).trim()) return "Departamento / área é obrigatório.";
+    // Seleções oficiais (IDs) têm precedência; texto continua aceito só para
+    // compat com fluxos legados (ex.: shadow purchase planning).
+    const hasRequesterRef = body.requesterEmployeeId && isUuid(body.requesterEmployeeId);
+    if (!hasRequesterRef && (!body.requester || !String(body.requester).trim())) {
+      return "Selecione o solicitante.";
+    }
+    if (!hasRequesterRef && (!body.department || !String(body.department).trim())) {
+      return "Departamento / área é obrigatório.";
+    }
     if (!body.justification || !String(body.justification).trim()) return "Justificativa é obrigatória.";
-    if (!body.defaultCostCenterId || !isUuid(body.defaultCostCenterId)) {
+    const hasFccRef =
+      body.defaultFinancialCostCenterId && isUuid(body.defaultFinancialCostCenterId);
+    if (!hasFccRef && (!body.defaultCostCenterId || !isUuid(body.defaultCostCenterId))) {
       return "Centro de custo do cabeçalho é obrigatório.";
     }
     const st = body.status;
@@ -6078,8 +6091,23 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         items = [],
       } = req.body;
 
+      let officialSel;
+      try {
+        officialSel = await resolveOfficialHeaderSelections(prisma, {
+          requesterEmployeeId: req.body?.requesterEmployeeId,
+          requestCategoryId: req.body?.requestCategoryId,
+          defaultFinancialCostCenterId: req.body?.defaultFinancialCostCenterId,
+        });
+      } catch (selErr: any) {
+        if (selErr?.name === "PurchaseSelectionError") {
+          return res.status(400).json({ error: selErr.message });
+        }
+        throw selErr;
+      }
+      const effectiveDefaultCostCenterId =
+        officialSel.mirroredCostCenterId ?? defaultCostCenterId;
       const officialReads = createOfficialDataProviders(prisma);
-      const cc = await officialReads.opsCostCenters.findById(defaultCostCenterId);
+      const cc = await officialReads.opsCostCenters.findById(effectiveDefaultCostCenterId);
       if (!cc || !cc.isActive) {
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
@@ -6098,13 +6126,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         const txReads = createOfficialDataProviders(tx);
         const header = await tx.purchaseRequest.create({
           data: {
-            requester: String(requester).trim(),
-            department: String(department).trim(),
-            requestCategory: requestCategory != null ? String(requestCategory) : null,
+            requester: officialSel.requester ?? String(requester ?? "").trim(),
+            department: officialSel.department ?? String(department ?? "").trim(),
+            requestCategory:
+              officialSel.requestCategory ??
+              (requestCategory != null ? String(requestCategory) : null),
+            requesterEmployeeId: officialSel.requesterEmployeeId,
+            requestCategoryId: officialSel.requestCategoryId,
+            defaultFinancialCostCenterId: officialSel.defaultFinancialCostCenterId,
             priority,
             status: "RASCUNHO",
             justification: String(justification).trim(),
-            defaultCostCenterId,
+            defaultCostCenterId: effectiveDefaultCostCenterId,
             notes: notes != null ? String(notes) : null,
             projectId: projectSnap.projectId,
             projectCodeSnapshot: projectSnap.projectCodeSnapshot,
@@ -6117,9 +6150,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
 
         for (const it of items) {
-          const costCenterId =
+          let itemFinancialCostCenterId: string | null = null;
+          let costCenterId =
             it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
-          if (costCenterId) {
+          if (it.financialCostCenterId && isUuid(it.financialCostCenterId)) {
+            const mirror = await mirrorFinancialCostCenter(tx, it.financialCostCenterId);
+            itemFinancialCostCenterId = mirror.financialId;
+            costCenterId = mirror.operationalId;
+          } else if (costCenterId) {
             const c = await txReads.opsCostCenters.findById(costCenterId);
             if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
           }
@@ -6137,6 +6175,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
               quantity: it.quantity,
               unit: String(it.unit).trim(),
               costCenterId,
+              financialCostCenterId: itemFinancialCostCenterId,
               desiredDate: it.desiredDate ? new Date(it.desiredDate) : null,
               priority: it.priority || null,
               notes: it.notes != null ? String(it.notes) : null,
@@ -6209,8 +6248,23 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         items = [],
       } = req.body;
 
+      let officialSel;
+      try {
+        officialSel = await resolveOfficialHeaderSelections(prisma, {
+          requesterEmployeeId: req.body?.requesterEmployeeId,
+          requestCategoryId: req.body?.requestCategoryId,
+          defaultFinancialCostCenterId: req.body?.defaultFinancialCostCenterId,
+        });
+      } catch (selErr: any) {
+        if (selErr?.name === "PurchaseSelectionError") {
+          return res.status(400).json({ error: selErr.message });
+        }
+        throw selErr;
+      }
+      const effectiveDefaultCostCenterId =
+        officialSel.mirroredCostCenterId ?? defaultCostCenterId;
       const officialReads = createOfficialDataProviders(prisma);
-      const cc = await officialReads.opsCostCenters.findById(defaultCostCenterId);
+      const cc = await officialReads.opsCostCenters.findById(effectiveDefaultCostCenterId);
       if (!cc || !cc.isActive) {
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
@@ -6226,12 +6280,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         await tx.purchaseRequest.update({
           where: { id },
           data: {
-            requester: String(requester).trim(),
-            department: String(department).trim(),
-            requestCategory: requestCategory != null ? String(requestCategory) : null,
+            requester: officialSel.requester ?? String(requester ?? "").trim(),
+            department: officialSel.department ?? String(department ?? "").trim(),
+            requestCategory:
+              officialSel.requestCategory ??
+              (requestCategory != null ? String(requestCategory) : null),
+            requesterEmployeeId: officialSel.requesterEmployeeId,
+            requestCategoryId: officialSel.requestCategoryId,
+            defaultFinancialCostCenterId: officialSel.defaultFinancialCostCenterId,
             priority,
             justification: String(justification).trim(),
-            defaultCostCenterId,
+            defaultCostCenterId: effectiveDefaultCostCenterId,
             notes: notes != null ? String(notes) : null,
             projectId: projectSnap.projectId,
             projectCodeSnapshot: projectSnap.projectCodeSnapshot,
@@ -6246,9 +6305,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         await tx.purchaseRequestItem.deleteMany({ where: { purchaseRequestId: id } });
 
         for (const it of items) {
-          const costCenterId =
+          let itemFinancialCostCenterId: string | null = null;
+          let costCenterId =
             it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
-          if (costCenterId) {
+          if (it.financialCostCenterId && isUuid(it.financialCostCenterId)) {
+            const mirror = await mirrorFinancialCostCenter(tx, it.financialCostCenterId);
+            itemFinancialCostCenterId = mirror.financialId;
+            costCenterId = mirror.operationalId;
+          } else if (costCenterId) {
             const c = await txReads.opsCostCenters.findById(costCenterId);
             if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
           }
@@ -6266,6 +6330,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
               quantity: it.quantity,
               unit: String(it.unit).trim(),
               costCenterId,
+              financialCostCenterId: itemFinancialCostCenterId,
               desiredDate: it.desiredDate ? new Date(it.desiredDate) : null,
               priority: it.priority || null,
               notes: it.notes != null ? String(it.notes) : null,

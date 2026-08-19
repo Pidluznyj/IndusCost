@@ -87,6 +87,75 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
     return { userId: user.id, userName: user.name ?? user.email ?? null };
   }
 
+  // Listas oficiais do formulário — o mesmo guard do módulo de Compras, para
+  // não exigir permissão de RH/Financeiro de quem só solicita compra.
+
+  app.get("/api/purchase-requests/official-refs/employees", ...view, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const rows = await prisma.employee.findMany({
+        where: {
+          status: "ACTIVE",
+          ...(q
+            ? {
+                OR: [
+                  { name: { contains: q, mode: "insensitive" } },
+                  { department: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        select: { id: true, name: true, department: true },
+        orderBy: { name: "asc" },
+        take: 100,
+      });
+      res.json({ rows });
+    } catch (e) {
+      console.error("official employees list error:", e);
+      res.status(500).json({ error: "Erro ao listar funcionários." });
+    }
+  });
+
+  app.get("/api/purchase-requests/official-refs/financial-cost-centers", ...view, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const rows = await prisma.financialCostCenter.findMany({
+        where: {
+          status: "ACTIVE",
+          ...(q
+            ? {
+                OR: [
+                  { code: { contains: q, mode: "insensitive" } },
+                  { name: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        select: { id: true, code: true, name: true },
+        orderBy: { code: "asc" },
+        take: 200,
+      });
+      res.json({ rows });
+    } catch (e) {
+      console.error("official financial cost centers list error:", e);
+      res.status(500).json({ error: "Erro ao listar centros de custo." });
+    }
+  });
+
+  app.get("/api/purchase-requests/official-refs/request-categories", ...view, async (_req, res) => {
+    try {
+      const rows = await prisma.purchaseRequestCategory.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, name: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      });
+      res.json({ rows });
+    } catch (e) {
+      console.error("official request categories list error:", e);
+      res.status(500).json({ error: "Erro ao listar categorias." });
+    }
+  });
+
   app.get("/api/purchase-requests/official-refs/materials", ...view, async (req, res) => {
     try {
       const q = String(req.query.q ?? "").trim();
