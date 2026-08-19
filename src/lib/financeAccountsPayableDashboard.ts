@@ -1152,20 +1152,16 @@ export function buildFinanceAccountsPayableDashboard(
   };
 }
 
-/** Soma pagamentos por data efetiva — mesma regra de `paidThisMonthAmount` no dashboard. */
-export function sumFinanceApPaidInPaymentPeriod(
+/** Soma pagamentos por data efetiva em linhas já filtradas — sem refiltrar. */
+export function sumFinanceApPaidInPaymentPeriodFromFilteredRows(
   rows: FinanceApDashboardRow[],
-  filters: FinanceApDashboardFilters,
-  referenceDate: Date,
-  syncCutoff: NomusApReportSyncCutoff | null | undefined,
   periodStart: Date,
   periodEnd: Date
 ): number {
-  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const startMs = periodStart.getTime();
   const endMs = endOfLocalDay(periodEnd).getTime();
   let total = 0;
-  for (const row of filteredRows) {
+  for (const row of rows) {
     if (isFinanceApCancelledTitle(row)) continue;
     const paidAt = resolveFinanceApEffectivePaymentDate(row);
     const realized = resolveFinanceApRealizedAmount(row);
@@ -1179,6 +1175,19 @@ export function sumFinanceApPaidInPaymentPeriod(
     }
   }
   return roundMoney(total);
+}
+
+/** Soma pagamentos por data efetiva — mesma regra de `paidThisMonthAmount` no dashboard. */
+export function sumFinanceApPaidInPaymentPeriod(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date,
+  syncCutoff: NomusApReportSyncCutoff | null | undefined,
+  periodStart: Date,
+  periodEnd: Date
+): number {
+  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  return sumFinanceApPaidInPaymentPeriodFromFilteredRows(filteredRows, periodStart, periodEnd);
 }
 
 export type FinanceApManagementRowsLoadResult = {

@@ -1165,6 +1165,27 @@ export function buildFinanceAccountsReceivableDashboard(
   };
 }
 
+/** Soma recebimentos por settlementDate em linhas já saneadas — sem refiltrar. */
+export function sumFinanceArReceivedBySettlementInFilteredRows(
+  rows: FinanceArDashboardRow[],
+  periodStart: Date,
+  periodEnd: Date
+): number {
+  const startMs = periodStart.getTime();
+  const endMs = endOfLocalDay(periodEnd).getTime();
+  let total = 0;
+  for (const row of rows) {
+    if (
+      row.settlementDate &&
+      row.settlementDate.getTime() >= startMs &&
+      row.settlementDate.getTime() <= endMs
+    ) {
+      total += row.amountReceived;
+    }
+  }
+  return roundMoney(total);
+}
+
 /** Soma recebimentos por data de baixa — mesma regra de `receivedThisMonthAmount` no dashboard. */
 export function sumFinanceArReceivedBySettlementInPeriod(
   rows: FinanceArDashboardRow[],
@@ -1180,19 +1201,7 @@ export function sumFinanceArReceivedBySettlementInPeriod(
     referenceDate,
     syncCutoff
   );
-  const startMs = periodStart.getTime();
-  const endMs = endOfLocalDay(periodEnd).getTime();
-  let total = 0;
-  for (const row of filteredRows) {
-    if (
-      row.settlementDate &&
-      row.settlementDate.getTime() >= startMs &&
-      row.settlementDate.getTime() <= endMs
-    ) {
-      total += row.amountReceived;
-    }
-  }
-  return roundMoney(total);
+  return sumFinanceArReceivedBySettlementInFilteredRows(filteredRows, periodStart, periodEnd);
 }
 
 export type { AccountsReceivableOpenHorizon };

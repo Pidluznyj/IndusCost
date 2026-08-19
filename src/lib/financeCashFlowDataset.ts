@@ -533,6 +533,14 @@ export type FinanceCashFlowDatasetOptions = FinanceCashFlowArFilterOptions & {
     FinanceCashFlowDatasetBlocks,
     "totalPayableOpen" | "overduePayableAmount"
   >;
+  /**
+   * Traces por título — só o endpoint de auditoria precisa.
+   * O dashboard/export não serializam arTrace/apTrace.
+   */
+  includeTrace?: boolean;
+  /** Portfólio já filtrado pelo chamador — evita o segundo filter idêntico. */
+  arPortfolioRows?: FinanceCashFlowArRow[];
+  apPortfolioRows?: FinanceCashFlowApRow[];
 };
 
 export type { FinanceArEffectiveOrderContext };
@@ -555,21 +563,25 @@ export function buildFinanceCashFlowDataset(
           nfeOrderLinks: options.nfeOrderLinks,
         }
       : undefined;
-  const arPortfolioRows = filterCashFlowArPortfolioRows(
-    arRows,
-    filters,
-    arFilters,
-    referenceDate,
-    arSyncCutoff,
-    arFilterOptions
-  );
-  const apPortfolioRows = filterCashFlowApPortfolioRows(
-    apRows,
-    filters,
-    apFilters,
-    referenceDate,
-    apSyncCutoff
-  );
+  const arPortfolioRows =
+    options?.arPortfolioRows ??
+    filterCashFlowArPortfolioRows(
+      arRows,
+      filters,
+      arFilters,
+      referenceDate,
+      arSyncCutoff,
+      arFilterOptions
+    );
+  const apPortfolioRows =
+    options?.apPortfolioRows ??
+    filterCashFlowApPortfolioRows(
+      apRows,
+      filters,
+      apFilters,
+      referenceDate,
+      apSyncCutoff
+    );
   const arRowsSanitized = filterCashFlowArRowsScoped(
     arRows,
     filters,
@@ -591,31 +603,44 @@ export function buildFinanceCashFlowDataset(
     ap: options?.officialApBlockTotals,
   });
 
-  const arPortfolioIds = new Set(arPortfolioRows.map((r) => r.externalId));
-  const arPeriodIds = new Set(arRowsSanitized.map((r) => r.externalId));
-  const apPortfolioIds = new Set(apPortfolioRows.map((r) => r.externalId));
-  const apPeriodIds = new Set(apRowsSanitized.map((r) => r.externalId));
+  const includeTrace = options?.includeTrace !== false;
+  const arPortfolioIds = includeTrace
+    ? new Set(arPortfolioRows.map((r) => r.externalId))
+    : null;
+  const arPeriodIds = includeTrace
+    ? new Set(arRowsSanitized.map((r) => r.externalId))
+    : null;
+  const apPortfolioIds = includeTrace
+    ? new Set(apPortfolioRows.map((r) => r.externalId))
+    : null;
+  const apPeriodIds = includeTrace
+    ? new Set(apRowsSanitized.map((r) => r.externalId))
+    : null;
 
-  const arTrace = arRows.map((row) =>
-    traceForArRow(
-      row,
-      arPortfolioIds.has(row.externalId),
-      arPeriodIds.has(row.externalId),
-      referenceDate,
-      arSyncCutoff ?? null,
-      blocks
-    )
-  );
-  const apTrace = apRows.map((row) =>
-    traceForApRow(
-      row,
-      apPortfolioIds.has(row.externalId),
-      apPeriodIds.has(row.externalId),
-      referenceDate,
-      apSyncCutoff ?? null,
-      blocks
-    )
-  );
+  const arTrace = includeTrace
+    ? arRows.map((row) =>
+        traceForArRow(
+          row,
+          arPortfolioIds!.has(row.externalId),
+          arPeriodIds!.has(row.externalId),
+          referenceDate,
+          arSyncCutoff ?? null,
+          blocks
+        )
+      )
+    : [];
+  const apTrace = includeTrace
+    ? apRows.map((row) =>
+        traceForApRow(
+          row,
+          apPortfolioIds!.has(row.externalId),
+          apPeriodIds!.has(row.externalId),
+          referenceDate,
+          apSyncCutoff ?? null,
+          blocks
+        )
+      )
+    : [];
 
   return {
     filters,

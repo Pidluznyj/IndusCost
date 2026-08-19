@@ -6,7 +6,6 @@ import {
   buildOfficialAccountsReceivableRulesResult,
 } from "./financeAccountsReceivableRulesAdapter.js";
 import {
-  buildOfficialCashFlowArApDashboardBundle,
   resolveOfficialCashFlowSources,
 } from "./financeCashFlowRulesAdapter.js";
 import {
@@ -66,15 +65,13 @@ import {
   resolveMonthlyNetStatus,
 } from "./financeCashFlowIntelligence.js";
 import {
-  buildCashFlowForecast,
+  buildCashFlowForecastWithScenarios,
   buildCashFlowOperationalRecommendations,
-  buildConservativeScenario,
   buildScenarioChartPoints,
-  buildStressScenario,
 } from "./financeCashFlowForecast.js";
 import {
   buildFinanceCashFlowCalendar,
-  buildCashFlowDailyCalendarFromMovements,
+  calendarDayToDailyPoint,
 } from "./financeCashFlowCalendar.js";
 import {
   buildCashFlowExecutiveInsights,
@@ -684,6 +681,9 @@ export function buildFinanceCashFlowDashboard(
     apSyncCutoff,
     {
       ...datasetOptions,
+      arPortfolioRows,
+      apPortfolioRows,
+      includeTrace: false,
       officialArBlockTotals: {
         totalReceivableOpen: officialArPortfolio.metrics.openAmount,
         overdueReceivableAmount: officialArPortfolio.metrics.overdueAmount,
@@ -735,7 +735,10 @@ export function buildFinanceCashFlowDashboardFromDataset(
   const period = sumPeriodAmounts(monthlySeries, filters.month);
 
   let lastSync: Date | null = null;
-  for (const row of [...filteredAr, ...filteredAp]) {
+  for (const row of filteredAr) {
+    if (lastSync == null || row.syncedAt > lastSync) lastSync = row.syncedAt;
+  }
+  for (const row of filteredAp) {
     if (lastSync == null || row.syncedAt > lastSync) lastSync = row.syncedAt;
   }
 
@@ -769,15 +772,12 @@ export function buildFinanceCashFlowDashboardFromDataset(
     cashFlowScope: filters.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
   };
 
-  const cashForecast = buildCashFlowForecast(filteredAr, filteredAp, filters, referenceDate);
-  const conservativeScenario = buildConservativeScenario(
+  const { cashForecast, conservativeScenario, stressScenario } = buildCashFlowForecastWithScenarios(
     filteredAr,
     filteredAp,
     filters,
-    referenceDate,
-    cashForecast.horizons.next12Months
+    referenceDate
   );
-  const stressScenario = buildStressScenario(filteredAr, filteredAp, filters, referenceDate);
   const scenarioChartPoints = buildScenarioChartPoints(
     cashForecast.monthlyPoints,
     conservativeScenario.monthlyPoints,
@@ -847,20 +847,24 @@ export function buildFinanceCashFlowDashboardFromDataset(
   };
 
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
-  const ytdAr = filterCashFlowArRows(
-    arRows,
-    ytdFilters,
-    referenceDate,
-    arSyncCutoff,
-    arFilterOptions
-  );
-  const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate, apSyncCutoff);
-  const ytdMonthlySeries = buildFinanceCashFlowMonthlySeries(
-    ytdAr,
-    ytdAp,
-    ytdFilters,
-    referenceDate
-  );
+  const ytdReusesPeriod =
+    filters.month == null &&
+    (filters.year ?? referenceDate.getFullYear()) === ytdFilters.year;
+  const ytdAr = ytdReusesPeriod
+    ? filteredAr
+    : filterCashFlowArRows(
+        arRows,
+        ytdFilters,
+        referenceDate,
+        arSyncCutoff,
+        arFilterOptions
+      );
+  const ytdAp = ytdReusesPeriod
+    ? filteredAp
+    : filterCashFlowApRows(apRows, ytdFilters, referenceDate, apSyncCutoff);
+  const ytdMonthlySeries = ytdReusesPeriod
+    ? monthlySeries
+    : buildFinanceCashFlowMonthlySeries(ytdAr, ytdAp, ytdFilters, referenceDate);
   const executiveYtd = buildFinanceCashFlowExecutiveYtd(
     ytdAr,
     ytdAp,
@@ -902,23 +906,19 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate,
     { monthlySeries, executiveMonthlyTimeline: executiveSummary.monthlyTimeline }
   );
-  const dailyCalendar = buildCashFlowDailyCalendarFromMovements(
-    filteredAr,
-    filteredAp,
-    filters,
-    referenceDate
-  );
+  const dailyCalendar = calendar.days
+    .filter((d) => d.movementCount > 0)
+    .map(calendarDayToDailyPoint)
+    .sort((a, b) => a.date.localeCompare(b.date));
 
-  const officialDash = buildOfficialCashFlowArApDashboardBundle({
-    arRows,
-    apRows,
-    filters,
+  const apDashPeriod = buildOfficialAccountsPayableRulesResult({
+    rows: apRows,
+    filters: toApLoadFilters(filters),
     referenceDate,
-    arSyncCutoff,
-    apSyncCutoff,
+    syncCutoff: apSyncCutoff,
+    year: filters.year,
+    month: filters.month,
   });
-  const apDashPortfolio = officialDash.apPortfolio;
-  const apDashPeriod = officialDash.apPeriod;
   const arEffectivePortfolioRules = buildOfficialAccountsReceivableRulesResult({
     rows: dataset.arPortfolioRows,
     filters: toCashFlowPortfolioArFilters(filters),
@@ -960,7 +960,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     {
       arDashboardOpenPortfolio: arEffectivePortfolioRules.metrics.openAmount,
       arDashboardOpenPeriod: arEffectivePeriodRules.metrics.openAmount,
-      apDashboardOpenPortfolio: apDashPortfolio.cards.totalOpenAmount,
+      apDashboardOpenPortfolio: totalPayableRounded,
       apDashboardOpenPeriod: apDashPeriod.cards.totalOpenAmount,
       arDashboardReceived: arEffectivePeriodRules.cards.totalReceivedAmount,
       apDashboardPaid: roundMoney(apPaidInScope),
