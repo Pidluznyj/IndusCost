@@ -480,6 +480,7 @@ import {
 } from "./src/lib/salesOrderPeriodFilter.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
+import { registerInventoryCollectorRoutes } from "./src/lib/inventory/collector/collectorRoutes.server.js";
 import { registerPurchaseRequestWorkflowRoutes } from "./src/lib/purchasing/purchaseRequestRoutes.js";
 import { registerPurchaseQuotationCollectionRoutes } from "./src/lib/purchasing/purchaseQuotationRoutes.js";
 import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvidenceRoutes.js";
@@ -16622,6 +16623,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireResource,
     getCurrentAppUser,
   });
+
+  // FASE 2D — Collector: identidade Tailscale + Device Registry (2C), SEM
+  // auth humana. Deliberado: login humano não autoriza este namespace, e a
+  // identidade DEVICE não passa por requireAppAuth/requireResource.
+  registerInventoryCollectorRoutes(app);
 
   registerPurchaseRequestWorkflowRoutes(app, {
     requireAppAuth,

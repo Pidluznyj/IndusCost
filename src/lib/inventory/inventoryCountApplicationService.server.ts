@@ -49,7 +49,8 @@ export const COUNT_LINE_VERSION_CONFLICT = "COUNT_LINE_VERSION_CONFLICT";
 export const COUNT_OPERATION_IDEMPOTENCY_CONFLICT = "COUNT_OPERATION_IDEMPOTENCY_CONFLICT";
 
 export type RecordInventoryCountActor = {
-  userId: string;
+  /** null para ator DEVICE — dispositivo não é usuário humano falso. */
+  userId: string | null;
   permissions?: readonly string[];
 };
 
