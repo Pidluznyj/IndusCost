@@ -98,7 +98,7 @@ export async function listCommissionClosings(
 
   const items: CommissionClosingListItem[] = [];
   for (const row of closings) {
-    const page = await getReceiptClosingPage(row.year, row.month);
+    const page = await getReceiptClosingPage(row.year, row.month, undefined, scope);
     if (page.mode !== "CLOSED" || !page.closing) continue;
 
     const sellers = buildClosingSellerSummaries(page.lines).filter((s) =>
@@ -144,7 +144,7 @@ export async function getCommissionClosingDetail(
   });
   if (!row) return null;
 
-  const page = await getReceiptClosingPage(row.year, row.month);
+  const page = await getReceiptClosingPage(row.year, row.month, undefined, scope);
   if (page.mode !== "CLOSED" || !page.closing) return null;
 
   const nameMap = await resolveUserDisplayNames(row.closedBy ? [row.closedBy] : []);
@@ -186,7 +186,7 @@ export async function getCommissionClosingSellerReport(
   });
   if (!row) return null;
 
-  const page = await getReceiptClosingPage(row.year, row.month);
+  const page = await getReceiptClosingPage(row.year, row.month, undefined, scope);
   if (page.mode !== "CLOSED" || !page.closing) return null;
 
   const decodedKey = decodeURIComponent(sellerKey);

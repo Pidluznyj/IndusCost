@@ -43,6 +43,41 @@ import {
  * agrupada em "Sem vendedor / Excluído" via `resolveReceiptClosingSellerGroupKey`,
  * mas Relatórios / detalhe podem filtrar e informar a carteira.
  */
+/**
+ * Filtro de escopo "own" para linhas do fechamento por recebimento — mesma
+ * regra de match usada em Relatórios/Fechamentos (rawSellerId, nome do
+ * responsável ou CommissionPerson.id já resolvido do vendedor logado).
+ * `ownCanonicalSellerIds` é resolvido no `.server.ts` (consulta Prisma) e
+ * passado pronto para esta função pura não depender de I/O.
+ */
+export type ReceiptClosingOwnScopeFilter = {
+  nomusSellerId: number | null;
+  sellerResponsibleName: string | null;
+  ownCanonicalSellerIds: ReadonlySet<string>;
+};
+
+export function lineMatchesReceiptClosingOwnScope(
+  line: ReceiptClosingApiLine,
+  own: ReceiptClosingOwnScopeFilter
+): boolean {
+  if (line.canonicalSellerId && own.ownCanonicalSellerIds.has(line.canonicalSellerId)) return true;
+  if (own.nomusSellerId != null && line.rawSellerId === own.nomusSellerId) return true;
+  if (own.sellerResponsibleName) {
+    const name = own.sellerResponsibleName.trim().toLowerCase();
+    if (line.canonicalSellerName?.trim().toLowerCase() === name) return true;
+    if (line.rawSellerName?.trim().toLowerCase() === name) return true;
+  }
+  return false;
+}
+
+export function filterReceiptClosingLinesByOwnScope(
+  lines: ReceiptClosingApiLine[],
+  own: ReceiptClosingOwnScopeFilter | null
+): ReceiptClosingApiLine[] {
+  if (!own) return lines;
+  return lines.filter((line) => lineMatchesReceiptClosingOwnScope(line, own));
+}
+
 function clearCanonicalSellerForExcludedApiLine(line: {
   status: string;
   canonicalSellerId: string | null;
@@ -989,8 +1024,12 @@ export function buildReceiptClosingPageFromPreview(input: {
   applyBlockedReason: string | null;
   nomusBase?: number | null;
   nomusCommission?: number | null;
+  /** Quando definido, restringe o payload (linhas + cards/resumo derivados) às linhas do vendedor. */
+  ownScope?: ReceiptClosingOwnScopeFilter | null;
 }): ReceiptClosingPagePayload {
-  const lines = input.preview.lines.map(mapPreviewLineToApiLine);
+  const mappedLines = input.preview.lines.map(mapPreviewLineToApiLine);
+  const ownScope = input.ownScope ?? null;
+  const lines = filterReceiptClosingLinesByOwnScope(mappedLines, ownScope);
   const base = {
     year: input.preview.year,
     month: input.preview.month,
@@ -1013,8 +1052,12 @@ export function buildReceiptClosingPageFromPreview(input: {
     lines,
     groupCompanyAuditLines: [],
   };
+  // Escopo "own": a reconciliação Nomus (options.previewLines) usa o motor de
+  // prévia bruto e não deve ver linhas de outros vendedores — cai no fallback
+  // buildReceiptClosingReconciliationFromApiLines(anchored), que já opera
+  // sobre `base.lines` (filtrado) dentro de enrichReceiptClosingPagePayload.
   return enrichReceiptClosingPagePayload(base, {
-    previewLines: input.preview.lines,
+    previewLines: ownScope ? undefined : input.preview.lines,
     nomusBase: input.nomusBase,
     nomusCommission: input.nomusCommission,
   });
@@ -1025,8 +1068,11 @@ export function buildReceiptClosingPageFromLedger(input: {
   ledgerLines: ReceiptClosingLedgerLineSnapshot[];
   nomusBase?: number | null;
   nomusCommission?: number | null;
+  /** Quando definido, restringe o payload (linhas + cards/resumo derivados) às linhas do vendedor. */
+  ownScope?: ReceiptClosingOwnScopeFilter | null;
 }): ReceiptClosingPagePayload {
-  const lines = input.ledgerLines.map((line) => mapLedgerLineToApiLine(line, input.closing));
+  const mappedLines = input.ledgerLines.map((line) => mapLedgerLineToApiLine(line, input.closing));
+  const lines = filterReceiptClosingLinesByOwnScope(mappedLines, input.ownScope ?? null);
   const base = {
     year: input.closing.year,
     month: input.closing.month,

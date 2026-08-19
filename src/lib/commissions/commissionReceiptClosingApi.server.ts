@@ -1,10 +1,12 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { CommissionValidationError } from "./commissionApiValidation.js";
+import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import {
   buildReceiptClosingExportCsv,
   buildReceiptClosingPageEmpty,
   buildReceiptClosingPageFromLedger,
   buildReceiptClosingPageFromPreview,
+  type ReceiptClosingOwnScopeFilter,
   type ReceiptClosingPagePayload,
 } from "./commissionReceiptClosingApi.js";
 import {
@@ -28,17 +30,48 @@ import {
 
 export type { ReceiptClosingPagePayload };
 
+/**
+ * Resolve o filtro "own" a partir do escopo de auth — mesma consulta/regra
+ * usada em Relatórios e Fechamentos (commissionReports.server.ts /
+ * commissionClosings.server.ts): CommissionPerson.id vinculado ao
+ * nomusPersonId do vendedor logado. `scope` ausente ou global/none não filtra.
+ */
+async function resolveReceiptClosingOwnScope(
+  scope?: CommissionAccessScope
+): Promise<ReceiptClosingOwnScopeFilter | null> {
+  if (!scope || scope.dataScope !== "own") return null;
+  const ownCanonicalSellerIds =
+    scope.nomusSellerId != null
+      ? new Set(
+          (
+            await prisma.commissionPerson.findMany({
+              where: { nomusPersonId: scope.nomusSellerId, type: "SELLER" },
+              select: { id: true },
+            })
+          ).map((p) => p.id)
+        )
+      : new Set<string>();
+  return {
+    nomusSellerId: scope.nomusSellerId,
+    sellerResponsibleName: scope.sellerResponsibleName,
+    ownCanonicalSellerIds,
+  };
+}
+
 async function buildReceiptClosingPagePayload(
-  filters: ReceiptClosingFilters
+  filters: ReceiptClosingFilters,
+  scope?: CommissionAccessScope
 ): Promise<ReceiptClosingPagePayload> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
   if (closing) {
     const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
+    const ownScope = await resolveReceiptClosingOwnScope(scope);
     return buildReceiptClosingPageFromLedger({
       closing,
       ledgerLines,
       nomusBase: filters.nomusBase,
       nomusCommission: filters.nomusCommission,
+      ownScope,
     });
   }
   return buildReceiptClosingPageEmpty(filters.year, filters.month);
@@ -47,20 +80,26 @@ async function buildReceiptClosingPagePayload(
 export async function getReceiptClosingPage(
   year: number,
   month: number,
-  nomus?: { nomusBase?: number | null; nomusCommission?: number | null }
+  nomus?: { nomusBase?: number | null; nomusCommission?: number | null },
+  scope?: CommissionAccessScope
 ): Promise<ReceiptClosingPagePayload> {
-  return buildReceiptClosingPagePayload({
-    year,
-    month,
-    nomusBase: nomus?.nomusBase,
-    nomusCommission: nomus?.nomusCommission,
-  });
+  return buildReceiptClosingPagePayload(
+    {
+      year,
+      month,
+      nomusBase: nomus?.nomusBase,
+      nomusCommission: nomus?.nomusCommission,
+    },
+    scope
+  );
 }
 
 export async function getReceiptClosingPreviewPage(
-  filters: ReceiptClosingFilters
+  filters: ReceiptClosingFilters,
+  scope?: CommissionAccessScope
 ): Promise<ReceiptClosingPagePayload> {
   const payload = await previewCommissionReceiptClosing(filters);
+  const ownScope = await resolveReceiptClosingOwnScope(scope);
   return buildReceiptClosingPageFromPreview({
     preview: payload.preview,
     closing: payload.existingClosing,
@@ -68,14 +107,16 @@ export async function getReceiptClosingPreviewPage(
     applyBlockedReason: payload.applyBlockedReason,
     nomusBase: filters.nomusBase,
     nomusCommission: filters.nomusCommission,
+    ownScope,
   });
 }
 
 export async function exportReceiptClosingCsv(
-  filters: ReceiptClosingFilters
+  filters: ReceiptClosingFilters,
+  scope?: CommissionAccessScope
 ): Promise<{ csv: string; filename: string }> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
-  const page = await loadReceiptClosingExportPage(filters);
+  const page = await loadReceiptClosingExportPage(filters, scope);
   const exportMode = closing ? "CLOSED" : "PREVIEW";
   const hash = closing?.calculationHash ?? page.closing?.calculationHash ?? null;
   return {
@@ -94,22 +135,29 @@ export async function exportReceiptClosingCsv(
 }
 
 async function loadReceiptClosingExportPage(
-  filters: ReceiptClosingFilters
+  filters: ReceiptClosingFilters,
+  scope?: CommissionAccessScope
 ): Promise<ReceiptClosingPagePayload> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
   if (closing) {
-    return getReceiptClosingPage(filters.year, filters.month, {
-      nomusBase: filters.nomusBase,
-      nomusCommission: filters.nomusCommission,
-    });
+    return getReceiptClosingPage(
+      filters.year,
+      filters.month,
+      {
+        nomusBase: filters.nomusBase,
+        nomusCommission: filters.nomusCommission,
+      },
+      scope
+    );
   }
-  return getReceiptClosingPreviewPage(filters);
+  return getReceiptClosingPreviewPage(filters, scope);
 }
 
 export async function exportReceiptClosingDetailXlsx(
-  filters: ReceiptClosingFilters
+  filters: ReceiptClosingFilters,
+  scope?: CommissionAccessScope
 ): Promise<{ buffer: Buffer; filename: string }> {
-  const page = await loadReceiptClosingExportPage(filters);
+  const page = await loadReceiptClosingExportPage(filters, scope);
   return {
     buffer: buildReceiptClosingDetailExportBuffer(page),
     filename: buildReceiptClosingDetailExportFilename(page.year, page.month, page.exportMode),

@@ -701,7 +701,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
       const filters = parseReceiptClosingQuery(req.query as Record<string, unknown>);
-      const payload = await getReceiptClosingPreviewPage(filters);
+      const payload = await getReceiptClosingPreviewPage(filters, ctx.scope);
       return res.json(payload);
     } catch (error) {
       try {
@@ -731,7 +731,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         notes: body.notes,
         acknowledgeCriticalDivergence: body.acknowledgeCriticalDivergence,
       });
-      const payload = await getReceiptClosingPage(body.year, body.month);
+      const payload = await getReceiptClosingPage(body.year, body.month, undefined, ctx.scope);
       return res.status(201).json({ result, payload });
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
@@ -761,10 +761,15 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         month,
         ...req.query,
       });
-      const payload = await getReceiptClosingPage(year, month, {
-        nomusBase: nomusQuery.nomusBase,
-        nomusCommission: nomusQuery.nomusCommission,
-      });
+      const payload = await getReceiptClosingPage(
+        year,
+        month,
+        {
+          nomusBase: nomusQuery.nomusBase,
+          nomusCommission: nomusQuery.nomusCommission,
+        },
+        ctx.scope
+      );
       return res.json(payload);
     } catch (error) {
       try {
@@ -789,12 +794,15 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           month,
           ...req.query,
         });
-        const { csv, filename } = await exportReceiptClosingCsv({
-          year,
-          month,
-          nomusBase: nomusQuery.nomusBase,
-          nomusCommission: nomusQuery.nomusCommission,
-        });
+        const { csv, filename } = await exportReceiptClosingCsv(
+          {
+            year,
+            month,
+            nomusBase: nomusQuery.nomusBase,
+            nomusCommission: nomusQuery.nomusCommission,
+          },
+          ctx.scope
+        );
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         return res.send(csv);
@@ -822,12 +830,15 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           month,
           ...req.query,
         });
-        const { buffer, filename } = await exportReceiptClosingDetailXlsx({
-          year,
-          month,
-          nomusBase: nomusQuery.nomusBase,
-          nomusCommission: nomusQuery.nomusCommission,
-        });
+        const { buffer, filename } = await exportReceiptClosingDetailXlsx(
+          {
+            year,
+            month,
+            nomusBase: nomusQuery.nomusBase,
+            nomusCommission: nomusQuery.nomusCommission,
+          },
+          ctx.scope
+        );
         res.setHeader(
           "Content-Type",
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -857,7 +868,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
         if (!ctx) return;
         const { year, month } = parseReceiptClosingPeriodParams(req.params);
-        const { buffer, filename } = await exportReceiptClosingDetailXlsx({ year, month });
+        const { buffer, filename } = await exportReceiptClosingDetailXlsx({ year, month }, ctx.scope);
         res.setHeader(
           "Content-Type",
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -880,7 +891,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
         if (!ctx) return;
         const { year, month } = parseReceiptClosingPeriodParams(req.params);
-        const payload = await getReceiptClosingPage(year, month);
+        const payload = await getReceiptClosingPage(year, month, undefined, ctx.scope);
         if (payload.mode !== "CLOSED") {
           return res.status(404).json({
             error: "Fechamento oficial não encontrado para o período.",
@@ -961,7 +972,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           userId: ctx.user.id,
           reason: body.reason,
         });
-        const payload = await getReceiptClosingPage(body.year, body.month);
+        const payload = await getReceiptClosingPage(body.year, body.month, undefined, ctx.scope);
         return res.json({ result, payload });
       } catch (error) {
         if (error instanceof CommissionValidationError) return handleValidationError(res, error);

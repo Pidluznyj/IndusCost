@@ -457,7 +457,9 @@ export function mapClosingListItemFromPage(
     commissionBaseAmount: round2(page.cards.commissionableBaseAmount),
     finalCommissionAmount: round2(page.cards.finalCommissionAmount),
     excludedCommissionAmount: round2(page.cards.excludedCommissionAmount),
-    lineCount: c.lineCount,
+    // page.lines já reflete o escopo do chamador (own/global) — c.lineCount é
+    // o total do ledger inteiro e vazaria contagem de outros vendedores.
+    lineCount: page.lines.length,
     sellerCount,
     criticalDivergence: page.criticalDivergence,
     calculationHash: c.calculationHash,

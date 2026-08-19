@@ -706,6 +706,135 @@ describe("commissionReceiptClosingApi", () => {
     assert.notEqual(rows[0]?.sellerName, null);
   });
 
+  it("ownScope (preview): vendedor só vê as próprias linhas — cards e bySeller não vazam outros vendedores", () => {
+    const lines = [
+      previewLine({
+        ledgerLineKey: "gislene-1",
+        nomusReceivableId: 1,
+        receivedAmount: 1000,
+        commissionableBaseAmount: 1000,
+        releasedCommissionAmount: 20,
+        grossCommissionAmount: 20,
+        canonicalSellerId: "seller-gislene",
+        canonicalSellerName: "GISLENE LIMA",
+        rawSellerId: 464,
+        rawSellerName: "GISLENE",
+      }),
+      previewLine({
+        ledgerLineKey: "rodrigo-1",
+        nomusReceivableId: 2,
+        receivedAmount: 5000,
+        commissionableBaseAmount: 5000,
+        releasedCommissionAmount: 150,
+        grossCommissionAmount: 150,
+        canonicalSellerId: "seller-rodrigo",
+        canonicalSellerName: "RODRIGO DA SILVA RAMOS",
+        rawSellerId: 1399,
+        rawSellerName: "RODRIGO",
+      }),
+    ];
+    const payload = buildReceiptClosingPageFromPreview({
+      preview: previewResult(lines),
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+      ownScope: {
+        nomusSellerId: 464,
+        sellerResponsibleName: "GISLENE LIMA",
+        ownCanonicalSellerIds: new Set(["seller-gislene"]),
+      },
+    });
+    assert.equal(payload.lines.length, 1);
+    assert.equal(payload.lines[0]?.canonicalSellerName, "GISLENE LIMA");
+    assert.equal(payload.bySeller.length, 1);
+    assert.equal(payload.bySeller[0]?.sellerId, "seller-gislene");
+    assert.equal(payload.cards.totalReceivedAmount, 1000);
+    assert.equal(payload.cards.finalCommissionAmount, 20);
+    assert.equal(payload.materializationSummary.totalReceivablesCount, 1);
+  });
+
+  it("ownScope (ledger/CLOSED): filtra por canonicalSellerId — rawSellerId não sobrevive no snapshot do ledger", () => {
+    const payload = buildReceiptClosingPageFromLedger({
+      closing: {
+        closingId: "close-1",
+        year: 2026,
+        month: 6,
+        status: "CLOSED",
+        calculationHash: "hash-abc",
+        totalReceivedAmount: 6000,
+        totalCommissionableBase: 6000,
+        totalExpectedCommission: 170,
+        totalReleasedCommission: 170,
+        totalExcludedAmount: 0,
+        totalExceptionAmount: 0,
+        lineCount: 2,
+        closedAt: "2026-07-01T00:00:00.000Z",
+        closedBy: "user-1",
+        notes: null,
+      },
+      ledgerLines: [
+        {
+          id: "line-1",
+          ledgerLineKey: "gislene-1",
+          nomusReceivableId: 1,
+          installmentNumber: 1,
+          settlementDate: "2026-06-15T00:00:00.000Z",
+          customerName: "Cliente A",
+          orderCode: "PED-1",
+          nfeNumber: "1",
+          productCode: "A",
+          canonicalSellerId: "seller-gislene",
+          canonicalSellerName: "GISLENE LIMA",
+          receivedAmount: 1000,
+          allocatedCommercialBase: 1000,
+          commissionRatePercent: 2,
+          expectedCommissionAmount: 20,
+          releasedCommissionAmount: 20,
+          status: "COMMISSIONABLE",
+          exceptionReason: null,
+          exclusionReason: null,
+          ruleNameSnapshot: "2%",
+          ruleSnapshotJson: null,
+        },
+        {
+          id: "line-2",
+          ledgerLineKey: "rodrigo-1",
+          nomusReceivableId: 2,
+          installmentNumber: 1,
+          settlementDate: "2026-06-15T00:00:00.000Z",
+          customerName: "Cliente B",
+          orderCode: "PED-2",
+          nfeNumber: "2",
+          productCode: "B",
+          canonicalSellerId: "seller-rodrigo",
+          canonicalSellerName: "RODRIGO DA SILVA RAMOS",
+          receivedAmount: 5000,
+          allocatedCommercialBase: 5000,
+          commissionRatePercent: 3,
+          expectedCommissionAmount: 150,
+          releasedCommissionAmount: 150,
+          status: "COMMISSIONABLE",
+          exceptionReason: null,
+          exclusionReason: null,
+          ruleNameSnapshot: "3%",
+          ruleSnapshotJson: null,
+        },
+      ],
+      ownScope: {
+        nomusSellerId: 464,
+        sellerResponsibleName: "GISLENE LIMA",
+        ownCanonicalSellerIds: new Set(["seller-gislene"]),
+      },
+    });
+    assert.equal(payload.lines.length, 1);
+    assert.equal(payload.lines[0]?.canonicalSellerName, "GISLENE LIMA");
+    assert.equal(payload.bySeller.length, 1);
+    assert.equal(payload.cards.totalReceivedAmount, 1000);
+    assert.equal(payload.cards.finalCommissionAmount, 20);
+    // O snapshot do ledger não expõe totalReceivedAmount/lineCount do fechamento
+    // inteiro fora de `closing` — cards/bySeller são a fonte usada pela tela.
+  });
+
   it("buildReceiptClosingMaterializationCards exige explicação quando há Nomus", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: previewResult([previewLine({ ledgerLineKey: "k1", releasedCommissionAmount: 18 })]),
