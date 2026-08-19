@@ -1,4 +1,4 @@
-import React from "react";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "@/src/lib/financeCashFlowExecutiveSummary";
 import {
   buildExecutiveMonthlyPlannedChartRows,
@@ -18,6 +18,7 @@ export function FinanceCashFlowMonthlyPlannedChart({
   year: number;
   rows: FinanceCashFlowExecutiveMonthlyRow[];
 }) {
+  noteDevPerfRender("FinanceCashFlowMonthlyPlannedChart");
   const data = buildExecutiveMonthlyPlannedChartRows(rows);
   const empty = rows.length === 0 || !executiveMonthlyTimelineHasChartData(rows);
 

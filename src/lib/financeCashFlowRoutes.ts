@@ -72,6 +72,11 @@ import {
 import type { FinanceArTitlesSourceBundle } from "@/src/lib/finance/financeArEffectiveTitlesSource.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
+import {
+  measureDevPerfPhase,
+  measureDevPerfPhaseSync,
+  noteDevPerfRowCounts,
+} from "@/src/lib/devPerfBaseline.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -104,7 +109,7 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
   }
 }
 
-async function loadCashFlowRows(
+export async function loadCashFlowRows(
   filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>,
   projectionMode: CashFlowProjectionMode = "legacy"
 ) {
@@ -120,10 +125,18 @@ async function loadCashFlowRows(
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
   const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
-  const apPrisma = await prisma.nomusAccountsPayable.findMany({
-    where: apWhere,
-    select: FINANCE_CASH_FLOW_AP_SELECT,
-    orderBy: { dueDate: "asc" },
+  const apPrisma = await measureDevPerfPhase("apLoad", () =>
+    prisma.nomusAccountsPayable.findMany({
+      where: apWhere,
+      select: FINANCE_CASH_FLOW_AP_SELECT,
+      orderBy: { dueDate: "asc" },
+    })
+  );
+
+  noteDevPerfRowCounts({
+    ar: arBundle.arRows.length,
+    ap: apPrisma.length,
+    orders: arBundle.orderContexts.length,
   });
 
   return {
@@ -137,7 +150,7 @@ async function loadCashFlowRows(
 }
 
 /** Carrega portfólio AR/AP aberto sem recorte de período — independente dos filtros da página. */
-async function loadDailyRadarPortfolioRows(
+export async function loadDailyRadarPortfolioRows(
   referenceDate = new Date(),
   projectionMode: CashFlowProjectionMode = "legacy"
 ) {
@@ -151,10 +164,18 @@ async function loadDailyRadarPortfolioRows(
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
   const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
-  const apPrisma = await prisma.nomusAccountsPayable.findMany({
-    where: apWhere,
-    select: FINANCE_CASH_FLOW_AP_SELECT,
-    orderBy: { dueDate: "asc" },
+  const apPrisma = await measureDevPerfPhase("apLoad", () =>
+    prisma.nomusAccountsPayable.findMany({
+      where: apWhere,
+      select: FINANCE_CASH_FLOW_AP_SELECT,
+      orderBy: { dueDate: "asc" },
+    })
+  );
+
+  noteDevPerfRowCounts({
+    ar: arBundle.arRows.length,
+    ap: apPrisma.length,
+    orders: arBundle.orderContexts.length,
   });
 
   return {
@@ -235,20 +256,24 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         );
       }
       const referenceDate = new Date();
-      const payload = buildFinanceCashFlowDashboard(
-        arRows,
-        apRows,
-        filters,
-        referenceDate,
-        arSyncCutoff,
-        apSyncCutoff,
-        arOptions
+      const payload = measureDevPerfPhaseSync("buildDashboard", () =>
+        buildFinanceCashFlowDashboard(
+          arRows,
+          apRows,
+          filters,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff,
+          arOptions
+        )
       );
-      const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
-        ytdYear: referenceDate.getFullYear(),
-        companyName: filters.companyName,
-        referenceDate,
-      });
+      const rawMaterialCostCenterSpotlight = await measureDevPerfPhase("spotlight", () =>
+        loadRawMaterialCostCenterSpotlight({
+          ytdYear: referenceDate.getFullYear(),
+          companyName: filters.companyName,
+          referenceDate,
+        })
+      );
       res.json({ ...payload, rawMaterialCostCenterSpotlight });
     }
   );
@@ -294,14 +319,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           resolveCashFlowProjectionMode()
         );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts, nfeOrderLinks } = load;
-        const payload = buildCashFlowAnnualComparison(
-          arRows,
-          apRows,
-          year,
-          referenceDate,
-          arSyncCutoff,
-          apSyncCutoff,
-          { orderContexts, nfeOrderLinks }
+        const payload = measureDevPerfPhaseSync("buildAnnual", () =>
+          buildCashFlowAnnualComparison(
+            arRows,
+            apRows,
+            year,
+            referenceDate,
+            arSyncCutoff,
+            apSyncCutoff,
+            { orderContexts, nfeOrderLinks }
+          )
         );
         res.json(payload);
       } catch (error) {
@@ -593,20 +620,24 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       );
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
-      const portfolio = filterDailyRadarPortfolioRows(
-        arRows,
-        apRows,
-        referenceDate,
-        arSyncCutoff,
-        apSyncCutoff,
-        undefined,
-        arOptions
+      const portfolio = measureDevPerfPhaseSync("filterRadarPortfolio", () =>
+        filterDailyRadarPortfolioRows(
+          arRows,
+          apRows,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff,
+          undefined,
+          arOptions
+        )
       );
-      const payload = buildFinanceCashFlowDailyRadar(
-        portfolio.arRows,
-        portfolio.apRows,
-        query,
-        referenceDate
+      const payload = measureDevPerfPhaseSync("buildRadar", () =>
+        buildFinanceCashFlowDailyRadar(
+          portfolio.arRows,
+          portfolio.apRows,
+          query,
+          referenceDate
+        )
       );
       res.json(payload);
     }

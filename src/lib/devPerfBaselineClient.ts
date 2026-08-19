@@ -7,6 +7,7 @@ import {
   isDevPerfBaselineClientEnabled,
   type DevPerfEndpointSample,
 } from "@/src/lib/devPerfBaseline.js";
+import { getCashFlowPerfSnapshot } from "@/src/lib/finance/cashFlowPerfClient.js";
 
 const samples: DevPerfEndpointSample[] = [];
 const renderCounts = new Map<string, number>();
@@ -97,6 +98,7 @@ export function installDevPerfBaselineClient(): void {
   (window as unknown as { __induscostPerfBaseline?: object }).__induscostPerfBaseline = {
     getSamples: () => [...samples],
     getRenderCounts: () => Object.fromEntries(renderCounts),
+    getCashFlow: getCashFlowPerfSnapshot,
     clear: () => {
       samples.length = 0;
       renderCounts.clear();

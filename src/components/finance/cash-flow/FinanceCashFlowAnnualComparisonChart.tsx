@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import { fetchCashFlowSessionJson } from "@/src/lib/finance/cashFlowPerfClient";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   annualComparisonHasChartData,
@@ -30,6 +31,7 @@ import { useSectionVisible } from "@/src/hooks/useSectionVisible";
  * Carrega só quando a seção entra na viewport (abaixo da dobra).
  */
 export function FinanceCashFlowAnnualComparisonChart() {
+  noteDevPerfRender("FinanceCashFlowAnnualComparisonChart");
   const { ref: sectionRef, visible } = useSectionVisible<HTMLDivElement>();
   const abortRef = useRef<AbortController | null>(null);
   const [payload, setPayload] = useState<FinanceCashFlowAnnualComparisonPayload | null>(null);
@@ -48,9 +50,10 @@ export function FinanceCashFlowAnnualComparisonChart() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchUiSessionCachedJson<FinanceCashFlowAnnualComparisonPayload>(
+      const data = await fetchCashFlowSessionJson<FinanceCashFlowAnnualComparisonPayload>(
         "/api/finance/cash-flow/annual-comparison",
-        { signal: controller.signal }
+        { signal: controller.signal },
+        "annual"
       );
       if (controller.signal.aborted) return;
       setPayload(data);

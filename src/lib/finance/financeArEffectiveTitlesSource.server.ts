@@ -13,6 +13,7 @@ import {
   enrichFinanceCashFlowArLoadBundle,
   type FinanceCashFlowArEnrichInput,
 } from "./financeCashFlowEffectiveAr.server.js";
+import { measureDevPerfPhase } from "@/src/lib/devPerfBaseline.server.js";
 
 export type FinanceArTitlesSourceBundle = {
   rows: Awaited<ReturnType<typeof loadFinanceArManagementRowsFromPrisma>>["rows"];
@@ -29,10 +30,8 @@ export async function loadFinanceArTitlesSourceBundle(
   referenceDate: Date = new Date(),
   enrichInput?: FinanceCashFlowArEnrichInput
 ): Promise<FinanceArTitlesSourceBundle> {
-  const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(
-    prisma,
-    arFilters,
-    referenceDate
+  const { rows, syncCutoff } = await measureDevPerfPhase("arLoad", () =>
+    loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate)
   );
   const arRows = rows as FinanceCashFlowArRow[];
   const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(

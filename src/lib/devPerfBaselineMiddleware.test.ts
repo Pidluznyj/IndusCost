@@ -166,6 +166,7 @@ describe("devPerfBaseline middleware — não interfere e não vaza", () => {
       const line = lines[0]!;
       assert.ok(line.startsWith("[perf-baseline:http] GET /api/finance/cash-flow/dashboard"));
       assert.match(line, /status=200 total=[\d.]+ms db=[\d.]+ms q=\d+ bytes≈\d+/);
+      assert.match(line, /profilingSerializeMs=[\d.]+ \(excludedFromTotalMs\)/);
       for (const secret of [
         "personCnpj",
         "12345678000199",

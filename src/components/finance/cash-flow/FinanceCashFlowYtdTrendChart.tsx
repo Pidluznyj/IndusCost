@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from "react";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import {
   Bar,
   CartesianGrid,
@@ -131,6 +132,7 @@ export function FinanceCashFlowYtdTrendChart({
 }: {
   points: FinanceCashFlowExecutiveYtdTrendPoint[];
 }) {
+  noteDevPerfRender("FinanceCashFlowYtdTrendChart");
   const [expanded, setExpanded] = useState(false);
   const expandedHeight = useFinanceBiExpandedChartHeight(520);
   const openExpand = useCallback(() => setExpanded(true), []);
