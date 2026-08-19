@@ -493,6 +493,7 @@ import {
   mirrorFinancialCostCenter,
   resolveOfficialHeaderSelections,
 } from "./src/lib/purchasing/purchaseRequestOfficialSelections.server.js";
+import { purchaseRequestDetailInclude } from "./src/lib/purchasing/purchaseRequestService.server.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
@@ -5930,16 +5931,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  const purchaseInclude = {
-    defaultCostCenter: true,
-    project: { select: { id: true, code: true, title: true, status: true } },
-    items: {
-      include: { material: true, costCenter: true },
-      orderBy: { id: "asc" as const },
-    },
-    historyEvents: { orderBy: { createdAt: "desc" as const }, take: 50 },
-    quotations: { select: { id: true, code: true, status: true }, orderBy: { createdAt: "desc" as const } },
-  };
+  // Fonte única do include de detalhe — evita duas listas divergentes onde
+  // uma esquece um relacionamento novo (quotes/purchaseOrders) e o outro tem.
+  const purchaseInclude = purchaseRequestDetailInclude;
 
   app.get("/api/purchase-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.view), async (_req, res) => {
     try {
