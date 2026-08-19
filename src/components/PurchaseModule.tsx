@@ -679,9 +679,9 @@ export const PurchaseModule = () => {
   .sheet { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; padding: 20px; }
   .no-print { max-width: 900px; margin: 0 auto 12px; text-align: right; }
   .no-print button { padding: 8px 16px; font-size: 13px; font-weight: 700; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-  header.doc-header { display: grid; grid-template-columns: ${logoSrc ? "140px 1fr 220px" : "1fr 220px"}; gap: 16px; align-items: center; }
+  header.doc-header { display: grid; grid-template-columns: ${logoSrc ? "100px 1fr 220px" : "1fr 220px"}; gap: 10px; align-items: center; }
   .logo-wrap { display: flex; align-items: center; height: 100%; }
-  .logo-wrap img { width: 100%; max-width: 140px; max-height: 110px; object-fit: contain; object-position: left center; }
+  .logo-wrap img { width: 100%; max-width: 100px; max-height: 110px; object-fit: contain; object-position: left center; }
   .company p { margin: 0 0 2px; }
   .company .name { font-size: 14px; font-weight: 700; color: #0f172a; }
   .company .slogan { color: #475569; font-style: italic; }
