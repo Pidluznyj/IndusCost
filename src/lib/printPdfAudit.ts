@@ -258,6 +258,27 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
     notes: ["A4 portrait; modal e rota com classes distintas."],
   },
   {
+    id: "purchase-order-print",
+    module: "Cadeia de Suprimentos",
+    feature: "Pedido de Compra — Imprimir / Salvar PDF",
+    route: "/purchases (Pedido de compra emitido)",
+    files: [
+      "src/components/PurchaseModule.tsx",
+      "src/lib/printBranding.ts",
+    ],
+    printMode: "browser-print",
+    hasPrintCss: false,
+    hasNoPrintShell: true,
+    hasSafePageBreaks: true,
+    hasFooterSafeArea: true,
+    hasChartPrintRules: false,
+    risk: "ok",
+    notes: [
+      "A4 portrait via popup (window.open + document.write) — mesmo padrão institucional de proposal-print (PrintHeader/branding), sem rota dedicada.",
+      "@page/estilos inline no HTML gerado (não há arquivo .css separado) — sem regressão de cobertura no audit CSS global.",
+    ],
+  },
+  {
     id: "material-demand-print",
     module: "Comercial / Engenharia",
     feature: "Uso de Matéria-Prima — Imprimir + CSV",

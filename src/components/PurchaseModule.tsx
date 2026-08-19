@@ -33,6 +33,8 @@ import { SearchableSelect, SelectOption } from "@/src/components/shared/Searchab
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { PRINT_COMPANY_DOC_FALLBACK, resolvePrintLogoSrc } from "@/src/lib/printBranding";
 import { motion } from "motion/react";
 import { filterPurchaseRequests } from "@/src/lib/operationalListFilters";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -246,6 +248,7 @@ export const PurchaseModule = () => {
   const [items, setItems] = useState<PurchaseItemDraft[]>([]);
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [requestNumber, setRequestNumber] = useState<number | null>(null);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
 
   const [ccModalOpen, setCcModalOpen] = useState(false);
@@ -380,6 +383,12 @@ export const PurchaseModule = () => {
   useEffect(() => {
     loadLists();
   }, [loadLists]);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
 
   useEffect(() => {
     fetchJsonOk<{ rows?: Array<{ id: string; displayName: string; document: string | null }> }>(
@@ -642,38 +651,124 @@ export const PurchaseModule = () => {
   const openOrderPdf = () => {
     if (!emittedOrder) return;
     const win = winnerQuote;
+    const esc = (value: unknown): string =>
+      String(value ?? "").replace(
+        /[&<>"']/g,
+        (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
+      );
+    const logoSrc = resolvePrintLogoSrc(branding);
+    const accentTint = `${branding.primaryColor || DEFAULT_BRANDING.primaryColor}14`;
+    const total = win ? formatCurrency(Number(win.totalValue)) : "—";
+    const issuedAt = new Date(emittedOrder.createdAt).toLocaleDateString("pt-BR");
     const rowsHtml = items
       .map(
-        (it, i) =>
-          `<tr><td>${i + 1}</td><td>${it.description}</td><td style="text-align:right">${it.quantity}</td><td>${it.unit}</td></tr>`
+        (it, i) => `<tr class="${i % 2 === 1 ? "stripe" : ""}">
+  <td class="num">${String((i + 1) * 10).padStart(5, "0")}</td>
+  <td>${esc(it.description)}</td>
+  <td class="right">${formatNumber(it.quantity)}</td>
+  <td class="center">${esc(it.unit)}</td>
+</tr>`
       )
       .join("");
-    const total = win ? formatCurrency(Number(win.totalValue)) : "—";
-    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${emittedOrder.code}</title>
-<style>body{font-family:Arial,sans-serif;color:#111;margin:32px;font-size:13px}h1{font-size:20px;margin:0}
-.head{display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px}
-table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #999;padding:6px 8px;text-align:left}
-th{background:#eee}.tot{font-size:16px;font-weight:bold;text-align:right;margin-top:8px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin:12px 0}.lbl{color:#555;font-size:11px;text-transform:uppercase}
-footer{margin-top:32px;font-size:11px;color:#555;border-top:1px solid #ccc;padding-top:8px}
-@media print{button{display:none}}</style></head><body>
-<div class="head"><div><h1>Pedido de Compra</h1><div>Grupo Lazarios</div></div>
-<div style="text-align:right"><div style="font-size:18px;font-weight:bold">${emittedOrder.code}</div>
-<div>${new Date(emittedOrder.createdAt).toLocaleDateString("pt-BR")}</div></div></div>
-<div class="grid">
-<div><div class="lbl">Fornecedor</div><div>${emittedOrder.supplierDisplayNameSnapshot}</div></div>
-<div><div class="lbl">CNPJ</div><div>${win?.supplierDocumentSnapshot ?? "—"}</div></div>
-<div><div class="lbl">Condição de pagamento</div><div>${win?.paymentTerms ?? "—"}</div></div>
-<div><div class="lbl">Prazo de entrega</div><div>${win?.deliveryDays != null ? win.deliveryDays + " dias" : "—"}</div></div>
-<div><div class="lbl">Solicitação</div><div>SC ${requestNumber ?? ""} — ${requester}</div></div>
-<div><div class="lbl">Comprador</div><div>${buyerNameView ?? "—"}</div></div>
+
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pedido de Compra ${esc(emittedOrder.code)}</title>
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 12px; line-height: 1.35; background: #f1f5f9; }
+  .sheet { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; padding: 20px; }
+  .no-print { max-width: 900px; margin: 0 auto 12px; text-align: right; }
+  .no-print button { padding: 8px 16px; font-size: 13px; font-weight: 700; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  header.doc-header { display: grid; grid-template-columns: ${logoSrc ? "70px 1fr 220px" : "1fr 220px"}; gap: 16px; align-items: start; }
+  .logo-wrap img { max-width: 70px; max-height: 40px; object-fit: contain; }
+  .company p { margin: 0 0 2px; }
+  .company .name { font-size: 14px; font-weight: 700; color: #0f172a; }
+  .company .slogan { color: #475569; font-style: italic; }
+  .lbl { color: #475569; font-weight: 600; }
+  .meta { text-align: right; }
+  .meta .kind { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #475569; margin: 0 0 2px; }
+  .meta .title { font-size: 15px; font-weight: 800; color: #0f172a; margin: 0 0 6px; }
+  .meta p { margin: 0 0 2px; }
+  .rule { height: 2px; background: #0f172a; margin: 10px 0 16px; }
+  .section-title { margin: 16px 0 6px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #334155; }
+  .section-title:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 24px; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 8px 0; }
+  .kv-grid p { margin: 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; }
+  thead tr { background: #f1f5f9; border-bottom: 1px solid #cbd5e1; }
+  th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: #334155; padding: 6px 8px; border-right: 1px solid #e2e8f0; }
+  th:last-child, td:last-child { border-right: none; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #f1f5f9; }
+  tr.stripe { background: #f8fafc; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  .no-print, footer, .note { break-inside: avoid; page-break-inside: avoid; }
+  @media print { .no-print { display: none !important; } }
+  td.num { font-family: "Courier New", monospace; color: #475569; }
+  td.right, th.right { text-align: right; }
+  td.center, th.center { text-align: center; }
+  .totals { margin-top: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 12px; }
+  .totals .row { display: grid; grid-template-columns: 1fr auto; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; }
+  .totals .row.total { border-bottom: none; background: ${accentTint}; font-weight: 800; font-size: 14px; }
+  ul.terms { list-style: none; margin: 6px 0 0; padding: 0; }
+  ul.terms li { padding: 2px 0; }
+  footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #cbd5e1; display: flex; justify-content: space-between; font-size: 10px; color: #64748b; }
+  .note { margin-top: 8px; font-size: 9px; color: #94a3b8; }
+</style></head><body>
+<div class="no-print"><button onclick="window.print()">Imprimir / Salvar PDF</button></div>
+<div class="sheet">
+  <header class="doc-header">
+    ${logoSrc ? `<div class="logo-wrap"><img src="${logoSrc}" alt="${esc(branding.companyName)}"></div>` : ""}
+    <div class="company">
+      <p class="name">${esc(branding.companyName || DEFAULT_BRANDING.companyName)}</p>
+      ${branding.slogan ? `<p class="slogan">${esc(branding.slogan)}</p>` : ""}
+      <p><span class="lbl">CNPJ:</span> ${esc(PRINT_COMPANY_DOC_FALLBACK.taxId)}</p>
+      <p>${esc(PRINT_COMPANY_DOC_FALLBACK.addressLine)}</p>
+      <p><span class="lbl">E-mail:</span> ${esc(PRINT_COMPANY_DOC_FALLBACK.email)}</p>
+    </div>
+    <div class="meta">
+      <p class="kind">Pedido de compra</p>
+      <p class="title">${esc(emittedOrder.code)}</p>
+      <p><span class="lbl">Data:</span> ${issuedAt}</p>
+      <p><span class="lbl">Comprador:</span> ${esc(buyerNameView ?? "—")}</p>
+    </div>
+  </header>
+  <div class="rule"></div>
+
+  <p class="section-title">Dados do fornecedor</p>
+  <div class="kv-grid">
+    <p><span class="lbl">Fornecedor:</span> ${esc(emittedOrder.supplierDisplayNameSnapshot)}</p>
+    <p><span class="lbl">CNPJ:</span> ${esc(win?.supplierDocumentSnapshot ?? "—")}</p>
+    <p><span class="lbl">Solicitação de origem:</span> SC ${esc(requestNumber ?? "")} — ${esc(requester)}</p>
+  </div>
+
+  <p class="section-title">Itens do pedido</p>
+  <table>
+    <thead><tr><th>Item</th><th>Descrição</th><th class="right">Qtde</th><th class="center">Un.</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  <div class="totals">
+    <div class="row"><span>Valor total do pedido</span><span></span></div>
+    <div class="row total"><span>Total</span><span>${total}</span></div>
+  </div>
+
+  <p class="section-title">Condições comerciais</p>
+  <ul class="terms">
+    <li><span class="lbl">Pagamento:</span> ${esc(win?.paymentTerms ?? "—")}</li>
+    <li><span class="lbl">Prazo de entrega:</span> ${win?.deliveryDays != null ? `${win.deliveryDays} dia(s)` : "—"}</li>
+  </ul>
+
+  ${win?.winnerReason
+      ? `<p class="section-title">Justificativa da escolha do fornecedor</p><p>${esc(win.winnerReason)}</p>`
+      : ""}
+
+  <footer>
+    <span>${esc(buyerNameView ?? "—")}</span>
+    <span>${issuedAt}</span>
+  </footer>
+  <p class="note">Documento gerado pelo IndusCost em ${new Date().toLocaleString("pt-BR")}.</p>
 </div>
-<table><thead><tr><th>#</th><th>Descrição</th><th style="text-align:right">Qtde</th><th>Un</th></tr></thead>
-<tbody>${rowsHtml}</tbody></table>
-<div class="tot">Valor total do pedido: ${total}</div>
-${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${win.winnerReason}</p>` : ""}
-<footer>Documento gerado pelo IndusCost em ${new Date().toLocaleString("pt-BR")}. Use Ctrl+P para salvar em PDF.</footer>
-<button onclick="window.print()" style="margin-top:16px;padding:8px 16px">Imprimir / salvar PDF</button>
 </body></html>`;
     const w = window.open("", "_blank");
     if (!w) return alert("Habilite pop-ups para visualizar o pedido.");
