@@ -126,8 +126,6 @@ describe("OP-28 — matriz E2E fluxo paralelo SC", () => {
     // 4) Solicitação
     let pr: PurchaseRequestWorkflowStatus = "RASCUNHO";
     pr = resolvePurchaseRequestTransition(pr, "SUBMIT");
-    assert.equal(pr, "AGUARDANDO_APROVACAO");
-    pr = resolvePurchaseRequestTransition(pr, "APPROVE");
     assert.equal(pr, "ABERTA");
     pr = resolvePurchaseRequestTransition(pr, "FORWARD_TO_QUOTATION");
     assert.equal(pr, "EM_COTACAO");

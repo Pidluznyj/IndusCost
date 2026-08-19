@@ -12,6 +12,12 @@ import {
 } from "@/src/lib/operationsAccess.js";
 import { createOfficialDataProviders } from "@/src/lib/supply-chain/officialDataProviders.server.js";
 import {
+  addPurchaseRequestQuote,
+  updatePurchaseRequestQuote,
+  deletePurchaseRequestQuote,
+  markPurchaseRequestQuoteWinner,
+} from "./purchaseRequestQuoteService.server.js";
+import {
   approvePurchaseRequest,
   cancelPurchaseRequest,
   forwardPurchaseRequestToQuotation,
@@ -20,6 +26,9 @@ import {
   rejectPurchaseRequest,
   reopenPurchaseRequestDraft,
   submitPurchaseRequest,
+  validatePurchaseRequest,
+  sendPurchaseRequestToApproval,
+  reopenPurchaseRequestQuoting,
 } from "@/src/lib/purchasing/purchaseRequestService.server.js";
 import { PurchaseRequestWorkflowError } from "@/src/lib/purchasing/purchaseRequestWorkflow.js";
 import {
@@ -271,6 +280,157 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
     } catch (e) {
       const mapped = mapEvidenceError(e);
       return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  function replyWorkflowError(res: express.Response, e: unknown) {
+    if (e instanceof PurchaseRequestWorkflowError) {
+      const status = e.code === "NOT_FOUND" ? 404 : 400;
+      return res.status(status).json({ error: e.message, code: e.code });
+    }
+    throw e;
+  }
+
+  // ---- Fluxo simplificado: validação do comprador e decisão de compra ----
+
+  app.post("/api/purchase-requests/:id/validate", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const row = await validatePurchaseRequest(prisma, req.params.id, actor, req.body?.notes ?? null);
+      res.json(row);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request validate error:", e);
+        res.status(500).json({ error: "Erro ao validar solicitação." });
+      }
+    }
+  });
+
+  app.post("/api/purchase-requests/:id/send-to-approval", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const row = await sendPurchaseRequestToApproval(prisma, req.params.id, actor, req.body?.notes ?? null);
+      res.json(row);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request send-to-approval error:", e);
+        res.status(500).json({ error: "Erro ao enviar para aprovação." });
+      }
+    }
+  });
+
+  app.post("/api/purchase-requests/:id/reopen-quoting", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const row = await reopenPurchaseRequestQuoting(prisma, req.params.id, actor);
+      res.json(row);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request reopen-quoting error:", e);
+        res.status(500).json({ error: "Erro ao reabrir orçamentação." });
+      }
+    }
+  });
+
+  // ---- Orçamentos simples ----
+
+  app.get("/api/purchase-requests/:id/quotes", ...view, async (req, res) => {
+    try {
+      const rows = await prisma.purchaseRequestQuote.findMany({
+        where: { purchaseRequestId: req.params.id },
+        orderBy: { createdAt: "asc" },
+      });
+      res.json({ rows });
+    } catch (e) {
+      console.error("purchase-request quotes list error:", e);
+      res.status(500).json({ error: "Erro ao listar orçamentos." });
+    }
+  });
+
+  app.post("/api/purchase-requests/:id/quotes", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const quote = await addPurchaseRequestQuote(prisma, req.params.id, req.body ?? {}, actor);
+      res.status(201).json(quote);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request quote create error:", e);
+        res.status(500).json({ error: "Erro ao registrar orçamento." });
+      }
+    }
+  });
+
+  app.put("/api/purchase-requests/:id/quotes/:quoteId", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const quote = await updatePurchaseRequestQuote(
+        prisma, req.params.id, req.params.quoteId, req.body ?? {}, actor
+      );
+      res.json(quote);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request quote update error:", e);
+        res.status(500).json({ error: "Erro ao atualizar orçamento." });
+      }
+    }
+  });
+
+  app.delete("/api/purchase-requests/:id/quotes/:quoteId", ...update, async (req, res) => {
+    try {
+      await deletePurchaseRequestQuote(prisma, req.params.id, req.params.quoteId);
+      res.json({ ok: true });
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request quote delete error:", e);
+        res.status(500).json({ error: "Erro ao excluir orçamento." });
+      }
+    }
+  });
+
+  app.post("/api/purchase-requests/:id/quotes/:quoteId/winner", ...update, async (req, res) => {
+    try {
+      const actor = await actorFromReq(req);
+      if (!actor) return res.status(401).json({ error: "Sessão inválida." });
+      const quote = await markPurchaseRequestQuoteWinner(
+        prisma, req.params.id, req.params.quoteId, String(req.body?.winnerReason ?? ""), actor
+      );
+      res.json(quote);
+    } catch (e) {
+      try { return replyWorkflowError(res, e); } catch {
+        console.error("purchase-request quote winner error:", e);
+        res.status(500).json({ error: "Erro ao marcar vencedor." });
+      }
+    }
+  });
+
+  app.get("/api/purchase-requests/official-refs/suppliers", ...view, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const rows = await prisma.financialSupplier.findMany({
+        where: {
+          status: "ACTIVE",
+          ...(q
+            ? {
+                OR: [
+                  { displayName: { contains: q, mode: "insensitive" } },
+                  { document: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        select: { id: true, displayName: true, document: true },
+        orderBy: { displayName: "asc" },
+        take: 100,
+      });
+      res.json({ rows });
+    } catch (e) {
+      console.error("official suppliers list error:", e);
+      res.status(500).json({ error: "Erro ao listar fornecedores." });
     }
   });
 

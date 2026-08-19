@@ -13,6 +13,32 @@ export type PurchasePriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
 export type PurchaseLineType = "MATERIA_PRIMA" | "INDIRETO";
 export type PurchaseItemLineStatus = "ABERTA" | "CANCELADA";
 
+export interface PurchaseRequestQuoteRow {
+  id: string;
+  purchaseRequestId: string;
+  supplierId: string | null;
+  supplierNameSnapshot: string;
+  supplierDocumentSnapshot: string | null;
+  totalValue: string | number;
+  paymentTerms: string | null;
+  deliveryDays: number | null;
+  validUntil: string | null;
+  notes: string | null;
+  isWinner: boolean;
+  winnerReason: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface PurchaseRequestEmittedOrderRow {
+  id: string;
+  code: string;
+  status: string;
+  totalAmountSnapshot: string | number | null;
+  supplierDisplayNameSnapshot: string;
+  createdAt: string;
+}
+
 export interface CostCenterRow {
   id: string;
   code: string;
@@ -86,6 +112,10 @@ export interface PurchaseRequestRow {
   createdAt: string;
   updatedAt: string;
   defaultCostCenter: CostCenterRow;
+  buyerName?: string | null;
+  buyerValidatedAt?: string | null;
+  quotes?: PurchaseRequestQuoteRow[];
+  purchaseOrders?: PurchaseRequestEmittedOrderRow[];
   project?: PurchaseRequestProjectRef | null;
   items: PurchaseRequestItemRow[];
   historyEvents?: PurchaseRequestHistoryEventRow[];

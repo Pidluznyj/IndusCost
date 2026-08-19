@@ -24,6 +24,8 @@ import {
   PurchaseRequestRow,
   PurchaseRequestStatus,
   emptyPurchaseItemDraft,
+  PurchaseRequestQuoteRow,
+  PurchaseRequestEmittedOrderRow,
 } from "@/src/types/purchase";
 import { SearchableSelect, SelectOption } from "@/src/components/shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -40,12 +42,12 @@ import {
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
-  AGUARDANDO_APROVACAO: "Aguardando aprovação",
-  ABERTA: "Aberta",
+  AGUARDANDO_APROVACAO: "Aguardando gestor",
+  ABERTA: "Aguardando comprador",
   REJEITADA: "Rejeitada",
-  EM_COTACAO: "Em cotação",
+  EM_COTACAO: "Em orçamentação",
   CANCELADA: "Cancelada",
-  ENCERRADA: "Encerrada",
+  ENCERRADA: "Pedido emitido",
 };
 
 const PRIORITY_LABEL: Record<PurchasePriority, string> = {
@@ -229,6 +231,16 @@ export const PurchaseModule = () => {
     Array<{ id: string; code: string; status: string }>
   >([]);
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [quotes, setQuotes] = useState<PurchaseRequestQuoteRow[]>([]);
+  const [emittedOrder, setEmittedOrder] = useState<PurchaseRequestEmittedOrderRow | null>(null);
+  const [buyerNameView, setBuyerNameView] = useState<string | null>(null);
+  const [supplierOptions, setSupplierOptions] = useState<SelectOption[]>([]);
+  const [quoteSupplierId, setQuoteSupplierId] = useState("");
+  const [quoteTotal, setQuoteTotal] = useState("");
+  const [quotePaymentTerms, setQuotePaymentTerms] = useState("");
+  const [quoteDeliveryDays, setQuoteDeliveryDays] = useState("");
+  const [quoteNotes, setQuoteNotes] = useState("");
+  const [quoteBusy, setQuoteBusy] = useState(false);
   const [items, setItems] = useState<PurchaseItemDraft[]>([]);
   const [requestNumber, setRequestNumber] = useState<number | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -366,7 +378,32 @@ export const PurchaseModule = () => {
     loadLists();
   }, [loadLists]);
 
+  useEffect(() => {
+    fetchJsonOk<{ rows?: Array<{ id: string; displayName: string; document: string | null }> }>(
+      "/api/purchase-requests/official-refs/suppliers"
+    )
+      .then((res) =>
+        setSupplierOptions(
+          (res.rows ?? []).map((f) => ({
+            value: f.id,
+            label: f.displayName,
+            sublabel: f.document ?? undefined,
+            searchTerms: `${f.displayName} ${f.document ?? ""}`,
+          }))
+        )
+      )
+      .catch(() => setSupplierOptions([]));
+  }, []);
+
   const resetForm = () => {
+    setQuotes([]);
+    setEmittedOrder(null);
+    setBuyerNameView(null);
+    setQuoteSupplierId("");
+    setQuoteTotal("");
+    setQuotePaymentTerms("");
+    setQuoteDeliveryDays("");
+    setQuoteNotes("");
     setRequester("");
     setDepartment("");
     setRequestCategory("");
@@ -425,6 +462,9 @@ export const PurchaseModule = () => {
       setExternalReference(row.externalReference || "");
       setHistoryEvents(Array.isArray(row.historyEvents) ? row.historyEvents : []);
       setLinkedQuotations(Array.isArray(row.quotations) ? row.quotations : []);
+      setQuotes(Array.isArray(row.quotes) ? row.quotes : []);
+      setEmittedOrder(row.purchaseOrders?.[0] ?? null);
+      setBuyerNameView(row.buyerName ?? null);
       setItems(row.items.length ? row.items.map(itemFromApi) : [emptyPurchaseItemDraft()]);
       try {
         const ev = await fetchJsonOk<{ rows?: import("@/src/types/purchase").PurchaseEvidenceRow[] }>(
@@ -526,8 +566,134 @@ export const PurchaseModule = () => {
     return body;
   };
 
+  const addQuote = async () => {
+    if (!editingId) return;
+    if (!quoteSupplierId) return alert("Selecione o fornecedor do orçamento.");
+    const total = Number(quoteTotal.replace(",", "."));
+    if (!Number.isFinite(total) || total <= 0) return alert("Informe o valor total do orçamento.");
+    setQuoteBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-requests/${editingId}/quotes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId: quoteSupplierId,
+          totalValue: total,
+          paymentTerms: quotePaymentTerms.trim() || null,
+          deliveryDays: quoteDeliveryDays.trim() ? Number(quoteDeliveryDays) : null,
+          notes: quoteNotes.trim() || null,
+        }),
+      });
+      setQuoteSupplierId("");
+      setQuoteTotal("");
+      setQuotePaymentTerms("");
+      setQuoteDeliveryDays("");
+      setQuoteNotes("");
+      await openEdit(editingId, "edit");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao registrar orçamento.");
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
+  const removeQuote = async (quoteId: string) => {
+    if (!editingId) return;
+    if (!window.confirm("Excluir este orçamento?")) return;
+    setQuoteBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-requests/${editingId}/quotes/${quoteId}`, { method: "DELETE" });
+      await openEdit(editingId, "edit");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao excluir orçamento.");
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
+  const chooseWinner = async (quoteId: string) => {
+    if (!editingId) return;
+    const winnerReason = window.prompt("Por que este fornecedor foi escolhido?") ?? "";
+    if (!winnerReason.trim()) return alert("Justificativa é obrigatória.");
+    setQuoteBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-requests/${editingId}/quotes/${quoteId}/winner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ winnerReason }),
+      });
+      await openEdit(editingId, "edit");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao marcar vencedor.");
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
+  const winnerQuote = quotes.find((q) => q.isWinner) ?? null;
+
+  const openOrderPdf = () => {
+    if (!emittedOrder) return;
+    const win = winnerQuote;
+    const rowsHtml = items
+      .map(
+        (it, i) =>
+          `<tr><td>${i + 1}</td><td>${it.description}</td><td style="text-align:right">${it.quantity}</td><td>${it.unit}</td></tr>`
+      )
+      .join("");
+    const total = win ? formatCurrency(Number(win.totalValue)) : "—";
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${emittedOrder.code}</title>
+<style>body{font-family:Arial,sans-serif;color:#111;margin:32px;font-size:13px}h1{font-size:20px;margin:0}
+.head{display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #999;padding:6px 8px;text-align:left}
+th{background:#eee}.tot{font-size:16px;font-weight:bold;text-align:right;margin-top:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin:12px 0}.lbl{color:#555;font-size:11px;text-transform:uppercase}
+footer{margin-top:32px;font-size:11px;color:#555;border-top:1px solid #ccc;padding-top:8px}
+@media print{button{display:none}}</style></head><body>
+<div class="head"><div><h1>Pedido de Compra</h1><div>Grupo Lazarios</div></div>
+<div style="text-align:right"><div style="font-size:18px;font-weight:bold">${emittedOrder.code}</div>
+<div>${new Date(emittedOrder.createdAt).toLocaleDateString("pt-BR")}</div></div></div>
+<div class="grid">
+<div><div class="lbl">Fornecedor</div><div>${emittedOrder.supplierDisplayNameSnapshot}</div></div>
+<div><div class="lbl">CNPJ</div><div>${win?.supplierDocumentSnapshot ?? "—"}</div></div>
+<div><div class="lbl">Condição de pagamento</div><div>${win?.paymentTerms ?? "—"}</div></div>
+<div><div class="lbl">Prazo de entrega</div><div>${win?.deliveryDays != null ? win.deliveryDays + " dias" : "—"}</div></div>
+<div><div class="lbl">Solicitação</div><div>SC ${requestNumber ?? ""} — ${requester}</div></div>
+<div><div class="lbl">Comprador</div><div>${buyerNameView ?? "—"}</div></div>
+</div>
+<table><thead><tr><th>#</th><th>Descrição</th><th style="text-align:right">Qtde</th><th>Un</th></tr></thead>
+<tbody>${rowsHtml}</tbody></table>
+<div class="tot">Valor total do pedido: ${total}</div>
+${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${win.winnerReason}</p>` : ""}
+<footer>Documento gerado pelo IndusCost em ${new Date().toLocaleString("pt-BR")}. Use Ctrl+P para salvar em PDF.</footer>
+<button onclick="window.print()" style="margin-top:16px;padding:8px 16px">Imprimir / salvar PDF</button>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return alert("Habilite pop-ups para visualizar o pedido.");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const emailOrder = () => {
+    if (!emittedOrder) return;
+    const win = winnerQuote;
+    const subject = encodeURIComponent(`Pedido de compra ${emittedOrder.code} — Grupo Lazarios`);
+    const body = encodeURIComponent(
+      `Prezados,\n\nSegue pedido de compra ${emittedOrder.code}.\n\nFornecedor: ${emittedOrder.supplierDisplayNameSnapshot}\nValor total: ${win ? formatCurrency(Number(win.totalValue)) : ""}\nCondição de pagamento: ${win?.paymentTerms ?? "-"}\nPrazo de entrega: ${win?.deliveryDays != null ? win.deliveryDays + " dias" : "-"}\n\nO PDF do pedido segue anexo.\n\nAtenciosamente,\nGrupo Lazarios`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
   const runWorkflow = async (
-    action: "submit" | "approve" | "reject" | "cancel" | "reopen-draft" | "forward-to-quotation"
+    action:
+      | "submit"
+      | "validate"
+      | "send-to-approval"
+      | "approve"
+      | "reject"
+      | "cancel"
+      | "reopen-draft"
+      | "reopen-quoting"
   ) => {
     if (!editingId) return;
     let reason: string | undefined;
@@ -546,16 +712,8 @@ export const PurchaseModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reason ? { reason } : {}),
       });
+      void result;
       await loadLists();
-      if (action === "forward-to-quotation") {
-        const qid = result?.quotations?.[0]?.id;
-        if (qid) {
-          navigate(`/purchases/quotations/${qid}`);
-          return;
-        }
-        navigate(`/purchases/quotations?purchaseRequestId=${editingId}`);
-        return;
-      }
       await openEdit(editingId, "edit");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro na ação de workflow.");
@@ -1180,11 +1338,32 @@ export const PurchaseModule = () => {
             Workflow
           </h4>
           <div className="flex flex-wrap gap-2">
-            {(status === "RASCUNHO" || status === "REJEITADA") && allowCreate ? (
+            {status === "RASCUNHO" && allowCreate ? (
               <button
                 type="button"
                 disabled={workflowBusy}
                 onClick={() => void runWorkflow("submit")}
+                className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
+              >
+                Enviar para compras
+              </button>
+            ) : null}
+            {status === "ABERTA" && allowEdit ? (
+              <button
+                type="button"
+                disabled={workflowBusy}
+                onClick={() => void runWorkflow("validate")}
+                className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
+              >
+                Validar e iniciar orçamentos
+              </button>
+            ) : null}
+            {status === "EM_COTACAO" && allowEdit ? (
+              <button
+                type="button"
+                disabled={workflowBusy || !quotes.some((q) => q.isWinner)}
+                onClick={() => void runWorkflow("send-to-approval")}
+                title={quotes.some((q) => q.isWinner) ? "" : "Marque um orçamento vencedor primeiro"}
                 className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
               >
                 Enviar para aprovação
@@ -1198,7 +1377,7 @@ export const PurchaseModule = () => {
                   onClick={() => void runWorkflow("approve")}
                   className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white disabled:opacity-50"
                 >
-                  Aprovar
+                  Aprovar e emitir pedido
                 </button>
                 <button
                   type="button"
@@ -1211,25 +1390,42 @@ export const PurchaseModule = () => {
               </>
             ) : null}
             {status === "REJEITADA" && allowEdit ? (
-              <button
-                type="button"
-                disabled={workflowBusy}
-                onClick={() => void runWorkflow("reopen-draft")}
-                className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
-              >
-                Reabrir rascunho
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("reopen-quoting")}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
+                >
+                  Reabrir orçamentos
+                </button>
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("reopen-draft")}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
+                >
+                  Reabrir rascunho
+                </button>
+              </>
             ) : null}
-            {status === "ABERTA" && allowEdit ? (
-              <button
-                type="button"
-                disabled={workflowBusy}
-                onClick={() => void runWorkflow("forward-to-quotation")}
-                className="px-3 py-1.5 rounded-lg text-sm bg-violet-700 text-white disabled:opacity-50"
-                data-testid="purchase-request-forward-quotation"
-              >
-                Encaminhar para cotação
-              </button>
+            {status === "ENCERRADA" && emittedOrder ? (
+              <>
+                <button
+                  type="button"
+                  onClick={openOrderPdf}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white"
+                >
+                  Pedido {emittedOrder.code} (PDF)
+                </button>
+                <button
+                  type="button"
+                  onClick={emailOrder}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-border"
+                >
+                  Enviar por e-mail
+                </button>
+              </>
             ) : null}
             {status !== "CANCELADA" && status !== "ENCERRADA" && allowEdit ? (
               <button
@@ -1242,6 +1438,136 @@ export const PurchaseModule = () => {
               </button>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {editingId && ["EM_COTACAO", "AGUARDANDO_APROVACAO", "ENCERRADA", "REJEITADA"].includes(status) ? (
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-quotes-block">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Orçamentos ({quotes.length})
+          </h4>
+          {quotes.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase text-muted-foreground border-b border-border">
+                    <th className="py-2 pr-3">Fornecedor</th>
+                    <th className="py-2 pr-3 text-right">Valor total</th>
+                    <th className="py-2 pr-3">Pagamento</th>
+                    <th className="py-2 pr-3">Entrega</th>
+                    <th className="py-2 pr-3">Obs.</th>
+                    <th className="py-2 pr-3">Vencedor</th>
+                    {status === "EM_COTACAO" ? <th className="py-2" /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotes.map((q) => (
+                    <tr key={q.id} className={cn("border-b border-border/60", q.isWinner && "bg-emerald-500/10")}>
+                      <td className="py-2 pr-3 font-medium">{q.supplierNameSnapshot}</td>
+                      <td className="py-2 pr-3 text-right">{formatCurrency(Number(q.totalValue))}</td>
+                      <td className="py-2 pr-3">{q.paymentTerms || "—"}</td>
+                      <td className="py-2 pr-3">{q.deliveryDays != null ? `${q.deliveryDays} dias` : "—"}</td>
+                      <td className="py-2 pr-3 max-w-[220px] truncate" title={q.notes ?? ""}>{q.notes || "—"}</td>
+                      <td className="py-2 pr-3">
+                        {q.isWinner ? (
+                          <span className="text-xs font-bold text-emerald-700" title={q.winnerReason ?? ""}>
+                            ✔ Escolhido
+                          </span>
+                        ) : status === "EM_COTACAO" ? (
+                          <button
+                            type="button"
+                            disabled={quoteBusy}
+                            onClick={() => void chooseWinner(q.id)}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Marcar vencedor
+                          </button>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      {status === "EM_COTACAO" ? (
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            disabled={quoteBusy}
+                            onClick={() => void removeQuote(q.id)}
+                            className="text-xs text-red-700 hover:underline"
+                          >
+                            Excluir
+                          </button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {winnerQuote?.winnerReason ? (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Justificativa: {winnerQuote.winnerReason}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhum orçamento registrado ainda.</p>
+          )}
+          {status === "EM_COTACAO" ? (
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end border-t border-border pt-4">
+              <div className="md:col-span-2 space-y-1">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor *</label>
+                <SearchableSelect
+                  options={supplierOptions}
+                  value={quoteSupplierId}
+                  onChange={setQuoteSupplierId}
+                  placeholder="Buscar fornecedor…"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Valor total *</label>
+                <input
+                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                  placeholder="0,00"
+                  value={quoteTotal}
+                  onChange={(e) => setQuoteTotal(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Pagamento</label>
+                <input
+                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                  placeholder="Ex.: 30/60"
+                  value={quotePaymentTerms}
+                  onChange={(e) => setQuotePaymentTerms(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Entrega (dias)</label>
+                <input
+                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                  value={quoteDeliveryDays}
+                  onChange={(e) => setQuoteDeliveryDays(e.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  disabled={quoteBusy}
+                  onClick={() => void addQuote()}
+                  className="w-full px-3 py-2 rounded-lg text-sm bg-primary text-primary-foreground disabled:opacity-50"
+                >
+                  Adicionar orçamento
+                </button>
+              </div>
+              <div className="md:col-span-6 space-y-1">
+                <input
+                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                  placeholder="Observações do orçamento (opcional)"
+                  value={quoteNotes}
+                  onChange={(e) => setQuoteNotes(e.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
