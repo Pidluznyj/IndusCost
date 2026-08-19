@@ -30,6 +30,7 @@ export type DevPerfScenarioId =
   | "finance_ap_dashboard"
   | "finance_ap_titles"
   | "finance_cash_flow_dashboard"
+  | "finance_cash_flow_annual_comparison"
   | "finance_cash_flow_daily_radar"
   | "finance_billing_dashboard"
   | "finance_billing_nfes"
@@ -61,7 +62,27 @@ export type DevPerfEndpointSample = {
   queryCount: number | null;
   payloadBytesApprox: number | null;
   rowCountApprox: number | null;
+  /**
+   * Duração wall-clock de `res.json` (serialização real do Express), quando
+   * o sample veio de HTTP. Ausente no runner de serviço, que não responde HTTP.
+   */
+  serializeMs?: number | null;
+  /**
+   * Custo de um `JSON.stringify` EXTRA usado só para estimar bytes.
+   * NÃO faz parte de `totalMs`. Não é o custo de serialização do response.
+   */
+  profilingSerializeMs?: number | null;
+  /** Fases nomeadas (wall-clock). Podem ser aninhadas — não some cegamente. */
+  phases?: Record<string, number> | null;
+  /** Contagens inteiras (AR/AP/pedidos). Sem nomes, CNPJ ou payload. */
+  rowCounts?: DevPerfRowCounts | null;
   notes?: string;
+};
+
+export type DevPerfRowCounts = {
+  ar?: number;
+  ap?: number;
+  orders?: number;
 };
 
 export type DevPerfRunSummary = {
@@ -94,6 +115,10 @@ export function isDevPerfBaselineClientEnabled(): boolean {
   } catch {
     return false;
   }
+}
+
+export function roundDevPerfMs(ms: number): number {
+  return Math.round(ms * 100) / 100;
 }
 
 export function approxJsonBytes(value: unknown): number {

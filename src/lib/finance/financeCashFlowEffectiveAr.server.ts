@@ -13,6 +13,7 @@ import {
   mergeFinanceArEffectiveOrderContexts,
   resolveFinanceArNfeOrderLinksFromRows,
 } from "./financeAccountsReceivableEffectiveTitles.server.js";
+import { measureDevPerfPhase } from "@/src/lib/devPerfBaseline.server.js";
 
 export type FinanceCashFlowArEnrichInput = {
   customerName?: string | null;
@@ -54,25 +55,29 @@ export async function enrichFinanceCashFlowArLoadBundle(
 ): Promise<FinanceCashFlowArLoadBundle> {
   const projectionMode: CashFlowProjectionMode =
     enrichInput?.projectionMode ?? "legacy";
-  const [customerContexts, portfolioContexts, nfeOrderLinks] = await Promise.all([
-    loadFinanceArEffectiveOrderContexts(
-      prisma,
-      {
-        customerName: enrichInput?.customerName,
-        customerPersonId: null,
-        document: enrichInput?.personCnpj,
-      },
-      referenceDate,
-      projectionMode
-    ),
-    loadFinanceCashFlowArOrderContexts(
-      prisma,
-      arRows,
-      referenceDate,
-      projectionMode
-    ),
-    resolveFinanceArNfeOrderLinksFromRows(prisma, arRows),
-  ]);
+  const [customerContexts, portfolioContexts, nfeOrderLinks] = await measureDevPerfPhase(
+    "orderProjection",
+    () =>
+      Promise.all([
+        loadFinanceArEffectiveOrderContexts(
+          prisma,
+          {
+            customerName: enrichInput?.customerName,
+            customerPersonId: null,
+            document: enrichInput?.personCnpj,
+          },
+          referenceDate,
+          projectionMode
+        ),
+        loadFinanceCashFlowArOrderContexts(
+          prisma,
+          arRows,
+          referenceDate,
+          projectionMode
+        ),
+        resolveFinanceArNfeOrderLinksFromRows(prisma, arRows),
+      ])
+  );
   const orderContexts = mergeFinanceArEffectiveOrderContexts(
     customerContexts,
     portfolioContexts

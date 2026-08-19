@@ -9,13 +9,19 @@ import type { PrismaClient } from "@prisma/client";
 import {
   approxJsonBytes,
   isDevPerfBaselineEnvEnabled,
+  roundDevPerfMs,
   type DevPerfEndpointSample,
+  type DevPerfRowCounts,
 } from "@/src/lib/devPerfBaseline.js";
 
 type PerfStore = {
   queryCount: number;
   dbMs: number;
   labels: string[];
+  phases: Record<string, number>;
+  rowCounts: DevPerfRowCounts;
+  serializeMs: number | null;
+  profilingSerializeMs: number | null;
 };
 
 const als = new AsyncLocalStorage<PerfStore>();
@@ -41,7 +47,69 @@ function pushSample(sample: DevPerfEndpointSample): void {
 }
 
 function newStore(): PerfStore {
-  return { queryCount: 0, dbMs: 0, labels: [] };
+  return {
+    queryCount: 0,
+    dbMs: 0,
+    labels: [],
+    phases: {},
+    rowCounts: {},
+    serializeMs: null,
+    profilingSerializeMs: null,
+  };
+}
+
+function snapshotPhases(store: PerfStore): Record<string, number> | null {
+  const keys = Object.keys(store.phases);
+  if (keys.length === 0) return null;
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    out[key] = roundDevPerfMs(store.phases[key] ?? 0);
+  }
+  return out;
+}
+
+function snapshotRowCounts(store: PerfStore): DevPerfRowCounts | null {
+  const { ar, ap, orders } = store.rowCounts;
+  if (ar == null && ap == null && orders == null) return null;
+  return { ...store.rowCounts };
+}
+
+/**
+ * Fase wall-clock. No-op fora de request/cenário instrumentado (flag off).
+ * Fases podem aninhar-se; o relatório NÃO deve somá-las como se fossem disjuntas.
+ */
+export async function measureDevPerfPhase<T>(
+  name: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const store = als.getStore();
+  if (!store) return fn();
+  const startedAt = performance.now();
+  try {
+    return await fn();
+  } finally {
+    store.phases[name] = (store.phases[name] ?? 0) + (performance.now() - startedAt);
+  }
+}
+
+export function measureDevPerfPhaseSync<T>(name: string, fn: () => T): T {
+  const store = als.getStore();
+  if (!store) return fn();
+  const startedAt = performance.now();
+  try {
+    return fn();
+  } finally {
+    store.phases[name] = (store.phases[name] ?? 0) + (performance.now() - startedAt);
+  }
+}
+
+/** Contagens inteiras — nunca strings de cliente/fornecedor. */
+export function noteDevPerfRowCounts(counts: DevPerfRowCounts): void {
+  const store = als.getStore();
+  if (!store) return;
+  if (counts.ar != null) store.rowCounts.ar = counts.ar;
+  if (counts.ap != null) store.rowCounts.ap = counts.ap;
+  if (counts.orders != null) store.rowCounts.orders = counts.orders;
 }
 
 export function isDevPerfBaselineServerEnabled(): boolean {
@@ -95,10 +163,22 @@ export async function runWithDevPerfContext<T>(fn: () => Promise<T>): Promise<{
   result: T;
   queryCount: number;
   dbMs: number;
+  phases: Record<string, number> | null;
+  rowCounts: DevPerfRowCounts | null;
+  serializeMs: number | null;
+  profilingSerializeMs: number | null;
 }> {
   const store = newStore();
   const result = await als.run(store, fn);
-  return { result, queryCount: store.queryCount, dbMs: store.dbMs };
+  return {
+    result,
+    queryCount: store.queryCount,
+    dbMs: store.dbMs,
+    phases: snapshotPhases(store),
+    rowCounts: snapshotRowCounts(store),
+    serializeMs: store.serializeMs,
+    profilingSerializeMs: store.profilingSerializeMs,
+  };
 }
 
 export async function measureDevPerfScenario<T>(input: {
@@ -110,28 +190,56 @@ export async function measureDevPerfScenario<T>(input: {
   notes?: string;
 }): Promise<{ result: T; sample: DevPerfEndpointSample }> {
   const t0 = performance.now();
-  const { result, queryCount, dbMs } = await runWithDevPerfContext(input.run);
+  const measured = await runWithDevPerfContext(input.run);
+  const { result, queryCount, dbMs, phases, rowCounts } = measured;
   const totalMs = performance.now() - t0;
+  // Stringify extra SOMENTE para estimar bytes — relógio do cenário já parou.
+  const profStarted = performance.now();
   const payloadBytesApprox = approxJsonBytes(result);
+  const profilingSerializeMs = performance.now() - profStarted;
   const sample: DevPerfEndpointSample = {
     scenario: input.scenario,
     method: input.method ?? "SERVICE",
     path: input.path,
     status: 200,
-    totalMs: Math.round(totalMs * 100) / 100,
-    dbMs: Math.round(dbMs * 100) / 100,
+    totalMs: roundDevPerfMs(totalMs),
+    dbMs: roundDevPerfMs(dbMs),
     queryCount,
     payloadBytesApprox,
-    rowCountApprox: input.rowCountApprox?.(result) ?? null,
-    notes: input.notes,
+    rowCountApprox: input.rowCountApprox?.(result) ?? (rowCounts?.ar ?? null),
+    serializeMs: null,
+    profilingSerializeMs: roundDevPerfMs(profilingSerializeMs),
+    phases,
+    rowCounts,
+    notes:
+      input.notes ??
+      "profilingSerializeMs=JSON.stringify extra para bytes; excluído de totalMs. dbMs é soma Prisma (pode > totalMs se queries paralelas). NÃO use totalMs-dbMs como CPU.",
   };
   pushSample(sample);
   if (isDevPerfBaselineEnvEnabled()) {
+    const phaseText = formatPhasesForLog(phases);
     console.info(
-      `[perf-baseline] ${sample.scenario} ${sample.path} total=${sample.totalMs}ms db=${sample.dbMs}ms queries=${sample.queryCount} bytes≈${sample.payloadBytesApprox}`
+      `[perf-baseline] ${sample.scenario} ${sample.path} total=${sample.totalMs}ms db=${sample.dbMs}ms queries=${sample.queryCount} bytes≈${sample.payloadBytesApprox} profilingSerializeMs=${sample.profilingSerializeMs} (excludedFromTotalMs)${phaseText}`
     );
   }
   return { result, sample };
+}
+
+function formatPhasesForLog(phases: Record<string, number> | null | undefined): string {
+  if (!phases) return "";
+  const parts = Object.entries(phases)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, ms]) => `${name}:${ms}`);
+  return parts.length > 0 ? ` phases=${parts.join(",")}` : "";
+}
+
+function formatRowCountsForLog(counts: DevPerfRowCounts | null | undefined): string {
+  if (!counts) return "";
+  const parts: string[] = [];
+  if (counts.ar != null) parts.push(`ar:${counts.ar}`);
+  if (counts.ap != null) parts.push(`ap:${counts.ap}`);
+  if (counts.orders != null) parts.push(`orders:${counts.orders}`);
+  return parts.length > 0 ? ` rows=${parts.join(",")}` : "";
 }
 
 export function getDevPerfSamples(): DevPerfEndpointSample[] {
@@ -174,42 +282,65 @@ export function createDevPerfBaselineMiddleware() {
 
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
+      // Bytes: stringify extra só com profiling. Relógio de totalMs desconta isto.
+      const profStarted = performance.now();
       try {
         payloadBytes = approxJsonBytes(body);
       } catch {
         payloadBytes = null;
       }
+      store.profilingSerializeMs = performance.now() - profStarted;
+
       if (!headerSet) {
         headerSet = true;
-        const totalMs = Math.round((performance.now() - t0) * 100) / 100;
+        const totalMs = roundDevPerfMs(
+          performance.now() - t0 - (store.profilingSerializeMs ?? 0)
+        );
         try {
           res.setHeader(
             "X-IndusCost-Perf",
-            `totalMs=${totalMs};dbMs=${Math.round(store.dbMs * 100) / 100};queries=${store.queryCount};bytes=${payloadBytes ?? 0}`
+            `totalMs=${totalMs};dbMs=${roundDevPerfMs(store.dbMs)};queries=${store.queryCount};bytes=${payloadBytes ?? 0}`
           );
         } catch {
           /* ignore */
         }
       }
-      return originalJson(body);
+
+      const serializeStarted = performance.now();
+      const result = originalJson(body);
+      store.serializeMs = performance.now() - serializeStarted;
+      return result;
     }) as typeof res.json;
 
     res.on("finish", () => {
-      const totalMs = Math.round((performance.now() - t0) * 100) / 100;
+      const wallMs = performance.now() - t0;
+      const totalMs = roundDevPerfMs(wallMs - (store.profilingSerializeMs ?? 0));
+      const phases = snapshotPhases(store);
+      const rowCounts = snapshotRowCounts(store);
       const sample: DevPerfEndpointSample = {
         scenario: `http:${req.method}:${req.path}`,
         method: req.method,
         path: req.originalUrl.split("?")[0] ?? req.path,
         status: res.statusCode,
         totalMs,
-        dbMs: Math.round(store.dbMs * 100) / 100,
+        dbMs: roundDevPerfMs(store.dbMs),
         queryCount: store.queryCount,
         payloadBytesApprox: payloadBytes,
-        rowCountApprox: null,
+        rowCountApprox: rowCounts?.ar ?? null,
+        serializeMs:
+          store.serializeMs == null ? null : roundDevPerfMs(store.serializeMs),
+        profilingSerializeMs:
+          store.profilingSerializeMs == null
+            ? null
+            : roundDevPerfMs(store.profilingSerializeMs),
+        phases,
+        rowCounts,
+        notes:
+          "totalMs exclui profilingSerializeMs (JSON.stringify extra para bytes). serializeMs=res.json real. dbMs=soma Prisma (pode > totalMs). NÃO use totalMs-dbMs como CPU.",
       };
       pushSample(sample);
       console.info(
-        `[perf-baseline:http] ${sample.method} ${sample.path} status=${sample.status} total=${sample.totalMs}ms db=${sample.dbMs}ms q=${sample.queryCount} bytes≈${sample.payloadBytesApprox ?? 0}`
+        `[perf-baseline:http] ${sample.method} ${sample.path} status=${sample.status} total=${sample.totalMs}ms db=${sample.dbMs}ms q=${sample.queryCount} bytes≈${sample.payloadBytesApprox ?? 0} serializeMs=${sample.serializeMs ?? "n/a"} profilingSerializeMs=${sample.profilingSerializeMs ?? 0} (excludedFromTotalMs)${formatPhasesForLog(phases)}${formatRowCountsForLog(rowCounts)}`
       );
     });
 

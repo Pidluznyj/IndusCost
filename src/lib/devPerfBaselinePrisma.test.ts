@@ -217,8 +217,28 @@ describe("devPerfBaseline — instrumentação Prisma", () => {
           `vazou no sample: ${sensivel} — ${serializado}`
         );
       }
-      // Só metadados numéricos sobrevivem.
-      assert.deepEqual(Object.keys(sample).sort(), ["dbMs", "queryCount", "result"]);
+      // Só metadados numéricos/estruturais de perf sobrevivem — nunca params Prisma.
+      const keys = Object.keys(sample).sort();
+      for (const allowed of [
+        "dbMs",
+        "phases",
+        "profilingSerializeMs",
+        "queryCount",
+        "result",
+        "rowCounts",
+        "serializeMs",
+      ]) {
+        assert.ok(keys.includes(allowed), `faltou chave ${allowed}`);
+      }
+      assert.deepEqual(keys, [
+        "dbMs",
+        "phases",
+        "profilingSerializeMs",
+        "queryCount",
+        "result",
+        "rowCounts",
+        "serializeMs",
+      ]);
     });
   });
 });

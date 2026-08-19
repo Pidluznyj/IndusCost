@@ -6,7 +6,8 @@ import {
   FinanceCostCenterGridTableShell,
   FinanceCostCenterSortableTh,
 } from "@/src/components/finance/cost-centers/FinanceCostCenterGridKit";
-import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import { fetchCashFlowSessionJson } from "@/src/lib/finance/cashFlowPerfClient";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 import {
   buildDailyRadarQuery,
@@ -316,6 +317,7 @@ function DayCard({
 }
 
 export function FinanceCashFlowDailyRadar() {
+  noteDevPerfRender("FinanceCashFlowDailyRadar");
   const { ref: sectionRef, visible } = useSectionVisible<HTMLElement>();
   const abortRef = useRef<AbortController | null>(null);
   const [payload, setPayload] = useState<DailyRadarPayload | null>(null);
@@ -367,9 +369,11 @@ export function FinanceCashFlowDailyRadar() {
         pageSize,
       });
       const url = `/api/finance/cash-flow/daily-radar?${qs}`;
-      const data = await fetchUiSessionCachedJson<DailyRadarPayload>(url, {
-        signal: controller.signal,
-      });
+      const data = await fetchCashFlowSessionJson<DailyRadarPayload>(
+        url,
+        { signal: controller.signal },
+        "radar"
+      );
       if (controller.signal.aborted) return;
       setPayload(data);
       if (data.customRangeError) {

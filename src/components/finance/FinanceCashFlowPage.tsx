@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import {
+  beginCashFlowPerfSession,
+  fetchCashFlowSessionJson,
+} from "@/src/lib/finance/cashFlowPerfClient";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceCashFlowDashboardQuery,
@@ -80,6 +84,7 @@ function labelClass() {
 }
 
 export function FinanceCashFlowPage() {
+  noteDevPerfRender("FinanceCashFlowPage");
   const auth = useAuth();
   const canView = canViewFinanceCashFlow(auth);
   const canExport = canExportFinanceCashFlow(auth);
@@ -121,10 +126,14 @@ export function FinanceCashFlowPage() {
       const url = appliedQuery
         ? `/api/finance/cash-flow/dashboard?${appliedQuery}`
         : "/api/finance/cash-flow/dashboard";
-      const data = await fetchUiSessionCachedJson<FinanceCashFlowDashboardPayload>(url, {
-        signal: controller.signal,
-        skipCache: opts?.skipCache === true,
-      });
+      const data = await fetchCashFlowSessionJson<FinanceCashFlowDashboardPayload>(
+        url,
+        {
+          signal: controller.signal,
+          skipCache: opts?.skipCache === true,
+        },
+        "dashboard"
+      );
       if (controller.signal.aborted) return;
       setPayload(data);
     } catch (e) {
@@ -137,6 +146,10 @@ export function FinanceCashFlowPage() {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [appliedQuery, canView]);
+
+  useEffect(() => {
+    beginCashFlowPerfSession();
+  }, []);
 
   useEffect(() => {
     void loadDashboard();

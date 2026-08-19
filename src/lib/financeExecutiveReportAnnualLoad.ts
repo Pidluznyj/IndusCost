@@ -19,6 +19,7 @@ import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReport
 import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 import type { CashFlowProjectionMode } from "./finance/cashFlowLightProjectionFlag.js";
 import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
+import { measureDevPerfPhase, noteDevPerfRowCounts } from "@/src/lib/devPerfBaseline.server.js";
 
 export async function loadAnnualComparisonPortfolioRows(
   db: PrismaClient,
@@ -32,15 +33,19 @@ export async function loadAnnualComparisonPortfolioRows(
   const apFilters = toCashFlowPortfolioApFilters(filters);
   const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
     await Promise.all([
-      loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
+      measureDevPerfPhase("arLoad", () =>
+        loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate)
+      ),
       resolveNomusApReportSyncCutoffFromPrisma(db),
     ]);
   const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
-  const apPrisma = await db.nomusAccountsPayable.findMany({
-    where: apWhere,
-    select: FINANCE_CASH_FLOW_AP_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
+  const apPrisma = await measureDevPerfPhase("apLoad", () =>
+    db.nomusAccountsPayable.findMany({
+      where: apWhere,
+      select: FINANCE_CASH_FLOW_AP_SELECT,
+      orderBy: { dueDate: "asc" },
+    })
+  );
 
   const arRows = arManagementRows as FinanceCashFlowArRow[];
   const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
@@ -53,6 +58,12 @@ export async function loadAnnualComparisonPortfolioRows(
       projectionMode,
     }
   );
+
+  noteDevPerfRowCounts({
+    ar: arRows.length,
+    ap: apPrisma.length,
+    orders: orderContexts.length,
+  });
 
   return {
     arRows,

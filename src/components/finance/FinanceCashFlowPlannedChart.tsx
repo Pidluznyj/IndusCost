@@ -1,4 +1,4 @@
-import React from "react";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import {
   Bar,
   CartesianGrid,
@@ -93,6 +93,7 @@ export function FinanceCashFlowPlannedChart({
   testId?: string;
   presentation?: "default" | "executive";
 }) {
+  noteDevPerfRender("FinanceCashFlowPlannedChart");
   const isExecutive = presentation === "executive";
   const pdfMode = useExecutiveReportPdfMode();
   const { width: frameWidth, height: frameHeight } = useExecutiveChartFrameDimensions();

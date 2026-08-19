@@ -1,4 +1,5 @@
 import React from "react";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import {
   Bar,
   CartesianGrid,
@@ -223,6 +224,7 @@ export function FinanceCashFlowAnnualComparisonChartView({
   height?: number;
   testId?: string;
 }) {
+  noteDevPerfRender("FinanceCashFlowAnnualComparisonChartView");
   return (
     <div
       data-testid={testId}
