@@ -6094,6 +6094,35 @@ model InventoryCountOperation {
   @@index([sessionId])
 }
 
+/// FASE 2C — Device Registry do Stock Collector.
+///
+/// A autorização do Collector é TAILSCALE IDENTITY + DEVICE REGISTRY, sempre
+/// fail-closed. A CHAVE é o stable node id do Tailscale — nunca IP, hostname,
+/// header ou qualquer valor enviado pelo cliente. Os campos tailscaleNodeName/
+/// tailscaleLoginName/lastSeenIp/lastSeenAt são snapshots informativos e não
+/// participam da decisão de autorização.
+///
+/// Revogação é soft: active=false nega acesso imediatamente e preserva o
+/// histórico. Não há delete físico no fluxo normal.
+model InventoryCollectorDevice {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                   String
+  /// Identidade persistente do node no tailnet (WhoIs → Node.StableID).
+  tailscaleStableNodeId  String    @unique
+  active                 Boolean   @default(true)
+  tailscaleNodeName      String?
+  tailscaleLoginName     String?
+  lastSeenIp             String?
+  lastSeenAt             DateTime? @db.Timestamptz(6)
+  createdByUserId        String?
+  disabledAt             DateTime? @db.Timestamptz(6)
+  disabledByUserId       String?
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([active])
+}
+
 model InventoryAuditLog {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType String

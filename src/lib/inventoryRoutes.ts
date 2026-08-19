@@ -22,6 +22,15 @@ import {
   recordInventoryCount,
 } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
 import {
+  COLLECTOR_DEVICE_DUPLICATE,
+  COLLECTOR_DEVICE_NOT_FOUND,
+  listCollectorDevices,
+  parseRegisterCollectorDeviceBody,
+  registerCollectorDevice,
+  serializeCollectorDevice,
+  setCollectorDeviceStatus,
+} from "@/src/lib/inventory/collector/collectorDeviceRegistry.server.js";
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   createInventoryCountSession,
@@ -127,12 +136,14 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "RESERVATION_NOT_FOUND" ||
     error.code === "BLOCK_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
-    error.code === "LINE_NOT_FOUND"
+    error.code === "LINE_NOT_FOUND" ||
+    error.code === COLLECTOR_DEVICE_NOT_FOUND
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
         : error.code === COUNT_LINE_VERSION_CONFLICT ||
             error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
+            error.code === COLLECTOR_DEVICE_DUPLICATE ||
             error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
             error.code === "INVENTORY_CODE_CONFLICT" ||
@@ -2054,6 +2065,76 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       res.status(500).json(inventoryApiError("Erro ao cancelar conferência."));
     }
   });
+
+  // ---------------------------------------------------------------------
+  // FASE 2C — Device Registry do Stock Collector (administração HUMANA).
+  // A autorização do dispositivo em si NÃO passa por aqui: ela é o
+  // requireInventoryCollectorDevice (Tailscale + Registry, fail-closed).
+  // Administrar dispositivos exige o mesmo nível de quem aprova conferência.
+  // ---------------------------------------------------------------------
+
+  app.get("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const devices = await listCollectorDevices(prisma, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+      res.json({ devices: devices.map(serializeCollectorDevice) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/collector-devices", e);
+      res.status(500).json(inventoryApiError("Erro ao listar dispositivos."));
+    }
+  });
+
+  app.post("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseRegisterCollectorDeviceBody(req.body);
+      const device = await registerCollectorDevice(prisma, input, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+      res.status(201).json({ device: serializeCollectorDevice(device) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/collector-devices", e);
+      res.status(500).json(inventoryApiError("Erro ao cadastrar dispositivo."));
+    }
+  });
+
+  app.patch(
+    "/api/inventory/collector-devices/:id/status",
+    ...countApprove,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+        const active = (req.body as Record<string, unknown> | undefined)?.active;
+        if (typeof active !== "boolean") {
+          return res.status(400).json(inventoryApiError("Campo active deve ser booleano."));
+        }
+
+        const device = await setCollectorDeviceStatus(prisma, id, active, {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        });
+        res.json({ device: serializeCollectorDevice(device) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error("PATCH /api/inventory/collector-devices/:id/status", e);
+        res.status(500).json(inventoryApiError("Erro ao atualizar dispositivo."));
+      }
+    }
+  );
 }
 
 function serializeInventoryBalanceFromSnapshot(snapshot: {
