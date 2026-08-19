@@ -54,6 +54,8 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
       "src/components/finance/executive-report/ExecutivePrintPageShell.tsx",
       "src/components/finance/executive-report/finance-executive-report-print.css",
       "src/lib/financeExecutiveReportPrint.ts",
+      "src/lib/financeExecutiveReportImageExport.ts",
+      "src/lib/financeExecutiveReportImageCapture.ts",
     ],
     printMode: "pdf-layout",
     hasPrintCss: true,
@@ -66,6 +68,9 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
       "A4 landscape paginado; oculta shell do app.",
       "Observações técnicas de dados não vão para o PDF.",
       "Gráfico de caixa usa annualChart Jan–Dez.",
+      "Exportação alternativa: ZIP com um PNG a 300 DPI por página (html2canvas). " +
+        "Reaproveita o mesmo CSS de impressão (extraído em runtime via import ?raw) " +
+        "para reproduzir o layout paginado fora de um contexto real de impressão.",
     ],
   },
   {

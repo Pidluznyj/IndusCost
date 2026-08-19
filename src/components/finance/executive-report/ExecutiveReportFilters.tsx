@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Loader2, Printer, RefreshCw, RotateCcw } from "lucide-react";
+import { ImageDown, Loader2, Printer, RefreshCw, RotateCcw } from "lucide-react";
 import {
   buildExecutiveReportMonthOptions,
   buildExecutiveReportYearOptions,
@@ -37,6 +37,8 @@ export function ExecutiveReportFilters({
   onClear,
   onRefresh,
   onPrint,
+  onExportImages,
+  exportingImages = false,
   onAudit,
   auditWarningCount,
   applyDisabled,
@@ -49,6 +51,9 @@ export function ExecutiveReportFilters({
   onClear: () => void;
   onRefresh: () => void;
   onPrint: () => void;
+  /** Exporta cada página do relatório como PNG em alta resolução (ZIP). */
+  onExportImages: () => void;
+  exportingImages?: boolean;
   onAudit: () => void;
   auditWarningCount?: number;
   applyDisabled: boolean;
@@ -92,6 +97,21 @@ export function ExecutiveReportFilters({
           >
             <Printer className="h-4 w-4" />
             {FINANCE_HEADER_ACTION_EXPORT_PDF}
+          </button>
+          <button
+            type="button"
+            onClick={onExportImages}
+            disabled={loading || exportingImages}
+            data-testid="executive-report-export-images-button"
+            title="Gera um PNG em alta resolução (300 DPI) para cada página — melhor qualidade de impressão que o PDF em alguns equipamentos."
+            className="no-print inline-flex items-center gap-2 rounded-lg border border-[#1e3a5f] px-3 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-[#1e3a5f]/5 disabled:opacity-60"
+          >
+            {exportingImages ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ImageDown className="h-4 w-4" />
+            )}
+            {exportingImages ? "Gerando imagens…" : "Exportar imagens (ZIP)"}
           </button>
           <FinanceDataAuditButton
             onClick={onAudit}

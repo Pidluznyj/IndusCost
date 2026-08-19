@@ -20,6 +20,12 @@ import {
   teardownExecutiveReportPrintMode,
   waitForExecutiveReportChartsReady,
 } from "@/src/lib/financeExecutiveReportPrint";
+import {
+  buildExecutiveReportImagesZip,
+  buildExecutiveReportImagesZipFilename,
+  downloadBlob,
+} from "@/src/lib/financeExecutiveReportImageExport";
+import { captureExecutiveReportPageImages } from "@/src/lib/financeExecutiveReportImageCapture";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { ExecutiveReportPrintProvider } from "@/src/components/finance/executive-report/ExecutiveReportPrintContext";
 import { ExecutiveReportFilters } from "@/src/components/finance/executive-report/ExecutiveReportFilters";
@@ -68,6 +74,7 @@ export function FinanceExecutiveReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [exportingImages, setExportingImages] = useState(false);
 
   const appliedQuery = useMemo(
     () => buildFinanceExecutiveReportQuery(appliedFilters),
@@ -161,6 +168,51 @@ export function FinanceExecutiveReportPage() {
     }
   };
 
+  const handleExportImages = async () => {
+    const action = resolveExecutiveReportPrintAction({
+      loading,
+      report,
+      confirmFn: (message) => window.confirm(message),
+    });
+
+    if (action === "blocked-loading") {
+      window.alert(EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE);
+      return;
+    }
+    if (action === "blocked-cancelled") {
+      return;
+    }
+
+    if (printing || exportingImages) return;
+    setExportingImages(true);
+    // pdfMode ativa o mesmo render de impressão dos gráficos (ExecutiveReportPrintProvider).
+    setPrinting(true);
+    try {
+      await prepareExecutiveReportForPrint();
+      await waitForExecutiveReportChartsReady(20_000);
+      markExecutiveReportDocumentReady(true);
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+      const images = await captureExecutiveReportPageImages();
+      const zip = await buildExecutiveReportImagesZip(images);
+      downloadBlob(zip, buildExecutiveReportImagesZipFilename());
+    } catch (err) {
+      window.alert(
+        err instanceof Error
+          ? `Não foi possível gerar as imagens: ${err.message}`
+          : "Não foi possível gerar as imagens do relatório."
+      );
+    } finally {
+      markExecutiveReportDocumentReady(false);
+      teardownExecutiveReportPrintMode();
+      setPrinting(false);
+      setExportingImages(false);
+    }
+  };
+
   const auditSections = useMemo(
     () =>
       buildFinanceExecutiveReportAuditSections({
@@ -192,6 +244,8 @@ export function FinanceExecutiveReportPage() {
         onClear={handleClear}
         onRefresh={() => void loadReport()}
         onPrint={() => void handlePrint()}
+        onExportImages={() => void handleExportImages()}
+        exportingImages={exportingImages}
         onAudit={() => setAuditOpen(true)}
         auditWarningCount={report?.dataQuality.warnings.length ?? 0}
         applyDisabled={!hasPendingFilterChanges}

@@ -367,6 +367,8 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.38.0",
     "multer": "^2.1.1",
