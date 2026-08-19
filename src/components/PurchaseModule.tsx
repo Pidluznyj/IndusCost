@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronUp,
   Edit2,
   Eye,
   Loader2,
@@ -242,6 +244,7 @@ export const PurchaseModule = () => {
   const [quoteNotes, setQuoteNotes] = useState("");
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [items, setItems] = useState<PurchaseItemDraft[]>([]);
+  const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [requestNumber, setRequestNumber] = useState<number | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
 
@@ -499,6 +502,10 @@ export const PurchaseModule = () => {
 
   const removeItem = (tempId: string) => {
     setItems((prev) => (prev.length <= 1 ? prev : prev.filter((i) => i.tempId !== tempId)));
+  };
+
+  const toggleItemDetails = (tempId: string) => {
+    setExpandedItemIds((prev) => ({ ...prev, [tempId]: !prev[tempId] }));
   };
 
   const updateItem = (tempId: string, patch: Partial<PurchaseItemDraft>) => {
@@ -1141,11 +1148,26 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
             <ArrowLeft className="h-4 w-4" />
             Voltar à lista
           </button>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+          <h3 className="text-lg font-semibold flex items-center gap-2 flex-wrap">
             <Package className="h-5 w-5 text-primary" />
             {formMode === "create"
               ? "Nova solicitação de compra"
               : `Solicitação ${requestNumber != null ? `#${requestNumber}` : ""}`}
+            <span
+              title="Use as ações de workflow abaixo para mudar o status."
+              className={cn(
+                "text-[11px] font-bold uppercase px-2.5 py-1 rounded-full",
+                status === "ABERTA" && "bg-blue-500/15 text-blue-700",
+                status === "RASCUNHO" && "bg-muted text-muted-foreground",
+                status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
+                status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
+                status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
+                status === "CANCELADA" && "bg-red-500/15 text-red-700",
+                status === "ENCERRADA" && "bg-green-500/15 text-green-800"
+              )}
+            >
+              {STATUS_LABEL[status]}
+            </span>
           </h3>
           {createdAt && (
             <p className="text-xs text-muted-foreground mt-1">Criada em {formatDt(createdAt)}</p>
@@ -1180,115 +1202,106 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-6" data-tour="purchases-header-block">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cabeçalho</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Solicitante *</label>
-            <SearchableSelect
-              options={employeeOptions}
-              value={requesterEmployeeId}
-              onChange={handleRequesterSelect}
-              placeholder="Selecione o funcionário..."
-              disabled={fieldsDisabled}
-              required
-            />
-            {!requesterEmployeeId && requester ? (
-              <p className="text-[11px] text-muted-foreground">
-                Registro antigo: {requester}. Selecione o funcionário para oficializar.
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / área *</label>
-            <input
-              disabled
-              readOnly
-              className="w-full p-2 rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground"
-              value={department}
-              placeholder="Definido pelo funcionário selecionado"
-              title="Preenchido automaticamente a partir do setor do funcionário"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Tipo / categoria (opcional)</label>
-            <select
-              disabled={fieldsDisabled}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={requestCategoryId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setRequestCategoryId(id);
-                setRequestCategory(requestCategories.find((c) => c.id === id)?.name ?? "");
-              }}
-            >
-              <option value="">— Sem categoria —</option>
-              {requestCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Prioridade</label>
-            <select
-              disabled={fieldsDisabled}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as PurchasePriority)}
-            >
-              {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
-                <option key={p} value={p}>
-                  {PRIORITY_LABEL[p]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
-            <div className="flex flex-wrap items-center gap-2 min-h-[40px]">
-              <span
-                className={cn(
-                  "text-xs font-bold uppercase px-2.5 py-1 rounded-full",
-                  status === "ABERTA" && "bg-blue-500/15 text-blue-700",
-                  status === "RASCUNHO" && "bg-muted text-muted-foreground",
-                  status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
-                  status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
-                  status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
-                  status === "CANCELADA" && "bg-red-500/15 text-red-700",
-                  status === "ENCERRADA" && "bg-green-500/15 text-green-800"
-                )}
-              >
-                {STATUS_LABEL[status]}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                Use as ações de workflow (não edite o status manualmente).
-              </span>
+      <div className="rounded-2xl border border-border bg-card p-6 space-y-8" data-tour="purchases-header-block">
+        <h4 className="text-sm font-semibold text-foreground">Dados da solicitação</h4>
+
+        <div className="space-y-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Quem solicita</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">
+                Solicitante <span className="text-primary">*</span>
+              </label>
+              <SearchableSelect
+                options={employeeOptions}
+                value={requesterEmployeeId}
+                onChange={handleRequesterSelect}
+                placeholder="Selecione o funcionário..."
+                disabled={fieldsDisabled}
+                required
+              />
+              {!requesterEmployeeId && requester ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Registro antigo: {requester}. Selecione o funcionário para oficializar.
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">
+                Departamento / área <span className="text-primary">*</span>
+              </label>
+              <input
+                disabled
+                readOnly
+                className="w-full p-2 rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground"
+                value={department}
+                placeholder="Definido pelo funcionário selecionado"
+                title="Preenchido automaticamente a partir do setor do funcionário"
+              />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Projeto (oficial, opcional)</label>
-            <SearchableSelect
-              options={[{ value: "", label: "— Sem projeto —" }, ...projectOptions]}
-              value={projectId}
-              onChange={setProjectId}
-              placeholder="Buscar projeto oficial…"
-              disabled={fieldsDisabled}
-            />
+        </div>
+
+        <div className="space-y-4 pt-6 border-t border-border/60">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Classificação e alocação</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">Tipo / categoria</label>
+              <select
+                disabled={fieldsDisabled}
+                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                value={requestCategoryId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setRequestCategoryId(id);
+                  setRequestCategory(requestCategories.find((c) => c.id === id)?.name ?? "");
+                }}
+              >
+                <option value="">— Sem categoria —</option>
+                {requestCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">Prioridade</label>
+              <select
+                disabled={fieldsDisabled}
+                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as PurchasePriority)}
+              >
+                {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">
+                Centro de custo <span className="text-primary">*</span>
+              </label>
+              <SearchableSelect
+                options={financialCcOptions}
+                value={defaultFinancialCostCenterId}
+                onChange={setDefaultFinancialCostCenterId}
+                placeholder="Selecione o centro de custo..."
+                disabled={fieldsDisabled}
+                required
+              />
+            </div>
           </div>
+        </div>
+
+        <div className="space-y-4 pt-6 border-t border-border/60">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Justificativa</p>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Referência externa (opcional)</label>
-            <input
-              disabled={fieldsDisabled}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              placeholder="OS, contrato, etc."
-              value={externalReference}
-              onChange={(e) => setExternalReference(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Justificativa / motivo *</label>
+            <label className="text-[13px] font-medium text-foreground/80">
+              Por que essa compra é necessária? <span className="text-primary">*</span>
+            </label>
             <textarea
               disabled={fieldsDisabled}
               rows={3}
@@ -1297,34 +1310,43 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
               onChange={(e) => setJustification(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-              <div className="flex-1 w-full space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase">
-                  Centro de custo (cabeçalho) *
-                </label>
-                <SearchableSelect
-                  options={financialCcOptions}
-                  value={defaultFinancialCostCenterId}
-                  onChange={setDefaultFinancialCostCenterId}
-                  placeholder="Selecione o centro de custo..."
-                  disabled={fieldsDisabled}
-                  required
-                />
-              </div>
-              {/* Cadastro de CC agora é exclusivo do módulo financeiro —
-                  sem atalho que crie centro de custo fora da lista oficial. */}
+        </div>
+
+        <div className="rounded-xl bg-muted/30 border border-border/60 p-4 space-y-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Informações complementares (opcional)
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">Projeto oficial</label>
+              <SearchableSelect
+                options={[{ value: "", label: "— Sem projeto —" }, ...projectOptions]}
+                value={projectId}
+                onChange={setProjectId}
+                placeholder="Buscar projeto oficial…"
+                disabled={fieldsDisabled}
+              />
             </div>
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Observações</label>
-            <textarea
-              disabled={fieldsDisabled}
-              rows={2}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground/80">Referência externa</label>
+              <input
+                disabled={fieldsDisabled}
+                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                placeholder="OS, contrato, etc."
+                value={externalReference}
+                onChange={(e) => setExternalReference(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-[13px] font-medium text-foreground/80">Observações</label>
+              <textarea
+                disabled={fieldsDisabled}
+                rows={2}
+                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1663,12 +1685,17 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
 
       <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-items-block">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Itens</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-foreground">Itens</h4>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              {items.length}
+            </span>
+          </div>
           {!fieldsDisabled && (
             <button
               type="button"
               onClick={addItem}
-              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
             >
               <Plus className="h-4 w-4" />
               Adicionar item
@@ -1680,26 +1707,50 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
           <p className="text-sm text-muted-foreground">Nenhum item. Adicione ao menos um item para registrar a demanda.</p>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {items.map((it, idx) => {
             const selectedMaterial = it.materialId
               ? materials.find((m) => m.id === it.materialId)
               : undefined;
+            const hasAdvancedData = Boolean(
+              it.financialCostCenterId ||
+                it.desiredDate ||
+                it.priority ||
+                it.suggestedSupplier ||
+                it.notes ||
+                it.supplierReference ||
+                it.packagingPresentation ||
+                it.minOrderQtySuggested ||
+                it.lineStatus !== "ABERTA"
+            );
+            const isExpanded = expandedItemIds[it.tempId] ?? hasAdvancedData;
+            const itemTitle =
+              it.lineType === "MATERIA_PRIMA"
+                ? selectedMaterial?.description || it.description || `Item ${idx + 1}`
+                : it.description || `Item ${idx + 1}`;
             return (
             <div
               key={it.tempId}
               className={cn(
-                "rounded-xl border border-border/80 bg-accent/10 p-4 space-y-4",
+                "rounded-xl border border-border/80 bg-accent/10 overflow-hidden",
                 it.lineType === "MATERIA_PRIMA" && "border-l-4 border-l-primary/60"
               )}
             >
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-sm font-semibold">Item {idx + 1}</span>
+              <div className="flex items-start justify-between gap-3 p-4">
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{itemTitle}</p>
+                    <p className="text-[11px] text-muted-foreground">{LINE_TYPE_LABEL[it.lineType]}</p>
+                  </div>
+                </div>
                 {!fieldsDisabled && allowDelete && items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeItem(it.tempId)}
-                    className="p-2 rounded-md hover:bg-red-500/10 text-red-600"
+                    className="p-2 rounded-md hover:bg-red-500/10 text-red-600 shrink-0"
                     title="Remover item"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1707,143 +1758,114 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Tipo do item *</label>
-                  <select
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.lineType}
-                    onChange={(e) =>
-                      updateItem(it.tempId, { lineType: e.target.value as PurchaseItemDraft["lineType"] })
-                    }
-                  >
-                    <option value="MATERIA_PRIMA">{LINE_TYPE_LABEL.MATERIA_PRIMA}</option>
-                    <option value="INDIRETO">{LINE_TYPE_LABEL.INDIRETO}</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Status da linha</label>
-                  <select
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.lineStatus}
-                    onChange={(e) =>
-                      updateItem(it.tempId, {
-                        lineStatus: e.target.value as PurchaseItemDraft["lineStatus"],
-                      })
-                    }
-                  >
-                    <option value="ABERTA">Aberta</option>
-                    <option value="CANCELADA">Cancelada</option>
-                  </select>
+              <div className="px-4 pb-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium text-foreground/80">
+                      Tipo do item <span className="text-primary">*</span>
+                    </label>
+                    <select
+                      disabled={fieldsDisabled}
+                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                      value={it.lineType}
+                      onChange={(e) =>
+                        updateItem(it.tempId, { lineType: e.target.value as PurchaseItemDraft["lineType"] })
+                      }
+                    >
+                      <option value="MATERIA_PRIMA">{LINE_TYPE_LABEL.MATERIA_PRIMA}</option>
+                      <option value="INDIRETO">{LINE_TYPE_LABEL.INDIRETO}</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium text-foreground/80">
+                      Quantidade <span className="text-primary">*</span>
+                    </label>
+                    <input
+                      disabled={fieldsDisabled}
+                      type="number"
+                      min={0}
+                      step="any"
+                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                      value={it.quantity}
+                      onChange={(e) => updateItem(it.tempId, { quantity: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium text-foreground/80">
+                      Unidade <span className="text-primary">*</span>
+                      {it.lineType === "MATERIA_PRIMA" ? " (do cadastro)" : ""}
+                    </label>
+                    <input
+                      disabled={fieldsDisabled}
+                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                      value={it.unit}
+                      onChange={(e) => updateItem(it.tempId, { unit: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 {it.lineType === "MATERIA_PRIMA" && (
-                  <>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-                        <div className="flex-1 w-full space-y-1.5 min-w-0">
-                          <label className="text-xs font-bold text-muted-foreground uppercase">
-                            Material (cadastro Suprimentos) *
-                          </label>
-                          <SearchableSelect
-                            options={materialOptionsMp}
-                            value={it.materialId}
-                            onChange={(v) => updateItem(it.tempId, { materialId: v })}
-                            placeholder="Pesquisar por código, descrição, unidade…"
-                            disabled={fieldsDisabled}
-                          />
+                  <div className="space-y-1.5">
+                    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                      <div className="flex-1 w-full space-y-1.5 min-w-0">
+                        <label className="text-[13px] font-medium text-foreground/80">
+                          Material (cadastro Suprimentos) <span className="text-primary">*</span>
+                        </label>
+                        <SearchableSelect
+                          options={materialOptionsMp}
+                          value={it.materialId}
+                          onChange={(v) => updateItem(it.tempId, { materialId: v })}
+                          placeholder="Pesquisar por código, descrição, unidade…"
+                          disabled={fieldsDisabled}
+                        />
+                      </div>
+                      {!fieldsDisabled && (
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => refreshMaterials()}
+                            className="inline-flex items-center gap-2 text-xs border border-border rounded-lg px-3 py-2 hover:bg-accent"
+                            title="Recarrega a lista após cadastrar material em outra aba"
+                          >
+                            Atualizar lista
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => window.open("/materials", "_blank", "noopener,noreferrer")}
+                            className="inline-flex items-center gap-2 text-sm text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Nova matéria-prima (nova aba)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate("/materials")}
+                            className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-accent"
+                          >
+                            Ir em Suprimentos
+                          </button>
                         </div>
-                        {!fieldsDisabled && (
-                          <div className="flex flex-wrap gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => refreshMaterials()}
-                              className="inline-flex items-center gap-2 text-xs border border-border rounded-lg px-3 py-2 hover:bg-accent"
-                              title="Recarrega a lista após cadastrar material em outra aba"
-                            >
-                              Atualizar lista
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => window.open("/materials", "_blank", "noopener,noreferrer")}
-                              className="inline-flex items-center gap-2 text-sm text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              Nova matéria-prima (nova aba)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => navigate("/materials")}
-                              className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-accent"
-                            >
-                              Ir em Suprimentos
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Dica: use <strong>Nova matéria-prima (nova aba)</strong> para não perder o rascunho desta solicitação; depois clique em{" "}
-                        <strong>Atualizar lista</strong>.
-                      </p>
+                      )}
                     </div>
-
-                    {selectedMaterial ? (
-                      <div className="md:col-span-2">
-                        <MaterialMpSummaryCard material={selectedMaterial} readOnly={fieldsDisabled} />
-                      </div>
-                    ) : it.materialId ? (
-                      <div className="md:col-span-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950">
-                        Material não encontrado na lista local. Salve a solicitação apenas após atualizar a lista ou verificar o cadastro.
-                      </div>
-                    ) : null}
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">
-                        Referência no fornecedor (opcional)
-                      </label>
-                      <input
-                        disabled={fieldsDisabled}
-                        placeholder="Código / item na lista do fornecedor"
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.supplierReference}
-                        onChange={(e) => updateItem(it.tempId, { supplierReference: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">
-                        Embalagem / apresentação (opcional)
-                      </label>
-                      <input
-                        disabled={fieldsDisabled}
-                        placeholder="Ex.: fardo 25 kg, bobina, caixa"
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.packagingPresentation}
-                        onChange={(e) => updateItem(it.tempId, { packagingPresentation: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">
-                        Qtd. mínima sugerida — MOQ (opcional)
-                      </label>
-                      <input
-                        disabled={fieldsDisabled}
-                        type="number"
-                        min={0}
-                        step="any"
-                        placeholder="Somente referência de compra"
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.minOrderQtySuggested}
-                        onChange={(e) => updateItem(it.tempId, { minOrderQtySuggested: e.target.value })}
-                      />
-                    </div>
-                  </>
+                    <p className="text-[11px] text-muted-foreground">
+                      Dica: use <strong>Nova matéria-prima (nova aba)</strong> para não perder o rascunho desta solicitação; depois clique em{" "}
+                      <strong>Atualizar lista</strong>.
+                    </p>
+                  </div>
                 )}
 
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">
-                    {it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação *" : "Descrição *"}
+                {it.lineType === "MATERIA_PRIMA" && selectedMaterial ? (
+                  <MaterialMpSummaryCard material={selectedMaterial} readOnly={fieldsDisabled} />
+                ) : it.lineType === "MATERIA_PRIMA" && it.materialId ? (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950">
+                    Material não encontrado na lista local. Salve a solicitação apenas após atualizar a lista ou verificar o cadastro.
+                  </div>
+                ) : null}
+
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium text-foreground/80">
+                    {it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação" : "Descrição"}{" "}
+                    <span className="text-primary">*</span>
                   </label>
                   <input
                     disabled={fieldsDisabled}
@@ -1858,97 +1880,155 @@ ${win?.winnerReason ? `<p><span class="lbl">Justificativa da escolha:</span> ${w
                   )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Quantidade *</label>
-                  <input
-                    disabled={fieldsDisabled}
-                    type="number"
-                    min={0}
-                    step="any"
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.quantity}
-                    onChange={(e) => updateItem(it.tempId, { quantity: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">
-                    Unidade *{it.lineType === "MATERIA_PRIMA" ? " (alinhada ao cadastro)" : ""}
-                  </label>
-                  <input
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.unit}
-                    onChange={(e) => updateItem(it.tempId, { unit: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">
-                    Centro de custo do item
-                  </label>
-                  <SearchableSelect
-                    options={itemCcOptions}
-                    value={it.financialCostCenterId}
-                    onChange={(v) => updateItem(it.tempId, { financialCostCenterId: v })}
-                    placeholder="Herdar ou sobrescrever..."
-                    disabled={fieldsDisabled}
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    CC efetivo: <strong>{resolvedCcLabel(it)}</strong>
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Data desejada</label>
-                  <input
-                    disabled={fieldsDisabled}
-                    type="date"
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.desiredDate}
-                    onChange={(e) => updateItem(it.tempId, { desiredDate: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Prioridade do item</label>
-                  <select
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.priority}
-                    onChange={(e) =>
-                      updateItem(it.tempId, {
-                        priority: (e.target.value || "") as PurchaseItemDraft["priority"],
-                      })
-                    }
+                <div className="pt-1 border-t border-border/60">
+                  <button
+                    type="button"
+                    onClick={() => toggleItemDetails(it.tempId)}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    aria-expanded={isExpanded}
                   >
-                    <option value="">(herdar / não definir)</option>
-                    {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
-                      <option key={p} value={p}>
-                        {PRIORITY_LABEL[p]}
-                      </option>
-                    ))}
-                  </select>
+                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    {isExpanded ? "Ocultar detalhes avançados" : "Mais detalhes"}
+                    {!isExpanded && hasAdvancedData ? (
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-primary"
+                        title="Há dados preenchidos nos detalhes avançados"
+                      />
+                    ) : null}
+                  </button>
                 </div>
 
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor sugerido (opcional)</label>
-                  <input
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.suggestedSupplier}
-                    onChange={(e) => updateItem(it.tempId, { suggestedSupplier: e.target.value })}
-                  />
-                </div>
+                {isExpanded && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-[13px] font-medium text-foreground/80">
+                        Centro de custo do item
+                      </label>
+                      <SearchableSelect
+                        options={itemCcOptions}
+                        value={it.financialCostCenterId}
+                        onChange={(v) => updateItem(it.tempId, { financialCostCenterId: v })}
+                        placeholder="Herdar ou sobrescrever..."
+                        disabled={fieldsDisabled}
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        CC efetivo: <strong>{resolvedCcLabel(it)}</strong>
+                      </p>
+                    </div>
 
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Observação do item</label>
-                  <textarea
-                    disabled={fieldsDisabled}
-                    rows={2}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.notes}
-                    onChange={(e) => updateItem(it.tempId, { notes: e.target.value })}
-                  />
-                </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium text-foreground/80">Data desejada</label>
+                      <input
+                        disabled={fieldsDisabled}
+                        type="date"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.desiredDate}
+                        onChange={(e) => updateItem(it.tempId, { desiredDate: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium text-foreground/80">Prioridade do item</label>
+                      <select
+                        disabled={fieldsDisabled}
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.priority}
+                        onChange={(e) =>
+                          updateItem(it.tempId, {
+                            priority: (e.target.value || "") as PurchaseItemDraft["priority"],
+                          })
+                        }
+                      >
+                        <option value="">(herdar / não definir)</option>
+                        {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
+                          <option key={p} value={p}>
+                            {PRIORITY_LABEL[p]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium text-foreground/80">Status da linha</label>
+                      <select
+                        disabled={fieldsDisabled}
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.lineStatus}
+                        onChange={(e) =>
+                          updateItem(it.tempId, {
+                            lineStatus: e.target.value as PurchaseItemDraft["lineStatus"],
+                          })
+                        }
+                      >
+                        <option value="ABERTA">Aberta</option>
+                        <option value="CANCELADA">Cancelada</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium text-foreground/80">Fornecedor sugerido</label>
+                      <input
+                        disabled={fieldsDisabled}
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.suggestedSupplier}
+                        onChange={(e) => updateItem(it.tempId, { suggestedSupplier: e.target.value })}
+                      />
+                    </div>
+
+                    {it.lineType === "MATERIA_PRIMA" && (
+                      <>
+                        <div className="space-y-1.5">
+                          <label className="text-[13px] font-medium text-foreground/80">
+                            Referência no fornecedor
+                          </label>
+                          <input
+                            disabled={fieldsDisabled}
+                            placeholder="Código / item na lista do fornecedor"
+                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                            value={it.supplierReference}
+                            onChange={(e) => updateItem(it.tempId, { supplierReference: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[13px] font-medium text-foreground/80">
+                            Embalagem / apresentação
+                          </label>
+                          <input
+                            disabled={fieldsDisabled}
+                            placeholder="Ex.: fardo 25 kg, bobina, caixa"
+                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                            value={it.packagingPresentation}
+                            onChange={(e) => updateItem(it.tempId, { packagingPresentation: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[13px] font-medium text-foreground/80">
+                            Qtd. mínima sugerida — MOQ
+                          </label>
+                          <input
+                            disabled={fieldsDisabled}
+                            type="number"
+                            min={0}
+                            step="any"
+                            placeholder="Somente referência de compra"
+                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                            value={it.minOrderQtySuggested}
+                            onChange={(e) => updateItem(it.tempId, { minOrderQtySuggested: e.target.value })}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-[13px] font-medium text-foreground/80">Observação do item</label>
+                      <textarea
+                        disabled={fieldsDisabled}
+                        rows={2}
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.notes}
+                        onChange={(e) => updateItem(it.tempId, { notes: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             );
