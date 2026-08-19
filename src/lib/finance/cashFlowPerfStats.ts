@@ -16,7 +16,16 @@ export const CASH_FLOW_PERF_OPENING_DISCLAIMER =
   "OPENING BACKEND WORK soma as medianas dos três endpoints de uma abertura típica (dashboard + annual-comparison + daily-radar). Não é tempo de tela: o frontend dispara annual e radar só depois do dashboard (waterfall) e só se as seções entram na viewport. A métrica de tela pronta é cf:ready.";
 
 export const CASH_FLOW_PERF_NESTED_PHASES_NOTE =
-  "orderProjection corre dentro do enrich AR; arLoad é a carga Nomus AR. Não some fases como se fossem disjuntas.";
+  "Fases detalhe (arLoad, apLoad, orderProjection, apCutoff, mapApRows, spotlightCcDashboard) ficam DENTRO de loadRows/spotlight. Não some detalhe com o pai.";
+
+export const CASH_FLOW_PERF_ACCOUNTED_NOTE =
+  "accountedWallMs soma só fases WALL-CLOCK sequenciais de primeiro nível (account:true): loadRows, buildDashboard, spotlight, assemblePayload, buildAnnual, filterRadarPortfolio, buildRadar. unaccountedWallMs = totalMs - accountedWallMs. NÃO usa dbMs (dbMs é soma Prisma e pode ter paralelismo).";
+
+export const CASH_FLOW_PERF_SINGLE_COMMAND_NOTE =
+  "Um único `npm run perf:cash-flow:baseline` já mede legacy e light em sequência no mesmo processo. Não envolva o comando em dois cenários externos nem rode duas vezes por modo.";
+
+export const CASH_FLOW_PERF_SHARED_PATH_NOTE =
+  "O runner de serviço chama os mesmos loaders e wrappers timed* que o HTTP. Instrumentar só o handler Express faz as fases (buildDashboard, spotlight, buildAnnual, filterRadarPortfolio, buildRadar) desaparecerem do benchmark.";
 
 export function sortedFinite(values: number[]): number[] {
   return values.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);

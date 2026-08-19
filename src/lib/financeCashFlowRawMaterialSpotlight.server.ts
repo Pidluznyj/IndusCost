@@ -8,6 +8,10 @@ import { buildExecutiveReportCostCenterDashboardFilters } from "@/src/lib/financ
 import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  measureDevPerfPhase,
+  measureDevPerfPhaseSync,
+} from "@/src/lib/devPerfBaseline.server.js";
+import {
   addCashFlowCalendarMonths,
   buildRawMaterialCostCenterSpotlight,
   emptyRawMaterialCostCenterSpotlight,
@@ -31,47 +35,68 @@ function yearsNeededForSpotlight(ytdYear: number, referenceDate: Date): number[]
 export async function loadRawMaterialCostCenterSpotlight(
   input: LoadRawMaterialCostCenterSpotlightInput
 ): Promise<FinanceCashFlowRawMaterialSpotlight> {
-  const referenceDate = input.referenceDate ?? new Date();
-  const ytdYear = Number.isFinite(input.ytdYear) ? Math.trunc(input.ytdYear) : referenceDate.getFullYear();
+  return measureDevPerfPhase(
+    "spotlight",
+    async () => {
+      const referenceDate = input.referenceDate ?? new Date();
+      const ytdYear = Number.isFinite(input.ytdYear)
+        ? Math.trunc(input.ytdYear)
+        : referenceDate.getFullYear();
 
-  try {
-    const years = yearsNeededForSpotlight(ytdYear, referenceDate);
-    const roleMap = await loadDreCostCenterRoleMap(prisma);
-    const dashboards = [];
-    for (const year of years) {
-      const dashboard = await buildFinanceCostCenterDashboardDefault(
-        buildExecutiveReportCostCenterDashboardFilters({
-          year,
-          month: null,
-          companyName: input.companyName,
-        }),
-        referenceDate
-      );
-      dashboards.push(dashboard);
-    }
-
-    const byCostCenter: FinanceCashFlowRawMaterialCcSpendRow[] = [];
-    for (const dashboard of dashboards) {
-      for (const row of dashboard.monthlySeries.byCostCenter) {
-        byCostCenter.push({
-          month: row.month,
-          year: row.year,
-          costCenterId: row.costCenterId,
-          code: row.code,
-          name: row.name,
-          amount: row.amount,
+      try {
+        const years = yearsNeededForSpotlight(ytdYear, referenceDate);
+        const roleMap = await measureDevPerfPhase("spotlightRoleMap", () =>
+          loadDreCostCenterRoleMap(prisma)
+        );
+        const dashboards = await measureDevPerfPhase("spotlightCcDashboard", async () => {
+          const loaded = [];
+          for (const year of years) {
+            const dashboard = await buildFinanceCostCenterDashboardDefault(
+              buildExecutiveReportCostCenterDashboardFilters({
+                year,
+                month: null,
+                companyName: input.companyName,
+              }),
+              referenceDate
+            );
+            loaded.push(dashboard);
+          }
+          return loaded;
         });
-      }
-    }
 
-    return buildRawMaterialCostCenterSpotlight({
-      byCostCenter,
-      ytdYear,
-      referenceDate,
-      mappingByCcId: roleMap,
-    });
-  } catch (error) {
-    console.error("[loadRawMaterialCostCenterSpotlight] Falha ao carregar centros de custo de matéria-prima:", error);
-    return emptyRawMaterialCostCenterSpotlight(referenceDate, ytdYear);
-  }
+        const byCostCenter = measureDevPerfPhaseSync("spotlightCollectRows", () => {
+          const rows: FinanceCashFlowRawMaterialCcSpendRow[] = [];
+          for (const dashboard of dashboards) {
+            for (const row of dashboard.monthlySeries.byCostCenter) {
+              rows.push({
+                month: row.month,
+                year: row.year,
+                costCenterId: row.costCenterId,
+                code: row.code,
+                name: row.name,
+                amount: row.amount,
+              });
+            }
+          }
+          return rows;
+        });
+
+        return measureDevPerfPhaseSync("spotlightBuild", () =>
+          buildRawMaterialCostCenterSpotlight({
+            byCostCenter,
+            ytdYear,
+            referenceDate,
+            mappingByCcId: roleMap,
+          })
+        );
+      } catch (error) {
+        console.error(
+          "[loadRawMaterialCostCenterSpotlight] Falha ao carregar centros de custo de matéria-prima:",
+          error
+        );
+        return emptyRawMaterialCostCenterSpotlight(referenceDate, ytdYear);
+      }
+    },
+    { account: true }
+  );
 }

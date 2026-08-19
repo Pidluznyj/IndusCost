@@ -74,6 +74,18 @@ export type DevPerfEndpointSample = {
   profilingSerializeMs?: number | null;
   /** Fases nomeadas (wall-clock). Podem ser aninhadas — não some cegamente. */
   phases?: Record<string, number> | null;
+  /**
+   * Fases WALL-CLOCK sequenciais (`account: true`). Podem ser somadas.
+   * Não inclui fases aninhadas (arLoad dentro de loadRows, etc.).
+   */
+  accountedPhases?: Record<string, number> | null;
+  /** Soma de `accountedPhases` (+ serializeMs HTTP, se houver). Não usa dbMs. */
+  accountedWallMs?: number | null;
+  /**
+   * totalMs - accountedWallMs. NÃO usa dbMs.
+   * Residual do caminho ainda sem fase sequencial.
+   */
+  unaccountedWallMs?: number | null;
   /** Contagens inteiras (AR/AP/pedidos). Sem nomes, CNPJ ou payload. */
   rowCounts?: DevPerfRowCounts | null;
   notes?: string;
