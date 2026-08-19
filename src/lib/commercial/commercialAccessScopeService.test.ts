@@ -25,7 +25,9 @@ function mockAuth(overrides: {
   sellerIdentityKey?: string | null;
 }): AppAuthContext {
   const permissions = overrides.permissions ?? [];
-  const role = overrides.role ?? "SELLER";
+  // VIEWER por padrão: SELLER agora é global por role (independe da bag), então
+  // os testes de mecânica "own scope via permissão" usam um role não-global.
+  const role = overrides.role ?? "VIEWER";
   return {
     id: "user-1",
     name: "Test User",
@@ -73,21 +75,20 @@ describe("commercialAccessScopeService", () => {
     assert.ok(scope.hierarchyTodo?.includes("TODO(commercial-hierarchy)"));
   });
 
-  it("SELLER só vê própria carteira e não burla query de outro responsável", () => {
+  it("SELLER agora vê CRM unrestricted (regra de carteira única removida)", () => {
     const auth = mockAuth({
       role: "SELLER",
-      permissions: ["crm.seller.own"],
+      permissions: [],
       externalSellerId: 464,
       sellerResponsibleName: "GISLENE LIMA",
     });
     const scope = getCommercialAccessScope(auth);
-    assert.equal(scope.mode, "own_portfolio");
-    assert.equal(scope.sellerLocked, true);
-    assert.equal(requireCrmCommercialGeneralScope(auth).ok, false);
+    assert.equal(scope.mode, "unrestricted");
+    assert.equal(scope.sellerLocked, false);
+    assert.equal(requireCrmCommercialGeneralScope(auth).ok, true);
 
     const allowed = getAllowedResponsibleIds(auth);
-    assert.equal(allowed.unrestricted, false);
-    assert.ok(allowed.sellerIdentityKeys.includes("gislene lima"));
+    assert.equal(allowed.unrestricted, true);
 
     const filtered = resolveRequestedResponsibleFilter(auth, {
       externalSellerId: 999,
@@ -96,21 +97,21 @@ describe("commercialAccessScopeService", () => {
     });
     assert.equal(filtered.ok, true);
     if (!filtered.ok || !filtered.sellerScope) throw new Error("expected ok");
-    assert.equal(filtered.sellerScope.scopeMode, "own");
-    assert.equal(filtered.sellerScope.sellerIdentityKey, "gislene lima");
+    assert.equal(filtered.sellerScope.scopeMode, "all");
+    assert.equal(filtered.sellerScope.sellerIdentityKey, "outro");
   });
 
-  it("SELLER com crm.seller.all indevido não abre visão unrestricted", () => {
+  it("SELLER com permissões elevadas na bag continua unrestricted (role decide, não a bag)", () => {
     const auth = mockAuth({
       role: "SELLER",
       permissions: ["crm.seller.own", "crm.seller.all", "crm.general.view"],
       sellerResponsibleName: "GISLENE LIMA",
     });
-    assert.equal(getCommercialAccessScope(auth).mode, "own_portfolio");
-    assert.equal(canViewAllCommercialCrm(auth), false);
+    assert.equal(getCommercialAccessScope(auth).mode, "unrestricted");
+    assert.equal(canViewAllCommercialCrm(auth), true);
   });
 
-  it("SELLER vê pedido do cliente sob responsabilidade mesmo com Nomus diferente (escopo own)", () => {
+  it("perfil own vê pedido do cliente sob responsabilidade mesmo com Nomus diferente (escopo own)", () => {
     const auth = mockAuth({
       permissions: ["crm.seller.own"],
       sellerResponsibleName: "GISLENE LIMA",
@@ -144,19 +145,27 @@ describe("commercialAccessScopeService", () => {
     assert.ok(dto.reason);
   });
 
-  it("DTO canônico: SUPER_ADMIN canViewAll; SELLER sem carteira denied=false vazio", () => {
+  it("DTO canônico: SUPER_ADMIN canViewAll; perfil own sem carteira denied=false vazio; SELLER canViewAll", () => {
     const adminDto = resolveCommercialCrmScopeDto(mockAuth({ role: "SUPER_ADMIN" }));
     assert.equal(adminDto.canViewAll, true);
     assert.equal(adminDto.denied, false);
     assert.deepEqual(adminDto.allowedCustomerIds, []);
 
-    const sellerEmpty = resolveCommercialCrmScopeDto(
-      mockAuth({ role: "SELLER", permissions: ["crm.seller.own"] })
+    // Perfil custom (não-SELLER) com escopo own e sem vínculo: vazio, não erro.
+    const ownEmpty = resolveCommercialCrmScopeDto(
+      mockAuth({ role: "VIEWER", permissions: ["crm.seller.own"] })
     );
-    assert.equal(sellerEmpty.canViewAll, false);
-    assert.equal(sellerEmpty.denied, false);
-    assert.deepEqual(sellerEmpty.allowedCustomerIds, []);
-    assert.match(sellerEmpty.reason ?? "", /responsável comercial/);
+    assert.equal(ownEmpty.canViewAll, false);
+    assert.equal(ownEmpty.denied, false);
+    assert.deepEqual(ownEmpty.allowedCustomerIds, []);
+    assert.match(ownEmpty.reason ?? "", /responsável comercial/);
+
+    // SELLER: role decide sozinho — global mesmo sem vínculo de carteira.
+    const sellerDto = resolveCommercialCrmScopeDto(
+      mockAuth({ role: "SELLER", permissions: [] })
+    );
+    assert.equal(sellerDto.canViewAll, true);
+    assert.equal(sellerDto.denied, false);
   });
 
   it("arquivos de escopo não acoplam Proposal nem motor de comissão", () => {

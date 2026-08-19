@@ -249,14 +249,14 @@ export function canAccessCrmPortfolio(check: PermissionChecker): boolean {
   return resolveCrmPersonaForChecker(check).canViewPortfolio;
 }
 
-/** Pode filtrar qualquer vendedor na gestão comercial (gestor). Role SELLER nunca. */
+/** Pode filtrar qualquer vendedor na gestão comercial. Role SELLER também (escopo global). */
 export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
   return resolveCrmPersonaForChecker(check).canFilterAllSellers;
 }
 
 /**
  * Apenas dados do vendedor vinculado ao usuário (sem troca de filtro).
- * Role SELLER é sempre own — mesmo se a bag tiver crm.seller.all por engano.
+ * Role SELLER não fica mais locked — vendedores têm escopo global no CRM.
  */
 export function isCrmOwnSellerOnly(check: PermissionChecker): boolean {
   return resolveCrmPersonaForChecker(check).sellerLocked;

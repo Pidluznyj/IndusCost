@@ -26,7 +26,9 @@ function mockAuth(overrides: {
   canonicalViewResources?: string[];
 }): AppAuthContext {
   const permissions = overrides.permissions ?? [];
-  const role = overrides.role ?? "SELLER";
+  // VIEWER por padrão: SELLER agora é global por role (independe da bag), então
+  // os testes de mecânica "own scope via permissão" usam um role não-global.
+  const role = overrides.role ?? "VIEWER";
   return {
     id: "user-1",
     name: "Test User",
@@ -129,31 +131,25 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(scope.canViewAllSellers, false);
   });
 
-  it("SELLER com crm.seller.all/general na bag ainda fica locked na própria carteira", () => {
+  it("SELLER agora recebe escopo global mesmo sem permissões elevadas na bag", () => {
     const auth = mockAuth({
       role: "SELLER",
-      permissions: [
-        "crm.view",
-        "crm.seller.view",
-        "crm.seller.own",
-        "crm.seller.all",
-        "crm.general.view",
-      ],
+      permissions: ["crm.view", "crm.seller.view"],
       externalSellerId: 464,
       sellerResponsibleName: "GISLENE LIMA",
     });
     const scope = resolveCrmCommercialAccessScope(auth);
-    assert.equal(scope.dataScope, "own");
-    assert.equal(scope.sellerLocked, true);
-    assert.equal(scope.canViewAllSellers, false);
-    assert.equal(scope.canViewCommercialGeneral, false);
+    assert.equal(scope.dataScope, "global");
+    assert.equal(scope.sellerLocked, false);
+    assert.equal(scope.canViewAllSellers, true);
+    assert.equal(scope.canViewCommercialGeneral, true);
 
     const checker = {
       ...checkerFromPermissions(auth.permissions),
       authUser: { role: "SELLER" as const, effectivePermissions: auth.permissions },
     };
-    assert.equal(canFilterAllCrmSellers(checker), false);
-    assert.equal(isCrmOwnSellerOnly(checker), true);
+    assert.equal(canFilterAllCrmSellers(checker), true);
+    assert.equal(isCrmOwnSellerOnly(checker), false);
 
     const dash = resolveCrmSellerDashboardQueryScope(
       auth,
@@ -165,8 +161,8 @@ describe("crmCommercialAccessScope", () => {
     );
     assert.equal(dash.ok, true);
     if (!dash.ok || !dash.sellerScope) throw new Error("expected ok");
-    assert.equal(dash.sellerScope.scopeMode, "own");
-    assert.equal(dash.sellerScope.sellerIdentityKey, "gislene lima");
+    assert.equal(dash.sellerScope.scopeMode, "all");
+    assert.equal(dash.sellerScope.sellerIdentityKey, "outro");
   });
 
   it("admin com crm.seller.all enxerga todos os vendedores no dashboard", () => {

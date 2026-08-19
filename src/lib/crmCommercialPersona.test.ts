@@ -43,17 +43,17 @@ test("Gestão Geral explícita transforma own + all em perfil global", () => {
   assert.equal(result.canFilterAllSellers, true);
 });
 
-test("role SELLER nunca recebe global mesmo com grants indevidos", () => {
+test("role SELLER agora sempre recebe escopo global (regra de carteira única removida)", () => {
   const result = resolveCrmCommercialPersona({
     ...base,
     role: "SELLER",
-    canViewGeneral: true,
-    canViewOwn: true,
-    canViewAll: true,
+    canViewGeneral: false,
+    canViewOwn: false,
+    canViewAll: false,
   });
-  assert.equal(result.dataScope, "own");
-  assert.equal(result.canViewGeneral, false);
-  assert.equal(result.canFilterAllSellers, false);
+  assert.equal(result.dataScope, "global");
+  assert.equal(result.canFilterAllSellers, true);
+  assert.equal(result.sellerLocked, false);
 });
 
 test("gestor comercial permanece global", () => {

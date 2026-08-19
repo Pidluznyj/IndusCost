@@ -36,9 +36,11 @@ export type CrmCommercialPersona = {
 
 /**
  * Precedência de segurança:
- * - ADMIN/SUPER_ADMIN: global;
- * - SELLER: sempre own quando há grant CRM utilizável;
- * - COMMERCIAL_MANAGER: global (fallback até existir hierarquia de equipe);
+ * - ADMIN/SUPER_ADMIN/COMMERCIAL_MANAGER/SELLER: global — role decide sozinho,
+ *   a bag de permissões não restringe o escopo de dados. Vendedores enxergam
+ *   toda a carteira/pedidos/propostas no CRM; a única tela que continua
+ *   restrita ao próprio usuário é Comissões, resolvida separadamente em
+ *   commissionAccessScope.ts (motor independente deste).
  * - perfil custom/VIEWER com own+all: own vence, exceto se Gestão Geral estiver
  *   explicitamente liberada.
  * - crm.view isolado só revela shell técnico; não concede dados nem menu útil.
@@ -49,7 +51,8 @@ export function resolveCrmCommercialPersona(
   const roleGlobal =
     input.role === "SUPER_ADMIN" ||
     input.role === "ADMIN" ||
-    input.role === "COMMERCIAL_MANAGER";
+    input.role === "COMMERCIAL_MANAGER" ||
+    input.role === "SELLER";
   const hasUsableView =
     input.canViewGeneral ||
     input.canViewSellerTab ||
@@ -65,8 +68,6 @@ export function resolveCrmCommercialPersona(
   let dataScope: CrmCommercialPersona["dataScope"] = "none";
   if (roleGlobal) {
     dataScope = "global";
-  } else if (input.role === "SELLER" && sellerHasUsableGrant) {
-    dataScope = "own";
   } else if (input.canViewOwn) {
     // Fail-closed para perfil custom incoerente com own + all.
     dataScope = input.canViewGeneral ? "global" : "own";
