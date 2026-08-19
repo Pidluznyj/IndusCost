@@ -154,6 +154,18 @@ function money(value: number | null): string {
   return formatPredictiveCashFlowMoney(value);
 }
 
+/**
+ * Rótulo do eixo Y — "R$" sempre explícito (não depende do símbolo de moeda
+ * do Intl, que pode renderizar só "$" dependendo do ambiente) e sem
+ * centavos, compacto o bastante para caber mais marcações na escala.
+ */
+function axisMoney(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  return `${sign}R$ ${Math.abs(value).toLocaleString("pt-BR", {
+    maximumFractionDigits: 0,
+  })}`;
+}
+
 function shortDate(civilDate: string): string {
   const [y, m, d] = civilDate.split("-");
   return `${d}/${m}`;
@@ -591,7 +603,9 @@ function renderScenariosChart(params: {
               com a borda e a linha "some". */}
           <YAxis
             tick={{ fill: "#6B7280", fontSize: 11 }}
-            tickFormatter={(v: number) => money(v)}
+            tickFormatter={(v: number) => axisMoney(v)}
+            tickCount={9}
+            width={92}
             padding={{ bottom: 16 }}
           />
           <Tooltip
