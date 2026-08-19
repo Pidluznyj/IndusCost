@@ -21,6 +21,7 @@ import {
   COUNT_OPERATION_IDEMPOTENCY_CONFLICT,
   recordInventoryCount,
 } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
+import { buildCollectorQrText } from "@/src/lib/inventory/collector/collectorQrContract.js";
 import {
   COLLECTOR_DEVICE_DUPLICATE,
   COLLECTOR_DEVICE_NOT_FOUND,
@@ -2135,6 +2136,68 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       }
     }
   );
+
+  // FASE 3 — geração de etiquetas QR (fluxo HUMANO autenticado; o DEVICE não
+  // gera QR). Combinações válidas item × endereço saem do InventoryBalance —
+  // a mesma fonte canônica que origina as linhas de conferência no START.
+  app.get("/api/inventory/count-labels", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      if (!isUuid(warehouseId)) {
+        return res.status(400).json(inventoryApiError("Almoxarifado inválido."));
+      }
+      const warehouse = await prisma.inventoryWarehouse.findUnique({
+        where: { id: warehouseId },
+        select: { id: true, code: true, name: true, status: true },
+      });
+      if (!warehouse) {
+        return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
+      }
+
+      const balances = await prisma.inventoryBalance.findMany({
+        where: { warehouseId, item: { status: "ACTIVE" } },
+        select: {
+          itemId: true,
+          locationId: true,
+          item: { select: { code: true, description: true, unit: true } },
+          location: { select: { code: true, name: true, status: true } },
+        },
+        orderBy: [{ item: { code: "asc" } }],
+      });
+
+      const labels = balances
+        .filter((b) => !b.locationId || b.location?.status === "ACTIVE")
+        .map((b) => ({
+          itemId: b.itemId,
+          itemCode: b.item.code,
+          itemDescription: b.item.description,
+          itemUnit: b.item.unit,
+          warehouseId: warehouse.id,
+          warehouseCode: warehouse.code,
+          warehouseName: warehouse.name,
+          locationId: b.locationId,
+          locationCode: b.location?.code ?? null,
+          locationName: b.location?.name ?? null,
+          qrText: buildCollectorQrText({
+            itemId: b.itemId,
+            warehouseId: warehouse.id,
+            locationId: b.locationId,
+          }),
+        }));
+
+      res.json({
+        warehouse: { id: warehouse.id, code: warehouse.code, name: warehouse.name },
+        labels,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/count-labels", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar etiquetas."));
+    }
+  });
 }
 
 function serializeInventoryBalanceFromSnapshot(snapshot: {

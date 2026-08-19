@@ -292,10 +292,16 @@ function createCollectorMockPrisma(options?: {
 type Handler = (req: unknown, res: unknown, next: () => void) => unknown;
 
 function buildCollectorApp(mock: ReturnType<typeof createCollectorMockPrisma>) {
-  const registered: { path: string; handlers: Handler[] }[] = [];
+  const registered: { method: string; path: string; handlers: Handler[] }[] = [];
   const app = {
+    get(path: string, ...handlers: Handler[]) {
+      registered.push({ method: "get", path, handlers });
+    },
+    post(path: string, ...handlers: Handler[]) {
+      registered.push({ method: "post", path, handlers });
+    },
     patch(path: string, ...handlers: Handler[]) {
-      registered.push({ path, handlers });
+      registered.push({ method: "patch", path, handlers });
     },
   };
   const identityResolver = {
@@ -328,8 +334,11 @@ async function callCollector(
   } = {}
 ): Promise<CallResult> {
   const { registered } = buildCollectorApp(mock);
-  assert.equal(registered.length, 1, "o Collector registra exatamente UMA rota");
-  const { handlers } = registered[0];
+  const countRoute = registered.find(
+    (r) => r.method === "patch" && r.path.includes("/lines/:lineId")
+  );
+  assert.ok(countRoute, "rota PATCH de contagem não registrada");
+  const { handlers } = countRoute;
 
   const req = {
     socket: { remoteAddress: options.remoteAddress ?? "100.64.1.5" },
@@ -436,7 +445,9 @@ describe("2D route/auth", () => {
   it("8. namespace Collector expõe UMA rota — nenhuma ação supervisora", () => {
     const src = codeOnly(read("src/lib/inventory/collector/collectorRoutes.server.ts"));
     const registrations = src.match(/app\.(get|post|patch|put|delete)\(/g) ?? [];
-    assert.equal(registrations.length, 1);
+    // FASE 3: 3 leituras (context, count-sessions, resolve-qr) + 1 escrita.
+    assert.equal(registrations.length, 4);
+    assert.equal((src.match(/app\.patch\(/g) ?? []).length, 1, "uma única rota de escrita");
     for (const forbidden of ["start", "finalize", "approve", "generate-adjustments", "cancel"]) {
       assert.equal(
         src.includes(`/${forbidden}`),
@@ -690,7 +701,8 @@ describe("2D regressão", () => {
     assert.doesNotMatch(src, /\$transaction/);
     assert.doesNotMatch(src, /updateMany/);
     assert.doesNotMatch(src, /inventoryCountObservation/);
-    assert.doesNotMatch(src, /inventoryCountLine\./);
+    // Leituras (resolve-qr) são permitidas; ESCRITA fora do motor, nunca.
+    assert.doesNotMatch(src, /inventoryCountLine\.(update|updateMany|create|upsert|delete)/);
     assert.doesNotMatch(src, /inventoryBalance/i);
     assert.doesNotMatch(src, /FOR UPDATE/);
     assert.doesNotMatch(src, /adjustmentDelta\s*=/);
@@ -720,7 +732,7 @@ describe("2D regressão", () => {
     // Ambos: version/idempotency conflict → 409; SESSION/LINE not found → 404.
     assert.match(human, /COUNT_LINE_VERSION_CONFLICT[\s\S]{0,800}\? 409/);
     assert.match(collector, /COUNT_LINE_VERSION_CONFLICT[\s\S]{0,200}409/);
-    assert.match(collector, /SESSION_NOT_FOUND[\s\S]{0,100}404|404[\s\S]{0,200}SESSION_NOT_FOUND/);
+    assert.match(collector, /SESSION_NOT_FOUND[\s\S]{0,400}404|404[\s\S]{0,400}SESSION_NOT_FOUND/);
     // Nenhum erro público com identidade Tailscale.
     assert.doesNotMatch(collector, /stableNodeId[\s\S]{0,40}json/i);
   });

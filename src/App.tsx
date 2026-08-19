@@ -54,6 +54,8 @@ import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
 import { FleetPublicVehicleChecklistPage } from "./components/fleet/FleetPublicVehicleChecklistPage";
 import { FleetPublicReservationShortLinkPage } from "./components/fleet/FleetPublicReservationShortLinkPage";
+import { CollectorPage } from "./components/inventory/collector/CollectorPage";
+import { InventoryCountLabelsPage } from "./components/inventory/collector/InventoryCountLabelsPage";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { PublicLandingRoute } from "./components/PublicLandingRoute";
 import { PublicLoginRoute } from "./components/PublicLoginRoute";
@@ -168,6 +170,10 @@ export default function App() {
         element={<FleetPublicVehicleChecklistPage />}
       />
       <Route path="/reservar-carro" element={<FleetPublicReservationShortLinkPage />} />
+      {/* Stock Collector: auth = Tailscale + Device Registry (server-side), sem login humano. */}
+      <Route path="/collector" element={<CollectorPage />} />
+      {/* Etiquetas QR: página standalone de impressão; dados exigem login humano + permissão. */}
+      <Route path="/inventory-labels" element={<InventoryCountLabelsPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
       {/* P11: telas autenticadas fora do Layout — mesmo view da sidebar */}
