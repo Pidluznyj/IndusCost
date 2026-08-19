@@ -157,53 +157,163 @@ export async function buildSalesOrderResultDashboard(
     productId: filters.productId,
   });
 
-  const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
   const marginOrders = orders as SalesOrderForMargin[];
-  const marginContext = await buildSalesOrderMarginContext(db, marginOrders, {
-    costPolicy: salesMarginNomusConfigToCostPolicy(nomusConfig),
-  });
-  const marginRulesOrders = mapMarginContextToRulesOrders(
-    marginOrders,
-    marginContext.byOrderId
-  );
 
-  const productIds = orders.flatMap((order) =>
-    order.items.map((item) => item.productId).filter((id): id is string => Boolean(id))
-  );
-  const taxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
+  // As quatro apurações abaixo (margem gerencial com imposto, margem
+  // comercial da listagem, série mensal do gráfico, ano anterior para YoY)
+  // são independentes entre si — cada uma resolve seu próprio custo/preço
+  // versionado e nenhuma depende do resultado das outras. Rodavam em série
+  // (o dashboard somava a latência das quatro); rodar em paralelo elimina
+  // a maior parte do tempo de carregamento sem mudar nenhum cálculo — mesmas
+  // funções, mesmas leituras, só deixam de esperar umas pelas outras.
+  const [marginPayload, commercialSummary, chartResult, previousYearMonthly] =
+    await Promise.all([
+      (async () => {
+        const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
+        const marginContext = await buildSalesOrderMarginContext(db, marginOrders, {
+          costPolicy: salesMarginNomusConfigToCostPolicy(nomusConfig),
+        });
+        const marginRulesOrders = mapMarginContextToRulesOrders(
+          marginOrders,
+          marginContext.byOrderId
+        );
+        const productIds = orders.flatMap((order) =>
+          order.items.map((item) => item.productId).filter((id): id is string => Boolean(id))
+        );
+        const taxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
+        const rules = buildOfficialSalesMarginRulesResult(marginRulesOrders, {
+          taxMode: nomusConfig.taxMode === "none" ? "none" : "deductFromGross",
+          taxContext,
+          year: filters.year,
+          month: filters.month,
+          referenceDate,
+          filters: {
+            year: filters.year,
+            month: filters.month ?? null,
+            customerId: filters.customerId ?? null,
+            productId: filters.productId ?? null,
+            sellerId: filters.sellerId ?? null,
+            companyId: filters.companyId ?? null,
+          },
+        });
+        return buildOfficialSalesOrderResultMarginPayload({ rules, salesBundle, filters });
+      })(),
+      // KPIs de cabeçalho (R$ Custo / R$ Margem / % Margem / Margem média/un.)
+      // seguem a MESMA regra da listagem de Pedidos de Venda — "Margem comercial"
+      // (buildOfficialSalesOrderListMarginSummary), não a margem gerencial com
+      // dedução de imposto. Decisão do usuário: paridade com a listagem, mesmo
+      // que a apuração fiscal detalhada continue disponível em `rules`/`source`.
+      buildOfficialSalesOrderListMarginSummary(db, marginOrders, { year: filters.year }),
+      (async () => {
+        try {
+          const { buildSalesOrderCommercialMarginReadModels } = await import(
+            "./salesOrderCommercialMarginReadService.server.js"
+          );
+          const { buildMonthlyCommercialMarginRows } = await import(
+            "./salesOrderCommercialMarginReadModel.js"
+          );
+          const { loadSalesOrderListChartYearOrders } = await import(
+            "./salesOrderListMarginSummary.server.js"
+          );
+          // Série do gráfico: ano civil da request, sem demais filtros da tela.
+          const chartOrders = await loadSalesOrderListChartYearOrders(db, filters.year);
+          const needsItemLoad = chartOrders.some((order) => !order.items?.length);
+          let itemsByOrder = new Map<string, SalesOrderForMargin["items"]>();
+          if (needsItemLoad) {
+            const { loadSalesOrderItemsForMargin } = await import(
+              "./salesOrderMarginService.server.js"
+            );
+            itemsByOrder = await loadSalesOrderItemsForMargin(
+              db,
+              chartOrders.map((order) => order.id)
+            );
+          }
+          const { calculateOfficialSalesOrderMarginsForOrders } = await import(
+            "./salesMarginRulesAdapter.js"
+          );
+          const [commercialByOrder, officialByOrder] = await Promise.all([
+            buildSalesOrderCommercialMarginReadModels(
+              db,
+              chartOrders.map((order) => ({
+                id: order.id,
+                issueDate:
+                  order.issueDate instanceof Date
+                    ? order.issueDate
+                    : order.issueDate
+                      ? new Date(order.issueDate)
+                      : null,
+                items: order.items?.length
+                  ? order.items
+                  : (itemsByOrder.get(order.id) ?? []),
+              }))
+            ),
+            calculateOfficialSalesOrderMarginsForOrders(db, chartOrders),
+          ]);
 
-  const rules = buildOfficialSalesMarginRulesResult(marginRulesOrders, {
-    taxMode: nomusConfig.taxMode === "none" ? "none" : "deductFromGross",
-    taxContext,
-    year: filters.year,
-    month: filters.month,
-    referenceDate,
-    filters: {
-      year: filters.year,
-      month: filters.month ?? null,
-      customerId: filters.customerId ?? null,
-      productId: filters.productId ?? null,
-      sellerId: filters.sellerId ?? null,
-      companyId: filters.companyId ?? null,
-    },
-  });
+          const monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
+            chartOrders.map((order) => {
+              const comm = commercialByOrder.get(order.id)?.commercialMargin;
+              const off = officialByOrder.get(order.id)?.marginSummary;
+              return {
+                issueDate: order.issueDate,
+                commercialMargin: comm,
+                officialMargin: off
+                  ? { marginValue: off.marginValue, netRevenue: off.netRevenue }
+                  : null,
+              };
+            }),
+            filters.year
+          );
+          return { ok: true as const, monthlyCommercialMargin };
+        } catch (err) {
+          console.warn(
+            "[buildSalesOrderResultDashboard] falha na série mensal de margem comercial.",
+            err
+          );
+          return { ok: false as const };
+        }
+      })(),
+      // Ano anterior: mesma população OP-02 (filtros da listagem), só para série YoY de vendas.
+      // Sem mês — o comparativo mensal é sempre o ano completo.
+      (async () => {
+        const previousYear = filters.year - 1;
+        const prevListQuery = parseSalesOrderListQuery({
+          ...query,
+          year: previousYear,
+          month: undefined,
+        });
+        const prevSellerWhere = await resolveSalesOrderListSellerWhere(db, {
+          sellerKeyRaw: prevListQuery.sellerKeyRaw,
+          sellerText: prevListQuery.sellerText,
+        });
+        let prevWhere = await resolveSalesOrderListWhere(db, prevListQuery, prevSellerWhere);
+        if (filters.productId) {
+          prevWhere = andWhere(prevWhere, {
+            items: { some: { productId: filters.productId } },
+          });
+        }
+        const previousYearOrders = await db.salesOrder.findMany({
+          where: prevWhere,
+          select: {
+            issueDate: true,
+            totalNetValue: true,
+          },
+        });
+        const monthly = new Map<number, number>();
+        for (let m = 1; m <= 12; m += 1) monthly.set(m, 0);
+        for (const order of previousYearOrders) {
+          if (!order.issueDate) continue;
+          if (order.issueDate.getFullYear() !== previousYear) continue;
+          const month = order.issueDate.getMonth() + 1;
+          monthly.set(
+            month,
+            (monthly.get(month) ?? 0) + (decimalToNumber(order.totalNetValue) ?? 0)
+          );
+        }
+        return monthly;
+      })(),
+    ]);
 
-  const marginPayload = buildOfficialSalesOrderResultMarginPayload({
-    rules,
-    salesBundle,
-    filters,
-  });
-
-  // KPIs de cabeçalho (R$ Custo / R$ Margem / % Margem / Margem média/un.)
-  // seguem a MESMA regra da listagem de Pedidos de Venda — "Margem comercial"
-  // (buildOfficialSalesOrderListMarginSummary), não a margem gerencial com
-  // dedução de imposto. Decisão do usuário: paridade com a listagem, mesmo
-  // que a apuração fiscal detalhada continue disponível em `rules`/`source`.
-  const commercialSummary = await buildOfficialSalesOrderListMarginSummary(
-    db,
-    marginOrders,
-    { year: filters.year }
-  );
   const totals = {
     ...marginPayload.totals,
     costAmount: commercialSummary.totalCost,
@@ -222,126 +332,20 @@ export async function buildSalesOrderResultDashboard(
     taxSourceLabel: "Margem comercial — mesma regra da listagem de Pedidos de Venda",
   };
 
-  let monthlyCommercialMargin = marginPayload.monthlyMargin.map((row) => ({
-    ...row,
-    marginAmount: 0,
-    marginPercent: null as number | null,
-    costAmount: 0,
-    taxAmount: 0,
-    coveredNetValue: 0,
-    totalNetValue: 0,
-    isPartial: false,
-    coveredOrders: 0,
-    totalEligibleOrders: row.ordersCount,
-  }));
-  try {
-    const { buildSalesOrderCommercialMarginReadModels } = await import(
-      "./salesOrderCommercialMarginReadService.server.js"
-    );
-    const { buildMonthlyCommercialMarginRows } = await import(
-      "./salesOrderCommercialMarginReadModel.js"
-    );
-    const { loadSalesOrderListChartYearOrders } = await import(
-      "./salesOrderListMarginSummary.server.js"
-    );
-    // Série do gráfico: ano civil da request, sem demais filtros da tela.
-    const chartOrders = await loadSalesOrderListChartYearOrders(db, filters.year);
-    const needsItemLoad = chartOrders.some((order) => !order.items?.length);
-    let itemsByOrder = new Map<string, SalesOrderForMargin["items"]>();
-    if (needsItemLoad) {
-      const { loadSalesOrderItemsForMargin } = await import(
-        "./salesOrderMarginService.server.js"
-      );
-      itemsByOrder = await loadSalesOrderItemsForMargin(
-        db,
-        chartOrders.map((order) => order.id)
-      );
-    }
-    const { calculateOfficialSalesOrderMarginsForOrders } = await import(
-      "./salesMarginRulesAdapter.js"
-    );
-    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
-      db,
-      chartOrders.map((order) => ({
-        id: order.id,
-        issueDate:
-          order.issueDate instanceof Date
-            ? order.issueDate
-            : order.issueDate
-              ? new Date(order.issueDate)
-              : null,
-        items: order.items?.length
-          ? order.items
-          : (itemsByOrder.get(order.id) ?? []),
-      }))
-    );
-    const officialByOrder = await calculateOfficialSalesOrderMarginsForOrders(
-      db,
-      chartOrders
-    );
-
-    monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
-      chartOrders.map((order) => {
-        const comm = commercialByOrder.get(order.id)?.commercialMargin;
-        const off = officialByOrder.get(order.id)?.marginSummary;
-        return {
-          issueDate: order.issueDate,
-          commercialMargin: comm,
-          officialMargin: off
-            ? { marginValue: off.marginValue, netRevenue: off.netRevenue }
-            : null,
-        };
-      }),
-      filters.year
-    );
-  } catch (err) {
-    console.warn(
-      "[buildSalesOrderResultDashboard] falha na série mensal de margem comercial.",
-      err
-    );
-  }
-
-  // Ano anterior: mesma população OP-02 (filtros da listagem), só para série YoY de vendas.
-  // Sem mês — o comparativo mensal é sempre o ano completo.
-  const previousYear = filters.year - 1;
-  const prevListQuery = parseSalesOrderListQuery({
-    ...query,
-    year: previousYear,
-    month: undefined,
-  });
-  const prevSellerWhere = await resolveSalesOrderListSellerWhere(db, {
-    sellerKeyRaw: prevListQuery.sellerKeyRaw,
-    sellerText: prevListQuery.sellerText,
-  });
-  let prevWhere = await resolveSalesOrderListWhere(
-    db,
-    prevListQuery,
-    prevSellerWhere
-  );
-  if (filters.productId) {
-    prevWhere = andWhere(prevWhere, {
-      items: { some: { productId: filters.productId } },
-    });
-  }
-  const previousYearOrders = await db.salesOrder.findMany({
-    where: prevWhere,
-    select: {
-      issueDate: true,
-      totalNetValue: true,
-    },
-  });
-  const previousYearMonthly = new Map<number, number>();
-  for (let m = 1; m <= 12; m += 1) previousYearMonthly.set(m, 0);
-  for (const order of previousYearOrders) {
-    if (!order.issueDate) continue;
-    if (order.issueDate.getFullYear() !== previousYear) continue;
-    const month = order.issueDate.getMonth() + 1;
-    previousYearMonthly.set(
-      month,
-      (previousYearMonthly.get(month) ?? 0) +
-        (decimalToNumber(order.totalNetValue) ?? 0)
-    );
-  }
+  const monthlyCommercialMargin = chartResult.ok
+    ? chartResult.monthlyCommercialMargin
+    : marginPayload.monthlyMargin.map((row) => ({
+        ...row,
+        marginAmount: 0,
+        marginPercent: null as number | null,
+        costAmount: 0,
+        taxAmount: 0,
+        coveredNetValue: 0,
+        totalNetValue: 0,
+        isPartial: false,
+        coveredOrders: 0,
+        totalEligibleOrders: row.ordersCount,
+      }));
 
   const monthlySales = salesBundle.monthlyTimeline.map((point) => ({
     month: point.month,
