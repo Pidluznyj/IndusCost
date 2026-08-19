@@ -19,7 +19,11 @@ import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReport
 import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 import type { CashFlowProjectionMode } from "./finance/cashFlowLightProjectionFlag.js";
 import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
-import { measureDevPerfPhase, noteDevPerfRowCounts } from "@/src/lib/devPerfBaseline.server.js";
+import {
+  measureDevPerfPhase,
+  measureDevPerfPhaseSync,
+  noteDevPerfRowCounts,
+} from "@/src/lib/devPerfBaseline.server.js";
 
 export async function loadAnnualComparisonPortfolioRows(
   db: PrismaClient,
@@ -28,49 +32,57 @@ export async function loadAnnualComparisonPortfolioRows(
   /** Default legacy: só o handler /cash-flow/annual-comparison passa "light". */
   projectionMode: CashFlowProjectionMode = "legacy"
 ) {
-  const filters = cashFlowFilters;
-  const arFilters = toCashFlowPortfolioArFilters(filters);
-  const apFilters = toCashFlowPortfolioApFilters(filters);
-  const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
-    await Promise.all([
-      measureDevPerfPhase("arLoad", () =>
-        loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate)
-      ),
-      resolveNomusApReportSyncCutoffFromPrisma(db),
-    ]);
-  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
-  const apPrisma = await measureDevPerfPhase("apLoad", () =>
-    db.nomusAccountsPayable.findMany({
-      where: apWhere,
-      select: FINANCE_CASH_FLOW_AP_SELECT,
-      orderBy: { dueDate: "asc" },
-    })
+  return measureDevPerfPhase(
+    "loadRows",
+    async () => {
+      const filters = cashFlowFilters;
+      const arFilters = toCashFlowPortfolioArFilters(filters);
+      const apFilters = toCashFlowPortfolioApFilters(filters);
+      const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
+        await Promise.all([
+          measureDevPerfPhase("arLoad", () =>
+            loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate)
+          ),
+          measureDevPerfPhase("apCutoff", () => resolveNomusApReportSyncCutoffFromPrisma(db)),
+        ]);
+      const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
+      const apPrisma = await measureDevPerfPhase("apLoad", () =>
+        db.nomusAccountsPayable.findMany({
+          where: apWhere,
+          select: FINANCE_CASH_FLOW_AP_SELECT,
+          orderBy: { dueDate: "asc" },
+        })
+      );
+
+      const arRows = arManagementRows as FinanceCashFlowArRow[];
+      const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
+        db,
+        arRows,
+        referenceDate,
+        {
+          customerName: filters.customerName,
+          personCnpj: filters.personCnpj,
+          projectionMode,
+        }
+      );
+
+      noteDevPerfRowCounts({
+        ar: arRows.length,
+        ap: apPrisma.length,
+        orders: orderContexts.length,
+      });
+
+      return {
+        arRows,
+        apRows: measureDevPerfPhaseSync("mapApRows", () =>
+          apPrisma.map(mapPrismaRowToFinanceCashFlowApRow)
+        ),
+        arSyncCutoff,
+        apSyncCutoff,
+        orderContexts,
+        nfeOrderLinks,
+      };
+    },
+    { account: true }
   );
-
-  const arRows = arManagementRows as FinanceCashFlowArRow[];
-  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
-    db,
-    arRows,
-    referenceDate,
-    {
-      customerName: filters.customerName,
-      personCnpj: filters.personCnpj,
-      projectionMode,
-    }
-  );
-
-  noteDevPerfRowCounts({
-    ar: arRows.length,
-    ap: apPrisma.length,
-    orders: orderContexts.length,
-  });
-
-  return {
-    arRows,
-    apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff,
-    apSyncCutoff,
-    orderContexts,
-    nfeOrderLinks,
-  };
 }

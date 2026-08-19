@@ -220,6 +220,8 @@ describe("devPerfBaseline — instrumentação Prisma", () => {
       // Só metadados numéricos/estruturais de perf sobrevivem — nunca params Prisma.
       const keys = Object.keys(sample).sort();
       for (const allowed of [
+        "accountedPhases",
+        "accountedWallMs",
         "dbMs",
         "phases",
         "profilingSerializeMs",
@@ -231,6 +233,8 @@ describe("devPerfBaseline — instrumentação Prisma", () => {
         assert.ok(keys.includes(allowed), `faltou chave ${allowed}`);
       }
       assert.deepEqual(keys, [
+        "accountedPhases",
+        "accountedWallMs",
         "dbMs",
         "phases",
         "profilingSerializeMs",

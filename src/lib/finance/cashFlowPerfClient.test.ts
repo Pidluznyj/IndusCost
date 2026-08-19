@@ -4,8 +4,11 @@ import {
   createCashFlowReadyTracker,
 } from "@/src/lib/finance/cashFlowPerfClient.js";
 import {
+  CASH_FLOW_PERF_ACCOUNTED_NOTE,
   CASH_FLOW_PERF_DBMS_DISCLAIMER,
   CASH_FLOW_PERF_OPENING_DISCLAIMER,
+  CASH_FLOW_PERF_SHARED_PATH_NOTE,
+  CASH_FLOW_PERF_SINGLE_COMMAND_NOTE,
   nearestRankPercentile,
   sortedFinite,
   summarizeNumeric,
@@ -46,5 +49,12 @@ describe("PERF 3.1 stats", () => {
     assert.match(CASH_FLOW_PERF_OPENING_DISCLAIMER, /cf:ready/);
     assert.doesNotMatch(CASH_FLOW_PERF_DBMS_DISCLAIMER, /FASE 2C/);
     assert.doesNotMatch(CASH_FLOW_PERF_OPENING_DISCLAIMER, /FASE 2C/);
+    assert.match(CASH_FLOW_PERF_ACCOUNTED_NOTE, /unaccountedWallMs = totalMs - accountedWallMs/);
+    assert.match(CASH_FLOW_PERF_ACCOUNTED_NOTE, /NÃO usa dbMs/);
+    assert.match(CASH_FLOW_PERF_SINGLE_COMMAND_NOTE, /npm run perf:cash-flow:baseline/);
+    assert.match(CASH_FLOW_PERF_SINGLE_COMMAND_NOTE, /legacy e light/);
+    assert.match(CASH_FLOW_PERF_SHARED_PATH_NOTE, /timed\*/);
+    assert.doesNotMatch(CASH_FLOW_PERF_ACCOUNTED_NOTE, /FASE 2C/);
+    assert.doesNotMatch(CASH_FLOW_PERF_SINGLE_COMMAND_NOTE, /FASE 2C/);
   });
 });

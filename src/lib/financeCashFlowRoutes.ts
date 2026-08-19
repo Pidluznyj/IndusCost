@@ -54,7 +54,6 @@ import {
   buildFinanceCashFlowDailyRadarExportFilename,
 } from "@/src/lib/financeCashFlowDailyRadarExportXlsx.js";
 import {
-  buildCashFlowAnnualComparison,
   FinanceCashFlowAnnualComparisonParseError,
   parseAnnualComparisonYear,
 } from "@/src/lib/financeCashFlowAnnualComparison.js";
@@ -77,6 +76,13 @@ import {
   measureDevPerfPhaseSync,
   noteDevPerfRowCounts,
 } from "@/src/lib/devPerfBaseline.server.js";
+import {
+  timedAssembleDashboardPayload,
+  timedBuildAnnual,
+  timedBuildDashboard,
+  timedBuildRadar,
+  timedFilterRadarPortfolio,
+} from "@/src/lib/finance/cashFlowPerfTimed.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -113,40 +119,48 @@ export async function loadCashFlowRows(
   filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>,
   projectionMode: CashFlowProjectionMode = "legacy"
 ) {
-  const referenceDate = new Date();
-  const arFilters = toArLoadFilters(filters);
-  const apFilters = toApLoadFilters(filters);
-  const [arBundle, apSyncCutoff] = await Promise.all([
-    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
-      customerName: filters.customerName,
-      personCnpj: filters.personCnpj,
-      projectionMode,
-    }),
-    resolveNomusApReportSyncCutoffFromPrisma(prisma),
-  ]);
-  const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
-  const apPrisma = await measureDevPerfPhase("apLoad", () =>
-    prisma.nomusAccountsPayable.findMany({
-      where: apWhere,
-      select: FINANCE_CASH_FLOW_AP_SELECT,
-      orderBy: { dueDate: "asc" },
-    })
+  return measureDevPerfPhase(
+    "loadRows",
+    async () => {
+      const referenceDate = new Date();
+      const arFilters = toArLoadFilters(filters);
+      const apFilters = toApLoadFilters(filters);
+      const [arBundle, apSyncCutoff] = await Promise.all([
+        loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
+          customerName: filters.customerName,
+          personCnpj: filters.personCnpj,
+          projectionMode,
+        }),
+        measureDevPerfPhase("apCutoff", () => resolveNomusApReportSyncCutoffFromPrisma(prisma)),
+      ]);
+      const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
+      const apPrisma = await measureDevPerfPhase("apLoad", () =>
+        prisma.nomusAccountsPayable.findMany({
+          where: apWhere,
+          select: FINANCE_CASH_FLOW_AP_SELECT,
+          orderBy: { dueDate: "asc" },
+        })
+      );
+
+      noteDevPerfRowCounts({
+        ar: arBundle.arRows.length,
+        ap: apPrisma.length,
+        orders: arBundle.orderContexts.length,
+      });
+
+      return {
+        arRows: arBundle.arRows,
+        apRows: measureDevPerfPhaseSync("mapApRows", () =>
+          apPrisma.map(mapPrismaRowToFinanceCashFlowApRow)
+        ),
+        arSyncCutoff: arBundle.syncCutoff,
+        apSyncCutoff,
+        orderContexts: arBundle.orderContexts,
+        nfeOrderLinks: arBundle.nfeOrderLinks,
+      };
+    },
+    { account: true }
   );
-
-  noteDevPerfRowCounts({
-    ar: arBundle.arRows.length,
-    ap: apPrisma.length,
-    orders: arBundle.orderContexts.length,
-  });
-
-  return {
-    arRows: arBundle.arRows,
-    apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff: arBundle.syncCutoff,
-    apSyncCutoff,
-    orderContexts: arBundle.orderContexts,
-    nfeOrderLinks: arBundle.nfeOrderLinks,
-  };
 }
 
 /** Carrega portfólio AR/AP aberto sem recorte de período — independente dos filtros da página. */
@@ -154,38 +168,46 @@ export async function loadDailyRadarPortfolioRows(
   referenceDate = new Date(),
   projectionMode: CashFlowProjectionMode = "legacy"
 ) {
-  const filters = createDailyRadarDashboardFilters();
-  const arFilters = toCashFlowPortfolioArFilters(filters);
-  const apFilters = toCashFlowPortfolioApFilters(filters);
-  const [arBundle, apSyncCutoff] = await Promise.all([
-    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
-      projectionMode,
-    }),
-    resolveNomusApReportSyncCutoffFromPrisma(prisma),
-  ]);
-  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
-  const apPrisma = await measureDevPerfPhase("apLoad", () =>
-    prisma.nomusAccountsPayable.findMany({
-      where: apWhere,
-      select: FINANCE_CASH_FLOW_AP_SELECT,
-      orderBy: { dueDate: "asc" },
-    })
+  return measureDevPerfPhase(
+    "loadRows",
+    async () => {
+      const filters = createDailyRadarDashboardFilters();
+      const arFilters = toCashFlowPortfolioArFilters(filters);
+      const apFilters = toCashFlowPortfolioApFilters(filters);
+      const [arBundle, apSyncCutoff] = await Promise.all([
+        loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
+          projectionMode,
+        }),
+        measureDevPerfPhase("apCutoff", () => resolveNomusApReportSyncCutoffFromPrisma(prisma)),
+      ]);
+      const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
+      const apPrisma = await measureDevPerfPhase("apLoad", () =>
+        prisma.nomusAccountsPayable.findMany({
+          where: apWhere,
+          select: FINANCE_CASH_FLOW_AP_SELECT,
+          orderBy: { dueDate: "asc" },
+        })
+      );
+
+      noteDevPerfRowCounts({
+        ar: arBundle.arRows.length,
+        ap: apPrisma.length,
+        orders: arBundle.orderContexts.length,
+      });
+
+      return {
+        arRows: arBundle.arRows,
+        apRows: measureDevPerfPhaseSync("mapApRows", () =>
+          apPrisma.map(mapPrismaRowToFinanceCashFlowApRow)
+        ),
+        arSyncCutoff: arBundle.syncCutoff,
+        apSyncCutoff,
+        orderContexts: arBundle.orderContexts,
+        nfeOrderLinks: arBundle.nfeOrderLinks,
+      };
+    },
+    { account: true }
   );
-
-  noteDevPerfRowCounts({
-    ar: arBundle.arRows.length,
-    ap: apPrisma.length,
-    orders: arBundle.orderContexts.length,
-  });
-
-  return {
-    arRows: arBundle.arRows,
-    apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff: arBundle.syncCutoff,
-    apSyncCutoff,
-    orderContexts: arBundle.orderContexts,
-    nfeOrderLinks: arBundle.nfeOrderLinks,
-  };
 }
 
 function cashFlowArFilterOptions(bundle: Pick<FinanceArTitlesSourceBundle, "orderContexts" | "nfeOrderLinks">) {
@@ -256,25 +278,21 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         );
       }
       const referenceDate = new Date();
-      const payload = measureDevPerfPhaseSync("buildDashboard", () =>
-        buildFinanceCashFlowDashboard(
-          arRows,
-          apRows,
-          filters,
-          referenceDate,
-          arSyncCutoff,
-          apSyncCutoff,
-          arOptions
-        )
+      const payload = timedBuildDashboard(
+        arRows,
+        apRows,
+        filters,
+        referenceDate,
+        arSyncCutoff,
+        apSyncCutoff,
+        arOptions
       );
-      const rawMaterialCostCenterSpotlight = await measureDevPerfPhase("spotlight", () =>
-        loadRawMaterialCostCenterSpotlight({
-          ytdYear: referenceDate.getFullYear(),
-          companyName: filters.companyName,
-          referenceDate,
-        })
-      );
-      res.json({ ...payload, rawMaterialCostCenterSpotlight });
+      const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
+        ytdYear: referenceDate.getFullYear(),
+        companyName: filters.companyName,
+        referenceDate,
+      });
+      res.json(timedAssembleDashboardPayload(payload, rawMaterialCostCenterSpotlight));
     }
   );
 
@@ -319,16 +337,14 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           resolveCashFlowProjectionMode()
         );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts, nfeOrderLinks } = load;
-        const payload = measureDevPerfPhaseSync("buildAnnual", () =>
-          buildCashFlowAnnualComparison(
-            arRows,
-            apRows,
-            year,
-            referenceDate,
-            arSyncCutoff,
-            apSyncCutoff,
-            { orderContexts, nfeOrderLinks }
-          )
+        const payload = timedBuildAnnual(
+          arRows,
+          apRows,
+          year,
+          referenceDate,
+          arSyncCutoff,
+          apSyncCutoff,
+          { orderContexts, nfeOrderLinks }
         );
         res.json(payload);
       } catch (error) {
@@ -620,24 +636,20 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       );
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
-      const portfolio = measureDevPerfPhaseSync("filterRadarPortfolio", () =>
-        filterDailyRadarPortfolioRows(
-          arRows,
-          apRows,
-          referenceDate,
-          arSyncCutoff,
-          apSyncCutoff,
-          undefined,
-          arOptions
-        )
+      const portfolio = timedFilterRadarPortfolio(
+        arRows,
+        apRows,
+        referenceDate,
+        arSyncCutoff,
+        apSyncCutoff,
+        undefined,
+        arOptions
       );
-      const payload = measureDevPerfPhaseSync("buildRadar", () =>
-        buildFinanceCashFlowDailyRadar(
-          portfolio.arRows,
-          portfolio.apRows,
-          query,
-          referenceDate
-        )
+      const payload = timedBuildRadar(
+        portfolio.arRows,
+        portfolio.apRows,
+        query,
+        referenceDate
       );
       res.json(payload);
     }

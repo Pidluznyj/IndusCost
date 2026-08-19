@@ -19,9 +19,18 @@ type PerfStore = {
   dbMs: number;
   labels: string[];
   phases: Record<string, number>;
+  accountedPhases: Record<string, number>;
   rowCounts: DevPerfRowCounts;
   serializeMs: number | null;
   profilingSerializeMs: number | null;
+};
+
+export type DevPerfPhaseOptions = {
+  /**
+   * Inclui a fase em accountedWallMs. Só use em passos sequenciais de
+   * primeiro nível — nunca aninhe `account: true` dentro de outro `account`.
+   */
+  account?: boolean;
 };
 
 const als = new AsyncLocalStorage<PerfStore>();
@@ -52,6 +61,7 @@ function newStore(): PerfStore {
     dbMs: 0,
     labels: [],
     phases: {},
+    accountedPhases: {},
     rowCounts: {},
     serializeMs: null,
     profilingSerializeMs: null,
@@ -74,13 +84,50 @@ function snapshotRowCounts(store: PerfStore): DevPerfRowCounts | null {
   return { ...store.rowCounts };
 }
 
+function snapshotAccountedPhases(store: PerfStore): Record<string, number> | null {
+  const keys = Object.keys(store.accountedPhases);
+  if (keys.length === 0) return null;
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    out[key] = roundDevPerfMs(store.accountedPhases[key] ?? 0);
+  }
+  return out;
+}
+
+function sumAccountedWallMs(
+  accountedPhases: Record<string, number> | null,
+  serializeMs: number | null
+): number {
+  let sum = 0;
+  if (accountedPhases) {
+    for (const ms of Object.values(accountedPhases)) sum += ms;
+  }
+  if (serializeMs != null && Number.isFinite(serializeMs)) sum += serializeMs;
+  return roundDevPerfMs(sum);
+}
+
+export function computeUnaccountedWallMs(
+  totalMs: number,
+  accountedWallMs: number
+): number {
+  return roundDevPerfMs(totalMs - accountedWallMs);
+}
+
+function recordPhase(store: PerfStore, name: string, dt: number, account?: boolean): void {
+  store.phases[name] = (store.phases[name] ?? 0) + dt;
+  if (account) {
+    store.accountedPhases[name] = (store.accountedPhases[name] ?? 0) + dt;
+  }
+}
+
 /**
  * Fase wall-clock. No-op fora de request/cenário instrumentado (flag off).
- * Fases podem aninhar-se; o relatório NÃO deve somá-las como se fossem disjuntas.
+ * Fases detalhe podem aninhar-se; só `account: true` entra em accountedWallMs.
  */
 export async function measureDevPerfPhase<T>(
   name: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  options?: DevPerfPhaseOptions
 ): Promise<T> {
   const store = als.getStore();
   if (!store) return fn();
@@ -88,18 +135,22 @@ export async function measureDevPerfPhase<T>(
   try {
     return await fn();
   } finally {
-    store.phases[name] = (store.phases[name] ?? 0) + (performance.now() - startedAt);
+    recordPhase(store, name, performance.now() - startedAt, options?.account);
   }
 }
 
-export function measureDevPerfPhaseSync<T>(name: string, fn: () => T): T {
+export function measureDevPerfPhaseSync<T>(
+  name: string,
+  fn: () => T,
+  options?: DevPerfPhaseOptions
+): T {
   const store = als.getStore();
   if (!store) return fn();
   const startedAt = performance.now();
   try {
     return fn();
   } finally {
-    store.phases[name] = (store.phases[name] ?? 0) + (performance.now() - startedAt);
+    recordPhase(store, name, performance.now() - startedAt, options?.account);
   }
 }
 
@@ -159,22 +210,40 @@ export function resetDevPerfPrismaInstrumentationForTests(): void {
   prismaListenerInstalled = false;
 }
 
+function buildAccountedWallFields(store: PerfStore, totalMs?: number) {
+  const accountedPhases = snapshotAccountedPhases(store);
+  const serializeMs =
+    store.serializeMs == null ? null : roundDevPerfMs(store.serializeMs);
+  const accountedWallMs = sumAccountedWallMs(accountedPhases, serializeMs);
+  return {
+    accountedPhases,
+    accountedWallMs,
+    unaccountedWallMs:
+      totalMs == null ? null : computeUnaccountedWallMs(totalMs, accountedWallMs),
+  };
+}
+
 export async function runWithDevPerfContext<T>(fn: () => Promise<T>): Promise<{
   result: T;
   queryCount: number;
   dbMs: number;
   phases: Record<string, number> | null;
+  accountedPhases: Record<string, number> | null;
+  accountedWallMs: number;
   rowCounts: DevPerfRowCounts | null;
   serializeMs: number | null;
   profilingSerializeMs: number | null;
 }> {
   const store = newStore();
   const result = await als.run(store, fn);
+  const accounted = buildAccountedWallFields(store);
   return {
     result,
     queryCount: store.queryCount,
     dbMs: store.dbMs,
     phases: snapshotPhases(store),
+    accountedPhases: accounted.accountedPhases,
+    accountedWallMs: accounted.accountedWallMs,
     rowCounts: snapshotRowCounts(store),
     serializeMs: store.serializeMs,
     profilingSerializeMs: store.profilingSerializeMs,
@@ -192,7 +261,12 @@ export async function measureDevPerfScenario<T>(input: {
   const t0 = performance.now();
   const measured = await runWithDevPerfContext(input.run);
   const { result, queryCount, dbMs, phases, rowCounts } = measured;
-  const totalMs = performance.now() - t0;
+  const totalMs = roundDevPerfMs(performance.now() - t0);
+  const accounted = {
+    accountedPhases: measured.accountedPhases,
+    accountedWallMs: measured.accountedWallMs,
+    unaccountedWallMs: computeUnaccountedWallMs(totalMs, measured.accountedWallMs),
+  };
   // Stringify extra SOMENTE para estimar bytes — relógio do cenário já parou.
   const profStarted = performance.now();
   const payloadBytesApprox = approxJsonBytes(result);
@@ -202,7 +276,7 @@ export async function measureDevPerfScenario<T>(input: {
     method: input.method ?? "SERVICE",
     path: input.path,
     status: 200,
-    totalMs: roundDevPerfMs(totalMs),
+    totalMs,
     dbMs: roundDevPerfMs(dbMs),
     queryCount,
     payloadBytesApprox,
@@ -210,16 +284,19 @@ export async function measureDevPerfScenario<T>(input: {
     serializeMs: null,
     profilingSerializeMs: roundDevPerfMs(profilingSerializeMs),
     phases,
+    accountedPhases: accounted.accountedPhases,
+    accountedWallMs: accounted.accountedWallMs,
+    unaccountedWallMs: accounted.unaccountedWallMs,
     rowCounts,
     notes:
       input.notes ??
-      "profilingSerializeMs=JSON.stringify extra para bytes; excluído de totalMs. dbMs é soma Prisma (pode > totalMs se queries paralelas). NÃO use totalMs-dbMs como CPU.",
+      "profilingSerializeMs=JSON.stringify extra para bytes; excluído de totalMs. unaccountedWallMs=totalMs-accountedWallMs (NÃO usa dbMs). dbMs é soma Prisma (pode > totalMs se queries paralelas). NÃO use totalMs-dbMs como CPU.",
   };
   pushSample(sample);
   if (isDevPerfBaselineEnvEnabled()) {
     const phaseText = formatPhasesForLog(phases);
     console.info(
-      `[perf-baseline] ${sample.scenario} ${sample.path} total=${sample.totalMs}ms db=${sample.dbMs}ms queries=${sample.queryCount} bytes≈${sample.payloadBytesApprox} profilingSerializeMs=${sample.profilingSerializeMs} (excludedFromTotalMs)${phaseText}`
+      `[perf-baseline] ${sample.scenario} ${sample.path} total=${sample.totalMs}ms db=${sample.dbMs}ms queries=${sample.queryCount} bytes≈${sample.payloadBytesApprox} accountedWallMs=${sample.accountedWallMs} unaccountedWallMs=${sample.unaccountedWallMs} profilingSerializeMs=${sample.profilingSerializeMs} (excludedFromTotalMs)${phaseText}`
     );
   }
   return { result, sample };
@@ -317,6 +394,7 @@ export function createDevPerfBaselineMiddleware() {
       const totalMs = roundDevPerfMs(wallMs - (store.profilingSerializeMs ?? 0));
       const phases = snapshotPhases(store);
       const rowCounts = snapshotRowCounts(store);
+      const accounted = buildAccountedWallFields(store, totalMs);
       const sample: DevPerfEndpointSample = {
         scenario: `http:${req.method}:${req.path}`,
         method: req.method,
@@ -334,13 +412,16 @@ export function createDevPerfBaselineMiddleware() {
             ? null
             : roundDevPerfMs(store.profilingSerializeMs),
         phases,
+        accountedPhases: accounted.accountedPhases,
+        accountedWallMs: accounted.accountedWallMs,
+        unaccountedWallMs: accounted.unaccountedWallMs,
         rowCounts,
         notes:
-          "totalMs exclui profilingSerializeMs (JSON.stringify extra para bytes). serializeMs=res.json real. dbMs=soma Prisma (pode > totalMs). NÃO use totalMs-dbMs como CPU.",
+          "totalMs exclui profilingSerializeMs (JSON.stringify extra para bytes). serializeMs=res.json real entra em accountedWallMs. unaccountedWallMs=totalMs-accountedWallMs (NÃO usa dbMs). dbMs=soma Prisma (pode > totalMs). NÃO use totalMs-dbMs como CPU.",
       };
       pushSample(sample);
       console.info(
-        `[perf-baseline:http] ${sample.method} ${sample.path} status=${sample.status} total=${sample.totalMs}ms db=${sample.dbMs}ms q=${sample.queryCount} bytes≈${sample.payloadBytesApprox ?? 0} serializeMs=${sample.serializeMs ?? "n/a"} profilingSerializeMs=${sample.profilingSerializeMs ?? 0} (excludedFromTotalMs)${formatPhasesForLog(phases)}${formatRowCountsForLog(rowCounts)}`
+        `[perf-baseline:http] ${sample.method} ${sample.path} status=${sample.status} total=${sample.totalMs}ms db=${sample.dbMs}ms q=${sample.queryCount} bytes≈${sample.payloadBytesApprox ?? 0} accountedWallMs=${sample.accountedWallMs} unaccountedWallMs=${sample.unaccountedWallMs} serializeMs=${sample.serializeMs ?? "n/a"} profilingSerializeMs=${sample.profilingSerializeMs ?? 0} (excludedFromTotalMs)${formatPhasesForLog(phases)}${formatRowCountsForLog(rowCounts)}`
       );
     });
 
