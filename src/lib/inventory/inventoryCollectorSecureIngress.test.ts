@@ -385,6 +385,54 @@ describe("3A estrutural", () => {
     assert.match(doc, /tailscale cert/);
     assert.match(doc, /Rollback/);
     assert.match(doc, /listen 100\./);
-    assert.doesNotMatch(doc, /proxy_add_x_forwarded_for para identidade DEVICE/);
+  });
+
+  it("3A.1 — guard operacional: upstreams por ambiente e aviso do gateway", () => {
+    const doc = read("docs/stock-collector-secure-ingress.md");
+
+    // Aviso em destaque: :3000 do servidor-01 é o GATEWAY DE PRODUÇÃO.
+    assert.match(doc, /NUNCA USAR A PORTA :3000 DO SERVIDOR-01/);
+    assert.match(doc, /GATEWAY DE PRODUÇÃO/);
+
+    // Template A (homologação) usa :3001 — e nada de :3000 dentro dele.
+    const templateA = doc.slice(
+      doc.indexOf("## Template A"),
+      doc.indexOf("## Template B")
+    );
+    assert.match(templateA, /proxy_pass http:\/\/127\.0\.0\.1:3001;/);
+    assert.doesNotMatch(templateA, /proxy_pass http:\/\/127\.0\.0\.1:3000/);
+    assert.match(templateA, /HOMOLOGAÇÃO/);
+
+    // Template B (produção AWS) usa :3000 no PRÓPRIO host AWS.
+    const templateB = doc.slice(
+      doc.indexOf("## Template B"),
+      doc.indexOf("Checklist comum")
+    );
+    assert.match(templateB, /proxy_pass http:\/\/127\.0\.0\.1:3000;/);
+    assert.doesNotMatch(templateB, /proxy_pass http:\/\/127\.0\.0\.1:3001/);
+    assert.match(templateB, /AWS/);
+
+    // Ambos preservam o header dedicado sobrescrito.
+    for (const template of [templateA, templateB]) {
+      assert.match(template, /proxy_set_header X-IndusCost-Tailscale-Peer \$remote_addr;/);
+    }
+
+    // Flags por ambiente: homologação sim, produção só após aprovação.
+    assert.match(doc, /SOMENTE no ambiente\/service da homologação/);
+    assert.match(doc, /NÃO habilitar até a homologação física ser aprovada/);
+  });
+
+  it("3A.1 — nenhuma configuração real é aplicada pelo código", () => {
+    // Nginx é documentação: nada no código do Collector escreve/aplica config.
+    for (const file of [
+      "server.ts",
+      "src/lib/inventory/collector/collectorRoutes.server.ts",
+      "src/lib/inventory/collector/collectorDeviceAuth.server.ts",
+      "src/lib/inventory/collector/collectorProxyPeer.ts",
+    ]) {
+      const src = read(file);
+      assert.doesNotMatch(src, /proxy_pass/, file);
+      assert.doesNotMatch(src, /sites-available|sites-enabled|nginx -s/, file);
+    }
   });
 });
