@@ -23,10 +23,8 @@ import {
 } from "./financeAccountsReceivableRulesEngine.js";
 import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
 import type { FinanceOfficialRulesProjection } from "./financeOfficialEngineProjection.js";
-import {
-  buildFinanceArOverduePayload,
-  type FinanceArOverdueFilters,
-} from "./financeAccountsReceivableOverdue.js";
+import { buildFinanceArOverduePayload } from "./financeAccountsReceivableOverdue.js";
+import type { FinanceArOverdueFilters } from "./financeAccountsReceivableOverdueTypes.js";
 import type { AccountsReceivableSummary } from "./nomusAccountsReceivableSummary.js";
 import type { FinanceArOverduePayload } from "./financeAccountsReceivableOverdueTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";

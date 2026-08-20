@@ -3,7 +3,7 @@
  * Consumidores futuros (telas, relatórios, exportações) devem usar estes tipos.
  */
 
-import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type { FinanceArDashboardSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import type {
   buildFinanceAccountsReceivableDashboard,
@@ -186,7 +186,7 @@ export type FinanceAccountsReceivableRulesResult = {
   horizon: AccountsReceivableOpenHorizon;
   dayBuckets: FinanceAccountsReceivableDayBucket[];
   gridRows: FinanceAccountsReceivableGridRow[];
-  dataSanitization: FinanceDataSanitization;
+  dataSanitization: FinanceArDashboardSanitization;
   metricDefinitions: FinanceAccountsReceivableMetricDefinition[];
   audit: FinanceAccountsReceivableRulesAuditResult;
   /** Payload completo da tela AR — reutilizado pelo adapter sem recalcular regras. */

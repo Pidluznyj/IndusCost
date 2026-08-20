@@ -30,10 +30,16 @@ import { startOfficialEngineProjectionTracker } from "./financeOfficialEnginePro
 
 const REF = new Date(2026, 5, 9);
 
-const FILTERS = {
-  viewMode: "projected" as const,
-  dateBase: "due" as const,
-  status: "all" as const,
+const FILTERS: {
+  viewMode: "projected";
+  dateBase: "due";
+  status: "all";
+  year: number;
+  month?: number;
+} = {
+  viewMode: "projected",
+  dateBase: "due",
+  status: "all",
   year: 2026,
 };
 
@@ -41,6 +47,8 @@ function arRow(overrides: Partial<FinanceCashFlowArRow> = {}): FinanceCashFlowAr
   return {
     externalId: 1,
     companyName: "Empresa A",
+    personId: null,
+    comments: null,
     personName: "Cliente X",
     personCnpj: "11111111000111",
     description: null,

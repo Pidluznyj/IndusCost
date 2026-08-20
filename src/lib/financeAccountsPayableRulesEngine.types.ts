@@ -2,7 +2,7 @@
  * Contratos do motor oficial de regras de Contas a Pagar.
  */
 
-import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type { FinanceApDashboardSanitization } from "./financeInternalGroupExclusions.js";
 import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
 import type {
   buildFinanceAccountsPayableDashboard,
@@ -136,7 +136,7 @@ export type FinanceAccountsPayableRulesResult = {
   purchaseOrderScheduleAudit: FinanceApPurchaseOrderScheduleAudit;
   dayBuckets: FinanceAccountsPayableDayBucket[];
   gridRows: FinanceAccountsPayableGridRow[];
-  dataSanitization: FinanceDataSanitization;
+  dataSanitization: FinanceApDashboardSanitization;
   metricDefinitions: FinanceAccountsPayableMetricDefinition[];
   audit: FinanceAccountsPayableRulesAuditResult;
   fullDashboard: FinanceAccountsPayableDashboardPayload;

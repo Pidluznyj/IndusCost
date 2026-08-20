@@ -28,12 +28,12 @@ function arRow(
   return {
     companyName: "Empresa A",
     personId: null,
+    comments: null,
     personName: "Cliente X",
     personCnpj: "12.345.678/0001-90",
     dueDate: new Date(2026, 5, 15),
     settlementDate: null,
     competenceDate: null,
-    comments: null,
     amountReceivable: 1000,
     amountReceived: 0,
     balanceReceivable: 1000,
@@ -61,7 +61,6 @@ function apRow(
     type: null,
     settlementDate: null,
     paymentDate: null,
-    competenceDate: new Date(2026, 4, 1),
     amountPayable: 1000,
     amountPaid: 0,
     balancePayable: 1000,
@@ -71,8 +70,6 @@ function apRow(
     documentNumber: "DOC-1",
     suspendPayment: false,
     description: null,
-    comments: null,
-    classification: null,
     nomusStatus: true,
     syncedAt: new Date("2026-06-06T12:00:00.000Z"),
     ...partial,
@@ -99,7 +96,10 @@ function assertArCashFlowCards(metricsCards: { totalOpenAmount: number; totalRec
   assert.equal(metricsCards.overdueAmount, fullCards.overdueAmount);
 }
 
-function compareAr(rows: FinanceArDashboardRow[], input: Parameters<typeof computeOfficialArMetrics>[0] = {}) {
+function compareAr(
+  rows: FinanceArDashboardRow[],
+  input: Partial<Parameters<typeof computeOfficialArMetrics>[0]> = {}
+) {
   const full = buildOfficialAccountsReceivableRulesResult({
     rows,
     referenceDate: REF,
@@ -118,7 +118,10 @@ function compareAr(rows: FinanceArDashboardRow[], input: Parameters<typeof compu
   return { full, metrics };
 }
 
-function compareAp(rows: FinanceApDashboardRow[], input: Parameters<typeof computeOfficialApMetrics>[0] = {}) {
+function compareAp(
+  rows: FinanceApDashboardRow[],
+  input: Partial<Parameters<typeof computeOfficialApMetrics>[0]> = {}
+) {
   const full = buildOfficialAccountsPayableRulesResult({
     rows,
     referenceDate: REF,

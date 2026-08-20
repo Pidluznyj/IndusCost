@@ -21,6 +21,7 @@ import {
   type FinanceManagementScope,
 } from "./financeInternalGroupExclusions.js";
 import {
+  type FinanceApDashboardPayload,
   FINANCE_AP_COMPANY_SUMMARY_LIMIT,
   FINANCE_AP_SUPPLIER_RANKING_LIMIT,
 } from "./financeAccountsPayableDashboardTypes.js";
@@ -677,13 +678,28 @@ export function filterFinanceApManagementReportRows(
 }
 
 /** @deprecated Preferir buildOfficialAccountsPayableDashboard (financeAccountsPayableRulesAdapter). */
+// Mesmo racional do AR: objeto zerado completo, runtime inalterado.
+const EMPTY_AP_CARDS_SANITIZATION: FinanceDataSanitization = {
+  ignoredInternalGroupReceivables: 0,
+  ignoredGhostReceivables: 0,
+  ignoredStaleReceivables: 0,
+  ignoredStalePayables: 0,
+  ignoredOverdueWithoutFiscalDocumentReceivables: 0,
+  supersededPreInvoiceReceivables: 0,
+  supersededPreInvoiceAmount: 0,
+  ignoredInternalGroupPayables: 0,
+  ignoredPurchaseOrderAgendaPayables: 0,
+};
+
 export function buildFinanceAccountsPayableDashboard(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters = { status: "all" },
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null,
   options?: { projection?: FinanceOfficialDashboardProjection }
-) {
+  // Mesmo motivo do AR: dois returns (full|cards) não podem virar UNION no
+  // ReturnType — o payload canônico é um só.
+): FinanceApDashboardPayload {
   const includePresentation = options?.projection !== "cards";
   const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const today = startOfLocalDay(referenceDate);
@@ -1019,17 +1035,7 @@ export function buildFinanceAccountsPayableDashboard(
       criticalTitles: [],
       dataQualityAlerts: financeApDataQualityAlertsLegacy(emptyQuality),
       dataQualitySummary: buildFinanceApDataQualitySummary(emptyQuality),
-      dataSanitization: {
-        ignoredInternalGroupReceivables: 0,
-        ignoredGhostReceivables: 0,
-        ignoredInternalGroupPayables: 0,
-        ignoredPurchaseOrderAgendaPayables: 0,
-        ignoredStaleReceivables: 0,
-        ignoredStalePayables: 0,
-        ignoredOverdueWithoutFiscalDocumentReceivables: 0,
-        supersededPreInvoiceReceivables: 0,
-        supersededPreInvoiceAmount: 0,
-      },
+      dataSanitization: EMPTY_AP_CARDS_SANITIZATION,
       purchaseOrderScheduleAudit: {
         excludedCount: 0,
         excludedAmount: 0,

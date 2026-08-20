@@ -1,6 +1,6 @@
 /** Tipos do payload GET /api/finance/accounts-receivable/dashboard */
 
-import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type { FinanceArDashboardSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import { isNomusPersonIdCustomerParam } from "./financeAccountsReceivableCustomerMatch.js";
 import { moneyAmountToFilterParam } from "./moneyRangeFilter.js";
@@ -190,7 +190,7 @@ export type FinanceArDashboardPayload = {
   criticalTitles: FinanceArCriticalTitle[];
   dataQualityAlerts: FinanceArDataQualityAlerts;
   dataQualitySummary: FinanceArDataQualityAlertItem[];
-  dataSanitization: FinanceDataSanitization;
+  dataSanitization: FinanceArDashboardSanitization;
   financialHorizon: AccountsReceivableOpenHorizon;
 };
 

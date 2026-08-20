@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { FinanceArDashboardPayload } from "./financeAccountsReceivableDashboardTypes.js";
 import {
   buildFinanceArDataQualitySummary,
   createFinanceArDataQualityAccumulator,
@@ -14,8 +15,9 @@ import {
   resolveEffectiveNomusArReportSyncCutoff,
   type NomusArReportSyncCutoff,
 } from "./financeNomusArReportFreshness.js";
-import { isFinanceArGhostTitle, isFinanceInternalGroupPerson } from "./financeInternalGroupExclusions.js";
-import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import { isFinanceArGhostTitle, isFinanceInternalGroupPerson,
+  type FinanceDataSanitization,
+} from "./financeInternalGroupExclusions.js";
 import { mergeAccountsReceivableOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 import {
   buildAccountsReceivableOpenHorizon,
@@ -676,6 +678,21 @@ export function filterFinanceArManagementReportRows(
 }
 
 /** @deprecated Preferir buildOfficialAccountsReceivableDashboard (financeAccountsReceivableRulesAdapter). */
+// Projeção cards: sanitização zerada COMPLETA (9 chaves) — mesmo objeto de
+// runtime de sempre; a const tipada evita o excess-check do literal contra o
+// subconjunto emitido pelo caminho full.
+const EMPTY_AR_CARDS_SANITIZATION: FinanceDataSanitization = {
+  ignoredInternalGroupReceivables: 0,
+  ignoredGhostReceivables: 0,
+  ignoredStaleReceivables: 0,
+  ignoredStalePayables: 0,
+  ignoredOverdueWithoutFiscalDocumentReceivables: 0,
+  supersededPreInvoiceReceivables: 0,
+  supersededPreInvoiceAmount: 0,
+  ignoredInternalGroupPayables: 0,
+  ignoredPurchaseOrderAgendaPayables: 0,
+};
+
 export function buildFinanceAccountsReceivableDashboard(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters = { status: "all" },
@@ -685,7 +702,10 @@ export function buildFinanceAccountsReceivableDashboard(
     horizonSourceRows?: FinanceArDashboardRow[];
     projection?: FinanceOfficialDashboardProjection;
   }
-) {
+  // Retorno anotado de propósito: com as projeções full|cards a função ganhou
+  // dois returns e o ReturnType virava UNION — quebrando reduce/consumidores.
+  // O payload canônico é um só; a projeção cards devolve as coleções vazias.
+): FinanceArDashboardPayload {
   const includePresentation = options?.projection !== "cards";
   const filteredRows = filterFinanceArManagementReportRows(
     rows,
@@ -1044,17 +1064,7 @@ export function buildFinanceAccountsReceivableDashboard(
       criticalTitles: [],
       dataQualityAlerts: financeArDataQualityAlertsLegacy(emptyQuality),
       dataQualitySummary: buildFinanceArDataQualitySummary(emptyQuality),
-      dataSanitization: {
-        ignoredInternalGroupReceivables: 0,
-        ignoredGhostReceivables: 0,
-        ignoredStaleReceivables: 0,
-        ignoredStalePayables: 0,
-        ignoredOverdueWithoutFiscalDocumentReceivables: 0,
-        supersededPreInvoiceReceivables: 0,
-        supersededPreInvoiceAmount: 0,
-        ignoredInternalGroupPayables: 0,
-        ignoredPurchaseOrderAgendaPayables: 0,
-      },
+      dataSanitization: EMPTY_AR_CARDS_SANITIZATION,
       financialHorizon: createEmptyAccountsReceivableOpenHorizon(referenceDate),
     };
   }

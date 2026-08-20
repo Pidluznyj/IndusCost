@@ -85,6 +85,26 @@ export type FinanceDataSanitization = {
   supersededPreInvoiceAmount: number;
 };
 
+/**
+ * Subconjuntos EMITIDOS de fato por cada dashboard (runtime inalterado desde
+ * antes da PERF 3.3): o AR não emite ignoredStalePayables; o AP emite apenas
+ * os contadores do lado a pagar + os dois zeros do lado a receber. Derivados
+ * do canônico via Omit/Pick — o tipo oficial permanece intacto.
+ */
+export type FinanceArDashboardSanitization = Omit<
+  FinanceDataSanitization,
+  "ignoredStalePayables"
+>;
+
+export type FinanceApDashboardSanitization = Pick<
+  FinanceDataSanitization,
+  | "ignoredInternalGroupReceivables"
+  | "ignoredGhostReceivables"
+  | "ignoredInternalGroupPayables"
+  | "ignoredPurchaseOrderAgendaPayables"
+  | "ignoredStalePayables"
+>;
+
 /** Visão gerencial financeira — mantido para compatibilidade de query/API. */
 export type FinanceManagementScope = "company" | "group_consolidated";
 
