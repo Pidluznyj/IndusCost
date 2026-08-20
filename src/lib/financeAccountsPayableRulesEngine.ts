@@ -33,6 +33,12 @@ import {
   resolveFinanceApOpenAmount,
 } from "./financeAccountsPayableRules.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
+import type { FinanceApDashboardCards } from "./financeAccountsPayableDashboardTypes.js";
+import {
+  fingerprintOfficialEnginePopulation,
+  noteOfficialEngineProjectionCall,
+  type FinanceOfficialRulesProjection,
+} from "./financeOfficialEngineProjection.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
 import type {
@@ -376,15 +382,18 @@ function sumScheduledOpenAmount(rows: FinanceApDashboardRow[]): number {
 
 export function buildAccountsPayableMetrics(
   titles: FinanceApDashboardRow[],
-  context: FinanceAccountsPayableRulesContext
+  context: FinanceAccountsPayableRulesContext,
+  cards?: FinanceApDashboardCards
 ): FinanceAccountsPayableMetrics {
-  const dashboard = buildFinanceAccountsPayableDashboard(
-    titles,
-    context.filters,
-    context.referenceDate,
-    context.syncCutoff
-  );
-  const cards = dashboard.cards;
+  const resolvedCards =
+    cards ??
+    buildFinanceAccountsPayableDashboard(
+      titles,
+      context.filters,
+      context.referenceDate,
+      context.syncCutoff,
+      { projection: "cards" }
+    ).cards;
   const filtered = filterFinanceApRows(
     titles,
     context.filters,
@@ -425,14 +434,14 @@ export function buildAccountsPayableMetrics(
   const scheduledOpenAmount = sumScheduledOpenAmount(filtered);
 
   return {
-    totalPayable: cards.totalPayableAmount,
-    paidThisMonth: cards.paidThisMonthAmount,
+    totalPayable: resolvedCards.totalPayableAmount,
+    paidThisMonth: resolvedCards.paidThisMonthAmount,
     paidYtd,
-    openAmount: cards.totalOpenAmount,
-    overdueAmount: cards.overdueAmount,
-    dueTodayAmount: cards.dueTodayAmount,
-    dueNext7DaysAmount: cards.dueNext7DaysAmount,
-    dueNext30DaysAmount: cards.dueNext30DaysAmount,
+    openAmount: resolvedCards.totalOpenAmount,
+    overdueAmount: resolvedCards.overdueAmount,
+    dueTodayAmount: resolvedCards.dueTodayAmount,
+    dueNext7DaysAmount: resolvedCards.dueNext7DaysAmount,
+    dueNext30DaysAmount: resolvedCards.dueNext30DaysAmount,
     dueNext60DaysAmount,
     dueNext90DaysAmount,
     scheduledOpenAmount,
@@ -563,16 +572,35 @@ export function buildFinanceAccountsPayableRulesResult(
   input: FinanceAccountsPayableRulesBuildInput = {}
 ): FinanceAccountsPayableRulesResult {
   const context = buildAccountsPayableRulesContext(input);
+  const projection: FinanceOfficialRulesProjection = input.projection ?? "full";
+  noteOfficialEngineProjectionCall(() => ({
+    kind: "ap",
+    mode: projection,
+    fingerprint: fingerprintOfficialEnginePopulation({
+      kind: "ap",
+      rowExternalIds: titles.map((row) => row.externalId),
+      rowOpenAmounts: titles.map((row) => row.balancePayable),
+      filters: context.filters,
+      referenceDate: context.referenceDate,
+      syncCutoff: context.syncCutoff,
+      year: input.year,
+      month: input.month,
+    }),
+  }));
+
   const dashboard = buildFinanceAccountsPayableDashboard(
     titles,
     context.filters,
     context.referenceDate,
-    context.syncCutoff
+    context.syncCutoff,
+    { projection: projection === "metrics" ? "cards" : "full" }
   );
 
-  const metrics = buildAccountsPayableMetrics(titles, context);
-  const dayBuckets = buildAccountsPayableDayBuckets(titles, context);
-  const gridRows = buildAccountsPayableGridRows(titles, context);
+  const metrics = buildAccountsPayableMetrics(titles, context, dashboard.cards);
+  const dayBuckets =
+    projection === "metrics" ? [] : buildAccountsPayableDayBuckets(titles, context);
+  const gridRows =
+    projection === "metrics" ? [] : buildAccountsPayableGridRows(titles, context);
 
   const result: FinanceAccountsPayableRulesResult = {
     engineVersion: FINANCE_AP_RULES_ENGINE_VERSION,
@@ -589,6 +617,7 @@ export function buildFinanceAccountsPayableRulesResult(
     metricDefinitions: listAccountsPayableMetricDefinitions(),
     audit: { isFinite: true, warnings: [], metricsDocumented: 0, filteredTitlesCount: 0, openTitlesCount: 0, settledTitlesCount: 0 },
     fullDashboard: dashboard,
+    projection,
   };
 
   result.audit = auditAccountsPayableRules(result);

@@ -191,6 +191,7 @@ export type FinanceAccountsReceivableRulesResult = {
   audit: FinanceAccountsReceivableRulesAuditResult;
   /** Payload completo da tela AR — reutilizado pelo adapter sem recalcular regras. */
   fullDashboard: FinanceAccountsReceivableDashboardPayload;
+  projection: import("./financeOfficialEngineProjection.js").FinanceOfficialRulesProjection;
 };
 
 export type FinanceAccountsReceivableRulesBuildInput = {
@@ -200,4 +201,6 @@ export type FinanceAccountsReceivableRulesBuildInput = {
   year?: number;
   month?: number;
   horizonSourceRows?: FinanceArDashboardRow[];
+  /** `metrics` omite grids/horizonte/aging — mesmos primitives de cards. Default `full`. */
+  projection?: import("./financeOfficialEngineProjection.js").FinanceOfficialRulesProjection;
 };

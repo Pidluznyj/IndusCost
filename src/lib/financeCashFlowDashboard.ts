@@ -1,13 +1,18 @@
 import type { Prisma } from "@prisma/client";
 import {
-  buildOfficialAccountsPayableRulesResult,
+  computeOfficialApMetrics,
 } from "./financeAccountsPayableRulesAdapter.js";
 import {
-  buildOfficialAccountsReceivableRulesResult,
+  computeOfficialArMetrics,
+  type OfficialAccountsReceivableBuildInput,
+  type OfficialArMetricsProjection,
 } from "./financeAccountsReceivableRulesAdapter.js";
 import {
   resolveOfficialCashFlowSources,
 } from "./financeCashFlowRulesAdapter.js";
+import {
+  reuseOfficialEngineResultIfSamePopulation,
+} from "./financeOfficialEngineProjection.js";
 import {
   countFinanceArSanitizationInScope,
   decimalFieldToNumber,
@@ -624,6 +629,13 @@ function sumPeriodAmounts(
   };
 }
 
+type FinanceCashFlowDashboardComputeOptions = FinanceCashFlowDatasetOptions & {
+  officialArPortfolioReuse?: {
+    input: OfficialAccountsReceivableBuildInput;
+    metrics: OfficialArMetricsProjection;
+  };
+};
+
 export function buildFinanceCashFlowDashboard(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -651,12 +663,13 @@ export function buildFinanceCashFlowDashboard(
     arSyncCutoff,
     arFilterOptions
   );
-  const officialArPortfolio = buildOfficialAccountsReceivableRulesResult({
+  const officialArPortfolioInput: OfficialAccountsReceivableBuildInput = {
     rows: arPortfolioRows,
     filters: toCashFlowPortfolioArFilters(filters),
     referenceDate,
     syncCutoff: arSyncCutoff,
-  });
+  };
+  const officialArPortfolio = computeOfficialArMetrics(officialArPortfolioInput);
   const apPortfolioRows = filterCashFlowApPortfolioRows(
     apRows,
     filters,
@@ -664,7 +677,7 @@ export function buildFinanceCashFlowDashboard(
     referenceDate,
     apSyncCutoff
   );
-  const officialApPortfolio = buildOfficialAccountsPayableRulesResult({
+  const officialApPortfolio = computeOfficialApMetrics({
     rows: apPortfolioRows,
     filters: toCashFlowPortfolioApFilters(filters),
     referenceDate,
@@ -702,7 +715,13 @@ export function buildFinanceCashFlowDashboard(
     referenceDate,
     arSyncCutoff,
     apSyncCutoff,
-    datasetOptions
+    {
+      ...datasetOptions,
+      officialArPortfolioReuse: {
+        input: officialArPortfolioInput,
+        metrics: officialArPortfolio,
+      },
+    }
   );
 }
 
@@ -714,7 +733,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
   referenceDate: Date = new Date(),
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null,
-  datasetOptions?: FinanceCashFlowDatasetOptions
+  datasetOptions?: FinanceCashFlowDashboardComputeOptions
 ): FinanceCashFlowDashboardPayload {
   const arFilterOptions =
     datasetOptions?.orderContexts !== undefined || datasetOptions?.nfeOrderLinks !== undefined
@@ -911,7 +930,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     .map(calendarDayToDailyPoint)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const apDashPeriod = buildOfficialAccountsPayableRulesResult({
+  const apDashPeriod = computeOfficialApMetrics({
     rows: apRows,
     filters: toApLoadFilters(filters),
     referenceDate,
@@ -919,13 +938,23 @@ export function buildFinanceCashFlowDashboardFromDataset(
     year: filters.year,
     month: filters.month,
   });
-  const arEffectivePortfolioRules = buildOfficialAccountsReceivableRulesResult({
+  const arPortfolioPeriodInput: OfficialAccountsReceivableBuildInput = {
     rows: dataset.arPortfolioRows,
     filters: toCashFlowPortfolioArFilters(filters),
     referenceDate,
     syncCutoff: arSyncCutoff,
-  });
-  const arEffectivePeriodRules = buildOfficialAccountsReceivableRulesResult({
+  };
+  const arEffectivePortfolioRules =
+    reuseOfficialEngineResultIfSamePopulation(
+      datasetOptions?.officialArPortfolioReuse
+        ? {
+            input: datasetOptions.officialArPortfolioReuse.input,
+            result: datasetOptions.officialArPortfolioReuse.metrics,
+          }
+        : null,
+      arPortfolioPeriodInput
+    ) ?? computeOfficialArMetrics(arPortfolioPeriodInput);
+  const arEffectivePeriodRules = computeOfficialArMetrics({
     rows: filteredAr,
     filters: toArLoadFilters(filters),
     referenceDate,

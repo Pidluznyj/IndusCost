@@ -21,6 +21,8 @@ import {
   type FinanceAccountsReceivableRulesResult,
   type OfficialArMetricScope,
 } from "./financeAccountsReceivableRulesEngine.js";
+import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
+import type { FinanceOfficialRulesProjection } from "./financeOfficialEngineProjection.js";
 import {
   buildFinanceArOverduePayload,
   type FinanceArOverdueFilters,
@@ -39,6 +41,7 @@ export type OfficialAccountsReceivableBuildInput = {
   horizonSourceRows?: FinanceArDashboardRow[];
   year?: number;
   month?: number;
+  projection?: FinanceOfficialRulesProjection;
 };
 
 function toRulesBuildInput(input: OfficialAccountsReceivableBuildInput): FinanceAccountsReceivableRulesBuildInput {
@@ -49,6 +52,7 @@ function toRulesBuildInput(input: OfficialAccountsReceivableBuildInput): Finance
     horizonSourceRows: input.horizonSourceRows,
     year: input.year,
     month: input.month,
+    projection: input.projection,
   };
 }
 
@@ -57,6 +61,32 @@ export function buildOfficialAccountsReceivableRulesResult(
   input: OfficialAccountsReceivableBuildInput
 ): FinanceAccountsReceivableRulesResult {
   return buildFinanceAccountsReceivableRulesResult(input.rows, toRulesBuildInput(input));
+}
+
+export type OfficialArMetricsProjection = {
+  metrics: FinanceAccountsReceivableMetrics;
+  cards: FinanceArDashboardCards;
+  engineVersion: string;
+  projection: "metrics";
+};
+
+/**
+ * Projeção de métricas oficiais AR — mesmos primitives do dashboard full.
+ * Não monta aging, ranking, grid, horizonte nem formatação de apresentação.
+ */
+export function computeOfficialArMetrics(
+  input: OfficialAccountsReceivableBuildInput
+): OfficialArMetricsProjection {
+  const result = buildOfficialAccountsReceivableRulesResult({
+    ...input,
+    projection: "metrics",
+  });
+  return {
+    metrics: result.metrics,
+    cards: result.cards,
+    engineVersion: result.engineVersion,
+    projection: "metrics",
+  };
 }
 
 export type OfficialAccountsReceivableDashboardPayload = FinanceAccountsReceivableDashboardPayload & {
@@ -118,7 +148,7 @@ export function resolveOfficialArCashFlowExecutiveMetrics(
   syncCutoff: NomusArReportSyncCutoff | null | undefined,
   year: number
 ): OfficialArCashFlowExecutiveMetrics {
-  const result = buildOfficialAccountsReceivableRulesResult({
+  const result = computeOfficialArMetrics({
     rows,
     filters,
     referenceDate,

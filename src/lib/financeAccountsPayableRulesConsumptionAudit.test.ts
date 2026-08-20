@@ -12,6 +12,7 @@ describe("financeAccountsPayableRulesConsumptionAudit", () => {
     const adapter = read("src/lib/financeAccountsPayableRulesAdapter.ts");
     assert.match(adapter, /OFFICIAL_AP_RULES_SOURCE/);
     assert.match(adapter, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(adapter, /computeOfficialApMetrics/);
     assert.match(adapter, /buildOfficialNomusAccountsPayableSummaryResponse/);
     assert.match(adapter, /buildOfficialApDueRadarPayload/);
     assert.match(adapter, /sumOfficialApOpenDueInPeriod/);
@@ -47,7 +48,7 @@ describe("financeAccountsPayableRulesConsumptionAudit", () => {
 
   it("dashboard Fluxo passa totais AP oficiais ao dataset", () => {
     const dashboard = read("src/lib/financeCashFlowDashboard.ts");
-    assert.match(dashboard, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(dashboard, /computeOfficialApMetrics/);
     assert.match(dashboard, /officialApBlockTotals/);
   });
 

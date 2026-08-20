@@ -140,6 +140,7 @@ export type FinanceAccountsPayableRulesResult = {
   metricDefinitions: FinanceAccountsPayableMetricDefinition[];
   audit: FinanceAccountsPayableRulesAuditResult;
   fullDashboard: FinanceAccountsPayableDashboardPayload;
+  projection: import("./financeOfficialEngineProjection.js").FinanceOfficialRulesProjection;
 };
 
 export type FinanceAccountsPayableRulesBuildInput = {
@@ -148,4 +149,6 @@ export type FinanceAccountsPayableRulesBuildInput = {
   syncCutoff?: NomusApReportSyncCutoff | null;
   year?: number;
   month?: number;
+  /** `metrics` omite grids/horizonte/aging — mesmos primitives de cards. Default `full`. */
+  projection?: import("./financeOfficialEngineProjection.js").FinanceOfficialRulesProjection;
 };
