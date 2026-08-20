@@ -1004,13 +1004,14 @@ export async function buildOfficialSalesOrderListMarginSummary(
 
     const loadCommercialFor = async (batch: SalesOrderForMargin[]) => {
       if (batch.length === 0) return new Map();
-      const needsItemLoad = batch.some((order) => !order.items?.length);
-      const loadedItems = needsItemLoad
-        ? await loadSalesOrderItemsForMargin(
-            db,
-            batch.map((order) => order.id)
-          )
-        : null;
+      // Recarrega itens apenas dos pedidos que vieram sem eles.
+      const idsMissingItems = batch
+        .filter((order) => !order.items?.length)
+        .map((order) => order.id);
+      const loadedItems =
+        idsMissingItems.length > 0
+          ? await loadSalesOrderItemsForMargin(db, idsMissingItems)
+          : null;
       return buildSalesOrderCommercialMarginReadModels(
         db,
         batch.map((order) => ({
