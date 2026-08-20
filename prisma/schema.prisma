@@ -6064,35 +6064,141 @@ model InventoryCountSession {
 
   warehouse InventoryWarehouse   @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   lines     InventoryCountLine[]
+  operations InventoryCountOperation[]
 
   @@index([warehouseId])
   @@index([status])
 }
 
 model InventoryCountLine {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionId           String   @db.Uuid
-  itemId              String   @db.Uuid
-  warehouseId         String   @db.Uuid
-  locationId          String?  @db.Uuid
-  systemQuantity      Decimal  @db.Decimal(20, 6)
-  countedQuantity     Decimal? @db.Decimal(20, 6)
-  differenceQuantity  Decimal? @db.Decimal(20, 6)
-  differencePercent   Decimal? @db.Decimal(10, 4)
-  justification       String?
-  generatedMovementId String?  @unique @db.Uuid
-  createdAt           DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId            String   @db.Uuid
+  itemId               String   @db.Uuid
+  warehouseId          String   @db.Uuid
+  locationId           String?  @db.Uuid
+  systemQuantity       Decimal  @db.Decimal(20, 6)
+  countedQuantity      Decimal? @db.Decimal(20, 6)
+  differenceQuantity   Decimal? @db.Decimal(20, 6)
+  differencePercent    Decimal? @db.Decimal(10, 4)
+  justification        String?
+  generatedMovementId  String?  @unique @db.Uuid
+  /// Trava otimista da linha — evita lost update entre coletores concorrentes.
+  version              Int      @default(0)
+  /// Observação vigente: autoridade do ajuste. Nulo em linhas legadas.
+  currentObservationId String?  @unique @db.Uuid
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  session           InventoryCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  item              InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  warehouse         InventoryWarehouse    @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  location          InventoryLocation?    @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  generatedMovement InventoryMovement?    @relation(fields: [generatedMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  session            InventoryCountSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  item               InventoryItem               @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouse          InventoryWarehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  location           InventoryLocation?          @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  generatedMovement  InventoryMovement?          @relation(fields: [generatedMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  currentObservation InventoryCountObservation?  @relation("CurrentObservation", fields: [currentObservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  observations       InventoryCountObservation[] @relation("LineObservations")
+  operations         InventoryCountOperation[]
 
   @@index([sessionId])
   @@index([itemId])
   @@index([warehouseId])
+}
+
+/// OP-10 — histórico append-only das contagens físicas.
+///
+/// Cada registro guarda o saldo sistêmico lido SOB LOCK no instante da
+/// contagem (`expectedQuantity`). O ajuste usa `adjustmentDelta`, e não a
+/// diferença contra a foto do start: movimentações legítimas ocorridas depois
+/// da contagem precisam sobreviver ao ajuste.
+model InventoryCountObservation {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lineId           String   @db.Uuid
+  /// Idempotência da operação de contagem (server-side).
+  operationId      String?  @unique
+  /// Saldo sistêmico no instante da contagem (InventoryBalance sob FOR UPDATE).
+  expectedQuantity Decimal  @db.Decimal(20, 6)
+  countedQuantity  Decimal  @db.Decimal(20, 6)
+  /// countedQuantity − expectedQuantity. Persistido: é o valor que decidiu o ajuste.
+  adjustmentDelta  Decimal  @db.Decimal(20, 6)
+  justification    String?
+  actorType        String   @default("USER")
+  userId           String?
+  deviceId         String?
+  observedAt       DateTime @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  line          InventoryCountLine  @relation("LineObservations", fields: [lineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  currentOfLine InventoryCountLine? @relation("CurrentObservation")
+  operations    InventoryCountOperation[]
+
+  @@index([lineId, observedAt])
+}
+
+/// FASE 2B — idempotência transacional da contagem física.
+///
+/// A linha só existe se a transação que a criou COMMITOU: aquisição via
+/// INSERT ... ON CONFLICT DO NOTHING, conclusão por UPDATE na mesma transação.
+/// Por isso não há coluna de status — registro commitado = operação concluída,
+/// rollback = registro inexistente (nada de PENDING persistente, nada de
+/// operationId envenenado por falha).
+///
+/// `resultSnapshot` guarda o DTO ORIGINAL devolvido pela operação: o replay de
+/// um retry atrasado precisa responder o que AQUELA operação produziu, e não o
+/// estado atual da linha (que pode já ter sido recontada).
+model InventoryCountOperation {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Chave de idempotência fornecida pelo cliente.
+  operationId String @unique
+  sessionId   String @db.Uuid
+  lineId      String @db.Uuid
+  /// SHA-256 do payload canônico — distingue retry legítimo de conflito.
+  requestHash String
+  /// Persistido explicitamente: não fica só embutido no requestHash.
+  expectedVersion Int
+  /// Preenchidos antes do commit (ver nota acima sobre ausência de status).
+  resultVersion   Int?
+  observationId   String? @db.Uuid
+  /// DTO da resposta original desta operação.
+  resultSnapshot  Json?
+  actorType   String   @default("USER")
+  userId      String?
+  deviceId    String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  session     InventoryCountSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  line        InventoryCountLine         @relation(fields: [lineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  observation InventoryCountObservation? @relation(fields: [observationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([lineId])
+  @@index([sessionId])
+}
+
+/// FASE 2C — Device Registry do Stock Collector.
+///
+/// A autorização do Collector é TAILSCALE IDENTITY + DEVICE REGISTRY, sempre
+/// fail-closed. A CHAVE é o stable node id do Tailscale — nunca IP, hostname,
+/// header ou qualquer valor enviado pelo cliente. Os campos tailscaleNodeName/
+/// tailscaleLoginName/lastSeenIp/lastSeenAt são snapshots informativos e não
+/// participam da decisão de autorização.
+///
+/// Revogação é soft: active=false nega acesso imediatamente e preserva o
+/// histórico. Não há delete físico no fluxo normal.
+model InventoryCollectorDevice {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                   String
+  /// Identidade persistente do node no tailnet (WhoIs → Node.StableID).
+  tailscaleStableNodeId  String    @unique
+  active                 Boolean   @default(true)
+  tailscaleNodeName      String?
+  tailscaleLoginName     String?
+  lastSeenIp             String?
+  lastSeenAt             DateTime? @db.Timestamptz(6)
+  createdByUserId        String?
+  disabledAt             DateTime? @db.Timestamptz(6)
+  disabledByUserId       String?
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([active])
 }
 
 model InventoryAuditLog {

@@ -17,13 +17,27 @@ import {
   parseUpdateCountLineBody,
 } from "@/src/lib/inventory/inventoryCountValidation.js";
 import {
+  COUNT_LINE_VERSION_CONFLICT,
+  COUNT_OPERATION_IDEMPOTENCY_CONFLICT,
+  recordInventoryCount,
+} from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
+import { buildCollectorQrText } from "@/src/lib/inventory/collector/collectorQrContract.js";
+import {
+  COLLECTOR_DEVICE_DUPLICATE,
+  COLLECTOR_DEVICE_NOT_FOUND,
+  listCollectorDevices,
+  parseRegisterCollectorDeviceBody,
+  registerCollectorDevice,
+  serializeCollectorDevice,
+  setCollectorDeviceStatus,
+} from "@/src/lib/inventory/collector/collectorDeviceRegistry.server.js";
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   createInventoryCountSession,
   finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
   startInventoryCountSession,
-  updateInventoryCountLine,
 } from "@/src/lib/inventory/inventoryCountService.server.js";
 import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
@@ -123,11 +137,15 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "RESERVATION_NOT_FOUND" ||
     error.code === "BLOCK_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
-    error.code === "LINE_NOT_FOUND"
+    error.code === "LINE_NOT_FOUND" ||
+    error.code === COLLECTOR_DEVICE_NOT_FOUND
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
-        : error.code === "LOCATION_CODE_DUPLICATE" ||
+        : error.code === COUNT_LINE_VERSION_CONFLICT ||
+            error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
+            error.code === COLLECTOR_DEVICE_DUPLICATE ||
+            error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
             error.code === "INVENTORY_CODE_CONFLICT" ||
             error.code === "ALREADY_REVERSED" ||
@@ -1920,12 +1938,41 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       }
 
       const input = parseUpdateCountLineBody(req.body);
-      const line = await updateInventoryCountLine(prisma, id, lineId, input, {
-        userId: user.id,
-        permissions: user.effectivePermissions,
-      });
+      // OP-10: a rota humana entra no serviço de aplicação canônico, o mesmo
+      // que a futura rota DEVICE usará.
+      //
+      // FASE 2B: actorType/userId/deviceId são definidos AQUI, server-side. O
+      // browser não escolhe ator — nada do corpo da requisição alimenta esses
+      // campos, mesmo que o cliente tente enviá-los.
+      const result = await recordInventoryCount(
+        prisma,
+        {
+          sessionId: id,
+          lineId,
+          countedQuantity: input.countedQuantity,
+          justification: input.justification,
+          expectedVersion: input.expectedVersion,
+          operationId: input.operationId,
+          actorType: "USER",
+          deviceId: null,
+        },
+        { userId: user.id, permissions: user.effectivePermissions }
+      );
 
-      res.json({ line: serializeInventoryCountLine(line) });
+      // Replay de retry: 200 normal, com o resultado ORIGINAL da operação.
+      if (result.replayed || !result.line) {
+        return res.json({
+          line: null,
+          replayed: true,
+          result: result.snapshot,
+        });
+      }
+
+      res.json({
+        line: serializeInventoryCountLine(result.line),
+        replayed: false,
+        result: result.snapshot,
+      });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("PATCH /api/inventory/count-sessions/:id/lines/:lineId", e);
@@ -2017,6 +2064,138 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/count-sessions/:id/cancel", e);
       res.status(500).json(inventoryApiError("Erro ao cancelar conferência."));
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // FASE 2C — Device Registry do Stock Collector (administração HUMANA).
+  // A autorização do dispositivo em si NÃO passa por aqui: ela é o
+  // requireInventoryCollectorDevice (Tailscale + Registry, fail-closed).
+  // Administrar dispositivos exige o mesmo nível de quem aprova conferência.
+  // ---------------------------------------------------------------------
+
+  app.get("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const devices = await listCollectorDevices(prisma, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+      res.json({ devices: devices.map(serializeCollectorDevice) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/collector-devices", e);
+      res.status(500).json(inventoryApiError("Erro ao listar dispositivos."));
+    }
+  });
+
+  app.post("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseRegisterCollectorDeviceBody(req.body);
+      const device = await registerCollectorDevice(prisma, input, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+      res.status(201).json({ device: serializeCollectorDevice(device) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/collector-devices", e);
+      res.status(500).json(inventoryApiError("Erro ao cadastrar dispositivo."));
+    }
+  });
+
+  app.patch(
+    "/api/inventory/collector-devices/:id/status",
+    ...countApprove,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+        const active = (req.body as Record<string, unknown> | undefined)?.active;
+        if (typeof active !== "boolean") {
+          return res.status(400).json(inventoryApiError("Campo active deve ser booleano."));
+        }
+
+        const device = await setCollectorDeviceStatus(prisma, id, active, {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        });
+        res.json({ device: serializeCollectorDevice(device) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error("PATCH /api/inventory/collector-devices/:id/status", e);
+        res.status(500).json(inventoryApiError("Erro ao atualizar dispositivo."));
+      }
+    }
+  );
+
+  // FASE 3 — geração de etiquetas QR (fluxo HUMANO autenticado; o DEVICE não
+  // gera QR). Combinações válidas item × endereço saem do InventoryBalance —
+  // a mesma fonte canônica que origina as linhas de conferência no START.
+  app.get("/api/inventory/count-labels", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      if (!isUuid(warehouseId)) {
+        return res.status(400).json(inventoryApiError("Almoxarifado inválido."));
+      }
+      const warehouse = await prisma.inventoryWarehouse.findUnique({
+        where: { id: warehouseId },
+        select: { id: true, code: true, name: true, status: true },
+      });
+      if (!warehouse) {
+        return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
+      }
+
+      const balances = await prisma.inventoryBalance.findMany({
+        where: { warehouseId, item: { status: "ACTIVE" } },
+        select: {
+          itemId: true,
+          locationId: true,
+          item: { select: { code: true, description: true, unit: true } },
+          location: { select: { code: true, name: true, status: true } },
+        },
+        orderBy: [{ item: { code: "asc" } }],
+      });
+
+      const labels = balances
+        .filter((b) => !b.locationId || b.location?.status === "ACTIVE")
+        .map((b) => ({
+          itemId: b.itemId,
+          itemCode: b.item.code,
+          itemDescription: b.item.description,
+          itemUnit: b.item.unit,
+          warehouseId: warehouse.id,
+          warehouseCode: warehouse.code,
+          warehouseName: warehouse.name,
+          locationId: b.locationId,
+          locationCode: b.location?.code ?? null,
+          locationName: b.location?.name ?? null,
+          qrText: buildCollectorQrText({
+            itemId: b.itemId,
+            warehouseId: warehouse.id,
+            locationId: b.locationId,
+          }),
+        }));
+
+      res.json({
+        warehouse: { id: warehouse.id, code: warehouse.code, name: warehouse.name },
+        labels,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/count-labels", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar etiquetas."));
     }
   });
 }

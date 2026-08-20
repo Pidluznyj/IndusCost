@@ -290,6 +290,9 @@ export function serializeInventoryCountLine(row: CountLineWithItem) {
     differencePercent: inventoryDecOrNull(row.differencePercent),
     justification: row.justification,
     generatedMovementId: row.generatedMovementId,
+    // FASE 2B: sem version no cliente não existe CAS.
+    version: row.version,
+    currentObservationId: row.currentObservationId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -17,14 +17,47 @@ import {
   finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
   startInventoryCountSession,
-  updateInventoryCountLine,
 } from "../lib/inventory/inventoryCountService.server.js";
 import { createInventoryMovement } from "../lib/inventory/inventoryService.server.js";
+import { recordInventoryCount as recordInventoryCountService } from "../lib/inventory/inventoryCountApplicationService.server.js";
 import { InventoryValidationError } from "../lib/inventory/inventoryTypes.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
+
+/**
+ * Wrapper de teste. O CAS é obrigatório no serviço; estes cenários exercitam
+ * semântica temporal, não concorrência, então usam a versão vigente da linha.
+ * Os testes de CAS passam expectedVersion explicitamente.
+ */
+async function recordInventoryCount(
+  prisma: never,
+  input: {
+    sessionId: string;
+    lineId: string;
+    countedQuantity: number;
+    justification?: string | null;
+    expectedVersion?: number;
+    operationId?: string | null;
+  },
+  actor: { userId: string; permissions?: readonly string[] }
+) {
+  const db = prisma as unknown as {
+    inventoryCountLine: {
+      findFirst: (args: unknown) => Promise<{ version?: number } | null>;
+    };
+  };
+  const current = await db.inventoryCountLine.findFirst({
+    where: { id: input.lineId, sessionId: input.sessionId },
+  });
+  return recordInventoryCountService(
+    prisma,
+    { ...input, expectedVersion: input.expectedVersion ?? current?.version ?? 0 },
+    actor
+  );
+}
+
 
 describe("inventoryCountValidation", () => {
   it("1. cria conferência com almoxarifado", () => {
@@ -37,12 +70,39 @@ describe("inventoryCountValidation", () => {
   });
 
   it("4. informa saldo contado >= 0", () => {
-    const line = parseUpdateCountLineBody({ countedQuantity: 12, justification: null });
+    const line = parseUpdateCountLineBody({
+      countedQuantity: 12,
+      justification: null,
+      expectedVersion: 0,
+    });
     assert.equal(line.countedQuantity, 12);
+    assert.equal(line.expectedVersion, 0);
     assert.throws(
-      () => parseUpdateCountLineBody({ countedQuantity: -1 }),
+      () => parseUpdateCountLineBody({ countedQuantity: -1, expectedVersion: 0 }),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "INVALID_COUNTED_QUANTITY"
     );
+  });
+
+  it("4b. FASE 2B — sem expectedVersion não há CAS: contrato recusa", () => {
+    assert.throws(
+      () => parseUpdateCountLineBody({ countedQuantity: 12 }),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === "COUNT_LINE_VERSION_REQUIRED"
+    );
+    for (const bad of [-1, 1.5, "x", null]) {
+      assert.throws(
+        () => parseUpdateCountLineBody({ countedQuantity: 12, expectedVersion: bad }),
+        (e: unknown) =>
+          e instanceof InventoryValidationError && e.code === "COUNT_LINE_VERSION_REQUIRED"
+      );
+    }
+    const ok = parseUpdateCountLineBody({
+      countedQuantity: 12,
+      expectedVersion: 3,
+      operationId: "  op-1  ",
+    });
+    assert.equal(ok.expectedVersion, 3);
+    assert.equal(ok.operationId, "op-1");
   });
 
   it("5. calcula diferença", () => {
@@ -105,13 +165,11 @@ describe("inventoryCountService", () => {
       sessions: countingSession("sess-1", "wh-1"),
       lines: [countLine("line-1", "sess-1", "item-1", "wh-1", 10)],
     });
-    await updateInventoryCountLine(
-      prisma as never,
-      "sess-1",
-      "line-1",
-      { countedQuantity: 12, justification: "Sobra física" },
-      { userId: "user-1" }
-    );
+    await recordInventoryCount(
+          prisma as never,
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 12, justification: "Sobra física" },
+          { userId: "user-1" }
+        );
     assert.equal(Number(state.lines[0].countedQuantity), 12);
     assert.equal(Number(state.lines[0].differenceQuantity), 2);
   });
@@ -252,11 +310,9 @@ describe("inventoryCountService", () => {
     });
     await assert.rejects(
       () =>
-        updateInventoryCountLine(
+        recordInventoryCount(
           prisma as never,
-          "sess-1",
-          "line-1",
-          { countedQuantity: 5 },
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 5 },
           { userId: "user-1" }
         ),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "SESSION_LOCKED"
@@ -336,6 +392,24 @@ describe("inventoryCountMath", () => {
   });
 });
 
+
+/** Aplica data do Prisma numa linha do mock, entendendo { increment }. */
+function applyMockUpdate<T extends Record<string, unknown>>(
+  row: T,
+  data: Record<string, unknown>
+): T {
+  const next: Record<string, unknown> = { ...row };
+  for (const [key, value] of Object.entries(data)) {
+    if (value && typeof value === "object" && "increment" in (value as object)) {
+      const inc = Number((value as { increment: number }).increment);
+      next[key] = Number(next[key] ?? 0) + inc;
+      continue;
+    }
+    next[key] = value;
+  }
+  return next as T;
+}
+
 type MockBalance = {
   id: string;
   itemId: string;
@@ -377,6 +451,8 @@ type MockLine = {
   differencePercent?: Prisma.Decimal | null;
   justification?: string | null;
   generatedMovementId?: string | null;
+  version?: number;
+  currentObservationId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -453,6 +529,8 @@ function createCountMockPrisma(options?: {
     sessions: [...(options?.sessions ?? [])] as MockSession[],
     lines: [...(options?.lines ?? [])] as MockLine[],
     movements: [] as Array<Record<string, unknown>>,
+    observations: [] as Array<Record<string, unknown>>,
+    operations: [] as Array<Record<string, unknown>>,
     auditLogs: [] as Array<Record<string, unknown>>,
   };
 
@@ -563,33 +641,100 @@ function createCountMockPrisma(options?: {
         return state.sessions[idx];
       },
     },
+    // OP-10: a contagem canônica grava Observation append-only.
+    inventoryCountObservation: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = {
+          ...data,
+          id: `obs-${state.observations.length + 1}`,
+          observedAt: new Date(),
+          createdAt: new Date(),
+        };
+        state.observations.push(row);
+        return row;
+      },
+      findMany: async () => [...state.observations],
+    },
     inventoryCountLine: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `line-${state.lines.length + 1}`, ...data };
         state.lines.push(row as MockLine);
         return row;
       },
-      findFirst: async ({ where }: { where: { id: string; sessionId: string } }) =>
-        state.lines.find((l) => l.id === where.id && l.sessionId === where.sessionId) ?? null,
+      findFirst: async ({ where }: { where: { id: string; sessionId?: string } }) =>
+        state.lines.find(
+          (l) => l.id === where.id && (where.sessionId === undefined || l.sessionId === where.sessionId)
+        ) ?? null,
       findMany: async ({
         where,
         include,
       }: {
         where: { sessionId: string };
-        include?: { item?: { select: { unit: boolean } } };
+        include?: { item?: { select: { unit: boolean } }; currentObservation?: boolean };
       }) =>
         state.lines
           .filter((l) => l.sessionId === where.sessionId)
           .map((l) => ({
             ...l,
-            ...(include?.item
-              ? { item: { unit: "UN" } }
+            ...(include?.item ? { item: { unit: "UN" } } : {}),
+            ...(include?.currentObservation
+              ? {
+                  currentObservation:
+                    state.observations.find((o) => o.id === l.currentObservationId) ?? null,
+                }
               : {}),
           })),
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const idx = state.lines.findIndex((l) => l.id === where.id);
-        state.lines[idx] = { ...state.lines[idx], ...data } as MockLine;
+        state.lines[idx] = applyMockUpdate(state.lines[idx], data) as MockLine;
         return state.lines[idx];
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; version?: number };
+        data: Record<string, unknown>;
+      }) => {
+        const matches = state.lines.filter(
+          (l) => l.id === where.id && (where.version === undefined || (l.version ?? 0) === where.version)
+        );
+        for (const match of matches) {
+          const idx = state.lines.findIndex((l) => l.id === match.id);
+          state.lines[idx] = applyMockUpdate(state.lines[idx], data) as MockLine;
+        }
+        return { count: matches.length };
+      },
+    },
+    inventoryCountOperation: {
+      createMany: async ({
+        data,
+        skipDuplicates,
+      }: {
+        data: Array<Record<string, unknown>>;
+        skipDuplicates?: boolean;
+      }) => {
+        let count = 0;
+        for (const row of data) {
+          const exists = state.operations.some((o) => o.operationId === row.operationId);
+          if (exists && skipDuplicates) continue;
+          state.operations.push({ id: `op-${state.operations.length + 1}`, ...row });
+          count += 1;
+        }
+        return { count };
+      },
+      findUnique: async ({ where }: { where: { operationId: string } }) =>
+        state.operations.find((o) => o.operationId === where.operationId) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { operationId: string };
+        data: Record<string, unknown>;
+      }) => {
+        const idx = state.operations.findIndex((o) => o.operationId === where.operationId);
+        state.operations[idx] = { ...state.operations[idx], ...data };
+        return state.operations[idx];
       },
     },
   };
@@ -599,6 +744,8 @@ function createCountMockPrisma(options?: {
     inventoryAuditLog: movementTx.inventoryAuditLog,
     inventoryCountSession: movementTx.inventoryCountSession,
     inventoryCountLine: movementTx.inventoryCountLine,
+    inventoryCountObservation: movementTx.inventoryCountObservation,
+    inventoryCountOperation: movementTx.inventoryCountOperation,
     inventoryBalance: movementTx.inventoryBalance,
     inventoryItem: movementTx.inventoryItem,
     inventoryWarehouse: movementTx.inventoryWarehouse,

@@ -269,6 +269,9 @@ export type InventoryCountLineRow = {
   differencePercent: number | null;
   justification: string | null;
   generatedMovementId: string | null;
+  /** Trava otimista — a UI devolve este valor como expectedVersion. */
+  version: number;
+  currentObservationId: string | null;
   createdAt: string;
   updatedAt: string;
 };

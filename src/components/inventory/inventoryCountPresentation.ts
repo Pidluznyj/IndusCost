@@ -62,6 +62,9 @@ function normalizeLine(raw: Record<string, unknown>): InventoryCountLineRow {
     justification: raw.justification != null ? String(raw.justification) : null,
     generatedMovementId:
       raw.generatedMovementId != null ? String(raw.generatedMovementId) : null,
+    version: asNumber(raw.version),
+    currentObservationId:
+      raw.currentObservationId != null ? String(raw.currentObservationId) : null,
     createdAt: String(raw.createdAt ?? ""),
     updatedAt: String(raw.updatedAt ?? ""),
   };

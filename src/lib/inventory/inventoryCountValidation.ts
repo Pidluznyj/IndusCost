@@ -13,7 +13,14 @@ export type CreateCountSessionInput = {
 export type UpdateCountLineInput = {
   countedQuantity: number;
   justification: string | null;
+  /** CAS obrigatório na rota humana — ver COUNT_LINE_VERSION_REQUIRED. */
+  expectedVersion: number;
+  /** Chave de idempotência por tentativa lógica. */
+  operationId: string | null;
 };
+
+/** Cliente antigo (aba aberta durante o deploy) não tem como fazer CAS. */
+export const COUNT_LINE_VERSION_REQUIRED = "COUNT_LINE_VERSION_REQUIRED";
 
 export function parseCreateCountSessionBody(body: unknown): CreateCountSessionInput {
   const data = (body ?? {}) as Record<string, unknown>;
@@ -37,15 +44,43 @@ export function parseUpdateCountLineBody(body: unknown): UpdateCountLineInput {
       "INVALID_COUNTED_QUANTITY"
     );
   }
+
+  // Sem expectedVersion não existe CAS — e proteção opcional em silêncio é o
+  // mesmo que proteção nenhuma. Código próprio para a UI pedir recarga.
+  const rawVersion = data.expectedVersion;
+  const expectedVersion = Number(rawVersion);
+  if (
+    rawVersion == null ||
+    !Number.isFinite(expectedVersion) ||
+    !Number.isInteger(expectedVersion) ||
+    expectedVersion < 0
+  ) {
+    throw new InventoryValidationError(
+      "Recarregue a conferência: a versão da linha é obrigatória.",
+      COUNT_LINE_VERSION_REQUIRED
+    );
+  }
+
   return {
     countedQuantity: n,
     justification: safeTrim(data.justification) || null,
+    expectedVersion,
+    operationId: safeTrim(data.operationId) || null,
   };
 }
 
+/**
+ * REGRA LEGADA — diferença contra a fotografia do START da sessão.
+ *
+ * NÃO usar como autoridade em contagens novas: desde o OP-10 a exigência de
+ * justificativa e o roteamento de aprovação seguem a divergência FÍSICA
+ * efetiva (requiresCountJustification / hasEffectiveCountDivergence, sobre o
+ * adjustmentDelta da Observation). Mantida apenas para descrever o
+ * comportamento das sessões anteriores ao OP-10.
+ */
 export function validateCountLineUpdate(
   systemQuantity: number,
-  input: UpdateCountLineInput
+  input: { countedQuantity: number; justification: string | null }
 ): { differenceQuantity: number; differencePercent: number } {
   const { differenceQuantity, differencePercent } = computeCountDifference(
     systemQuantity,
