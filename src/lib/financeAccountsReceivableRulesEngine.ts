@@ -32,6 +32,12 @@ import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
 import { isFinanceArOverdueWithoutFiscalDocument } from "./financeAccountsReceivableManagement.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
+import {
+  fingerprintOfficialEnginePopulation,
+  noteOfficialEngineProjectionCall,
+  type FinanceOfficialRulesProjection,
+} from "./financeOfficialEngineProjection.js";
 import type {
   FinanceAccountsReceivableDayBucket,
   FinanceAccountsReceivableGridRow,
@@ -622,15 +628,18 @@ export function countOfficialArOpenDueInPeriod(
 
 export function buildAccountsReceivableMetrics(
   titles: FinanceArDashboardRow[],
-  context: FinanceAccountsReceivableRulesContext
+  context: FinanceAccountsReceivableRulesContext,
+  cards?: FinanceArDashboardCards
 ): FinanceAccountsReceivableMetrics {
-  const dashboard = buildFinanceAccountsReceivableDashboard(
-    titles,
-    context.filters,
-    context.referenceDate,
-    context.syncCutoff
-  );
-  const cards = dashboard.cards;
+  const resolvedCards =
+    cards ??
+    buildFinanceAccountsReceivableDashboard(
+      titles,
+      context.filters,
+      context.referenceDate,
+      context.syncCutoff,
+      { projection: "cards" }
+    ).cards;
 
   const receivedYtd = sumFinanceArReceivedBySettlementInPeriod(
     titles,
@@ -664,20 +673,20 @@ export function buildAccountsReceivableMetrics(
   );
 
   return {
-    totalReceivable: cards.totalAmountReceivable,
-    receivedThisMonth: cards.receivedThisMonthAmount,
+    totalReceivable: resolvedCards.totalAmountReceivable,
+    receivedThisMonth: resolvedCards.receivedThisMonthAmount,
     receivedYtd,
-    openAmount: cards.totalOpenAmount,
-    overdueAmount: cards.overdueAmount,
-    dueTodayAmount: cards.dueTodayAmount,
-    dueNext7DaysAmount: cards.dueNext7DaysAmount,
-    dueNext30DaysAmount: cards.dueNext30DaysAmount,
+    openAmount: resolvedCards.totalOpenAmount,
+    overdueAmount: resolvedCards.overdueAmount,
+    dueTodayAmount: resolvedCards.dueTodayAmount,
+    dueNext7DaysAmount: resolvedCards.dueNext7DaysAmount,
+    dueNext30DaysAmount: resolvedCards.dueNext30DaysAmount,
     dueNext60DaysAmount,
     dueNext90DaysAmount,
-    openWithInvoiceAmount: cards.openWithInvoiceAmount,
-    openWithoutInvoiceAmount: cards.openWithoutInvoiceAmount,
-    openWithInvoiceCount: cards.openWithInvoiceCount,
-    openWithoutInvoiceCount: cards.openWithoutInvoiceCount,
+    openWithInvoiceAmount: resolvedCards.openWithInvoiceAmount,
+    openWithoutInvoiceAmount: resolvedCards.openWithoutInvoiceAmount,
+    openWithInvoiceCount: resolvedCards.openWithInvoiceCount,
+    openWithoutInvoiceCount: resolvedCards.openWithoutInvoiceCount,
     openUntilYearEnd,
     estimatedYearTotal: roundMoney(receivedYtd + openUntilYearEnd),
     periodReceivedAmount: receivedYtd,
@@ -799,17 +808,38 @@ export function buildFinanceAccountsReceivableRulesResult(
   input: FinanceAccountsReceivableRulesBuildInput = {}
 ): FinanceAccountsReceivableRulesResult {
   const context = buildAccountsReceivableRulesContext(input);
+  const projection: FinanceOfficialRulesProjection = input.projection ?? "full";
+  noteOfficialEngineProjectionCall(() => ({
+    kind: "ar",
+    mode: projection,
+    fingerprint: fingerprintOfficialEnginePopulation({
+      kind: "ar",
+      rowExternalIds: titles.map((row) => row.externalId),
+      rowOpenAmounts: titles.map((row) => row.balanceReceivable),
+      filters: context.filters,
+      referenceDate: context.referenceDate,
+      syncCutoff: context.syncCutoff,
+      year: input.year,
+      month: input.month,
+    }),
+  }));
+
   const dashboard = buildFinanceAccountsReceivableDashboard(
     titles,
     context.filters,
     context.referenceDate,
     context.syncCutoff,
-    { horizonSourceRows: input.horizonSourceRows ?? titles }
+    {
+      horizonSourceRows: input.horizonSourceRows ?? titles,
+      projection: projection === "metrics" ? "cards" : "full",
+    }
   );
 
-  const metrics = buildAccountsReceivableMetrics(titles, context);
-  const dayBuckets = buildAccountsReceivableDayBuckets(titles, context);
-  const gridRows = buildAccountsReceivableGridRows(titles, context);
+  const metrics = buildAccountsReceivableMetrics(titles, context, dashboard.cards);
+  const dayBuckets =
+    projection === "metrics" ? [] : buildAccountsReceivableDayBuckets(titles, context);
+  const gridRows =
+    projection === "metrics" ? [] : buildAccountsReceivableGridRows(titles, context);
   const horizon = dashboard.financialHorizon;
 
   const result: FinanceAccountsReceivableRulesResult = {
@@ -826,6 +856,7 @@ export function buildFinanceAccountsReceivableRulesResult(
     metricDefinitions: listAccountsReceivableMetricDefinitions(),
     audit: { isFinite: true, warnings: [], metricsDocumented: 0, filteredTitlesCount: 0, openTitlesCount: 0, settledTitlesCount: 0 },
     fullDashboard: dashboard,
+    projection,
   };
 
   result.audit = auditAccountsReceivableRules(result);

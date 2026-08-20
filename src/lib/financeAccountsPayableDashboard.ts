@@ -29,7 +29,10 @@ import {
 } from "./financeAccountsPayableTitles.js";
 import {
   buildFinanceApHorizonSummary,
+  createEmptyFinanceHorizonSummary,
+  FINANCE_HORIZON_AP_SCOPE_NOTE,
 } from "./financeHorizonAggregation.js";
+import type { FinanceOfficialDashboardProjection } from "./financeOfficialEngineProjection.js";
 import { assignFinanceDashboardAgingBucketKey } from "./financeDashboardAgingBuckets.js";
 import {
   isFinanceApExcludedFromReports,
@@ -678,8 +681,10 @@ export function buildFinanceAccountsPayableDashboard(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters = { status: "all" },
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusApReportSyncCutoff | null
+  syncCutoff?: NomusApReportSyncCutoff | null,
+  options?: { projection?: FinanceOfficialDashboardProjection }
 ) {
+  const includePresentation = options?.projection !== "cards";
   const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const today = startOfLocalDay(referenceDate);
   const in7Days = endOfLocalDay(addLocalDays(today, 7));
@@ -769,7 +774,9 @@ export function buildFinanceAccountsPayableDashboard(
     if (isFinanceApCancelledTitle(row)) continue;
     if (lastSyncAt == null || row.syncedAt > lastSyncAt) lastSyncAt = row.syncedAt;
 
-    trackFinanceApDataQualityRow(dataQualityAcc, row, today);
+    if (includePresentation) {
+      trackFinanceApDataQualityRow(dataQualityAcc, row, today);
+    }
     totalPayableAmount += row.amountPayable;
 
     const paidAt = resolveFinanceApEffectivePaymentDate(row);
@@ -781,30 +788,32 @@ export function buildFinanceAccountsPayableDashboard(
       paidAt.getTime() <= monthEnd.getTime()
     ) {
       paidThisMonthAmount += realized;
-      const companyName = row.companyName?.trim() || "Sem empresa";
-      const company =
-        companyAcc.get(companyName) ??
-        ({
-          companyName,
-          openAmount: 0,
-          overdueAmount: 0,
-          upcomingAmount: 0,
-          paidThisMonthAmount: 0,
-          titlesCount: 0,
-          suppliers: new Set<string>(),
-        } as {
-          companyName: string;
-          openAmount: number;
-          overdueAmount: number;
-          upcomingAmount: number;
-          paidThisMonthAmount: number;
-          titlesCount: number;
-          suppliers: Set<string>;
+      if (includePresentation) {
+        const companyName = row.companyName?.trim() || "Sem empresa";
+        const company =
+          companyAcc.get(companyName) ??
+          ({
+            companyName,
+            openAmount: 0,
+            overdueAmount: 0,
+            upcomingAmount: 0,
+            paidThisMonthAmount: 0,
+            titlesCount: 0,
+            suppliers: new Set<string>(),
+          } as {
+            companyName: string;
+            openAmount: number;
+            overdueAmount: number;
+            upcomingAmount: number;
+            paidThisMonthAmount: number;
+            titlesCount: number;
+            suppliers: Set<string>;
+          });
+        companyAcc.set(companyName, {
+          ...company,
+          paidThisMonthAmount: company.paidThisMonthAmount + realized,
         });
-      companyAcc.set(companyName, {
-        ...company,
-        paidThisMonthAmount: company.paidThisMonthAmount + realized,
-      });
+      }
     }
 
     if (isFinanceApSettled(row)) {
@@ -843,118 +852,122 @@ export function buildFinanceAccountsPayableDashboard(
       if (isDueInRange(operationalDueDate, today, in7Days)) dueNext7DaysAmount += balance;
       if (isDueInRange(operationalDueDate, today, in30Days)) dueNext30DaysAmount += balance;
 
-      const bucketKey = assignAgingBucketKey(operationalDueDate, today);
-      const bucket = agingAcc.get(bucketKey)!;
-      bucket.amount += balance;
-      bucket.count += 1;
-      bucket.suppliers.add(supplierKey);
+      if (includePresentation) {
+        const bucketKey = assignAgingBucketKey(operationalDueDate, today);
+        const bucket = agingAcc.get(bucketKey)!;
+        bucket.amount += balance;
+        bucket.count += 1;
+        bucket.suppliers.add(supplierKey);
 
-      const dueDay = startOfLocalDay(operationalDueDate);
-      const daysFromToday = Math.floor((dueDay.getTime() - today.getTime()) / MS_PER_DAY);
-      if (daysFromToday >= 0) {
-        const scheduleKey = assignScheduleBucketKey(daysFromToday);
-        if (scheduleKey) {
-          const sched = scheduleAcc.get(scheduleKey)!;
-          sched.amount += balance;
-          sched.count += 1;
-          sched.suppliers.add(supplierKey);
-          const clientKey = supplierKey;
-          const existingClient = sched.topClients.get(clientKey);
-          sched.topClients.set(clientKey, {
-            personName: existingClient?.personName ?? row.personName,
-            personCnpj: existingClient?.personCnpj ?? row.personCnpj,
-            amount: (existingClient?.amount ?? 0) + balance,
-          });
+        const dueDay = startOfLocalDay(operationalDueDate);
+        const daysFromToday = Math.floor((dueDay.getTime() - today.getTime()) / MS_PER_DAY);
+        if (daysFromToday >= 0) {
+          const scheduleKey = assignScheduleBucketKey(daysFromToday);
+          if (scheduleKey) {
+            const sched = scheduleAcc.get(scheduleKey)!;
+            sched.amount += balance;
+            sched.count += 1;
+            sched.suppliers.add(supplierKey);
+            const clientKey = supplierKey;
+            const existingClient = sched.topClients.get(clientKey);
+            sched.topClients.set(clientKey, {
+              personName: existingClient?.personName ?? row.personName,
+              personCnpj: existingClient?.personCnpj ?? row.personCnpj,
+              amount: (existingClient?.amount ?? 0) + balance,
+            });
+          }
         }
-      }
 
-      const monthKey = `${operationalDueDate.getFullYear()}-${operationalDueDate.getMonth() + 1}`;
-      const monthRow =
-        monthlyAcc.get(monthKey) ??
+        const monthKey = `${operationalDueDate.getFullYear()}-${operationalDueDate.getMonth() + 1}`;
+        const monthRow =
+          monthlyAcc.get(monthKey) ??
+          ({
+            year: operationalDueDate.getFullYear(),
+            month: operationalDueDate.getMonth() + 1,
+            openAmount: 0,
+            overdueAmount: 0,
+            upcomingAmount: 0,
+            titlesCount: 0,
+          } as const);
+        const nextMonth = {
+          ...monthRow,
+          openAmount: monthRow.openAmount + balance,
+          titlesCount: monthRow.titlesCount + 1,
+          overdueAmount: monthRow.overdueAmount + (status === "overdue" ? balance : 0),
+          upcomingAmount:
+            monthRow.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
+        };
+        monthlyAcc.set(monthKey, nextMonth);
+      }
+    }
+
+    if (includePresentation) {
+      const debtor =
+        debtorAcc.get(supplierKey) ??
         ({
-          year: operationalDueDate.getFullYear(),
-          month: operationalDueDate.getMonth() + 1,
-          openAmount: 0,
+          personName: row.personName,
+          personCnpj: row.personCnpj,
+          totalOpenAmount: 0,
           overdueAmount: 0,
           upcomingAmount: 0,
           titlesCount: 0,
+          oldestOverdueDate: null,
+          maxDaysOverdue: 0,
+          hasSuspendedOpen: false,
         } as const);
-      const nextMonth = {
-        ...monthRow,
-        openAmount: monthRow.openAmount + balance,
-        titlesCount: monthRow.titlesCount + 1,
-        overdueAmount: monthRow.overdueAmount + (status === "overdue" ? balance : 0),
+      const daysOverdue = computeFinanceApDaysOverdue(row, today);
+      debtorAcc.set(supplierKey, {
+        personName: debtor.personName ?? row.personName,
+        personCnpj: debtor.personCnpj ?? row.personCnpj,
+        totalOpenAmount: debtor.totalOpenAmount + balance,
+        overdueAmount: debtor.overdueAmount + (status === "overdue" ? balance : 0),
         upcomingAmount:
-          monthRow.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
-      };
-      monthlyAcc.set(monthKey, nextMonth);
-    }
+          debtor.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
+        titlesCount: debtor.titlesCount + 1,
+        oldestOverdueDate:
+          status === "overdue" && operationalDueDate
+            ? !debtor.oldestOverdueDate || operationalDueDate < debtor.oldestOverdueDate
+              ? operationalDueDate
+              : debtor.oldestOverdueDate
+            : debtor.oldestOverdueDate,
+        maxDaysOverdue: Math.max(debtor.maxDaysOverdue, daysOverdue),
+        hasSuspendedOpen: debtor.hasSuspendedOpen || row.suspendPayment === true,
+      });
 
-    const debtor =
-      debtorAcc.get(supplierKey) ??
-      ({
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        totalOpenAmount: 0,
-        overdueAmount: 0,
-        upcomingAmount: 0,
-        titlesCount: 0,
-        oldestOverdueDate: null,
-        maxDaysOverdue: 0,
-        hasSuspendedOpen: false,
-      } as const);
-    const daysOverdue = computeFinanceApDaysOverdue(row, today);
-    debtorAcc.set(supplierKey, {
-      personName: debtor.personName ?? row.personName,
-      personCnpj: debtor.personCnpj ?? row.personCnpj,
-      totalOpenAmount: debtor.totalOpenAmount + balance,
-      overdueAmount: debtor.overdueAmount + (status === "overdue" ? balance : 0),
-      upcomingAmount:
-        debtor.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
-      titlesCount: debtor.titlesCount + 1,
-      oldestOverdueDate:
-        status === "overdue" && operationalDueDate
-          ? !debtor.oldestOverdueDate || operationalDueDate < debtor.oldestOverdueDate
-            ? operationalDueDate
-            : debtor.oldestOverdueDate
-          : debtor.oldestOverdueDate,
-      maxDaysOverdue: Math.max(debtor.maxDaysOverdue, daysOverdue),
-      hasSuspendedOpen: debtor.hasSuspendedOpen || row.suspendPayment === true,
-    });
+      const paymentName = row.paymentMethodName?.trim() || "Sem forma de pagamento";
+      const payment =
+        paymentAcc.get(paymentName) ??
+        ({ paymentMethodName: paymentName, openAmount: 0, overdueAmount: 0, titlesCount: 0 } as const);
+      paymentAcc.set(paymentName, {
+        paymentMethodName: paymentName,
+        openAmount: payment.openAmount + balance,
+        overdueAmount: payment.overdueAmount + (status === "overdue" ? balance : 0),
+        titlesCount: payment.titlesCount + 1,
+      });
 
-    const paymentName = row.paymentMethodName?.trim() || "Sem forma de pagamento";
-    const payment =
-      paymentAcc.get(paymentName) ??
-      ({ paymentMethodName: paymentName, openAmount: 0, overdueAmount: 0, titlesCount: 0 } as const);
-    paymentAcc.set(paymentName, {
-      paymentMethodName: paymentName,
-      openAmount: payment.openAmount + balance,
-      overdueAmount: payment.overdueAmount + (status === "overdue" ? balance : 0),
-      titlesCount: payment.titlesCount + 1,
-    });
-
-    const companyName = row.companyName?.trim() || "Sem empresa";
-    const company =
-      companyAcc.get(companyName) ??
-      ({
+      const companyName = row.companyName?.trim() || "Sem empresa";
+      const company =
+        companyAcc.get(companyName) ??
+        ({
+          companyName,
+          openAmount: 0,
+          overdueAmount: 0,
+          upcomingAmount: 0,
+          paidThisMonthAmount: 0,
+          titlesCount: 0,
+          suppliers: new Set<string>(),
+        } as const);
+      companyAcc.set(companyName, {
         companyName,
-        openAmount: 0,
-        overdueAmount: 0,
-        upcomingAmount: 0,
-        paidThisMonthAmount: 0,
-        titlesCount: 0,
-        suppliers: new Set<string>(),
-      } as const);
-    companyAcc.set(companyName, {
-      companyName,
-      openAmount: company.openAmount + balance,
-      overdueAmount: company.overdueAmount + (status === "overdue" ? balance : 0),
-      upcomingAmount:
-        company.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
-      paidThisMonthAmount: company.paidThisMonthAmount,
-      titlesCount: company.titlesCount + 1,
-      suppliers: new Set([...company.suppliers, supplierKey]),
-    });
+        openAmount: company.openAmount + balance,
+        overdueAmount: company.overdueAmount + (status === "overdue" ? balance : 0),
+        upcomingAmount:
+          company.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
+        paidThisMonthAmount: company.paidThisMonthAmount,
+        titlesCount: company.titlesCount + 1,
+        suppliers: new Set([...company.suppliers, supplierKey]),
+      });
+    }
   }
 
   const overduePercent = safeRatio(overdueAmount, totalOpenAmount);
@@ -962,6 +975,76 @@ export function buildFinanceAccountsPayableDashboard(
     avgDaysOverdueTotalBalance > 0
       ? roundMoney(avgDaysOverdueTotalWeightedDays / avgDaysOverdueTotalBalance)
       : null;
+
+  const cards = {
+    totalRecords: filteredRows.length,
+    totalPayableAmount: roundMoney(totalPayableAmount),
+    openTitlesCount,
+    settledTitlesCount,
+    totalOpenAmount: roundMoney(totalOpenAmount),
+    overdueAmount: roundMoney(overdueAmount),
+    upcomingAmount: roundMoney(upcomingAmount),
+    paidThisMonthAmount: roundMoney(paidThisMonthAmount),
+    dueTodayAmount: roundMoney(dueTodayAmount),
+    dueNext7DaysAmount: roundMoney(dueNext7DaysAmount),
+    dueNext30DaysAmount: roundMoney(dueNext30DaysAmount),
+    overdueSuppliersCount: overdueSuppliers.size,
+    overduePercent: roundMoney(overduePercent * 100),
+    overdueOver30DaysAmount: roundMoney(overdueOver30DaysAmount),
+    overdueOver30DaysCount,
+    avgDaysOverdue,
+    topSupplier: null as {
+      personName: string | null;
+      personCnpj: string | null;
+      totalOpenAmount: number;
+    } | null,
+    lastSyncAt: lastSyncAt?.toISOString() ?? null,
+  };
+
+  if (!includePresentation) {
+    const emptyQuality = createFinanceApDataQualityAccumulator();
+    return {
+      generatedAt: referenceDate.toISOString(),
+      referenceDate: today.toISOString(),
+      filtersApplied: filters,
+      source: "NomusAccountsPayable (read-only local sync)",
+      cards,
+      agingBuckets: [],
+      topSuppliers: [],
+      monthlyDueSchedule: [],
+      paymentMethodSummary: [],
+      companySummary: [],
+      scheduleBuckets: [],
+      supplierRanking: [],
+      criticalTitles: [],
+      dataQualityAlerts: financeApDataQualityAlertsLegacy(emptyQuality),
+      dataQualitySummary: buildFinanceApDataQualitySummary(emptyQuality),
+      dataSanitization: {
+        ignoredInternalGroupReceivables: 0,
+        ignoredGhostReceivables: 0,
+        ignoredInternalGroupPayables: 0,
+        ignoredPurchaseOrderAgendaPayables: 0,
+        ignoredStaleReceivables: 0,
+        ignoredStalePayables: 0,
+        ignoredOverdueWithoutFiscalDocumentReceivables: 0,
+        supersededPreInvoiceReceivables: 0,
+        supersededPreInvoiceAmount: 0,
+      },
+      purchaseOrderScheduleAudit: {
+        excludedCount: 0,
+        excludedAmount: 0,
+        rescheduledOpenCount: 0,
+        rescheduledOpenAmount: 0,
+      },
+      financialHorizon: createEmptyFinanceHorizonSummary({
+        title: "Horizonte financeiro — próximos 60 dias",
+        subtitle: "Distribuição por janela operacional a partir de hoje. Valores não acumulativos.",
+        scopeNote: FINANCE_HORIZON_AP_SCOPE_NOTE,
+        countUnitLabel: "título(s)",
+        ignoresPeriodFilter: Boolean(filters.year != null || filters.month != null),
+      }),
+    };
+  }
 
   const agingBuckets = AGING_BUCKET_DEFS.map((def) => {
     const bucket = agingAcc.get(def.key)!;
@@ -1102,22 +1185,7 @@ export function buildFinanceAccountsPayableDashboard(
     filtersApplied: filters,
     source: "NomusAccountsPayable (read-only local sync)",
     cards: {
-      totalRecords: filteredRows.length,
-      totalPayableAmount: roundMoney(totalPayableAmount),
-      openTitlesCount,
-      settledTitlesCount,
-      totalOpenAmount: roundMoney(totalOpenAmount),
-      overdueAmount: roundMoney(overdueAmount),
-      upcomingAmount: roundMoney(upcomingAmount),
-      paidThisMonthAmount: roundMoney(paidThisMonthAmount),
-      dueTodayAmount: roundMoney(dueTodayAmount),
-      dueNext7DaysAmount: roundMoney(dueNext7DaysAmount),
-      dueNext30DaysAmount: roundMoney(dueNext30DaysAmount),
-      overdueSuppliersCount: overdueSuppliers.size,
-      overduePercent: roundMoney(overduePercent * 100),
-      overdueOver30DaysAmount: roundMoney(overdueOver30DaysAmount),
-      overdueOver30DaysCount,
-      avgDaysOverdue,
+      ...cards,
       topSupplier: topSuppliersList[0]
         ? {
             personName: topSuppliersList[0].personName,
@@ -1125,7 +1193,6 @@ export function buildFinanceAccountsPayableDashboard(
             totalOpenAmount: topSuppliersList[0].totalOpenAmount,
           }
         : null,
-      lastSyncAt: lastSyncAt?.toISOString() ?? null,
     },
     agingBuckets,
     topSuppliers: topSuppliersList,

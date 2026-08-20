@@ -24,8 +24,8 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
   it("dashboard usa adapter e fontes oficiais", () => {
     const dashboard = read("src/lib/financeCashFlowDashboard.ts");
     assert.match(dashboard, /resolveOfficialCashFlowSources/);
-    assert.match(dashboard, /buildOfficialAccountsReceivableRulesResult/);
-    assert.match(dashboard, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(dashboard, /computeOfficialArMetrics/);
+    assert.match(dashboard, /computeOfficialApMetrics/);
     assert.match(dashboard, /officialArBlockTotals/);
     assert.match(dashboard, /officialApBlockTotals/);
     assert.doesNotMatch(dashboard, /NomusAccountsReceivable/);

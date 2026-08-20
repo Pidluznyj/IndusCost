@@ -116,6 +116,79 @@ const BUCKET_TOOLTIPS: Record<Exclude<AccountsReceivableOpenHorizonBucketKey, "t
   "46_60": "Saldo em aberto com vencimento entre 46 e 60 dias a partir de hoje.",
 };
 
+/** Horizonte vazio para projeção cards/metrics — mesma forma do payload full, sem varrer títulos. */
+export function createEmptyAccountsReceivableOpenHorizon(
+  referenceDate: Date = new Date()
+): AccountsReceivableOpenHorizon {
+  const today = startOfLocalDay(referenceDate);
+  const emptyBucket = (
+    key: Exclude<AccountsReceivableOpenHorizonBucketKey, "total_60">,
+    label: string,
+    fromDays: number | null,
+    toDays: number | null
+  ): AccountsReceivableOpenHorizonBucket => ({
+    key,
+    label,
+    fromDays,
+    toDays,
+    amount: 0,
+    titlesCount: 0,
+    tooltip: BUCKET_TOOLTIPS[key],
+  });
+  const overdue = emptyBucket("overdue", "Vencidos", null, -1);
+  const buckets = FINANCE_HORIZON_BUCKETS.map((def) =>
+    emptyBucket(def.key, def.label, def.fromDay, def.toDay)
+  );
+  const total60: AccountsReceivableOpenHorizonBucket = {
+    key: "total_60",
+    label: "Total 60 dias",
+    fromDays: 0,
+    toDays: FINANCE_HORIZON_MAX_DAY,
+    amount: 0,
+    titlesCount: 0,
+    tooltip: "Soma das faixas de 0 a 60 dias. Não inclui vencidos.",
+  };
+  return {
+    generatedAt: referenceDate.toISOString(),
+    today: today.toISOString(),
+    scope: "open_receivables_global",
+    ignoresPagePeriodFilters: true,
+    usesOpenBalance: true,
+    title: FINANCE_AR_OPEN_HORIZON_TITLE,
+    subtitle: FINANCE_AR_OPEN_HORIZON_SUBTITLE,
+    scopeNote: FINANCE_AR_OPEN_HORIZON_SCOPE_NOTE,
+    overdueNote: FINANCE_AR_OPEN_HORIZON_OVERDUE_NOTE,
+    buckets,
+    overdue,
+    total60,
+    totals: {
+      overdueAmount: 0,
+      overdueTitlesCount: 0,
+      total60Amount: 0,
+      total60TitlesCount: 0,
+      totalOpenAmount: 0,
+      totalOpenTitlesCount: 0,
+    },
+    topCustomers: [],
+    titlesByBucket: {
+      overdue: [],
+      "0_7": [],
+      "8_15": [],
+      "16_30": [],
+      "31_45": [],
+      "46_60": [],
+      total_60: [],
+    },
+    insights: [],
+    audit: {
+      source: "accounts_receivable",
+      periodFiltersIgnored: [...PERIOD_FILTERS_IGNORED],
+      excludedBecauseSettled: 0,
+      warnings: [],
+    },
+  };
+}
+
 export function buildFinanceArPrismaWhereForOpenHorizon(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): Prisma.NomusAccountsReceivableWhereInput {

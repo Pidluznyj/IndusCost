@@ -12,6 +12,7 @@ describe("financeAccountsReceivableRulesConsumptionAudit", () => {
     const adapter = read("src/lib/financeAccountsReceivableRulesAdapter.ts");
     assert.match(adapter, /OFFICIAL_AR_RULES_SOURCE/);
     assert.match(adapter, /buildOfficialAccountsReceivableRulesResult/);
+    assert.match(adapter, /computeOfficialArMetrics/);
     assert.match(adapter, /buildOfficialNomusAccountsReceivableSummaryResponse/);
     assert.match(adapter, /buildOfficialAccountsReceivableOverduePayload/);
     assert.match(adapter, /sumOfficialArOpenDueInPeriod/);
@@ -52,14 +53,14 @@ describe("financeAccountsReceivableRulesConsumptionAudit", () => {
 
   it("dashboard Fluxo passa totais AR oficiais ao dataset", () => {
     const dashboard = read("src/lib/financeCashFlowDashboard.ts");
-    assert.match(dashboard, /buildOfficialAccountsReceivableRulesResult/);
+    assert.match(dashboard, /computeOfficialArMetrics/);
     assert.match(dashboard, /officialArBlockTotals/);
   });
 
   it("dataset aceita totais AR oficiais sem recalcular regra", () => {
     const dataset = read("src/lib/financeCashFlowDataset.ts");
     assert.match(dataset, /officialArBlockTotals/);
-    assert.match(dataset, /officialArTotals\?\.totalReceivableOpen/);
+    assert.match(dataset, /officialTotals\?\.ar\?\.totalReceivableOpen/);
   });
 
   it("script de auditoria AR existe", () => {

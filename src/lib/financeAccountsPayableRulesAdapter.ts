@@ -25,6 +25,8 @@ import {
   type DueRadarQuery,
 } from "./financeDueRadar.js";
 import type { AccountsPayableSummary } from "./nomusAccountsPayableSummary.js";
+import type { FinanceApDashboardCards } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceOfficialRulesProjection } from "./financeOfficialEngineProjection.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 
 export const OFFICIAL_AP_RULES_SOURCE = "official-accounts-payable-rules-engine" as const;
@@ -36,6 +38,7 @@ export type OfficialAccountsPayableBuildInput = {
   syncCutoff?: NomusApReportSyncCutoff | null;
   year?: number;
   month?: number;
+  projection?: FinanceOfficialRulesProjection;
 };
 
 function toRulesBuildInput(input: OfficialAccountsPayableBuildInput): FinanceAccountsPayableRulesBuildInput {
@@ -45,6 +48,7 @@ function toRulesBuildInput(input: OfficialAccountsPayableBuildInput): FinanceAcc
     syncCutoff: input.syncCutoff,
     year: input.year,
     month: input.month,
+    projection: input.projection,
   };
 }
 
@@ -53,6 +57,32 @@ export function buildOfficialAccountsPayableRulesResult(
   input: OfficialAccountsPayableBuildInput
 ): FinanceAccountsPayableRulesResult {
   return buildFinanceAccountsPayableRulesResult(input.rows, toRulesBuildInput(input));
+}
+
+export type OfficialApMetricsProjection = {
+  metrics: FinanceAccountsPayableMetrics;
+  cards: FinanceApDashboardCards;
+  engineVersion: string;
+  projection: "metrics";
+};
+
+/**
+ * Projeção de métricas oficiais AP — mesmos primitives do dashboard full.
+ * Não monta aging, ranking, grid, horizonte nem formatação de apresentação.
+ */
+export function computeOfficialApMetrics(
+  input: OfficialAccountsPayableBuildInput
+): OfficialApMetricsProjection {
+  const result = buildOfficialAccountsPayableRulesResult({
+    ...input,
+    projection: "metrics",
+  });
+  return {
+    metrics: result.metrics,
+    cards: result.cards,
+    engineVersion: result.engineVersion,
+    projection: "metrics",
+  };
 }
 
 export type OfficialAccountsPayableDashboardPayload = FinanceAccountsPayableDashboardPayload & {
@@ -112,7 +142,7 @@ export function resolveOfficialApCashFlowExecutiveMetrics(
   syncCutoff: NomusApReportSyncCutoff | null | undefined,
   year: number
 ): OfficialApCashFlowExecutiveMetrics {
-  const result = buildOfficialAccountsPayableRulesResult({
+  const result = computeOfficialApMetrics({
     rows,
     filters,
     referenceDate,
@@ -140,7 +170,7 @@ export type OfficialApPortfolioFinancialMetrics = {
 export function resolveOfficialApPortfolioFinancialMetrics(
   input: OfficialAccountsPayableBuildInput
 ): OfficialApPortfolioFinancialMetrics {
-  const result = buildOfficialAccountsPayableRulesResult(input);
+  const result = computeOfficialApMetrics(input);
   return {
     source: OFFICIAL_AP_RULES_SOURCE,
     totalPayable: result.metrics.totalPayable,
