@@ -1,0 +1,65 @@
+---
+description: Safety, git, production, database and performance guardrails for IndusCost.
+alwaysApply: true
+---
+
+PROJECT: INDUSCOST
+
+GENERAL
+- This is a production business system.
+- Preserve existing business semantics unless explicitly authorized.
+- Prefer evidence from the repository over assumptions.
+- Inspect existing architecture before creating new abstractions.
+- Do not duplicate existing domain models, services, repositories or ledgers.
+- Keep changes narrowly scoped to the requested mission.
+
+GIT
+- Never work directly on main for implementation missions.
+- Before changing files, inspect branch, HEAD and git status.
+- Use a clean dedicated branch/worktree.
+- Never mix unrelated changes.
+- Never reset or revert unrelated work.
+- Report initial SHA and final SHA.
+
+PRODUCTION SAFETY
+- Never deploy unless explicitly requested.
+- Never execute production migrations.
+- Never modify production databases.
+- Never alter cron, systemd, firewall, Cloudflare, Tailscale or AWS infrastructure unless explicitly requested.
+- Never use production as a test database.
+- Never expose credentials or .env contents.
+
+DATABASE
+- PostgreSQL is authoritative for application persistence.
+- Prisma schema and migrations must be reviewed before database changes.
+- No destructive migration without explicit authorization.
+- Performance changes must be supported by measurements.
+- Do not create indexes based solely on intuition; use query evidence and EXPLAIN when appropriate.
+
+PERFORMANCE WORK
+- Measure before optimizing.
+- Separate frontend, network/API, backend processing and database time.
+- Identify query counts, N+1 patterns, repeated work, payload size and expensive transformations.
+- Use repeatable benchmarks with warm-up and multiple iterations.
+- Do not claim improvement from a single run.
+- Preserve financial results exactly.
+- Profiling must be disabled by default and have negligible overhead when disabled.
+- Do not log sensitive financial/customer data.
+
+CASH FLOW
+- Cash Flow/Treasury financial semantics must not change during performance work.
+- Nomus remains the authoritative source for official AR/AP data according to existing architecture.
+- Do not double-count PV, NF, DS and CR.
+- Existing PERF 2C behavior must be preserved unless measurements demonstrate a concrete regression.
+
+QUALITY
+- Run relevant tests after modifications.
+- Run build before declaring completion.
+- Distinguish new errors from repository baseline errors.
+- Do not fix unrelated technical debt.
+
+REPORTING
+- Be concise.
+- Do not narrate every file read or tool call.
+- Do not return huge discovery reports.
+- Report evidence, measured bottlenecks, files changed, tests, build, SHA and real remaining risks.
