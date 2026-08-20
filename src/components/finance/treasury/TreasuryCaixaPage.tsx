@@ -237,6 +237,15 @@ export function TreasuryCaixaPage() {
     accountsAbortRef.current = controller;
     setAccountsLoading(true);
     try {
+      const civilDate = todayTreasuryCivilDateInSaoPaulo();
+      // Passo 3 (movimento de hoje) não depende das contas/saldos abaixo —
+      // só da data. Dispara já, em paralelo, em vez de esperar o passo 1
+      // terminar para só então começar (a tela inteira aguarda accountsLoading).
+      const closingPromise = fetchTreasuryTodayClosing({
+        date: civilDate,
+        signal: controller.signal,
+      }).catch(() => null);
+
       const page = await fetchTreasuryAccounts({
         page: 1,
         pageSize: 200,
@@ -267,12 +276,10 @@ export function TreasuryCaixaPage() {
       setAccounts(withBalances);
 
       // Passo 3 — movimento de hoje: os 4 números já vêm calculados por conta
-      // no workspace canônico de fechamento; aqui só consolidamos.
-      const civilDate = todayTreasuryCivilDateInSaoPaulo();
-      const closing = await fetchTreasuryTodayClosing({
-        date: civilDate,
-        signal: controller.signal,
-      }).catch(() => null);
+      // no workspace canônico de fechamento; aqui só consolidamos. A essa
+      // altura `closingPromise` já deve ter resolvido (disparou junto com o
+      // passo 1), então este await normalmente não adiciona espera nenhuma.
+      const closing = await closingPromise;
       if (controller.signal.aborted) return;
       setTodayFlow(
         closing
