@@ -77,7 +77,22 @@ function respondCollectorValidationError(
 export type InventoryCollectorRoutesDeps = {
   prisma?: PrismaClient;
   identityResolver?: TailscalePeerIdentityResolver;
+  /** Override para testes; em produção vem da env no momento do registro. */
+  trustLocalProxy?: boolean;
 };
+
+/**
+ * FASE 3A — flag opt-in do reverse proxy HTTPS local (Nginx no próprio host,
+ * escutando só no endereço Tailscale). DESLIGADA por default: sem ela o
+ * Collector segue exigindo peer Tailscale direto no socket (2C puro). A flag
+ * não é bypass: apenas move a origem do endereço para o header dedicado
+ * carimbado pelo proxy — WhoIs + Device Registry continuam decidindo.
+ */
+export const COLLECTOR_TRUST_LOCAL_PROXY_ENV = "INVENTORY_COLLECTOR_TRUST_LOCAL_PROXY";
+
+function trustLocalProxyFromEnv(): boolean {
+  return process.env[COLLECTOR_TRUST_LOCAL_PROXY_ENV] === "1";
+}
 
 export function registerInventoryCollectorRoutes(
   app: Pick<express.Express, "get" | "post" | "patch">,
@@ -88,7 +103,12 @@ export function registerInventoryCollectorRoutes(
     deps.identityResolver ??
     createTailscalePeerIdentityResolver(createTailscaleLocalApiTransport());
 
-  const deviceAuth = requireInventoryCollectorDevice({ prisma, identityResolver });
+  const trustLocalProxy = deps.trustLocalProxy ?? trustLocalProxyFromEnv();
+  const deviceAuth = requireInventoryCollectorDevice({
+    prisma,
+    identityResolver,
+    trustLocalProxy,
+  });
 
   // -------------------------------------------------------------------------
   // FASE 3 — leituras mínimas para a UI do Collector. Mesmo deviceAuth

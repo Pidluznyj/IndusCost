@@ -29,9 +29,9 @@ type Props = {
 export function CollectorQrScanner({ onScan, disabled }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<"starting" | "active" | "unavailable">(
-    "starting"
-  );
+  const [cameraState, setCameraState] = useState<
+    "starting" | "active" | "unavailable" | "insecure"
+  >("starting");
   const [manualText, setManualText] = useState("");
   const [showManual, setShowManual] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -46,6 +46,13 @@ export function CollectorQrScanner({ onScan, disabled }: Props) {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     async function start() {
+      // Câmera exige contexto seguro (HTTPS ou localhost) — regra do browser,
+      // sem bypass. Fora disso, só a entrada manual.
+      if (!globalThis.isSecureContext) {
+        setCameraState("insecure");
+        setShowManual(true);
+        return;
+      }
       const Detector = getBarcodeDetectorCtor();
       if (!Detector || !navigator.mediaDevices?.getUserMedia) {
         setCameraState("unavailable");
@@ -100,7 +107,7 @@ export function CollectorQrScanner({ onScan, disabled }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      {cameraState !== "unavailable" ? (
+      {cameraState !== "unavailable" && cameraState !== "insecure" ? (
         <div className="relative overflow-hidden rounded-2xl bg-black" data-testid="collector-camera">
           <video ref={videoRef} className="h-64 w-full object-cover" muted playsInline />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -114,8 +121,9 @@ export function CollectorQrScanner({ onScan, disabled }: Props) {
         </div>
       ) : (
         <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-base text-amber-900">
-          Câmera indisponível neste aparelho/navegador. Use o campo abaixo para digitar ou colar
-          o conteúdo da etiqueta.
+          {cameraState === "insecure"
+            ? "Conexão sem HTTPS: o navegador bloqueia a câmera. Acesse pelo endereço https:// do tailnet ou use o campo abaixo."
+            : "Câmera indisponível neste aparelho/navegador. Use o campo abaixo para digitar ou colar o conteúdo da etiqueta."}
         </div>
       )}
 

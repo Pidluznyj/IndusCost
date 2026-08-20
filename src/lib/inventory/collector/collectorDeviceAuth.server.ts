@@ -16,7 +16,7 @@
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
-import { resolveCollectorPeerAddress } from "./collectorPeerAddress.js";
+import { resolveCollectorPeerFromRequest } from "./collectorProxyPeer.js";
 import type { TailscalePeerIdentityResolver } from "./tailscaleIdentity.server.js";
 
 export const COLLECTOR_DEVICE_UNAUTHORIZED = "COLLECTOR_DEVICE_UNAUTHORIZED";
@@ -38,6 +38,13 @@ export type CollectorDeviceContext = {
 export type CollectorDeviceAuthDeps = {
   prisma: Pick<PrismaClient, "inventoryCollectorDevice">;
   identityResolver: TailscalePeerIdentityResolver;
+  /**
+   * FASE 3A — confiança no reverse proxy LOCAL (default: false = 2C puro).
+   * Mesmo ligada, só muda a ORIGEM do endereço quando o socket é loopback e o
+   * header dedicado traz exatamente um IP; WhoIs + Registry continuam
+   * obrigatórios. Nunca é lida de env aqui: quem registra as rotas decide.
+   */
+  trustLocalProxy?: boolean;
   /** Injetável só para teste de lastSeen determinístico. */
   now?: () => Date;
 };
@@ -77,7 +84,9 @@ export function requireInventoryCollectorDevice(
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const peerAddress = resolveCollectorPeerAddress(req);
+      const peerAddress = resolveCollectorPeerFromRequest(req, {
+        trustLocalProxy: deps.trustLocalProxy === true,
+      });
       if (!peerAddress) return deny(res);
 
       const identity = await deps.identityResolver.resolve(peerAddress);
