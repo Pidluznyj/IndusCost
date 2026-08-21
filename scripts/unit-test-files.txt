@@ -230,3 +230,4 @@ src/lib/satisfaction/satisfactionSecurity.test.ts
 src/lib/satisfaction/satisfactionImport.test.ts
 src/lib/satisfaction/satisfactionRoutes.test.ts
 src/lib/satisfaction/satisfactionService.test.ts
+src/lib/sales-orders/salesOrderCanonicalValues.test.ts

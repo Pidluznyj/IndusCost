@@ -14,9 +14,15 @@ import {
 
 describe("salesOrderListPaymentSchedule", () => {
   const issueDate = new Date("2026-07-08T12:00:00.000Z");
+  // Relógio FIXO anterior aos vencimentos do fixture: sem isto o teste
+  // apodrecia quando as datas absolutas ficavam no passado (o motor,
+  // corretamente, passava a reportar "Atrasado"). O motor já aceita
+  // referenceDate injetável — todo caso com data absoluta deve usá-lo.
+  const referenceDate = new Date("2026-07-10T12:00:00.000Z");
 
   it("pedido com títulos reais usa vencimentos do Contas a Receber", () => {
     const payment = resolveSalesOrderListPaymentSummary({
+      referenceDate,
       paymentTerms: "30/60/90",
       paymentMethod: "Boleto",
       issueDate,
