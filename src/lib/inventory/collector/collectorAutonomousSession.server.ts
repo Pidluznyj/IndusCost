@@ -27,16 +27,19 @@ import {
   populateRawMaterialCountLines,
   type CollectorSectorPopulationDiagnostics,
 } from "./collectorSectorPopulation.server.js";
+import {
+  prepareRawMaterialSectorForCounting,
+  resolveCollectorSectorOperationalContext,
+  type CollectorOperationalState,
+  type CollectorSectorPrepareDiagnostics,
+  type CollectorWarehouseSummary,
+} from "./collectorSectorPrepare.server.js";
 
 export const COLLECTOR_NO_WAREHOUSE_FOR_SECTOR = "COLLECTOR_NO_WAREHOUSE_FOR_SECTOR";
 export const COLLECTOR_PENDING_ITEMS = "PENDING_ITEMS";
 export const COLLECTOR_DEVICE_JUSTIFICATION = "Contagem física Collector";
 
-export type CollectorWarehouseSummary = {
-  id: string;
-  code: string;
-  name: string;
-};
+export type { CollectorOperationalState, CollectorWarehouseSummary };
 
 export type CollectorBlindItem = {
   lineId: string;
@@ -99,66 +102,31 @@ async function generateMpSessionCode(
 }
 
 /**
- * Almoxarifados ACTIVE com saldo RAW_MATERIAL ou itens defaultWarehouse do setor.
+ * Resolve warehouses para o setor.
+ * Soft: não lança quando vazio — use resolveCollectorSectorOperationalContext
+ * no GET context. Lança COLLECTOR_NO_WAREHOUSE_FOR_SECTOR só quando o caller
+ * exige lista não vazia (create session sem warehouse).
  */
 export async function resolveWarehousesForSector(
   prisma: PrismaClient,
-  sector: CollectorSectorCode
+  sector: CollectorSectorCode,
+  opts?: { requireNonEmpty?: boolean }
 ): Promise<CollectorWarehouseSummary[]> {
-  if (sector !== "RAW_MATERIAL") {
+  const resolved = await resolveCollectorSectorOperationalContext(prisma, sector);
+  if (opts?.requireNonEmpty !== false && resolved.warehouses.length === 0) {
     throw new InventoryValidationError(
-      "Setor de contagem não suportado.",
-      "COLLECTOR_INVALID_SECTOR"
-    );
-  }
-
-  const [balanceWarehouses, defaultWarehouses] = await Promise.all([
-    prisma.inventoryBalance.findMany({
-      where: {
-        item: {
-          status: "ACTIVE",
-          itemType: "RAW_MATERIAL",
-          materialId: { not: null },
-        },
-        warehouse: { status: "ACTIVE" },
-      },
-      select: {
-        warehouse: { select: { id: true, code: true, name: true } },
-      },
-      distinct: ["warehouseId"],
-    }),
-    prisma.inventoryItem.findMany({
-      where: {
-        status: "ACTIVE",
-        itemType: "RAW_MATERIAL",
-        materialId: { not: null },
-        defaultWarehouseId: { not: null },
-        defaultWarehouse: { status: "ACTIVE" },
-      },
-      select: {
-        defaultWarehouse: { select: { id: true, code: true, name: true } },
-      },
-    }),
-  ]);
-
-  const byId = new Map<string, CollectorWarehouseSummary>();
-  for (const row of balanceWarehouses) {
-    if (row.warehouse) byId.set(row.warehouse.id, row.warehouse);
-  }
-  for (const row of defaultWarehouses) {
-    if (row.defaultWarehouse) byId.set(row.defaultWarehouse.id, row.defaultWarehouse);
-  }
-
-  const list = [...byId.values()].sort((a, b) =>
-    a.code.localeCompare(b.code, "pt-BR")
-  );
-  if (list.length === 0) {
-    throw new InventoryValidationError(
-      "Nenhum almoxarifado ativo com matéria-prima logística para contagem.",
+      "Nenhum almoxarifado ativo disponível para contagem. Configure um almoxarifado ACTIVE.",
       COLLECTOR_NO_WAREHOUSE_FOR_SECTOR
     );
   }
-  return list;
+  return resolved.warehouses;
+}
+
+export async function resolveCollectorSectorContextPayload(
+  prisma: PrismaClient,
+  sector: CollectorSectorCode
+) {
+  return resolveCollectorSectorOperationalContext(prisma, sector);
 }
 
 export async function findActiveCountingSession(
@@ -181,6 +149,7 @@ export async function createAndStartCollectorSectorSession(
     sector: CollectorSectorCode;
     warehouseId: string;
     deviceId: string;
+    deviceName?: string | null;
     operationId?: string | null;
   }
 ): Promise<{
@@ -192,15 +161,28 @@ export async function createAndStartCollectorSectorSession(
     startedAt: Date | null;
   };
   diagnostics: CollectorSectorPopulationDiagnostics;
+  prepare: CollectorSectorPrepareDiagnostics;
   reused: boolean;
 }> {
-  const warehouses = await resolveWarehousesForSector(prisma, input.sector);
-  if (!warehouses.some((w) => w.id === input.warehouseId)) {
+  const warehouse = await prisma.inventoryWarehouse.findUnique({
+    where: { id: input.warehouseId },
+    select: { id: true, status: true },
+  });
+  if (!warehouse || warehouse.status !== "ACTIVE") {
     throw new InventoryValidationError(
       "Almoxarifado não elegível para este setor.",
       "WAREHOUSE_NOT_ELIGIBLE"
     );
   }
+
+  // Cold-start FORA da transaction de sessão: links Material→Item são
+  // idempotentes e não devem segurar lock de COUNTING.
+  const prepare = await prepareRawMaterialSectorForCounting(prisma, {
+    warehouseId: input.warehouseId,
+    deviceId: input.deviceId,
+    deviceName: input.deviceName,
+    sector: input.sector,
+  });
 
   return prisma.$transaction(async (tx) => {
     const existing = await tx.inventoryCountSession.findFirst({
@@ -220,13 +202,14 @@ export async function createAndStartCollectorSectorSession(
           startedAt: existing.startedAt,
         },
         diagnostics: {
-          materialsTotal: 0,
-          materialsLinked: 0,
-          materialsMissingInventoryItem: 0,
+          materialsTotal: prepare.materialsTotal,
+          materialsLinked: prepare.materialsAlreadyLinked + prepare.itemsEnsured,
+          materialsMissingInventoryItem: prepare.materialsMissingInventoryItem,
           inventoryItemsWithoutBalance: 0,
           linesCreated: lineCount,
           skippedExistingLines: true,
         },
+        prepare,
         reused: true,
       };
     }
@@ -251,16 +234,12 @@ export async function createAndStartCollectorSectorSession(
       sector: input.sector,
     });
 
-    if (diagnostics.materialsLinked > 0 && diagnostics.linesCreated === 0) {
-      throw new InventoryValidationError(
-        "Há matérias-primas vinculadas sem linhas de contagem geradas.",
-        "COLLECTOR_POPULATION_EMPTY"
-      );
-    }
     if (diagnostics.linesCreated === 0) {
       throw new InventoryValidationError(
-        "Nenhum item logístico de matéria-prima para este almoxarifado.",
-        "COLLECTOR_NO_LINES"
+        prepare.materialsEligible === 0
+          ? "Nenhuma matéria-prima elegível para inventário neste setor."
+          : "Nenhum item logístico de matéria-prima para este almoxarifado após preparação.",
+        prepare.materialsEligible === 0 ? "COLLECTOR_NO_ELIGIBLE_ITEMS" : "COLLECTOR_NO_LINES"
       );
     }
 
@@ -274,6 +253,7 @@ export async function createAndStartCollectorSectorSession(
         sector: input.sector,
         deviceId: input.deviceId,
         diagnostics,
+        prepare,
       },
       userId: null,
     });
@@ -299,6 +279,7 @@ export async function createAndStartCollectorSectorSession(
         startedAt: session.startedAt,
       },
       diagnostics,
+      prepare,
       reused: false,
     };
   });

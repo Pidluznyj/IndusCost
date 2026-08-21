@@ -17,11 +17,32 @@ import {
   type CollectorSessionProgressDto,
   type CollectorDivergenceDto,
 } from "./collectorClient";
+import {
+  mapCollectorBootError,
+  mapOperationalStateToBootHint,
+  type CollectorBootPhase,
+} from "./collectorBootError";
 
 type Boot =
   | { phase: "checking" }
-  | { phase: "unauthorized" }
+  | { phase: "unauthorized"; message?: string }
+  | { phase: "configuration_error"; message: string; context?: CollectorSectorContext }
+  | { phase: "error"; message: string }
   | { phase: "ready"; context: CollectorSectorContext };
+
+function operationalMessage(context: CollectorSectorContext): string | null {
+  const state = context.operationalState;
+  if (state === "CONFIGURATION_REQUIRED") {
+    return "Nenhum almoxarifado ACTIVE configurado. Cadastre um almoxarifado no estoque antes de contar.";
+  }
+  if (state === "NO_ELIGIBLE_ITEMS") {
+    return "Não há matérias-primas elegíveis para inventário. Verifique o cadastro de Suprimentos.";
+  }
+  if (state === "NEEDS_WAREHOUSE_SELECTION") {
+    return "Selecione o almoxarifado para iniciar a contagem.";
+  }
+  return null;
+}
 
 type Screen =
   | { name: "home" }
@@ -67,9 +88,26 @@ export function CollectorSectorPage() {
         const context = await fetchCollectorSectorContext(sectorParam);
         if (cancelled) return;
         if (!context.device) {
-          setBoot({ phase: "unauthorized" });
+          setBoot({
+            phase: "unauthorized",
+            message:
+              "Este aparelho não está liberado para contagem. Acione o supervisor de estoque.",
+          });
           return;
         }
+
+        const configHint = mapOperationalStateToBootHint(context.operationalState);
+        const opMsg = operationalMessage(context);
+        if (configHint === "configuration_error" && !context.activeSession) {
+          setBoot({
+            phase: "configuration_error",
+            message:
+              opMsg ?? "Configuração de estoque incompleta para iniciar a contagem.",
+            context,
+          });
+          return;
+        }
+
         setBoot({ phase: "ready", context });
         const warehouses = context.warehouses ?? [];
         if (warehouses.length === 1) setWarehouseId(warehouses[0].id);
@@ -78,8 +116,19 @@ export function CollectorSectorPage() {
           setWarehouseId(context.activeSession.warehouseId);
           setProgress(context.activeSession);
         }
-      } catch {
-        if (!cancelled) setBoot({ phase: "unauthorized" });
+      } catch (e: unknown) {
+        if (cancelled) return;
+        const api = toCollectorApiError(e);
+        const mapped = mapCollectorBootError({
+          status: api.status,
+          code: api.code,
+          message: api.message,
+          networkFailure: api.status == null,
+        });
+        setBoot({
+          phase: mapped.phase as Exclude<CollectorBootPhase, "checking" | "ready">,
+          message: mapped.message,
+        });
       }
     })();
     return () => {
@@ -209,6 +258,9 @@ export function CollectorSectorPage() {
 
   const sectorLabel = useMemo(() => {
     if (boot.phase === "ready") return boot.context.sector?.label ?? "Matéria-prima";
+    if (boot.phase === "configuration_error" && boot.context?.sector?.label) {
+      return boot.context.sector.label;
+    }
     return "Matéria-prima";
   }, [boot]);
 
@@ -225,14 +277,42 @@ export function CollectorSectorPage() {
         <div className="rounded-2xl border-2 border-red-500 bg-red-950/60 p-6 text-center">
           <p className="text-2xl font-bold text-red-200">Dispositivo não autorizado</p>
           <p className="mt-3 text-base text-red-100">
-            Este aparelho não está liberado para contagem. Acione o supervisor de estoque.
+            {boot.message ??
+              "Este aparelho não está liberado para contagem. Acione o supervisor de estoque."}
           </p>
+        </div>
+      </Shell>
+    );
+  }
+  if (boot.phase === "configuration_error") {
+    return (
+      <Shell>
+        <div className="rounded-2xl border-2 border-amber-500 bg-amber-950/50 p-6 text-center">
+          <p className="text-2xl font-bold text-amber-100">Configuração necessária</p>
+          <p className="mt-3 text-base text-amber-50">{boot.message}</p>
+          <p className="mt-4 text-sm text-slate-300">
+            O dispositivo está autorizado. Ajuste almoxarifado / vínculos de estoque no IndusCost.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+  if (boot.phase === "error") {
+    return (
+      <Shell>
+        <div className="rounded-2xl border-2 border-orange-500 bg-orange-950/50 p-6 text-center">
+          <p className="text-2xl font-bold text-orange-100">Erro ao carregar</p>
+          <p className="mt-3 text-base text-orange-50">{boot.message}</p>
         </div>
       </Shell>
     );
   }
 
   const warehouses = boot.context.warehouses ?? [];
+  const selectionHint =
+    boot.context.operationalState === "NEEDS_WAREHOUSE_SELECTION"
+      ? operationalMessage(boot.context)
+      : null;
 
   return (
     <Shell>
@@ -250,6 +330,11 @@ export function CollectorSectorPage() {
 
       {screen.name === "home" ? (
         <div className="space-y-4">
+          {selectionHint ? (
+            <p className="rounded-xl border border-slate-600 bg-slate-900/80 p-3 text-slate-200">
+              {selectionHint}
+            </p>
+          ) : null}
           {warehouses.length > 1 ? (
             <label className="block">
               <span className="mb-1 block text-sm text-slate-300">Almoxarifado</span>

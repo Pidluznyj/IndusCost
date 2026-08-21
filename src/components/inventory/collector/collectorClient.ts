@@ -35,6 +35,17 @@ export type CollectorSectorContext = CollectorContext & {
   sector?: { code: string; label: string };
   warehouses?: CollectorWarehouseDto[];
   activeSession?: CollectorSessionProgressDto | null;
+  operationalState?:
+    | "READY"
+    | "NEEDS_WAREHOUSE_SELECTION"
+    | "CONFIGURATION_REQUIRED"
+    | "NO_ELIGIBLE_ITEMS";
+  diagnostics?: {
+    activeWarehouses: number;
+    warehousesWithRawMaterialPresence: number;
+    eligibleMaterials: number;
+    linkedRawMaterialItems: number;
+  };
 };
 
 export type CollectorSessionSummary = {

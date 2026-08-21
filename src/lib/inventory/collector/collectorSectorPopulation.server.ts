@@ -1,13 +1,22 @@
 /**
  * População em lote das linhas de conferência do setor RAW_MATERIAL.
  *
- * Fonte oficial: Materials ACTIVE + InventoryItems ACTIVE (materialId +
- * RAW_MATERIAL). Saldo sistêmico vem de InventoryBalance.physicalQuantity —
- * nunca atualiza Material.quantity nem InventoryBalance diretamente.
+ * Fonte: InventoryItem ACTIVE RAW_MATERIAL + materialId + controlsStock,
+ * no warehouse da sessão (balances e/ou defaultWarehouse).
+ *
+ * Saldo sistêmico = InventoryBalance.physicalQuantity quando existe.
+ * Sem balance: systemQuantity = 0 — alinhado ao motor canônico
+ * (getOrCreateInventoryBalanceForUpdate / INITIAL_BALANCE / count adjustments
+ * tratam ausência de balance como physicalQuantity 0). Não cria balance aqui.
+ * Nunca atualiza Material.quantity nem InventoryBalance diretamente.
  */
 import type { PrismaClient } from "@prisma/client";
 import { InventoryValidationError } from "./../inventoryTypes.js";
 import type { CollectorSectorCode } from "./collectorSectorContract.js";
+import {
+  ACTIVE_MATERIAL_WHERE,
+  RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE,
+} from "./collectorSectorEligibility.js";
 
 export type CollectorSectorPopulationDiagnostics = {
   materialsTotal: number;
@@ -60,17 +69,13 @@ export async function populateRawMaterialCountLines(
 
   const [materials, balanceRows, defaultItems] = await Promise.all([
     tx.material.findMany({
-      where: { status: "ACTIVE" },
+      where: ACTIVE_MATERIAL_WHERE,
       select: { id: true },
     }),
     tx.inventoryBalance.findMany({
       where: {
         warehouseId: input.warehouseId,
-        item: {
-          status: "ACTIVE",
-          itemType: "RAW_MATERIAL",
-          materialId: { not: null },
-        },
+        item: RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE,
       },
       select: {
         itemId: true,
@@ -81,9 +86,7 @@ export async function populateRawMaterialCountLines(
     }),
     tx.inventoryItem.findMany({
       where: {
-        status: "ACTIVE",
-        itemType: "RAW_MATERIAL",
-        materialId: { not: null },
+        ...RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE,
         defaultWarehouseId: input.warehouseId,
       },
       select: { id: true, materialId: true },
@@ -94,7 +97,6 @@ export async function populateRawMaterialCountLines(
   const materialIds = new Set(materials.map((m) => m.id));
 
   const linkedMaterialIds = new Set<string>();
-  const itemIdsInWarehouse = new Set<string>();
 
   type LineSeed = {
     itemId: string;
@@ -110,7 +112,6 @@ export async function populateRawMaterialCountLines(
     if (seedKeys.has(key)) return;
     seedKeys.add(key);
     seeds.push(seed);
-    itemIdsInWarehouse.add(seed.itemId);
     if (seed.materialId) linkedMaterialIds.add(seed.materialId);
   };
 
@@ -138,13 +139,8 @@ export async function populateRawMaterialCountLines(
     });
   }
 
-  // Materiais ACTIVE com InventoryItem global (diagnóstico), mesmo fora do warehouse.
   const allLinkedItems = await tx.inventoryItem.findMany({
-    where: {
-      status: "ACTIVE",
-      itemType: "RAW_MATERIAL",
-      materialId: { not: null },
-    },
+    where: RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE,
     select: { materialId: true },
   });
   const globallyLinked = new Set<string>();

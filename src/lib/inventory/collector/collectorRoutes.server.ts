@@ -22,10 +22,12 @@ import { serializeInventoryCountLine } from "./../inventorySerialization.server.
 import { InventoryValidationError } from "./../inventoryTypes.js";
 import {
   applyCollectorSessionAdjustments,
+  COLLECTOR_NO_WAREHOUSE_FOR_SECTOR,
   createAndStartCollectorSectorSession,
   finalizeCollectorSession,
   findActiveCountingSession,
   listCollectorSessionItemsBlind,
+  resolveCollectorSectorContextPayload,
   resolveWarehousesForSector,
   summarizeActiveSession,
 } from "./collectorAutonomousSession.server.js";
@@ -162,7 +164,8 @@ export function registerInventoryCollectorRoutes(
       }
 
       const sector = parseCollectorSector(sectorRaw);
-      const warehouses = await resolveWarehousesForSector(prisma, sector);
+      const resolved = await resolveCollectorSectorContextPayload(prisma, sector);
+      const warehouses = resolved.warehouses;
       let activeSession = null;
       const warehouseIdQ = String(req.query.warehouseId ?? "").trim();
       if (UUID_RE.test(warehouseIdQ)) {
@@ -173,6 +176,12 @@ export function registerInventoryCollectorRoutes(
         activeSession = summarizeActiveSession(
           await findActiveCountingSession(prisma, warehouses[0].id)
         );
+      }
+
+      // Device autorizado: sempre 200 com estado operacional (config ≠ auth).
+      let operationalState = resolved.operationalState;
+      if (activeSession) {
+        operationalState = "READY";
       }
 
       res.json({
@@ -187,6 +196,8 @@ export function registerInventoryCollectorRoutes(
         sector: { code: sector, label: collectorSectorLabel(sector) },
         warehouses,
         activeSession,
+        operationalState,
+        diagnostics: resolved.diagnostics,
       });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) {
@@ -240,12 +251,27 @@ export function registerInventoryCollectorRoutes(
       if (!UUID_RE.test(warehouseId)) {
         return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
       }
-      const warehouses = await resolveWarehousesForSector(prisma, sector);
-      if (!warehouses.some((w) => w.id === warehouseId)) {
+      const warehouses = await resolveWarehousesForSector(prisma, sector, {
+        requireNonEmpty: false,
+      });
+      if (warehouses.length === 0) {
         throw new InventoryValidationError(
-          "Almoxarifado não elegível para este setor.",
-          "WAREHOUSE_NOT_ELIGIBLE"
+          "Nenhum almoxarifado ativo disponível para contagem. Configure um almoxarifado ACTIVE.",
+          COLLECTOR_NO_WAREHOUSE_FOR_SECTOR
         );
+      }
+      if (!warehouses.some((w) => w.id === warehouseId)) {
+        // Warehouse ACTIVE explícito ainda é válido (cold-start).
+        const wh = await prisma.inventoryWarehouse.findUnique({
+          where: { id: warehouseId },
+          select: { id: true, status: true },
+        });
+        if (!wh || wh.status !== "ACTIVE") {
+          throw new InventoryValidationError(
+            "Almoxarifado não elegível para este setor.",
+            "WAREHOUSE_NOT_ELIGIBLE"
+          );
+        }
       }
       const session = await findActiveCountingSession(prisma, warehouseId);
       res.json({ activeSession: summarizeActiveSession(session) });
@@ -282,7 +308,9 @@ export function registerInventoryCollectorRoutes(
         typeof body.operationId === "string" ? body.operationId.trim() : null;
 
       if (!warehouseId) {
-        const warehouses = await resolveWarehousesForSector(prisma, sector);
+        const warehouses = await resolveWarehousesForSector(prisma, sector, {
+          requireNonEmpty: true,
+        });
         if (warehouses.length !== 1) {
           return res.status(400).json({
             error: "Informe o almoxarifado (há mais de um elegível).",
@@ -300,6 +328,7 @@ export function registerInventoryCollectorRoutes(
         sector,
         warehouseId,
         deviceId: device.deviceId,
+        deviceName: caps?.name ?? null,
         operationId,
       });
       res.status(result.reused ? 200 : 201).json(result);

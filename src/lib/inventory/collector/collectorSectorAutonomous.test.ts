@@ -155,7 +155,7 @@ describe("blind DTO / population / finalize semantics (structural)", () => {
     assert.match(listFn, /status: counted \? "counted" : "pending"/);
   });
 
-  it("create sessão idempotente COUNTING + responsibleUserId null + DEVICE audit", () => {
+  it("create sessão chama prepare + responsibleUserId null + DEVICE audit", () => {
     const auto = read("src/lib/inventory/collector/collectorAutonomousSession.server.ts");
     assert.match(auto, /status: "COUNTING"/);
     assert.match(auto, /responsibleUserId: null/);
@@ -163,6 +163,7 @@ describe("blind DTO / population / finalize semantics (structural)", () => {
     assert.match(auto, /COLLECTOR_COUNT_SESSION_STARTED/);
     assert.match(auto, /deviceId: input\.deviceId/);
     assert.match(auto, /reused: true/);
+    assert.match(auto, /prepareRawMaterialSectorForCounting/);
   });
 
   it("population diagnostics fields e createMany batch", () => {
