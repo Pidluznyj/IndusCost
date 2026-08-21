@@ -1,6 +1,12 @@
 /**
  * Serviço de listagem/pesquisa tablet — Conferência de Estoque.
  * Select mínimo, sem relações pesadas, sem custos.
+ *
+ * SoT de quantidade para MPs vinculadas ao Inventory:
+ * - Se existir InventoryItem ACTIVE (materialId + RAW_MATERIAL), o saldo
+ *   exibido vem da soma de InventoryBalance.physicalQuantity (batch).
+ * - Material.quantity permanece para MPs sem vínculo / legado.
+ * - Este serviço NÃO escreve Material.quantity nem InventoryBalance.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeSearchString } from "@/src/lib/utils.js";
@@ -104,6 +110,52 @@ function paginateRows<T>(rows: T[], page: number, pageSize: number): T[] {
   return rows.slice(start, start + pageSize);
 }
 
+/**
+ * Para MPs com InventoryItem vinculado, sobrescreve `quantity` com a soma
+ * batch de InventoryBalance.physicalQuantity. Sem writes.
+ */
+async function applyLinkedInventoryBalanceQuantities(
+  db: PrismaClient,
+  rows: MaterialStockTabletDbRow[]
+): Promise<MaterialStockTabletDbRow[]> {
+  if (rows.length === 0) return rows;
+  const materialIds = rows.map((r) => r.id);
+  const items = await db.inventoryItem.findMany({
+    where: {
+      materialId: { in: materialIds },
+      status: "ACTIVE",
+      itemType: "RAW_MATERIAL",
+    },
+    select: { id: true, materialId: true },
+  });
+  if (items.length === 0) return rows;
+
+  const itemIds = items.map((i) => i.id);
+  const balances = await db.inventoryBalance.findMany({
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, physicalQuantity: true },
+  });
+
+  const qtyByItem = new Map<string, number>();
+  for (const b of balances) {
+    const prev = qtyByItem.get(b.itemId) ?? 0;
+    const n = Number(b.physicalQuantity);
+    qtyByItem.set(b.itemId, prev + (Number.isFinite(n) ? n : 0));
+  }
+
+  const qtyByMaterial = new Map<string, number>();
+  for (const item of items) {
+    if (!item.materialId) continue;
+    const itemQty = qtyByItem.get(item.id) ?? 0;
+    qtyByMaterial.set(item.materialId, (qtyByMaterial.get(item.materialId) ?? 0) + itemQty);
+  }
+
+  return rows.map((row) => {
+    if (!qtyByMaterial.has(row.id)) return row;
+    return { ...row, quantity: qtyByMaterial.get(row.id) ?? 0 };
+  });
+}
+
 export async function searchMaterialStockTablet(
   db: PrismaClient,
   query: MaterialStockTabletSearchQuery,
@@ -112,7 +164,7 @@ export async function searchMaterialStockTablet(
   const where = buildPrismaWhere(query, now);
 
   if (!needsInMemoryPipeline(query)) {
-    const [total, rows] = await Promise.all([
+    const [total, rawRows] = await Promise.all([
       db.material.count({ where }),
       db.material.findMany({
         where,
@@ -123,14 +175,16 @@ export async function searchMaterialStockTablet(
         take: query.pageSize,
       }),
     ]);
+    const rows = await applyLinkedInventoryBalanceQuantities(
+      db,
+      rawRows as MaterialStockTabletDbRow[]
+    );
     const nameMap = await resolveUserDisplayNames(
       db,
       rows.map((r) => r.lastStockConferenceUserId).filter((id): id is string => Boolean(id))
     );
     return {
-      rows: rows.map((r) =>
-        serializeMaterialStockTabletListItem(r as MaterialStockTabletDbRow, nameMap)
-      ),
+      rows: rows.map((r) => serializeMaterialStockTabletListItem(r, nameMap)),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -145,7 +199,10 @@ export async function searchMaterialStockTablet(
     take: IN_MEMORY_CANDIDATE_CAP,
   });
 
-  let filtered = candidates as MaterialStockTabletDbRow[];
+  let filtered = await applyLinkedInventoryBalanceQuantities(
+    db,
+    candidates as MaterialStockTabletDbRow[]
+  );
   if (query.q) {
     filtered = filtered.filter((row) =>
       materialStockTabletTextMatches(row.code, row.description, query.q)

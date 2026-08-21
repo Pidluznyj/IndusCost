@@ -1,5 +1,10 @@
 /**
- * FASE 3 — contrato canônico do QR do Stock Collector. Motor puro.
+ * FASE 3 — contrato canônico do QR de LOCALIZAÇÃO do Stock Collector (legado
+ * item × almoxarifado × endereço). Motor puro.
+ *
+ * LEGADO: o fluxo autônomo por setor usa deep-link em collectorSectorContract
+ * (`/collector/sector/raw-material`). Este contrato permanece para etiquetas
+ * por item e resolve-qr do CollectorPage clássico.
  *
  * O QR é um LOCALIZADOR, nunca uma credencial: identifica item × almoxarifado
  * × endereço com os UUIDs canônicos do Inventory e nada mais. Não contém

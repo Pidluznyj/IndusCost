@@ -6188,6 +6188,10 @@ model InventoryCollectorDevice {
   /// Identidade persistente do node no tailnet (WhoIs → Node.StableID).
   tailscaleStableNodeId  String    @unique
   active                 Boolean   @default(true)
+  /// Capacidade DEVICE: criar/continuar/finalizar sessões de contagem do setor.
+  canManageCountSessions Boolean   @default(true)
+  /// Capacidade DEVICE: gerar ajustes canônicos após finalização.
+  canApplyCountAdjustments Boolean @default(true)
   tailscaleNodeName      String?
   tailscaleLoginName     String?
   lastSeenIp             String?

@@ -125,7 +125,7 @@ function createMock(options?: {
 }) {
   const state = {
     devices: [
-      { id: "dev-1", name: "Coletor 01", tailscaleStableNodeId: "nDEV1", active: true },
+      { id: "dev-1", name: "Coletor 01", tailscaleStableNodeId: "nDEV1", active: true, canManageCountSessions: true, canApplyCountAdjustments: true },
       { id: "dev-off", name: "Desativado", tailscaleStableNodeId: "nOFF", active: false },
     ],
     sessions: [
@@ -414,7 +414,14 @@ describe("F3 leituras DEVICE", () => {
     const mock = createMock();
     const routes = buildApp(mock);
     const context = await call(routes, CONTEXT);
-    assert.deepEqual(context.body, { device: { id: "dev-1", name: "Coletor 01" } });
+    assert.deepEqual(context.body, {
+      device: {
+        id: "dev-1",
+        name: "Coletor 01",
+        canManageCountSessions: true,
+        canApplyCountAdjustments: true,
+      },
+    });
 
     const sessions = await call(routes, SESSIONS);
     const list = (sessions.body as { sessions: Array<Record<string, unknown>> }).sessions;
@@ -456,12 +463,16 @@ describe("F3 leituras DEVICE", () => {
     assert.match(human.slice(labelsIdx, labelsIdx + 300), /countManage/);
   });
 
-  it("37/38/39. namespace Collector segue sem ações supervisoras nem geração de QR", () => {
+  it("37/38/39. namespace Collector DEVICE: finalize/apply autônomos; sem QR humano/approve", () => {
     const src = read("src/lib/inventory/collector/collectorRoutes.server.ts")
       .split("\n")
       .filter((l) => !l.trim().startsWith("*") && !l.trim().startsWith("//"))
       .join("\n");
-    for (const forbidden of ["/finalize", "/approve", "/generate-adjustments", "/cancel", "/start", "count-labels"]) {
+    // Autônomo: finalize + apply-adjustments no Collector (DEVICE).
+    assert.match(src, /finalize/);
+    assert.match(src, /apply-adjustments/);
+    // Ainda exclusivos do fluxo humano: approve solto, cancel, start legado, labels.
+    for (const forbidden of ["/approve", "/cancel", "count-labels", "buildCollectorQrText"]) {
       assert.equal(src.includes(forbidden), false, forbidden);
     }
     assert.doesNotMatch(src, /inventoryMovement/);
@@ -490,9 +501,8 @@ describe("F3 regressão estrutural", () => {
   it("43. 2C preservada — deviceAuth continua a única porta", () => {
     const src = read("src/lib/inventory/collector/collectorRoutes.server.ts");
     const registrations = src.match(/app\.(get|post|patch)\(/g) ?? [];
-    // 3 leituras + 1 escrita, todas registradas com deviceAuth.
-    assert.equal(registrations.length, 4);
-    assert.equal((src.match(/deviceAuth/g) ?? []).length >= 5, true);
+    assert.ok(registrations.length >= 9, `esperado ≥9 rotas DEVICE, veio ${registrations.length}`);
+    assert.equal((src.match(/deviceAuth/g) ?? []).length >= registrations.length + 1, true);
   });
 
   it("46/47. Nomus e Material fora do Collector", () => {

@@ -35,6 +35,11 @@ export function InventoryCountLabelsPage() {
   const [labels, setLabels] = useState<LabelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sectorQr, setSectorQr] = useState<{
+    sector: string;
+    label: string;
+    url: string;
+  } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -45,6 +50,19 @@ export function InventoryCountLabelsPage() {
         setWarehouses((data.rows ?? []).map((w) => ({ id: w.id, code: w.code, name: w.name })));
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Erro ao carregar almoxarifados.");
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await fetchJsonOk<{ sector: string; label: string; url: string }>(
+          "/api/inventory/collector/sector-qr?sector=RAW_MATERIAL"
+        );
+        setSectorQr(data);
+      } catch {
+        // Sem permissão humana: QR de setor fica oculto; etiquetas de item seguem.
       }
     })();
   }, []);
@@ -69,6 +87,21 @@ export function InventoryCountLabelsPage() {
   return (
     <div className="min-h-screen bg-white p-6">
       <div className="mx-auto max-w-5xl">
+        {sectorQr ? (
+          <div className="mb-8 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-6 print:border print:bg-white">
+            <h2 className="text-xl font-bold text-slate-900">
+              QR de setor — {sectorQr.label}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Abra no tablet do Collector (Tailscale). Contagem cega autônoma de matéria-prima.
+            </p>
+            <div className="mt-4 flex flex-col items-center gap-3">
+              <QRCodeSVG value={sectorQr.url} size={200} marginSize={2} />
+              <p className="break-all text-center text-xs text-slate-700">{sectorQr.url}</p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3 print:hidden">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Etiquetas QR — Inventário</h1>
@@ -96,7 +129,7 @@ export function InventoryCountLabelsPage() {
             <button
               type="button"
               onClick={() => window.print()}
-              disabled={labels.length === 0}
+              disabled={labels.length === 0 && !sectorQr}
               className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             >
               Imprimir

@@ -442,20 +442,16 @@ describe("2D route/auth", () => {
     assert.match(server, /registerInventoryCollectorRoutes\(app\);/);
   });
 
-  it("8. namespace Collector expõe UMA rota — nenhuma ação supervisora", () => {
+  it("8. namespace Collector expõe rotas DEVICE (legado + autônomo)", () => {
     const src = codeOnly(read("src/lib/inventory/collector/collectorRoutes.server.ts"));
     const registrations = src.match(/app\.(get|post|patch|put|delete)\(/g) ?? [];
-    // FASE 3: 3 leituras (context, count-sessions, resolve-qr) + 1 escrita.
-    assert.equal(registrations.length, 4);
-    assert.equal((src.match(/app\.patch\(/g) ?? []).length, 1, "uma única rota de escrita");
-    for (const forbidden of ["start", "finalize", "approve", "generate-adjustments", "cancel"]) {
-      assert.equal(
-        src.includes(`/${forbidden}`),
-        false,
-        `rota supervisora ${forbidden} não pode existir no Collector`
-      );
-    }
-    assert.doesNotMatch(src, /inventoryMovement/);
+    // Legado: context, count-sessions, resolve-qr, PATCH lines
+    // Autônomo: active, POST sessions, items, count, finalize, apply-adjustments
+    assert.ok(registrations.length >= 9, `esperado ≥9 rotas, veio ${registrations.length}`);
+    assert.equal((src.match(/app\.patch\(/g) ?? []).length, 1, "uma única rota PATCH legada");
+    assert.match(src, /finalize/);
+    assert.match(src, /apply-adjustments/);
+    assert.match(src, /recordInventoryCount/);
   });
 });
 
@@ -670,7 +666,7 @@ describe("2D workflow", () => {
     assert.equal(ok.status, null);
   });
 
-  it("36–38. finalize/approve/generate-adjustments continuam exclusivamente humanos", () => {
+  it("36–38. fluxo humano de finalize/approve/adjustments permanece; Collector também finaliza DEVICE", () => {
     const humanRoutes = read("src/lib/inventoryRoutes.ts");
     for (const action of ["finalize", "approve", "generate-adjustments"]) {
       const idx = humanRoutes.indexOf(`/api/inventory/count-sessions/:id/${action}`);
@@ -678,6 +674,9 @@ describe("2D workflow", () => {
       const slice = humanRoutes.slice(idx, idx + 200);
       assert.match(slice, /countApprove|countManage/, action);
     }
+    const collector = read("src/lib/inventory/collector/collectorRoutes.server.ts");
+    assert.match(collector, /finalizeCollectorSession|count-sessions\/:id\/finalize/);
+    assert.match(collector, /apply-adjustments/);
   });
 });
 
@@ -714,16 +713,17 @@ describe("2D regressão", () => {
     assert.doesNotMatch(auth, /NODE_ENV/);
   });
 
-  it("44/45. nenhuma migration nova, Nomus e Material intocados", () => {
-    const dirs = read("package.json");
-    assert.ok(dirs); // sanity
-    // 2D não cria migration: a mais recente continua sendo a da 2C.
-    // O repositório tem migrations com datas futuras no baseline; a invariante
-    // real da 2D é: nenhuma migration própria — a única do Collector é a da 2C.
+  it("44/45. migrations Collector aditivas; Nomus e Material intocados na rota", () => {
     const migrations = readdirSync(join(process.cwd(), "prisma/migrations")).filter((d) =>
       /collector/i.test(d)
     );
-    assert.deepEqual(migrations, ["20260819130000_inventory_collector_device_registry"]);
+    assert.deepEqual(migrations.sort(), [
+      "20260819130000_inventory_collector_device_registry",
+      "20260821140000_inventory_collector_device_autonomous_caps",
+    ]);
+    const collector = read("src/lib/inventory/collector/collectorRoutes.server.ts");
+    assert.doesNotMatch(collector, /nomus/i);
+    assert.doesNotMatch(collector, /material\.update/i);
   });
 
   it("paridade de status HTTP entre rota humana e Collector", () => {
