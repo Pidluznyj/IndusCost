@@ -139,8 +139,8 @@ describe("margem canônica (motor oficial consumido por lista, detalhe e exports
     quantity: 10,
     netUnitPrice: 100, // receita 1000
     unitCost: 60, // custo 600 → margem 400 (40%)
-    costSource: "PRODUCTION_COST_TABLE",
-    costConfidence: "OFFICIAL",
+    costSource: "VERSIONED_PRODUCTION_COST",
+    costConfidence: "HIGH",
   });
   const itemB = calculateSalesOrderItemMargin({
     salesOrderItemId: "item-b",
@@ -148,8 +148,8 @@ describe("margem canônica (motor oficial consumido por lista, detalhe e exports
     quantity: 1,
     netUnitPrice: 10, // receita 10
     unitCost: 9, // custo 9 → margem 1 (10%)
-    costSource: "PRODUCTION_COST_TABLE",
-    costConfidence: "OFFICIAL",
+    costSource: "VERSIONED_PRODUCTION_COST",
+    costConfidence: "HIGH",
   });
 
   it("caracteriza o item: valores exatos com arredondamento oficial", () => {
