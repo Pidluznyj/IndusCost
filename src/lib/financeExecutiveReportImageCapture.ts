@@ -13,7 +13,6 @@
  * duplicação de regras: o texto vem do mesmo arquivo usado na impressão
  * real, extraído em tempo de execução via `extractMediaPrintBlocks`.
  */
-import html2canvas from "html2canvas";
 import executiveReportPrintCssRaw from "@/src/components/finance/executive-report/finance-executive-report-print.css?raw";
 import {
   extractMediaPrintBlocks,
@@ -59,6 +58,9 @@ function activateCaptureStyles(): () => void {
  * — mesma preparação usada antes de `window.print()`).
  */
 export async function captureExecutiveReportPageImages(): Promise<ExecutiveReportPageImage[]> {
+  // `html2canvas` só é necessário quando o usuário aciona a exportação em PNG;
+  // carregar sob demanda mantém a biblioteca fora do carregamento da tela.
+  const { default: html2canvas } = await import("html2canvas");
   const deactivate = activateCaptureStyles();
   try {
     // Duas frames para o navegador recalcular layout com o CSS injetado

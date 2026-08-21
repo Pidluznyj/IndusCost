@@ -2,16 +2,6 @@ import React from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
-import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
-import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
-import { FinanceCashFlowPage } from "@/src/components/finance/FinanceCashFlowPage";
-import { FinanceExecutiveReportPage } from "@/src/components/finance/FinanceExecutiveReportPage";
-import { FinanceManagerialDrePage } from "@/src/components/finance/FinanceManagerialDrePage";
-import { FinanceDreCostCenterMappingPage } from "@/src/components/finance/FinanceDreCostCenterMappingPage";
-import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/FinanceCostCentersPage";
-import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
-import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
 import {
   FINANCE_DEFAULT_SECTION,
   getFinanceDefaultPath,
@@ -24,6 +14,59 @@ import { FINANCE_UI_SECTIONS } from "@/src/lib/internalSurfaceAccess";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
+
+// Cada seção do Financeiro é um chunk próprio: o roteador só monta a rota casada,
+// então carregar as 8 seções no bundle inicial é download puro sem uso.
+const FinanceAccountsReceivablePage = React.lazy(() =>
+  import("@/src/components/finance/FinanceAccountsReceivablePage").then((m) => ({
+    default: m.FinanceAccountsReceivablePage,
+  }))
+);
+const FinanceAccountsPayablePage = React.lazy(() =>
+  import("@/src/components/finance/FinanceAccountsPayablePage").then((m) => ({
+    default: m.FinanceAccountsPayablePage,
+  }))
+);
+const FinanceBillingPage = React.lazy(() =>
+  import("@/src/components/finance/FinanceBillingPage").then((m) => ({
+    default: m.FinanceBillingPage,
+  }))
+);
+const FinanceCashFlowPage = React.lazy(() =>
+  import("@/src/components/finance/FinanceCashFlowPage").then((m) => ({
+    default: m.FinanceCashFlowPage,
+  }))
+);
+const FinanceExecutiveReportPage = React.lazy(() =>
+  import("@/src/components/finance/FinanceExecutiveReportPage").then((m) => ({
+    default: m.FinanceExecutiveReportPage,
+  }))
+);
+const FinanceManagerialDrePage = React.lazy(() =>
+  import("@/src/components/finance/FinanceManagerialDrePage").then((m) => ({
+    default: m.FinanceManagerialDrePage,
+  }))
+);
+const FinanceDreCostCenterMappingPage = React.lazy(() =>
+  import("@/src/components/finance/FinanceDreCostCenterMappingPage").then((m) => ({
+    default: m.FinanceDreCostCenterMappingPage,
+  }))
+);
+const FinanceCostCentersPage = React.lazy(() =>
+  import("@/src/components/finance/cost-centers/FinanceCostCentersPage").then((m) => ({
+    default: m.FinanceCostCentersPage,
+  }))
+);
+const FinanceCostCenterDetailPage = React.lazy(() =>
+  import("@/src/components/finance/cost-centers/FinanceCostCenterDetailPage").then((m) => ({
+    default: m.FinanceCostCenterDetailPage,
+  }))
+);
+const FinanceSalesOrdersPage = React.lazy(() =>
+  import("@/src/components/finance/FinanceSalesOrdersPage").then((m) => ({
+    default: m.FinanceSalesOrdersPage,
+  }))
+);
 
 function FinanceCanonicalRedirect() {
   const location = useLocation();
@@ -132,34 +175,40 @@ export function FinanceModule() {
         ))}
       </nav>
 
-      <Routes>
-        <Route index element={<Navigate to={defaultPath} replace />} />
-        <Route path="cash-flow" element={sectionRoutes["cash-flow"]} />
-        <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
-        <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
-        <Route path="billing" element={sectionRoutes.billing} />
-        <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
-        <Route
-          path="cost-centers/:costCenterId"
-          element={
-            can("cost-centers") ? (
-              <FinanceCostCenterDetailPage />
-            ) : (
-              <Navigate to={defaultPath} replace />
-            )
-          }
-        />
-        <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
-        <Route path="executive-report" element={sectionRoutes["executive-report"]} />
-        <Route
-          path="dre/parametrizacao"
-          element={
-            can("dre") ? <FinanceDreCostCenterMappingPage /> : <UnauthorizedAccessGate forceDenied />
-          }
-        />
-        <Route path="dre" element={sectionRoutes.dre} />
-        <Route path="*" element={<FinanceCanonicalRedirect />} />
-      </Routes>
+      <React.Suspense fallback={<FinanceModuleLoadingFallback />}>
+        <Routes>
+          <Route index element={<Navigate to={defaultPath} replace />} />
+          <Route path="cash-flow" element={sectionRoutes["cash-flow"]} />
+          <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
+          <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
+          <Route path="billing" element={sectionRoutes.billing} />
+          <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
+          <Route
+            path="cost-centers/:costCenterId"
+            element={
+              can("cost-centers") ? (
+                <FinanceCostCenterDetailPage />
+              ) : (
+                <Navigate to={defaultPath} replace />
+              )
+            }
+          />
+          <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
+          <Route path="executive-report" element={sectionRoutes["executive-report"]} />
+          <Route
+            path="dre/parametrizacao"
+            element={
+              can("dre") ? (
+                <FinanceDreCostCenterMappingPage />
+              ) : (
+                <UnauthorizedAccessGate forceDenied />
+              )
+            }
+          />
+          <Route path="dre" element={sectionRoutes.dre} />
+          <Route path="*" element={<FinanceCanonicalRedirect />} />
+        </Routes>
+      </React.Suspense>
     </div>
   );
 }
