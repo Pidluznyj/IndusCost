@@ -1139,6 +1139,8 @@ model Customer {
   commissionReceiptLedgerLines     CommissionReceiptLedgerLine[]
   commissionOrderSnapshots         CommissionOrderSnapshot[]
   commissionReceivableSchedules    CommissionReceivableSchedule[]
+  satisfactionInvitations          SatisfactionSurveyInvitation[]
+  satisfactionResponses            SatisfactionSurveyResponse[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -9933,4 +9935,372 @@ model GoalInitiative {
   @@index([goalId])
   @@index([keyResultId])
   @@index([status])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Comercial → Satisfação de Clientes
+// docs/commercial/customer-satisfaction-module.md
+//
+// Invariantes do domínio:
+//  - Customer é a UNICA fonte de cadastro de cliente (aqui só há snapshots).
+//  - Rating oficial é inteiro 1..5. Média/percentual são projeções derivadas.
+//  - Não respondido = linha de Answer ausente (nunca 0, nunca default).
+//  - Token público nunca é persistido em claro — somente SHA-256.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum SatisfactionTemplateStatus {
+  ACTIVE
+  RETIRED
+}
+
+enum SatisfactionQuestionType {
+  RATING
+  TEXT
+  SHORT_TEXT
+  PHONE
+  DATE
+  TAX_ID
+}
+
+enum SatisfactionCampaignStatus {
+  DRAFT
+  SCHEDULED
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum SatisfactionAccessTokenKind {
+  INDIVIDUAL
+  GENERAL
+}
+
+enum SatisfactionAccessTokenStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum SatisfactionResponseSource {
+  INDIVIDUAL_LINK
+  GENERAL_LINK
+  GOOGLE_FORMS_IMPORT
+}
+
+enum SatisfactionResponseStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum SatisfactionCustomerMatchStatus {
+  MATCHED
+  UNMATCHED
+}
+
+enum SatisfactionEventType {
+  OPENED
+  STARTED
+  DRAFT_SAVED
+  SUBMITTED
+}
+
+enum SatisfactionImportBatchStatus {
+  PREVIEWED
+  APPLIED
+}
+
+/// Questionário versionado. V1 (`CUSTOMER_SATISFACTION_V1`) reproduz a pesquisa
+/// histórica do Google Forms e é imutável (`isLocked`): uma V2 futura nasce como
+/// novo template, jamais editando este.
+model SatisfactionSurveyTemplate {
+  id          String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String                     @unique
+  name        String
+  description String?
+  version     Int                        @default(1)
+  status      SatisfactionTemplateStatus @default(ACTIVE)
+  /// Template histórico: bloqueia qualquer edição semântica no service.
+  isLocked    Boolean                    @default(false)
+  createdAt   DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  questions SatisfactionSurveyQuestion[]
+  campaigns SatisfactionSurveyCampaign[]
+
+  @@index([status])
+}
+
+/// Pergunta do template. `code` é a identidade semântica estável — comparações
+/// históricas usam o code, NUNCA o texto nem a posição.
+model SatisfactionSurveyQuestion {
+  id         String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId String                   @db.Uuid
+  code       String
+  label      String
+  helpText   String?
+  type       SatisfactionQuestionType
+  sortOrder  Int
+  required   Boolean                  @default(true)
+  /// Preenchido somente quando type = RATING.
+  scaleMin   Int?
+  scaleMax   Int?
+  createdAt  DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+
+  template SatisfactionSurveyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([templateId, code])
+  @@index([templateId, sortOrder])
+}
+
+/// Campanha de pesquisa. Após `publishedAt` o questionário está congelado em
+/// SatisfactionSurveyCampaignQuestion e nenhuma edição semântica é aceita.
+model SatisfactionSurveyCampaign {
+  id                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String                     @unique
+  name              String
+  description       String?
+  templateId        String                     @db.Uuid
+  /// Período AVALIADO pela pesquisa (não confundir com a janela de resposta).
+  referenceStart    DateTime                   @db.Timestamptz(6)
+  referenceEnd      DateTime                   @db.Timestamptz(6)
+  /// Janela em que o formulário público aceita respostas.
+  opensAt           DateTime?                  @db.Timestamptz(6)
+  closesAt          DateTime?                  @db.Timestamptz(6)
+  status            SatisfactionCampaignStatus @default(DRAFT)
+  /// Link geral (WhatsApp/QR) além dos links individuais.
+  allowGeneralLink  Boolean                    @default(false)
+  createdByUserId   String?                    @db.Uuid
+  publishedByUserId String?                    @db.Uuid
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  publishedAt       DateTime?                  @db.Timestamptz(6)
+  closedAt          DateTime?                  @db.Timestamptz(6)
+  archivedAt        DateTime?                  @db.Timestamptz(6)
+
+  template     SatisfactionSurveyTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  questions    SatisfactionSurveyCampaignQuestion[]
+  invitations  SatisfactionSurveyInvitation[]
+  accessTokens SatisfactionSurveyAccessToken[]
+  responses    SatisfactionSurveyResponse[]
+  events       SatisfactionSurveyEvent[]
+  sessions     SatisfactionPublicSession[]
+  importBatches SatisfactionImportBatch[]
+
+  @@index([status, opensAt])
+  @@index([templateId])
+  @@index([referenceStart, referenceEnd])
+}
+
+/// Snapshot imutável da pergunta no momento da publicação da campanha.
+/// É contra esta linha que as Answers apontam — o template pode evoluir depois
+/// sem reescrever a história.
+model SatisfactionSurveyCampaignQuestion {
+  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId       String                   @db.Uuid
+  /// Origem no template (rastreabilidade); pode ficar órfã se o template mudar.
+  sourceQuestionId String?                  @db.Uuid
+  code             String
+  label            String
+  helpText         String?
+  type             SatisfactionQuestionType
+  sortOrder        Int
+  required         Boolean                  @default(true)
+  scaleMin         Int?
+  scaleMax         Int?
+  createdAt        DateTime                 @default(now()) @db.Timestamptz(6)
+
+  campaign SatisfactionSurveyCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  answers  SatisfactionSurveyAnswer[]
+
+  @@unique([campaignId, code])
+  @@index([campaignId, sortOrder])
+}
+
+/// Participação de um cliente numa campanha. O unique garante que republicar ou
+/// clicar duas vezes NAO duplica audiência.
+model SatisfactionSurveyInvitation {
+  id                                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId                        String    @db.Uuid
+  customerId                        String    @db.Uuid
+  /// Snapshots do contexto da época — não substituem o cadastro oficial.
+  customerNameSnapshot              String
+  customerTaxIdSnapshot             String?
+  responsibleCommercialIdSnapshot   Int?
+  responsibleCommercialNameSnapshot String?
+  createdAt                         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  firstOpenedAt                     DateTime? @db.Timestamptz(6)
+  startedAt                         DateTime? @db.Timestamptz(6)
+  completedAt                       DateTime? @db.Timestamptz(6)
+  revokedAt                         DateTime? @db.Timestamptz(6)
+
+  campaign     SatisfactionSurveyCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  customer     Customer                       @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  accessTokens SatisfactionSurveyAccessToken[]
+  response     SatisfactionSurveyResponse?
+  events       SatisfactionSurveyEvent[]
+  sessions     SatisfactionPublicSession[]
+
+  @@unique([campaignId, customerId])
+  @@index([campaignId, completedAt])
+  @@index([customerId])
+  @@index([responsibleCommercialIdSnapshot])
+}
+
+/// Segredo do link público. NUNCA guarda o token em claro: só o SHA-256.
+/// `tokenPrefix` são os primeiros caracteres, não sensíveis, para suporte.
+model SatisfactionSurveyAccessToken {
+  id              String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String                        @db.Uuid
+  invitationId    String?                       @db.Uuid
+  kind            SatisfactionAccessTokenKind
+  tokenHash       String                        @unique
+  tokenPrefix     String
+  status          SatisfactionAccessTokenStatus @default(ACTIVE)
+  expiresAt       DateTime?                     @db.Timestamptz(6)
+  revokedAt       DateTime?                     @db.Timestamptz(6)
+  lastUsedAt      DateTime?                     @db.Timestamptz(6)
+  /// Token que este substituiu numa rotação (trilha de regeneração).
+  rotatedFromId   String?                       @db.Uuid
+  createdByUserId String?                       @db.Uuid
+  createdAt       DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  campaign   SatisfactionSurveyCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  invitation SatisfactionSurveyInvitation? @relation(fields: [invitationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  sessions   SatisfactionPublicSession[]
+
+  @@index([campaignId, status])
+  @@index([invitationId, status])
+}
+
+/// Sessão EXCLUSIVAMENTE pública (escopo SATISFACTION_RESPONSE). Não é AppSession,
+/// não concede nenhuma permissão administrativa e morre com a campanha.
+model SatisfactionPublicSession {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash     String    @unique
+  campaignId    String    @db.Uuid
+  invitationId  String?   @db.Uuid
+  accessTokenId String    @db.Uuid
+  responseId    String?   @db.Uuid
+  scope         String    @default("SATISFACTION_RESPONSE")
+  expiresAt     DateTime  @db.Timestamptz(6)
+  revokedAt     DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  campaign    SatisfactionSurveyCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  invitation  SatisfactionSurveyInvitation? @relation(fields: [invitationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  accessToken SatisfactionSurveyAccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  response    SatisfactionSurveyResponse?   @relation(fields: [responseId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([campaignId])
+  @@index([expiresAt])
+  @@index([invitationId])
+  @@index([accessTokenId])
+  @@index([responseId])
+}
+
+/// Resposta. DRAFT nunca entra em métrica de satisfação; só SUBMITTED conta.
+/// `originalSubmittedAt` preserva o instante histórico na importação — jamais
+/// sobrescrito pela data de execução do import.
+model SatisfactionSurveyResponse {
+  id                  String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId          String                           @db.Uuid
+  /// Uma resposta por convite — trava de duplicidade do link individual.
+  invitationId        String?                          @unique @db.Uuid
+  customerId          String?                          @db.Uuid
+  customerMatchStatus SatisfactionCustomerMatchStatus?
+  source              SatisfactionResponseSource
+  status              SatisfactionResponseStatus       @default(DRAFT)
+  respondentName      String?
+  respondentPhone     String?
+  /// Dados declarados pelo respondente (link geral / importação histórica).
+  declaredCompanyName String?
+  declaredTaxId       String?
+  declaredDate        DateTime?                        @db.Timestamptz(6)
+  startedAt           DateTime?                        @db.Timestamptz(6)
+  lastSavedAt         DateTime?                        @db.Timestamptz(6)
+  /// Instante real de submissão no IndusCost.
+  submittedAt         DateTime?                        @db.Timestamptz(6)
+  /// Instante histórico da origem (Google Forms). Não confundir com submittedAt.
+  originalSubmittedAt DateTime?                        @db.Timestamptz(6)
+  /// Controle otimista do autosave (CAS) — evita perda por corrida.
+  version             Int                              @default(0)
+  idempotencyKey      String?
+  importBatchId       String?                          @db.Uuid
+  importFingerprint   String?
+  createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  campaign    SatisfactionSurveyCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  invitation  SatisfactionSurveyInvitation? @relation(fields: [invitationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  customer    Customer?                     @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  importBatch SatisfactionImportBatch?      @relation(fields: [importBatchId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  answers     SatisfactionSurveyAnswer[]
+  events      SatisfactionSurveyEvent[]
+  sessions    SatisfactionPublicSession[]
+
+  @@unique([campaignId, idempotencyKey])
+  @@unique([importBatchId, importFingerprint])
+  @@index([campaignId, status, submittedAt])
+  @@index([customerId, submittedAt])
+  @@index([campaignId, customerMatchStatus])
+}
+
+/// Uma linha por pergunta respondida. Ausência = não respondido (nunca zero).
+model SatisfactionSurveyAnswer {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId  String    @db.Uuid
+  questionId  String    @db.Uuid
+  /// Fonte oficial da nota: inteiro 1..5. Percentual/média são derivados.
+  ratingValue Int?
+  textValue   String?
+  dateValue   DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  response SatisfactionSurveyResponse         @relation(fields: [responseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  question SatisfactionSurveyCampaignQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([responseId, questionId])
+  @@index([questionId, ratingValue])
+}
+
+/// Funil da campanha: convidados -> abriram -> começaram -> concluíram.
+model SatisfactionSurveyEvent {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId   String                @db.Uuid
+  invitationId String?               @db.Uuid
+  responseId   String?               @db.Uuid
+  type         SatisfactionEventType
+  occurredAt   DateTime              @default(now()) @db.Timestamptz(6)
+
+  campaign   SatisfactionSurveyCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  invitation SatisfactionSurveyInvitation? @relation(fields: [invitationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  response   SatisfactionSurveyResponse?   @relation(fields: [responseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([campaignId, type, occurredAt])
+  @@index([invitationId, type])
+  @@index([responseId])
+}
+
+/// Lote de importação histórica (Google Forms). PREVIEWED nunca escreveu resposta.
+model SatisfactionImportBatch {
+  id              String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String                        @db.Uuid
+  fileName        String
+  /// SHA-256 do arquivo — reimportar o mesmo arquivo é detectável.
+  fileHash        String
+  status          SatisfactionImportBatchStatus @default(PREVIEWED)
+  statsJson       Json?
+  createdByUserId String?                       @db.Uuid
+  createdAt       DateTime                      @default(now()) @db.Timestamptz(6)
+  appliedAt       DateTime?                     @db.Timestamptz(6)
+
+  campaign  SatisfactionSurveyCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  responses SatisfactionSurveyResponse[]
+
+  @@index([campaignId, status])
+  @@index([fileHash])
 }

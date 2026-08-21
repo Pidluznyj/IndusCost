@@ -91,6 +91,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
     "commercial.commissions.closings",
     "commercial.commissions.reports",
   ],
+  satisfaction: ["commercial.satisfaction"],
   simulations: ["engineering.simulations"],
   reports: ["finance.reports"],
   finance: [

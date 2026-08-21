@@ -20,6 +20,10 @@ import { FinancePortfolioReconciliationPage } from "./components/finance/Finance
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
 import { GoalsCockpitPage } from "./components/goals/GoalsCockpitPage";
+import { SatisfactionModule } from "./components/commercial/satisfaction/SatisfactionModule";
+import { SatisfactionResultsPage } from "./components/commercial/satisfaction/SatisfactionResultsPage";
+import { SatisfactionInvitationsPage } from "./components/commercial/satisfaction/SatisfactionInvitationsPage";
+import { SatisfactionResponsePage } from "./components/commercial/satisfaction/SatisfactionResponsePage";
 import { GoalDetailPage } from "./components/goals/GoalDetailPage";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { CustomerModule } from "./components/CustomerModule";
@@ -956,6 +960,50 @@ export default function App() {
               description={COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE}
             >
               <CommercialPriceTableModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/satisfaction"
+          element={
+            <ModulePageShell
+              title="Satisfação"
+              description="Pesquisas de satisfação de clientes, indicadores e respostas."
+            >
+              <SatisfactionModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/satisfaction/surveys/:campaignId/results"
+          element={
+            <ModulePageShell
+              title="Resultado da pesquisa"
+              description="Resumo, critérios, respostas e comentários da campanha."
+            >
+              <SatisfactionResultsPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/satisfaction/surveys/:campaignId/invitations"
+          element={
+            <ModulePageShell
+              title="Convites da pesquisa"
+              description="Acompanhe a adesão e gerencie os links individuais."
+            >
+              <SatisfactionInvitationsPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/satisfaction/responses/:responseId"
+          element={
+            <ModulePageShell
+              title="Resposta do cliente"
+              description="Notas, comentário e histórico comparável do cliente."
+            >
+              <SatisfactionResponsePage />
             </ModulePageShell>
           }
         />

@@ -58,6 +58,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   customers: "Clientes",
   "crm-commercial": "CRM",
   commissions: "Comiss.",
+  satisfaction: "Satisf.",
   simulations: "Simul.",
   reports: "Relat.",
   finance: "Financ.",

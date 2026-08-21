@@ -46,6 +46,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   "output-documents": "comercial",
   pricing: "comercial",
   commissions: "comercial",
+  satisfaction: "comercial",
   finance: "financeiro",
   treasury: "financeiro",
   "invested-capital-recovery": "financeiro",
