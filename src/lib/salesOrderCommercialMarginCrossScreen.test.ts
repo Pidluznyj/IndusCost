@@ -132,9 +132,19 @@ function makePrismaMock() {
       },
     },
     priceTableVersion: {
-      findMany: async (args: { where: { priceTableId: string } }) => {
-        const code = String(args.where.priceTableId).replace("table-", "");
-        return [{ id: `ver-${code}` }];
+      findMany: async (args: { where: { priceTableId: { in: string[] } } }) => {
+        const allowed = new Set(args.where.priceTableId.in);
+        return COMMERCIAL_PRICE_TIER_CODES.filter((code) =>
+          allowed.has(`table-${code}`)
+        ).map((code, index) => ({
+          id: `ver-${code}`,
+          priceTableId: `table-${code}`,
+          status: "PUBLISHED",
+          effectiveFrom: null,
+          effectiveTo: null,
+          publishedAt: new Date("2024-01-01T00:00:00.000Z"),
+          versionNumber: index + 1,
+        }));
       },
     },
     priceTableItem: {

@@ -478,6 +478,23 @@ function createEndToEndFlowDb(input: {
       count: async () => products.length,
     },
     priceTable: {
+      findMany: async ({
+        where,
+      }: {
+        where?: { id?: { in: string[] }; code?: { in: string[] }; status?: string };
+      }) => {
+        const table = {
+          id: PRICE_TABLE_ID,
+          status: "ACTIVE",
+          defaultMarginPct,
+          code: "ATACADO",
+          name: "Atacado E2E",
+        };
+        if (where?.id?.in && !where.id.in.includes(table.id)) return [];
+        if (where?.code?.in && !where.code.in.includes(table.code)) return [];
+        if (where?.status && where.status !== table.status) return [];
+        return [table];
+      },
       findUnique: async ({ where }: { where: { id: string } }) => {
         if (where.id !== PRICE_TABLE_ID) return null;
         return {
@@ -490,6 +507,29 @@ function createEndToEndFlowDb(input: {
       },
     },
     priceTableVersion: {
+      findMany: async ({
+        where,
+      }: {
+        where?: {
+          priceTableId?: string | { in: string[] };
+          status?: string | { in: string[] };
+        };
+      }) => {
+        let rows = [...priceVersions.values()];
+        if (typeof where?.priceTableId === "string") {
+          rows = rows.filter((v) => v.priceTableId === where.priceTableId);
+        } else if (where?.priceTableId && typeof where.priceTableId === "object") {
+          const allowed = where.priceTableId.in;
+          rows = rows.filter((v) => allowed.includes(v.priceTableId));
+        }
+        if (typeof where?.status === "string") {
+          rows = rows.filter((v) => v.status === where.status);
+        } else if (where?.status && typeof where.status === "object") {
+          const allowed = where.status.in;
+          rows = rows.filter((v) => allowed.includes(v.status));
+        }
+        return rows.map((v) => ({ ...v }));
+      },
       findFirst: async ({
         where,
         orderBy,

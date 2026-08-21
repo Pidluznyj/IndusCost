@@ -53,19 +53,19 @@ export async function loadSalesOrderListMarginSummary(
     sellerText: listQuery.sellerText,
   });
   const where = await resolveSalesOrderListWhere(db, listQuery, sellerWhere);
-  // População filtrada do card — select SUMMARY (sem JSON Nomus em massa).
-  const marginOrders = await db.salesOrder.findMany({
-    where,
-    select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
-  });
-
   const chartYear = resolveSalesOrderListChartsCalendarYear(
     options?.referenceDate ?? new Date()
   );
-  const ordersForMonthlySeries = await loadSalesOrderListChartYearOrders(
-    db,
-    chartYear
-  );
+  // Card (população filtrada) e série mensal (população anual) são leituras
+  // independentes — em paralelo, sem alterar nenhuma das duas populações.
+  const [marginOrders, ordersForMonthlySeries] = await Promise.all([
+    // População filtrada do card — select SUMMARY (sem JSON Nomus em massa).
+    db.salesOrder.findMany({
+      where,
+      select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
+    }),
+    loadSalesOrderListChartYearOrders(db, chartYear),
+  ]);
 
   return buildOfficialSalesOrderListMarginSummary(db, marginOrders, {
     year: chartYear,

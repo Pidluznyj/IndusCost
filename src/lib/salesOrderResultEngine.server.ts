@@ -217,16 +217,16 @@ export async function buildSalesOrderResultDashboard(
           );
           // Série do gráfico: ano civil da request, sem demais filtros da tela.
           const chartOrders = await loadSalesOrderListChartYearOrders(db, filters.year);
-          const needsItemLoad = chartOrders.some((order) => !order.items?.length);
+          // Recarrega itens apenas dos pedidos que vieram sem eles.
+          const idsMissingItems = chartOrders
+            .filter((order) => !order.items?.length)
+            .map((order) => order.id);
           let itemsByOrder = new Map<string, SalesOrderForMargin["items"]>();
-          if (needsItemLoad) {
+          if (idsMissingItems.length > 0) {
             const { loadSalesOrderItemsForMargin } = await import(
               "./salesOrderMarginService.server.js"
             );
-            itemsByOrder = await loadSalesOrderItemsForMargin(
-              db,
-              chartOrders.map((order) => order.id)
-            );
+            itemsByOrder = await loadSalesOrderItemsForMargin(db, idsMissingItems);
           }
           const { calculateOfficialSalesOrderMarginsForOrders } = await import(
             "./salesMarginRulesAdapter.js"

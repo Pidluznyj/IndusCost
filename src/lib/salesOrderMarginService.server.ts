@@ -270,11 +270,13 @@ export async function buildSalesOrderMarginContext(
     costPolicy?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostPolicy;
   }
 ): Promise<SalesOrderMarginContext> {
+  // O fallback só é consultado quando `order.items` é null/undefined — carregar
+  // itens de pedidos que JÁ vieram com itens era uma releitura integral inútil.
   const itemsByOrderId =
     options?.itemsByOrderId ??
     (await loadSalesOrderItemsForMargin(
       prisma,
-      orders.map((order) => order.id)
+      orders.filter((order) => order.items == null).map((order) => order.id)
     ));
 
   const resolverItems: SalesOrderMarginResolverItem[] = [];
@@ -357,6 +359,7 @@ export async function buildSalesOrderMarginContext(
 
   const itemResultsByOrder = new Map<string, SalesOrderMarginItemResult[]>();
   const itemMarginsByOrder = new Map<string, Map<string, SalesOrderItemMarginPayload>>();
+  const orderById = new Map(orders.map((order) => [order.id, order]));
 
   for (const input of marginInputs) {
     const itemId = input.salesOrderItemId;
@@ -377,7 +380,7 @@ export async function buildSalesOrderMarginContext(
         notes: [],
       } satisfies ProductResolution);
 
-    const order = orders.find((o) => o.id === orderId);
+    const order = orderById.get(orderId);
     const priceTableId =
       priceTableContext.priceTableByItemId.get(itemId)?.priceTableId ??
       (order ? priceTableContext.priceTableByOrderId.get(order.id)?.priceTableId : null) ??
@@ -488,13 +491,15 @@ async function mergeCommercialMarginsIntoOrderResults(
     const { toCommercialMarginItemPayload } = await import(
       "./salesOrderCommercialMarginReadModel.js"
     );
-    const needsItemLoad = orders.some((order) => !order.items?.length);
-    const loadedItems = needsItemLoad
-      ? await loadSalesOrderItemsForMargin(
-          prisma,
-          orders.map((order) => order.id)
-        )
-      : null;
+    // Recarrega itens apenas dos pedidos que vieram sem eles (o merge abaixo
+    // ignora o carregado quando `order.items` já está preenchido).
+    const idsMissingItems = orders
+      .filter((order) => !order.items?.length)
+      .map((order) => order.id);
+    const loadedItems =
+      idsMissingItems.length > 0
+        ? await loadSalesOrderItemsForMargin(prisma, idsMissingItems)
+        : null;
     const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
       prisma,
       orders.map((order) => ({

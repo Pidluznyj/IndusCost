@@ -3,7 +3,6 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { toCivilDateKey } from "./financeCivilDate.js";
-import { resolvePublishedPriceTableVersionForDate } from "./priceTablePublication.server.js";
 import type {
   SalesOrderMarginOfficialPriceMeta,
 } from "./salesOrderMarginTypes.js";
@@ -51,23 +50,90 @@ export async function loadOfficialPriceTableItemsForPairs(
     }
   }
 
-  for (const group of groups.values()) {
-    const [priceTable, version] = await Promise.all([
-      db.priceTable.findUnique({
-        where: { id: group.priceTableId },
-        select: { id: true, code: true, name: true, status: true },
-      }),
-      resolvePublishedPriceTableVersionForDate(db, group.priceTableId, group.referenceDate),
-    ]);
+  // Tabelas + versões em lote (antes: 2 consultas sequenciais por tabela×data).
+  const tableIds = [...new Set([...groups.values()].map((g) => g.priceTableId))];
+  const [priceTables, versionRows] = await Promise.all([
+    db.priceTable.findMany({
+      where: { id: { in: tableIds } },
+      select: { id: true, code: true, name: true, status: true },
+    }),
+    db.priceTableVersion.findMany({
+      where: {
+        priceTableId: { in: tableIds },
+        status: { in: ["PUBLISHED", "ARCHIVED"] },
+      },
+      select: {
+        id: true,
+        priceTableId: true,
+        versionNumber: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+        publishedAt: true,
+      },
+    }),
+  ]);
 
-    if (!priceTable || String(priceTable.status).toUpperCase() !== "ACTIVE" || !version) {
-      continue;
+  const priceTableById = new Map(priceTables.map((table) => [table.id, table]));
+  type VersionRow = (typeof versionRows)[number];
+  const versionsByTableId = new Map<string, VersionRow[]>();
+  for (const row of versionRows) {
+    const list = versionsByTableId.get(row.priceTableId) ?? [];
+    list.push(row);
+    versionsByTableId.set(row.priceTableId, list);
+  }
+  // Mesmo orderBy de resolvePublishedPriceTableVersionForDate:
+  // [{ effectiveFrom: desc }, { publishedAt: desc }, { versionNumber: desc }]
+  // — DESC no Postgres ordena NULL primeiro (NULL conta como "maior").
+  const nullableDesc = (a: Date | null, b: Date | null): number => {
+    if (a == null && b == null) return 0;
+    if (a == null) return -1;
+    if (b == null) return 1;
+    return b.getTime() - a.getTime();
+  };
+  for (const list of versionsByTableId.values()) {
+    list.sort(
+      (a, b) =>
+        nullableDesc(a.effectiveFrom, b.effectiveFrom) ||
+        nullableDesc(a.publishedAt, b.publishedAt) ||
+        b.versionNumber - a.versionNumber
+    );
+  }
+  const pickVersionForDate = (tableId: string, referenceDate: Date): VersionRow | null => {
+    const ref = referenceDate.getTime();
+    for (const version of versionsByTableId.get(tableId) ?? []) {
+      if (version.effectiveFrom != null && version.effectiveFrom.getTime() > ref) continue;
+      if (version.effectiveTo != null && version.effectiveTo.getTime() <= ref) continue;
+      return version;
     }
+    return null;
+  };
 
+  // Grupos que resolvem para a MESMA versão compartilham uma única consulta de itens.
+  type ResolvedGroup = {
+    priceTableId: string;
+    referenceDate: Date;
+    productIds: Set<string>;
+    version: VersionRow;
+  };
+  const groupsByVersionId = new Map<string, ResolvedGroup[]>();
+  for (const group of groups.values()) {
+    const priceTable = priceTableById.get(group.priceTableId);
+    if (!priceTable || String(priceTable.status).toUpperCase() !== "ACTIVE") continue;
+    const version = pickVersionForDate(group.priceTableId, group.referenceDate);
+    if (!version) continue;
+    const list = groupsByVersionId.get(version.id) ?? [];
+    list.push({ ...group, version });
+    groupsByVersionId.set(version.id, list);
+  }
+
+  for (const [versionId, resolvedGroups] of groupsByVersionId) {
+    const unionProductIds = [
+      ...new Set(resolvedGroups.flatMap((group) => [...group.productIds])),
+    ];
     const items = await db.priceTableItem.findMany({
       where: {
-        priceTableVersionId: version.id,
-        productId: { in: [...group.productIds] },
+        priceTableVersionId: versionId,
+        productId: { in: unionProductIds },
       },
       select: {
         id: true,
@@ -76,36 +142,43 @@ export async function loadOfficialPriceTableItemsForPairs(
         frozenTotalCost: true,
       },
     });
+    const itemsByProductId = new Map(items.map((row) => [row.productId, row]));
 
-    const metaBase: Omit<SalesOrderMarginOfficialPriceMeta, "orderIssueDate"> = {
-      priceTableId: priceTable.id,
-      priceTableCode: priceTable.code,
-      priceTableName: priceTable.name,
-      priceTableVersionId: version.id,
-      versionNumber: version.versionNumber,
-      effectiveFrom: version.effectiveFrom ? toCivilDateKey(version.effectiveFrom) : null,
-      effectiveTo: version.effectiveTo ? toCivilDateKey(version.effectiveTo) : null,
-      priceTableItemId: "",
-    };
+    for (const group of resolvedGroups) {
+      const priceTable = priceTableById.get(group.priceTableId)!;
+      const version = group.version;
+      const metaBase: Omit<SalesOrderMarginOfficialPriceMeta, "orderIssueDate"> = {
+        priceTableId: priceTable.id,
+        priceTableCode: priceTable.code,
+        priceTableName: priceTable.name,
+        priceTableVersionId: version.id,
+        versionNumber: version.versionNumber,
+        effectiveFrom: version.effectiveFrom ? toCivilDateKey(version.effectiveFrom) : null,
+        effectiveTo: version.effectiveTo ? toCivilDateKey(version.effectiveTo) : null,
+        priceTableItemId: "",
+      };
 
-    for (const row of items) {
-      const salePrice = Number(row.salePrice);
-      if (!Number.isFinite(salePrice) || salePrice <= 0) continue;
-      const key = officialPriceLookupKey(group.priceTableId, row.productId, group.referenceDate);
-      result.set(key, {
-        meta: {
-          ...metaBase,
-          priceTableItemId: row.id,
-          orderIssueDate: toCivilDateKey(group.referenceDate),
-        },
-        item: {
-          priceTableItemId: row.id,
-          salePrice,
-          frozenTotalCost: Number.isFinite(Number(row.frozenTotalCost))
-            ? Number(row.frozenTotalCost)
-            : null,
-        },
-      });
+      for (const productId of group.productIds) {
+        const row = itemsByProductId.get(productId);
+        if (!row) continue;
+        const salePrice = Number(row.salePrice);
+        if (!Number.isFinite(salePrice) || salePrice <= 0) continue;
+        const key = officialPriceLookupKey(group.priceTableId, row.productId, group.referenceDate);
+        result.set(key, {
+          meta: {
+            ...metaBase,
+            priceTableItemId: row.id,
+            orderIssueDate: toCivilDateKey(group.referenceDate),
+          },
+          item: {
+            priceTableItemId: row.id,
+            salePrice,
+            frozenTotalCost: Number.isFinite(Number(row.frozenTotalCost))
+              ? Number(row.frozenTotalCost)
+              : null,
+          },
+        });
+      }
     }
   }
 

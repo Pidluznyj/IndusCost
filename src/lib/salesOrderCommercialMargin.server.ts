@@ -178,30 +178,98 @@ function ratesEqual(a: HistoricalFormationRates, b: HistoricalFormationRates): b
   );
 }
 
-/**
- * Carrega conjuntos históricos coerentes (4 faixas) para vários produtos em uma data.
- * Consultas: tabelas (1) + versões (≤4) + itens (1) — sem N+1 por produto.
- */
-export async function loadHistoricalCommercialFormationsBatch(
-  db: PrismaClient,
-  productIds: string[],
-  referenceDate: Date
-): Promise<Map<string, HistoricalTieretResult>> {
-  const result = new Map<string, HistoricalTieretResult>();
-  const uniqueProductIds = [...new Set(productIds.filter(Boolean))];
-  const refIso = toCivilDateKey(referenceDate);
-  if (!refIso) {
-    for (const id of uniqueProductIds) {
-      result.set(id, {
-        ok: false,
-        reasonCode: "MISSING_ORDER_DATE",
-        message: "Pedido sem data de emissão.",
-      });
-    }
-    return result;
-  }
+/** Balde de formação histórica: uma data (issueDate) + produtos daquela data. */
+export type CommercialFormationDateBucket = {
+  referenceDate: Date;
+  productIds: string[];
+};
 
-  if (uniqueProductIds.length === 0) return result;
+type CommercialPriceTableVersionRow = {
+  id: string;
+  priceTableId: string;
+  status: string;
+  effectiveFrom: Date | null;
+  effectiveTo: Date | null;
+  publishedAt: Date | null;
+  versionNumber: number;
+};
+
+/**
+ * Réplica em memória do orderBy do banco na escolha da versão vigente:
+ * [{ status: desc }, { effectiveFrom: desc }, { publishedAt: desc }, { versionNumber: desc }]
+ * — em Postgres, DESC ordena NULL primeiro (NULL conta como "maior").
+ */
+function compareCommercialVersionsDesc(
+  a: CommercialPriceTableVersionRow,
+  b: CommercialPriceTableVersionRow
+): number {
+  if (a.status !== b.status) return a.status > b.status ? -1 : 1;
+  const byFrom = compareNullableDatesDesc(a.effectiveFrom, b.effectiveFrom);
+  if (byFrom !== 0) return byFrom;
+  const byPublished = compareNullableDatesDesc(a.publishedAt, b.publishedAt);
+  if (byPublished !== 0) return byPublished;
+  return b.versionNumber - a.versionNumber;
+}
+
+function compareNullableDatesDesc(a: Date | null, b: Date | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1; // NULLS FIRST no DESC (padrão do Postgres)
+  if (b == null) return 1;
+  return b.getTime() - a.getTime();
+}
+
+/** Janela de vigência idêntica ao where original: from<=ref (ou null) e to>ref (ou null). */
+function pickCommercialVersionForDate(
+  sortedVersionsDesc: CommercialPriceTableVersionRow[],
+  referenceDate: Date
+): CommercialPriceTableVersionRow | null {
+  const ref = referenceDate.getTime();
+  for (const version of sortedVersionsDesc) {
+    if (version.effectiveFrom != null && version.effectiveFrom.getTime() > ref) continue;
+    if (version.effectiveTo != null && version.effectiveTo.getTime() <= ref) continue;
+    return version;
+  }
+  return null;
+}
+
+/**
+ * Carrega conjuntos históricos coerentes (4 faixas) para vários produtos em VÁRIAS datas.
+ * Consultas: tabelas (1) + versões (1 — todas as vigências das 4 faixas, resolvidas em
+ * memória por data) + itens (1 por conjunto distinto de versões — normalmente 1).
+ * Sem N+1 por produto NEM por data. Retorno alinhado por índice com `buckets`.
+ */
+export async function loadHistoricalCommercialFormationsForBuckets(
+  db: PrismaClient,
+  buckets: CommercialFormationDateBucket[]
+): Promise<Array<Map<string, HistoricalTieretResult>>> {
+  const results = buckets.map(() => new Map<string, HistoricalTieretResult>());
+
+  type ValidBucket = {
+    index: number;
+    refIso: string;
+    referenceDate: Date;
+    uniqueProductIds: string[];
+  };
+  const validBuckets: ValidBucket[] = [];
+
+  buckets.forEach((bucket, index) => {
+    const uniqueProductIds = [...new Set(bucket.productIds.filter(Boolean))];
+    const refIso = toCivilDateKey(bucket.referenceDate);
+    if (!refIso) {
+      for (const id of uniqueProductIds) {
+        results[index]!.set(id, {
+          ok: false,
+          reasonCode: "MISSING_ORDER_DATE",
+          message: "Pedido sem data de emissão.",
+        });
+      }
+      return;
+    }
+    if (uniqueProductIds.length === 0) return;
+    validBuckets.push({ index, refIso, referenceDate: bucket.referenceDate, uniqueProductIds });
+  });
+
+  if (validBuckets.length === 0) return results;
 
   const tables = await db.priceTable.findMany({
     where: { code: { in: [...COMMERCIAL_PRICE_TIER_CODES] }, status: "ACTIVE" },
@@ -210,79 +278,171 @@ export async function loadHistoricalCommercialFormationsBatch(
   const tableByCode = new Map(tables.map((t) => [t.code as CommercialPriceTierCode, t]));
   const missingCodes = COMMERCIAL_PRICE_TIER_CODES.filter((c) => !tableByCode.has(c));
   if (missingCodes.length > 0) {
-    for (const id of uniqueProductIds) {
-      result.set(id, {
-        ok: false,
-        reasonCode: "INCOMPLETE_MARGIN_TIERS",
-        message: `Tabelas comerciais ausentes: ${missingCodes.join(", ")}.`,
-      });
+    for (const bucket of validBuckets) {
+      for (const id of bucket.uniqueProductIds) {
+        results[bucket.index]!.set(id, {
+          ok: false,
+          reasonCode: "INCOMPLETE_MARGIN_TIERS",
+          message: `Tabelas comerciais ausentes: ${missingCodes.join(", ")}.`,
+        });
+      }
     }
-    return result;
+    return results;
   }
 
-  const versionIdsByCode = {} as Record<CommercialPriceTierCode, string>;
-  const versionIdToCode = new Map<string, CommercialPriceTierCode>();
+  const versionRows = (await db.priceTableVersion.findMany({
+    where: {
+      priceTableId: { in: tables.map((t) => t.id) },
+      status: { in: ["PUBLISHED", "ARCHIVED"] },
+    },
+    select: {
+      id: true,
+      priceTableId: true,
+      status: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      publishedAt: true,
+      versionNumber: true,
+    },
+  })) as CommercialPriceTableVersionRow[];
 
-  for (const code of COMMERCIAL_PRICE_TIER_CODES) {
-    const table = tableByCode.get(code)!;
-    const overlapping = await db.priceTableVersion.findMany({
-      where: {
-        priceTableId: table.id,
-        status: { in: ["PUBLISHED", "ARCHIVED"] },
-        AND: [
-          { OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: referenceDate } }] },
-          { OR: [{ effectiveTo: null }, { effectiveTo: { gt: referenceDate } }] },
-        ],
-      },
-      orderBy: [{ status: "desc" }, { effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
-      take: 1,
-      select: { id: true },
-    });
-    if (overlapping.length === 0) {
-      for (const id of uniqueProductIds) {
-        result.set(id, {
+  const versionsByTableId = new Map<string, CommercialPriceTableVersionRow[]>();
+  for (const row of versionRows) {
+    const list = versionsByTableId.get(row.priceTableId) ?? [];
+    list.push(row);
+    versionsByTableId.set(row.priceTableId, list);
+  }
+  for (const list of versionsByTableId.values()) {
+    list.sort(compareCommercialVersionsDesc);
+  }
+
+  type ResolvedBucket = ValidBucket & {
+    versionIdsByCode: Record<CommercialPriceTierCode, string>;
+    historicalContextId: string;
+  };
+  /** conjunto de versões (ordenado) → buckets que compartilham o MESMO conjunto. */
+  const bucketsByContext = new Map<string, ResolvedBucket[]>();
+
+  for (const bucket of validBuckets) {
+    const versionIdsByCode = {} as Record<CommercialPriceTierCode, string>;
+    let failure: HistoricalTieretFailure | null = null;
+    for (const code of COMMERCIAL_PRICE_TIER_CODES) {
+      const table = tableByCode.get(code)!;
+      const version = pickCommercialVersionForDate(
+        versionsByTableId.get(table.id) ?? [],
+        bucket.referenceDate
+      );
+      if (!version) {
+        failure = {
           ok: false,
           reasonCode: "HISTORICAL_FORMATION_NOT_FOUND",
           message: `Sem versão publicada de ${code} na data do Pedido.`,
-        });
+        };
+        break;
       }
-      return result;
+      versionIdsByCode[code] = version.id;
     }
-    const version = overlapping[0]!;
-    versionIdsByCode[code] = version.id;
-    versionIdToCode.set(version.id, code);
+    if (failure) {
+      for (const id of bucket.uniqueProductIds) {
+        results[bucket.index]!.set(id, failure);
+      }
+      continue;
+    }
+    const historicalContextId = Object.values(versionIdsByCode).slice().sort().join("|");
+    const group = bucketsByContext.get(historicalContextId) ?? [];
+    group.push({ ...bucket, versionIdsByCode, historicalContextId });
+    bucketsByContext.set(historicalContextId, group);
   }
 
-  const versionIds = Object.values(versionIdsByCode);
-  const historicalContextId = versionIds.slice().sort().join("|");
-
-  const items = await db.priceTableItem.findMany({
-    where: {
-      priceTableVersionId: { in: versionIds },
-      productId: { in: uniqueProductIds },
-    },
-    select: {
-      priceTableVersionId: true,
-      productId: true,
-      frozenTotalCost: true,
-      marginPct: true,
-      salePrice: true,
-      commissionPerc: true,
-      formulaSnapshotJson: true,
-    },
-  });
-
-  const itemsByProduct = new Map<string, Map<CommercialPriceTierCode, LoadedItem>>();
-  for (const item of items) {
-    const code = versionIdToCode.get(item.priceTableVersionId);
-    if (!code) continue;
-    let byCode = itemsByProduct.get(item.productId);
-    if (!byCode) {
-      byCode = new Map();
-      itemsByProduct.set(item.productId, byCode);
+  for (const [historicalContextId, group] of bucketsByContext) {
+    const versionIdsByCode = group[0]!.versionIdsByCode;
+    const versionIds = Object.values(versionIdsByCode);
+    const versionIdToCode = new Map<string, CommercialPriceTierCode>();
+    for (const code of COMMERCIAL_PRICE_TIER_CODES) {
+      versionIdToCode.set(versionIdsByCode[code], code);
     }
-    byCode.set(code, item);
+    const groupProductIds = [
+      ...new Set(group.flatMap((bucket) => bucket.uniqueProductIds)),
+    ];
+
+    const items = await db.priceTableItem.findMany({
+      where: {
+        priceTableVersionId: { in: versionIds },
+        productId: { in: groupProductIds },
+      },
+      select: {
+        priceTableVersionId: true,
+        productId: true,
+        frozenTotalCost: true,
+        marginPct: true,
+        salePrice: true,
+        commissionPerc: true,
+        formulaSnapshotJson: true,
+      },
+    });
+
+    const itemsByProduct = new Map<string, Map<CommercialPriceTierCode, LoadedItem>>();
+    for (const item of items) {
+      const code = versionIdToCode.get(item.priceTableVersionId);
+      if (!code) continue;
+      let byCode = itemsByProduct.get(item.productId);
+      if (!byCode) {
+        byCode = new Map();
+        itemsByProduct.set(item.productId, byCode);
+      }
+      byCode.set(code, item);
+    }
+
+    for (const bucket of group) {
+      assembleHistoricalFormationsForProducts({
+        uniqueProductIds: bucket.uniqueProductIds,
+        itemsByProduct,
+        tableByCode,
+        versionIdsByCode,
+        historicalContextId,
+        refIso: bucket.refIso,
+        result: results[bucket.index]!,
+      });
+    }
   }
+
+  return results;
+}
+
+/**
+ * Carrega conjuntos históricos coerentes (4 faixas) para vários produtos em uma data.
+ * Wrapper de compatibilidade sobre o loader multi-datas.
+ */
+export async function loadHistoricalCommercialFormationsBatch(
+  db: PrismaClient,
+  productIds: string[],
+  referenceDate: Date
+): Promise<Map<string, HistoricalTieretResult>> {
+  const [result] = await loadHistoricalCommercialFormationsForBuckets(db, [
+    { referenceDate, productIds },
+  ]);
+  return result ?? new Map();
+}
+
+/** Montagem por produto — mesmas validações, falhas e mensagens do loader original. */
+function assembleHistoricalFormationsForProducts(input: {
+  uniqueProductIds: string[];
+  itemsByProduct: Map<string, Map<CommercialPriceTierCode, LoadedItem>>;
+  tableByCode: Map<CommercialPriceTierCode, { id: string; code: string; name: string }>;
+  versionIdsByCode: Record<CommercialPriceTierCode, string>;
+  historicalContextId: string;
+  refIso: string;
+  result: Map<string, HistoricalTieretResult>;
+}): void {
+  const {
+    uniqueProductIds,
+    itemsByProduct,
+    tableByCode,
+    versionIdsByCode,
+    historicalContextId,
+    refIso,
+    result,
+  } = input;
 
   for (const productId of uniqueProductIds) {
     const byCode = itemsByProduct.get(productId);
@@ -379,8 +539,6 @@ export async function loadHistoricalCommercialFormationsBatch(
       anchorPriceTableVersionId: versionIdsByCode.ATACADO,
     });
   }
-
-  return result;
 }
 
 export async function calculateCommercialMarginsForSalesOrders(
@@ -477,16 +635,22 @@ export async function calculateCommercialMarginsForSalesOrders(
 
   /** productId|dateIso → formation */
   const formationByKey = new Map<string, HistoricalTieretResult>();
-  for (const [dateIso, bucket] of productIdsByDate) {
-    const batch = await loadHistoricalCommercialFormationsBatch(
-      prisma,
-      [...bucket.productIds],
-      bucket.date
-    );
-    for (const [productId, formation] of batch) {
+  // Todas as datas em UM lote (antes: ~6 consultas sequenciais POR data de emissão).
+  const dateBuckets = [...productIdsByDate.entries()];
+  const formationsPerBucket = await loadHistoricalCommercialFormationsForBuckets(
+    prisma,
+    dateBuckets.map(([, bucket]) => ({
+      referenceDate: bucket.date,
+      productIds: [...bucket.productIds],
+    }))
+  );
+  dateBuckets.forEach(([dateIso], bucketIndex) => {
+    const formations = formationsPerBucket[bucketIndex];
+    if (!formations) return;
+    for (const [productId, formation] of formations) {
       formationByKey.set(`${productId}|${dateIso}`, formation);
     }
-  }
+  });
 
   const byOrderPayloads = new Map<
     string,
