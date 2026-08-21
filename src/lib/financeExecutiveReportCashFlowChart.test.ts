@@ -318,9 +318,10 @@ describe("financeExecutiveReportCashFlowChart", () => {
     assert.match(cashFlowChart, /mapExecutiveCashFlowRowsToPlannedChart/);
   });
 
-  it("serviço executive-report carrega fluxo duas vezes (período + anual)", () => {
+  it("serviço executive-report reutiliza carteira anual e monta CF anual (+ período só se distinto)", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
-    assert.match(src, /cashFlowAnnualLoad/);
+    assert.match(src, /loadExecutiveReportYearScopedBundle/);
+    assert.match(src, /periodEqualsAnnual/);
     assert.match(src, /buildExecutiveReportCashFlowAnnualFilters/);
     assert.match(src, /annualChart:\s*cashFlowAnnualChart/);
     assert.match(src, /resolveExecutiveReportCashFlowMonthlyTimeline\(cashFlowAnnualPayload\)/);

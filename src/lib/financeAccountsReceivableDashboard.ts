@@ -1064,7 +1064,10 @@ export function buildFinanceAccountsReceivableDashboard(
       criticalTitles: [],
       dataQualityAlerts: financeArDataQualityAlertsLegacy(emptyQuality),
       dataQualitySummary: buildFinanceArDataQualitySummary(emptyQuality),
-      dataSanitization: EMPTY_AR_CARDS_SANITIZATION,
+      dataSanitization: {
+        ...EMPTY_AR_CARDS_SANITIZATION,
+        ...countFinanceArSanitizationInScope(rows, filters, referenceDate, syncCutoff),
+      },
       financialHorizon: createEmptyAccountsReceivableOpenHorizon(referenceDate),
     };
   }

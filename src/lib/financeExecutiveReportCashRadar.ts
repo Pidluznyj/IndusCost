@@ -211,8 +211,8 @@ export function buildExecutiveReportCashRadarBlock(input: {
       rangeKey,
       day: input.day,
       search: input.search,
-      exportAll: input.exportAll ?? true,
-      pageSize: DAILY_RADAR_EXPORT_PAGE_SIZE,
+      exportAll: input.exportAll ?? false,
+      pageSize: input.exportAll ? DAILY_RADAR_EXPORT_PAGE_SIZE : 25,
     },
   });
 

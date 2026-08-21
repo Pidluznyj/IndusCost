@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -134,6 +135,18 @@ export function FinanceExecutiveReportPage() {
     setAppliedFilters(defaults);
   };
 
+  const ensureExecutiveReportCashRadarForPrint = useCallback(async () => {
+    if (!report) return;
+    const params = new URLSearchParams(appliedQuery);
+    params.set("exportAll", "1");
+    const cashRadar = await fetchJsonOk<FinanceExecutiveReport["cashRadar"]>(
+      `/api/finance/executive-report/cash-radar?${params.toString()}`
+    );
+    flushSync(() => {
+      setReport((prev) => (prev ? { ...prev, cashRadar } : prev));
+    });
+  }, [appliedQuery, report]);
+
   const handlePrint = async () => {
     const action = resolveExecutiveReportPrintAction({
       loading,
@@ -152,6 +165,7 @@ export function FinanceExecutiveReportPage() {
     if (printing) return;
     setPrinting(true);
     try {
+      await ensureExecutiveReportCashRadarForPrint();
       await prepareExecutiveReportForPrint();
       await waitForExecutiveReportChartsReady(20_000);
       markExecutiveReportDocumentReady(true);
@@ -188,6 +202,7 @@ export function FinanceExecutiveReportPage() {
     // pdfMode ativa o mesmo render de impressão dos gráficos (ExecutiveReportPrintProvider).
     setPrinting(true);
     try {
+      await ensureExecutiveReportCashRadarForPrint();
       await prepareExecutiveReportForPrint();
       await waitForExecutiveReportChartsReady(20_000);
       markExecutiveReportDocumentReady(true);

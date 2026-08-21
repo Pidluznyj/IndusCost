@@ -102,6 +102,7 @@ describe("financeExecutiveReportDataSources", () => {
     const src = read("src/lib/financeExecutiveReportDataSources.ts");
     assert.match(src, /EXECUTIVE_REPORT_RECEIVABLES_SOURCE/);
     assert.match(src, /buildOfficialAccountsReceivableRulesResult/);
+    assert.match(src, /projection:\s*"metrics"/);
     assert.match(src, /sumOfficialArReceivedBySettlementInPeriod/);
     assert.match(src, /buildExecutiveReportArKpisFromOfficial/);
   });
@@ -110,6 +111,7 @@ describe("financeExecutiveReportDataSources", () => {
     const src = read("src/lib/financeExecutiveReportDataSources.ts");
     assert.match(src, /EXECUTIVE_REPORT_PAYABLES_SOURCE/);
     assert.match(src, /buildOfficialAccountsPayableRulesResult/);
+    assert.match(src, /projection:\s*"metrics"/);
     assert.match(src, /sumOfficialApPaidInPaymentPeriod/);
   });
 
