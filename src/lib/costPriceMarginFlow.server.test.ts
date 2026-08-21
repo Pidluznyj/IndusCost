@@ -54,6 +54,12 @@ type ProductRow = {
   status: string;
 };
 
+/** Arestas de BOM do fixture (pai → filho). Ausente ⇒ ProductBOM = []. */
+type ProductBomEdge = {
+  parentProductId: string;
+  childProductId: string;
+};
+
 type MpVersionRow = {
   id: string;
   code: string;
@@ -169,10 +175,13 @@ type PriceItemRow = {
 function createEndToEndFlowDb(input: {
   materials: MaterialRow[];
   products: ProductRow[];
+  /** Relações ProductBOM do fixture; sem edges o Prisma devolveria []. */
+  bomEdges?: ProductBomEdge[];
   defaultMarginPct?: number;
 }) {
   const materials = input.materials.map((m) => ({ ...m }));
   const products = input.products.map((p) => ({ ...p }));
+  const bomEdges = (input.bomEdges ?? []).map((e) => ({ ...e }));
   const mpVersions = new Map<string, MpVersionRow>();
   const mpItems = new Map<string, MpItemRow>();
   const prodVersions = new Map<string, ProdVersionRow>();
@@ -186,6 +195,35 @@ function createEndToEndFlowDb(input: {
   let priceVerSeq = 0;
   let priceItemSeq = 0;
   const defaultMarginPct = input.defaultMarginPct ?? 25;
+
+  const childrenOf = (parentProductId: string) =>
+    bomEdges
+      .filter((e) => e.parentProductId === parentProductId)
+      .map((e) => ({ childProductId: e.childProductId }));
+
+  /**
+   * Projeta o `select` do Prisma o suficiente para os caminhos exercitados
+   * (produção, BOM health, margem). ProductBOM só entra quando selecionado.
+   */
+  const projectProductRow = (
+    p: ProductRow,
+    select?: Record<string, unknown> | null
+  ): Record<string, unknown> => {
+    if (!select) {
+      return { id: p.id, sku: p.sku, name: p.name, type: p.type, sourceExternalId: null };
+    }
+    const out: Record<string, unknown> = {};
+    if (select.id) out.id = p.id;
+    if (select.sku) out.sku = p.sku;
+    if (select.name) out.name = p.name;
+    if (select.type) out.type = p.type;
+    if (select.status) out.status = p.status;
+    if (select.sourceExternalId) out.sourceExternalId = null;
+    if (select.ProductBOM) {
+      out.ProductBOM = childrenOf(p.id);
+    }
+    return out;
+  };
 
   const mpItemKey = (vId: string, mId: string) => `${vId}:${mId}`;
   const prodItemKey = (vId: string, pId: string) => `${vId}:${pId}`;
@@ -449,31 +487,104 @@ function createEndToEndFlowDb(input: {
         prodItems.set(key, row);
         return row;
       },
-      findMany: async () => [...prodItems.values()],
+      findMany: async ({
+        where,
+        include,
+        select,
+      }: {
+        where?: {
+          productId?: string;
+          costTableVersionId?: string;
+          costTableVersion?: { status?: string; id?: { not: string } };
+        };
+        include?: { costTableVersion?: { select?: { id?: boolean; code?: boolean } } };
+        select?: { productId?: boolean; unitProductionCost?: boolean };
+      } = {}) => {
+        let rows = [...prodItems.values()];
+        if (where?.productId) rows = rows.filter((i) => i.productId === where.productId);
+        if (where?.costTableVersionId) {
+          rows = rows.filter((i) => i.costTableVersionId === where.costTableVersionId);
+        }
+        if (where?.costTableVersion) {
+          const cvWhere = where.costTableVersion;
+          rows = rows.filter((i) => {
+            const ver = prodVersions.get(i.costTableVersionId);
+            if (!ver) return false;
+            if (cvWhere.status && ver.status !== cvWhere.status) return false;
+            if (cvWhere.id?.not && ver.id === cvWhere.id.not) return false;
+            return true;
+          });
+        }
+        if (select) {
+          return rows.map((i) => {
+            const out: Record<string, unknown> = {};
+            if (select.productId) out.productId = i.productId;
+            if (select.unitProductionCost) out.unitProductionCost = i.unitProductionCost;
+            return out;
+          });
+        }
+        if (include?.costTableVersion) {
+          return rows.map((i) => {
+            const ver = prodVersions.get(i.costTableVersionId);
+            const cvSelect = include.costTableVersion?.select;
+            const costTableVersion = ver
+              ? cvSelect
+                ? {
+                    ...(cvSelect.id ? { id: ver.id } : {}),
+                    ...(cvSelect.code ? { code: ver.code } : {}),
+                  }
+                : { id: ver.id, code: ver.code }
+              : null;
+            return { ...i, costTableVersion };
+          });
+        }
+        return rows;
+      },
+      delete: async ({ where }: { where: { id: string } }) => {
+        for (const [key, row] of prodItems) {
+          if (row.id === where.id) {
+            prodItems.delete(key);
+            return row;
+          }
+        }
+        throw new Error("prod item not found");
+      },
     },
     product: {
       findMany: async ({
         where,
+        select,
       }: {
         where?: {
           status?: string;
           type?: string | { in: string[] };
           id?: { in: string[] };
+          sku?: { in: string[] };
+          sourceExternalId?: { in: string[] };
         };
+        select?: Record<string, unknown>;
       }) => {
         let rows = products;
         if (where?.status) rows = rows.filter((p) => p.status === where.status);
-        if (where?.type && typeof where.type === "object" && Array.isArray(where.type.in)) {
-          rows = rows.filter((p) => where.type.in.includes(p.type));
-        } else if (typeof where?.type === "string") {
-          rows = rows.filter((p) => p.type === where.type);
+        const typeFilter = where?.type;
+        if (typeFilter && typeof typeFilter === "object" && Array.isArray(typeFilter.in)) {
+          rows = rows.filter((p) => typeFilter.in.includes(p.type));
+        } else if (typeof typeFilter === "string") {
+          rows = rows.filter((p) => p.type === typeFilter);
         }
         if (where?.id?.in) rows = rows.filter((p) => where.id!.in.includes(p.id));
-        return rows.map(({ id, sku, name, type }) => ({ id, sku, name, type, sourceExternalId: null }));
+        if (where?.sku?.in) rows = rows.filter((p) => where.sku!.in.includes(p.sku));
+        return rows.map((p) => projectProductRow(p, select ?? null));
       },
-      findUnique: async ({ where }: { where: { id: string } }) => {
+      findUnique: async ({
+        where,
+        select,
+      }: {
+        where: { id: string };
+        select?: Record<string, unknown>;
+      }) => {
         const p = products.find((x) => x.id === where.id);
-        return p ? { ...p, sourceExternalId: null } : null;
+        return p ? projectProductRow(p, select ?? null) : null;
       },
       count: async () => products.length,
     },
