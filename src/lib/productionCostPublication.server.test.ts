@@ -264,25 +264,41 @@ function createMockDb(
     product: {
       findMany: async ({
         where,
+        select,
       }: {
         where: {
           id?: { in: string[] };
           status?: string;
           type?: string | { in: string[] };
         };
+        select?: Record<string, unknown>;
       }) => {
         if (where.id?.in?.length === 0) return [];
         let rows = normalized;
-        if (where.type && typeof where.type === "object" && Array.isArray(where.type.in)) {
-          rows = rows.filter((p) => where.type.in.includes(p.type));
-        } else if (typeof where.type === "string") {
-          rows = rows.filter((p) => p.type === where.type);
+        const typeFilter = where.type;
+        if (typeFilter && typeof typeFilter === "object" && Array.isArray(typeFilter.in)) {
+          rows = rows.filter((p) => typeFilter.in.includes(p.type));
+        } else if (typeof typeFilter === "string") {
+          rows = rows.filter((p) => p.type === typeFilter);
         }
         if (where.status) {
           rows = rows.filter((p) => (p as { status?: string }).status !== "INACTIVE");
         }
         const ids = where.id?.in;
-        return ids ? rows.filter((p) => ids.includes(p.id)) : rows;
+        const filtered = ids ? rows.filter((p) => ids.includes(p.id)) : rows;
+        if (!select) return filtered;
+        return filtered.map((p) => {
+          const out: Record<string, unknown> = {};
+          if (select.id) out.id = p.id;
+          if (select.sku) out.sku = p.sku;
+          if (select.name) out.name = p.name;
+          if (select.type) out.type = p.type;
+          if (select.status) out.status = (p as { status?: string }).status ?? "ACTIVE";
+          if (select.sourceExternalId) out.sourceExternalId = null;
+          // Fixture sem BOM explícita: Prisma real devolveria [].
+          if (select.ProductBOM) out.ProductBOM = [];
+          return out;
+        });
       },
       findUnique: async ({ where }: { where: { id: string } }) =>
         normalized.find((p) => p.id === where.id) ?? null,
