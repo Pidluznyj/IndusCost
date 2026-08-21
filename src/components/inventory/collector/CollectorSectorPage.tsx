@@ -208,7 +208,13 @@ export function CollectorSectorPage() {
       setScreen({ name: "list" });
     } catch (e: unknown) {
       const err = toCollectorApiError(e);
-      setError(err.message ?? "Erro ao salvar contagem.");
+      if (err.code === "JUSTIFICATION_REQUIRED") {
+        setError(
+          "Falha operacional ao registrar a divergência. Recarregue a lista e tente novamente."
+        );
+      } else {
+        setError(err.message ?? "Erro ao salvar contagem.");
+      }
       if (err.code === "COUNT_LINE_VERSION_CONFLICT" && sessionId) {
         await loadItems(sessionId);
       }

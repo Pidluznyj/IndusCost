@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -76,6 +76,7 @@ export function FinanceExecutiveReportPage() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [exportingImages, setExportingImages] = useState(false);
+  const reportAbortRef = useRef<AbortController | null>(null);
 
   const appliedQuery = useMemo(
     () => buildFinanceExecutiveReportQuery(appliedFilters),
@@ -105,19 +106,29 @@ export function FinanceExecutiveReportPage() {
       return;
     }
 
+    // Troca rápida de filtros: a resposta do período anterior não pode
+    // sobrescrever o período selecionado agora.
+    reportAbortRef.current?.abort();
+    const controller = new AbortController();
+    reportAbortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const url = getFinanceExecutiveReportApiPath(appliedQuery);
-      const payload = await fetchJsonOk<FinanceExecutiveReport>(url);
+      const payload = await fetchJsonOk<FinanceExecutiveReport>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
       setReport(payload);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setReport(null);
       setError(
         buildFinanceTabLoadError("Não foi possível carregar o Relatório Executivo.", err)
       );
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [appliedQuery, canView]);
 

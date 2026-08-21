@@ -19,6 +19,7 @@ import {
   resolveCountAdjustmentBasis,
 } from "./../inventoryCountObservation.js";
 import { InventoryValidationError } from "./../inventoryTypes.js";
+import { COLLECTOR_DEVICE_JUSTIFICATION } from "./../inventoryCountDeviceJustification.js";
 import {
   COLLECTOR_SECTORS,
   type CollectorSectorCode,
@@ -37,7 +38,7 @@ import {
 
 export const COLLECTOR_NO_WAREHOUSE_FOR_SECTOR = "COLLECTOR_NO_WAREHOUSE_FOR_SECTOR";
 export const COLLECTOR_PENDING_ITEMS = "PENDING_ITEMS";
-export const COLLECTOR_DEVICE_JUSTIFICATION = "Contagem física Collector";
+export { COLLECTOR_DEVICE_JUSTIFICATION };
 
 export type { CollectorOperationalState, CollectorWarehouseSummary };
 

@@ -180,9 +180,11 @@ describe("blind DTO / population / finalize semantics (structural)", () => {
   it("finalize: PENDING_ITEMS, allowUncounted não zera, justificativa DEVICE", () => {
     const auto = read("src/lib/inventory/collector/collectorAutonomousSession.server.ts");
     assert.match(auto, /PENDING_ITEMS|COLLECTOR_PENDING_ITEMS/);
-    assert.match(auto, /Contagem física Collector/);
+    assert.match(auto, /COLLECTOR_DEVICE_JUSTIFICATION/);
     assert.match(auto, /allowUncounted/);
     assert.doesNotMatch(auto, /countedQuantity:\s*0/);
+    const helper = read("src/lib/inventory/inventoryCountDeviceJustification.ts");
+    assert.match(helper, /Contagem física Collector/);
   });
 
   it("count zero é válido no contrato DEVICE", () => {
@@ -190,6 +192,18 @@ describe("blind DTO / population / finalize semantics (structural)", () => {
     assert.match(contract, /counted < 0/);
     assert.doesNotMatch(contract, /counted <= 0/);
     assert.doesNotMatch(contract, /counted === 0/);
+  });
+
+  it("recordInventoryCount injeta justificativa DEVICE no motor, não no frontend", () => {
+    const app = read("src/lib/inventory/inventoryCountApplicationService.server.ts");
+    assert.match(app, /resolveRecordedCountJustification/);
+    const helper = read("src/lib/inventory/inventoryCountDeviceJustification.ts");
+    assert.match(helper, /Contagem física Collector/);
+    assert.match(helper, /actorType === "DEVICE"/);
+    const page = read("src/components/inventory/collector/CollectorSectorPage.tsx");
+    assert.doesNotMatch(page, /textarea/i);
+    assert.match(page, /JUSTIFICATION_REQUIRED/);
+    assert.doesNotMatch(page, /Informe a justificativa/);
   });
 
   it("suprimentos usa InventoryBalance como SoT sem write Material.quantity", () => {
