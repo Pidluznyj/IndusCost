@@ -22,7 +22,15 @@ import {
 import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
 import { SalesOrderReportPrintDocument } from "@/src/components/sales/SalesOrderReportPrintDocument";
 import { SalesOrderIndustrialResultReportPrintDocument } from "@/src/components/sales/SalesOrderIndustrialResultReportPrintDocument";
-import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
+// Detalhe do Pedido: lazy como nos demais consumidores (OutputDocuments,
+// Provisao de Comissoes, ICR, Ordens de Producao). O import estatico daqui
+// era o unico que impedia o Vite de mover o dialog + abas para chunk proprio
+// (warning "dynamic import will not move module into another chunk").
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
 import { SalesOrderReceivableStatusMultiSelect } from "@/src/components/sales/SalesOrderReceivableStatusMultiSelect";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
@@ -713,20 +721,24 @@ function SalesOrderList() {
   useEffect(() => {
     const ac = new AbortController();
     setSellerOptionsLoading(true);
+    // Fonte: o proprio key (que exclui sellerKey de proposito). Ler
+    // appliedFilters aqui exigiria te-lo nas deps e refaria este fetch ao
+    // trocar somente o vendedor — exatamente o que o key existe para evitar.
+    const filters = JSON.parse(sellerOptionsFiltersKey) as Record<string, string>;
     const params = new URLSearchParams();
-    if (appliedFilters.status) params.set("status", appliedFilters.status);
-    if (appliedFilters.hasInvoice) params.set("hasInvoice", appliedFilters.hasInvoice);
-    if (appliedFilters.receivableStatus) {
-      params.set("receivableStatus", appliedFilters.receivableStatus);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.hasInvoice) params.set("hasInvoice", filters.hasInvoice);
+    if (filters.receivableStatus) {
+      params.set("receivableStatus", filters.receivableStatus);
     }
-    if (appliedFilters.customerId) params.set("customerId", appliedFilters.customerId);
-    if (appliedFilters.startDate) params.set("startDate", appliedFilters.startDate);
-    if (appliedFilters.endDate) params.set("endDate", appliedFilters.endDate);
-    if (appliedFilters.minNetValue) params.set("minNetValue", appliedFilters.minNetValue);
-    if (appliedFilters.maxNetValue) params.set("maxNetValue", appliedFilters.maxNetValue);
-    if (appliedFilters.year) params.set("year", appliedFilters.year);
-    if (appliedFilters.month) params.set("month", appliedFilters.month);
-    if (appliedFilters.search) params.set("q", appliedFilters.search);
+    if (filters.customerId) params.set("customerId", filters.customerId);
+    if (filters.startDate) params.set("startDate", filters.startDate);
+    if (filters.endDate) params.set("endDate", filters.endDate);
+    if (filters.minNetValue) params.set("minNetValue", filters.minNetValue);
+    if (filters.maxNetValue) params.set("maxNetValue", filters.maxNetValue);
+    if (filters.year) params.set("year", filters.year);
+    if (filters.month) params.set("month", filters.month);
+    if (filters.search) params.set("q", filters.search);
     const q = params.toString();
     // Rota consumida: GET /api/sales-orders/seller-filter-options (via helper).
     void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
@@ -744,7 +756,7 @@ function SalesOrderList() {
         if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => ac.abort();
-  }, [sellerOptionsFiltersKey, appliedFilters]);
+  }, [sellerOptionsFiltersKey]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -1161,13 +1173,17 @@ function SalesOrderList() {
         onOpenDetail={handleOpenDetailFromSummary}
       />
 
-      <SalesOrderDetailDialog
-        open={detailOpen}
-        salesOrderId={detailOrderId}
-        orderCode={detailOrderCode}
-        onClose={closeDetail}
-        onOpenFullAudit={handleOpenFullAudit}
-      />
+      {detailOpen && detailOrderId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={detailOrderId}
+            orderCode={detailOrderCode}
+            onClose={closeDetail}
+            onOpenFullAudit={handleOpenFullAudit}
+          />
+        </React.Suspense>
+      ) : null}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
         <p className="text-sm text-muted-foreground">
@@ -1221,6 +1237,7 @@ function SalesOrderList() {
 function SalesOrderDetailRoute({ id }: { id: string }) {
   const navigate = useNavigate();
   return (
+    <React.Suspense fallback={null}>
     <SalesOrderDetailDialog
       open
       salesOrderId={id}
@@ -1231,6 +1248,7 @@ function SalesOrderDetailRoute({ id }: { id: string }) {
         )
       }
     />
+    </React.Suspense>
   );
 }
 
