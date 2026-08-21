@@ -34,8 +34,17 @@ Tailscale e só aceita o nó da AWS.
 
 ## Ordem de execução
 
-A ordem importa: o Nginx precisa existir antes do hostname no Tunnel, e o
-drop-in do systemd só entra **depois** do deploy da main com o módulo.
+A ordem importa e é deliberada:
+
+1. **Deploy primeiro** — o código com o módulo precisa estar no ar.
+2. **Variáveis logo em seguida** — assim o Public Host Guard do Node já está
+   ativo *antes* de qualquer coisa ficar alcançável de fora. Definir
+   `SATISFACTION_PUBLIC_HOSTS` não afeta o tráfego existente: o guard só
+   reage ao `Host` público, que ainda não é roteado.
+3. **Nginx depois** — a primeira barreira já nasce apontando para um Node
+   que sabe se defender.
+4. **Tunnel e Access por último** — a exposição externa é o passo final,
+   quando as duas barreiras já estão de pé (§37, falhar fechado).
 
 ### Passo 0 — Deploy da homologação
 
@@ -62,7 +71,32 @@ sudo -u postgres psql -d teste_bi_homolog -c "SELECT count(*) FROM \"Satisfactio
 
 ---
 
-### Passo 1 — Nginx dedicado (servidor-01)
+### Passo 1 — Variáveis de ambiente (servidor-01)
+
+Só depois do Passo 0 concluído. Aplicar **antes** de expor o hostname: com o guard já ativo, não existe janela em que a superfície pública responda sem ele.
+
+```bash
+sudo mkdir -p /etc/systemd/system/induscost-homolog.service.d
+sudo cp infra/satisfaction-homolog/systemd/98-satisfaction-public.conf \
+        /etc/systemd/system/induscost-homolog.service.d/98-satisfaction-public.conf
+sudo systemctl daemon-reload
+sudo systemctl restart induscost-homolog
+sudo systemctl status induscost-homolog --no-pager | head -12
+```
+
+Confirme que **não** existe `SATISFACTION_TURNSTILE_SECRET_KEY` definida — com
+o secret presente o modo vira obrigatório e todo submit passaria a falhar,
+porque o egress do serviço está bloqueado.
+
+```bash
+sudo systemctl show induscost-homolog -p Environment | tr ' ' '\n' | grep -i satisfaction
+```
+
+**Aceite:** as 6 variáveis presentes, nenhuma chave de Turnstile.
+
+---
+
+### Passo 2 — Nginx dedicado (servidor-01)
 
 ```bash
 # 1.1 conferir que a porta escolhida está livre no IP Tailscale
@@ -94,7 +128,7 @@ respondendo (ver Passo 5).
 
 ---
 
-### Passo 2 — Cloudflare Tunnel (na AWS)
+### Passo 3 — Cloudflare Tunnel (na AWS)
 
 Auditar **antes** de mudar:
 
@@ -137,7 +171,7 @@ pelo próprio mecanismo de Public Hostname do Tunnel (CNAME proxied).
 
 ---
 
-### Passo 3 — Cloudflare Access (crítico)
+### Passo 4 — Cloudflare Access (crítico)
 
 O hostname da Satisfação **não pode** herdar a política do administrativo.
 
@@ -158,31 +192,6 @@ Zero Trust → Access → Applications
 **Aceite:** `curl -I https://induscost.grupolazarios.com.br/` continua
 devolvendo o desafio do Access (302/403), e
 `https://satisfacao-homolog.grupolazarios.com.br/r` responde 200 sem login.
-
----
-
-### Passo 4 — Variáveis de ambiente (servidor-01)
-
-Só depois do Passo 0 concluído.
-
-```bash
-sudo mkdir -p /etc/systemd/system/induscost-homolog.service.d
-sudo cp infra/satisfaction-homolog/systemd/98-satisfaction-public.conf \
-        /etc/systemd/system/induscost-homolog.service.d/98-satisfaction-public.conf
-sudo systemctl daemon-reload
-sudo systemctl restart induscost-homolog
-sudo systemctl status induscost-homolog --no-pager | head -12
-```
-
-Confirme que **não** existe `SATISFACTION_TURNSTILE_SECRET_KEY` definida — com
-o secret presente o modo vira obrigatório e todo submit passaria a falhar,
-porque o egress do serviço está bloqueado.
-
-```bash
-sudo systemctl show induscost-homolog -p Environment | tr ' ' '\n' | grep -i satisfaction
-```
-
-**Aceite:** as 6 variáveis presentes, nenhuma chave de Turnstile.
 
 ---
 
