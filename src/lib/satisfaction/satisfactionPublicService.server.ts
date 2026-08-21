@@ -96,6 +96,34 @@ function fail(reason: SatisfactionUnavailableReason): SatisfactionPublicFailure 
   return { ok: false, reason, message: UNAVAILABLE_MESSAGES[reason] };
 }
 
+/**
+ * Forma comum de todo retorno de erro da superfície pública.
+ * `reason` é sempre string aqui porque cada operação tem seu próprio conjunto
+ * de motivos (indisponibilidade, VALIDATION, VERSION_CONFLICT).
+ */
+export type SatisfactionPublicErrorResult = {
+  ok: false;
+  reason: string;
+  message?: string;
+  issues?: SatisfactionValidationIssue[];
+  currentVersion?: number;
+};
+
+/**
+ * Estreitamento explícito dos retornos `{ ok: true } | { ok: false, ... }`.
+ *
+ * O `tsconfig.json` do projeto não habilita `strictNullChecks`, e sem ela o
+ * TypeScript NÃO estreita união discriminada por literal booleano — `if
+ * (!r.ok)` não expõe `r.reason`. Em vez de espalhar cast em cada rota,
+ * concentramos a conversão aqui: por construção, todo retorno com `ok: false`
+ * carrega `reason`, então o cast é seguro e fica num lugar só.
+ */
+export function asPublicError(value: {
+  ok: boolean;
+}): SatisfactionPublicErrorResult | null {
+  return value.ok === false ? (value as SatisfactionPublicErrorResult) : null;
+}
+
 function toQuestionSpec(question: {
   id: string;
   code: string;
@@ -186,7 +214,9 @@ export function createSatisfactionPublicService(deps: {
         },
         now()
       );
-      if (!usability.usable) return fail(usability.reason);
+      if (!usability.usable) {
+        return fail((usability as { reason: SatisfactionUnavailableReason }).reason);
+      }
 
       if (accessToken.invitation?.revokedAt) return fail("REVOKED");
       if (accessToken.invitation?.completedAt) return fail("ALREADY_ANSWERED");
@@ -575,7 +605,11 @@ export function createSatisfactionPublicService(deps: {
       const specs = campaign.questions.map(toQuestionSpec);
       const validation = validateAnswers(specs, input.answers, { enforceRequired: true });
       if (!validation.ok) {
-        return { ok: false, reason: "VALIDATION", issues: validation.issues };
+        return {
+          ok: false,
+          reason: "VALIDATION",
+          issues: (validation as { issues: SatisfactionValidationIssue[] }).issues,
+        };
       }
 
       const submittedAt = now();

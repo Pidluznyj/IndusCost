@@ -353,7 +353,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   {
     key: ResourceKeys.COMERCIAL_SATISFACAO_RESPOSTAS,
     label: "Satisfação — respostas",
-    type: "SECTION",
+    type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_SATISFACAO,
     legacyAliasKeys: ["commercial.satisfaction.responses.view"],
   },

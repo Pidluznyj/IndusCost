@@ -21,6 +21,7 @@ import {
   SATISFACTION_INPUT_LIMITS,
 } from "./satisfactionContracts.js";
 import {
+  asPublicError,
   createSatisfactionPublicService,
   SATISFACTION_PUBLIC_SESSION_COOKIE,
   SATISFACTION_PUBLIC_SESSION_TTL_MS,
@@ -157,19 +158,20 @@ export function registerSatisfactionPublicRoutes(
       const token = normalizeText((req.body ?? {}).token, 200) ?? "";
       const result = await service.exchangeToken(token);
 
-      if (!result.ok) {
+      const failure = asPublicError(result);
+      if (failure) {
         logPublicEvent({
           requestId,
           event: "session_exchange",
-          result: result.reason,
+          result: failure.reason,
           durationMs: Date.now() - startedAt,
           statusCode: 200,
         });
-        res.json({ ok: false, reason: result.reason, message: result.message });
+        res.json({ ok: false, reason: failure.reason, message: failure.message });
         return;
       }
 
-      setSessionCookie(res, result.sessionToken);
+      setSessionCookie(res, (result as { sessionToken: string }).sessionToken);
       logPublicEvent({
         requestId,
         event: "session_exchange",
@@ -177,7 +179,7 @@ export function registerSatisfactionPublicRoutes(
         durationMs: Date.now() - startedAt,
         statusCode: 200,
       });
-      res.json({ ok: true, expiresAt: result.expiresAt.toISOString() });
+      res.json({ ok: true, expiresAt: (result as { expiresAt: Date }).expiresAt.toISOString() });
     } catch (error) {
       console.error("[satisfaction:public] falha na troca de sessão", requestId);
       res.status(500).json({ error: "INTERNAL_ERROR" });
@@ -199,15 +201,16 @@ export function registerSatisfactionPublicRoutes(
       const turnstile = resolveTurnstileConfig();
       const result = await service.getForm(sessionToken, turnstile.siteKey);
 
-      if (!result.ok) {
+      const failure = asPublicError(result);
+      if (failure) {
         logPublicEvent({
           requestId,
           event: "form_load",
-          result: result.reason,
+          result: failure.reason,
           durationMs: Date.now() - startedAt,
           statusCode: 200,
         });
-        res.json({ ok: false, reason: result.reason, message: result.message });
+        res.json({ ok: false, reason: failure.reason, message: failure.message });
         return;
       }
 
@@ -218,7 +221,7 @@ export function registerSatisfactionPublicRoutes(
         durationMs: Date.now() - startedAt,
         statusCode: 200,
       });
-      res.json({ ok: true, form: result.form });
+      res.json({ ok: true, form: (result as { form: unknown }).form });
     } catch (error) {
       console.error("[satisfaction:public] falha ao carregar formulário", requestId);
       res.status(500).json({ error: "INTERNAL_ERROR" });
@@ -254,7 +257,7 @@ export function registerSatisfactionPublicRoutes(
           typeof body.expectedVersion === "number" ? body.expectedVersion : null,
       });
 
-      const outcome = result.ok ? "ok" : result.reason;
+      const outcome = asPublicError(result)?.reason ?? "ok";
       logPublicEvent({
         requestId,
         event: "draft_save",
@@ -291,30 +294,34 @@ export function registerSatisfactionPublicRoutes(
       // Turnstile ANTES de qualquer persistência de SUBMITTED.
       const turnstile = resolveTurnstileConfig();
       const challenge = await verifyTurnstile(input.turnstileToken, turnstile);
-      if (!challenge.ok) {
+      const challengeFailure = challenge.ok
+        ? null
+        : (challenge as { reason: "MISSING_TOKEN" | "REJECTED" | "UNAVAILABLE" });
+      if (challengeFailure) {
         logPublicEvent({
           requestId,
           event: "submit",
-          result: `turnstile_${challenge.reason}`,
+          result: `turnstile_${challengeFailure.reason}`,
           durationMs: Date.now() - startedAt,
           statusCode: 400,
         });
         res.status(400).json({
           ok: false,
           reason: "TURNSTILE",
-          message: turnstileFailureMessage(challenge.reason),
+          message: turnstileFailureMessage(challengeFailure.reason),
         });
         return;
       }
 
       const result = await service.submit(sessionToken, input);
 
-      if (!result.ok) {
-        const status = result.reason === "VALIDATION" ? 400 : 200;
+      const submitFailure = asPublicError(result);
+      if (submitFailure) {
+        const status = submitFailure.reason === "VALIDATION" ? 400 : 200;
         logPublicEvent({
           requestId,
           event: "submit",
-          result: String(result.reason),
+          result: submitFailure.reason,
           durationMs: Date.now() - startedAt,
           statusCode: status,
         });
@@ -322,15 +329,16 @@ export function registerSatisfactionPublicRoutes(
         return;
       }
 
+      const success = result as { responseId: string; alreadySubmitted: boolean };
       logPublicEvent({
         requestId,
         event: "submit",
-        result: result.alreadySubmitted ? "idempotent" : "ok",
+        result: success.alreadySubmitted ? "idempotent" : "ok",
         durationMs: Date.now() - startedAt,
         statusCode: 200,
-        responseId: result.responseId,
+        responseId: success.responseId,
       });
-      res.json({ ok: true, alreadySubmitted: result.alreadySubmitted });
+      res.json({ ok: true, alreadySubmitted: success.alreadySubmitted });
     } catch (error) {
       console.error("[satisfaction:public] falha no envio", requestId);
       res.status(500).json({ error: "INTERNAL_ERROR" });
