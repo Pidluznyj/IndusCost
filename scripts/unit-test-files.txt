@@ -223,3 +223,10 @@ src/lib/analistaCompras.perm43.test.ts
 src/lib/granularPermissions.perm44.rc.test.ts
 src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts
 src/components/admin/PermissionsTree.test.tsx
+src/lib/satisfaction/satisfactionContracts.test.ts
+src/lib/satisfaction/satisfactionMetrics.test.ts
+src/lib/satisfaction/satisfactionPublicSurface.test.ts
+src/lib/satisfaction/satisfactionSecurity.test.ts
+src/lib/satisfaction/satisfactionImport.test.ts
+src/lib/satisfaction/satisfactionRoutes.test.ts
+src/lib/satisfaction/satisfactionService.test.ts

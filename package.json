@@ -358,7 +358,8 @@
     "rebuild:sales-order-flow": "tsx scripts/rebuildSalesOrderFlow.ts",
     "rebuild:sales-order-flow:preview": "tsx scripts/rebuildSalesOrderFlow.ts --preview",
     "rebuild:sales-order-flow:apply": "tsx scripts/rebuildSalesOrderFlow.ts --apply",
-    "repair:sales-order-fulfilled-qty-flow": "tsx scripts/repairSalesOrderFulfilledQtyAndFlow.ts"
+    "repair:sales-order-fulfilled-qty-flow": "tsx scripts/repairSalesOrderFulfilledQtyAndFlow.ts",
+    "test:satisfaction": "node --import tsx --test src/lib/satisfaction/satisfactionContracts.test.ts src/lib/satisfaction/satisfactionMetrics.test.ts src/lib/satisfaction/satisfactionPublicSurface.test.ts src/lib/satisfaction/satisfactionSecurity.test.ts src/lib/satisfaction/satisfactionImport.test.ts src/lib/satisfaction/satisfactionRoutes.test.ts src/lib/satisfaction/satisfactionService.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -1107,7 +1107,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["comercial.satisfacao"],
+    relationalResourceKeys: [],
     moduleId: "satisfaction",
     notes:
       "Pesquisa de satisfação de clientes (docs/commercial/customer-satisfaction-module.md). A superfície pública /r é anônima e NÃO passa por este contrato.",

@@ -691,9 +691,15 @@ export function createSatisfactionPublicService(deps: {
             },
           });
 
+          // A sessão NÃO é revogada aqui de propósito. Se fosse, um retry de
+          // rede legítimo (a resposta já foi gravada, mas o cliente não
+          // recebeu o 200) cairia em "Link inválido" em vez do resultado
+          // idempotente "já enviado". A trava contra segunda resposta é o
+          // invitation.completedAt + o UNIQUE de idempotencyKey; a sessão
+          // expira sozinha pelo TTL.
           await tx.satisfactionPublicSession.update({
             where: { id: session.id },
-            data: { responseId: id, revokedAt: submittedAt },
+            data: { responseId: id },
           });
 
           return id;
