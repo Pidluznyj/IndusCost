@@ -1,4 +1,4 @@
-﻿-- Additive: capacidades autônomas do Stock Collector (DEVICE).
+-- Additive: capacidades autônomas do Stock Collector (DEVICE).
 -- DEFAULT true preserva devices existentes já autorizados no registry.
 
 ALTER TABLE "InventoryCollectorDevice"
