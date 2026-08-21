@@ -43,6 +43,7 @@ import {
   loadExecutiveReportAllYearsBundle,
   loadExecutiveReportYearScopedBundle,
   resolveExecutiveReportSharedCutoffs,
+  sliceCashFlowRowsToDuePeriod,
 } from "./financeExecutiveReportLoad.server.js";
 import {
   FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS,
@@ -610,18 +611,25 @@ export async function buildFinanceExecutiveReport(
   );
   const cashFlowPayload = periodEqualsAnnual
     ? cashFlowAnnualPayload
-    : buildFinanceCashFlowDashboard(
-        yearScoped.arRows,
-        yearScoped.apRows,
-        cashFlowFilters,
-        referenceDate,
-        yearScoped.arSyncCutoff,
-        yearScoped.apSyncCutoff,
-        {
-          orderContexts: yearScoped.orderContexts,
-          nfeOrderLinks: yearScoped.nfeOrderLinks,
-        }
-      );
+    : (() => {
+        const periodRows = sliceCashFlowRowsToDuePeriod(
+          yearScoped.arRows,
+          yearScoped.apRows,
+          cashFlowFilters
+        );
+        return buildFinanceCashFlowDashboard(
+          periodRows.arRows,
+          periodRows.apRows,
+          cashFlowFilters,
+          referenceDate,
+          yearScoped.arSyncCutoff,
+          yearScoped.apSyncCutoff,
+          {
+            orderContexts: yearScoped.orderContexts,
+            nfeOrderLinks: yearScoped.nfeOrderLinks,
+          }
+        );
+      })();
 
   const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
     cashFlowAnnualPayload,

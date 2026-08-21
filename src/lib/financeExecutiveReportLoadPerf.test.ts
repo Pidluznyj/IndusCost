@@ -216,6 +216,14 @@ describe("financeExecutiveReportLoadPerf", () => {
     );
   });
 
+  it("CF período com mês recorta vencimento (mesma população projected BASE)", () => {
+    const assembler = read("src/lib/financeExecutiveReport.ts");
+    const load = read("src/lib/financeExecutiveReportLoad.server.ts");
+    assert.match(assembler, /sliceCashFlowRowsToDuePeriod/);
+    assert.match(load, /export function sliceCashFlowRowsToDuePeriod/);
+    assert.match(load, /resolveFinanceArDueDateBounds/);
+  });
+
   it("guard: relatório não introduz fórmula financeira nova nos loaders", () => {
     const load = read("src/lib/financeExecutiveReportLoad.server.ts");
     assert.doesNotMatch(load, /balanceReceivable\s*\*\s*/);

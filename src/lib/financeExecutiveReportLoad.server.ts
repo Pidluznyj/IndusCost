@@ -6,6 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   buildFinanceApPrismaWhere,
   mapPrismaRowToFinanceApDashboardRow,
+  resolveFinanceApDueDateBounds,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
@@ -13,6 +14,8 @@ import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
 import {
   buildFinanceArPrismaWhere,
   mapPrismaRowToFinanceArDashboardRow,
+  resolveFinanceArDueDateBounds,
+  startOfLocalDay,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
@@ -75,6 +78,48 @@ function noteLoadCall(call: ExecutiveReportLoadCall): void {
 
 function fingerprintFilters(filters: unknown): string {
   return JSON.stringify(filters ?? null);
+}
+
+function dueDateInBounds(
+  dueDate: Date | null | undefined,
+  from: Date | null,
+  toExclusive: Date | null
+): boolean {
+  if (!dueDate) return false;
+  const t = startOfLocalDay(dueDate).getTime();
+  if (from != null && t < from.getTime()) return false;
+  if (toExclusive != null && t >= toExclusive.getTime()) return false;
+  return true;
+}
+
+/**
+ * Recorta a carteira anual ao vencimento do período — mesma população do load
+ * projected BASE (year+month) sem segundo enrich FIN-05.
+ */
+export function sliceCashFlowRowsToDuePeriod(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters
+): { arRows: FinanceCashFlowArRow[]; apRows: FinanceCashFlowApRow[] } {
+  const arBounds = resolveFinanceArDueDateBounds({
+    year: filters.year,
+    month: filters.month,
+  });
+  const apBounds = resolveFinanceApDueDateBounds({
+    year: filters.year,
+    month: filters.month,
+  });
+  if (arBounds.empty && apBounds.empty) {
+    return { arRows: [], apRows: [] };
+  }
+  return {
+    arRows: arBounds.empty
+      ? []
+      : arRows.filter((row) => dueDateInBounds(row.dueDate, arBounds.from, arBounds.toExclusive)),
+    apRows: apBounds.empty
+      ? []
+      : apRows.filter((row) => dueDateInBounds(row.dueDate, apBounds.from, apBounds.toExclusive)),
+  };
 }
 
 export type ExecutiveReportSharedCutoffs = {
