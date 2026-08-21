@@ -54,7 +54,10 @@ describe("modulePermissions — P09 costs.view sem cross-module", () => {
     assert.equal(canAccessModule("opex", checker(["costs.view"])), true);
   });
 
-  it("INT-003: dashboard.view ainda abre Relatórios (legado preservado)", () => {
-    assert.equal(canAccessModule("reports", checker(["dashboard.view"])), true);
+  it("INT-003: reports.view abre Financeiro; AppModuleId reports não existe no menu", () => {
+    // Relatórios legados (/reports) não são mais item de sidebar — o acesso
+    // menu usa finance + resourceKey. Deny default se moduleId inválido.
+    assert.equal(canAccessModule("finance", checker(["reports.view"])), true);
+    assert.equal(canAccessModule("finance", checker(["dashboard.view"])), false);
   });
 });

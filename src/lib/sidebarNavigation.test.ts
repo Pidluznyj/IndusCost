@@ -154,7 +154,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.equal(none.groups.some((g) => g.id === "cadeia_suprimentos"), false);
   });
 
-  it("Comercial contém CRM, Clientes, Propostas, Tabela comercial, Pedidos, Fluxo, Documentos de Saída, Formação de Preço e Comissões", () => {
+  it("Comercial contém CRM, Clientes, Propostas, Tabela comercial, Pedidos, Fluxo, Documentos de Saída, Formação de Preço, Comissões e Satisfação", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "comercial");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
@@ -167,6 +167,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
       "output-documents",
       "pricing",
       "commissions",
+      "satisfaction",
     ]);
   });
 

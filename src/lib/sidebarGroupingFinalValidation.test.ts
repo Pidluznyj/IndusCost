@@ -87,6 +87,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS["output-documents"],
     MODULE_LABELS.pricing,
     MODULE_LABELS.commissions,
+    MODULE_LABELS.satisfaction,
   ],
   Financeiro: [
     MODULE_LABELS.finance,
@@ -175,6 +176,8 @@ describe("validação final — rotas preservadas", () => {
                         ? "/supply-chain/inventory"
                         : moduleId === "sc-receiving"
                           ? "/supply-chain/receiving"
+                          : moduleId === "satisfaction"
+                            ? "/commercial/satisfaction"
               : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
@@ -195,6 +198,11 @@ describe("validação final — rotas preservadas", () => {
       if (moduleId === "commercial-price-table") {
         assert.match(appTsx, /path=["']commercial\/price-table["']/);
         assert.match(appTsx, /CommercialPriceTableModule/);
+        continue;
+      }
+      if (moduleId === "satisfaction") {
+        assert.match(appTsx, /path=["']commercial\/satisfaction["']/);
+        assert.match(appTsx, /SatisfactionModule/);
         continue;
       }
       if (moduleId === "treasury") {

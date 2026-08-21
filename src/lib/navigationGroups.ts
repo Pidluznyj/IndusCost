@@ -129,7 +129,6 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   "production-orders": ["operations.production-orders.view"],
   projects: ["projects.view"],
   fleet: ["fleet.view", "fleet.manage"],
-  reports: ["reports.view", "dashboard.view"],
   finance: [
     "finance.view",
     "finance.accountsReceivable.view",

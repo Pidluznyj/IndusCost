@@ -54,7 +54,6 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   "portfolio-reconciliation": "financeiro",
   opex: "financeiro",
   taxes: "financeiro",
-  reports: "financeiro",
   inventory: "cadeia_suprimentos",
   purchases: "cadeia_suprimentos",
   "sc-purchases": "cadeia_suprimentos",
@@ -68,8 +67,23 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   employees: "gestao_pessoas",
   "employees-dashboard": "gestao_pessoas",
   "org-chart": "gestao_pessoas",
+  goals: "administracao",
   settings: "administracao",
   guide: "administracao",
+};
+
+/** Paths canônicos que diferem de `/${moduleId}` — espelho de getModulePath. */
+const CANONICAL_PATH_OVERRIDES: Partial<Record<AppModuleId, string>> = {
+  suppliers: "/finance/suppliers",
+  treasury: "/finance/treasury",
+  "invested-capital-recovery": "/finance/invested-capital-recovery",
+  "portfolio-reconciliation": "/finance/portfolio-reconciliation",
+  "sales-order-flow": "/commercial/sales-order-flow",
+  "commercial-price-table": "/commercial/price-table",
+  satisfaction: "/commercial/satisfaction",
+  "sc-purchases": "/supply-chain/purchases",
+  "sc-inventory": "/supply-chain/inventory",
+  "sc-receiving": "/supply-chain/receiving",
 };
 
 describe("navigationGroups — cobertura completa do menu atual", () => {
@@ -87,27 +101,10 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     assert.equal(new Set(ids).size, ids.length);
   });
 
-  it("todos os paths usam getModulePath (suppliers → /finance/suppliers)", () => {
+  it("todos os paths usam getModulePath (fonte canônica)", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
-      let expected = `/${moduleId}`;
-      if (moduleId === "suppliers") expected = "/finance/suppliers";
-      if (moduleId === "treasury") expected = "/finance/treasury";
-      if (moduleId === "invested-capital-recovery") {
-        expected = "/finance/invested-capital-recovery";
-      }
-      if (moduleId === "portfolio-reconciliation") {
-        expected = "/finance/portfolio-reconciliation";
-      }
-      if (moduleId === "sales-order-flow") {
-        expected = "/commercial/sales-order-flow";
-      }
-      if (moduleId === "commercial-price-table") {
-        expected = "/commercial/price-table";
-      }
-      if (moduleId === "sc-purchases") expected = "/supply-chain/purchases";
-      if (moduleId === "sc-inventory") expected = "/supply-chain/inventory";
-      if (moduleId === "sc-receiving") expected = "/supply-chain/receiving";
-      assert.equal(getModulePath(moduleId), expected);
+      const expected = CANONICAL_PATH_OVERRIDES[moduleId] ?? `/${moduleId}`;
+      assert.equal(getModulePath(moduleId), expected, moduleId);
     }
     for (const item of flattenGroupedNavigationItems()) {
       assert.equal(item.path, getModulePath(item.itemId));
@@ -154,18 +151,29 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     }
   });
 
-  it("grupos oficiais com contagem esperada de itens", () => {
+  it("contagens de grupos coincidem com NAVIGATION_GROUP_DEFINITIONS (membership)", () => {
     const structure = buildGroupedNavigationStructure();
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
-    assert.deepEqual(counts, {
-      engenharia: 4,
-      cadeia_suprimentos: 6,
-      comercial: 9,
-      financeiro: 7,
-      operacoes: 5,
-      gestao_pessoas: 3,
-      administracao: 2,
-    });
+    const expected = Object.fromEntries(
+      NAVIGATION_GROUP_DEFINITIONS.filter((g) => !g.isDirect).map((g) => [
+        g.id,
+        g.itemIds.length,
+      ])
+    );
+    assert.deepEqual(counts, expected);
+
+    // Membership explícito: cada moduleId do mapa está no grupo declarado.
+    for (const [moduleId, groupId] of Object.entries(EXPECTED_GROUP_BY_MODULE) as Array<
+      [AppModuleId, string]
+    >) {
+      if (groupId === "dashboard") continue;
+      const def = NAVIGATION_GROUP_DEFINITIONS.find((g) => g.id === groupId);
+      assert.ok(def, `grupo ${groupId}`);
+      assert.ok(
+        def!.itemIds.includes(moduleId),
+        `${moduleId} deve estar em ${groupId}.itemIds`
+      );
+    }
   });
 });
 
@@ -178,6 +186,9 @@ describe("navigationGroups — permissões preservadas", () => {
   });
 
   it("acesso por permissão primária continua alinhado a canAccessModule", () => {
+    // samples = módulos do menu atual (AppModuleId). `reports` NÃO é mais
+    // AppModuleId/sidebar — rota legada /reports existe, mas menu usa finance
+    // + resourceKey finance.reports. Não reintroduzir canAccessModule("reports").
     const samples: Array<[AppModuleId, string]> = [
       ["dashboard", "dashboard.view"],
       ["products", "products.view"],
@@ -187,7 +198,8 @@ describe("navigationGroups — permissões preservadas", () => {
       ["customers", "customers.view"],
       ["employees", "employees.view"],
       ["employees-dashboard", "employees.dashboard.view"],
-      ["reports", "reports.view"],
+      ["satisfaction", "commercial.satisfaction.view"],
+      ["goals", "goals.view"],
     ];
     for (const [moduleId, perm] of samples) {
       assert.equal(canAccessModule(moduleId, checker([perm])), true, moduleId);

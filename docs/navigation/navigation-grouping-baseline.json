@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-27T17:24:39.984Z",
+  "generatedAt": "2026-08-21T19:24:27.844Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -90,6 +90,18 @@
     },
     {
       "order": 8,
+      "itemId": "sc-purchases",
+      "label": "Compras SC",
+      "path": "/supply-chain/purchases",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
+      "isDirect": false,
+      "requiredPermissions": [
+        "operations.supply_chain.purchases.view"
+      ]
+    },
+    {
+      "order": 9,
       "itemId": "maintenance",
       "label": "Manutenção Predial",
       "path": "/maintenance",
@@ -101,7 +113,7 @@
       ]
     },
     {
-      "order": 9,
+      "order": 10,
       "itemId": "inventory",
       "label": "Estoque / Almoxarifado",
       "path": "/inventory",
@@ -113,7 +125,7 @@
       ]
     },
     {
-      "order": 10,
+      "order": 11,
       "itemId": "sc-inventory",
       "label": "Estoque SC",
       "path": "/supply-chain/inventory",
@@ -125,7 +137,7 @@
       ]
     },
     {
-      "order": 11,
+      "order": 12,
       "itemId": "sc-receiving",
       "label": "Recebimentos",
       "path": "/supply-chain/receiving",
@@ -134,18 +146,6 @@
       "isDirect": false,
       "requiredPermissions": [
         "operations.supply_chain.receiving.view"
-      ]
-    },
-    {
-      "order": 12,
-      "itemId": "sc-purchases",
-      "label": "Compras SC",
-      "path": "/supply-chain/purchases",
-      "groupId": "cadeia_suprimentos",
-      "groupLabel": "Cadeia de Suprimentos",
-      "isDirect": false,
-      "requiredPermissions": [
-        "operations.supply_chain.purchases.view"
       ]
     },
     {
@@ -376,6 +376,18 @@
     },
     {
       "order": 30,
+      "itemId": "satisfaction",
+      "label": "Satisfação",
+      "path": "/commercial/satisfaction",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "commercial.satisfaction.view"
+      ]
+    },
+    {
+      "order": 31,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -387,7 +399,7 @@
       ]
     },
     {
-      "order": 31,
+      "order": 32,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -404,7 +416,7 @@
       ]
     },
     {
-      "order": 32,
+      "order": 33,
       "itemId": "treasury",
       "label": "Tesouraria",
       "path": "/finance/treasury",
@@ -416,7 +428,7 @@
       ]
     },
     {
-      "order": 33,
+      "order": 34,
       "itemId": "invested-capital-recovery",
       "label": "Recuperação do Dinheiro Investido",
       "path": "/finance/invested-capital-recovery",
@@ -428,7 +440,7 @@
       ]
     },
     {
-      "order": 34,
+      "order": 35,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -442,7 +454,7 @@
       ]
     },
     {
-      "order": 35,
+      "order": 36,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -458,7 +470,7 @@
       ]
     },
     {
-      "order": 36,
+      "order": 37,
       "itemId": "goals",
       "label": "Metas (OKR)",
       "path": "/goals",
@@ -467,19 +479,6 @@
       "isDirect": false,
       "requiredPermissions": [
         "goals.view"
-      ]
-    },
-    {
-      "order": 37,
-      "itemId": "settings",
-      "label": "Configurações",
-      "path": "/settings",
-      "groupId": "administracao",
-      "groupLabel": "Administração",
-      "isDirect": false,
-      "requiredPermissions": [
-        "settings.view",
-        "users.manage"
       ]
     },
     {
@@ -494,6 +493,19 @@
         "guide.view",
         "dashboard.view"
       ]
+    },
+    {
+      "order": 39,
+      "itemId": "settings",
+      "label": "Configurações",
+      "path": "/settings",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "settings.view",
+        "users.manage"
+      ]
     }
   ],
   "appModuleRoutes": {
@@ -504,8 +516,11 @@
     "machines": true,
     "materials": true,
     "purchases": true,
+    "sc-purchases": true,
     "maintenance": true,
     "inventory": true,
+    "sc-inventory": true,
+    "sc-receiving": true,
     "operations-performance": true,
     "production-orders": true,
     "projects": true,
@@ -523,18 +538,16 @@
     "customers": true,
     "crm-commercial": true,
     "commissions": true,
+    "satisfaction": true,
     "simulations": true,
     "finance": true,
+    "treasury": true,
+    "invested-capital-recovery": true,
     "suppliers": true,
     "portfolio-reconciliation": true,
     "goals": true,
     "guide": true,
-    "settings": true,
-    "sc-purchases": true,
-    "sc-inventory": true,
-    "sc-receiving": true,
-    "treasury": true,
-    "invested-capital-recovery": true
+    "settings": true
   },
   "permissionKeysByModule": {
     "dashboard": [
@@ -558,6 +571,9 @@
       "commissions.rules.view",
       "commissions.audit.view",
       "commissions.settings.view"
+    ],
+    "satisfaction": [
+      "commercial.satisfaction.view"
     ],
     "customers": [
       "customers.view"
@@ -583,6 +599,9 @@
     ],
     "purchases": [
       "purchases.view"
+    ],
+    "sc-purchases": [
+      "operations.supply_chain.purchases.view"
     ],
     "pricing": [
       "pricing.view"
@@ -630,6 +649,12 @@
     "inventory": [
       "inventory.view"
     ],
+    "sc-inventory": [
+      "operations.supply_chain.inventory.view"
+    ],
+    "sc-receiving": [
+      "operations.supply_chain.receiving.view"
+    ],
     "operations-performance": [
       "operations.component-performance.view",
       "operations.component-performance.edit",
@@ -653,6 +678,12 @@
       "settings.nomus.view",
       "settings.view"
     ],
+    "treasury": [
+      "finance.treasury.view"
+    ],
+    "invested-capital-recovery": [
+      "finance.investedCapitalRecovery.view"
+    ],
     "suppliers": [
       "finance.suppliers.view",
       "finance.cost_centers.view",
@@ -671,21 +702,6 @@
     ],
     "goals": [
       "goals.view"
-    ],
-    "sc-purchases": [
-      "operations.supply_chain.purchases.view"
-    ],
-    "sc-inventory": [
-      "operations.supply_chain.inventory.view"
-    ],
-    "sc-receiving": [
-      "operations.supply_chain.receiving.view"
-    ],
-    "treasury": [
-      "finance.treasury.view"
-    ],
-    "invested-capital-recovery": [
-      "finance.investedCapitalRecovery.view"
     ]
   }
 }

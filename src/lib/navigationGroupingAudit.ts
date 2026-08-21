@@ -122,6 +122,9 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "sc-receiving") {
     return /path=["']supply-chain\/receiving["']/.test(appTsx);
   }
+  if (moduleId === "satisfaction") {
+    return /path=["']commercial\/satisfaction["']/.test(appTsx);
+  }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);
 }
