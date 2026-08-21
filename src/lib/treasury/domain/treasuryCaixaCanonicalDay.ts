@@ -10,9 +10,8 @@
  *   receivableDue      = títulos CR em aberto vencendo neste dia
  *   receivableReceived = títulos CR baixados neste dia (settlementDate)
  *   payableDue         = títulos CP em aberto vencendo neste dia
- *   payablePaid        = títulos CP baixados neste dia (paymentDate,
- *                        fallback dueDate quando Nomus não informa — mesma
- *                        regra canônica de `buildTreasuryCaixaRealizedDays`)
+ *   payablePaid        = títulos CP baixados ancorados no vencimento (dueDate);
+ *                        settlement/paymentDate não deslocam o dia do caixa CP
  *   otherInflows       = ledger CREDIT + transferências recebidas no dia
  *   otherOutflows      = ledger DEBIT + transferências saídas no dia
  *
