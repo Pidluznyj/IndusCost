@@ -199,7 +199,13 @@ describe("financeExecutiveReportCashRadar", () => {
   it("assembler inclui cashRadar via motor oficial", () => {
     const assembler = readFileSync(join(process.cwd(), "src", "lib", "financeExecutiveReport.ts"), "utf8");
     assert.match(assembler, /buildExecutiveReportCashRadarBlock/);
-    assert.match(assembler, /loadExecutiveReportDailyRadarPortfolioRows/);
     assert.match(assembler, /cashRadar,/);
+    // O assembler delega a carga ao bloco do radar; o loader oficial das linhas
+    // de carteira vive no módulo do radar (antes era chamado direto aqui).
+    const radar = readFileSync(
+      join(process.cwd(), "src", "lib", "financeExecutiveReportCashRadar.ts"),
+      "utf8"
+    );
+    assert.match(radar, /loadExecutiveReportDailyRadarPortfolioRows/);
   });
 });

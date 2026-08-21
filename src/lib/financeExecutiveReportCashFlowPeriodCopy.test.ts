@@ -211,7 +211,11 @@ describe("financeExecutiveReportCashFlowPeriodCopy", () => {
 describe("financeExecutiveReportCashFlowPeriodCopy — serviço inalterado", () => {
   it("payload financeiro continua com carga período + anual", () => {
     const service = read("lib/financeExecutiveReport.ts");
-    assert.match(service, /cashFlowAnnualLoad/);
+    // As duas cargas continuam existindo; o antigo `cashFlowAnnualLoad` virou
+    // `cashFlowAnnualPayload`, e o período reaproveita o anual quando são a
+    // mesma janela (month == null) em vez de apurar duas vezes.
+    assert.match(service, /cashFlowAnnualPayload/);
+    assert.match(service, /cashFlowPayload/);
     assert.match(service, /buildExecutiveReportCashFlowAnnualFilters/);
     assert.doesNotMatch(service, /financeExecutiveReportCashFlowPeriodCopy/);
   });
