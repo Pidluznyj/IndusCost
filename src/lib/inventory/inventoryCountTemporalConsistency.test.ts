@@ -32,6 +32,7 @@ import {
   buildLegacyCountBasisEvent,
 } from "./inventoryCountTelemetry.js";
 import {
+  approveInventoryCountSession,
   finalizeInventoryCountSession,
   generateInventoryCountAdjustments,
 } from "./inventoryCountService.server.js";
@@ -671,6 +672,275 @@ describe("OP-10 regressão do contrato humano", () => {
     assert.doesNotMatch(service, /persistInventoryBalanceSnapshot/);
     // Transação única.
     assert.match(service, /prisma\.\$transaction/);
+  });
+});
+
+describe("OP-10 DEVICE auto-justification", () => {
+  const deviceActor = { userId: null as string | null };
+
+  it("DEVICE com divergência e justification null aceita e grava constante canônica", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const result = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 90,
+        justification: null,
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    assert.equal(result.replayed, false);
+    assert.equal(Number(result.snapshot.countedQuantity), 90);
+    assert.equal(result.snapshot.justification, "Contagem física Collector");
+    assert.equal(Number(result.snapshot.adjustmentDelta), -10);
+    assert.equal(state.lines[0].justification, "Contagem física Collector");
+    assert.equal(state.observations[0].justification, "Contagem física Collector");
+  });
+
+  it("HUMAN com divergência e justification null continua JUSTIFICATION_REQUIRED", async () => {
+    const { prisma } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await assert.rejects(
+      () =>
+        recordInventoryCount(
+          prisma as never,
+          { sessionId: "sess-1", lineId: "line-1", countedQuantity: 90, justification: null },
+          { userId: "user-1" }
+        ),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "JUSTIFICATION_REQUIRED"
+    );
+  });
+
+  it("HUMAN com justificativa válida continua PASS", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const { line } = await recordInventoryCount(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 90,
+        justification: "Falta física confirmada",
+      },
+      { userId: "user-1" }
+    );
+    assert.equal(Number(line?.countedQuantity), 90);
+    assert.equal(state.lines[0].justification, "Falta física confirmada");
+  });
+
+  it("DEVICE sem divergência efetiva não grava justificativa artificial", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const result = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 100,
+        justification: null,
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    assert.equal(Number(result.snapshot.adjustmentDelta), 0);
+    assert.equal(result.snapshot.justification, null);
+    assert.equal(state.lines[0].justification ?? null, null);
+  });
+
+  it("DEVICE counted 0 é válido, autojustifica e preserva delta -100", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const result = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 0,
+        justification: null,
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    assert.equal(Number(result.snapshot.countedQuantity), 0);
+    assert.equal(Number(result.snapshot.adjustmentDelta), -100);
+    assert.equal(result.snapshot.justification, "Contagem física Collector");
+    assert.equal(Number(state.lines[0].countedQuantity), 0);
+  });
+
+  it("DEVICE ignora justification forjada pelo client", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 90,
+        justification: "texto forjado no iPad",
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    assert.equal(state.lines[0].justification, "Contagem física Collector");
+  });
+
+  it("DEVICE retry mesmo operationId após autojustification é idempotente", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const input = {
+      sessionId: "sess-1",
+      lineId: "line-1",
+      countedQuantity: 90,
+      justification: null as string | null,
+      expectedVersion: 0,
+      operationId: "op-device-retry",
+      actorType: "DEVICE" as const,
+      deviceId: "dev-1",
+    };
+    const first = await recordInventoryCountService(prisma as never, input, deviceActor);
+    const second = await recordInventoryCountService(prisma as never, input, deviceActor);
+    assert.equal(second.replayed, true);
+    assert.deepEqual(second.snapshot, first.snapshot);
+    assert.equal(state.observations.length, 1);
+    assert.equal(state.lines[0].version, 1);
+    assert.equal(auditCountRecorded(state).length, 1);
+  });
+
+  it("DEVICE CAS stale version continua 409", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 90,
+        expectedVersion: 0,
+        operationId: "op-cas-1",
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    const beforeObs = state.observations.length;
+    await assert.rejects(
+      () =>
+        recordInventoryCountService(
+          prisma as never,
+          {
+            sessionId: "sess-1",
+            lineId: "line-1",
+            countedQuantity: 88,
+            expectedVersion: 0,
+            operationId: "op-cas-2",
+            actorType: "DEVICE",
+            deviceId: "dev-1",
+          },
+          deviceActor
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === COUNT_LINE_VERSION_CONFLICT
+    );
+    assert.equal(state.observations.length, beforeObs);
+    assert.equal(state.lines[0].version, 1);
+  });
+
+  it("START 100, movimento -20, DEVICE count 80: delta efetivo 0 sem autojustification", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 80)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    const result = await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 80,
+        justification: null,
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    assert.equal(Number(result.snapshot.expectedQuantity), 80);
+    assert.equal(Number(result.snapshot.adjustmentDelta), 0);
+    assert.equal(result.snapshot.justification, null);
+    state.sessions[0].status = "APPROVED";
+    const adj = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: null,
+      deviceId: "dev-1",
+      actorType: "DEVICE",
+    });
+    assert.equal(adj.movementsCreated, 0);
+  });
+
+  it("DEVICE finalize + apply: reason canônica e movimento sem ADJUSTMENT_REASON_REQUIRED", async () => {
+    const { prisma, state } = createTemporalMockPrisma({
+      balances: [balanceRow("item-1", "wh-1", 100)],
+      lines: [countLine("line-1", "sess-1", 100)],
+    });
+    await recordInventoryCountService(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 90,
+        justification: null,
+        expectedVersion: 0,
+        actorType: "DEVICE",
+        deviceId: "dev-1",
+      },
+      deviceActor
+    );
+    await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: null,
+      deviceId: "dev-1",
+      actorType: "DEVICE",
+    });
+    if (state.sessions[0].status === "WAITING_APPROVAL") {
+      await approveInventoryCountSession(prisma as never, "sess-1", {
+        userId: null,
+        deviceId: "dev-1",
+        actorType: "DEVICE",
+      });
+    }
+    const adj = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: null,
+      deviceId: "dev-1",
+      actorType: "DEVICE",
+    });
+    assert.equal(adj.movementsCreated, 1);
+    assert.equal(state.movements[0].reason, "Contagem física Collector");
+    assert.equal(state.movements[0].movementType, "NEGATIVE_ADJUSTMENT");
+    assert.equal(Number(state.movements[0].quantity), 10);
   });
 });
 

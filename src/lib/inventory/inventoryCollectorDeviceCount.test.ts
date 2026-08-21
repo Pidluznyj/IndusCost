@@ -624,6 +624,17 @@ describe("2D temporal", () => {
     assert.equal(snapshot.differenceQuantity, -20);
   });
 
+  it("DEVICE divergência sem texto: aceita e grava justificativa canônica", async () => {
+    const mock = createCollectorMockPrisma({ balanceQty: 100, systemQty: 100 });
+    const result = await callCollector(mock, {
+      body: validBody({ countedQuantity: 90, justification: null }),
+    });
+    assert.ok((result.status ?? 200) < 400, JSON.stringify(result.body));
+    assert.equal(mock.state.lines[0].justification, "Contagem física Collector");
+    assert.equal(Number(mock.state.lines[0].countedQuantity), 90);
+    assert.equal(Number(mock.state.observations[0].adjustmentDelta), -10);
+  });
+
   it("28. movimento depois: delta da Observation vigente não é recalculado", async () => {
     const mock = createCollectorMockPrisma({ balanceQty: 100, systemQty: 100 });
     await callCollector(mock, {

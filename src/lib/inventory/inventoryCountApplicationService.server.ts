@@ -29,9 +29,9 @@ import {
   computeObservationDelta,
   requiresCountJustification,
 } from "./inventoryCountObservation.js";
+import { resolveRecordedCountJustification } from "./inventoryCountDeviceJustification.js";
 import {
   buildCountRequestHash,
-  canonicalCountJustification,
   type CountActorType,
 } from "./inventoryCountRequestHash.js";
 import { COUNT_SESSION_LINE_EDITABLE_STATUSES } from "./inventoryCountValidation.js";
@@ -175,12 +175,14 @@ export async function recordInventoryCountInTx(
   const actorType: CountActorType = input.actorType ?? "USER";
   const deviceId = input.deviceId?.trim() || null;
   const operationId = input.operationId?.trim() || null;
-  const justification = canonicalCountJustification(input.justification) || null;
   const previousVersion = Math.trunc(input.expectedVersion);
+  // DEVICE: o client não escolhe a razão oficial. Hash sem justification do
+  // browser para retry idêntico (qty + version + operationId) não colidir
+  // com a constante injetada depois do lock.
   const requestHash = buildCountRequestHash({
     lineId: input.lineId,
     countedQuantity: input.countedQuantity,
-    justification: input.justification,
+    justification: actorType === "DEVICE" ? null : input.justification,
     expectedVersion: previousVersion,
     actorType,
     userId: actor.userId,
@@ -246,8 +248,16 @@ export async function recordInventoryCountInTx(
   // diferença contra a foto do START — que decide se há divergência física.
   const adjustmentDelta = computeObservationDelta(expectedQuantity, countedQuantity);
 
+  const justification = resolveRecordedCountJustification({
+    actorType,
+    effectiveDelta: adjustmentDelta,
+    clientJustification: input.justification,
+  });
+
   // A decisão só acontece DEPOIS do lock: antes disso expectedQuantity não
   // existe corretamente e a exigência sairia do systemQuantity congelado.
+  // DEVICE já recebeu justificativa canônica quando o delta efetivo exige.
+  // HUMAN continua JUSTIFICATION_REQUIRED sem texto.
   // Lançar aqui aborta a transação inteira — nem Observation nem operação
   // sobrevivem, então o operationId não fica envenenado.
   if (requiresCountJustification(adjustmentDelta, justification)) {
