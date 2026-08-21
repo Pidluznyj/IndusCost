@@ -1,0 +1,384 @@
+/*
+ * Formulário público de Satisfação — CSS próprio e autocontido.
+ *
+ * Deliberadamente NÃO reaproveita o CSS do app administrativo: o cliente não
+ * deve baixar o design system inteiro para responder seis perguntas. Mobile
+ * first, alvos de toque grandes, foco visível e contraste alto.
+ */
+
+:root {
+  --sat-bg: #f1f5f9;
+  --sat-surface: #ffffff;
+  --sat-ink: #0f172a;
+  --sat-ink-soft: #475569;
+  --sat-ink-faint: #64748b;
+  --sat-border: #e2e8f0;
+  --sat-brand: #1d4ed8;
+  --sat-brand-soft: #eff6ff;
+  --sat-danger: #b91c1c;
+  --sat-danger-soft: #fef2f2;
+  --sat-ok: #047857;
+  --sat-ok-soft: #ecfdf5;
+  --sat-radius: 14px;
+  --sat-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--sat-bg);
+  color: var(--sat-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sat-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.sat-container {
+  width: 100%;
+  max-width: 640px;
+}
+
+.sat-header {
+  padding: 20px 4px 12px;
+}
+
+.sat-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sat-ink-faint);
+  margin: 0 0 6px;
+}
+
+.sat-title {
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.sat-subtitle {
+  font-size: 15px;
+  color: var(--sat-ink-soft);
+  margin: 0;
+}
+
+.sat-card {
+  background: var(--sat-surface);
+  border: 1px solid var(--sat-border);
+  border-radius: var(--sat-radius);
+  box-shadow: var(--sat-shadow);
+  padding: 18px 16px;
+  margin-bottom: 14px;
+}
+
+.sat-question-label {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.sat-required {
+  color: var(--sat-danger);
+  margin-left: 4px;
+}
+
+.sat-help {
+  font-size: 14px;
+  color: var(--sat-ink-faint);
+  margin: 0 0 12px;
+}
+
+/* ── Escala 1–5 ──────────────────────────────────────────────────────────── */
+/*
+ * Coluna no celular: cinco linhas largas e fáceis de acertar com o polegar.
+ * Um grid horizontal de 5 colunas ficaria apertado demais em telas pequenas.
+ */
+.sat-scale {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sat-scale-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--sat-border);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.sat-scale-option:hover {
+  border-color: #cbd5e1;
+}
+
+.sat-scale-option input {
+  /* O input real fica acessível ao leitor de tela e ao teclado. */
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--sat-brand);
+  flex: none;
+}
+
+.sat-scale-option.is-selected {
+  border-color: var(--sat-brand);
+  background: var(--sat-brand-soft);
+}
+
+.sat-scale-value {
+  font-weight: 700;
+  font-size: 16px;
+  min-width: 18px;
+}
+
+.sat-scale-text {
+  font-size: 15px;
+  color: var(--sat-ink-soft);
+}
+
+.sat-scale-option.is-selected .sat-scale-text {
+  color: var(--sat-ink);
+  font-weight: 600;
+}
+
+/* Foco visível de verdade — navegação por teclado precisa disso. */
+.sat-scale-option:focus-within {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+@media (min-width: 560px) {
+  .sat-scale {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .sat-scale-option {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    min-height: 92px;
+    padding: 10px 6px;
+  }
+  .sat-scale-text {
+    font-size: 13px;
+  }
+}
+
+/* ── Campos ──────────────────────────────────────────────────────────────── */
+
+.sat-input,
+.sat-textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--sat-ink);
+  background: #fff;
+  border: 1.5px solid var(--sat-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 48px;
+}
+
+.sat-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.sat-input:focus,
+.sat-textarea:focus {
+  outline: 3px solid #93c5fd;
+  outline-offset: 1px;
+  border-color: var(--sat-brand);
+}
+
+.sat-input[aria-invalid="true"],
+.sat-textarea[aria-invalid="true"] {
+  border-color: var(--sat-danger);
+}
+
+.sat-field-error {
+  color: var(--sat-danger);
+  font-size: 14px;
+  margin: 6px 0 0;
+  font-weight: 500;
+}
+
+.sat-counter {
+  font-size: 13px;
+  color: var(--sat-ink-faint);
+  text-align: right;
+  margin: 6px 0 0;
+}
+
+/* ── Ações ───────────────────────────────────────────────────────────────── */
+
+.sat-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 0 calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--sat-bg) 72%, rgba(241, 245, 249, 0));
+}
+
+.sat-button {
+  width: 100%;
+  min-height: 54px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 17px;
+  color: #fff;
+  background: var(--sat-brand);
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.sat-button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.sat-button:focus-visible {
+  outline: 3px solid #1e3a8a;
+  outline-offset: 2px;
+}
+
+.sat-status {
+  font-size: 14px;
+  color: var(--sat-ink-faint);
+  text-align: center;
+  margin: 10px 0 0;
+  min-height: 20px;
+}
+
+.sat-alert {
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  margin-bottom: 14px;
+}
+
+.sat-alert-error {
+  background: var(--sat-danger-soft);
+  border: 1px solid #fecaca;
+  color: var(--sat-danger);
+}
+
+/* ── Progresso ───────────────────────────────────────────────────────────── */
+
+.sat-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin: 10px 0 2px;
+}
+
+.sat-progress-bar {
+  height: 100%;
+  background: var(--sat-brand);
+  transition: width 0.25s ease;
+}
+
+.sat-progress-text {
+  font-size: 13px;
+  color: var(--sat-ink-faint);
+  margin: 0 0 4px;
+}
+
+/* ── Estados terminais ───────────────────────────────────────────────────── */
+
+.sat-centered {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.sat-message-card {
+  background: var(--sat-surface);
+  border: 1px solid var(--sat-border);
+  border-radius: var(--sat-radius);
+  box-shadow: var(--sat-shadow);
+  padding: 32px 24px;
+  max-width: 460px;
+}
+
+.sat-message-icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.sat-message-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.sat-message-text {
+  color: var(--sat-ink-soft);
+  margin: 0;
+}
+
+.sat-ok-badge {
+  color: var(--sat-ok);
+  background: var(--sat-ok-soft);
+}
+
+.sat-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #cbd5e1;
+  border-top-color: var(--sat-brand);
+  border-radius: 50%;
+  animation: sat-spin 0.7s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes sat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sat-spinner {
+    animation-duration: 2s;
+  }
+  .sat-progress-bar {
+    transition: none;
+  }
+}

@@ -45,6 +45,18 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        input: {
+          // App administrativo.
+          main: path.resolve(__dirname, 'index.html'),
+          // Formulário público de Satisfação: entry SEPARADO de propósito.
+          // Quem responde a pesquisa não deve baixar o bundle administrativo —
+          // nem com as rotas apenas escondidas visualmente.
+          satisfaction: path.resolve(__dirname, 'satisfacao.html'),
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

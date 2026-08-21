@@ -253,6 +253,13 @@ import {
 } from "./src/lib/canonicalPersonRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
+import { registerSatisfactionRoutes } from "./src/lib/satisfaction/satisfactionRoutes.js";
+import { registerSatisfactionPublicRoutes } from "./src/lib/satisfaction/satisfactionPublicRoutes.js";
+import {
+  createSatisfactionPublicHostGuard,
+  isSatisfactionPublicPathAllowed,
+  resolveSatisfactionPublicSurfaceConfig,
+} from "./src/lib/satisfaction/satisfactionPublicSurface.js";
 import {
   assertRoleExists,
   EmployeeRegistrationError,
@@ -1042,6 +1049,17 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+  // Comercial > Satisfação — 2ª barreira da superfície pública (a 1ª é o
+  // gateway externo). Pelo hostname público só existem /r, /assets,
+  // /api/public/satisfaction/* e afins; todo o resto responde 404 e os
+  // cookies de sessão administrativa são removidos da request.
+  // Registrado aqui de propósito: antes de qualquer rota, inclusive as
+  // públicas da própria Satisfação.
+  app.use(createSatisfactionPublicHostGuard());
+
+  // Superfície pública da Satisfação (sem autenticação IndusCost).
+  registerSatisfactionPublicRoutes(app);
   // PERFORMANCE 02 — linha de base (somente INDUSCOST_PERF_BASELINE=1, nunca produção)
   try {
     const { createDevPerfBaselineMiddleware, isDevPerfBaselineServerEnabled } =
@@ -14981,6 +14999,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     getCurrentAppUser,
   });
 
+  registerSatisfactionRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
   app.post("/api/customers", requireAppAuth, requireResource("commercial.customers", "create"), async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);
@@ -16865,6 +16889,26 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       server: { middlewareMode: true },
       appType: "spa",
     });
+
+    // /r -> formulario publico de Satisfacao (entry SEPARADO do bundle
+    // administrativo). Registrado antes do middleware do Vite para nao cair
+    // no fallback de SPA, que devolveria a aplicacao interna.
+    app.get("/r", async (req, res, next) => {
+      try {
+        const template = await fs.readFile(
+          path.join(process.cwd(), "satisfacao.html"),
+          "utf-8"
+        );
+        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        res
+          .status(200)
+          .set({ "Content-Type": "text/html", "Cache-Control": "no-store" })
+          .end(html);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -16887,7 +16931,24 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         },
       })
     );
-    app.get("*", (_req, res) => {
+    // /r -> bundle publico da Satisfacao, nunca o index.html administrativo.
+    app.get("/r", (_req, res) => {
+      setSpaHtmlNoCacheHeaders(res);
+      res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.sendFile(path.join(distPath, "satisfacao.html"));
+    });
+
+    app.get("*", (req, res) => {
+      // Cinto de seguranca: se o host publico chegar ate aqui, nao servimos a
+      // SPA interna -- o guard ja barra, isto cobre erro de configuracao.
+      const surface = resolveSatisfactionPublicSurfaceConfig();
+      if (!isSatisfactionPublicPathAllowed(req.path ?? "/", surface)) {
+        const host = String(req.headers.host ?? "").split(":")[0]?.toLowerCase();
+        if (host && surface.publicHosts.includes(host)) {
+          res.status(404).json({ error: "NOT_FOUND" });
+          return;
+        }
+      }
       setSpaHtmlNoCacheHeaders(res);
       res.sendFile(path.join(distPath, "index.html"));
     });

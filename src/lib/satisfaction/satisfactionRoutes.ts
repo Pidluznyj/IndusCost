@@ -14,6 +14,7 @@
  */
 
 import type express from "express";
+import multer from "multer";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
@@ -123,6 +124,15 @@ function resolvePublicBaseUrl(): string | null {
   const configured = (process.env.SATISFACTION_PUBLIC_BASE_URL ?? "").trim();
   return configured || null;
 }
+
+/**
+ * Upload da importacao historica: memoria, arquivo unico e teto de 10 MB.
+ * Planilha de pesquisa e pequena; o limite evita que a rota vire vetor de abuso.
+ */
+const uploadHistoricalFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+}).single("file");
 
 export function registerSatisfactionRoutes(app: express.Express, guards: AuthGuards): void {
   const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
@@ -753,6 +763,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     "/api/commercial/satisfaction/campaigns/:id/import/preview",
     requireAppAuth,
     runImport,
+    uploadHistoricalFile,
     async (req, res) => {
       try {
         const file = (req as express.Request & { file?: { buffer: Buffer; originalname: string } })
@@ -784,6 +795,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     "/api/commercial/satisfaction/campaigns/:id/import/apply",
     requireAppAuth,
     runImport,
+    uploadHistoricalFile,
     async (req, res) => {
       try {
         const file = (req as express.Request & { file?: { buffer: Buffer; originalname: string } })
