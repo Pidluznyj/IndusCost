@@ -1,60 +1,49 @@
 import type { PrismaClient } from "@prisma/client";
 import { buildFinanceBillingDashboard } from "./financeBillingDashboard.js";
 import {
-  buildOfficialAccountsReceivableDashboard,
   type OfficialAccountsReceivableDashboardPayload,
 } from "./financeAccountsReceivableRulesAdapter.js";
 import {
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { createEmptyAccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import {
-  buildOfficialAccountsPayableDashboard,
   type OfficialAccountsPayableDashboardPayload,
 } from "./financeAccountsPayableRulesAdapter.js";
 import {
-  buildFinanceApPrismaWhere,
-  mapPrismaRowToFinanceApDashboardRow,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
 import {
   buildFinanceCashFlowDashboard,
-  FINANCE_CASH_FLOW_AP_SELECT,
-  mapPrismaRowToFinanceCashFlowApRow,
-  toApLoadFilters,
-  toArLoadFilters,
   type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
-import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
-import {
-  buildCashFlowApPrismaWhere,
-} from "./financeCashFlowRowFilters.js";
-import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
-import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
-import { loadFinanceArOpenHorizonRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
 import { buildSalesOrdersDashboardTab } from "./salesOrdersDashboardMetrics.js";
 import {
   buildExecutiveReportCashRadarBlock,
-  loadExecutiveReportDailyRadarPortfolioRows,
+  buildExecutiveReportDailyRadarCashFlowFilters,
 } from "./financeExecutiveReportCashRadar.js";
 import { formatExecutiveReportCurrency } from "./financeExecutiveReportUtils.js";
 import {
-  buildExecutiveReportCoverTitle,
   EXECUTIVE_REPORT_DOCUMENT_TITLE,
   formatExecutiveReportCoverDate,
 } from "./financeExecutiveReportUtils.js";
 import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNarrative.js";
 import { buildExecutiveCashFlowAnnualChart } from "./financeExecutiveReportPresentation.js";
 import { buildCashFlowAnnualComparison } from "./financeCashFlowAnnualComparison.js";
-import { loadAnnualComparisonPortfolioRows } from "./financeExecutiveReportAnnualLoad.js";
 import {
   buildExecutiveReportPayablesSection,
   buildExecutiveReportReceivablesSection,
   resolveExecutiveReportHighlightMonth,
 } from "./financeExecutiveReportDataSources.js";
+import {
+  loadExecutiveReportAllYearsBundle,
+  loadExecutiveReportYearScopedBundle,
+  resolveExecutiveReportSharedCutoffs,
+} from "./financeExecutiveReportLoad.server.js";
 import {
   FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS,
   FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES,
@@ -65,7 +54,6 @@ import {
 import { getNomusAccountsReceivableSyncStatus } from "./nomusAccountsReceivableSyncRunner.js";
 import { getNomusAccountsPayableSyncStatus } from "./nomusAccountsPayableSyncRunner.js";
 import { getNomusNfesSyncStatus } from "./nomusNfesSyncRunner.js";
-import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
 import { buildFinanceCostCenterDashboardDefault } from "./financeCostCenterDashboard.js";
@@ -80,6 +68,8 @@ import {
   type FinanceExecutiveReportCostCenterTopCard,
 } from "./financeExecutiveReportCostCenterTopCards.js";
 import { listFinancialCostCentersDefault } from "./financeCostCenters.js";
+import { createEmptyFinanceHorizonSummary } from "./financeHorizonAggregation.js";
+import { FINANCE_HORIZON_AP_SCOPE_NOTE } from "./financeHorizonAggregation.js";
 
 export { EXECUTIVE_REPORT_COST_CENTER_TOP_CARDS_LIMIT } from "./financeExecutiveReportCostCenterTopCards.js";
 
@@ -311,60 +301,6 @@ export function sliceExecutiveReportTopN<T>(rows: T[], topN?: number): T[] {
   return rows.slice(0, topN);
 }
 
-async function loadApRows(
-  db: Pick<PrismaClient, "nomusAccountsPayable">,
-  filters: FinanceApDashboardFilters
-) {
-  const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(db);
-  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
-  const rows = await db.nomusAccountsPayable.findMany({
-    where,
-    select: FINANCE_AP_TITLE_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-  return { rows: rows.map(mapPrismaRowToFinanceApDashboardRow), syncCutoff };
-}
-
-async function loadCashFlowRows(
-  db: PrismaClient,
-  filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
-) {
-  const arFilters = toArLoadFilters(filters);
-  const apFilters = toApLoadFilters(filters);
-  const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
-    await Promise.all([
-      loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
-      resolveNomusApReportSyncCutoffFromPrisma(db),
-    ]);
-  const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
-  const apPrisma = await db.nomusAccountsPayable.findMany({
-    where: apWhere,
-    select: FINANCE_CASH_FLOW_AP_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-
-  const arRows = arManagementRows as import("./financeCashFlowDashboard.js").FinanceCashFlowArRow[];
-  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
-    db,
-    arRows,
-    referenceDate,
-    {
-      customerName: filters.customerName,
-      personCnpj: filters.personCnpj,
-    }
-  );
-
-  return {
-    arRows,
-    apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff,
-    apSyncCutoff,
-    orderContexts,
-    nfeOrderLinks,
-  };
-}
-
 export function buildFinanceExecutiveReportDataQuality(input: {
   warnings: string[];
   unavailableSections: string[];
@@ -570,7 +506,7 @@ export async function loadExecutiveReportCostCenterSpending(
 
 export async function buildFinanceExecutiveReport(
   query: Record<string, unknown>,
-  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable"> = defaultPrisma
+  db: PrismaClient = defaultPrisma
 ): Promise<FinanceExecutiveReport> {
   const filters = parseFinanceExecutiveReportQuery(query);
   const referenceDate = resolveExecutiveReportReferenceDate(filters);
@@ -580,33 +516,34 @@ export async function buildFinanceExecutiveReport(
   const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(filters);
   const cashFlowAnnualFilters = buildExecutiveReportCashFlowAnnualFilters(filters);
-  const topN = filters.topN;
   const unavailableSections: string[] = [];
   const warnings: string[] = [];
   const companyIssuer = mapExecutiveReportCompanyToFilter(
     (filters.company as FinanceExecutiveReportCompany | undefined) ?? "all"
   );
+  const periodEqualsAnnual = filters.month == null;
 
   const [
-    arLoad,
-    apLoad,
-    arHorizonLoad,
-    cashFlowLoad,
-    cashFlowAnnualLoad,
-    annualPortfolioLoad,
+    portfolios,
     billingPayload,
     salesOrdersTab,
     arSyncStatus,
     apSyncStatus,
     nfeSyncStatus,
-    dailyRadarPortfolio,
+    costCenterLoaded,
   ] = await Promise.all([
-    loadFinanceArManagementRowsFromPrisma(db, arPortfolioFilters, referenceDate),
-    loadApRows(db, apPortfolioFilters),
-    loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate),
-    loadCashFlowRows(db, cashFlowFilters, referenceDate),
-    loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
-    loadAnnualComparisonPortfolioRows(db, referenceDate, cashFlowFilters),
+    resolveExecutiveReportSharedCutoffs(db).then(async (shared) => {
+      const [yearScoped, allYears] = await Promise.all([
+        loadExecutiveReportYearScopedBundle(db, {
+          arPortfolioFilters,
+          cashFlowAnnualFilters,
+          referenceDate,
+          shared,
+        }),
+        loadExecutiveReportAllYearsBundle(db, cashFlowFilters, referenceDate, shared),
+      ]);
+      return { yearScoped, allYears };
+    }),
     buildFinanceBillingDashboard(
       {
         year: String(filters.year),
@@ -632,110 +569,100 @@ export async function buildFinanceExecutiveReport(
     getNomusAccountsReceivableSyncStatus().catch(() => null),
     getNomusAccountsPayableSyncStatus().catch(() => null),
     getNomusNfesSyncStatus().catch(() => null),
-    loadExecutiveReportDailyRadarPortfolioRows(filters, referenceDate, db),
+    loadExecutiveReportCostCenterSpending(filters, referenceDate).catch((error) => {
+      console.error("executive-report costCenterSpending", error);
+      unavailableSections.push("costCenterSpending");
+      warnings.push("Centros de custo indisponíveis nesta geração.");
+      return null;
+    }),
   ]);
 
-  const arPayload = buildOfficialAccountsReceivableDashboard({
-    rows: arLoad.rows,
-    filters: arPortfolioFilters,
-    referenceDate,
-    syncCutoff: arLoad.syncCutoff,
-    horizonSourceRows: arHorizonLoad.rows,
-    year: filters.year,
-    month: highlightMonth,
-  });
-  const apPayload = buildOfficialAccountsPayableDashboard({
-    rows: apLoad.rows,
-    filters: apPortfolioFilters,
-    referenceDate,
-    syncCutoff: apLoad.syncCutoff,
-    year: filters.year,
-    month: highlightMonth,
-  });
+  const { yearScoped, allYears } = portfolios;
+
   const receivablesSection = buildExecutiveReportReceivablesSection({
-    rows: arLoad.rows,
+    rows: yearScoped.arDashboardRows,
     filters: arPortfolioFilters,
     referenceDate,
-    syncCutoff: arLoad.syncCutoff,
+    syncCutoff: yearScoped.arSyncCutoff,
     year: filters.year,
     month: highlightMonth,
   });
   const payablesSection = buildExecutiveReportPayablesSection({
-    rows: apLoad.rows,
+    rows: yearScoped.apDashboardRows,
     filters: apPortfolioFilters,
     referenceDate,
-    syncCutoff: apLoad.syncCutoff,
+    syncCutoff: yearScoped.apSyncCutoff,
     year: filters.year,
     month: highlightMonth,
   });
-  const cashFlowPayload = buildFinanceCashFlowDashboard(
-    cashFlowLoad.arRows,
-    cashFlowLoad.apRows,
-    cashFlowFilters,
-    referenceDate,
-    cashFlowLoad.arSyncCutoff,
-    cashFlowLoad.apSyncCutoff,
-    {
-      orderContexts: cashFlowLoad.orderContexts,
-      nfeOrderLinks: cashFlowLoad.nfeOrderLinks,
-    }
-  );
+
   const cashFlowAnnualPayload = buildFinanceCashFlowDashboard(
-    cashFlowAnnualLoad.arRows,
-    cashFlowAnnualLoad.apRows,
+    yearScoped.arRows,
+    yearScoped.apRows,
     cashFlowAnnualFilters,
     referenceDate,
-    cashFlowAnnualLoad.arSyncCutoff,
-    cashFlowAnnualLoad.apSyncCutoff,
+    yearScoped.arSyncCutoff,
+    yearScoped.apSyncCutoff,
     {
-      orderContexts: cashFlowAnnualLoad.orderContexts,
-      nfeOrderLinks: cashFlowAnnualLoad.nfeOrderLinks,
+      orderContexts: yearScoped.orderContexts,
+      nfeOrderLinks: yearScoped.nfeOrderLinks,
     }
   );
-  const highlightMonthForChart = highlightMonth;
+  const cashFlowPayload = periodEqualsAnnual
+    ? cashFlowAnnualPayload
+    : buildFinanceCashFlowDashboard(
+        yearScoped.arRows,
+        yearScoped.apRows,
+        cashFlowFilters,
+        referenceDate,
+        yearScoped.arSyncCutoff,
+        yearScoped.apSyncCutoff,
+        {
+          orderContexts: yearScoped.orderContexts,
+          nfeOrderLinks: yearScoped.nfeOrderLinks,
+        }
+      );
+
   const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
     cashFlowAnnualPayload,
     filters.year,
-    highlightMonthForChart
+    highlightMonth
   );
 
   const annualComparisonCurrent = buildCashFlowAnnualComparison(
-    annualPortfolioLoad.arRows,
-    annualPortfolioLoad.apRows,
+    allYears.arRows,
+    allYears.apRows,
     filters.year,
     referenceDate,
-    annualPortfolioLoad.arSyncCutoff,
-    annualPortfolioLoad.apSyncCutoff,
+    allYears.arSyncCutoff,
+    allYears.apSyncCutoff,
     {
-      orderContexts: annualPortfolioLoad.orderContexts,
-      nfeOrderLinks: annualPortfolioLoad.nfeOrderLinks,
+      orderContexts: allYears.orderContexts,
+      nfeOrderLinks: allYears.nfeOrderLinks,
     }
   );
   const annualComparisonPrevious = buildCashFlowAnnualComparison(
-    annualPortfolioLoad.arRows,
-    annualPortfolioLoad.apRows,
+    allYears.arRows,
+    allYears.apRows,
     filters.year - 1,
     referenceDate,
-    annualPortfolioLoad.arSyncCutoff,
-    annualPortfolioLoad.apSyncCutoff,
+    allYears.arSyncCutoff,
+    allYears.apSyncCutoff,
     {
-      orderContexts: annualPortfolioLoad.orderContexts,
-      nfeOrderLinks: annualPortfolioLoad.nfeOrderLinks,
+      orderContexts: allYears.orderContexts,
+      nfeOrderLinks: allYears.nfeOrderLinks,
     }
   );
 
   let costCenterSpending: FinanceExecutiveReport["costCenterSpending"];
-  try {
-    const loaded = await loadExecutiveReportCostCenterSpending(filters, referenceDate);
+  if (costCenterLoaded) {
     costCenterSpending = {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
-      topCards: loaded.topCards,
-      summary: loaded.summary,
-      totals: loaded.totals,
+      topCards: costCenterLoaded.topCards,
+      summary: costCenterLoaded.summary,
+      totals: costCenterLoaded.totals,
     };
-  } catch (error) {
-    console.error("executive-report costCenterSpending", error);
-    unavailableSections.push("costCenterSpending");
+  } else {
     const empty = buildEmptyExecutiveReportCostCenterTopCards();
     costCenterSpending = {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.costCenterDashboard,
@@ -743,7 +670,6 @@ export async function buildFinanceExecutiveReport(
       summary: empty.summary,
       totals: empty.totals,
     };
-    warnings.push("Centros de custo indisponíveis nesta geração.");
   }
 
   const billingTab = billingPayload?.tab ?? null;
@@ -754,19 +680,19 @@ export async function buildFinanceExecutiveReport(
     accountsReceivableLastSyncAt:
       arSyncStatus?.finishedAt ??
       arSyncStatus?.lastSuccess?.finishedAt ??
-      arPayload.cards.lastSyncAt,
+      receivablesSection.cards.lastSyncAt,
     accountsPayableLastSyncAt:
       apSyncStatus?.finishedAt ??
       apSyncStatus?.lastSuccess?.finishedAt ??
-      apPayload.cards.lastSyncAt,
+      payablesSection.cards.lastSyncAt,
     nfeLastSyncAt:
       nfeSyncStatus?.lastSuccess?.finishedAt ?? nfeSyncStatus?.lastRun?.finishedAt ?? null,
     salesOrdersLastSyncAt: null,
   };
 
   const sanitization = mergeFinanceDataSanitization(
-    arPayload.dataSanitization,
-    apPayload.dataSanitization,
+    receivablesSection.dataSanitization,
+    payablesSection.dataSanitization,
     cashFlowPayload.dataSanitization
   );
 
@@ -775,8 +701,8 @@ export async function buildFinanceExecutiveReport(
     unavailableSections,
     sanitization,
     sync: syncInfo,
-    arStaleExcluded: arLoad.syncCutoff != null,
-    apStaleExcluded: apLoad.syncCutoff != null,
+    arStaleExcluded: yearScoped.arSyncCutoff != null,
+    apStaleExcluded: yearScoped.apSyncCutoff != null,
     billingTargetMissing,
   });
 
@@ -809,15 +735,15 @@ export async function buildFinanceExecutiveReport(
       {
         id: "ar-open",
         label: "AR em aberto",
-        value: arPayload.cards.totalOpenAmount,
-        formatted: formatExecutiveReportCurrency(arPayload.cards.totalOpenAmount),
+        value: receivablesSection.cards.totalOpenAmount,
+        formatted: formatExecutiveReportCurrency(receivablesSection.cards.totalOpenAmount),
         source: "accountsReceivable" as const,
       },
       {
         id: "ap-open",
         label: "AP em aberto",
-        value: apPayload.cards.totalOpenAmount,
-        formatted: formatExecutiveReportCurrency(apPayload.cards.totalOpenAmount),
+        value: payablesSection.cards.totalOpenAmount,
+        formatted: formatExecutiveReportCurrency(payablesSection.cards.totalOpenAmount),
         source: "accountsPayable" as const,
       },
       {
@@ -833,23 +759,34 @@ export async function buildFinanceExecutiveReport(
 
   const narrative = buildFinanceExecutiveReportNarrative({
     billingTab,
-    arCards: arPayload.cards,
-    apCards: apPayload.cards,
+    arCards: receivablesSection.cards,
+    apCards: payablesSection.cards,
     cashFlow: cashFlowPayload,
     salesOrdersTab,
   });
 
   const cashRadar = buildExecutiveReportCashRadarBlock({
-    arRows: dailyRadarPortfolio.arRows,
-    apRows: dailyRadarPortfolio.apRows,
+    arRows: allYears.arRows,
+    apRows: allYears.apRows,
     filters,
     referenceDate,
-    arSyncCutoff: dailyRadarPortfolio.arSyncCutoff,
-    apSyncCutoff: dailyRadarPortfolio.apSyncCutoff,
-    dashboardFilters: dailyRadarPortfolio.dashboardFilters,
-    orderContexts: dailyRadarPortfolio.orderContexts,
-    nfeOrderLinks: dailyRadarPortfolio.nfeOrderLinks,
-    exportAll: true,
+    arSyncCutoff: allYears.arSyncCutoff,
+    apSyncCutoff: allYears.apSyncCutoff,
+    dashboardFilters: buildExecutiveReportDailyRadarCashFlowFilters(filters),
+    orderContexts: allYears.orderContexts,
+    nfeOrderLinks: allYears.nfeOrderLinks,
+    exportAll: false,
+  });
+
+  const emptyArHorizon = createEmptyAccountsReceivableOpenHorizon(referenceDate);
+  const emptyApHorizon = createEmptyFinanceHorizonSummary({
+    title: "Horizonte financeiro — próximos 60 dias",
+    subtitle: "Distribuição por janela operacional a partir de hoje. Valores não acumulativos.",
+    scopeNote: FINANCE_HORIZON_AP_SCOPE_NOTE,
+    countUnitLabel: "título(s)",
+    ignoresPeriodFilter: Boolean(
+      arPortfolioFilters.year != null || arPortfolioFilters.month != null
+    ),
   });
 
   return {
@@ -982,14 +919,14 @@ export async function buildFinanceExecutiveReport(
       metricsSource: receivablesSection.metricsSource,
       kpis: receivablesSection.kpis,
       payload: {
-        cards: arPayload.cards,
-        agingBuckets: arPayload.agingBuckets,
-        topDebtors: sliceExecutiveReportTopN(arPayload.topDebtors, topN),
-        monthlyDueSchedule: arPayload.monthlyDueSchedule,
-        scheduleBuckets: arPayload.scheduleBuckets,
-        criticalTitles: sliceExecutiveReportTopN(arPayload.criticalTitles, topN),
-        dataSanitization: mergeFinanceDataSanitization(arPayload.dataSanitization),
-        financialHorizon: arPayload.financialHorizon,
+        cards: receivablesSection.cards,
+        agingBuckets: [],
+        topDebtors: [],
+        monthlyDueSchedule: [],
+        scheduleBuckets: [],
+        criticalTitles: [],
+        dataSanitization: mergeFinanceDataSanitization(receivablesSection.dataSanitization),
+        financialHorizon: emptyArHorizon,
       },
     },
     accountsPayable: {
@@ -997,14 +934,14 @@ export async function buildFinanceExecutiveReport(
       metricsSource: payablesSection.metricsSource,
       kpis: payablesSection.kpis,
       payload: {
-        cards: apPayload.cards,
-        agingBuckets: apPayload.agingBuckets,
-        topSuppliers: sliceExecutiveReportTopN(apPayload.topSuppliers, topN),
-        monthlyDueSchedule: apPayload.monthlyDueSchedule,
-        criticalTitles: sliceExecutiveReportTopN(apPayload.criticalTitles, topN),
-        dataSanitization: mergeFinanceDataSanitization(apPayload.dataSanitization),
-        financialHorizon: apPayload.financialHorizon,
-        purchaseOrderScheduleAudit: apPayload.purchaseOrderScheduleAudit,
+        cards: payablesSection.cards,
+        agingBuckets: [],
+        topSuppliers: [],
+        monthlyDueSchedule: [],
+        criticalTitles: [],
+        dataSanitization: mergeFinanceDataSanitization(payablesSection.dataSanitization),
+        financialHorizon: emptyApHorizon,
+        purchaseOrderScheduleAudit: payablesSection.purchaseOrderScheduleAudit,
       },
     },
     cashFlow: {
@@ -1013,7 +950,7 @@ export async function buildFinanceExecutiveReport(
         cards: cashFlowPayload.cards,
         executiveSummary: cashFlowPayload.executiveSummary,
         executiveYtd: cashFlowPayload.executiveYtd,
-        monthlySeries: cashFlowPayload.monthlySeries,
+        monthlySeries: [],
         cashForecast: cashFlowPayload.cashForecast,
         dataSanitization: cashFlowPayload.dataSanitization,
         reconciliation: cashFlowPayload.reconciliation,
@@ -1022,7 +959,7 @@ export async function buildFinanceExecutiveReport(
     },
     calendarAgenda: {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlowCalendar,
-      calendar: cashFlowPayload.calendar,
+      calendar: cashFlowAnnualPayload.calendar,
       executiveSummary: {
         monthlyTimeline: resolveExecutiveReportCashFlowMonthlyTimeline(cashFlowAnnualPayload),
         period: cashFlowPayload.executiveSummary.period,

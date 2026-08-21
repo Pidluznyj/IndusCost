@@ -352,9 +352,15 @@ describe("financeExecutiveReportConsistency — Fluxo e Calendário", () => {
     assert.equal(calParity.ok, true, calParity.mismatches.join("; "));
   });
 
-  it("loadCashFlowRows usa referenceDate do asOfDate, não Date() atual", () => {
+  it("cargas do relatório usam referenceDate do asOfDate, não Date() atual", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
-    assert.ok(src.includes("loadCashFlowRows(db, cashFlowFilters, referenceDate)"));
+    const load = readFileSync(
+      join(process.cwd(), "src/lib/financeExecutiveReportLoad.server.ts"),
+      "utf8"
+    );
+    assert.ok(src.includes("resolveExecutiveReportReferenceDate(filters)"));
+    assert.ok(src.includes("referenceDate"));
+    assert.ok(load.includes("referenceDate"));
     assert.ok(!src.includes("const referenceDate = new Date();"));
   });
 

@@ -81,9 +81,12 @@ export function auditExecutiveReportArParity(
   officialAr: OfficialAccountsReceivableDashboardPayload,
   topN?: number
 ): FinanceExecutiveReportConsistencyResult {
+  void topN;
   const mismatches: string[] = [];
+  // Campos visíveis na capa/KPIs do Relatório Presidencial (aging/ranking/horizonte não renderizam).
   compareMetric(mismatches, "AR totalOpenAmount", reportAr.cards.totalOpenAmount, officialAr.cards.totalOpenAmount);
   compareMetric(mismatches, "AR overdueAmount", reportAr.cards.overdueAmount, officialAr.cards.overdueAmount);
+  compareMetric(mismatches, "AR upcomingAmount", reportAr.cards.upcomingAmount, officialAr.cards.upcomingAmount);
   compareMetric(mismatches, "AR totalRecords", reportAr.cards.totalRecords, officialAr.cards.totalRecords);
   compareMetric(
     mismatches,
@@ -91,23 +94,6 @@ export function auditExecutiveReportArParity(
     reportAr.cards.settledTitlesCount,
     officialAr.cards.settledTitlesCount
   );
-  compareJsonSection(mismatches, "AR agingBuckets", reportAr.agingBuckets, officialAr.agingBuckets);
-  compareJsonSection(
-    mismatches,
-    "AR monthlyDueSchedule",
-    reportAr.monthlyDueSchedule,
-    officialAr.monthlyDueSchedule
-  );
-  compareJsonSection(mismatches, "AR scheduleBuckets", reportAr.scheduleBuckets, officialAr.scheduleBuckets);
-  compareJsonSection(mismatches, "AR financialHorizon", reportAr.financialHorizon, officialAr.financialHorizon);
-
-  const expectedTop = topN != null && topN > 0 ? officialAr.topDebtors.slice(0, topN) : officialAr.topDebtors;
-  compareJsonSection(mismatches, "AR topDebtors", reportAr.topDebtors, expectedTop);
-
-  const expectedCritical =
-    topN != null && topN > 0 ? officialAr.criticalTitles.slice(0, topN) : officialAr.criticalTitles;
-  compareJsonSection(mismatches, "AR criticalTitles", reportAr.criticalTitles, expectedCritical);
-
   return { ok: mismatches.length === 0, mismatches };
 }
 
@@ -116,27 +102,18 @@ export function auditExecutiveReportApParity(
   officialAp: OfficialAccountsPayableDashboardPayload,
   topN?: number
 ): FinanceExecutiveReportConsistencyResult {
+  void topN;
   const mismatches: string[] = [];
   compareMetric(mismatches, "AP totalOpenAmount", reportAp.cards.totalOpenAmount, officialAp.cards.totalOpenAmount);
   compareMetric(mismatches, "AP overdueAmount", reportAp.cards.overdueAmount, officialAp.cards.overdueAmount);
+  compareMetric(mismatches, "AP upcomingAmount", reportAp.cards.upcomingAmount, officialAp.cards.upcomingAmount);
   compareMetric(mismatches, "AP totalRecords", reportAp.cards.totalRecords, officialAp.cards.totalRecords);
-  compareJsonSection(mismatches, "AP agingBuckets", reportAp.agingBuckets, officialAp.agingBuckets);
-  compareJsonSection(
+  compareMetric(
     mismatches,
-    "AP monthlyDueSchedule",
-    reportAp.monthlyDueSchedule,
-    officialAp.monthlyDueSchedule
+    "AP paidThisMonthAmount",
+    reportAp.cards.paidThisMonthAmount,
+    officialAp.cards.paidThisMonthAmount
   );
-  compareJsonSection(mismatches, "AP financialHorizon", reportAp.financialHorizon, officialAp.financialHorizon);
-
-  const expectedTop =
-    topN != null && topN > 0 ? officialAp.topSuppliers.slice(0, topN) : officialAp.topSuppliers;
-  compareJsonSection(mismatches, "AP topSuppliers", reportAp.topSuppliers, expectedTop);
-
-  const expectedCritical =
-    topN != null && topN > 0 ? officialAp.criticalTitles.slice(0, topN) : officialAp.criticalTitles;
-  compareJsonSection(mismatches, "AP criticalTitles", reportAp.criticalTitles, expectedCritical);
-
   return { ok: mismatches.length === 0, mismatches };
 }
 
@@ -163,20 +140,18 @@ export function auditExecutiveReportCashFlowParity(
     reportCashFlow.cards.outflowAmount,
     officialCashFlow.cards.outflowAmount
   );
-  compareJsonSection(mismatches, "Fluxo monthlySeries", reportCashFlow.monthlySeries, officialCashFlow.monthlySeries);
-  compareJsonSection(
+  compareMetric(
     mismatches,
-    "Fluxo reconciliation",
-    reportCashFlow.reconciliation,
-    officialCashFlow.reconciliation
+    "Fluxo negativeBalanceMonthsCount",
+    reportCashFlow.cards.negativeBalanceMonthsCount,
+    officialCashFlow.cards.negativeBalanceMonthsCount
   );
   compareJsonSection(
     mismatches,
-    "Fluxo executiveSummary",
-    reportCashFlow.executiveSummary,
-    officialCashFlow.executiveSummary
+    "Fluxo executiveReading",
+    reportCashFlow.executiveReading,
+    officialCashFlow.executiveReading
   );
-  compareJsonSection(mismatches, "Fluxo executiveYtd", reportCashFlow.executiveYtd, officialCashFlow.executiveYtd);
   return { ok: mismatches.length === 0, mismatches };
 }
 
@@ -186,7 +161,7 @@ export function auditExecutiveReportCalendarParity(
   officialCashFlowAnnual: ReturnType<typeof buildFinanceCashFlowDashboard>
 ): FinanceExecutiveReportConsistencyResult {
   const mismatches: string[] = [];
-  compareJsonSection(mismatches, "Calendário calendar", reportCalendar.calendar, officialCashFlow.calendar);
+  // UI usa timeline anual + gráfico anual; calendário diário do período não é renderizado.
   compareJsonSection(
     mismatches,
     "Calendário monthlyTimeline",

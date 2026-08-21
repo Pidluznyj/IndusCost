@@ -1019,6 +1019,11 @@ export function buildFinanceAccountsPayableDashboard(
 
   if (!includePresentation) {
     const emptyQuality = createFinanceApDataQualityAccumulator();
+    const exclusionAudit = auditFinanceApPurchaseOrderExclusionsInScope(
+      rows,
+      filters,
+      referenceDate
+    );
     return {
       generatedAt: referenceDate.toISOString(),
       referenceDate: today.toISOString(),
@@ -1035,12 +1040,15 @@ export function buildFinanceAccountsPayableDashboard(
       criticalTitles: [],
       dataQualityAlerts: financeApDataQualityAlertsLegacy(emptyQuality),
       dataQualitySummary: buildFinanceApDataQualitySummary(emptyQuality),
-      dataSanitization: EMPTY_AP_CARDS_SANITIZATION,
+      dataSanitization: {
+        ...EMPTY_AP_CARDS_SANITIZATION,
+        ...countFinanceApSanitizationInScope(rows, filters, referenceDate, syncCutoff),
+      },
       purchaseOrderScheduleAudit: {
-        excludedCount: 0,
-        excludedAmount: 0,
-        rescheduledOpenCount: 0,
-        rescheduledOpenAmount: 0,
+        excludedCount: exclusionAudit.ignoredPurchaseOrderAgendaPayables,
+        excludedAmount: exclusionAudit.ignoredPurchaseOrderAgendaAmount,
+        rescheduledOpenCount: exclusionAudit.rescheduledOpenCount,
+        rescheduledOpenAmount: exclusionAudit.rescheduledOpenAmount,
       },
       financialHorizon: createEmptyFinanceHorizonSummary({
         title: "Horizonte financeiro — próximos 60 dias",

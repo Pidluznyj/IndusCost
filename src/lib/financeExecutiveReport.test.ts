@@ -115,26 +115,41 @@ describe("financeExecutiveReport", () => {
     assert.ok(dq.unavailableSections.includes("billing"));
   });
 
-  it("serviço AR usa loader canônico loadFinanceArManagementRowsFromPrisma", () => {
+  it("serviço AR usa loader compartilhado e KPIs metrics-only (sem segundo full dashboard)", () => {
     const src = readFileSync(
       join(process.cwd(), "src/lib/financeExecutiveReport.ts"),
       "utf8"
     );
-    assert.ok(src.includes("loadFinanceArManagementRowsFromPrisma"));
-    assert.ok(src.includes("buildOfficialAccountsReceivableDashboard"));
+    const load = readFileSync(
+      join(process.cwd(), "src/lib/financeExecutiveReportLoad.server.ts"),
+      "utf8"
+    );
+    assert.ok(src.includes("loadExecutiveReportYearScopedBundle"));
+    assert.ok(src.includes("buildExecutiveReportReceivablesSection"));
+    assert.ok(load.includes("buildFinanceArPrismaWhere"));
+    assert.ok(!src.includes("buildOfficialAccountsReceivableDashboard("));
   });
 
-  it("serviço AP usa buildFinanceApPrismaWhere e buildOfficialAccountsPayableDashboard", () => {
+  it("serviço AP usa loader compartilhado e KPIs metrics-only (sem segundo full dashboard)", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
-    assert.ok(src.includes("buildFinanceApPrismaWhere"));
-    assert.ok(src.includes("buildOfficialAccountsPayableDashboard"));
+    const load = readFileSync(
+      join(process.cwd(), "src/lib/financeExecutiveReportLoad.server.ts"),
+      "utf8"
+    );
+    assert.ok(load.includes("buildFinanceApPrismaWhere"));
+    assert.ok(src.includes("buildExecutiveReportPayablesSection"));
+    assert.ok(!src.includes("buildOfficialAccountsPayableDashboard("));
   });
 
-  it("serviço Fluxo usa buildFinanceCashFlowDashboard", () => {
+  it("serviço Fluxo usa buildFinanceCashFlowDashboard com bundle compartilhado", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
+    const load = readFileSync(
+      join(process.cwd(), "src/lib/financeExecutiveReportLoad.server.ts"),
+      "utf8"
+    );
     assert.ok(src.includes("buildFinanceCashFlowDashboard"));
-    assert.ok(src.includes("loadFinanceArManagementRowsFromPrisma"));
-    assert.ok(src.includes("enrichFinanceCashFlowArLoadBundle"));
+    assert.ok(src.includes("loadExecutiveReportYearScopedBundle"));
+    assert.ok(load.includes("enrichFinanceCashFlowArLoadBundle"));
   });
 
   it("serviço Pedidos usa buildSalesOrdersDashboardTab (SalesOrder)", () => {

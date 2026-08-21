@@ -1,5 +1,6 @@
 /**
  * Orquestração de KPIs AR/AP do Relatório Executivo — apenas delega aos motores oficiais.
+ * PERF: uma projeção metrics-only (mesmos primitives do full); sem aging/ranking/grid.
  */
 import {
   endOfLocalDay,
@@ -20,7 +21,6 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
-import type { FinanceApPurchaseOrderScheduleAudit } from "./financeAccountsPayableDashboardTypes.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
@@ -36,11 +36,18 @@ export const EXECUTIVE_REPORT_PAYABLES_SOURCE = "official-accounts-payable-engin
 export type ExecutiveReportReceivablesSection = {
   metricsSource: typeof EXECUTIVE_REPORT_RECEIVABLES_SOURCE;
   kpis: ExecutiveReportArSectionKpis;
+  cards: ReturnType<typeof buildOfficialAccountsReceivableRulesResult>["cards"];
+  dataSanitization: ReturnType<typeof buildOfficialAccountsReceivableRulesResult>["dataSanitization"];
 };
 
 export type ExecutiveReportPayablesSection = {
   metricsSource: typeof EXECUTIVE_REPORT_PAYABLES_SOURCE;
   kpis: ExecutiveReportApSectionKpis;
+  cards: ReturnType<typeof buildOfficialAccountsPayableRulesResult>["cards"];
+  dataSanitization: ReturnType<typeof buildOfficialAccountsPayableRulesResult>["dataSanitization"];
+  purchaseOrderScheduleAudit: NonNullable<
+    ReturnType<typeof buildOfficialAccountsPayableRulesResult>["purchaseOrderScheduleAudit"]
+  >;
 };
 
 export function resolveExecutiveReportHighlightMonth(
@@ -90,7 +97,7 @@ function previousYearComparableEnd(
   );
 }
 
-/** Monta KPIs de Contas a Receber usando exclusivamente o motor oficial AR. */
+/** Monta KPIs de Contas a Receber usando exclusivamente o motor oficial AR (metrics-only). */
 export function buildExecutiveReportReceivablesSection(input: {
   rows: FinanceArDashboardRow[];
   filters: FinanceArDashboardFilters;
@@ -112,6 +119,7 @@ export function buildExecutiveReportReceivablesSection(input: {
     syncCutoff,
     year,
     month,
+    projection: "metrics",
   });
 
   const receivedMonthCurrent = sumOfficialArReceivedBySettlementInPeriod(
@@ -149,10 +157,12 @@ export function buildExecutiveReportReceivablesSection(input: {
       receivedYtdPrevious,
       cards: rulesCurrent.cards,
     }),
+    cards: rulesCurrent.cards,
+    dataSanitization: rulesCurrent.dataSanitization,
   };
 }
 
-/** Monta KPIs de Contas a Pagar usando exclusivamente o motor oficial AP. */
+/** Monta KPIs de Contas a Pagar usando exclusivamente o motor oficial AP (metrics-only). */
 export function buildExecutiveReportPayablesSection(input: {
   rows: FinanceApDashboardRow[];
   filters: FinanceApDashboardFilters;
@@ -174,6 +184,7 @@ export function buildExecutiveReportPayablesSection(input: {
     syncCutoff,
     year,
     month,
+    projection: "metrics",
   });
 
   const paidMonthCurrent = sumOfficialApPaidInPaymentPeriod(
@@ -212,6 +223,9 @@ export function buildExecutiveReportPayablesSection(input: {
       cards: rulesCurrent.cards,
       purchaseOrderScheduleAudit: rulesCurrent.purchaseOrderScheduleAudit,
     }),
+    cards: rulesCurrent.cards,
+    dataSanitization: rulesCurrent.dataSanitization,
+    purchaseOrderScheduleAudit: rulesCurrent.purchaseOrderScheduleAudit,
   };
 }
 
