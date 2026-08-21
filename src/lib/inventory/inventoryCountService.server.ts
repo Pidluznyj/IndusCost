@@ -17,7 +17,9 @@ import { createInventoryMovement } from "./inventoryService.server.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
 
 export type CountSessionContext = {
-  userId: string;
+  userId?: string | null;
+  deviceId?: string | null;
+  actorType?: "USER" | "DEVICE";
   permissions?: readonly string[];
 };
 
@@ -63,7 +65,7 @@ export async function createInventoryCountSession(
         code,
         warehouseId: input.warehouseId,
         status: "OPEN",
-        responsibleUserId: context.userId,
+        responsibleUserId: context.userId ?? null,
         notes: input.notes?.trim() || null,
       },
     });
@@ -72,8 +74,13 @@ export async function createInventoryCountSession(
       entityType: "InventoryCountSession",
       entityId: session.id,
       action: "CREATE",
-      afterJson: { code: session.code, warehouseId: session.warehouseId },
-      userId: context.userId,
+      afterJson: {
+        code: session.code,
+        warehouseId: session.warehouseId,
+        deviceId: context.deviceId ?? null,
+        actorType: context.actorType ?? "USER",
+      },
+      userId: context.userId ?? null,
     });
 
     return session;
@@ -117,7 +124,7 @@ export async function startInventoryCountSession(
       data: {
         status: "COUNTING",
         startedAt: new Date(),
-        responsibleUserId: context.userId,
+        responsibleUserId: context.userId ?? null,
       },
     });
 
@@ -126,8 +133,13 @@ export async function startInventoryCountSession(
       entityId: sessionId,
       action: "START_COUNTING",
       beforeJson: { status: "OPEN" },
-      afterJson: { status: "COUNTING", lines: balances.length },
-      userId: context.userId,
+      afterJson: {
+        status: "COUNTING",
+        lines: balances.length,
+        deviceId: context.deviceId ?? null,
+        actorType: context.actorType ?? "USER",
+      },
+      userId: context.userId ?? null,
     });
 
     return updated;
@@ -186,7 +198,7 @@ export async function finalizeInventoryCountSession(
       status: nextStatus,
       finishedAt: new Date(),
       ...(nextStatus === "APPROVED"
-        ? { approvedByUserId: context.userId, approvedAt: new Date() }
+        ? { approvedByUserId: context.userId ?? null, approvedAt: new Date() }
         : {}),
     },
   });
@@ -195,8 +207,13 @@ export async function finalizeInventoryCountSession(
     entityType: "InventoryCountSession",
     entityId: sessionId,
     action: "FINALIZE",
-    afterJson: { status: nextStatus, hasDivergence },
-    userId: context.userId,
+    afterJson: {
+      status: nextStatus,
+      hasDivergence,
+      deviceId: context.deviceId ?? null,
+      actorType: context.actorType ?? "USER",
+    },
+    userId: context.userId ?? null,
   });
 
   return updated;
@@ -207,7 +224,9 @@ export async function approveInventoryCountSession(
   sessionId: string,
   context: CountSessionContext
 ) {
-  assertCanApprove(context.permissions);
+  if (context.actorType !== "DEVICE") {
+    assertCanApprove(context.permissions);
+  }
 
   const session = await prisma.inventoryCountSession.findUnique({ where: { id: sessionId } });
   if (!session) {
@@ -221,7 +240,7 @@ export async function approveInventoryCountSession(
     where: { id: sessionId },
     data: {
       status: "APPROVED",
-      approvedByUserId: context.userId,
+      approvedByUserId: context.userId ?? null,
       approvedAt: new Date(),
     },
   });
@@ -230,7 +249,11 @@ export async function approveInventoryCountSession(
     entityType: "InventoryCountSession",
     entityId: sessionId,
     action: "APPROVE",
-    userId: context.userId,
+    afterJson: {
+      deviceId: context.deviceId ?? null,
+      actorType: context.actorType ?? "USER",
+    },
+    userId: context.userId ?? null,
   });
 
   return updated;
@@ -314,7 +337,11 @@ export async function generateInventoryCountAdjustments(
               sourceLocationId: line.locationId,
             }),
       },
-      context
+      {
+        userId: context.userId ?? null,
+        deviceId: context.deviceId ?? null,
+        permissions: context.permissions,
+      }
     );
 
     await prisma.inventoryCountLine.update({
@@ -334,8 +361,12 @@ export async function generateInventoryCountAdjustments(
     entityType: "InventoryCountSession",
     entityId: sessionId,
     action: "GENERATE_ADJUSTMENTS",
-    afterJson: { movementsCreated: movementsCreated.length },
-    userId: context.userId,
+    afterJson: {
+      movementsCreated: movementsCreated.length,
+      deviceId: context.deviceId ?? null,
+      actorType: context.actorType ?? "USER",
+    },
+    userId: context.userId ?? null,
   });
 
   return { session: updated, movementsCreated: movementsCreated.length };
@@ -369,7 +400,7 @@ export async function cancelInventoryCountSession(
     entityType: "InventoryCountSession",
     entityId: sessionId,
     action: "CANCEL",
-    userId: context.userId,
+    userId: context.userId ?? null,
   });
 
   return updated;

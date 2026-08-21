@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FASE 3 — cliente HTTP do Collector (frontend).
  *
  * Todas as rotas passam pelo deviceAuth do servidor (Tailscale + Registry).
@@ -8,7 +8,34 @@
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import type { CollectorLineInfo, CollectorSubmission } from "./collectorCountFlow";
 
-export type CollectorContext = { device: { id: string; name: string } | null };
+export type CollectorContext = {
+  device: {
+    id: string;
+    name: string;
+    canManageCountSessions?: boolean;
+    canApplyCountAdjustments?: boolean;
+  } | null;
+};
+
+export type CollectorWarehouseDto = { id: string; code: string; name: string };
+
+export type CollectorSessionProgressDto = {
+  sessionId: string;
+  code: string;
+  status: string;
+  warehouseId: string;
+  warehouseCode: string | null;
+  warehouseName: string | null;
+  totalLines: number;
+  countedLines: number;
+  pendingLines: number;
+};
+
+export type CollectorSectorContext = CollectorContext & {
+  sector?: { code: string; label: string };
+  warehouses?: CollectorWarehouseDto[];
+  activeSession?: CollectorSessionProgressDto | null;
+};
 
 export type CollectorSessionSummary = {
   id: string;
@@ -18,6 +45,33 @@ export type CollectorSessionSummary = {
   warehouseName: string | null;
   totalLines: number;
   countedLines: number;
+};
+
+export type CollectorBlindItemDto = {
+  lineId: string;
+  itemId: string;
+  code: string;
+  description: string;
+  unit: string;
+  counted: boolean;
+  countedQuantity: number | null;
+  version: number;
+  status: "pending" | "counted";
+  locationId: string | null;
+  locationCode: string | null;
+  locationName: string | null;
+};
+
+export type CollectorDivergenceDto = {
+  lineId: string;
+  itemId: string;
+  code: string;
+  description: string;
+  unit: string;
+  countedQuantity: number;
+  expectedQuantity: number;
+  adjustmentDelta: number;
+  justification: string | null;
 };
 
 export type CollectorApiError = {
@@ -40,12 +94,104 @@ export async function fetchCollectorContext(): Promise<CollectorContext> {
   });
 }
 
+export async function fetchCollectorSectorContext(
+  sector: string,
+  warehouseId?: string
+): Promise<CollectorSectorContext> {
+  const params = new URLSearchParams({ sector });
+  if (warehouseId) params.set("warehouseId", warehouseId);
+  return fetchJsonOk<CollectorSectorContext>(
+    `/api/inventory/collector/context?${params.toString()}`,
+    { suppressAuthEvent: true }
+  );
+}
+
 export async function fetchCollectorSessions(): Promise<CollectorSessionSummary[]> {
   const data = await fetchJsonOk<{ sessions: CollectorSessionSummary[] }>(
     "/api/inventory/collector/count-sessions",
     { suppressAuthEvent: true }
   );
   return data.sessions ?? [];
+}
+
+export async function createCollectorSectorSession(input: {
+  sector: string;
+  warehouseId?: string;
+  operationId: string;
+}): Promise<{
+  session: {
+    id: string;
+    code: string;
+    status: string;
+    warehouseId: string;
+    startedAt: string | null;
+  };
+  reused: boolean;
+}> {
+  return fetchJsonOk(`/api/inventory/collector/count-sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    suppressAuthEvent: true,
+  });
+}
+
+export async function fetchCollectorSectorItems(
+  sessionId: string,
+  opts?: { q?: string; filter?: "all" | "pending" | "counted" }
+): Promise<{ items: CollectorBlindItemDto[]; progress: CollectorSessionProgressDto }> {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.filter) params.set("filter", opts.filter);
+  const qs = params.toString();
+  return fetchJsonOk(
+    `/api/inventory/collector/count-sessions/${sessionId}/items${qs ? `?${qs}` : ""}`,
+    { suppressAuthEvent: true }
+  );
+}
+
+export async function submitCollectorSectorCount(input: {
+  sessionId: string;
+  lineId: string;
+  countedQuantity: number;
+  expectedVersion: number;
+  operationId: string;
+  justification?: string | null;
+}): Promise<{ replayed: boolean }> {
+  const data = await fetchJsonOk<{ replayed: boolean }>("/api/inventory/collector/count", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    suppressAuthEvent: true,
+  });
+  return { replayed: data.replayed === true };
+}
+
+export async function finalizeCollectorSectorSession(
+  sessionId: string,
+  body: { allowUncounted?: boolean; confirm?: boolean }
+): Promise<{
+  progress: CollectorSessionProgressDto;
+  divergences: CollectorDivergenceDto[];
+}> {
+  return fetchJsonOk(`/api/inventory/collector/count-sessions/${sessionId}/finalize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    suppressAuthEvent: true,
+  });
+}
+
+export async function applyCollectorAdjustments(
+  sessionId: string,
+  body: { confirm: true; operationId: string }
+): Promise<{ movementsCreated: number; alreadyApplied?: boolean }> {
+  return fetchJsonOk(`/api/inventory/collector/count-sessions/${sessionId}/apply-adjustments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    suppressAuthEvent: true,
+  });
 }
 
 export async function resolveCollectorQr(
@@ -82,6 +228,5 @@ export async function submitCollectorCount(
       suppressAuthEvent: true,
     }
   );
-  // Replay idempotente é sucesso normal — o chamador não distingue.
   return { replayed: data.replayed === true };
 }

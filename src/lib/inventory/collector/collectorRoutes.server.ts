@@ -1,19 +1,14 @@
 /**
- * FASE 2D — rotas do Stock Collector (server-only).
+ * Rotas do Stock Collector (server-only).
  *
- * A rota DEVICE é apenas uma nova PORTA DE ENTRADA para o motor canônico
- * recordInventoryCount: nenhuma transação própria, nenhum CAS próprio, nenhuma
- * idempotência própria, nenhum cálculo temporal fora dele. 1 motor, 2 atores.
+ * Autenticação: Tailscale identity + Device Registry (fail-closed). Sem login
+ * humano neste namespace.
  *
- * Separação deliberada de autenticação:
- *   ROTA HUMANA    → login humano + requireResource (inventoryRoutes.ts)
- *   ROTA COLLECTOR → identidade Tailscale + Device Registry (2C), fail-closed
- * Uma não substitui a outra: aqui NÃO existe requireAppAuth/requireResource, e
- * login humano algum autoriza este namespace.
+ * Legado (item QR / contagem por etiqueta): context, count-sessions list,
+ * resolve-qr, PATCH lines.
+ * Autônomo (setor): create/start sessão, lista cega, finalize, apply-adjustments.
  *
- * O Collector só REGISTRA contagem. start/finalize/approve/generate-adjustments/
- * cancel continuam exclusivos do fluxo supervisor humano — este módulo registra
- * UMA rota e nada mais.
+ * Contagem sempre via recordInventoryCount (1 motor, 2 atores).
  */
 import type express from "express";
 import type { PrismaClient } from "@prisma/client";
@@ -26,15 +21,24 @@ import {
 import { serializeInventoryCountLine } from "./../inventorySerialization.server.js";
 import { InventoryValidationError } from "./../inventoryTypes.js";
 import {
+  applyCollectorSessionAdjustments,
+  createAndStartCollectorSectorSession,
+  finalizeCollectorSession,
+  findActiveCountingSession,
+  listCollectorSessionItemsBlind,
+  resolveWarehousesForSector,
+  summarizeActiveSession,
+} from "./collectorAutonomousSession.server.js";
+import {
   getCollectorDeviceContext,
   requireInventoryCollectorDevice,
 } from "./collectorDeviceAuth.server.js";
-import { parseCollectorCountBody } from "./collectorCountContract.js";
+import { parseCollectorCountBody, COLLECTOR_FORBIDDEN_IDENTITY_FIELDS, COLLECTOR_IDENTITY_FIELD_REJECTED } from "./collectorCountContract.js";
+import { parseCollectorQrText } from "./collectorQrContract.js";
 import {
-  QR_INVALID,
-  QR_VERSION_UNSUPPORTED,
-  parseCollectorQrText,
-} from "./collectorQrContract.js";
+  parseCollectorSector,
+  collectorSectorLabel,
+} from "./collectorSectorContract.js";
 import {
   createTailscaleLocalApiTransport,
   createTailscalePeerIdentityResolver,
@@ -43,16 +47,11 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * Mapeamento HTTP dos códigos canônicos — MESMOS status da rota humana
- * (handleInventoryValidation em inventoryRoutes.ts; paridade garantida por
- * teste estrutural). Só contrato HTTP: nenhuma regra de negócio vive aqui.
- * Nenhum erro público carrega StableID, IP ou detalhe interno.
- */
 export const QR_TARGET_NOT_FOUND = "QR_TARGET_NOT_FOUND";
 export const QR_WRONG_WAREHOUSE = "QR_WRONG_WAREHOUSE";
 export const QR_LINE_NOT_FOUND = "QR_LINE_NOT_FOUND";
 export const QR_AMBIGUOUS = "QR_AMBIGUOUS";
+export const COLLECTOR_CAPABILITY_DENIED = "COLLECTOR_CAPABILITY_DENIED";
 
 function respondCollectorValidationError(
   res: express.Response,
@@ -64,7 +63,7 @@ function respondCollectorValidationError(
     error.code === QR_TARGET_NOT_FOUND ||
     error.code === QR_LINE_NOT_FOUND
       ? 404
-      : error.code === "NOT_AUTHORIZED"
+      : error.code === "NOT_AUTHORIZED" || error.code === COLLECTOR_CAPABILITY_DENIED
         ? 403
         : error.code === COUNT_LINE_VERSION_CONFLICT ||
             error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
@@ -74,6 +73,38 @@ function respondCollectorValidationError(
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
+function rejectIdentityFields(body: unknown): void {
+  const data = (body ?? {}) as Record<string, unknown>;
+  for (const field of COLLECTOR_FORBIDDEN_IDENTITY_FIELDS) {
+    if (field in data) {
+      throw new InventoryValidationError(
+        "Identidade do dispositivo não pode vir no corpo da requisição.",
+        COLLECTOR_IDENTITY_FIELD_REJECTED
+      );
+    }
+  }
+}
+
+async function loadDeviceCaps(
+  prisma: PrismaClient,
+  deviceId: string
+): Promise<{
+  id: string;
+  name: string;
+  canManageCountSessions: boolean;
+  canApplyCountAdjustments: boolean;
+} | null> {
+  return prisma.inventoryCollectorDevice.findUnique({
+    where: { id: deviceId },
+    select: {
+      id: true,
+      name: true,
+      canManageCountSessions: true,
+      canApplyCountAdjustments: true,
+    },
+  });
+}
+
 export type InventoryCollectorRoutesDeps = {
   prisma?: PrismaClient;
   identityResolver?: TailscalePeerIdentityResolver;
@@ -81,13 +112,6 @@ export type InventoryCollectorRoutesDeps = {
   trustLocalProxy?: boolean;
 };
 
-/**
- * FASE 3A — flag opt-in do reverse proxy HTTPS local (Nginx no próprio host,
- * escutando só no endereço Tailscale). DESLIGADA por default: sem ela o
- * Collector segue exigindo peer Tailscale direto no socket (2C puro). A flag
- * não é bypass: apenas move a origem do endereço para o header dedicado
- * carimbado pelo proxy — WhoIs + Device Registry continuam decidindo.
- */
 export const COLLECTOR_TRUST_LOCAL_PROXY_ENV = "INVENTORY_COLLECTOR_TRUST_LOCAL_PROXY";
 
 function trustLocalProxyFromEnv(): boolean {
@@ -111,12 +135,10 @@ export function registerInventoryCollectorRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // FASE 3 — leituras mínimas para a UI do Collector. Mesmo deviceAuth
-  // fail-closed; NENHUM guard humano. Só o necessário para operar: nada de
-  // custo, financeiro, Nomus, StableID ou dados administrativos do registry.
+  // Context — legado + setor opcional
   // -------------------------------------------------------------------------
 
-  app.get("/api/inventory/collector/context", deviceAuth, async (_req, res) => {
+  app.get("/api/inventory/collector/context", deviceAuth, async (req, res) => {
     try {
       const device = getCollectorDeviceContext(res);
       if (!device) {
@@ -124,12 +146,52 @@ export function registerInventoryCollectorRoutes(
           .status(403)
           .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
       }
-      const row = await prisma.inventoryCollectorDevice.findUnique({
-        where: { id: device.deviceId },
-        select: { id: true, name: true },
+      const row = await loadDeviceCaps(prisma, device.deviceId);
+      const sectorRaw = req.query.sector;
+      if (sectorRaw == null || String(sectorRaw).trim() === "") {
+        return res.json({
+          device: row
+            ? {
+                id: row.id,
+                name: row.name,
+                canManageCountSessions: row.canManageCountSessions,
+                canApplyCountAdjustments: row.canApplyCountAdjustments,
+              }
+            : null,
+        });
+      }
+
+      const sector = parseCollectorSector(sectorRaw);
+      const warehouses = await resolveWarehousesForSector(prisma, sector);
+      let activeSession = null;
+      const warehouseIdQ = String(req.query.warehouseId ?? "").trim();
+      if (UUID_RE.test(warehouseIdQ)) {
+        activeSession = summarizeActiveSession(
+          await findActiveCountingSession(prisma, warehouseIdQ)
+        );
+      } else if (warehouses.length === 1) {
+        activeSession = summarizeActiveSession(
+          await findActiveCountingSession(prisma, warehouses[0].id)
+        );
+      }
+
+      res.json({
+        device: row
+          ? {
+              id: row.id,
+              name: row.name,
+              canManageCountSessions: row.canManageCountSessions,
+              canApplyCountAdjustments: row.canApplyCountAdjustments,
+            }
+          : null,
+        sector: { code: sector, label: collectorSectorLabel(sector) },
+        warehouses,
+        activeSession,
       });
-      res.json({ device: row ? { id: row.id, name: row.name } : null });
     } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
       console.error("GET /api/inventory/collector/context", e);
       res.status(500).json({ error: "Erro ao carregar contexto." });
     }
@@ -137,8 +199,6 @@ export function registerInventoryCollectorRoutes(
 
   app.get("/api/inventory/collector/count-sessions", deviceAuth, async (_req, res) => {
     try {
-      // Collector só enxerga sessões em COUNTING — o restante do workflow é
-      // exclusivamente humano/supervisor.
       const sessions = await prisma.inventoryCountSession.findMany({
         where: { status: "COUNTING" },
         select: {
@@ -167,6 +227,269 @@ export function registerInventoryCollectorRoutes(
     }
   });
 
+  app.get("/api/inventory/collector/count-sessions/active", deviceAuth, async (req, res) => {
+    try {
+      const device = getCollectorDeviceContext(res);
+      if (!device) {
+        return res
+          .status(403)
+          .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+      }
+      const sector = parseCollectorSector(req.query.sector);
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      if (!UUID_RE.test(warehouseId)) {
+        return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
+      }
+      const warehouses = await resolveWarehousesForSector(prisma, sector);
+      if (!warehouses.some((w) => w.id === warehouseId)) {
+        throw new InventoryValidationError(
+          "Almoxarifado não elegível para este setor.",
+          "WAREHOUSE_NOT_ELIGIBLE"
+        );
+      }
+      const session = await findActiveCountingSession(prisma, warehouseId);
+      res.json({ activeSession: summarizeActiveSession(session) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("GET /api/inventory/collector/count-sessions/active", e);
+      res.status(500).json({ error: "Erro ao buscar conferência ativa." });
+    }
+  });
+
+  app.post("/api/inventory/collector/count-sessions", deviceAuth, async (req, res) => {
+    try {
+      const device = getCollectorDeviceContext(res);
+      if (!device) {
+        return res
+          .status(403)
+          .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+      }
+      rejectIdentityFields(req.body);
+      const caps = await loadDeviceCaps(prisma, device.deviceId);
+      if (!caps?.canManageCountSessions) {
+        throw new InventoryValidationError(
+          "Dispositivo sem permissão para gerenciar conferências.",
+          COLLECTOR_CAPABILITY_DENIED
+        );
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sector = parseCollectorSector(body.sector);
+      let warehouseId = typeof body.warehouseId === "string" ? body.warehouseId.trim() : "";
+      const operationId =
+        typeof body.operationId === "string" ? body.operationId.trim() : null;
+
+      if (!warehouseId) {
+        const warehouses = await resolveWarehousesForSector(prisma, sector);
+        if (warehouses.length !== 1) {
+          return res.status(400).json({
+            error: "Informe o almoxarifado (há mais de um elegível).",
+            code: "WAREHOUSE_REQUIRED",
+            warehouses,
+          });
+        }
+        warehouseId = warehouses[0].id;
+      }
+      if (!UUID_RE.test(warehouseId)) {
+        return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
+      }
+
+      const result = await createAndStartCollectorSectorSession(prisma, {
+        sector,
+        warehouseId,
+        deviceId: device.deviceId,
+        operationId,
+      });
+      res.status(result.reused ? 200 : 201).json(result);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("POST /api/inventory/collector/count-sessions", e);
+      res.status(500).json({ error: "Erro ao criar conferência." });
+    }
+  });
+
+  app.get(
+    "/api/inventory/collector/count-sessions/:id/items",
+    deviceAuth,
+    async (req, res) => {
+      try {
+        const device = getCollectorDeviceContext(res);
+        if (!device) {
+          return res
+            .status(403)
+            .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+        }
+        const sessionId = req.params.id;
+        if (!UUID_RE.test(sessionId)) {
+          return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
+        }
+        const filterRaw = String(req.query.filter ?? "all").toLowerCase();
+        const filter =
+          filterRaw === "pending" || filterRaw === "counted" ? filterRaw : "all";
+        const result = await listCollectorSessionItemsBlind(prisma, sessionId, {
+          q: String(req.query.q ?? ""),
+          filter,
+        });
+        // Blind: nunca incluir systemQuantity no JSON
+        res.json(result);
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) {
+          return respondCollectorValidationError(res, e);
+        }
+        console.error("GET /api/inventory/collector/count-sessions/:id/items", e);
+        res.status(500).json({ error: "Erro ao listar itens." });
+      }
+    }
+  );
+
+  app.post("/api/inventory/collector/count", deviceAuth, async (req, res) => {
+    try {
+      const device = getCollectorDeviceContext(res);
+      if (!device) {
+        return res
+          .status(403)
+          .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+      }
+      rejectIdentityFields(req.body);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+      const lineId = typeof body.lineId === "string" ? body.lineId : "";
+      if (!UUID_RE.test(sessionId) || !UUID_RE.test(lineId)) {
+        return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
+      }
+      const input = parseCollectorCountBody(req.body);
+      const result = await recordInventoryCount(
+        prisma,
+        {
+          sessionId,
+          lineId,
+          countedQuantity: input.countedQuantity,
+          justification: input.justification,
+          expectedVersion: input.expectedVersion,
+          operationId: input.operationId,
+          actorType: "DEVICE",
+          deviceId: device.deviceId,
+        },
+        { userId: null }
+      );
+      if (result.replayed || !result.line) {
+        return res.json({ line: null, replayed: true, result: result.snapshot });
+      }
+      res.json({
+        line: serializeInventoryCountLine(result.line),
+        replayed: false,
+        result: result.snapshot,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("POST /api/inventory/collector/count", e);
+      res.status(500).json({ error: "Erro ao registrar contagem." });
+    }
+  });
+
+  app.post(
+    "/api/inventory/collector/count-sessions/:id/finalize",
+    deviceAuth,
+    async (req, res) => {
+      try {
+        const device = getCollectorDeviceContext(res);
+        if (!device) {
+          return res
+            .status(403)
+            .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+        }
+        rejectIdentityFields(req.body);
+        const caps = await loadDeviceCaps(prisma, device.deviceId);
+        if (!caps?.canManageCountSessions) {
+          throw new InventoryValidationError(
+            "Dispositivo sem permissão para finalizar conferências.",
+            COLLECTOR_CAPABILITY_DENIED
+          );
+        }
+        const sessionId = req.params.id;
+        if (!UUID_RE.test(sessionId)) {
+          return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
+        }
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const summary = await finalizeCollectorSession(prisma, {
+          sessionId,
+          deviceId: device.deviceId,
+          allowUncounted: body.allowUncounted === true,
+        });
+        res.json(summary);
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) {
+          return respondCollectorValidationError(res, e);
+        }
+        console.error("POST /api/inventory/collector/count-sessions/:id/finalize", e);
+        res.status(500).json({ error: "Erro ao finalizar conferência." });
+      }
+    }
+  );
+
+  app.post(
+    "/api/inventory/collector/count-sessions/:id/apply-adjustments",
+    deviceAuth,
+    async (req, res) => {
+      try {
+        const device = getCollectorDeviceContext(res);
+        if (!device) {
+          return res
+            .status(403)
+            .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+        }
+        rejectIdentityFields(req.body);
+        const caps = await loadDeviceCaps(prisma, device.deviceId);
+        if (!caps?.canApplyCountAdjustments) {
+          throw new InventoryValidationError(
+            "Dispositivo sem permissão para aplicar ajustes.",
+            COLLECTOR_CAPABILITY_DENIED
+          );
+        }
+        const sessionId = req.params.id;
+        if (!UUID_RE.test(sessionId)) {
+          return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
+        }
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        if (body.confirm !== true) {
+          return res.status(400).json({
+            error: "Confirmação obrigatória (confirm: true).",
+            code: "CONFIRM_REQUIRED",
+          });
+        }
+        const operationId =
+          typeof body.operationId === "string" ? body.operationId.trim() : null;
+        if (!operationId) {
+          return res.status(400).json({
+            error: "operationId é obrigatório.",
+            code: "COLLECTOR_OPERATION_ID_REQUIRED",
+          });
+        }
+        const result = await applyCollectorSessionAdjustments(prisma, {
+          sessionId,
+          deviceId: device.deviceId,
+          operationId,
+        });
+        res.json(result);
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) {
+          return respondCollectorValidationError(res, e);
+        }
+        console.error(
+          "POST /api/inventory/collector/count-sessions/:id/apply-adjustments",
+          e
+        );
+        res.status(500).json({ error: "Erro ao aplicar ajustes." });
+      }
+    }
+  );
+
   app.post("/api/inventory/collector/resolve-qr", deviceAuth, async (req, res) => {
     try {
       const device = getCollectorDeviceContext(res);
@@ -182,8 +505,6 @@ export function registerInventoryCollectorRoutes(
         return res.status(400).json({ error: "Sessão inválida.", code: "INVALID_ID" });
       }
 
-      // O conteúdo do QR NUNCA é confiado: parse estrito + revalidação de cada
-      // entidade no banco, e a linha só vale dentro da sessão COUNTING.
       const qr = parseCollectorQrText(body.qr);
 
       const session = await prisma.inventoryCountSession.findUnique({
@@ -259,9 +580,6 @@ export function registerInventoryCollectorRoutes(
         );
       }
       if (lines.length > 1) {
-        // D15: não deveria existir (linha nasce de saldo com UNIQUE item ×
-        // balanceKey). Se existir, é dado inconsistente — bloquear explícito,
-        // nunca escolher heuristicamente.
         throw new InventoryValidationError(
           "Etiqueta ambígua nesta conferência — acione o supervisor.",
           QR_AMBIGUOUS
@@ -272,8 +590,6 @@ export function registerInventoryCollectorRoutes(
         throw new InventoryValidationError("Linha já possui ajuste gerado.", "ADJUSTMENT_EXISTS");
       }
 
-      // CONTAGEM CEGA: nada de systemQuantity/countedQuantity na resposta — o
-      // operador informa o que encontrou sem ver o saldo do sistema.
       res.json({
         line: {
           lineId: line.id,
@@ -302,8 +618,6 @@ export function registerInventoryCollectorRoutes(
     deviceAuth,
     async (req, res) => {
       try {
-        // Defensivo: sem contexto DEVICE não há operação, mesmo que alguém
-        // registre o handler sem o middleware por engano.
         const device = getCollectorDeviceContext(res);
         if (!device) {
           return res
@@ -318,9 +632,6 @@ export function registerInventoryCollectorRoutes(
 
         const input = parseCollectorCountBody(req.body);
 
-        // Identidade 100% server-side: actorType/deviceId vêm do contexto do
-        // middleware (registry), userId é null por definição de DEVICE. Nada
-        // do body participa — o parser já rejeitou campos de identidade.
         const result = await recordInventoryCount(
           prisma,
           {

@@ -100,7 +100,8 @@ export type CreateInventoryMovementInput = {
 };
 
 export type CreateInventoryMovementContext = {
-  userId: string;
+  userId?: string | null;
+  deviceId?: string | null;
   permissions?: readonly string[];
   allowNegativeStock?: boolean;
   /** Política explícita: permite reserva/bloqueio acima do disponível (exige override). */
@@ -168,6 +169,8 @@ function assertMovementAuthorized(
   context: CreateInventoryMovementContext,
   movementType: InventoryMovementType
 ): void {
+  // DEVICE autorizado pelo Device Registry na porta Collector — sem permissão humana.
+  if (context.deviceId) return;
   try {
     assertInventoryMovementPermission(context.permissions, movementType);
   } catch (e: unknown) {
@@ -325,6 +328,10 @@ async function createMovementRecord(
           ? Number(item.averageCost)
           : null;
 
+  const noteParts: string[] = [];
+  if (input.notes?.trim()) noteParts.push(input.notes.trim());
+  if (context.deviceId) noteParts.push(`deviceId=${context.deviceId}`);
+
   return tx.inventoryMovement.create({
     data: {
       itemId: input.itemId,
@@ -336,9 +343,9 @@ async function createMovementRecord(
       quantity: decimalQuantity(input.quantity),
       unit: input.unit,
       reason: input.reason.trim(),
-      notes: input.notes?.trim() || null,
-      responsibleUserId: input.responsibleUserId ?? context.userId,
-      createdByUserId: context.userId,
+      notes: noteParts.length > 0 ? noteParts.join(" | ") : null,
+      responsibleUserId: input.responsibleUserId ?? context.userId ?? null,
+      createdByUserId: context.userId ?? null,
       movementDate,
       originType: input.originType ?? "MANUAL",
       originId: input.originId?.trim() || null,
@@ -439,9 +446,9 @@ async function executeSimpleMovement(
         reason: input.reason.trim(),
         originType: input.originType ?? "MANUAL",
         originId: input.originId ?? null,
-        responsibleUserId: input.responsibleUserId ?? context.userId,
+        responsibleUserId: input.responsibleUserId ?? context.userId ?? null,
         expiresAt: input.expiresAt ?? null,
-        createdByUserId: context.userId,
+        createdByUserId: context.userId ?? null,
         notes: input.notes?.trim() || null,
       },
     });
@@ -460,8 +467,8 @@ async function executeSimpleMovement(
         reason: input.reason.trim(),
         originType: input.originType ?? "MANUAL",
         originId: input.originId ?? null,
-        responsibleUserId: input.responsibleUserId ?? context.userId,
-        createdByUserId: context.userId,
+        responsibleUserId: input.responsibleUserId ?? context.userId ?? null,
+        createdByUserId: context.userId ?? null,
         notes: input.notes?.trim() || null,
       },
     });
@@ -488,7 +495,7 @@ async function executeSimpleMovement(
     action: input.movementType,
     beforeJson: before,
     afterJson: after,
-    userId: context.userId,
+    userId: context.userId ?? null,
     reason: input.reason,
   });
 
@@ -502,12 +509,12 @@ async function executeSimpleMovement(
         quantity: input.quantity,
         warehouseId,
         reservationType: input.reservationType ?? "MANUAL",
-        responsibleUserId: input.responsibleUserId ?? context.userId,
+        responsibleUserId: input.responsibleUserId ?? context.userId ?? null,
         expiresAt: input.expiresAt ?? null,
         originType: input.originType ?? "MANUAL",
         originId: input.originId ?? null,
       },
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason: input.reason,
     });
   }
@@ -523,7 +530,7 @@ async function executeSimpleMovement(
         warehouseId,
         reasonType: input.blockReasonType ?? "MANUAL",
       },
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason: input.reason,
     });
   }
@@ -539,7 +546,7 @@ async function executeSimpleMovement(
       action: input.movementType,
       beforeJson: before,
       afterJson: after,
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason: input.reason,
     });
   }
@@ -615,7 +622,7 @@ async function executeTransfer(
     action: "TRANSFER",
     beforeJson: { source: beforeSource, destination: beforeDest },
     afterJson: { source: afterSource, destination: afterDest },
-    userId: context.userId,
+    userId: context.userId ?? null,
     reason: input.reason,
   });
 
@@ -830,7 +837,7 @@ export async function createInitialInventoryBalance(
 ): Promise<InventoryMovementResult> {
   const payload = validateInitialBalancePayload({
     ...raw,
-    responsibleUserId: raw.responsibleUserId || context.userId,
+    responsibleUserId: raw.responsibleUserId || context.userId || null,
   });
 
   const item = await prisma.inventoryItem.findUnique({
@@ -1051,7 +1058,7 @@ export async function reverseInventoryMovementInTx(
       action: "REVERSAL",
       beforeJson: { originalId: original.id, source: beforeSource, destination: beforeDest },
       afterJson: { source: afterSource, destination: afterDest },
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason: reason.trim(),
     });
 
@@ -1131,7 +1138,7 @@ export async function reverseInventoryMovementInTx(
       data: {
         status: "RELEASED",
         releasedAt: new Date(),
-        releasedByUserId: context.userId,
+        releasedByuserId: context.userId ?? null,
       },
     });
   }
@@ -1141,7 +1148,7 @@ export async function reverseInventoryMovementInTx(
       data: {
         status: "CANCELED",
         canceledAt: new Date(),
-        canceledByUserId: context.userId,
+        canceledByuserId: context.userId ?? null,
       },
     });
   }
@@ -1152,7 +1159,7 @@ export async function reverseInventoryMovementInTx(
     action: "REVERSAL",
     beforeJson: { originalId: original.id, before },
     afterJson: after,
-    userId: context.userId,
+    userId: context.userId ?? null,
     reason: reason.trim(),
   });
 
@@ -1215,7 +1222,7 @@ export async function cancelInventoryReservation(
       data: {
         status: "CANCELED",
         canceledAt: new Date(),
-        canceledByUserId: context.userId,
+        canceledByuserId: context.userId ?? null,
       },
     });
 
@@ -1223,7 +1230,7 @@ export async function cancelInventoryReservation(
       entityType: "InventoryReservation",
       entityId: reservationId,
       action: "CANCEL",
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason,
     });
 
@@ -1268,7 +1275,7 @@ export async function releaseInventoryBlock(
         reason: reason.trim(),
         originType: "MANUAL",
         originId: blockId,
-        responsibleUserId: context.userId,
+        responsibleuserId: context.userId ?? null,
       },
       context,
       item,
@@ -1281,7 +1288,7 @@ export async function releaseInventoryBlock(
       data: {
         status: "RELEASED",
         releasedAt: new Date(),
-        releasedByUserId: context.userId,
+        releasedByuserId: context.userId ?? null,
       },
     });
 
@@ -1289,7 +1296,7 @@ export async function releaseInventoryBlock(
       entityType: "InventoryBlock",
       entityId: blockId,
       action: "RELEASE",
-      userId: context.userId,
+      userId: context.userId ?? null,
       reason: reason.trim(),
     });
 
@@ -1374,7 +1381,7 @@ export async function transferBetweenPhysicalAndQuarantine(
         (input.toQuarantine ? " [PHYSICAL→QUARANTINE]" : " [QUARANTINE→PHYSICAL]"),
       originType: "OTHER",
       originId: `quarantine-transfer:${input.toQuarantine ? "in" : "out"}:${Date.now()}`,
-      responsibleUserId: input.responsibleUserId ?? context.userId,
+      responsibleUserId: input.responsibleUserId ?? context.userId ?? null,
     },
     context
   );

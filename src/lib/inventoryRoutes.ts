@@ -23,6 +23,11 @@ import {
 } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
 import { buildCollectorQrText } from "@/src/lib/inventory/collector/collectorQrContract.js";
 import {
+  buildSectorCollectorAbsoluteUrl,
+  collectorSectorLabel,
+  parseCollectorSector,
+} from "@/src/lib/inventory/collector/collectorSectorContract.js";
+import {
   COLLECTOR_DEVICE_DUPLICATE,
   COLLECTOR_DEVICE_NOT_FOUND,
   listCollectorDevices,
@@ -2196,6 +2201,26 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("GET /api/inventory/count-labels", e);
       res.status(500).json(inventoryApiError("Erro ao gerar etiquetas."));
+    }
+  });
+
+  // QR de setor (humano) — deep-link público do Collector autônomo. Sem segredos.
+  app.get("/api/inventory/collector/sector-qr", ...countManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const sector = parseCollectorSector(req.query.sector ?? "RAW_MATERIAL");
+      const url = buildSectorCollectorAbsoluteUrl(sector);
+      res.json({
+        sector,
+        label: collectorSectorLabel(sector),
+        url,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/collector/sector-qr", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar QR de setor."));
     }
   });
 }
