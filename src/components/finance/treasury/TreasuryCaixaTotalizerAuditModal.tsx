@@ -167,11 +167,11 @@ const KIND_META: Record<
   },
   todayPayablePaid: {
     title: "Pago hoje",
-    subtitleSuffix: "CP baixados hoje",
+    subtitleSuffix: "CP com vencimento hoje (já pagos)",
     tone: "payable",
     reconcileLabel: "Soma dos pagos",
     criteria:
-      "Contas a Pagar baixadas hoje (paymentDate/fallback dueDate, respeitando a regra dos N dias de conciliação).",
+      "Contas a Pagar já liquidadas cujo vencimento oficial é hoje (CP na Tesouraria ancora no vencimento, não na data de baixa Nomus).",
   },
 };
 
@@ -186,8 +186,8 @@ function centsClose(a: number, b: number): boolean {
 /**
  * Para os kinds `today*`, o motor único-de-dia já entregou as listas de
  * títulos por dimensão em `canonicalDay.*Titles` — não precisa refiltrar
- * `receivables[]` por data. As listas do canonicalDay já respeitam a
- * regra dos N dias de conciliação e a exclusão de suspensos.
+ * `receivables[]` por data. CR respeita a regra dos N dias; CP ancora no
+ * vencimento; suspensos já foram excluídos do fluxo.
  */
 function filterArFromCanonicalToday(
   kind: TreasuryCaixaTotalizerAuditKind,

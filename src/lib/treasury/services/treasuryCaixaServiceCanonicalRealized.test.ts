@@ -1,9 +1,8 @@
 /**
  * Realizado da linha do tempo da Caixa: conversão dos conjuntos canônicos do
- * Fluxo de Caixa (por ano) em entradas de dia, usando a MESMA autoridade de
- * data efetiva (`resolveFinanceEffectiveSettlementDate`, regra dos N dias)
- * que o motor único-de-dia e o fluxo de HOJE já usam — não mais a regra
- * antiga (CR por settlementDate cru; CP sempre por vencimento).
+ * Fluxo de Caixa (por ano) em entradas de dia. CR usa a regra dos N dias
+ * (`resolveFinanceEffectiveSettlementDate`); CP ancora sempre no vencimento
+ * (baixa Nomus retroativa não desloca o mês do caixa).
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -184,8 +183,8 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
     ]);
   });
 
-  // ── Regra final: D <= S <= D+3 → atribui SEMPRE a D (R01-R06) ───────────
-  describe("regra dos N dias — dueDate=05/08, valor 100 (R01-R06)", () => {
+  // ── Regra dos N dias: só CR. CP sempre ancora no vencimento. ───────────
+  describe("regra dos N dias — dueDate=05/08, valor 100 (R01-R06); CP sempre em D", () => {
     const DUE = new Date(2026, 7, 5); // 05/08/2026
 
     it("R01 — baixa NO vencimento (D) conta em D", () => {
@@ -203,7 +202,7 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R02 — baixa em D+1 conta em D, nunca em D+1", () => {
+    it("R02 — baixa em D+1: CR conta em D; CP conta em D (vencimento)", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -218,7 +217,7 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R03 — baixa em D+2 conta em D", () => {
+    it("R03 — baixa em D+2: CR conta em D; CP conta em D", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -233,7 +232,7 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R04 — baixa em D+3 (limite da tolerância) conta em D", () => {
+    it("R04 — baixa em D+3: CR conta em D; CP conta em D", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -248,7 +247,7 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R05 — baixa ALÉM da tolerância (D+4) preserva a política existente: conta na data REAL da baixa, não em D", () => {
+    it("R05 — baixa ALÉM da tolerância (D+4): CR na data real; CP permanece no vencimento", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -260,10 +259,10 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
         POLICY
       );
       assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-09", amountReceived: 100 }]);
-      assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-09", amountPaid: 100 }]);
+      assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R06 — baixa ANTECIPADA (antes de D) preserva a política existente: conta na data REAL da baixa, não em D", () => {
+    it("R06 — baixa ANTECIPADA: CR na data real; CP permanece no vencimento", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -275,10 +274,10 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
         POLICY
       );
       assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-02", amountReceived: 100 }]);
-      assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-02", amountPaid: 100 }]);
+      assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R07 — o título não reaparece na data real da baixa quando dentro da tolerância (não duplica)", () => {
+    it("R07 — o título CR não reaparece na data real da baixa quando dentro da tolerância (não duplica)", () => {
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
@@ -291,6 +290,26 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.equal(inputs.receivables.length, 1);
       assert.equal(inputs.receivables[0]!.settlementDate, "2026-08-05");
     });
+  });
+
+  it("CP ignora política ligada: baixa meses depois ainda conta no vencimento", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [], [
+          apRow({
+            dueDate: new Date(2026, 0, 1),
+            paymentDate: new Date(2026, 5, 30),
+            amountPayable: 700,
+            amountPaid: 700,
+            balancePayable: 0,
+          }),
+        ]),
+      ],
+      POLICY
+    );
+    assert.deepEqual(inputs.payables, [
+      { dueDate: null, paymentDate: "2026-01-01", amountPaid: 700 },
+    ]);
   });
 
   it("política LEGACY (desligada) preserva o comportamento histórico do AP: sempre dueDate, mesmo além de qualquer tolerância", () => {
