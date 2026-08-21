@@ -145,6 +145,7 @@ export function FinanceManagerialDrePage() {
   const [drillSourceCheckId, setDrillSourceCheckId] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const printCleanupRef = useRef<number | null>(null);
+  const reportAbortRef = useRef<AbortController | null>(null);
   const cashBridgeAbortRef = useRef<AbortController | null>(null);
 
   const appliedQuery = useMemo(
@@ -160,17 +161,27 @@ export function FinanceManagerialDrePage() {
       setError("Você não possui permissão para visualizar o DRE Gerencial.");
       return;
     }
+    // Troca rápida de filtros: a resposta do período anterior não pode
+    // sobrescrever o período selecionado agora.
+    reportAbortRef.current?.abort();
+    const controller = new AbortController();
+    reportAbortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const url = getFinanceDreApiPath(appliedQuery);
-      const payload = await fetchJsonOk<FinanceDreReport>(url);
+      const payload = await fetchJsonOk<FinanceDreReport>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
       setReport(payload);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setReport(null);
       setError(buildFinanceTabLoadError("Falha ao carregar o DRE Gerencial.", err));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [appliedQuery, canView]);
 
