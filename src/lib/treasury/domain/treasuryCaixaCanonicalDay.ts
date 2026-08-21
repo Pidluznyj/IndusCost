@@ -10,9 +10,8 @@
  *   receivableDue      = títulos CR em aberto vencendo neste dia
  *   receivableReceived = títulos CR baixados neste dia (settlementDate)
  *   payableDue         = títulos CP em aberto vencendo neste dia
- *   payablePaid        = títulos CP baixados neste dia (paymentDate,
- *                        fallback dueDate quando Nomus não informa — mesma
- *                        regra canônica de `buildTreasuryCaixaRealizedDays`)
+ *   payablePaid        = títulos CP baixados ancorados no vencimento (dueDate);
+ *                        settlement/paymentDate não deslocam o dia do caixa CP
  *   otherInflows       = ledger CREDIT + transferências recebidas no dia
  *   otherOutflows      = ledger DEBIT + transferências saídas no dia
  *
@@ -30,7 +29,6 @@
 
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
-import { resolveFinanceApEffectivePaymentDate } from "@/src/lib/financeAccountsPayableRules.js";
 import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
 import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
 
@@ -158,39 +156,23 @@ export type TreasuryCaixaCanonicalDay = {
 };
 
 /**
- * Data efetiva do CP baixado — quando há política de conciliação, delega ao
- * canônico `resolveFinanceApEffectivePaymentDate`; sem política, mantém o
- * fallback histórico (`paymentDate ?? dueDate`) para preservar 100% do
- * comportamento anterior. Nomus raramente preenche `paymentDate` para CP.
+ * Data efetiva do CP baixado na Tesouraria > Caixa.
+ * Sempre o VENCIMENTO: pagamos em dia e a baixa Nomus costuma ser retroativa;
+ * a regra dos N dias (política de cenário) aplica-se somente ao CR.
+ * Sem dueDate, cai no paymentDate/settlementDate só como fallback residual.
  */
 function resolveApRealizedCivilDate(
   row: Pick<
     FinanceAccountsPayableGridRow,
     "dueDate" | "paymentDate" | "settlementDate" | "amountPaid"
   >,
-  reconciliation?: FinanceSettlementReconciliationPolicy | null
+  _reconciliation?: FinanceSettlementReconciliationPolicy | null
 ): string | null {
+  void _reconciliation;
   if (!(row.amountPaid > 0)) return null;
-  // Realidade primeiro: `paymentDate` quando o Nomus informa; `settlementDate`
-  // como fallback (o Nomus raramente preenche o primeiro, mas quase sempre
-  // preenche o segundo numa baixa real) — sem isso a regra dos N dias nunca
-  // enxergava a baixa real de boa parte dos títulos e caía sempre no
-  // vencimento, mesmo com a política ligada.
+  if (row.dueDate) return row.dueDate.slice(0, 10);
   const settledOnKey = row.paymentDate ?? row.settlementDate;
-  if (reconciliation && reconciliation.enabled) {
-    const effective = resolveFinanceApEffectivePaymentDate(
-      {
-        dueDate: row.dueDate ? new Date(`${row.dueDate}T12:00:00Z`) : null,
-        paymentDate: settledOnKey ? new Date(`${settledOnKey}T12:00:00Z`) : null,
-        amountPaid: row.amountPaid,
-        balancePayable: 0,
-      },
-      { reconciliation }
-    );
-    return effective ? effective.toISOString().slice(0, 10) : null;
-  }
-  const key = settledOnKey ?? row.dueDate;
-  return key ? key.slice(0, 10) : null;
+  return settledOnKey ? settledOnKey.slice(0, 10) : null;
 }
 
 /**
@@ -316,11 +298,9 @@ export type TreasuryCaixaCanonicalDayInput = {
    */
   openingBalanceOfFirstDay?: number | null;
   /**
-   * Política de conciliação (regra dos N dias). Quando presente e ligada,
-   * o motor delega ao canônico para resolver a data efetiva de cada baixa
-   * (AR settlementDate / AP paymentDate). Sem política ou desligada,
-   * mantém o comportamento histórico do próprio motor
-   * (settlementDate cru para AR; paymentDate ?? dueDate para AP).
+   * Política de conciliação (regra dos N dias) — aplica-se somente ao CR.
+   * CP na Tesouraria sempre usa o vencimento (baixa Nomus retroativa não
+   * desloca o mês do caixa). Sem política ou desligada no CR: settlementDate cru.
    */
   reconciliationPolicy?: FinanceSettlementReconciliationPolicy | null;
   /**

@@ -44,6 +44,7 @@ import {
 } from "@/src/lib/financeAccountsPayableRules.js";
 import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
 import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
+import { FINANCE_SETTLEMENT_RECONCILIATION_LEGACY } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -138,18 +139,16 @@ export function resolveTreasuryCaixaChainYears(
  * canônica de data efetiva que o motor único-de-dia (`canonicalDay`) e o
  * fluxo de HOJE já usam:
  *
- * - CR e CP entram pela DATA EFETIVA (`resolveFinanceArEffectiveSettlementDate`
- *   / `resolveFinanceApEffectivePaymentDate`) sob a política de conciliação
- *   informada — dueDate <= settlementDate <= dueDate+N dias vira dueDate;
- *   além da tolerância, vira a data real da baixa. `reconciliation` é
- *   OBRIGATÓRIO (não tem default oculto): quem chama decide a política, sem
- *   comportamento implícito.
+ * - CR entra pela DATA EFETIVA (`resolveFinanceArEffectiveSettlementDate`)
+ *   sob a política de conciliação informada — dueDate <= settlementDate <=
+ *   dueDate+N dias vira dueDate; além da tolerância, vira a data real da
+ *   baixa. `reconciliation` é OBRIGATÓRIO para o CR (não tem default oculto).
+ * - CP entra sempre pelo VENCIMENTO (`FINANCE_SETTLEMENT_RECONCILIATION_LEGACY`):
+ *   pagamos em dia e a baixa Nomus é frequentemente retroativa — a regra dos
+ *   N dias distorce o mês do caixa no pagar. A política de cenário não altera CP.
  * - CP usa `resolveFinanceApRealizedAmount`, cancelados fora;
  * - o dia precisa cair DENTRO do ano do contexto: cada tabela anual do Fluxo
- *   só enxerga títulos daquele ano-vencimento baixados naquele ano. Baixa
- *   cruzando ano ALÉM da tolerância (raríssimo: só quando a data efetiva sai
- *   do ano em que o título foi carregado) fica fora — mesma limitação que já
- *   existia (ver `resolveTreasuryCaixaChainYears`), não introduzida aqui.
+ *   só enxerga títulos daquele ano-vencimento baixados naquele ano.
  *
  * Esta função é exclusiva da Tesouraria > Caixa (não é chamada pela "Linha do
  * tempo mensal" do Fluxo de Caixa, que tem sua própria composição em
@@ -201,7 +200,10 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
 
     for (const row of ctx.apPaidRows as readonly FinanceCashFlowApRow[]) {
       if (isFinanceApCancelledTitle(row)) continue;
-      const paidAt = resolveFinanceApEffectivePaymentDate(row, { reconciliation });
+      // CP: sempre vencimento — independente da política de conciliação do CR.
+      const paidAt = resolveFinanceApEffectivePaymentDate(row, {
+        reconciliation: FINANCE_SETTLEMENT_RECONCILIATION_LEGACY,
+      });
       const realized = resolveFinanceApRealizedAmount(row);
       if (!paidAt || realized <= 0) continue;
       const key = toCivilDateKey(paidAt);
@@ -550,13 +552,11 @@ export function createTreasuryCaixaService(input: {
 
       // Passado da linha do tempo: MESMA população de títulos (CR/CP) que a
       // "Linha do tempo mensal" do Fluxo de Caixa carrega, ano a ano da
-      // gênese até o ano filtrado — mas agora com a MESMA autoridade de data
-      // efetiva do motor único-de-dia (`reconciliationPolicy`, dueDate <=
-      // settlementDate <= dueDate+N dias → dueDate), não mais a regra antiga
-      // (CR por settlementDate cru; CP sempre por vencimento). As duas telas
-      // passam a ser autoridades DESACOPLADAS: mudar a regra aqui não altera
-      // o Fluxo de Caixa, que mantém sua própria composição. Baixa cruzando
-      // ano além da tolerância fica fora, como já era.
+      // gênese até o ano filtrado. CR usa a regra dos N dias
+      // (`reconciliationPolicy`); CP ancora sempre no vencimento (baixa Nomus
+      // retroativa não desloca o mês). As duas telas (Tesouraria vs Fluxo)
+      // permanecem autoridades DESACOPLADAS. Baixa de CR cruzando ano além da
+      // tolerância fica fora, como já era.
       const chainYears = resolveTreasuryCaixaChainYears(period.year);
       const canonicalContexts: FinanceCashFlowCanonicalRealizedYearSets[] = [];
       for (const year of chainYears) {

@@ -91,19 +91,19 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
     assert.equal(day04.receivableDueTitles.length, 2);
   });
 
-  it("Σ payablePaidTitles == payablePaid por dia (respeitando fallback paymentDate→dueDate)", () => {
+  it("Σ payablePaidTitles == payablePaid por dia (CP ancora no vencimento)", () => {
     const days = buildTreasuryCaixaCanonicalDays({
-      civilDatesInWindow: ["2026-08-04"],
+      civilDatesInWindow: ["2026-08-01", "2026-08-04"],
       receivables: [],
       payables: [
-        // Nomus preencheu paymentDate — conta em 04
+        // Baixa Nomus em 04 — Tesouraria ancora no vencimento 01
         ap({
           externalId: 10,
           dueDate: "2026-08-01",
           paymentDate: "2026-08-04",
           amountPaid: 700,
         }),
-        // Nomus NÃO preencheu paymentDate mas foi pago — fallback pelo dueDate
+        // Vence e paga no mesmo dia (04)
         ap({
           externalId: 11,
           dueDate: "2026-08-04",
@@ -112,11 +112,13 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
         }),
       ],
     });
-    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
-    assert.equal(day.payablePaid, 1000);
-    const sum = day.payablePaidTitles.reduce((s, t) => s + t.amountPaid, 0);
-    assert.equal(sum, 1000);
-    assert.equal(day.payablePaidTitles.length, 2);
+    const day01 = findTreasuryCaixaCanonicalDay(days, "2026-08-01")!;
+    const day04 = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
+    assert.equal(day01.payablePaid, 700);
+    assert.equal(day01.payablePaidTitles.length, 1);
+    assert.equal(day04.payablePaid, 300);
+    const sum04 = day04.payablePaidTitles.reduce((s, t) => s + t.amountPaid, 0);
+    assert.equal(sum04, 300);
   });
 
   it("dimensões AR são DISJUNTAS: título só entra em Due OU em Received no dia", () => {
@@ -261,7 +263,7 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
 
   it("realizedInflows/Outflows = baixados + outros; projectedInflows/Outflows = vencendo em aberto", () => {
     const days = buildTreasuryCaixaCanonicalDays({
-      civilDatesInWindow: ["2026-08-04"],
+      civilDatesInWindow: ["2026-08-01", "2026-08-04"],
       receivables: [
         ar({ externalId: 1, dueDate: "2026-08-04", balanceReceivable: 500 }),
         ar({
@@ -272,6 +274,7 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
       ],
       payables: [
         ap({ externalId: 3, dueDate: "2026-08-04", balancePayable: 300 }),
+        // CP pago com baixa em 04 — ancora no vencimento 01
         ap({
           externalId: 4,
           dueDate: "2026-08-01",
@@ -289,13 +292,15 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
         ],
       ]),
     });
-    const d = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
-    // realized = baixados + outros
-    assert.equal(d.realizedInflows, 240, "200 recebido + 40 outros");
-    assert.equal(d.realizedOutflows, 175, "150 pago + 25 outros");
+    const d01 = findTreasuryCaixaCanonicalDay(days, "2026-08-01")!;
+    const d04 = findTreasuryCaixaCanonicalDay(days, "2026-08-04")!;
+    assert.equal(d01.payablePaid, 150, "CP conta no vencimento 01, não na baixa 04");
+    // realized = baixados + outros (no dia 04)
+    assert.equal(d04.realizedInflows, 240, "200 recebido + 40 outros");
+    assert.equal(d04.realizedOutflows, 25, "só 25 outros — CP pago saiu no vencimento");
     // projected = títulos em aberto vencendo hoje
-    assert.equal(d.projectedInflows, 500);
-    assert.equal(d.projectedOutflows, 300);
+    assert.equal(d04.projectedInflows, 500);
+    assert.equal(d04.projectedOutflows, 300);
   });
 
   it("openingBalance encadeia dia a dia; closingRealized é o próximo opening", () => {
@@ -495,14 +500,13 @@ describe("buildTreasuryCaixaCanonicalDays — invariantes de conciliação", () 
   });
 });
 
-describe("buildTreasuryCaixaCanonicalDays — CASE-01/CASE-02: título fora da janela por vencimento, dentro por liquidação", () => {
+describe("buildTreasuryCaixaCanonicalDays — CP ancora no vencimento (não na baixa Nomus)", () => {
   const POLICY = FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS;
 
-  it("CASE-01 — CP vencido MUITO antes da janela, pago DENTRO dela além da tolerância → conta na data da baixa (settlementDate)", () => {
-    // dueDate=10/07, settlementDate=07/08 (>D+3) — mesmo sem `paymentDate`
-    // preenchido pelo Nomus, a baixa real fica visível via `settlementDate`.
+  it("CASE-01 — CP com baixa meses depois do vencimento conta no vencimento, não na data da baixa", () => {
+    // dueDate=10/07, settlementDate=07/08 — CP ignora a baixa e fica em 10/07.
     const days = buildTreasuryCaixaCanonicalDays({
-      civilDatesInWindow: ["2026-08-07"],
+      civilDatesInWindow: ["2026-07-10", "2026-08-07"],
       receivables: [],
       payables: [
         ap({
@@ -517,16 +521,18 @@ describe("buildTreasuryCaixaCanonicalDays — CASE-01/CASE-02: título fora da j
       ],
       reconciliationPolicy: POLICY,
     });
-    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
-    assert.equal(day.payablePaid, 100);
-    assert.equal(day.payablePaidTitles.length, 1);
-    assert.equal(day.payablePaidTitles[0]!.externalId, 100);
+    const dayDue = findTreasuryCaixaCanonicalDay(days, "2026-07-10")!;
+    const daySettlement = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(dayDue.payablePaid, 100);
+    assert.equal(dayDue.payablePaidTitles.length, 1);
+    assert.equal(dayDue.payablePaidTitles[0]!.externalId, 100);
+    assert.equal(daySettlement.payablePaid, 0);
   });
 
-  it("CASE-02 — CP vencendo bem DEPOIS da janela, pago DENTRO dela antecipadamente → conta na data da baixa (settlementDate)", () => {
-    // dueDate=10/09, settlementDate=07/08 (antecipado) — mesma proteção.
+  it("CASE-02 — CP com baixa antes do vencimento ainda conta no vencimento", () => {
+    // dueDate=10/09, settlementDate=07/08 — CP permanece em 10/09.
     const days = buildTreasuryCaixaCanonicalDays({
-      civilDatesInWindow: ["2026-08-07"],
+      civilDatesInWindow: ["2026-08-07", "2026-09-10"],
       receivables: [],
       payables: [
         ap({
@@ -541,10 +547,11 @@ describe("buildTreasuryCaixaCanonicalDays — CASE-01/CASE-02: título fora da j
       ],
       reconciliationPolicy: POLICY,
     });
-    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
-    assert.equal(day.payablePaid, 100);
-    assert.equal(day.payablePaidTitles.length, 1);
-    assert.equal(day.payablePaidTitles[0]!.externalId, 200);
+    const daySettlement = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    const dayDue = findTreasuryCaixaCanonicalDay(days, "2026-09-10")!;
+    assert.equal(daySettlement.payablePaid, 0);
+    assert.equal(dayDue.payablePaid, 100);
+    assert.equal(dayDue.payablePaidTitles[0]!.externalId, 200);
   });
 
   it("POP-07 — equivalente para AR: CR vencido muito antes, recebido dentro da janela além da tolerância → conta na baixa", () => {
@@ -568,11 +575,7 @@ describe("buildTreasuryCaixaCanonicalDays — CASE-01/CASE-02: título fora da j
     assert.equal(day.receivableReceivedTitles.length, 1);
   });
 
-  it("dentro da tolerância (D+2), mesmo sem paymentDate: settlementDate ainda assim atribui a D, não à data da baixa", () => {
-    // dueDate=05/08, settlementDate=07/08 (D+2, dentro da tolerância) →
-    // effectiveDate = dueDate (05/08), não 07/08 — prova que o fallback para
-    // settlementDate não quebra a regra dos 3 dias, só preenche a lacuna
-    // quando paymentDate está ausente.
+  it("CP com baixa D+2 ainda conta no vencimento (política de CR não afeta CP)", () => {
     const days = buildTreasuryCaixaCanonicalDays({
       civilDatesInWindow: ["2026-08-05", "2026-08-07"],
       receivables: [],
