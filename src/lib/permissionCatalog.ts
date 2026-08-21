@@ -40,6 +40,7 @@ const PRJ = "Projetos";
 const FLT = "Gestão de Frota";
 const INV = "Estoque";
 const CM = "Comissões";
+const SAT = "Satisfação";
 
 const FIN = "Financeiro";
 
@@ -89,6 +90,14 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   perm({ key: "goals.create", label: "Metas — criar", group: G, module: "goals", description: "Criar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
   perm({ key: "goals.update", label: "Metas — editar", group: G, module: "goals", description: "Editar metas e lançar valor realizado.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
   perm({ key: "goals.manage", label: "Metas — gerenciar", group: G, module: "goals", description: "Excluir/arquivar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
+
+  // —— Comercial > Satisfação — docs/commercial/customer-satisfaction-module.md ——
+  perm({ key: "commercial.satisfaction.view", label: "Satisfação", group: SAT, module: "satisfaction", description: "Acessar o dashboard e as pesquisas de satisfação de clientes.", type: "menu" }),
+  perm({ key: "commercial.satisfaction.manage", label: "Satisfação — gerenciar pesquisas", group: SAT, module: "satisfaction", description: "Criar, duplicar e editar rascunhos, definir audiência e gerar/revogar links.", type: "action", parentKey: "commercial.satisfaction.view", requires: ["commercial.satisfaction.view"] }),
+  perm({ key: "commercial.satisfaction.publish", label: "Satisfação — publicar/encerrar", group: SAT, module: "satisfaction", description: "Publicar (congela o questionário), encerrar e arquivar pesquisas.", type: "action", parentKey: "commercial.satisfaction.view", requires: ["commercial.satisfaction.view"], risk: "sensitive" }),
+  perm({ key: "commercial.satisfaction.responses.view", label: "Satisfação — ver respostas", group: SAT, module: "satisfaction", description: "Abrir a resposta individual do cliente, com comentário e contato.", type: "section", parentKey: "commercial.satisfaction.view", requires: ["commercial.satisfaction.view"], risk: "sensitive" }),
+  perm({ key: "commercial.satisfaction.export", label: "Satisfação — exportar", group: SAT, module: "satisfaction", description: "Exportar resultados sob demanda.", type: "action", parentKey: "commercial.satisfaction.view", requires: ["commercial.satisfaction.view"] }),
+  perm({ key: "commercial.satisfaction.import", label: "Satisfação — importar histórico", group: SAT, module: "satisfaction", description: "Importar respostas históricas do Google Forms (preview e aplicação).", type: "action", parentKey: "commercial.satisfaction.view", requires: ["commercial.satisfaction.view"], risk: "sensitive" }),
 
   // —— Financeiro ——
   perm({

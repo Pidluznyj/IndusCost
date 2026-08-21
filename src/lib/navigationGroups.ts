@@ -96,6 +96,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "crm.seller.all",
   ],
   commissions: [...COMMISSIONS_VIEW_PERMISSIONS],
+  satisfaction: ["commercial.satisfaction.view"],
   customers: ["customers.view"],
   proposals: ["proposals.view"],
   "sales-orders": ["sales_orders.view"],
@@ -201,6 +202,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
       "output-documents",
       "pricing",
       "commissions",
+      "satisfaction",
     ],
   },
   {
@@ -269,6 +271,7 @@ export function getModulePath(moduleId: AppModuleId): string {
     return "/finance/invested-capital-recovery";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
   if (moduleId === "commercial-price-table") return "/commercial/price-table";
+  if (moduleId === "satisfaction") return "/commercial/satisfaction";
   if (moduleId === "sc-purchases") return "/supply-chain/purchases";
   if (moduleId === "sc-inventory") return "/supply-chain/inventory";
   if (moduleId === "sc-receiving") return "/supply-chain/receiving";

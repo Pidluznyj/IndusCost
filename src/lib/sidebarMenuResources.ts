@@ -18,6 +18,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "sales-order-flow": ResourceKeys.COMERCIAL_FLUXO_PEDIDOS,
   "output-documents": ResourceKeys.COMERCIAL_DOCUMENTOS_SAIDA,
   commissions: ResourceKeys.COMISSOES,
+  satisfaction: ResourceKeys.COMERCIAL_SATISFACAO,
   materials: ResourceKeys.SUPRIMENTOS,
   settings: ResourceKeys.CONFIGURACOES,
   customers: ResourceKeys.COMERCIAL_CLIENTES,

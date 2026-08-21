@@ -36,6 +36,7 @@ export type AppModuleId =
   | "customers"
   | "crm-commercial"
   | "commissions"
+  | "satisfaction"
   | "simulations"
   | "finance"
   | "treasury"
@@ -86,6 +87,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "customers",
   "crm-commercial",
   "commissions",
+  "satisfaction",
   "simulations",
   "finance",
   "treasury",
@@ -108,6 +110,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("dashboard.view");
     case "crm-commercial":
       return canAccessCrmAny(check);
+    case "satisfaction":
+      return check.hasPermission("commercial.satisfaction.view");
     case "commissions":
       return canAccessCommissionsModule(check);
     case "customers":
@@ -366,6 +370,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
     return "crm-commercial";
   }
   if (
+    normalized === "/commercial/satisfaction" ||
+    normalized.startsWith("/commercial/satisfaction/")
+  ) {
+    return "satisfaction";
+  }
+  if (
     normalized === "/commercial/sales-order-flow" ||
     normalized.startsWith("/commercial/sales-order-flow/")
   ) {
@@ -401,6 +411,7 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "sc-inventory") return "/supply-chain/inventory";
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";
       if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
+      if (moduleId === "satisfaction") return "/commercial/satisfaction";
       if (moduleId === "treasury") return "/finance/treasury";
       if (moduleId === "invested-capital-recovery")
         return "/finance/invested-capital-recovery";
@@ -440,6 +451,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   customers: "Clientes",
   "crm-commercial": "CRM Comercial",
   commissions: "Comissões",
+  satisfaction: "Satisfação",
   simulations: "Simulações",
   finance: "Financeiro",
   treasury: "Tesouraria",
