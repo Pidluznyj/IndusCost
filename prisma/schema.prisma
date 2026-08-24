@@ -8266,6 +8266,7 @@ model OrderToCashAuditFact {
   @@index([nfeExternalId])
   @@index([nfeNumber])
   @@index([stockDocumentId])
+  @@index([stockDocumentExternalId])
   @@index([receivableStatus])
   @@index([paymentStatus])
   @@index([orderToCashStage])
