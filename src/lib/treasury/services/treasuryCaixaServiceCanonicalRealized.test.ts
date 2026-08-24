@@ -247,19 +247,34 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
     });
 
-    it("R05 — baixa ALÉM da tolerância (D+4): CR na data real; CP permanece no vencimento", () => {
+    it("R05 — baixa ALÉM da tolerância (4 dias ÚTEIS: qua 05→ter 11): CR na data real; CP permanece no vencimento", () => {
+      // Tolerância conta dias ÚTEIS: 09/08 (domingo, D+4 corridos) são só 2
+      // úteis e ficou DENTRO — por isso o atraso real aqui usa 11/08 (terça,
+      // qui+sex+seg+ter = 4 úteis).
       const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
         [
           ctx(2026, [
-            arRow({ dueDate: DUE, settlementDate: new Date(2026, 7, 9), amountReceived: 100 }),
+            arRow({ dueDate: DUE, settlementDate: new Date(2026, 7, 11), amountReceived: 100 }),
           ], [
-            apRow({ dueDate: DUE, paymentDate: new Date(2026, 7, 9), amountPayable: 100, amountPaid: 100, balancePayable: 0 }),
+            apRow({ dueDate: DUE, paymentDate: new Date(2026, 7, 11), amountPayable: 100, amountPaid: 100, balancePayable: 0 }),
           ]),
         ],
         POLICY
       );
-      assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-09", amountReceived: 100 }]);
+      assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-11", amountReceived: 100 }]);
       assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 100 }]);
+    });
+
+    it("R05b — baixa no DOMINGO D+4 corridos (2 úteis) fica DENTRO da tolerância → dueDate", () => {
+      const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+        [
+          ctx(2026, [
+            arRow({ dueDate: DUE, settlementDate: new Date(2026, 7, 9), amountReceived: 100 }),
+          ], []),
+        ],
+        POLICY
+      );
+      assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-05", amountReceived: 100 }]);
     });
 
     it("R06 — baixa ANTECIPADA: CR na data real; CP permanece no vencimento", () => {

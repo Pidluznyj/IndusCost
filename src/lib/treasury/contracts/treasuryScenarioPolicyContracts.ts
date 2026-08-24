@@ -29,6 +29,7 @@ export type TreasuryScenarioPolicyDto = {
    * (pagamos em dia; baixa Nomus costuma ser retroativa).
    */
   settlementReconciliationEnabled: boolean;
+  /** Tolerância em DIAS ÚTEIS (seg–sex) — ver financeSettlementReconciliation. */
   settlementReconciliationToleranceDays: number;
   version: number;
   updatedAt: TreasuryTimestampIso;
