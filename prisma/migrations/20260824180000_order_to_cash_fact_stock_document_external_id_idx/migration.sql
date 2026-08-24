@@ -13,12 +13,29 @@
 -- B-tree simples serve tanto ao predicado de igualdade quanto ao IN do
 -- resolver em lote. Sem coluna adicional: nenhuma evidência pediu composto.
 --
--- CONCURRENTLY não é usado: `prisma migrate deploy` executa a migration em
--- transação (CREATE INDEX CONCURRENTLY é proibido em transação) e a tabela
--- tem ~18k linhas — o CREATE INDEX normal conclui em milissegundos.
+-- CONCURRENTLY não é usado — decisão baseada no deploy REAL deste projeto:
+--   • runner: `npx prisma migrate deploy` puro (scripts/deploy-server-main-
+--     update.sh), sem wrapper transacional próprio;
+--   • padrão consolidado: 145 migrations com CREATE INDEX no histórico,
+--     ZERO com CONCURRENTLY — este seria o primeiro, sem necessidade;
+--   • volume: ~18k linhas na homolog (produção na mesma ordem — a tabela é
+--     repovoada por runs do O2C audit). CREATE INDEX B-tree de Int nesse
+--     volume conclui em milissegundos; o lock SHARE bloqueia writes só
+--     nesse instante, e quem escreve nesta tabela é o job de auditoria,
+--     não usuários interativos;
+--   • falha com CONCURRENTLY deixa índice INVALID + migration marcada como
+--     failed (recovery manual via `migrate resolve`) — risco operacional
+--     maior que o lock de milissegundos do caminho normal.
 --
 -- Aditivo e reversível: só cria índice, não toca dado nem estrutura.
--- IF NOT EXISTS mantém o reprocessamento idempotente.
+-- IF NOT EXISTS (padrão em 41 migrations de índice do projeto): a proteção
+-- real não é contra re-aplicação (o ledger _prisma_migrations já garante
+-- aplicação única) e sim contra criação MANUAL antecipada — este índice foi
+-- recomendado por auditoria de performance publicada, e um operador pode
+-- criá-lo à mão na homolog/produção antes do deploy desta migration; sem o
+-- IF NOT EXISTS esse cenário quebraria o deploy. O nome segue a convenção
+-- default do Prisma para exatamente esta definição, tornando desprezível o
+-- risco de colidir com um índice divergente de mesmo nome.
 
 CREATE INDEX IF NOT EXISTS "OrderToCashAuditFact_stockDocumentExternalId_idx"
   ON "OrderToCashAuditFact" ("stockDocumentExternalId");
