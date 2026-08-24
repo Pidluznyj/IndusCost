@@ -51,6 +51,7 @@ import {
   SATISFACTION_AUDIT_ENTITIES,
 } from "./satisfactionAudit.server.js";
 import { summarizeRatings, resolveAlertLevel } from "./satisfactionMetrics.js";
+import { resolveSatisfactionResponsibleNames } from "./satisfactionSellerDisplay.server.js";
 
 export const SATISFACTION_RESOURCE_KEY = "commercial.satisfaction" as const;
 export const SATISFACTION_RESPONSES_RESOURCE_KEY = "commercial.satisfaction.responses" as const;
@@ -631,6 +632,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
             invitation: {
               select: {
                 customerNameSnapshot: true,
+                responsibleCommercialIdSnapshot: true,
                 responsibleCommercialNameSnapshot: true,
               },
             },
@@ -672,8 +674,11 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
               response.invitation?.customerNameSnapshot ??
               response.declaredCompanyName ??
               "Cliente não identificado",
-            responsibleCommercialName:
-              response.invitation?.responsibleCommercialNameSnapshot ?? null,
+            responsibleCommercialName: response.invitation
+              ? ((await resolveSatisfactionResponsibleNames(prisma, [response.invitation])).get(
+                  response.invitation
+                ) ?? null)
+              : null,
             respondentName: response.respondentName,
             respondentPhone: response.respondentPhone,
             declaredDate: response.declaredDate,

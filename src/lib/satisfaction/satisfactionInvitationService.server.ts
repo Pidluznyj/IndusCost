@@ -25,6 +25,7 @@ import {
   SATISFACTION_AUDIT_ENTITIES,
 } from "./satisfactionAudit.server.js";
 import { SatisfactionDomainError } from "./satisfactionCampaignService.server.js";
+import { resolveSatisfactionResponsibleNames } from "./satisfactionSellerDisplay.server.js";
 
 export type SatisfactionInvitationRow = {
   id: string;
@@ -138,6 +139,7 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
             id: true,
             customerId: true,
             customerNameSnapshot: true,
+            responsibleCommercialIdSnapshot: true,
             responsibleCommercialNameSnapshot: true,
             firstOpenedAt: true,
             startedAt: true,
@@ -153,11 +155,18 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
         }),
       ]);
 
+      // Nome do responsável pelo MESMO motor oficial do CRM/Pedidos — o
+      // snapshot "Vendedor ID N" era o placeholder de vendedor não mapeado.
+      const responsibleNames = await resolveSatisfactionResponsibleNames(
+        prisma,
+        invitations
+      );
+
       const rows = invitations.map((invitation): SatisfactionInvitationRow => ({
         id: invitation.id,
         customerId: invitation.customerId,
         customerName: invitation.customerNameSnapshot,
-        responsibleCommercialName: invitation.responsibleCommercialNameSnapshot,
+        responsibleCommercialName: responsibleNames.get(invitation) ?? null,
         status: resolveInvitationStatus(invitation),
         firstOpenedAt: invitation.firstOpenedAt,
         startedAt: invitation.startedAt,

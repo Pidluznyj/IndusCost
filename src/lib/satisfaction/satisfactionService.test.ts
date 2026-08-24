@@ -940,3 +940,92 @@ describe("superfície pública — identidade visual no formulário", () => {
     });
   });
 });
+
+describe("responsável comercial — nome pelo motor oficial, nunca o placeholder", () => {
+  it('detecta os placeholders reais ("Vendedor ID 464" etc.)', async () => {
+    const { isSellerPlaceholderName } = await import(
+      "./satisfactionSellerDisplay.server.js"
+    );
+    assert.equal(isSellerPlaceholderName("Vendedor ID 464"), true);
+    assert.equal(isSellerPlaceholderName("vendedor id 7"), true);
+    assert.equal(isSellerPlaceholderName("Vendedor Nomus não mapeado: ID 464"), true);
+    // Nomes legítimos nunca podem ser tratados como placeholder:
+    assert.equal(isSellerPlaceholderName("Ana Vendedora"), false);
+    assert.equal(isSellerPlaceholderName("Carlos ID Silva"), false);
+    assert.equal(isSellerPlaceholderName(null), false);
+  });
+
+  it("resolve pelo motor oficial quando o vendedor está mapeado; placeholder vira null quando não está", async () => {
+    const { resolveSatisfactionResponsibleNames } = await import(
+      "./satisfactionSellerDisplay.server.js"
+    );
+    const prisma = {
+      commissionPerson: {
+        findMany: async () => [
+          {
+            id: "cp-1",
+            nomusPersonId: 464,
+            name: "Ana Vendedora",
+            type: "SELLER",
+            source: "NOMUS",
+            active: true,
+            createdAt: new Date("2025-01-01"),
+            _count: { commissionRecords: 0 },
+          },
+        ],
+      },
+      commissionPersonAlias: { findMany: async () => [] },
+    } as never;
+
+    const mapped = {
+      responsibleCommercialIdSnapshot: 464,
+      responsibleCommercialNameSnapshot: "Vendedor ID 464",
+    };
+    const unmapped = {
+      responsibleCommercialIdSnapshot: 999,
+      responsibleCommercialNameSnapshot: "Vendedor ID 999",
+    };
+    const legacyName = {
+      responsibleCommercialIdSnapshot: null,
+      responsibleCommercialNameSnapshot: "Carlos Antigo",
+    };
+
+    const names = await resolveSatisfactionResponsibleNames(prisma, [
+      mapped,
+      unmapped,
+      legacyName,
+    ]);
+
+    assert.equal(
+      names.get(mapped),
+      "Ana Vendedora",
+      "mapeado: o motor oficial vence o snapshot placeholder"
+    );
+    assert.equal(
+      names.get(unmapped),
+      null,
+      'não mapeado: "Vendedor ID 999" nunca aparece como nome — a UI mostra "—"'
+    );
+    assert.equal(
+      names.get(legacyName),
+      "Carlos Antigo",
+      "snapshot legítimo continua valendo quando não há id para resolver"
+    );
+  });
+
+  it("falha ao carregar o contexto não derruba a listagem (cai no snapshot)", async () => {
+    const { resolveSatisfactionResponsibleNames } = await import(
+      "./satisfactionSellerDisplay.server.js"
+    );
+    const prisma = {
+      commissionPerson: { findMany: async () => { throw new Error("db off"); } },
+      commissionPersonAlias: { findMany: async () => [] },
+    } as never;
+    const row = {
+      responsibleCommercialIdSnapshot: 464,
+      responsibleCommercialNameSnapshot: "Nome Legitimo Salvo",
+    };
+    const names = await resolveSatisfactionResponsibleNames(prisma, [row]);
+    assert.equal(names.get(row), "Nome Legitimo Salvo");
+  });
+});

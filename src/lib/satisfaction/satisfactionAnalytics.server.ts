@@ -19,6 +19,7 @@ import {
   type SatisfactionTrend,
 } from "./satisfactionMetrics.js";
 import { SATISFACTION_RATING_CODE_SHORT_LABELS } from "./satisfactionContracts.js";
+import { resolveSatisfactionResponsibleNames } from "./satisfactionSellerDisplay.server.js";
 
 export type SatisfactionAnalyticsFilters = {
   campaignIds: string[] | null;
@@ -261,6 +262,7 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
                   rating: number;
                   submittedAt: Date | null;
                   responsible: string | null;
+                  responsibleId: number | null;
                 }>
               )
             : prisma.$queryRaw<
@@ -272,6 +274,7 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
                   rating: number;
                   submittedAt: Date | null;
                   responsible: string | null;
+                  responsibleId: number | null;
                 }>
               >`
                 SELECT r."id"                                             AS "responseId",
@@ -281,7 +284,8 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
                        q."label"                                         AS "label",
                        a."ratingValue"                                   AS "rating",
                        r."submittedAt"                                   AS "submittedAt",
-                       i."responsibleCommercialNameSnapshot"             AS "responsible"
+                       i."responsibleCommercialNameSnapshot"             AS "responsible",
+                       i."responsibleCommercialIdSnapshot"               AS "responsibleId"
                   FROM "SatisfactionSurveyAnswer" a
                   JOIN "SatisfactionSurveyResponse" r ON r."id" = a."responseId"
                   JOIN "SatisfactionSurveyCampaignQuestion" q ON q."id" = a."questionId"
@@ -333,6 +337,21 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
       const opened = invitations.filter((i) => i.firstOpenedAt).length;
       const started = invitations.filter((i) => i.startedAt).length;
       const completed = invitations.filter((i) => i.completedAt).length;
+
+      // Nome do responsável nos pontos de atenção: mesmo motor oficial do
+      // CRM/Pedidos (snapshot pode conter o placeholder "Vendedor ID N").
+      const attentionResponsibleRows = attentionRows.map((row) => ({
+        row,
+        responsibleCommercialIdSnapshot: row.responsibleId ?? null,
+        responsibleCommercialNameSnapshot: row.responsible ?? null,
+      }));
+      const attentionNames = await resolveSatisfactionResponsibleNames(
+        prisma,
+        attentionResponsibleRows
+      );
+      const attentionNameByRow = new Map(
+        attentionResponsibleRows.map((e) => [e.row, attentionNames.get(e) ?? null])
+      );
 
       return {
         kpis: {
@@ -391,7 +410,7 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
             ] ?? row.label,
           rating: Number(row.rating),
           submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
-          responsibleCommercialName: row.responsible,
+          responsibleCommercialName: attentionNameByRow.get(row) ?? null,
         })),
       };
     },
