@@ -82,10 +82,13 @@ function BalanceTooltip({
 
 export type TreasuryCaixaBalanceChartProps = {
   points: readonly TreasuryCaixaBalanceChartPoint[];
+  /** Ação opcional no cabeçalho (ex.: botão "Visão anual" da página). */
+  headerAction?: React.ReactNode;
 };
 
 export function TreasuryCaixaBalanceChart({
   points,
+  headerAction,
 }: TreasuryCaixaBalanceChartProps) {
   if (points.length === 0) return null;
 
@@ -102,9 +105,12 @@ export function TreasuryCaixaBalanceChart({
       className="rounded-lg border border-border bg-card p-3 shadow-sm"
       data-testid="caixa-balance-chart"
     >
-      <h2 className="text-sm font-semibold text-foreground">
-        Evolução do saldo — mês a mês
-      </h2>
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="text-sm font-semibold text-foreground">
+          Evolução do saldo — mês a mês
+        </h2>
+        {headerAction ?? null}
+      </div>
       <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
         Saldo no fim de cada mês, acumulado. Linha cheia é o que já aconteceu;
         tracejada é a previsão pelos títulos em aberto.

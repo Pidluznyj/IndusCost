@@ -27,11 +27,11 @@ import {
   buildTreasuryCaixaDayFlow,
   buildTreasuryCaixaMonthlyBalanceChart,
   buildTreasuryCaixaMonthlyTimeline,
-  buildTreasuryCaixaUnifiedTimeline,
   resolveTreasuryCaixaChainedOpeningForToday,
   type TreasuryCaixaDayFlow,
   type TreasuryCaixaTimeline as TreasuryCaixaTimelineData,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import { buildTreasuryCaixaTimelineFromBoardSources } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
@@ -78,34 +78,15 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /**
- * Passado (do board, por data de liquidação) + hoje (fechamento do dia) +
- * futuro (agenda). Passar `agendaDays` vazio produz a linha do tempo só com o
- * que é fato — é o caminho usado quando não há projeção materializada.
+ * Modal "Visão anual" — lazy: o chunk (modal + série anual) só baixa quando o
+ * usuário clica no botão do gráfico. Nenhum request acontece ao abrir; o
+ * fetch é disparado apenas pelo "Gerar gráfico" dentro do modal.
  */
-function buildTimelineFromSources(
-  board: TreasuryCaixaPayload,
-  todayFlow: TreasuryCaixaDayFlow | null,
-  agendaDays: readonly TreasuryAgendaDayDto[]
-): TreasuryCaixaTimelineData {
-  return buildTreasuryCaixaUnifiedTimeline({
-    todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
-    realizedDays: board.realizedDays ?? [],
-    todayFlow,
-    // `inflows`/`outflows` = cenário pedido; são os que movem o closingBalance.
-    // Os buckets `planned*` não servem: plannedOutflows só vem do contratual e
-    // fica zerado quando se pede PROBABLE, deixando a coluna "Saiu" vazia.
-    forecastDays: agendaDays.map((d) => ({
-      civilDate: d.civilDate,
-      openingBalance: treasuryMoneyToNumber(d.openingBalance),
-      inflows: treasuryMoneyToNumber(d.inflows),
-      outflows: treasuryMoneyToNumber(d.outflows),
-      closingBalance:
-        d.closingBalance == null
-          ? null
-          : treasuryMoneyToNumber(d.closingBalance),
-    })),
-  });
-}
+const TreasuryCaixaAnnualViewModal = React.lazy(() =>
+  import(
+    "@/src/components/finance/treasury/TreasuryCaixaAnnualViewModal"
+  ).then((m) => ({ default: m.TreasuryCaixaAnnualViewModal }))
+);
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -195,6 +176,7 @@ export function TreasuryCaixaPage() {
   // quem quiser o detalhe abre por conta própria (mesmo padrão do Atrasados).
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [payablesOpen, setPayablesOpen] = useState(false);
+  const [annualViewOpen, setAnnualViewOpen] = useState(false);
   // Modal de auditoria dos totalizadores — abre ao clicar num card.
   const [auditKind, setAuditKind] =
     useState<TreasuryCaixaTotalizerAuditKind | null>(null);
@@ -335,6 +317,12 @@ export function TreasuryCaixaPage() {
     return out;
   }, [today]);
 
+  // Mesma resolução de empresa que o `search` usa para a agenda canônica.
+  const annualCompanyCode = useMemo(
+    () => accounts.map((a) => a.companyCode?.trim()).find((c) => c) ?? null,
+    [accounts]
+  );
+
   const dayOptions = useMemo(() => {
     if (month === "") return [];
     const max = daysInMonth(year, month);
@@ -448,7 +436,11 @@ export function TreasuryCaixaPage() {
   // linha de hoje ficava sem o saldo informado (a realidade).
   const timeline = useMemo<TreasuryCaixaTimelineData | null>(() => {
     if (!data) return null;
-    const base = buildTimelineFromSources(data, correctedTodayFlow, agendaDays);
+    const base = buildTreasuryCaixaTimelineFromBoardSources(
+      data,
+      correctedTodayFlow,
+      agendaDays
+    );
     // Futuro fora da cobertura da projeção materializada: estima dia a dia
     // pelos CR/CP em aberto por vencimento, ancorado no último caixa
     // conhecido — informar o caixa de hoje re-ancora toda a cadeia futura.
@@ -595,7 +587,31 @@ export function TreasuryCaixaPage() {
           />
         ) : null}
 
-        <TreasuryCaixaBalanceChart points={balanceChartPoints} />
+        <TreasuryCaixaBalanceChart
+          points={balanceChartPoints}
+          headerAction={
+            <button
+              type="button"
+              onClick={() => setAnnualViewOpen(true)}
+              className="rounded-md border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground hover:bg-muted"
+              data-testid="caixa-annual-open"
+            >
+              Visão anual
+            </button>
+          }
+        />
+
+        {annualViewOpen ? (
+          <React.Suspense fallback={null}>
+            <TreasuryCaixaAnnualViewModal
+              defaultYear={year}
+              yearOptions={yearOptions}
+              todayFlowRaw={todayFlow}
+              companyCode={annualCompanyCode}
+              onClose={() => setAnnualViewOpen(false)}
+            />
+          </React.Suspense>
+        ) : null}
 
         <TreasuryCaixaScenariosChart
           data={scenarios}
