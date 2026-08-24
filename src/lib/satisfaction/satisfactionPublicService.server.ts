@@ -67,6 +67,17 @@ export type SatisfactionPublicFormDto = {
   /** Link geral exige que o respondente se identifique. */
   requiresSelfIdentification: boolean;
   questions: SatisfactionPublicQuestionDto[];
+  /**
+   * Identificação vinda do CADASTRO (snapshot do convite) no link individual.
+   * `locked: true` = o formulário exibe como somente leitura; o servidor
+   * também sobrescreve esses códigos no submit, então adulterar via devtools
+   * não tem efeito. Vazio no link geral (cliente se identifica).
+   */
+  identificationPrefill: Array<{
+    questionCode: string;
+    textValue: string;
+    locked: boolean;
+  }>;
   draft: {
     version: number;
     answers: Array<{
@@ -303,7 +314,12 @@ export function createSatisfactionPublicService(deps: {
       const invitation = session.invitationId
         ? await prisma.satisfactionSurveyInvitation.findUnique({
             where: { id: session.invitationId },
-            select: { customerNameSnapshot: true, completedAt: true, revokedAt: true },
+            select: {
+              customerNameSnapshot: true,
+              customerTaxIdSnapshot: true,
+              completedAt: true,
+              revokedAt: true,
+            },
           })
         : null;
 
@@ -351,6 +367,7 @@ export function createSatisfactionPublicService(deps: {
           },
           customerDisplayName: invitation?.customerNameSnapshot ?? null,
           requiresSelfIdentification: session.invitationId == null,
+          identificationPrefill: buildIdentityPrefill(invitation),
           questions: campaign.questions.map((question) => ({
             code: question.code,
             label: question.label,
@@ -430,7 +447,19 @@ export function createSatisfactionPublicService(deps: {
       if (unavailable) return fail(unavailable);
 
       const specs = campaign.questions.map(toQuestionSpec);
-      const validation = validateAnswers(specs, payload.answers, { enforceRequired: false });
+      // Link individual: identidade vem do CADASTRO, nunca do cliente.
+      const draftIdentity = session.invitationId
+        ? await prisma.satisfactionSurveyInvitation.findUnique({
+            where: { id: session.invitationId },
+            select: { customerNameSnapshot: true, customerTaxIdSnapshot: true },
+          })
+        : null;
+      const draftAnswers = applyIdentityOverrides(
+        payload.answers,
+        draftIdentity,
+        new Set(specs.map((q) => q.code))
+      );
+      const validation = validateAnswers(specs, draftAnswers, { enforceRequired: false });
       if (!validation.ok) return fail("INVALID");
 
       const result = await prisma.$transaction(async (tx) => {
@@ -580,7 +609,13 @@ export function createSatisfactionPublicService(deps: {
       if (session.invitationId) {
         const invitation = await prisma.satisfactionSurveyInvitation.findUnique({
           where: { id: session.invitationId },
-          select: { revokedAt: true, completedAt: true, response: { select: { id: true } } },
+          select: {
+            revokedAt: true,
+            completedAt: true,
+            customerNameSnapshot: true,
+            customerTaxIdSnapshot: true,
+            response: { select: { id: true } },
+          },
         });
         if (invitation?.revokedAt) return fail("REVOKED");
         if (invitation?.completedAt && invitation.response) {
@@ -603,7 +638,21 @@ export function createSatisfactionPublicService(deps: {
       }
 
       const specs = campaign.questions.map(toQuestionSpec);
-      const validation = validateAnswers(specs, input.answers, { enforceRequired: true });
+      // Blindagem: no link individual, CUSTOMER_NAME/TAX_ID vêm do snapshot
+      // do convite — qualquer valor enviado pelo cliente para esses códigos é
+      // descartado. Também satisfaz o required de CUSTOMER_NAME por construção.
+      const submitIdentity = session.invitationId
+        ? await prisma.satisfactionSurveyInvitation.findUnique({
+            where: { id: session.invitationId },
+            select: { customerNameSnapshot: true, customerTaxIdSnapshot: true },
+          })
+        : null;
+      const submitAnswers = applyIdentityOverrides(
+        input.answers,
+        submitIdentity,
+        new Set(specs.map((q) => q.code))
+      );
+      const validation = validateAnswers(specs, submitAnswers, { enforceRequired: true });
       if (!validation.ok) {
         return {
           ok: false,
@@ -782,6 +831,62 @@ async function persistAnswers(
       },
     });
   }
+}
+
+/** Códigos de identificação que o cadastro responde no link individual. */
+const IDENTITY_PREFILL_CODES = { name: "CUSTOMER_NAME", taxId: "TAX_ID" } as const;
+
+type IdentitySnapshots = {
+  customerNameSnapshot: string | null;
+  customerTaxIdSnapshot: string | null;
+} | null;
+
+/** Prefill exibido no formulário (link individual). Vazio no link geral. */
+function buildIdentityPrefill(
+  invitation: IdentitySnapshots
+): Array<{ questionCode: string; textValue: string; locked: boolean }> {
+  if (!invitation) return [];
+  const prefill: Array<{ questionCode: string; textValue: string; locked: boolean }> = [];
+  if (invitation.customerNameSnapshot) {
+    prefill.push({
+      questionCode: IDENTITY_PREFILL_CODES.name,
+      textValue: invitation.customerNameSnapshot,
+      locked: true,
+    });
+  }
+  if (invitation.customerTaxIdSnapshot) {
+    prefill.push({
+      questionCode: IDENTITY_PREFILL_CODES.taxId,
+      textValue: invitation.customerTaxIdSnapshot,
+      locked: true,
+    });
+  }
+  return prefill;
+}
+
+/**
+ * Sobrepõe as respostas de identificação com os snapshots do convite.
+ * O que o cliente tiver digitado (ou adulterado) nesses códigos é descartado;
+ * sem snapshot de CNPJ o campo segue livre (é opcional no V1).
+ */
+function applyIdentityOverrides(
+  answers: SatisfactionAnswerInput[],
+  invitation: IdentitySnapshots,
+  campaignQuestionCodes: ReadonlySet<string>
+): SatisfactionAnswerInput[] {
+  if (!invitation) return answers;
+  // So injeta o que EXISTE no questionario da campanha: injetar codigo
+  // desconhecido derrubaria o submit com UNKNOWN_QUESTION em campanhas cujo
+  // snapshot nao tem os campos de identificacao.
+  const overrides = buildIdentityPrefill(invitation).filter((o) =>
+    campaignQuestionCodes.has(o.questionCode)
+  );
+  if (overrides.length === 0) return answers;
+  const overriddenCodes = new Set(overrides.map((o) => o.questionCode));
+  return [
+    ...answers.filter((a) => !overriddenCodes.has(a.questionCode)),
+    ...overrides.map((o) => ({ questionCode: o.questionCode, textValue: o.textValue })),
+  ];
 }
 
 /**

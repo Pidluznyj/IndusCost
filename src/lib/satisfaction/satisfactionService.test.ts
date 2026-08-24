@@ -402,6 +402,7 @@ function seedForPublic(overrides: { campaign?: Row; invitation?: Row } = {}) {
     campaignId: campaign.id,
     customerId: "cus-1",
     customerNameSnapshot: "Metalúrgica Alfa",
+    customerTaxIdSnapshot: "12345678000190",
     revokedAt: null,
     completedAt: null,
     startedAt: null,
@@ -739,5 +740,141 @@ describe("superfície pública — rascunho", () => {
     assert.equal((stale as { reason: string }).reason, "VERSION_CONFLICT");
     const answer = seeded.prisma.satisfactionSurveyAnswer.rows[0];
     assert.equal(answer.ratingValue, 4, "a gravação velha não pode sobrescrever a nova");
+  });
+});
+
+describe("superfície pública — identificação vinda do cadastro (link individual)", () => {
+  /** Questionário com os campos de identificação do V1, além dos avaliativos. */
+  const IDENTITY_QUESTIONS = [
+    { id: "q-name", code: "CUSTOMER_NAME", label: "Cliente", type: "SHORT_TEXT", sortOrder: 1, required: true, scaleMin: null, scaleMax: null, helpText: null },
+    { id: "q-tax", code: "TAX_ID", label: "CNPJ", type: "TAX_ID", sortOrder: 2, required: false, scaleMin: null, scaleMax: null, helpText: null },
+    { id: "q-resp", code: "RESPONDENT_NAME", label: "Responsável", type: "SHORT_TEXT", sortOrder: 3, required: true, scaleMin: null, scaleMax: null, helpText: null },
+    ...V1_QUESTIONS.map((q, i) => ({ ...q, sortOrder: 4 + i })),
+  ];
+
+  async function openIdentitySession() {
+    const seeded = seedForPublic();
+    seeded.prisma.satisfactionSurveyCampaign.rows[0].questions = IDENTITY_QUESTIONS;
+    const service = createSatisfactionPublicService({ prisma: seeded.prisma });
+    const session = await service.exchangeToken(seeded.token);
+    return {
+      ...seeded,
+      service,
+      sessionToken: (session as { sessionToken: string }).sessionToken,
+    };
+  }
+
+  it("getForm devolve o prefill travado com nome e CNPJ do snapshot", async () => {
+    const { service, sessionToken } = await openIdentitySession();
+    const form = await service.getForm(sessionToken, null);
+    assert.equal(form.ok, true);
+    const prefill = (form as any).form.identificationPrefill as Array<{
+      questionCode: string;
+      textValue: string;
+      locked: boolean;
+    }>;
+    assert.deepEqual(
+      prefill.map((p) => [p.questionCode, p.textValue, p.locked]),
+      [
+        ["CUSTOMER_NAME", "Metalúrgica Alfa", true],
+        ["TAX_ID", "12345678000190", true],
+      ]
+    );
+  });
+
+  it("ELIMINATÓRIO: adulterar o nome da empresa no submit é DESCARTADO — grava o snapshot", async () => {
+    const { prisma, service, sessionToken } = await openIdentitySession();
+    const result = await service.submit(sessionToken, {
+      answers: [
+        // Cliente tenta se passar por outra empresa via devtools:
+        { questionCode: "CUSTOMER_NAME", textValue: "Empresa Falsa LTDA" },
+        { questionCode: "TAX_ID", textValue: "99999999999999" },
+        { questionCode: "RESPONDENT_NAME", textValue: "João" },
+        { questionCode: "PRODUCT_QUALITY", ratingValue: 5 },
+        { questionCode: "DELIVERY_DEADLINE", ratingValue: 4 },
+        { questionCode: "OPEN_FEEDBACK", textValue: "ok" },
+      ],
+      respondentName: "João",
+      respondentPhone: "11999990000",
+      declaredCompanyName: null,
+      declaredTaxId: null,
+      idempotencyKey: "k-tamper",
+      turnstileToken: null,
+    });
+    assert.equal(result.ok, true);
+
+    const byQuestion = new Map(
+      prisma.satisfactionSurveyAnswer.rows.map((a: Record<string, unknown>) => [
+        a.questionId,
+        a,
+      ])
+    );
+    assert.equal(
+      (byQuestion.get("q-name") as { textValue: string }).textValue,
+      "Metalúrgica Alfa",
+      "o nome gravado deve vir do cadastro, não do payload"
+    );
+    assert.equal(
+      (byQuestion.get("q-tax") as { textValue: string }).textValue,
+      "12345678000190",
+      "o CNPJ gravado deve vir do cadastro, não do payload"
+    );
+  });
+
+  it("cliente NÃO precisa enviar nome/CNPJ no link individual — required satisfeito pelo cadastro", async () => {
+    const { prisma, service, sessionToken } = await openIdentitySession();
+    const result = await service.submit(sessionToken, {
+      answers: [
+        // Só o que o cliente realmente preenche:
+        { questionCode: "RESPONDENT_NAME", textValue: "Maria" },
+        { questionCode: "PRODUCT_QUALITY", ratingValue: 5 },
+        { questionCode: "DELIVERY_DEADLINE", ratingValue: 5 },
+        { questionCode: "OPEN_FEEDBACK", textValue: "excelente" },
+      ],
+      respondentName: "Maria",
+      respondentPhone: "11888887777",
+      declaredCompanyName: null,
+      declaredTaxId: null,
+      idempotencyKey: "k-minimal",
+      turnstileToken: null,
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const name = prisma.satisfactionSurveyAnswer.rows.find(
+      (a: Record<string, unknown>) => a.questionId === "q-name"
+    ) as { textValue: string };
+    assert.equal(name.textValue, "Metalúrgica Alfa");
+  });
+
+  it("o rascunho também recebe a identidade do cadastro (retomada consistente)", async () => {
+    const { prisma, service, sessionToken } = await openIdentitySession();
+    const result = await service.saveDraft(sessionToken, {
+      answers: [{ questionCode: "PRODUCT_QUALITY", ratingValue: 3 }],
+      respondentName: null,
+      respondentPhone: null,
+      expectedVersion: null,
+    });
+    assert.equal(result.ok, true);
+    const name = prisma.satisfactionSurveyAnswer.rows.find(
+      (a: Record<string, unknown>) => a.questionId === "q-name"
+    ) as { textValue: string } | undefined;
+    assert.equal(name?.textValue, "Metalúrgica Alfa");
+  });
+
+  it("link geral NÃO tem prefill — o cliente se identifica", async () => {
+    const seeded = seedForPublic();
+    seeded.prisma.satisfactionSurveyCampaign.rows[0].questions = IDENTITY_QUESTIONS;
+    // Token geral: sem convite.
+    seeded.prisma.satisfactionSurveyAccessToken.rows[0].invitationId = null;
+    seeded.prisma.satisfactionSurveyAccessToken.rows[0].invitation = null;
+    seeded.prisma.satisfactionSurveyAccessToken.rows[0].kind = "GENERAL";
+    const service = createSatisfactionPublicService({ prisma: seeded.prisma });
+    const session = await service.exchangeToken(seeded.token);
+    const form = await service.getForm(
+      (session as { sessionToken: string }).sessionToken,
+      null
+    );
+    assert.equal(form.ok, true);
+    assert.deepEqual((form as any).form.identificationPrefill, []);
+    assert.equal((form as any).form.requiresSelfIdentification, true);
   });
 });

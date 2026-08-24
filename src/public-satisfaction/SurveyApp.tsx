@@ -30,6 +30,12 @@ type PublicForm = {
   customerDisplayName: string | null;
   requiresSelfIdentification: boolean;
   questions: PublicQuestion[];
+  /** Identificação vinda do cadastro no link individual (campos travados). */
+  identificationPrefill?: Array<{
+    questionCode: string;
+    textValue: string;
+    locked: boolean;
+  }>;
   draft: {
     version: number;
     answers: Array<{
@@ -204,6 +210,20 @@ export function SurveyApp() {
             date: answer.dateValue ? answer.dateValue.slice(0, 10) : undefined,
           };
         }
+        // Link individual: nome/CNPJ vêm do cadastro (o servidor também
+        // sobrescreve no envio — aqui é só a exibição travada).
+        for (const prefill of form.identificationPrefill ?? []) {
+          initial[prefill.questionCode] = { text: prefill.textValue };
+        }
+        // Data da pesquisa: hoje por padrão; o cliente pode ajustar.
+        const dateQuestion = form.questions.find(
+          (q) => q.type === "DATE" && !initial[q.code]?.date
+        );
+        if (dateQuestion) {
+          const today = new Date();
+          const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+          initial[dateQuestion.code] = { ...initial[dateQuestion.code], date: iso };
+        }
         setAnswers(initial);
         setRespondentName(form.draft?.respondentName ?? "");
         setRespondentPhone(form.draft?.respondentPhone ?? "");
@@ -303,6 +323,14 @@ export function SurveyApp() {
     setAnswers((prev) => ({ ...prev, [code]: { ...prev[code], date } }));
     setErrors((prev) => ({ ...prev, [code]: "" }));
   };
+
+  const lockedCodes = useMemo(() => {
+    return new Set(
+      (form?.identificationPrefill ?? [])
+        .filter((p) => p.locked)
+        .map((p) => p.questionCode)
+    );
+  }, [form]);
 
   const progress = useMemo(() => {
     if (!form) return { answered: 0, total: 0, percent: 0 };
@@ -537,15 +565,28 @@ export function SurveyApp() {
                     </label>
                     <input
                       id={`q-${question.code}`}
-                      className="sat-input"
+                      className={
+                        lockedCodes.has(question.code)
+                          ? "sat-input sat-input-locked"
+                          : "sat-input"
+                      }
                       type={question.type === "PHONE" ? "tel" : "text"}
                       inputMode={question.type === "PHONE" ? "tel" : undefined}
                       autoComplete={question.type === "PHONE" ? "tel" : "organization"}
                       value={value?.text ?? ""}
-                      onChange={(e) => setText(question.code, e.target.value)}
+                      onChange={(e) => {
+                        if (lockedCodes.has(question.code)) return;
+                        setText(question.code, e.target.value);
+                      }}
+                      readOnly={lockedCodes.has(question.code)}
                       aria-invalid={error ? "true" : undefined}
                       aria-describedby={error ? errorId : undefined}
                     />
+                    {lockedCodes.has(question.code) ? (
+                      <p className="sat-help" style={{ margin: "6px 0 0" }}>
+                        Preenchido automaticamente pelo nosso cadastro.
+                      </p>
+                    ) : null}
                   </>
                 )}
 
