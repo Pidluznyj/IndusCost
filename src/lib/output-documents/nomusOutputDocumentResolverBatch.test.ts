@@ -163,6 +163,7 @@ function buildDataset(): Record<string, Row[]> {
       { id: "SO-D", orderCode: "PV-D", status: "OPEN" },
       { id: "SO-E", orderCode: "PV-E", status: "OPEN" },
       { id: "SO-F", orderCode: "PV-F", status: "OPEN" },
+      { id: "SO-G", orderCode: "PV-G", status: "OPEN" },
     ],
     salesOrderItem: [
       { id: "I-B1", salesOrderId: "SO-B", externalProductId: 11, nomusItemExternalId: 1 },
@@ -180,6 +181,7 @@ function buildDataset(): Record<string, Row[]> {
       { id: "L-D2", salesOrderId: "SO-D", orderCode: "PV-D", nfeExternalId: 903, nfeKey: "CHAVE-903" },
       // SO-E divide a mesma NF de SO-D (N:N)
       { id: "L-E", salesOrderId: "SO-E", orderCode: "PV-E", nfeExternalId: 902, nfeKey: "CHAVE-902" },
+      { id: "L-G", salesOrderId: "SO-G", orderCode: "PV-G", nfeExternalId: 905, nfeKey: "CHAVE-905" },
     ],
     nomusNfe: [
       { id: "nfe-900", externalId: 900, numero: "900", chave: "CHAVE-900", status: "AUTORIZADA" },
@@ -187,6 +189,7 @@ function buildDataset(): Record<string, Row[]> {
       { id: "nfe-902", externalId: 902, numero: "902", chave: "CHAVE-902", status: "AUTORIZADA" },
       { id: "nfe-903", externalId: 903, numero: "903", chave: "CHAVE-903", status: "AUTORIZADA" },
       { id: "nfe-904", externalId: 904, numero: "904", chave: "CHAVE-904", status: "AUTORIZADA" },
+      { id: "nfe-905", externalId: 905, numero: "905", chave: "CHAVE-905", status: "CANCELADA" },
     ],
     nomusStockDocument: [
       doc(7000, 900, "1000"), // SO-B: documento integral
@@ -194,6 +197,8 @@ function buildDataset(): Record<string, Row[]> {
       doc(7002, 902, "600"), // SO-D + SO-E
       doc(7003, 903, "300"), // SO-D segundo documento
       doc(7004, 904, "250"), // SO-F: só alcançável via overlay O2C
+      // SO-G: documento CANCELADO — o flag deve atravessar igual nos dois caminhos.
+      { ...doc(7005, 905, "150"), isCancelled: true, statusRaw: "Cancelado" },
     ],
     nomusStockDocumentItem: [
       docItem(7000, 1, 11, "2", "500"),
@@ -201,6 +206,7 @@ function buildDataset(): Record<string, Row[]> {
       docItem(7002, 1, 31, "3", "200"),
       docItem(7003, 1, 31, "1", "300"),
       docItem(7004, 1, 41, "1", "250"),
+      docItem(7005, 1, 51, "1", "150"),
     ],
     orderToCashAuditFact: [
       fact({
@@ -270,6 +276,19 @@ function buildDataset(): Record<string, Row[]> {
         allocatedValueByDocumentPrice: "250",
         quantityUsedForOrder: "1",
       }),
+      // SO-G: documento cancelado + receivableIdsJson preenchido — os dois
+      // campos precisam atravessar idênticos nos dois caminhos.
+      fact({
+        salesOrderId: "SO-G",
+        orderCode: "PV-G",
+        nfeExternalId: 905,
+        stockDocumentExternalId: 7005,
+        stockDocumentIdNfe: 905,
+        stockDocumentItemId: "sdi-7005-1",
+        allocatedValueByDocumentPrice: "150",
+        quantityUsedForOrder: "1",
+        receivableIdsJson: "[5003]",
+      }),
     ],
     nomusAccountsReceivable: [
       {
@@ -292,7 +311,7 @@ function buildDataset(): Record<string, Row[]> {
   };
 }
 
-const ORDER_IDS = ["SO-A", "SO-B", "SO-C", "SO-D", "SO-E", "SO-F"];
+const ORDER_IDS = ["SO-A", "SO-B", "SO-C", "SO-D", "SO-E", "SO-F", "SO-G"];
 
 async function runOld(data: Record<string, Row[]>) {
   const { prisma, counter, reset } = makePrisma(data);
@@ -358,6 +377,31 @@ describe("SHADOW 1 — resolver de Documentos de Saída: por pedido × lote", ()
     assert.equal(count("SO-D"), 2, "SO-D tem múltiplos documentos");
     assert.equal(count("SO-E"), 1, "SO-E divide documento com SO-D (N:N)");
     assert.equal(count("SO-F"), 1, "SO-F chega ao documento só via overlay O2C");
+    assert.equal(count("SO-G"), 1, "SO-G tem documento cancelado (não some)");
+  });
+
+  it("documento cancelado e receivableIdsJson atravessam idênticos (SO-G)", async () => {
+    const data = buildDataset();
+    const old = await runOld(data);
+    const neo = await runNew(data);
+
+    type Resolved = Array<{
+      document: { externalId: number; isCancelled: boolean | null };
+      o2c: unknown;
+    }>;
+    const oldG = old.out.get("SO-G") as Resolved;
+    const neoG = neo.out.get("SO-G") as Resolved;
+    assert.equal(neoG.length, 1);
+    assert.equal(neoG[0]!.document.isCancelled, true, "cancelado preservado");
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(neoG)),
+      JSON.parse(JSON.stringify(oldG)),
+      "SO-G divergiu entre caminhos"
+    );
+    // receivableIdsJson: o parse acontece na evidência O2C dos DOIS caminhos
+    // com a mesma função (`parseReceivableIdsJson`); a igualdade estrutural
+    // acima é a prova de que o campo atravessa idêntico — o resolved não
+    // serializa a evidência crua, então não se asserta o valor bruto aqui.
   });
 
   it("o lote não escala com o número de pedidos (fim do N+1)", async () => {
@@ -408,6 +452,87 @@ describe("SHADOW 1 — resolver de Documentos de Saída: por pedido × lote", ()
       counter(),
       single.queries,
       `2N pedidos deveria custar as mesmas ${single.queries} consultas`
+    );
+  });
+
+  it("ANTI-N+1 por DOCUMENTO: 1, 3 e 10 documentos no MESMO pedido custam o mesmo número de consultas", async () => {
+    // Este era o defeito do detalhe do pedido: ~7 consultas POR documento de
+    // saída. Aqui provamos que o custo em consultas NÃO cresce com o número
+    // de documentos de um único pedido — se alguém reintroduzir query dentro
+    // do loop de documentos, este teste quebra.
+    async function queriesForDocCount(nDocs: number): Promise<number> {
+      const data: Record<string, Row[]> = {
+        salesOrder: [{ id: "SO-X", orderCode: "PV-X", status: "OPEN" }],
+        salesOrderItem: [
+          { id: "I-X1", salesOrderId: "SO-X", externalProductId: 99, nomusItemExternalId: 900 },
+        ],
+        salesOrderNfeLink: [],
+        nomusNfe: [],
+        nomusStockDocument: [],
+        nomusStockDocumentItem: [],
+        orderToCashAuditFact: [],
+        nomusAccountsReceivable: [],
+      };
+      for (let i = 0; i < nDocs; i++) {
+        const nfe = 800 + i;
+        const docId = 7100 + i;
+        data.salesOrderNfeLink!.push({
+          id: `L-X${i}`, salesOrderId: "SO-X", orderCode: "PV-X",
+          nfeExternalId: nfe, nfeKey: `CHAVE-${nfe}`,
+        });
+        data.nomusNfe!.push({
+          id: `nfe-${nfe}`, externalId: nfe, numero: String(nfe),
+          chave: `CHAVE-${nfe}`, status: "AUTORIZADA",
+        });
+        data.nomusStockDocument!.push(doc(docId, nfe, "100"));
+        data.nomusStockDocumentItem!.push(docItem(docId, 1, 99, "1", "100"));
+        data.orderToCashAuditFact!.push(
+          fact({
+            salesOrderId: "SO-X", orderCode: "PV-X", salesOrderItemId: "I-X1",
+            nfeExternalId: nfe, stockDocumentExternalId: docId,
+            stockDocumentIdNfe: nfe, stockDocumentItemId: `sdi-${docId}-1`,
+            allocatedValueByDocumentPrice: "100", quantityUsedForOrder: "1",
+          })
+        );
+      }
+      const { prisma, counter } = makePrisma(data);
+      const out = await loadOutputDocumentsForSalesOrdersBatch(prisma, ["SO-X"]);
+      assert.equal(
+        (out.get("SO-X") ?? []).length,
+        nDocs,
+        `esperava ${nDocs} documentos resolvidos`
+      );
+      return counter();
+    }
+
+    const q1 = await queriesForDocCount(1);
+    const q3 = await queriesForDocCount(3);
+    const q10 = await queriesForDocCount(10);
+    assert.equal(q3, q1, `3 documentos custou ${q3}, 1 documento custou ${q1}`);
+    assert.equal(q10, q1, `10 documentos custou ${q10}, 1 documento custou ${q1}`);
+  });
+});
+
+describe("gate estrutural — detalhe do pedido usa o resolver em LOTE", () => {
+  it("orderFullAuditService não chama loadOutputDocumentsForSalesOrder (singular) — só o batch", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const source = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../finance/orderFullAuditService.ts",
+          import.meta.url
+        )
+      ),
+      "utf8"
+    );
+    assert.ok(
+      source.includes("loadOutputDocumentsForSalesOrdersBatch("),
+      "audit deveria usar o resolver em lote"
+    );
+    assert.ok(
+      !/loadOutputDocumentsForSalesOrder\(/.test(source),
+      "audit não pode voltar ao resolver por-pedido (7 queries POR documento — N+1 medido na homolog em 24/08/2026)"
     );
   });
 });

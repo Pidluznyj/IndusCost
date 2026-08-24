@@ -83,7 +83,7 @@ import {
 import { NOMUS_STOCK_DOCUMENT_TIPO_SAIDA } from "@/src/lib/output-documents/auditOutputDocumentsDb.js";
 import { buildOutputDocumentAuditHref } from "@/src/lib/outputDocumentsUi.js";
 import { extractOutputDocumentItemProductIdentity } from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
-import { loadOutputDocumentsForSalesOrder } from "@/src/lib/output-documents/nomusOutputDocumentResolver.server.js";
+import { loadOutputDocumentsForSalesOrdersBatch } from "@/src/lib/output-documents/nomusOutputDocumentResolverBatch.server.js";
 import {
   buildOrderFullAuditDocumentHeaderAlertDrafts,
   emptyOrderFullAuditStockDocument,
@@ -1808,10 +1808,17 @@ async function loadOrderFullAuditUncached(
   // sem depender exclusivamente do run atual do O2C.
   let resolvedOutputDocuments: ResolvedOutputDocument[] = [];
   try {
+    // PERF (24/08/2026): resolver em LOTE — o caminho por pedido fazia ~7
+    // queries POR documento de saída (N+1 medido na homolog; D9 era Seq Scan
+    // de ~9ms por doc). O batch monta as MESMAS evidências com número fixo de
+    // consultas e chama a MESMA função pura `resolveOutputDocument`; a
+    // equivalência por-pedido × lote é provada pelo shadow test do batch.
     resolvedOutputDocuments = dedupeResolvedOutputDocumentsByExternalId(
-      await loadOutputDocumentsForSalesOrder(prisma, salesOrderId, {
-        runId: runId ?? undefined,
-      })
+      (
+        await loadOutputDocumentsForSalesOrdersBatch(prisma, [salesOrderId], {
+          runIdBySalesOrderId: new Map([[salesOrderId, runId ?? null]]),
+        })
+      ).get(salesOrderId) ?? []
     );
   } catch (error) {
     console.warn(
