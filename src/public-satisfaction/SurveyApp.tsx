@@ -49,6 +49,10 @@ type PublicForm = {
   } | null;
   ratingScale: Array<{ value: number; label: string }>;
   turnstileSiteKey: string | null;
+  branding?: {
+    logoDataUrl: string | null;
+    companyName: string | null;
+  };
 };
 
 type AnswerState = Record<string, { rating?: number; text?: string; date?: string }>;
@@ -158,6 +162,11 @@ export function SurveyApp() {
   const [saveHint, setSaveHint] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  // Guardada fora da fase: a tela de confirmação também exibe a marca.
+  const [brand, setBrand] = useState<{ logoDataUrl: string | null; companyName: string | null }>({
+    logoDataUrl: null,
+    companyName: null,
+  });
 
   const versionRef = useRef<number | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -224,6 +233,10 @@ export function SurveyApp() {
           const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
           initial[dateQuestion.code] = { ...initial[dateQuestion.code], date: iso };
         }
+        setBrand({
+          logoDataUrl: form.branding?.logoDataUrl ?? null,
+          companyName: form.branding?.companyName ?? null,
+        });
         setAnswers(initial);
         setRespondentName(form.draft?.respondentName ?? "");
         setRespondentPhone(form.draft?.respondentPhone ?? "");
@@ -426,6 +439,14 @@ export function SurveyApp() {
     return (
       <div className="sat-centered">
         <div className="sat-message-card" role="status" aria-live="polite">
+          {brand.logoDataUrl ? (
+            <img
+              className="sat-brand-logo"
+              src={brand.logoDataUrl}
+              alt={brand.companyName ?? "Logotipo da empresa"}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
           <div className="sat-message-icon" aria-hidden="true">
             🎉
           </div>
@@ -445,6 +466,13 @@ export function SurveyApp() {
     <div className="sat-shell">
       <div className="sat-container">
         <header className="sat-header">
+          {activeForm.branding?.logoDataUrl ? (
+            <img
+              className="sat-brand-logo"
+              src={activeForm.branding.logoDataUrl}
+              alt={activeForm.branding.companyName ?? "Logotipo da empresa"}
+            />
+          ) : null}
           <p className="sat-eyebrow">Pesquisa de satisfação</p>
           <h1 className="sat-title">{activeForm.surveyTitle}</h1>
           {activeForm.customerDisplayName ? (

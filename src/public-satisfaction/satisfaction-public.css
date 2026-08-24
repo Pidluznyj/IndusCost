@@ -389,3 +389,19 @@ body {
   color: var(--sat-ink-soft);
   cursor: default;
 }
+
+/* Logo do sistema (Identidade visual) no topo do formulário e na confirmação. */
+.sat-brand-logo {
+  display: block;
+  max-height: 52px;
+  max-width: 240px;
+  object-fit: contain;
+  object-position: left center;
+  margin-bottom: 4px;
+}
+
+.sat-message-card .sat-brand-logo {
+  margin-left: auto;
+  margin-right: auto;
+  object-position: center;
+}

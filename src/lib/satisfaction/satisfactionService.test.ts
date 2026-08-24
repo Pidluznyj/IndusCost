@@ -878,3 +878,65 @@ describe("superfície pública — identificação vinda do cadastro (link indiv
     assert.equal((form as any).form.requiresSelfIdentification, true);
   });
 });
+
+describe("superfície pública — identidade visual no formulário", () => {
+  const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+  async function openWithBranding(brandingRows: Record<string, unknown>[]) {
+    const seeded = seedForPublic();
+    seeded.prisma.satisfactionSurveyCampaign.rows[0].questions = V1_QUESTIONS;
+    (seeded.prisma as Record<string, any>).brandingSettings = {
+      findFirst: async () => brandingRows[0] ?? null,
+    };
+    const service = createSatisfactionPublicService({ prisma: seeded.prisma });
+    const session = await service.exchangeToken(seeded.token);
+    return service.getForm((session as { sessionToken: string }).sessionToken, null);
+  }
+
+  it("logo expandida do cadastro viaja no DTO como data URL", async () => {
+    const form = await openWithBranding([
+      { systemExpandedLogoDataUrl: LOGO, companyName: "Lazarios Koppetel" },
+    ]);
+    assert.equal(form.ok, true);
+    assert.deepEqual((form as any).form.branding, {
+      logoDataUrl: LOGO,
+      companyName: "Lazarios Koppetel",
+    });
+  });
+
+  it("ELIMINATÓRIO: valor que não é data:image/* é descartado (nunca vira src)", async () => {
+    for (const bad of [
+      "javascript:alert(1)",
+      "https://externo.exemplo.com/logo.png",
+      "data:text/html;base64,PHNjcmlwdD4=",
+    ]) {
+      const form = await openWithBranding([
+        { systemExpandedLogoDataUrl: bad, companyName: "X" },
+      ]);
+      assert.equal(form.ok, true);
+      assert.equal(
+        (form as any).form.branding.logoDataUrl,
+        null,
+        `valor inseguro aceito: ${bad}`
+      );
+    }
+  });
+
+  it("sem branding configurado (ou consulta falhando) o formulário abre normalmente", async () => {
+    // seedForPublic não tem a collection brandingSettings — a consulta lança
+    // e o fail-soft precisa segurar.
+    const seeded = seedForPublic();
+    seeded.prisma.satisfactionSurveyCampaign.rows[0].questions = V1_QUESTIONS;
+    const service = createSatisfactionPublicService({ prisma: seeded.prisma });
+    const session = await service.exchangeToken(seeded.token);
+    const form = await service.getForm(
+      (session as { sessionToken: string }).sessionToken,
+      null
+    );
+    assert.equal(form.ok, true, "a logo nunca pode impedir o formulário de abrir");
+    assert.deepEqual((form as any).form.branding, {
+      logoDataUrl: null,
+      companyName: null,
+    });
+  });
+});

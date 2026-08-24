@@ -91,6 +91,16 @@ export type SatisfactionPublicFormDto = {
   } | null;
   ratingScale: Array<{ value: number; label: string }>;
   turnstileSiteKey: string | null;
+  /**
+   * Identidade visual (Configurações > Identidade visual). A logo expandida
+   * viaja como data URL dentro do próprio DTO: a superfície pública não pode
+   * chamar APIs administrativas (o guard bloqueia), e data URL dispensa
+   * liberar qualquer path novo na allowlist.
+   */
+  branding: {
+    logoDataUrl: string | null;
+    companyName: string | null;
+  };
 };
 
 const UNAVAILABLE_MESSAGES: Record<SatisfactionUnavailableReason, string> = {
@@ -356,6 +366,23 @@ export function createSatisfactionPublicService(deps: {
 
       if (existing?.status === "SUBMITTED") return fail("ALREADY_ANSWERED");
 
+      // Logo do sistema (expandida). Fail-soft: o formulário nunca deixa de
+      // abrir por causa da identidade visual. Só aceitamos data:image/* — um
+      // valor corrompido no cadastro não pode virar vetor de injeção no src.
+      let brandingLogoDataUrl: string | null = null;
+      let brandingCompanyName: string | null = null;
+      try {
+        const branding = await prisma.brandingSettings.findFirst({
+          select: { systemExpandedLogoDataUrl: true, companyName: true },
+        });
+        const rawLogo = branding?.systemExpandedLogoDataUrl ?? null;
+        brandingLogoDataUrl =
+          rawLogo && rawLogo.startsWith("data:image/") ? rawLogo : null;
+        brandingCompanyName = branding?.companyName?.trim() || null;
+      } catch {
+        /* sem branding configurado ou indisponível — segue sem logo */
+      }
+
       return {
         ok: true,
         form: {
@@ -395,6 +422,10 @@ export function createSatisfactionPublicService(deps: {
             label: ["", "Ruim", "Regular", "Bom", "Ótimo", "Excelente"][value] ?? String(value),
           })),
           turnstileSiteKey,
+          branding: {
+            logoDataUrl: brandingLogoDataUrl,
+            companyName: brandingCompanyName,
+          },
         },
       };
     },
