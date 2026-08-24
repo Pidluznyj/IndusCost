@@ -20,6 +20,10 @@ import {
   type SatisfactionCampaignStatus,
 } from "./satisfactionApi.js";
 import { NewSurveyWizard } from "./NewSurveyWizard.js";
+import {
+  SatisfactionLinkDialog,
+  type SatisfactionLinkDialogData,
+} from "./SatisfactionLinkDialog.js";
 
 const STATUS_BADGE: Record<SatisfactionCampaignStatus, string> = {
   DRAFT: "border-[#CBD5E1] bg-[#F8FAFC] text-[#475569]",
@@ -47,6 +51,7 @@ export function SatisfactionSurveysPanel(props: Props) {
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStatus, setDraftStatus] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [linkDialog, setLinkDialog] = useState<SatisfactionLinkDialogData | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -74,18 +79,20 @@ export function SatisfactionSurveysPanel(props: Props) {
     [props]
   );
 
-  const copyGeneralLink = useCallback(
+  const openGeneralLink = useCallback(
     async (campaign: SatisfactionCampaignRow) => {
       setBusyId(campaign.id);
       setActionError(null);
       try {
         const link = await satisfactionApi.issueGeneralLink(campaign.id);
-        await navigator.clipboard?.writeText(link.url);
-        setFeedback(
-          link.rotated
-            ? "Novo link geral copiado. O link anterior foi invalidado."
-            : "Link geral copiado."
-        );
+        // Dialogo com link visivel + QR: copiar direto falhava em silencio
+        // quando navigator.clipboard nao existe (HTTP na LAN).
+        setLinkDialog({
+          url: link.url,
+          tokenPrefix: link.tokenPrefix,
+          rotated: link.rotated,
+          title: "Link geral · " + campaign.name,
+        });
       } catch (err) {
         setActionError(
           err instanceof Error ? err.message : "Não foi possível gerar o link geral."
@@ -331,7 +338,7 @@ export function SatisfactionSurveysPanel(props: Props) {
                               type="button"
                               disabled={busy}
                               className="inline-flex items-center gap-1 text-[#475569] hover:underline disabled:opacity-50"
-                              onClick={() => void copyGeneralLink(campaign)}
+                              onClick={() => void openGeneralLink(campaign)}
                             >
                               <Link2 className="h-3.5 w-3.5" />
                               Link geral
@@ -373,6 +380,8 @@ export function SatisfactionSurveysPanel(props: Props) {
           </div>
         ) : null}
       </div>
+
+      <SatisfactionLinkDialog data={linkDialog} onClose={() => setLinkDialog(null)} />
 
       {wizardOpen ? (
         <NewSurveyWizard

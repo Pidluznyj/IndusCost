@@ -15,6 +15,10 @@ import {
   satisfactionApi,
   type SatisfactionInvitationRow,
 } from "./satisfactionApi.js";
+import {
+  SatisfactionLinkDialog,
+  type SatisfactionLinkDialogData,
+} from "./SatisfactionLinkDialog.js";
 
 const STATUS_BADGE: Record<SatisfactionInvitationRow["status"], string> = {
   NOT_OPENED: "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]",
@@ -35,6 +39,7 @@ export function SatisfactionInvitationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [linkDialog, setLinkDialog] = useState<SatisfactionLinkDialogData | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,12 +76,14 @@ export function SatisfactionInvitationsPage() {
     setError(null);
     try {
       const link = await satisfactionApi.issueLink(invitation.id);
-      await navigator.clipboard?.writeText(link.url);
-      setNotice(
-        link.rotated
-          ? `Novo link de ${invitation.customerName} copiado. O anterior foi invalidado.`
-          : `Link de ${invitation.customerName} copiado.`
-      );
+      // Dialogo com link visivel + QR: copiar direto falhava em silencio
+      // quando navigator.clipboard nao existe (HTTP na LAN).
+      setLinkDialog({
+        url: link.url,
+        tokenPrefix: link.tokenPrefix,
+        rotated: link.rotated,
+        title: invitation.customerName,
+      });
       void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível gerar o link.");
@@ -270,6 +277,8 @@ export function SatisfactionInvitationsPage() {
           </div>
         ) : null}
       </div>
+
+      <SatisfactionLinkDialog data={linkDialog} onClose={() => setLinkDialog(null)} />
     </div>
   );
 }
