@@ -134,6 +134,24 @@ const uploadHistoricalFile = multer({
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
 }).single("file");
 
+export function buildSatisfactionCustomerSearchFilters(
+  search: string
+): Array<Record<string, unknown>> {
+  const normalizedSearch = search.trim();
+  if (!normalizedSearch) return [];
+
+  const filters: Array<Record<string, unknown>> = [
+    { companyName: { contains: normalizedSearch, mode: "insensitive" } },
+  ];
+
+  const taxIdSearch = normalizedSearch.replace(/\D+/g, "");
+  if (taxIdSearch) {
+    filters.push({ taxId: { contains: taxIdSearch } });
+  }
+
+  return filters;
+}
+
 export function registerSatisfactionRoutes(app: express.Express, guards: AuthGuards): void {
   const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
 
@@ -363,11 +381,9 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
 
       const where: Record<string, unknown> = { status: "ACTIVE" };
       if (allowed) where.id = { in: allowed };
-      if (search) {
-        where.OR = [
-          { companyName: { contains: search, mode: "insensitive" } },
-          { taxId: { contains: search.replace(/\D+/g, "") } },
-        ];
+      const searchFilters = buildSatisfactionCustomerSearchFilters(search);
+      if (searchFilters.length > 0) {
+        where.OR = searchFilters;
       }
       // Compra no período vem do SalesOrder — fonte oficial, sem coluna espelho.
       if (onlyWithOrders) {

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type express from "express";
 import {
+  buildSatisfactionCustomerSearchFilters,
   registerSatisfactionRoutes,
   SATISFACTION_IMPORT_RESOURCE_KEY,
   SATISFACTION_RESOURCE_KEY,
@@ -74,6 +75,32 @@ function find(routes: RouteEntry[], method: string, path: string): RouteEntry {
   assert.ok(entry, `rota não registrada: ${method} ${path}`);
   return entry!;
 }
+
+describe("busca administrativa de clientes da Satisfação", () => {
+  it("busca textual não cria taxId contains vazio", () => {
+    assert.deepEqual(buildSatisfactionCustomerSearchFilters("vicla"), [
+      { companyName: { contains: "vicla", mode: "insensitive" } },
+    ]);
+  });
+
+  it("busca por nome continua case-insensitive", () => {
+    assert.deepEqual(buildSatisfactionCustomerSearchFilters("Vicla"), [
+      { companyName: { contains: "Vicla", mode: "insensitive" } },
+    ]);
+  });
+
+  it("busca com dígitos também consulta CNPJ normalizado", () => {
+    assert.deepEqual(buildSatisfactionCustomerSearchFilters("12.345.678/0001-90"), [
+      {
+        companyName: {
+          contains: "12.345.678/0001-90",
+          mode: "insensitive",
+        },
+      },
+      { taxId: { contains: "12345678000190" } },
+    ]);
+  });
+});
 
 describe("rotas administrativas — guard por ação", () => {
   const routes = adminRoutes();
