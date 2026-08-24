@@ -224,3 +224,72 @@ uma vez por cliente.
   sem plano real — regra do §11 mantida: `INDEX_CANDIDATE` continua vazio.
 - `HOMOLOG_DEPLOY_REQUIRED=YES` para a compressão chegar à homolog (deploy
   pelo fluxo oficial, fora desta missão).
+
+---
+
+## REAL HOMOLOGATION VALIDATION — FINAL CLOSURE — 2026-08-24
+
+### 1. COMPRESSION IN HOMOLOG — MEASURED (implementação) / DEPLOY PENDENTE
+Homolog ainda serve `84069d2` (pré-compressão). Deploy tool inexistente nesta
+máquina → **HOMOLOG_DEPLOY_BLOCKED=YES**; comando a executar no servidor:
+`cd /opt/induscost && induscost-deploy-homologacao`.
+Matriz de encodings provada em modo produção local (mesmo build binário):
+
+| Pedido | Recebido | Bytes | Vary |
+|---|---|---|---|
+| identity | (vazio) | 6.982.092 | Accept-Encoding |
+| gzip | gzip | 1.649.018 | Accept-Encoding |
+| br | br | **1.564.475 (−77,6%)** | Accept-Encoding |
+
+### 2. AUTHENTICATED ENDPOINTS — BLOCKED
+Extensão Claude in Chrome desconectada nas 3 tentativas; sem credencial
+utilizável; proibido inventar login. `/api/*` protegidos respondem 401 sem
+sessão (correto). Pendente para rodada com sessão disponível.
+
+### 3–4. DATABASE PLANS / INDEX — BLOCKED (reconfirmado)
+5432 fechada na LAN, Tailscale parado, sem chave SSH. Nenhum índice proposto
+sem plano real. `CREATE INDEX EXECUTED=NO · MIGRATION CREATED=NO`.
+
+### 5. NETWORK WATERFALL / SUPERFÍCIE PÚBLICA — MEASURED
+O host público **está no ar** (runbook aplicado): bateria completa na
+Internet real via Cloudflare — 11 rotas internas → 404; `/r` e
+`/api/public/satisfaction/form` → 200; CSP, Permissions-Policy, nosniff,
+no-referrer, noindex e no-store presentes. **PUBLIC SURFACE = PASS.**
+Cloudflare já comprime a borda pública (satisfaction.js: 12.335 → 4.291 gzip).
+
+### 6–7. JS BOOTSTRAP / PARSE — MEASURED (a pergunta central)
+Homolog real, browser in-app, `/login` (main completo + React montado):
+
+| Métrica | Cold (amostra 1) | Warm (amostra 2, disk cache) |
+|---|---|---|
+| TTFB | 22 ms | 25 ms |
+| Download main.js | **1.056 ms** (6.982.392 bytes sem compressão) | 0 ms (cache) |
+| DOMContentLoaded | 1.339 ms | **99 ms** |
+| Load | 1.342 ms | **100 ms** |
+| Long tasks | **1 × 82 ms** | **0** |
+
+**Veredito: o custo dominante era TRANSFER, não parse/evaluation.** O parse
+dos 6,98 MB custa ~82 ms de bloqueio (V8 lazy parsing) e zero no warm — o
+`Cache-Control: immutable` elimina o custo recorrente. Com a compressão
+deployada, o download cold cai ~78%. `BOOTSTRAP_RUNTIME=WATCH` (não
+BOTTLENECK): sem evidência que justifique refactor de bundle agora.
+
+### INITIAL BUNDLE MAP (attribution por grep nos chunks do build)
+
+| Lib/domínio | Onde vive | Ação |
+|---|---|---|
+| html2canvas, pptxgenjs, jszip | chunks lazy (trabalho prévio do Financeiro) | nenhuma |
+| Finance pages | chunks próprios (204/156/92/92/84 KB) | nenhuma |
+| SalesOrderDetailDialog | chunk lazy 41 KB | nenhuma |
+| recharts, xlsx, lucide, motion, qrcode | **main** | DOCUMENT_ONLY — candidato futuro a route-level lazy dos módulos não-Finance; sem FIX agora porque o custo de execução medido não o sustenta |
+
+### 8–9. PAYLOAD / N+1 — NOT-VERIFIED (dependem de sessão/DB)
+JSONs autenticados e contagem de queries por request: mesmos bloqueios de
+sessão e banco. Estrutura CODE-VERIFIED na rodada estrutural (payload único do
+detalhe; agregação da lista no banco).
+
+### 10. REMAINING BLOCKERS
+- Deploy da compressão na homolog (comando acima) → depois repetir a matriz
+  de encodings contra `192.168.100.5:3001`.
+- Sessão para endpoints autenticados (conectar a extensão Chrome resolve).
+- Acesso ao PG para EXPLAIN (rodar no próprio servidor).
