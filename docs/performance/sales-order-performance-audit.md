@@ -153,3 +153,74 @@ exigisse arbitragem de regra.
 - tempos reais de endpoint e waterfall de rede
 - payload de produção
 - validação dos INDEX_CANDIDATE em banco real
+
+---
+
+## REAL HOMOLOGATION VALIDATION — 2026-08-24
+
+Rodada de validação contra o ambiente REAL de homologação
+(`192.168.100.5:3001`, alcançável pela LAN). Rótulos: **MEASURED** (medido de
+fato), **CODE-VERIFIED** (provado por código/teste/build), **BLOCKED** (rota
+de acesso inexistente — motivo objetivo registrado).
+
+### A. CODE AUDIT
+Sem mudanças conceituais desde a rodada anterior. `HOMOLOG_COMMIT = 84069d2`
+= `origin/main` no momento da medição (build de 24/08 13:25 UTC) — comparação
+binária válida: o `main-*.js` servido pela homolog tem exatamente os
+6.982.092 bytes do build local.
+
+### B. SERVER MEASUREMENTS — MEASURED (parcial)
+Rede LAN → homolog: TTFB 10–65 ms nos probes. Endpoints autenticados de
+Pedidos de Venda respondem **401** sem sessão (guard correto).
+
+**AUTH_BLOCKED** para os tempos de lista/detalhe/seller-options: a extensão
+Claude in Chrome (sessão real do operador) estava desconectada, não existe
+credencial utilizável nesta máquina e a missão proíbe inventar login. Os
+p50/p95 desses endpoints ficam para uma rodada com sessão disponível.
+
+### C. DATABASE PLANS — BLOCKED
+PostgreSQL da homolog inacessível desta máquina: porta 5432 fechada na LAN e
+no Tailscale (parado localmente), sem chave SSH (`~/.ssh` só tem
+known_hosts). EXPLAIN/inventário de índices/pg_stat exigem execução no
+próprio servidor — **READ_ONLY_DB_VALIDATION = BLOCKED**, com o roteiro
+seguro (BEGIN READ ONLY + timeouts + ROLLBACK) já documentado na memória
+operacional do projeto para quem tiver acesso.
+
+### D. NETWORK WATERFALL — MEASURED (bootstrap) / CODE-VERIFIED (demais)
+Bootstrap real na homolog (browser in-app, página de login = mesmo bundle):
+exatamente 4 requests — `main-*.js`, `client-*.js`, `main-*.css`,
+`/api/auth/me`. **Nenhum chunk `SalesOrderDetailDialog` no boot** (prova A do
+plano). O chunk existe no dist da homolog (`SalesOrderDetailDialog-COTyt7BG.js`,
+41.348 bytes) e só é referenciado via import dinâmico (0 ocorrências no HTML)
+— provas B–E (abrir detalhe, abas, dedupe de seller) dependem de sessão:
+cobertas por gates estruturais e testes (CODE-VERIFIED), não medidas ao vivo.
+
+### E. BOTTLENECK ENCONTRADO — MEASURED
+**Transporte sem compressão.** A homolog servia `main-*.js` com
+`content-encoding` vazio mesmo com `Accept-Encoding: gzip, br` — 6.982.092
+bytes transferidos por carga fria (~0,8–1,0 s na LAN; muito pior fora dela).
+Causa: `express.static` não comprime e a homolog é acessada direto na porta
+3001, sem proxy comprimindo na frente. O mesmo vale para os JSONs das APIs.
+
+### F. CHANGES IMPLEMENTED
+Middleware `compression` (pacote oficial do Express, threshold 1 KB),
+registrado antes do body parser — cobre assets estáticos E respostas JSON.
+Sem SSE no projeto (verificado). Prova local em modo produção:
+
+| Asset | Antes (homolog, MEASURED) | Depois (local, MEASURED) | Δ |
+|---|---|---|---|
+| main-*.js | 6.982.092 bytes | **1.564.475 bytes (br)** | **−77,6%** |
+| main-*.css | 378.817 | 51.038 (br) | −86,5% |
+| SalesOrderDetailDialog-*.js | 41.348 | 9.940 (br) | −76,0% |
+| fallback sem Accept-Encoding | — | bytes originais, sem encoding | correto |
+
+O middleware negociou **brotli** (melhor que o gzip previsto: 1,56 MB vs
+1,65 MB). Assets têm `Cache-Control: immutable`, então o custo de CPU é pago
+uma vez por cliente.
+
+### G. REMAINING RISKS / PENDÊNCIAS
+- p50/p95 dos endpoints autenticados: **AUTH_BLOCKED** (medir com sessão).
+- EXPLAIN/índices reais: **BLOCKED** (sem rota ao PG). Nenhum índice proposto
+  sem plano real — regra do §11 mantida: `INDEX_CANDIDATE` continua vazio.
+- `HOMOLOG_DEPLOY_REQUIRED=YES` para a compressão chegar à homolog (deploy
+  pelo fluxo oficial, fora desta missão).

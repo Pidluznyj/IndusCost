@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { promises as fs } from "fs";
@@ -1046,6 +1047,13 @@ async function startServer() {
   const bootstrapAdminConfig = getBootstrapAdminConfig();
   const isBootstrapReady = isBootstrapAdminConfigReady(bootstrapAdminConfig);
   const adminElevationFallbackSecret = crypto.randomBytes(32).toString("hex");
+
+  // Compressao de transporte (gzip/br via negotiation). Evidencia real da
+  // homologacao: main.js trafegava SEM compressao (6.982.092 bytes; gzip do
+  // mesmo build = 1.649 kB, -76%). Vale tambem para os JSONs grandes das
+  // APIs (lista de Pedidos de Venda etc.). Assets tem cache immutable, entao
+  // o custo de CPU e pago uma vez por cliente. Sem SSE no projeto.
+  app.use(compression({ threshold: 1024 }));
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
