@@ -310,6 +310,133 @@ describe("visão ampliada — slicer local", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Semântica de horizonDays no SERVIÇO REAL (prova executável)        */
+/* ------------------------------------------------------------------ */
+
+import { createTreasuryCaixaScenariosService } from "@/src/lib/treasury/services/treasuryCaixaScenariosService.server.js";
+
+function fakeBoard(year: number, asOf: string) {
+  return {
+    period: { year },
+    dueDateFrom: `${year}-01-01`,
+    dueDateTo: `${year}-12-31`,
+    totals: {},
+    realizedDays: [],
+    overdue: null,
+    receivables: [],
+    payables: [],
+    monthlyDueEstimates: [],
+    dailyDueEstimates: [],
+    canonicalDays: [],
+    officialTodayBalance: {
+      amount: 1000,
+      source: "DAILY_CLOSING",
+      civilDate: asOf,
+      informedAt: null,
+      accountsCovered: 1,
+      accountsWithoutBalance: 0,
+      sourceLabel: "fixture",
+    },
+  } as never;
+}
+
+/** Prisma fake: qualquer tabela responde vazio (nenhuma consulta importa aqui). */
+function fakePrisma() {
+  const nullBag = new Proxy({}, { get: () => null });
+  const zeroBag = new Proxy({}, { get: () => 0 });
+  const table = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    aggregate: async () => ({
+      _sum: nullBag,
+      _max: nullBag,
+      _min: nullBag,
+      _avg: nullBag,
+      _count: zeroBag,
+    }),
+    groupBy: async () => [],
+    count: async () => 0,
+  };
+  return new Proxy(
+    {},
+    { get: () => table }
+  ) as never;
+}
+
+async function runServiceWindow(asOf: string, horizonDays: number) {
+  const year = Number(asOf.slice(0, 4));
+  const service = createTreasuryCaixaScenariosService({
+    prisma: fakePrisma(),
+    caixaService: { getBoard: async () => fakeBoard(year, asOf) } as never,
+    policyService: { getForEngine: async () => POLICY } as never,
+  });
+  const result = await service.getBoard({
+    asOfCivilDate: asOf,
+    horizonDays,
+    year: null,
+    month: null,
+    day: null,
+  });
+  const days = result.days;
+  return {
+    first: days[0]?.civilDate ?? null,
+    last: days[days.length - 1]?.civilDate ?? null,
+    count: days.length,
+  };
+}
+
+describe("visão ampliada — horizonDays no serviço real (janela inclusiva)", () => {
+  it("horizonDays é o TOTAL de pontos: 30 gera 30 pontos, asOf incluído", async () => {
+    const w = await runServiceWindow("2026-08-24", 30);
+    assert.equal(w.count, 30);
+    assert.equal(w.first, "2026-08-24");
+    assert.equal(w.last, "2026-09-22");
+  });
+
+  it("ANO NORMAL: 2026-01-01 + 365 → termina em 31/12/2026 com 365 pontos", async () => {
+    const w = await runServiceWindow("2026-01-01", 365);
+    assert.equal(w.first, "2026-01-01");
+    assert.equal(w.last, "2026-12-31");
+    assert.equal(w.count, 365);
+  });
+
+  it("BISSEXTO com 365: 2028-01-01 + 365 termina em 30/12 (por isso o teto é 366)", async () => {
+    const w = await runServiceWindow("2028-01-01", 365);
+    assert.equal(w.first, "2028-01-01");
+    assert.equal(w.last, "2028-12-30", "365 pontos NÃO alcançam 31/12 em bissexto");
+    assert.equal(w.count, 365);
+  });
+
+  it("REGRESSÃO OFF-BY-ONE: 2028-01-01 + 366 → 31/12/2028 incluído, 366 pontos", async () => {
+    const w = await runServiceWindow("2028-01-01", 366);
+    assert.equal(w.first, "2028-01-01");
+    assert.equal(w.last, "2028-12-31");
+    assert.equal(w.count, 366);
+  });
+
+  it("teto do serviço: pedido acima de 366 é clampado (nunca range ilimitado)", async () => {
+    const w = await runServiceWindow("2028-01-01", 999);
+    assert.equal(w.count, 366, "clamp em MAX_HORIZON_DAYS=366");
+    assert.equal(w.last, "2028-12-31");
+  });
+
+  it("a visão ampliada nunca pede acima do teto: hoje→31/12 ≤ 366 em qualquer data", () => {
+    for (const today of [
+      "2026-01-01",
+      "2026-08-24",
+      "2026-12-31",
+      "2028-01-01",
+      "2028-02-29",
+      "2028-12-31",
+    ]) {
+      const h = resolveScenarioExpandedHorizon(today).horizonDays;
+      assert.ok(h >= 1 && h <= 366, `${today} → ${h} fora do teto`);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Gates estruturais                                                  */
 /* ------------------------------------------------------------------ */
 

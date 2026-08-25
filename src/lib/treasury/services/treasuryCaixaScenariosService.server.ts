@@ -83,7 +83,16 @@ export type TreasuryCaixaScenariosResponse = TreasuryScenarioComputationResult &
 };
 
 const DEFAULT_HORIZON_DAYS = 90;
-const MAX_HORIZON_DAYS = 365;
+/**
+ * `horizonDays` é a quantidade TOTAL de pontos da janela — o asOf é o
+ * primeiro (i=0) e o último dia é asOf + (horizonDays − 1). Um ano civil
+ * COMPLETO a partir de 01/01 precisa de 365 pontos (ano normal) ou 366
+ * (bissexto): com o teto anterior de 365, a projeção legítima
+ * 01/01/2028 → 31/12/2028 perdia o dia 31/12 (off-by-one provado em
+ * treasuryCaixaScenariosExpandedUi.test.ts). 366 é o menor teto que
+ * representa qualquer ano civil inteiro.
+ */
+const MAX_HORIZON_DAYS = 366;
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
