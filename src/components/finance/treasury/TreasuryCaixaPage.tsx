@@ -88,6 +88,16 @@ const TreasuryCaixaAnnualViewModal = React.lazy(() =>
   ).then((m) => ({ default: m.TreasuryCaixaAnnualViewModal }))
 );
 
+/**
+ * Modal "Visão ampliada" da Projeção do caixa — cenários (lazy: chunk só
+ * baixa ao clicar; nenhum request antes do "Gerar projeção" do modal).
+ */
+const TreasuryCaixaScenariosExpandedModal = React.lazy(() =>
+  import(
+    "@/src/components/finance/treasury/TreasuryCaixaScenariosExpandedModal"
+  ).then((m) => ({ default: m.TreasuryCaixaScenariosExpandedModal }))
+);
+
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -177,6 +187,7 @@ export function TreasuryCaixaPage() {
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [payablesOpen, setPayablesOpen] = useState(false);
   const [annualViewOpen, setAnnualViewOpen] = useState(false);
+  const [scenariosExpandedOpen, setScenariosExpandedOpen] = useState(false);
   // Modal de auditoria dos totalizadores — abre ao clicar num card.
   const [auditKind, setAuditKind] =
     useState<TreasuryCaixaTotalizerAuditKind | null>(null);
@@ -624,7 +635,26 @@ export function TreasuryCaixaPage() {
           // "deveria" bater — é o mesmo array. Otimista/Pessimista preservam
           // o delta que o motor canônico do backend calculou.
           timelineRows={timeline?.rows}
+          headerAction={
+            <button
+              type="button"
+              onClick={() => setScenariosExpandedOpen(true)}
+              className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-[11px] font-semibold hover:bg-[#F9FAFB]"
+              data-testid="caixa-scenarios-expanded-open"
+            >
+              Visão ampliada
+            </button>
+          }
         />
+
+        {scenariosExpandedOpen ? (
+          <React.Suspense fallback={null}>
+            <TreasuryCaixaScenariosExpandedModal
+              timelineRows={timeline?.rows}
+              onClose={() => setScenariosExpandedOpen(false)}
+            />
+          </React.Suspense>
+        ) : null}
 
         {error ? (
           <div

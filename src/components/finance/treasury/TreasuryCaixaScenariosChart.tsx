@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
+  Brush,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -72,6 +73,18 @@ export type TreasuryCaixaScenariosChartProps = {
     opening: number | null;
     closing: number | null;
   }[];
+  /** Ação opcional no grupo de botões do cabeçalho (ex.: "Visão ampliada"). */
+  headerAction?: React.ReactNode;
+  /**
+   * Range slicer opcional (Visão Ampliada): Brush nativo do Recharts na
+   * MESMA granularidade diária do gráfico. O card da página não passa a
+   * prop — comportamento atual intacto.
+   */
+  brush?: {
+    startIndex: number;
+    endIndex: number;
+    onChange: (range: { startIndex?: number; endIndex?: number }) => void;
+  };
 };
 
 /** Tokens de cor por cenário (usados TAMBÉM em estilo de linha para acessibilidade). */
@@ -121,7 +134,7 @@ const HORIZON_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 90, label: "90 dias" },
 ];
 
-type ChartRow = {
+export type ScenarioChartRow = {
   civilDate: string;
   label: string;
   opt: number | null;
@@ -200,7 +213,7 @@ function shortDate(civilDate: string): string {
  * desenhado — o conceito anterior de antecipação/postergação foi removido e
  * NUNCA volta por fallback.
  */
-function buildRows(
+export function buildRows(
   days: readonly TreasuryScenarioDay[],
   asOf: string,
   timelineByDate?: ReadonlyMap<
@@ -210,7 +223,7 @@ function buildRows(
   sales?: TreasurySalesVolumeScenariosResult | null,
   /** Deltas da simulação what-if aplicada pelo usuário (mesmo motor puro). */
   simDeltas?: TreasuryScenarioDeltaSet | null
-): ChartRow[] {
+): ScenarioChartRow[] {
   // Realista mostrado: Linha do tempo com forward-fill; fallback = backend.
   const realShownByDate = new Map<string, number | null>();
   let lastTimelineClosing: number | null = null;
@@ -247,7 +260,7 @@ function buildRows(
     }
   }
 
-  const rows: ChartRow[] = days.map((d) => {
+  const rows: ScenarioChartRow[] = days.map((d) => {
     const fromTimeline = timelineByDate?.get(d.civilDate) ?? null;
     const real = realShownByDate.get(d.civilDate) ?? null;
     const openingShown =
@@ -443,7 +456,7 @@ function ScenarioTooltip({
   labels,
 }: {
   active?: boolean;
-  payload?: Array<{ payload?: ChartRow }>;
+  payload?: Array<{ payload?: ScenarioChartRow }>;
   label?: string;
   daysByLabel: Map<string, TreasuryScenarioDay>;
   labels: { optimistic: string; realistic: string; pessimistic: string };
@@ -488,7 +501,7 @@ function ScenarioTooltip({
           {money(row.openingShown)}
         </span>
       </div>
-      {/* Valores vindos do ChartRow (o que a linha desenha), não do payload
+      {/* Valores vindos do ScenarioChartRow (o que a linha desenha), não do payload
           bruto do backend — assim tooltip e gráfico nunca se contradizem. */}
       <div className="space-y-0.5 border-t border-[#E5E7EB]/60 pt-1.5">
         <Line
@@ -558,7 +571,7 @@ const SIMULATION_COLOR = "#7C3AED"; // violeta — distinto dos 3 cenários
  * inteiro), só remove a linha/área do desenho.
  */
 function renderScenariosChart(params: {
-  rows: ChartRow[];
+  rows: ScenarioChartRow[];
   daysByLabel: Map<string, TreasuryScenarioDay>;
   heightPx: number;
   visible: Record<SeriesKey, boolean>;
@@ -567,6 +580,8 @@ function renderScenariosChart(params: {
   labels: { optimistic: string; realistic: string; pessimistic: string };
   /** true quando o usuário aplicou uma simulação (linha + legenda entram). */
   hasSimulation: boolean;
+  /** Brush opcional (Visão Ampliada) — ver TreasuryCaixaScenariosChartProps. */
+  brush?: TreasuryCaixaScenariosChartProps["brush"];
 }) {
   const {
     rows,
@@ -577,6 +592,7 @@ function renderScenariosChart(params: {
     onPointClick,
     labels,
     hasSimulation,
+    brush,
   } = params;
   return (
     <div style={{ height: `${heightPx}px` }}>
@@ -586,7 +602,7 @@ function renderScenariosChart(params: {
           margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
           onClick={(state: unknown) => {
             const s = state as
-              | { activePayload?: Array<{ payload?: ChartRow }> }
+              | { activePayload?: Array<{ payload?: ScenarioChartRow }> }
               | null;
             const payload = s?.activePayload?.[0]?.payload;
             if (payload) onPointClick(payload.civilDate);
@@ -780,6 +796,23 @@ function renderScenariosChart(params: {
               );
             }}
           />
+          {brush ? (
+            <Brush
+              dataKey="label"
+              height={26}
+              travellerWidth={8}
+              stroke={SCENARIO_STYLE.realistic.color}
+              fill="transparent"
+              startIndex={brush.startIndex}
+              endIndex={brush.endIndex}
+              onChange={(range) =>
+                brush.onChange({
+                  startIndex: range?.startIndex,
+                  endIndex: range?.endIndex,
+                })
+              }
+            />
+          ) : null}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -801,6 +834,8 @@ export function TreasuryCaixaScenariosChart({
   horizonDays,
   onHorizonChange,
   timelineRows,
+  headerAction,
+  brush,
 }: TreasuryCaixaScenariosChartProps) {
   const [drilldownDate, setDrilldownDate] = useState<string | null>(null);
   /**
@@ -1004,7 +1039,7 @@ export function TreasuryCaixaScenariosChart({
     if (!timelineByDate) return data.summaries; // sem âncora → backend manda.
 
     function summarize(
-      pick: (r: ChartRow) => number | null,
+      pick: (r: ScenarioChartRow) => number | null,
       base: TreasuryScenarioSummary
     ): TreasuryScenarioSummary {
       let finalBalance: number | null = null;
@@ -1197,6 +1232,7 @@ export function TreasuryCaixaScenariosChart({
               label="Ampliar em modo apresentação"
             />
           ) : null}
+          {headerAction ?? null}
         </div>
       </header>
 
@@ -1302,12 +1338,13 @@ export function TreasuryCaixaScenariosChart({
           {renderScenariosChart({
             rows,
             daysByLabel,
-            heightPx: 320,
+            heightPx: brush ? 356 : 320,
             visible,
             onLegendClick: toggleSeries,
             onPointClick: (civilDate) => setDrilldownDate(civilDate),
             labels,
             hasSimulation: simDeltas != null,
+            brush,
           })}
 
           <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
