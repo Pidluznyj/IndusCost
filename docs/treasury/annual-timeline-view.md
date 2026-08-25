@@ -41,7 +41,17 @@ motor canônico (treasuryCaixaRules)
 - Granularidade mensal — a mesma agregação oficial do gráfico da página
   (o ponto É o "Terminou" do mês da linha do tempo; nada recalculado).
 - KPIs: saldo inicial do período (abertura do 1º mês com saldo), menor saldo
-  do ano + mês, saldo final (rótulo oficial realizado × projetado do ponto).
+  do período + mês, saldo final (rótulo oficial realizado × projetado do ponto).
+- **Slicer de período** (recorte LOCAL, zero request por interação): presets
+  Ano inteiro/1º–4º Tri, datas De/Até (normalizadas ao mês — granularidade do
+  gráfico) e Brush nativo do Recharts no próprio `TreasuryCaixaBalanceChart`
+  (prop opcional `brush`; a página não a usa — comportamento intacto). Os
+  quatro controles ficam sincronizados por um único estado de índices
+  (`normalizeAnnualRange` corrige inversão/clamp; datas civis por string,
+  sem timezone). Gráfico, tooltip e KPIs refletem o recorte via
+  `sliceTreasuryCaixaAnnualSeries` — slice puro dos MESMOS pontos do motor
+  (equivalência por construção) + `deriveTreasuryCaixaAnnualKpis` sobre o
+  recorte.
 - Gráfico de 90 dias/cenários e a página atual: intocados.
 
 Testes: `src/lib/treasury/treasuryCaixaAnnualViewUi.test.ts` (range/bissexto,

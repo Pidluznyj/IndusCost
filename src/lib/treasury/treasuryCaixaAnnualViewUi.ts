@@ -126,6 +126,151 @@ export type TreasuryCaixaAnnualKpis = {
   finalBalanceIsForecast: boolean;
 };
 
+/* ------------------------------------------------------------------ */
+/*  Slicer de período — recorte LOCAL da série anual (zero request).    */
+/*  Granularidade: MENSAL — a mesma do gráfico oficial (o ponto é o     */
+/*  "Terminou" do mês). Nenhuma regra financeira é recalculada: o       */
+/*  recorte é um slice dos MESMOS meses/pontos que o motor produziu.    */
+/* ------------------------------------------------------------------ */
+
+/** Intervalo por ÍNDICE de mês na série carregada (0-based, inclusivo). */
+export type TreasuryCaixaAnnualRange = {
+  startIndex: number;
+  endIndex: number;
+};
+
+export type TreasuryCaixaAnnualPreset = {
+  key: "full" | "q1" | "q2" | "q3" | "q4";
+  label: string;
+  /** Meses civis 1..12 (inclusivos) que o preset cobre. */
+  startMonth: number;
+  endMonth: number;
+};
+
+export const TREASURY_CAIXA_ANNUAL_PRESETS: readonly TreasuryCaixaAnnualPreset[] =
+  [
+    { key: "full", label: "Ano inteiro", startMonth: 1, endMonth: 12 },
+    { key: "q1", label: "1º Tri", startMonth: 1, endMonth: 3 },
+    { key: "q2", label: "2º Tri", startMonth: 4, endMonth: 6 },
+    { key: "q3", label: "3º Tri", startMonth: 7, endMonth: 9 },
+    { key: "q4", label: "4º Tri", startMonth: 10, endMonth: 12 },
+  ];
+
+function lastDayOfMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+/**
+ * Datas civis (YYYY-MM-DD) do intervalo efetivo: 1º dia do mês inicial e
+ * último dia do mês final — sempre strings civis, nunca Date (sem timezone
+ * para deslocar 01/01 ou 31/12).
+ */
+export function annualRangeToCivilDates(
+  points: readonly TreasuryCaixaBalanceChartPoint[],
+  range: TreasuryCaixaAnnualRange
+): { fromCivil: string; toCivil: string } | null {
+  const start = points[range.startIndex];
+  const end = points[range.endIndex];
+  if (!start || !end) return null;
+  const [ey, em] = end.monthKey.split("-").map(Number);
+  if (!ey || !em) return null;
+  return {
+    fromCivil: `${start.monthKey}-01`,
+    toCivil: `${end.monthKey}-${String(lastDayOfMonth(ey, em)).padStart(2, "0")}`,
+  };
+}
+
+/**
+ * Converte uma data civil digitada num índice de mês da série carregada.
+ * Clampa ao ano carregado: antes do 1º ponto → 0; depois do último →
+ * último índice. Retorna null só para entrada não-parseável.
+ */
+export function civilDateToAnnualIndex(
+  points: readonly TreasuryCaixaBalanceChartPoint[],
+  civilDate: string
+): number | null {
+  if (points.length === 0) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(civilDate.trim());
+  if (!m) return null;
+  const monthKey = `${m[1]}-${m[2]}`;
+  const idx = points.findIndex((p) => p.monthKey === monthKey);
+  if (idx >= 0) return idx;
+  if (monthKey < points[0]!.monthKey) return 0;
+  return points.length - 1;
+}
+
+/**
+ * Normaliza um intervalo: índices dentro da série e start ≤ end (datas
+ * invertidas são corrigidas por troca — nunca estado vazio/NaN).
+ */
+export function normalizeAnnualRange(
+  pointCount: number,
+  range: TreasuryCaixaAnnualRange
+): TreasuryCaixaAnnualRange {
+  if (pointCount <= 0) return { startIndex: 0, endIndex: 0 };
+  const clamp = (v: number) =>
+    Math.min(pointCount - 1, Math.max(0, Math.trunc(Number.isFinite(v) ? v : 0)));
+  const a = clamp(range.startIndex);
+  const b = clamp(range.endIndex);
+  return a <= b
+    ? { startIndex: a, endIndex: b }
+    : { startIndex: b, endIndex: a };
+}
+
+/** Índices do preset dentro da série carregada (meses podem faltar no início/fim). */
+export function resolveAnnualPresetRange(
+  points: readonly TreasuryCaixaBalanceChartPoint[],
+  preset: TreasuryCaixaAnnualPreset
+): TreasuryCaixaAnnualRange {
+  if (points.length === 0) return { startIndex: 0, endIndex: 0 };
+  let start = -1;
+  let end = -1;
+  for (let i = 0; i < points.length; i += 1) {
+    const month = Number(points[i]!.monthKey.slice(5, 7));
+    if (month >= preset.startMonth && month <= preset.endMonth) {
+      if (start < 0) start = i;
+      end = i;
+    }
+  }
+  if (start < 0) return { startIndex: 0, endIndex: points.length - 1 };
+  return { startIndex: start, endIndex: end };
+}
+
+/** Qual preset corresponde exatamente ao intervalo atual (para highlight). */
+export function matchAnnualPreset(
+  points: readonly TreasuryCaixaBalanceChartPoint[],
+  range: TreasuryCaixaAnnualRange
+): TreasuryCaixaAnnualPreset["key"] | null {
+  for (const preset of TREASURY_CAIXA_ANNUAL_PRESETS) {
+    const r = resolveAnnualPresetRange(points, preset);
+    if (r.startIndex === range.startIndex && r.endIndex === range.endIndex) {
+      return preset.key;
+    }
+  }
+  return null;
+}
+
+/**
+ * Recorte LOCAL da série — slice puro dos MESMOS meses/pontos do motor.
+ * Equivalência semântica por construção: nenhum valor é recalculado.
+ */
+export function sliceTreasuryCaixaAnnualSeries(
+  series: Pick<TreasuryCaixaAnnualSeries, "months" | "points">,
+  range: TreasuryCaixaAnnualRange
+): Pick<TreasuryCaixaAnnualSeries, "months" | "points"> {
+  const { startIndex, endIndex } = normalizeAnnualRange(
+    series.points.length,
+    range
+  );
+  const monthKeys = new Set(
+    series.points.slice(startIndex, endIndex + 1).map((p) => p.monthKey)
+  );
+  return {
+    months: series.months.filter((m) => monthKeys.has(m.monthKey)),
+    points: series.points.slice(startIndex, endIndex + 1),
+  };
+}
+
 /** KPIs derivados da MESMA série do gráfico — nenhuma consulta própria. */
 export function deriveTreasuryCaixaAnnualKpis(
   series: Pick<TreasuryCaixaAnnualSeries, "months" | "points">

@@ -11,6 +11,7 @@
 
 import React from "react";
 import {
+  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -80,15 +81,29 @@ function BalanceTooltip({
   );
 }
 
+export type TreasuryCaixaBalanceChartBrush = {
+  /** Índice inicial/final (inclusivos) da janela visível — controlado. */
+  startIndex: number;
+  endIndex: number;
+  onChange: (range: { startIndex?: number; endIndex?: number }) => void;
+};
+
 export type TreasuryCaixaBalanceChartProps = {
   points: readonly TreasuryCaixaBalanceChartPoint[];
   /** Ação opcional no cabeçalho (ex.: botão "Visão anual" da página). */
   headerAction?: React.ReactNode;
+  /**
+   * Range slicer opcional (Visão Anual): Brush nativo do Recharts operando
+   * na MESMA granularidade mensal do gráfico. A página da Caixa não passa a
+   * prop — comportamento atual intacto.
+   */
+  brush?: TreasuryCaixaBalanceChartBrush;
 };
 
 export function TreasuryCaixaBalanceChart({
   points,
   headerAction,
+  brush,
 }: TreasuryCaixaBalanceChartProps) {
   if (points.length === 0) return null;
 
@@ -136,7 +151,7 @@ export function TreasuryCaixaBalanceChart({
         </div>
       ) : null}
 
-      <div style={{ width: "100%", height: 240 }}>
+      <div style={{ width: "100%", height: brush ? 280 : 240 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={rows}
@@ -186,6 +201,23 @@ export function TreasuryCaixaBalanceChart({
               connectNulls={false}
               isAnimationActive={false}
             />
+            {brush ? (
+              <Brush
+                dataKey="label"
+                height={26}
+                travellerWidth={8}
+                stroke={FINANCE_BI_COLORS.primary}
+                fill="transparent"
+                startIndex={brush.startIndex}
+                endIndex={brush.endIndex}
+                onChange={(range) =>
+                  brush.onChange({
+                    startIndex: range?.startIndex,
+                    endIndex: range?.endIndex,
+                  })
+                }
+              />
+            ) : null}
           </LineChart>
         </ResponsiveContainer>
       </div>

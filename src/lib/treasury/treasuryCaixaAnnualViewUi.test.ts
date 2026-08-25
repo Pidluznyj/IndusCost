@@ -218,6 +218,170 @@ describe("visão anual — KPIs derivados da própria série", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Slicer de período — recorte local, sincronização e clamp           */
+/* ------------------------------------------------------------------ */
+
+import {
+  annualRangeToCivilDates,
+  civilDateToAnnualIndex,
+  matchAnnualPreset,
+  normalizeAnnualRange,
+  resolveAnnualPresetRange,
+  sliceTreasuryCaixaAnnualSeries,
+  TREASURY_CAIXA_ANNUAL_PRESETS,
+} from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
+
+function fullYearPoints(year: number): TreasuryCaixaBalanceChartPoint[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const mm = String(i + 1).padStart(2, "0");
+    return {
+      monthKey: `${year}-${mm}`,
+      label: `m${mm}/${String(year).slice(2)}`,
+      closingBalance: (i + 1) * 100 * (i === 4 ? -1 : 1), // maio negativo
+      kind: i < 6 ? "REALIZED" : "ESTIMATED",
+      isForecast: i >= 6,
+    } as TreasuryCaixaBalanceChartPoint;
+  });
+}
+
+function preset(key: string) {
+  const p = TREASURY_CAIXA_ANNUAL_PRESETS.find((x) => x.key === key);
+  assert.ok(p, `preset ${key} existe`);
+  return p!;
+}
+
+describe("visão anual — slicer de período (recorte local)", () => {
+  const points = fullYearPoints(2026);
+
+  it("SLICER_YEAR_FULL: preset Ano inteiro cobre 01/01–31/12", () => {
+    const r = resolveAnnualPresetRange(points, preset("full"));
+    assert.deepEqual(r, { startIndex: 0, endIndex: 11 });
+    assert.deepEqual(annualRangeToCivilDates(points, r), {
+      fromCivil: "2026-01-01",
+      toCivil: "2026-12-31",
+    });
+  });
+
+  it("PRESET_SYNC: Q1..Q4 produzem as datas civis exatas", () => {
+    const cases: Array<[string, string, string]> = [
+      ["q1", "2026-01-01", "2026-03-31"],
+      ["q2", "2026-04-01", "2026-06-30"],
+      ["q3", "2026-07-01", "2026-09-30"],
+      ["q4", "2026-10-01", "2026-12-31"],
+    ];
+    for (const [key, from, to] of cases) {
+      const r = resolveAnnualPresetRange(points, preset(key));
+      assert.deepEqual(
+        annualRangeToCivilDates(points, r),
+        { fromCivil: from, toCivil: to },
+        `preset ${key}`
+      );
+      assert.equal(matchAnnualPreset(points, r), key, `highlight de ${key}`);
+    }
+  });
+
+  it("LEAP_YEAR: 2028 — fevereiro fecha em 29/02 e 29/02 seleciona fevereiro", () => {
+    const leap = fullYearPoints(2028);
+    const r = normalizeAnnualRange(12, { startIndex: 0, endIndex: 1 });
+    assert.deepEqual(annualRangeToCivilDates(leap, r), {
+      fromCivil: "2028-01-01",
+      toCivil: "2028-02-29",
+    });
+    assert.equal(civilDateToAnnualIndex(leap, "2028-02-29"), 1);
+  });
+
+  it("DATE_SYNC/CUSTOM_RANGE: data civil seleciona o mês correspondente (brush segue)", () => {
+    assert.equal(civilDateToAnnualIndex(points, "2026-08-15"), 7);
+    assert.equal(civilDateToAnnualIndex(points, "2026-11-01"), 10);
+    const custom = normalizeAnnualRange(12, { startIndex: 7, endIndex: 10 });
+    assert.deepEqual(annualRangeToCivilDates(points, custom), {
+      fromCivil: "2026-08-01",
+      toCivil: "2026-11-30",
+    });
+    assert.equal(matchAnnualPreset(points, custom), null, "custom sem preset");
+  });
+
+  it("INVALID_RANGE: start>end é corrigido por troca — nunca estado vazio", () => {
+    assert.deepEqual(normalizeAnnualRange(12, { startIndex: 9, endIndex: 2 }), {
+      startIndex: 2,
+      endIndex: 9,
+    });
+    assert.deepEqual(
+      normalizeAnnualRange(12, { startIndex: Number.NaN, endIndex: 5 }),
+      { startIndex: 0, endIndex: 5 },
+      "NaN vira limite válido"
+    );
+  });
+
+  it("OUTSIDE_YEAR: data fora do ano é clampada ao limite da série", () => {
+    assert.equal(civilDateToAnnualIndex(points, "2025-12-31"), 0);
+    assert.equal(civilDateToAnnualIndex(points, "2027-01-01"), 11);
+    assert.equal(civilDateToAnnualIndex(points, "abc"), null, "não-parseável");
+    assert.deepEqual(
+      normalizeAnnualRange(12, { startIndex: -4, endIndex: 99 }),
+      { startIndex: 0, endIndex: 11 }
+    );
+  });
+
+  it("SEMANTIC_EQUIVALENCE: o recorte é EXATAMENTE os pontos da série original", () => {
+    const months = points.map(
+      (p) =>
+        ({
+          monthKey: p.monthKey,
+          kind: p.kind,
+          opening: p.closingBalance - 10,
+          inflows: 0,
+          outflows: 0,
+          closing: p.closingBalance,
+          divergence: null,
+          divergentDayCount: 0,
+        }) as TreasuryCaixaTimelineMonth
+    );
+    const sliced = sliceTreasuryCaixaAnnualSeries(
+      { months, points },
+      { startIndex: 3, endIndex: 5 }
+    );
+    assert.deepEqual(sliced.points, points.slice(3, 6), "pontos = slice puro");
+    assert.deepEqual(
+      sliced.months.map((m) => m.monthKey),
+      ["2026-04", "2026-05", "2026-06"]
+    );
+    // Nenhum valor recalculado: referência aos MESMOS objetos do motor.
+    assert.equal(sliced.points[0], points[3]);
+  });
+
+  it("KPI_FILTER: KPIs recalculados SÓ sobre o período visível", () => {
+    const months = points.map(
+      (p, i) =>
+        ({
+          monthKey: p.monthKey,
+          kind: p.kind,
+          opening: 1000 + i,
+          inflows: 0,
+          outflows: 0,
+          closing: p.closingBalance,
+          divergence: null,
+          divergentDayCount: 0,
+        }) as TreasuryCaixaTimelineMonth
+    );
+    const q2 = resolveAnnualPresetRange(points, preset("q2"));
+    const kpis = deriveTreasuryCaixaAnnualKpis(
+      sliceTreasuryCaixaAnnualSeries({ months, points }, q2)
+    );
+    assert.equal(kpis.initialBalance, 1003, "abertura do 1º mês do recorte");
+    assert.equal(kpis.lowestBalance, -500, "maio negativo DENTRO do Q2");
+    assert.equal(kpis.lowestBalanceLabel, "m05/26");
+    assert.equal(kpis.finalBalance, 600, "fechamento de junho");
+    // Fora do recorte (Q4) o menor saldo NÃO pode enxergar maio:
+    const q4 = resolveAnnualPresetRange(points, preset("q4"));
+    const kpisQ4 = deriveTreasuryCaixaAnnualKpis(
+      sliceTreasuryCaixaAnnualSeries({ months, points }, q4)
+    );
+    assert.equal(kpisQ4.lowestBalance, 1000, "menor saldo do Q4, não do ano");
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Gates estruturais — lazy, zero fetch antecipado, endpoint canônico */
 /* ------------------------------------------------------------------ */
 
@@ -273,6 +437,39 @@ describe("visão anual — gates estruturais", () => {
   it("modal protege corrida: AbortController + sequência", () => {
     assert.ok(modal.includes("AbortController"), "AbortController ausente");
     assert.ok(modal.includes("seqRef"), "guarda de sequência ausente");
+  });
+
+  it("SLICER_FETCH_COUNT: mover o slicer não dispara request — só 2 fetches no modal (board+agenda), ambos no Gerar", () => {
+    const calls = modal.match(/fetchTreasury\w+\(/g) ?? [];
+    assert.equal(
+      calls.length,
+      2,
+      `modal deveria ter exatamente 2 chamadas fetch (board+agenda), achou ${calls.length}`
+    );
+    assert.ok(
+      !/setRange[\s\S]{0,200}?fetchTreasury/.test(modal) &&
+        !/onChange[^\n]*fetchTreasury/.test(modal),
+      "interação do slicer não pode disparar fetch"
+    );
+    assert.ok(
+      modal.includes("sliceTreasuryCaixaAnnualSeries"),
+      "recorte deve ser o slice LOCAL da série carregada"
+    );
+  });
+
+  it("BRUSH_SYNC: gráfico oficial ganhou Brush opt-in e o modal o controla", () => {
+    const chart = readSource(
+      "../../components/finance/treasury/TreasuryCaixaBalanceChart.tsx"
+    );
+    assert.ok(/\bBrush\b/.test(chart), "Brush do Recharts no gráfico oficial");
+    assert.ok(
+      chart.includes("brush?:"),
+      "prop de brush deve ser OPCIONAL — página atual não muda"
+    );
+    assert.ok(
+      modal.includes("brush={{"),
+      "modal deve controlar o brush (startIndex/endIndex/onChange)"
+    );
   });
 
   it("modal renderiza o MESMO componente de gráfico da página", () => {

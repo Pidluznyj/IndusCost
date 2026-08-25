@@ -5,7 +5,7 @@
  *  - carregada por React.lazy a partir da página (chunk separado);
  *  - NENHUM request ao abrir o modal nem ao trocar o ano — o fetch acontece
  *    exclusivamente no clique em "Gerar gráfico" (`handleGenerate`);
- *  - reutiliza o MESMO endpoint do board (`fetchTreasuryCaixa({ year })`,
+ *  - reutiliza o MESMO endpoint do board (`fetchTreasuryCaixa` só com year,
  *    sem mês/dia → 01/01–31/12 pelo motor) e a MESMA agenda canônica que a
  *    página busca por período — nenhum endpoint novo, nenhuma regra nova;
  *  - a série e os KPIs saem de `treasuryCaixaAnnualViewUi` (composição das
@@ -27,9 +27,16 @@ import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import type { TreasuryCaixaDayFlow } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import {
+  annualRangeToCivilDates,
   buildTreasuryCaixaAnnualSeries,
+  civilDateToAnnualIndex,
   deriveTreasuryCaixaAnnualKpis,
-  type TreasuryCaixaAnnualKpis,
+  matchAnnualPreset,
+  normalizeAnnualRange,
+  resolveAnnualPresetRange,
+  sliceTreasuryCaixaAnnualSeries,
+  TREASURY_CAIXA_ANNUAL_PRESETS,
+  type TreasuryCaixaAnnualRange,
   type TreasuryCaixaAnnualSeries,
 } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import {
@@ -48,7 +55,6 @@ function formatMoney(value: number | null): string {
 type AnnualResult = {
   year: number;
   series: TreasuryCaixaAnnualSeries;
-  kpis: TreasuryCaixaAnnualKpis;
 };
 
 function KpiCard({
@@ -108,6 +114,9 @@ export function TreasuryCaixaAnnualViewModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnnualResult | null>(null);
+  // Slicer de período — recorte LOCAL da série carregada (índices de mês).
+  // Nenhum request ao mover: gráfico (Brush), datas e KPIs derivam daqui.
+  const [range, setRange] = useState<TreasuryCaixaAnnualRange | null>(null);
 
   // Cache por ano enquanto o modal está aberto: voltar a um ano já gerado
   // não refaz o request. Vive num ref para não reexecutar efeitos.
@@ -149,11 +158,12 @@ export function TreasuryCaixaAnnualViewModal({
         todayFlowRaw,
         agendaDays: cached.agendaDays,
       });
-      setResult({
-        year: requestedYear,
-        series,
-        kpis: deriveTreasuryCaixaAnnualKpis(series),
-      });
+      setResult({ year: requestedYear, series });
+      setRange(
+        series.points.length > 0
+          ? { startIndex: 0, endIndex: series.points.length - 1 }
+          : null
+      );
       setError(null);
       setLoading(false);
       return;
@@ -200,11 +210,12 @@ export function TreasuryCaixaAnnualViewModal({
         todayFlowRaw,
         agendaDays,
       });
-      setResult({
-        year: requestedYear,
-        series,
-        kpis: deriveTreasuryCaixaAnnualKpis(series),
-      });
+      setResult({ year: requestedYear, series });
+      setRange(
+        series.points.length > 0
+          ? { startIndex: 0, endIndex: series.points.length - 1 }
+          : null
+      );
     } catch (err) {
       if (seq !== seqRef.current || controller.signal.aborted) return;
       setError(
@@ -215,8 +226,36 @@ export function TreasuryCaixaAnnualViewModal({
     }
   }, [year, companyCode, todayFlowRaw]);
 
-  const kpis = result?.kpis ?? null;
+  // ── Slicer: recorte local + sincronização preset ↔ datas ↔ brush ──────
   const points = result?.series.points ?? [];
+  const activeRange =
+    result != null && range != null && points.length > 0
+      ? normalizeAnnualRange(points.length, range)
+      : null;
+  const visible =
+    result != null && activeRange != null
+      ? sliceTreasuryCaixaAnnualSeries(result.series, activeRange)
+      : null;
+  const kpis = visible != null ? deriveTreasuryCaixaAnnualKpis(visible) : null;
+  const rangeDates =
+    activeRange != null ? annualRangeToCivilDates(points, activeRange) : null;
+  const activePreset =
+    activeRange != null ? matchAnnualPreset(points, activeRange) : null;
+
+  const applyDate = useCallback(
+    (side: "from" | "to", civil: string) => {
+      if (activeRange == null || points.length === 0) return;
+      const idx = civilDateToAnnualIndex(points, civil);
+      if (idx == null) return; // entrada não-parseável: mantém estado atual
+      setRange(
+        normalizeAnnualRange(points.length, {
+          startIndex: side === "from" ? idx : activeRange.startIndex,
+          endIndex: side === "to" ? idx : activeRange.endIndex,
+        })
+      );
+    },
+    [activeRange, points]
+  );
 
   return (
     <CostCenterDialog
@@ -300,8 +339,77 @@ export function TreasuryCaixaAnnualViewModal({
           </p>
         ) : null}
 
-        {result != null && kpis != null ? (
+        {result != null && kpis != null && activeRange != null ? (
           <>
+            <div
+              className="flex flex-wrap items-end gap-3"
+              data-testid="caixa-annual-slicer"
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {TREASURY_CAIXA_ANNUAL_PRESETS.map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    onClick={() =>
+                      setRange(resolveAnnualPresetRange(points, preset))
+                    }
+                    className={
+                      "rounded-md border px-2.5 py-1 text-[11px] font-semibold " +
+                      (activePreset === preset.key
+                        ? "border-[#1D4ED8] bg-[#EFF6FF] text-[#1D4ED8]"
+                        : "border-border text-foreground hover:bg-muted")
+                    }
+                    data-testid={`caixa-annual-preset-${preset.key}`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-end gap-2">
+                <div>
+                  <label
+                    htmlFor="caixa-annual-from"
+                    className={financeModuleFilterLabelClass}
+                  >
+                    De
+                  </label>
+                  <input
+                    id="caixa-annual-from"
+                    type="date"
+                    value={rangeDates?.fromCivil ?? ""}
+                    min={`${result.year}-01-01`}
+                    max={`${result.year}-12-31`}
+                    onChange={(e) => applyDate("from", e.target.value)}
+                    className={financeModuleFilterFieldClass}
+                    data-testid="caixa-annual-from"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="caixa-annual-to"
+                    className={financeModuleFilterLabelClass}
+                  >
+                    Até
+                  </label>
+                  <input
+                    id="caixa-annual-to"
+                    type="date"
+                    value={rangeDates?.toCivil ?? ""}
+                    min={`${result.year}-01-01`}
+                    max={`${result.year}-12-31`}
+                    onChange={(e) => applyDate("to", e.target.value)}
+                    className={financeModuleFilterFieldClass}
+                    data-testid="caixa-annual-to"
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="-mt-2 text-[10px] text-muted-foreground">
+              O recorte segue a granularidade do gráfico (mês a mês): a data
+              escolhida seleciona o mês correspondente. Tudo local — nenhum
+              novo carregamento.
+            </p>
+
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <KpiCard
                 label="Saldo inicial do período"
@@ -310,7 +418,7 @@ export function TreasuryCaixaAnnualViewModal({
                 testId="caixa-annual-kpi-initial"
               />
               <KpiCard
-                label="Menor saldo do ano"
+                label="Menor saldo do período"
                 value={formatMoney(kpis.lowestBalance)}
                 hint={kpis.lowestBalanceIsForecast ? "previsto" : "realizado"}
                 negative={(kpis.lowestBalance ?? 0) < 0}
@@ -334,7 +442,22 @@ export function TreasuryCaixaAnnualViewModal({
             </div>
 
             {points.length > 0 ? (
-              <TreasuryCaixaBalanceChart points={points} />
+              <TreasuryCaixaBalanceChart
+                points={points}
+                brush={{
+                  startIndex: activeRange.startIndex,
+                  endIndex: activeRange.endIndex,
+                  onChange: ({ startIndex, endIndex }) => {
+                    if (startIndex == null || endIndex == null) return;
+                    setRange(
+                      normalizeAnnualRange(points.length, {
+                        startIndex,
+                        endIndex,
+                      })
+                    );
+                  },
+                }}
+              />
             ) : (
               <p
                 className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground"
