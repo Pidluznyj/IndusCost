@@ -53,10 +53,19 @@ describe("impressão JPEG — gates estruturais", () => {
     "../../components/finance/bi/FinanceBiChartExpandModal.tsx"
   );
 
-  it("html2canvas é carregado SOB DEMANDA — nunca import estático", () => {
+  it("html-to-image é carregado SOB DEMANDA — nunca import estático", () => {
     assert.ok(
-      util.includes('await import("html2canvas")'),
-      "utilitário deve importar html2canvas dinamicamente"
+      util.includes('await import("html-to-image")'),
+      "utilitário deve importar html-to-image dinamicamente"
+    );
+    // REGRESSÃO oklch: html2canvas não entende as cores oklch() do tema
+    // Tailwind e a captura falhava na homolog ("unsupported color function
+    // oklch"). Este export NUNCA pode voltar a IMPORTAR html2canvas (o
+    // docstring pode citá-lo para explicar o porquê).
+    assert.ok(
+      !util.includes('import("html2canvas")') &&
+        !/^import[^\n]*html2canvas/m.test(util),
+      "export de cenários não pode importar html2canvas (quebra com oklch)"
     );
     for (const [name, src] of [
       ["chart", chart],
@@ -64,15 +73,20 @@ describe("impressão JPEG — gates estruturais", () => {
       ["expand modal", expand],
     ] as const) {
       assert.ok(
-        !/^import[^\n]*html2canvas/m.test(src),
-        `${name} não pode importar html2canvas estaticamente`
+        !/^import[^\n]*html-to-image/m.test(src) &&
+          !/^import[^\n]*html2canvas/m.test(src),
+        `${name} não pode importar a lib de captura estaticamente`
       );
     }
   });
 
   it("JPEG com fundo branco pintado (sem alfa) e mimetype image/jpeg", () => {
     assert.ok(util.includes('backgroundColor: "#ffffff"'), "fundo branco");
-    assert.ok(util.includes('"image/jpeg"'), "formato JPEG");
+    assert.ok(util.includes("toJpeg"), "captura via toJpeg (formato JPEG)");
+    assert.ok(
+      util.includes('dataUrl.startsWith("data:image/jpeg")'),
+      "valida o mimetype do resultado antes de baixar"
+    );
   });
 
   it("modo apresentação tem o botão Imprimir (JPEG) capturando o card completo", () => {

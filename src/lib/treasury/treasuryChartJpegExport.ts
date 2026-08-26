@@ -6,8 +6,15 @@
  * (300/96, o MESMO fator do Relatório Presidencial) imprime nítida e o
  * usuário controla o aproveitamento da página.
  *
- * `html2canvas` já é dependência do projeto (Relatório Presidencial) e é
- * carregada SOB DEMANDA aqui também — nada entra no bundle inicial.
+ * Por que `html-to-image` e NÃO `html2canvas`: o html2canvas reimplementa o
+ * parser de CSS e NÃO entende as cores `oklch()` dos tokens de tema do
+ * Tailwind — na homologação a captura falhava com "Attempting to parse an
+ * unsupported color function \"oklch\"" e nenhum arquivo era gerado. O
+ * html-to-image serializa o DOM em SVG (foreignObject) e deixa o PRÓPRIO
+ * navegador rasterizar — qualquer CSS que a tela renderiza sai igual na
+ * imagem. Carregado SOB DEMANDA — nada entra no bundle inicial.
+ * (O Relatório Presidencial continua no html2canvas: o CSS de impressão
+ * dele não usa oklch e já está validado.)
  *
  * JPEG não tem canal alfa: o fundo é SEMPRE pintado de branco, senão as
  * áreas transparentes sairiam pretas na impressão.
@@ -36,34 +43,26 @@ export function buildTreasuryJpegFileName(
 }
 
 /**
- * Captura o elemento como JPEG e dispara o download.
+ * Captura o elemento como JPEG e SALVA o arquivo na máquina (Downloads) —
+ * o usuário abre a imagem e imprime de lá.
  * Browser-only; lança erro legível quando a captura falha.
  */
 export async function exportTreasuryElementToJpeg(
   element: HTMLElement,
   fileName: string
 ): Promise<void> {
-  // Carregamento sob demanda — mesma estratégia do Relatório Presidencial.
-  const { default: html2canvas } = await import("html2canvas");
-  const canvas = await html2canvas(element, {
-    scale: TREASURY_JPEG_EXPORT_SCALE,
+  // Carregamento sob demanda — chunk separado, fora do bundle inicial.
+  const { toJpeg } = await import("html-to-image");
+  const dataUrl = await toJpeg(element, {
+    quality: TREASURY_JPEG_QUALITY,
+    pixelRatio: TREASURY_JPEG_EXPORT_SCALE,
     backgroundColor: "#ffffff",
-    useCORS: true,
-    logging: false,
   });
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", TREASURY_JPEG_QUALITY)
-  );
-  if (!blob) {
+  if (!dataUrl || !dataUrl.startsWith("data:image/jpeg")) {
     throw new Error("Não foi possível gerar a imagem para impressão.");
   }
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = fileName;
+  anchor.click();
 }
