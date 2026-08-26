@@ -79,11 +79,28 @@ export const EMPLOYEE_RESOURCE_KEYS = {
   links: "admin.employees.links",
   userLink: "admin.employees.user_link",
   epi: "admin.employees.epi",
+  career: "admin.employees.career",
+  compensationEvents: "admin.employees.compensation_events",
+  compensationValues: "admin.employees.compensation_values",
+  benefits: "admin.employees.benefits",
+  documents: "admin.employees.documents",
+  absences: "admin.employees.absences",
+  history: "admin.employees.history",
+  notes: "admin.employees.notes",
+  notesRestricted: "admin.employees.notes_restricted",
+  team: "admin.employees.team",
 } as const;
 
 export type EmployeePermissionBag = {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission?: (permissions: readonly string[]) => boolean;
+  /** Deny explícito do motor oficial — vence allow/alias/herança. */
+  isDenied?: (permission: string) => boolean;
+  /**
+   * Recursos `view` já resolvidos por requireResource (deny aplicado).
+   * Quando presente, valores financeiros exigem `admin.employees.compensation_values`.
+   */
+  canonicalViewResources?: readonly string[];
 };
 
 function hasAny(check: EmployeePermissionBag, keys: readonly string[]): boolean {

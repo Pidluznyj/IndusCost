@@ -292,6 +292,9 @@ import {
   EMPLOYEES_ACTIONS,
   EMPLOYEES_RESOURCE_KEYS,
 } from "./src/lib/employeesAccess.js";
+import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
+import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
+import { recordHistoryAfterEmployeeWrite } from "./src/lib/peopleProfileMutations.server.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -2004,6 +2007,7 @@ async function startServer() {
       hasPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
       hasAnyPermission: (list: readonly string[]) =>
         Boolean(authUser && list.some((p) => hasPermission(authUser, p))),
+      canonicalViewResources: authUser?.canonicalAccess?.viewResources,
     };
   }
 
@@ -3108,8 +3112,13 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
   const revealEmergency = canViewEmployeeSensitiveData(check);
   const revealCompensation = canViewEmployeeSensitiveData(check);
   const revealAdminNotes = canViewEmployeeAdministrativeData(check);
+  const listWhere = await buildVisibleEmployeeWhere(prisma, {
+    check,
+    actorEmployeeId: authUser?.employeeId ?? null,
+  });
 
   const employees = await prisma.employee.findMany({
+    where: listWhere,
     include: {
       Role: true,
       EmployeePayrollComponent: {
@@ -3567,11 +3576,20 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
       where: { id },
       select: {
         managerId: true,
+        managerName: true,
         personId: true,
         corporateEmail: true,
         costCenterId: true,
         costCenter: true,
         contractType: true,
+        workSchedule: true,
+        status: true,
+        roleId: true,
+        department: true,
+        departmentId: true,
+        salary: true,
+        admissionDate: true,
+        terminationDate: true,
         cpf: true,
         phone: true,
         personalEmail: true,
@@ -3581,6 +3599,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
         jacketSize: true,
         gloveSize: true,
         shoeSize: true,
+        Role: { select: { name: true } },
+        manager: { select: { name: true, socialName: true } },
       },
     });
     if (!existingEmployee) {
@@ -3711,10 +3731,6 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
     );
     const hrProfile = hrBuilt.data;
 
-    await prisma.employeePayrollComponent.deleteMany({
-      where: { employeeId: id },
-    });
-
     const nextPersonId =
       personResolve.personId !== null
         ? personResolve.personId
@@ -3742,46 +3758,74 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
 
     const resolvedName =
       (personResolve.appliedForm.displayName || "").trim() || cleanName;
-
-    const employee = await prisma.employee.update({
-      where: { id },
-      data: {
-        ...mergeEmployeeWriteData(
-          {
-            name: resolvedName,
-            roleId: cleanRoleId,
-            department: orgDept.department,
-            departmentId: orgDept.departmentId,
-            costCenter: persisted.costCenterLabel,
-            costCenterId: persisted.costCenterId,
-            classification: persisted.classification,
-            salary: adminRef.salary,
-            monthlyHours: adminRef.monthlyHours,
-            productivity: adminRef.productivity,
-            status: persisted.status,
-            corporateEmail: persisted.corporateEmail,
-            managerId: persisted.managerId,
-            managerName: persisted.managerName,
-            contractType: persisted.contractType,
-            admissionDate: persisted.admissionDate,
-            terminationDate: persisted.terminationDate,
-            personId: nextPersonId,
-          },
-          hrProfile as Record<string, unknown>
-        ),
-        EmployeePayrollComponent:
-          cleanComponentIds.length > 0
-            ? {
-                create: cleanComponentIds.map((compId) => ({
-                  PayrollComponent: { connect: { id: compId } },
-                })),
-              }
-            : undefined,
-      },
-      include: employeeApiInclude,
-    });
-
     const actorUserId = authUser?.id ?? null;
+    const historyPrevious = {
+      roleId: existingEmployee.roleId,
+      roleName: existingEmployee.Role?.name ?? null,
+      departmentId: existingEmployee.departmentId,
+      department: existingEmployee.department,
+      costCenterId: existingEmployee.costCenterId,
+      costCenter: existingEmployee.costCenter,
+      managerId: existingEmployee.managerId,
+      managerName: existingEmployee.manager
+        ? (existingEmployee.manager.socialName ?? "").trim() || existingEmployee.manager.name
+        : existingEmployee.managerName,
+      contractType: existingEmployee.contractType,
+      workSchedule: existingEmployee.workSchedule,
+      status: existingEmployee.status,
+      salary: existingEmployee.salary != null ? Number(existingEmployee.salary) : null,
+      admissionDate: existingEmployee.admissionDate,
+      terminationDate: existingEmployee.terminationDate,
+    };
+
+    const employee = await prisma.$transaction(async (tx) => {
+      await tx.employeePayrollComponent.deleteMany({
+        where: { employeeId: id },
+      });
+      const updated = await tx.employee.update({
+        where: { id },
+        data: {
+          ...mergeEmployeeWriteData(
+            {
+              name: resolvedName,
+              roleId: cleanRoleId,
+              department: orgDept.department,
+              departmentId: orgDept.departmentId,
+              costCenter: persisted.costCenterLabel,
+              costCenterId: persisted.costCenterId,
+              classification: persisted.classification,
+              salary: adminRef.salary,
+              monthlyHours: adminRef.monthlyHours,
+              productivity: adminRef.productivity,
+              status: persisted.status,
+              corporateEmail: persisted.corporateEmail,
+              managerId: persisted.managerId,
+              managerName: persisted.managerName,
+              contractType: persisted.contractType,
+              admissionDate: persisted.admissionDate,
+              terminationDate: persisted.terminationDate,
+              personId: nextPersonId,
+            },
+            hrProfile as Record<string, unknown>
+          ),
+          EmployeePayrollComponent:
+            cleanComponentIds.length > 0
+              ? {
+                  create: cleanComponentIds.map((compId) => ({
+                    PayrollComponent: { connect: { id: compId } },
+                  })),
+                }
+              : undefined,
+        },
+        include: employeeApiInclude,
+      });
+      await recordHistoryAfterEmployeeWrite(tx, {
+        employeeId: id,
+        previous: historyPrevious,
+        actorUserId,
+      });
+      return updated;
+    });
 
     if (existingEmployee.managerId !== persisted.managerId) {
       logEmployeeHrAudit({
@@ -14987,7 +15031,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getPermissionCheck: async (req) => {
-      const authUser = await getCurrentAppUser(req);
+      const authUser =
+        (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return employeePermCheck(authUser);
+    },
+  });
+
+  registerPeopleProfileRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+    getPermissionCheck: async (req) => {
+      const authUser =
+        (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
       return employeePermCheck(authUser);
     },
   });

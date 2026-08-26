@@ -129,6 +129,14 @@ model Employee {
   gloveSize                    String?
   shoeSize                     String?
   epiNotes                     String?
+  /// Estado civil (RH). Não replica Person.
+  maritalStatus                String?
+  city                         String?
+  state                        String?
+  zipCode                      String?
+  /// Jornada descritiva (ex.: 44h/sem). monthlyHours permanece o snapshot numérico legado.
+  workSchedule                 String?
+  photoStorageKey              String?
   createdAt                    DateTime?                  @default(now()) @db.Timestamptz(6)
   updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   Role                         Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -143,6 +151,15 @@ model Employee {
   appUser                      AppUser?
   ledDirectorates              HrDirectorate[]            @relation("HrDirectorateLeader")
   ledDepartments               HrDepartment[]             @relation("HrDepartmentLeader")
+  /// Ficha funcional — histórico e satélites (Employee permanece snapshot atual).
+  historyEvents                HrEmployeeHistory[]
+  compensationAdjustments      HrCompensationAdjustment[]
+  employeeBenefits             HrEmployeeBenefit[]
+  extraEmergencyContacts       HrEmergencyContact[]
+  epiDeliveries                HrEpiDelivery[]
+  hrDocuments                  HrEmployeeDocument[]
+  absences                     HrAbsence[]
+  hrNotes                      HrEmployeeNote[]
 
   @@unique([personId])
   @@index([costCenterId])
@@ -219,6 +236,203 @@ model EmployeePayrollComponent {
   PayrollComponent   PayrollComponent @relation(fields: [payrollComponentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([employeeId, payrollComponentId])
+}
+
+/// Evento funcional imutável da trajetória do colaborador.
+/// Employee = snapshot atual; esta tabela = histórico auditável.
+/// Índices: listagem paginada por colaborador (effectiveDate DESC, createdAt DESC, id DESC)
+/// e idempotência do baseline INITIAL_STATE (backfill).
+model HrEmployeeHistory {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId           String    @db.Uuid
+  eventType            String
+  effectiveDate        DateTime  @db.Timestamptz(6)
+  source               String    @default("USER")
+  reason               String?
+  notes                String?
+  previousRoleId       String?   @db.Uuid
+  newRoleId            String?   @db.Uuid
+  previousRoleName     String?
+  newRoleName          String?
+  previousDepartmentId String?   @db.Uuid
+  newDepartmentId      String?   @db.Uuid
+  previousDepartment   String?
+  newDepartment        String?
+  previousCostCenterId String?   @db.Uuid
+  newCostCenterId      String?   @db.Uuid
+  previousCostCenter   String?
+  newCostCenter        String?
+  previousManagerId    String?   @db.Uuid
+  newManagerId         String?   @db.Uuid
+  previousManagerName  String?
+  newManagerName       String?
+  previousContractType String?
+  newContractType      String?
+  previousWorkSchedule String?
+  newWorkSchedule      String?
+  previousStatus       String?
+  newStatus            String?
+  /// Complemento opcional — nunca a única fonte de dados consultáveis.
+  metadata             Json?
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId      String?   @db.Uuid
+  employee             Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, effectiveDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
+  @@index([eventType, effectiveDate(sort: Desc)])
+}
+
+/// Histórico de reajuste/alteração salarial. Valores monetários só saem da API com permissão explícita.
+model HrCompensationAdjustment {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId             String    @db.Uuid
+  effectiveDate          DateTime  @db.Timestamptz(6)
+  registeredAt           DateTime  @default(now()) @db.Timestamptz(6)
+  type                   String
+  percentage             Decimal?  @db.Decimal(10, 6)
+  previousAmount         Decimal?  @db.Decimal(20, 6)
+  newAmount              Decimal?  @db.Decimal(20, 6)
+  differenceAmount       Decimal?  @db.Decimal(20, 6)
+  reason                 String?
+  notes                  String?
+  historyEventId         String?   @db.Uuid
+  createdByUserId        String?   @db.Uuid
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee               Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, effectiveDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
+}
+
+/// Catálogo de benefícios de RH (não é PayrollComponent / motor de custo HH).
+model HrBenefit {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String              @unique
+  name              String
+  category          String              @default("OTHER")
+  status            String              @default("ACTIVE")
+  isFinancial       Boolean             @default(false)
+  notes             String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  employeeBenefits  HrEmployeeBenefit[]
+
+  @@index([status])
+}
+
+model HrEmployeeBenefit {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String    @db.Uuid
+  benefitId       String    @db.Uuid
+  status          String    @default("ACTIVE")
+  startDate       DateTime  @db.Timestamptz(6)
+  endDate         DateTime? @db.Timestamptz(6)
+  planName        String?
+  amount          Decimal?  @db.Decimal(20, 6)
+  notes           String?
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  benefit         HrBenefit @relation(fields: [benefitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, startDate(sort: Desc)])
+  @@index([benefitId])
+}
+
+/// Contatos de emergência extras (o contato primário permanece em Employee.*).
+model HrEmergencyContact {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String   @db.Uuid
+  name            String
+  relationship    String?
+  phone           String
+  alternatePhone  String?
+  priority        Int      @default(2)
+  notes           String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, priority])
+}
+
+/// Entrega histórica de EPI/uniforme (tamanhos atuais continuam em Employee).
+model HrEpiDelivery {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId       String    @db.Uuid
+  item             String
+  deliveredAt      DateTime  @db.Timestamptz(6)
+  quantity         Int       @default(1)
+  size             String?
+  validUntil       DateTime? @db.Timestamptz(6)
+  responsibleName  String?
+  returnedAt       DateTime? @db.Timestamptz(6)
+  notes            String?
+  createdByUserId  String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, deliveredAt(sort: Desc)])
+}
+
+/// Metadata de documentos da ficha. Arquivo no storage oficial (`storageKey`).
+model HrEmployeeDocument {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId       String    @db.Uuid
+  personId         String?   @db.Uuid
+  documentType     String
+  displayName      String
+  storageKey       String
+  originalFileName String
+  mimeType         String?
+  fileSize         Int?
+  issuedAt         DateTime? @db.Timestamptz(6)
+  expiresAt        DateTime? @db.Timestamptz(6)
+  notes            String?
+  uploadedByUserId String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, createdAt(sort: Desc)])
+}
+
+/// Férias / afastamentos — histórico próprio (status atual do Employee não substitui).
+model HrAbsence {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String    @db.Uuid
+  type            String
+  startDate       DateTime  @db.Timestamptz(6)
+  endDate         DateTime? @db.Timestamptz(6)
+  expectedReturn  DateTime? @db.Timestamptz(6)
+  actualReturn    DateTime? @db.Timestamptz(6)
+  status          String    @default("SCHEDULED")
+  reason          String?
+  notes           String?
+  documentId      String?   @db.Uuid
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, startDate(sort: Desc)])
+  @@index([employeeId, status])
+}
+
+/// Observações governadas da ficha (além de professionalNotes/adminNotes legados).
+model HrEmployeeNote {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String    @db.Uuid
+  category        String
+  body            String
+  visibility      String    @default("STANDARD")
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, createdAt(sort: Desc)])
+  @@index([employeeId, category])
 }
 
 model Material {

@@ -23,6 +23,16 @@ export const EMPLOYEES_RESOURCE_KEYS = {
   links: "admin.employees.links",
   userLink: "admin.employees.user_link",
   epi: "admin.employees.epi",
+  career: "admin.employees.career",
+  compensationEvents: "admin.employees.compensation_events",
+  compensationValues: "admin.employees.compensation_values",
+  benefits: "admin.employees.benefits",
+  documents: "admin.employees.documents",
+  absences: "admin.employees.absences",
+  history: "admin.employees.history",
+  notes: "admin.employees.notes",
+  notesRestricted: "admin.employees.notes_restricted",
+  team: "admin.employees.team",
 } as const;
 
 export const EMPLOYEES_ACTIONS = {
@@ -110,6 +120,36 @@ export const EMPLOYEES_PILOT_ENDPOINTS = [
   },
   { method: "GET", path: "/api/people/search", resourceKey: "admin.employees", action: "view" },
   { method: "GET", path: "/api/people/resolve", resourceKey: "admin.employees", action: "view" },
+  {
+    method: "GET",
+    path: "/api/employees/:id/profile",
+    resourceKey: "admin.employees",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/employees/:id/compensation",
+    resourceKey: "admin.employees.compensation_events",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/employees/:id/compensation-adjustments",
+    resourceKey: "admin.employees.compensation_values",
+    action: "manage",
+  },
+  {
+    method: "GET",
+    path: "/api/employees/:id/history",
+    resourceKey: "admin.employees.history",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/employees/:id/documents/:documentId/download",
+    resourceKey: "admin.employees.documents",
+    action: "view",
+  },
   { method: "GET", path: "/api/people/:id/links", resourceKey: "admin.employees", action: "view" },
 ] as const;
 

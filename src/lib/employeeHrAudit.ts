@@ -15,7 +15,17 @@ export type EmployeeHrAuditEvent =
   | "employee.person_conflict_resolve"
   | "employee.user_link"
   | "employee.user_unlink"
-  | "employee.admin_access";
+  | "employee.admin_access"
+  | "employee.career.change"
+  | "employee.compensation.view_values"
+  | "employee.compensation.adjustment"
+  | "employee.benefit.change"
+  | "employee.absence.change"
+  | "employee.document.upload"
+  | "employee.document.download"
+  | "employee.epi.delivery"
+  | "employee.note.create"
+  | "employee.note.restricted";
 
 export type EmployeeHrAuditPayload = {
   event: EmployeeHrAuditEvent;
@@ -39,6 +49,12 @@ const SENSITIVE_DETAIL_KEYS = new Set([
   "emergencyContactPhone",
   "emergencyContactRelationship",
   "salary",
+  "previousAmount",
+  "newAmount",
+  "differenceAmount",
+  "bonusAmount",
+  "benefitAmount",
+  "amount",
   "bankAccount",
   "pixKey",
   "password",
