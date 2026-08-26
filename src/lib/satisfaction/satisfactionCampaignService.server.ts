@@ -194,7 +194,8 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
       const pageSize = clampPageSize(filters.pageSize);
       const page = Math.max(1, Math.trunc(filters.page) || 1);
 
-      const where: Prisma.SatisfactionSurveyCampaignWhereInput = {};
+      // Excluída logicamente nunca aparece — em nenhuma listagem.
+      const where: Prisma.SatisfactionSurveyCampaignWhereInput = { deletedAt: null };
       if (filters.status) where.status = filters.status;
       if (filters.search) {
         where.OR = [
@@ -265,10 +266,55 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
           _count: { select: { invitations: true, responses: true } },
         },
       });
-      if (!campaign) {
+      if (!campaign || campaign.deletedAt) {
         throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
       }
       return campaign;
+    },
+
+    /**
+     * Exclusão LÓGICA (só SUPER_ADMIN — a rota valida o papel). A pesquisa
+     * some de todas as telas e PARA de aceitar respostas: os tokens ativos
+     * (individuais e link geral) são revogados e as sessões públicas em
+     * andamento encerradas na MESMA transação. Nada é apagado do banco —
+     * respostas, convites e trilha de auditoria permanecem íntegros.
+     * (`deleteCampaign` mais abaixo é OUTRA coisa: exclusão física de
+     * rascunho virgem, sem rota HTTP — mantida para uso interno/testes.)
+     */
+    async softDeleteCampaign(id: string, userId: string | null) {
+      const campaign = await prisma.satisfactionSurveyCampaign.findUnique({
+        where: { id },
+        select: { id: true, code: true, name: true, deletedAt: true },
+      });
+      if (!campaign || campaign.deletedAt) {
+        throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      }
+
+      const deletedAt = new Date();
+      await prisma.$transaction(async (tx) => {
+        await tx.satisfactionSurveyCampaign.update({
+          where: { id },
+          data: { deletedAt, deletedByUserId: userId },
+        });
+        await tx.satisfactionSurveyAccessToken.updateMany({
+          where: { campaignId: id, status: "ACTIVE" },
+          data: { status: "REVOKED", revokedAt: deletedAt },
+        });
+        await tx.satisfactionPublicSession.updateMany({
+          where: { campaignId: id, revokedAt: null },
+          data: { revokedAt: deletedAt },
+        });
+      });
+
+      await recordSatisfactionAudit(prisma, {
+        entityType: SATISFACTION_AUDIT_ENTITIES.campaign,
+        entityId: id,
+        action: "DELETED",
+        newValue: `exclusão lógica de ${campaign.code} — ${campaign.name}`,
+        performedBy: userId,
+      });
+
+      return { id: campaign.id, code: campaign.code, name: campaign.name };
     },
 
     async createCampaign(input: SatisfactionCampaignCreateInput, userId: string | null) {

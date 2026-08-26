@@ -10078,6 +10078,10 @@ model SatisfactionSurveyCampaign {
   publishedAt       DateTime?                  @db.Timestamptz(6)
   closedAt          DateTime?                  @db.Timestamptz(6)
   archivedAt        DateTime?                  @db.Timestamptz(6)
+  /// Exclusão lógica (só SUPER_ADMIN): some das telas e para de aceitar
+  /// respostas; dados preservados para auditoria. Nunca hard delete.
+  deletedAt         DateTime?                  @db.Timestamptz(6)
+  deletedByUserId   String?                    @db.Uuid
 
   template     SatisfactionSurveyTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   questions    SatisfactionSurveyCampaignQuestion[]

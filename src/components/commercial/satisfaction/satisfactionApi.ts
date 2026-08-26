@@ -227,6 +227,21 @@ export const satisfactionApi = {
     return fetchJsonOk(`${BASE}/invitations/${invitationId}/revoke`, { method: "POST" });
   },
 
+  /**
+   * Exclusão LÓGICA — só SUPER_ADMIN. O servidor exige `confirmCode`
+   * idêntico ao código da pesquisa (checagem de segurança dupla).
+   */
+  deleteCampaign(id: string, confirmCode: string) {
+    return fetchJsonOk<{ deleted: { id: string; code: string; name: string } }>(
+      `${BASE}/campaigns/${id}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmCode }),
+      }
+    );
+  },
+
   issueGeneralLink(campaignId: string) {
     return fetchJsonOk<{ url: string; tokenPrefix: string; rotated: boolean }>(
       `${BASE}/campaigns/${campaignId}/general-link`,

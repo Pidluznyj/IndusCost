@@ -339,6 +339,47 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     }
   );
 
+  /**
+   * Exclusão LÓGICA — SÓ SUPER_ADMIN. Checagem de segurança dupla no
+   * servidor: além do papel, o corpo precisa trazer `confirmCode` idêntico
+   * ao código da pesquisa (o mesmo que a UI obriga a digitar) — impossível
+   * excluir por engano ou por chamada solta de API.
+   */
+  app.delete(
+    "/api/commercial/satisfaction/campaigns/:id",
+    requireAppAuth,
+    manage,
+    async (req, res) => {
+      try {
+        const user = await getCurrentAppUser(req);
+        if (!user || user.role !== "SUPER_ADMIN") {
+          res.status(403).json({
+            error: "Apenas o Super administrador pode excluir uma pesquisa.",
+          });
+          return;
+        }
+
+        const id = String(req.params.id);
+        const confirmCode = String(
+          (req.body as { confirmCode?: unknown } | undefined)?.confirmCode ?? ""
+        ).trim();
+        const campaign = await campaigns.getCampaign(id);
+        if (!confirmCode || confirmCode !== campaign.code) {
+          res.status(400).json({
+            error:
+              "Confirmação inválida: digite o código exato da pesquisa para excluir.",
+          });
+          return;
+        }
+
+        const deleted = await campaigns.softDeleteCampaign(id, user.id ?? null);
+        res.json({ deleted });
+      } catch (err) {
+        sendSatisfactionError(res, err);
+      }
+    }
+  );
+
   app.post(
     "/api/commercial/satisfaction/campaigns/:id/duplicate",
     requireAppAuth,
@@ -356,19 +397,10 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     }
   );
 
-  app.delete(
-    "/api/commercial/satisfaction/campaigns/:id",
-    requireAppAuth,
-    manage,
-    async (req, res) => {
-      try {
-        await campaigns.deleteCampaign(String(req.params.id), await currentUserId(req));
-        res.json({ success: true });
-      } catch (err) {
-        sendSatisfactionError(res, err);
-      }
-    }
-  );
+  // A rota DELETE de rascunho virgem (exclusão física) foi substituída pela
+  // exclusão lógica acima: um único caminho HTTP de exclusão, sempre com
+  // SUPER_ADMIN + confirmCode. A exclusão física continua existindo apenas
+  // como método interno do serviço, sem exposição HTTP.
 
   // ─── Seleção de audiência (clientes) ──────────────────────────────────────
 

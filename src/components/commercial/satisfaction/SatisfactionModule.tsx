@@ -21,7 +21,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
 ];
 
 export function SatisfactionModule() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isSuperAdmin } = useAuth();
   const [tab, setTab] = useState<TabId>("dashboard");
 
   const [campaigns, setCampaigns] = useState<SatisfactionCampaignRow[]>([]);
@@ -98,6 +98,7 @@ export function SatisfactionModule() {
           error={error}
           canManage={canManage}
           canPublish={canPublish}
+          isSuperAdmin={isSuperAdmin()}
           onPageChange={setPage}
           onSearch={(nextSearch, nextStatus) => {
             setPage(1);

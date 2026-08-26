@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Copy, Link2, Plus, Search } from "lucide-react";
+import { Copy, Link2, Plus, Search, Trash2 } from "lucide-react";
 import {
   campaignActions,
   CAMPAIGN_STATUS_LABELS,
@@ -45,6 +45,8 @@ type Props = {
   onRefresh: () => void;
   canManage: boolean;
   canPublish: boolean;
+  /** Exclusão lógica é EXCLUSIVA do Super administrador — nunca por permissão comum. */
+  isSuperAdmin: boolean;
 };
 
 export function SatisfactionSurveysPanel(props: Props) {
@@ -55,6 +57,11 @@ export function SatisfactionSurveysPanel(props: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Confirmação forte da exclusão: o usuário precisa DIGITAR o código da
+  // pesquisa — um window.confirm seria fraco demais para uma ação que
+  // derruba links públicos na hora.
+  const [deleteTarget, setDeleteTarget] = useState<SatisfactionCampaignRow | null>(null);
+  const [deleteCode, setDeleteCode] = useState("");
 
   useEffect(() => {
     if (!feedback) return;
@@ -344,6 +351,21 @@ export function SatisfactionSurveysPanel(props: Props) {
                               Link geral
                             </button>
                           ) : null}
+                          {props.isSuperAdmin ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              data-testid="satisfaction-campaign-delete"
+                              className="inline-flex items-center gap-1 text-[#B91C1C] hover:underline disabled:opacity-50"
+                              onClick={() => {
+                                setDeleteCode("");
+                                setDeleteTarget(campaign);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Excluir
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -382,6 +404,82 @@ export function SatisfactionSurveysPanel(props: Props) {
       </div>
 
       <SatisfactionLinkDialog data={linkDialog} onClose={() => setLinkDialog(null)} />
+
+      {deleteTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="satisfaction-delete-title"
+        >
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h3
+              id="satisfaction-delete-title"
+              className="flex items-center gap-2 text-[16px] font-bold text-[#B91C1C]"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir pesquisa
+            </h3>
+            <p className="mt-2 text-[14px] text-[#334155]">
+              <span className="font-semibold">{deleteTarget.name}</span>{" "}
+              <span className="text-[#94A3B8]">({deleteTarget.code})</span>
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-[13px] text-[#475569]">
+              <li>A pesquisa some de todas as telas imediatamente.</li>
+              <li>Todos os links de resposta (individuais e geral) deixam de funcionar.</li>
+              <li>Os dados são preservados para auditoria — nada é apagado do banco.</li>
+              <li>Não é possível desfazer pela tela.</li>
+            </ul>
+            <label className="mt-4 block text-[12px] font-semibold text-[#475569]">
+              Digite o código{" "}
+              <span className="font-mono text-[#B91C1C]">{deleteTarget.code}</span>{" "}
+              para confirmar
+              <input
+                autoFocus
+                className="mt-1 w-full rounded-md border border-[#CBD5E1] px-3 py-2 font-mono text-[14px] font-normal"
+                value={deleteCode}
+                onChange={(e) => setDeleteCode(e.target.value)}
+                placeholder={deleteTarget.code}
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-[#CBD5E1] px-4 py-2 text-[14px] font-semibold text-[#334155] hover:bg-[#F8FAFC]"
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteCode("");
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                data-testid="satisfaction-campaign-delete-confirm"
+                disabled={
+                  busyId === deleteTarget.id ||
+                  deleteCode.trim() !== deleteTarget.code
+                }
+                className="rounded-md bg-[#B91C1C] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#991B1B] disabled:opacity-40"
+                onClick={() => {
+                  const target = deleteTarget;
+                  const code = deleteCode.trim();
+                  void runAction(
+                    target.id,
+                    () => satisfactionApi.deleteCampaign(target.id, code),
+                    `Pesquisa "${target.name}" excluída.`
+                  ).finally(() => {
+                    setDeleteTarget(null);
+                    setDeleteCode("");
+                  });
+                }}
+              >
+                Excluir definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {wizardOpen ? (
         <NewSurveyWizard

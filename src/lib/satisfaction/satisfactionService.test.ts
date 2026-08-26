@@ -392,6 +392,123 @@ describe("campanha — exclusão protege o histórico", () => {
   });
 });
 
+describe("campanha — exclusão LÓGICA (só SUPER_ADMIN)", () => {
+  function seedForSoftDelete() {
+    return buildPrisma({
+      campaigns: [{ ...OPEN_CAMPAIGN, deletedAt: null }],
+      tokens: [
+        { id: "tok-a", campaignId: "camp-1", status: "ACTIVE", revokedAt: null },
+        { id: "tok-r", campaignId: "camp-1", status: "REVOKED", revokedAt: new Date("2026-01-01T00:00:00Z") },
+        { id: "tok-outra", campaignId: "camp-2", status: "ACTIVE", revokedAt: null },
+      ],
+      sessions: [
+        { id: "sess-aberta", campaignId: "camp-1", revokedAt: null },
+        { id: "sess-outra", campaignId: "camp-2", revokedAt: null },
+      ],
+    });
+  }
+
+  it("marca deletedAt/deletedByUserId e NÃO apaga nada do banco", async () => {
+    const prisma = seedForSoftDelete();
+    const service = createSatisfactionCampaignService({ prisma });
+
+    const deleted = await service.softDeleteCampaign("camp-1", "user-admin");
+    assert.deepEqual(deleted, { id: "camp-1", code: "SAT_2026", name: "Satisfação 2026" });
+
+    const row = prisma.satisfactionSurveyCampaign.rows[0];
+    assert.ok(row.deletedAt instanceof Date, "deletedAt preenchido");
+    assert.equal(row.deletedByUserId, "user-admin");
+    // ELIMINATÓRIO: exclusão lógica preserva TUDO — nenhuma linha some.
+    assert.equal(prisma.satisfactionSurveyCampaign.rows.length, 1);
+    assert.equal(prisma.satisfactionSurveyAccessToken.rows.length, 3);
+    assert.equal(prisma.satisfactionPublicSession.rows.length, 2);
+  });
+
+  it("revoga tokens ATIVOS e sessões abertas SÓ da campanha excluída", async () => {
+    const prisma = seedForSoftDelete();
+    const service = createSatisfactionCampaignService({ prisma });
+    await service.softDeleteCampaign("camp-1", "user-admin");
+
+    const byId = (id: string) =>
+      prisma.satisfactionSurveyAccessToken.rows.find((r: Row) => r.id === id)!;
+    assert.equal(byId("tok-a").status, "REVOKED");
+    assert.ok(byId("tok-a").revokedAt, "token ativo ganhou revokedAt");
+    // Já revogado não é reprocessado; campanha alheia intocada.
+    assert.equal(
+      byId("tok-r").revokedAt.getTime(),
+      new Date("2026-01-01T00:00:00Z").getTime()
+    );
+    assert.equal(byId("tok-outra").status, "ACTIVE");
+
+    const sess = (id: string) =>
+      prisma.satisfactionPublicSession.rows.find((r: Row) => r.id === id)!;
+    assert.ok(sess("sess-aberta").revokedAt, "sessão pública encerrada");
+    assert.equal(sess("sess-outra").revokedAt, null, "outra campanha intocada");
+  });
+
+  it("registra auditoria DELETED sem apagar a trilha", async () => {
+    const prisma = seedForSoftDelete();
+    const service = createSatisfactionCampaignService({ prisma });
+    await service.softDeleteCampaign("camp-1", "user-admin");
+    const audit = prisma.commercialAuditLog.rows.at(-1);
+    assert.equal(audit.entityType, "SATISFACTION_CAMPAIGN");
+    assert.equal(audit.action, "DELETED");
+    assert.match(String(audit.newValue), /exclusão lógica/);
+  });
+
+  it("excluir de novo (ou id inexistente) → NOT_FOUND", async () => {
+    const prisma = seedForSoftDelete();
+    const service = createSatisfactionCampaignService({ prisma });
+    await service.softDeleteCampaign("camp-1", "user-admin");
+    await assert.rejects(
+      () => service.softDeleteCampaign("camp-1", "user-admin"),
+      /não encontrada/i
+    );
+    await assert.rejects(
+      () => service.softDeleteCampaign("nao-existe", "user-admin"),
+      /não encontrada/i
+    );
+  });
+
+  it("some das telas: listCampaigns filtra e getCampaign devolve 404", async () => {
+    const prisma = buildPrisma({
+      campaigns: [
+        { ...OPEN_CAMPAIGN, deletedAt: null, _count: { invitations: 0, responses: 0 } },
+        {
+          ...OPEN_CAMPAIGN,
+          id: "camp-excluida",
+          code: "SAT_OLD",
+          deletedAt: new Date(),
+          _count: { invitations: 0, responses: 0 },
+        },
+      ],
+    });
+    const service = createSatisfactionCampaignService({ prisma });
+
+    const { rows, total } = await service.listCampaigns({
+      page: 1,
+      pageSize: 25,
+      status: null,
+      search: null,
+      allowedCustomerIds: null,
+    });
+    assert.equal(total, 1);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, "camp-1", "só a campanha viva aparece no grid");
+
+    await assert.rejects(() => service.getCampaign("camp-excluida"), /não encontrada/i);
+  });
+
+  it("link de campanha excluída PARA de funcionar (troca de token recusada)", async () => {
+    const { prisma, token } = seedForPublic({ campaign: { deletedAt: new Date() } });
+    const service = createSatisfactionPublicService({ prisma });
+    const result = await service.exchangeToken(token);
+    assert.equal(result.ok, false);
+    assert.equal((result as { reason: string }).reason, "REVOKED");
+    assert.equal(prisma.satisfactionPublicSession.rows.length, 0, "nenhuma sessão criada");
+  });
+});
+
 // ─── Superfície pública ─────────────────────────────────────────────────────
 
 function seedForPublic(overrides: { campaign?: Row; invitation?: Row } = {}) {

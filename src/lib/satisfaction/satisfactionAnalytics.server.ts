@@ -108,7 +108,11 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
    * participa de métrica de satisfação.
    */
   function buildResponseWhere(filters: SatisfactionAnalyticsFilters) {
-    const where: Record<string, unknown> = { status: "SUBMITTED" };
+    // Pesquisa excluída logicamente não entra em métrica nenhuma.
+    const where: Record<string, unknown> = {
+      status: "SUBMITTED",
+      campaign: { deletedAt: null },
+    };
     if (filters.campaignIds?.length) where.campaignId = { in: filters.campaignIds };
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.allowedCustomerIds) {
@@ -198,7 +202,10 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
     ): Promise<SatisfactionDashboardDto> {
       const responseIds = await selectResponseIds(filters);
 
-      const invitationWhere: Record<string, unknown> = { revokedAt: null };
+      const invitationWhere: Record<string, unknown> = {
+        revokedAt: null,
+        campaign: { deletedAt: null },
+      };
       if (filters.campaignIds?.length) invitationWhere.campaignId = { in: filters.campaignIds };
       if (filters.allowedCustomerIds) {
         invitationWhere.customerId = { in: filters.allowedCustomerIds };
@@ -248,6 +255,7 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
                 ON r."campaignId" = c."id" AND r."status" = 'SUBMITTED'
               LEFT JOIN "SatisfactionSurveyAnswer" a
                 ON a."responseId" = r."id" AND a."ratingValue" IS NOT NULL
+             WHERE c."deletedAt" IS NULL
              GROUP BY c."id", c."name", c."referenceStart"
              ORDER BY c."referenceStart" ASC
              LIMIT 24

@@ -217,7 +217,13 @@ export function createSatisfactionPublicService(deps: {
           expiresAt: true,
           revokedAt: true,
           campaign: {
-            select: { id: true, status: true, opensAt: true, closesAt: true },
+            select: {
+              id: true,
+              status: true,
+              opensAt: true,
+              closesAt: true,
+              deletedAt: true,
+            },
           },
           invitation: {
             select: { id: true, revokedAt: true, completedAt: true },
@@ -226,6 +232,9 @@ export function createSatisfactionPublicService(deps: {
       });
 
       if (!accessToken) return fail("INVALID");
+      // Pesquisa excluída logicamente: defesa dupla — a exclusão já revoga
+      // os tokens, mas nenhum link de campanha excluída pode abrir sessão.
+      if (accessToken.campaign.deletedAt) return fail("REVOKED");
 
       const usability = evaluateTokenUsability(
         {
