@@ -54,6 +54,7 @@ import {
   validateEmployeeEpiAdminNotesForm,
 } from "@/src/lib/employeeAdminHr";
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
+import { PeopleEmployeeProfileDialog } from "@/src/components/employee/profile/PeopleEmployeeProfileDialog";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
 import { EmployeeSystemLinksPanel } from "@/src/components/employee/EmployeeSystemLinksPanel";
@@ -2185,407 +2186,90 @@ export const EmployeeModule = () => {
         </div>
       )}
 
-      {/* Modal: Ficha do colaborador */}
+      {/* Modal: Ficha funcional corporativa */}
       {viewingEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={FICHA_MODAL_CLASS}
-          >
-            <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/40 shrink-0">
-              <div>
-                <h3 className="text-xl font-bold">{viewingEmployee.name}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {viewingEmployee.socialName?.trim() ? `${viewingEmployee.socialName} · ` : ""}
-                  {viewingEmployee.Role.name} · {viewingEmployee.department}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const employee = viewingEmployee;
-                      setViewingEmployee(null);
-                      handleOpenModal(employee);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                    Editar
-                  </button>
-                )}
-                {canDelete && (
-                  <button
-                    type="button"
-                    onClick={() => requestDeleteEmployee(viewingEmployee)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive/40 bg-background hover:bg-destructive/10 text-sm font-medium text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Excluir
-                  </button>
-                )}
-                <button type="button" onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
-                  <X className="h-5 w-5" />
+        <PeopleEmployeeProfileDialog
+          employeeId={viewingEmployee.id}
+          onClose={() => setViewingEmployee(null)}
+          canViewLinks={canViewLinksTab}
+          canViewAdmin={canViewAdminHr || canViewSensitiveHr}
+          headerActions={
+            <>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const employee = viewingEmployee;
+                    setViewingEmployee(null);
+                    handleOpenModal(employee);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-background hover:bg-accent text-sm font-medium"
+                >
+                  <Edit2 className="h-4 w-4" />
+                  Editar
                 </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-              <EmployeeFichaTabNav
-                activeTab={viewFichaTab}
-                onTabChange={setViewFichaTab}
-                layout="sidebar"
-                visibleTabIds={visibleFichaTabs}
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => requestDeleteEmployee(viewingEmployee)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-destructive/40 bg-background hover:bg-destructive/10 text-sm font-medium text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Excluir
+                </button>
+              )}
+            </>
+          }
+          linksSlot={
+            <div className="space-y-4 text-sm">
+              <EmployeeSystemAccessCard
+                employeeId={viewingEmployee.id}
+                canManageLink={canManageUserLink}
+                canOpenUsersAdmin={auth.hasPermission("users.manage")}
+                onLinked={(appUser) => {
+                  if (!appUser) return;
+                  setViewingEmployee({ ...viewingEmployee, appUser });
+                  setEmployees((prev) =>
+                    prev.map((e) => (e.id === viewingEmployee.id ? { ...e, appUser } : e))
+                  );
+                }}
+                onUnlinked={() => {
+                  setViewingEmployee({ ...viewingEmployee, appUser: null });
+                  setEmployees((prev) =>
+                    prev.map((e) => (e.id === viewingEmployee.id ? { ...e, appUser: null } : e))
+                  );
+                }}
               />
-
-              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
-                <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
-                  Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
-                </p>
-
-                {viewFichaTab === "professional" && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <DetailField label="Nome social / apelido" value={displayText(viewingEmployee.socialName)} />
-                    <DetailField
-                      label="E-mail corporativo"
-                      value={displayText(viewingEmployee.corporateEmail)}
-                    />
-                    <DetailField label="Cargo" value={displayText(viewingEmployee.Role.name)} />
-                    <DetailField label="Departamento" value={displayText(viewingEmployee.department)} />
-                    {viewingEmployee.orgDepartment?.directorate?.name ? (
-                      <DetailField
-                        label="Diretoria"
-                        value={viewingEmployee.orgDepartment.directorate.name}
-                      />
-                    ) : null}
-                    {viewingEmployee.orgDepartment?.leader?.name ? (
-                      <DetailField
-                        label="Líder do departamento"
-                        value={viewingEmployee.orgDepartment.leader.name}
-                      />
-                    ) : null}
-                    <DetailField
-                      label="Centro de custo"
-                      value={
-                        viewingEmployee.financialCostCenter
-                          ? `${viewingEmployee.financialCostCenter.code} — ${viewingEmployee.financialCostCenter.name}`
-                          : displayText(viewingEmployee.costCenter)
-                      }
-                    />
-                    <DetailField label="Classificação" value={displayText(viewingEmployee.classification)} />
-                    <DetailField label="Tipo de contrato" value={formatContractType(viewingEmployee.contractType)} />
-                    <DetailField label="Admissão" value={formatEmployeeDate(viewingEmployee.admissionDate)} />
-                    <DetailField label="Desligamento" value={formatEmployeeDate(viewingEmployee.terminationDate)} />
-                    <DetailField
-                      label="Gestor responsável"
-                      value={
-                        viewingEmployee.manager
-                          ? viewingEmployee.manager.socialName?.trim() ||
-                            viewingEmployee.manager.name
-                          : displayText(viewingEmployee.managerName)
-                      }
-                    />
-                    <div>
-                      <p className="text-muted-foreground text-xs">Status</p>
-                      <div className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1",
-                        viewingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                      )}>
-                        {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
-                      </div>
-                    </div>
-                    <div className="col-span-2 md:col-span-3">
-                      <EmployeeSystemAccessCard
-                        employeeId={viewingEmployee.id}
-                        canManageLink={canManageUserLink}
-                        canOpenUsersAdmin={auth.hasPermission("users.manage")}
-                        onLinked={(appUser) => {
-                          if (!appUser) return;
-                          const updated = { ...viewingEmployee, appUser };
-                          setViewingEmployee(updated);
-                          setEmployees((prev) =>
-                            prev.map((e) =>
-                              e.id === viewingEmployee.id ? { ...e, appUser } : e
-                            )
-                          );
-                        }}
-                        onUnlinked={() => {
-                          const updated = { ...viewingEmployee, appUser: null };
-                          setViewingEmployee(updated);
-                          setEmployees((prev) =>
-                            prev.map((e) =>
-                              e.id === viewingEmployee.id ? { ...e, appUser: null } : e
-                            )
-                          );
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {viewFichaTab === "personal" && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <DetailField
-                      label="CPF"
-                      value={
-                        canViewPersonalHr
-                          ? formatCpfForDisplay(viewingEmployee.cpf)
-                          : "•••••••••••"
-                      }
-                    />
-                    <DetailField
-                      label="RG"
-                      value={canViewPersonalHr ? displayText(viewingEmployee.rg) : "••••••"}
-                    />
-                    <DetailField
-                      label="Nascimento"
-                      value={
-                        canViewPersonalHr
-                          ? formatEmployeeDate(viewingEmployee.birthDate)
-                          : "••••••"
-                      }
-                    />
-                    <DetailField
-                      label="Telefone"
-                      value={
-                        canViewPersonalHr
-                          ? formatPhoneForDisplay(viewingEmployee.phone)
-                          : "••••••••"
-                      }
-                    />
-                    <DetailField
-                      label="E-mail pessoal"
-                      value={
-                        canViewPersonalHr
-                          ? displayText(viewingEmployee.personalEmail)
-                          : "••••••"
-                      }
-                      className="col-span-2 md:col-span-3"
-                    />
-                    <DetailField
-                      label="Endereço"
-                      value={
-                        canViewPersonalHr ? displayText(viewingEmployee.address) : "••••••"
-                      }
-                      className="col-span-2 md:col-span-3"
-                      multiline
-                    />
-                    {!canViewPersonalHr && (
-                      <p className="col-span-2 md:col-span-3 text-xs text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Dados pessoais restritos. A API também omite CPF e endereço sem{" "}
-                        <span className="font-mono">employees.personal_data.view</span> (ou{" "}
-                        <span className="font-mono">employees.edit</span>).
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {viewFichaTab === "emergency" && (
-                  <div className="grid grid-cols-2 gap-4 text-sm max-w-3xl">
-                    {canViewSensitiveHr ? (
-                      <>
-                        <DetailField
-                          label="Nome do contato"
-                          value={displayText(viewingEmployee.emergencyContactName)}
-                          className="col-span-2"
-                        />
-                        <DetailField
-                          label="Telefone"
-                          value={formatPhoneForDisplay(viewingEmployee.emergencyContactPhone)}
-                        />
-                        <DetailField
-                          label="Grau / relação"
-                          value={displayText(viewingEmployee.emergencyContactRelationship)}
-                        />
-                      </>
-                    ) : (
-                      <p className="col-span-2 text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Contatos de emergência restritos. Solicite{" "}
-                        <span className="font-mono">employees.sensitive_data.view</span> (ou{" "}
-                        <span className="font-mono">employees.edit</span>).
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {viewFichaTab === "epi" && (
-                  <div className="space-y-4 text-sm">
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <DetailField label="Camiseta / camisa" value={displayText(viewingEmployee.shirtSize)} />
-                      <DetailField label="Calça" value={displayText(viewingEmployee.pantsSize)} />
-                      <DetailField label="Jaqueta / blusa" value={displayText(viewingEmployee.jacketSize)} />
-                      <DetailField label="Luva" value={displayText(viewingEmployee.gloveSize)} />
-                      <DetailField label="Calçado / bota" value={displayText(viewingEmployee.shoeSize)} />
-                    </div>
-                    <DetailField label="Observações de EPI / uniforme" value={displayText(viewingEmployee.epiNotes)} multiline />
-                  </div>
-                )}
-
-                {viewFichaTab === "admin" && (
-                  <div className="space-y-5">
-                    {!canViewSensitiveHr || viewingEmployee.compensationRedacted ? (
-                      <p className="text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Dados salariais e de custo restritos. Solicite{" "}
-                        <span className="font-mono">employees.sensitive_data.view</span> (ou{" "}
-                        <span className="font-mono">employees.edit</span>). A API também omite
-                        salário e custos sem essa permissão.
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                          Referência administrativa p/ estimativas RH e rateio global de HH. Não é
-                          folha oficial nem dado bancário.
-                        </p>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          <div className="p-3 rounded-lg bg-muted/20 border border-border">
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
-                              Estimativa mensal
-                            </p>
-                            <p className="text-lg font-semibold">
-                              {formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg bg-muted/20 border border-border">
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
-                              Estimativa /h produtiva
-                            </p>
-                            <p className="text-lg font-semibold">
-                              {formatCurrency(
-                                viewingEmployee.costs?.costPerProductiveHour || 0,
-                                5
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Referência salarial</span>
-                            <span>{formatCurrency(viewingEmployee.costs?.salary || 0)}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Jornada mensal</span>
-                            <span>{viewingEmployee.monthlyHours}h</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Produtividade</span>
-                            <span>{formatNumber(viewingEmployee.productivity, 2)}%</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Benefícios (estimativa)</span>
-                            <span className="text-green-600">
-                              {formatCurrency(viewingEmployee.costs?.totalBenefits || 0)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Encargos (estimativa)</span>
-                            <span className="text-orange-600">
-                              {formatCurrency(viewingEmployee.costs?.totalCharges || 0)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Provisões (estimativa)</span>
-                            <span className="text-blue-600">
-                              {formatCurrency(viewingEmployee.costs?.totalProvisions || 0)}
-                            </span>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-muted-foreground uppercase mb-2">
-                            Verbas vinculadas
-                          </p>
-                          {viewingEmployee.EmployeePayrollComponent.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">—</p>
-                          ) : (
-                            <ul className="space-y-1 text-sm">
-                              {viewingEmployee.EmployeePayrollComponent.map((c) => (
-                                <li
-                                  key={c.PayrollComponent.id}
-                                  className="flex justify-between gap-2"
-                                >
-                                  <span>{c.PayrollComponent.name}</span>
-                                  <span className="text-muted-foreground text-xs">
-                                    {c.PayrollComponent.type}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {viewFichaTab === "notes" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <DetailField
-                      label="Observações profissionais"
-                      value={displayText(viewingEmployee.professionalNotes)}
-                      multiline
-                    />
-                    <DetailField
-                      label="Observações administrativas"
-                      value={
-                        canViewAdminHr && !viewingEmployee.adminNotesRedacted
-                      ? displayText(viewingEmployee.adminNotes)
-                          : "••••••"
-                      }
-                      multiline
-                    />
-                    {(!canViewAdminHr || viewingEmployee.adminNotesRedacted) && (
-                      <p className="md:col-span-2 text-xs text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Observações administrativas omitidas sem{" "}
-                        <span className="font-mono">employees.administrative_data.view</span> (ou{" "}
-                        <span className="font-mono">employees.edit</span>).
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {viewFichaTab === "links" && (
-                  <div className="space-y-4 text-sm">
-                    <EmployeeSystemAccessCard
-                      employeeId={viewingEmployee.id}
-                      canManageLink={canManageUserLink}
-                      canOpenUsersAdmin={auth.hasPermission("users.manage")}
-                      onLinked={(appUser) => {
-                        if (!appUser) return;
-                        setViewingEmployee({ ...viewingEmployee, appUser });
-                        setEmployees((prev) =>
-                          prev.map((e) =>
-                            e.id === viewingEmployee.id ? { ...e, appUser } : e
-                          )
-                        );
-                      }}
-                      onUnlinked={() => {
-                        setViewingEmployee({ ...viewingEmployee, appUser: null });
-                        setEmployees((prev) =>
-                          prev.map((e) =>
-                            e.id === viewingEmployee.id ? { ...e, appUser: null } : e
-                          )
-                        );
-                      }}
-                    />
-                    <EmployeeSystemLinksPanel
-                      employeeId={viewingEmployee.id}
-                      canUnlinkPerson={canManageLinks}
-                      onUnlinkedPerson={() => {
-                        setViewingEmployee({
-                          ...viewingEmployee,
-                          personId: null,
-                          person: null,
-                        });
-                        fetchData();
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
+              <EmployeeSystemLinksPanel
+                employeeId={viewingEmployee.id}
+                canUnlinkPerson={canManageLinks}
+                onUnlinkedPerson={() => {
+                  setViewingEmployee({
+                    ...viewingEmployee,
+                    personId: null,
+                    person: null,
+                  });
+                  fetchData();
+                }}
+              />
             </div>
-          </motion.div>
-        </div>
+          }
+          adminSlot={
+            !canViewSensitiveHr || viewingEmployee.compensationRedacted ? (
+              <p className="text-sm text-muted-foreground">Informação restrita</p>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  Referência administrativa para estimativas RH e rateio global de HH. Não é folha oficial.
+                </p>
+                <p>Estimativa mensal: {formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
+                <p>Referência salarial: {formatCurrency(viewingEmployee.costs?.salary || 0)}</p>
+                <p>Jornada: {viewingEmployee.monthlyHours}h · Produtividade {formatNumber(viewingEmployee.productivity, 2)}%</p>
+              </div>
+            )
+          }
+        />
       )}
 
       <ProjectDeleteConfirmModal
