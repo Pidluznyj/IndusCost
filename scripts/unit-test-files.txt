@@ -224,6 +224,7 @@ src/lib/granularPermissions.perm44.rc.test.ts
 src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts
 src/components/admin/PermissionsTree.test.tsx
 src/lib/satisfaction/satisfactionContracts.test.ts
+src/lib/satisfaction/satisfactionInvitationFilters.test.ts
 src/lib/satisfaction/satisfactionMetrics.test.ts
 src/lib/satisfaction/satisfactionPublicSurface.test.ts
 src/lib/satisfaction/satisfactionSecurity.test.ts

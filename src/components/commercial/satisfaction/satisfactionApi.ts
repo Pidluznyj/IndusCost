@@ -197,10 +197,11 @@ export const satisfactionApi = {
     );
   },
 
-  listCustomers(params: { search?: string | null; onlyWithOrders?: boolean; from?: string | null; to?: string | null }) {
+  listCustomers(params: { search?: string | null; customerId?: string | null; onlyWithOrders?: boolean; from?: string | null; to?: string | null }) {
     return fetchJsonOk<{ customers: SatisfactionCustomerOption[] }>(
       `${BASE}/customers${query({
         search: params.search,
+        customerId: params.customerId,
         onlyWithOrders: params.onlyWithOrders ? "true" : null,
         from: params.from,
         to: params.to,
@@ -208,7 +209,7 @@ export const satisfactionApi = {
     );
   },
 
-  listInvitations(campaignId: string, params: { page?: number; pageSize?: number; status?: string | null; search?: string | null }) {
+  listInvitations(campaignId: string, params: { page?: number; pageSize?: number; status?: string | null; search?: string | null; customerId?: string | null }) {
     return fetchJsonOk<Paginated<SatisfactionInvitationRow>>(
       `${BASE}/campaigns/${campaignId}/invitations${query(params)}`
     );
@@ -239,12 +240,13 @@ export const satisfactionApi = {
     );
   },
 
-  listResponses(campaignId: string, params: { page?: number; pageSize?: number; onlyCritical?: boolean }) {
+  listResponses(campaignId: string, params: { page?: number; pageSize?: number; onlyCritical?: boolean; customerId?: string | null }) {
     return fetchJsonOk<Paginated<SatisfactionResponseRow>>(
       `${BASE}/campaigns/${campaignId}/responses${query({
         page: params.page,
         pageSize: params.pageSize,
         onlyCritical: params.onlyCritical ? "true" : null,
+        customerId: params.customerId,
       })}`
     );
   },

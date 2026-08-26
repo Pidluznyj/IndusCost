@@ -12,6 +12,10 @@ import {
   satisfactionApi,
   type SatisfactionCustomerOption,
 } from "./satisfactionApi.js";
+import {
+  CustomerAutocompleteFilter,
+  type EntityAutocompleteSelection,
+} from "@/src/components/common/CustomerAutocompleteFilter";
 
 type Props = {
   onClose: () => void;
@@ -46,6 +50,10 @@ export function NewSurveyWizard({ onClose, onCreated }: Props) {
   const [allowGeneralLink, setAllowGeneralLink] = useState(false);
 
   const [customerSearch, setCustomerSearch] = useState("");
+  // Autocomplete de cliente: seleção filtra por id exato; texto livre cai na
+  // busca textual (nome/CNPJ) que o endpoint de audiência já faz.
+  const [customerSelection, setCustomerSelection] =
+    useState<EntityAutocompleteSelection | null>(null);
   const [onlyWithOrders, setOnlyWithOrders] = useState(false);
   const [customers, setCustomers] = useState<SatisfactionCustomerOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -68,6 +76,7 @@ export function NewSurveyWizard({ onClose, onCreated }: Props) {
     try {
       const result = await satisfactionApi.listCustomers({
         search: customerSearch || null,
+        customerId: customerSelection?.id ?? null,
         onlyWithOrders,
         from: onlyWithOrders ? referenceStart || null : null,
         to: onlyWithOrders ? referenceEnd || null : null,
@@ -78,7 +87,7 @@ export function NewSurveyWizard({ onClose, onCreated }: Props) {
     } finally {
       setLoadingCustomers(false);
     }
-  }, [customerSearch, onlyWithOrders, referenceEnd, referenceStart]);
+  }, [customerSearch, customerSelection, onlyWithOrders, referenceEnd, referenceStart]);
 
   useEffect(() => {
     if (step === 3) void loadCustomers();
@@ -271,16 +280,28 @@ export function NewSurveyWizard({ onClose, onCreated }: Props) {
           {step === 3 ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-end gap-2">
-                <input
-                  className="min-w-[220px] flex-1 rounded-md border border-[#CBD5E1] px-3 py-2 text-[14px]"
-                  placeholder="Buscar por nome ou CNPJ"
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void loadCustomers();
-                  }}
-                />
-                <label className="flex items-center gap-2 text-[13px] text-[#334155]">
+                <div
+                  className="min-w-[260px] flex-1"
+                  data-testid="satisfaction-wizard-customer-filter"
+                >
+                  <CustomerAutocompleteFilter
+                    label="Cliente (nome ou CNPJ)"
+                    placeholder="Buscar por nome ou CNPJ…"
+                    allowFreeText
+                    value={customerSelection}
+                    onChange={(selection) => {
+                      // Seleção do autocomplete → filtro por id exato; texto
+                      // livre (Enter sem selecionar) → busca textual, mesmo
+                      // comportamento do campo anterior. loadCustomers refaz
+                      // pela mudança de deps.
+                      setCustomerSelection(selection);
+                      setCustomerSearch(
+                        selection?.id ? "" : (selection?.name ?? "")
+                      );
+                    }}
+                  />
+                </div>
+                <label className="flex items-center gap-2 pb-2 text-[13px] text-[#334155]">
                   <input
                     type="checkbox"
                     className="h-4 w-4"
@@ -289,13 +310,6 @@ export function NewSurveyWizard({ onClose, onCreated }: Props) {
                   />
                   Só quem comprou no período
                 </label>
-                <button
-                  type="button"
-                  className="rounded-md border border-[#CBD5E1] px-3 py-2 text-[13px] font-semibold text-[#334155]"
-                  onClick={() => void loadCustomers()}
-                >
-                  Buscar
-                </button>
               </div>
 
               <div className="flex items-center justify-between rounded-md bg-[#F8FAFC] px-3 py-2 text-[13px]">

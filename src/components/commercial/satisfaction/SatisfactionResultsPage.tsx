@@ -14,6 +14,10 @@ import {
   type SatisfactionDashboard,
   type SatisfactionResponseRow,
 } from "./satisfactionApi.js";
+import {
+  CustomerAutocompleteFilter,
+  type EntityAutocompleteSelection,
+} from "@/src/components/common/CustomerAutocompleteFilter";
 
 type TabId = "summary" | "criteria" | "responses" | "comments";
 
@@ -44,6 +48,9 @@ export function SatisfactionResultsPage() {
   const [responsesTotal, setResponsesTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [onlyCritical, setOnlyCritical] = useState(false);
+  // Autocomplete de cliente (nome/CNPJ) — a seleção filtra por id exato.
+  const [customerFilter, setCustomerFilter] =
+    useState<EntityAutocompleteSelection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -76,13 +83,14 @@ export function SatisfactionResultsPage() {
         page,
         pageSize,
         onlyCritical,
+        customerId: customerFilter?.id ?? null,
       });
       setResponses(result.rows);
       setResponsesTotal(result.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar respostas.");
     }
-  }, [campaignId, onlyCritical, page]);
+  }, [campaignId, onlyCritical, page, customerFilter]);
 
   useEffect(() => {
     if (tab === "responses" || tab === "comments") void loadResponses();
@@ -226,18 +234,34 @@ export function SatisfactionResultsPage() {
 
       {tab === "responses" || tab === "comments" ? (
         <div className="space-y-3">
-          <label className="flex items-center gap-2 text-[13px] text-[#334155]">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={onlyCritical}
-              onChange={(e) => {
-                setPage(1);
-                setOnlyCritical(e.target.checked);
-              }}
-            />
-            Mostrar apenas respostas com nota crítica (≤ 2)
-          </label>
+          <div className="flex flex-wrap items-end gap-4">
+            <div
+              className="min-w-[260px] max-w-[420px] flex-1"
+              data-testid="satisfaction-responses-customer-filter"
+            >
+              <CustomerAutocompleteFilter
+                label="Cliente (nome ou CNPJ)"
+                placeholder="Buscar por nome ou CNPJ…"
+                value={customerFilter}
+                onChange={(selection) => {
+                  setPage(1);
+                  setCustomerFilter(selection);
+                }}
+              />
+            </div>
+            <label className="flex items-center gap-2 pb-2 text-[13px] text-[#334155]">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={onlyCritical}
+                onChange={(e) => {
+                  setPage(1);
+                  setOnlyCritical(e.target.checked);
+                }}
+              />
+              Mostrar apenas respostas com nota crítica (≤ 2)
+            </label>
+          </div>
 
           <div className="overflow-hidden rounded-lg border border-[#E2E8F0] bg-white">
             <div className="overflow-x-auto">

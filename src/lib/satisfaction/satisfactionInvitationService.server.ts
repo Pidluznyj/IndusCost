@@ -82,6 +82,8 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
         pageSize: number;
         status: SatisfactionInvitationStatusValue | null;
         search: string | null;
+        /** Filtro exato do autocomplete de cliente (id interno). */
+        customerId?: string | null;
         allowedCustomerIds: string[] | null;
       }
     ): Promise<{
@@ -95,9 +97,27 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
 
       const where: Prisma.SatisfactionSurveyInvitationWhereInput = { campaignId };
       if (filters.search) {
-        where.customerNameSnapshot = { contains: filters.search, mode: "insensitive" };
+        // Nome OU CNPJ. O CNPJ pode ser digitado pontuado ou só com dígitos
+        // (e o snapshot idem) — por isso o braço literal e o só-dígitos.
+        const term = filters.search;
+        const digits = term.replace(/\D+/g, "");
+        const or: Prisma.SatisfactionSurveyInvitationWhereInput[] = [
+          { customerNameSnapshot: { contains: term, mode: "insensitive" } },
+          { customerTaxIdSnapshot: { contains: term } },
+        ];
+        if (digits && digits !== term) {
+          or.push({ customerTaxIdSnapshot: { contains: digits } });
+        }
+        where.OR = or;
       }
-      if (filters.allowedCustomerIds) {
+      const customerIdFilter = filters.customerId?.trim() || null;
+      if (customerIdFilter) {
+        // Interseção com o escopo do vendedor: cliente fora da carteira
+        // resulta vazio — nunca vaza convite de outro escopo.
+        where.customerId = filters.allowedCustomerIds
+          ? { equals: customerIdFilter, in: filters.allowedCustomerIds }
+          : customerIdFilter;
+      } else if (filters.allowedCustomerIds) {
         where.customerId = { in: filters.allowedCustomerIds };
       }
       // Status é derivado; traduzimos para condição de banco, sem filtrar no Node.

@@ -19,6 +19,10 @@ import {
   SatisfactionLinkDialog,
   type SatisfactionLinkDialogData,
 } from "./SatisfactionLinkDialog.js";
+import {
+  CustomerAutocompleteFilter,
+  type EntityAutocompleteSelection,
+} from "@/src/components/common/CustomerAutocompleteFilter";
 
 const STATUS_BADGE: Record<SatisfactionInvitationRow["status"], string> = {
   NOT_OPENED: "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]",
@@ -35,6 +39,9 @@ export function SatisfactionInvitationsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const [statusFilter, setStatusFilter] = useState("");
+  // Autocomplete de cliente (nome/CNPJ) — a seleção filtra por id exato.
+  const [customerFilter, setCustomerFilter] =
+    useState<EntityAutocompleteSelection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -49,6 +56,7 @@ export function SatisfactionInvitationsPage() {
         page,
         pageSize,
         status: statusFilter || null,
+        customerId: customerFilter?.id ?? null,
       });
       setRows(result.rows);
       setTotal(result.total);
@@ -57,7 +65,7 @@ export function SatisfactionInvitationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, page, statusFilter]);
+  }, [campaignId, page, statusFilter, customerFilter]);
 
   useEffect(() => {
     void load();
@@ -139,6 +147,17 @@ export function SatisfactionInvitationsPage() {
             ))}
           </select>
         </label>
+        <div className="min-w-[260px] flex-1" data-testid="satisfaction-invitations-customer-filter">
+          <CustomerAutocompleteFilter
+            label="Cliente (nome ou CNPJ)"
+            placeholder="Buscar por nome ou CNPJ…"
+            value={customerFilter}
+            onChange={(selection) => {
+              setPage(1);
+              setCustomerFilter(selection);
+            }}
+          />
+        </div>
         <p className="ml-auto text-[13px] text-[#64748B]">{total} convite(s)</p>
       </div>
 

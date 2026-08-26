@@ -381,7 +381,15 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
       const allowed = await resolveScope(req);
 
       const where: Record<string, unknown> = { status: "ACTIVE" };
-      if (allowed) where.id = { in: allowed };
+      // Seleção exata do autocomplete de cliente — intersecta com o escopo.
+      const customerIdFilter = String(req.query.customerId ?? "").trim();
+      if (customerIdFilter) {
+        where.id = allowed
+          ? { equals: customerIdFilter, in: allowed }
+          : customerIdFilter;
+      } else if (allowed) {
+        where.id = { in: allowed };
+      }
       const searchFilters = buildSatisfactionCustomerSearchFilters(search);
       if (searchFilters.length > 0) {
         where.OR = searchFilters;
@@ -441,6 +449,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
           pageSize: parseIntParam(req.query.pageSize, 25),
           status: parseInvitationStatusParam(req.query.status),
           search: String(req.query.search ?? "").trim() || null,
+          customerId: String(req.query.customerId ?? "").trim() || null,
           allowedCustomerIds: await resolveScope(req),
         });
         res.json(result);
@@ -554,7 +563,16 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
         const allowed = await resolveScope(req);
 
         const where: Record<string, unknown> = { campaignId, status: "SUBMITTED" };
-        if (allowed) where.customerId = { in: allowed };
+        // Filtro exato do autocomplete de cliente — intersecta com o escopo
+        // do vendedor (fora da carteira ⇒ vazio, nunca vaza resposta).
+        const customerIdFilter = String(req.query.customerId ?? "").trim();
+        if (customerIdFilter) {
+          where.customerId = allowed
+            ? { equals: customerIdFilter, in: allowed }
+            : customerIdFilter;
+        } else if (allowed) {
+          where.customerId = { in: allowed };
+        }
         if (req.query.onlyCritical === "true") {
           where.answers = { some: { ratingValue: { lte: 2 } } };
         }
