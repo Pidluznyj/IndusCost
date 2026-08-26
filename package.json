@@ -112,6 +112,7 @@
     "backfill:sales-order-nfe-links:dry": "tsx scripts/backfill-sales-order-nfe-links.ts --dry-run",
     "backfill:sales-order-nfe-links:apply": "tsx scripts/backfill-sales-order-nfe-links.ts --apply",
     "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts",
+    "test:sales-orders-charts-cache": "tsx --test src/lib/sales/salesOrderResultChartsCache.test.ts",
     "test:sales-orders-fulfillment": "tsx --test src/lib/salesOrderManagementFulfillment.test.ts",
     "test:sales-orders-delay": "tsx --test src/lib/salesOrderDeliveryDelay.test.ts src/lib/salesOrderManagementDelayParity.test.ts",
     "test:sales-orders-search": "tsx --test src/lib/salesOrderSmartSearch.test.ts src/lib/salesOrdersListSummary.test.ts src/lib/salesOrderListReportExport.test.ts src/lib/salesOrderListPaymentSchedule.test.ts src/lib/finance/salesOrderPlannedReceivables.test.ts src/lib/salesOrderListInvoicing.test.ts src/lib/salesOrderListGrid.test.ts",

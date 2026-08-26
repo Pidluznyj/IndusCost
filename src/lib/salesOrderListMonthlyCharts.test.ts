@@ -39,11 +39,16 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.doesNotMatch(chartsBlock, /startDate/);
     assert.doesNotMatch(chartsBlock, /month:/);
 
-    assert.match(charts, /getSalesOrderResultApiPath/);
+    // Cache materializado por ano: a URL leva SÓ o ano — nenhum outro filtro.
+    assert.match(
+      charts,
+      /charts-cache\?year=\$\{filters\.year\}/,
+      "gráficos leem do cache por ano"
+    );
     assert.doesNotMatch(charts, /filters\.status/);
     assert.doesNotMatch(charts, /filters\.customerId/);
     assert.doesNotMatch(charts, /filters\.minNetValue/);
-    assert.match(charts, /month:\s*undefined/);
+    assert.doesNotMatch(charts, /filters\.month/);
   });
 
   it("gráfico de margem usa margem comercial (não gerencial)", () => {
@@ -55,7 +60,9 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.doesNotMatch(chart, /YTD/);
     const charts = read("src/components/sales/SalesOrderListMonthlyCharts.tsx");
     assert.match(charts, /payload\.monthlyCommercialMargin/);
-    assert.match(charts, /commercial-margin-charts-v3/);
+    // A série vem do cache materializado (que preserva monthlyCommercialMargin
+    // do motor oficial) — nunca da margem gerencial do summary.
+    assert.match(charts, /SalesOrderResultChartsCachePayload/);
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.doesNotMatch(module, /monthlyCommercialMargin=\{marginSummary/);
     const adapter = read("src/lib/salesMarginRulesAdapter.ts");

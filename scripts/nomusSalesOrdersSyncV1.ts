@@ -34,6 +34,10 @@ import {
   buildSalesOrderFlowRecomputeAfterSyncTrigger,
   runSalesOrderFlowRecomputeAfterNomusSync,
 } from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
+import {
+  formatSalesOrderResultChartsCacheAfterSyncLog,
+  refreshSalesOrderResultChartsCacheAfterNomusSync,
+} from "../src/lib/sales/salesOrderResultChartsCache.server.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 import {
   formatSalesOrdersPaginationNote,
@@ -2223,6 +2227,24 @@ export async function executeNomusSalesOrdersSync(
     } catch (err) {
       console.error(
         "[nomusSalesOrdersSyncV1] sales-order-flow recompute falhou (sync de pedidos segue):",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    // Cache dos gráficos da listagem Comercial > Pedidos (YoY + margem %):
+    // recomputa os anos tocados pelos pedidos afetados. Soft-fail.
+    try {
+      hooksAlreadyRan.push("salesOrderResultChartsCache");
+      const chartsCacheResult =
+        await refreshSalesOrderResultChartsCacheAfterNomusSync(prisma, {
+          salesOrderIds: applied?.affectedSalesOrderIds ?? [],
+        });
+      console.log(
+        `[nomusSalesOrdersSyncV1] ${formatSalesOrderResultChartsCacheAfterSyncLog(chartsCacheResult)}`
+      );
+    } catch (err) {
+      console.error(
+        "[nomusSalesOrdersSyncV1] charts-cache pós-sync falhou (sync de pedidos segue):",
         err instanceof Error ? err.message : err
       );
     }

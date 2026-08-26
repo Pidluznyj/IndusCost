@@ -236,3 +236,4 @@ src/lib/satisfaction/satisfactionRoutes.test.ts
 src/lib/satisfaction/satisfactionService.test.ts
 src/lib/satisfaction/satisfactionCampaignDelete.test.ts
 src/lib/sales-orders/salesOrderCanonicalValues.test.ts
+src/lib/sales/salesOrderResultChartsCache.test.ts
