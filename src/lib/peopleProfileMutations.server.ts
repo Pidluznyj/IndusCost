@@ -14,6 +14,8 @@ import {
 import { assertNoManagerCycleCte } from "./peopleProfileHierarchy.server.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
 import { saveAppLocalFile, readAppLocalFile } from "./appLocalFileStorage.js";
+import type { PeopleCareerPostEventType } from "./peopleProfileTypes.js";
+export { PEOPLE_CAREER_POST_EVENT_TYPES } from "./peopleProfileTypes.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -342,7 +344,7 @@ export async function applyCareerMovement(
   prisma: PrismaClient,
   input: {
     employeeId: string;
-    eventType: "PROMOTION" | "ROLE_CHANGE" | "DEPARTMENT_CHANGE" | "MANAGER_CHANGE" | "CONTRACT_CHANGE";
+    eventType: PeopleCareerPostEventType;
     effectiveDate: Date;
     reason?: string | null;
     notes?: string | null;
@@ -352,6 +354,9 @@ export async function applyCareerMovement(
     newDepartment?: string | null;
     newManagerId?: string | null;
     newContractType?: string | null;
+    newCostCenterId?: string | null;
+    newCostCenter?: string | null;
+    newWorkSchedule?: string | null;
   }
 ) {
   return prisma.$transaction(async (tx) => {
@@ -366,6 +371,11 @@ export async function applyCareerMovement(
       data.managerId = nextManagerId;
     }
     if (input.newContractType) data.contractType = input.newContractType;
+    if (input.newCostCenterId !== undefined && input.newCostCenterId !== null) {
+      data.costCenterId = input.newCostCenterId;
+    }
+    if (input.newCostCenter) data.costCenter = input.newCostCenter;
+    if (input.newWorkSchedule) data.workSchedule = input.newWorkSchedule;
 
     await tx.employee.update({
       where: { id: input.employeeId },
@@ -394,6 +404,12 @@ export async function applyCareerMovement(
       newManagerName: next.managerName,
       previousContractType: previous.contractType,
       newContractType: next.contractType,
+      previousCostCenterId: previous.costCenterId,
+      newCostCenterId: next.costCenterId,
+      previousCostCenter: previous.costCenter,
+      newCostCenter: next.costCenter,
+      previousWorkSchedule: previous.workSchedule,
+      newWorkSchedule: next.workSchedule,
     });
 
     logEmployeeHrAudit({
@@ -605,18 +621,28 @@ export async function createEmergencyContact(
     alternatePhone?: string | null;
     priority?: number;
     notes?: string | null;
+    actorUserId?: string | null;
   }
 ) {
-  return prisma.hrEmergencyContact.create({
-    data: {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.hrEmergencyContact.create({
+      data: {
+        employeeId: input.employeeId,
+        name: input.name.trim(),
+        phone: input.phone.trim(),
+        relationship: input.relationship ?? null,
+        alternatePhone: input.alternatePhone ?? null,
+        priority: input.priority ?? 2,
+        notes: input.notes ?? null,
+      },
+    });
+    logEmployeeHrAudit({
+      event: "employee.emergency.change",
+      actorUserId: input.actorUserId,
       employeeId: input.employeeId,
-      name: input.name.trim(),
-      phone: input.phone.trim(),
-      relationship: input.relationship ?? null,
-      alternatePhone: input.alternatePhone ?? null,
-      priority: input.priority ?? 2,
-      notes: input.notes ?? null,
-    },
+      details: { action: "create", contactId: row.id },
+    });
+    return row;
   });
 }
 

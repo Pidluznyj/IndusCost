@@ -1,10 +1,14 @@
 import React from "react";
 import { formatProfileDate, ProfileField, ProfileSection, ProfileState } from "./profileUi";
+import { EpiManageForm } from "./PeopleProfileManageForms";
 
 export function PeopleEpiTab({
   data,
   loading,
   error,
+  employeeId,
+  canManage,
+  onSaved,
 }: {
   data: {
     sizes?: Record<string, string | null>;
@@ -12,6 +16,9 @@ export function PeopleEpiTab({
   } | null;
   loading: boolean;
   error: string | null;
+  employeeId?: string;
+  canManage?: boolean;
+  onSaved?: () => void;
 }) {
   if (loading) return <ProfileState kind="loading" message="Carregando EPI…" />;
   if (error) return <ProfileState kind="error" message={error} />;
@@ -46,6 +53,9 @@ export function PeopleEpiTab({
           </ul>
         )}
       </ProfileSection>
+      {canManage && employeeId && onSaved ? (
+        <EpiManageForm employeeId={employeeId} onSaved={onSaved} />
+      ) : null}
     </div>
   );
 }

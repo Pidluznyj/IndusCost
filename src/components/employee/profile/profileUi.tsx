@@ -92,6 +92,28 @@ export function formatPercent(value: number | null | undefined): string {
   return `${sign}${n.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 }
 
+export const PROFILE_INPUT_CLASS =
+  "w-full p-2 rounded-md border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-foreground/30";
+
+export const PROFILE_LABEL_CLASS = "text-[11px] uppercase tracking-wide text-muted-foreground";
+
+export function ProfileManageSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mt-8 pt-4 border-t border-border">
+      <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-3">
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 export function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";

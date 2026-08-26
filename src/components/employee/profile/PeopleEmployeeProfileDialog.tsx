@@ -108,11 +108,13 @@ export function PeopleEmployeeProfileDialog({
 }) {
   const [summary, setSummary] = useState<PeopleProfileSummaryDto | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryErrorStatus, setSummaryErrorStatus] = useState<number | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PeopleProfileTabId>("overview");
   const [tabCache, setTabCache] = useState<TabCache>({});
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState<string | null>(null);
+  const [tabErrorStatus, setTabErrorStatus] = useState<number | null>(null);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const employeeIdRef = useRef(employeeId);
   employeeIdRef.current = employeeId;
@@ -129,6 +131,7 @@ export function PeopleEmployeeProfileDialog({
   useEffect(() => {
     setSummary(null);
     setSummaryError(null);
+    setSummaryErrorStatus(null);
     setSummaryLoading(true);
     setTabCache({});
     setActiveTab("overview");
@@ -143,6 +146,7 @@ export function PeopleEmployeeProfileDialog({
         if (ac.signal.aborted) return;
         if (employeeIdRef.current !== requestedId) return;
         setSummaryError(err instanceof Error ? err.message : "Não foi possível abrir a ficha.");
+        setSummaryErrorStatus(typeof err === "object" && err && "status" in err ? Number((err as { status: number }).status) : null);
       })
       .finally(() => {
         if (employeeIdRef.current === requestedId) setSummaryLoading(false);
@@ -150,13 +154,14 @@ export function PeopleEmployeeProfileDialog({
     return () => ac.abort();
   }, [employeeId]);
 
-  const loadTab = useCallback(async (tab: PeopleProfileTabId, opts?: { appendHistory?: boolean }) => {
+  const loadTab = useCallback(async (tab: PeopleProfileTabId, opts?: { appendHistory?: boolean; force?: boolean }) => {
     if (!LAZY_TABS.has(tab)) return;
     const requestedId = employeeIdRef.current;
     const cacheKey = `${requestedId}:${tab}`;
     const cached = tabCacheRef.current[cacheKey];
-    if (cached !== undefined && !(tab === "history" && opts?.appendHistory)) {
+    if (cached !== undefined && !opts?.force && !(tab === "history" && opts?.appendHistory)) {
       setTabError(null);
+      setTabErrorStatus(null);
       return;
     }
     const pathByTab: Record<string, string> = {
@@ -187,6 +192,7 @@ export function PeopleEmployeeProfileDialog({
     else {
       setTabLoading(true);
       setTabError(null);
+      setTabErrorStatus(null);
     }
     try {
       const body = await fetchJson(url, ac.signal);
@@ -207,6 +213,7 @@ export function PeopleEmployeeProfileDialog({
       if (ac.signal.aborted) return;
       if (employeeIdRef.current !== requestedId) return;
       setTabError(err instanceof Error ? err.message : "Erro ao carregar a guia.");
+      setTabErrorStatus(typeof err === "object" && err && "status" in err ? Number((err as { status: number }).status) : null);
     } finally {
       if (employeeIdRef.current === requestedId) {
         setTabLoading(false);
@@ -214,6 +221,46 @@ export function PeopleEmployeeProfileDialog({
       }
     }
   }, []);
+
+  const reloadSummary = useCallback(() => {
+    const requestedId = employeeIdRef.current;
+    const ac = new AbortController();
+    fetchJson(`/api/employees/${requestedId}/profile`, ac.signal)
+      .then((body) => {
+        if (employeeIdRef.current !== requestedId) return;
+        setSummary(body as PeopleProfileSummaryDto);
+      })
+      .catch(() => {
+        /* summary já está na tela; falha de refresh não fecha a ficha */
+      });
+  }, []);
+
+  const onRecorded = useCallback(
+    (tab: PeopleProfileTabId) => {
+      const requestedId = employeeIdRef.current;
+      setTabCache((prev) => {
+        const next = { ...prev };
+        delete next[`${requestedId}:${tab}`];
+        delete next[`${requestedId}:history`];
+        if (tab === "compensation" || tab === "career") {
+          delete next[`${requestedId}:career`];
+          delete next[`${requestedId}:compensation`];
+        }
+        return next;
+      });
+      void loadTab(tab, { force: true });
+      reloadSummary();
+    },
+    [loadTab, reloadSummary]
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   useEffect(() => {
     void loadTab(activeTab);
@@ -223,10 +270,17 @@ export function PeopleEmployeeProfileDialog({
   const cacheKey = `${employeeId}:${activeTab}`;
   const cached = tabCache[cacheKey];
   const historyPage = (cached as HistoryPage | undefined) ?? null;
+  const tabForbidden = tabErrorStatus === 403;
+  const summaryForbidden = summaryErrorStatus === 403;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80">
-      <div className="relative bg-background text-foreground w-[96vw] h-[94vh] max-w-[96vw] rounded-md border border-border shadow-sm overflow-hidden flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Ficha funcional do colaborador"
+        className="relative bg-background text-foreground w-[96vw] h-[94vh] max-w-[96vw] rounded-md border border-border shadow-sm overflow-hidden flex flex-col"
+      >
         <div className="absolute right-4 top-3 z-10 flex items-center gap-2">
           {headerActions}
           <button
@@ -245,7 +299,10 @@ export function PeopleEmployeeProfileDialog({
           </div>
         ) : summaryError ? (
           <div className="p-8">
-            <ProfileState kind="error" message={summaryError} />
+            <ProfileState
+              kind={summaryForbidden ? "forbidden" : "error"}
+              message={summaryError}
+            />
           </div>
         ) : summary ? (
           <>
@@ -254,12 +311,17 @@ export function PeopleEmployeeProfileDialog({
               activeTab={activeTab}
               onTabChange={(tab) => {
                 setTabError(null);
+                setTabErrorStatus(null);
                 setActiveTab(tab);
               }}
               visibleTabIds={visibleTabIds}
             />
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
               <Suspense fallback={<ProfileState kind="loading" message="Carregando guia…" />}>
+                {tabForbidden ? (
+                  <ProfileState kind="forbidden" message={tabError ?? "🔒 Informação restrita"} />
+                ) : (
+                  <>
                 {activeTab === "overview" && <PeopleOverviewTab summary={summary} />}
                 {activeTab === "professional" && (
                   <PeopleProfessionalTab
@@ -277,6 +339,9 @@ export function PeopleEmployeeProfileDialog({
                     }
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageCareer)}
+                    onSaved={() => onRecorded("career")}
                   />
                 )}
                 {activeTab === "compensation" && (
@@ -285,6 +350,9 @@ export function PeopleEmployeeProfileDialog({
                     loading={tabLoading && !cached}
                     error={tabError}
                     canViewValues={Boolean(caps?.canViewCompensationValues)}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageCompensation)}
+                    onSaved={() => onRecorded("compensation")}
                   />
                 )}
                 {activeTab === "benefits" && (
@@ -297,6 +365,9 @@ export function PeopleEmployeeProfileDialog({
                     loading={tabLoading && !cached}
                     error={tabError}
                     canViewValues={Boolean(caps?.canViewCompensationValues)}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageBenefits)}
+                    onSaved={() => onRecorded("benefits")}
                   />
                 )}
                 {activeTab === "personal" && (
@@ -311,6 +382,9 @@ export function PeopleEmployeeProfileDialog({
                     data={(cached as { redacted?: boolean; contacts?: never[] }) ?? null}
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageEmergency)}
+                    onSaved={() => onRecorded("emergency")}
                   />
                 )}
                 {activeTab === "epi" && (
@@ -318,6 +392,9 @@ export function PeopleEmployeeProfileDialog({
                     data={(cached as { sizes?: Record<string, string | null>; deliveries?: never[] }) ?? null}
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageEpi)}
+                    onSaved={() => onRecorded("epi")}
                   />
                 )}
                 {activeTab === "documents" && (
@@ -329,6 +406,9 @@ export function PeopleEmployeeProfileDialog({
                     }
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageDocuments)}
+                    onSaved={() => onRecorded("documents")}
                   />
                 )}
                 {activeTab === "absences" && (
@@ -340,6 +420,9 @@ export function PeopleEmployeeProfileDialog({
                     }
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageAbsences)}
+                    onSaved={() => onRecorded("absences")}
                   />
                 )}
                 {activeTab === "history" && (
@@ -357,10 +440,16 @@ export function PeopleEmployeeProfileDialog({
                     data={(cached as { notes?: never[] }) ?? null}
                     loading={tabLoading && !cached}
                     error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageNotes)}
+                    canRestricted={Boolean(caps?.canViewRestrictedNotes)}
+                    onSaved={() => onRecorded("notes")}
                   />
                 )}
                 {activeTab === "links" && (linksSlot ?? <ProfileState kind="empty" message="Vínculos indisponíveis." />)}
                 {activeTab === "admin" && (adminSlot ?? <ProfileState kind="forbidden" message="🔒 Informação restrita" />)}
+                  </>
+                )}
               </Suspense>
             </div>
             <footer className="shrink-0 border-t border-border px-6 py-2 text-[11px] text-muted-foreground">

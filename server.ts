@@ -294,6 +294,7 @@ import {
 } from "./src/lib/employeesAccess.js";
 import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
+import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
 import { recordHistoryAfterEmployeeWrite } from "./src/lib/peopleProfileMutations.server.js";
 import {
   OPERATIONS_ACTIONS,
@@ -2003,11 +2004,19 @@ async function startServer() {
   }
 
   function employeePermCheck(authUser: AppAuthContext | null) {
+    const viewResources = authUser?.canonicalAccess?.viewResources;
     return {
       hasPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
       hasAnyPermission: (list: readonly string[]) =>
         Boolean(authUser && list.some((p) => hasPermission(authUser, p))),
-      canonicalViewResources: authUser?.canonicalAccess?.viewResources,
+      canonicalViewResources: viewResources,
+      isDenied: (p: string) => {
+        if (!viewResources) return false;
+        if (p === "employees.compensation.values.view") {
+          return !viewResources.includes("admin.employees.compensation_values");
+        }
+        return false;
+      },
     };
   }
 
@@ -3110,7 +3119,7 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
   const check = employeePermCheck(authUser);
   const revealPersonal = canViewEmployeePersonalData(check);
   const revealEmergency = canViewEmployeeSensitiveData(check);
-  const revealCompensation = canViewEmployeeSensitiveData(check);
+  const revealCompensation = canViewCompensationValues(check);
   const revealAdminNotes = canViewEmployeeAdministrativeData(check);
   const listWhere = await buildVisibleEmployeeWhere(prisma, {
     check,
@@ -3159,20 +3168,23 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
 
   const orgLeadershipByEmployee = await loadOrgLeadershipByEmployeeId(prisma);
 
-  // Motor de Custeio HH (fórmula canônica — employeeCostEngine)
+  // Motor de Custeio HH (fórmula canônica — employeeCostEngine).
+  // Sem permissão de valores: não calcula nem serializa R$.
   const employeesWithCosts = employees.map((emp) => {
-    const costs = buildEmployeeCosts({
-      salary: emp.salary,
-      monthlyHours: emp.monthlyHours,
-      productivity: emp.productivity,
-      components: emp.EmployeePayrollComponent.map((rel) => ({
-        id: rel.PayrollComponent.id,
-        name: rel.PayrollComponent.name,
-        type: rel.PayrollComponent.type,
-        calculationType: rel.PayrollComponent.calculationType,
-        value: Number(rel.PayrollComponent.value),
-      })),
-    });
+    const costs = revealCompensation
+      ? buildEmployeeCosts({
+          salary: emp.salary,
+          monthlyHours: emp.monthlyHours,
+          productivity: emp.productivity,
+          components: emp.EmployeePayrollComponent.map((rel) => ({
+            id: rel.PayrollComponent.id,
+            name: rel.PayrollComponent.name,
+            type: rel.PayrollComponent.type,
+            calculationType: rel.PayrollComponent.calculationType,
+            value: Number(rel.PayrollComponent.value),
+          })),
+        })
+      : undefined;
 
     const orgLeadership = orgLeadershipByEmployee.get(emp.id) ?? {
       isOrgLeader: false,
@@ -3183,7 +3195,7 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
     const enriched = {
       ...emp,
       orgLeadership,
-      costs,
+      ...(revealCompensation ? { costs } : {}),
     };
 
     const personalSafe = redactEmployeePersonalEmergencyForApi(
@@ -3193,6 +3205,7 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
     return redactEmployeeAdminForApi(personalSafe, { revealCompensation, revealAdminNotes });
   });
 
+  res.setHeader("Cache-Control", "no-store");
   res.json(employeesWithCosts);
 });
 

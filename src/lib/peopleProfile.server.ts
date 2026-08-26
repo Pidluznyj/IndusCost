@@ -639,7 +639,7 @@ export async function loadPeopleNotes(
     ? { employeeId }
     : { employeeId, NOT: { category: "RESTRITA" } };
 
-  const notes = await prisma.hrEmployeeNote.findMany({
+  const notesRaw = await prisma.hrEmployeeNote.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -652,6 +652,9 @@ export async function loadPeopleNotes(
       createdByUserId: true,
     },
   });
+  const notes = opts.includeRestricted
+    ? notesRaw
+    : notesRaw.filter((n) => n.category !== "RESTRITA");
   const names = await resolveActorNames(
     prisma,
     notes.map((n) => n.createdByUserId)
@@ -726,6 +729,19 @@ export async function loadPeopleCompensation(
     where: { employeeId },
     orderBy: [{ effectiveDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: 50,
+    select: {
+      id: true,
+      effectiveDate: true,
+      registeredAt: true,
+      type: true,
+      percentage: true,
+      reason: true,
+      notes: true,
+      createdByUserId: true,
+      ...(opts.includeValues
+        ? { previousAmount: true, newAmount: true, differenceAmount: true }
+        : {}),
+    },
   });
   const names = await resolveActorNames(
     prisma,
@@ -755,9 +771,15 @@ export async function loadPeopleCompensation(
       createdByName: row.createdByUserId ? names.get(row.createdByUserId) ?? null : null,
     };
     if (opts.includeValues) {
-      dto.previousAmount = row.previousAmount != null ? Number(row.previousAmount) : null;
-      dto.newAmount = row.newAmount != null ? Number(row.newAmount) : null;
-      dto.differenceAmount = row.differenceAmount != null ? Number(row.differenceAmount) : null;
+      const money = row as typeof row & {
+        previousAmount?: unknown;
+        newAmount?: unknown;
+        differenceAmount?: unknown;
+      };
+      dto.previousAmount = money.previousAmount != null ? Number(money.previousAmount) : null;
+      dto.newAmount = money.newAmount != null ? Number(money.newAmount) : null;
+      dto.differenceAmount =
+        money.differenceAmount != null ? Number(money.differenceAmount) : null;
     }
     return dto;
   });

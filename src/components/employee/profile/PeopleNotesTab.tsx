@@ -1,10 +1,15 @@
 import React from "react";
 import { formatProfileDate, ProfileField, ProfileSection, ProfileState } from "./profileUi";
+import { NotesManageForm } from "./PeopleProfileManageForms";
 
 export function PeopleNotesTab({
   data,
   loading,
   error,
+  employeeId,
+  canManage,
+  canRestricted,
+  onSaved,
 }: {
   data: {
     legacy?: { professionalNotes?: string | null; adminNotes?: string | null; adminNotesRedacted?: boolean };
@@ -12,6 +17,10 @@ export function PeopleNotesTab({
   } | null;
   loading: boolean;
   error: string | null;
+  employeeId?: string;
+  canManage?: boolean;
+  canRestricted?: boolean;
+  onSaved?: () => void;
 }) {
   if (loading) return <ProfileState kind="loading" message="Carregando observações…" />;
   if (error) return <ProfileState kind="error" message={error} />;
@@ -43,6 +52,13 @@ export function PeopleNotesTab({
           </ul>
         )}
       </ProfileSection>
+      {canManage && employeeId && onSaved ? (
+        <NotesManageForm
+          employeeId={employeeId}
+          canRestricted={Boolean(canRestricted)}
+          onSaved={onSaved}
+        />
+      ) : null}
     </div>
   );
 }

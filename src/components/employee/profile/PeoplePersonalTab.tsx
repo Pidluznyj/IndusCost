@@ -13,6 +13,9 @@ export function PeoplePersonalTab({
   if (loading) return <ProfileState kind="loading" message="Carregando dados pessoais…" />;
   if (error) return <ProfileState kind="error" message={error} />;
   if (!data) return <ProfileState kind="empty" message="Não informado" />;
+  if (data.redacted === true) {
+    return <ProfileState kind="forbidden" message="🔒 Informação restrita" />;
+  }
   return (
     <ProfileSection title="Dados pessoais">
       <ProfileField label="Nome" value={data.fullName as string} />

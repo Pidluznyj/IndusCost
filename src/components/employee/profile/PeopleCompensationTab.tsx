@@ -1,5 +1,6 @@
 import React from "react";
 import { formatPercent, formatProfileDate, ProfileField, ProfileSection, ProfileState } from "./profileUi";
+import { CompensationManageForm } from "./PeopleProfileManageForms";
 
 type CompItem = {
   id: string;
@@ -17,11 +18,17 @@ export function PeopleCompensationTab({
   loading,
   error,
   canViewValues,
+  employeeId,
+  canManage,
+  onSaved,
 }: {
   data: { currentSalary?: number | null; items?: CompItem[] } | null;
   loading: boolean;
   error: string | null;
   canViewValues: boolean;
+  employeeId?: string;
+  canManage?: boolean;
+  onSaved?: () => void;
 }) {
   if (loading) return <ProfileState kind="loading" message="Carregando remuneração…" />;
   if (error) return <ProfileState kind="error" message={error} />;
@@ -61,6 +68,13 @@ export function PeopleCompensationTab({
           </ul>
         )}
       </ProfileSection>
+      {canManage && canViewValues && employeeId && onSaved ? (
+        <CompensationManageForm
+          employeeId={employeeId}
+          currentSalary={data?.currentSalary}
+          onSaved={onSaved}
+        />
+      ) : null}
     </div>
   );
 }

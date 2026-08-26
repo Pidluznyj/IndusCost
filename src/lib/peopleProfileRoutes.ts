@@ -39,6 +39,7 @@ import {
   createEmployeeNote,
   createEpiDelivery,
   createHrBenefitCatalogItem,
+  PEOPLE_CAREER_POST_EVENT_TYPES,
   readEmployeeDocumentFile,
   saveEmployeeDocument,
 } from "@/src/lib/peopleProfileMutations.server.js";
@@ -61,6 +62,11 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+function noStore(res: express.Response) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
+}
+
 function parseDate(value: unknown, fallback?: Date): Date | null {
   if (value == null || value === "") return fallback ?? null;
   const d = new Date(String(value));
@@ -69,12 +75,15 @@ function parseDate(value: unknown, fallback?: Date): Date | null {
 
 function sendError(res: express.Response, error: unknown, fallback: string) {
   if (error instanceof PeopleProfileAccessError) {
+    noStore(res);
     return res.status(error.status).json({ error: error.message, code: error.code });
   }
   if (error instanceof EmployeeRegistrationError) {
+    noStore(res);
     return res.status(error.status).json({ error: error.message, code: error.code });
   }
   console.error(fallback, { message: error instanceof Error ? error.message : "unknown" });
+  noStore(res);
   return res.status(500).json({ error: fallback });
 }
 
@@ -107,7 +116,7 @@ export function registerPeopleProfileRoutes(
       const { id } = req.params;
       const ctx = await context(req, id);
       const summary = await loadPeopleProfileSummary(prisma, id, ctx.capabilities);
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(summary);
     } catch (error) {
       return sendError(res, error, "Erro ao carregar ficha.");
@@ -121,6 +130,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewProfessional) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para dados profissionais.");
       }
+      noStore(res);
       return res.json(await loadPeopleProfessional(prisma, id));
     } catch (error) {
       return sendError(res, error, "Erro ao carregar dados profissionais.");
@@ -134,6 +144,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewCareer) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para carreira.");
       }
+      noStore(res);
       return res.json(await loadPeopleCareer(prisma, id));
     } catch (error) {
       return sendError(res, error, "Erro ao carregar carreira.");
@@ -147,7 +158,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewCompensationEvents) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para remuneração.");
       }
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(
         await loadPeopleCompensation(prisma, id, {
           includeValues: ctx.capabilities.canViewCompensationValues,
@@ -166,6 +177,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
       }
+      noStore(res);
       return res.json({
         items: await loadPeopleBenefits(prisma, id, {
           includeAmounts: ctx.capabilities.canViewCompensationValues,
@@ -183,7 +195,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewPersonal) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para dados pessoais.");
       }
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(
         await loadPeoplePersonal(prisma, id, { reveal: ctx.capabilities.canViewPersonal })
       );
@@ -199,7 +211,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewEmergency) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para emergência.");
       }
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(
         await loadPeopleEmergency(prisma, id, { reveal: ctx.capabilities.canViewEmergency })
       );
@@ -215,6 +227,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewEpi) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para EPI.");
       }
+      noStore(res);
       return res.json(await loadPeopleEpi(prisma, id));
     } catch (error) {
       return sendError(res, error, "Erro ao carregar EPI.");
@@ -228,7 +241,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewDocuments) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
       }
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(await loadPeopleDocuments(prisma, id));
     } catch (error) {
       return sendError(res, error, "Erro ao carregar documentos.");
@@ -255,7 +268,8 @@ export function registerPeopleProfileRoutes(
         employeeId: id,
         details: { documentId },
       });
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
+      res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", row.mimeType || "application/octet-stream");
       res.setHeader(
         "Content-Disposition",
@@ -274,6 +288,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewAbsences) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para férias/afastamentos.");
       }
+      noStore(res);
       return res.json({ items: await loadPeopleAbsences(prisma, id) });
     } catch (error) {
       return sendError(res, error, "Erro ao carregar afastamentos.");
@@ -289,7 +304,7 @@ export function registerPeopleProfileRoutes(
       }
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
       const limit = Number(req.query.limit ?? 50);
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(
         await loadPeopleHistoryPage(prisma, id, {
           includeAmounts: ctx.capabilities.canViewCompensationValues,
@@ -309,7 +324,7 @@ export function registerPeopleProfileRoutes(
       if (!ctx.capabilities.canViewNotes) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para observações.");
       }
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.json(
         await loadPeopleNotes(prisma, id, {
           includeRestricted: ctx.capabilities.canViewRestrictedNotes,
@@ -332,7 +347,8 @@ export function registerPeopleProfileRoutes(
         return res.status(404).json({ error: "Foto não cadastrada." });
       }
       const buffer = await readAppLocalFile(row.photoStorageKey);
-      res.setHeader("Cache-Control", "private, max-age=300");
+      noStore(res);
+      res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", "image/jpeg");
       return res.send(buffer);
     } catch (error) {
@@ -362,7 +378,7 @@ export function registerPeopleProfileRoutes(
         notes: typeof body.notes === "string" ? body.notes : null,
         actorUserId: ctx.user?.id,
       });
-      res.setHeader("Cache-Control", "no-store");
+      noStore(res);
       return res.status(201).json(result);
     } catch (error) {
       return sendError(res, error, "Erro ao registrar reajuste.");
@@ -378,15 +394,14 @@ export function registerPeopleProfileRoutes(
       }
       const body = req.body as Record<string, unknown>;
       const eventType = String(body.eventType ?? "");
-      const allowed = ["PROMOTION", "ROLE_CHANGE", "DEPARTMENT_CHANGE", "MANAGER_CHANGE", "CONTRACT_CHANGE"];
-      if (!allowed.includes(eventType)) {
+      if (!(PEOPLE_CAREER_POST_EVENT_TYPES as readonly string[]).includes(eventType)) {
         return res.status(400).json({ error: "Tipo de evento inválido." });
       }
       const effectiveDate = parseDate(body.effectiveDate, new Date());
       if (!effectiveDate) return res.status(400).json({ error: "Data de vigência inválida." });
       const result = await applyCareerMovement(prisma, {
         employeeId: id,
-        eventType: eventType as "PROMOTION" | "ROLE_CHANGE" | "DEPARTMENT_CHANGE" | "MANAGER_CHANGE" | "CONTRACT_CHANGE",
+        eventType: eventType as (typeof PEOPLE_CAREER_POST_EVENT_TYPES)[number],
         effectiveDate,
         reason: typeof body.reason === "string" ? body.reason : null,
         notes: typeof body.notes === "string" ? body.notes : null,
@@ -396,7 +411,11 @@ export function registerPeopleProfileRoutes(
         newDepartment: typeof body.newDepartment === "string" ? body.newDepartment : null,
         newManagerId: typeof body.newManagerId === "string" ? body.newManagerId : null,
         newContractType: typeof body.newContractType === "string" ? body.newContractType : null,
+        newCostCenterId: typeof body.newCostCenterId === "string" ? body.newCostCenterId : null,
+        newCostCenter: typeof body.newCostCenter === "string" ? body.newCostCenter : null,
+        newWorkSchedule: typeof body.newWorkSchedule === "string" ? body.newWorkSchedule : null,
       });
+      noStore(res);
       return res.status(201).json(result);
     } catch (error) {
       return sendError(res, error, "Erro ao registrar movimentação.");
@@ -421,10 +440,14 @@ export function registerPeopleProfileRoutes(
         startDate,
         endDate: parseDate(body.endDate),
         planName: typeof body.planName === "string" ? body.planName : null,
-        amount: body.amount == null ? null : Number(body.amount),
+        amount:
+          ctx.capabilities.canViewCompensationValues && body.amount != null
+            ? Number(body.amount)
+            : null,
         notes: typeof body.notes === "string" ? body.notes : null,
         actorUserId: ctx.user?.id,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar benefício.");
@@ -454,6 +477,7 @@ export function registerPeopleProfileRoutes(
         notes: typeof body.notes === "string" ? body.notes : null,
         actorUserId: ctx.user?.id,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar afastamento.");
@@ -478,6 +502,7 @@ export function registerPeopleProfileRoutes(
         body: String(body.body ?? ""),
         actorUserId: ctx.user?.id,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar observação.");
@@ -503,7 +528,9 @@ export function registerPeopleProfileRoutes(
         alternatePhone: typeof body.alternatePhone === "string" ? body.alternatePhone : null,
         priority: Number(body.priority ?? 2),
         notes: typeof body.notes === "string" ? body.notes : null,
+        actorUserId: ctx.user?.id,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar contato.");
@@ -533,6 +560,7 @@ export function registerPeopleProfileRoutes(
         notes: typeof body.notes === "string" ? body.notes : null,
         actorUserId: ctx.user?.id,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar entrega de EPI.");
@@ -571,7 +599,7 @@ export function registerPeopleProfileRoutes(
           notes: typeof body.notes === "string" ? body.notes : null,
           actorUserId: ctx.user?.id,
         });
-        res.setHeader("Cache-Control", "no-store");
+        noStore(res);
         return res.status(201).json({ id: row.id });
       } catch (error) {
         return sendError(res, error, "Erro ao anexar documento.");
@@ -579,13 +607,19 @@ export function registerPeopleProfileRoutes(
     }
   );
 
-  app.get("/api/hr/benefits", ...viewGuard, async (_req, res) => {
+  app.get("/api/hr/benefits", ...viewGuard, async (req, res) => {
     try {
+      const check = await getPermissionCheck(req);
+      const caps = buildPeopleProfileCapabilities(check);
+      if (!caps.canViewBenefits) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
+      }
       const items = await prisma.hrBenefit.findMany({
         where: { status: "ACTIVE" },
         orderBy: { name: "asc" },
         select: { id: true, code: true, name: true, category: true, isFinancial: true },
       });
+      noStore(res);
       return res.json({ items });
     } catch (error) {
       return sendError(res, error, "Erro ao listar benefícios.");
@@ -609,6 +643,7 @@ export function registerPeopleProfileRoutes(
         category: typeof body.category === "string" ? body.category : "OTHER",
         isFinancial: body.isFinancial === true,
       });
+      noStore(res);
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao criar benefício.");

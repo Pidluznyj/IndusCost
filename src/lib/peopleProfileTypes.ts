@@ -55,6 +55,18 @@ export const HR_HISTORY_EVENT_LABELS: Record<HrEmployeeHistoryEventType, string>
   REHIRE: "Reativação",
 };
 
+export const PEOPLE_CAREER_POST_EVENT_TYPES = [
+  "PROMOTION",
+  "ROLE_CHANGE",
+  "DEPARTMENT_CHANGE",
+  "COST_CENTER_CHANGE",
+  "MANAGER_CHANGE",
+  "CONTRACT_CHANGE",
+  "WORK_SCHEDULE_CHANGE",
+] as const;
+
+export type PeopleCareerPostEventType = (typeof PEOPLE_CAREER_POST_EVENT_TYPES)[number];
+
 export const HR_COMPENSATION_ADJUSTMENT_TYPES = [
   "MERIT",
   "COLLECTIVE",
