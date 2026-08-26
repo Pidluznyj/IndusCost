@@ -112,12 +112,16 @@ describe("employeeAdminHr — notas e redação", () => {
       },
       { reveal: false }
     );
-    assert.equal(redacted.salary, null);
-    assert.equal(redacted.costs, null);
+    assert.equal("salary" in redacted, false);
+    assert.equal("costs" in redacted, false);
+    assert.equal("productivity" in redacted, false);
+    assert.equal("EmployeePayrollComponent" in redacted, false);
     assert.equal(redacted.adminNotes, null);
     assert.equal(redacted.compensationRedacted, true);
-    const pc = (redacted.EmployeePayrollComponent as { PayrollComponent: { value: unknown } }[])[0];
-    assert.equal(pc?.PayrollComponent.value, null);
+    const json = JSON.stringify(redacted);
+    assert.ok(!json.includes("5000"));
+    assert.ok(!json.includes("7000"));
+    assert.ok(!json.includes("\"salary\""));
   });
 
   it("auditoria não inclui salário numérico", () => {

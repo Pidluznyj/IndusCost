@@ -15,10 +15,12 @@ Registro oficial da trajetória do colaborador em Pessoas / RH.
 | Método | Caminho | Notas |
 |--------|---------|--------|
 | GET | `/api/employees/:id/profile` | Summary leve + capabilities. Sem salário. `Cache-Control: no-store`. |
-| GET | `/api/employees/:id/{professional,career,compensation,benefits,personal,emergency,epi,documents,absences,history,notes}` | Guias sob demanda |
-| POST | `/api/employees/:id/compensation-adjustments` | Reajuste atômico (histórico + snapshot + auditoria) |
-| POST | `/api/employees/:id/career-events` | Promoção / movimentação transacional |
-| GET | `/api/employees/:id/documents/:documentId/download` | Auth + scope + permissão documental |
+| GET | `/api/employees/:id/{professional,career,compensation,benefits,personal,emergency,epi,documents,absences,history,notes}` | Guias sob demanda. Todas com `Cache-Control: no-store`. |
+| POST | `/api/employees/:id/compensation-adjustments` | Reajuste atômico (histórico + snapshot + auditoria). Resposta 201 sem amounts. Exige `compensation.manage` **e** valores. |
+| POST | `/api/employees/:id/career-events` | Promoção / movimentação transacional (cargo, depto, CC, gestor, contrato, jornada). |
+| POST | `/api/employees/:id/{benefits,absences,notes,emergency-contacts,epi-deliveries,documents}` | Persistência das guias; formulários na ficha quando `canManage*`. |
+| GET | `/api/hr/benefits` | Catálogo. Exige `canViewBenefits`, não só o gate do módulo. |
+| GET | `/api/employees/:id/documents/:documentId/download` | Auth + scope + `findFirst({ id, employeeId })`. Download via `fetch` autenticado (não `<a href>`). |
 
 ## Permissões
 
@@ -32,7 +34,7 @@ Namespace oficial: `employees.*` (não foi criado um segundo motor).
 
 ## Proteção financeira
 
-Sem permissão de valores, os DTOs **omitam** as chaves `salary`, `previousAmount`, `newAmount`, `differenceAmount`, `amount` financeiro. Não basta enviar `null`. Testes inspecionam `JSON.stringify`.
+Sem permissão de valores, os DTOs da ficha **omitam** as chaves `salary`, `previousAmount`, `newAmount`, `differenceAmount`, `amount` financeiro. `GET /api/employees` (listagem) usa o mesmo critério (`canViewCompensationValues`, com deny/canonical) e **apaga** as chaves — não envia `salary: null`. A guia administrativa da ficha não lê R$ da listagem.
 
 ## Hierarquia
 

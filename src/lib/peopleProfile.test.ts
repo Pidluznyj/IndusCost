@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import {
   computeAdjustmentPercentage,
   computeTenureParts,
@@ -161,6 +162,16 @@ describe("peopleProfileCapabilities — deny/financeiro", () => {
     assert.equal(caps.canViewCompensationValues, false);
     assert.equal(caps.accessScope, "NONE");
   });
+
+  it("registrar reajuste exige permissão de valores, não só manage", () => {
+    const manageOnly = buildPeopleProfileCapabilities(check(["employees.compensation.manage"]));
+    assert.equal(manageOnly.canManageCompensation, false);
+    const withValues = buildPeopleProfileCapabilities(
+      check(["employees.compensation.manage", "employees.compensation.values.view"])
+    );
+    assert.equal(withValues.canManageCompensation, true);
+    assert.equal(withValues.canViewCompensationValues, true);
+  });
 });
 
 describe("peopleProfileSanitize — JSON bruto sem salário", () => {
@@ -321,5 +332,41 @@ describe("peopleProfileHistory — keyset", () => {
     });
     assert.ok(where);
     assert.equal(where!.OR.length, 3);
+  });
+});
+
+describe("peopleProfile — wiring de segurança da ficha", () => {
+  it("download de documento usa fetch autenticado, não <a href>", () => {
+    const src = readFileSync(new URL("../components/employee/profile/PeopleDocumentsTab.tsx", import.meta.url), "utf8");
+    assert.ok(src.includes("downloadEmployeeDocument"));
+    assert.ok(!src.includes("href={doc.downloadUrl}"));
+  });
+
+  it("slot admin da listagem não serializa R$ da GET /api/employees", () => {
+    const src = readFileSync(new URL("../components/EmployeeModule.tsx", import.meta.url), "utf8");
+    assert.ok(!src.includes("viewingEmployee.costs?.salary"));
+    assert.ok(!src.includes("viewingEmployee.costs?.totalMonthlyCost"));
+  });
+
+  it("rotas da ficha aplicam no-store e gate do catálogo de benefícios", () => {
+    const src = readFileSync(new URL("./peopleProfileRoutes.ts", import.meta.url), "utf8");
+    assert.ok(src.includes("function noStore"));
+    assert.ok(src.includes("canViewBenefits"));
+    assert.ok(!src.includes("max-age=300"));
+    assert.ok(src.includes("canViewCompensationValues && body.amount"));
+  });
+
+  it("não persiste remuneração em localStorage/sessionStorage", () => {
+    const dialog = readFileSync(
+      new URL("../components/employee/profile/PeopleEmployeeProfileDialog.tsx", import.meta.url),
+      "utf8"
+    );
+    const client = readFileSync(
+      new URL("../components/employee/profile/profileClient.ts", import.meta.url),
+      "utf8"
+    );
+    assert.ok(!dialog.includes("localStorage"));
+    assert.ok(!dialog.includes("sessionStorage"));
+    assert.ok(!client.includes("localStorage"));
   });
 });

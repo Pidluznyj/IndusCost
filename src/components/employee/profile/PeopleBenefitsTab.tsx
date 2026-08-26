@@ -1,5 +1,6 @@
 import React from "react";
 import { formatProfileDate, ProfileSection, ProfileState } from "./profileUi";
+import { BenefitsManageForm } from "./PeopleProfileManageForms";
 
 type BenefitItem = {
   id: string;
@@ -17,38 +18,50 @@ export function PeopleBenefitsTab({
   loading,
   error,
   canViewValues,
+  employeeId,
+  canManage,
+  onSaved,
 }: {
   items: BenefitItem[] | null;
   loading: boolean;
   error: string | null;
   canViewValues: boolean;
+  employeeId?: string;
+  canManage?: boolean;
+  onSaved?: () => void;
 }) {
   if (loading) return <ProfileState kind="loading" message="Carregando benefícios…" />;
   if (error) return <ProfileState kind="error" message={error} />;
-  if (!items || items.length === 0) {
-    return <ProfileState kind="empty" message="Nenhum benefício registrado para este colaborador." />;
-  }
   return (
-    <ProfileSection title="Benefícios">
-      <ul className="space-y-3">
-        {items.map((item) => (
-          <li key={item.id} className="text-sm border-b border-border/70 pb-3">
-            <p className="font-medium">{item.name}</p>
-            <p className="text-muted-foreground">
-              {item.status} · {formatProfileDate(item.startDate)}
-              {item.endDate ? ` — ${formatProfileDate(item.endDate)}` : ""}
-            </p>
-            {item.planName ? <p>{item.planName}</p> : null}
-            {item.isFinancial ? (
-              canViewValues && item.amount != null ? (
-                <p>{item.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
-              ) : (
-                <p className="text-muted-foreground">🔒 Informação restrita</p>
-              )
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </ProfileSection>
+    <div>
+      {!items || items.length === 0 ? (
+        <ProfileState kind="empty" message="Nenhum benefício registrado para este colaborador." />
+      ) : (
+        <ProfileSection title="Benefícios">
+          <ul className="space-y-3">
+            {items.map((item) => (
+              <li key={item.id} className="text-sm border-b border-border/70 pb-3">
+                <p className="font-medium">{item.name}</p>
+                <p className="text-muted-foreground">
+                  {item.status} · {formatProfileDate(item.startDate)}
+                  {item.endDate ? ` — ${formatProfileDate(item.endDate)}` : ""}
+                </p>
+                {item.planName ? <p>{item.planName}</p> : null}
+                {item.isFinancial ? (
+                  canViewValues && item.amount != null ? (
+                    <p>{item.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+                  ) : (
+                    <p className="text-muted-foreground">🔒 Informação restrita</p>
+                  )
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </ProfileSection>
+      )}
+      {canManage && employeeId && onSaved ? (
+        <BenefitsManageForm employeeId={employeeId} canViewValues={canViewValues} onSaved={onSaved} />
+      ) : null}
+    </div>
   );
 }

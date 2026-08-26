@@ -123,7 +123,10 @@ export function canViewCompensationEvents(check: EmployeePermissionBag): boolean
 }
 
 export function canManageCompensation(check: EmployeePermissionBag): boolean {
-  return hasAny(check, PEOPLE_PROFILE_PERMISSIONS.compensationManage);
+  return (
+    hasAny(check, PEOPLE_PROFILE_PERMISSIONS.compensationManage) &&
+    canViewCompensationValues(check)
+  );
 }
 
 export function buildPeopleProfileCapabilities(

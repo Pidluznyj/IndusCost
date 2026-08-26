@@ -2256,18 +2256,19 @@ export const EmployeeModule = () => {
             </div>
           }
           adminSlot={
-            !canViewSensitiveHr || viewingEmployee.compensationRedacted ? (
-              <p className="text-sm text-muted-foreground">Informação restrita</p>
-            ) : (
-              <div className="space-y-3 text-sm">
-                <p className="text-xs text-muted-foreground">
-                  Referência administrativa para estimativas RH e rateio global de HH. Não é folha oficial.
+            <div className="space-y-3 text-sm">
+              <p className="text-xs text-muted-foreground">
+                Referência administrativa para jornada e rateio de HH. Valores monetários não vêm da listagem — consulte a guia Remuneração.
+              </p>
+              <p>Jornada: {viewingEmployee.monthlyHours}h/mês</p>
+              {!canViewSensitiveHr || viewingEmployee.compensationRedacted ? (
+                <p className="text-muted-foreground">🔒 Informação restrita</p>
+              ) : (
+                <p className="text-muted-foreground">
+                  Salário e custos: abra a guia Remuneração (consulta auditada).
                 </p>
-                <p>Estimativa mensal: {formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
-                <p>Referência salarial: {formatCurrency(viewingEmployee.costs?.salary || 0)}</p>
-                <p>Jornada: {viewingEmployee.monthlyHours}h · Produtividade {formatNumber(viewingEmployee.productivity, 2)}%</p>
-              </div>
-            )
+              )}
+            </div>
           }
         />
       )}

@@ -25,7 +25,8 @@ export type EmployeeHrAuditEvent =
   | "employee.document.download"
   | "employee.epi.delivery"
   | "employee.note.create"
-  | "employee.note.restricted";
+  | "employee.note.restricted"
+  | "employee.emergency.change";
 
 export type EmployeeHrAuditPayload = {
   event: EmployeeHrAuditEvent;

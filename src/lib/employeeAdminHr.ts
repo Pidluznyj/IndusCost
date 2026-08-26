@@ -242,25 +242,13 @@ export function redactEmployeeAdminForApi<T extends Record<string, unknown>>(
 
   const next: Record<string, unknown> = { ...employee };
   if (!revealCompensation) {
-    next.salary = null;
-    next.productivity = null;
-    next.costs = null;
+    delete next.salary;
+    delete next.productivity;
+    delete next.costs;
+    delete next.EmployeePayrollComponent;
   }
   if (!revealAdminNotes) {
     next.adminNotes = null;
-  }
-  if (!revealCompensation && Array.isArray(employee.EmployeePayrollComponent)) {
-    next.EmployeePayrollComponent = (
-      employee.EmployeePayrollComponent as { PayrollComponent?: { id?: string; name?: string } }[]
-    ).map((rel) => ({
-      PayrollComponent: {
-        id: rel.PayrollComponent?.id ?? null,
-        name: rel.PayrollComponent?.name ?? "—",
-        type: null,
-        calculationType: null,
-        value: null,
-      },
-    }));
   }
 
   return {
