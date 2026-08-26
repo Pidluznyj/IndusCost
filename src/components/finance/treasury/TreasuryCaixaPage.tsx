@@ -650,7 +650,8 @@ export function TreasuryCaixaPage() {
         {scenariosExpandedOpen ? (
           <React.Suspense fallback={null}>
             <TreasuryCaixaScenariosExpandedModal
-              timelineRows={timeline?.rows}
+              todayFlowRaw={todayFlow}
+              companyCode={annualCompanyCode}
               onClose={() => setScenariosExpandedOpen(false)}
             />
           </React.Suspense>

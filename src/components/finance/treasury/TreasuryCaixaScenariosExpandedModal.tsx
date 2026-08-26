@@ -1,17 +1,24 @@
 /**
  * Projeção do caixa — cenários — modal "Visão ampliada".
  *
+ * Janela COMPLETA do ano civil: passado REALIZADO (01/01 → ontem, da série
+ * canônica da Linha do tempo — a mesma composição da Visão Anual) + HOJE →
+ * 31/12 PROJETADO pelo MESMO motor de cenários do card.
+ *
  * Contratos:
  *  - carregado por React.lazy a partir da página (chunk separado);
- *  - NENHUM request ao abrir o modal; o fetch acontece exclusivamente no
- *    clique em "Gerar projeção" (`handleGenerate`) — UM request ao MESMO
- *    endpoint do card (o serviço já aceita/clampa horizonDays até 365);
- *  - horizonte prospectivo HOJE → 31/12 (o motor não projeta passado; board
- *    cobre o ano civil do asOf — adaptação documentada no Ui);
- *  - o gráfico é o PRÓPRIO TreasuryCaixaScenariosChart (mesmas séries,
- *    legenda, tooltip, drill-down e simulador), com Brush opt-in;
- *  - slicer 100% LOCAL (presets/datas/brush recortam por índice diário);
- *    KPIs derivam do MESMO `buildRows` que desenha as linhas;
+ *  - NENHUM request ao abrir o modal; o clique em "Gerar projeção" dispara
+ *    UM carregamento (cenários + board anual + agenda — todos endpoints
+ *    canônicos existentes, os mesmos do card e da página);
+ *  - o motor de cenários NÃO foi alterado: ele segue prospectivo e ancorado
+ *    no saldo oficial de hoje; o passado entra como PREFIXO de linhas
+ *    realizadas (três cenários coincidem com o realizado — a mesma regra
+ *    que o motor aplica a dias < asOf);
+ *  - o gráfico é o PRÓPRIO TreasuryCaixaScenariosChart (props opt-in
+ *    prefix/brush); a linha Realista futura usa a MESMA timeline anual
+ *    canônica (fonte única);
+ *  - slicer 100% LOCAL (Ano completo / Hoje→31/12 / próx. 90/180 dias,
+ *    datas civis, brush diário); KPIs derivam das linhas desenhadas;
  *  - corrida: AbortController + sequência; fechar/desmontar aborta.
  */
 
@@ -21,21 +28,28 @@ import { CostCenterDialog } from "@/src/components/finance/cost-centers/financeU
 import {
   buildRows,
   TreasuryCaixaScenariosChart,
+  type ScenarioChartRow,
 } from "@/src/components/finance/treasury/TreasuryCaixaScenariosChart";
 import {
   fetchTreasuryCaixaScenarios,
   type TreasuryCaixaScenariosPayload,
 } from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
+import { fetchTreasuryCaixa } from "@/src/lib/treasury/treasuryCaixaApi.js";
+import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
+import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
+import type { TreasuryCaixaDayFlow } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import { buildTreasuryCaixaAnnualSeries } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import {
+  buildScenarioPastPrefix,
   civilDateToScenarioIndex,
   deriveScenarioExpandedKpis,
-  matchScenarioExpandedPreset,
+  matchScenarioFullPreset,
   normalizeScenarioExpandedRange,
   resolveScenarioExpandedHorizon,
-  resolveScenarioExpandedPresetRange,
-  TREASURY_SCENARIO_EXPANDED_PRESETS,
+  resolveScenarioFullPresetRange,
+  TREASURY_SCENARIO_FULL_PRESETS,
   type TreasuryScenarioExpandedRange,
 } from "@/src/lib/treasury/treasuryCaixaScenariosExpandedUi.js";
 import {
@@ -87,18 +101,29 @@ function KpiCard({
   );
 }
 
-export type TreasuryCaixaScenariosExpandedModalProps = {
-  /** Mesma série da Linha do tempo da página — fonte única do Realista. */
-  timelineRows?: readonly {
+type LoadedData = {
+  payload: TreasuryCaixaScenariosPayload;
+  /** Timeline anual canônica (passado+hoje+futuro) — fonte única do Realista. */
+  annualRows: readonly {
     civilDate: string;
     opening: number | null;
     closing: number | null;
+    inflows: number;
+    outflows: number;
   }[];
+};
+
+export type TreasuryCaixaScenariosExpandedModalProps = {
+  /** Fluxo bruto de hoje já carregado pela página (nenhum fetch extra). */
+  todayFlowRaw: TreasuryCaixaDayFlow | null;
+  /** Empresa das contas da página — necessária para a agenda canônica. */
+  companyCode: string | null;
   onClose: () => void;
 };
 
 export function TreasuryCaixaScenariosExpandedModal({
-  timelineRows,
+  todayFlowRaw,
+  companyCode,
   onClose,
 }: TreasuryCaixaScenariosExpandedModalProps) {
   const todayCivil = todayTreasuryCivilDateInSaoPaulo();
@@ -106,17 +131,18 @@ export function TreasuryCaixaScenariosExpandedModal({
     () => resolveScenarioExpandedHorizon(todayCivil),
     [todayCivil]
   );
+  const yearStartCivil = `${todayCivil.slice(0, 4)}-01-01`;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<TreasuryCaixaScenariosPayload | null>(null);
+  const [data, setData] = useState<LoadedData | null>(null);
   const [range, setRange] = useState<TreasuryScenarioExpandedRange | null>(
     null
   );
 
   const seqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const cacheRef = useRef<TreasuryCaixaScenariosPayload | null>(null);
+  const cacheRef = useRef<LoadedData | null>(null);
 
   useEffect(() => {
     return () => {
@@ -137,15 +163,18 @@ export function TreasuryCaixaScenariosExpandedModal({
     const seq = (seqRef.current += 1);
     abortRef.current?.abort();
 
-    const applyPayload = (payload: TreasuryCaixaScenariosPayload) => {
-      setData(payload);
-      const count = payload.days.length;
-      setRange(count > 0 ? { startIndex: 0, endIndex: count - 1 } : null);
+    const applyLoaded = (loaded: LoadedData) => {
+      setData(loaded);
+      const pastCount = loaded.annualRows.filter(
+        (r) => r.civilDate < loaded.payload.asOfCivilDate
+      ).length;
+      const total = pastCount + loaded.payload.days.length;
+      setRange(total > 0 ? { startIndex: 0, endIndex: total - 1 } : null);
       setError(null);
     };
 
     if (cacheRef.current) {
-      applyPayload(cacheRef.current);
+      applyLoaded(cacheRef.current);
       setLoading(false);
       return;
     }
@@ -155,14 +184,50 @@ export function TreasuryCaixaScenariosExpandedModal({
     setLoading(true);
     setError(null);
     try {
-      // MESMO endpoint do card — só o horizonte muda (hoje → 31/12).
-      const payload = await fetchTreasuryCaixaScenarios({
-        horizonDays: horizon.horizonDays,
-        signal: controller.signal,
+      const year = Number(todayCivil.slice(0, 4));
+      // MESMOS endpoints canônicos: cenários (card) + board anual (página/
+      // Visão Anual). A agenda entra na composição da timeline anual —
+      // idêntica à pesquisa da página para o ano corrente.
+      const [payload, board] = await Promise.all([
+        fetchTreasuryCaixaScenarios({
+          horizonDays: horizon.horizonDays,
+          signal: controller.signal,
+        }),
+        fetchTreasuryCaixa({ year, signal: controller.signal }),
+      ]);
+
+      let agendaDays: readonly TreasuryAgendaDayDto[] = [];
+      if (companyCode) {
+        try {
+          const agenda = await fetchTreasuryAgenda({
+            companyCode,
+            baseDate: board.dueDateFrom,
+            endDate: board.dueDateTo,
+            scenario: "PROBABLE",
+            accountIds: null,
+            consolidated: true,
+            includeDayDetail: false,
+            signal: controller.signal,
+          });
+          agendaDays = agenda.days ?? [];
+        } catch (agendaErr) {
+          if (controller.signal.aborted) throw agendaErr;
+          agendaDays = []; // fallback por vencimento — mesmo padrão da página
+        }
+      }
+
+      if (seq !== seqRef.current) return;
+      const annual = buildTreasuryCaixaAnnualSeries({
+        board,
+        todayFlowRaw,
+        agendaDays,
       });
-      if (seq !== seqRef.current) return; // outro Gerar/fechamento venceu
-      cacheRef.current = payload;
-      applyPayload(payload);
+      const loaded: LoadedData = {
+        payload,
+        annualRows: annual.timeline.rows,
+      };
+      cacheRef.current = loaded;
+      applyLoaded(loaded);
     } catch (err) {
       if (seq !== seqRef.current || controller.signal.aborted) return;
       setError(
@@ -171,34 +236,53 @@ export function TreasuryCaixaScenariosExpandedModal({
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [horizon.horizonDays]);
+  }, [horizon.horizonDays, todayCivil, companyCode, todayFlowRaw]);
 
-  // ── Linhas do gráfico: MESMO buildRows do componente (fonte única) ──────
+  // ── Prefixo do passado + linhas futuras (MESMO buildRows do gráfico) ────
+  const prefix = useMemo(
+    () =>
+      data
+        ? buildScenarioPastPrefix({
+            timelineRows: data.annualRows,
+            asOfCivilDate: data.payload.asOfCivilDate,
+          })
+        : null,
+    [data]
+  );
+
   const timelineByDate = useMemo(() => {
-    if (!timelineRows || timelineRows.length === 0) return null;
+    if (!data) return null;
     const map = new Map<
       string,
       { opening: number | null; closing: number | null }
     >();
-    for (const r of timelineRows) {
+    for (const r of data.annualRows) {
       map.set(r.civilDate, { opening: r.opening, closing: r.closing });
     }
     return map;
-  }, [timelineRows]);
+  }, [data]);
 
-  const rows = useMemo(
+  const futureRows = useMemo(
     () =>
       data
         ? buildRows(
-            data.days,
-            data.asOfCivilDate,
+            data.payload.days,
+            data.payload.asOfCivilDate,
             timelineByDate,
-            data.salesVolumeScenarios ?? null,
+            data.payload.salesVolumeScenarios ?? null,
             null
           )
         : [],
     [data, timelineByDate]
   );
+  const rows = useMemo<ScenarioChartRow[]>(
+    () =>
+      prefix
+        ? [...(prefix.rows as unknown as ScenarioChartRow[]), ...futureRows]
+        : futureRows,
+    [prefix, futureRows]
+  );
+  const pastCount = prefix?.rows.length ?? 0;
   const civilDates = useMemo(() => rows.map((r) => r.civilDate), [rows]);
 
   const activeRange =
@@ -212,10 +296,11 @@ export function TreasuryCaixaScenariosExpandedModal({
         : [],
     [rows, activeRange]
   );
-  const kpis = activeRange != null ? deriveScenarioExpandedKpis(visibleRows) : null;
+  const kpis =
+    activeRange != null ? deriveScenarioExpandedKpis(visibleRows) : null;
   const activePreset =
     activeRange != null
-      ? matchScenarioExpandedPreset(rows.length, activeRange)
+      ? matchScenarioFullPreset(rows.length, pastCount, activeRange)
       : null;
 
   const applyDate = useCallback(
@@ -237,7 +322,7 @@ export function TreasuryCaixaScenariosExpandedModal({
     <CostCenterDialog
       testId="caixa-scenarios-expanded-modal"
       title="Projeção do caixa — visão ampliada"
-      subtitle={`Mesmo motor e mesmas séries do gráfico de cenários, projetados de hoje (${formatCivilDate(todayCivil)}) até ${formatCivilDate(horizon.endCivil)}.`}
+      subtitle={`Ano completo: realizado de ${formatCivilDate(yearStartCivil)} até ontem (Linha do tempo) + projeção de hoje (${formatCivilDate(todayCivil)}) até ${formatCivilDate(horizon.endCivil)} pelo mesmo motor de cenários.`}
       maxWidthClass="max-w-6xl"
       onClose={onClose}
       footer={
@@ -256,11 +341,12 @@ export function TreasuryCaixaScenariosExpandedModal({
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-muted-foreground">
-            Período projetado:{" "}
+            Período:{" "}
             <span className="font-semibold text-foreground">
-              hoje → {formatCivilDate(horizon.endCivil)}
+              {formatCivilDate(yearStartCivil)} →{" "}
+              {formatCivilDate(horizon.endCivil)}
             </span>{" "}
-            ({horizon.horizonDays} dias)
+            (realizado + {horizon.horizonDays} dias projetados)
           </p>
           <button
             type="button"
@@ -296,9 +382,9 @@ export function TreasuryCaixaScenariosExpandedModal({
             className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground"
             data-testid="caixa-scenarios-expanded-idle"
           >
-            Clique em <strong>Gerar projeção</strong> para carregar os
-            cenários até o fim do ano. Depois use os recortes abaixo para
-            analisar qualquer trecho — sem novo carregamento.
+            Clique em <strong>Gerar projeção</strong> para montar o ano
+            completo — passado realizado + cenários até 31/12. Depois use os
+            recortes abaixo sem novo carregamento.
           </p>
         ) : null}
 
@@ -309,13 +395,17 @@ export function TreasuryCaixaScenariosExpandedModal({
               data-testid="caixa-scenarios-expanded-slicer"
             >
               <div className="flex flex-wrap gap-1.5">
-                {TREASURY_SCENARIO_EXPANDED_PRESETS.map((preset) => (
+                {TREASURY_SCENARIO_FULL_PRESETS.map((preset) => (
                   <button
                     key={preset.key}
                     type="button"
                     onClick={() =>
                       setRange(
-                        resolveScenarioExpandedPresetRange(rows.length, preset)
+                        resolveScenarioFullPresetRange(
+                          rows.length,
+                          pastCount,
+                          preset
+                        )
                       )
                     }
                     className={
@@ -369,6 +459,11 @@ export function TreasuryCaixaScenariosExpandedModal({
                 </div>
               </div>
             </div>
+            <p className="-mt-2 text-[10px] text-muted-foreground">
+              Passado = realizado da Linha do tempo (as três linhas
+              coincidem); a partir de hoje, cenários do motor oficial. Tudo
+              local — nenhum novo carregamento ao recortar.
+            </p>
 
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <KpiCard
@@ -409,8 +504,9 @@ export function TreasuryCaixaScenariosExpandedModal({
             </div>
 
             <TreasuryCaixaScenariosChart
-              data={data}
-              timelineRows={timelineRows}
+              data={data.payload}
+              timelineRows={data.annualRows}
+              prefix={prefix as never}
               brush={{
                 startIndex: activeRange.startIndex,
                 endIndex: activeRange.endIndex,

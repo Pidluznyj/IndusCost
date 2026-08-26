@@ -7,12 +7,16 @@ com slicers locais — sem segundo motor.
 ## Semântica temporal (motor real)
 
 O motor de cenários é **prospectivo**: janela civil de `asOf` (hoje) até
-`asOf + horizonDays`; o board que o alimenta cobre o ano civil do asOf. Não
-existe projeção retroativa — por isso a visão ampliada NÃO oferece "ano
-passado" nem 01/01 retroativo (`REQUEST_ADAPTATION_REQUIRED=YES`): o range
-máximo semanticamente rico é hoje → 31/12, e é isso que ela carrega. Os
-presets trimestrais civis foram adaptados para janelas prospectivas
-(Até 31/12 / 30 / 60 / 90 / 180 dias), alinhadas aos horizontes do card.
+`asOf + horizonDays`, ancorada no saldo oficial de hoje. Estender a janela
+DELE para trás faria a projeção futura divergir da âncora (a acumulação é
+sequencial, sem re-ancoragem no meio) — por isso o motor permanece intacto
+e o **passado realizado entra como PREFIXO no frontend**: 01/01 → ontem vem
+da série canônica da Linha do tempo (a MESMA composição da Visão Anual —
+board anual + fluxo de hoje + agenda via `buildTreasuryCaixaAnnualSeries`),
+com as três linhas coincidindo com o realizado, exatamente como o motor
+trata dias < asOf. Resultado: a janela exibida é o **ano civil completo**
+(01/01 → 31/12), com a projeção a partir de hoje idêntica ao card.
+Presets: Ano completo / Hoje → 31/12 / próximos 90 / próximos 180 dias.
 
 ## Arquitetura (fonte única)
 
@@ -42,8 +46,10 @@ portanto, o card com horizonte maior — nunca uma segunda conta.
 
 ## Contratos protegidos por teste
 
-- Zero fetch: página/abrir modal/interações — o request só no Gerar; slicer
-  (presets/datas/brush) recorta índices localmente, KPIs sobre o recorte.
+- Zero fetch: página/abrir modal/interações — o carregamento só no Gerar
+  (cenários + board anual + agenda, todos endpoints canônicos existentes);
+  slicer (presets/datas/brush) recorta índices localmente, KPIs sobre o
+  recorte; o prefixo do passado nunca recalcula cenário.
 - Bordas: start>end (troca), datas fora da janela (clamp), NaN, vazio,
   ponto único, 29/02/2028.
 - Gates estruturais: lazy sem import estático; fetch único no handler;

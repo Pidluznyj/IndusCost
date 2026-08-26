@@ -106,6 +106,181 @@ export function civilDateToScenarioIndex(
   return idx >= 0 ? idx : civilDates.length - 1;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Prefixo do PASSADO REALIZADO (frontend; motor de cenários intacto)  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * O motor de cenários acumula saldo sequencialmente a partir da âncora de
+ * HOJE — estender a janela dele para trás faria a projeção futura divergir
+ * do card (a âncora oficial deixaria de valer). Por isso o passado entra
+ * como PREFIXO montado da série canônica da Linha do tempo (a MESMA
+ * composição da Visão Anual da Evolução do saldo): dias < asOf viram linhas
+ * onde os três cenários coincidem com o REALIZADO — exatamente como o motor
+ * trata passado ("dia < asOf usa realizado; sem projeção").
+ */
+
+export type TreasuryScenarioPastTimelineRow = {
+  civilDate: string;
+  opening: number | null;
+  closing: number | null;
+  inflows: number;
+  outflows: number;
+};
+
+/** Subconjunto do ScenarioChartRow que o prefixo precisa produzir. */
+export type TreasuryScenarioPrefixRow = {
+  civilDate: string;
+  label: string;
+  opt: number | null;
+  real: number | null;
+  pes: number | null;
+  optNeg: number | null;
+  realNeg: number | null;
+  pesNeg: number | null;
+  sim: number | null;
+  simNeg: number | null;
+  bandLow: number | null;
+  bandRange: number | null;
+  isPast: boolean;
+  openingShown: number | null;
+};
+
+/** Dia sintético para o tooltip (mesmo shape do TreasuryScenarioDay). */
+export type TreasuryScenarioPrefixDay = {
+  civilDate: string;
+  openingBalance: number | null;
+  realizedInflows: number;
+  realizedOutflows: number;
+  otherInflows: number;
+  otherOutflows: number;
+  optimistic: TreasuryScenarioPrefixDayFacts;
+  realistic: TreasuryScenarioPrefixDayFacts;
+  pessimistic: TreasuryScenarioPrefixDayFacts;
+  warnings: string[];
+};
+
+type TreasuryScenarioPrefixDayFacts = {
+  receivableInflows: number;
+  payableOutflows: number;
+  receivableCount: number;
+  payableCount: number;
+  receivableProjections: never[];
+  payableProjections: never[];
+  closingBalance: number | null;
+};
+
+function shortDayLabel(civilDate: string): string {
+  return `${civilDate.slice(8, 10)}/${civilDate.slice(5, 7)}`;
+}
+
+export function buildScenarioPastPrefix(input: {
+  timelineRows: readonly TreasuryScenarioPastTimelineRow[];
+  asOfCivilDate: string;
+}): { rows: TreasuryScenarioPrefixRow[]; days: TreasuryScenarioPrefixDay[] } {
+  const past = input.timelineRows
+    .filter((r) => r.civilDate < input.asOfCivilDate)
+    .slice()
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+
+  const rows: TreasuryScenarioPrefixRow[] = [];
+  const days: TreasuryScenarioPrefixDay[] = [];
+  for (const r of past) {
+    const closing = r.closing;
+    const neg = closing != null && closing <= 0 ? closing : null;
+    rows.push({
+      civilDate: r.civilDate,
+      label: shortDayLabel(r.civilDate),
+      // Passado: os três cenários SÃO o realizado (linhas coincidem).
+      opt: closing,
+      real: closing,
+      pes: closing,
+      optNeg: neg,
+      realNeg: neg,
+      pesNeg: neg,
+      sim: null,
+      simNeg: null,
+      bandLow: null,
+      bandRange: null,
+      isPast: true,
+      openingShown: r.opening,
+    });
+    const facts: TreasuryScenarioPrefixDayFacts = {
+      receivableInflows: 0,
+      payableOutflows: 0,
+      receivableCount: 0,
+      payableCount: 0,
+      receivableProjections: [],
+      payableProjections: [],
+      closingBalance: closing,
+    };
+    days.push({
+      civilDate: r.civilDate,
+      openingBalance: r.opening,
+      realizedInflows: r.inflows,
+      realizedOutflows: r.outflows,
+      otherInflows: 0,
+      otherOutflows: 0,
+      optimistic: facts,
+      realistic: { ...facts },
+      pessimistic: { ...facts },
+      warnings: [],
+    });
+  }
+  return { rows, days };
+}
+
+export type TreasuryScenarioFullPreset = {
+  key: "year" | "future" | "f90" | "f180";
+  label: string;
+};
+
+/**
+ * Presets da janela COMPLETA (passado realizado + futuro projetado):
+ * ano civil inteiro, só o futuro, e janelas futuras de 90/180 dias.
+ */
+export const TREASURY_SCENARIO_FULL_PRESETS: readonly TreasuryScenarioFullPreset[] =
+  [
+    { key: "year", label: "Ano completo" },
+    { key: "future", label: "Hoje → 31/12" },
+    { key: "f90", label: "Próx. 90 dias" },
+    { key: "f180", label: "Próx. 180 dias" },
+  ];
+
+export function resolveScenarioFullPresetRange(
+  pointCount: number,
+  pastCount: number,
+  preset: TreasuryScenarioFullPreset
+): TreasuryCaixaAnnualRange {
+  if (pointCount <= 0) return { startIndex: 0, endIndex: 0 };
+  const last = pointCount - 1;
+  const todayIdx = Math.min(Math.max(0, pastCount), last);
+  switch (preset.key) {
+    case "year":
+      return { startIndex: 0, endIndex: last };
+    case "future":
+      return { startIndex: todayIdx, endIndex: last };
+    case "f90":
+      return { startIndex: todayIdx, endIndex: Math.min(todayIdx + 89, last) };
+    case "f180":
+      return { startIndex: todayIdx, endIndex: Math.min(todayIdx + 179, last) };
+  }
+}
+
+export function matchScenarioFullPreset(
+  pointCount: number,
+  pastCount: number,
+  range: TreasuryCaixaAnnualRange
+): TreasuryScenarioFullPreset["key"] | null {
+  for (const preset of TREASURY_SCENARIO_FULL_PRESETS) {
+    const r = resolveScenarioFullPresetRange(pointCount, pastCount, preset);
+    if (r.startIndex === range.startIndex && r.endIndex === range.endIndex) {
+      return preset.key;
+    }
+  }
+  return null;
+}
+
 /** Linha mínima necessária para os KPIs (subset do ScenarioChartRow). */
 export type TreasuryScenarioExpandedKpiRow = {
   civilDate: string;

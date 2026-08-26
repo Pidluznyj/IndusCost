@@ -310,6 +310,126 @@ describe("visão ampliada — slicer local", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Prefixo do passado + presets da janela completa                    */
+/* ------------------------------------------------------------------ */
+
+import {
+  buildScenarioPastPrefix,
+  matchScenarioFullPreset,
+  resolveScenarioFullPresetRange,
+  TREASURY_SCENARIO_FULL_PRESETS,
+} from "@/src/lib/treasury/treasuryCaixaScenariosExpandedUi.js";
+
+describe("visão ampliada — prefixo do passado realizado", () => {
+  const timelineRows = [
+    { civilDate: "2026-08-20", opening: 100, closing: 150, inflows: 60, outflows: 10 },
+    { civilDate: "2026-08-22", opening: 150, closing: -40, inflows: 0, outflows: 190 },
+    { civilDate: "2026-08-24", opening: -40, closing: 300, inflows: 400, outflows: 60 },
+    { civilDate: "2026-08-25", opening: 300, closing: 500, inflows: 200, outflows: 0 },
+  ];
+
+  it("corta estritamente < asOf; três cenários coincidem com o realizado; isPast", () => {
+    const { rows, days } = buildScenarioPastPrefix({
+      timelineRows,
+      asOfCivilDate: "2026-08-24",
+    });
+    assert.deepEqual(
+      rows.map((r) => r.civilDate),
+      ["2026-08-20", "2026-08-22"],
+      "hoje e futuro NÃO entram no prefixo"
+    );
+    for (const r of rows) {
+      assert.equal(r.isPast, true);
+      assert.equal(r.opt, r.real, "otimista = realizado no passado");
+      assert.equal(r.pes, r.real, "pessimista = realizado no passado");
+      assert.equal(r.bandRange, null, "sem banda no passado");
+      assert.equal(r.sim, null);
+    }
+    assert.equal(rows[1]!.real, -40);
+    assert.equal(rows[1]!.realNeg, -40, "zona vermelha no passado negativo");
+    assert.equal(rows[0]!.realNeg, null);
+    // Dia sintético para o tooltip carrega o realizado da timeline:
+    assert.equal(days[0]!.realizedInflows, 60);
+    assert.equal(days[1]!.realizedOutflows, 190);
+    assert.equal(days[1]!.realistic.closingBalance, -40);
+  });
+
+  it("timeline vazia ou toda futura → prefixo vazio (não explode)", () => {
+    assert.deepEqual(
+      buildScenarioPastPrefix({ timelineRows: [], asOfCivilDate: "2026-08-24" })
+        .rows,
+      []
+    );
+    assert.deepEqual(
+      buildScenarioPastPrefix({
+        timelineRows,
+        asOfCivilDate: "2026-08-19",
+      }).rows,
+      []
+    );
+  });
+});
+
+describe("visão ampliada — presets da janela completa (passado+futuro)", () => {
+  // 236 dias de passado + 130 projetados = ano civil de 2026 (366? não: 365).
+  const pastCount = 235;
+  const total = 365;
+
+  function preset(key: string) {
+    const p = TREASURY_SCENARIO_FULL_PRESETS.find((x) => x.key === key);
+    assert.ok(p, `preset ${key} existe`);
+    return p!;
+  }
+
+  it("Ano completo / Hoje→31/12 / próximos 90 e 180 dias", () => {
+    assert.deepEqual(resolveScenarioFullPresetRange(total, pastCount, preset("year")), {
+      startIndex: 0,
+      endIndex: total - 1,
+    });
+    assert.deepEqual(
+      resolveScenarioFullPresetRange(total, pastCount, preset("future")),
+      { startIndex: pastCount, endIndex: total - 1 }
+    );
+    assert.deepEqual(
+      resolveScenarioFullPresetRange(total, pastCount, preset("f90")),
+      { startIndex: pastCount, endIndex: pastCount + 89 }
+    );
+    assert.deepEqual(
+      resolveScenarioFullPresetRange(total, pastCount, preset("f180")),
+      { startIndex: pastCount, endIndex: total - 1 },
+      "180 dias futuros clampam em 31/12 quando só restam 130"
+    );
+    assert.equal(
+      matchScenarioFullPreset(total, pastCount, {
+        startIndex: pastCount,
+        endIndex: pastCount + 89,
+      }),
+      "f90"
+    );
+    assert.equal(
+      matchScenarioFullPreset(total, pastCount, { startIndex: 3, endIndex: 77 }),
+      null,
+      "recorte custom não vira preset"
+    );
+  });
+
+  it("bordas: sem passado (aberto em 01/01) e janela vazia", () => {
+    assert.deepEqual(resolveScenarioFullPresetRange(366, 0, preset("year")), {
+      startIndex: 0,
+      endIndex: 365,
+    });
+    assert.deepEqual(resolveScenarioFullPresetRange(366, 0, preset("future")), {
+      startIndex: 0,
+      endIndex: 365,
+    });
+    assert.deepEqual(resolveScenarioFullPresetRange(0, 0, preset("year")), {
+      startIndex: 0,
+      endIndex: 0,
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Semântica de horizonDays no SERVIÇO REAL (prova executável)        */
 /* ------------------------------------------------------------------ */
 
@@ -479,16 +599,34 @@ describe("visão ampliada — gates estruturais", () => {
 
   it("modal: fetch mora SÓ no handler de Gerar — nunca em useEffect", () => {
     assert.ok(
-      !/useEffect\([\s\S]{0,900}?fetchTreasuryCaixaScenarios/.test(modal),
+      !/useEffect\([\s\S]{0,900}?fetchTreasury/.test(modal),
       "fetch em useEffect = request sem clicar em Gerar"
     );
-    const calls = modal.match(/fetchTreasuryCaixaScenarios\(/g) ?? [];
-    assert.equal(calls.length, 1, "exatamente UMA chamada fetch no modal");
+    // Um carregamento por Gerar: cenários + board anual + agenda — todos
+    // endpoints canônicos já existentes (card, página e Visão Anual).
+    const calls = modal.match(/fetchTreasury\w+\(\{/g) ?? [];
+    assert.equal(
+      calls.length,
+      3,
+      `exatamente TRÊS chamadas fetch no modal (cenários+board+agenda), achou ${calls.length}`
+    );
     assert.ok(
       /onClick=\{\(\)\s*=>\s*void handleGenerate\(\)\}/.test(modal),
       "o fetch é disparado pelo clique em Gerar projeção"
     );
     assert.ok(!modal.includes('"/api/'), "nenhum endpoint novo hardcoded");
+  });
+
+  it("passado realizado: prefixo vem da composição canônica — motor de cenários intacto", () => {
+    assert.ok(
+      modal.includes("buildTreasuryCaixaAnnualSeries") &&
+        modal.includes("buildScenarioPastPrefix"),
+      "o passado deve vir da timeline anual canônica, não de conta própria"
+    );
+    assert.ok(
+      chart.includes("prefix?:"),
+      "prefix deve ser OPCIONAL no chart — card atual não passa a prop"
+    );
   });
 
   it("slicer não dispara fetch: interações apenas recortam índices", () => {

@@ -85,6 +85,16 @@ export type TreasuryCaixaScenariosChartProps = {
     endIndex: number;
     onChange: (range: { startIndex?: number; endIndex?: number }) => void;
   };
+  /**
+   * PREFIXO de passado realizado (Visão Ampliada): linhas < asOf montadas da
+   * série canônica da Linha do tempo, onde os três cenários coincidem com o
+   * realizado — o motor de cenários permanece intacto (só projeta futuro).
+   * O card da página não passa a prop — comportamento atual intacto.
+   */
+  prefix?: {
+    rows: ScenarioChartRow[];
+    days: TreasuryScenarioDay[];
+  };
 };
 
 /** Tokens de cor por cenário (usados TAMBÉM em estilo de linha para acessibilidade). */
@@ -836,6 +846,7 @@ export function TreasuryCaixaScenariosChart({
   timelineRows,
   headerAction,
   brush,
+  prefix,
 }: TreasuryCaixaScenariosChartProps) {
   const [drilldownDate, setDrilldownDate] = useState<string | null>(null);
   /**
@@ -982,19 +993,19 @@ export function TreasuryCaixaScenariosChart({
     setSimDeltas(null);
   }, [simDefaults]);
 
-  const rows = useMemo(
-    () =>
-      data
-        ? buildRows(
-            data.days,
-            data.asOfCivilDate,
-            timelineByDate,
-            data.salesVolumeScenarios ?? null,
-            simDeltas
-          )
-        : [],
-    [data, timelineByDate, simDeltas]
-  );
+  const rows = useMemo(() => {
+    const built = data
+      ? buildRows(
+          data.days,
+          data.asOfCivilDate,
+          timelineByDate,
+          data.salesVolumeScenarios ?? null,
+          simDeltas
+        )
+      : [];
+    // Prefixo de passado realizado (Visão Ampliada) — só linhas < asOf.
+    return prefix && prefix.rows.length > 0 ? [...prefix.rows, ...built] : built;
+  }, [data, timelineByDate, simDeltas, prefix]);
 
   /** Resumo da simulação — seleção simples sobre a série já desenhada. */
   const simSummary = useMemo(() => {
@@ -1023,9 +1034,10 @@ export function TreasuryCaixaScenariosChart({
 
   const daysByLabel = useMemo(() => {
     const map = new Map<string, TreasuryScenarioDay>();
+    if (prefix) for (const d of prefix.days) map.set(d.civilDate, d);
     if (data) for (const d of data.days) map.set(d.civilDate, d);
     return map;
-  }, [data]);
+  }, [data, prefix]);
 
   /**
    * Resumos derivados da MESMA série que o gráfico desenha. Quando a linha
