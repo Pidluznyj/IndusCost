@@ -1,10 +1,10 @@
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { FinanceSalesOrdersMonthlyChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersMonthlyChart";
 import { SalesOrderListMonthlyMarginPercentChart } from "@/src/components/sales/SalesOrderListMonthlyMarginPercentChart";
-import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
-import { getSalesOrderResultApiPath } from "@/src/lib/salesOrderResultApi";
-import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
+import { fetchJsonOk } from "@/src/lib/http";
+import type { SalesOrderResultChartsCachePayload } from "@/src/lib/sales/salesOrderResultChartsCache";
 import { buildChartSeriesConfig } from "@/src/lib/executiveDashboardChartSeries";
 import { resolveExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear";
 import type { FinanceSalesOrdersMonthlyComparisonRow } from "@/src/lib/financeSalesOrdersDashboardTypes";
@@ -18,7 +18,11 @@ export type SalesOrderListMonthlyChartsFilters = {
 /**
  * Gráficos acima do grid: valor vendido YoY + margem % mês a mês.
  * Só o Ano da listagem entra; mês/cliente/vendedor/status/valor são ignorados.
- * População anual canônica do ano selecionado (e ano anterior no YoY).
+ *
+ * Os dados vêm do CACHE materializado por ano (`SalesOrderResultChartsCache`)
+ * — carga instantânea, sem rodar o motor de margem na requisição. O cache é
+ * recalculado automaticamente ao fim do sync de pedidos do Nomus; o botão
+ * Atualizar força o recálculo sob demanda.
  */
 export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCharts({
   filters,
@@ -29,31 +33,25 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
 }) {
   noteDevPerfRender("SalesOrderListMonthlyCharts");
   const { ref: sectionRef, visible } = useSectionVisible<HTMLDivElement>();
-  const [payload, setPayload] = useState<SalesOrderResultDashboardPayload | null>(
+  const [payload, setPayload] = useState<SalesOrderResultChartsCachePayload | null>(
     null
   );
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
 
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    // Somente o ano — nenhum filtro da listagem (cliente/vendedor/mês/status/…).
-    const path = getSalesOrderResultApiPath({
-      year: filters.year,
-      month: undefined,
-    });
 
-    void fetchUiSessionCachedJson<SalesOrderResultDashboardPayload>(path, {
-      signal: controller.signal,
-      cacheKey: `${path}::commercial-margin-charts-v3`,
-    })
+    void fetchJsonOk<{ cache: SalesOrderResultChartsCachePayload }>(
+      `/api/sales-orders/results/charts-cache?year=${filters.year}`,
+      { signal: controller.signal }
+    )
       .then((data) => {
-        if (!controller.signal.aborted) setPayload(data);
+        if (!controller.signal.aborted) setPayload(data.cache);
       })
       .catch((cause: unknown) => {
         if (
@@ -71,7 +69,26 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
       });
 
     return () => controller.abort();
-  }, [filtersKey, filters, visible]);
+  }, [filters.year, visible]);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    setError(null);
+    void fetchJsonOk<{ cache: SalesOrderResultChartsCachePayload }>(
+      "/api/sales-orders/results/charts-cache/refresh",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year: filters.year }),
+      }
+    )
+      .then((data) => setPayload(data.cache))
+      .catch((cause: unknown) => {
+        console.error(cause);
+        setError("Não foi possível atualizar os gráficos mensais.");
+      })
+      .finally(() => setRefreshing(false));
+  }, [filters.year]);
 
   const yearCtx = useMemo(
     () => resolveExecutiveDashboardYearContext(filters.year, new Date()),
@@ -101,6 +118,13 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
     }));
   }, [payload?.monthlySalesComparison]);
 
+  const computedAtLabel = useMemo(() => {
+    if (!payload?.computedAt) return null;
+    const date = new Date(payload.computedAt);
+    if (Number.isNaN(date.getTime())) return null;
+    return `${date.toLocaleDateString("pt-BR")} ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  }, [payload?.computedAt]);
+
   if (!visible || loading) {
     return (
       <div
@@ -116,7 +140,7 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
     );
   }
 
-  if (error) {
+  if (error && !payload) {
     return (
       <p
         ref={sectionRef}
@@ -133,23 +157,52 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
   }
 
   return (
-    <div
-      ref={sectionRef}
-      className={`grid gap-4 ${showMarginChart ? "xl:grid-cols-2" : "grid-cols-1"}`}
-      data-testid="sales-order-list-monthly-charts"
-    >
-      <FinanceSalesOrdersMonthlyChart
-        rows={salesRows}
-        selectedYear={filters.year}
-        previousYear={filters.year - 1}
-        config={chartConfig}
-      />
-      {showMarginChart ? (
-        <SalesOrderListMonthlyMarginPercentChart
-          rows={payload.monthlyCommercialMargin ?? []}
+    <div ref={sectionRef} className="space-y-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {error ? (
+          <span className="text-xs text-amber-700" role="alert">
+            {error}
+          </span>
+        ) : null}
+        {computedAtLabel ? (
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="sales-order-list-monthly-charts-computed-at"
+          >
+            Atualizado em {computedAtLabel}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+          data-testid="sales-order-list-monthly-charts-refresh"
+          disabled={refreshing}
+          onClick={refresh}
+        >
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
+          {refreshing ? "Atualizando…" : "Atualizar"}
+        </button>
+      </div>
+      <div
+        className={`grid gap-4 ${showMarginChart ? "xl:grid-cols-2" : "grid-cols-1"}`}
+        data-testid="sales-order-list-monthly-charts"
+      >
+        <FinanceSalesOrdersMonthlyChart
+          rows={salesRows}
           selectedYear={filters.year}
+          previousYear={filters.year - 1}
+          config={chartConfig}
         />
-      ) : null}
+        {showMarginChart ? (
+          <SalesOrderListMonthlyMarginPercentChart
+            rows={payload.monthlyCommercialMargin ?? []}
+            selectedYear={filters.year}
+          />
+        ) : null}
+      </div>
     </div>
   );
 });

@@ -7949,6 +7949,20 @@ model SalesOrderFlowSnapshot {
   @@index([isOverdue, currentStage])
 }
 
+/// Cache materializado dos gráficos da listagem Comercial > Pedidos de Venda
+/// (valor vendido YoY + margem % mensal). Uma linha por ano; recalculado pelo
+/// botão Atualizar da tela e ao fim do sync de pedidos do Nomus. A fonte da
+/// verdade continua sendo o motor oficial (buildSalesOrderResultDashboard);
+/// esta tabela só evita rodá-lo a cada carga da tela.
+model SalesOrderResultChartsCache {
+  /// Ano civil dos gráficos (chave natural — os gráficos ignoram os demais filtros).
+  year                        Int      @id
+  monthlySalesComparisonJson  Json
+  monthlyCommercialMarginJson Json
+  computedAt                  DateTime @db.Timestamptz(6)
+  computeDurationMs           Int?
+}
+
 /// Evento append-only do Fluxo de Pedidos (transições / materialização).
 /// Sem updatedAt. Idempotência via dedupeKey única.
 /// occurredAt = melhor evidência real; observedAt = quando o IndusCost observou.
