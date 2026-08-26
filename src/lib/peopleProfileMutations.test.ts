@@ -35,6 +35,8 @@ describe("applyCompensationAdjustment — concorrência", () => {
         assert.ok(err instanceof PeopleProfileAccessError);
         assert.equal(err.code, "SALARY_CONFLICT");
         assert.equal(err.status, 409);
+        assert.ok(!String(err.message).includes("2000"));
+        assert.ok(!String(err.message).includes("2200"));
         return true;
       }
     );
