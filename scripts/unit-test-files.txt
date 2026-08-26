@@ -2,6 +2,9 @@
 src/lib/canonicalPersonHardening.integration.test.ts
 src/lib/employeesPermissions.test.ts
 src/lib/employeeHrAudit.test.ts
+src/lib/peopleProfile.test.ts
+src/lib/peopleProfileMutations.test.ts
+src/lib/peopleProfile.server.test.ts
 src/lib/employeeSystemLinks.test.ts
 src/lib/canonicalPersonRoutes.auth.test.ts
 src/lib/costRollup.test.ts
