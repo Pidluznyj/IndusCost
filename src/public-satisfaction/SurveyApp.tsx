@@ -10,6 +10,12 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PublicTurnstile, type PublicTurnstileHandle } from "./PublicTurnstile.js";
+import {
+  canSubmitWithTurnstile,
+  readTurnstileConfigFromForm,
+  turnstileUserMessage,
+} from "./publicTurnstileContract.js";
 
 // ─── Contratos do DTO público (espelho do backend, sem importar server code) ──
 
@@ -48,6 +54,7 @@ type PublicForm = {
     respondentPhone: string | null;
   } | null;
   ratingScale: Array<{ value: number; label: string }>;
+  turnstile?: { required: boolean; siteKey: string | null } | null;
   turnstileSiteKey: string | null;
   branding?: {
     logoDataUrl: string | null;
@@ -162,6 +169,8 @@ export function SurveyApp() {
   const [saveHint, setSaveHint] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<PublicTurnstileHandle | null>(null);
   // Guardada fora da fase: a tela de confirmação também exibe a marca.
   const [brand, setBrand] = useState<{ logoDataUrl: string | null; companyName: string | null }>({
     logoDataUrl: null,
@@ -255,6 +264,15 @@ export function SurveyApp() {
   }, []);
 
   const form = phase.kind === "form" ? phase.form : null;
+  const turnstileConfig = useMemo(
+    () => (form ? readTurnstileConfigFromForm(form) : { required: false, siteKey: null }),
+    [form]
+  );
+
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset();
+    setTurnstileToken(null);
+  };
 
   /** Payload COMPLETO — o backend trata rascunho como estado inteiro, não delta. */
   const buildAnswerPayload = useCallback(() => {
@@ -387,15 +405,20 @@ export function SurveyApp() {
       return;
     }
 
+    const turnstileGate = canSubmitWithTurnstile(turnstileConfig, turnstileToken);
+    if (turnstileGate.ok === false) {
+      setFormError(turnstileGate.error);
+      document
+        .querySelector<HTMLElement>("[data-testid='satisfaction-turnstile']")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
     setFormError(null);
     setSubmitting(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     try {
-      const turnstileToken =
-        (document.querySelector<HTMLInputElement>("[name='cf-turnstile-response']")?.value ??
-          null) || null;
-
       const result = await postJson("/api/public/satisfaction/submit", {
         answers: buildAnswerPayload(),
         respondentName,
@@ -419,13 +442,19 @@ export function SurveyApp() {
         }
         setErrors(issueMap);
         setFormError("Revise as respostas destacadas.");
+        resetTurnstile();
       } else if (result?.reason === "ALREADY_ANSWERED") {
         setPhase({ kind: "done" });
+      } else if (result?.reason === "TURNSTILE") {
+        setFormError(result?.message ?? turnstileUserMessage("backend"));
+        resetTurnstile();
       } else {
         setFormError(result?.message ?? "Não foi possível enviar. Tente novamente.");
+        resetTurnstile();
       }
     } catch {
       setFormError("Falha de conexão ao enviar. Verifique a internet e tente de novo.");
+      resetTurnstile();
     } finally {
       setSubmitting(false);
     }
@@ -627,19 +656,39 @@ export function SurveyApp() {
             );
           })}
 
-          {activeForm.turnstileSiteKey ? (
+          {turnstileConfig.required ? (
             <div className="sat-card">
-              <div
-                className="cf-turnstile"
-                data-sitekey={activeForm.turnstileSiteKey}
-                data-appearance="interaction-only"
-              />
+              {turnstileConfig.siteKey ? (
+                <PublicTurnstile
+                  ref={turnstileRef}
+                  siteKey={turnstileConfig.siteKey}
+                  onTokenChange={setTurnstileToken}
+                />
+              ) : (
+                <section className="sat-turnstile" data-testid="satisfaction-turnstile">
+                  <h2 className="sat-turnstile-title">Verificação de segurança</h2>
+                  <p className="sat-turnstile-status is-error" role="alert">
+                    {turnstileUserMessage("error")}
+                  </p>
+                </section>
+              )}
             </div>
           ) : null}
 
           <div className="sat-actions">
-            <button className="sat-button" type="submit" disabled={submitting}>
-              {submitting ? "Enviando…" : "Enviar respostas"}
+            <button
+              className="sat-button"
+              type="submit"
+              disabled={
+                submitting ||
+                (turnstileConfig.required && (!turnstileToken || !turnstileConfig.siteKey))
+              }
+            >
+              {submitting
+                ? "Enviando…"
+                : turnstileConfig.required && !turnstileToken
+                  ? "Aguarde a verificação…"
+                  : "Enviar respostas"}
             </button>
             <p className="sat-status" aria-live="polite">
               {saveHint}

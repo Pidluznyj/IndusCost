@@ -13,6 +13,7 @@
  */
 
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { buildSatisfactionPublicCsp } from "./satisfactionPublicCsp.js";
 
 /** Cookies de sessão administrativa — nunca válidos na superfície pública. */
 export const SATISFACTION_STRIPPED_COOKIE_NAMES = [
@@ -211,6 +212,10 @@ export function createSatisfactionPublicHostGuard(
     res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
+    // CSP só no host público de produção. Em dev o HMR do Vite usa eval.
+    if (!config.allowDevAssets) {
+      res.setHeader("Content-Security-Policy", buildSatisfactionPublicCsp());
+    }
     return next();
   };
 }

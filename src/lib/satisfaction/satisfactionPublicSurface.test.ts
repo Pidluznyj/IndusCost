@@ -20,6 +20,7 @@ import {
   stripAdminCookies,
   type SatisfactionPublicSurfaceConfig,
 } from "./satisfactionPublicSurface.js";
+import { buildSatisfactionPublicCsp } from "./satisfactionPublicCsp.js";
 
 const PROD: SatisfactionPublicSurfaceConfig = {
   publicHosts: ["satisfacao.exemplo.com.br"],
@@ -224,6 +225,19 @@ describe("superfície pública — middleware", () => {
     assert.equal(res.headers["X-Robots-Tag"], "noindex, nofollow, noarchive");
     assert.equal(res.headers["Referrer-Policy"], "no-referrer");
     assert.equal(res.headers["X-Content-Type-Options"], "nosniff");
+    const csp = res.headers["Content-Security-Policy"];
+    assert.ok(typeof csp === "string");
+    assert.ok(csp.includes("https://challenges.cloudflare.com"));
+    assert.equal(csp.includes("*"), false);
+    assert.equal(csp.includes("unsafe-eval"), false);
+  });
+
+  it("CSP pública libera só o Turnstile oficial, sem wildcard", () => {
+    const csp = buildSatisfactionPublicCsp();
+    assert.ok(csp.includes("script-src 'self' https://challenges.cloudflare.com"));
+    assert.ok(csp.includes("frame-src https://challenges.cloudflare.com"));
+    assert.equal(/\bscript-src[^;]*\*/.test(csp), false);
+    assert.equal(csp.includes("unsafe-eval"), false);
   });
 
   it("host interno passa intocado — o app administrativo não é afetado", () => {

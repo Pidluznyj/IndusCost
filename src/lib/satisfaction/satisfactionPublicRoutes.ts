@@ -34,6 +34,7 @@ import {
 } from "./satisfactionRateLimit.js";
 import {
   resolveTurnstileConfig,
+  toPublicTurnstileDto,
   turnstileFailureMessage,
   verifyTurnstileToken,
 } from "./satisfactionTurnstile.server.js";
@@ -199,7 +200,7 @@ export function registerSatisfactionPublicRoutes(
         SATISFACTION_PUBLIC_SESSION_COOKIE
       );
       const turnstile = resolveTurnstileConfig();
-      const result = await service.getForm(sessionToken, turnstile.siteKey);
+      const result = await service.getForm(sessionToken, toPublicTurnstileDto(turnstile));
 
       const failure = asPublicError(result);
       if (failure) {

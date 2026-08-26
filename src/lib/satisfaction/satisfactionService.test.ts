@@ -669,6 +669,23 @@ describe("superfície pública — DTO do formulário", () => {
     const form = await service.getForm("sessao-que-nao-existe", null);
     assert.equal(form.ok, false);
   });
+
+  it("DTO do formulário público expõe turnstile.required/siteKey e não serializa secret", async () => {
+    const { prisma, token } = seedForPublic();
+    prisma.satisfactionSurveyCampaign.rows[0].questions = V1_QUESTIONS;
+    const service = createSatisfactionPublicService({ prisma });
+    const session = await service.exchangeToken(token);
+    const result = await service.getForm((session as { sessionToken: string }).sessionToken, {
+      required: true,
+      siteKey: "pk_publica",
+    });
+    assert.equal(result.ok, true);
+    const form = (result as { form: { turnstile: { required: boolean; siteKey: string | null } } }).form;
+    assert.deepEqual(form.turnstile, { required: true, siteKey: "pk_publica" });
+    const serialized = JSON.stringify(form);
+    assert.equal(serialized.includes("pk_publica"), true);
+    assert.equal(serialized.toLowerCase().includes("secret"), false);
+  });
 });
 
 describe("superfície pública — submit", () => {

@@ -20,8 +20,10 @@ import {
   SATISFACTION_TOKEN_BYTES,
 } from "./satisfactionToken.js";
 import {
+  assertPublicFormDtoHasNoSecrets,
   isMisconfiguredForProduction,
   resolveTurnstileConfig,
+  toPublicTurnstileDto,
   verifyTurnstileToken,
 } from "./satisfactionTurnstile.server.js";
 import {
@@ -158,6 +160,36 @@ describe("Turnstile", () => {
     assert.equal(resolveTurnstileConfig({} as NodeJS.ProcessEnv).mode, "disabled");
   });
 
+  it("DTO público informa required + siteKey e NUNCA serializa o secret", () => {
+    const config = resolveTurnstileConfig({
+      SATISFACTION_TURNSTILE_SITE_KEY: "pk_publica",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk_nunca_vazar",
+    } as NodeJS.ProcessEnv);
+    const dto = toPublicTurnstileDto(config);
+    assert.deepEqual(dto, { required: true, siteKey: "pk_publica" });
+    const serialized = JSON.stringify({ turnstile: dto, surveyTitle: "Pesquisa" });
+    assertPublicFormDtoHasNoSecrets(serialized);
+    assert.equal(serialized.includes("sk_nunca_vazar"), false);
+  });
+
+  it("Turnstile obrigatório sem siteKey não inventa chave — e não vaza secret", () => {
+    const config = resolveTurnstileConfig({
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk_nunca_vazar",
+    } as NodeJS.ProcessEnv);
+    const dto = toPublicTurnstileDto(config);
+    assert.equal(dto.required, true);
+    assert.equal(dto.siteKey, null);
+    assertPublicFormDtoHasNoSecrets(JSON.stringify(dto));
+  });
+
+  it("produção sem site key pública também é desvio", () => {
+    const env = {
+      NODE_ENV: "production",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk",
+    } as NodeJS.ProcessEnv;
+    assert.equal(isMisconfiguredForProduction(resolveTurnstileConfig(env), env), true);
+  });
+
   it("produção sem proteção é sinalizada como desvio de configuração", () => {
     const env = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
     assert.equal(isMisconfiguredForProduction(resolveTurnstileConfig(env), env), true);
@@ -228,6 +260,37 @@ describe("Turnstile", () => {
       throw new Error("timeout");
     });
     assert.deepEqual(result, { ok: false, reason: "UNAVAILABLE" });
+  });
+
+  it("DTO público informa required + siteKey e NUNCA serializa o secret", () => {
+    const config = resolveTurnstileConfig({
+      SATISFACTION_TURNSTILE_SITE_KEY: "pk_publica",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk_nunca_vazar",
+    } as NodeJS.ProcessEnv);
+    const dto = toPublicTurnstileDto(config);
+    assert.deepEqual(dto, { required: true, siteKey: "pk_publica" });
+    const serialized = JSON.stringify({ turnstile: dto, surveyTitle: "Pesquisa" });
+    assertPublicFormDtoHasNoSecrets(serialized);
+    assert.equal(serialized.includes("sk_nunca_vazar"), false);
+    assert.equal(serialized.toLowerCase().includes("secret"), false);
+  });
+
+  it("DTO público com Turnstile obrigatório sem siteKey não libera o widget — e não vaza secret", () => {
+    const config = resolveTurnstileConfig({
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk_nunca_vazar",
+    } as NodeJS.ProcessEnv);
+    const dto = toPublicTurnstileDto(config);
+    assert.equal(dto.required, true);
+    assert.equal(dto.siteKey, null);
+    assertPublicFormDtoHasNoSecrets(JSON.stringify(dto));
+  });
+
+  it("produção sem site key pública também é desvio", () => {
+    const env = {
+      NODE_ENV: "production",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk",
+    } as NodeJS.ProcessEnv;
+    assert.equal(isMisconfiguredForProduction(resolveTurnstileConfig(env), env), true);
   });
 
   it("o segredo nunca aparece no resultado devolvido", async () => {
