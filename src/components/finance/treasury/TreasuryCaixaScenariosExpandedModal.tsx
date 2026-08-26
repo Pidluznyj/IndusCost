@@ -23,7 +23,11 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Printer } from "lucide-react";
+import {
+  buildTreasuryJpegFileName,
+  exportTreasuryElementToJpeg,
+} from "@/src/lib/treasury/treasuryChartJpegExport.js";
 import { CostCenterDialog } from "@/src/components/finance/cost-centers/financeUnclassifiedModalUi";
 import {
   buildRows,
@@ -143,6 +147,26 @@ export function TreasuryCaixaScenariosExpandedModal({
   const seqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const cacheRef = useRef<LoadedData | null>(null);
+  // Impressão em JPEG — captura o conteúdo do modal (KPIs + slicer + gráfico).
+  const printAreaRef = useRef<HTMLDivElement | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const handlePrint = useCallback(async () => {
+    const el = printAreaRef.current;
+    if (!el || printing) return;
+    setPrinting(true);
+    try {
+      await exportTreasuryElementToJpeg(
+        el,
+        buildTreasuryJpegFileName("projecao-caixa-visao-ampliada")
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Falha ao gerar a imagem."
+      );
+    } finally {
+      setPrinting(false);
+    }
+  }, [printing]);
 
   useEffect(() => {
     return () => {
@@ -338,7 +362,7 @@ export function TreasuryCaixaScenariosExpandedModal({
         </div>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div ref={printAreaRef} className="flex flex-col gap-4 bg-white">
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-muted-foreground">
             Período:{" "}
@@ -358,6 +382,23 @@ export function TreasuryCaixaScenariosExpandedModal({
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {loading ? "Gerando…" : "Gerar projeção"}
           </button>
+          {data != null ? (
+            <button
+              type="button"
+              onClick={() => void handlePrint()}
+              disabled={printing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+              data-testid="caixa-scenarios-expanded-print"
+              title="Baixar esta tela como imagem JPEG em alta resolução"
+            >
+              {printing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Printer className="h-4 w-4" />
+              )}
+              Imprimir (JPEG)
+            </button>
+          ) : null}
         </div>
 
         {error ? (

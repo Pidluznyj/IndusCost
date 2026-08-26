@@ -14,7 +14,7 @@
  * recebimentos. Nenhuma correção artificial de ordenação é aplicada.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   Brush,
@@ -28,7 +28,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, ChevronDown, Info, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Info, Loader2, Printer, RefreshCw } from "lucide-react";
+import {
+  buildTreasuryJpegFileName,
+  exportTreasuryElementToJpeg,
+} from "@/src/lib/treasury/treasuryChartJpegExport.js";
 import type { TreasuryCaixaScenariosPayload } from "@/src/lib/treasury/treasuryCaixaScenariosApi.js";
 import type {
   TreasuryScenarioDay,
@@ -858,6 +862,24 @@ export function TreasuryCaixaScenariosChart({
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>(DEFAULT_VISIBLE);
   const [expanded, setExpanded] = useState(false);
   const expandedHeight = useFinanceBiExpandedChartHeight();
+  // Impressão em JPEG do modo apresentação — captura o card completo.
+  const presentationCardRef = useRef<HTMLDivElement | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const handlePrintPresentation = useCallback(async () => {
+    const el = presentationCardRef.current;
+    if (!el || printing) return;
+    setPrinting(true);
+    try {
+      await exportTreasuryElementToJpeg(
+        el,
+        buildTreasuryJpegFileName("projecao-caixa-cenarios")
+      );
+    } catch {
+      // Falha de captura não pode derrubar a apresentação — sem estado extra.
+    } finally {
+      setPrinting(false);
+    }
+  }, [printing]);
 
   const toggleSeries = (key: SeriesKey) =>
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1516,6 +1538,24 @@ export function TreasuryCaixaScenariosChart({
               : ""
           }`}
           testId="caixa-scenarios-expand-modal"
+          contentRef={presentationCardRef}
+          headerAction={
+            <button
+              type="button"
+              onClick={() => void handlePrintPresentation()}
+              disabled={printing}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-[13px] font-semibold hover:bg-white/15 disabled:opacity-50"
+              data-testid="caixa-scenarios-expand-print"
+              title="Baixar esta tela como imagem JPEG em alta resolução"
+            >
+              {printing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Printer className="h-4 w-4" />
+              )}
+              Imprimir (JPEG)
+            </button>
+          }
         >
           {renderScenariosChart({
             rows,
