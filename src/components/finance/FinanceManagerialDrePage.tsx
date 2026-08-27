@@ -6,7 +6,10 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceDreReport } from "@/src/lib/financeDreTypes";
 import type { CashBridgeReport } from "@/src/lib/financeDreCashBridgeTypes";
-import { canViewFinanceDre } from "@/src/lib/financeDrePermissions";
+import {
+  canManageFinanceDreMappings,
+  canViewFinanceDre,
+} from "@/src/lib/financeDrePermissions";
 import {
   buildFinanceDreQuery,
   createDefaultFinanceDreUiFilters,
@@ -125,6 +128,9 @@ function KpiCard({
 export function FinanceManagerialDrePage() {
   const auth = useAuth();
   const canView = canViewFinanceDre(auth);
+  // Forçar recomputação do snapshot é cálculo pesado — somente manage.
+  const canForceRefresh = canManageFinanceDreMappings(auth);
+  const [forceRefreshing, setForceRefreshing] = useState(false);
 
   const [draftFilters, setDraftFilters] = useState<FinanceDreUiFilters>(() =>
     createDefaultFinanceDreUiFilters()
@@ -297,17 +303,50 @@ export function FinanceManagerialDrePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {report?.snapshot?.refreshPending ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Atualização pendente
+            </span>
+          ) : null}
           <FinanceBiFilterStatusBadge status={filterStatus} />
           <button
             type="button"
+            disabled={forceRefreshing}
             onClick={() => {
+              if (canForceRefresh) {
+                // Recomputa o snapshot no servidor e então relê o relatório.
+                setForceRefreshing(true);
+                void (async () => {
+                  try {
+                    const params = new URLSearchParams(appliedQuery);
+                    await fetchJsonOk("/api/finance/dre/refresh", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        year: params.get("year") ?? undefined,
+                        month: params.get("month") ?? undefined,
+                        company: params.get("company") ?? undefined,
+                      }),
+                    });
+                  } catch (err) {
+                    console.error("POST /api/finance/dre/refresh", err);
+                  } finally {
+                    setForceRefreshing(false);
+                    void loadReport();
+                    if (pageTab === "cash-bridge") void loadCashBridge();
+                  }
+                })();
+                return;
+              }
               void loadReport();
               if (pageTab === "cash-bridge") void loadCashBridge();
             }}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-60"
           >
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
+            <RefreshCw className={cn("h-4 w-4", forceRefreshing && "animate-spin")} />
+            {forceRefreshing ? "Atualizando…" : "Atualizar"}
           </button>
           <button
             type="button"

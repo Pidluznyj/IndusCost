@@ -2,9 +2,13 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
-  buildFinanceDreReport,
   FinanceDreParseError,
+  parseFinanceDreQuery,
 } from "@/src/lib/financeDreService.server.js";
+import {
+  refreshFinanceDreSnapshot,
+  resolveFinanceDreReportWithSnapshot,
+} from "@/src/lib/financeDreSnapshot.server.js";
 import { buildFinanceDreCashBridgeReport } from "@/src/lib/financeDreCashBridge.server.js";
 import { buildFinanceDreLineDrilldown } from "@/src/lib/financeDreDrilldown.server.js";
 import { buildFinanceDreSourceCheckDrilldown } from "@/src/lib/financeDreSourceCheckDrilldown.server.js";
@@ -42,7 +46,9 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
       if (!user) {
         return res.status(401).json({ error: "Não autenticado." });
       }
-      const payload = await buildFinanceDreReport(req.query as Record<string, unknown>);
+      const payload = await resolveFinanceDreReportWithSnapshot(
+        req.query as Record<string, unknown>
+      );
       return res.json(payload);
     } catch (error) {
       if (error instanceof FinanceDreParseError) {
@@ -59,7 +65,9 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
       if (!user) {
         return res.status(401).json({ error: "Não autenticado." });
       }
-      const payload = await buildFinanceDreReport(req.query as Record<string, unknown>);
+      const payload = await resolveFinanceDreReportWithSnapshot(
+        req.query as Record<string, unknown>
+      );
       const csv = buildFinanceDreExportCsv(payload);
       const filename = buildFinanceDreExportFilename(payload);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -159,6 +167,55 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
     requireAppAuth,
     requireResource(FINANCE_MODULE_RESOURCE_KEYS.dre, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
+
+  /**
+   * Força a recomputação do snapshot anual (year/company) — cálculo pesado,
+   * por isso restrito a `manage`. Usuários com `view` seguem lendo snapshot
+   * FRESH/STALE; o refresh automático server-side independe de permissão.
+   */
+  app.post("/api/finance/dre/refresh", ...manageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const filters = parseFinanceDreQuery(
+        (req.body ?? {}) as Record<string, unknown>
+      );
+      const result = await refreshFinanceDreSnapshot(prisma, {
+        year: filters.year,
+        company: filters.company,
+        forceAllEntities: true,
+      });
+      if (result.status === "already_running") {
+        return res.status(409).json({
+          error: "Já existe uma atualização em andamento para este período.",
+          status: result.status,
+        });
+      }
+      if (result.status === "error") {
+        return res.status(500).json({
+          error: `Falha ao atualizar o snapshot da DRE: ${result.error ?? "erro desconhecido"}`,
+          status: result.status,
+        });
+      }
+      return res.json({
+        schemaVersion: 1,
+        status: result.status,
+        year: result.year,
+        company: result.company,
+        computedAt: result.computedAt,
+        computeDurationMs: result.computeDurationMs,
+        entitiesRefreshed: result.entitiesRefreshed,
+      });
+    } catch (error) {
+      if (error instanceof FinanceDreParseError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("POST /api/finance/dre/refresh", error);
+      return res.status(500).json({ error: "Erro ao atualizar o snapshot da DRE Gerencial." });
+    }
+  });
 
   app.put("/api/finance/dre/cost-center-mappings", ...manageGuard, async (req, res) => {
     try {
