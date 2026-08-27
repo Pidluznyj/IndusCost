@@ -1,5 +1,101 @@
 import React from "react";
+import { Lock } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+
+/** Cartão padrão da ficha redesenhada (fundo branco, borda, cantos 12px). */
+export function ProfileCard({
+  title,
+  action,
+  children,
+  className,
+}: {
+  title?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-xl border border-border bg-background p-5 shadow-sm flex flex-col gap-4",
+        className
+      )}
+    >
+      {title ? (
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
+          {action}
+        </div>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+/** Campo rótulo/valor empilhado, para grades de 2 colunas dentro de cartões. */
+export function ProfileGridField({
+  label,
+  value,
+  sub,
+  restricted,
+}: {
+  label: string;
+  value?: string | number | null;
+  sub?: string | null;
+  restricted?: boolean;
+}) {
+  const display =
+    restricted === true
+      ? null
+      : value == null || String(value).trim() === ""
+        ? "Não informado"
+        : String(value);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      {restricted ? (
+        <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Lock className="h-3.5 w-3.5" aria-hidden /> Informação restrita
+        </span>
+      ) : (
+        <span className="text-sm text-foreground">{display}</span>
+      )}
+      {sub && !restricted ? <span className="text-[11px] text-muted-foreground">{sub}</span> : null}
+    </div>
+  );
+}
+
+const STATUS_PILL_STYLES: Record<string, string> = {
+  ACTIVE: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  VACATION: "bg-sky-50 border-sky-200 text-sky-700",
+  ON_LEAVE: "bg-amber-50 border-amber-200 text-amber-700",
+};
+
+const STATUS_DOT_STYLES: Record<string, string> = {
+  ACTIVE: "bg-emerald-600",
+  VACATION: "bg-sky-500",
+  ON_LEAVE: "bg-amber-500",
+};
+
+/** Pill de status com ponto colorido (verde = ativo). */
+export function ProfileStatusPill({ status, label }: { status: string; label: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        STATUS_PILL_STYLES[status] ?? "bg-muted border-border text-muted-foreground"
+      )}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          STATUS_DOT_STYLES[status] ?? "bg-muted-foreground"
+        )}
+      />
+      {label}
+    </span>
+  );
+}
 
 export function ProfileField({
   label,

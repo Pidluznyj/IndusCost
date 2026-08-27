@@ -307,22 +307,33 @@ export function PeopleEmployeeProfileDialog({
         ) : summary ? (
           <>
             <ProfileHeader summary={summary} />
-            <ProfileTabs
-              activeTab={activeTab}
-              onTabChange={(tab) => {
-                setTabError(null);
-                setTabErrorStatus(null);
-                setActiveTab(tab);
-              }}
-              visibleTabIds={visibleTabIds}
-            />
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
+            <div className="flex-1 min-h-0 grid grid-cols-[232px_minmax(0,1fr)] bg-overlay-surface-muted">
+              <div className="min-h-0 border-r border-border bg-background">
+                <ProfileTabs
+                  activeTab={activeTab}
+                  onTabChange={(tab) => {
+                    setTabError(null);
+                    setTabErrorStatus(null);
+                    setActiveTab(tab);
+                  }}
+                  visibleTabIds={visibleTabIds}
+                />
+              </div>
+              <div className="min-h-0 overflow-y-auto px-6 py-5">
               <Suspense fallback={<ProfileState kind="loading" message="Carregando guia…" />}>
                 {tabForbidden ? (
                   <ProfileState kind="forbidden" message={tabError ?? "🔒 Informação restrita"} />
                 ) : (
-                  <>
-                {activeTab === "overview" && <PeopleOverviewTab summary={summary} />}
+                  <div
+                    className={
+                      activeTab === "overview" || activeTab === "benefits" || activeTab === "history"
+                        ? undefined
+                        : "rounded-xl border border-border bg-background p-6 shadow-sm"
+                    }
+                  >
+                {activeTab === "overview" && (
+                  <PeopleOverviewTab summary={summary} onOpenHistory={() => setActiveTab("history")} />
+                )}
                 {activeTab === "professional" && (
                   <PeopleProfessionalTab
                     data={(cached as Record<string, unknown>) ?? null}
@@ -448,9 +459,10 @@ export function PeopleEmployeeProfileDialog({
                 )}
                 {activeTab === "links" && (linksSlot ?? <ProfileState kind="empty" message="Vínculos indisponíveis." />)}
                 {activeTab === "admin" && (adminSlot ?? <ProfileState kind="forbidden" message="🔒 Informação restrita" />)}
-                  </>
+                  </div>
                 )}
               </Suspense>
+              </div>
             </div>
             <footer className="shrink-0 border-t border-border px-6 py-2 text-[11px] text-muted-foreground">
               Registro funcional atualizado em {formatProfileDateTime(summary.identity.updatedAt)}
