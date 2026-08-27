@@ -86,6 +86,7 @@ export const ResourceKeys = {
   FINANCE_SUPPLIERS: "finance.suppliers",
   /** Central de Tesouraria (contrato finance.treasury). */
   FINANCE_TREASURY: "finance.treasury",
+  FINANCE_ONE_PAGE: "finance.one_page",
   /** Prompt 13 — canônicos (contrato) com aliases legados no FE. */
   COMERCIAL_CLIENTES: "commercial.customers",
   COMERCIAL_PROPOSTAS: "commercial.proposals",
@@ -629,6 +630,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "SUBMENU",
     parentKey: ResourceKeys.FINANCEIRO,
     legacyAliasKeys: ["finance.treasury.view"],
+  },
+  {
+    key: ResourceKeys.FINANCE_ONE_PAGE,
+    label: "One Page",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["finance.onePage.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_CLIENTES,

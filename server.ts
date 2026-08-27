@@ -433,6 +433,7 @@ import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financeP
 import { registerFiscalSettlementRoutes } from "./src/lib/finance/fiscalSettlementRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerFinanceDreRoutes } from "./src/lib/financeDreRoutes.js";
+import { getFinanceOnePageDashboard } from "./src/lib/finance/onePageService.server.js";
 import { registerTreasuryRoutes } from "./src/lib/treasury/treasuryRoutes.js";
 import {
   FINANCE_MODULE_ACTIONS,
@@ -16738,6 +16739,23 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireResource,
     getCurrentAppUser,
   });
+
+  app.get(
+    "/api/finance/one-page",
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.onePage, FINANCE_MODULE_ACTIONS.view),
+    async (req, res) => {
+      try {
+        const year = req.query.year;
+        const month = req.query.month;
+        const data = await getFinanceOnePageDashboard(year, month);
+        return res.json(data);
+      } catch (err) {
+        console.error("Erro ao carregar o dashboard One Page:", err);
+        return res.status(500).json({ error: "Erro interno ao carregar o dashboard One Page." });
+      }
+    }
+  );
 
   registerSalesProductRankingRoutes(app, {
     requireAppAuth,

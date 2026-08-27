@@ -52,6 +52,7 @@ function auth(partial: {
 
 describe("financeModulesAccess — matriz P17", () => {
   it("resourceKeys reais (AP separado)", () => {
+    assert.equal(FINANCE_MODULE_RESOURCE_KEYS.onePage, "finance.one_page");
     assert.equal(FINANCE_MODULE_RESOURCE_KEYS.cashFlow, "finance.cash_flow");
     assert.equal(FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable, "finance.accounts_receivable");
     assert.equal(FINANCE_MODULE_RESOURCE_KEYS.portfolio, "finance.portfolio_reconciliation");

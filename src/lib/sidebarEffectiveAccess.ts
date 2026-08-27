@@ -96,6 +96,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   reports: ["finance.reports"],
   finance: [
     "finance",
+    "finance.one_page",
     "finance.accounts_payable",
     "finance.accounts_receivable",
     "finance.cost_centers",

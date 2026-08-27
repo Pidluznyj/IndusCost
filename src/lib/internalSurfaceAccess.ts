@@ -16,6 +16,7 @@ import { projectLegacyBagToBaseline } from "@/src/lib/security/effectiveAccess/l
 
 /** Seções do FinanceModule → chave de contrato (view). */
 export const FINANCE_SECTION_CONTRACT_KEYS: Record<FinanceSectionId, string> = {
+  "one-page": "finance.one_page",
   "cash-flow": "finance.cash_flow",
   "accounts-receivable": "finance.accounts_receivable",
   "accounts-payable": "finance.accounts_payable",
@@ -28,6 +29,7 @@ export const FINANCE_SECTION_CONTRACT_KEYS: Record<FinanceSectionId, string> = {
 
 /** Seções do FinanceModule → resourceKey FE (catálogo). */
 export const FINANCE_SECTION_FE_RESOURCE_KEYS: Record<FinanceSectionId, string> = {
+  "one-page": ResourceKeys.FINANCE_ONE_PAGE,
   "cash-flow": "finance.cash_flow",
   "accounts-receivable": ResourceKeys.FINANCEIRO_CONTAS_RECEBER,
   "accounts-payable": ResourceKeys.FINANCEIRO_CONTAS_PAGAR,
@@ -45,6 +47,13 @@ export const FINANCE_UI_SECTIONS: ReadonlyArray<{
   resourceKey: string;
   contractKey: string;
 }> = [
+  {
+    id: "one-page",
+    label: "One Page",
+    path: "/finance/one-page",
+    resourceKey: FINANCE_SECTION_FE_RESOURCE_KEYS["one-page"],
+    contractKey: FINANCE_SECTION_CONTRACT_KEYS["one-page"],
+  },
   {
     id: "cash-flow",
     label: "Fluxo de Caixa",

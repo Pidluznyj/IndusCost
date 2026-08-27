@@ -23,6 +23,7 @@ describe("permissionResourceSeedData", () => {
       "financeiro.contas_receber",
       "financeiro.contas_pagar",
       "financeiro.fluxo_caixa",
+      "financeiro.one_page",
       "financeiro.relatorio_presidencial",
       "comercial",
       "comercial.pedidos_venda",

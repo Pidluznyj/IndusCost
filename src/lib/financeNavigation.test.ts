@@ -18,6 +18,7 @@ import {
 
 describe("financeNavigation", () => {
   it("expõe rotas canônicas absolutas", () => {
+    assert.equal(getFinanceSectionPath("one-page"), "/finance/one-page");
     assert.equal(getFinanceSectionPath("cash-flow"), "/finance/cash-flow");
     assert.equal(getFinanceSectionPath("accounts-receivable"), "/finance/accounts-receivable");
     assert.equal(getFinanceSectionPath("accounts-payable"), "/finance/accounts-payable");
@@ -98,6 +99,7 @@ describe("financeNavigation", () => {
     assert.ok(!mod.includes('to: "accounts-receivable"'));
     assert.ok(!mod.includes('to: "accounts-payable"'));
     assert.ok(!mod.includes('to={defaultSection}'));
+    assert.ok(nav.includes('"/finance/one-page"'));
     assert.ok(nav.includes('"/finance/cash-flow"'));
     assert.ok(nav.includes('"/finance/accounts-receivable"'));
     assert.ok(nav.includes('"/finance/accounts-payable"'));

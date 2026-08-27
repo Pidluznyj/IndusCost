@@ -103,8 +103,17 @@ describe("P12 — FinanceModule seções via DTO", () => {
     const ids = listVisibleFinanceSections(c).map((s) => s.id);
     assert.ok(ids.includes("accounts-payable"));
     assert.ok(ids.includes("accounts-receivable"));
-    // cash-flow: finance.view é primary
-    assert.ok(ids.includes("cash-flow"));
+    // finance.view não abre filhos 1:1 (P17) — nem Fluxo de Caixa nem One Page.
+    assert.equal(ids.includes("cash-flow"), false);
+    assert.equal(ids.includes("one-page"), false);
+  });
+
+  it("One Page só abre com chave 1:1 dedicada", () => {
+    const c = ctx(["finance.onePage.view"]);
+    assert.deepEqual(
+      listVisibleFinanceSections(c).map((s) => s.id),
+      ["one-page"]
+    );
   });
 
   it("URL/query tab não autorizada cai na primeira permitida", () => {

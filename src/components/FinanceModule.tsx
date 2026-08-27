@@ -47,6 +47,11 @@ const FinanceManagerialDrePage = React.lazy(() =>
     default: m.FinanceManagerialDrePage,
   }))
 );
+const FinanceOnePage = React.lazy(() =>
+  import("@/src/components/finance/FinanceOnePage").then((m) => ({
+    default: m.FinanceOnePage,
+  }))
+);
 const FinanceDreCostCenterMappingPage = React.lazy(() =>
   import("@/src/components/finance/FinanceDreCostCenterMappingPage").then((m) => ({
     default: m.FinanceDreCostCenterMappingPage,
@@ -112,6 +117,11 @@ export function FinanceModule() {
   const can = (id: FinanceSectionId) => visibleIds.has(id);
 
   const sectionRoutes: Record<FinanceSectionId, React.ReactNode> = {
+    "one-page": can("one-page") ? (
+      <FinanceOnePage />
+    ) : (
+      <UnauthorizedAccessGate forceDenied />
+    ),
     "cash-flow": can("cash-flow") ? (
       <FinanceCashFlowPage />
     ) : (
@@ -178,6 +188,7 @@ export function FinanceModule() {
       <React.Suspense fallback={<FinanceModuleLoadingFallback />}>
         <Routes>
           <Route index element={<Navigate to={defaultPath} replace />} />
+          <Route path="one-page" element={sectionRoutes["one-page"]} />
           <Route path="cash-flow" element={sectionRoutes["cash-flow"]} />
           <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
           <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />

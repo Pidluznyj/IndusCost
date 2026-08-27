@@ -14,6 +14,7 @@ import type { PermissionConsistencyFinding } from "./types.ts";
 
 /** Heurística: rota/aba financeira mapeada de forma aproximada. */
 const FINANCE_SECTION_MAP: Record<string, string> = {
+  "finance.one-page": "finance.one_page",
   "finance.cash-flow": "finance.cash_flow",
   "finance.accounts-receivable": "finance.accounts_receivable",
   "finance.accounts-payable": "finance.accounts_payable",

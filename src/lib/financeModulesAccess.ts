@@ -7,6 +7,7 @@
 
 export const FINANCE_MODULE_RESOURCE_KEYS = {
   home: "finance",
+  onePage: "finance.one_page",
   cashFlow: "finance.cash_flow",
   accountsReceivable: "finance.accounts_receivable",
   investedCapitalRecovery: "finance.invested_capital_recovery",
@@ -149,6 +150,7 @@ export const FINANCE_MODULE_PILOT_ENDPOINTS = [
 /** Recursos que Leticia (AP-only) deve negar. */
 export const FINANCE_LETICIA_DENIED_RESOURCE_KEYS = [
   FINANCE_MODULE_RESOURCE_KEYS.home,
+  FINANCE_MODULE_RESOURCE_KEYS.onePage,
   FINANCE_MODULE_RESOURCE_KEYS.cashFlow,
   FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
   FINANCE_MODULE_RESOURCE_KEYS.billing,

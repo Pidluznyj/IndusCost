@@ -2,7 +2,7 @@
  * Testes estruturais de performance da superfície Financeiro.
  *
  * Travam as fronteiras de code-splitting conquistadas na auditoria
- * (`docs/performance/finance-performance-audit.md`): as 8 seções do
+ * (`docs/performance/finance-performance-audit.md`): as 9 seções do
  * `FinanceModule` e as bibliotecas pesadas acionadas por exportação não
  * podem voltar para o bundle inicial via import estático.
  *
@@ -24,6 +24,7 @@ const FINANCE_MODULE = "src/components/FinanceModule.tsx";
 
 /** Componente de página de cada seção, na ordem de `FINANCE_UI_SECTIONS`. */
 const SECTION_PAGE_COMPONENTS: Record<string, string> = {
+  "one-page": "FinanceOnePage",
   "cash-flow": "FinanceCashFlowPage",
   "accounts-receivable": "FinanceAccountsReceivablePage",
   "accounts-payable": "FinanceAccountsPayablePage",

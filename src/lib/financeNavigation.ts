@@ -3,6 +3,7 @@
 export const FINANCE_BASE_PATH = "/finance" as const;
 
 export const FINANCE_SECTION_IDS = [
+  "one-page",
   "cash-flow",
   "accounts-receivable",
   "accounts-payable",
@@ -25,6 +26,7 @@ export const FINANCE_STANDALONE_PATHS = {
 export type FinanceStandaloneId = keyof typeof FINANCE_STANDALONE_PATHS;
 
 export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
+  "one-page": "/finance/one-page",
   "cash-flow": "/finance/cash-flow",
   "accounts-receivable": "/finance/accounts-receivable",
   "accounts-payable": "/finance/accounts-payable",
@@ -44,6 +46,11 @@ export type FinanceSectionDef = {
 };
 
 export const FINANCE_SECTIONS: FinanceSectionDef[] = [
+  {
+    id: "one-page",
+    label: "One Page",
+    path: FINANCE_SECTION_PATHS["one-page"],
+  },
   {
     id: "cash-flow",
     label: "Fluxo de Caixa",
