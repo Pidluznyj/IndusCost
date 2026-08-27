@@ -40,11 +40,19 @@ function FormStatus({ error, ok }: { error: string | null; ok: boolean }) {
   return null;
 }
 
-function SubmitButton({ saving, label }: { saving: boolean; label: string }) {
+function SubmitButton({
+  saving,
+  label,
+  disabled,
+}: {
+  saving: boolean;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="submit"
-      disabled={saving}
+      disabled={saving || disabled}
       className="inline-flex items-center px-3 py-1.5 rounded-md border border-border bg-background hover:bg-accent text-sm font-medium disabled:opacity-60"
     >
       {saving ? "Gravando…" : label}
@@ -271,7 +279,12 @@ export function CareerManageForm({
         </Field>
         {(eventType === "PROMOTION" || eventType === "ROLE_CHANGE") && (
           <Field label="Novo cargo">
-            <select className={PROFILE_INPUT_CLASS} value={newRoleId} onChange={(e) => setNewRoleId(e.target.value)}>
+            <select
+              required={eventType === "PROMOTION" || eventType === "ROLE_CHANGE"}
+              className={PROFILE_INPUT_CLASS}
+              value={newRoleId}
+              onChange={(e) => setNewRoleId(e.target.value)}
+            >
               <option value="">Selecione</option>
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -279,6 +292,12 @@ export function CareerManageForm({
                 </option>
               ))}
             </select>
+            {roles.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Cadastre em Administração → Configurações → Estrutura Operacional (Cargos e
+                Salários).
+              </p>
+            ) : null}
           </Field>
         )}
         {eventType === "DEPARTMENT_CHANGE" && (
@@ -379,7 +398,9 @@ export function BenefitsManageForm({
   const [endDate, setEndDate] = useState("");
   const [planName, setPlanName] = useState("");
   const [amount, setAmount] = useState("");
-  const [catalog, setCatalog] = useState<Array<{ id: string; name: string; isFinancial?: boolean }>>([]);
+  const [catalog, setCatalog] = useState<
+    Array<{ id: string; name: string; isFinancial?: boolean; typeLabel?: string }>
+  >([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -389,7 +410,17 @@ export function BenefitsManageForm({
     profileFetchJson("/api/hr/benefits")
       .then((body) => {
         if (cancelled) return;
-        const items = (body as { items?: Array<{ id: string; name: string; isFinancial?: boolean }> }).items ?? [];
+        const items =
+          (
+            body as {
+              items?: Array<{
+                id: string;
+                name: string;
+                isFinancial?: boolean;
+                typeLabel?: string;
+              }>;
+            }
+          ).items ?? [];
         setCatalog(items);
       })
       .catch((err) => {
@@ -432,7 +463,7 @@ export function BenefitsManageForm({
           }
         }}
       >
-        <Field label="Benefício">
+        <Field label="Encargo ou benefício">
           <select
             required
             className={PROFILE_INPUT_CLASS}
@@ -442,10 +473,16 @@ export function BenefitsManageForm({
             <option value="">Selecione</option>
             {catalog.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name}
+                {item.typeLabel ? `${item.name} · ${item.typeLabel}` : item.name}
               </option>
             ))}
           </select>
+          {catalog.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Cadastre em Administração → Configurações → Estrutura Operacional (Encargos e
+              Benefícios).
+            </p>
+          ) : null}
         </Field>
         <Field label="Início">
           <input
@@ -480,7 +517,11 @@ export function BenefitsManageForm({
           </Field>
         ) : null}
         <FormStatus error={error} ok={ok} />
-        <SubmitButton saving={saving} label="Registrar benefício" />
+        <SubmitButton
+          saving={saving}
+          disabled={catalog.length === 0}
+          label="Registrar benefício"
+        />
       </form>
     </ProfileManageSection>
   );

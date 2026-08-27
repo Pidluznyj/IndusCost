@@ -15,6 +15,7 @@ import { assertNoManagerCycleCte } from "./peopleProfileHierarchy.server.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
 import { saveAppLocalFile, readAppLocalFile } from "./appLocalFileStorage.js";
 import type { PeopleCareerPostEventType } from "./peopleProfileTypes.js";
+import { officialPayrollBenefitCode } from "./peopleOfficialPayrollCatalog.js";
 export { PEOPLE_CAREER_POST_EVENT_TYPES } from "./peopleProfileTypes.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -437,17 +438,47 @@ export async function createEmployeeBenefit(
   }
 ) {
   return prisma.$transaction(async (tx) => {
-    const benefit = await tx.hrBenefit.findUnique({
+    const payroll = await tx.payrollComponent.findUnique({
       where: { id: input.benefitId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, type: true, calculationType: true },
     });
+    let benefit: { id: string; name: string } | null = null;
+    if (payroll) {
+      const code = officialPayrollBenefitCode(payroll.id);
+      benefit = await tx.hrBenefit.upsert({
+        where: { code },
+        create: {
+          code,
+          name: payroll.name,
+          category: payroll.type,
+          isFinancial: payroll.calculationType === "FIXED",
+          status: "ACTIVE",
+        },
+        update: {
+          name: payroll.name,
+          category: payroll.type,
+          isFinancial: payroll.calculationType === "FIXED",
+          status: "ACTIVE",
+        },
+        select: { id: true, name: true },
+      });
+    } else {
+      benefit = await tx.hrBenefit.findUnique({
+        where: { id: input.benefitId },
+        select: { id: true, name: true },
+      });
+    }
     if (!benefit) {
-      throw new PeopleProfileAccessError("INVALID_BENEFIT", "Benefício inválido.", 400);
+      throw new PeopleProfileAccessError(
+        "INVALID_BENEFIT",
+        "Selecione um item do cadastro oficial de Encargos e Benefícios.",
+        400
+      );
     }
     const row = await tx.hrEmployeeBenefit.create({
       data: {
         employeeId: input.employeeId,
-        benefitId: input.benefitId,
+        benefitId: benefit.id,
         startDate: input.startDate,
         endDate: input.endDate ?? null,
         planName: input.planName ?? null,

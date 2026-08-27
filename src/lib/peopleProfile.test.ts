@@ -23,6 +23,13 @@ import {
   paginateHistory,
   toHistoryEventDto,
 } from "./peopleProfileHistory.ts";
+import {
+  mapPayrollComponentToHrCatalogItem,
+  officialPayrollBenefitCode,
+  overlayOfficialPayrollName,
+  payrollIdFromHrBenefitCode,
+  payrollTypeLabel,
+} from "./peopleOfficialPayrollCatalog.ts";
 
 function check(perms: string[]) {
   const set = new Set(perms);
@@ -350,10 +357,19 @@ describe("peopleProfile — wiring de segurança da ficha", () => {
 
   it("rotas da ficha aplicam no-store e gate do catálogo de benefícios", () => {
     const src = readFileSync(new URL("./peopleProfileRoutes.ts", import.meta.url), "utf8");
+    const form = readFileSync(
+      new URL("../components/employee/profile/PeopleProfileManageForms.tsx", import.meta.url),
+      "utf8"
+    );
     assert.ok(src.includes("function noStore"));
     assert.ok(src.includes("canViewBenefits"));
     assert.ok(!src.includes("max-age=300"));
     assert.ok(src.includes("canViewCompensationValues && body.amount"));
+    assert.ok(src.includes("listOfficialPayrollHrCatalogItems"));
+    assert.ok(!src.includes("hrBenefit.findMany"));
+    assert.ok(form.includes("/api/hr/benefits"));
+    assert.ok(form.includes("/api/employees/lookups/roles"));
+    assert.ok(form.includes("Estrutura Operacional"));
   });
 
   it("não persiste remuneração em localStorage/sessionStorage", () => {
@@ -368,5 +384,48 @@ describe("peopleProfile — wiring de segurança da ficha", () => {
     assert.ok(!dialog.includes("localStorage"));
     assert.ok(!dialog.includes("sessionStorage"));
     assert.ok(!client.includes("localStorage"));
+  });
+});
+
+describe("peopleOfficialPayrollCatalog", () => {
+  it("mapeia a verba oficial com o nome idêntico e tipo da Estrutura Operacional", () => {
+    const item = mapPayrollComponentToHrCatalogItem({
+      id: "comp-fgts",
+      name: "FGTS",
+      type: "CHARGE",
+      calculationType: "PERCENTAGE",
+    });
+    assert.equal(item.id, "comp-fgts");
+    assert.equal(item.name, "FGTS");
+    assert.equal(item.category, "CHARGE");
+    assert.equal(item.typeLabel, "Encargo");
+    assert.equal(item.isFinancial, false);
+    assert.equal(item.code, officialPayrollBenefitCode("comp-fgts"));
+    assert.equal(payrollIdFromHrBenefitCode(item.code), "comp-fgts");
+    assert.equal(payrollTypeLabel("BENEFIT"), "Benefício");
+    assert.equal(payrollTypeLabel("PROVISION"), "Provisão");
+  });
+
+  it("leitura da ficha usa o nome vigente do cadastro oficial", () => {
+    const payrollById = new Map([
+      [
+        "comp-vr",
+        {
+          id: "comp-vr",
+          name: "Vale Refeição",
+          type: "BENEFIT",
+          calculationType: "FIXED",
+        },
+      ],
+    ]);
+    const overlaid = overlayOfficialPayrollName({
+      code: officialPayrollBenefitCode("comp-vr"),
+      fallbackName: "Nome antigo",
+      fallbackCategory: "OTHER",
+      payrollById,
+    });
+    assert.equal(overlaid.name, "Vale Refeição");
+    assert.equal(overlaid.category, "BENEFIT");
+    assert.equal(overlaid.typeLabel, "Benefício");
   });
 });

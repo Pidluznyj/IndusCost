@@ -39,6 +39,10 @@ import {
 import { formatContractType } from "./employeeHrUi.js";
 import { formatCpfForDisplay, formatPhoneForDisplay, maskCpf, maskPhone } from "./employeePersonalHr.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
+import {
+  overlayOfficialPayrollName,
+  payrollIdFromHrBenefitCode,
+} from "./peopleOfficialPayrollCatalog.js";
 
 export { PeopleProfileAccessError };
 
@@ -583,13 +587,35 @@ export async function loadPeopleBenefits(
       benefit: { select: { id: true, code: true, name: true, category: true, isFinancial: true } },
     },
   });
+  const payrollIds = [
+    ...new Set(
+      rows
+        .map((row) => payrollIdFromHrBenefitCode(row.benefit.code))
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const payrollRows =
+    payrollIds.length > 0
+      ? await prisma.payrollComponent.findMany({
+          where: { id: { in: payrollIds } },
+          select: { id: true, name: true, type: true, calculationType: true },
+        })
+      : [];
+  const payrollById = new Map(payrollRows.map((row) => [row.id, row]));
   return rows.map((row) => {
+    const official = overlayOfficialPayrollName({
+      code: row.benefit.code,
+      fallbackName: row.benefit.name,
+      fallbackCategory: row.benefit.category,
+      payrollById,
+    });
     const dto: Record<string, unknown> = {
       id: row.id,
       benefitId: row.benefitId,
       code: row.benefit.code,
-      name: row.benefit.name,
-      category: row.benefit.category,
+      name: official.name,
+      category: official.category,
+      typeLabel: official.typeLabel,
       status: row.status,
       startDate: row.startDate.toISOString(),
       endDate: row.endDate ? row.endDate.toISOString() : null,

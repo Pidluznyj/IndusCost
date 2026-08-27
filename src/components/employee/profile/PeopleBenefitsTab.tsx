@@ -11,6 +11,7 @@ type BenefitItem = {
   planName: string | null;
   amount?: number | null;
   isFinancial?: boolean;
+  typeLabel?: string;
 };
 
 export function PeopleBenefitsTab({
@@ -41,7 +42,12 @@ export function PeopleBenefitsTab({
           <ul className="space-y-3">
             {items.map((item) => (
               <li key={item.id} className="text-sm border-b border-border/70 pb-3">
-                <p className="font-medium">{item.name}</p>
+                <p className="font-medium">
+                  {item.name}
+                  {item.typeLabel ? (
+                    <span className="font-normal text-muted-foreground"> · {item.typeLabel}</span>
+                  ) : null}
+                </p>
                 <p className="text-muted-foreground">
                   {item.status} · {formatProfileDate(item.startDate)}
                   {item.endDate ? ` — ${formatProfileDate(item.endDate)}` : ""}

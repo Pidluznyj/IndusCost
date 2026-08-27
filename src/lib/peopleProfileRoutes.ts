@@ -38,12 +38,12 @@ import {
   createEmployeeBenefit,
   createEmployeeNote,
   createEpiDelivery,
-  createHrBenefitCatalogItem,
   PEOPLE_CAREER_POST_EVENT_TYPES,
   readEmployeeDocumentFile,
   saveEmployeeDocument,
 } from "@/src/lib/peopleProfileMutations.server.js";
 import { buildPeopleProfileCapabilities } from "@/src/lib/peopleProfileCapabilities.js";
+import { listOfficialPayrollHrCatalogItems } from "@/src/lib/peopleOfficialPayrollCatalog.server.js";
 import { readAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { EmployeeRegistrationError } from "@/src/lib/employeeRegistration.js";
 
@@ -614,11 +614,7 @@ export function registerPeopleProfileRoutes(
       if (!caps.canViewBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
       }
-      const items = await prisma.hrBenefit.findMany({
-        where: { status: "ACTIVE" },
-        orderBy: { name: "asc" },
-        select: { id: true, code: true, name: true, category: true, isFinancial: true },
-      });
+      const items = await listOfficialPayrollHrCatalogItems(prisma);
       noStore(res);
       return res.json({ items });
     } catch (error) {
@@ -633,18 +629,11 @@ export function registerPeopleProfileRoutes(
       if (!caps.canManageBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para catálogo de benefícios.");
       }
-      const body = req.body as Record<string, unknown>;
-      if (typeof body.code !== "string" || typeof body.name !== "string") {
-        return res.status(400).json({ error: "Código e nome são obrigatórios." });
-      }
-      const row = await createHrBenefitCatalogItem(prisma, {
-        code: body.code,
-        name: body.name,
-        category: typeof body.category === "string" ? body.category : "OTHER",
-        isFinancial: body.isFinancial === true,
-      });
       noStore(res);
-      return res.status(201).json({ id: row.id });
+      return res.status(409).json({
+        error:
+          "O catálogo oficial é Administração → Configurações → Estrutura Operacional (Encargos e Benefícios).",
+      });
     } catch (error) {
       return sendError(res, error, "Erro ao criar benefício.");
     }
