@@ -487,6 +487,125 @@ function OnePageReportBody({
           ))}
         </ul>
       </div>
+
+      {/* DRE GERENCIAL — RESUMO DO PERÍODO (exclusivamente snapshot canônico) */}
+      <OnePageDreSummarySection dre={data.dre} print={print} />
+    </div>
+  );
+}
+
+function OnePageDreSummarySection({
+  dre,
+  print,
+}: {
+  dre: OnePageDashboardPayload["dre"];
+  print: boolean;
+}) {
+  const sectionClass = print
+    ? `${financeBiCardClass} p-4 space-y-4`
+    : `${financeBiCardClass} p-6 space-y-5`;
+  const kpiGridClass = print
+    ? "grid grid-cols-3 gap-3"
+    : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4";
+
+  return (
+    <div className={sectionClass} data-testid="one-page-dre-summary">
+      <div className="border-b border-[#E5E7EB] pb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-[#111827]">
+            DRE Gerencial — Resumo do Período
+          </h2>
+          <p className="text-xs text-[#6B7280]">
+            {dre.periodLabel} · valores oficiais da DRE Gerencial (competência emissão NF-e).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {dre.freshness === "stale" ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Atualização pendente
+            </span>
+          ) : null}
+          {dre.updatedAtLabel ? (
+            <span className="text-[10px] font-semibold text-[#6B7280]">
+              Atualizado {dre.updatedAtLabel}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {!dre.available ? (
+        <p className="text-sm text-[#6B7280] py-2">
+          Dados da DRE em preparação — o resumo aparecerá automaticamente após o
+          próximo cálculo do snapshot da DRE Gerencial.
+        </p>
+      ) : (
+        <>
+          <div className={kpiGridClass}>
+            <OnePageKpiCard
+              label="Receita Líquida"
+              value={dre.receitaLiquidaFormatted}
+            />
+            <OnePageKpiCard label="Deduções sobre Vendas" value={dre.deducoesFormatted} />
+            <OnePageKpiCard label="Custos" value={dre.custosFormatted} />
+            <OnePageKpiCard label="Lucro Bruto" value={dre.lucroBrutoFormatted} />
+            <OnePageKpiCard
+              label="Margem Bruta"
+              value={dre.margemBrutaPctFormatted}
+              valueClass="text-[#2563EB]"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+            <span className="text-sm text-[#374151]">
+              <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mr-2">
+                Resultado Operacional
+              </span>
+              <span
+                className={`font-extrabold ${
+                  (dre.resultadoOperacional ?? 0) >= 0 ? "text-[#111827]" : "text-[#DC2626]"
+                }`}
+              >
+                {dre.resultadoOperacionalFormatted}
+              </span>
+            </span>
+            <span className="text-sm text-[#374151]">
+              <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mr-2">
+                Margem Operacional
+              </span>
+              <span className="font-extrabold text-[#2563EB]">
+                {dre.margemOperacionalPctFormatted}
+              </span>
+            </span>
+          </div>
+
+          <p className="text-xs text-[#6B7280]">
+            CMV {dre.cmvFormatted} · Fretes {dre.fretesFormatted} · Embalagens{" "}
+            {dre.embalagensFormatted}
+          </p>
+
+          <p
+            className={`text-xs font-semibold inline-flex items-center gap-1.5 ${
+              dre.quality.status === "ok"
+                ? "text-[#047857]"
+                : dre.quality.status === "critical"
+                  ? "text-[#DC2626]"
+                  : "text-[#B45309]"
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                dre.quality.status === "ok"
+                  ? "bg-[#059669]"
+                  : dre.quality.status === "critical"
+                    ? "bg-[#DC2626]"
+                    : "bg-[#D97706]"
+              }`}
+            />
+            {dre.quality.label}
+          </p>
+        </>
+      )}
     </div>
   );
 }

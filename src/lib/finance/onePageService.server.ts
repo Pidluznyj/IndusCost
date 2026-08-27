@@ -20,6 +20,8 @@ import { aggregateCommercialMarginSummaries } from "../salesOrderCommercialMargi
 import type { SalesOrderCommercialMarginSummaryDTO } from "../salesOrderCommercialMarginReadModel.js";
 import { isIntercompanySalesOrder } from "../financeInternalGroupExclusions.js";
 import { buildSalesOrderListWhere } from "../salesOrdersListSummary.js";
+import { getFinanceDreOnePageSummaryFromSnapshot } from "../financeDreSnapshot.server.js";
+import { FINANCE_DRE_ONE_PAGE_UNAVAILABLE } from "../financeDreOnePageSummary.js";
 import { resolveOnePagePeriod, type OnePagePeriod } from "./onePagePeriod.js";
 import { buildOnePagePayload, type OnePageMarginInput } from "./onePageMapper.js";
 import type { OnePageDashboardPayload } from "./onePageTypes.js";
@@ -88,11 +90,20 @@ export async function getFinanceOnePageDashboard(
 ): Promise<OnePageDashboardPayload> {
   const period = resolveOnePagePeriod(yearParam, monthParam, now);
 
-  const [billingTab, salesTab, margin] = await Promise.all([
+  const [billingTab, salesTab, margin, dre] = await Promise.all([
     buildBillingDashboardFromNfes(period.yearCtx, "emissao"),
     buildSalesOrdersDashboardTab(period.yearCtx, { month: period.metricMonth }),
     computeOnePageCommercialMargin(period),
+    // DRE: EXCLUSIVAMENTE snapshot canônico (nunca o motor live). MISS/erro
+    // nunca bloqueiam o restante do One Page — bloco vira "em preparação".
+    getFinanceDreOnePageSummaryFromSnapshot(
+      { year: period.selectedYear, month: period.metricMonth, periodMode: period.mode },
+      now
+    ).catch((error) => {
+      console.error("[one-page] resumo DRE indisponível (One Page segue):", error);
+      return FINANCE_DRE_ONE_PAGE_UNAVAILABLE;
+    }),
   ]);
 
-  return buildOnePagePayload({ period, billingTab, salesTab, margin, now });
+  return buildOnePagePayload({ period, billingTab, salesTab, margin, dre, now });
 }

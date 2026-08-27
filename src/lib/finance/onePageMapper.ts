@@ -20,6 +20,7 @@ import {
 import { formatExecutivePercent } from "../executiveDashboardFormatters.js";
 import type { OnePagePeriod } from "./onePagePeriod.js";
 import type { OnePageDashboardPayload } from "./onePageTypes.js";
+import type { FinanceDreOnePageSummaryResult } from "../financeDreOnePageSummary.js";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -125,11 +126,106 @@ export type OnePageEngineInputs = {
   billingTab: BillingDashboardTab;
   salesTab: SalesOrdersDashboardTab;
   margin: OnePageMarginInput;
+  /** Resumo da DRE lido do snapshot canônico (null = indisponível). */
+  dre: FinanceDreOnePageSummaryResult | null;
   now: Date;
 };
 
+/**
+ * Bloco "DRE Gerencial — Resumo do Período" do payload: apenas seleção e
+ * formatação sobre os valores canônicos extraídos do snapshot — nenhuma
+ * fórmula financeira aqui. Deduções/custos são exibidos em valor absoluto
+ * (o rótulo carrega a semântica), preservando o número assinado no payload.
+ */
+export function buildOnePageDreSection(
+  dre: FinanceDreOnePageSummaryResult | null,
+  periodLabel: string
+): OnePageDashboardPayload["dre"] {
+  const unavailable: OnePageDashboardPayload["dre"] = {
+    available: false,
+    freshness: null,
+    computedAt: null,
+    updatedAtLabel: null,
+    periodLabel,
+    receitaLiquida: null,
+    receitaLiquidaFormatted: "—",
+    deducoes: null,
+    deducoesFormatted: "—",
+    custos: null,
+    custosFormatted: "—",
+    cmv: null,
+    cmvFormatted: "—",
+    fretes: null,
+    fretesFormatted: "—",
+    embalagens: null,
+    embalagensFormatted: "—",
+    lucroBruto: null,
+    lucroBrutoFormatted: "—",
+    margemBrutaPct: null,
+    margemBrutaPctFormatted: "—",
+    resultadoOperacional: null,
+    resultadoOperacionalFormatted: "—",
+    margemOperacionalPct: null,
+    margemOperacionalPctFormatted: "—",
+    quality: { status: null, label: "Dados da DRE em preparação" },
+  };
+  if (!dre || !dre.available) return unavailable;
+
+  const v = dre.values;
+  const abs = (value: number) => formatFinanceKpiCurrency(Math.abs(value));
+  const qualityStatus =
+    v.quality.alertCount === 0
+      ? ("ok" as const)
+      : v.quality.maxSeverity === "critical"
+        ? ("critical" as const)
+        : ("warning" as const);
+  const qualityLabel =
+    qualityStatus === "ok"
+      ? "Dados íntegros"
+      : qualityStatus === "critical"
+        ? "Dados com alerta crítico — ver DRE"
+        : "Dados com ressalva — ver DRE";
+
+  const computedAtDate = dre.computedAt ? new Date(dre.computedAt) : null;
+  const updatedAtLabel =
+    computedAtDate && !Number.isNaN(computedAtDate.getTime())
+      ? computedAtDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+
+  return {
+    available: true,
+    freshness: dre.freshness,
+    computedAt: dre.computedAt,
+    updatedAtLabel,
+    periodLabel,
+    receitaLiquida: v.receitaLiquida,
+    receitaLiquidaFormatted: formatFinanceKpiCurrency(v.receitaLiquida),
+    deducoes: v.deducoes,
+    deducoesFormatted: abs(v.deducoes),
+    custos: v.custos,
+    custosFormatted: abs(v.custos),
+    cmv: v.cmv,
+    cmvFormatted: abs(v.cmv),
+    fretes: v.fretes,
+    fretesFormatted: abs(v.fretes),
+    embalagens: v.embalagens,
+    embalagensFormatted: abs(v.embalagens),
+    lucroBruto: v.lucroBruto,
+    lucroBrutoFormatted: formatFinanceKpiCurrency(v.lucroBruto),
+    margemBrutaPct: v.margemBrutaPct,
+    margemBrutaPctFormatted:
+      v.margemBrutaPct != null ? formatExecutivePercent(v.margemBrutaPct) : "—",
+    resultadoOperacional: v.resultadoOperacional,
+    resultadoOperacionalFormatted: formatFinanceKpiCurrency(v.resultadoOperacional),
+    margemOperacionalPct: v.margemOperacionalPct,
+    margemOperacionalPctFormatted:
+      v.margemOperacionalPct != null ? formatExecutivePercent(v.margemOperacionalPct) : "—",
+    quality: { status: qualityStatus, label: qualityLabel },
+  };
+}
+
 export function buildOnePagePayload(inputs: OnePageEngineInputs): OnePageDashboardPayload {
-  const { period, billingTab, salesTab, margin, now } = inputs;
+  const { period, billingTab, salesTab, margin, dre, now } = inputs;
   const { selectedYear, previousYear, metricMonth } = period;
   const monthLabel = MONTH_NAMES[metricMonth - 1] ?? "";
 
@@ -324,5 +420,6 @@ export function buildOnePagePayload(inputs: OnePageEngineInputs): OnePageDashboa
       chartData: pedidoChartData,
     },
     leituraExecutiva,
+    dre: buildOnePageDreSection(dre, periodLabel),
   };
 }

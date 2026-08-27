@@ -755,6 +755,96 @@ export async function refreshDirtyFinanceDreSnapshots(
   }
 }
 
+/**
+ * Resumo executivo da DRE para o One Page — EXCLUSIVAMENTE via snapshot.
+ *
+ * Nunca executa os motores pesados (NF-e/CMV/AP) no request: HIT/STALE montam
+ * o report com o motor puro sobre o snapshot; STALE e MISS disparam o MESMO
+ * refresh em background da DRE (claim-protegido) e respondem imediatamente
+ * (MISS → available=false, "em preparação"). O One Page nunca bloqueia.
+ */
+export async function getFinanceDreOnePageSummaryFromSnapshot(
+  input: { year: number; month: number; periodMode: "ytd" | "month" },
+  referenceNow: Date = new Date(),
+  depsInput: ResolveFinanceDreReportDeps = {}
+): Promise<
+  import("@/src/lib/financeDreOnePageSummary.js").FinanceDreOnePageSummaryResult
+> {
+  const { extractFinanceDreOnePageSummaryValues, FINANCE_DRE_ONE_PAGE_UNAVAILABLE } =
+    await import("@/src/lib/financeDreOnePageSummary.js");
+  const db = depsInput.db ?? (prisma as FinanceDreSnapshotDb);
+  const loadRoleMap = depsInput.loadRoleMap ?? (() => loadDreCostCenterRoleMap(prisma));
+  const scheduleBackgroundRefresh =
+    depsInput.scheduleBackgroundRefresh ??
+    ((year: number, company: FinanceDreCompany) => {
+      void refreshFinanceDreSnapshot(db, { year, company }, depsInput)
+        .then((r) => {
+          if (r.status === "error") {
+            console.error(`${LOG_PREFIX} refresh background ${year}/${company}: ${r.error}`);
+          }
+        })
+        .catch((error) => {
+          console.error(`${LOG_PREFIX} refresh background ${year}/${company} falhou:`, error);
+        });
+    });
+
+  // Mesma regra canônica de período da DRE (clamp de mês futuro incluído).
+  const filters = parseFinanceDreQuery(
+    { year: input.year, month: input.month, company: "all" },
+    referenceNow
+  );
+  const availableThroughMonth = resolveFinanceDreAvailableThroughMonth(
+    filters.year,
+    referenceNow
+  );
+  const companies: FinanceDreCompany[] = ["all", ...FINANCE_DRE_LEGAL_ENTITY_COMPANIES];
+
+  const [roleMap, rows] = await Promise.all([
+    loadRoleMap(),
+    getFinanceDreSnapshotRows(db, filters.year, companies),
+  ]);
+  const rowByCompany = new Map(rows.map((r) => [r.company, r]));
+
+  const parsedByCompany = new Map<FinanceDreCompany, FinanceDreRawSourceSeries>();
+  for (const company of companies) {
+    const parsed = parseFinanceDreSnapshotSeriesPayload(
+      rowByCompany.get(company)?.seriesJson ?? null
+    );
+    if (parsed) parsedByCompany.set(company, parsed);
+  }
+
+  if (parsedByCompany.size < companies.length) {
+    // MISS: nunca computa inline no One Page — aquece em background e informa
+    // "em preparação".
+    scheduleBackgroundRefresh(filters.year, "all");
+    return FINANCE_DRE_ONE_PAGE_UNAVAILABLE;
+  }
+
+  const report = buildFinanceDreReportFromRawSources({
+    filters,
+    availableThroughMonth,
+    roleMap,
+    consolidated: parsedByCompany.get("all")!,
+    perEntity: FINANCE_DRE_LEGAL_ENTITY_COMPANIES.map((c) => parsedByCompany.get(c)!),
+  });
+  const values = extractFinanceDreOnePageSummaryValues(report, input.periodMode);
+  if (!values) {
+    return FINANCE_DRE_ONE_PAGE_UNAVAILABLE;
+  }
+
+  const anyDirty = companies.some((c) => rowByCompany.get(c)?.dirtyAt != null);
+  if (anyDirty) {
+    scheduleBackgroundRefresh(filters.year, "all");
+  }
+  const mainRow = rowByCompany.get("all")!;
+  return {
+    available: true,
+    freshness: anyDirty ? "stale" : "fresh",
+    computedAt: mainRow.computedAt?.toISOString() ?? null,
+    values,
+  };
+}
+
 export type ResolveFinanceDreReportDeps = FinanceDreSnapshotDeps & {
   db?: FinanceDreSnapshotDb;
   loadRoleMap?: () => Promise<ReadonlyMap<string, DreCostCenterRole>>;

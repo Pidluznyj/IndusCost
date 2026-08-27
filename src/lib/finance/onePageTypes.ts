@@ -59,4 +59,42 @@ export type OnePageDashboardPayload = {
     }>;
   };
   leituraExecutiva: string[];
+  /**
+   * DRE Gerencial — resumo do período, EXCLUSIVAMENTE do snapshot canônico da
+   * DRE (nenhum motor pesado roda no request do One Page). Valores numéricos
+   * carregam o sinal canônico das linhas (deduções/custos negativos);
+   * `*Formatted` já vem pronto para exibição executiva.
+   */
+  dre: {
+    available: boolean;
+    /** fresh | stale (atualização pendente) | null quando indisponível. */
+    freshness: "fresh" | "stale" | null;
+    computedAt: string | null;
+    updatedAtLabel: string | null;
+    periodLabel: string;
+    receitaLiquida: number | null;
+    receitaLiquidaFormatted: string;
+    deducoes: number | null;
+    deducoesFormatted: string;
+    custos: number | null;
+    custosFormatted: string;
+    cmv: number | null;
+    cmvFormatted: string;
+    fretes: number | null;
+    fretesFormatted: string;
+    embalagens: number | null;
+    embalagensFormatted: string;
+    lucroBruto: number | null;
+    lucroBrutoFormatted: string;
+    margemBrutaPct: number | null;
+    margemBrutaPctFormatted: string;
+    resultadoOperacional: number | null;
+    resultadoOperacionalFormatted: string;
+    margemOperacionalPct: number | null;
+    margemOperacionalPctFormatted: string;
+    quality: {
+      status: "ok" | "warning" | "critical" | null;
+      label: string;
+    };
+  };
 };
