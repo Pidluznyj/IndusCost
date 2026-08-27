@@ -3,6 +3,11 @@
  * Sempre consulta motores oficiais — não recalcula elegibilidade NF-e nem alocação AP.
  * CMV = item NF-e × custo vigente na data da nota (tabela de custo de produtos).
  * IRPJ/CSLL: provisão gerencial estimada (não grava tributos nem apuração fiscal).
+ *
+ * Este módulo carrega as SÉRIES BRUTAS das fontes (I/O caro em
+ * `loadFinanceDreRawSourceSeries`); toda a matemática/montagem do relatório é
+ * pura e vive em `financeDreReportBuilder` — compartilhada com o caminho de
+ * snapshot anual materializado (`financeDreSnapshot.server`).
  */
 
 import { queryMonthlyFiscalNfe } from "@/src/lib/financeBillingNfeDashboard.js";
@@ -17,39 +22,22 @@ import {
 } from "@/src/lib/financeExecutiveReportCompany.js";
 import { queryMonthlyFiscalNfeDeductions } from "@/src/lib/financeDreNfeQueries.server.js";
 import { loadMonthlyCmvFromNfeProductCosts } from "@/src/lib/financeDreCmvFromNfe.server.js";
-import {
-  bucketCostCenterSpendByDreRole,
-  DRE_COST_CENTER_ROLE_LABELS,
-  type DreCostCenterRole,
-} from "@/src/lib/financeDreCostCenterRoles.js";
 import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  buildEstimatedCorporateTaxSeriesFromEntityBases,
-  FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
-  type FinanceDreEstimatedCorporateTaxesBlock,
-  type FinanceDreTaxEntitySeries,
-} from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
-import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
+  buildFinanceDreReportFromRawSources,
+  FINANCE_DRE_LEGAL_ENTITY_COMPANIES,
+  type FinanceDreRawSourceSeries,
+} from "@/src/lib/financeDreReportBuilder.js";
 import {
-  buildFinanceDreInformativeReport,
-  buildFinanceDreLines,
-  buildFinanceDreSourceChecks,
-  computeFinanceDreEstimatedTaxBaseSeries,
   emptyDreSeries,
-  financeDreMonthLabels,
   resolveFinanceDreAvailableThroughMonth,
   roundDreMoney,
-  zeroDreSeriesAfterMonth,
-  ytdThroughMonth,
-  type FinanceDreMathInput,
 } from "@/src/lib/financeDreMath.js";
-import {
-  FINANCE_DRE_OFFICIAL_SOURCES,
-  type FinanceDreCompany,
-  type FinanceDreCostCenterBreakdownRow,
-  type FinanceDreFilters,
-  type FinanceDreReport,
+import type {
+  FinanceDreCompany,
+  FinanceDreFilters,
+  FinanceDreReport,
 } from "@/src/lib/financeDreTypes.js";
 
 export class FinanceDreParseError extends Error {
@@ -58,15 +46,6 @@ export class FinanceDreParseError extends Error {
     this.name = "FinanceDreParseError";
   }
 }
-
-const ROLE_LABELS = DRE_COST_CENTER_ROLE_LABELS;
-
-/** Pessoas jurídicas distintas do grupo (CNPJ próprio) — filtro "Todas as empresas". */
-const LEGAL_ENTITY_COMPANIES: Exclude<FinanceDreCompany, "all">[] = [
-  "lazarios",
-  "koppetel",
-  "sm",
-];
 
 export function parseFinanceDreQuery(
   query: Record<string, unknown>,
@@ -98,265 +77,130 @@ export function parseFinanceDreQuery(
   };
 }
 
-function companyLabel(company: FinanceDreCompany): string {
-  switch (company) {
-    case "lazarios":
-      return "Lazarios";
-    case "koppetel":
-      return "Koppetel";
-    case "sm":
-      return "SM";
-    default:
-      return "Todas as empresas";
-  }
-}
+/**
+ * Carrega as séries BRUTAS de 12 meses das fontes oficiais para (year, company).
+ * É o custo pesado do DRE — e exatamente o que o snapshot anual materializa.
+ * Nenhum clamp temporal nem bucketing por papel acontece aqui (read-time).
+ */
+export async function loadFinanceDreRawSourceSeries(
+  year: number,
+  company: FinanceDreCompany,
+  referenceNow: Date = new Date()
+): Promise<FinanceDreRawSourceSeries> {
+  const emitterCnpj = mapExecutiveReportCompanyToEmitterCnpj(company);
+  const companyName = mapExecutiveReportCompanyToFilter(company);
 
-function sumSeriesSafeLocal(a: number[], b: number[]): number[] {
-  return Array.from({ length: 12 }, (_, i) => roundDreMoney((a[i] ?? 0) + (b[i] ?? 0)));
-}
-
-type DreSeriesBundle = {
-  mathInput: FinanceDreMathInput;
-  costCenterBreakdown: FinanceDreCostCenterBreakdownRow[];
-  unclassifiedYtd: number;
-  gapRevenueByMonth: number[];
-  gapLineCount: number;
-  missingItemsRevenueByMonth: number[];
-  missingProductRevenueByMonth: number[];
-  missingCostRevenueByMonth: number[];
-  personnel: number[];
-  taxCc: number[];
-  rawMaterial: number[];
-  unclassified: number[];
-  pricedLineCount: number;
-  taxSummaryGapCount: number;
-};
-
-async function loadFinanceDreSeriesBundle(
-  filters: FinanceDreFilters,
-  referenceNow: Date
-): Promise<DreSeriesBundle> {
-  const availableThroughMonth = resolveFinanceDreAvailableThroughMonth(
-    filters.year,
-    referenceNow
-  );
-  const emitterCnpj = mapExecutiveReportCompanyToEmitterCnpj(filters.company);
-  const companyName = mapExecutiveReportCompanyToFilter(filters.company);
-
-  const [revenueMap, deductions, ccDashboard, cmvBundle, roleMap] = await Promise.all([
-    queryMonthlyFiscalNfe(filters.year, "emissao", emitterCnpj),
-    queryMonthlyFiscalNfeDeductions(filters.year, "emissao", emitterCnpj),
+  const [revenueMap, deductions, ccDashboard, cmvBundle] = await Promise.all([
+    queryMonthlyFiscalNfe(year, "emissao", emitterCnpj),
+    queryMonthlyFiscalNfeDeductions(year, "emissao", emitterCnpj),
     buildFinanceCostCenterDashboardDefault(
       buildExecutiveReportCostCenterDashboardFilters({
-        year: filters.year,
+        year,
         month: null,
         companyName,
       }),
       referenceNow
     ),
-    loadMonthlyCmvFromNfeProductCosts(filters.year, emitterCnpj),
-    loadDreCostCenterRoleMap(prisma),
+    loadMonthlyCmvFromNfeProductCosts(year, emitterCnpj),
   ]);
 
-  const receitaBruta = emptyDreSeries();
+  const receitaBrutaByMonth = emptyDreSeries();
   for (const [month, total] of revenueMap.entries()) {
-    if (month >= 1 && month <= 12) receitaBruta[month - 1] = roundDreMoney(total);
+    if (month >= 1 && month <= 12) receitaBrutaByMonth[month - 1] = roundDreMoney(total);
   }
 
-  const { buckets: ccBuckets, roleRows } = bucketCostCenterSpendByDreRole(
-    ccDashboard.monthlySeries.byCostCenter.map((row) => ({
-      month: row.month,
-      year: row.year,
+  // Agrega a série oficial mensal por CC em byMonth[12] (soma associativa —
+  // idêntica à passada linha a linha para o bucket em read-time).
+  const byCcKey = new Map<
+    string,
+    { costCenterId: string; code: string; name: string; byMonth: number[] }
+  >();
+  for (const row of ccDashboard.monthlySeries.byCostCenter) {
+    if (row.year !== year) continue;
+    if (row.month < 1 || row.month > 12) continue;
+    const amount = Number.isFinite(row.amount) ? row.amount : 0;
+    if (amount === 0) continue;
+    const key = row.costCenterId || `${row.code}::${row.name}`;
+    const current = byCcKey.get(key) ?? {
       costCenterId: row.costCenterId,
       code: row.code,
       name: row.name,
-      amount: row.amount,
-    })),
-    filters.year,
-    ccDashboard.monthlySeries.totals.map((row) => ({
-      month: row.month,
-      year: row.year,
-      unclassifiedAmount: row.unclassifiedAmount,
-    })),
-    filters.highlightMonth,
-    roleMap
-  );
+      byMonth: emptyDreSeries(),
+    };
+    current.byMonth[row.month - 1] += amount;
+    byCcKey.set(key, current);
+  }
 
-  const despesasAdmin = sumSeriesSafeLocal(ccBuckets.admin, ccBuckets.unclassified);
-  const unclassifiedYtd = ytdThroughMonth(ccBuckets.unclassified, filters.highlightMonth);
+  const unclassifiedByMonth = emptyDreSeries();
+  for (const row of ccDashboard.monthlySeries.totals) {
+    if (row.year !== year) continue;
+    if (row.month < 1 || row.month > 12) continue;
+    unclassifiedByMonth[row.month - 1] += Number.isFinite(row.unclassifiedAmount)
+      ? row.unclassifiedAmount
+      : 0;
+  }
 
-  const gapRevenueByMonth = sumSeriesSafeLocal(
-    sumSeriesSafeLocal(
-      cmvBundle.missingItemsRevenueByMonth,
-      cmvBundle.missingProductRevenueByMonth
-    ),
-    cmvBundle.missingCostRevenueByMonth
-  );
-  const gapRevenueYtd = ytdThroughMonth(gapRevenueByMonth, filters.highlightMonth);
-  const gapLineCount =
-    cmvBundle.missingItemsNfeCount +
-    cmvBundle.missingProductLineCount +
-    cmvBundle.missingCostLineCount;
-
-  const costCenterBreakdown: FinanceDreCostCenterBreakdownRow[] = roleRows.map((row) => ({
-    costCenterId: row.costCenterId,
-    code: row.code,
-    name: row.name,
-    role: row.role,
-    roleLabel: ROLE_LABELS[row.role],
-    highlightAmount: row.highlightAmount,
-    ytdAmount: row.ytdAmount,
-  }));
-
-  const clamp = (series: number[]) => zeroDreSeriesAfterMonth(series, availableThroughMonth);
-
-  const mathInput: FinanceDreMathInput = {
-    highlightMonth: filters.highlightMonth,
-    availableThroughMonth,
-    receitaBruta: clamp(receitaBruta),
-    cofins: clamp(deductions.cofins),
-    icms: clamp(deductions.icms),
-    icmsSt: clamp(deductions.icmsSt),
-    ipi: clamp(deductions.ipi),
-    pis: clamp(deductions.pis),
-    devolucoes: clamp(deductions.devolucoes),
-    cmv: clamp(cmvBundle.cmv),
-    fretes: clamp(ccBuckets.logistics),
-    embalagens: clamp(ccBuckets.packaging),
-    despesasAdmin: clamp(despesasAdmin),
-    investimentoSocios: clamp(ccBuckets.partnerInvestment),
-    despesasPessoal: clamp(ccBuckets.personnel),
-    impostosCc: clamp(ccBuckets.tax),
-    materiaPrimaCc: clamp(ccBuckets.rawMaterial),
-    unclassifiedCcAmount: clamp(ccBuckets.unclassified),
-    quality: {
-      unlinkedNfeCount: gapLineCount,
-      unlinkedNfeRevenue: gapRevenueYtd,
+  return {
+    year,
+    company,
+    receitaBrutaByMonth,
+    deductions: {
+      cofins: deductions.cofins,
+      icms: deductions.icms,
+      icmsSt: deductions.icmsSt,
+      ipi: deductions.ipi,
+      pis: deductions.pis,
+      devolucoes: deductions.devolucoes,
       taxSummaryGapCount: deductions.taxSummaryGapCount,
+    },
+    cmv: {
+      cmvByMonth: cmvBundle.cmv,
+      missingItemsRevenueByMonth: cmvBundle.missingItemsRevenueByMonth,
+      missingProductRevenueByMonth: cmvBundle.missingProductRevenueByMonth,
+      missingCostRevenueByMonth: cmvBundle.missingCostRevenueByMonth,
       missingItemsNfeCount: cmvBundle.missingItemsNfeCount,
       missingProductLineCount: cmvBundle.missingProductLineCount,
       missingCostLineCount: cmvBundle.missingCostLineCount,
       pricedLineCount: cmvBundle.pricedLineCount,
     },
-  };
-
-  return {
-    mathInput,
-    costCenterBreakdown,
-    unclassifiedYtd,
-    gapRevenueByMonth: clamp(gapRevenueByMonth),
-    gapLineCount,
-    missingItemsRevenueByMonth: clamp(cmvBundle.missingItemsRevenueByMonth),
-    missingProductRevenueByMonth: clamp(cmvBundle.missingProductRevenueByMonth),
-    missingCostRevenueByMonth: clamp(cmvBundle.missingCostRevenueByMonth),
-    personnel: clamp(ccBuckets.personnel),
-    taxCc: clamp(ccBuckets.tax),
-    rawMaterial: clamp(ccBuckets.rawMaterial),
-    unclassified: clamp(ccBuckets.unclassified),
-    pricedLineCount: cmvBundle.pricedLineCount,
-    taxSummaryGapCount: deductions.taxSummaryGapCount,
+    costCenters: {
+      byCostCenter: [...byCcKey.values()],
+      unclassifiedByMonth,
+    },
   };
 }
 
-async function loadPerLegalEntityTaxOverride(
-  filters: FinanceDreFilters,
-  referenceNow: Date
-): Promise<FinanceDreEstimatedCorporateTaxesBlock> {
-  const bundles = await Promise.all(
-    LEGAL_ENTITY_COMPANIES.map((company) =>
-      loadFinanceDreSeriesBundle({ ...filters, company }, referenceNow)
-    )
-  );
-  const entities: FinanceDreTaxEntitySeries[] = LEGAL_ENTITY_COMPANIES.map((company, idx) => {
-    const cnpj =
-      mapExecutiveReportCompanyToEmitterCnpj(company) ??
-      FINANCE_INTERNAL_GROUP_COMPANIES.find((c) =>
-        c.aliases.some((a) => a.toLowerCase().includes(company))
-      )?.cnpj ??
-      "";
-    return {
-      companyKey: company,
-      companyLabel: companyLabel(company),
-      cnpjDigits: cnpj,
-      baseByMonth: computeFinanceDreEstimatedTaxBaseSeries(bundles[idx]!.mathInput),
-    };
-  });
-  return buildEstimatedCorporateTaxSeriesFromEntityBases(
-    entities,
-    filters.highlightMonth,
-    "per_legal_entity"
-  );
-}
-
+/**
+ * Caminho LIVE (motores oficiais a cada chamada) — usado pelo cash-bridge,
+ * drill-downs e como fallback/primeiro cômputo do snapshot.
+ */
 export async function buildFinanceDreReport(
   query: Record<string, unknown> = {},
   referenceNow: Date = new Date()
 ): Promise<FinanceDreReport> {
   const filters = parseFinanceDreQuery(query, referenceNow);
+  const availableThroughMonth = resolveFinanceDreAvailableThroughMonth(
+    filters.year,
+    referenceNow
+  );
 
-  const consolidated = await loadFinanceDreSeriesBundle(filters, referenceNow);
-
-  const estimatedCorporateTaxesOverride =
+  const [roleMap, consolidated, perEntity] = await Promise.all([
+    loadDreCostCenterRoleMap(prisma),
+    loadFinanceDreRawSourceSeries(filters.year, filters.company, referenceNow),
     filters.company === "all"
-      ? await loadPerLegalEntityTaxOverride(filters, referenceNow)
-      : undefined;
+      ? Promise.all(
+          FINANCE_DRE_LEGAL_ENTITY_COMPANIES.map((company) =>
+            loadFinanceDreRawSourceSeries(filters.year, company, referenceNow)
+          )
+        )
+      : Promise.resolve(null),
+  ]);
 
-  const { lines, kpis, qualityAlerts, estimatedCorporateTaxes } = buildFinanceDreLines({
-    ...consolidated.mathInput,
-    estimatedCorporateTaxesOverride,
-  });
-
-  const sourceChecks = buildFinanceDreSourceChecks({
-    unlinkedNfeCount: consolidated.gapLineCount,
-    taxSummaryGapCount: consolidated.taxSummaryGapCount,
-    unclassifiedYtd: consolidated.unclassifiedYtd,
-    pricedLineCount: consolidated.pricedLineCount,
-  });
-
-  const informativeReport = buildFinanceDreInformativeReport({
-    highlightMonth: filters.highlightMonth,
-    despesasPessoal: consolidated.personnel,
-    impostosCc: consolidated.taxCc,
-    materiaPrimaCc: consolidated.rawMaterial,
-    unclassifiedCcAmount: consolidated.unclassified,
-    unlinkedNfeRevenueByMonth: consolidated.gapRevenueByMonth,
-    unlinkedNfeCount: consolidated.gapLineCount,
-    missingItemsNfeCount: consolidated.mathInput.quality.missingItemsNfeCount,
-    missingItemsRevenueByMonth: consolidated.missingItemsRevenueByMonth,
-    missingProductLineCount: consolidated.mathInput.quality.missingProductLineCount,
-    missingProductRevenueByMonth: consolidated.missingProductRevenueByMonth,
-    missingCostLineCount: consolidated.mathInput.quality.missingCostLineCount,
-    missingCostRevenueByMonth: consolidated.missingCostRevenueByMonth,
-  });
-
-  const monthName = financeDreMonthLabels()[filters.highlightMonth - 1] ?? String(filters.highlightMonth);
-  const consolidationHint =
-    estimatedCorporateTaxes.consolidationMode === "per_legal_entity"
-      ? " IRPJ/CSLL estimados por pessoa jurídica (CNPJ) e somados — sem compensação entre empresas."
-      : "";
-  const ytdHint =
-    " YTD de IRPJ/CSLL = soma das estimativas mensais independentes (não é apuração acumulada com limite × meses).";
-
-  return {
-    schemaVersion: 1,
-    title: "DRE Gerencial Mensal",
-    subtitle: `${companyLabel(filters.company)} · ${monthName}/${filters.year} · competência emissão NF-e`,
-    disclaimer:
-      "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; CMV = quantidade faturada × custo vigente na data da nota; despesas via centros de custo. " +
-      FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER +
-      consolidationHint +
-      ytdHint,
-    generatedAt: new Date().toISOString(),
+  return buildFinanceDreReportFromRawSources({
     filters,
-    companyLabel: companyLabel(filters.company),
-    monthLabels: financeDreMonthLabels(),
-    kpis,
-    lines,
-    estimatedCorporateTaxes,
-    sourceChecks,
-    informativeReport,
-    costCenterBreakdown: consolidated.costCenterBreakdown,
-    qualityAlerts,
-    sources: FINANCE_DRE_OFFICIAL_SOURCES,
-  };
+    availableThroughMonth,
+    roleMap,
+    consolidated,
+    perEntity,
+  });
 }

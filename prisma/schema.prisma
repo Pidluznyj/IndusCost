@@ -8177,6 +8177,37 @@ model SalesOrderResultChartsCache {
   computeDurationMs           Int?
 }
 
+/// Snapshot anual materializado das fontes do DRE Gerencial (year+company).
+/// Projeção/cache — nunca fonte da verdade. seriesJson = séries brutas de 12
+/// meses (receita, deduções, CMV+lacunas, AP por centro de custo); a matemática
+/// derivada continua no motor puro em read-time. seriesJson NULL = "shell"
+/// (linha reservada por um refresh em andamento que ainda não publicou).
+model FinanceDreAnnualSnapshot {
+  year                           Int
+  /// "all" | "lazarios" | "koppetel" | "sm"
+  company                        String
+  schemaVersion                  Int
+  seriesJson                     Json?
+  computedAt                     DateTime? @db.Timestamptz(6)
+  computeDurationMs              Int?
+  /// Auditoria do momento do cálculo — NUNCA usado como autoridade temporal na leitura.
+  availableThroughMonthAtCompute Int?
+  dirtyAt                        DateTime? @db.Timestamptz(6)
+  dirtyReason                    String?
+  /// Incrementado a cada markDirty; o refresh só limpa dirty se a geração não avançou.
+  dirtyGeneration                Int       @default(0)
+  refreshClaimedAt               DateTime? @db.Timestamptz(6)
+  refreshClaimToken              String?
+  lastSuccessfulRefreshAt        DateTime? @db.Timestamptz(6)
+  lastRefreshError               String?
+  lastRefreshErrorAt             DateTime? @db.Timestamptz(6)
+  createdAt                      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                      DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@id([year, company])
+  @@index([dirtyAt])
+}
+
 /// Evento append-only do Fluxo de Pedidos (transições / materialização).
 /// Sem updatedAt. Idempotência via dedupeKey única.
 /// occurredAt = melhor evidência real; observedAt = quando o IndusCost observou.

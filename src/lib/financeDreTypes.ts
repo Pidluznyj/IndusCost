@@ -206,6 +206,16 @@ export type FinanceDreKpis = FinanceDreKpiSet & {
   ebitdaByMonth?: number[];
 };
 
+/** Estado do snapshot anual materializado que serviu o relatório (aditivo). */
+export type FinanceDreReportSnapshotMeta = {
+  /** fresh = snapshot válido; stale = último snapshot válido com refresh pendente; live = computado ao vivo. */
+  freshness: "fresh" | "stale" | "live";
+  computedAt: string | null;
+  computeDurationMs: number | null;
+  refreshPending: boolean;
+  dirtyReason: string | null;
+};
+
 export type FinanceDreReport = {
   schemaVersion: 1;
   title: string;
@@ -233,4 +243,6 @@ export type FinanceDreReport = {
   costCenterBreakdown: FinanceDreCostCenterBreakdownRow[];
   qualityAlerts: FinanceDreQualityAlert[];
   sources: typeof FINANCE_DRE_OFFICIAL_SOURCES;
+  /** Presente quando servido pela camada de snapshot anual (campo aditivo). */
+  snapshot?: FinanceDreReportSnapshotMeta;
 };

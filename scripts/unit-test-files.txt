@@ -130,6 +130,7 @@ src/lib/finance/portfolioIntelligenceDrilldown.test.ts
 src/lib/finance/portfolioIntelligenceFilters.test.ts
 src/lib/finance/portfolioIntelligenceSellerKpis.test.ts
 src/lib/finance/portfolioIntelligenceMetricHelp.test.ts
+src/lib/financeDreSnapshot.test.ts
 src/lib/finance/onePage.test.ts
 src/lib/finance/onePageJpeg.test.ts
 src/lib/finance/onePagePeriod.test.ts
