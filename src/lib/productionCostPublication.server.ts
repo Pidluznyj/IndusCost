@@ -411,12 +411,39 @@ export async function publishProductionCostVersionFromDraft(
     }
   }
 
-  return publishProductionCostTableVersion(db, {
+  const published = await publishProductionCostTableVersion(db, {
     versionId: input.versionId,
     publishedBy: input.publishedBy,
     supersedeVersionId: supersedeId,
     auditContext: input.auditContext ?? null,
   });
+
+  // Snapshot da DRE: custo vigente novo (inclusive effectiveDate retroativa)
+  // muda o CMV de todos os anos >= effectiveDate — invalidação conservadora
+  // dos snapshots existentes desses anos, todas as empresas (soft-fail).
+  try {
+    const effective = await db.productionCostTableVersion.findUnique({
+      where: { id: input.versionId },
+      select: { effectiveDate: true },
+    });
+    const minYear = effective?.effectiveDate?.getFullYear();
+    if (minYear != null && Number.isFinite(minYear)) {
+      const { markFinanceDreSnapshotsDirtySafe } = await import(
+        "@/src/lib/financeDreSnapshot.server.js"
+      );
+      await markFinanceDreSnapshotsDirtySafe(db as never, {
+        reason: "production-cost-publish",
+        minYear,
+      });
+    }
+  } catch (err) {
+    console.error(
+      "[dre-snapshot] invalidação pós-publicação de custo falhou (publicação segue):",
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  return published;
 }
 
 export async function listProductionCostTableVersions(

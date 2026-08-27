@@ -807,6 +807,16 @@ async function main(): Promise<void> {
   // duplicado para o mesmo código.
   const materialApplied = isApply ? await applyMaterialRoutingCreates(materialRouting) : null;
   const applied = isApply ? await executeLifecyclePlans(lifecyclePlans) : null;
+
+  // Snapshot da DRE: criação/alteração de Product pode mudar a resolução de
+  // itens do CMV (sourceExternalId/SKU). Invalidação conservadora dos
+  // snapshots existentes quando o apply mudou algo (soft-fail).
+  if (isApply && ((applied?.created ?? 0) + (applied?.updated ?? 0) > 0)) {
+    const { markFinanceDreSnapshotsDirtySafe } = await import(
+      "../src/lib/financeDreSnapshot.server.ts"
+    );
+    await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "products-sync" });
+  }
   console.log(
     JSON.stringify(
       {

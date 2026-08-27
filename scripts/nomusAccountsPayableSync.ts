@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { markFinanceDreSnapshotsDirtySafe } from "@/src/lib/financeDreSnapshot.server.js";
 import {
   persistAccountsPayableIntegrationRun,
   disconnectAccountsPayableIntegrationPrisma,
@@ -486,6 +487,13 @@ export async function executeNomusAccountsPayableSync(
             operationalAxis: "dueDate",
           },
         });
+      }
+
+      // Snapshot da DRE: AP alocado em CC alimenta fretes/embalagens/despesas.
+      // Mapear anos/empresas por título seria caro aqui — invalidação
+      // conservadora dos snapshots existentes (barato, soft-fail).
+      if ((applied?.created ?? 0) + (applied?.updated ?? 0) + lifecycleApplied > 0) {
+        await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "accounts-payable-sync" });
       }
     }
 

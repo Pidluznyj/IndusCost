@@ -19,6 +19,8 @@ import {
   parseUnclassifiedGroupTitlesQuery,
 } from "@/src/lib/financeUnclassifiedGroupTitles.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import { markFinanceDreSnapshotsDirtySafe } from "@/src/lib/financeDreSnapshot.server.js";
+import { prisma } from "@/src/lib/prisma.js";
 import {
   FINANCE_AP_ACTIONS,
   FINANCE_AP_RESOURCE_KEY,
@@ -169,6 +171,7 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
         userId: user.id,
         userName: user.name ?? user.email ?? null,
       });
+      await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "ap-allocation-batch" });
       return res.json(result);
     } catch (error) {
       if (error instanceof FinanceApAllocationError) {
@@ -195,6 +198,7 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
           userId: user.id,
           userName: user.name ?? user.email ?? null,
         });
+        await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "ap-allocation-manual" });
         return res.status(201).json(result);
       } catch (error) {
         if (error instanceof FinanceApAllocationError) {
@@ -222,6 +226,7 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
           userId: user.id,
           userName: user.name ?? user.email ?? null,
         });
+        await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "ap-allocation-reclassify" });
         return res.status(200).json(result);
       } catch (error) {
         if (error instanceof FinanceApAllocationError) {

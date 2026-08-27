@@ -29,6 +29,7 @@ import {
 import { NOMUS_NFES_SYNC_WINDOW_LABEL } from "@/src/lib/nomusNfesSyncConstants.js";
 import { mapNomusNfePayload, type MappedNomusNfe } from "@/src/lib/nomusNfeMapper.js";
 import { ensureNomusNfeFiscalPersisted } from "@/src/lib/nfeFiscalPersist.js";
+import { markFinanceDreSnapshotsDirtyForNfes } from "@/src/lib/financeDreSnapshot.server.js";
 import {
   buildNomusUrl,
   fetchNomusJson,
@@ -405,6 +406,10 @@ async function main(): Promise<void> {
         err instanceof Error ? err.message : err
       );
     }
+
+    // Snapshot da DRE: NF-e alterada muda receita/deduções/CMV — marca dirty
+    // (barato, soft-fail); o refresh acontece fora do sync (SWR no GET / warm-up).
+    await markFinanceDreSnapshotsDirtyForNfes(prisma, applied.affectedNfeIds, "nfes-sync");
   }
 
   if (options.mode === "apply") {

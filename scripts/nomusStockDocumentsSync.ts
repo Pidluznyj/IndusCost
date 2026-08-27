@@ -19,6 +19,7 @@
 import "dotenv/config";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { markFinanceDreSnapshotsDirtySafe } from "@/src/lib/financeDreSnapshot.server.js";
 import {
   buildSalesOrderFlowRecomputeAfterSyncTrigger,
   runSalesOrderFlowRecomputeAfterNomusSync,
@@ -607,6 +608,11 @@ async function main(): Promise<void> {
         err instanceof Error ? err.message : err
       );
     }
+
+    // Snapshot da DRE: Documento de Saída é fallback de itens do CMV. Mapear
+    // idNfe→ano/empresa aqui seria caro — invalidação conservadora dos
+    // snapshots existentes (barato, soft-fail; refresh acontece fora do sync).
+    await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "stock-documents-sync" });
   }
 
   const durationMs = audit.durationMs;

@@ -20,6 +20,7 @@
     "validate:treasury-baseline": "node scripts/runTreasuryBaseline.mjs",
     "validate:treasury:deploy": "tsx scripts/treasuryValidateDeploy.ts",
     "test:treasury": "node scripts/runTreasuryTests.mjs",
+    "dre:snapshot:warm": "tsx scripts/warmFinanceDreSnapshots.ts",
     "sync:nomus:proposals:dry": "tsx scripts/nomusProposalsSyncV1.ts",
     "sync:nomus:proposals:apply": "tsx scripts/nomusProposalsSyncV1.ts --apply",
     "sync:nomus:proposals:hourly:dry": "bash scripts/runNomusProposalsHourlySync.sh dry",
