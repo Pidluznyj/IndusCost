@@ -21,6 +21,23 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(summary, null, 2));
     if (summary.lockBlocked) process.exitCode = 0;
     else if (summary.ok === false) process.exitCode = 2;
+
+    // Snapshot da DRE: o backfill altera campos de PRESENÇA de AP
+    // (sourcePresenceStatus etc.), que participam do universo operacional do
+    // dashboard de centros de custo (mergeAccountsPayableOperationalPresence).
+    // Apply bem-sucedido → invalidação conservadora soft-fail.
+    if (
+      process.argv.slice(2).includes("apply") &&
+      !summary.lockBlocked &&
+      summary.ok !== false
+    ) {
+      const { markFinanceDreSnapshotsDirtySafe } = await import(
+        "../src/lib/financeDreSnapshot.server.ts"
+      );
+      await markFinanceDreSnapshotsDirtySafe(prisma, {
+        reason: "nomus-lifecycle-backfill",
+      });
+    }
   } finally {
     await prisma.$disconnect();
   }
