@@ -15,8 +15,12 @@ import {
 import {
   claimFinanceDreSnapshotRefresh,
   markFinanceDreSnapshotsDirty,
+  markFinanceDreSnapshotsDirtyForNfeExternalIds,
+  markFinanceDreSnapshotsDirtyForNfeIds,
+  markFinanceDreSnapshotsDirtyForStockDocumentChanges,
   refreshDirtyFinanceDreSnapshots,
   refreshFinanceDreSnapshot,
+  releaseFinanceDreSnapshotClaim,
   resolveFinanceDreReportWithSnapshot,
   type FinanceDreSnapshotDb,
 } from "./financeDreSnapshot.server.js";
@@ -115,7 +119,16 @@ function roundTrip(raw: FinanceDreRawSourceSeries): FinanceDreRawSourceSeries {
 
 type FakeRow = Record<string, unknown> & { year: number; company: string };
 
-function createFakeDb(initial: Array<Partial<FakeRow>> = []) {
+/** NF-e mínima para os testes de invalidação (contrato real: externalId numérico). */
+type FakeNfe = {
+  id: string;
+  externalId: number;
+  xmlDhEmi: Date | null;
+  dataProcessamento: Date | null;
+  cnpjEmitente: string | null;
+};
+
+function createFakeDb(initial: Array<Partial<FakeRow>> = [], nfes: FakeNfe[] = []) {
   let seq = 1;
   const rows: FakeRow[] = [];
 
@@ -240,12 +253,24 @@ function createFakeDb(initial: Array<Partial<FakeRow>> = []) {
     },
   };
 
+  const nfeModel = {
+    findMany: async (args: { where?: Record<string, unknown>; select?: unknown } = {}) => {
+      return nfes
+        .filter((n) => (args.where ? matches(n as unknown as FakeRow, args.where) : true))
+        .map((n) => ({ ...n }));
+    },
+  };
+
   const db = {
     financeDreAnnualSnapshot: model,
+    nomusNfe: nfeModel,
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
     __rows: rows,
   };
-  return db as unknown as FinanceDreSnapshotDb & { __rows: FakeRow[] };
+  return db as unknown as FinanceDreSnapshotDb & {
+    __rows: FakeRow[];
+    nomusNfe: typeof nfeModel;
+  };
 }
 
 function seededRow(
@@ -662,6 +687,276 @@ describe("DRE snapshot — markDirty / refreshDirty", () => {
   });
 });
 
+describe("DRE snapshot — invalidação NF-e pelo contrato REAL do sync (externalId numérico)", () => {
+  const NFES: FakeNfe[] = [
+    {
+      id: "uuid-101",
+      externalId: 101,
+      xmlDhEmi: new Date(2026, 2, 10),
+      dataProcessamento: null,
+      cnpjEmitente: "72.569.510/0001-95", // Lazarios (formatado de propósito)
+    },
+    {
+      id: "uuid-102",
+      externalId: 102,
+      xmlDhEmi: null,
+      dataProcessamento: new Date(2025, 10, 5),
+      cnpjEmitente: "14055501000180", // Koppetel
+    },
+    {
+      id: "uuid-103",
+      externalId: 103,
+      xmlDhEmi: new Date(2026, 6, 1),
+      dataProcessamento: null,
+      cnpjEmitente: "99999999000199", // desconhecido
+    },
+  ];
+
+  function dbWithSnapshots(nfes: FakeNfe[]) {
+    return createFakeDb(
+      [
+        seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 1)),
+        seededRow(2026, "koppetel", makeRaw(2026, "koppetel", 1)),
+        seededRow(2026, "sm", makeRaw(2026, "sm", 1)),
+        seededRow(2026, "all", makeRaw(2026, "all", 1)),
+        seededRow(2025, "koppetel", makeRaw(2025, "koppetel", 1)),
+        seededRow(2025, "all", makeRaw(2025, "all", 1)),
+        seededRow(2024, "sm", makeRaw(2024, "sm", 1)),
+      ],
+      nfes
+    );
+  }
+
+  it("externalIds numéricos [101, 102] (com duplicado) → marca PJ + all dos anos certos e incrementa geração", async () => {
+    const db = dbWithSnapshots(NFES);
+    const result = await markFinanceDreSnapshotsDirtyForNfeExternalIds(
+      db as never,
+      [101, 102, 101],
+      "nfes-sync"
+    );
+    // Conservador por produto cartesiano anos × empresas afetadas:
+    // {2025,2026} × {lazarios,koppetel,all} ∩ existentes — sm e 2024 intocados.
+    assert.equal(result.error, null);
+    assert.equal(result.count, 5);
+    const dirty = db.__rows
+      .filter((r) => r.dirtyAt != null)
+      .map((r) => `${r.year}/${r.company}`)
+      .sort();
+    assert.deepEqual(dirty, [
+      "2025/all",
+      "2025/koppetel",
+      "2026/all",
+      "2026/koppetel",
+      "2026/lazarios",
+    ]);
+    for (const r of db.__rows.filter((row) => row.dirtyAt != null)) {
+      assert.equal(r.dirtyGeneration, 1);
+      assert.equal(r.dirtyReason, "nfes-sync");
+    }
+  });
+
+  it("CNPJ emitente desconhecido → invalidação conservadora de TODAS as empresas do ano", async () => {
+    const db = dbWithSnapshots(NFES);
+    await markFinanceDreSnapshotsDirtyForNfeExternalIds(db as never, [103], "nfes-sync");
+    const dirty = db.__rows
+      .filter((r) => r.dirtyAt != null)
+      .map((r) => `${r.year}/${r.company}`)
+      .sort();
+    assert.deepEqual(dirty, ["2026/all", "2026/koppetel", "2026/lazarios", "2026/sm"]);
+  });
+
+  it("lista vazia e externalId inexistente → nenhum snapshot tocado, sem erro", async () => {
+    const db = dbWithSnapshots(NFES);
+    const empty = await markFinanceDreSnapshotsDirtyForNfeExternalIds(db as never, [], "x");
+    assert.deepEqual(empty, { count: 0, error: null });
+    const missing = await markFinanceDreSnapshotsDirtyForNfeExternalIds(db as never, [777], "x");
+    assert.deepEqual(missing, { count: 0, error: null });
+    assert.equal(db.__rows.some((r) => r.dirtyAt != null), false);
+  });
+
+  it("a consulta é por externalId — UUIDs no lugar de números não passam no tipo/filtro", async () => {
+    const db = dbWithSnapshots(NFES);
+    // Contrato antigo bugado (UUID strings) não marca nada nem lança.
+    const result = await markFinanceDreSnapshotsDirtyForNfeExternalIds(
+      db as never,
+      ["uuid-101", "uuid-102"] as unknown as number[],
+      "nfes-sync"
+    );
+    assert.deepEqual(result, { count: 0, error: null });
+  });
+
+  it("backfill fiscal invalida pelos UUIDs internos (persistedNomusNfeIds)", async () => {
+    const db = dbWithSnapshots(NFES);
+    const result = await markFinanceDreSnapshotsDirtyForNfeIds(
+      db as never,
+      ["uuid-102"],
+      "nfe-fiscal-backfill"
+    );
+    assert.equal(result.count, 2); // 2025/koppetel + 2025/all
+    const dirty = db.__rows
+      .filter((r) => r.dirtyAt != null)
+      .map((r) => `${r.year}/${r.company}`)
+      .sort();
+    assert.deepEqual(dirty, ["2025/all", "2025/koppetel"]);
+  });
+});
+
+describe("DRE snapshot — invalidação canônica de Documentos de Saída", () => {
+  it("changedCount 0 → não invalida; changedCount > 0 → invalida existentes", async () => {
+    const db = createFakeDb([
+      seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 1)),
+      seededRow(2026, "all", makeRaw(2026, "all", 1)),
+    ]);
+    const none = await markFinanceDreSnapshotsDirtyForStockDocumentChanges(db, {
+      changedCount: 0,
+      reason: "stock-documents-sync",
+    });
+    assert.deepEqual(none, { count: 0, error: null });
+    assert.equal(db.__rows.some((r) => r.dirtyAt != null), false);
+
+    const some = await markFinanceDreSnapshotsDirtyForStockDocumentChanges(db, {
+      changedCount: 3,
+      reason: "stock-documents-after-sales-orders",
+    });
+    assert.equal(some.count, 2);
+    assert.equal(db.__rows.every((r) => r.dirtyAt != null), true);
+  });
+});
+
+describe("DRE snapshot — FENCING da publicação (CRITICAL)", () => {
+  it("cenário adversarial: claim de A expira, B assume e publica; A NÃO publica nem toca o estado de B", async () => {
+    const rawA = makeRaw(2026, "lazarios", 1);
+    const rawB = makeRaw(2026, "lazarios", 9);
+    const db = createFakeDb([
+      seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 5), {
+        dirtyGeneration: 10,
+        dirtyAt: new Date(),
+      }),
+    ]);
+    const row = () => db.__rows.find((r) => r.company === "lazarios")!;
+
+    let bResult: Awaited<ReturnType<typeof refreshFinanceDreSnapshot>> | null = null;
+    const aResult = await refreshFinanceDreSnapshot(
+      db,
+      { year: 2026, company: "lazarios" },
+      {
+        computeRaw: async () => {
+          // t2: claim de A expira durante o cômputo…
+          row().refreshClaimedAt = new Date(Date.now() - 11 * 60 * 1000);
+          // t3/t4: …B assume e publica o payload B.
+          bResult = await refreshFinanceDreSnapshot(
+            db,
+            { year: 2026, company: "lazarios" },
+            { computeRaw: async () => rawB }
+          );
+          // t5: A termina e tenta publicar o payload A (obsoleto).
+          return rawA;
+        },
+      }
+    );
+
+    assert.equal(bResult!.status, "refreshed");
+    assert.equal(aResult.status, "claim_lost");
+    // Payload final é o de B — A não sobrescreveu.
+    assert.deepEqual(parseFinanceDreSnapshotSeriesPayload(row().seriesJson), rawB);
+    // B publicou e liberou o próprio claim; A não recriou/zerou nada indevido.
+    assert.equal(row().refreshClaimToken, null);
+    assert.equal(row().refreshClaimedAt, null);
+    // dirtyGeneration consistente (B limpou o dirty da geração 10).
+    assert.equal(row().dirtyGeneration, 10);
+    assert.equal(row().dirtyAt, null);
+  });
+
+  it("release com token antigo não toca o claim atual de B", async () => {
+    const db = createFakeDb([seededRow(2026, "sm", makeRaw(2026, "sm", 1))]);
+    const a = await claimFinanceDreSnapshotRefresh(db, 2026, "sm");
+    assert.ok(a);
+    const row = db.__rows.find((r) => r.company === "sm")!;
+    row.refreshClaimedAt = new Date(Date.now() - 11 * 60 * 1000);
+    const b = await claimFinanceDreSnapshotRefresh(db, 2026, "sm");
+    assert.ok(b);
+    await releaseFinanceDreSnapshotClaim(db, 2026, "sm", a!.token, "erro antigo");
+    assert.equal(row.refreshClaimToken, b!.token);
+    assert.equal(row.lastRefreshError, null); // erro de A não é registrado sobre claim de B
+  });
+});
+
+describe("DRE snapshot — MISS concorrente espera o vencedor (sem segundo compute pesado)", () => {
+  const query = { year: "2026", month: "8", company: "lazarios" };
+  const referenceNow = new Date(2026, 7, 27, 10, 0, 0);
+
+  it("claim ocupado: espera limitada e serve o snapshot publicado pelo vencedor", async () => {
+    const raw = makeRaw(2026, "lazarios", 6);
+    // Shell com claim ativo simula o processo A computando.
+    const db = createFakeDb([
+      {
+        year: 2026,
+        company: "lazarios",
+        seriesJson: null,
+        refreshClaimedAt: new Date(),
+        refreshClaimToken: "token-A",
+      },
+    ]);
+    let computeCalls = 0;
+    let sleeps = 0;
+    const report = await resolveFinanceDreReportWithSnapshot(query, referenceNow, {
+      db,
+      loadRoleMap: async () => emptyRoleMap,
+      computeRaw: async () => {
+        computeCalls += 1;
+        return raw;
+      },
+      sleep: async () => {
+        sleeps += 1;
+        if (sleeps === 2) {
+          // A publica durante a espera de B.
+          const row = db.__rows.find((r) => r.company === "lazarios")!;
+          row.seriesJson = JSON.parse(
+            JSON.stringify(serializeFinanceDreSnapshotSeriesPayload(raw))
+          );
+          row.computedAt = new Date();
+          row.refreshClaimedAt = null;
+          row.refreshClaimToken = null;
+        }
+      },
+      missWaitAttempts: 4,
+      missWaitIntervalMs: 250,
+    });
+    assert.equal(computeCalls, 0); // B nunca rodou o motor pesado
+    assert.equal(sleeps, 2);
+    assert.equal(report.snapshot.freshness, "fresh");
+  });
+
+  it("espera esgotada: fallback live sem persistir (contrato preservado)", async () => {
+    const db = createFakeDb([
+      {
+        year: 2026,
+        company: "lazarios",
+        seriesJson: null,
+        refreshClaimedAt: new Date(),
+        refreshClaimToken: "token-A",
+      },
+    ]);
+    let computeCalls = 0;
+    const report = await resolveFinanceDreReportWithSnapshot(query, referenceNow, {
+      db,
+      loadRoleMap: async () => emptyRoleMap,
+      computeRaw: async () => {
+        computeCalls += 1;
+        return makeRaw(2026, "lazarios", 6);
+      },
+      sleep: async () => {},
+      missWaitAttempts: 2,
+      missWaitIntervalMs: 250,
+    });
+    assert.equal(report.snapshot.freshness, "live");
+    assert.equal(computeCalls, 1);
+    // Nada foi persistido pelo perdedor.
+    const row = db.__rows.find((r) => r.company === "lazarios")!;
+    assert.equal(row.seriesJson, null);
+  });
+});
+
 describe("DRE snapshot — resolve (HIT / STALE / MISS / schemaVersion)", () => {
   const baseQuery = { year: "2026", month: "8", company: "lazarios" };
   const referenceNow = new Date(2026, 7, 27, 10, 0, 0);
@@ -814,25 +1109,57 @@ describe("DRE snapshot — fontes e permissões (guards estruturais)", () => {
     );
   });
 
-  it("hooks de invalidação existem nos pontos reais de escrita", () => {
+  it("hooks de invalidação existem nos pontos reais de escrita, com o identificador certo", () => {
+    const nfesSync = read("../../scripts/nomusNfesSync.ts");
+    // NF-e: SEMPRE por externalId numérico (nunca o UUID interno) e cobrindo
+    // resumo fiscal de nota unchanged (fiscal.skipped).
+    assert.match(nfesSync, /markFinanceDreSnapshotsDirtyForNfeExternalIds\(\s*prisma/);
+    assert.match(nfesSync, /dreAffectedNfeExternalIds/);
+    assert.match(nfesSync, /fiscal\.skipped/);
+    assert.equal(nfesSync.includes("markFinanceDreSnapshotsDirtyForNfes("), false);
+
+    // Backfill fiscal: UUIDs realmente persistidos.
     assert.match(
-      read("../../scripts/nomusNfesSync.ts"),
-      /markFinanceDreSnapshotsDirtyForNfes\(prisma/
+      read("../../scripts/nomus-nfe-fiscal-backfill.ts"),
+      /markFinanceDreSnapshotsDirtyForNfeIds\(\s*prisma,\s*result\.persistedNomusNfeIds/
     );
+
+    // Documentos de Saída: os TRÊS caminhos usam a mesma função canônica.
+    assert.match(
+      read("../../scripts/nomusStockDocumentsSync.ts"),
+      /markFinanceDreSnapshotsDirtyForStockDocumentChanges/
+    );
+    assert.match(
+      read("../../scripts/nomusSalesOrdersSyncV1.ts"),
+      /markFinanceDreSnapshotsDirtyForStockDocumentChanges/
+    );
+    assert.match(
+      read("../../scripts/nomusStockDocumentsRepair.ts"),
+      /markFinanceDreSnapshotsDirtyForStockDocumentChanges/
+    );
+
     assert.match(
       read("../../scripts/nomusAccountsPayableSync.ts"),
       /markFinanceDreSnapshotsDirtySafe\(prisma,\s*\{\s*reason:\s*"accounts-payable-sync"/
     );
-    assert.match(
-      read("../../scripts/nomusStockDocumentsSync.ts"),
-      /markFinanceDreSnapshotsDirtySafe\(prisma,\s*\{\s*reason:\s*"stock-documents-sync"/
-    );
     assert.match(read("./productionCostPublication.server.ts"), /production-cost-publish/);
-    assert.match(read("../../scripts/nomusProductsSyncV1.ts"), /products-sync/);
+    const productsSync = read("../../scripts/nomusProductsSyncV1.ts");
+    assert.match(productsSync, /products-sync/);
+    assert.match(productsSync, /catalogSync\.upserted/);
     assert.match(
       read("./financeAccountsPayableCostCenterAllocationRoutes.ts"),
       /ap-allocation-manual/
     );
+  });
+
+  it("publicação exige o token do claim (fencing) no WHERE", () => {
+    const src = read("./financeDreSnapshot.server.ts");
+    const publishIdx = src.indexOf("async function publishOneInTx");
+    assert.ok(publishIdx > 0);
+    const publishSrc = src.slice(publishIdx, src.indexOf("export type FinanceDreSnapshotRefreshResult"));
+    assert.match(publishSrc, /refreshClaimToken:\s*input\.claimToken/);
+    // Sem create fallback: token perdido = abandono, nunca recriação.
+    assert.equal(publishSrc.includes(".create("), false);
   });
 
   it("mapeamento de CC da DRE NÃO invalida snapshot (roleMap é read-time)", () => {

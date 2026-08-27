@@ -99,8 +99,8 @@ async function main(): Promise<void> {
               ? ` entidades=[${result.entitiesRefreshed.join(", ")}]`
               : "")
         );
-      } else if (result.status === "already_running") {
-        console.warn(`${LOG_PREFIX} ${year}/${company} SKIP (refresh já em andamento)`);
+      } else if (result.status === "already_running" || result.status === "claim_lost") {
+        console.warn(`${LOG_PREFIX} ${year}/${company} SKIP (${result.status})`);
       } else {
         errors += 1;
         console.error(`${LOG_PREFIX} ${year}/${company} ERRO: ${result.error}`);

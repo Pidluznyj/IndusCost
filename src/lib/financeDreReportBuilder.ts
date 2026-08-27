@@ -196,7 +196,9 @@ export function deriveFinanceDreSeriesBundle(
     costCenterId: row.costCenterId,
     code: row.code,
     name: row.name,
-    role: row.role,
+    // Mesmo shape runtime do caminho live anterior (o bucket emite o superset
+    // de papéis; o contrato do payload usa o subconjunto exibível).
+    role: row.role as FinanceDreCostCenterBreakdownRow["role"],
     roleLabel: ROLE_LABELS[row.role],
     highlightAmount: row.highlightAmount,
     ytdAmount: row.ytdAmount,
