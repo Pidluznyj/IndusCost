@@ -20,6 +20,22 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(summary, null, 2));
     if (summary.lockBlocked) process.exitCode = 0;
     else if (summary.ok === false) process.exitCode = 2;
+
+    // Snapshot da DRE: reconciliação histórica de AP pode alterar títulos de
+    // qualquer ano (lifecycle/soft-delete) — invalidação conservadora dos
+    // snapshots existentes em apply bem-sucedido (soft-fail).
+    if (
+      process.argv.slice(2).includes("apply") &&
+      !summary.lockBlocked &&
+      summary.ok !== false
+    ) {
+      const { markFinanceDreSnapshotsDirtySafe } = await import(
+        "../src/lib/financeDreSnapshot.server.ts"
+      );
+      await markFinanceDreSnapshotsDirtySafe(prisma, {
+        reason: "accounts-payable-historical-reconcile",
+      });
+    }
   } finally {
     await prisma.$disconnect();
   }

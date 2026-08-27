@@ -2205,6 +2205,20 @@ export async function executeNomusSalesOrdersSync(
           `[nomusSalesOrdersSyncV1] stock-documents by-idNfe com falhas (sync de pedidos permanece válido): errors=${dsResult.sync.errors}`
         );
       }
+
+      // Snapshot da DRE: Documento de Saída é fallback de itens do CMV — se o
+      // sync pós-pedidos criou/alterou documentos, invalida (soft-fail).
+      if (dsResult.sync && !dsResult.skipped && !dsResult.sync.lockBlocked) {
+        const { markFinanceDreSnapshotsDirtyForStockDocumentChanges } = await import(
+          "../src/lib/financeDreSnapshot.server.ts"
+        );
+        await markFinanceDreSnapshotsDirtyForStockDocumentChanges(prisma, {
+          changedCount:
+            (dsResult.sync.counters.documentsCreated ?? 0) +
+            (dsResult.sync.counters.documentsUpdated ?? 0),
+          reason: "stock-documents-after-sales-orders",
+        });
+      }
     } catch (err) {
       console.error(
         "[nomusSalesOrdersSyncV1] stock-documents sync falhou (sync de pedidos segue):",

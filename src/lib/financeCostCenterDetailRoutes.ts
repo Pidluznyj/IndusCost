@@ -117,6 +117,12 @@ export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth
         userId: user.id,
         userName: user.name,
       });
+      // Snapshot da DRE: realocação AP→CC muda as séries por centro de custo.
+      const { markFinanceDreSnapshotsDirtySafe } = await import(
+        "@/src/lib/financeDreSnapshot.server.js"
+      );
+      const { prisma } = await import("@/src/lib/prisma.js");
+      await markFinanceDreSnapshotsDirtySafe(prisma, { reason: "cc-reallocation" });
       return res.json(result);
     } catch (error) {
       if (

@@ -95,6 +95,16 @@ export function registerFinanceCostCenterReclassificationRoutes(
             userName: user.name ?? user.email ?? null,
           },
         });
+        if (!dryRun) {
+          // Snapshot da DRE: reclassificação em massa muda as séries por CC.
+          const { markFinanceDreSnapshotsDirtySafe } = await import(
+            "@/src/lib/financeDreSnapshot.server.js"
+          );
+          const { prisma } = await import("@/src/lib/prisma.js");
+          await markFinanceDreSnapshotsDirtySafe(prisma, {
+            reason: "cc-reclassification-rules",
+          });
+        }
         return res.json(result);
       } catch (error) {
         const handled = handleError(res, error);

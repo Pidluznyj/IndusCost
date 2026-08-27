@@ -182,6 +182,21 @@ async function main(): Promise<void> {
 
   // APPLY
   const result = await applyNfeFiscalBackfill(prisma, filters);
+
+  // Snapshot da DRE: summaries (re)persistidos mudam as deduções oficiais —
+  // marca dirty pelas notas realmente alteradas (UUIDs do relatório do apply).
+  // Soft-fail: falha de invalidação não derruba nem reverte o backfill.
+  if (result.persistedNomusNfeIds.length > 0) {
+    const { markFinanceDreSnapshotsDirtyForNfeIds } = await import(
+      "../src/lib/financeDreSnapshot.server.ts"
+    );
+    await markFinanceDreSnapshotsDirtyForNfeIds(
+      prisma,
+      result.persistedNomusNfeIds,
+      "nfe-fiscal-backfill"
+    );
+  }
+
   writeJson(jsonPath, result);
   writeText(
     csvPath,

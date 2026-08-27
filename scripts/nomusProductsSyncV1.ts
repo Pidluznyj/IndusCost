@@ -808,10 +808,13 @@ async function main(): Promise<void> {
   const materialApplied = isApply ? await applyMaterialRoutingCreates(materialRouting) : null;
   const applied = isApply ? await executeLifecyclePlans(lifecyclePlans) : null;
 
-  // Snapshot da DRE: criação/alteração de Product pode mudar a resolução de
-  // itens do CMV (sourceExternalId/SKU). Invalidação conservadora dos
-  // snapshots existentes quando o apply mudou algo (soft-fail).
-  if (isApply && ((applied?.created ?? 0) + (applied?.updated ?? 0) > 0)) {
+  // Snapshot da DRE: criação/alteração de Product OU do catálogo Nomus pode
+  // mudar a resolução de itens do CMV (sourceExternalId/SKU/código).
+  // Invalidação conservadora dos snapshots existentes (soft-fail).
+  if (
+    isApply &&
+    ((applied?.created ?? 0) + (applied?.updated ?? 0) + (catalogSync.upserted ?? 0) > 0)
+  ) {
     const { markFinanceDreSnapshotsDirtySafe } = await import(
       "../src/lib/financeDreSnapshot.server.ts"
     );

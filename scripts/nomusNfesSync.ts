@@ -29,7 +29,7 @@ import {
 import { NOMUS_NFES_SYNC_WINDOW_LABEL } from "@/src/lib/nomusNfesSyncConstants.js";
 import { mapNomusNfePayload, type MappedNomusNfe } from "@/src/lib/nomusNfeMapper.js";
 import { ensureNomusNfeFiscalPersisted } from "@/src/lib/nfeFiscalPersist.js";
-import { markFinanceDreSnapshotsDirtyForNfes } from "@/src/lib/financeDreSnapshot.server.js";
+import { markFinanceDreSnapshotsDirtyForNfeExternalIds } from "@/src/lib/financeDreSnapshot.server.js";
 import {
   buildNomusUrl,
   fetchNomusJson,
@@ -213,6 +213,10 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
   let unchanged = 0;
   let errors = 0;
   const affectedNfeIds: number[] = [];
+  // Invalidação da DRE: nota criada/atualizada OU resumo fiscal efetivamente
+  // (re)persistido — uma nota "unchanged" pode ganhar summary novo e mudar
+  // deduções (externalId numérico; nunca o UUID interno).
+  const dreAffectedNfeExternalIds = new Set<number>();
 
   for (const row of rows) {
     try {
@@ -229,6 +233,7 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
         nomusNfeId = createdRow.id;
         created += 1;
         affectedNfeIds.push(row.externalId);
+        dreAffectedNfeExternalIds.add(row.externalId);
       } else if (existing.payloadHash === row.payloadHash) {
         await prisma.nomusNfe.update({
           where: { externalId: row.externalId },
@@ -244,14 +249,18 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
         nomusNfeId = existing.id;
         updated += 1;
         affectedNfeIds.push(row.externalId);
+        dreAffectedNfeExternalIds.add(row.externalId);
       }
 
       // Fiscal: sempre garantir (mesmo payload inalterado pode ainda não ter summary).
-      await ensureNomusNfeFiscalPersisted(prisma, {
+      const fiscal = await ensureNomusNfeFiscalPersisted(prisma, {
         nomusNfeId,
         xmlRaw: row.xmlRaw,
         status: row.status,
       });
+      if (!fiscal.skipped) {
+        dreAffectedNfeExternalIds.add(row.externalId);
+      }
     } catch {
       errors += 1;
     }
@@ -263,6 +272,7 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
     unchanged,
     errors,
     affectedNfeIds: [...new Set(affectedNfeIds)],
+    dreAffectedNfeExternalIds: [...dreAffectedNfeExternalIds],
   };
 }
 
@@ -407,9 +417,18 @@ async function main(): Promise<void> {
       );
     }
 
-    // Snapshot da DRE: NF-e alterada muda receita/deduções/CMV — marca dirty
-    // (barato, soft-fail); o refresh acontece fora do sync (SWR no GET / warm-up).
-    await markFinanceDreSnapshotsDirtyForNfes(prisma, applied.affectedNfeIds, "nfes-sync");
+  }
+
+  // Snapshot da DRE: NF-e criada/alterada OU resumo fiscal persistido muda
+  // receita/deduções/CMV — marca dirty por externalId (barato, soft-fail);
+  // o refresh acontece fora do sync (SWR no GET / warm-up). Fora do bloco de
+  // affectedNfeIds porque nota "unchanged" com summary novo também invalida.
+  if (options.mode === "apply" && applied?.dreAffectedNfeExternalIds?.length) {
+    await markFinanceDreSnapshotsDirtyForNfeExternalIds(
+      prisma,
+      applied.dreAffectedNfeExternalIds,
+      "nfes-sync"
+    );
   }
 
   if (options.mode === "apply") {

@@ -23,6 +23,19 @@ async function main() {
     cli,
   });
 
+  // Snapshot da DRE: reparo que altera Documentos de Saída invalida o
+  // fallback de itens do CMV (defensivo — mesma semântica canônica dos
+  // demais writers de stock documents; soft-fail).
+  if (result.mode === "apply" && (result.counters.updated ?? 0) > 0) {
+    const { markFinanceDreSnapshotsDirtyForStockDocumentChanges } = await import(
+      "../src/lib/financeDreSnapshot.server.ts"
+    );
+    await markFinanceDreSnapshotsDirtyForStockDocumentChanges(prisma, {
+      changedCount: result.counters.updated ?? 0,
+      reason: "stock-documents-repair",
+    });
+  }
+
   console.log(
     JSON.stringify(
       {
