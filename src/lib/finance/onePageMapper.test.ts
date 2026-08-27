@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildOnePageDreSection,
   buildOnePagePayload,
   computeVariationPercent,
   requireSummaryCard,
   type OnePageEngineInputs,
 } from "./onePageMapper.js";
+import { extractFinanceDreOnePageSummaryValues } from "../financeDreOnePageSummary.js";
+import {
+  buildFinanceDreReportFromRawSources,
+  type FinanceDreRawSourceSeries,
+} from "../financeDreReportBuilder.js";
 import { resolveOnePagePeriod } from "./onePagePeriod.js";
 import { isIntercompanySalesOrder } from "../financeInternalGroupExclusions.js";
 import type {
@@ -111,9 +117,75 @@ function buildInputs(overrides: Partial<OnePageEngineInputs> = {}): OnePageEngin
     billingTab: billingTabFixture(),
     salesTab: salesTabFixture(),
     margin: { percent: 27.4, orderCount: 12 },
+    dre: null,
     now: NOW,
     ...overrides,
   };
+}
+
+/** Séries brutas simples para montar um FinanceDreReport canônico nos testes. */
+function dreRawFixture(company: FinanceDreRawSourceSeries["company"]): FinanceDreRawSourceSeries {
+  const series = (base: number) =>
+    Array.from({ length: 12 }, (_, i) => Math.round(base * (i + 1) * 100) / 100);
+  const zero = () => Array.from({ length: 12 }, () => 0);
+  return {
+    year: 2026,
+    company,
+    receitaBrutaByMonth: series(100_000),
+    deductions: {
+      cofins: series(2_000),
+      icms: series(5_000),
+      icmsSt: zero(),
+      ipi: series(1_000),
+      pis: series(500),
+      devolucoes: series(1_500),
+      taxSummaryGapCount: 0,
+    },
+    cmv: {
+      cmvByMonth: series(40_000),
+      missingItemsRevenueByMonth: zero(),
+      missingProductRevenueByMonth: zero(),
+      missingCostRevenueByMonth: zero(),
+      missingItemsNfeCount: 0,
+      missingProductLineCount: 0,
+      missingCostLineCount: 0,
+      pricedLineCount: 10,
+    },
+    costCenters: {
+      byCostCenter: [
+        {
+          costCenterId: `cc-log-${company}`,
+          code: "CC10",
+          name: "Logistica",
+          byMonth: series(3_000),
+        },
+        {
+          costCenterId: `cc-emb-${company}`,
+          code: "CC11",
+          name: "Embalagens",
+          byMonth: series(1_000),
+        },
+        {
+          costCenterId: `cc-adm-${company}`,
+          code: "CC20",
+          name: "Administrativo",
+          byMonth: series(8_000),
+        },
+      ],
+      unclassifiedByMonth: zero(),
+    },
+  };
+}
+
+function dreReportFixture() {
+  return buildFinanceDreReportFromRawSources({
+    filters: { year: 2026, highlightMonth: 8, company: "all", dateBase: "emissao" },
+    availableThroughMonth: 8,
+    roleMap: null,
+    consolidated: dreRawFixture("all"),
+    perEntity: [dreRawFixture("lazarios"), dreRawFixture("koppetel"), dreRawFixture("sm")],
+    generatedAt: "2026-08-27T12:00:00.000Z",
+  });
 }
 
 describe("One Page — paridade Faturamento com o motor oficial (NF-e)", () => {
@@ -268,6 +340,117 @@ describe("One Page — leitura executiva e margem", () => {
     assert.equal(computeVariationPercent(100, null), null);
     assert.equal(computeVariationPercent(null, 50), null);
     assert.equal(computeVariationPercent(120, 100), 20);
+  });
+});
+
+describe("One Page — resumo da DRE (fonte canônica, sem fórmula própria)", () => {
+  it("extração usa as LINHAS canônicas por id — mês e YTD idênticos aos da DRE", () => {
+    const report = dreReportFixture();
+    const line = (id: string) => report.lines.find((l) => l.id === id)!;
+
+    const month = extractFinanceDreOnePageSummaryValues(report, "month")!;
+    assert.equal(month.receitaLiquida, line("receita_liquida").values.highlight);
+    assert.equal(month.deducoes, line("deducoes").values.highlight);
+    assert.equal(month.custos, line("custos").values.highlight);
+    assert.equal(month.cmv, line("cmv").values.highlight);
+    assert.equal(month.fretes, line("fretes").values.highlight);
+    assert.equal(month.embalagens, line("embalagens").values.highlight);
+    assert.equal(month.lucroBruto, line("lucro_bruto").values.highlight);
+    assert.equal(
+      month.resultadoOperacional,
+      line("resultado_operacional").values.highlight
+    );
+    assert.equal(month.margemBrutaPct, report.kpis.margemBrutaPct);
+    assert.equal(month.margemOperacionalPct, report.kpis.margemOperacionalPct);
+
+    const ytd = extractFinanceDreOnePageSummaryValues(report, "ytd")!;
+    assert.equal(ytd.receitaLiquida, line("receita_liquida").values.ytd);
+    assert.equal(ytd.custos, line("custos").values.ytd);
+    assert.equal(ytd.margemBrutaPct, report.kpis.ytd.margemBrutaPct);
+    assert.equal(ytd.margemOperacionalPct, report.kpis.ytd.margemOperacionalPct);
+    // Sinais canônicos preservados (deduções/custos negativos nas linhas).
+    assert.ok(ytd.deducoes < 0);
+    assert.ok(ytd.custos < 0);
+    // Consistência interna canônica: custos = cmv + fretes + embalagens.
+    assert.equal(
+      Math.round((ytd.cmv + ytd.fretes + ytd.embalagens) * 100) / 100,
+      ytd.custos
+    );
+  });
+
+  it("quality mapeada dos qualityAlerts canônicos (íntegro × ressalva)", () => {
+    const clean = extractFinanceDreOnePageSummaryValues(dreReportFixture(), "ytd")!;
+    assert.equal(clean.quality.alertCount, 0);
+    const cleanSection = buildOnePageDreSection(
+      { available: true, freshness: "fresh", computedAt: null, values: clean },
+      "Agosto/2026"
+    );
+    assert.equal(cleanSection.quality.status, "ok");
+    assert.equal(cleanSection.quality.label, "Dados íntegros");
+
+    const withGaps = buildFinanceDreReportFromRawSources({
+      filters: { year: 2026, highlightMonth: 8, company: "lazarios", dateBase: "emissao" },
+      availableThroughMonth: 8,
+      roleMap: null,
+      consolidated: {
+        ...dreRawFixture("lazarios"),
+        cmv: { ...dreRawFixture("lazarios").cmv, missingCostLineCount: 3 },
+      },
+      perEntity: null,
+      generatedAt: "2026-08-27T12:00:00.000Z",
+    });
+    const warn = extractFinanceDreOnePageSummaryValues(withGaps, "ytd")!;
+    assert.ok(warn.quality.alertCount > 0);
+    const warnSection = buildOnePageDreSection(
+      { available: true, freshness: "stale", computedAt: "2026-08-27T10:00:00.000Z", values: warn },
+      "Agosto/2026"
+    );
+    assert.equal(warnSection.quality.status, "warning");
+    assert.match(warnSection.quality.label, /ressalva/);
+    assert.equal(warnSection.freshness, "stale");
+  });
+
+  it("bloco formatado: deduções/custos em valor absoluto, timestamp HH:mm, payload numérico assinado", () => {
+    const values = extractFinanceDreOnePageSummaryValues(dreReportFixture(), "ytd")!;
+    const section = buildOnePageDreSection(
+      {
+        available: true,
+        freshness: "fresh",
+        computedAt: "2026-08-27T14:35:00.000Z",
+        values,
+      },
+      "Janeiro – Agosto/2026 (YTD)"
+    );
+    assert.equal(section.available, true);
+    assert.equal(section.deducoes, values.deducoes); // assinado no payload
+    assert.ok(values.deducoes < 0);
+    assert.equal(section.deducoesFormatted.includes("-"), false); // absoluto na exibição
+    assert.equal(section.periodLabel, "Janeiro – Agosto/2026 (YTD)");
+    assert.match(section.updatedAtLabel ?? "", /^\d{2}:\d{2}$/);
+    assert.equal(section.margemBrutaPctFormatted.endsWith("%"), true);
+  });
+
+  it("indisponível: bloco seguro, restante do payload intacto", () => {
+    const payload = buildOnePagePayload(buildInputs({ dre: null }));
+    assert.equal(payload.dre.available, false);
+    assert.equal(payload.dre.freshness, null);
+    assert.match(payload.dre.quality.label, /preparação/);
+    assert.equal(payload.dre.receitaLiquidaFormatted, "—");
+    // O restante do One Page continua íntegro.
+    assert.equal(payload.faturamento.ytd, 9_500_000);
+    assert.equal(payload.pedidoVenda.total, 2_000_000);
+  });
+
+  it("payload completo carrega o bloco dre montado a partir do resumo", () => {
+    const values = extractFinanceDreOnePageSummaryValues(dreReportFixture(), "ytd")!;
+    const payload = buildOnePagePayload(
+      buildInputs({
+        dre: { available: true, freshness: "fresh", computedAt: null, values },
+      })
+    );
+    assert.equal(payload.dre.available, true);
+    assert.equal(payload.dre.receitaLiquida, values.receitaLiquida);
+    assert.equal(payload.dre.resultadoOperacional, values.resultadoOperacional);
   });
 });
 

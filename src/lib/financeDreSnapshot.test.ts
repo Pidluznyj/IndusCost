@@ -18,13 +18,17 @@ import {
   markFinanceDreSnapshotsDirtyForNfeExternalIds,
   markFinanceDreSnapshotsDirtyForNfeIds,
   markFinanceDreSnapshotsDirtyForStockDocumentChanges,
+  getFinanceDreOnePageSummaryFromSnapshot,
   refreshDirtyFinanceDreSnapshots,
   refreshFinanceDreSnapshot,
   releaseFinanceDreSnapshotClaim,
   resolveFinanceDreReportWithSnapshot,
   type FinanceDreSnapshotDb,
 } from "./financeDreSnapshot.server.js";
-import { buildEstimatedCorporateTaxSeriesFromEntityBases } from "./financeDreEstimatedCorporateTaxes.js";
+import {
+  buildEstimatedCorporateTaxSeriesFromEntityBases,
+  buildEstimatedCorporateTaxSeriesFromSingleBase,
+} from "./financeDreEstimatedCorporateTaxes.js";
 import { computeFinanceDreEstimatedTaxBaseSeries, roundDreMoney } from "./financeDreMath.js";
 import type { DreCostCenterRole } from "./financeDreCostCenterRoles.js";
 import type { FinanceDreCompany } from "./financeDreTypes.js";
@@ -380,6 +384,47 @@ describe("DRE snapshot — paridade LIVE == SNAPSHOT (motor puro único)", () =>
     assert.equal(live.estimatedCorporateTaxes.entitiesHighlightMonth.length, 3);
   });
 
+  it("all adversarial: PJ positiva + PJ negativa + PJ com adicional — imposto = soma por PJ e ≠ cálculo sobre consolidado", () => {
+    // Base tributária controlada: receita = base, resto zero.
+    const flatBaseRaw = (company: FinanceDreCompany, base: number): FinanceDreRawSourceSeries => {
+      const zero = () => Array.from({ length: 12 }, () => 0);
+      const raw = makeRaw(2026, company, 1);
+      return {
+        ...raw,
+        receitaBrutaByMonth: Array.from({ length: 12 }, () => base),
+        deductions: { ...raw.deductions, cofins: zero(), icms: zero(), icmsSt: zero(), ipi: zero(), pis: zero(), devolucoes: zero() },
+        cmv: { ...raw.cmv, cmvByMonth: zero() },
+        costCenters: { byCostCenter: [], unclassifiedByMonth: zero() },
+      };
+    };
+    const perEntity = [
+      flatBaseRaw("lazarios", 10_000), // positiva simples
+      flatBaseRaw("koppetel", -5_000), // negativa — não compensa
+      flatBaseRaw("sm", 50_000), // acima do limite de adicional (R$ 20.000/mês)
+    ];
+    const report = buildFinanceDreReportFromRawSources({
+      filters: { year: 2026, highlightMonth: 1, company: "all", dateBase: "emissao" },
+      availableThroughMonth: 12,
+      roleMap: emptyRoleMap,
+      consolidated: flatBaseRaw("all", 55_000),
+      perEntity,
+      generatedAt: GENERATED_AT,
+    });
+    const taxes = report.estimatedCorporateTaxes;
+    // Por PJ: CSLL 9%×(10.000+50.000)=5.400 · IRPJ 15%×60.000=9.000 + adicional 10%×30.000=3.000.
+    assert.equal(taxes.csllByMonth[0], 5_400);
+    assert.equal(taxes.irpjByMonth[0], 12_000);
+    assert.equal(taxes.provisionByMonth[0], 17_400);
+    assert.equal(taxes.consolidationMode, "per_legal_entity");
+    // Cálculo INCORRETO hipotético sobre a base consolidada (55.000) difere:
+    const wrong = buildEstimatedCorporateTaxSeriesFromSingleBase(
+      Array.from({ length: 12 }, () => 55_000),
+      1
+    );
+    assert.equal(wrong.provisionByMonth[0], 16_700);
+    assert.notEqual(taxes.provisionByMonth[0], wrong.provisionByMonth[0]);
+  });
+
   it("all: bloco tributário bate com o motor canônico chamado diretamente com as bases por PJ", () => {
     const perEntity = makePerEntity(2026);
     const filters = {
@@ -512,6 +557,69 @@ describe("DRE snapshot — roleMap de CC aplicado em read-time (séries brutas p
   });
 });
 
+describe("DRE snapshot — roleMap remapeia TODOS os buckets em read-time", () => {
+  it("mesmo payload: embalagens/pessoal/imposto/MP/breakdown seguem o roleMap da leitura", () => {
+    const raw = makeRaw(2026, "sm", 2); // CCs: cc-log, cc-emb, cc-adm, cc-folha
+    const filters = {
+      year: 2026,
+      highlightMonth: 12,
+      company: "sm" as const,
+      dateBase: "emissao" as const,
+    };
+    const build = (roleMap: Map<string, DreCostCenterRole>) =>
+      buildFinanceDreReportFromRawSources({
+        filters,
+        availableThroughMonth: 12,
+        roleMap,
+        consolidated: raw,
+        perEntity: null,
+        generatedAt: GENERATED_AT,
+      });
+
+    // Mapa A: classificador natural (log→fretes, emb→embalagens, folha→pessoal).
+    const a = build(new Map());
+    // Mapa B: remapeia tudo — log→tax, emb→raw_material, adm→packaging, folha→admin.
+    const b = build(
+      new Map<string, DreCostCenterRole>([
+        ["cc-log-sm", "tax"],
+        ["cc-emb-sm", "raw_material"],
+        ["cc-adm-sm", "packaging"],
+        ["cc-folha-sm", "admin"],
+      ])
+    );
+
+    const line = (r: typeof a, id: string) => r.lines.find((l) => l.id === id)!;
+    const info = (r: typeof a, id: string) =>
+      r.informativeReport.items.find((i) => i.id === id);
+
+    // Fretes: A tem cc-log; B zera.
+    assert.notEqual(line(a, "fretes").values.ytd, 0);
+    assert.equal(line(b, "fretes").values.ytd, 0);
+    // Embalagens: A = cc-emb; B = cc-adm (valores diferentes).
+    assert.notEqual(line(a, "embalagens").values.ytd, line(b, "embalagens").values.ytd);
+    // Pessoal informativo: A tem cc-folha; B zera (folha virou admin).
+    assert.ok((info(a, "pessoal_cc")?.ytdAmount ?? 0) > 0);
+    assert.equal(info(b, "pessoal_cc"), undefined);
+    // Imposto CC informativo: só em B (cc-log→tax).
+    assert.equal(info(a, "impostos_cc"), undefined);
+    assert.ok((info(b, "impostos_cc")?.ytdAmount ?? 0) > 0);
+    // Matéria-prima CC informativa: só em B (cc-emb→raw_material).
+    assert.equal(info(a, "materia_prima_cc"), undefined);
+    assert.ok((info(b, "materia_prima_cc")?.ytdAmount ?? 0) > 0);
+    // Unclassified independe do roleMap (série própria do snapshot).
+    assert.equal(
+      info(a, "ap_sem_cc_provisorio")?.ytdAmount,
+      info(b, "ap_sem_cc_provisorio")?.ytdAmount
+    );
+    // Breakdown reflete os papéis da LEITURA.
+    const roleOf = (r: typeof a, cc: string) =>
+      r.costCenterBreakdown.find((row) => row.costCenterId === cc)?.role;
+    assert.equal(roleOf(a, "cc-log-sm"), "logistics");
+    assert.equal(roleOf(b, "cc-log-sm"), "tax");
+    assert.equal(roleOf(b, "cc-folha-sm"), "admin");
+  });
+});
+
 describe("DRE snapshot — claim / lock por chave", () => {
   it("mesma chave não é reivindicada duas vezes; claim expirado é retomado; chaves distintas independem", async () => {
     const db = createFakeDb([seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 1))]);
@@ -565,6 +673,50 @@ describe("DRE snapshot — dirtyGeneration (CRITICAL: invalidação nunca é per
     // …mas NÃO marcou FRESH: dirty permanece para novo ciclo.
     assert.notEqual(row.dirtyAt, null);
     assert.equal(row.dirtyGeneration, 11);
+  });
+
+  it("G10 → markDirty×2 (G12) durante refresh: nunca vira FRESH para G10 e o próximo refresh resolve G12", async () => {
+    const db = createFakeDb([
+      seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 1), {
+        dirtyGeneration: 10,
+        dirtyAt: new Date(),
+      }),
+    ]);
+    const row = () => db.__rows.find((r) => r.company === "lazarios")!;
+
+    const first = await refreshFinanceDreSnapshot(
+      db,
+      { year: 2026, company: "lazarios" },
+      {
+        computeRaw: async () => {
+          await markFinanceDreSnapshotsDirty(db, {
+            reason: "m1",
+            years: [2026],
+            companies: ["lazarios"],
+          });
+          await markFinanceDreSnapshotsDirty(db, {
+            reason: "m2",
+            years: [2026],
+            companies: ["lazarios"],
+          });
+          return makeRaw(2026, "lazarios", 7);
+        },
+      }
+    );
+    assert.equal(first.status, "refreshed");
+    assert.equal(first.clearedDirty, false);
+    assert.notEqual(row().dirtyAt, null); // não virou FRESH para G10
+    assert.equal(row().dirtyGeneration, 12);
+
+    // Novo ciclo sem invalidação concorrente resolve a geração 12.
+    const second = await refreshFinanceDreSnapshot(
+      db,
+      { year: 2026, company: "lazarios" },
+      { computeRaw: async () => makeRaw(2026, "lazarios", 8) }
+    );
+    assert.equal(second.status, "refreshed");
+    assert.equal(second.clearedDirty, true);
+    assert.equal(row().dirtyAt, null);
   });
 
   it("sem invalidação concorrente, o refresh limpa dirty", async () => {
@@ -867,6 +1019,50 @@ describe("DRE snapshot — FENCING da publicação (CRITICAL)", () => {
     assert.equal(row().dirtyAt, null);
   });
 
+  it("cadeia A→B→C: somente o dono corrente do claim publica", async () => {
+    const rawA = makeRaw(2026, "koppetel", 1);
+    const rawB = makeRaw(2026, "koppetel", 5);
+    const rawC = makeRaw(2026, "koppetel", 9);
+    const db = createFakeDb([seededRow(2026, "koppetel", makeRaw(2026, "koppetel", 3))]);
+    const row = () => db.__rows.find((r) => r.company === "koppetel")!;
+    const expire = () => {
+      row().refreshClaimedAt = new Date(Date.now() - 11 * 60 * 1000);
+    };
+
+    let bResult: Awaited<ReturnType<typeof refreshFinanceDreSnapshot>> | null = null;
+    let cResult: Awaited<ReturnType<typeof refreshFinanceDreSnapshot>> | null = null;
+    const aResult = await refreshFinanceDreSnapshot(
+      db,
+      { year: 2026, company: "koppetel" },
+      {
+        computeRaw: async () => {
+          expire(); // claim de A expira
+          bResult = await refreshFinanceDreSnapshot(
+            db,
+            { year: 2026, company: "koppetel" },
+            {
+              computeRaw: async () => {
+                expire(); // claim de B também expira durante o cômputo de B
+                cResult = await refreshFinanceDreSnapshot(
+                  db,
+                  { year: 2026, company: "koppetel" },
+                  { computeRaw: async () => rawC }
+                );
+                return rawB;
+              },
+            }
+          );
+          return rawA;
+        },
+      }
+    );
+
+    assert.equal(cResult!.status, "refreshed"); // C é o dono corrente
+    assert.equal(bResult!.status, "claim_lost");
+    assert.equal(aResult.status, "claim_lost");
+    assert.deepEqual(parseFinanceDreSnapshotSeriesPayload(row().seriesJson), rawC);
+  });
+
   it("release com token antigo não toca o claim atual de B", async () => {
     const db = createFakeDb([seededRow(2026, "sm", makeRaw(2026, "sm", 1))]);
     const a = await claimFinanceDreSnapshotRefresh(db, 2026, "sm");
@@ -1094,6 +1290,111 @@ describe("DRE snapshot — resolve (HIT / STALE / MISS / schemaVersion)", () => 
     assert.equal(result.status, "refreshed");
     assert.deepEqual(computed, ["all"]); // PJs FRESH reutilizadas
     assert.equal(result.entitiesRefreshed.length, 0);
+  });
+});
+
+describe("DRE snapshot — resumo do One Page (nunca chama motor pesado)", () => {
+  const fullDb = () =>
+    createFakeDb([
+      seededRow(2026, "all", makeRaw(2026, "all", 9)),
+      seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 2)),
+      seededRow(2026, "koppetel", makeRaw(2026, "koppetel", 3)),
+      seededRow(2026, "sm", makeRaw(2026, "sm", 4)),
+    ]);
+  const referenceNow = new Date(2026, 7, 27, 10, 0, 0);
+  const heavyGuard = {
+    computeRaw: async (): Promise<never> => {
+      throw new Error("motor pesado não pode rodar no One Page");
+    },
+  };
+
+  it("HIT: valores do report canônico, freshness fresh, ZERO computes", async () => {
+    const db = fullDb();
+    const result = await getFinanceDreOnePageSummaryFromSnapshot(
+      { year: 2026, month: 8, periodMode: "ytd" },
+      referenceNow,
+      {
+        db,
+        loadRoleMap: async () => emptyRoleMap,
+        ...heavyGuard,
+        scheduleBackgroundRefresh: () => {
+          throw new Error("FRESH não agenda refresh");
+        },
+      }
+    );
+    assert.equal(result.available, true);
+    if (!result.available) return;
+    assert.equal(result.freshness, "fresh");
+    // Paridade com o report canônico montado das mesmas séries:
+    const report = buildFinanceDreReportFromRawSources({
+      filters: { year: 2026, highlightMonth: 8, company: "all", dateBase: "emissao" },
+      availableThroughMonth: 8,
+      roleMap: emptyRoleMap,
+      consolidated: makeRaw(2026, "all", 9),
+      perEntity: [makeRaw(2026, "lazarios", 2), makeRaw(2026, "koppetel", 3), makeRaw(2026, "sm", 4)],
+      generatedAt: GENERATED_AT,
+    });
+    const receita = report.lines.find((l) => l.id === "receita_liquida")!;
+    assert.equal(result.values.receitaLiquida, receita.values.ytd);
+    assert.equal(result.values.margemBrutaPct, report.kpis.ytd.margemBrutaPct);
+  });
+
+  it("STALE: responde imediatamente com o último válido e agenda o MESMO refresh background", async () => {
+    const db = createFakeDb([
+      seededRow(2026, "all", makeRaw(2026, "all", 9), { dirtyAt: new Date() }),
+      seededRow(2026, "lazarios", makeRaw(2026, "lazarios", 2)),
+      seededRow(2026, "koppetel", makeRaw(2026, "koppetel", 3)),
+      seededRow(2026, "sm", makeRaw(2026, "sm", 4)),
+    ]);
+    const scheduled: string[] = [];
+    const result = await getFinanceDreOnePageSummaryFromSnapshot(
+      { year: 2026, month: 8, periodMode: "month" },
+      referenceNow,
+      {
+        db,
+        loadRoleMap: async () => emptyRoleMap,
+        ...heavyGuard,
+        scheduleBackgroundRefresh: (year, company) => scheduled.push(`${year}/${company}`),
+      }
+    );
+    assert.equal(result.available, true);
+    assert.equal(result.available && result.freshness, "stale");
+    assert.deepEqual(scheduled, ["2026/all"]);
+  });
+
+  it("MISS: available=false, agenda aquecimento em background, NUNCA computa inline", async () => {
+    const db = createFakeDb([]);
+    const scheduled: string[] = [];
+    const result = await getFinanceDreOnePageSummaryFromSnapshot(
+      { year: 2026, month: 8, periodMode: "ytd" },
+      referenceNow,
+      {
+        db,
+        loadRoleMap: async () => emptyRoleMap,
+        ...heavyGuard,
+        scheduleBackgroundRefresh: (year, company) => scheduled.push(`${year}/${company}`),
+      }
+    );
+    assert.equal(result.available, false);
+    assert.equal(result.values, null);
+    assert.deepEqual(scheduled, ["2026/all"]);
+  });
+
+  it("PJ com schemaVersion incompatível → tratado como MISS seguro", async () => {
+    const good = fullDb();
+    const smRow = good.__rows.find((r) => r.company === "sm")!;
+    smRow.seriesJson = { schemaVersion: 999 };
+    const result = await getFinanceDreOnePageSummaryFromSnapshot(
+      { year: 2026, month: 8, periodMode: "ytd" },
+      referenceNow,
+      {
+        db: good,
+        loadRoleMap: async () => emptyRoleMap,
+        ...heavyGuard,
+        scheduleBackgroundRefresh: () => {},
+      }
+    );
+    assert.equal(result.available, false);
   });
 });
 

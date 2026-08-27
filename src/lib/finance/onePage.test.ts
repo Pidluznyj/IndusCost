@@ -94,6 +94,42 @@ describe("One Page — fonte canônica (gates eliminatórios)", () => {
     assert.match(service, /buildOnePagePayload/);
     assert.match(service, /resolveOnePagePeriod/);
   });
+
+  it("resumo DRE vem EXCLUSIVAMENTE do snapshot — sem motor live no One Page", () => {
+    assert.match(service, /getFinanceDreOnePageSummaryFromSnapshot/);
+    for (const heavy of [
+      "buildFinanceDreReport(",
+      "loadFinanceDreRawSourceSeries",
+      "queryMonthlyFiscalNfe",
+      "queryMonthlyFiscalNfeDeductions",
+      "loadMonthlyCmvFromNfeProductCosts",
+      "buildFinanceCostCenterDashboardDefault(",
+    ]) {
+      // buildFinanceCostCenterDashboardDefault é permitido apenas via os
+      // motores próprios do One Page? Não — o One Page não o usa diretamente.
+      if (heavy === "buildFinanceCostCenterDashboardDefault(") {
+        assert.equal(service.includes(heavy), false, heavy);
+        continue;
+      }
+      assert.equal(service.includes(heavy), false, heavy);
+    }
+  });
+
+  it("seção DRE na UI: rótulo canônico de Deduções, nunca 'imposto pago', presente na superfície compartilhada", () => {
+    const page = readFileSync(
+      join(ROOT, "src/components/finance/FinanceOnePage.tsx"),
+      "utf8"
+    );
+    assert.match(page, /DRE Gerencial — Resumo do Período/);
+    assert.match(page, /Deduções sobre Vendas/);
+    assert.equal(/imposto pago/i.test(page), false);
+    // Renderizada dentro do OnePageReportBody (tela + impressão A4/JPEG).
+    const bodyIdx = page.indexOf("function OnePageReportBody");
+    const sectionIdx = page.indexOf("OnePageDreSummarySection");
+    assert.ok(bodyIdx > 0 && sectionIdx > bodyIdx);
+    assert.match(page, /Atualização pendente/);
+    assert.match(page, /Dados da DRE em preparação/);
+  });
 });
 
 describe("One Page — formatadores reutilizados", () => {
