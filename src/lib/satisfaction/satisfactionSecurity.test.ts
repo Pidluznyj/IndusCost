@@ -22,6 +22,7 @@ import {
 import {
   isMisconfiguredForProduction,
   resolveTurnstileConfig,
+  toPublicTurnstileSiteKey,
   verifyTurnstileToken,
 } from "./satisfactionTurnstile.server.js";
 import {
@@ -238,6 +239,23 @@ describe("Turnstile", () => {
       throw new Error("falhou com SEGREDO-SUPER-SENSIVEL no texto");
     });
     assert.equal(JSON.stringify(result).includes("SEGREDO"), false);
+  });
+
+  it("site key pública vai ao browser; o secret não", () => {
+    const config = resolveTurnstileConfig({
+      SATISFACTION_TURNSTILE_SITE_KEY: "pk_publica",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk_nunca_vazar",
+    } as NodeJS.ProcessEnv);
+    assert.equal(toPublicTurnstileSiteKey(config), "pk_publica");
+    assert.equal(JSON.stringify({ turnstileSiteKey: toPublicTurnstileSiteKey(config) }).includes("sk_"), false);
+  });
+
+  it("produção com secret mas sem site key pública também é desvio", () => {
+    const env = {
+      NODE_ENV: "production",
+      SATISFACTION_TURNSTILE_SECRET_KEY: "sk",
+    } as NodeJS.ProcessEnv;
+    assert.equal(isMisconfiguredForProduction(resolveTurnstileConfig(env), env), true);
   });
 });
 

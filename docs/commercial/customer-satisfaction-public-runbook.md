@@ -117,6 +117,37 @@ A validação é **sempre server-side** (siteverify) e acontece **antes** de
 qualquer persistência de `SUBMITTED`. Falha de rede no siteverify resulta em
 recusa — indisponibilidade não vira permissão.
 
+O frontend público carrega `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`
+e renderiza o widget com `window.turnstile.render`. Sem esse script o desafio
+não existe e o submit chega sem token.
+
+### Homologação — habilitar Turnstile para teste real (posterior)
+
+Este commit de aplicação **não** altera o nginx de homologação. Lá o Turnstile
+continua desligado (`SATISFACTION_TURNSTILE_MODE=disabled`) e a CSP **bloqueia**
+`challenges.cloudflare.com`.
+
+Para um teste real posterior, o operador precisa:
+
+1. Criar o site Turnstile para o hostname público de homologação.
+2. Preencher `SATISFACTION_TURNSTILE_SITE_KEY` e `SATISFACTION_TURNSTILE_SECRET_KEY`.
+3. Remover `SATISFACTION_TURNSTILE_MODE=disabled` (ou não definir a variável).
+4. No nginx de homologação, em **todos** os `Content-Security-Policy`, trocar
+   `script-src 'self'` por `script-src 'self' https://challenges.cloudflare.com`
+   e acrescentar `frame-src https://challenges.cloudflare.com`.
+   Sem `*`, sem `unsafe-eval`. Recorte de referência (o mesmo já usado em produção):
+
+   ```
+   script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com
+   ```
+
+5. Recarregar o nginx e reiniciar o processo Node de homologação.
+6. Confirmar que o widget aparece em `/r` e que um submit sem token continua
+   recusado (`TURNSTILE` / `MISSING_TOKEN`).
+
+Produção já possui `script-src` e `frame-src` para `challenges.cloudflare.com`.
+Não abrir mais a CSP de produção.
+
 ---
 
 ## 5. Rate limit

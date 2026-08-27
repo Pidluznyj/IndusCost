@@ -61,7 +61,21 @@ export function isMisconfiguredForProduction(
   config: SatisfactionTurnstileConfig,
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
-  return env.NODE_ENV === "production" && config.mode !== "required";
+  if (env.NODE_ENV !== "production") return false;
+  if (config.mode !== "required") return true;
+  return !config.siteKey;
+}
+
+/**
+ * Site key que pode ir ao browser. O secret nunca entra aqui.
+ * Homologação com MODE=disabled recebe null — o widget não tenta carregar
+ * contra a CSP que ainda bloqueia challenges.cloudflare.com.
+ */
+export function toPublicTurnstileSiteKey(config: SatisfactionTurnstileConfig): string | null {
+  if (config.mode !== "required") return null;
+  if (config.devBypassEnabled) return null;
+  const key = config.siteKey?.trim() || null;
+  return key;
 }
 
 export type SatisfactionTurnstileResult =
@@ -120,10 +134,10 @@ export function turnstileFailureMessage(
 ): string {
   switch (reason) {
     case "MISSING_TOKEN":
-      return "Confirme que você não é um robô para enviar a pesquisa.";
+      return "Conclua a verificação de segurança antes de enviar.";
     case "REJECTED":
-      return "Não foi possível confirmar a verificação de segurança. Tente novamente.";
+      return "A verificação de segurança expirou ou é inválida. Valide novamente.";
     default:
-      return "Verificação de segurança indisponível no momento. Tente novamente em instantes.";
+      return "Não foi possível concluir a verificação de segurança. Tente novamente.";
   }
 }

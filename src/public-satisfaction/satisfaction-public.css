@@ -272,6 +272,40 @@ body {
   outline-offset: 2px;
 }
 
+.sat-turnstile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sat-turnstile-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sat-turnstile-help {
+  margin: 0;
+  font-size: 14px;
+  color: var(--sat-ink-soft);
+}
+
+.sat-turnstile-widget {
+  min-height: 65px;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.sat-turnstile-status {
+  margin: 0;
+  font-size: 14px;
+  color: var(--sat-ink-soft);
+}
+
+.sat-turnstile-status.is-error {
+  color: var(--sat-danger);
+}
+
 .sat-status {
   font-size: 14px;
   color: var(--sat-ink-faint);

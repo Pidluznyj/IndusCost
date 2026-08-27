@@ -10,6 +10,12 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PublicTurnstile, type PublicTurnstileHandle } from "./PublicTurnstile.js";
+import {
+  canSubmitWithTurnstile,
+  isSurveySubmitDisabled,
+  shouldResetTurnstileAfterSubmit,
+} from "./publicTurnstileContract.js";
 
 // ─── Contratos do DTO público (espelho do backend, sem importar server code) ──
 
@@ -162,6 +168,8 @@ export function SurveyApp() {
   const [saveHint, setSaveHint] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<PublicTurnstileHandle | null>(null);
   // Guardada fora da fase: a tela de confirmação também exibe a marca.
   const [brand, setBrand] = useState<{ logoDataUrl: string | null; companyName: string | null }>({
     logoDataUrl: null,
@@ -255,6 +263,12 @@ export function SurveyApp() {
   }, []);
 
   const form = phase.kind === "form" ? phase.form : null;
+  const turnstileSiteKey = form?.turnstileSiteKey ?? null;
+
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset();
+    setTurnstileToken(null);
+  };
 
   /** Payload COMPLETO — o backend trata rascunho como estado inteiro, não delta. */
   const buildAnswerPayload = useCallback(() => {
@@ -387,15 +401,20 @@ export function SurveyApp() {
       return;
     }
 
+    const turnstileGate = canSubmitWithTurnstile(turnstileSiteKey, turnstileToken);
+    if (turnstileGate.ok === false) {
+      setFormError(turnstileGate.error);
+      document
+        .querySelector<HTMLElement>("[data-testid='satisfaction-turnstile']")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
     setFormError(null);
     setSubmitting(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     try {
-      const turnstileToken =
-        (document.querySelector<HTMLInputElement>("[name='cf-turnstile-response']")?.value ??
-          null) || null;
-
       const result = await postJson("/api/public/satisfaction/submit", {
         answers: buildAnswerPayload(),
         respondentName,
@@ -419,13 +438,18 @@ export function SurveyApp() {
         }
         setErrors(issueMap);
         setFormError("Revise as respostas destacadas.");
+        if (shouldResetTurnstileAfterSubmit("VALIDATION")) resetTurnstile();
       } else if (result?.reason === "ALREADY_ANSWERED") {
         setPhase({ kind: "done" });
       } else {
         setFormError(result?.message ?? "Não foi possível enviar. Tente novamente.");
+        if (shouldResetTurnstileAfterSubmit(result?.reason === "TURNSTILE" ? "TURNSTILE" : "OTHER")) {
+          resetTurnstile();
+        }
       }
     } catch {
       setFormError("Falha de conexão ao enviar. Verifique a internet e tente de novo.");
+      if (shouldResetTurnstileAfterSubmit("NETWORK")) resetTurnstile();
     } finally {
       setSubmitting(false);
     }
@@ -629,16 +653,24 @@ export function SurveyApp() {
 
           {activeForm.turnstileSiteKey ? (
             <div className="sat-card">
-              <div
-                className="cf-turnstile"
-                data-sitekey={activeForm.turnstileSiteKey}
-                data-appearance="interaction-only"
+              <PublicTurnstile
+                ref={turnstileRef}
+                siteKey={activeForm.turnstileSiteKey}
+                onTokenChange={setTurnstileToken}
               />
             </div>
           ) : null}
 
           <div className="sat-actions">
-            <button className="sat-button" type="submit" disabled={submitting}>
+            <button
+              className="sat-button"
+              type="submit"
+              disabled={isSurveySubmitDisabled({
+                submitting,
+                siteKey: activeForm.turnstileSiteKey,
+                token: turnstileToken,
+              })}
+            >
               {submitting ? "Enviando…" : "Enviar respostas"}
             </button>
             <p className="sat-status" aria-live="polite">

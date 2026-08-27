@@ -331,5 +331,6 @@ idênticos nas duas execuções.
 | `satisfacao.grupolazarios.com.br` | NOT DEPLOYED |
 | Turnstile real (site key + secret) | PENDING PRODUCTION CONFIGURATION |
 | Egress mínimo para `challenges.cloudflare.com` | PENDING |
+| CSP de homologação para Turnstile | NÃO aplicada neste commit de app — ver runbook público, seção 4 |
 | Deploy de produção | NOT EXECUTED |
 | Migration no banco de produção | NOT EXECUTED |
