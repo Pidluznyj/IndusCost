@@ -1451,6 +1451,14 @@ describe("DRE snapshot — fontes e permissões (guards estruturais)", () => {
       read("./financeAccountsPayableCostCenterAllocationRoutes.ts"),
       /ap-allocation-manual/
     );
+    // Identidade de resolução do CMV fora do sync: edição de SKU na rota de
+    // produto e reconciliação de engenharia (sourceExternalId/sku).
+    assert.match(read("../../server.ts"), /product-sku-change/);
+    assert.match(
+      read("./nomusEngineeringReconciliation.ts"),
+      /engineering-reconciliation/
+    );
+    assert.match(read("../../scripts/nomusLifecycleBackfill.ts"), /nomus-lifecycle-backfill/);
   });
 
   it("publicação exige o token do claim (fencing) no WHERE", () => {

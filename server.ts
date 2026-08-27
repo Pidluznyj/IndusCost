@@ -8936,7 +8936,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       // effectiveType: usa o tipo do banco se o payload não trouxer type
       const currentProduct = await prisma.product.findUnique({
         where: { id },
-        select: { type: true, costingMode: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true, isNomusControlled: true, sourceSystem: true }
+        select: { sku: true, type: true, costingMode: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true, isNomusControlled: true, sourceSystem: true }
       });
       if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
 
@@ -9136,6 +9136,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             null,
           sourceEntity: "Product",
           sourceAction: "UPDATE",
+        });
+      }
+      // Snapshot da DRE: SKU é identidade de resolução dos itens de NF-e no
+      // CMV — mudou, invalida conservadoramente (soft-fail, rota segue).
+      if (product.sku !== currentProduct.sku) {
+        const { markFinanceDreSnapshotsDirtySafe } = await import(
+          "./src/lib/financeDreSnapshot.server.js"
+        );
+        await markFinanceDreSnapshotsDirtySafe(prisma, {
+          reason: "product-sku-change",
         });
       }
       res.json(product);

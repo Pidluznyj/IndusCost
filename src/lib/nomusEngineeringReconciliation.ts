@@ -1066,6 +1066,26 @@ export async function applyNomusEngineeringSync(
       { maxWait: 15_000, timeout: 120_000 }
     );
 
+    // Snapshot da DRE: criação/atualização de Product aqui pode mudar a
+    // identidade de resolução do CMV (sku novo / sourceExternalId alterado)
+    // e destravar itens de NF-e históricas. Invalidação conservadora
+    // soft-fail — a aplicação de engenharia nunca falha por causa disto.
+    if (totals.productsCreated + totals.productsUpdated > 0) {
+      try {
+        const { markFinanceDreSnapshotsDirtySafe } = await import(
+          "@/src/lib/financeDreSnapshot.server.js"
+        );
+        await markFinanceDreSnapshotsDirtySafe(prisma, {
+          reason: "engineering-reconciliation",
+        });
+      } catch (dirtyErr) {
+        console.error(
+          "[dre-snapshot] invalidação pós-reconciliação de engenharia falhou (aplicação segue):",
+          dirtyErr instanceof Error ? dirtyErr.message : dirtyErr
+        );
+      }
+    }
+
     return {
       runId: run.id,
       status: "APPLIED",
