@@ -72,10 +72,14 @@ export type OnePageDashboardPayload = {
     computedAt: string | null;
     updatedAtLabel: string | null;
     periodLabel: string;
+    receitaBruta: number | null;
+    receitaBrutaFormatted: string;
     receitaLiquida: number | null;
     receitaLiquidaFormatted: string;
     deducoes: number | null;
     deducoesFormatted: string;
+    despesasOperacionais: number | null;
+    despesasOperacionaisFormatted: string;
     custos: number | null;
     custosFormatted: string;
     cmv: number | null;

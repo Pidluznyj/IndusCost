@@ -24,8 +24,10 @@ export type FinanceDreOnePageQuality = {
 export type FinanceDreOnePageSummaryValues = {
   periodMode: FinanceDreOnePagePeriodMode;
   /** Valores assinados como nas linhas canônicas (deduções/custos negativos). */
+  receitaBruta: number;
   receitaLiquida: number;
   deducoes: number;
+  despesasOperacionais: number;
   custos: number;
   cmv: number;
   fretes: number;
@@ -76,8 +78,10 @@ export function extractFinanceDreOnePageSummaryValues(
   report: FinanceDreReport,
   mode: FinanceDreOnePagePeriodMode
 ): FinanceDreOnePageSummaryValues | null {
+  const receitaBruta = lineValue(report, "receita_bruta", mode);
   const receitaLiquida = lineValue(report, "receita_liquida", mode);
   const deducoes = lineValue(report, "deducoes", mode);
+  const despesasOperacionais = lineValue(report, "despesas_operacionais", mode);
   const custos = lineValue(report, "custos", mode);
   const cmv = lineValue(report, "cmv", mode);
   const fretes = lineValue(report, "fretes", mode);
@@ -85,8 +89,10 @@ export function extractFinanceDreOnePageSummaryValues(
   const lucroBruto = lineValue(report, "lucro_bruto", mode);
   const resultadoOperacional = lineValue(report, "resultado_operacional", mode);
   if (
+    receitaBruta == null ||
     receitaLiquida == null ||
     deducoes == null ||
+    despesasOperacionais == null ||
     custos == null ||
     cmv == null ||
     fretes == null ||
@@ -108,8 +114,10 @@ export function extractFinanceDreOnePageSummaryValues(
 
   return {
     periodMode: mode,
+    receitaBruta,
     receitaLiquida,
     deducoes,
+    despesasOperacionais,
     custos,
     cmv,
     fretes,

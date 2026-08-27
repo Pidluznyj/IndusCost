@@ -123,6 +123,24 @@ describe("One Page — fonte canônica (gates eliminatórios)", () => {
     assert.match(page, /DRE Gerencial — Resumo do Período/);
     assert.match(page, /Deduções sobre Vendas/);
     assert.equal(/imposto pago/i.test(page), false);
+    // Cascata narrativa completa, na ordem da DRE, com explicação para leigos.
+    const cascadeLabels = [
+      "Receita Bruta",
+      "Deduções sobre Vendas",
+      "Receita Líquida",
+      '"Custos"',
+      "Lucro Bruto",
+      "Despesas Operacionais",
+      "Resultado Operacional",
+    ];
+    let cursor = -1;
+    for (const label of cascadeLabels) {
+      const idx = page.indexOf(label, cursor + 1);
+      assert.ok(idx > cursor, `cascata fora de ordem ou ausente: ${label}`);
+      cursor = idx;
+    }
+    assert.match(page, /notas fiscais de venda emitidas|notas fiscais emitidas/);
+    assert.match(page, /DreFlowRow/);
     // Renderizada dentro do OnePageReportBody (tela + impressão A4/JPEG).
     const bodyIdx = page.indexOf("function OnePageReportBody");
     const sectionIdx = page.indexOf("OnePageDreSummarySection");

@@ -504,9 +504,6 @@ function OnePageDreSummarySection({
   const sectionClass = print
     ? `${financeBiCardClass} p-4 space-y-4`
     : `${financeBiCardClass} p-6 space-y-5`;
-  const kpiGridClass = print
-    ? "grid grid-cols-3 gap-3"
-    : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4";
 
   return (
     <div className={sectionClass} data-testid="one-page-dre-summary">
@@ -541,48 +538,66 @@ function OnePageDreSummarySection({
         </p>
       ) : (
         <>
-          <div className={kpiGridClass}>
-            <OnePageKpiCard
+          {/* Linha lógica: entrou → deduz → sobra, passo a passo, com
+              explicação para quem não é do financeiro. */}
+          <div className="rounded-xl border border-[#E5E7EB] overflow-hidden">
+            <DreFlowRow
+              sign="start"
+              label="Receita Bruta"
+              description="Tudo o que entrou em vendas: total das notas fiscais emitidas no período."
+              value={dre.receitaBrutaFormatted}
+              print={print}
+            />
+            <DreFlowRow
+              sign="minus"
+              label="Deduções sobre Vendas"
+              description="Impostos destacados nas notas (ICMS, IPI, PIS/COFINS) e devoluções de clientes."
+              value={dre.deducoesFormatted}
+              print={print}
+            />
+            <DreFlowRow
+              sign="equals"
               label="Receita Líquida"
+              description="O que realmente sobra das vendas depois dos impostos e devoluções."
               value={dre.receitaLiquidaFormatted}
+              emphasize
+              print={print}
             />
-            <OnePageKpiCard label="Deduções sobre Vendas" value={dre.deducoesFormatted} />
-            <OnePageKpiCard label="Custos" value={dre.custosFormatted} />
-            <OnePageKpiCard label="Lucro Bruto" value={dre.lucroBrutoFormatted} />
-            <OnePageKpiCard
-              label="Margem Bruta"
-              value={dre.margemBrutaPctFormatted}
-              valueClass="text-[#2563EB]"
+            <DreFlowRow
+              sign="minus"
+              label="Custos"
+              description="Quanto custou produzir e entregar o que foi vendido."
+              detail={`CMV ${dre.cmvFormatted} · Fretes ${dre.fretesFormatted} · Embalagens ${dre.embalagensFormatted}`}
+              value={dre.custosFormatted}
+              print={print}
+            />
+            <DreFlowRow
+              sign="equals"
+              label="Lucro Bruto"
+              description="O ganho das vendas antes das despesas de funcionamento da empresa."
+              value={dre.lucroBrutoFormatted}
+              badge={`Margem bruta ${dre.margemBrutaPctFormatted}`}
+              emphasize
+              print={print}
+            />
+            <DreFlowRow
+              sign="minus"
+              label="Despesas Operacionais"
+              description="Despesas administrativas para manter a empresa funcionando (centros de custo)."
+              value={dre.despesasOperacionaisFormatted}
+              print={print}
+            />
+            <DreFlowRow
+              sign="equals"
+              label="Resultado Operacional"
+              description="O que a operação de fato gerou no período, depois de custos e despesas."
+              value={dre.resultadoOperacionalFormatted}
+              valueNegative={(dre.resultadoOperacional ?? 0) < 0}
+              badge={`Margem operacional ${dre.margemOperacionalPctFormatted}`}
+              emphasize
+              print={print}
             />
           </div>
-
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
-            <span className="text-sm text-[#374151]">
-              <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mr-2">
-                Resultado Operacional
-              </span>
-              <span
-                className={`font-extrabold ${
-                  (dre.resultadoOperacional ?? 0) >= 0 ? "text-[#111827]" : "text-[#DC2626]"
-                }`}
-              >
-                {dre.resultadoOperacionalFormatted}
-              </span>
-            </span>
-            <span className="text-sm text-[#374151]">
-              <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mr-2">
-                Margem Operacional
-              </span>
-              <span className="font-extrabold text-[#2563EB]">
-                {dre.margemOperacionalPctFormatted}
-              </span>
-            </span>
-          </div>
-
-          <p className="text-xs text-[#6B7280]">
-            CMV {dre.cmvFormatted} · Fretes {dre.fretesFormatted} · Embalagens{" "}
-            {dre.embalagensFormatted}
-          </p>
 
           <p
             className={`text-xs font-semibold inline-flex items-center gap-1.5 ${
@@ -606,6 +621,89 @@ function OnePageDreSummarySection({
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Uma linha da cascata da DRE: sinal (entrada / deduz / resultado), nome,
+ * explicação em linguagem simples e o valor à direita. Linhas de resultado
+ * ("=") ganham fundo e peso — é onde a história "o que sobrou" se conta.
+ */
+function DreFlowRow({
+  sign,
+  label,
+  description,
+  detail,
+  value,
+  badge,
+  emphasize = false,
+  valueNegative = false,
+  print,
+}: {
+  sign: "start" | "minus" | "equals";
+  label: string;
+  description: string;
+  detail?: string;
+  value: string;
+  badge?: string;
+  emphasize?: boolean;
+  valueNegative?: boolean;
+  print: boolean;
+}) {
+  const signStyles =
+    sign === "minus"
+      ? "bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]"
+      : sign === "equals"
+        ? "bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]"
+        : "bg-[#ECFDF5] text-[#047857] border-[#A7F3D0]";
+  const signChar = sign === "minus" ? "−" : sign === "equals" ? "=" : "+";
+
+  return (
+    <div
+      className={`flex items-start gap-3 border-b border-[#F3F4F6] last:border-b-0 ${
+        print ? "px-4 py-2.5" : "px-5 py-3.5"
+      } ${emphasize ? "bg-[#F9FAFB]" : "bg-white"}`}
+    >
+      <span
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${signStyles}`}
+        aria-hidden
+      >
+        {signChar}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span
+            className={`${
+              emphasize ? "text-sm font-extrabold text-[#111827]" : "text-sm font-semibold text-[#374151]"
+            }`}
+          >
+            {label}
+          </span>
+          {badge ? (
+            <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider">
+              {badge}
+            </span>
+          ) : null}
+        </div>
+        <p className="text-[11px] text-[#6B7280] leading-snug mt-0.5">{description}</p>
+        {detail ? (
+          <p className="text-[11px] text-[#9CA3AF] leading-snug mt-0.5">{detail}</p>
+        ) : null}
+      </div>
+      <span
+        className={`shrink-0 tabular-nums ${
+          emphasize ? "text-base font-extrabold" : "text-sm font-bold"
+        } ${
+          valueNegative
+            ? "text-[#DC2626]"
+            : sign === "minus"
+              ? "text-[#DC2626]"
+              : "text-[#111827]"
+        }`}
+      >
+        {sign === "minus" ? `− ${value}` : value}
+      </span>
     </div>
   );
 }

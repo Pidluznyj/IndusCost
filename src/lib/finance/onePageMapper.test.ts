@@ -349,8 +349,13 @@ describe("One Page — resumo da DRE (fonte canônica, sem fórmula própria)", 
     const line = (id: string) => report.lines.find((l) => l.id === id)!;
 
     const month = extractFinanceDreOnePageSummaryValues(report, "month")!;
+    assert.equal(month.receitaBruta, line("receita_bruta").values.highlight);
     assert.equal(month.receitaLiquida, line("receita_liquida").values.highlight);
     assert.equal(month.deducoes, line("deducoes").values.highlight);
+    assert.equal(
+      month.despesasOperacionais,
+      line("despesas_operacionais").values.highlight
+    );
     assert.equal(month.custos, line("custos").values.highlight);
     assert.equal(month.cmv, line("cmv").values.highlight);
     assert.equal(month.fretes, line("fretes").values.highlight);
@@ -364,17 +369,30 @@ describe("One Page — resumo da DRE (fonte canônica, sem fórmula própria)", 
     assert.equal(month.margemOperacionalPct, report.kpis.margemOperacionalPct);
 
     const ytd = extractFinanceDreOnePageSummaryValues(report, "ytd")!;
+    assert.equal(ytd.receitaBruta, line("receita_bruta").values.ytd);
     assert.equal(ytd.receitaLiquida, line("receita_liquida").values.ytd);
+    assert.equal(ytd.despesasOperacionais, line("despesas_operacionais").values.ytd);
     assert.equal(ytd.custos, line("custos").values.ytd);
     assert.equal(ytd.margemBrutaPct, report.kpis.ytd.margemBrutaPct);
     assert.equal(ytd.margemOperacionalPct, report.kpis.ytd.margemOperacionalPct);
-    // Sinais canônicos preservados (deduções/custos negativos nas linhas).
+    // Sinais canônicos preservados (deduções/custos/despesas negativos nas linhas).
     assert.ok(ytd.deducoes < 0);
     assert.ok(ytd.custos < 0);
+    assert.ok(ytd.despesasOperacionais < 0);
     // Consistência interna canônica: custos = cmv + fretes + embalagens.
     assert.equal(
       Math.round((ytd.cmv + ytd.fretes + ytd.embalagens) * 100) / 100,
       ytd.custos
+    );
+    // A cascata narrativa fecha com os sinais canônicos:
+    // Receita Bruta + Deduções = Receita Líquida; Líquida + Custos = Lucro
+    // Bruto; Lucro Bruto + Despesas = Resultado Operacional.
+    const round2 = (v: number) => Math.round(v * 100) / 100;
+    assert.equal(round2(ytd.receitaBruta + ytd.deducoes), round2(ytd.receitaLiquida));
+    assert.equal(round2(ytd.receitaLiquida + ytd.custos), round2(ytd.lucroBruto));
+    assert.equal(
+      round2(ytd.lucroBruto + ytd.despesasOperacionais),
+      round2(ytd.resultadoOperacional)
     );
   });
 
@@ -422,9 +440,14 @@ describe("One Page — resumo da DRE (fonte canônica, sem fórmula própria)", 
       "Janeiro – Agosto/2026 (YTD)"
     );
     assert.equal(section.available, true);
+    assert.equal(section.receitaBruta, values.receitaBruta);
     assert.equal(section.deducoes, values.deducoes); // assinado no payload
+    assert.equal(section.despesasOperacionais, values.despesasOperacionais);
     assert.ok(values.deducoes < 0);
+    assert.ok(values.despesasOperacionais < 0);
     assert.equal(section.deducoesFormatted.includes("-"), false); // absoluto na exibição
+    assert.equal(section.despesasOperacionaisFormatted.includes("-"), false);
+    assert.equal(section.receitaBrutaFormatted.includes("—"), false);
     assert.equal(section.periodLabel, "Janeiro – Agosto/2026 (YTD)");
     assert.match(section.updatedAtLabel ?? "", /^\d{2}:\d{2}$/);
     assert.equal(section.margemBrutaPctFormatted.endsWith("%"), true);
@@ -436,6 +459,8 @@ describe("One Page — resumo da DRE (fonte canônica, sem fórmula própria)", 
     assert.equal(payload.dre.freshness, null);
     assert.match(payload.dre.quality.label, /preparação/);
     assert.equal(payload.dre.receitaLiquidaFormatted, "—");
+    assert.equal(payload.dre.receitaBrutaFormatted, "—");
+    assert.equal(payload.dre.despesasOperacionaisFormatted, "—");
     // O restante do One Page continua íntegro.
     assert.equal(payload.faturamento.ytd, 9_500_000);
     assert.equal(payload.pedidoVenda.total, 2_000_000);
