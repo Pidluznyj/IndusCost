@@ -41,6 +41,61 @@ describe("Finance One Page — wiring", () => {
   });
 });
 
+describe("One Page — fonte canônica (gates eliminatórios)", () => {
+  const service = readFileSync(
+    join(ROOT, "src/lib/finance/onePageService.server.ts"),
+    "utf8"
+  );
+  const salesMetrics = readFileSync(
+    join(ROOT, "src/lib/salesOrdersDashboardMetrics.ts"),
+    "utf8"
+  );
+
+  it("F — Faturamento usa o MESMO motor NF-e da tela oficial (emissao), nunca a variante de pedidos", () => {
+    assert.match(service, /buildBillingDashboardFromNfes/);
+    assert.match(service, /buildBillingDashboardFromNfes\(period\.yearCtx,\s*"emissao"\)/);
+    assert.equal(service.includes("buildBillingDashboardTab"), false);
+  });
+
+  it("Pedidos usam o motor canônico buildSalesOrdersDashboardTab", () => {
+    assert.match(service, /buildSalesOrdersDashboardTab/);
+  });
+
+  it("sem IDs fantasmas de billing no serviço", () => {
+    for (const ghost of [
+      "billing_net_found",
+      "billing_ytd_current",
+      "billing_ytd_previous",
+      "billing_delta_prev_year_month_percent",
+    ]) {
+      assert.equal(service.includes(ghost), false, ghost);
+    }
+  });
+
+  it("sem hack do dia 28 no serviço e no motor de pedidos", () => {
+    assert.doesNotMatch(service, /28,\s*23,\s*59/);
+    assert.doesNotMatch(salesMetrics, /Math\.min\(ref\.getDate\(\),\s*28\)/);
+    assert.match(salesMetrics, /resolveComparablePreviousYearReference/);
+  });
+
+  it("motor de pedidos expõe o YTD anterior comparável (corte simétrico)", () => {
+    assert.match(salesMetrics, /previousYearComparableYtd/);
+  });
+
+  it("margem delega ao agregado ponderado canônico (nunca média simples), com exclusão intercompany", () => {
+    assert.match(service, /aggregateCommercialMarginSummaries/);
+    assert.match(service, /getSalesOrdersCommercialMargins/);
+    assert.match(service, /isIntercompanySalesOrder/);
+    assert.match(service, /buildSalesOrderListWhere/);
+  });
+
+  it("código morto removido (pedPrevYearFullNet) e mapper puro em uso", () => {
+    assert.equal(service.includes("pedPrevYearFullNet"), false);
+    assert.match(service, /buildOnePagePayload/);
+    assert.match(service, /resolveOnePagePeriod/);
+  });
+});
+
 describe("One Page — formatadores reutilizados", () => {
   it("resolveExecutiveDashboardYearContext parses year context correctly", () => {
     const now = new Date("2026-08-27T09:15:00Z");

@@ -320,6 +320,15 @@ export type SalesOrdersDashboardTab = ExecutiveSectionBase & {
   targets: SalesOrdersTargetsBlock;
   /** @deprecated Use targets.monthly */
   target: DashboardTargetBlock;
+  /**
+   * YTD do ano anterior com o MESMO corte temporal do YTD atual — mesmo dia da
+   * referência, clampado ao último dia real do mês no ano anterior.
+   */
+  previousYearComparableYtd?: {
+    net: ExecutiveMetricValue;
+    referenceDate: string;
+    formatted: string;
+  };
   projection: SalesOrdersProjectionBlock;
   monthlySeries: DashboardMonthlySeriesPoint[];
   accumulatedEvolution: SalesOrdersAccumulatedPoint[];

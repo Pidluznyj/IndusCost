@@ -31,6 +31,7 @@ import {
   TARGET_GROWTH_FACTOR,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { isIntercompanySalesOrder } from "@/src/lib/financeInternalGroupExclusions.js";
+import { resolveComparablePreviousYearReference } from "@/src/lib/executiveDashboardComparablePeriod.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import {
   loadSalesOrderEnrichedMetricsForIssueYear,
@@ -274,7 +275,7 @@ export async function buildSalesOrdersDashboardTab(
     month: metricMonth,
     excludeGroupCompanyCustomers,
   });
-  const prevYearRef = new Date(previousYear, metricMonth - 1, Math.min(ref.getDate(), 28), 23, 59, 59, 999);
+  const prevYearRef = resolveComparablePreviousYearReference(ref, previousYear, metricMonth);
   const prevOfficial = resolveOfficialSalesOrderExecutiveMetrics(
     previousYearOrders.map(mapPrismaOrderToSalesOrderRulesInput),
     prevYearRef,
@@ -434,6 +435,11 @@ export async function buildSalesOrdersDashboardTab(
     summaryCards,
     targets,
     target: monthlyTarget,
+    previousYearComparableYtd: {
+      net: prevOfficial.metrics.soldAmountYtd,
+      referenceDate: prevYearRef.toISOString(),
+      formatted: formatExecutiveCurrency(prevOfficial.metrics.soldAmountYtd),
+    },
     projection,
     monthlySeries,
     accumulatedEvolution,

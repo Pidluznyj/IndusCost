@@ -131,6 +131,8 @@ src/lib/finance/portfolioIntelligenceFilters.test.ts
 src/lib/finance/portfolioIntelligenceSellerKpis.test.ts
 src/lib/finance/portfolioIntelligenceMetricHelp.test.ts
 src/lib/finance/onePage.test.ts
+src/lib/finance/onePagePeriod.test.ts
+src/lib/finance/onePageMapper.test.ts
 src/lib/financeNavigation.test.ts
 src/lib/financeModulesAccess.test.ts
 src/lib/financeLazyBoundaries.test.ts

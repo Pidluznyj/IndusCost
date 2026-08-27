@@ -186,12 +186,18 @@ export function FinanceOnePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg p-3.5">
                 <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider block">
-                  Mês Corrente
+                  Mês — {data.monthLabel}
                 </span>
                 <span className="text-lg font-extrabold text-[#111827] block mt-1">
                   {data.faturamento.liquidoFormatted}
                 </span>
-                <span className="text-[10px] text-[#059669] font-semibold mt-0.5 block">
+                <span
+                  className={`text-[10px] font-semibold mt-0.5 block ${
+                    (data.faturamento.liquidoGrowthPercent ?? 0) >= 0
+                      ? "text-[#059669]"
+                      : "text-[#DC2626]"
+                  }`}
+                >
                   {data.faturamento.liquidoGrowthPercentFormatted}
                 </span>
               </div>
@@ -203,7 +209,13 @@ export function FinanceOnePage() {
                 <span className="text-lg font-extrabold text-[#111827] block mt-1">
                   {data.faturamento.ytdFormatted}
                 </span>
-                <span className="text-[10px] text-[#059669] font-semibold mt-0.5 block">
+                <span
+                  className={`text-[10px] font-semibold mt-0.5 block ${
+                    (data.faturamento.ytdVariation ?? 0) >= 0
+                      ? "text-[#059669]"
+                      : "text-[#DC2626]"
+                  }`}
+                >
                   {data.faturamento.ytdVariationFormatted}
                 </span>
               </div>
@@ -241,13 +253,13 @@ export function FinanceOnePage() {
 
               <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg p-3.5">
                 <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider block">
-                  Meta YTD (Atingimento)
+                  Meta Anual (Atingimento)
                 </span>
                 <span className="text-lg font-extrabold text-[#111827] block mt-1">
                   {data.faturamento.metaFormatted}
                 </span>
                 <span className="text-[10px] text-[#2563EB] font-semibold mt-0.5 block">
-                  Atingido {data.faturamento.atingimentoFormatted}
+                  Atingido {data.faturamento.atingimentoFormatted} (YTD)
                 </span>
               </div>
             </div>
@@ -313,12 +325,18 @@ export function FinanceOnePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="bg-[#F9FAFB] border border-[#E5E7EB] rounded-lg p-3.5">
                 <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider block">
-                  Entrada Mês
+                  Entrada — {data.monthLabel}
                 </span>
                 <span className="text-lg font-extrabold text-[#111827] block mt-1">
                   {data.pedidoVenda.totalFormatted}
                 </span>
-                <span className="text-[10px] text-[#059669] font-semibold mt-0.5 block">
+                <span
+                  className={`text-[10px] font-semibold mt-0.5 block ${
+                    (data.pedidoVenda.totalGrowthPercent ?? 0) >= 0
+                      ? "text-[#059669]"
+                      : "text-[#DC2626]"
+                  }`}
+                >
                   {data.pedidoVenda.totalGrowthPercentFormatted}
                 </span>
               </div>
@@ -329,6 +347,9 @@ export function FinanceOnePage() {
                 </span>
                 <span className="text-lg font-extrabold text-[#2563EB] block mt-1">
                   {data.pedidoVenda.margemFormatted}
+                </span>
+                <span className="text-[10px] text-[#6B7280] font-semibold mt-0.5 block">
+                  {data.pedidoVenda.margemPeriodLabel}
                 </span>
               </div>
 

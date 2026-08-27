@@ -37,6 +37,8 @@ export type OnePageDashboardPayload = {
     totalGrowthPercentFormatted: string;
     margem: number | null;
     margemFormatted: string;
+    /** Escopo temporal da margem exibida (ex.: "Jan–Ago/2026 (YTD)" ou "Ago/2026"). */
+    margemPeriodLabel: string;
     ytd: number | null;
     ytdFormatted: string;
     ytdPrevious: number | null;
