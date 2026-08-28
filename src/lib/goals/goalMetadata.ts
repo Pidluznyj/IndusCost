@@ -106,6 +106,15 @@ export type GoalMetadataMetric = {
    */
   periodDbColumn: string;
   periodLabel: string;
+  /**
+   * MÉTRICA OFICIAL (P2): quando presente, o motor NÃO monta SQL próprio —
+   * delega a execução ao GoalMetricProvider canônico (que reutiliza o motor
+   * oficial do domínio dono do número). Métricas oficiais não aceitam
+   * filtros personalizados: a regra é a do domínio, fechada.
+   */
+  providerKey?: string;
+  /** Fonte oficial em texto leigo ("Financeiro > Faturamento (NF-e)"). */
+  sourceLabel?: string;
 };
 
 export type GoalMetadataEntity = {
@@ -128,6 +137,53 @@ const TEXT_OPERATORS = ["EQ", "NEQ", "CONTAINS", "IS_EMPTY"] as const;
 
 /** Catálogo curado — mantido pelo backend (nunca gerado do schema cru). */
 export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
+  // ─── MEDIÇÕES OFICIAIS (providers canônicos — P2) ─────────────────────────
+  // Não têm filtros: a regra é a do domínio dono do número, fechada. O motor
+  // delega a execução ao provider (que chama a função oficial do módulo).
+  {
+    key: "FISCAL_BILLING",
+    label: "Faturamento (Notas Fiscais)",
+    domain: "FINANCEIRO",
+    // Informativo — o provider é quem executa (nunca SQL próprio do Goals).
+    dbTable: "NomusNfe",
+    employeeDbColumn: null,
+    metrics: [
+      {
+        key: "NFE_NET_TOTAL",
+        label: "Valor líquido faturado (NF-e autorizadas)",
+        operation: "SUM",
+        dbColumn: null,
+        suggestedUnit: "R$",
+        periodDbColumn: "xmlDhEmi",
+        periodLabel: "data de emissão da NF-e",
+        providerKey: "NFE_FISCAL_BILLING",
+        sourceLabel: "Financeiro > Faturamento (NF-e)",
+      },
+    ],
+    filterFields: [],
+  },
+  {
+    key: "SALES_OFFICIAL",
+    label: "Pedidos de Venda (regra oficial)",
+    domain: "COMERCIAL",
+    dbTable: "SalesOrder",
+    employeeDbColumn: null,
+    metrics: [
+      {
+        key: "SALES_OFFICIAL_NET_TOTAL",
+        label: "Valor líquido de pedidos (população oficial do Comercial)",
+        operation: "SUM",
+        dbColumn: null,
+        suggestedUnit: "R$",
+        periodDbColumn: "issueDate",
+        periodLabel: "data de emissão do pedido",
+        providerKey: "SALES_ORDERS_OFFICIAL",
+        sourceLabel: "Comercial > Pedidos de Venda",
+      },
+    ],
+    filterFields: [],
+  },
+  // ─── MEDIÇÕES PERSONALIZADAS (motor curado) ───────────────────────────────
   {
     key: "SALES_ORDERS",
     label: "Pedidos de Venda",
@@ -590,6 +646,9 @@ export function buildGoalMetadataPublicView() {
       operationLabel: GOAL_METRIC_OPERATION_LABELS[m.operation],
       suggestedUnit: m.suggestedUnit,
       periodLabel: m.periodLabel,
+      // Métrica oficial: a UI mostra "Fonte: …" (nunca tabela/coluna/SQL).
+      isOfficial: m.providerKey != null,
+      sourceLabel: m.sourceLabel ?? null,
     })),
     filterFields: entity.filterFields.map((f) => ({
       key: f.key,

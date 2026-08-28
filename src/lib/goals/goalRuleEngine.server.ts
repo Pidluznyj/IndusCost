@@ -35,6 +35,11 @@ import {
   invoicedOrderPredicateSql,
   resolveGoalConcept,
 } from "./goalConceptCompiler.server.js";
+import {
+  findGoalMetricProvider,
+  type GoalMetricProvider,
+  type GoalMetricProviderKey,
+} from "./goalMetricProviders.server.js";
 
 export type GoalRuleFilter = {
   fieldKey: string;
@@ -80,6 +85,16 @@ export function resolveGoalRule(ruleJson: unknown): GoalRuleResolved {
   const rawFilters = Array.isArray(raw.filters) ? raw.filters : [];
   if (rawFilters.length > 10) {
     throw new GoalContractError("Máximo de 10 regras de exceção.", "ruleJson.filters");
+  }
+  // Métrica OFICIAL (provider): a regra é a do domínio dono do número —
+  // fechada. Filtro personalizado aqui criaria uma variação "quase oficial"
+  // que ninguém consegue auditar; quem precisa de recorte usa a área de
+  // medição personalizada correspondente.
+  if (metric.providerKey && rawFilters.length > 0) {
+    throw new GoalContractError(
+      "Esta é uma medição oficial — ela segue exatamente a regra do módulo de origem e não aceita regras de exceção. Para filtrar, use a medição personalizada da mesma área.",
+      "ruleJson.filters"
+    );
   }
   const filters: GoalRuleResolved["filters"] = rawFilters.map((f, index) => {
     const row = (f ?? {}) as Record<string, unknown>;
@@ -218,7 +233,38 @@ export type GoalRuleExecutionOptions = {
    * employeeDbColumn da entidade. Erro se a entidade não suporta.
    */
   employeeColumnValue?: number | string | null;
+  /**
+   * SÓ PARA TESTE: registry de providers com deps fake. Produção sempre usa
+   * o registry oficial (default).
+   */
+  providerRegistry?: ReadonlyMap<GoalMetricProviderKey, GoalMetricProvider>;
 };
+
+/**
+ * Provider da métrica OFICIAL, se houver. Métrica com providerKey sem
+ * provider registrado é contrato quebrado — erro claro, nunca SQL próprio.
+ */
+function resolveMetricProvider(
+  resolved: GoalRuleResolved,
+  options: GoalRuleExecutionOptions
+): GoalMetricProvider | null {
+  const key = resolved.metric.providerKey;
+  if (!key) return null;
+  const provider = findGoalMetricProvider(key, options.providerRegistry);
+  if (!provider) {
+    throw new GoalContractError(
+      "Medição oficial indisponível no momento — o provedor desta métrica não está registrado.",
+      "ruleJson.metricKey"
+    );
+  }
+  if (options.employeeColumnValue != null && !provider.capabilities.employeeSlice) {
+    throw new GoalContractError(
+      "Esta medição oficial ainda não suporta desdobramento por pessoa.",
+      "ruleJson.metricKey"
+    );
+  }
+  return provider;
+}
 
 /**
  * Origem + filtro da regra, sem o SELECT — a parte que TODA leitura da meta
@@ -365,6 +411,12 @@ export async function executeGoalRuleMonthly(
   options: GoalRuleExecutionOptions = {}
 ): Promise<GoalRuleMonthlyBucket[]> {
   const resolved = resolveGoalRule(ruleJson);
+  // Métrica oficial: preview, refresh, job e SÉRIE usam a MESMA autoridade —
+  // o provider canônico (nunca série por uma fórmula e valor por outra).
+  const provider = resolveMetricProvider(resolved, options);
+  if (provider) {
+    return provider.executeMonthly(prisma, window);
+  }
   const query = buildGoalRuleMonthlyQuery(resolved, window, options);
   const rows = await prisma.$queryRaw<
     Array<{
@@ -430,6 +482,11 @@ export async function executeGoalRule(
   options: GoalRuleExecutionOptions = {}
 ): Promise<string> {
   const resolved = resolveGoalRule(ruleJson);
+  // Métrica oficial delega ao provider canônico (motor oficial do domínio).
+  const provider = resolveMetricProvider(resolved, options);
+  if (provider) {
+    return provider.execute(prisma, window);
+  }
   const query = buildGoalRuleQuery(resolved, window, options);
   const rows = await prisma.$queryRaw<Array<{ value: string | null }>>(query);
   const value = rows[0]?.value;

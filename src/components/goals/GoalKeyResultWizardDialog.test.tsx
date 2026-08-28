@@ -102,12 +102,29 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
     assert.ok(html.includes("todo o período do objetivo"));
   });
 
-  it("oferece medições prontas de 1 clique (galeria de receitas)", () => {
+  it("oferece medições prontas de 1 clique — OFICIAIS primeiro (P2)", () => {
     const html = renderToStaticMarkup(
       <GoalKeyResultWizardDialog
         goal={goal}
         owners={[]}
         metadataEntities={[
+          {
+            key: "SALES_OFFICIAL",
+            label: "Pedidos de Venda (regra oficial)",
+            domain: "COMERCIAL",
+            supportsQuotaSplit: false,
+            metrics: [
+              {
+                key: "SALES_OFFICIAL_NET_TOTAL",
+                label: "Valor líquido de pedidos (população oficial do Comercial)",
+                operation: "SUM",
+                operationLabel: "Soma",
+                suggestedUnit: "R$",
+                periodLabel: "data de emissão do pedido",
+              },
+            ],
+            filterFields: [],
+          },
           {
             key: "SALES_ORDERS",
             label: "Pedidos de Venda",
@@ -131,7 +148,11 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       />
     );
     assert.ok(html.includes('data-testid="measure-recipes"'));
-    assert.ok(html.includes('data-testid="measure-recipe-REVENUE_SALES_ORDERS"'));
+    assert.ok(html.includes('data-testid="measure-recipe-OFFICIAL_SALES_ORDERS"'));
+    // Seções: oficiais antes das personalizadas.
+    const officialIdx = html.indexOf("Medições oficiais");
+    const customIdx = html.indexOf("Medições personalizadas");
+    assert.ok(officialIdx > -1 && customIdx > officialIdx);
   });
 
   it("botão final chama a ação de adicionar (não de criar objetivo)", () => {

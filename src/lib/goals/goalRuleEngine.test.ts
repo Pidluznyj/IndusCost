@@ -57,9 +57,14 @@ describe("goalMetadata — governança do dicionário", () => {
     }
   });
 
-  it("RN-003: SUM/AVG sempre têm coluna numérica; COUNT nunca tem", () => {
+  it("RN-003: SUM/AVG sempre têm coluna numérica; COUNT nunca tem (providers ficam fora do SQL)", () => {
     for (const entity of GOAL_METADATA_ENTITIES) {
       for (const metric of entity.metrics) {
+        // Métrica OFICIAL delega ao provider — não monta SQL, não tem coluna.
+        if (metric.providerKey) {
+          assert.equal(metric.dbColumn, null, `${metric.key} oficial com coluna própria`);
+          continue;
+        }
         if (metric.operation === "COUNT") assert.equal(metric.dbColumn, null);
         else assert.ok(metric.dbColumn, `${metric.key} sem coluna`);
       }

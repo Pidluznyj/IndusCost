@@ -257,7 +257,9 @@ export function buildGoalRuleSummary(ruleJson: unknown): string | null {
     filterCount > 0
       ? ` com ${filterCount} regra${filterCount > 1 ? "s" : ""} de exceção`
       : "";
-  return `${GOAL_METRIC_OPERATION_LABELS[metric.operation]} de "${metric.label}" em ${entity.label}${filtersLabel}`;
+  // Métrica oficial diz a FONTE em texto leigo — nunca tabela/coluna/SQL.
+  const sourceLabel = metric.sourceLabel ? ` — Fonte: ${metric.sourceLabel}` : "";
+  return `${GOAL_METRIC_OPERATION_LABELS[metric.operation]} de "${metric.label}" em ${entity.label}${filtersLabel}${sourceLabel}`;
 }
 
 // ─── Row → DTO ──────────────────────────────────────────────────────────────
