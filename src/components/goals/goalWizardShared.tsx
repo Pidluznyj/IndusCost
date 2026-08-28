@@ -235,7 +235,7 @@ export function GoalPeriodPicker({
 
   return (
     <div className="space-y-2" data-testid="period-picker">
-      <span className={wizardLabelClass}>Qual período este indicador mede?</span>
+      <span className={wizardLabelClass}>Qual período este resultado-chave mede?</span>
       <div className="flex flex-wrap gap-1.5">
         <button
           type="button"
@@ -600,7 +600,7 @@ export function GoalMeasureBuilder({
             {metric ? (
               <span className="block text-[11px] text-muted-foreground">
                 Conta pela {metric.periodLabel}, dentro do período que você escolher
-                para este indicador no próximo passo.
+                para este resultado-chave no próximo passo.
               </span>
             ) : null}
           </p>
@@ -754,11 +754,11 @@ export function GoalMeasureBuilder({
 
           <label className="block space-y-1 pt-1">
             <span className={wizardLabelClass}>
-              Nome do indicador (opcional — sugerimos o da medição)
+              Nome do resultado-chave (opcional — sugerimos o da medição)
             </span>
             <input
               className={wizardFieldClass}
-              placeholder={metric?.label ?? "Ex.: Faturamento físico"}
+              placeholder={metric?.label ?? "Ex.: Clientes visitados no mês"}
               value={value.krTitle}
               onChange={(e) => patch({ krTitle: e.target.value })}
             />
@@ -771,7 +771,7 @@ export function GoalMeasureBuilder({
             tempos em tempos, e o painel acompanha do mesmo jeito.
           </p>
           <label className="block space-y-1">
-            <span className={wizardLabelClass}>Nome do indicador</span>
+            <span className={wizardLabelClass}>Nome do resultado-chave</span>
             <input
               className={wizardFieldClass}
               placeholder="Ex.: Satisfação dos clientes (NPS)"

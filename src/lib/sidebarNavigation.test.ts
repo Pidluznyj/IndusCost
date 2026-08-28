@@ -197,10 +197,12 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Administração contém Configurações e Guia", () => {
+  it("Administração contém Configurações e Guia (Objetivos e Metas saiu para o topo)", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "administracao");
-    assert.deepEqual(group?.items.map((i) => i.itemId), ["goals", "settings", "guide"]);
+    assert.deepEqual(group?.items.map((i) => i.itemId), ["settings", "guide"]);
+    // OKR agora é item direto ao lado do Dashboard — gestão, não configuração.
+    assert.ok(nav.directItems.map((i) => i.itemId).includes("goals"));
   });
 
   it("Gestão de pessoas contém Dashboard, Pessoas/RH e Organograma", () => {

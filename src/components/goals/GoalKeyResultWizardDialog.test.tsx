@@ -42,7 +42,7 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       html.includes(goal.title),
       "o nome do objetivo aparece no cabeçalho — sem ambiguidade de onde o indicador vai parar"
     );
-    assert.ok(html.includes("Novo indicador em"));
+    assert.ok(html.includes("Novo resultado-chave em"));
     // 3 passos (sem o passo de Direção, que já existe no objetivo escolhido).
     assert.ok(html.includes("passo 1 de 3") || html.includes("passo 1 de 3".toLowerCase()));
   });
@@ -91,7 +91,7 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       />
     );
     assert.ok(html.includes('data-testid="period-picker"'), "seletor de período presente");
-    assert.ok(html.includes("Qual período este indicador mede?"));
+    assert.ok(html.includes("Qual período este resultado-chave mede?"));
     // Objetivo anual → atalhos de trimestre/semestre dentro dele (1 clique).
     assert.ok(html.includes('data-testid="period-chip-Q3-2026"'), "trimestres do objetivo");
     assert.ok(html.includes('data-testid="period-chip-S1-2026"'), "semestres do objetivo");

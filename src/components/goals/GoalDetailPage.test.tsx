@@ -38,7 +38,7 @@ describe("GoalDetailPage — drill-down e vínculo correto das tarefas", () => {
   it("permite adicionar um novo indicador sem sair da tela de detalhe", () => {
     const src = source();
     assert.ok(src.includes("GoalKeyResultWizardDialog"));
-    assert.ok(src.includes("Novo indicador"));
+    assert.ok(src.includes("Novo resultado-chave"));
   });
 
   it("gráfico traz as três curvas: ideal, acumulado mês a mês e período comparado", () => {

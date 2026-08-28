@@ -155,7 +155,7 @@ export function GoalKeyResultWizardDialog({
         title:
           measure.mode === "MANUAL"
             ? measure.krTitle
-            : measure.krTitle.trim() || metric?.label || "Indicador",
+            : measure.krTitle.trim() || metric?.label || "Resultado-chave",
         domain: entity?.domain ?? "OUTROS",
         trackingType,
         baseline: baseline.replace(",", "."),
@@ -194,7 +194,7 @@ export function GoalKeyResultWizardDialog({
       setCreatedKeyResult(finalKr);
       saved = finalKr;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar o indicador.");
+      setError(err instanceof Error ? err.message : "Falha ao salvar o resultado-chave.");
     } finally {
       setBusy(false);
     }
@@ -221,8 +221,10 @@ export function GoalKeyResultWizardDialog({
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-lg">
         <div className="mb-4">
           <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>
-              Novo indicador em <strong className="text-foreground">{goal.title}</strong> — passo{" "}
+            <span
+              title="Resultado-chave: um resultado mensurável que mostra se o objetivo está sendo alcançado."
+            >
+              Novo resultado-chave em <strong className="text-foreground">{goal.title}</strong> — passo{" "}
               {step + 1} de 3
             </span>
             <button type="button" className="hover:text-foreground" onClick={onCancel}>
@@ -341,7 +343,7 @@ export function GoalKeyResultWizardDialog({
         {step === 2 ? (
           <div className="space-y-3" data-testid="kr-wizard-step-team">
             <label className="block space-y-1">
-              <span className={labelClass}>Responsável por este indicador *</span>
+              <span className={labelClass}>Responsável por este resultado-chave *</span>
               <select
                 className={fieldClass}
                 value={ownerAppUserId}
@@ -357,6 +359,16 @@ export function GoalKeyResultWizardDialog({
               </select>
             </label>
 
+            {/* Fatias por pessoa são configuração AVANÇADA — quem só quer o
+                responsável principal não precisa nem ver isto. */}
+            <details
+              className="rounded-lg border border-border bg-muted/20 p-3"
+              data-testid="kr-wizard-advanced"
+            >
+              <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+                Opções avançadas — dividir o alvo em fatias por pessoa (opcional)
+              </summary>
+              <div className="mt-2 space-y-3">
             <p className="text-xs text-muted-foreground">
               Opcional: divida o alvo em fatias nominais. Cada pessoa enxerga a própria fatia
               no painel.
@@ -435,6 +447,8 @@ export function GoalKeyResultWizardDialog({
                     : `Distribuído ${formatNumberBr(quotasSum)} de ${formatNumberBr(targetNumber)} — o restante fica com o time todo.`}
               </p>
             ) : null}
+              </div>
+            </details>
           </div>
         ) : null}
 
@@ -477,7 +491,7 @@ export function GoalKeyResultWizardDialog({
                 ? "Salvando…"
                 : createdKeyResult
                   ? "Tentar novamente (sem duplicar)"
-                  : "Adicionar Indicador"}
+                  : "Adicionar Resultado-chave"}
             </button>
           )}
         </div>
