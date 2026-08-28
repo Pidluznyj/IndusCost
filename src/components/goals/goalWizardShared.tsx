@@ -235,7 +235,7 @@ export function GoalPeriodPicker({
 
   return (
     <div className="space-y-2" data-testid="period-picker">
-      <span className={wizardLabelClass}>Qual período este indicador mede?</span>
+      <span className={wizardLabelClass}>Qual período este resultado-chave mede?</span>
       <div className="flex flex-wrap gap-1.5">
         <button
           type="button"
@@ -531,37 +531,52 @@ export function GoalMeasureBuilder({
 
       {value.mode === "AUTO" ? (
         <>
-          {/* 1. Galeria de receitas — comece por aqui */}
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
-              Comece por uma medição pronta (você pode ajustar depois):
-            </p>
-            <div
-              className="grid grid-cols-1 gap-1.5 sm:grid-cols-2"
-              data-testid="measure-recipes"
-            >
-              {recipes.map((recipe) => (
-                <button
-                  key={recipe.key}
-                  type="button"
-                  className={cn(
-                    "rounded-lg border px-2.5 py-2 text-left",
-                    activeRecipeKey === recipe.key
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/40 hover:bg-muted/40"
-                  )}
-                  onClick={() => applyRecipe(recipe)}
-                  data-testid={`measure-recipe-${recipe.key}`}
-                >
-                  <span className="text-xs font-semibold">
-                    {recipe.emoji} {recipe.title}
-                  </span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
-                    {recipe.description}
-                  </span>
-                </button>
+          {/* 1. Galeria de receitas — OFICIAIS primeiro (mesma regra dos
+              módulos donos do número), personalizadas depois. */}
+          <div className="space-y-2" data-testid="measure-recipes">
+            {[
+              {
+                id: "official",
+                label: "Medições oficiais — mesma regra dos módulos",
+                items: recipes.filter((r) => r.official),
+              },
+              {
+                id: "custom",
+                label: "Medições personalizadas",
+                items: recipes.filter((r) => !r.official),
+              },
+            ]
+              .filter((section) => section.items.length > 0)
+              .map((section) => (
+                <div key={section.id}>
+                  <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
+                    {section.label}
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {section.items.map((recipe) => (
+                      <button
+                        key={recipe.key}
+                        type="button"
+                        className={cn(
+                          "rounded-lg border px-2.5 py-2 text-left",
+                          activeRecipeKey === recipe.key
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/40 hover:bg-muted/40"
+                        )}
+                        onClick={() => applyRecipe(recipe)}
+                        data-testid={`measure-recipe-${recipe.key}`}
+                      >
+                        <span className="text-xs font-semibold">
+                          {recipe.emoji} {recipe.title}
+                        </span>
+                        <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+                          {recipe.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
-            </div>
           </div>
 
           {/* 2. A frase interativa — ordem natural: área primeiro */}
@@ -600,7 +615,7 @@ export function GoalMeasureBuilder({
             {metric ? (
               <span className="block text-[11px] text-muted-foreground">
                 Conta pela {metric.periodLabel}, dentro do período que você escolher
-                para este indicador no próximo passo.
+                para este resultado-chave no próximo passo.
               </span>
             ) : null}
           </p>
@@ -617,18 +632,20 @@ export function GoalMeasureBuilder({
               >
                 {index === 0 ? (
                   "Mas apenas considerar quando "
+                ) : filter.connector === "OR" ? (
+                  // Regra LEGADA com "ou": o motor continua executando-a como
+                  // sempre, mas a UI não deixa criar novas — "A ou B e C" sem
+                  // parênteses visíveis engana. O conector legado é preservado
+                  // como está (nada é regravado em silêncio) e sinalizado.
+                  <span
+                    className="rounded border border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 text-[11px] font-medium text-[#92400E]"
+                    title="Condição alternativa (ou) de uma configuração antiga — mantida como foi criada. Novas regras combinam condições apenas com 'e'."
+                    data-testid={`measure-filter-legacy-or-${index}`}
+                  >
+                    ou então quando (configuração legada)
+                  </span>
                 ) : (
-                  <PhraseSelect
-                    value={filter.connector}
-                    onChange={(v) =>
-                      updateFilter(filter.id, { connector: v as "AND" | "OR" })
-                    }
-                    options={[
-                      { value: "AND", label: "e também quando" },
-                      { value: "OR", label: "ou então quando" },
-                    ]}
-                    placeholder="…"
-                  />
+                  "e também quando "
                 )}{" "}
                 <PhraseSelect
                   value={filter.fieldKey}
@@ -752,11 +769,11 @@ export function GoalMeasureBuilder({
 
           <label className="block space-y-1 pt-1">
             <span className={wizardLabelClass}>
-              Nome do indicador (opcional — sugerimos o da medição)
+              Nome do resultado-chave (opcional — sugerimos o da medição)
             </span>
             <input
               className={wizardFieldClass}
-              placeholder={metric?.label ?? "Ex.: Faturamento físico"}
+              placeholder={metric?.label ?? "Ex.: Clientes visitados no mês"}
               value={value.krTitle}
               onChange={(e) => patch({ krTitle: e.target.value })}
             />
@@ -769,7 +786,7 @@ export function GoalMeasureBuilder({
             tempos em tempos, e o painel acompanha do mesmo jeito.
           </p>
           <label className="block space-y-1">
-            <span className={wizardLabelClass}>Nome do indicador</span>
+            <span className={wizardLabelClass}>Nome do resultado-chave</span>
             <input
               className={wizardFieldClass}
               placeholder="Ex.: Satisfação dos clientes (NPS)"

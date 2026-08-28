@@ -1,9 +1,9 @@
 /**
  * Metas (OKR) — Cockpit (MVP 1, docs/goal-engine-plan.md).
  *
- * Lista objetivos com roll-up ponderado (somente leitura — RN-001), KRs com
- * progresso individual, visão "Minhas Metas" (RN-005) e lançamento MANUAL de
- * valor realizado (RN-008 chega no MVP 3 com o motor). Todo cálculo vem do
+ * Lista objetivos com roll-up ponderado (somente leitura — RN-001),
+ * resultados-chave com progresso individual, visão de responsabilidades
+ * (RN-005) e lançamento MANUAL de valor realizado. Todo cálculo vem do
  * backend — esta tela só desenha DTOs.
  */
 
@@ -23,7 +23,6 @@ import { cn } from "@/src/lib/utils";
 import { renderInPortal } from "@/src/lib/renderInPortal.js";
 import { fetchJsonOk } from "@/src/lib/http.js";
 import { useAuth } from "@/src/contexts/AuthContext.js";
-import { GoalWizardDialog } from "./GoalWizardDialog.js";
 import { GoalKeyResultWizardDialog } from "./GoalKeyResultWizardDialog.js";
 import {
   EMPTY_TARGET_DRAFT,
@@ -79,9 +78,9 @@ function ProgressBar({ percent, invalid }: { percent: number; invalid?: boolean 
       {invalid ? (
         <span
           className="rounded bg-[#FEF2F2] px-1 text-[10px] font-semibold text-[#991B1B]"
-          title="Alvo igual à linha de base — meta sem intervalo de progresso"
+          title="Alvo igual ao ponto de partida ou direção incompatível — este resultado não conta no progresso até ser corrigido"
         >
-          meta inválida
+          configuração precisa de atenção
         </span>
       ) : null}
     </div>
@@ -176,14 +175,20 @@ export function GoalsCockpitPage() {
   const [view, setView] = useState<CockpitView>("ALL");
   const [year, setYear] = useState<number>(() => new Date().getFullYear());
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [expandedGoalIds, setExpandedGoalIds] = useState<ReadonlySet<string>>(new Set());
 
   // Dialog state (um por vez).
   const [goalDialog, setGoalDialog] = useState<{ mode: "create" } | { mode: "edit"; goal: GoalDto } | null>(null);
-  // Criação de indicador usa o assistente conversacional (mesma experiência
-  // do "+ Novo Objetivo", só que dentro de um Objetivo já existente — nunca
-  // cria um Objetivo novo). Edição continua no formulário técnico simples.
+  /**
+   * Objetivo recém-criado pelo fluxo simples: "+ Novo Objetivo" cria SÓ o
+   * Objetivo (o que alcançar, período, responsável) e depois convida a
+   * definir o primeiro resultado-chave — nada de métrica/alvo/fatias na
+   * frente de quem só quer registrar a direção.
+   */
+  const [justCreatedGoal, setJustCreatedGoal] = useState<GoalDto | null>(null);
+  // Criação de resultado-chave usa o assistente conversacional dentro de um
+  // Objetivo já existente (nunca cria outro Objetivo). Edição continua no
+  // formulário simples.
   const [krWizardGoal, setKrWizardGoal] = useState<GoalDto | null>(null);
   const [krDialog, setKrDialog] = useState<
     { mode: "edit"; goal: GoalDto; keyResult: GoalKeyResultDto } | null
@@ -191,6 +196,11 @@ export function GoalsCockpitPage() {
   const [valueDialog, setValueDialog] = useState<{ keyResult: GoalKeyResultDto } | null>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  /** Aviso não-bloqueante (ex.: resultado-chave com a primeira medição pendente). */
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const FIRST_MEASUREMENT_NOTICE =
+    "Resultado-chave criado, mas a primeira medição automática falhou — o valor mostrado ainda é o ponto de partida, não uma medição confirmada. O sistema tentará medir de novo no próximo recálculo.";
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -277,7 +287,7 @@ export function GoalsCockpitPage() {
 
   async function handleDeleteKeyResult(kr: GoalKeyResultDto) {
     const confirmed = window.confirm(
-      `Excluir o KR "${kr.title}"? Com histórico ele será ARQUIVADO (auditável).`
+      `Excluir o resultado-chave "${kr.title}"? Com histórico ele será ARQUIVADO (auditável).`
     );
     if (!confirmed) return;
     try {
@@ -307,17 +317,23 @@ export function GoalsCockpitPage() {
         <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-primary" aria-hidden />
           <div>
-            <h2 className="text-lg font-semibold">Metas (OKR)</h2>
+            <h2 className="text-lg font-semibold">Objetivos e Metas</h2>
             <p className="text-[12px] text-muted-foreground">
-              Objetivos e Key Results com progresso calculado pelo sistema — o
-              percentual é somente leitura, derivado dos KRs.
+              O que queremos alcançar, como saberemos que chegamos lá e quem
+              responde — o progresso é calculado pelo sistema (somente leitura).
             </p>
           </div>
         </div>
+        {/* Fluxo simples: criar o OBJETIVO primeiro (o quê, até quando, quem);
+            os resultados-chave vêm no passo seguinte, sem obrigar métrica,
+            alvo e fatias de cara. */}
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
-          onClick={() => setWizardOpen(true)}
+          onClick={() => {
+            setDialogError(null);
+            setGoalDialog({ mode: "create" });
+          }}
           data-testid="goals-new-goal"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden /> Novo Objetivo
@@ -326,11 +342,15 @@ export function GoalsCockpitPage() {
 
       {/* Filtros rápidos (Tela 1): três botões grandes + ano */}
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs">
+        {/* Rótulos fiéis à LÓGICA real de cada visão: "Minhas
+            responsabilidades" inclui objetivos que possuo, resultados-chave
+            sob minha responsabilidade e fatias atribuídas a mim; "Objetivos
+            que lidero" são os que EU respondo como dono. */}
         {(
           [
-            ["MINE", "Minhas Metas"],
-            ["TEAM", "Metas da Minha Equipe"],
-            ["ALL", "Metas da Empresa"],
+            ["MINE", "Minhas responsabilidades"],
+            ["TEAM", "Objetivos que lidero"],
+            ["ALL", "Todos os objetivos"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -377,6 +397,57 @@ export function GoalsCockpitPage() {
         </div>
       ) : null}
 
+      {notice ? (
+        <div
+          className="mb-3 flex items-start justify-between gap-2 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-xs text-[#92400E]"
+          data-testid="goals-notice"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            className="shrink-0 font-semibold underline"
+            onClick={() => setNotice(null)}
+          >
+            Entendi
+          </button>
+        </div>
+      ) : null}
+
+      {justCreatedGoal ? (
+        <div
+          className="mb-3 rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3"
+          data-testid="goal-created-confirmation"
+        >
+          <p className="text-sm font-semibold text-[#065F46]">Objetivo criado.</p>
+          <p className="mt-0.5 text-xs text-[#047857]">
+            Agora defina como saberemos se ele foi alcançado — adicione um
+            resultado mensurável.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+              onClick={() => {
+                setDialogError(null);
+                setKrWizardGoal(justCreatedGoal);
+                setJustCreatedGoal(null);
+              }}
+              data-testid="goal-created-add-kr"
+            >
+              + Adicionar primeiro resultado-chave
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted"
+              onClick={() => setJustCreatedGoal(null)}
+              data-testid="goal-created-later"
+            >
+              Fazer isso depois
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="rounded-lg border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
           Carregando metas…
@@ -385,7 +456,8 @@ export function GoalsCockpitPage() {
         <div className="rounded-lg border border-dashed border-border bg-card px-3 py-10 text-center">
           <p className="text-sm font-medium">Nenhum objetivo por aqui ainda.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Crie o primeiro Objetivo e desdobre em Key Results mensuráveis.
+            Crie o primeiro objetivo e depois defina os resultados-chave — os
+            números que mostram se ele está sendo alcançado.
           </p>
         </div>
       ) : (
@@ -430,10 +502,23 @@ export function GoalsCockpitPage() {
                         {goal.ownerName ? ` · Resp.: ${goal.ownerName}` : ""}
                       </p>
                       <div className="mt-2">
-                        <ProgressBar
-                          percent={goal.progressPercent}
-                          invalid={goal.invalidKeyResults > 0}
-                        />
+                        {/* Objetivo sem resultado-chave não tem progresso a
+                            mostrar — 0% aqui seria mentira de medição. */}
+                        {goal.activeKeyResults === 0 ? (
+                          <p
+                            className="text-[11px] text-muted-foreground"
+                            data-testid={`goal-no-krs-${goal.id}`}
+                          >
+                            Este objetivo ainda não possui resultados-chave.
+                            Adicione pelo menos um resultado mensurável para
+                            calcular o progresso.
+                          </p>
+                        ) : (
+                          <ProgressBar
+                            percent={goal.progressPercent}
+                            invalid={goal.invalidKeyResults > 0}
+                          />
+                        )}
                       </div>
                       {/* Afordância explícita da prévia — antes só o título
                           (sem nenhum sinal visual) abria isto; ninguém
@@ -449,34 +534,34 @@ export function GoalsCockpitPage() {
                           aria-hidden
                         />
                         {expanded
-                          ? "Ocultar indicadores"
-                          : `Ver ${goal.activeKeyResults} indicador(es)`}
+                          ? "Ocultar resultados-chave"
+                          : `Ver ${goal.activeKeyResults} resultado(s)-chave`}
                       </button>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {/* Único caminho de drill-down: Objetivo → indicadores →
-                        tarefas. Botão sólido e em primeiro lugar para não se
-                        confundir com as ações secundárias ao lado. */}
+                    {/* Único caminho de drill-down: Objetivo →
+                        resultados-chave → iniciativas. Botão sólido e em
+                        primeiro lugar — ações secundárias ficam ao lado. */}
                     <Link
                       to={`/goals/${goal.id}`}
                       className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
                       data-testid={`goal-detail-link-${goal.id}`}
-                      title="Abrir a meta: ver indicadores, evolução e tarefas"
+                      title="Abrir o objetivo: ver resultados-chave, evolução e iniciativas"
                     >
-                      Abrir meta <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                      Abrir objetivo <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                     </Link>
                     <button
                       type="button"
                       className="rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
-                      title="Adicionar um novo indicador (número) dentro deste objetivo"
+                      title="Adicionar um resultado mensurável que mostra se o objetivo está sendo alcançado"
                       onClick={() => {
                         setDialogError(null);
                         setKrWizardGoal(goal);
                       }}
                       data-testid={`goal-add-kr-${goal.id}`}
                     >
-                      + Indicador
+                      + Resultado-chave
                     </button>
                     <button
                       type="button"
@@ -503,18 +588,19 @@ export function GoalsCockpitPage() {
                 {expanded ? (
                   <div className="border-t border-border/60 px-3 pb-3">
                     <p className="py-2 pl-[42px] text-[10px] text-muted-foreground">
-                      Indicadores deste objetivo — clique em um para abrir a evolução e
-                      as tarefas dele.
+                      Resultados-chave deste objetivo — cada um é um resultado
+                      mensurável que mostra se o objetivo está sendo alcançado.
                     </p>
                     {goal.keyResults.length === 0 ? (
                       <p className="py-3 pl-[42px] text-xs text-muted-foreground">
-                        Nenhum indicador ainda — clique em "+ Indicador" acima para
-                        adicionar o primeiro número mensurável deste objetivo.
+                        Este objetivo ainda não possui resultados-chave. Clique em
+                        "+ Resultado-chave" acima para adicionar o primeiro
+                        resultado mensurável.
                       </p>
                     ) : (
                       // Recuo + linha-guia alinhados sob o título do objetivo:
-                      // mostra visualmente que estes indicadores estão DENTRO
-                      // dele (Objetivo → Indicadores), não numa lista solta.
+                      // mostra visualmente que estes resultados estão DENTRO
+                      // dele (Objetivo → Resultados-chave), não numa lista solta.
                       <ul className="ml-[42px] divide-y divide-border/60 border-l-2 border-border/50 pl-3">
                         {goal.keyResults.map((kr) => (
                           <li
@@ -528,7 +614,7 @@ export function GoalsCockpitPage() {
                             <Link
                               to={`/goals/${goal.id}?kr=${kr.id}`}
                               className="min-w-0 flex-1"
-                              title="Abrir este indicador (evolução e tarefas)"
+                              title="Abrir este resultado-chave (evolução e iniciativas)"
                               data-testid={`kr-drilldown-${kr.id}`}
                             >
                               <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -544,6 +630,43 @@ export function GoalsCockpitPage() {
                                 {kr.status === "ARCHIVED" ? (
                                   <span className="rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-1.5 text-[10px] text-[#6B7280]">
                                     Arquivado
+                                  </span>
+                                ) : null}
+                                {/* Registro legado com direção falsa: nunca é
+                                    "corrigido" em silêncio — aparece marcado e
+                                    fica fora do progresso do objetivo. */}
+                                {kr.configurationIssue === "DIRECTION_MISMATCH" ? (
+                                  <span
+                                    className="rounded-full border border-[#FECACA] bg-[#FEF2F2] px-1.5 text-[10px] font-semibold text-[#991B1B]"
+                                    title="A direção desta meta não combina com ponto de partida e alvo (ex.: meta de aumento com alvo abaixo do ponto de partida). Edite o resultado-chave para corrigir — até lá ele não conta no progresso do objetivo."
+                                    data-testid={`kr-direction-mismatch-${kr.id}`}
+                                  >
+                                    direção incompatível
+                                  </span>
+                                ) : null}
+                                {/* Estado da MEDIÇÃO: 0 nunca se confunde com
+                                    "não medido" ou erro. Em ERROR o valor na
+                                    tela é a última leitura VÁLIDA. */}
+                                {kr.measurementStatus === "PENDING" ? (
+                                  <span
+                                    className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-1.5 text-[10px] font-semibold text-[#92400E]"
+                                    title="O sistema ainda não conseguiu medir este resultado-chave — o número mostrado é o ponto de partida, não uma medição."
+                                    data-testid={`kr-measurement-pending-${kr.id}`}
+                                  >
+                                    aguardando 1ª medição
+                                  </span>
+                                ) : null}
+                                {kr.measurementStatus === "ERROR" ? (
+                                  <span
+                                    className="rounded-full border border-[#FECACA] bg-[#FEF2F2] px-1.5 text-[10px] font-semibold text-[#991B1B]"
+                                    title={`A última atualização automática falhou${
+                                      kr.lastMeasurementAt
+                                        ? ` — o valor mostrado é a última leitura válida (${new Date(kr.lastMeasurementAt).toLocaleString("pt-BR")})`
+                                        : ""
+                                    }. ${kr.lastMeasurementError ?? ""}`}
+                                    data-testid={`kr-measurement-error-${kr.id}`}
+                                  >
+                                    falha na última atualização
                                   </span>
                                 ) : null}
                                 {/* Recorte próprio (ex.: trimestre dentro de um
@@ -572,8 +695,8 @@ export function GoalsCockpitPage() {
                               </div>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {formatValue(kr.achievedValue, kr.unit)} de{" "}
-                                {formatValue(kr.target, kr.unit)} (base{" "}
-                                {formatValue(kr.baseline, kr.unit)}) · peso {kr.weight}
+                                {formatValue(kr.target, kr.unit)} (partiu de{" "}
+                                {formatValue(kr.baseline, kr.unit)})
                                 {kr.ownerName ? ` · Resp.: ${kr.ownerName}` : ""}
                               </p>
                               <div className="mt-1">
@@ -584,22 +707,36 @@ export function GoalsCockpitPage() {
                               </div>
                             </Link>
                             <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                                disabled={kr.status === "ARCHIVED"}
-                                onClick={() => {
-                                  setDialogError(null);
-                                  setValueDialog({ keyResult: kr });
-                                }}
-                                data-testid={`kr-set-value-${kr.id}`}
-                              >
-                                Lançar valor
-                              </button>
+                              {/* Lançar valor só existe para resultado MANUAL —
+                                  o automático é calculado pelo motor e o
+                                  backend recusaria o lançamento de qualquer
+                                  forma (a UI não oferece o que vai falhar). */}
+                              {kr.manualTracking ? (
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                                  disabled={kr.status === "ARCHIVED"}
+                                  onClick={() => {
+                                    setDialogError(null);
+                                    setValueDialog({ keyResult: kr });
+                                  }}
+                                  data-testid={`kr-set-value-${kr.id}`}
+                                >
+                                  Lançar valor
+                                </button>
+                              ) : (
+                                <span
+                                  className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-1 text-[11px] font-semibold text-[#1E40AF]"
+                                  title="O sistema mede este resultado-chave sozinho — abra-o para ver a evolução e atualizar o painel."
+                                  data-testid={`kr-automatic-${kr.id}`}
+                                >
+                                  Automático
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 className="rounded-md border border-border p-1.5 hover:bg-muted"
-                                title="Editar indicador"
+                                title="Editar resultado-chave"
                                 onClick={() => {
                                   setDialogError(null);
                                   setKrDialog({ mode: "edit", goal, keyResult: kr });
@@ -610,7 +747,7 @@ export function GoalsCockpitPage() {
                               <button
                                 type="button"
                                 className="rounded-md border border-[#FECACA] p-1.5 text-[#991B1B] hover:bg-[#FEF2F2]"
-                                title="Excluir/arquivar indicador"
+                                title="Excluir/arquivar resultado-chave"
                                 onClick={() => void handleDeleteKeyResult(kr)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -628,18 +765,6 @@ export function GoalsCockpitPage() {
         </div>
       )}
 
-      {wizardOpen ? (
-        <GoalWizardDialog
-          owners={owners}
-          metadataEntities={metadataEntities}
-          onCancel={() => setWizardOpen(false)}
-          onCreated={() => {
-            setWizardOpen(false);
-            void load();
-          }}
-        />
-      ) : null}
-
       {goalDialog ? (
         <GoalFormDialog
           mode={goalDialog.mode}
@@ -649,19 +774,24 @@ export function GoalsCockpitPage() {
           error={dialogError}
           onCancel={() => setGoalDialog(null)}
           onSubmit={(payload) =>
-            void submitDialog(() =>
-              goalDialog.mode === "create"
-                ? fetchJsonOk("/api/goals", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                  })
-                : fetchJsonOk(`/api/goals/${goalDialog.goal.id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                  })
-            )
+            void submitDialog(async () => {
+              if (goalDialog.mode === "create") {
+                // Cria SOMENTE o Objetivo (endpoint canônico simples) e abre
+                // o convite para o primeiro resultado-chave.
+                const res = await fetchJsonOk<{ goal: GoalDto }>("/api/goals", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                });
+                setJustCreatedGoal(res.goal);
+                return;
+              }
+              await fetchJsonOk(`/api/goals/${goalDialog.goal.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            })
           }
         />
       ) : null}
@@ -672,9 +802,10 @@ export function GoalsCockpitPage() {
           owners={owners}
           metadataEntities={metadataEntities}
           onCancel={() => setKrWizardGoal(null)}
-          onCreated={() => {
+          onCreated={(created) => {
             setKrWizardGoal(null);
             setExpandedGoalIds((prev) => new Set(prev).add(krWizardGoal.id));
+            setNotice(created.firstMeasurementFailed ? FIRST_MEASUREMENT_NOTICE : null);
             void load();
           }}
         />
@@ -747,7 +878,8 @@ function GoalFormDialog({
   const [description, setDescription] = useState(goal?.description ?? "");
   const [startDate, setStartDate] = useState(goal?.startDate ?? "");
   const [endDate, setEndDate] = useState(goal?.endDate ?? "");
-  const [status, setStatus] = useState<GoalStatusValue>(goal?.status ?? "DRAFT");
+  // Criação simples: o objetivo já nasce ativo (status é detalhe de edição).
+  const [status, setStatus] = useState<GoalStatusValue>(goal?.status ?? "ACTIVE");
   const [ownerAppUserId, setOwnerAppUserId] = useState(goal?.ownerAppUserId ?? "");
 
   const canSubmit = Boolean(title.trim() && startDate && endDate && ownerAppUserId);
@@ -773,11 +905,17 @@ function GoalFormDialog({
       testId="goal-form-dialog"
     >
       <label className="block space-y-1">
-        <span className={labelClass}>Título *</span>
-        <input className={fieldClass} value={title} onChange={(e) => setTitle(e.target.value)} data-testid="goal-form-title" />
+        <span className={labelClass}>O que queremos alcançar? *</span>
+        <input
+          className={fieldClass}
+          placeholder='Ex.: "Dobrar as vendas da linha industrial em 2026"'
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          data-testid="goal-form-title"
+        />
       </label>
       <label className="block space-y-1">
-        <span className={labelClass}>Descrição</span>
+        <span className={labelClass}>Descrição (opcional)</span>
         <textarea className={fieldClass} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       <div className="grid grid-cols-2 gap-2">
@@ -791,20 +929,23 @@ function GoalFormDialog({
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="block space-y-1">
-          <span className={labelClass}>Status</span>
-          <select
-            className={fieldClass}
-            value={status}
-            onChange={(e) => setStatus(e.target.value as GoalStatusValue)}
-          >
-            {GOAL_STATUSES.filter((s) => s !== "ARCHIVED" || mode === "edit").map((s) => (
-              <option key={s} value={s}>
-                {GOAL_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* Status só na edição — na criação o objetivo nasce ativo. */}
+        {mode === "edit" ? (
+          <label className="block space-y-1">
+            <span className={labelClass}>Status</span>
+            <select
+              className={fieldClass}
+              value={status}
+              onChange={(e) => setStatus(e.target.value as GoalStatusValue)}
+            >
+              {GOAL_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {GOAL_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="block space-y-1">
           <span className={labelClass}>Responsável *</span>
           <select
@@ -887,7 +1028,7 @@ function KeyResultFormDialog({
 
   return (
     <DialogShell
-      title="Editar indicador"
+      title="Editar resultado-chave"
       onCancel={onCancel}
       onSubmit={() =>
         onSubmit({
@@ -942,7 +1083,7 @@ function KeyResultFormDialog({
       </div>
       <div className="grid grid-cols-3 gap-2">
         <label className="block space-y-1">
-          <span className={labelClass}>Linha de base *</span>
+          <span className={labelClass}>Ponto de partida *</span>
           <input className={fieldClass} value={baseline} onChange={(e) => setBaseline(e.target.value)} data-testid="kr-form-baseline" />
         </label>
 
@@ -988,7 +1129,15 @@ function KeyResultFormDialog({
         <GoalPeriodPicker bounds={goalWindow} value={period} onChange={setPeriod} />
       </div>
       <p className="text-[10px] text-muted-foreground">
-        Progresso = (realizado − base) ÷ (alvo − base), limitado a 0–100%.
+        Progresso = (valor atual − ponto de partida) ÷ (alvo − ponto de
+        partida), limitado a 0–100%.
+      </p>
+      <p
+        className="rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[11px] text-[#92400E]"
+        data-testid="kr-form-commitment-notice"
+      >
+        Alterar alvo, ponto de partida ou período muda o COMPROMISSO desta
+        meta — a alteração ficará registrada no histórico de versões.
       </p>
     </DialogShell>
   );
@@ -1021,7 +1170,7 @@ function AchievedValueDialog({
       testId="kr-value-dialog"
     >
       <p className="text-xs text-muted-foreground">
-        Valor realizado ATUAL do indicador (não é incremento). Base{" "}
+        Valor ATUAL do resultado-chave (não é incremento). Ponto de partida{" "}
         {formatValue(keyResult.baseline, keyResult.unit)} · alvo{" "}
         {formatValue(keyResult.target, keyResult.unit)}. O retrato do dia é
         gravado no histórico; dias anteriores nunca mudam.

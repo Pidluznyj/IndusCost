@@ -162,7 +162,11 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Dashboard",
     iconKey: "LayoutDashboard",
     order: 1,
-    itemIds: ["dashboard"],
+    // "Objetivos e Metas" (OKR) é gestão do negócio, não configuração do
+    // sistema: sai de Administração e vira item direto ao lado do Dashboard.
+    // Só arquitetura de informação — o recurso continua admin.goals e nenhum
+    // acesso é ampliado (a visibilidade segue goals.view / admin.goals).
+    itemIds: ["dashboard", "goals"],
     isDirect: true,
   },
   {
@@ -244,7 +248,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Administração",
     iconKey: "Settings",
     order: 8,
-    itemIds: ["goals", "settings", "guide"],
+    itemIds: ["settings", "guide"],
   },
 ];
 

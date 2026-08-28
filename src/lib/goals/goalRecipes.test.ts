@@ -48,7 +48,57 @@ describe("goalRecipes — receitas de 1 clique", () => {
   });
 
   it("findGoalRecipe devolve a receita pela chave e null para desconhecida", () => {
-    assert.equal(findGoalRecipe("REVENUE_SALES_ORDERS")?.entityKey, "SALES_ORDERS");
+    assert.equal(findGoalRecipe("FISCAL_BILLING_TOTAL")?.entityKey, "FISCAL_BILLING");
     assert.equal(findGoalRecipe("NAO_EXISTE"), null);
+  });
+
+  it("medições OFICIAIS vêm primeiro; faturamento passa pelo provider NF-e; sem receita ambígua", () => {
+    const officialKeys = GOAL_RECIPES.filter((r) => r.official).map((r) => r.key);
+    const firstCustomIdx = GOAL_RECIPES.findIndex((r) => !r.official);
+    const lastOfficialIdx = GOAL_RECIPES.map((r) => Boolean(r.official)).lastIndexOf(true);
+    assert.ok(officialKeys.length >= 2, "faturamento NF-e + pedidos oficiais");
+    assert.ok(
+      lastOfficialIdx < firstCustomIdx,
+      "todas as oficiais antes das personalizadas"
+    );
+    // Faturamento é NF-e (provider oficial) — nunca SalesOrder.
+    const billing = findGoalRecipe("FISCAL_BILLING_TOTAL")!;
+    assert.equal(billing.entityKey, "FISCAL_BILLING");
+    // Pedidos continuam PEDIDOS (fonte oficial própria).
+    const orders = findGoalRecipe("OFFICIAL_SALES_ORDERS")!;
+    assert.equal(orders.entityKey, "SALES_OFFICIAL");
+    assert.match(orders.title, /Pedidos de Venda/);
+    // Receitas ambíguas removidas (duplicavam as oficiais com outra regra).
+    assert.equal(findGoalRecipe("REVENUE_SALES_ORDERS"), null);
+    assert.equal(findGoalRecipe("INVOICED_REVENUE"), null);
+  });
+
+  it("semântica: receita que soma VALOR DE PEDIDO nunca se chama 'faturamento'", () => {
+    // Faturamento é NF-e. Enquanto não existir provider canônico de NF-e no
+    // módulo de Metas, nenhuma receita cuja fonte numérica é SalesOrder pode
+    // usar 'faturamento'/'faturado' no título ou descrição — o filtro "já tem
+    // nota" restringe QUAIS pedidos contam, mas o valor somado continua sendo
+    // o do pedido.
+    for (const recipe of GOAL_RECIPES) {
+      if (recipe.entityKey !== "SALES_ORDERS") continue;
+      const text = `${recipe.title} ${recipe.description}`;
+      assert.ok(
+        !/faturament|faturad/i.test(text),
+        `receita ${recipe.key} baseada em pedidos usa linguagem de faturamento: "${text}"`
+      );
+    }
+  });
+
+  it("receita de pedidos com filtro de NF-e deixa explícito que soma o valor do PEDIDO", () => {
+    const recipe = findGoalRecipe("REVENUE_NEW_CUSTOMERS")!;
+    const hasInvoicedFilter = recipe.filters.some(
+      (f) => f.fieldKey === "SALES_INVOICED" && f.value === "INVOICED"
+    );
+    assert.ok(hasInvoicedFilter, "deveria filtrar por NF-e vinculada");
+    assert.match(
+      recipe.description,
+      /valor do pedido/i,
+      "precisa dizer que soma o valor do pedido, não o da nota"
+    );
   });
 });

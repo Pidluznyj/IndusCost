@@ -42,7 +42,7 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       html.includes(goal.title),
       "o nome do objetivo aparece no cabeçalho — sem ambiguidade de onde o indicador vai parar"
     );
-    assert.ok(html.includes("Novo indicador em"));
+    assert.ok(html.includes("Novo resultado-chave em"));
     // 3 passos (sem o passo de Direção, que já existe no objetivo escolhido).
     assert.ok(html.includes("passo 1 de 3") || html.includes("passo 1 de 3".toLowerCase()));
   });
@@ -91,7 +91,7 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       />
     );
     assert.ok(html.includes('data-testid="period-picker"'), "seletor de período presente");
-    assert.ok(html.includes("Qual período este indicador mede?"));
+    assert.ok(html.includes("Qual período este resultado-chave mede?"));
     // Objetivo anual → atalhos de trimestre/semestre dentro dele (1 clique).
     assert.ok(html.includes('data-testid="period-chip-Q3-2026"'), "trimestres do objetivo");
     assert.ok(html.includes('data-testid="period-chip-S1-2026"'), "semestres do objetivo");
@@ -102,12 +102,29 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
     assert.ok(html.includes("todo o período do objetivo"));
   });
 
-  it("oferece medições prontas de 1 clique (galeria de receitas)", () => {
+  it("oferece medições prontas de 1 clique — OFICIAIS primeiro (P2)", () => {
     const html = renderToStaticMarkup(
       <GoalKeyResultWizardDialog
         goal={goal}
         owners={[]}
         metadataEntities={[
+          {
+            key: "SALES_OFFICIAL",
+            label: "Pedidos de Venda (regra oficial)",
+            domain: "COMERCIAL",
+            supportsQuotaSplit: false,
+            metrics: [
+              {
+                key: "SALES_OFFICIAL_NET_TOTAL",
+                label: "Valor líquido de pedidos (população oficial do Comercial)",
+                operation: "SUM",
+                operationLabel: "Soma",
+                suggestedUnit: "R$",
+                periodLabel: "data de emissão do pedido",
+              },
+            ],
+            filterFields: [],
+          },
           {
             key: "SALES_ORDERS",
             label: "Pedidos de Venda",
@@ -131,7 +148,11 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
       />
     );
     assert.ok(html.includes('data-testid="measure-recipes"'));
-    assert.ok(html.includes('data-testid="measure-recipe-REVENUE_SALES_ORDERS"'));
+    assert.ok(html.includes('data-testid="measure-recipe-OFFICIAL_SALES_ORDERS"'));
+    // Seções: oficiais antes das personalizadas.
+    const officialIdx = html.indexOf("Medições oficiais");
+    const customIdx = html.indexOf("Medições personalizadas");
+    assert.ok(officialIdx > -1 && customIdx > officialIdx);
   });
 
   it("botão final chama a ação de adicionar (não de criar objetivo)", () => {
@@ -149,34 +170,36 @@ describe("GoalKeyResultWizardDialog — adicionar indicador a Objetivo existente
 });
 
 /**
- * Trava de regressão do defeito relatado em 17/08/2026: o usuário viu erro ao
- * adicionar o indicador, clicou de novo algumas vezes e a lista acabou com
- * quatro indicadores idênticos — as tentativas "que deram erro" tinham sido
- * gravadas assim mesmo. O comportamento vive no fluxo assíncrono do envio, que
- * SSR estático não exercita; a prova fica no código-fonte.
+ * Trava de regressão do defeito relatado em 17/08/2026 (quatro indicadores
+ * idênticos após cliques repetidos). O desenho evoluiu em P0-B: o wizard faz
+ * UM request atômico (indicador + fatias na mesma transação do backend) — o
+ * estado "criou o KR mas as fatias falharam" deixou de existir. A prova fica
+ * no código-fonte, pois SSR estático não exercita o envio assíncrono.
  */
-describe("GoalKeyResultWizardDialog — retentativa não duplica o indicador", () => {
+describe("GoalKeyResultWizardDialog — criação atômica (sem estado parcial)", () => {
   function source(): string {
     const here = dirname(fileURLToPath(import.meta.url));
     return readFileSync(join(here, "GoalKeyResultWizardDialog.tsx"), "utf8");
   }
 
-  it("guarda o indicador já criado e reaproveita na retentativa", () => {
+  it("um único POST leva indicador + fatias juntos; NÃO existe segundo request de quotas", () => {
     const src = source();
-    assert.ok(src.includes("createdKeyResult"), "precisa lembrar o que já foi gravado");
+    const submitStart = src.indexOf("async function handleSubmit");
+    const submitEnd = src.indexOf("\n  }", submitStart);
+    const body = src.slice(submitStart, submitEnd);
+    assert.ok(body.includes("/key-results"), "POST de criação presente");
     assert.ok(
-      src.includes("createdKeyResult ??"),
-      "a retentativa reaproveita o indicador em vez de POSTar de novo"
+      !body.includes("/quotas"),
+      "o wizard não pode voltar a fazer PUT de quotas separado (estado parcial)"
     );
+    assert.ok(body.includes("quotas:"), "as fatias vão no MESMO payload da criação");
   });
 
-  it("falha nas fatias não é anunciada como falha do indicador", () => {
+  it("retentativa após erro de rede é coberta pela trava de duplicidade do backend", () => {
     const src = source();
-    assert.ok(
-      src.includes("O indicador foi criado, mas as fatias"),
-      "mensagem separa o que foi salvo do que faltou"
-    );
-    assert.ok(src.includes("não crie outro"), "orienta a não repetir a criação");
+    // O botão continua sinalizando a retentativa segura; a autoridade
+    // anti-duplicata é o CONFLICT por assinatura no service.
+    assert.ok(src.includes("Tentar novamente (sem duplicar)"));
   });
 
   it("callback do pai roda fora do try — erro dele não vira 'falha ao salvar'", () => {

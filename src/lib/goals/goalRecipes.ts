@@ -32,26 +32,51 @@ export type GoalRecipe = {
   filters: GoalRecipeFilter[];
   /** Direção sugerida no passo do alvo. */
   suggestedTrackingType: GoalTrackingTypeValue;
+  /** Medição OFICIAL (provider canônico) — exibida antes das personalizadas. */
+  official?: boolean;
 };
 
 export const GOAL_RECIPES: readonly GoalRecipe[] = [
+  // ─── MEDIÇÕES OFICIAIS primeiro (providers canônicos — P2) ────────────────
+  // Faturamento passa OBRIGATORIAMENTE pelo provider NF-e (motor oficial do
+  // Financeiro); Pedidos de Venda seguem a população oficial do Comercial.
+  // Faturamento ≠ Pedido: um pedido de 100k com NF-e parcial de 20k vale
+  // 100k em Pedidos e 20k em Faturamento — cada número com o seu dono.
   {
-    key: "REVENUE_SALES_ORDERS",
-    emoji: "💰",
-    title: "Faturamento (Pedidos de Venda)",
-    description: "Soma do valor líquido dos pedidos oficiais no período.",
-    entityKey: "SALES_ORDERS",
-    metricKey: "SALES_NET_TOTAL",
-    filters: [
-      { fieldKey: "SALES_STATUS", operator: "EQ", value: "SENT_TO_NOMUS", connector: "AND" },
-    ],
+    key: "FISCAL_BILLING_TOTAL",
+    emoji: "🧾",
+    title: "Faturamento (Notas Fiscais)",
+    description:
+      "Valor líquido das NF-e de venda autorizadas — a MESMA regra da tela Financeiro > Faturamento.",
+    entityKey: "FISCAL_BILLING",
+    metricKey: "NFE_NET_TOTAL",
+    filters: [],
     suggestedTrackingType: "INCREASE",
+    official: true,
   },
+  {
+    key: "OFFICIAL_SALES_ORDERS",
+    emoji: "💰",
+    title: "Pedidos de Venda (regra oficial)",
+    description:
+      "Valor líquido dos pedidos pela MESMA regra da listagem do Comercial (sem cancelados e sem empresas do grupo). Valor de pedido, não de nota.",
+    entityKey: "SALES_OFFICIAL",
+    metricKey: "SALES_OFFICIAL_NET_TOTAL",
+    filters: [],
+    suggestedTrackingType: "INCREASE",
+    official: true,
+  },
+  // ─── MEDIÇÕES PERSONALIZADAS (motor curado) ───────────────────────────────
+  // Semântica defensiva: receitas que somam VALOR DE PEDIDO (SalesOrder)
+  // nunca se chamam "faturamento" — faturamento é NF-e (receita oficial
+  // acima). As antigas "Valor de Pedidos de Venda" e "Pedidos já com nota
+  // fiscal" foram REMOVIDAS por ambiguidade com as medições oficiais.
   {
     key: "REVENUE_NEW_CUSTOMERS",
     emoji: "🌱",
-    title: "Faturamento com clientes novos",
-    description: "Valor dos pedidos que foram a PRIMEIRA compra faturada do cliente.",
+    title: "Pedidos de clientes novos",
+    description:
+      "Soma o VALOR DO PEDIDO da primeira compra de cada cliente — conta só pedidos que já têm nota fiscal vinculada.",
     entityKey: "SALES_ORDERS",
     metricKey: "SALES_NET_TOTAL",
     filters: [
@@ -82,18 +107,6 @@ export const GOAL_RECIPES: readonly GoalRecipe[] = [
         value: "REACTIVATION",
         connector: "AND",
       },
-      { fieldKey: "SALES_INVOICED", operator: "EQ", value: "INVOICED", connector: "AND" },
-    ],
-    suggestedTrackingType: "INCREASE",
-  },
-  {
-    key: "INVOICED_REVENUE",
-    emoji: "🧾",
-    title: "Faturamento com nota fiscal",
-    description: "Valor dos pedidos que já têm nota fiscal emitida.",
-    entityKey: "SALES_ORDERS",
-    metricKey: "SALES_NET_TOTAL",
-    filters: [
       { fieldKey: "SALES_INVOICED", operator: "EQ", value: "INVOICED", connector: "AND" },
     ],
     suggestedTrackingType: "INCREASE",

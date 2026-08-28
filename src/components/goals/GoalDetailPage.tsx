@@ -14,6 +14,7 @@ import { fetchJsonOk } from "@/src/lib/http.js";
 import {
   GOAL_INITIATIVE_STATUSES,
   GOAL_INITIATIVE_STATUS_LABELS,
+  GOAL_MEASUREMENT_STATUS_LABELS,
   type GoalDto,
   type GoalInitiativeDto,
   type GoalInitiativeStatusValue,
@@ -261,7 +262,7 @@ function BurnUpChart({
           className="fill-current text-[11px]"
           opacity={0.6}
         >
-          Ainda sem medição — indicador manual ou período sem movimento.
+          Ainda sem medição — resultado-chave manual ou período sem movimento.
         </text>
       ) : null}
       {decrease ? (
@@ -542,8 +543,10 @@ export function GoalDetailPage() {
             <h2 className="text-lg font-semibold">{goal.title}</h2>
             <p className="text-[12px] text-muted-foreground">
               {civilDateBr(goal.startDate)} – {civilDateBr(goal.endDate)}
-              {goal.ownerName ? ` · Dono: ${goal.ownerName}` : ""} ·{" "}
-              {goal.progressPercent}% atingido
+              {goal.ownerName ? ` · Responsável: ${goal.ownerName}` : ""} ·{" "}
+              {goal.activeKeyResults === 0
+                ? "sem resultados-chave (progresso ainda não medido)"
+                : `${goal.progressPercent}% atingido`}
             </p>
           </div>
         </div>
@@ -579,8 +582,11 @@ export function GoalDetailPage() {
         {/* Coluna principal: seletor de indicador + burn-up + quotas */}
         <div className="space-y-3 lg:col-span-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-muted-foreground">
-              Indicadores:
+            <span
+              className="text-[11px] font-semibold text-muted-foreground"
+              title="Resultado-chave: um resultado mensurável que mostra se o objetivo está sendo alcançado."
+            >
+              Resultados-chave:
             </span>
             {goal.keyResults.map((kr) => (
               <button
@@ -604,7 +610,7 @@ export function GoalDetailPage() {
               onClick={() => setKrWizardOpen(true)}
               data-testid="detail-add-kr"
             >
-              <Plus className="h-3 w-3" aria-hidden /> Novo indicador
+              <Plus className="h-3 w-3" aria-hidden /> Novo resultado-chave
             </button>
           </div>
 
@@ -614,8 +620,31 @@ export function GoalDetailPage() {
                 <div>
                   <h3 className="text-sm font-semibold">{selectedKr.title}</h3>
                   <p className="text-[11px] text-muted-foreground">
+                    Medição:{" "}
                     {selectedKr.ruleSummary ??
-                      "Indicador de lançamento manual — o valor é informado pela equipe."}
+                      "lançamento manual — o valor é informado pela equipe."}
+                  </p>
+                  {/* Saúde da medição em linguagem simples: Manual /
+                      Aguardando 1ª medição / Atualizado / Falha. */}
+                  <p
+                    className={cn(
+                      "text-[11px]",
+                      selectedKr.measurementStatus === "ERROR"
+                        ? "font-semibold text-[#991B1B]"
+                        : selectedKr.measurementStatus === "PENDING"
+                          ? "font-semibold text-[#92400E]"
+                          : "text-muted-foreground"
+                    )}
+                    data-testid="detail-kr-measurement-status"
+                  >
+                    {GOAL_MEASUREMENT_STATUS_LABELS[selectedKr.measurementStatus]}
+                    {selectedKr.lastMeasurementAt
+                      ? ` · última leitura válida em ${new Date(selectedKr.lastMeasurementAt).toLocaleString("pt-BR")}`
+                      : ""}
+                    {selectedKr.measurementStatus === "ERROR" &&
+                    selectedKr.lastMeasurementError
+                      ? ` — ${selectedKr.lastMeasurementError}`
+                      : ""}
                   </p>
                   {selectedKr.comparison ? (
                     <p
@@ -630,6 +659,22 @@ export function GoalDetailPage() {
                       {selectedKr.comparison.modeLabel})
                     </p>
                   ) : null}
+                  {/* Governança (P3): mudança de compromisso nunca é
+                      silenciosa — quem olha o número sabe que o alvo mudou. */}
+                  {selectedKr.lastConfigChange ? (
+                    <p
+                      className="text-[11px] font-medium text-[#92400E]"
+                      data-testid="detail-kr-config-change"
+                    >
+                      Compromisso alterado em{" "}
+                      {new Date(selectedKr.lastConfigChange.at).toLocaleDateString("pt-BR")}
+                      {selectedKr.lastConfigChange.actorName
+                        ? ` por ${selectedKr.lastConfigChange.actorName}`
+                        : ""}{" "}
+                      (versão {selectedKr.lastConfigChange.version}) — o histórico
+                      de progresso anterior mantém o contexto da versão da época.
+                    </p>
+                  ) : null}
                   <p
                     className="text-[11px] text-muted-foreground"
                     data-testid="detail-kr-period"
@@ -637,7 +682,7 @@ export function GoalDetailPage() {
                     Período medido: {civilDateBr(selectedKr.effectiveStartDate)} –{" "}
                     {civilDateBr(selectedKr.effectiveEndDate)}
                     {selectedKr.hasOwnPeriod
-                      ? " (recorte próprio deste indicador)"
+                      ? " (recorte próprio deste resultado-chave)"
                       : " (mesmo período do objetivo)"}
                   </p>
                 </div>
@@ -677,7 +722,8 @@ export function GoalDetailPage() {
             </section>
           ) : (
             <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-              Este objetivo ainda não tem indicadores.
+              Este objetivo ainda não possui resultados-chave. Adicione pelo
+              menos um resultado mensurável para calcular o progresso.
             </p>
           )}
 
@@ -727,9 +773,9 @@ export function GoalDetailPage() {
                 )}
                 disabled={!selectedKrId}
                 onClick={() => setNewInitiativeScope("KR")}
-                title={selectedKr ? `Tarefa deste indicador: ${selectedKr.title}` : "Selecione um indicador acima"}
+                title={selectedKr ? `Iniciativa deste resultado-chave: ${selectedKr.title}` : "Selecione um resultado-chave acima"}
               >
-                Deste indicador
+                Deste resultado-chave
               </button>
               <button
                 type="button"
@@ -804,7 +850,7 @@ export function GoalDetailPage() {
                         >
                           {initiative.keyResultId
                             ? (goal.keyResults.find((k) => k.id === initiative.keyResultId)
-                                ?.title ?? "Indicador")
+                                ?.title ?? "Resultado-chave")
                             : "Objetivo (geral)"}
                         </span>
                         <p className="text-xs font-medium">{initiative.title}</p>

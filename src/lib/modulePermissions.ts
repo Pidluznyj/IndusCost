@@ -458,7 +458,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "invested-capital-recovery": "Recuperação do Dinheiro Investido",
   suppliers: "Fornecedores",
   "portfolio-reconciliation": "Conciliação de Carteira",
-  goals: "Metas (OKR)",
+  goals: "Objetivos e Metas",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };

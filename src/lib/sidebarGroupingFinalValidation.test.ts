@@ -110,13 +110,17 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.employees,
     MODULE_LABELS["org-chart"],
   ],
-  Administração: [MODULE_LABELS.goals, MODULE_LABELS.settings, MODULE_LABELS.guide],
+  // P1 (OKR): "Objetivos e Metas" saiu de Administração e virou item direto
+  // ao lado do Dashboard — gestão do negócio, não configuração do sistema.
+  Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide],
 };
 
 describe("validação final — estrutura de menu agrupado", () => {
   it("grupos e itens batem com o mapa oficial de negócio", () => {
     const structure = buildGroupedNavigationStructure();
     assert.equal(structure.directItems[0]?.label, "Dashboard");
+    // OKR como item direto logo após o Dashboard (permissões inalteradas).
+    assert.equal(structure.directItems[1]?.label, "Objetivos e Metas");
     assert.deepEqual(
       structure.groups.map((g) => g.label),
       [...SIDEBAR_GROUP_UI_LABELS]

@@ -67,7 +67,9 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   employees: "gestao_pessoas",
   "employees-dashboard": "gestao_pessoas",
   "org-chart": "gestao_pessoas",
-  goals: "administracao",
+  // P1 (OKR): "Objetivos e Metas" é gestão do negócio — item direto ao lado
+  // do Dashboard, fora de Administração. Permissões inalteradas.
+  goals: "dashboard",
   settings: "administracao",
   guide: "administracao",
 };
@@ -119,10 +121,12 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     }
   });
 
-  it("Dashboard permanece item direto (sem accordion)", () => {
+  it("Dashboard e Objetivos e Metas são itens diretos (sem accordion)", () => {
     const structure = buildGroupedNavigationStructure();
-    assert.equal(structure.directItems.length, 1);
+    assert.equal(structure.directItems.length, 2);
     assert.equal(structure.directItems[0]?.itemId, "dashboard");
+    // P1 (OKR): gestão do negócio ao lado do Dashboard, permissões intactas.
+    assert.equal(structure.directItems[1]?.itemId, "goals");
     assert.equal(structure.directItems[0]?.groupId, "dashboard");
     const dashboardDef = NAVIGATION_GROUP_DEFINITIONS.find((g) => g.id === "dashboard");
     assert.equal(dashboardDef?.isDirect, true);
