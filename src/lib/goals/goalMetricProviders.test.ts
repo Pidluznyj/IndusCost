@@ -18,6 +18,9 @@ import {
   GOAL_METRIC_PROVIDER_REGISTRY,
 } from "./goalMetricProviders.server.js";
 import { executeGoalRule, executeGoalRuleMonthly, resolveGoalRule } from "./goalRuleEngine.server.js";
+import { fiscalNfeWhereSql } from "@/src/lib/financeBillingNfeDashboard.js";
+import { buildSalesOrderListWhere } from "@/src/lib/salesOrdersListSummary.js";
+import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js";
 import { findGoalMetadataEntity, findGoalMetadataMetric, buildGoalMetadataPublicView } from "./goalMetadata.js";
 import { GoalContractError } from "./goalContracts.js";
 
@@ -182,6 +185,49 @@ describe("consistência preview/refresh/job/série — MESMA autoridade", () => 
       !/Prisma\.sql|queryRaw/i.test(providers),
       "provider nunca monta SQL próprio"
     );
+  });
+});
+
+describe("gate pré-merge — a AUTORIDADE delegada aplica as regras oficiais", () => {
+  it("predicado NF-e oficial: só status AUTORIZADA, venda de mercado, MARKET_REVENUE (cancelada/não autorizada NUNCA entra)", () => {
+    // A prova é sobre a FUNÇÃO OFICIAL que o provider delega — não um mock.
+    const sql = fiscalNfeWhereSql("emissao") as unknown as {
+      text?: string;
+      sql?: string;
+      values?: unknown[];
+    };
+    const text = sql.text ?? sql.sql ?? "";
+    const values = sql.values ?? [];
+    assert.ok(text.includes('"status" ='), "filtro de status presente");
+    assert.ok(
+      values.includes(NOMUS_NFE_STATUS_AUTHORIZED),
+      "somente NF-e AUTORIZADA — cancelada/denegada/em digitação ficam fora"
+    );
+    assert.ok(text.includes('"isMarketSale" = true'), "só venda de mercado");
+    assert.ok(values.includes("MARKET_REVENUE"), "só classificação de receita de mercado");
+    assert.ok(text.includes('"valorLiquido" IS NOT NULL'));
+  });
+
+  it("população oficial de Pedidos: cancelado fora, janela por issueDate, grupo econômico excluído — sem filtro de tela acidental", () => {
+    const where = buildSalesOrderListWhere(
+      {
+        startDate: new Date(2026, 0, 1),
+        endDate: new Date(2026, 11, 31, 23, 59, 59, 999),
+      },
+      { excludeEconomicGroupCustomers: true }
+    );
+    const json = JSON.stringify(where);
+    // Pedido cancelado → fora (regra operacional da listagem oficial).
+    assert.ok(json.includes('"status":{"not":"CANCELLED"}'), "cancelados fora");
+    // Janela do indicador → issueDate (data canônica do pedido).
+    assert.ok(json.includes('"issueDate"'), "recorte por data de emissão");
+    // Grupo econômico → exclusão oficial via Customer.isNot (Lazarios/Koppetel/SM).
+    assert.ok(json.includes('"isNot"'), "exclusão intercompany presente");
+    assert.ok(json.includes("Koppetel"), "vocabulário oficial do grupo");
+    // Sem contaminação de tela: nada de busca, vendedor ou cliente específico.
+    for (const forbidden of ['"customerId"', '"nomusSellerName"', '"externalSellerId"']) {
+      assert.ok(!json.includes(forbidden), `filtro de tela vazou: ${forbidden}`);
+    }
   });
 });
 

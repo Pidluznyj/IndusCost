@@ -50,6 +50,35 @@ function fullAccessChecker(): PermissionChecker {
   return FULL_ACCESS_CHECKER;
 }
 
+describe("sidebarNavigation — Objetivos e Metas ao lado do Dashboard SEM ampliar acesso (gate P1)", () => {
+  it("dashboard.view sozinho NÃO revela Objetivos e Metas (item direto é filtrado pela própria permissão)", () => {
+    const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
+    const ids = nav.directItems.map((i) => i.itemId);
+    assert.ok(ids.includes("dashboard"), "dashboard visível");
+    assert.ok(!ids.includes("goals"), "goals NÃO herda dashboard.view por estar no grupo");
+    assert.ok(
+      !nav.flatAccessibleItems.some((i) => i.id === "goals"),
+      "goals fora também do menu colapsado"
+    );
+    assert.equal(canAccessModule("goals", checker(["dashboard.view"])), false);
+  });
+
+  it("goals.view revela Objetivos e Metas; SUPER_ADMIN (acesso total) também vê", () => {
+    const withGoals = buildAccessibleSidebarNavigation(checker(["goals.view"]));
+    assert.ok(withGoals.directItems.some((i) => i.itemId === "goals"));
+    const full = buildAccessibleSidebarNavigation(fullAccessChecker());
+    assert.ok(full.directItems.some((i) => i.itemId === "goals"));
+    assert.equal(canAccessModule("goals", checker(["goals.view"])), true);
+  });
+
+  it("resource key continua admin.goals — mover de grupo não trocou permissão", () => {
+    const structure = buildGroupedNavigationStructure();
+    const goals = structure.directItems.find((i) => i.itemId === "goals");
+    assert.ok(goals, "goals é item direto");
+    assert.deepEqual([...goals!.requiredPermissions], ["goals.view"]);
+  });
+});
+
 describe("sidebarNavigation — filtro por permissão", () => {
   it("oculta grupos sem nenhum item acessível", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
