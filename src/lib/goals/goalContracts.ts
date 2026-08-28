@@ -50,6 +50,58 @@ export class GoalContractError extends Error {
   }
 }
 
+// ─── Coerência direção × base/alvo ──────────────────────────────────────────
+
+/**
+ * Problema de configuração de um alvo:
+ *  - NO_INTERVAL: alvo == base (meta sem intervalo de progresso);
+ *  - DIRECTION_MISMATCH: INCREASE com alvo abaixo da base, ou DECREASE com
+ *    alvo acima — a fórmula "funcionaria" pelo sinal do span, mas o progresso
+ *    exibido premiaria o movimento CONTRÁRIO ao que a direção promete.
+ */
+export type GoalTargetConfigurationIssue = "NO_INTERVAL" | "DIRECTION_MISMATCH";
+
+export function classifyGoalTargetConfiguration(
+  trackingType: GoalTrackingTypeValue,
+  baseline: string | number,
+  target: string | number
+): GoalTargetConfigurationIssue | null {
+  const base = Number(baseline);
+  const goal = Number(target);
+  if (!Number.isFinite(base) || !Number.isFinite(goal)) return null;
+  if (goal === base) return "NO_INTERVAL";
+  if (trackingType === "INCREASE" && goal < base) return "DIRECTION_MISMATCH";
+  if (trackingType === "DECREASE" && goal > base) return "DIRECTION_MISMATCH";
+  return null;
+}
+
+/**
+ * Invariante obrigatória de cadastro/edição: INCREASE exige alvo > base;
+ * DECREASE exige alvo < base; alvo == base continua inválido. Vale para alvo
+ * digitado E para alvo apurado por comparação (valide DEPOIS de calcular).
+ */
+export function assertGoalTargetDirection(
+  trackingType: GoalTrackingTypeValue,
+  baseline: string | number,
+  target: string | number
+): void {
+  const issue = classifyGoalTargetConfiguration(trackingType, baseline, target);
+  if (issue === "NO_INTERVAL") {
+    throw new GoalContractError(
+      "Alvo não pode ser igual à linha de base (meta sem intervalo).",
+      "target"
+    );
+  }
+  if (issue === "DIRECTION_MISMATCH") {
+    throw new GoalContractError(
+      trackingType === "INCREASE"
+        ? `Meta de AUMENTO exige alvo maior que a linha de base (base ${baseline}, alvo ${target}). Aumente o alvo ou troque a direção para redução.`
+        : `Meta de REDUÇÃO exige alvo menor que a linha de base (base ${baseline}, alvo ${target}). Diminua o alvo ou troque a direção para aumento.`,
+      "target"
+    );
+  }
+}
+
 // ─── DTOs ───────────────────────────────────────────────────────────────────
 
 /** Procedência de um alvo derivado de período anterior (somente leitura). */
@@ -81,8 +133,20 @@ export type GoalKeyResultDto = {
   status: GoalStatusValue;
   /** 0..100 derivado — somente leitura. */
   progressPercent: number;
-  /** target == baseline — meta sem intervalo, sinalizada na UI. */
+  /** Configuração inválida (sem intervalo OU direção incompatível). */
   invalidTargets: boolean;
+  /**
+   * Qual problema de configuração existe — null quando coerente. Registros
+   * legados inconsistentes NÃO são corrigidos automaticamente: aparecem
+   * sinalizados aqui e ficam fora do roll-up do Objetivo.
+   */
+  configurationIssue: GoalTargetConfigurationIssue | null;
+  /**
+   * true quando o indicador automático acabou de ser criado mas a PRIMEIRA
+   * leitura do motor falhou — o valor exibido é a linha de base, não uma
+   * medição confirmada. Transitório (só na resposta da criação).
+   */
+  firstMeasurementFailed?: boolean;
   /** true quando o valor é calculado pelo motor (regra dinâmica). */
   hasRule: boolean;
   /** Período PRÓPRIO do indicador (null = herda o período do Objetivo). */
@@ -120,6 +184,12 @@ export type GoalDto = {
   keyResults: GoalKeyResultDto[];
   /** Planos de ação do Objetivo e dos seus KRs (kanban — US-05). */
   initiatives: GoalInitiativeDto[];
+  /**
+   * true quando a meta nasceu do wizard mas a PRIMEIRA leitura automática
+   * falhou — o indicador existe e será medido pelo recálculo; o número atual
+   * não é uma medição confirmada. Transitório (só na resposta da criação).
+   */
+  firstMeasurementFailed?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -611,11 +681,11 @@ export function parseGoalKeyResultCreateInput(
   // Em COMPARISON o alvo é apurado no servidor; digitar número não é exigido.
   const target =
     targetBasis === "COMPARISON" ? null : parseDecimalString(body.target, "target");
-  if (target != null && Number(baseline) === Number(target)) {
-    throw new GoalContractError(
-      "Alvo não pode ser igual à linha de base (meta sem intervalo).",
-      "target"
-    );
+  const trackingType = parseEnum(body.trackingType, GOAL_TRACKING_TYPES, "trackingType");
+  // Alvo digitado valida direção já aqui; alvo COMPARISON é validado no
+  // servidor DEPOIS de apurado (mesma invariante, mesmo helper).
+  if (target != null) {
+    assertGoalTargetDirection(trackingType, baseline, target);
   }
   const weight =
     body.weight == null || body.weight === ""
@@ -635,7 +705,7 @@ export function parseGoalKeyResultCreateInput(
   return {
     title: parseRequiredString(body.title, "title"),
     domain: parseEnum(body.domain, GOAL_DOMAINS, "domain"),
-    trackingType: parseEnum(body.trackingType, GOAL_TRACKING_TYPES, "trackingType"),
+    trackingType,
     baseline,
     target,
     unit: parseOptionalString(body.unit, "unit", 30),
@@ -664,15 +734,17 @@ export function parseGoalKeyResultUpdateInput(
   }
   if (body.baseline !== undefined) out.baseline = parseDecimalString(body.baseline, "baseline");
   if (body.target !== undefined) out.target = parseDecimalString(body.target, "target");
-  if (
-    out.baseline !== undefined &&
-    out.target !== undefined &&
-    Number(out.baseline) === Number(out.target)
-  ) {
-    throw new GoalContractError(
-      "Alvo não pode ser igual à linha de base (meta sem intervalo).",
-      "target"
-    );
+  // Com os três campos no payload a direção é validada já aqui; em updates
+  // parciais o service revalida com os valores finais (atuais + novos).
+  if (out.baseline !== undefined && out.target != null) {
+    if (out.trackingType !== undefined) {
+      assertGoalTargetDirection(out.trackingType, out.baseline, out.target);
+    } else if (Number(out.baseline) === Number(out.target)) {
+      throw new GoalContractError(
+        "Alvo não pode ser igual à linha de base (meta sem intervalo).",
+        "target"
+      );
+    }
   }
   if (body.unit !== undefined) out.unit = parseOptionalString(body.unit, "unit", 30);
   if (body.weight !== undefined) {

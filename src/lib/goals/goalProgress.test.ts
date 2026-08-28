@@ -67,6 +67,64 @@ describe("computeGoalKeyResultProgress — DECREASE (menor é melhor)", () => {
     });
     assert.equal(p.ratio, 0);
     assert.equal(p.invalidTargets, true);
+    assert.equal(p.configurationIssue, "NO_INTERVAL");
+  });
+});
+
+describe("computeGoalKeyResultProgress — coerência direção × base/alvo", () => {
+  it("INCREASE com alvo ABAIXO da base é DIRECTION_MISMATCH: ratio 0, nunca finge progresso", () => {
+    // Sem a checagem, realizado 50 daria (50−100)/(50−100) = 100% — mentira:
+    // o número CAIU numa meta de aumento.
+    const p = computeGoalKeyResultProgress({
+      baseline: "100",
+      target: "50",
+      achievedValue: "50",
+      trackingType: "INCREASE",
+    });
+    assert.equal(p.ratio, 0);
+    assert.equal(p.invalidTargets, true);
+    assert.equal(p.configurationIssue, "DIRECTION_MISMATCH");
+  });
+
+  it("DECREASE com alvo ACIMA da base é DIRECTION_MISMATCH: ratio 0", () => {
+    const p = computeGoalKeyResultProgress({
+      baseline: "100",
+      target: "150",
+      achievedValue: "150",
+      trackingType: "DECREASE",
+    });
+    assert.equal(p.ratio, 0);
+    assert.equal(p.invalidTargets, true);
+    assert.equal(p.configurationIssue, "DIRECTION_MISMATCH");
+  });
+
+  it("direções coerentes seguem normais (INCREASE alvo>base; DECREASE alvo<base)", () => {
+    const up = computeGoalKeyResultProgress({
+      baseline: "100",
+      target: "150",
+      achievedValue: "125",
+      trackingType: "INCREASE",
+    });
+    assert.equal(up.ratio, 0.5);
+    assert.equal(up.configurationIssue, null);
+    const down = computeGoalKeyResultProgress({
+      baseline: "100",
+      target: "50",
+      achievedValue: "75",
+      trackingType: "DECREASE",
+    });
+    assert.equal(down.ratio, 0.5);
+    assert.equal(down.configurationIssue, null);
+  });
+
+  it("sem trackingType (chamador legado) o comportamento antigo é preservado", () => {
+    const p = computeGoalKeyResultProgress({
+      baseline: "100",
+      target: "50",
+      achievedValue: "50",
+    });
+    assert.equal(p.ratio, 1);
+    assert.equal(p.configurationIssue, null);
   });
 });
 
@@ -97,6 +155,33 @@ describe("computeGoalRollup — média ponderada dos KRs ativos (RN-010)", () =>
     ]);
     assert.equal(rollup.ratio, 1);
     assert.equal(rollup.invalidKeyResults, 1);
+  });
+
+  it("KR legado com direção incompatível NÃO infla o roll-up — sinalizado e fora da conta", () => {
+    // O segundo KR "atingiria 100%" pela fórmula crua (INCREASE, base 100 →
+    // alvo 50, realizado 50), mas é semanticamente inválido: fica fora do
+    // denominador e conta como inválido.
+    const rollup = computeGoalRollup([
+      {
+        status: "ACTIVE",
+        weight: "1",
+        baseline: "0",
+        target: "100",
+        achievedValue: "50",
+        trackingType: "INCREASE",
+      },
+      {
+        status: "ACTIVE",
+        weight: "9",
+        baseline: "100",
+        target: "50",
+        achievedValue: "50",
+        trackingType: "INCREASE",
+      },
+    ]);
+    assert.equal(rollup.ratio, 0.5);
+    assert.equal(rollup.invalidKeyResults, 1);
+    assert.equal(rollup.activeKeyResults, 2);
   });
 
   it("sem KR ativo ⇒ 0%", () => {

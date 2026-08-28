@@ -79,7 +79,7 @@ function ProgressBar({ percent, invalid }: { percent: number; invalid?: boolean 
       {invalid ? (
         <span
           className="rounded bg-[#FEF2F2] px-1 text-[10px] font-semibold text-[#991B1B]"
-          title="Alvo igual à linha de base — meta sem intervalo de progresso"
+          title="Configuração inválida — alvo igual à linha de base ou direção incompatível com base/alvo"
         >
           meta inválida
         </span>
@@ -191,6 +191,11 @@ export function GoalsCockpitPage() {
   const [valueDialog, setValueDialog] = useState<{ keyResult: GoalKeyResultDto } | null>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  /** Aviso não-bloqueante (ex.: indicador criado com a primeira medição pendente). */
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const FIRST_MEASUREMENT_NOTICE =
+    "Indicador criado, mas a primeira medição automática falhou — o valor mostrado ainda é a linha de base, não uma medição confirmada. O sistema tentará medir de novo no próximo recálculo.";
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -377,6 +382,22 @@ export function GoalsCockpitPage() {
         </div>
       ) : null}
 
+      {notice ? (
+        <div
+          className="mb-3 flex items-start justify-between gap-2 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-xs text-[#92400E]"
+          data-testid="goals-notice"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            className="shrink-0 font-semibold underline"
+            onClick={() => setNotice(null)}
+          >
+            Entendi
+          </button>
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="rounded-lg border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
           Carregando metas…
@@ -546,6 +567,18 @@ export function GoalsCockpitPage() {
                                     Arquivado
                                   </span>
                                 ) : null}
+                                {/* Registro legado com direção falsa: nunca é
+                                    "corrigido" em silêncio — aparece marcado e
+                                    fica fora do progresso do objetivo. */}
+                                {kr.configurationIssue === "DIRECTION_MISMATCH" ? (
+                                  <span
+                                    className="rounded-full border border-[#FECACA] bg-[#FEF2F2] px-1.5 text-[10px] font-semibold text-[#991B1B]"
+                                    title="A direção desta meta não combina com base e alvo (ex.: meta de aumento com alvo abaixo da base). Edite o indicador para corrigir — até lá ele não conta no progresso do objetivo."
+                                    data-testid={`kr-direction-mismatch-${kr.id}`}
+                                  >
+                                    direção incompatível
+                                  </span>
+                                ) : null}
                                 {/* Recorte próprio (ex.: trimestre dentro de um
                                     objetivo anual) — sem isto o número parecia
                                     "o total de tudo". */}
@@ -584,18 +617,32 @@ export function GoalsCockpitPage() {
                               </div>
                             </Link>
                             <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                                disabled={kr.status === "ARCHIVED"}
-                                onClick={() => {
-                                  setDialogError(null);
-                                  setValueDialog({ keyResult: kr });
-                                }}
-                                data-testid={`kr-set-value-${kr.id}`}
-                              >
-                                Lançar valor
-                              </button>
+                              {/* Lançar valor só existe para indicador MANUAL —
+                                  o automático é calculado pelo motor e o
+                                  backend recusaria o lançamento de qualquer
+                                  forma (a UI não oferece o que vai falhar). */}
+                              {kr.manualTracking ? (
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                                  disabled={kr.status === "ARCHIVED"}
+                                  onClick={() => {
+                                    setDialogError(null);
+                                    setValueDialog({ keyResult: kr });
+                                  }}
+                                  data-testid={`kr-set-value-${kr.id}`}
+                                >
+                                  Lançar valor
+                                </button>
+                              ) : (
+                                <span
+                                  className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-1 text-[11px] font-semibold text-[#1E40AF]"
+                                  title="O sistema mede este indicador sozinho — abra o indicador para ver a evolução e atualizar o painel."
+                                  data-testid={`kr-automatic-${kr.id}`}
+                                >
+                                  Automático
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 className="rounded-md border border-border p-1.5 hover:bg-muted"
@@ -633,8 +680,9 @@ export function GoalsCockpitPage() {
           owners={owners}
           metadataEntities={metadataEntities}
           onCancel={() => setWizardOpen(false)}
-          onCreated={() => {
+          onCreated={(created) => {
             setWizardOpen(false);
+            setNotice(created.firstMeasurementFailed ? FIRST_MEASUREMENT_NOTICE : null);
             void load();
           }}
         />
@@ -672,9 +720,10 @@ export function GoalsCockpitPage() {
           owners={owners}
           metadataEntities={metadataEntities}
           onCancel={() => setKrWizardGoal(null)}
-          onCreated={() => {
+          onCreated={(created) => {
             setKrWizardGoal(null);
             setExpandedGoalIds((prev) => new Set(prev).add(krWizardGoal.id));
+            setNotice(created.firstMeasurementFailed ? FIRST_MEASUREMENT_NOTICE : null);
             void load();
           }}
         />

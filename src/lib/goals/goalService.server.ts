@@ -21,6 +21,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   GOAL_TARGET_COMPARISON_MODE_LABELS,
   GoalContractError,
+  classifyGoalTargetConfiguration,
   isDuplicateGoalKeyResult,
   computeGoalTargetFromComparison,
   resolveGoalMeasurementWindow,
@@ -92,6 +93,49 @@ export function todayGoalCivilDateInSaoPaulo(now: Date = new Date()): string {
     month: "2-digit",
     day: "2-digit",
   }).format(now);
+}
+
+/**
+ * Mês civil corrente em São Paulo (YYYY-MM) — TODA decisão de "mês corrente"
+ * do módulo passa por aqui. Perto da meia-noite, o dia UTC já virou enquanto
+ * o dia de negócio em São Paulo ainda não — cortar série pelo mês UTC faria
+ * a curva "pular" um mês três horas antes da virada real.
+ */
+export function currentGoalCivilMonthInSaoPaulo(now: Date = new Date()): string {
+  return todayGoalCivilDateInSaoPaulo(now).slice(0, 7);
+}
+
+/**
+ * Invariante direção × base/alvo na borda do service (cobre alvo apurado por
+ * COMPARISON, que só existe depois do cálculo). Mensagens em português e
+ * cientes da origem do alvo.
+ */
+function assertGoalTargetDirectionOrDomainError(
+  trackingType: GoalTrackingTypeValue,
+  baseline: string,
+  target: string,
+  origin: "MANUAL" | "COMPARISON"
+): void {
+  const issue = classifyGoalTargetConfiguration(trackingType, baseline, target);
+  if (issue == null) return;
+  if (issue === "NO_INTERVAL") {
+    throw new GoalDomainError(
+      "VALIDATION_ERROR",
+      origin === "COMPARISON"
+        ? "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
+        : "Alvo não pode ser igual à linha de base (meta sem intervalo)."
+    );
+  }
+  const comparisonPrefix =
+    origin === "COMPARISON"
+      ? `O alvo apurado pela comparação foi ${target}. `
+      : "";
+  throw new GoalDomainError(
+    "VALIDATION_ERROR",
+    trackingType === "INCREASE"
+      ? `${comparisonPrefix}Meta de AUMENTO exige alvo maior que a linha de base (base ${baseline}, alvo ${target}). Aumente o alvo${origin === "COMPARISON" ? "/percentual" : ""} ou troque a direção para redução.`
+      : `${comparisonPrefix}Meta de REDUÇÃO exige alvo menor que a linha de base (base ${baseline}, alvo ${target}). Diminua o alvo${origin === "COMPARISON" ? "/percentual" : ""} ou troque a direção para aumento.`
+  );
 }
 
 function civilDateToUtc(value: string): Date {
@@ -196,7 +240,15 @@ function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResul
   const baseline = decimalToString(row.baseline);
   const target = decimalToString(row.target);
   const achievedValue = decimalToString(row.achievedValue);
-  const progress = computeGoalKeyResultProgress({ baseline, target, achievedValue });
+  // trackingType habilita a checagem de coerência: KR legado com direção
+  // incompatível aparece SINALIZADO (configurationIssue) e com progresso 0 —
+  // nunca corrigido em silêncio, nunca fingindo estar certo.
+  const progress = computeGoalKeyResultProgress({
+    baseline,
+    target,
+    achievedValue,
+    trackingType: row.trackingType,
+  });
   const startDate = civilFromDate(row.startDate);
   const endDate = civilFromDate(row.endDate);
   const window = resolveGoalMeasurementWindow({
@@ -222,6 +274,7 @@ function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResul
     status: row.status as GoalStatusValue,
     progressPercent: progressRatioToPercent(progress.ratio),
     invalidTargets: progress.invalidTargets,
+    configurationIssue: progress.configurationIssue,
     hasRule: row.ruleJson != null,
     ruleSummary: buildGoalRuleSummary(row.ruleJson),
     targetBasis: (row.targetBasis ?? "MANUAL") as GoalTargetBasisValue,
@@ -308,6 +361,7 @@ function toGoalDto(row: GoalRow, extraInitiatives: InitiativeRow[] = []): GoalDt
       baseline: decimalToString(kr.baseline),
       target: decimalToString(kr.target),
       achievedValue: decimalToString(kr.achievedValue),
+      trackingType: kr.trackingType,
     }))
   );
   const initiatives = [...(row.initiatives ?? []), ...extraInitiatives]
@@ -745,12 +799,12 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       if (resolvedTarget == null) {
         throw new GoalDomainError("VALIDATION_ERROR", "Informe o alvo do indicador.");
       }
-      if (Number(input.baseline) === Number(resolvedTarget)) {
-        throw new GoalDomainError(
-          "VALIDATION_ERROR",
-          "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
-        );
-      }
+      assertGoalTargetDirectionOrDomainError(
+        input.trackingType,
+        input.baseline,
+        resolvedTarget,
+        input.targetBasis === "COMPARISON" ? "COMPARISON" : "MANUAL"
+      );
 
       // Trava de duplicidade: uma tentativa que falhou DEPOIS da gravação (ex.:
       // erro ao salvar as fatias, queda de rede lendo a resposta) deixa o
@@ -817,6 +871,10 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         include: KR_INCLUDE,
       });
       // Primeira leitura do motor já na janela certa ("nasceu medindo").
+      // Falha aqui NÃO desfaz a criação (o recálculo automático cobre), mas
+      // também não pode virar "medição zero confirmada": a resposta carrega o
+      // sinal explícito de que a primeira leitura falhou.
+      let firstMeasurementFailed = false;
       if (rule != null) {
         try {
           await computeAndStoreRuleValue(
@@ -832,18 +890,23 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             "REFRESH",
             new Date()
           );
-        } catch {
-          // Falha da primeira leitura não desfaz a criação — o job noturno cobre.
+        } catch (cause) {
+          firstMeasurementFailed = true;
+          console.error(
+            `[goals] primeira leitura do indicador ${created.id} falhou`,
+            cause
+          );
         }
       }
       const fresh = await prisma.goalKeyResult.findUniqueOrThrow({
         where: { id: created.id },
         include: KR_INCLUDE,
       });
-      return toKeyResultDto(fresh as unknown as KeyResultRow, {
+      const dto = toKeyResultDto(fresh as unknown as KeyResultRow, {
         startDate: goal.startDate.toISOString().slice(0, 10),
         endDate: goal.endDate.toISOString().slice(0, 10),
       });
+      return firstMeasurementFailed ? { ...dto, firstMeasurementFailed: true } : dto;
     },
 
     async updateKeyResult(
@@ -908,12 +971,17 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
       const baseline = input.baseline ?? decimalToString(current.baseline);
       const target = resolvedTarget ?? decimalToString(current.target);
-      if (Number(baseline) === Number(target)) {
-        throw new GoalDomainError(
-          "VALIDATION_ERROR",
-          "Alvo não pode ser igual à linha de base (meta sem intervalo)."
-        );
-      }
+      // Direção validada com os valores FINAIS (atuais + novos): update
+      // parcial não escapa da invariante, e alvo COMPARISON é validado
+      // depois de apurado.
+      assertGoalTargetDirectionOrDomainError(
+        (input.trackingType ?? current.trackingType) as GoalTrackingTypeValue,
+        baseline,
+        target,
+        input.targetBasis === "COMPARISON" || (input.comparison != null && resolvedTarget != null)
+          ? "COMPARISON"
+          : "MANUAL"
+      );
       const updated = await prisma.goalKeyResult.update({
         where: { id },
         data: {
@@ -1248,12 +1316,12 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       if (wizardTarget == null) {
         throw new GoalDomainError("VALIDATION_ERROR", "Informe o alvo do indicador.");
       }
-      if (Number(input.keyResult.baseline) === Number(wizardTarget)) {
-        throw new GoalDomainError(
-          "VALIDATION_ERROR",
-          "O alvo apurado ficou igual à linha de base — ajuste o percentual ou o ponto de partida."
-        );
-      }
+      assertGoalTargetDirectionOrDomainError(
+        input.keyResult.trackingType,
+        input.keyResult.baseline,
+        wizardTarget,
+        input.keyResult.targetBasis === "COMPARISON" ? "COMPARISON" : "MANUAL"
+      );
       assertQuotasWithinTarget(wizardTarget, input.quotas);
 
       const goalId = await prisma.$transaction(async (tx) => {
@@ -1305,6 +1373,10 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       });
 
       // Primeira leitura do motor logo após criar ("Ligar os Motores").
+      // Falha não desfaz a criação (o recálculo automático cobre), mas a
+      // resposta DISTINGUE criação bem-sucedida de primeira leitura falha —
+      // o número exibido nesse caso é a linha de base, não medição real.
+      let firstMeasurementFailed = false;
       if (rule != null) {
         try {
           const kr = await prisma.goalKeyResult.findFirst({
@@ -1318,11 +1390,18 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
               new Date()
             );
           }
-        } catch {
-          // Falha da primeira leitura não desfaz a criação — o job noturno cobre.
+        } catch (cause) {
+          firstMeasurementFailed = true;
+          console.error(
+            `[goals] primeira leitura da meta ${goalId} (wizard) falhou`,
+            cause
+          );
         }
       }
-      return service.getGoal(goalId);
+      const goalDto = await service.getGoal(goalId);
+      return firstMeasurementFailed
+        ? { ...goalDto, firstMeasurementFailed: true }
+        : goalDto;
     },
 
     /** Lista enxuta de usuários ativos para seletores (id+nome, nada sensível). */
@@ -1391,7 +1470,9 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         }));
       }
 
-      const todayMonth = new Date().toISOString().slice(0, 7);
+      // Mês corrente pelo calendário civil de São Paulo — o mês UTC vira até
+      // 3h antes do mês de negócio e cortaria a curva cedo demais.
+      const todayMonth = currentGoalCivilMonthInSaoPaulo();
       const current = limitGoalSeriesToMonth(
         await seriesFor(window.startCivilDate, window.endCivilDate),
         todayMonth

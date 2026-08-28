@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   GoalContractError,
+  assertGoalTargetDirection,
+  classifyGoalTargetConfiguration,
+  computeGoalTargetFromComparison,
   isDuplicateGoalKeyResult,
   parseGoalAchievedValueInput,
   parseGoalCreateInput,
@@ -99,6 +102,113 @@ describe("parseGoalKeyResultCreateInput", () => {
     assert.equal(parseGoalKeyResultCreateInput(base).rule, null);
     const rule = { entityKey: "SALES_ORDERS", metricKey: "SALES_NET_TOTAL", filters: [] };
     assert.deepEqual(parseGoalKeyResultCreateInput({ ...base, rule }).rule, rule);
+  });
+});
+
+describe("invariante direção × base/alvo (INCREASE alvo>base; DECREASE alvo<base)", () => {
+  const base = {
+    title: "Indicador",
+    domain: "COMERCIAL",
+    baseline: "100",
+    ownerAppUserId: OWNER,
+  };
+
+  it("INCREASE base 100 alvo 150 = válido", () => {
+    const input = parseGoalKeyResultCreateInput({
+      ...base,
+      trackingType: "INCREASE",
+      target: "150",
+    });
+    assert.equal(input.target, "150");
+  });
+
+  it("INCREASE base 100 alvo 50 = inválido (direção incompatível)", () => {
+    assert.throws(
+      () =>
+        parseGoalKeyResultCreateInput({ ...base, trackingType: "INCREASE", target: "50" }),
+      (e: unknown) =>
+        e instanceof GoalContractError &&
+        e.field === "target" &&
+        /AUMENTO/.test(e.message)
+    );
+  });
+
+  it("DECREASE base 100 alvo 50 = válido", () => {
+    const input = parseGoalKeyResultCreateInput({
+      ...base,
+      trackingType: "DECREASE",
+      target: "50",
+    });
+    assert.equal(input.target, "50");
+  });
+
+  it("DECREASE base 100 alvo 150 = inválido (direção incompatível)", () => {
+    assert.throws(
+      () =>
+        parseGoalKeyResultCreateInput({ ...base, trackingType: "DECREASE", target: "150" }),
+      (e: unknown) =>
+        e instanceof GoalContractError &&
+        e.field === "target" &&
+        /REDUÇÃO/.test(e.message)
+    );
+  });
+
+  it("target == baseline continua inválido nas duas direções", () => {
+    for (const trackingType of ["INCREASE", "DECREASE"]) {
+      assert.throws(() =>
+        parseGoalKeyResultCreateInput({ ...base, trackingType, target: "100" })
+      );
+    }
+  });
+
+  it("update com os três campos valida a direção; classificador cobre projeção de legado", () => {
+    assert.throws(() =>
+      parseGoalKeyResultUpdateInput({
+        trackingType: "INCREASE",
+        baseline: "100",
+        target: "50",
+      })
+    );
+    assert.equal(
+      parseGoalKeyResultUpdateInput({
+        trackingType: "DECREASE",
+        baseline: "100",
+        target: "50",
+      }).target,
+      "50"
+    );
+    // Classificador puro — é o que a projeção DTO usa para sinalizar legado.
+    assert.equal(classifyGoalTargetConfiguration("INCREASE", "100", "150"), null);
+    assert.equal(classifyGoalTargetConfiguration("INCREASE", "100", "100"), "NO_INTERVAL");
+    assert.equal(
+      classifyGoalTargetConfiguration("INCREASE", "100", "50"),
+      "DIRECTION_MISMATCH"
+    );
+    assert.equal(
+      classifyGoalTargetConfiguration("DECREASE", "100", "150"),
+      "DIRECTION_MISMATCH"
+    );
+  });
+
+  it("alvo por COMPARAÇÃO: primeiro calcula, depois valida — percentual que inverte a direção é bloqueado", () => {
+    // "Aumentar" com percentual NEGATIVO: alvo apurado cai abaixo da base.
+    const target = computeGoalTargetFromComparison({
+      comparisonValue: "100",
+      percent: "-30",
+      trackingType: "INCREASE",
+    });
+    assert.equal(Number(target), 70);
+    assert.throws(
+      () => assertGoalTargetDirection("INCREASE", "100", target),
+      (e: unknown) => e instanceof GoalContractError && /AUMENTO/.test(e.message)
+    );
+    // Percentual coerente passa.
+    const ok = computeGoalTargetFromComparison({
+      comparisonValue: "100",
+      percent: "30",
+      trackingType: "INCREASE",
+    });
+    assert.doesNotThrow(() => assertGoalTargetDirection("INCREASE", "100", ok));
   });
 });
 

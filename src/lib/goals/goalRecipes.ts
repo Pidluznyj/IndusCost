@@ -35,11 +35,16 @@ export type GoalRecipe = {
 };
 
 export const GOAL_RECIPES: readonly GoalRecipe[] = [
+  // Semântica defensiva: receitas que somam VALOR DE PEDIDO (SalesOrder)
+  // nunca se chamam "faturamento" — faturamento é NF-e, e um provider
+  // canônico de NF-e ainda não existe aqui (virá em missão própria). O
+  // filtro de "já tem nota" restringe QUAIS pedidos contam, mas o número
+  // somado continua sendo o valor do pedido — e o texto diz isso.
   {
     key: "REVENUE_SALES_ORDERS",
     emoji: "💰",
-    title: "Faturamento (Pedidos de Venda)",
-    description: "Soma do valor líquido dos pedidos oficiais no período.",
+    title: "Valor de Pedidos de Venda",
+    description: "Soma do valor líquido dos pedidos oficiais no período (valor de pedido, não de nota fiscal).",
     entityKey: "SALES_ORDERS",
     metricKey: "SALES_NET_TOTAL",
     filters: [
@@ -50,8 +55,9 @@ export const GOAL_RECIPES: readonly GoalRecipe[] = [
   {
     key: "REVENUE_NEW_CUSTOMERS",
     emoji: "🌱",
-    title: "Faturamento com clientes novos",
-    description: "Valor dos pedidos que foram a PRIMEIRA compra faturada do cliente.",
+    title: "Pedidos de clientes novos",
+    description:
+      "Soma o VALOR DO PEDIDO da primeira compra de cada cliente — conta só pedidos que já têm nota fiscal vinculada.",
     entityKey: "SALES_ORDERS",
     metricKey: "SALES_NET_TOTAL",
     filters: [
@@ -89,8 +95,9 @@ export const GOAL_RECIPES: readonly GoalRecipe[] = [
   {
     key: "INVOICED_REVENUE",
     emoji: "🧾",
-    title: "Faturamento com nota fiscal",
-    description: "Valor dos pedidos que já têm nota fiscal emitida.",
+    title: "Pedidos já com nota fiscal",
+    description:
+      "Soma o VALOR DO PEDIDO dos pedidos que já têm nota fiscal emitida — não é o valor das notas.",
     entityKey: "SALES_ORDERS",
     metricKey: "SALES_NET_TOTAL",
     filters: [

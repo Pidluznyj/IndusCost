@@ -51,4 +51,35 @@ describe("goalRecipes — receitas de 1 clique", () => {
     assert.equal(findGoalRecipe("REVENUE_SALES_ORDERS")?.entityKey, "SALES_ORDERS");
     assert.equal(findGoalRecipe("NAO_EXISTE"), null);
   });
+
+  it("semântica: receita que soma VALOR DE PEDIDO nunca se chama 'faturamento'", () => {
+    // Faturamento é NF-e. Enquanto não existir provider canônico de NF-e no
+    // módulo de Metas, nenhuma receita cuja fonte numérica é SalesOrder pode
+    // usar 'faturamento'/'faturado' no título ou descrição — o filtro "já tem
+    // nota" restringe QUAIS pedidos contam, mas o valor somado continua sendo
+    // o do pedido.
+    for (const recipe of GOAL_RECIPES) {
+      if (recipe.entityKey !== "SALES_ORDERS") continue;
+      const text = `${recipe.title} ${recipe.description}`;
+      assert.ok(
+        !/faturament|faturad/i.test(text),
+        `receita ${recipe.key} baseada em pedidos usa linguagem de faturamento: "${text}"`
+      );
+    }
+  });
+
+  it("receita de pedidos com filtro de NF-e deixa explícito que soma o valor do PEDIDO", () => {
+    for (const key of ["REVENUE_NEW_CUSTOMERS", "INVOICED_REVENUE"]) {
+      const recipe = findGoalRecipe(key)!;
+      const hasInvoicedFilter = recipe.filters.some(
+        (f) => f.fieldKey === "SALES_INVOICED" && f.value === "INVOICED"
+      );
+      assert.ok(hasInvoicedFilter, `${key} deveria filtrar por NF-e vinculada`);
+      assert.match(
+        recipe.description,
+        /valor do pedido/i,
+        `${key} precisa dizer que soma o valor do pedido, não o da nota`
+      );
+    }
+  });
 });

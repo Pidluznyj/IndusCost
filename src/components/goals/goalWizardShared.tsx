@@ -617,18 +617,20 @@ export function GoalMeasureBuilder({
               >
                 {index === 0 ? (
                   "Mas apenas considerar quando "
+                ) : filter.connector === "OR" ? (
+                  // Regra LEGADA com "ou": o motor continua executando-a como
+                  // sempre, mas a UI não deixa criar novas — "A ou B e C" sem
+                  // parênteses visíveis engana. O conector legado é preservado
+                  // como está (nada é regravado em silêncio) e sinalizado.
+                  <span
+                    className="rounded border border-[#FDE68A] bg-[#FFFBEB] px-1.5 py-0.5 text-[11px] font-medium text-[#92400E]"
+                    title="Condição alternativa (ou) de uma configuração antiga — mantida como foi criada. Novas regras combinam condições apenas com 'e'."
+                    data-testid={`measure-filter-legacy-or-${index}`}
+                  >
+                    ou então quando (configuração legada)
+                  </span>
                 ) : (
-                  <PhraseSelect
-                    value={filter.connector}
-                    onChange={(v) =>
-                      updateFilter(filter.id, { connector: v as "AND" | "OR" })
-                    }
-                    options={[
-                      { value: "AND", label: "e também quando" },
-                      { value: "OR", label: "ou então quando" },
-                    ]}
-                    placeholder="…"
-                  />
+                  "e também quando "
                 )}{" "}
                 <PhraseSelect
                   value={filter.fieldKey}
