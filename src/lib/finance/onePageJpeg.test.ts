@@ -26,21 +26,26 @@ describe("Finance One Page — download JPEG", () => {
     "utf8"
   );
 
-  it("botão Baixar JPEG presente e desabilitado sem dados ou durante a geração", () => {
+  it("botões Baixar JPEG (A4) e PDF (A4) presentes e desabilitados sem dados ou durante a geração", () => {
     assert.match(page, /data-testid="finance-one-page-download-jpeg"/);
-    assert.match(page, /disabled=\{!data \|\| loading \|\| printing\}/);
+    assert.match(page, /data-testid="finance-one-page-download-pdf"/);
+    const disabled = page.match(/disabled=\{!data \|\| loading \|\| printing != null\}/g) ?? [];
+    assert.equal(disabled.length, 2, "os dois botões travam durante a geração");
   });
 
-  it("captura usa o utilitário oficial (html-to-image sob demanda)", () => {
-    assert.match(page, /exportTreasuryElementToJpeg/);
-    assert.match(
-      page,
-      /buildTreasuryJpegFileName\("one-page-financeiro"\)/,
-      "nome de arquivo determinístico com data local"
-    );
+  it("captura usa o exportador A4 oficial (html-to-image sob demanda, fatiado por seção)", () => {
+    assert.match(page, /exportOnePageElementToA4\(element, format, "one-page-financeiro"\)/);
+    // As quebras de página acontecem SEMPRE entre seções marcadas.
+    const blocks = page.match(/data-print-block/g) ?? [];
+    assert.ok(blocks.length >= 5, "cabeçalho + 4 seções marcadas como bloco de página");
     // ELIMINATÓRIO: nenhuma lib de captura importada direto no componente.
     assert.doesNotMatch(page, /^import[^\n]*html-to-image/m);
     assert.doesNotMatch(page, /html2canvas/);
+  });
+
+  it("usuário é informado de quantas páginas/arquivos saíram", () => {
+    assert.match(page, /finance-one-page-print-notice/);
+    assert.match(page, /páginas A4/);
   });
 
   it("folha de impressão: largura A4 retrato, off-screen SEM display:none", () => {

@@ -33,12 +33,13 @@ import {
   Legend,
 } from "recharts";
 import type { OnePageDashboardPayload } from "@/src/lib/finance/onePageTypes";
-// Utilitário compartilhado de captura (html-to-image sob demanda — nada no
-// bundle inicial; o mesmo motor validado nas telas de cenários da Tesouraria).
+// Exportação A4 (JPEG multipágina + PDF paginado) — mesmo motor de captura
+// validado na Tesouraria (html-to-image sob demanda), com fatiamento em
+// páginas de proporção A4 exata quebrando entre seções.
 import {
-  buildTreasuryJpegFileName,
-  exportTreasuryElementToJpeg,
-} from "@/src/lib/treasury/treasuryChartJpegExport";
+  exportOnePageElementToA4,
+  type OnePagePrintFormat,
+} from "@/src/lib/finance/onePagePrintExport";
 
 const YEAR_OPTIONS = Array.from(
   { length: 8 },
@@ -85,8 +86,10 @@ export function FinanceOnePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<OnePageDashboardPayload | null>(null);
-  const [printing, setPrinting] = useState(false);
+  /** Formato sendo gerado (null = ocioso) — a folha off-screen só monta aqui. */
+  const [printing, setPrinting] = useState<OnePagePrintFormat | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [printNotice, setPrintNotice] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
 
   const loadData = useCallback(async () => {
@@ -139,41 +142,55 @@ export function FinanceOnePage() {
   }, [data]);
 
   /**
-   * Baixar em JPEG: monta uma instância de IMPRESSÃO fora da tela (largura
-   * A4 retrato, cards em 3 colunas, gráficos sem animação), espera o layout
-   * assentar e captura. O arquivo cai em Downloads — o usuário abre e imprime.
+   * Baixar em A4 (JPEG ou PDF): monta uma instância de IMPRESSÃO fora da
+   * tela (largura A4 retrato, cards em 3 colunas, gráficos sem animação),
+   * espera o layout assentar, captura UMA vez e fatia em páginas A4 exatas —
+   * quebrando entre seções. JPEG: um arquivo por página; PDF: arquivo único
+   * paginado. Tudo cai em Downloads.
    */
-  const handleDownloadJpeg = useCallback(() => {
-    if (!data || printing) return;
-    setPrintError(null);
-    setPrinting(true);
-  }, [data, printing]);
+  const handleDownload = useCallback(
+    (format: OnePagePrintFormat) => {
+      if (!data || printing) return;
+      setPrintError(null);
+      setPrintNotice(null);
+      setPrinting(format);
+    },
+    [data, printing]
+  );
 
   useEffect(() => {
     if (!printing) return;
     let cancelled = false;
+    const format = printing;
     // Recharts mede o contêiner via ResizeObserver e desenha no tick
     // seguinte; a folga cobre layout + fontes antes da captura.
     const timer = setTimeout(() => {
       const element = printRef.current;
       if (!element || cancelled) {
-        setPrinting(false);
+        setPrinting(null);
         return;
       }
-      void exportTreasuryElementToJpeg(
-        element,
-        buildTreasuryJpegFileName("one-page-financeiro")
-      )
+      void exportOnePageElementToA4(element, format, "one-page-financeiro")
+        .then(({ pages }) => {
+          if (cancelled) return;
+          setPrintNotice(
+            format === "pdf"
+              ? `PDF gerado com ${pages} página(s) A4 — imprima em "Tamanho real" ou "Ajustar à página".`
+              : pages > 1
+                ? `Relatório dividido em ${pages} páginas A4 — foram baixados ${pages} arquivos JPEG (um por folha).`
+                : "JPEG gerado no tamanho exato de uma folha A4."
+          );
+        })
         .catch((cause: unknown) => {
           console.error(cause);
           if (!cancelled) {
             setPrintError(
-              "Não foi possível gerar o JPEG do relatório. Tente novamente."
+              "Não foi possível gerar o arquivo para impressão. Tente novamente."
             );
           }
         })
         .finally(() => {
-          if (!cancelled) setPrinting(false);
+          if (!cancelled) setPrinting(null);
         });
     }, 450);
     return () => {
@@ -242,14 +259,25 @@ export function FinanceOnePage() {
             </button>
 
             <button
-              onClick={handleDownloadJpeg}
-              disabled={!data || loading || printing}
+              onClick={() => handleDownload("jpeg")}
+              disabled={!data || loading || printing != null}
               className={`${financeBiButtonOutlineClass} disabled:opacity-50`}
               data-testid="finance-one-page-download-jpeg"
-              title="Baixar o relatório completo em JPEG (A4 retrato, alta resolução)"
+              title="Baixar em JPEG ajustado à folha A4 — se o relatório passar de uma página, baixa um arquivo por folha"
             >
               <Download className="h-3.5 w-3.5" />
-              {printing ? "Gerando…" : "Baixar JPEG"}
+              {printing === "jpeg" ? "Gerando…" : "Baixar JPEG (A4)"}
+            </button>
+
+            <button
+              onClick={() => handleDownload("pdf")}
+              disabled={!data || loading || printing != null}
+              className={`${financeBiButtonOutlineClass} disabled:opacity-50`}
+              data-testid="finance-one-page-download-pdf"
+              title="Baixar em PDF com todas as páginas já ajustadas à folha A4 — pronto para imprimir"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {printing === "pdf" ? "Gerando…" : "Baixar PDF (A4)"}
             </button>
           </div>
         </div>
@@ -257,6 +285,21 @@ export function FinanceOnePage() {
 
       {error ? <FinanceModuleErrorBanner message={error} /> : null}
       {printError ? <FinanceModuleErrorBanner message={printError} /> : null}
+      {printNotice ? (
+        <div
+          className="mb-4 flex items-start justify-between gap-2 rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 text-xs text-[#065F46]"
+          data-testid="finance-one-page-print-notice"
+        >
+          <span>{printNotice}</span>
+          <button
+            type="button"
+            className="shrink-0 font-semibold underline"
+            onClick={() => setPrintNotice(null)}
+          >
+            Fechar
+          </button>
+        </div>
+      ) : null}
 
       {loading ? (
         <FinanceModulePageLoading label="Carregando painel executivo One Page…" />
@@ -292,7 +335,9 @@ export function FinanceOnePage() {
             className="space-y-5 bg-white p-6"
             style={{ width: ONE_PAGE_PRINT_WIDTH_PX }}
           >
-            <div className="border-b-2 border-[#111827] pb-3">
+            {/* data-print-block: fronteiras de quebra de página do A4 —
+                a paginação nunca corta no meio de uma seção marcada. */}
+            <div className="border-b-2 border-[#111827] pb-3" data-print-block>
               <h1 className="text-xl font-extrabold text-[#111827]">
                 One Page — Financeiro
               </h1>
@@ -345,7 +390,7 @@ function OnePageReportBody({
   return (
     <div className={print ? "space-y-5" : "space-y-6"}>
       {/* SEÇÃO FATURAMENTO */}
-      <div className={sectionClass}>
+      <div className={sectionClass} data-print-block>
         <div className="border-b border-[#E5E7EB] pb-3">
           <h2 className="text-lg font-bold text-[#111827]">Faturamento</h2>
           <p className="text-xs text-[#6B7280]">
@@ -407,7 +452,7 @@ function OnePageReportBody({
       </div>
 
       {/* SEÇÃO PEDIDOS DE VENDA */}
-      <div className={sectionClass}>
+      <div className={sectionClass} data-print-block>
         <div className="border-b border-[#E5E7EB] pb-3">
           <h2 className="text-lg font-bold text-[#111827]">Pedidos de Venda</h2>
           <p className="text-xs text-[#6B7280]">
@@ -465,7 +510,10 @@ function OnePageReportBody({
       </div>
 
       {/* LEITURA EXECUTIVA */}
-      <div className={print ? `${financeBiCardClass} p-4` : `${financeBiCardClass} p-6`}>
+      <div
+        className={print ? `${financeBiCardClass} p-4` : `${financeBiCardClass} p-6`}
+        data-print-block
+      >
         <div className="border-b border-[#E5E7EB] pb-3 mb-4">
           <h2 className="text-lg font-bold text-[#111827] flex items-center gap-2">
             <FileText className="h-5 w-5 text-[#2563EB]" />
@@ -506,7 +554,7 @@ function OnePageDreSummarySection({
     : `${financeBiCardClass} p-6 space-y-5`;
 
   return (
-    <div className={sectionClass} data-testid="one-page-dre-summary">
+    <div className={sectionClass} data-testid="one-page-dre-summary" data-print-block>
       <div className="border-b border-[#E5E7EB] pb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold text-[#111827]">
