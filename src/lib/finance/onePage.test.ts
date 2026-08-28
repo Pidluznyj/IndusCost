@@ -139,7 +139,11 @@ describe("One Page — fonte canônica (gates eliminatórios)", () => {
       assert.ok(idx > cursor, `cascata fora de ordem ou ausente: ${label}`);
       cursor = idx;
     }
-    assert.match(page, /notas fiscais de venda emitidas|notas fiscais emitidas/);
+    // Redação por competência (faturamento), nunca linguagem de caixa.
+    assert.match(page, /Tudo o que foi faturado em vendas/);
+    assert.match(page, /Impostos e tributos considerados pela DRE/);
+    assert.equal(page.includes("entrou em vendas"), false);
+    assert.equal(page.includes("Impostos destacados nas notas"), false);
     assert.match(page, /DreFlowRow/);
     // Renderizada dentro do OnePageReportBody (tela + impressão A4/JPEG).
     const bodyIdx = page.indexOf("function OnePageReportBody");

@@ -544,14 +544,14 @@ function OnePageDreSummarySection({
             <DreFlowRow
               sign="start"
               label="Receita Bruta"
-              description="Tudo o que entrou em vendas: total das notas fiscais emitidas no período."
+              description="Tudo o que foi faturado em vendas: total das notas fiscais consideradas pela DRE no período."
               value={dre.receitaBrutaFormatted}
               print={print}
             />
             <DreFlowRow
               sign="minus"
               label="Deduções sobre Vendas"
-              description="Impostos destacados nas notas (ICMS, IPI, PIS/COFINS) e devoluções de clientes."
+              description="Impostos e tributos considerados pela DRE (ICMS, IPI, PIS/COFINS), além das devoluções de clientes."
               value={dre.deducoesFormatted}
               print={print}
             />
