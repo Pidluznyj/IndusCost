@@ -180,6 +180,18 @@ export type GoalKeyResultDto = {
   comparison: GoalTargetComparisonDto | null;
   /** Frase leiga da regra ("Soma de Valor total vendido em Pedidos de Venda"). */
   ruleSummary: string | null;
+  /**
+   * Versão ATUAL do compromisso (1 = como foi criado). Toda alteração
+   * relevante (alvo, base, direção, período, regra, peso, dono, status)
+   * cria uma versão nova e imutável — o histórico nunca é reescrito.
+   */
+  configVersion: number;
+  /** Última MUDANÇA de compromisso (nunca a versão inicial) — null se intacto. */
+  lastConfigChange: {
+    at: string;
+    version: number;
+    actorName: string | null;
+  } | null;
   /** Desdobramento nominal por pessoa (US-04). */
   quotas: GoalQuotaDto[];
   updatedAt: string;

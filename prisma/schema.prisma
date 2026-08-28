@@ -10142,6 +10142,7 @@ model GoalKeyResult {
   snapshots   GoalKeyResultSnapshot[]
   quotas      GoalKeyResultQuota[]
   initiatives GoalInitiative[]
+  versions    GoalKeyResultVersion[]
 
   @@index([goalId])
   @@index([ownerAppUserId])
@@ -10167,6 +10168,66 @@ model GoalKeyResultSnapshot {
 
   @@unique([keyResultId, snapshotDate])
   @@index([snapshotDate])
+}
+
+/// Histórico IMUTÁVEL do COMPROMISSO de um KR (P3): "72% em 10/06 era 72% de
+/// qual alvo?". Toda alteração relevante da configuração cria uma nova
+/// versão; versões nunca são reescritas. Campos pesquisáveis são colunas
+/// explícitas (padrão da casa) — nada importante vive só em JSON.
+model GoalKeyResultVersion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keyResultId String   @db.Uuid
+  /// Sequência 1..N por KR (1 = versão inicial, criada junto com o KR).
+  version     Int
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  actorUserId String?  @db.Uuid
+  /// Nome do autor no momento (denormalizado — o histórico não muda depois).
+  actorName   String?
+  reason      String?
+  /// CREATE (inicial) | UPDATE (edição) | SYSTEM (ajuste automático, ex.:
+  /// aparo de período quando o Objetivo pai encolheu).
+  source      String
+
+  // ── Snapshot imutável do compromisso ──
+  title             String
+  trackingType      GoalKeyResultTrackingType
+  baseline          Decimal                   @db.Decimal(20, 6)
+  target            Decimal                   @db.Decimal(20, 6)
+  weight            Decimal                   @db.Decimal(10, 4)
+  unit              String?
+  ownerAppUserId    String                    @db.Uuid
+  status            GoalStatus
+  startDate         DateTime?                 @db.Date
+  endDate           DateTime?                 @db.Date
+  targetBasis       GoalTargetBasis
+  comparisonMode    GoalTargetComparisonMode?
+  comparisonValue   Decimal?                  @db.Decimal(20, 6)
+  comparisonPercent Decimal?                  @db.Decimal(10, 4)
+  ruleJson          Json?
+
+  keyResult GoalKeyResult @relation(fields: [keyResultId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([keyResultId, version])
+  @@index([keyResultId])
+  @@index([createdAt])
+}
+
+/// Trilha de auditoria do módulo de Metas (padrão TreasuryAuditLog):
+/// mudanças relevantes de Goal (título/período/owner/status) e
+/// exclusão/arquivamento de Goal/KR.
+model GoalAuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// GOAL | KEY_RESULT
+  entityType  String
+  entityId    String   @db.Uuid
+  action      String
+  beforeJson  Json?
+  afterJson   Json?
+  actorUserId String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
 
 enum GoalInitiativeStatus {

@@ -304,6 +304,12 @@ type KeyResultRow = {
   comparisonComputedAt?: Date | null;
   owner?: { name: string } | null;
   quotas?: QuotaRow[];
+  versions?: Array<{
+    version: number;
+    source: string;
+    createdAt: Date;
+    actorName: string | null;
+  }>;
 };
 
 /** Janela civil do Objetivo pai — necessária para resolver o período do KR. */
@@ -373,6 +379,17 @@ function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResul
     configurationIssue: progress.configurationIssue,
     hasRule: row.ruleJson != null,
     ruleSummary: buildGoalRuleSummary(row.ruleJson),
+    configVersion: row.versions?.[0]?.version ?? 1,
+    // "Alvo alterado em DD/MM por X": só quando o compromisso já MUDOU
+    // (a versão inicial não é mudança).
+    lastConfigChange:
+      row.versions?.[0] && row.versions[0].source !== "CREATE"
+        ? {
+            at: row.versions[0].createdAt.toISOString(),
+            version: row.versions[0].version,
+            actorName: row.versions[0].actorName ?? null,
+          }
+        : null,
     targetBasis: (row.targetBasis ?? "MANUAL") as GoalTargetBasisValue,
     comparison:
       row.targetBasis === "COMPARISON" && row.comparisonMode
@@ -488,6 +505,17 @@ const KR_INCLUDE = {
     orderBy: { sortOrder: "asc" as const },
     include: { assignee: { select: { name: true } } },
   },
+  // Última versão do compromisso — alimenta configVersion/lastConfigChange.
+  versions: {
+    orderBy: { version: "desc" as const },
+    take: 1,
+    select: {
+      version: true,
+      source: true,
+      createdAt: true,
+      actorName: true,
+    },
+  },
 };
 
 const GOAL_INCLUDE = {
@@ -547,6 +575,105 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         "A soma das cotas ultrapassa o alvo do indicador — ajuste as fatias."
       );
     }
+  }
+
+  // ─── Versionamento do compromisso + auditoria (P3) ───────────────────────
+
+  /** Linha de KR com os campos que DEFINEM o compromisso. */
+  type KrConfigRow = {
+    id: string;
+    title: string;
+    trackingType: string;
+    baseline: unknown;
+    target: unknown;
+    weight: unknown;
+    unit: string | null;
+    ownerAppUserId: string;
+    status: string;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    targetBasis?: string | null;
+    comparisonMode?: string | null;
+    comparisonValue?: unknown;
+    comparisonPercent?: unknown;
+    ruleJson?: unknown;
+  };
+
+  /**
+   * Assinatura da CONFIGURAÇÃO (nunca do valor realizado): mudança relevante
+   * = assinatura diferente → nova versão. Mudança irrelevante (ex.: salvar
+   * sem alterar nada) não duplica versão.
+   */
+  function krConfigSignature(kr: KrConfigRow): string {
+    return JSON.stringify({
+      title: kr.title,
+      trackingType: kr.trackingType,
+      baseline: decimalToString(kr.baseline),
+      target: decimalToString(kr.target),
+      weight: decimalToString(kr.weight),
+      unit: kr.unit ?? null,
+      ownerAppUserId: kr.ownerAppUserId,
+      status: kr.status,
+      startDate: civilFromDate(kr.startDate),
+      endDate: civilFromDate(kr.endDate),
+      targetBasis: kr.targetBasis ?? "MANUAL",
+      comparisonMode: kr.comparisonMode ?? null,
+      comparisonValue:
+        kr.comparisonValue == null ? null : decimalToString(kr.comparisonValue),
+      comparisonPercent:
+        kr.comparisonPercent == null ? null : decimalToString(kr.comparisonPercent),
+      // Duas leituras do MESMO banco têm ordenação jsonb estável.
+      rule: JSON.stringify(kr.ruleJson ?? null),
+    });
+  }
+
+  async function resolveActorName(actorUserId?: string | null): Promise<string | null> {
+    if (!actorUserId) return null;
+    try {
+      const user = await prisma.appUser.findUnique({
+        where: { id: actorUserId },
+        select: { name: true },
+      });
+      return user?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Dados imutáveis de uma versão a partir da linha ATUAL do KR. */
+  function krVersionData(
+    kr: KrConfigRow,
+    version: number,
+    source: "CREATE" | "UPDATE" | "SYSTEM",
+    actorUserId: string | null,
+    actorName: string | null,
+    reason?: string | null
+  ) {
+    return {
+      keyResultId: kr.id,
+      version,
+      source,
+      actorUserId,
+      actorName,
+      reason: reason ?? null,
+      title: kr.title,
+      trackingType: kr.trackingType,
+      baseline: decimalToString(kr.baseline),
+      target: decimalToString(kr.target),
+      weight: decimalToString(kr.weight),
+      unit: kr.unit,
+      ownerAppUserId: kr.ownerAppUserId,
+      status: kr.status,
+      startDate: kr.startDate ?? null,
+      endDate: kr.endDate ?? null,
+      targetBasis: kr.targetBasis ?? "MANUAL",
+      comparisonMode: kr.comparisonMode ?? null,
+      comparisonValue:
+        kr.comparisonValue == null ? null : decimalToString(kr.comparisonValue),
+      comparisonPercent:
+        kr.comparisonPercent == null ? null : decimalToString(kr.comparisonPercent),
+      ruleJson: kr.ruleJson ?? undefined,
+    } as never;
   }
 
   async function writeSnapshot(
@@ -860,6 +987,7 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       // ATÔMICO: update do Objetivo + aparo dos recortes dos indicadores +
       // releitura na MESMA transação — período do pai e dos filhos nunca
       // ficam parcialmente aplicados (falhou qualquer passo, nada muda).
+      const goalEditorName = await resolveActorName(actor?.userId);
       const dtoRow = await prisma.$transaction(async (tx) => {
         const updated = await tx.goal.update({
           where: { id },
@@ -885,7 +1013,53 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         // Encolheu o período do Objetivo? Os recortes próprios dos indicadores
         // são aparados para dentro da nova janela — nenhum indicador mede fora
         // do período do pai, nem sequer no histórico do que foi cadastrado.
+        // Auditoria: mudanças relevantes do Objetivo ficam na trilha.
+        const relevant = (["title", "status", "ownerAppUserId"] as const).filter(
+          (field) => input[field] !== undefined && input[field] !== (current as never)[field]
+        );
+        const periodChanged =
+          (input.startDate !== undefined &&
+            startDate.getTime() !== current.startDate.getTime()) ||
+          (input.endDate !== undefined && endDate.getTime() !== current.endDate.getTime());
+        if (relevant.length > 0 || periodChanged) {
+          await tx.goalAuditLog.create({
+            data: {
+              entityType: "GOAL",
+              entityId: id,
+              action: "UPDATE",
+              beforeJson: {
+                title: current.title,
+                startDate: current.startDate.toISOString().slice(0, 10),
+                endDate: current.endDate.toISOString().slice(0, 10),
+                ownerAppUserId: current.ownerAppUserId,
+                status: current.status,
+              },
+              afterJson: {
+                title: input.title ?? current.title,
+                startDate: startDate.toISOString().slice(0, 10),
+                endDate: endDate.toISOString().slice(0, 10),
+                ownerAppUserId: input.ownerAppUserId ?? current.ownerAppUserId,
+                status: input.status ?? current.status,
+              },
+              actorUserId: actor?.userId || null,
+            },
+          });
+        }
         if (input.startDate !== undefined || input.endDate !== undefined) {
+          // KRs que SERÃO aparados ganham versão SYSTEM — o compromisso deles
+          // mudou (mesmo que por consequência do pai), e isso fica registrado.
+          const affected = await tx.goalKeyResult.findMany({
+            where: {
+              goalId: id,
+              OR: [
+                { startDate: { lt: startDate } },
+                { startDate: { gt: endDate } },
+                { endDate: { gt: endDate } },
+                { endDate: { lt: startDate } },
+              ],
+            },
+            select: { id: true },
+          });
           await tx.goalKeyResult.updateMany({
             where: { goalId: id, startDate: { lt: startDate } },
             data: { startDate },
@@ -902,6 +1076,30 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             where: { goalId: id, endDate: { lt: startDate } },
             data: { endDate: startDate },
           });
+          for (const { id: krId } of affected) {
+            const fresh = await tx.goalKeyResult.findUnique({
+              where: { id: krId },
+              include: {
+                versions: {
+                  orderBy: { version: "desc" as const },
+                  take: 1,
+                  select: { version: true },
+                },
+              },
+            });
+            if (!fresh) continue;
+            await tx.goalKeyResultVersion.create({
+              data: krVersionData(
+                fresh as unknown as KrConfigRow,
+                ((fresh as unknown as { versions?: Array<{ version: number }> })
+                  .versions?.[0]?.version ?? 1) + 1,
+                "SYSTEM",
+                actor?.userId ?? null,
+                goalEditorName,
+                "Período aparado pela alteração do período do Objetivo."
+              ),
+            });
+          }
           const reread = await tx.goal.findUnique({
             where: { id },
             include: GOAL_INCLUDE,
@@ -926,18 +1124,31 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       // Excluir/arquivar é ato administrativo: manage, sempre (a rota já
       // exige; a checagem aqui cobre qualquer chamador direto do service).
       if (actor) assertActor(actor.canManage);
-      const snapshotCount = await prisma.goalKeyResultSnapshot.count({
-        where: { keyResult: { goalId: id } },
-      });
-      if (snapshotCount === 0) {
+      const [snapshotCount, changeVersionCount] = await Promise.all([
+        prisma.goalKeyResultSnapshot.count({ where: { keyResult: { goalId: id } } }),
+        // Alguma versão além da inicial em qualquer KR = histórico relevante.
+        prisma.goalKeyResultVersion.count({
+          where: { keyResult: { goalId: id }, version: { gt: 1 } },
+        }),
+      ]);
+      if (snapshotCount === 0 && changeVersionCount === 0) {
         await prisma.goalInitiative.deleteMany({
           where: { OR: [{ goalId: id }, { keyResult: { goalId: id } }] },
         });
         await prisma.goalKeyResultQuota.deleteMany({
           where: { keyResult: { goalId: id } },
         });
+        // Versões iniciais caem por cascade junto com os KRs.
         await prisma.goalKeyResult.deleteMany({ where: { goalId: id } });
         await prisma.goal.delete({ where: { id } });
+        await prisma.goalAuditLog.create({
+          data: {
+            entityType: "GOAL",
+            entityId: id,
+            action: "DELETE",
+            actorUserId: actor?.userId || null,
+          },
+        });
         return { deleted: true, archived: false };
       }
       await prisma.goalKeyResult.updateMany({
@@ -947,6 +1158,14 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       await prisma.goal.update({
         where: { id: current.id },
         data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      await prisma.goalAuditLog.create({
+        data: {
+          entityType: "GOAL",
+          entityId: id,
+          action: "ARCHIVE",
+          actorUserId: actor?.userId || null,
+        },
       });
       return { deleted: false, archived: true };
     },
@@ -1067,6 +1286,7 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
       // ATÔMICO: indicador + cotas na mesma transação — falha em qualquer
       // cota desfaz tudo (o KR não fica órfão de configuração).
+      const creatorName = await resolveActorName(actor?.userId);
       const created = await prisma.$transaction(async (tx) => {
         const kr = await tx.goalKeyResult.create({
           data: {
@@ -1099,6 +1319,16 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             },
           });
         }
+        // Versão INICIAL do compromisso — nasce junto, na mesma transação.
+        await tx.goalKeyResultVersion.create({
+          data: krVersionData(
+            kr as unknown as KrConfigRow,
+            1,
+            "CREATE",
+            actor?.userId ?? null,
+            creatorName
+          ),
+        });
         return kr;
       });
       // Primeira leitura do motor FORA da transação (consulta pesada não
@@ -1215,46 +1445,73 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           ? "COMPARISON"
           : "MANUAL"
       );
-      const updated = await prisma.goalKeyResult.update({
-        where: { id },
-        data: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.domain !== undefined ? { domain: input.domain } : {}),
-          ...(input.trackingType !== undefined
-            ? { trackingType: input.trackingType }
-            : {}),
-          ...(input.baseline !== undefined ? { baseline: input.baseline } : {}),
-          ...(resolvedTarget != null ? { target: resolvedTarget } : {}),
-          ...comparisonData,
-          ...(input.unit !== undefined ? { unit: input.unit } : {}),
-          ...(input.weight !== undefined ? { weight: input.weight } : {}),
-          ...(input.status !== undefined
-            ? {
-                status: input.status,
-                archivedAt: input.status === "ARCHIVED" ? new Date() : null,
-              }
-            : {}),
-          ...(input.ownerAppUserId !== undefined
-            ? { ownerAppUserId: input.ownerAppUserId }
-            : {}),
-          ...(ruleProvided
-            ? {
-                ruleJson: rule ?? null,
-                manualTracking: rule == null,
-                // Troca de medição reseta o estado: manual não tem medição;
-                // automático (nova regra) volta a "aguardando 1ª leitura".
-                measurementStatus: rule == null ? "MANUAL" : "PENDING",
-                lastMeasurementError: null,
-              }
-            : {}),
-          ...(input.startDate !== undefined
-            ? { startDate: input.startDate ? civilDateToUtc(input.startDate) : null }
-            : {}),
-          ...(input.endDate !== undefined
-            ? { endDate: input.endDate ? civilDateToUtc(input.endDate) : null }
-            : {}),
-        },
-        include: KR_INCLUDE,
+      // Versão do compromisso na MESMA transação do update: alteração
+      // relevante (assinatura de configuração mudou) cria versão nova e
+      // imutável; salvar sem mudar nada não duplica versão.
+      const editorName = await resolveActorName(actor?.userId);
+      const updated = await prisma.$transaction(async (tx) => {
+        const row = await tx.goalKeyResult.update({
+          where: { id },
+          data: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.domain !== undefined ? { domain: input.domain } : {}),
+            ...(input.trackingType !== undefined
+              ? { trackingType: input.trackingType }
+              : {}),
+            ...(input.baseline !== undefined ? { baseline: input.baseline } : {}),
+            ...(resolvedTarget != null ? { target: resolvedTarget } : {}),
+            ...comparisonData,
+            ...(input.unit !== undefined ? { unit: input.unit } : {}),
+            ...(input.weight !== undefined ? { weight: input.weight } : {}),
+            ...(input.status !== undefined
+              ? {
+                  status: input.status,
+                  archivedAt: input.status === "ARCHIVED" ? new Date() : null,
+                }
+              : {}),
+            ...(input.ownerAppUserId !== undefined
+              ? { ownerAppUserId: input.ownerAppUserId }
+              : {}),
+            ...(ruleProvided
+              ? {
+                  ruleJson: rule ?? null,
+                  manualTracking: rule == null,
+                  // Troca de medição reseta o estado: manual não tem medição;
+                  // automático (nova regra) volta a "aguardando 1ª leitura".
+                  measurementStatus: rule == null ? "MANUAL" : "PENDING",
+                  lastMeasurementError: null,
+                }
+              : {}),
+            ...(input.startDate !== undefined
+              ? { startDate: input.startDate ? civilDateToUtc(input.startDate) : null }
+              : {}),
+            ...(input.endDate !== undefined
+              ? { endDate: input.endDate ? civilDateToUtc(input.endDate) : null }
+              : {}),
+          },
+          include: KR_INCLUDE,
+        });
+        const changed =
+          krConfigSignature(current as unknown as KrConfigRow) !==
+          krConfigSignature(row as unknown as KrConfigRow);
+        if (changed) {
+          const latestVersion =
+            (current as unknown as KeyResultRow).versions?.[0]?.version ?? 1;
+          await tx.goalKeyResultVersion.create({
+            data: krVersionData(
+              row as unknown as KrConfigRow,
+              latestVersion + 1,
+              "UPDATE",
+              actor?.userId ?? null,
+              editorName
+            ),
+          });
+          return tx.goalKeyResult.findUniqueOrThrow({
+            where: { id },
+            include: KR_INCLUDE,
+          });
+        }
+        return row;
       });
       return toKeyResultDto(updated as unknown as KeyResultRow, {
         startDate: current.goal.startDate.toISOString().slice(0, 10),
@@ -1268,18 +1525,41 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     ): Promise<{ deleted: boolean; archived: boolean }> {
       await requireKeyResult(id);
       if (actor) assertActor(actor.canManage);
-      const snapshotCount = await prisma.goalKeyResultSnapshot.count({
-        where: { keyResultId: id },
-      });
-      if (snapshotCount === 0) {
+      const [snapshotCount, changeVersionCount] = await Promise.all([
+        prisma.goalKeyResultSnapshot.count({ where: { keyResultId: id } }),
+        // Versões ALÉM da inicial = histórico de compromisso relevante.
+        prisma.goalKeyResultVersion.count({
+          where: { keyResultId: id, version: { gt: 1 } },
+        }),
+      ]);
+      // Exclusão física só sem NENHUM histórico (nem retrato, nem mudança de
+      // compromisso). A versão inicial cai junto (cascade) — ela só espelha o
+      // que está sendo apagado.
+      if (snapshotCount === 0 && changeVersionCount === 0) {
         await prisma.goalInitiative.deleteMany({ where: { keyResultId: id } });
         await prisma.goalKeyResultQuota.deleteMany({ where: { keyResultId: id } });
         await prisma.goalKeyResult.delete({ where: { id } });
+        await prisma.goalAuditLog.create({
+          data: {
+            entityType: "KEY_RESULT",
+            entityId: id,
+            action: "DELETE",
+            actorUserId: actor?.userId || null,
+          },
+        });
         return { deleted: true, archived: false };
       }
       await prisma.goalKeyResult.update({
         where: { id },
         data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      await prisma.goalAuditLog.create({
+        data: {
+          entityType: "KEY_RESULT",
+          entityId: id,
+          action: "ARCHIVE",
+          actorUserId: actor?.userId || null,
+        },
       });
       return { deleted: false, archived: true };
     },
@@ -1351,12 +1631,21 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       });
     },
 
-    /** Job diário (RN-008): calcula todos os KRs ativos com regra. */
+    /**
+     * Job diário (RN-008): calcula todos os KRs ativos com regra.
+     *
+     * População: SÓ status ACTIVE em Objetivo ACTIVE — arquivados e
+     * concluídos (DONE) ficam fora por definição, e o job NUNCA muda status
+     * (100% atingido ≠ encerrado administrativamente; DONE é decisão humana).
+     * Idempotente no dia: snapshots são upsert por (KR, dia civil SP).
+     */
     async runDailySnapshots(now: Date = new Date()): Promise<{
       computed: number;
       manualSnapshotted: number;
       failures: Array<{ keyResultId: string; message: string }>;
+      durationMs: number;
     }> {
+      const startedAt = Date.now();
       const active = await prisma.goalKeyResult.findMany({
         where: { status: "ACTIVE", goal: { status: "ACTIVE" } },
         include: { goal: true },
@@ -1391,13 +1680,19 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             manualSnapshotted += 1;
           }
         } catch (err) {
+          // BUSY e afins: mensagem sanitizada (nunca SQL/segredo no resumo).
           failures.push({
             keyResultId: kr.id,
-            message: err instanceof Error ? err.message : String(err),
+            message: sanitizeGoalMeasurementError(err),
           });
         }
       }
-      return { computed, manualSnapshotted, failures };
+      const durationMs = Date.now() - startedAt;
+      // Resumo operacional (sem dado sensível — só contagens e duração).
+      console.info(
+        `[goals] job diário: ${computed} medidos, ${manualSnapshotted} manuais retratados, ${failures.length} falhas em ${durationMs}ms`
+      );
+      return { computed, manualSnapshotted, failures, durationMs };
     },
 
     /** Substitui TODAS as cotas do KR (Σ ≤ target — bloqueio). */
@@ -1608,6 +1903,7 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       );
       assertQuotasWithinTarget(wizardTarget, input.quotas);
 
+      const wizardActorName = await resolveActorName(actorUserId);
       const goalId = await prisma.$transaction(async (tx) => {
         const goal = await tx.goal.create({
           data: {
@@ -1655,6 +1951,16 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             },
           });
         }
+        // Versão INICIAL do compromisso do KR criado pelo wizard.
+        await tx.goalKeyResultVersion.create({
+          data: krVersionData(
+            kr as unknown as KrConfigRow,
+            1,
+            "CREATE",
+            actorUserId || null,
+            wizardActorName
+          ),
+        });
         return goal.id;
       });
 
@@ -1724,6 +2030,14 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
      * há de onde tirar o histórico sem inventar número.
      */
     async getKeyResultSeries(keyResultId: string): Promise<GoalKeyResultSeriesDto> {
+      // Custo (P3, medido por inspeção): 1 query agregada mensal no motor
+      // genérico (índices por data) ou ≤12 chamadas/ano à função oficial no
+      // provider; +1 janela quando há comparação. CUSTOMER_MOMENT adiciona
+      // window function — aceitável na leitura sob demanda do detalhe.
+      // SEM cache por decisão: cachear sem chave por versão/configuração
+      // arriscaria servir série de compromisso antigo como atual; se a
+      // telemetria de produção mostrar custo real, a chave terá de incluir
+      // KR + configVersion + janela + regra/provider (+ comparação).
       const kr = await requireKeyResult(keyResultId);
       const window = keyResultWindow(kr);
       const empty: GoalKeyResultSeriesDto = {

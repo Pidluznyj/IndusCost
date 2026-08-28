@@ -659,6 +659,22 @@ export function GoalDetailPage() {
                       {selectedKr.comparison.modeLabel})
                     </p>
                   ) : null}
+                  {/* Governança (P3): mudança de compromisso nunca é
+                      silenciosa — quem olha o número sabe que o alvo mudou. */}
+                  {selectedKr.lastConfigChange ? (
+                    <p
+                      className="text-[11px] font-medium text-[#92400E]"
+                      data-testid="detail-kr-config-change"
+                    >
+                      Compromisso alterado em{" "}
+                      {new Date(selectedKr.lastConfigChange.at).toLocaleDateString("pt-BR")}
+                      {selectedKr.lastConfigChange.actorName
+                        ? ` por ${selectedKr.lastConfigChange.actorName}`
+                        : ""}{" "}
+                      (versão {selectedKr.lastConfigChange.version}) — o histórico
+                      de progresso anterior mantém o contexto da versão da época.
+                    </p>
+                  ) : null}
                   <p
                     className="text-[11px] text-muted-foreground"
                     data-testid="detail-kr-period"

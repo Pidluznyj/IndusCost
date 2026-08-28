@@ -1132,6 +1132,13 @@ function KeyResultFormDialog({
         Progresso = (valor atual − ponto de partida) ÷ (alvo − ponto de
         partida), limitado a 0–100%.
       </p>
+      <p
+        className="rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[11px] text-[#92400E]"
+        data-testid="kr-form-commitment-notice"
+      >
+        Alterar alvo, ponto de partida ou período muda o COMPROMISSO desta
+        meta — a alteração ficará registrada no histórico de versões.
+      </p>
     </DialogShell>
   );
 }
