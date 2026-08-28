@@ -10024,6 +10024,18 @@ enum GoalTargetBasis {
   COMPARISON
 }
 
+/// Estado canônico da medição de um KR (0 ≠ não medido ≠ erro ≠ ok).
+enum GoalMeasurementStatus {
+  /// Indicador de lançamento manual — não há medição automática.
+  MANUAL
+  /// Automático recém-configurado, aguardando a primeira execução com sucesso.
+  PENDING
+  /// Última medição automática concluiu com sucesso.
+  OK
+  /// Última medição automática falhou (o último valor válido é preservado).
+  ERROR
+}
+
 /// Qual período anterior serve de referência para o alvo comparado.
 enum GoalTargetComparisonMode {
   /// Mesma janela, um ano antes (jul-set/2026 → jul-set/2025).
@@ -10109,6 +10121,15 @@ model GoalKeyResult {
   comparisonComputedAt DateTime?                 @db.Timestamptz(6)
   /// true = valor digitado (MVP 1); false = calculado pelo motor (MVP 2+).
   manualTracking       Boolean                   @default(true)
+  /// Estado canônico da MEDIÇÃO — nunca confundir 0 com "não medido"/erro.
+  /// MANUAL = valor digitado; PENDING = automático aguardando a primeira
+  /// execução bem-sucedida; OK = última medição concluiu; ERROR = última
+  /// medição falhou (achievedValue preserva o último valor VÁLIDO).
+  measurementStatus    GoalMeasurementStatus     @default(MANUAL)
+  /// Instante da última medição BEM-SUCEDIDA (a "última leitura válida").
+  lastMeasurementAt    DateTime?                 @db.Timestamptz(6)
+  /// Mensagem SANITIZADA da última falha (nunca SQL/stack/segredo).
+  lastMeasurementError String?
   /// Regra dinâmica (MVP 2+): métrica + filtros como chaves do dicionário.
   ruleJson             Json?
   status               GoalStatus                @default(ACTIVE)

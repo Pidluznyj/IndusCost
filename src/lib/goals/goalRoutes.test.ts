@@ -91,13 +91,14 @@ function stubService(overrides: Partial<GoalService> = {}): GoalService {
   } as GoalService;
 }
 
-function setup(service = stubService()) {
+function setup(service = stubService(), options: { manageAllowed?: boolean } = {}) {
   const { app, routes } = buildFakeApp();
   const { requireResource, requireAppAuth } = fakeGuardFactory();
   registerGoalRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser: () => ({ id: "user-1" }),
+    authorizeRequest: async () => ({ ok: options.manageAllowed === true }),
     service,
   });
   return { routes };
@@ -185,14 +186,18 @@ describe("goalRoutes — parse e erros controlados", () => {
     assert.equal(res409.statusCode, 409);
   });
 
-  it("POST /api/goals/:id/key-results repassa rule ao service (indicador dentro do objetivo existente)", async () => {
+  it("POST /api/goals/:id/key-results é ATÔMICO: rule + quotas + ator chegam juntos ao service", async () => {
     let seenGoalId: unknown = null;
     let seenInput: unknown = null;
+    let seenQuotas: unknown = null;
+    let seenActor: unknown = null;
     const { routes } = setup(
       stubService({
-        createKeyResult: async (goalId, input) => {
+        createKeyResultWithQuotas: async (goalId, input, quotas, actor) => {
           seenGoalId = goalId;
           seenInput = input;
+          seenQuotas = quotas;
+          seenActor = actor;
           return {} as never;
         },
       })
@@ -206,13 +211,19 @@ describe("goalRoutes — parse e erros controlados", () => {
       {
         params: { id: "goal-1" },
         body: {
-          title: "Faturamento",
+          title: "Valor de Pedidos",
           domain: "COMERCIAL",
           trackingType: "INCREASE",
           baseline: "0",
           target: "100000",
           ownerAppUserId: "3f2b8c9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
           rule,
+          quotas: [
+            {
+              assignedAppUserId: "3f2b8c9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+              quotaValue: "50000",
+            },
+          ],
         },
       },
       res
@@ -220,6 +231,52 @@ describe("goalRoutes — parse e erros controlados", () => {
     assert.equal(res.statusCode, 201);
     assert.equal(seenGoalId, "goal-1");
     assert.deepEqual((seenInput as { rule: unknown }).rule, rule);
+    assert.equal((seenQuotas as unknown[]).length, 1);
+    assert.deepEqual(seenActor, { userId: "user-1", canManage: false });
+  });
+
+  it("ator contextual: update sem manage → canManage=false; decisão canônica manage → true", async () => {
+    let seenActor: unknown = null;
+    const capture = stubService({
+      updateGoal: async (_id, _input, actor) => {
+        seenActor = actor;
+        return {} as never;
+      },
+    });
+    const put = (routes: RouteEntry[]) =>
+      routes.find((r) => r.method === "PUT" && r.path === "/api/goals/:id")!;
+
+    const denied = setup(capture, { manageAllowed: false });
+    await put(denied.routes).handler(
+      { params: { id: "g1" }, body: { title: "X" } },
+      mockRes()
+    );
+    assert.deepEqual(seenActor, { userId: "user-1", canManage: false });
+
+    const allowed = setup(capture, { manageAllowed: true });
+    await put(allowed.routes).handler(
+      { params: { id: "g1" }, body: { title: "X" } },
+      mockRes()
+    );
+    assert.deepEqual(seenActor, { userId: "user-1", canManage: true });
+  });
+
+  it("FORBIDDEN do service vira 403 na borda HTTP (política por objeto aplicada na API)", async () => {
+    const { routes } = setup(
+      stubService({
+        updateGoal: async () => {
+          throw new GoalDomainError(
+            "FORBIDDEN",
+            "Você não tem vínculo com esta meta — apenas o responsável (ou um gestor do módulo) pode alterá-la."
+          );
+        },
+      })
+    );
+    const route = routes.find((r) => r.method === "PUT" && r.path === "/api/goals/:id")!;
+    const res = mockRes();
+    await route.handler({ params: { id: "g1" }, body: { title: "X" } }, res);
+    assert.equal(res.statusCode, 403);
+    assert.equal((res.body as { code: string }).code, "FORBIDDEN");
   });
 
   it("POST /api/goals/rules/preview: guard de leitura, valida a janela e delega ao service", async () => {

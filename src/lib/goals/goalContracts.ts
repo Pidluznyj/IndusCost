@@ -40,6 +40,17 @@ export const GOAL_TRACKING_TYPE_LABELS: Record<GoalTrackingTypeValue, string> = 
   DECREASE: "Redução (menor é melhor)",
 };
 
+/** Estado canônico da medição — 0 nunca se confunde com "não medido"/erro. */
+export const GOAL_MEASUREMENT_STATUSES = ["MANUAL", "PENDING", "OK", "ERROR"] as const;
+export type GoalMeasurementStatusValue = (typeof GOAL_MEASUREMENT_STATUSES)[number];
+
+export const GOAL_MEASUREMENT_STATUS_LABELS: Record<GoalMeasurementStatusValue, string> = {
+  MANUAL: "Manual",
+  PENDING: "Aguardando primeira medição",
+  OK: "Atualizado",
+  ERROR: "Falha na última atualização",
+};
+
 export class GoalContractError extends Error {
   readonly code = "VALIDATION_ERROR";
   readonly field: string | null;
@@ -130,6 +141,12 @@ export type GoalKeyResultDto = {
   ownerAppUserId: string;
   ownerName: string | null;
   manualTracking: boolean;
+  /** Estado persistido da medição (MANUAL | PENDING | OK | ERROR). */
+  measurementStatus: GoalMeasurementStatusValue;
+  /** Última medição BEM-SUCEDIDA (a "última leitura válida"); ISO ou null. */
+  lastMeasurementAt: string | null;
+  /** Mensagem sanitizada da última falha de medição — null quando não há. */
+  lastMeasurementError: string | null;
   status: GoalStatusValue;
   /** 0..100 derivado — somente leitura. */
   progressPercent: number;

@@ -170,51 +170,28 @@ export function GoalKeyResultWizardDialog({
             ? buildRuleFromWizardState(measure.entityKey, measure.metricKey, measure.filters)
             : null,
       };
-      // Retentativa depois de um erro NÃO recria o indicador: se ele já foi
-      // gravado nesta sessão do diálogo, reaproveita e segue para as fatias.
-      let finalKr =
-        createdKeyResult ??
-        (
-          await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
-            `/api/goals/${goal.id}/key-results`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            }
-          )
-        ).keyResult;
-      setCreatedKeyResult(finalKr);
-
+      // UM único request ATÔMICO: indicador + fatias nascem na mesma
+      // transação do backend. Fatia inválida = indicador NÃO é criado —
+      // acabou o estado "criou mas as fatias falharam" que induzia o
+      // usuário a clicar de novo e duplicar.
       const nonEmptyQuotas = quotas.filter((q) => q.quotaValue.trim() !== "");
-      if (nonEmptyQuotas.length > 0) {
-        try {
-          const withQuotas = await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
-            `/api/goals/key-results/${finalKr.id}/quotas`,
-            {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                quotas: nonEmptyQuotas.map((q) => ({
-                  assignedAppUserId: q.assignedAppUserId,
-                  quotaValue: q.quotaValue.replace(",", "."),
-                })),
-              }),
-            }
-          );
-          finalKr = withQuotas.keyResult;
-        } catch (quotaErr) {
-          // O indicador EXISTE — dizer "falha ao salvar o indicador" aqui é o
-          // que levava o usuário a clicar de novo e duplicar. A mensagem
-          // separa o que foi salvo do que faltou.
-          setError(
-            `O indicador foi criado, mas as fatias da equipe não foram salvas: ${
-              quotaErr instanceof Error ? quotaErr.message : "erro desconhecido"
-            } Feche e ajuste as fatias pelo indicador — não crie outro.`
-          );
-          return;
-        }
-      }
+      const finalKr = (
+        await fetchJsonOk<{ keyResult: GoalKeyResultDto }>(
+          `/api/goals/${goal.id}/key-results`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...payload,
+              quotas: nonEmptyQuotas.map((q) => ({
+                assignedAppUserId: q.assignedAppUserId,
+                quotaValue: q.quotaValue.replace(",", "."),
+              })),
+            }),
+          }
+        )
+      ).keyResult;
+      setCreatedKeyResult(finalKr);
       saved = finalKr;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao salvar o indicador.");

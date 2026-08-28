@@ -15081,10 +15081,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // Metas (OKR) — docs/goal-engine-plan.md (recurso admin.goals).
+  // authorizeRequest: decisão canônica sem side-effect HTTP — resolve o
+  // `canManage` do ator para a autorização POR OBJETO no service.
   registerGoalRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+    authorizeRequest: authorizeResourceRequest,
   });
 
   registerSatisfactionRoutes(app, {

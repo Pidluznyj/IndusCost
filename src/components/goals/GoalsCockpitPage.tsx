@@ -579,6 +579,31 @@ export function GoalsCockpitPage() {
                                     direção incompatível
                                   </span>
                                 ) : null}
+                                {/* Estado da MEDIÇÃO: 0 nunca se confunde com
+                                    "não medido" ou erro. Em ERROR o valor na
+                                    tela é a última leitura VÁLIDA. */}
+                                {kr.measurementStatus === "PENDING" ? (
+                                  <span
+                                    className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-1.5 text-[10px] font-semibold text-[#92400E]"
+                                    title="O sistema ainda não conseguiu medir este indicador — o número mostrado é a linha de base, não uma medição."
+                                    data-testid={`kr-measurement-pending-${kr.id}`}
+                                  >
+                                    aguardando 1ª medição
+                                  </span>
+                                ) : null}
+                                {kr.measurementStatus === "ERROR" ? (
+                                  <span
+                                    className="rounded-full border border-[#FECACA] bg-[#FEF2F2] px-1.5 text-[10px] font-semibold text-[#991B1B]"
+                                    title={`A última atualização automática falhou${
+                                      kr.lastMeasurementAt
+                                        ? ` — o valor mostrado é a última leitura válida (${new Date(kr.lastMeasurementAt).toLocaleString("pt-BR")})`
+                                        : ""
+                                    }. ${kr.lastMeasurementError ?? ""}`}
+                                    data-testid={`kr-measurement-error-${kr.id}`}
+                                  >
+                                    falha na última atualização
+                                  </span>
+                                ) : null}
                                 {/* Recorte próprio (ex.: trimestre dentro de um
                                     objetivo anual) — sem isto o número parecia
                                     "o total de tudo". */}

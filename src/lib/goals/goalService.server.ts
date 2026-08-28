@@ -43,6 +43,7 @@ import {
   type GoalQuotaDto,
   type GoalQuotaInput,
   type GoalKeyResultSeriesDto,
+  type GoalMeasurementStatusValue,
   type GoalSeriesPointDto,
   type GoalSnapshotDto,
   type GoalStatusValue,
@@ -73,16 +74,99 @@ import {
   findGoalMetadataMetric,
 } from "./goalMetadata.js";
 
+export type GoalDomainErrorCode =
+  | "NOT_FOUND"
+  | "CONFLICT"
+  | "VALIDATION_ERROR"
+  | "BUSY"
+  | "FORBIDDEN"
+  | "MEASUREMENT_FAILED";
+
 export class GoalDomainError extends Error {
-  readonly code: "NOT_FOUND" | "CONFLICT" | "VALIDATION_ERROR" | "BUSY";
-  constructor(
-    code: "NOT_FOUND" | "CONFLICT" | "VALIDATION_ERROR" | "BUSY",
-    message: string
-  ) {
+  readonly code: GoalDomainErrorCode;
+  constructor(code: GoalDomainErrorCode, message: string) {
     super(message);
     this.name = "GoalDomainError";
     this.code = code;
   }
+}
+
+// ─── Autorização por objeto ─────────────────────────────────────────────────
+
+/**
+ * Quem está agindo, resolvido na BORDA HTTP pela decisão canônica de
+ * permissões (requireResource/authorizeRequest): `canManage` = admin.goals:
+ * manage permitido. Chamadas internas (jobs/scripts) omitem o ator e são
+ * tratadas como sistema confiável.
+ *
+ * Política (P0-B): possuir `update` NÃO significa editar qualquer meta —
+ * update dá a capacidade; o VÍNCULO com o objeto dá o direito.
+ */
+export type GoalActor = {
+  userId: string;
+  canManage: boolean;
+};
+
+/** Owner do Goal ou manage. */
+export function canActorEditGoal(
+  actor: GoalActor,
+  goal: { ownerAppUserId: string }
+): boolean {
+  return actor.canManage || goal.ownerAppUserId === actor.userId;
+}
+
+/** Owner do Goal, owner do KR ou manage. */
+export function canActorEditKeyResult(
+  actor: GoalActor,
+  kr: { ownerAppUserId: string; goal: { ownerAppUserId: string } }
+): boolean {
+  return (
+    actor.canManage ||
+    kr.ownerAppUserId === actor.userId ||
+    kr.goal.ownerAppUserId === actor.userId
+  );
+}
+
+/**
+ * Iniciativa: owner do Goal (quando ligada ao Goal), owner do KR ou do Goal
+ * pai (quando ligada ao KR), manage sempre; o assignee pode atualizar o fluxo
+ * operacional da PRÓPRIA iniciativa (allowAssignee) — mas não excluí-la.
+ */
+export function canActorTouchInitiative(
+  actor: GoalActor,
+  links: {
+    goalOwnerAppUserId: string | null;
+    keyResultOwnerAppUserId: string | null;
+    assigneeAppUserId: string | null;
+  },
+  opts: { allowAssignee: boolean }
+): boolean {
+  if (actor.canManage) return true;
+  if (links.goalOwnerAppUserId === actor.userId) return true;
+  if (links.keyResultOwnerAppUserId === actor.userId) return true;
+  if (opts.allowAssignee && links.assigneeAppUserId === actor.userId) return true;
+  return false;
+}
+
+const GOAL_FORBIDDEN_MESSAGE =
+  "Você não tem vínculo com esta meta — apenas o responsável (ou um gestor do módulo) pode alterá-la.";
+
+function assertActor(allowed: boolean): void {
+  if (!allowed) throw new GoalDomainError("FORBIDDEN", GOAL_FORBIDDEN_MESSAGE);
+}
+
+// ─── Medição — sanitização de erro ──────────────────────────────────────────
+
+/**
+ * Mensagem persistível de uma falha de medição: erros de domínio/contrato já
+ * são frases pt-BR seguras; QUALQUER outro erro (Prisma, SQL, rede) vira
+ * mensagem genérica — stack trace, SQL e segredos nunca chegam ao banco.
+ */
+export function sanitizeGoalMeasurementError(err: unknown): string {
+  if (err instanceof GoalDomainError || err instanceof GoalContractError) {
+    return err.message.slice(0, 300);
+  }
+  return "Erro interno ao executar a medição — os dados de origem não puderam ser lidos.";
 }
 
 /** Dia civil corrente em São Paulo (YYYY-MM-DD) — snapshots são por dia civil. */
@@ -201,6 +285,10 @@ type KeyResultRow = {
   ruleJson: unknown;
   status: string;
   updatedAt: Date;
+  /** Estado canônico da medição (rows antigos podem não trazer — fallback). */
+  measurementStatus?: string | null;
+  lastMeasurementAt?: Date | null;
+  lastMeasurementError?: string | null;
   /** Período próprio (null = herda o do Objetivo). */
   startDate?: Date | null;
   endDate?: Date | null;
@@ -271,6 +359,12 @@ function toKeyResultDto(row: KeyResultRow, goalWindow: GoalWindow): GoalKeyResul
     ownerAppUserId: row.ownerAppUserId,
     ownerName: row.owner?.name ?? null,
     manualTracking: row.manualTracking,
+    measurementStatus: (row.measurementStatus ??
+      (row.manualTracking ? "MANUAL" : "OK")) as GoalMeasurementStatusValue,
+    lastMeasurementAt: row.lastMeasurementAt
+      ? row.lastMeasurementAt.toISOString()
+      : null,
+    lastMeasurementError: row.lastMeasurementError ?? null,
     status: row.status as GoalStatusValue,
     progressPercent: progressRatioToPercent(progress.ratio),
     invalidTargets: progress.invalidTargets,
@@ -574,32 +668,108 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     return { target, comparisonValue, window, computedAt: new Date() };
   }
 
-  /** Executa a regra do KR (janela própria ∩ período do Goal) e persiste valor + snapshot. */
-  async function computeAndStoreRuleValue(
-    kr: {
-      id: string;
-      ruleJson: unknown;
-      baseline: unknown;
-      target: unknown;
-      startDate?: Date | null;
-      endDate?: Date | null;
-      goal: { startDate: Date; endDate: Date };
-    },
+  type MeasurableKr = {
+    id: string;
+    ruleJson: unknown;
+    baseline: unknown;
+    target: unknown;
+    trackingType?: string;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    goal: { startDate: Date; endDate: Date };
+  };
+
+  type GoalMeasurementOutcome =
+    | { ok: true; achievedValue: string }
+    | { ok: false; error: string };
+
+  /**
+   * Caminho ÚNICO da medição automática — primeira leitura, refresh manual e
+   * job diário passam todos por aqui:
+   *  - advisory lock por KR dentro da transação: duas medições do mesmo
+   *    indicador nunca rodam juntas (a segunda recebe BUSY);
+   *  - sucesso: valor + measurementStatus OK + lastMeasurementAt + snapshot
+   *    idempotente do dia, tudo na mesma transação curta;
+   *  - falha da REGRA: não lança — registra ERROR com mensagem SANITIZADA,
+   *    PRESERVA o último achievedValue válido (nunca vira zero) e devolve o
+   *    outcome para o chamador decidir a resposta.
+   * BUSY é a única exceção que escapa (o chamador informa/pula).
+   */
+  async function measureKeyResult(
+    kr: MeasurableKr,
     source: "ENGINE" | "REFRESH",
     now: Date
-  ): Promise<string> {
-    const achievedValue = await executeGoalRule(prisma, kr.ruleJson, keyResultWindow(kr));
-    const progress = computeGoalKeyResultProgress({
-      baseline: decimalToString(kr.baseline),
-      target: decimalToString(kr.target),
-      achievedValue,
-    });
-    await prisma.goalKeyResult.update({
-      where: { id: kr.id },
-      data: { achievedValue },
-    });
-    await writeSnapshot(kr.id, achievedValue, progress.ratio, source, now);
-    return achievedValue;
+  ): Promise<GoalMeasurementOutcome> {
+    const lockKey = hashGoalLockKey(kr.id);
+    try {
+      const achievedValue = await prisma.$transaction(async (tx) => {
+        const lockRows = await tx.$queryRaw<Array<{ locked: boolean }>>`
+          SELECT pg_try_advisory_xact_lock(${0x60a15}::int, ${lockKey}::int) AS locked
+        `;
+        if (!lockRows[0]?.locked) {
+          throw new GoalDomainError(
+            "BUSY",
+            "Este indicador já está sendo recalculado — aguarde alguns segundos."
+          );
+        }
+        const value = await executeGoalRule(
+          tx as unknown as PrismaClient,
+          kr.ruleJson,
+          keyResultWindow(kr)
+        );
+        const progress = computeGoalKeyResultProgress({
+          baseline: decimalToString(kr.baseline),
+          target: decimalToString(kr.target),
+          achievedValue: value,
+          trackingType: kr.trackingType,
+        });
+        await tx.goalKeyResult.update({
+          where: { id: kr.id },
+          data: {
+            achievedValue: value,
+            measurementStatus: "OK",
+            lastMeasurementAt: now,
+            lastMeasurementError: null,
+          },
+        });
+        const snapshotDate = civilDateToUtc(todayGoalCivilDateInSaoPaulo(now));
+        await tx.goalKeyResultSnapshot.upsert({
+          where: { keyResultId_snapshotDate: { keyResultId: kr.id, snapshotDate } },
+          create: {
+            keyResultId: kr.id,
+            snapshotDate,
+            achievedValue: value,
+            progressRatio: progress.ratio.toFixed(6),
+            source,
+          },
+          update: {
+            achievedValue: value,
+            progressRatio: progress.ratio.toFixed(6),
+            source,
+          },
+        });
+        return value;
+      });
+      return { ok: true, achievedValue };
+    } catch (err) {
+      if (err instanceof GoalDomainError && err.code === "BUSY") throw err;
+      const message = sanitizeGoalMeasurementError(err);
+      console.error(`[goals] medição do indicador ${kr.id} falhou (${source})`, err);
+      // Registro da falha FORA da transação abortada: estado ERROR + mensagem;
+      // achievedValue fica intocado — o último valor válido permanece visível.
+      try {
+        await prisma.goalKeyResult.update({
+          where: { id: kr.id },
+          data: { measurementStatus: "ERROR", lastMeasurementError: message },
+        });
+      } catch (recordErr) {
+        console.error(
+          `[goals] falha ao registrar erro de medição do indicador ${kr.id}`,
+          recordErr
+        );
+      }
+      return { ok: false, error: message };
+    }
   }
 
   const service = {
@@ -668,8 +838,13 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       return toGoalDto(created as unknown as GoalRow);
     },
 
-    async updateGoal(id: string, input: GoalUpdateInput): Promise<GoalDto> {
+    async updateGoal(
+      id: string,
+      input: GoalUpdateInput,
+      actor?: GoalActor
+    ): Promise<GoalDto> {
       const current = await requireGoal(id);
+      if (actor) assertActor(canActorEditGoal(actor, current));
       const startDate = input.startDate
         ? civilDateToUtc(input.startDate)
         : current.startDate;
@@ -680,57 +855,75 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           "Data fim não pode ser anterior à data início."
         );
       }
-      const updated = await prisma.goal.update({
-        where: { id },
-        data: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.description !== undefined ? { description: input.description } : {}),
-          ...(input.startDate !== undefined ? { startDate } : {}),
-          ...(input.endDate !== undefined ? { endDate } : {}),
-          ...(input.status !== undefined
-            ? {
-                status: input.status,
-                archivedAt: input.status === "ARCHIVED" ? new Date() : null,
-              }
-            : {}),
-          ...(input.ownerAppUserId !== undefined
-            ? { ownerAppUserId: input.ownerAppUserId }
-            : {}),
-        },
-        include: GOAL_INCLUDE,
+      // ATÔMICO: update do Objetivo + aparo dos recortes dos indicadores +
+      // releitura na MESMA transação — período do pai e dos filhos nunca
+      // ficam parcialmente aplicados (falhou qualquer passo, nada muda).
+      const dtoRow = await prisma.$transaction(async (tx) => {
+        const updated = await tx.goal.update({
+          where: { id },
+          data: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined
+              ? { description: input.description }
+              : {}),
+            ...(input.startDate !== undefined ? { startDate } : {}),
+            ...(input.endDate !== undefined ? { endDate } : {}),
+            ...(input.status !== undefined
+              ? {
+                  status: input.status,
+                  archivedAt: input.status === "ARCHIVED" ? new Date() : null,
+                }
+              : {}),
+            ...(input.ownerAppUserId !== undefined
+              ? { ownerAppUserId: input.ownerAppUserId }
+              : {}),
+          },
+          include: GOAL_INCLUDE,
+        });
+        // Encolheu o período do Objetivo? Os recortes próprios dos indicadores
+        // são aparados para dentro da nova janela — nenhum indicador mede fora
+        // do período do pai, nem sequer no histórico do que foi cadastrado.
+        if (input.startDate !== undefined || input.endDate !== undefined) {
+          await tx.goalKeyResult.updateMany({
+            where: { goalId: id, startDate: { lt: startDate } },
+            data: { startDate },
+          });
+          await tx.goalKeyResult.updateMany({
+            where: { goalId: id, startDate: { gt: endDate } },
+            data: { startDate: endDate },
+          });
+          await tx.goalKeyResult.updateMany({
+            where: { goalId: id, endDate: { gt: endDate } },
+            data: { endDate },
+          });
+          await tx.goalKeyResult.updateMany({
+            where: { goalId: id, endDate: { lt: startDate } },
+            data: { endDate: startDate },
+          });
+          const reread = await tx.goal.findUnique({
+            where: { id },
+            include: GOAL_INCLUDE,
+          });
+          if (!reread) throw new GoalDomainError("NOT_FOUND", "Objetivo não encontrado.");
+          return reread;
+        }
+        return updated;
       });
-      // Encolheu o período do Objetivo? Os recortes próprios dos indicadores
-      // são aparados para dentro da nova janela — nenhum indicador mede fora
-      // do período do pai, nem sequer no histórico do que foi cadastrado.
-      if (input.startDate !== undefined || input.endDate !== undefined) {
-        await prisma.goalKeyResult.updateMany({
-          where: { goalId: id, startDate: { lt: startDate } },
-          data: { startDate },
-        });
-        await prisma.goalKeyResult.updateMany({
-          where: { goalId: id, startDate: { gt: endDate } },
-          data: { startDate: endDate },
-        });
-        await prisma.goalKeyResult.updateMany({
-          where: { goalId: id, endDate: { gt: endDate } },
-          data: { endDate },
-        });
-        await prisma.goalKeyResult.updateMany({
-          where: { goalId: id, endDate: { lt: startDate } },
-          data: { endDate: startDate },
-        });
-        const reread = await requireGoal(id);
-        return toGoalDto(reread as unknown as GoalRow);
-      }
-      return toGoalDto(updated as unknown as GoalRow);
+      return toGoalDto(dtoRow as unknown as GoalRow);
     },
 
     /**
      * RN-001: exclusão física só sem histórico de processamento; caso
      * contrário arquiva (soft-delete) — Objetivo e KRs.
      */
-    async deleteGoal(id: string): Promise<{ deleted: boolean; archived: boolean }> {
+    async deleteGoal(
+      id: string,
+      actor?: GoalActor
+    ): Promise<{ deleted: boolean; archived: boolean }> {
       const current = await requireGoal(id);
+      // Excluir/arquivar é ato administrativo: manage, sempre (a rota já
+      // exige; a checagem aqui cobre qualquer chamador direto do service).
+      if (actor) assertActor(actor.canManage);
       const snapshotCount = await prisma.goalKeyResultSnapshot.count({
         where: { keyResult: { goalId: id } },
       });
@@ -758,9 +951,26 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
     async createKeyResult(
       goalId: string,
-      input: GoalKeyResultCreateInput & { rule?: unknown | null }
+      input: GoalKeyResultCreateInput & { rule?: unknown | null },
+      actor?: GoalActor
+    ): Promise<GoalKeyResultDto> {
+      return service.createKeyResultWithQuotas(goalId, input, [], actor);
+    },
+
+    /**
+     * Caminho ATÔMICO do wizard: indicador + cotas nascem na MESMA transação.
+     * Cota inválida → o KR não nasce (nada de estado parcial). A primeira
+     * medição (consulta pesada) roda DEPOIS da transação e registra o estado
+     * explicitamente (PENDING → OK/ERROR) — nunca dentro dela.
+     */
+    async createKeyResultWithQuotas(
+      goalId: string,
+      input: GoalKeyResultCreateInput & { rule?: unknown | null },
+      quotas: GoalQuotaInput[],
+      actor?: GoalActor
     ): Promise<GoalKeyResultDto> {
       const goal = await requireGoal(goalId);
+      if (actor) assertActor(canActorEditGoal(actor, goal));
       if (goal.status === "ARCHIVED") {
         throw new GoalDomainError("CONFLICT", "Objetivo arquivado não recebe novos KRs.");
       }
@@ -805,6 +1015,9 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         resolvedTarget,
         input.targetBasis === "COMPARISON" ? "COMPARISON" : "MANUAL"
       );
+      // Cotas validadas ANTES de qualquer escrita: se a soma estoura o alvo,
+      // nem o indicador nasce.
+      assertQuotasWithinTarget(resolvedTarget, quotas);
 
       // Trava de duplicidade: uma tentativa que falhou DEPOIS da gravação (ex.:
       // erro ao salvar as fatias, queda de rede lendo a resposta) deixa o
@@ -850,39 +1063,56 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
         );
       }
 
-      const created = await prisma.goalKeyResult.create({
-        data: {
-          goalId,
-          title: input.title,
-          domain: input.domain,
-          trackingType: input.trackingType,
-          baseline: input.baseline,
-          target: resolvedTarget,
-          ...comparisonData,
-          achievedValue: input.baseline,
-          unit: input.unit,
-          weight: input.weight,
-          ownerAppUserId: input.ownerAppUserId,
-          manualTracking: rule == null,
-          ruleJson: rule ?? undefined,
-          startDate: startDate ? civilDateToUtc(startDate) : null,
-          endDate: endDate ? civilDateToUtc(endDate) : null,
-        },
-        include: KR_INCLUDE,
+      // ATÔMICO: indicador + cotas na mesma transação — falha em qualquer
+      // cota desfaz tudo (o KR não fica órfão de configuração).
+      const created = await prisma.$transaction(async (tx) => {
+        const kr = await tx.goalKeyResult.create({
+          data: {
+            goalId,
+            title: input.title,
+            domain: input.domain,
+            trackingType: input.trackingType,
+            baseline: input.baseline,
+            target: resolvedTarget,
+            ...comparisonData,
+            achievedValue: input.baseline,
+            unit: input.unit,
+            weight: input.weight,
+            ownerAppUserId: input.ownerAppUserId,
+            manualTracking: rule == null,
+            ruleJson: rule ?? undefined,
+            // Automático nasce PENDING: baseline exibida NÃO é medição.
+            measurementStatus: rule == null ? "MANUAL" : "PENDING",
+            startDate: startDate ? civilDateToUtc(startDate) : null,
+            endDate: endDate ? civilDateToUtc(endDate) : null,
+          },
+        });
+        for (const [index, quota] of quotas.entries()) {
+          await tx.goalKeyResultQuota.create({
+            data: {
+              keyResultId: kr.id,
+              assignedAppUserId: quota.assignedAppUserId,
+              quotaValue: quota.quotaValue,
+              sortOrder: index,
+            },
+          });
+        }
+        return kr;
       });
-      // Primeira leitura do motor já na janela certa ("nasceu medindo").
-      // Falha aqui NÃO desfaz a criação (o recálculo automático cobre), mas
-      // também não pode virar "medição zero confirmada": a resposta carrega o
-      // sinal explícito de que a primeira leitura falhou.
+      // Primeira leitura do motor FORA da transação (consulta pesada não
+      // segura a gravação). Falha não desfaz a criação — vira estado ERROR
+      // persistido + sinal transitório na resposta; PENDING/ERROR dizem ao
+      // usuário que o número exibido ainda é a linha de base.
       let firstMeasurementFailed = false;
       if (rule != null) {
         try {
-          await computeAndStoreRuleValue(
+          const outcome = await measureKeyResult(
             {
               id: created.id,
               ruleJson: created.ruleJson,
               baseline: created.baseline,
               target: created.target,
+              trackingType: created.trackingType,
               startDate: created.startDate,
               endDate: created.endDate,
               goal: { startDate: goal.startDate, endDate: goal.endDate },
@@ -890,12 +1120,11 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             "REFRESH",
             new Date()
           );
-        } catch (cause) {
+          firstMeasurementFailed = !outcome.ok;
+        } catch {
+          // BUSY (medição concorrente) — improvável num KR recém-criado;
+          // fica PENDING e o job cobre.
           firstMeasurementFailed = true;
-          console.error(
-            `[goals] primeira leitura do indicador ${created.id} falhou`,
-            cause
-          );
         }
       }
       const fresh = await prisma.goalKeyResult.findUniqueOrThrow({
@@ -911,9 +1140,11 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
     async updateKeyResult(
       id: string,
-      input: GoalKeyResultUpdateInput & { rule?: unknown | null }
+      input: GoalKeyResultUpdateInput & { rule?: unknown | null },
+      actor?: GoalActor
     ): Promise<GoalKeyResultDto> {
       const current = await requireKeyResult(id);
+      if (actor) assertActor(canActorEditKeyResult(actor, current));
       const ruleProvided = input.rule !== undefined;
       const rule =
         ruleProvided && input.rule != null
@@ -1005,7 +1236,14 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             ? { ownerAppUserId: input.ownerAppUserId }
             : {}),
           ...(ruleProvided
-            ? { ruleJson: rule ?? null, manualTracking: rule == null }
+            ? {
+                ruleJson: rule ?? null,
+                manualTracking: rule == null,
+                // Troca de medição reseta o estado: manual não tem medição;
+                // automático (nova regra) volta a "aguardando 1ª leitura".
+                measurementStatus: rule == null ? "MANUAL" : "PENDING",
+                lastMeasurementError: null,
+              }
             : {}),
           ...(input.startDate !== undefined
             ? { startDate: input.startDate ? civilDateToUtc(input.startDate) : null }
@@ -1022,8 +1260,12 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       });
     },
 
-    async deleteKeyResult(id: string): Promise<{ deleted: boolean; archived: boolean }> {
+    async deleteKeyResult(
+      id: string,
+      actor?: GoalActor
+    ): Promise<{ deleted: boolean; archived: boolean }> {
       await requireKeyResult(id);
+      if (actor) assertActor(actor.canManage);
       const snapshotCount = await prisma.goalKeyResultSnapshot.count({
         where: { keyResultId: id },
       });
@@ -1047,9 +1289,11 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     async setAchievedValue(
       id: string,
       input: GoalAchievedValueInput,
-      now: Date = new Date()
+      now: Date = new Date(),
+      actor?: GoalActor
     ): Promise<GoalKeyResultDto> {
       const current = await requireKeyResult(id);
+      if (actor) assertActor(canActorEditKeyResult(actor, current));
       if (current.status === "ARCHIVED") {
         throw new GoalDomainError("CONFLICT", "KR arquivado não recebe valores.");
       }
@@ -1091,49 +1335,13 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
           "Este indicador é manual — lance o valor realizado diretamente."
         );
       }
-      // Lock nomeado por KR (classe 0x60A15 + hash do id) dentro da transação.
-      const lockKey = hashGoalLockKey(current.id);
-      await prisma.$transaction(async (tx) => {
-        const lockRows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-          SELECT pg_try_advisory_xact_lock(${0x60a15}::int, ${lockKey}::int) AS locked
-        `;
-        if (!lockRows[0]?.locked) {
-          throw new GoalDomainError(
-            "BUSY",
-            "Este indicador já está sendo recalculado — aguarde alguns segundos."
-          );
-        }
-        const achievedValue = await executeGoalRule(
-          tx as unknown as PrismaClient,
-          current.ruleJson,
-          keyResultWindow(current)
-        );
-        const progress = computeGoalKeyResultProgress({
-          baseline: decimalToString(current.baseline),
-          target: decimalToString(current.target),
-          achievedValue,
-        });
-        await tx.goalKeyResult.update({
-          where: { id },
-          data: { achievedValue },
-        });
-        const snapshotDate = civilDateToUtc(todayGoalCivilDateInSaoPaulo(now));
-        await tx.goalKeyResultSnapshot.upsert({
-          where: { keyResultId_snapshotDate: { keyResultId: id, snapshotDate } },
-          create: {
-            keyResultId: id,
-            snapshotDate,
-            achievedValue,
-            progressRatio: progress.ratio.toFixed(6),
-            source: "REFRESH",
-          },
-          update: {
-            achievedValue,
-            progressRatio: progress.ratio.toFixed(6),
-            source: "REFRESH",
-          },
-        });
-      });
+      // Caminho ÚNICO da medição (lock por KR + estado + snapshot). Falha da
+      // regra vira estado ERROR persistido e erro claro ao usuário — o último
+      // valor válido permanece na tela, nunca vira zero.
+      const outcome = await measureKeyResult(current, "REFRESH", now);
+      if (outcome.ok === false) {
+        throw new GoalDomainError("MEASUREMENT_FAILED", outcome.error);
+      }
       const fresh = await requireKeyResult(id);
       return toKeyResultDto(fresh as unknown as KeyResultRow, {
         startDate: fresh.goal.startDate.toISOString().slice(0, 10),
@@ -1157,11 +1365,17 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       for (const kr of active) {
         try {
           if (kr.ruleJson != null && !kr.manualTracking) {
-            await computeAndStoreRuleValue(
-              kr as unknown as Parameters<typeof computeAndStoreRuleValue>[0],
+            // Mesmo caminho de domínio do refresh manual (lock, estado,
+            // snapshot idempotente) — job e clique nunca medem em paralelo.
+            const outcome = await measureKeyResult(
+              kr as unknown as MeasurableKr,
               "ENGINE",
               now
             );
+            if (outcome.ok === false) {
+              failures.push({ keyResultId: kr.id, message: outcome.error });
+              continue;
+            }
             computed += 1;
           } else {
             // KR manual também ganha retrato diário (burn-up contínuo).
@@ -1187,9 +1401,11 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
     /** Substitui TODAS as cotas do KR (Σ ≤ target — bloqueio). */
     async setQuotas(
       keyResultId: string,
-      quotas: GoalQuotaInput[]
+      quotas: GoalQuotaInput[],
+      actor?: GoalActor
     ): Promise<GoalKeyResultDto> {
       const current = await requireKeyResult(keyResultId);
+      if (actor) assertActor(canActorEditKeyResult(actor, current));
       assertQuotasWithinTarget(decimalToString(current.target), quotas);
       await prisma.$transaction(async (tx) => {
         await tx.goalKeyResultQuota.deleteMany({ where: { keyResultId } });
@@ -1215,10 +1431,24 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
     async createInitiative(
       input: GoalInitiativeCreateInput,
-      actorUserId: string
+      actorUserId: string,
+      actor?: GoalActor
     ): Promise<GoalInitiativeDto> {
-      if (input.goalId) await requireGoal(input.goalId);
-      if (input.keyResultId) await requireKeyResult(input.keyResultId);
+      const goal = input.goalId ? await requireGoal(input.goalId) : null;
+      const kr = input.keyResultId ? await requireKeyResult(input.keyResultId) : null;
+      if (actor) {
+        assertActor(
+          canActorTouchInitiative(
+            actor,
+            {
+              goalOwnerAppUserId: goal?.ownerAppUserId ?? kr?.goal.ownerAppUserId ?? null,
+              keyResultOwnerAppUserId: kr?.ownerAppUserId ?? null,
+              assigneeAppUserId: null,
+            },
+            { allowAssignee: false }
+          )
+        );
+      }
       const created = await prisma.goalInitiative.create({
         data: {
           goalId: input.goalId,
@@ -1235,10 +1465,37 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
 
     async updateInitiative(
       id: string,
-      input: GoalInitiativeUpdateInput
+      input: GoalInitiativeUpdateInput,
+      actor?: GoalActor
     ): Promise<GoalInitiativeDto> {
-      const current = await prisma.goalInitiative.findUnique({ where: { id } });
+      const current = await prisma.goalInitiative.findUnique({
+        where: { id },
+        include: {
+          goal: { select: { ownerAppUserId: true } },
+          keyResult: {
+            select: { ownerAppUserId: true, goal: { select: { ownerAppUserId: true } } },
+          },
+        },
+      });
       if (!current) throw new GoalDomainError("NOT_FOUND", "Iniciativa não encontrada.");
+      // Owners/manage sempre; o ASSIGNEE pode atualizar o fluxo operacional
+      // da própria iniciativa (mover no kanban, ajustar prazo/título).
+      if (actor) {
+        assertActor(
+          canActorTouchInitiative(
+            actor,
+            {
+              goalOwnerAppUserId:
+                current.goal?.ownerAppUserId ??
+                current.keyResult?.goal.ownerAppUserId ??
+                null,
+              keyResultOwnerAppUserId: current.keyResult?.ownerAppUserId ?? null,
+              assigneeAppUserId: current.assigneeAppUserId,
+            },
+            { allowAssignee: true }
+          )
+        );
+      }
       const updated = await prisma.goalInitiative.update({
         where: { id },
         data: {
@@ -1256,9 +1513,34 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
       return toInitiativeDto(updated as unknown as InitiativeRow);
     },
 
-    async deleteInitiative(id: string): Promise<{ deleted: true }> {
-      const current = await prisma.goalInitiative.findUnique({ where: { id } });
+    async deleteInitiative(id: string, actor?: GoalActor): Promise<{ deleted: true }> {
+      const current = await prisma.goalInitiative.findUnique({
+        where: { id },
+        include: {
+          goal: { select: { ownerAppUserId: true } },
+          keyResult: {
+            select: { ownerAppUserId: true, goal: { select: { ownerAppUserId: true } } },
+          },
+        },
+      });
       if (!current) throw new GoalDomainError("NOT_FOUND", "Iniciativa não encontrada.");
+      // Excluir NÃO é fluxo operacional: assignee não basta — owners/manage.
+      if (actor) {
+        assertActor(
+          canActorTouchInitiative(
+            actor,
+            {
+              goalOwnerAppUserId:
+                current.goal?.ownerAppUserId ??
+                current.keyResult?.goal.ownerAppUserId ??
+                null,
+              keyResultOwnerAppUserId: current.keyResult?.ownerAppUserId ?? null,
+              assigneeAppUserId: current.assigneeAppUserId,
+            },
+            { allowAssignee: false }
+          )
+        );
+      }
       await prisma.goalInitiative.delete({ where: { id } });
       return { deleted: true };
     },
@@ -1351,6 +1633,8 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             ownerAppUserId: input.keyResult.ownerAppUserId,
             manualTracking: rule == null,
             ruleJson: rule ?? undefined,
+            // Automático nasce PENDING: baseline exibida NÃO é medição.
+            measurementStatus: rule == null ? "MANUAL" : "PENDING",
             startDate: input.keyResult.startDate
               ? civilDateToUtc(input.keyResult.startDate)
               : null,
@@ -1384,18 +1668,16 @@ export function createGoalService(deps: { prisma: PrismaClient }) {
             include: { goal: true },
           });
           if (kr) {
-            await computeAndStoreRuleValue(
-              kr as unknown as Parameters<typeof computeAndStoreRuleValue>[0],
+            const outcome = await measureKeyResult(
+              kr as unknown as MeasurableKr,
               "REFRESH",
               new Date()
             );
+            firstMeasurementFailed = !outcome.ok;
           }
-        } catch (cause) {
+        } catch {
+          // BUSY — medição concorrente; fica PENDING e o job cobre.
           firstMeasurementFailed = true;
-          console.error(
-            `[goals] primeira leitura da meta ${goalId} (wizard) falhou`,
-            cause
-          );
         }
       }
       const goalDto = await service.getGoal(goalId);

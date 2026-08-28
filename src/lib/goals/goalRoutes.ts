@@ -24,7 +24,12 @@ import {
   type GoalStatusValue,
 } from "./goalContracts.js";
 import { buildGoalMetadataPublicView } from "./goalMetadata.js";
-import { GoalDomainError, createGoalService, type GoalService } from "./goalService.server.js";
+import {
+  GoalDomainError,
+  createGoalService,
+  type GoalActor,
+  type GoalService,
+} from "./goalService.server.js";
 
 export const GOALS_RESOURCE_KEY = "admin.goals" as const;
 
@@ -34,6 +39,16 @@ type AuthGuards = {
   getCurrentAppUser: (
     req: express.Request
   ) => Promise<{ id: string } | null> | { id: string } | null;
+  /**
+   * Decisão canônica SEM side-effect HTTP (createResourcePermissionGuards.
+   * authorizeResourceRequest) — usada para resolver `canManage` do ator.
+   * Sem a injeção, ninguém é manage implícito (política mais restritiva).
+   */
+  authorizeRequest?: (
+    req: express.Request,
+    resourceKey: string,
+    action?: string
+  ) => Promise<{ ok: boolean }>;
   /** Injeção para teste — em produção usa createGoalService({ prisma }). */
   service?: GoalService;
 };
@@ -51,7 +66,11 @@ function sendGoalError(res: express.Response, err: unknown): void {
           ? 409
           : err.code === "BUSY"
             ? 423
-            : 400;
+            : err.code === "FORBIDDEN"
+              ? 403
+              : err.code === "MEASUREMENT_FAILED"
+                ? 500
+                : 400;
     res.status(status).json({ error: err.message, code: err.code });
     return;
   }
@@ -67,6 +86,26 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
   const create = requireResource(GOALS_RESOURCE_KEY, "create");
   const update = requireResource(GOALS_RESOURCE_KEY, "update");
   const manage = requireResource(GOALS_RESOURCE_KEY, "manage");
+
+  /**
+   * Ator contextual: `update` dá a CAPACIDADE de editar; o VÍNCULO com o
+   * objeto (owner do Goal/KR, assignee da iniciativa) dá o direito. `manage`
+   * (decisão canônica, nunca a UI) é a autoridade administrativa global.
+   * O service é quem bloqueia — a UI nunca é autoridade.
+   */
+  async function resolveActor(req: express.Request): Promise<GoalActor> {
+    const user = await getCurrentAppUser(req);
+    let canManage = false;
+    if (guards.authorizeRequest) {
+      try {
+        canManage =
+          (await guards.authorizeRequest(req, GOALS_RESOURCE_KEY, "manage")).ok === true;
+      } catch {
+        canManage = false;
+      }
+    }
+    return { userId: user?.id ?? "", canManage };
+  }
 
   app.get("/api/goals", requireAppAuth, view, async (req, res) => {
     try {
@@ -154,9 +193,10 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
       const input = parseGoalInitiativeCreateInput(
         (req.body ?? {}) as Record<string, unknown>
       );
+      const actor = await resolveActor(req);
       res
         .status(201)
-        .json({ initiative: await service.createInitiative(input, user?.id ?? "") });
+        .json({ initiative: await service.createInitiative(input, user?.id ?? "", actor) });
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -167,7 +207,8 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
       const input = parseGoalInitiativeUpdateInput(
         (req.body ?? {}) as Record<string, unknown>
       );
-      res.json({ initiative: await service.updateInitiative(req.params.id, input) });
+      const actor = await resolveActor(req);
+      res.json({ initiative: await service.updateInitiative(req.params.id, input, actor) });
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -175,7 +216,7 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
 
   app.delete("/api/goals/initiatives/:id", requireAppAuth, update, async (req, res) => {
     try {
-      res.json(await service.deleteInitiative(req.params.id));
+      res.json(await service.deleteInitiative(req.params.id, await resolveActor(req)));
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -202,7 +243,8 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
   app.put("/api/goals/:id", requireAppAuth, update, async (req, res) => {
     try {
       const input = parseGoalUpdateInput((req.body ?? {}) as Record<string, unknown>);
-      res.json({ goal: await service.updateGoal(req.params.id, input) });
+      const actor = await resolveActor(req);
+      res.json({ goal: await service.updateGoal(req.params.id, input, actor) });
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -210,19 +252,30 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
 
   app.delete("/api/goals/:id", requireAppAuth, manage, async (req, res) => {
     try {
-      res.json(await service.deleteGoal(req.params.id));
+      res.json(await service.deleteGoal(req.params.id, await resolveActor(req)));
     } catch (err) {
       sendGoalError(res, err);
     }
   });
 
+  // Criação do indicador — ATÔMICA com as cotas opcionais no MESMO request:
+  // o wizard não faz mais POST + PUT (cota inválida = indicador não nasce).
   app.post("/api/goals/:id/key-results", requireAppAuth, create, async (req, res) => {
     try {
-      const input = parseGoalKeyResultCreateInput(
-        (req.body ?? {}) as Record<string, unknown>
-      );
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const input = parseGoalKeyResultCreateInput(body);
+      const quotas =
+        body.quotas === undefined || body.quotas === null
+          ? []
+          : parseGoalQuotasInput(body);
+      const actor = await resolveActor(req);
       res.status(201).json({
-        keyResult: await service.createKeyResult(req.params.id, input),
+        keyResult: await service.createKeyResultWithQuotas(
+          req.params.id,
+          input,
+          quotas,
+          actor
+        ),
       });
     } catch (err) {
       sendGoalError(res, err);
@@ -234,7 +287,8 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
       const input = parseGoalKeyResultUpdateInput(
         (req.body ?? {}) as Record<string, unknown>
       );
-      res.json({ keyResult: await service.updateKeyResult(req.params.id, input) });
+      const actor = await resolveActor(req);
+      res.json({ keyResult: await service.updateKeyResult(req.params.id, input, actor) });
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -242,7 +296,7 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
 
   app.delete("/api/goals/key-results/:id", requireAppAuth, manage, async (req, res) => {
     try {
-      res.json(await service.deleteKeyResult(req.params.id));
+      res.json(await service.deleteKeyResult(req.params.id, await resolveActor(req)));
     } catch (err) {
       sendGoalError(res, err);
     }
@@ -258,7 +312,15 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
         const input = parseGoalAchievedValueInput(
           (req.body ?? {}) as Record<string, unknown>
         );
-        res.json({ keyResult: await service.setAchievedValue(req.params.id, input) });
+        const actor = await resolveActor(req);
+        res.json({
+          keyResult: await service.setAchievedValue(
+            req.params.id,
+            input,
+            undefined,
+            actor
+          ),
+        });
       } catch (err) {
         sendGoalError(res, err);
       }
@@ -287,7 +349,8 @@ export function registerGoalRoutes(app: express.Express, guards: AuthGuards): vo
     async (req, res) => {
       try {
         const quotas = parseGoalQuotasInput((req.body ?? {}) as Record<string, unknown>);
-        res.json({ keyResult: await service.setQuotas(req.params.id, quotas) });
+        const actor = await resolveActor(req);
+        res.json({ keyResult: await service.setQuotas(req.params.id, quotas, actor) });
       } catch (err) {
         sendGoalError(res, err);
       }
