@@ -203,6 +203,36 @@ describe("computeGoalRollup — média ponderada dos KRs ativos (RN-010)", () =>
     assert.equal(rollup.ratio, 0.75);
   });
 
+  it("auditoria: reduzir 100→80 com realizado 90 = 50%; aumentar 100→120 com 110 = 50%", () => {
+    assert.equal(
+      computeGoalKeyResultProgress({
+        baseline: "100",
+        target: "80",
+        achievedValue: "90",
+        trackingType: "DECREASE",
+      }).ratio,
+      0.5
+    );
+    assert.equal(
+      computeGoalKeyResultProgress({
+        baseline: "100",
+        target: "120",
+        achievedValue: "110",
+        trackingType: "INCREASE",
+      }).ratio,
+      0.5
+    );
+  });
+
+  it("auditoria: KR A peso 1 a 100% + KR B peso 2 a 50% ⇒ 66,67% (arredondamento oficial = 67%)", () => {
+    const rollup = computeGoalRollup([
+      { status: "ACTIVE", weight: "1", baseline: "0", target: "100", achievedValue: "100" },
+      { status: "ACTIVE", weight: "2", baseline: "0", target: "100", achievedValue: "50" },
+    ]);
+    assert.ok(Math.abs(rollup.ratio - 2 / 3) < 1e-9);
+    assert.equal(progressRatioToPercent(rollup.ratio), 67);
+  });
+
   it("determinístico: mesma entrada ⇒ mesma saída", () => {
     const input = [
       { status: "ACTIVE", weight: "1.5", baseline: "10", target: "90", achievedValue: "35" },
