@@ -48,6 +48,8 @@ function auth(partial: {
     externalSellerIds: [],
     sellerResponsibleName: null,
     lastLoginAt: null,
+    mustChangePassword: false,
+    passwordChangedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-1",

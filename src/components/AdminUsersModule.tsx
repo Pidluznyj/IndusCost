@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  Copy,
   Trash2,
   X,
 } from "lucide-react";
@@ -15,11 +16,18 @@ import { cn } from "@/src/lib/utils";
 import { HttpError, fetchJsonOk } from "@/src/lib/http";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
-  APP_PASSWORD_MIN_LENGTH,
   APP_USER_ROLE_OPTIONS,
   type AppUserRole,
   formatRoleLabel,
 } from "@/src/lib/appAuthClient";
+import {
+  describePasswordPolicy,
+  validatePasswordPolicy,
+} from "@/src/lib/auth/passwordPolicy";
+import {
+  describePasswordError,
+  requestAdminResetPassword,
+} from "@/src/lib/auth/passwordLifecycleClient";
 import { SellerNomusPicker, type SellerNomusPickerValue } from "@/src/components/admin/SellerNomusPicker";
 import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
@@ -198,8 +206,11 @@ export const AdminUsersModule: React.FC = () => {
   const [sellerLinkSaving, setSellerLinkSaving] = useState(false);
 
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetPassword, setResetPassword] = useState("");
-  const [resetConfirm, setResetConfirm] = useState("");
+  // A senha temporária é GERADA pelo backend e devolvida uma única vez.
+  // Fica só neste estado local: fechar o modal ou recarregar a página a perde,
+  // e não existe rota para reconsultá-la.
+  const [resetTemporaryPassword, setResetTemporaryPassword] = useState<string | null>(null);
+  const [resetCopied, setResetCopied] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
@@ -739,8 +750,9 @@ export const AdminUsersModule: React.FC = () => {
       setCreateError("Informe nome e e-mail de acesso válidos.");
       return;
     }
-    if (createForm.password.length < APP_PASSWORD_MIN_LENGTH) {
-      setCreateError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
+    const createPasswordPolicy = validatePasswordPolicy(createForm.password);
+    if (!createPasswordPolicy.valid) {
+      setCreateError(createPasswordPolicy.reasons[0] ?? "Senha fora da política.");
       return;
     }
     setSaving(true);
@@ -770,28 +782,33 @@ export const AdminUsersModule: React.FC = () => {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId) return;
-    if (resetPassword.length < APP_PASSWORD_MIN_LENGTH) {
-      setResetError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
-      return;
-    }
-    if (resetPassword !== resetConfirm) {
-      setResetError("As senhas não coincidem.");
-      return;
-    }
     setSaving(true);
     setResetError(null);
     try {
-      await fetchJsonOk(`/api/admin/users/${selectedId}/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: resetPassword }),
-      });
-      setResetOpen(false);
+      const result = await requestAdminResetPassword(selectedId);
+      // Mantém o modal aberto: é a única exibição da senha temporária.
+      setResetTemporaryPassword(result.temporaryPassword);
+      setResetCopied(false);
+      await loadUsers();
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Falha ao redefinir senha.");
+      const code = err instanceof HttpError ? err.code : undefined;
+      setResetError(
+        describePasswordError(
+          code,
+          err instanceof Error ? err.message : "Falha ao redefinir senha."
+        )
+      );
     } finally {
       setSaving(false);
     }
+  };
+
+  const closeResetModal = () => {
+    setResetOpen(false);
+    // A senha temporária some com o modal — não fica em memória nem em storage.
+    setResetTemporaryPassword(null);
+    setResetCopied(false);
+    setResetError(null);
   };
 
   const deleteGuardPreview = useMemo(() => {
@@ -1120,11 +1137,13 @@ export const AdminUsersModule: React.FC = () => {
               <div className="flex shrink-0 items-center gap-1.5">
                 {detail ? (
                   <>
+                    {/* Só SUPER_ADMIN vê o botão. Quem decide é o 403 do backend. */}
+                    {authUser?.role === "SUPER_ADMIN" ? (
                     <button
                       type="button"
                       onClick={() => {
-                        setResetPassword("");
-                        setResetConfirm("");
+                        setResetTemporaryPassword(null);
+                        setResetCopied(false);
                         setResetError(null);
                         setResetOpen(true);
                       }}
@@ -1133,6 +1152,7 @@ export const AdminUsersModule: React.FC = () => {
                       <KeyRound className="h-3 w-3" />
                       Redefinir senha
                     </button>
+                    ) : null}
                     <button
                       type="button"
                       disabled={
@@ -1861,11 +1881,16 @@ export const AdminUsersModule: React.FC = () => {
               <input
                 required
                 type="password"
+                autoComplete="new-password"
                 placeholder="Senha provisória"
                 value={createForm.password}
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {describePasswordPolicy()} Como quem digita é você, ela vale como senha
+                temporária: o usuário terá de definir a própria senha no primeiro acesso.
+              </p>
               <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
                 O usuário será criado sem perfil e sem acesso. Depois da criação, abra o usuário
                 para atribuir um perfil pronto ou configurar as permissões manualmente.
@@ -1893,45 +1918,82 @@ export const AdminUsersModule: React.FC = () => {
 
       {resetOpen ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xl p-4 space-y-3">
-            <h4 className="font-bold">Redefinir senha</h4>
-            {resetError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                {resetError}
-              </div>
-            ) : null}
-            <form onSubmit={handleResetPassword} className="space-y-3">
-              <input
-                type="password"
-                placeholder="Nova senha"
-                value={resetPassword}
-                onChange={(e) => setResetPassword(e.target.value)}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-              <input
-                type="password"
-                placeholder="Confirmar senha"
-                value={resetConfirm}
-                onChange={(e) => setResetConfirm(e.target.value)}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setResetOpen(false)}
-                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold"
+          <div
+            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xl p-4 space-y-3"
+            data-testid="admin-user-reset-modal"
+          >
+            {resetTemporaryPassword ? (
+              <>
+                <h4 className="font-bold">Senha temporária criada</h4>
+                <p className="text-xs text-muted-foreground">
+                  Entregue esta senha a {selectedListUser?.name ?? "o usuário"}. No próximo
+                  acesso o sistema vai exigir que ele defina uma senha definitiva.
+                </p>
+                <div
+                  data-testid="admin-user-temporary-password"
+                  className="rounded-lg border border-border bg-muted/60 px-3 py-2 font-mono text-sm break-all select-all"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
-                >
-                  Salvar senha
-                </button>
-              </div>
-            </form>
+                  {resetTemporaryPassword}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard
+                        ?.writeText(resetTemporaryPassword)
+                        .then(() => setResetCopied(true))
+                        .catch(() => setResetCopied(false));
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-accent"
+                  >
+                    <Copy className="h-3 w-3" />
+                    {resetCopied ? "Copiada" : "Copiar senha"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeResetModal}
+                    className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <p className="text-[11px] font-medium text-amber-700">
+                  Esta senha será exibida somente agora. Se ela se perder, gere um novo reset.
+                </p>
+              </>
+            ) : (
+              <>
+                <h4 className="font-bold">
+                  Redefinir senha de {selectedListUser?.name ?? "usuário"}?
+                </h4>
+                {resetError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    {resetError}
+                  </div>
+                ) : null}
+                <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                  <li>encerrará todas as sessões deste usuário;</li>
+                  <li>criará uma senha temporária gerada pelo sistema;</li>
+                  <li>exigirá uma nova senha no próximo acesso.</li>
+                </ul>
+                <form onSubmit={handleResetPassword} className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeResetModal}
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                  >
+                    Redefinir senha
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       ) : null}

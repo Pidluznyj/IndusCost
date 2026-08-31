@@ -573,6 +573,15 @@ import {
   ADMIN_ELEVATION_REQUIRED_CODE,
   ADMIN_ELEVATION_TTL_MS,
 } from "./src/lib/auth/adminElevation.shared.js";
+import { createPasswordChangeRequiredGuard } from "./src/lib/auth/passwordChangeRequiredGuard.js";
+import { registerPasswordLifecycleRoutes } from "./src/lib/auth/passwordLifecycleRoutes.js";
+import { authRateLimiter, authRateLimitedBody } from "./src/lib/auth/authRateLimit.js";
+import {
+  SECURITY_AUDIT_EVENTS,
+  normalizeUserAgent,
+  resolveAuditIpAddress,
+  writeSecurityAuditLog,
+} from "./src/lib/auth/securityAudit.server.js";
 import {
   createAdminElevationPayload,
   decodeAdminElevationToken,
@@ -1836,6 +1845,43 @@ async function startServer() {
     });
   }
 
+  // Troca obrigatória de senha: bloqueio REAL, no servidor. Fail closed —
+  // com mustChangePassword=true só passa a whitelist explícita do guard.
+  // Só age em requisição que traz o cookie de sessão humana, então Collector
+  // (peer Tailscale), Satisfação pública, assets da SPA e demais superfícies
+  // não humanas seguem exatamente como estavam.
+  const passwordChangeRequiredGuard = createPasswordChangeRequiredGuard({
+    resolveMustChangePassword: async (req) => {
+      const request = req as express.Request;
+      // Se algum guard anterior já resolveu a sessão, aproveita.
+      if (request.appAuth) return request.appAuth.mustChangePassword === true;
+
+      // Leitura SEM EFEITO COLATERAL — de propósito não usa readAppSession.
+      // readAppSession REVOGA a sessão quando permissionsVersion está
+      // desatualizada (P21), e /api/auth/sync-session-permissions depende de
+      // encontrar exatamente essa sessão viva para reemitir o epoch. Chamar o
+      // leitor aqui mataria a sessão antes da rota rodar e transformaria um
+      // refresh de ACL em logout. Este guard só precisa de um booleano.
+      const cookies = parseCookiesFromHeader(request.headers.cookie);
+      const token = cookies[APP_SESSION_COOKIE_NAME];
+      if (!token) return null;
+      const session = await prisma.appSession.findFirst({
+        where: {
+          tokenHash: hashSessionToken(token),
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        select: { user: { select: { isActive: true, mustChangePassword: true } } },
+      });
+      if (!session?.user?.isActive) return null;
+      return session.user.mustChangePassword === true;
+    },
+    onError: (error) => console.error("[password-change-guard]", error),
+  });
+  app.use("/api", (req, res, next) => {
+    passwordChangeRequiredGuard(req, res, next).catch(next);
+  });
+
   const {
     requireAppAuth,
     requirePermission,
@@ -2080,6 +2126,17 @@ async function startServer() {
     }
   };
 
+  // Ciclo de senha: troca voluntária, troca obrigatória e reset administrativo.
+  // POST /api/admin/users/:id/reset-password mora no módulo — é a MESMA rota
+  // oficial da tela de Usuários, movida junto com o endurecimento.
+  registerPasswordLifecycleRoutes(app, {
+    prisma,
+    requireAppAuth,
+    requireAdminUsersManage: requireUsersManageOrBootstrap,
+    getCurrentAppUser,
+    setAppSessionCookie,
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
@@ -2092,8 +2149,21 @@ async function startServer() {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: "Informe a senha." });
       }
 
+      // Força bruta: janela deslizante por identidade. A chave é o e-mail
+      // normalizado — o servidor não confia em X-Forwarded-For/CF-Connecting-IP
+      // (não há trust proxy) e nada é persistido, então não existe lockout
+      // permanente utilizável como DoS. A contagem vale para e-mail existente
+      // ou não, e a resposta é a mesma: sem enumeração de contas.
+      const loginRateKey = email;
+      const loginGate = authRateLimiter.peek("login", loginRateKey);
+      if (!loginGate.allowed) {
+        res.set("Retry-After", String(loginGate.retryAfterSeconds));
+        return res.status(429).json(authRateLimitedBody(loginGate));
+      }
+
       const user = await prisma.appUser.findUnique({ where: { email } });
       if (!user || !user.isActive) {
+        authRateLimiter.consume("login", loginRateKey);
         return res.status(401).json({
           error: "INVALID_CREDENTIALS",
           message: "E-mail ou senha inválidos.",
@@ -2102,11 +2172,16 @@ async function startServer() {
 
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
+        authRateLimiter.consume("login", loginRateKey);
         return res.status(401).json({
           error: "INVALID_CREDENTIALS",
           message: "E-mail ou senha inválidos.",
         });
       }
+
+      // Autenticação legítima limpa o histórico: errar a senha algumas vezes
+      // e acertar não pode deixar o usuário perto do bloqueio.
+      authRateLimiter.clear("login", loginRateKey);
 
       const token = createOpaqueSessionToken();
       const tokenHash = hashSessionToken(token);
@@ -2470,24 +2545,40 @@ async function startServer() {
       // VIEWER sem perfil e bag vazia permanece sem acesso até configuração explícita.
 
       const passwordHash = await hashPassword(password);
-      const user = await prisma.appUser.create({
-        data: {
-          name,
-          email,
-          passwordHash,
-          role,
-          permissions,
-          accessProfileId,
-          employeeId: employee.id,
-          isActive,
-          externalSellerId: sellerLink.externalSellerId,
-          externalSellerIds: sellerLink.externalSellerIds,
-          sellerResponsibleName: sellerLink.sellerResponsibleName,
-        },
-        include: {
-          accessProfile: { select: { name: true } },
-          employee: { select: { id: true, name: true, socialName: true, department: true } },
-        },
+      const actorUserId = req.appAuth?.id ?? null;
+      const user = await prisma.$transaction(async (tx) => {
+        const created = await tx.appUser.create({
+          data: {
+            name,
+            email,
+            passwordHash,
+            role,
+            permissions,
+            accessProfileId,
+            employeeId: employee.id,
+            isActive,
+            // A senha inicial foi escolhida por OUTRA pessoa: vale como
+            // credencial temporária e exige troca no primeiro acesso.
+            mustChangePassword: true,
+            passwordChangedAt: new Date(),
+            externalSellerId: sellerLink.externalSellerId,
+            externalSellerIds: sellerLink.externalSellerIds,
+            sellerResponsibleName: sellerLink.sellerResponsibleName,
+          },
+          include: {
+            accessProfile: { select: { name: true } },
+            employee: { select: { id: true, name: true, socialName: true, department: true } },
+          },
+        });
+        await writeSecurityAuditLog(tx, {
+          eventType: SECURITY_AUDIT_EVENTS.USER_INITIAL_PASSWORD_ASSIGNED,
+          actorUserId,
+          targetUserId: created.id,
+          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+          userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          metadata: { source: "USER_CREATION" },
+        });
+        return created;
       });
       return res.status(201).json({
         user: toSafeAppUser(user, {
@@ -2731,36 +2822,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users/:id/reset-password", requireUsersManageOrBootstrap, async (req, res) => {
-    try {
-      const id = String(req.params.id ?? "").trim();
-      const password = typeof req.body?.password === "string" ? req.body.password : "";
-      const passwordError = validatePasswordMin(password);
-      if (passwordError) {
-        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
-      }
-
-      const existing = await prisma.appUser.findUnique({ where: { id } });
-      if (!existing) {
-        return res.status(404).json({ error: "NOT_FOUND", message: "Usuário não encontrado." });
-      }
-
-      const passwordHash = await hashPassword(password);
-      await prisma.$transaction([
-        prisma.appUser.update({ where: { id }, data: { passwordHash } }),
-        prisma.appSession.updateMany({
-          where: { userId: id, revokedAt: null },
-          data: { revokedAt: new Date() },
-        }),
-      ]);
-
-      const user = await prisma.appUser.findUniqueOrThrow({ where: { id } });
-      return res.json({ success: true, user: toSafeAppUser(user) });
-    } catch (error) {
-      console.error("POST /api/admin/users/:id/reset-password", error);
-      return res.status(500).json({ error: "Erro ao redefinir senha." });
-    }
-  });
+  // POST /api/admin/users/:id/reset-password vive em
+  // src/lib/auth/passwordLifecycleRoutes.ts (SUPER_ADMIN + senha temporária
+  // gerada pelo sistema + revogação de sessões + auditoria).
 
   app.delete("/api/admin/users/:id", requireUsersManageOrBootstrap, async (req, res) => {
     try {

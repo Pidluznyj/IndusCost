@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  KeyRound,
   LogOut,
   PieChart,
   GitCompare,
@@ -839,6 +840,28 @@ export const Sidebar = () => {
             <p className="text-[10px] text-muted-foreground truncate">{formatRoleLabel(authUser.role)}</p>
           </div>
         ) : null}
+        {/* Self-service do próprio usuário: qualquer pessoa autenticada pode
+            trocar a própria senha (exige a senha atual no backend). */}
+        <button
+          type="button"
+          title={collapsed ? "Alterar senha" : undefined}
+          aria-label={collapsed ? "Alterar senha" : undefined}
+          className={cn(
+            "flex items-center w-full rounded-md transition-colors duration-200 min-w-0 min-h-11",
+            collapsed ? "justify-center px-1 py-2" : "px-3 py-2.5",
+            "text-muted-foreground hover:bg-accent/80 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          )}
+          onClick={() => {
+            if (isMobile) closeMobileSidebar();
+            navigate("/security/change-password");
+          }}
+        >
+          <KeyRound className="h-[18px] w-[18px] shrink-0" />
+          {!collapsed && (
+            <span className="ml-3 text-sm font-medium truncate">Alterar senha</span>
+          )}
+        </button>
         <button
           type="button"
           disabled={pendingLogout}

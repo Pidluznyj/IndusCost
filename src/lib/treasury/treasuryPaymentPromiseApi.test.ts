@@ -72,6 +72,8 @@ function baseUser(overrides: Partial<AppAuthContext> = {}): AppAuthContext {
     externalSellerIds: [],
     sellerResponsibleName: null,
     lastLoginAt: null,
+    mustChangePassword: false,
+    passwordChangedAt: null,
     createdAt: "2026-07-27T00:00:00.000+00:00",
     updatedAt: "2026-07-27T00:00:00.000+00:00",
     sessionId: "sess-1",

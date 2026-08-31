@@ -157,6 +157,15 @@ src/lib/userPermissionsAdminUi.test.ts
 src/lib/security/permissionService.test.ts
 src/lib/security/permissionGuards.test.ts
 src/lib/auth/adminElevation.test.ts
+src/lib/auth/passwordPolicy.test.ts
+src/lib/auth/passwordHashCompat.test.ts
+src/lib/auth/passwordLifecycle.test.ts
+src/lib/auth/passwordLifecycleRoutes.test.ts
+src/lib/auth/passwordLifecycleE2E.test.ts
+src/lib/auth/passwordChangeRequiredGuard.test.ts
+src/lib/auth/passwordLifecycleWiring.test.ts
+src/lib/auth/authRateLimit.test.ts
+src/lib/auth/securityAudit.test.ts
 src/lib/security/permissionAudit.test.ts
 src/lib/security/userPermissionAdminAudit.test.ts
 src/lib/security/userPermissionAssignDiagnosis.test.ts

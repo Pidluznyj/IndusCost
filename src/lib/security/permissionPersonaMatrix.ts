@@ -285,6 +285,8 @@ function personaUser(role: AuthUser["role"], permissions: string[]): AuthUser {
     externalSellerIds: [],
     sellerResponsibleName: null,
     lastLoginAt: null,
+    mustChangePassword: false,
+    passwordChangedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

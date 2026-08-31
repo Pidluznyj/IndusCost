@@ -105,6 +105,11 @@ export function toSafeAppUser(
         : [],
     sellerResponsibleName: user.sellerResponsibleName,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+    mustChangePassword:
+      (user as AppUser & { mustChangePassword?: boolean }).mustChangePassword === true,
+    passwordChangedAt:
+      (user as AppUser & { passwordChangedAt?: Date | null }).passwordChangedAt?.toISOString() ??
+      null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
