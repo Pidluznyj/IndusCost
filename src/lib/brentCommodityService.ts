@@ -1,6 +1,25 @@
 export const BRENT_YAHOO_SYMBOL = "BZ=F" as const;
 export const BRENT_DEFAULT_SOURCE = "yahoo-finance" as const;
 
+/**
+ * O Yahoo passou a recusar requisições sem `User-Agent` de navegador: sem o
+ * header a API responde HTTP 429 de forma determinística, com ele responde 200.
+ * Sem isso toda coleta do Brent falha e o card fica congelado na última
+ * cotação boa.
+ */
+export const BRENT_YAHOO_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36" as const;
+
+/** Hosts equivalentes do Yahoo — o segundo cobre indisponibilidade do primeiro. */
+export const BRENT_YAHOO_HOSTS = [
+  "https://query1.finance.yahoo.com",
+  "https://query2.finance.yahoo.com",
+] as const;
+
+export function buildBrentYahooUrl(host: string): string {
+  return `${host}/v8/finance/chart/${encodeURIComponent(BRENT_YAHOO_SYMBOL)}?interval=1d&range=1d`;
+}
+
 export type BrentQuoteFetchResult = {
   priceUSD: number;
   quoteDate: string;
@@ -54,20 +73,34 @@ export function calculateBrentVariationFromPrevious(
 export async function fetchBrentQuoteFromYahoo(
   fetchImpl: typeof fetch = fetch
 ): Promise<BrentQuoteFetchResult> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(BRENT_YAHOO_SYMBOL)}?interval=1d&range=1d`;
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha de rede ao consultar Brent.";
-    throw new Error(`Brent API indisponível: ${message}`);
+  let response: Response | null = null;
+  let lastError: Error | null = null;
+
+  for (const host of BRENT_YAHOO_HOSTS) {
+    let candidate: Response;
+    try {
+      candidate = await fetchImpl(buildBrentYahooUrl(host), {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": BRENT_YAHOO_USER_AGENT,
+        },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha de rede ao consultar Brent.";
+      lastError = new Error(`Brent API indisponível: ${message}`);
+      continue;
+    }
+
+    if (candidate.ok) {
+      response = candidate;
+      break;
+    }
+    lastError = new Error(`Brent API retornou HTTP ${candidate.status}.`);
   }
 
-  if (!response.ok) {
-    throw new Error(`Brent API retornou HTTP ${response.status}.`);
+  if (!response) {
+    throw lastError ?? new Error("Brent API indisponível.");
   }
 
   let payload: YahooChartResponse;

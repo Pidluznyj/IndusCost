@@ -1,6 +1,7 @@
 import type { PtaxSnapshot } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import {
+  invalidateProvisionalPtaxCache,
   PTAX_BCB_SOURCE,
   resolvePtaxBcbRates,
 } from "./materialMarketPtax.js";
@@ -71,6 +72,9 @@ export async function collectPtaxSnapshot(input: {
   console.info(
     `${PTAX_SNAPSHOT_LOG_PREFIX} start trigger=${input.trigger} requestedDate=${requestedDate} source=${PTAX_BCB_SOURCE}`
   );
+
+  // O botão "Atualizar" precisa valer como consulta nova ao BCB.
+  if (input.trigger === "MANUAL") invalidateProvisionalPtaxCache();
 
   let rates: Awaited<ReturnType<typeof resolvePtaxBcbRates>> = null;
   try {

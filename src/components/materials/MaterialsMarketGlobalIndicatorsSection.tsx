@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { DollarSign, Droplets, Loader2, RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { formatNumber } from "@/src/lib/utils";
 import {
   MARKET_GLOBAL_INDICATORS_API,
   MARKET_GLOBAL_INDICATORS_REFRESH_API,
@@ -40,18 +39,26 @@ function formatQuoteDatePt(iso: string | null | undefined): string {
   return d.toLocaleDateString("pt-BR");
 }
 
+// A PTAX é cotada em 4 casas e o Brent em 2; `formatNumber` abriria até 6.
+function formatFixed(value: number, decimals: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
 function formatUsdRate(value: number): string {
-  return `R$ ${formatNumber(value, 4)}`;
+  return `R$ ${formatFixed(value, 4)}`;
 }
 
 function formatBrentPrice(value: number): string {
-  return `US$ ${formatNumber(value, 2)}`;
+  return `US$ ${formatFixed(value, 2)}`;
 }
 
 function formatVariation(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${formatNumber(value, 2)}%`;
+  return `${sign}${formatFixed(value, 2)}%`;
 }
 
 function variationVariant(

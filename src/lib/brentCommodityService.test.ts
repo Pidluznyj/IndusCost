@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   BRENT_DEFAULT_SOURCE,
+  BRENT_YAHOO_HOSTS,
+  BRENT_YAHOO_USER_AGENT,
   calculateBrentVariationFromPrevious,
   fetchBrentQuoteFromYahoo,
   parseBrentQuoteDateIso,
@@ -53,6 +55,53 @@ describe("brentCommodityService", () => {
       }) as Response;
 
     await assert.rejects(() => fetchBrentQuoteFromYahoo(mockFetch), /HTTP 503/);
+  });
+
+  it("envia User-Agent de navegador — sem ele o Yahoo responde 429", async () => {
+    const sentHeaders: Array<Record<string, string>> = [];
+    const mockFetch: typeof fetch = async (_url, init) => {
+      sentHeaders.push((init?.headers ?? {}) as Record<string, string>);
+      return {
+        ok: true,
+        json: async () => ({
+          chart: { result: [{ meta: { regularMarketPrice: 87.37 } }] },
+        }),
+      } as Response;
+    };
+
+    await fetchBrentQuoteFromYahoo(mockFetch);
+    assert.equal(sentHeaders.length, 1);
+    assert.equal(sentHeaders[0]["User-Agent"], BRENT_YAHOO_USER_AGENT);
+    assert.match(sentHeaders[0]["User-Agent"], /Mozilla\/5\.0/);
+  });
+
+  it("cai para o host alternativo quando o primeiro recusa a requisição", async () => {
+    const requestedUrls: string[] = [];
+    const mockFetch: typeof fetch = async (url) => {
+      const raw = String(url);
+      requestedUrls.push(raw);
+      if (raw.startsWith(BRENT_YAHOO_HOSTS[0])) {
+        return { ok: false, status: 429, json: async () => ({}) } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          chart: { result: [{ meta: { regularMarketPrice: 87.37 } }] },
+        }),
+      } as Response;
+    };
+
+    const quote = await fetchBrentQuoteFromYahoo(mockFetch);
+    assert.equal(quote.priceUSD, 87.37);
+    assert.equal(requestedUrls.length, 2);
+    assert.ok(requestedUrls[1].startsWith(BRENT_YAHOO_HOSTS[1]));
+  });
+
+  it("propaga o último erro quando todos os hosts recusam", async () => {
+    const mockFetch: typeof fetch = async () =>
+      ({ ok: false, status: 429, json: async () => ({}) }) as Response;
+
+    await assert.rejects(() => fetchBrentQuoteFromYahoo(mockFetch), /HTTP 429/);
   });
 
   it("fetchBrentQuoteFromYahoo falha sem preço válido", async () => {

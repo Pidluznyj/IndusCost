@@ -12,8 +12,29 @@ export type PtaxBcbRates = {
   sellRate: number;
 };
 
-const ptaxSellCache = new Map<string, number | null>();
-const ptaxRatesCache = new Map<string, PtaxBcbRates | null>();
+/**
+ * O BCB só publica a PTAX de fechamento do dia por volta das 13h. Antes disso a
+ * consulta do próprio dia volta vazia e caímos no dia anterior — uma resposta
+ * **provisória**, que muda assim que o BCB publica.
+ *
+ * Por isso o cache é dividido: o que o BCB publicou para uma data exata é fato
+ * imutável e vale para sempre; tudo que veio de fallback (ou de uma ausência de
+ * cotação) é provisório e expira. Misturar os dois congelava a cotação: a
+ * resposta provisória da coleta das 09:00 virava permanente e contaminava todos
+ * os dias seguintes, que caíam nela ao recuar um dia.
+ *
+ * A memória do provisório existe só para deduplicar rajadas de consultas (uma
+ * página que resolve dezenas de datas de uma vez). Por isso vive segundos, não
+ * minutos: nunca pode atravessar duas coletas nem dois cliques em "Atualizar".
+ */
+const PTAX_PROVISIONAL_TTL_MS = 60_000;
+
+/** Cotações que o BCB publicou para a data exata — fato histórico imutável. */
+const ptaxPublishedCache = new Map<string, PtaxBcbRates>();
+/** Datas em que o BCB respondeu "sem cotação" — provisório enquanto o dia corre. */
+const ptaxAbsenceMemo = new Map<string, number>();
+/** Resolução por fallback de uma data pedida — provisória por definição. */
+const ptaxResolutionMemo = new Map<string, { value: PtaxBcbRates | null; expiresAt: number }>();
 
 export function toBcbDateParam(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
@@ -69,6 +90,46 @@ export async function fetchPtaxBcbRatesForDate(
 }
 
 /**
+ * Guarda a resolução de `isoDate`. Só é definitiva quando o próprio BCB
+ * publicou `isoDate` — aí ela já está em `ptaxPublishedCache`. Resolução vinda
+ * de fallback fica com prazo de validade para não congelar a cotação.
+ */
+function rememberResolution(
+  isoDate: string,
+  resolvedDate: string,
+  rates: PtaxBcbRates,
+  now: number
+): PtaxBcbRates {
+  if (resolvedDate !== isoDate) {
+    ptaxResolutionMemo.set(isoDate, {
+      value: rates,
+      expiresAt: now + PTAX_PROVISIONAL_TTL_MS,
+    });
+  }
+  return rates;
+}
+
+function readValidMemo<T>(memo: Map<string, { value: T; expiresAt: number }>, key: string, now: number) {
+  const entry = memo.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    memo.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function hasFreshAbsence(isoDate: string, now: number): boolean {
+  const expiresAt = ptaxAbsenceMemo.get(isoDate);
+  if (expiresAt == null) return false;
+  if (expiresAt <= now) {
+    ptaxAbsenceMemo.delete(isoDate);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Busca PTAX compra/venda; tenta dias anteriores se não houver cotação na data pedida.
  * Retorna a data efetiva da cotação encontrada.
  */
@@ -76,43 +137,40 @@ export async function resolvePtaxBcbRates(
   isoDate: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<PtaxBcbRates | null> {
-  const cached = ptaxRatesCache.get(isoDate);
-  if (cached !== undefined) return cached;
+  const published = ptaxPublishedCache.get(isoDate);
+  if (published) return published;
+
+  const now = Date.now();
+  const memo = readValidMemo(ptaxResolutionMemo, isoDate, now);
+  if (memo) return memo.value;
 
   let cursor = isoDate;
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const hit = ptaxRatesCache.get(cursor);
-    if (hit !== undefined) {
-      ptaxRatesCache.set(isoDate, hit);
-      return hit;
-    }
+    const cachedForCursor = ptaxPublishedCache.get(cursor);
+    if (cachedForCursor) return rememberResolution(isoDate, cursor, cachedForCursor, now);
 
-    try {
-      const rates = await fetchPtaxBcbRatesForDate(cursor, fetchImpl);
-      if (rates != null) {
-        ptaxRatesCache.set(cursor, rates);
-        ptaxRatesCache.set(isoDate, rates);
-        ptaxSellCache.set(cursor, rates.sellRate);
-        ptaxSellCache.set(isoDate, rates.sellRate);
-        return rates;
+    if (!hasFreshAbsence(cursor, now)) {
+      try {
+        const rates = await fetchPtaxBcbRatesForDate(cursor, fetchImpl);
+        if (rates != null) {
+          ptaxPublishedCache.set(cursor, rates);
+          return rememberResolution(isoDate, cursor, rates, now);
+        }
+        ptaxAbsenceMemo.set(cursor, now + PTAX_PROVISIONAL_TTL_MS);
+      } catch {
+        // erro de rede: não memoriza nada e tenta o dia anterior
       }
-    } catch {
-      // tenta dia anterior
     }
 
     cursor = previousIsoDate(cursor);
   }
 
-  ptaxRatesCache.set(isoDate, null);
-  ptaxSellCache.set(isoDate, null);
+  ptaxResolutionMemo.set(isoDate, { value: null, expiresAt: now + PTAX_PROVISIONAL_TTL_MS });
   return null;
 }
 
 /** Busca PTAX venda para a data; tenta dias úteis anteriores se não houver cotação. */
 export async function resolvePtaxUsdSellRate(isoDate: string): Promise<number | null> {
-  const cached = ptaxSellCache.get(isoDate);
-  if (cached !== undefined) return cached;
-
   const rates = await resolvePtaxBcbRates(isoDate);
   return rates?.sellRate ?? null;
 }
@@ -129,8 +187,19 @@ export async function resolvePtaxRatesByDate(
   return map;
 }
 
+/**
+ * Descarta só o que é provisório, preservando o histórico já publicado pelo
+ * BCB. Usado pela coleta manual para que o botão "Atualizar" sempre consulte a
+ * fonte de verdade em vez de repetir a resposta memorizada.
+ */
+export function invalidateProvisionalPtaxCache(): void {
+  ptaxAbsenceMemo.clear();
+  ptaxResolutionMemo.clear();
+}
+
 /** Limpa cache — útil em testes. */
 export function clearMaterialMarketPtaxCache(): void {
-  ptaxSellCache.clear();
-  ptaxRatesCache.clear();
+  ptaxPublishedCache.clear();
+  ptaxAbsenceMemo.clear();
+  ptaxResolutionMemo.clear();
 }
