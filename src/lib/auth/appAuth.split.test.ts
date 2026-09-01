@@ -20,14 +20,18 @@ import {
 } from "./appAuth.server.js";
 
 describe("appAuth.shared — contrato autenticado", () => {
-  it("constantes e validadores de e-mail/senha permanecem estáveis", () => {
+  it("constantes de sessão e validadores de e-mail/senha seguem a política vigente", () => {
     assert.equal(APP_SESSION_COOKIE_NAME, "induscost_session");
-    assert.equal(APP_PASSWORD_MIN_LENGTH, 8);
+    // O mínimo passou de 8 para 12 com a política central (passwordPolicy.ts).
+    assert.equal(APP_PASSWORD_MIN_LENGTH, 12);
     assert.equal(normalizeEmail("  A@B.C  "), "a@b.c");
     assert.equal(isValidEmail("a@b.c"), true);
     assert.equal(isValidEmail("x"), false);
-    assert.equal(validatePasswordMin("short"), "A senha deve ter no mínimo 8 caracteres.");
-    assert.equal(validatePasswordMin("longenough"), null);
+    assert.equal(
+      validatePasswordMin("short"),
+      `A senha deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`
+    );
+    assert.equal(validatePasswordMin("longenough12"), null);
   });
 
   it("roles/permissões efetivas — SUPER_ADMIN recebe catálogo; demais filtram", () => {
