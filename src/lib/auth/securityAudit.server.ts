@@ -80,17 +80,46 @@ export function normalizeUserAgent(raw: unknown): string | null {
 }
 
 /**
- * IP de ORIGEM DE SOCKET apenas.
+/**
+ * Peer de rede observado PELO PROCESSO — não é "o IP do usuário".
  *
  * Deliberadamente NÃO lê `X-Forwarded-For`, `X-Real-IP` nem `CF-Connecting-IP`:
  * a aplicação não habilita `trust proxy` e passar a confiar em header forjável
- * enfraqueceria outras superfícies. Sem cadeia de confiança, o peer real é a
- * única informação honesta — e ela é só auditoria, nunca autorização.
+ * enfraqueceria superfícies que têm modelo de confiança próprio.
+ *
+ * Consequência de topologia (ver docs/stock-collector-secure-ingress.md): o
+ * Nginx faz `proxy_pass` para `127.0.0.1:3000` (produção na AWS) e
+ * `127.0.0.1:3001` (homologação), então nesses ambientes o peer é SEMPRE
+ * loopback. Gravar `127.0.0.1` numa coluna chamada `ipAddress` seria pior do
+ * que não gravar nada: quem lesse a auditoria acreditaria estar vendo a origem
+ * do usuário. Por isso peer de loopback vira `null`.
+ *
+ * Em acesso direto (ex.: LAN da homologação em http://192.168.x.x:3001) o peer
+ * É o endereço real do cliente e é registrado.
  */
 export function resolveAuditIpAddress(socketAddress: unknown): string | null {
   if (typeof socketAddress !== "string") return null;
   const trimmed = socketAddress.trim();
-  return trimmed ? trimmed.slice(0, 64) : null;
+  if (!trimmed) return null;
+
+  // IPv4 mapeado em IPv6 (`::ffff:127.0.0.1`) é como o Node entrega em dual-stack.
+  const normalized = trimmed.replace(/^::ffff:/i, "");
+
+  if (isLoopbackOrUnspecifiedAddress(normalized)) return null;
+  return normalized.slice(0, 64);
+}
+
+/**
+ * Loopback ou endereço não especificado ⇒ o peer é o próprio host (proxy na
+ * mesma máquina), nunca um cliente. Faixas privadas NÃO entram aqui: numa
+ * instalação de LAN o `192.168.x.x` é o endereço real de quem acessou.
+ */
+export function isLoopbackOrUnspecifiedAddress(address: string): boolean {
+  const addr = address.trim().toLowerCase();
+  if (!addr) return true;
+  if (addr === "::1" || addr === "::" || addr === "0.0.0.0") return true;
+  // 127.0.0.0/8
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(addr);
 }
 
 export type SecurityAuditEntry = {

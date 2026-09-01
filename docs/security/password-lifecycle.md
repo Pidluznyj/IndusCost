@@ -202,8 +202,34 @@ chave cujo nome contenha `password`, `senha`, `hash`, `token`, `salt`, `secret`
 ou `credential`, e aceita apenas escalares — objeto aninhado não pode esconder
 segredo em profundidade.
 
-`ipAddress` vem do **peer do socket**. Não lemos `X-Forwarded-For`,
-`X-Real-IP` nem `CF-Connecting-IP`.
+### `ipAddress` — o que esse campo é, e o que ele NÃO é
+
+É o **peer de rede observado pelo processo**, não "o IP do usuário". Não lemos
+`X-Forwarded-For`, `X-Real-IP` nem `CF-Connecting-IP`, e `trust proxy`
+continua desligado.
+
+Consequência da topologia real (ver `docs/stock-collector-secure-ingress.md`):
+o Nginx faz `proxy_pass` para `127.0.0.1:3000` (produção na AWS) e
+`127.0.0.1:3001` (homologação). Nesses ambientes o peer é **sempre loopback**.
+Gravar `127.0.0.1` numa coluna chamada `ipAddress` seria pior do que não gravar
+nada: quem auditasse acreditaria estar vendo a origem do usuário.
+
+Por isso:
+
+| Peer observado | Gravado |
+| --- | --- |
+| `127.0.0.1`, `::1`, `::ffff:127.0.0.1`, `0.0.0.0` | `null` |
+| `192.168.100.5` (LAN da homologação, acesso direto) | `192.168.100.5` |
+| endereço público de cliente direto | o endereço |
+
+Faixa privada **não** é descartada: numa instalação de LAN ela é o endereço real
+de quem acessou. Só loopback/não-especificado — que comprovadamente indicam um
+proxy no mesmo host — viram `null`.
+
+**Para obter o IP real do usuário** seria preciso uma cadeia de confiança
+explícita (ex.: `trust proxy` limitado ao IP do Nginx local + validação de
+`CF-Connecting-IP` contra as faixas da Cloudflare). Isso é mudança de
+infraestrutura e está fora desta missão.
 
 ---
 
@@ -217,12 +243,44 @@ Janela deslizante em memória, **por identidade**, sem nada persistido:
 | Troca de senha | userId | 10 / 15 min |
 | Reset administrativo | userId do SUPER_ADMIN | 10 / 10 min |
 
+### O limiter não tranca conta
+
+O limite do login **não interrompe a requisição antes de verificar a
+credencial**. Ele só escolhe a resposta de uma tentativa que **já falhou**:
+abaixo do limite `401`, acima `429`. Uma senha correta autentica mesmo com o
+contador estourado.
+
+Isso é deliberado. Se o limite barrasse antes da verificação, qualquer pessoa
+que soubesse o e-mail de um colega derrubaria o acesso dele por 15 minutos — e
+indefinidamente, repetindo — só errando a senha de propósito. Força bruta
+continua contida: chute errado nunca autentica e passa a levar `429`.
+
 Login bem-sucedido limpa o histórico da identidade. A contagem vale para e-mail
 existente ou não, e a resposta é sempre a mesma — **sem enumeração de contas**.
 
 Não existe lockout persistente (nada de `failedLoginCount`/`lockedUntil`): a
-janela expira sozinha, então ninguém consegue travar a conta de outro de forma
-duradoura.
+janela expira sozinha.
+
+### Ameaça residual documentada
+
+Como a credencial é sempre verificada, um atacante consegue forçar um `scrypt`
+por requisição, mesmo acima do limite — amplificação de CPU. Três observações:
+
+1. é o comportamento que **já existia** antes desta feature (o login não tinha
+   limite algum), então nada regrediu;
+2. proteção volumétrica é trabalho de borda (Cloudflare / Nginx), não da
+   aplicação — e infraestrutura está fora desta missão;
+3. o alcance depende de o login estar atrás do gateway/Cloudflare Access. Isso
+   é afirmado pelo runbook de infraestrutura, **não** verificável neste
+   repositório — trate como premissa a confirmar na auditoria.
+
+Preferimos essa exposição de CPU (mitigável na borda, e já existente) a um
+lockout de conta por identidade (não mitigável na borda, e que seria
+**introduzido** por esta feature).
+
+O limiter é por processo: com múltiplas instâncias o limite efetivo multiplica.
+Aceitável na topologia atual (processo único), mesma premissa do limiter da
+Satisfação.
 
 `trust proxy` **não** foi habilitado e nenhum header de proxy passou a ser
 confiado. Sem cadeia de confiança, limitar por identidade é preferível a
@@ -280,7 +338,19 @@ nunca em `localStorage`, `sessionStorage`, contexto persistente, URL ou query.
 ## 13. Migration
 
 `prisma/migrations/20260916120000_auth_password_lifecycle/`, estritamente
-**aditiva**:
+**aditiva**.
+
+> **Sobre o timestamp.** Os nomes de migration deste repositório **não são datas
+> reais**: são um contador sintético (um "dia" por migration, sempre às
+> `120000`). `20260915120000_goal_governance`, por exemplo, foi commitada em
+> 2026-08-28, e 16 migrations já carregam timestamp posterior a setembro/2026.
+> O slot `20260901120000` inclusive já está ocupado por
+> `20260901120000_treasury_scenario_policy`. Por isso esta migration usa o
+> próximo número da sequência (`20260916120000`) e não a data do calendário:
+> um nome com a data real ordenaria **antes** de 15 migrations existentes, e o
+> Prisma aplica em ordem lexicográfica. Há teste travando essa invariante.
+
+Conteúdo:
 
 - `ALTER TABLE "AppUser" ADD COLUMN "mustChangePassword" BOOLEAN NOT NULL DEFAULT false`
 - `ALTER TABLE "AppUser" ADD COLUMN "passwordChangedAt" TIMESTAMPTZ(6)`

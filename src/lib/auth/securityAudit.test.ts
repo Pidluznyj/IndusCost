@@ -9,6 +9,7 @@ import type { SecurityAuditDb } from "./securityAudit.server.js";
 import {
   SECURITY_AUDIT_EVENTS,
   isForbiddenAuditMetadataKey,
+  isLoopbackOrUnspecifiedAddress,
   normalizeUserAgent,
   resolveAuditIpAddress,
   sanitizeSecurityAuditMetadata,
@@ -95,11 +96,40 @@ describe("sanitização do metadata", () => {
 });
 
 describe("origem da requisição", () => {
-  it("IP vem do peer do socket e é limitado em tamanho", () => {
+  it("peer real de cliente é registrado e truncado", () => {
     assert.equal(resolveAuditIpAddress("192.168.0.10"), "192.168.0.10");
+    assert.equal(resolveAuditIpAddress("203.0.113.7"), "203.0.113.7");
     assert.equal(resolveAuditIpAddress(undefined), null);
     assert.equal(resolveAuditIpAddress("   "), null);
     assert.equal(String(resolveAuditIpAddress("x".repeat(500))).length, 64);
+  });
+
+  it("peer de loopback vira null — atrás do proxy não é o IP do usuário", () => {
+    // Nginx faz proxy_pass para 127.0.0.1:3000/3001 (ver
+    // docs/stock-collector-secure-ingress.md), então o peer é o próprio host.
+    // Gravar isso numa coluna "ipAddress" faria a auditoria mentir.
+    for (const peer of ["127.0.0.1", "::ffff:127.0.0.1", "::1", "0.0.0.0", "::", "127.0.0.53"]) {
+      assert.equal(resolveAuditIpAddress(peer), null, `${peer} deveria virar null`);
+    }
+  });
+
+  it("normaliza IPv4 mapeado em IPv6 (dual-stack do Node)", () => {
+    assert.equal(resolveAuditIpAddress("::ffff:192.168.100.5"), "192.168.100.5");
+  });
+
+  it("faixa privada NÃO é descartada: na LAN é o endereço real de quem acessou", () => {
+    assert.equal(isLoopbackOrUnspecifiedAddress("192.168.100.5"), false);
+    assert.equal(isLoopbackOrUnspecifiedAddress("10.0.0.9"), false);
+    assert.equal(isLoopbackOrUnspecifiedAddress("127.0.0.1"), true);
+    assert.equal(isLoopbackOrUnspecifiedAddress("::1"), true);
+  });
+
+  it("continua sem ler qualquer header de proxy", () => {
+    const src = read("src/lib/auth/securityAudit.server.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(src.toLowerCase(), /x-forwarded-for|cf-connecting-ip|x-real-ip|trust proxy/);
+    assert.doesNotMatch(src, /req\.headers|request\.headers/);
   });
 
   it("User-Agent é truncado", () => {

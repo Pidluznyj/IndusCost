@@ -2149,34 +2149,42 @@ async function startServer() {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: "Informe a senha." });
       }
 
-      // Força bruta: janela deslizante por identidade. A chave é o e-mail
-      // normalizado — o servidor não confia em X-Forwarded-For/CF-Connecting-IP
-      // (não há trust proxy) e nada é persistido, então não existe lockout
-      // permanente utilizável como DoS. A contagem vale para e-mail existente
-      // ou não, e a resposta é a mesma: sem enumeração de contas.
+      // Força bruta: janela deslizante por identidade (e-mail normalizado). O
+      // servidor não confia em X-Forwarded-For/CF-Connecting-IP e não habilita
+      // trust proxy, então a rede não serve de chave; nada é persistido, então
+      // a janela expira sozinha.
+      //
+      // O limite NÃO barra a requisição antes de verificar a credencial: ele
+      // só decide a RESPOSTA de uma tentativa que já falhou. Senha correta
+      // entra mesmo com o contador estourado. Sem isso, qualquer pessoa que
+      // conheça o e-mail de alguém derrubaria o acesso dessa pessoa por 15
+      // minutos — e indefinidamente, repetindo — só errando a senha de
+      // propósito. Força bruta continua contida: chute errado nunca autentica,
+      // e passa a levar 429 depois do limite.
       const loginRateKey = email;
       const loginGate = authRateLimiter.peek("login", loginRateKey);
-      if (!loginGate.allowed) {
-        res.set("Retry-After", String(loginGate.retryAfterSeconds));
-        return res.status(429).json(authRateLimitedBody(loginGate));
-      }
 
-      const user = await prisma.appUser.findUnique({ where: { email } });
-      if (!user || !user.isActive) {
+      // Mesma resposta para e-mail inexistente e senha errada: sem enumeração.
+      const rejectInvalidCredentials = () => {
         authRateLimiter.consume("login", loginRateKey);
+        if (!loginGate.allowed) {
+          res.set("Retry-After", String(loginGate.retryAfterSeconds));
+          return res.status(429).json(authRateLimitedBody(loginGate));
+        }
         return res.status(401).json({
           error: "INVALID_CREDENTIALS",
           message: "E-mail ou senha inválidos.",
         });
+      };
+
+      const user = await prisma.appUser.findUnique({ where: { email } });
+      if (!user || !user.isActive) {
+        return rejectInvalidCredentials();
       }
 
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
-        authRateLimiter.consume("login", loginRateKey);
-        return res.status(401).json({
-          error: "INVALID_CREDENTIALS",
-          message: "E-mail ou senha inválidos.",
-        });
+        return rejectInvalidCredentials();
       }
 
       // Autenticação legítima limpa o histórico: errar a senha algumas vezes

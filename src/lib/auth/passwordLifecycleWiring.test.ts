@@ -8,7 +8,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { PASSWORD_CHANGE_ALLOWED_ROUTES } from "./passwordChangeRequiredGuard.js";
 
@@ -25,6 +25,53 @@ function code(rel: string): string {
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 }
+
+describe("migration do ciclo de senha", () => {
+  const MIGRATION = "20260916120000_auth_password_lifecycle";
+
+  function migrations(): string[] {
+    return readdirSync(path.join(ROOT, "prisma/migrations"))
+      .filter((n) => n !== "migration_lock.toml")
+      .sort();
+  }
+
+  it("é a ÚLTIMA na ordem em que o Prisma aplica (lexicográfica)", () => {
+    const todas = migrations();
+    assert.equal(
+      todas[todas.length - 1],
+      MIGRATION,
+      "a migration precisa ordenar depois de todas as existentes"
+    );
+  });
+
+  it("o timestamp segue a sequência sintética do repositório", () => {
+    // Os timestamps deste repositório NÃO são datas reais: são um contador
+    // (um "dia" por migration, sempre às 120000). 20260915120000_goal_governance,
+    // por exemplo, foi commitada em 2026-08-28. Por isso a migration do ciclo
+    // de senha usa o próximo slot da sequência, e não a data do calendário —
+    // qualquer nome com data real cairia ANTES de migrations já existentes.
+    const anteriores = migrations().filter((n) => n !== MIGRATION);
+    const maiorAnterior = anteriores[anteriores.length - 1];
+    assert.equal(maiorAnterior, "20260915120000_goal_governance");
+    assert.ok(MIGRATION > maiorAnterior);
+    assert.match(MIGRATION, /^\d{8}120000_/);
+  });
+
+  it("é aditiva: sem DROP, sem RENAME, sem backfill", () => {
+    const sql = readFileSync(
+      path.join(ROOT, "prisma/migrations", MIGRATION, "migration.sql"),
+      "utf8"
+    );
+    const codigo = sql.replace(/^\s*--.*$/gm, "");
+    assert.doesNotMatch(codigo, /\bDROP\b/i);
+    assert.doesNotMatch(codigo, /RENAME/i);
+    // Só comando de DADOS conta como backfill — `ON UPDATE CASCADE` de FK não é.
+    assert.doesNotMatch(codigo, /(^|;)\s*(UPDATE|INSERT|DELETE)\s/im);
+    assert.match(codigo, /ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false/);
+    assert.match(codigo, /ADD COLUMN IF NOT EXISTS "passwordChangedAt" TIMESTAMPTZ\(6\)/);
+    assert.match(codigo, /CREATE TABLE IF NOT EXISTS "SecurityAuditLog"/);
+  });
+});
 
 describe("server.ts — guard montado antes das rotas de negócio", () => {
   it("o middleware existe e resolve o estado a partir da sessão", () => {
@@ -152,11 +199,42 @@ describe("server.ts — criação de usuário e login", () => {
     const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
     const rota = server.slice(inicio, fim);
     assert.match(rota, /authRateLimiter\.peek\("login", loginRateKey\)/);
-    // Conta a falha tanto para e-mail inexistente quanto para senha errada.
-    assert.equal((rota.match(/authRateLimiter\.consume\("login", loginRateKey\)/g) ?? []).length, 2);
     assert.match(rota, /authRateLimiter\.clear\("login", loginRateKey\)/);
-    // Mensagem genérica preservada nos dois caminhos.
-    assert.equal((rota.match(/E-mail ou senha inválidos\./g) ?? []).length, 2);
+    // E-mail inexistente e senha errada passam pelo MESMO caminho de rejeição,
+    // com a mesma mensagem: sem enumeração de contas.
+    assert.equal((rota.match(/return rejectInvalidCredentials\(\);/g) ?? []).length, 2);
+    assert.equal((rota.match(/E-mail ou senha inválidos\./g) ?? []).length, 1);
+  });
+
+  it("o limiter NÃO permite lockout de conta: senha correta entra mesmo estourado", () => {
+    const inicio = server.indexOf('app.post("/api/auth/login"');
+    const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
+    const rota = server.slice(inicio, fim);
+
+    const peekIdx = rota.indexOf('authRateLimiter.peek("login", loginRateKey)');
+    const verifyIdx = rota.indexOf("await verifyPassword(password, user.passwordHash)");
+    const clearIdx = rota.indexOf('authRateLimiter.clear("login", loginRateKey)');
+    assert.ok(peekIdx > 0 && verifyIdx > peekIdx, "a senha é verificada depois do peek");
+    assert.ok(clearIdx > verifyIdx, "o sucesso limpa o contador");
+
+    // A verificação da credencial acontece SEMPRE: o peek só alimenta a
+    // resposta de falha, nunca interrompe a requisição antes dela. Sem isso,
+    // conhecer o e-mail de alguém bastaria para derrubar o acesso da pessoa.
+    const caminhoDeSucesso = rota.slice(verifyIdx, clearIdx);
+    assert.doesNotMatch(
+      caminhoDeSucesso,
+      /429|loginGate\.allowed/,
+      "credencial correta não pode ser barrada pelo rate limit"
+    );
+
+    // O 429 existe uma única vez, dentro do rejeitador de credencial inválida.
+    const rejeitador = rota.slice(
+      rota.indexOf("const rejectInvalidCredentials"),
+      rota.indexOf("const user = await prisma.appUser.findUnique")
+    );
+    assert.match(rejeitador, /authRateLimiter\.consume\("login", loginRateKey\)/);
+    assert.match(rejeitador, /res\.status\(429\)/);
+    assert.equal((rota.match(/res\.status\(429\)/g) ?? []).length, 1);
   });
 
   it("login com troca pendente NÃO é negado — a sessão restrita precisa nascer", () => {
