@@ -54,6 +54,18 @@ export const FINANCE_BILLING_EXECUTIVE_TABS = [
 export type FinanceBillingExecutiveTabId =
   (typeof FINANCE_BILLING_EXECUTIVE_TABS)[number]["id"];
 
+/**
+ * Visões da página de Faturamento (mesmo padrão de Contas a Receber:
+ * `FINANCE_AR_PAGE_VIEWS`). "overview" é o conteúdo executivo já existente.
+ */
+export const FINANCE_BILLING_PAGE_VIEWS = [
+  { id: "overview", label: "Visão Geral" },
+  { id: "detail", label: "Detalhamento" },
+] as const;
+
+export type FinanceBillingPageViewId =
+  (typeof FINANCE_BILLING_PAGE_VIEWS)[number]["id"];
+
 /** Abas de análise gráfica — mesma fonte NF-e fiscal. */
 export const FINANCE_BILLING_ANALYSIS_TABS = [
   { id: "overview", label: "Visão Geral" },

@@ -5,6 +5,8 @@ import { buildFinanceBillingDashboard } from "@/src/lib/financeBillingDashboard.
 import { buildFinanceBillingNfeComparison } from "@/src/lib/financeBillingNfeComparison.js";
 import { buildFinanceBillingNfeList } from "@/src/lib/financeBillingNfeList.js";
 import { buildFinanceBillingHorizonDrilldown } from "@/src/lib/financeBillingHorizonDrilldown.js";
+import { FinanceBillingDetailQueryError } from "@/src/lib/finance/financeBillingDetailOrders.js";
+import { loadFinanceBillingDetailOrders } from "@/src/lib/finance/financeBillingDetailOrders.server.js";
 import { buildBillingAuditDataset } from "@/src/lib/financeBillingAuditDataset.js";
 import {
   billingAuditWorkbookToBytes,
@@ -98,6 +100,34 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
           : "Não foi possível listar pedidos do horizonte de faturamento.";
       return res.status(error instanceof Error && error.message.includes("inválida") ? 400 : 500).json(
         financeApiErrorJson(message, error)
+      );
+    }
+  });
+
+  /**
+   * Subaba Detalhamento — pedidos de venda faturados na competência.
+   * Read-only, 1 linha lógica por SalesOrder, mesma permissão da tela.
+   */
+  app.get("/api/finance/billing/detail/orders", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const payload = await loadFinanceBillingDetailOrders(
+        req.query as Record<string, unknown>
+      );
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof FinanceBillingDetailQueryError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("GET /api/finance/billing/detail/orders", error);
+      return res.status(500).json(
+        financeApiErrorJson(
+          "Não foi possível listar os pedidos faturados. Tente novamente.",
+          error
+        )
       );
     }
   });
