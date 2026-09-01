@@ -182,6 +182,13 @@ describe("server.ts — reset administrativo sem duplicação", () => {
 });
 
 describe("server.ts — criação de usuário e login", () => {
+  function rotaDeLogin(): string {
+    const inicio = server.indexOf('app.post("/api/auth/login"');
+    const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
+    assert.ok(inicio > 0 && fim > inicio, "não achei a rota de login");
+    return server.slice(inicio, fim);
+  }
+
   it("a credencial inicial nasce temporária e auditada, na mesma transação", () => {
     const inicio = server.indexOf('app.post("/api/admin/users"');
     const fim = server.indexOf('app.get("/api/admin/users/:id"', inicio);
@@ -194,54 +201,81 @@ describe("server.ts — criação de usuário e login", () => {
     assert.match(rota, /validatePasswordMin\(password\)/);
   });
 
-  it("o login limita por identidade, limpa no sucesso e não enumera contas", () => {
-    const inicio = server.indexOf('app.post("/api/auth/login"');
-    const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
-    const rota = server.slice(inicio, fim);
-    assert.match(rota, /authRateLimiter\.peek\("login", loginRateKey\)/);
-    assert.match(rota, /authRateLimiter\.clear\("login", loginRateKey\)/);
+  it("o login usa o throttle por identidade e limpa o estado no sucesso", () => {
+    const rota = rotaDeLogin();
+    assert.match(rota, /const loginRateKey = email;/);
+    assert.match(rota, /loginThrottle\.acquire\(loginRateKey\)/);
+    assert.match(rota, /loginThrottle\.recordSuccess\(loginRateKey\)/);
     // E-mail inexistente e senha errada passam pelo MESMO caminho de rejeição,
     // com a mesma mensagem: sem enumeração de contas.
     assert.equal((rota.match(/return rejectInvalidCredentials\(\);/g) ?? []).length, 2);
     assert.equal((rota.match(/E-mail ou senha inválidos\./g) ?? []).length, 1);
+    // O limiter de janela deslizante não gerencia mais o login.
+    assert.doesNotMatch(rota, /authRateLimiter/);
   });
 
-  it("o limiter NÃO permite lockout de conta: senha correta entra mesmo estourado", () => {
-    const inicio = server.indexOf('app.post("/api/auth/login"');
-    const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
-    const rota = server.slice(inicio, fim);
+  it("BLOCKER: o gate roda ANTES de verifyPassword — é isso que contém força bruta", () => {
+    const rota = rotaDeLogin();
 
-    const peekIdx = rota.indexOf('authRateLimiter.peek("login", loginRateKey)');
+    const acquireIdx = rota.indexOf("loginThrottle.acquire(loginRateKey)");
+    const gate429Idx = rota.indexOf("return res.status(429)");
+    const dbIdx = rota.indexOf("await prisma.appUser.findUnique");
     const verifyIdx = rota.indexOf("await verifyPassword(password, user.passwordHash)");
-    const clearIdx = rota.indexOf('authRateLimiter.clear("login", loginRateKey)');
-    assert.ok(peekIdx > 0 && verifyIdx > peekIdx, "a senha é verificada depois do peek");
-    assert.ok(clearIdx > verifyIdx, "o sucesso limpa o contador");
+    const successIdx = rota.indexOf("loginThrottle.recordSuccess(loginRateKey)");
 
-    // A verificação da credencial acontece SEMPRE: o peek só alimenta a
-    // resposta de falha, nunca interrompe a requisição antes dela. Sem isso,
-    // conhecer o e-mail de alguém bastaria para derrubar o acesso da pessoa.
-    const caminhoDeSucesso = rota.slice(verifyIdx, clearIdx);
-    assert.doesNotMatch(
-      caminhoDeSucesso,
-      /429|loginGate\.allowed/,
-      "credencial correta não pode ser barrada pelo rate limit"
-    );
+    assert.ok(acquireIdx > 0, "o gate precisa existir");
+    assert.ok(gate429Idx > acquireIdx, "o 429 sai do próprio gate");
+    assert.ok(dbIdx > gate429Idx, "o banco só é consultado depois do gate");
+    assert.ok(verifyIdx > gate429Idx, "o scrypt só roda depois do gate");
+    assert.ok(successIdx > verifyIdx, "o sucesso limpa o estado ao final");
 
-    // O 429 existe uma única vez, dentro do rejeitador de credencial inválida.
+    // Nada de verificação criptográfica antes do gate. Sem comentários: o
+    // bloco EXPLICA que o gate precede verifyPassword, e a asserção precisa
+    // olhar o código.
+    const antesDoGate = rota
+      .slice(0, acquireIdx)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(antesDoGate, /verifyPassword|appUser\.findUnique/);
+
+    // O 429 é decidido só pelo gate: o caminho de credencial inválida devolve
+    // 401 puro, sem reavaliar limite.
     const rejeitador = rota.slice(
       rota.indexOf("const rejectInvalidCredentials"),
       rota.indexOf("const user = await prisma.appUser.findUnique")
     );
-    assert.match(rejeitador, /authRateLimiter\.consume\("login", loginRateKey\)/);
-    assert.match(rejeitador, /res\.status\(429\)/);
+    assert.doesNotMatch(rejeitador, /429/);
     assert.equal((rota.match(/res\.status\(429\)/g) ?? []).length, 1);
+
+    // Retry-After acompanha o 429.
+    assert.match(rota, /res\.set\("Retry-After", String\(loginGate\.retryAfterSeconds\)\)/);
+  });
+
+  it("o cooldown do login é curto e com teto — não é lockout longo", async () => {
+    const { LOGIN_BACKOFF_MS, LOGIN_FAILURE_THRESHOLD } = await import("./authRateLimit.js");
+    assert.equal(LOGIN_FAILURE_THRESHOLD, 5);
+    assert.deepEqual([...LOGIN_BACKOFF_MS], [15_000, 30_000, 60_000, 120_000]);
+    assert.ok(
+      Math.max(...LOGIN_BACKOFF_MS) <= 120_000,
+      "o teto precisa continuar em 2 minutos"
+    );
+  });
+
+  it("nenhum estado de bloqueio de login foi para o banco", () => {
+    const schema = read("prisma/schema.prisma");
+    assert.doesNotMatch(schema, /failedLoginCount|lockedUntil|lockoutUntil|loginAttempts|cooldownUntil/i);
+    const throttle = read("src/lib/auth/authRateLimit.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(throttle, /prisma|@prisma\/client/i);
   });
 
   it("login com troca pendente NÃO é negado — a sessão restrita precisa nascer", () => {
-    const inicio = server.indexOf('app.post("/api/auth/login"');
-    const fim = server.indexOf('app.post("/api/auth/logout"', inicio);
-    const rota = server.slice(inicio, fim);
-    assert.doesNotMatch(rota, /mustChangePassword/, "o login não pode barrar por troca pendente");
+    assert.doesNotMatch(
+      rotaDeLogin(),
+      /mustChangePassword/,
+      "o login não pode barrar por troca pendente"
+    );
   });
 });
 

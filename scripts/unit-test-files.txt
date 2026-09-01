@@ -165,6 +165,7 @@ src/lib/auth/passwordLifecycleE2E.test.ts
 src/lib/auth/passwordChangeRequiredGuard.test.ts
 src/lib/auth/passwordLifecycleWiring.test.ts
 src/lib/auth/authRateLimit.test.ts
+src/lib/auth/loginThrottle.test.ts
 src/lib/auth/securityAudit.test.ts
 src/lib/security/permissionAudit.test.ts
 src/lib/security/userPermissionAdminAudit.test.ts

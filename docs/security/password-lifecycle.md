@@ -235,59 +235,84 @@ infraestrutura e está fora desta missão.
 
 ## 10. Rate limit
 
-Janela deslizante em memória, **por identidade**, sem nada persistido:
+São **dois mecanismos**, porque os problemas são diferentes.
+
+### 10.1 Login — throttle de força bruta
+
+Janela deslizante não serve aqui. Um limiter que apenas troca `401` por `429`
+**não contém força bruta**: o `scrypt` continua rodando a cada tentativa e o
+atacante segue testando candidatos à vontade. O gate precisa impedir a
+**verificação**, não só mudar a resposta.
+
+O login usa `LoginThrottle`: cooldown progressivo por identidade (e-mail
+normalizado), avaliado **antes** de consultar o banco e antes de
+`verifyPassword`.
+
+| Falhas consecutivas | Cooldown antes da próxima verificação |
+| --- | --- |
+| 1 – 4 | nenhum |
+| 5 | 15 s |
+| 6 | 30 s |
+| 7 | 60 s |
+| 8 ou mais | 120 s (teto) |
+
+Durante o cooldown a resposta é `429` com `Retry-After` igual ao tempo
+restante, e **nenhum `scrypt` é executado** — nem para a senha correta.
+Terminado o cooldown, exatamente **uma** tentativa avança para verificação por
+ciclo; se acertar, autentica e o estado é apagado; se errar, o backoff sobe
+para o degrau seguinte.
+
+O teto de 2 minutos é deliberado: conhecer o e-mail de alguém não pode virar
+uma forma de derrubar o acesso da pessoa por muito tempo. O estado decai
+sozinho após 15 minutos de inatividade.
+
+**Concorrência.** `acquire()` é síncrono: lê e grava o estado sem `await` no
+meio, então no laço de eventos do Node duas requisições paralelas não conseguem
+observar o mesmo estado e passar as duas. A tentativa é cobrada como falha já
+na **concessão** — é isso que impede uma rajada simultânea de N requisições de
+obter N verificações antes que a primeira falha fosse registrada. Teste
+adversarial: 200 requisições paralelas partindo do zero resultam em exatamente
+5 `scrypt`; 20 requisições disparadas no instante exato da expiração do
+cooldown resultam em exatamente 1.
+
+### 10.2 Operações autenticadas — janela deslizante
+
+Para quem **já** está autenticado, o problema é abuso operacional, não
+adivinhação de senha; janela deslizante basta:
 
 | Operação | Chave | Limite |
 | --- | --- | --- |
-| Login | e-mail normalizado | 5 / 15 min |
 | Troca de senha | userId | 10 / 15 min |
 | Reset administrativo | userId do SUPER_ADMIN | 10 / 10 min |
 
-### O limiter não tranca conta
+### 10.3 O que vale para os dois
 
-O limite do login **não interrompe a requisição antes de verificar a
-credencial**. Ele só escolhe a resposta de uma tentativa que **já falhou**:
-abaixo do limite `401`, acima `429`. Uma senha correta autentica mesmo com o
-contador estourado.
+Chave é **identidade**, nunca rede: `trust proxy` continua desligado e nenhum
+header (`X-Forwarded-For`, `X-Real-IP`, `CF-Connecting-IP`) é lido. Sem cadeia
+de confiança, limitar por identidade é preferível a enfraquecer a confiança de
+rede de outras superfícies.
 
-Isso é deliberado. Se o limite barrasse antes da verificação, qualquer pessoa
-que soubesse o e-mail de um colega derrubaria o acesso dele por 15 minutos — e
-indefinidamente, repetindo — só errando a senha de propósito. Força bruta
-continua contida: chute errado nunca autentica e passa a levar `429`.
+Nada é persistido: não existe `failedLoginCount` nem `lockedUntil` em
+`AppUser`, e nenhuma migration foi criada para isso. O estado vive em memória,
+compatível com a topologia de processo único — com múltiplas instâncias o
+limite efetivo multiplica pelo número de processos (mesma premissa do limiter
+da Satisfação, que **não** foi tocado).
 
-Login bem-sucedido limpa o histórico da identidade. A contagem vale para e-mail
-existente ou não, e a resposta é sempre a mesma — **sem enumeração de contas**.
+E-mail existente e inexistente recebem a mesma resposta e entram em cooldown no
+mesmo ponto: **sem enumeração de contas**.
 
-Não existe lockout persistente (nada de `failedLoginCount`/`lockedUntil`): a
-janela expira sozinha.
+### 10.4 Ameaças residuais
 
-### Ameaça residual documentada
-
-Como a credencial é sempre verificada, um atacante consegue forçar um `scrypt`
-por requisição, mesmo acima do limite — amplificação de CPU. Três observações:
-
-1. é o comportamento que **já existia** antes desta feature (o login não tinha
-   limite algum), então nada regrediu;
-2. proteção volumétrica é trabalho de borda (Cloudflare / Nginx), não da
-   aplicação — e infraestrutura está fora desta missão;
-3. o alcance depende de o login estar atrás do gateway/Cloudflare Access. Isso
-   é afirmado pelo runbook de infraestrutura, **não** verificável neste
-   repositório — trate como premissa a confirmar na auditoria.
-
-Preferimos essa exposição de CPU (mitigável na borda, e já existente) a um
-lockout de conta por identidade (não mitigável na borda, e que seria
-**introduzido** por esta feature).
-
-O limiter é por processo: com múltiplas instâncias o limite efetivo multiplica.
-Aceitável na topologia atual (processo único), mesma premissa do limiter da
-Satisfação.
-
-`trust proxy` **não** foi habilitado e nenhum header de proxy passou a ser
-confiado. Sem cadeia de confiança, limitar por identidade é preferível a
-enfraquecer a confiança de rede de outras superfícies. O limiter público da
-Satisfação **não** foi tocado.
-
----
+1. **Bloqueio temporário dirigido.** Quem souber o e-mail de alguém consegue
+   manter aquela identidade em cooldown, batendo uma vez a cada expiração. O
+   teto limita o impacto a 2 minutos por ciclo, contra os 15 minutos de um
+   lockout clássico — é a troca consciente entre conter força bruta e não
+   entregar um DoS de conta prolongado.
+2. **Canal lateral de tempo.** E-mail inexistente responde sem executar
+   `scrypt`, então é mais rápido que senha errada de usuário real. Status,
+   corpo e contagem de throttle são idênticos; a diferença é de latência.
+   Equalizar exigiria um hash-fantasma no caminho de usuário inexistente —
+   mudança de desenho fora do escopo desta correção.
 
 ## 11. Contratos
 

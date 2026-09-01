@@ -575,7 +575,11 @@ import {
 } from "./src/lib/auth/adminElevation.shared.js";
 import { createPasswordChangeRequiredGuard } from "./src/lib/auth/passwordChangeRequiredGuard.js";
 import { registerPasswordLifecycleRoutes } from "./src/lib/auth/passwordLifecycleRoutes.js";
-import { authRateLimiter, authRateLimitedBody } from "./src/lib/auth/authRateLimit.js";
+import {
+  loginThrottle,
+  authRateLimitedBody,
+  isLoginAttemptDenied,
+} from "./src/lib/auth/authRateLimit.js";
 import {
   SECURITY_AUDIT_EVENTS,
   normalizeUserAgent,
@@ -2149,33 +2153,32 @@ async function startServer() {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: "Informe a senha." });
       }
 
-      // Força bruta: janela deslizante por identidade (e-mail normalizado). O
-      // servidor não confia em X-Forwarded-For/CF-Connecting-IP e não habilita
-      // trust proxy, então a rede não serve de chave; nada é persistido, então
-      // a janela expira sozinha.
+      // Força bruta: cooldown progressivo por identidade (e-mail normalizado).
+      // A chave é identidade, nunca rede — não há trust proxy nem cadeia de
+      // confiança para X-Forwarded-For/CF-Connecting-IP.
       //
-      // O limite NÃO barra a requisição antes de verificar a credencial: ele
-      // só decide a RESPOSTA de uma tentativa que já falhou. Senha correta
-      // entra mesmo com o contador estourado. Sem isso, qualquer pessoa que
-      // conheça o e-mail de alguém derrubaria o acesso dessa pessoa por 15
-      // minutos — e indefinidamente, repetindo — só errando a senha de
-      // propósito. Força bruta continua contida: chute errado nunca autentica,
-      // e passa a levar 429 depois do limite.
+      // O gate roda ANTES de tocar no banco e ANTES de verifyPassword: durante
+      // o cooldown a requisição é recusada sem gastar um scrypt. É isso que
+      // limita força bruta de verdade — só trocar 401 por 429 não limitaria
+      // nada, porque a verificação continuaria acontecendo a cada tentativa.
+      //
+      // O cooldown é curto e tem teto de 2 minutos: conhecer o e-mail de
+      // alguém não pode virar uma forma de derrubar o acesso da pessoa.
       const loginRateKey = email;
-      const loginGate = authRateLimiter.peek("login", loginRateKey);
+      const loginGate = loginThrottle.acquire(loginRateKey);
+      if (isLoginAttemptDenied(loginGate)) {
+        res.set("Retry-After", String(loginGate.retryAfterSeconds));
+        return res.status(429).json(authRateLimitedBody(loginGate));
+      }
 
       // Mesma resposta para e-mail inexistente e senha errada: sem enumeração.
-      const rejectInvalidCredentials = () => {
-        authRateLimiter.consume("login", loginRateKey);
-        if (!loginGate.allowed) {
-          res.set("Retry-After", String(loginGate.retryAfterSeconds));
-          return res.status(429).json(authRateLimitedBody(loginGate));
-        }
-        return res.status(401).json({
+      // A tentativa já foi contabilizada no acquire, então não há o que somar
+      // aqui — o próximo acquire desta identidade é que aplicará o cooldown.
+      const rejectInvalidCredentials = () =>
+        res.status(401).json({
           error: "INVALID_CREDENTIALS",
           message: "E-mail ou senha inválidos.",
         });
-      };
 
       const user = await prisma.appUser.findUnique({ where: { email } });
       if (!user || !user.isActive) {
@@ -2187,9 +2190,8 @@ async function startServer() {
         return rejectInvalidCredentials();
       }
 
-      // Autenticação legítima limpa o histórico: errar a senha algumas vezes
-      // e acertar não pode deixar o usuário perto do bloqueio.
-      authRateLimiter.clear("login", loginRateKey);
+      // Autenticação legítima apaga todo o estado de falhas da identidade.
+      loginThrottle.recordSuccess(loginRateKey);
 
       const token = createOpaqueSessionToken();
       const tokenHash = hashSessionToken(token);

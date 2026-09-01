@@ -1,5 +1,13 @@
 /**
- * Rate limit das operações de credencial humana (login e ciclo de senha).
+ * Rate limit das operações de credencial humana.
+ *
+ * São DOIS mecanismos, porque os problemas são diferentes:
+ *
+ *  - `LoginThrottle`  — força bruta de senha. Precisa impedir a VERIFICAÇÃO
+ *    (scrypt) em si, não só trocar o código de resposta. Cooldown progressivo
+ *    e curto por identidade.
+ *  - `AuthRateLimiter` — abuso operacional de quem JÁ está autenticado
+ *    (trocar senha, disparar resets). Janela deslizante simples basta.
  *
  * Chave é IDENTIDADE, nunca rede. O IndusCost não habilita `trust proxy` e
  * não possui cadeia de confiança para `X-Forwarded-For` / `X-Real-IP` /
@@ -16,7 +24,7 @@
  * usado na superfície pública da Satisfação, cujo limiter NÃO é tocado aqui.
  */
 
-export type AuthRateLimitBucket = "login" | "change-password" | "admin-reset";
+export type AuthRateLimitBucket = "change-password" | "admin-reset";
 
 export type AuthRateLimitRule = {
   /** Janela deslizante, em milissegundos. */
@@ -26,13 +34,13 @@ export type AuthRateLimitRule = {
 };
 
 /**
- *  - login:           tentativas malsucedidas por identidade; sucesso zera.
  *  - change-password: troca voluntária/obrigatória por usuário autenticado.
  *  - admin-reset:     resets emitidos por um mesmo SUPER_ADMIN (abuso operacional).
+ *
+ * O login NÃO está aqui: ver `LoginThrottle` no fim do arquivo.
  */
 export const AUTH_RATE_LIMIT_RULES: Readonly<Record<AuthRateLimitBucket, AuthRateLimitRule>> =
   Object.freeze({
-    login: { windowMs: 15 * 60_000, max: 5 },
     "change-password": { windowMs: 15 * 60_000, max: 10 },
     "admin-reset": { windowMs: 10 * 60_000, max: 10 },
   });
@@ -143,7 +151,7 @@ export class AuthRateLimiter {
 export const authRateLimiter = new AuthRateLimiter();
 
 /** Corpo padrão do 429 — código estável, o cliente não faz parsing de texto. */
-export function authRateLimitedBody(decision: AuthRateLimitDecision): {
+export function authRateLimitedBody(decision: { retryAfterSeconds: number }): {
   error: string;
   code: string;
   message: string;
@@ -156,3 +164,159 @@ export function authRateLimitedBody(decision: AuthRateLimitDecision): {
     retryAfterSeconds: decision.retryAfterSeconds,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Força bruta de login                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Throttle de verificação de senha.
+ *
+ * O problema que ele resolve: uma janela deslizante que apenas troca 401 por
+ * 429 NÃO contém força bruta, porque o `scrypt` continua rodando a cada
+ * tentativa e o atacante segue testando candidatos à vontade. Aqui o gate
+ * roda ANTES da verificação: durante o cooldown a requisição é recusada sem
+ * que `verifyPassword` chegue a ser chamado.
+ *
+ * O que ele deliberadamente NÃO faz: bloqueio longo. O teto é de 2 minutos,
+ * justamente para que conhecer o e-mail de alguém não vire uma forma de
+ * derrubar o acesso da pessoa por muito tempo.
+ *
+ * Chave é IDENTIDADE (e-mail normalizado), nunca rede: não há `trust proxy`
+ * nem cadeia de confiança para `X-Forwarded-For` / `CF-Connecting-IP`.
+ *
+ * Estado é in-memory por processo. Nada vai para o banco — não existe
+ * `failedLoginCount` nem `lockedUntil` em `AppUser`.
+ */
+
+/** A partir daqui cada nova tentativa passa a exigir cooldown. */
+export const LOGIN_FAILURE_THRESHOLD = 5;
+
+/** Backoff progressivo, em ms, a partir da 5ª falha. O último valor é o teto. */
+export const LOGIN_BACKOFF_MS: readonly number[] = Object.freeze([
+  15_000, // 5ª falha
+  30_000, // 6ª
+  60_000, // 7ª
+  120_000, // 8ª em diante (teto)
+]);
+
+/** Sem atividade por esse tempo, a identidade volta ao estado limpo. */
+export const LOGIN_STATE_RESET_MS = 15 * 60_000;
+
+export function loginCooldownMsFor(failures: number): number {
+  if (failures < LOGIN_FAILURE_THRESHOLD) return 0;
+  const index = Math.min(failures - LOGIN_FAILURE_THRESHOLD, LOGIN_BACKOFF_MS.length - 1);
+  return LOGIN_BACKOFF_MS[index] ?? 0;
+}
+
+export type LoginAttemptAllowed = { allowed: true; failures: number };
+export type LoginAttemptDenied = {
+  allowed: false;
+  failures: number;
+  retryAfterSeconds: number;
+};
+export type LoginAttemptDecision = LoginAttemptAllowed | LoginAttemptDenied;
+
+/**
+ * Estreitamento explícito.
+ *
+ * O tsconfig do projeto não usa `strict`, e sem `strictNullChecks` o
+ * estreitamento por discriminante (`if (!gate.allowed)`) não é aplicado. Um
+ * type guard nomeado resolve sem `any` e sem `@ts-ignore` — mesmo padrão já
+ * usado em `isPasswordLifecycleFailure`.
+ */
+export function isLoginAttemptDenied(
+  decision: LoginAttemptDecision
+): decision is LoginAttemptDenied {
+  return decision.allowed === false;
+}
+
+type LoginEntry = {
+  /** Falhas consecutivas contabilizadas para esta identidade. */
+  failures: number;
+  /** Instante (epoch ms) até o qual nenhuma verificação é permitida. */
+  cooldownUntil: number;
+  /** Última atividade — usada para o decaimento do estado. */
+  lastAttemptAt: number;
+};
+
+export class LoginThrottle {
+  private readonly entries = new Map<string, LoginEntry>();
+  private lastSweepAt = 0;
+
+  /**
+   * Concede (ou nega) o direito de verificar a senha desta identidade.
+   *
+   * É SÍNCRONO de propósito: leitura e escrita acontecem sem `await` no meio,
+   * então no laço de eventos do Node duas requisições paralelas não conseguem
+   * observar o mesmo estado e passar as duas. Quem entra primeiro já grava o
+   * novo cooldown; as demais o enxergam e são recusadas.
+   *
+   * A tentativa é cobrada como falha JÁ na concessão. Se ela der certo,
+   * `recordSuccess` apaga tudo. Cobrar na entrada é o que impede uma rajada
+   * simultânea de N requisições de conseguir N verificações antes que a
+   * primeira falha fosse registrada.
+   */
+  acquire(key: string, now: number = Date.now()): LoginAttemptDecision {
+    this.sweep(now);
+
+    const stored = this.entries.get(key);
+    const entry: LoginEntry =
+      stored && now - stored.lastAttemptAt < LOGIN_STATE_RESET_MS
+        ? stored
+        : { failures: 0, cooldownUntil: 0, lastAttemptAt: now };
+
+    if (now < entry.cooldownUntil) {
+      entry.lastAttemptAt = now;
+      this.entries.set(key, entry);
+      return {
+        allowed: false,
+        failures: entry.failures,
+        retryAfterSeconds: Math.max(1, Math.ceil((entry.cooldownUntil - now) / 1000)),
+      };
+    }
+
+    entry.failures += 1;
+    entry.lastAttemptAt = now;
+    entry.cooldownUntil = now + loginCooldownMsFor(entry.failures);
+    this.entries.set(key, entry);
+    return { allowed: true, failures: entry.failures };
+  }
+
+  /** Autenticação bem-sucedida apaga todo o estado da identidade. */
+  recordSuccess(key: string): void {
+    this.entries.delete(key);
+  }
+
+  /** Só para inspeção/teste. */
+  failuresFor(key: string, now: number = Date.now()): number {
+    const entry = this.entries.get(key);
+    if (!entry) return 0;
+    if (now - entry.lastAttemptAt >= LOGIN_STATE_RESET_MS) return 0;
+    return entry.failures;
+  }
+
+  /** Só para inspeção/teste. */
+  cooldownRemainingMs(key: string, now: number = Date.now()): number {
+    const entry = this.entries.get(key);
+    if (!entry) return 0;
+    return Math.max(0, entry.cooldownUntil - now);
+  }
+
+  private sweep(now: number): void {
+    if (now - this.lastSweepAt < 60_000) return;
+    this.lastSweepAt = now;
+    for (const [key, entry] of this.entries) {
+      if (now - entry.lastAttemptAt >= LOGIN_STATE_RESET_MS) this.entries.delete(key);
+    }
+  }
+
+  /** Só para teste — zera o estado entre casos. */
+  reset(): void {
+    this.entries.clear();
+    this.lastSweepAt = 0;
+  }
+}
+
+/** Instância compartilhada do processo. */
+export const loginThrottle = new LoginThrottle();

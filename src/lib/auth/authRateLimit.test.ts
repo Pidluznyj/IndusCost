@@ -33,10 +33,10 @@ describe("janela deslizante", () => {
   it("aplica o limite e devolve retryAfter", () => {
     const limiter = new AuthRateLimiter();
     const t0 = 1_000_000;
-    for (let i = 0; i < AUTH_RATE_LIMIT_RULES.login.max; i += 1) {
-      assert.equal(limiter.consume("login", "alguem@exemplo.test", t0).allowed, true);
+    for (let i = 0; i < AUTH_RATE_LIMIT_RULES["change-password"].max; i += 1) {
+      assert.equal(limiter.consume("change-password", "alguem@exemplo.test", t0).allowed, true);
     }
-    const bloqueado = limiter.consume("login", "alguem@exemplo.test", t0);
+    const bloqueado = limiter.consume("change-password", "alguem@exemplo.test", t0);
     assert.equal(bloqueado.allowed, false);
     assert.ok(bloqueado.retryAfterSeconds > 0);
     assert.equal(authRateLimitedBody(bloqueado).code, "RATE_LIMITED");
@@ -45,14 +45,14 @@ describe("janela deslizante", () => {
   it("a janela expira sozinha — não existe lockout permanente", () => {
     const limiter = new AuthRateLimiter();
     const t0 = 1_000_000;
-    for (let i = 0; i < AUTH_RATE_LIMIT_RULES.login.max; i += 1) {
-      limiter.consume("login", "alvo@exemplo.test", t0);
+    for (let i = 0; i < AUTH_RATE_LIMIT_RULES["change-password"].max; i += 1) {
+      limiter.consume("change-password", "alvo@exemplo.test", t0);
     }
-    assert.equal(limiter.consume("login", "alvo@exemplo.test", t0).allowed, false);
+    assert.equal(limiter.consume("change-password", "alvo@exemplo.test", t0).allowed, false);
 
-    const depois = t0 + AUTH_RATE_LIMIT_RULES.login.windowMs + 1;
+    const depois = t0 + AUTH_RATE_LIMIT_RULES["change-password"].windowMs + 1;
     assert.equal(
-      limiter.peek("login", "alvo@exemplo.test", depois).allowed,
+      limiter.peek("change-password", "alvo@exemplo.test", depois).allowed,
       true,
       "passada a janela, a identidade volta sozinha"
     );
@@ -61,34 +61,45 @@ describe("janela deslizante", () => {
   it("sucesso limpa o histórico da identidade", () => {
     const limiter = new AuthRateLimiter();
     const t0 = 2_000_000;
-    for (let i = 0; i < 4; i += 1) limiter.consume("login", "erra@exemplo.test", t0);
-    limiter.clear("login", "erra@exemplo.test");
-    assert.equal(limiter.peek("login", "erra@exemplo.test", t0).remaining, AUTH_RATE_LIMIT_RULES.login.max);
+    for (let i = 0; i < 4; i += 1) limiter.consume("change-password", "erra@exemplo.test", t0);
+    limiter.clear("change-password", "erra@exemplo.test");
+    assert.equal(limiter.peek("change-password", "erra@exemplo.test", t0).remaining, AUTH_RATE_LIMIT_RULES["change-password"].max);
   });
 
   it("peek não consome — dá para negar antes de pagar o scrypt", () => {
     const limiter = new AuthRateLimiter();
     const t0 = 3_000_000;
-    limiter.peek("login", "x@exemplo.test", t0);
-    limiter.peek("login", "x@exemplo.test", t0);
-    assert.equal(limiter.peek("login", "x@exemplo.test", t0).remaining, AUTH_RATE_LIMIT_RULES.login.max);
+    limiter.peek("change-password", "x@exemplo.test", t0);
+    limiter.peek("change-password", "x@exemplo.test", t0);
+    assert.equal(limiter.peek("change-password", "x@exemplo.test", t0).remaining, AUTH_RATE_LIMIT_RULES["change-password"].max);
   });
 
   it("identidades e buckets são independentes", () => {
     const limiter = new AuthRateLimiter();
     const t0 = 4_000_000;
-    for (let i = 0; i < AUTH_RATE_LIMIT_RULES.login.max; i += 1) {
-      limiter.consume("login", "a@exemplo.test", t0);
+    for (let i = 0; i < AUTH_RATE_LIMIT_RULES["change-password"].max; i += 1) {
+      limiter.consume("change-password", "a@exemplo.test", t0);
     }
-    assert.equal(limiter.peek("login", "a@exemplo.test", t0).allowed, false);
-    assert.equal(limiter.peek("login", "b@exemplo.test", t0).allowed, true);
-    assert.equal(limiter.peek("change-password", "a@exemplo.test", t0).allowed, true);
+    assert.equal(limiter.peek("change-password", "a@exemplo.test", t0).allowed, false);
+    // outra identidade, mesmo bucket
+    assert.equal(limiter.peek("change-password", "b@exemplo.test", t0).allowed, true);
+    // mesma identidade, outro bucket
+    assert.equal(limiter.peek("admin-reset", "a@exemplo.test", t0).allowed, true);
   });
 
   it("os limites são os desenhados para cada operação", () => {
-    assert.deepEqual(AUTH_RATE_LIMIT_RULES.login, { windowMs: 15 * 60_000, max: 5 });
     assert.deepEqual(AUTH_RATE_LIMIT_RULES["change-password"], { windowMs: 15 * 60_000, max: 10 });
     assert.deepEqual(AUTH_RATE_LIMIT_RULES["admin-reset"], { windowMs: 10 * 60_000, max: 10 });
+  });
+
+  it("o login NÃO usa mais este limiter — ele tem throttle próprio", () => {
+    // Janela deslizante só troca o código de resposta; não impede o scrypt.
+    // Força bruta de senha é responsabilidade do LoginThrottle.
+    assert.equal("login" in AUTH_RATE_LIMIT_RULES, false);
+    assert.deepEqual(Object.keys(AUTH_RATE_LIMIT_RULES).sort(), [
+      "admin-reset",
+      "change-password",
+    ]);
   });
 });
 
