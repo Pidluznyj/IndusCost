@@ -310,6 +310,7 @@
     "permissions:compare:legacy-vs-effective": "tsx scripts/compareLegacyVsEffectiveAccess.ts",
     "permissions:backfill:preview": "tsx scripts/backfillPermissionOverrides.ts --fixtures-only",
     "test:access-comparison": "tsx --test src/lib/security/accessComparison/legacyAuthCompare.test.ts",
+    "test:auth-password": "tsx --test src/lib/auth/passwordPolicy.test.ts src/lib/auth/passwordHashCompat.test.ts src/lib/auth/passwordLifecycle.test.ts src/lib/auth/passwordLifecycleRoutes.test.ts src/lib/auth/passwordLifecycleE2E.test.ts src/lib/auth/passwordChangeRequiredGuard.test.ts src/lib/auth/passwordLifecycleWiring.test.ts src/lib/auth/authRateLimit.test.ts src/lib/auth/loginThrottle.test.ts src/lib/auth/securityAudit.test.ts",
     "test:permissions-version": "tsx --test src/lib/permissionsVersion.test.ts src/lib/authFlow.test.ts",
     "test:permission-backfill": "tsx --test src/lib/security/permissionBackfill/permissionBackfill.test.ts",
     "test:permission-persona-matrix": "tsx --test src/lib/security/permissionPersonaMatrix.test.ts src/lib/security/permissionPersonaMatrix.compare.test.ts",

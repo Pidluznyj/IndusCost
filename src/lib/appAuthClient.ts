@@ -1,5 +1,19 @@
 /** Tipos e utilitários do cliente para auth real (Fase 1K-C). */
 
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  describePasswordPolicy,
+  validatePasswordPolicy,
+} from "@/src/lib/auth/passwordPolicy";
+
+export {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  describePasswordPolicy,
+  validatePasswordPolicy,
+};
+
 export type AppUserRole =
   | "SUPER_ADMIN"
   | "ADMIN"
@@ -26,6 +40,10 @@ export type AuthUser = {
   externalSellerIds: number[];
   sellerResponsibleName: string | null;
   lastLoginAt: string | null;
+  /** Credencial temporária pendente de troca (autoridade é o backend). */
+  mustChangePassword: boolean;
+  /** `null` = usuário anterior à feature; a data histórica é desconhecida. */
+  passwordChangedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -91,7 +109,8 @@ export const APP_USER_ROLE_OPTIONS: { value: AppUserRole; label: string; hint: s
   },
 ];
 
-export const APP_PASSWORD_MIN_LENGTH = 8;
+/** Reexport da política central — nunca redefinir o número aqui. */
+export const APP_PASSWORD_MIN_LENGTH = PASSWORD_MIN_LENGTH;
 
 export const ROLE_LABELS: Record<AppUserRole, string> = {
   SUPER_ADMIN: "Super administrador",

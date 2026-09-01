@@ -77,7 +77,7 @@ describe("syncCommissionPersonFromAppUserSellerLink — chamada ao upsert canôn
 describe("PATCH /api/admin/users/:id — sincroniza CommissionPerson dentro da mesma transação", () => {
   const src = readFileSync(join(process.cwd(), "server.ts"), "utf8");
   const start = src.indexOf('app.patch("/api/admin/users/:id"');
-  const end = src.indexOf('app.post("/api/admin/users/:id/reset-password"');
+  const end = src.indexOf('app.delete("/api/admin/users/:id"');
   const route = src.slice(start, end);
 
   it("a rota existe e chama o sync dentro do prisma.$transaction", () => {

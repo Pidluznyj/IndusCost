@@ -2611,6 +2611,10 @@ model AppUser {
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
   personId                               String?                              @unique @db.Uuid
   isActive                               Boolean                              @default(true)
+  /// Credencial atual é temporária: exige troca antes de usar o sistema (enforcement no backend).
+  mustChangePassword                     Boolean                              @default(false)
+  /// Última troca conhecida. NULL = usuário anterior à feature (histórico desconhecido; sem backfill).
+  passwordChangedAt                      DateTime?                            @db.Timestamptz(6)
   externalSellerId                       Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
   externalSellerIds                      Int[]                                @default([])
@@ -2625,6 +2629,8 @@ model AppUser {
   permissionOverrides                    UserPermissionOverride[]
   permissionAuditsAsActor                PermissionAuditLog[]                 @relation("PermissionAuditActor")
   permissionAuditsAsTarget               PermissionAuditLog[]                 @relation("PermissionAuditTarget")
+  securityAuditsAsActor                  SecurityAuditLog[]                   @relation("SecurityAuditActor")
+  securityAuditsAsTarget                 SecurityAuditLog[]                   @relation("SecurityAuditTarget")
   treasuryAccountsCreated                TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
   treasuryAccountsDeactivated            TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
   treasuryAccountAccessGrants            TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
@@ -2786,6 +2792,27 @@ model PermissionAuditLog {
   @@index([resourceKey])
   @@index([action])
   @@index([createdAt])
+}
+
+/// Eventos de segurança de credencial (ciclo de senha). Separado de
+/// PermissionAuditLog: aquele audita mutação de ACL (resourceKey/targetRole/
+/// before/after) e não tem onde guardar origem da requisição. NUNCA recebe
+/// senha, hash, salt ou token — só metadados.
+model SecurityAuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType    String
+  actorUserId  String?  @db.Uuid
+  targetUserId String?  @db.Uuid
+  ipAddress    String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  actorUser    AppUser? @relation("SecurityAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  targetUser   AppUser? @relation("SecurityAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([eventType, createdAt])
 }
 
 /// Catálogo administrativo de produtos do ERP Nomus (inclui matérias-primas bloqueadas do sync Product).

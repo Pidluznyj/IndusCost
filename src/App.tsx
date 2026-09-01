@@ -92,6 +92,7 @@ import { ProposalInternalManagementPrintView } from "@/src/components/proposal/P
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
+import { PasswordChangePage } from "@/src/components/security/PasswordChangePage";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
@@ -182,6 +183,10 @@ export default function App() {
       <Route path="/inventory-labels" element={<InventoryCountLabelsPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
+      {/* Ciclo de senha do próprio usuário: fora do Layout e fora do
+          RequirePathViewAccess — precisa abrir mesmo com a ACL bloqueada
+          durante a troca obrigatória. */}
+      <Route path="/security/change-password" element={<PasswordChangePage />} />
       {/* P11: telas autenticadas fora do Layout — mesmo view da sidebar */}
       <Route element={<RequirePathViewAccess />}>
       <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />

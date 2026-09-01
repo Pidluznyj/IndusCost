@@ -227,6 +227,8 @@ export function analistaComprasAuthUser(
     externalSellerIds: [],
     sellerResponsibleName: null,
     lastLoginAt: null,
+    mustChangePassword: false,
+    passwordChangedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     permissionsVersion: 1,

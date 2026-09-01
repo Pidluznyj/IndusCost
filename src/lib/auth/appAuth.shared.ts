@@ -9,6 +9,13 @@ import {
   type PermissionCatalogEntry,
 } from "@/src/lib/permissionCatalog.js";
 import { normalizePermissionsVersion } from "@/src/lib/permissionsVersion.js";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  firstPasswordPolicyReason,
+  validatePasswordPolicy,
+  type PasswordPolicyResult,
+} from "./passwordPolicy.js";
 
 export type { PermissionCatalogEntry };
 export { PERMISSION_CATALOG, ALL_PERMISSION_KEYS };
@@ -23,7 +30,10 @@ export type AppUserRole =
 
 export const APP_SESSION_COOKIE_NAME = "induscost_session";
 export const APP_SESSION_TTL_MS = 1000 * 60 * 60 * 12;
-export const APP_PASSWORD_MIN_LENGTH = 8;
+/** Reexport da política central — o valor não é redefinido aqui. */
+export const APP_PASSWORD_MIN_LENGTH = PASSWORD_MIN_LENGTH;
+export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePasswordPolicy };
+export type { PasswordPolicyResult };
 
 const PERMISSION_KEY_SET = new Set(ALL_PERMISSION_KEYS);
 
@@ -49,6 +59,15 @@ export type SafeAppUser = {
   externalSellerIds: number[];
   sellerResponsibleName: string | null;
   lastLoginAt: string | null;
+  /**
+   * `true` = o usuário autenticou com credencial temporária e precisa definir
+   * uma senha definitiva antes de usar o sistema. O bloqueio real é do
+   * backend (`passwordChangeRequiredGuard`); o campo existe para o frontend
+   * não ter que deduzir o estado a partir de mensagem de erro.
+   */
+  mustChangePassword: boolean;
+  /** Última troca conhecida. `null` = usuário anterior à feature (histórico desconhecido). */
+  passwordChangedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -85,11 +104,15 @@ export function isValidEmail(email: string): boolean {
   return t.length >= 3 && t.includes("@") && t.includes(".");
 }
 
+/**
+ * Validação de senha das rotas legadas.
+ *
+ * Mantida pelo nome para não quebrar chamadores, mas o conteúdo agora é a
+ * política central: mínimo, máximo e ausência de composição obrigatória vivem
+ * em `passwordPolicy.ts`. Nenhuma rota valida comprimento por conta própria.
+ */
 export function validatePasswordMin(password: string): string | null {
-  if (typeof password !== "string" || password.length < APP_PASSWORD_MIN_LENGTH) {
-    return `A senha deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`;
-  }
-  return null;
+  return firstPasswordPolicyReason(password);
 }
 
 export function filterKnownPermissions(permissions: unknown): string[] {
