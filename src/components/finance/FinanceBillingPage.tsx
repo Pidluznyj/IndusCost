@@ -14,9 +14,11 @@ import {
   buildFinanceBillingYearOptions,
   createDefaultFinanceBillingYear,
   FINANCE_BILLING_ANALYSIS_TABS,
+  FINANCE_BILLING_PAGE_VIEWS,
   hasPendingFinanceBillingYearChange,
   type FinanceBillingAnalysisTabId,
   type FinanceBillingDashboardPayload,
+  type FinanceBillingPageViewId,
 } from "@/src/lib/financeBillingDashboardTypes";
 import {
   buildFinanceBillingDashboardQuery,
@@ -115,12 +117,23 @@ import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilter
 import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
 import type { FinanceBillingHorizonDrilldownFilters } from "@/src/lib/financeBillingHorizonDrilldownTypes";
 
+/**
+ * Subaba Detalhamento — grid de pedidos faturados. Carregada sob demanda para
+ * não empurrar o modal de Pedido de Venda para o chunk inicial de Faturamento.
+ */
+const FinanceBillingDetailTab = React.lazy(() =>
+  import("@/src/components/finance/billing/FinanceBillingDetailTab").then((m) => ({
+    default: m.FinanceBillingDetailTab,
+  }))
+);
+
 export function FinanceBillingPage() {
   const auth = useAuth();
   const canRunSync = canRunFinanceBillingNfeSync(auth);
   const defaultYear = createDefaultFinanceBillingYear();
 
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
+  const [pageView, setPageView] = useState<FinanceBillingPageViewId>("overview");
   const [analysisTab, setAnalysisTab] = useState<FinanceBillingAnalysisTabId>("overview");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -568,7 +581,20 @@ export function FinanceBillingPage() {
         </div>
       </FinanceDataAuditDrawer>
 
+      <FinanceDetailTabs
+        tabs={FINANCE_BILLING_PAGE_VIEWS}
+        activeId={pageView}
+        onChange={setPageView}
+        className="mb-2"
+      />
+
       <main data-testid="finance-main-content">
+      {pageView === "detail" ? (
+        <React.Suspense fallback={<FinanceApLoadingBlock label="detalhamento" />}>
+          <FinanceBillingDetailTab />
+        </React.Suspense>
+      ) : (
+        <>
       {error ? (
         <FinanceApErrorBanner
           message={error}
@@ -906,6 +932,8 @@ export function FinanceBillingPage() {
           yearLabel={appliedYear}
         />
       </div>
+        </>
+      )}
       </main>
     </FinanceBiDashboardShell>
   );
