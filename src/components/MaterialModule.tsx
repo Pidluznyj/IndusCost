@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   DollarSign,
   LineChart,
+  QrCode,
   Radar
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
@@ -50,6 +51,7 @@ import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { canEditMaterials } from "@/src/lib/commercialEngineeringPermissions";
@@ -68,6 +70,9 @@ export const MaterialModule = () => {
     ...auth,
     canPerformAction: permissions.canPerformAction,
   });
+  // Etiquetas/QR consomem dados administrativos de inventário e o endpoint de QR
+  // exige gestão de conferências — permissão distinta de editar o cadastro.
+  const { canManageCounts } = useInventoryPermissions();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -419,8 +424,18 @@ export const MaterialModule = () => {
             <span className="font-bold text-foreground">{materials.length}</span> material(is).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          {canManageCounts ? (
+          <Link
+            to="/inventory-labels"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
+            title="Abrir etiquetas e QR de inventário"
+          >
+            <QrCode className="h-4 w-4" />
+            Etiquetas / QR
+          </Link>
+          ) : null}
           {allowEditMaterials ? (
           <button 
             onClick={() => setIsImportOpen(true)}

@@ -313,4 +313,39 @@ describe("materialsNavigation", () => {
     assert.match(quotes, /MaterialMarketQuoteAttachmentsPanel/);
     assert.match(quotes, /attachmentCount/);
   });
+
+  it("atalho Etiquetas / QR navega por SPA para a rota já existente", () => {
+    const catalog = read("src/components/MaterialModule.tsx");
+    assert.match(catalog, /Etiquetas \/ QR/);
+    assert.match(catalog, /<Link\s+to="\/inventory-labels"/);
+    assert.match(catalog, /QrCode/);
+    // Navegação interna: nada de window.location / href cru para a tela.
+    assert.doesNotMatch(catalog, /window\.location[\s\S]{0,40}inventory-labels/);
+    assert.doesNotMatch(catalog, /href="\/inventory-labels"/);
+  });
+
+  it("atalho exige gestão de conferências, não edição de materiais", () => {
+    const catalog = read("src/components/MaterialModule.tsx");
+    assert.match(catalog, /useInventoryPermissions/);
+    assert.match(catalog, /const \{ canManageCounts \} = useInventoryPermissions\(\);/);
+    // O bloco do atalho é guardado por canManageCounts.
+    const shortcut = /\{canManageCounts \? \([\s\S]*?Etiquetas \/ QR[\s\S]*?\) : null\}/.exec(
+      catalog
+    );
+    assert.ok(shortcut, "atalho deve estar dentro de {canManageCounts ? ... : null}");
+    assert.doesNotMatch(shortcut[0], /allowEditMaterials/);
+  });
+
+  it("Importar e Novo Material seguem em allowEditMaterials", () => {
+    const catalog = read("src/components/MaterialModule.tsx");
+    assert.match(catalog, /\{allowEditMaterials \? \([\s\S]{0,400}Importar/);
+    assert.match(catalog, /\{allowEditMaterials \? \([\s\S]{0,400}Novo Material/);
+  });
+
+  it("a rota /inventory-labels continua única e standalone no App", () => {
+    const app = read("src/App.tsx");
+    const matches = app.match(/path="\/inventory-labels"/g) ?? [];
+    assert.equal(matches.length, 1);
+    assert.match(app, /path="\/inventory-labels" element=\{<InventoryCountLabelsPage \/>\}/);
+  });
 });
