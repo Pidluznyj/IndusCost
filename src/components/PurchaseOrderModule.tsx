@@ -9,6 +9,19 @@ import {
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess";
 import { PurchaseOrderSupplierEvaluationCard } from "@/src/components/supply-chain/supplier-performance/PurchaseOrderSupplierEvaluationCard";
+import { OverlayBadge, OverlaySection } from "@/src/components/ui/overlay";
+import { PurchaseChainTrail } from "@/src/components/supply-chain/flow/PurchaseChainTrail";
+import { useSupplyChainFeatureFlags } from "@/src/lib/supply-chain/supplyChainClient";
+import {
+  resolvePurchaseOrderGuidance,
+  stageForPurchaseOrderStatus,
+} from "@/src/lib/purchasing/purchaseChainGuidance";
+import {
+  purchaseOrderHistoryActionLabel,
+  purchaseOrderStatusLabel,
+  purchaseOrderStatusTone,
+} from "@/src/lib/purchasing/purchaseOrderUi";
+import type { PurchaseOrderStatusName } from "@/src/lib/purchasing/purchaseOrderWorkflow";
 
 type PoListRow = {
   id: string;
@@ -68,17 +81,25 @@ type PoDetail = PoListRow & {
   }>;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  RASCUNHO: "Rascunho",
-  APROVADO: "Aprovado",
-  ENVIADO: "Enviado",
-  EMITIDO: "Emitido",
-  CONFIRMADO: "Confirmado",
-  PARCIALMENTE_RECEBIDO: "Parcialmente recebido",
-  RECEBIDO: "Recebido",
-  CANCELADO: "Cancelado",
-  ENCERRADO: "Encerrado",
-};
+/** Campo somente-leitura no padrão do repositório (dl/dt/dd). */
+function Term({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value: string | null | undefined;
+  wide?: boolean;
+}) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-4" : undefined}>
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-sm font-medium text-foreground">{value || "—"}</dd>
+    </div>
+  );
+}
 
 function money(v: string | number | null | undefined, currency = "BRL"): string {
   if (v == null || v === "") return "—";
@@ -106,6 +127,9 @@ export function PurchaseOrderModule() {
   const allowApprove =
     auth.hasPermission("purchases.approve") ||
     permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.approve);
+
+  // Fail-closed enquanto carrega: null nunca vira "ligado".
+  const flags = useSupplyChainFeatureFlags();
 
   const [list, setList] = useState<PoListRow[]>([]);
   const [detail, setDetail] = useState<PoDetail | null>(null);
@@ -140,11 +164,18 @@ export function PurchaseOrderModule() {
     })();
   }, [allowView, orderId, loadDetail, loadList]);
 
-  const runAction = async (action: "approve" | "send" | "confirm" | "cancel") => {
+  const runAction = async (
+    action: "approve" | "send" | "confirm" | "cancel" | "close",
+    requiresReason = false
+  ) => {
     if (!detail) return;
     let reason: string | null = null;
-    if (action === "cancel") {
-      reason = window.prompt("Motivo do cancelamento (obrigatório):");
+    if (action === "cancel" || requiresReason) {
+      reason = window.prompt(
+        action === "cancel"
+          ? "Motivo do cancelamento (obrigatório):"
+          : "Motivo do encerramento com saldo pendente (obrigatório):"
+      );
       if (!reason?.trim()) return;
     }
     setBusy(true);
@@ -217,7 +248,11 @@ export function PurchaseOrderModule() {
                     onClick={() => navigate(`/purchases/orders/${row.id}`)}
                   >
                     <td className="p-3 font-mono">{row.code}</td>
-                    <td className="p-3">{STATUS_LABEL[row.status] ?? row.status}</td>
+                    <td className="p-3">
+                      <OverlayBadge tone={purchaseOrderStatusTone(row.status)} variant="soft">
+                        {purchaseOrderStatusLabel(row.status)}
+                      </OverlayBadge>
+                    </td>
                     <td className="p-3">{row.supplierDisplayNameSnapshot}</td>
                     <td className="p-3">{money(row.totalAmountSnapshot, row.currency)}</td>
                     <td className="p-3 font-mono text-xs">{row.quotation?.code ?? "—"}</td>
@@ -233,6 +268,16 @@ export function PurchaseOrderModule() {
 
   if (!detail) return null;
 
+  // A orientação é derivada: status + flags + permissões deste usuário.
+  const guidance = resolvePurchaseOrderGuidance({
+    status: detail.status as PurchaseOrderStatusName,
+    flags: {
+      receiving: flags?.receiving === true,
+      supplierPerformance: flags?.supplierPerformance === true,
+    },
+    permissions: { canUpdate: allowEdit, canApprove: allowApprove },
+  });
+
   return (
     <div className="space-y-6" data-testid="purchase-order-detail">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -245,9 +290,14 @@ export function PurchaseOrderModule() {
             <ArrowLeft className="h-4 w-4" />
             Lista de pedidos
           </button>
-          <h3 className="text-lg font-semibold font-mono">{detail.code}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold font-mono">{detail.code}</h3>
+            <OverlayBadge tone={purchaseOrderStatusTone(detail.status)} emphasized>
+              {purchaseOrderStatusLabel(detail.status)}
+            </OverlayBadge>
+          </div>
           <p className="text-sm text-muted-foreground">
-            {STATUS_LABEL[detail.status] ?? detail.status}
+            {detail.supplierDisplayNameSnapshot}
             {detail.quotationCodeSnapshot ? ` · Cotação ${detail.quotationCodeSnapshot}` : ""}
           </p>
         </div>
@@ -277,6 +327,20 @@ export function PurchaseOrderModule() {
         </div>
       </div>
 
+      <OverlaySection title="Fase do pedido" testId="purchase-order-phase">
+        <PurchaseChainTrail
+          currentStage={stageForPurchaseOrderStatus(detail.status as PurchaseOrderStatusName)}
+          terminalLabel={
+            detail.status === "CANCELADO" || detail.status === "ENCERRADO"
+              ? purchaseOrderStatusLabel(detail.status)
+              : null
+          }
+          guidance={guidance}
+          busy={busy}
+          onAction={(g) => void runAction(g.action!.endpoint, g.action!.requiresReason)}
+        />
+      </OverlaySection>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs uppercase text-muted-foreground">Fornecedor</p>
@@ -300,23 +364,40 @@ export function PurchaseOrderModule() {
               : "Pendente de aprovação"}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Entrada futura: {detail.futureEntryPending ? "pendente" : "não"} · sem estoque · sem AP
+            {detail.futureEntryPending
+              ? "Material ainda não recebido. Aprovar não movimenta estoque nem gera Contas a Pagar."
+              : "Sem entrada pendente."}
           </p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-        <div>Pagamento: {detail.paymentTermsSnapshot || "—"}</div>
-        <div>Entrega: {detail.deliveryTermsSnapshot || "—"}</div>
-        <div>Frete: {money(detail.freightValueSnapshot, detail.currency)}</div>
-        <div>Impostos NR: {money(detail.nonRecoverableTaxesSnapshot, detail.currency)}</div>
-        <div>Descontos: {money(detail.discountsSnapshot, detail.currency)}</div>
-        <div>Prazo: {detail.leadTimeDaysSnapshot != null ? `${detail.leadTimeDaysSnapshot}d` : "—"}</div>
-        <div>Evidências: {detail.evidenceCountSnapshot}</div>
-        <div className="md:col-span-2">
-          Justificativa: {detail.awardJustificationSnapshot || "—"}
-        </div>
-      </div>
+      <OverlaySection title="Condições comerciais" testId="purchase-order-terms">
+        <dl className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Term label="Pagamento" value={detail.paymentTermsSnapshot} />
+          <Term label="Entrega" value={detail.deliveryTermsSnapshot} />
+          <Term label="Frete" value={money(detail.freightValueSnapshot, detail.currency)} />
+          <Term
+            label="Impostos não recuperáveis"
+            value={money(detail.nonRecoverableTaxesSnapshot, detail.currency)}
+          />
+          <Term label="Descontos" value={money(detail.discountsSnapshot, detail.currency)} />
+          <Term
+            label="Prazo de entrega"
+            value={detail.leadTimeDaysSnapshot != null ? `${detail.leadTimeDaysSnapshot} dias` : null}
+          />
+          <Term label="Evidências anexadas" value={String(detail.evidenceCountSnapshot)} />
+          <Term label="Aprovado por" value={detail.approvedByUserName} />
+          <Term
+            label="Justificativa da escolha"
+            value={detail.awardJustificationSnapshot}
+            wide
+          />
+          {detail.notes ? <Term label="Observações" value={detail.notes} wide /> : null}
+          {detail.cancelReason ? (
+            <Term label="Motivo do cancelamento" value={detail.cancelReason} wide />
+          ) : null}
+        </dl>
+      </OverlaySection>
 
       <div className="rounded-2xl border border-border overflow-x-auto">
         <table className="w-full text-sm min-w-[800px]">
@@ -351,6 +432,15 @@ export function PurchaseOrderModule() {
               </tr>
             ))}
           </tbody>
+          <tfoot className="border-t border-border bg-muted/30 font-semibold">
+            <tr>
+              <td className="p-2" colSpan={5}>
+                Total do pedido
+              </td>
+              <td className="p-2">{money(detail.totalAmountSnapshot, detail.currency)}</td>
+              <td className="p-2">{money(detail.totalGainSnapshot, detail.currency)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
@@ -365,7 +455,7 @@ export function PurchaseOrderModule() {
             Aprovar (compromisso)
           </button>
         ) : null}
-        {allowEdit && (detail.status === "APROVADO" || detail.status === "EMITIDO") ? (
+        {allowEdit && detail.status === "APROVADO" ? (
           <button
             type="button"
             disabled={busy}
@@ -376,9 +466,7 @@ export function PurchaseOrderModule() {
           </button>
         ) : null}
         {allowEdit &&
-        (detail.status === "ENVIADO" ||
-          detail.status === "EMITIDO" ||
-          detail.status === "APROVADO") ? (
+        (detail.status === "ENVIADO" || detail.status === "APROVADO") ? (
           <button
             type="button"
             disabled={busy}
@@ -389,7 +477,7 @@ export function PurchaseOrderModule() {
           </button>
         ) : null}
         {allowEdit &&
-        ["RASCUNHO", "APROVADO", "ENVIADO", "EMITIDO"].includes(detail.status) ? (
+        ["RASCUNHO", "APROVADO", "ENVIADO"].includes(detail.status) ? (
           <button
             type="button"
             disabled={busy}
@@ -417,9 +505,10 @@ export function PurchaseOrderModule() {
             {detail.history.map((h) => (
               <li key={h.id} className="border-l-2 border-border pl-3">
                 <div>
-                  {new Date(h.createdAt).toLocaleString("pt-BR")} · {h.action}
+                  {new Date(h.createdAt).toLocaleString("pt-BR")} ·{" "}
+                  {purchaseOrderHistoryActionLabel(h.action)}
                   {h.fromStatus || h.toStatus
-                    ? ` (${h.fromStatus ?? "—"} → ${h.toStatus ?? "—"})`
+                    ? ` (${h.fromStatus ? purchaseOrderStatusLabel(h.fromStatus) : "—"} → ${h.toStatus ? purchaseOrderStatusLabel(h.toStatus) : "—"})`
                     : ""}
                 </div>
                 <div className="text-xs text-muted-foreground">

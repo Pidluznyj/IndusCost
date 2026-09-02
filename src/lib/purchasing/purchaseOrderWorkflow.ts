@@ -23,7 +23,27 @@ export type PurchaseOrderAction =
   | "CONFIRM"
   | "CANCEL"
   | "MARK_PARTIAL_RECEIVED"
-  | "MARK_RECEIVED";
+  | "MARK_RECEIVED"
+  | "REOPEN_FROM_RECEIPT"
+  | "CLOSE";
+
+/**
+ * `EMITIDO` é legado INALCANÇÁVEL: nenhuma transição o produz e nenhuma criação
+ * o usa (o pedido nasce `RASCUNHO` pela adjudicação ou `APROVADO` pela
+ * solicitação). O próprio schema documenta a aposentadoria — `ENVIADO`
+ * substituiu o sentido de "enviado ao fornecedor". Continua no enum porque é
+ * dado histórico, mas deixou de figurar como origem de transição: aceitar
+ * origem impossível só produzia botão morto na tela.
+ */
+export const PURCHASE_ORDER_LEGACY_UNREACHABLE_STATUSES: readonly PurchaseOrderStatusName[] = [
+  "EMITIDO",
+];
+
+/** Estados terminais — saem do funil operacional (indicadores já os excluem). */
+export const PURCHASE_ORDER_TERMINAL_STATUSES: readonly PurchaseOrderStatusName[] = [
+  "CANCELADO",
+  "ENCERRADO",
+];
 
 export class PurchaseOrderWorkflowError extends Error {
   constructor(
@@ -40,10 +60,10 @@ const TRANSITIONS: Record<
   { from: readonly PurchaseOrderStatusName[]; to: PurchaseOrderStatusName }
 > = {
   APPROVE: { from: ["RASCUNHO"], to: "APROVADO" },
-  SEND: { from: ["APROVADO", "EMITIDO"], to: "ENVIADO" },
-  CONFIRM: { from: ["ENVIADO", "EMITIDO", "APROVADO"], to: "CONFIRMADO" },
+  SEND: { from: ["APROVADO"], to: "ENVIADO" },
+  CONFIRM: { from: ["ENVIADO", "APROVADO"], to: "CONFIRMADO" },
   CANCEL: {
-    from: ["RASCUNHO", "APROVADO", "ENVIADO", "EMITIDO"],
+    from: ["RASCUNHO", "APROVADO", "ENVIADO"],
     to: "CANCELADO",
   },
   MARK_PARTIAL_RECEIVED: {
@@ -54,7 +74,46 @@ const TRANSITIONS: Record<
     from: ["CONFIRMADO", "PARCIALMENTE_RECEBIDO"],
     to: "RECEBIDO",
   },
+  /**
+   * Estorno total do recebimento devolve o pedido a CONFIRMADO. O serviço de
+   * recebimento já fazia isso gravando status direto, fora desta tabela —
+   * declarar aqui devolve à máquina o papel de fonte única, sem mudar
+   * comportamento.
+   */
+  REOPEN_FROM_RECEIPT: {
+    from: ["PARCIALMENTE_RECEBIDO", "RECEBIDO"],
+    to: "CONFIRMADO",
+  },
+  /**
+   * Encerramento administrativo. `PARCIALMENTE_RECEBIDO` entra de propósito: é
+   * o pedido abandonado com saldo aberto, que antes disto não tinha saída
+   * nenhuma e ficava preso para sempre contando no funil.
+   */
+  CLOSE: {
+    from: ["RECEBIDO", "PARCIALMENTE_RECEBIDO"],
+    to: "ENCERRADO",
+  },
 };
+
+/** Motivo é exigido quando se encerra deixando saldo por receber. */
+export function closeRequiresReason(current: PurchaseOrderStatusName): boolean {
+  return current === "PARCIALMENTE_RECEBIDO";
+}
+
+export const PURCHASE_ORDER_CLOSE_REASON_MIN_LENGTH = 5;
+
+export function assertPurchaseOrderCloseReason(
+  current: PurchaseOrderStatusName,
+  reason: string | null | undefined
+): void {
+  if (!closeRequiresReason(current)) return;
+  if (String(reason ?? "").trim().length < PURCHASE_ORDER_CLOSE_REASON_MIN_LENGTH) {
+    throw new PurchaseOrderWorkflowError(
+      "Encerrar pedido com saldo pendente exige motivo (mín. 5 caracteres).",
+      "CLOSE_REASON"
+    );
+  }
+}
 
 export function resolvePurchaseOrderTransition(
   current: PurchaseOrderStatusName,

@@ -43,6 +43,7 @@ import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess";
+import { resolvePurchaseRequestGuidance } from "@/src/lib/purchasing/purchaseChainGuidance";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
@@ -1265,6 +1266,22 @@ export const PurchaseModule = () => {
               {STATUS_LABEL[status]}
             </span>
           </h3>
+          {/* Mesmo vocabulário do Pedido: por que está aqui, o que falta. */}
+          {formMode !== "create" ? (
+            <div
+              className="mt-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2"
+              data-testid="purchase-request-next-step"
+            >
+              <p className="text-sm leading-snug text-foreground">
+                <span className="font-medium text-muted-foreground">Aqui porque </span>
+                {resolvePurchaseRequestGuidance(status).stayReason}
+              </p>
+              <p className="mt-1 text-sm leading-snug text-foreground">
+                <span className="font-medium text-sky-800">Para sair · </span>
+                {resolvePurchaseRequestGuidance(status).nextAction}
+              </p>
+            </div>
+          ) : null}
           {createdAt && (
             <p className="text-xs text-muted-foreground mt-1">Criada em {formatDt(createdAt)}</p>
           )}

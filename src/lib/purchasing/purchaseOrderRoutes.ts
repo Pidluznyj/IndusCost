@@ -220,4 +220,10 @@ export function registerPurchaseOrderRoutes(app: express.Express, auth: AuthGuar
   app.post("/api/purchase-orders/:id/cancel", ...update, (req, res) =>
     void transition(req, res, "CANCEL")
   );
+  // Encerrar é decisão, não edição: mesmo nível de `approve`. Antes disto o
+  // status ENCERRADO era lido pelos indicadores e pela elegibilidade da
+  // avaliação, mas nada no sistema conseguia produzi-lo.
+  app.post("/api/purchase-orders/:id/close", ...approve, (req, res) =>
+    void transition(req, res, "CLOSE")
+  );
 }
