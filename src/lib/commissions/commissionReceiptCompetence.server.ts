@@ -112,8 +112,17 @@ export async function loadReceivableIdsWithAnyReceipt(
 }
 
 /**
- * TESTE 6 — baixa no período sem recebimento correspondente.
- * A baixa NÃO é usada como fallback: o caso é reportado como inconsistência.
+ * Baixa sem movimentação financeira no período.
+ *
+ * A existência de receipt é verificada em TODO o histórico do título
+ * (`loadReceivableIdsWithAnyReceipt`), nunca dentro da janela de competência:
+ * um CR recebido em 30/06 e baixado em 01/07 tem movimentação financeira real
+ * e não pode ser reportado como baixa sem caixa ao processar julho.
+ *
+ * A baixa continua sem virar fallback de competência — o caso é apenas
+ * reportado como inconsistência.
+ *
+ * Custo: 2 queries, ambas em lote (nenhuma por título).
  */
 export async function loadSettledWithoutReceiptInconsistencies(
   db: CompetenceWithArDb,
@@ -121,20 +130,18 @@ export async function loadSettledWithoutReceiptInconsistencies(
   month: number
 ): Promise<CommissionCompetenceInconsistency[]> {
   const { from, to } = resolveCompetencePeriodUtcBounds(year, month);
-  const [settled, competence] = await Promise.all([
-    db.nomusAccountsReceivable.findMany({
-      where: {
-        settlementDate: { gte: from, lte: to },
-        amountReceived: { gt: 0 },
-      },
-      select: { externalId: true },
-    }),
-    loadCommissionReceiptCompetenceForPeriod(db, year, month),
-  ]);
-  return detectSettledWithoutReceipt(
-    settled.map((row) => row.externalId),
-    competence
-  );
+  const settled = await db.nomusAccountsReceivable.findMany({
+    where: {
+      settlementDate: { gte: from, lte: to },
+      amountReceived: { gt: 0 },
+    },
+    select: { externalId: true },
+  });
+  const settledIds = settled.map((row) => row.externalId);
+  if (settledIds.length === 0) return [];
+
+  const withAnyReceipt = await loadReceivableIdsWithAnyReceipt(db, settledIds);
+  return detectSettledWithoutReceipt(settledIds, withAnyReceipt);
 }
 
 /**

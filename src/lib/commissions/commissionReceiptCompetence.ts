@@ -173,31 +173,79 @@ export function buildReceiptCompetenceByReceivable(
 
 /** Motivos auditáveis de divergência entre baixa e recebimento. */
 export const COMMISSION_SETTLED_WITHOUT_RECEIPT_REASON =
-  "Título com baixa no período e sem evento de recebimento sincronizado — competência não pode vir da baixa";
+  "Título baixado no ERP sem NENHUM evento de recebimento associado (em qualquer data) — baixa sem movimentação financeira";
 
 export const COMMISSION_RECEIPT_WITHOUT_LOCAL_RECEIVABLE_REASON =
   "Recebimento Nomus sem Conta a Receber local correspondente";
 
 export type CommissionCompetenceInconsistency = {
+  /**
+   * `SETTLED_WITHOUT_RECEIPT` é o código de domínio para "baixa sem movimentação
+   * financeira" (non-cash settlement inferido). Não existe enum duplicado para
+   * o mesmo conceito.
+   */
   code: "SETTLED_WITHOUT_RECEIPT" | "RECEIPT_WITHOUT_LOCAL_RECEIVABLE";
   receivableExternalId: number;
   reason: string;
 };
 
 /**
- * TESTE 6 — baixa presente, recebimento ausente.
- * Não vira fallback silencioso: vira inconsistência detectável.
+ * Classificação de um título quanto à existência de movimentação financeira.
+ *
+ * - `FINANCIAL_RECEIPT`        — existe pelo menos um `NomusReceivableReceipt`.
+ * - `SETTLED_WITHOUT_RECEIPT`  — baixado no ERP, sem nenhum receipt: não é caixa.
+ * - `OPEN_NOT_RECEIVED`        — sem receipt e sem baixa: título em aberto.
+ */
+export type CommissionReceivableSettlementClass =
+  | "FINANCIAL_RECEIPT"
+  | "SETTLED_WITHOUT_RECEIPT"
+  | "OPEN_NOT_RECEIVED";
+
+/**
+ * Responde à ÚNICA pergunta correta: existe ALGUM receipt para este título?
+ *
+ * `hasAnyReceipt` tem de ser calculado sobre TODO o histórico do CR, nunca
+ * dentro da janela de competência analisada. Um receipt de junho prova
+ * movimentação financeira mesmo quando se está processando julho — a data do
+ * receipt em relação à `settlementDate` é irrelevante para esta classificação
+ * (ela decide a COMPETÊNCIA, não a EXISTÊNCIA de caixa).
+ *
+ * `isSettled` é a baixa administrativa (`settlementDate` presente). Ela nunca
+ * vira evidência de entrada de caixa nem competência comissionável.
+ */
+export function classifyReceivableSettlement(input: {
+  hasAnyReceipt: boolean;
+  isSettled: boolean;
+}): CommissionReceivableSettlementClass {
+  if (input.hasAnyReceipt) return "FINANCIAL_RECEIPT";
+  if (input.isSettled) return "SETTLED_WITHOUT_RECEIPT";
+  return "OPEN_NOT_RECEIVED";
+}
+
+/**
+ * Baixa sem movimentação financeira: título baixado no período **e sem nenhum
+ * receipt em todo o histórico**.
+ *
+ * O segundo argumento é DELIBERADAMENTE o conjunto global de títulos que
+ * possuem qualquer receipt — não o mapa de competência do período. Usar a
+ * competência do mês aqui produzia falso positivo: um CR recebido em 30/06 e
+ * baixado em 01/07 não aparece na competência de julho e era classificado como
+ * baixa sem caixa, apesar de ter recebimento real em junho.
  */
 export function detectSettledWithoutReceipt(
   settledReceivableIdsInPeriod: Iterable<number>,
-  competenceByReceivable: Map<number, CommissionReceiptCompetence>
+  receivableIdsWithAnyReceipt: ReadonlySet<number>
 ): CommissionCompetenceInconsistency[] {
   const out: CommissionCompetenceInconsistency[] = [];
   const seen = new Set<number>();
   for (const receivableId of settledReceivableIdsInPeriod) {
     if (seen.has(receivableId)) continue;
     seen.add(receivableId);
-    if (competenceByReceivable.has(receivableId)) continue;
+    const classification = classifyReceivableSettlement({
+      hasAnyReceipt: receivableIdsWithAnyReceipt.has(receivableId),
+      isSettled: true,
+    });
+    if (classification !== "SETTLED_WITHOUT_RECEIPT") continue;
     out.push({
       code: "SETTLED_WITHOUT_RECEIPT",
       receivableExternalId: receivableId,
