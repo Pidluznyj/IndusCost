@@ -182,6 +182,18 @@ function formatYmd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Versão null-safe de `formatYmd` para colunas opcionais.
+ *
+ * O `tsconfig` do projeto não liga `strictNullChecks`, então passar um
+ * `Date | null` para `formatYmd` compila e só quebra em produção com
+ * "Cannot read properties of null (reading 'toISOString')" — derrubando a tela
+ * inteira. Toda data vinda de coluna nullable deve passar por aqui.
+ */
+export function formatYmdOrNull(date: Date | null | undefined): string | null {
+  return date ? formatYmd(date) : null;
+}
+
 function safeNum(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -469,8 +481,10 @@ export async function buildRawMaterialPlanningPayload(
     purchasePlansRaw.map((p) => [
       p.materialId,
       {
-        purchaseDate: formatYmd(p.purchaseDate),
-        expectedArrivalDate: formatYmd(p.expectedArrivalDate),
+        // Colunas nullable: uma anotação salva só com nº do pedido ou
+        // quantidade, sem datas, derrubava a tela inteira.
+        purchaseDate: formatYmdOrNull(p.purchaseDate),
+        expectedArrivalDate: formatYmdOrNull(p.expectedArrivalDate),
         purchaseOrderRef: p.purchaseOrderRef,
         purchasedQuantity:
           p.purchasedQuantity != null ? Number(p.purchasedQuantity) : null,
