@@ -19,10 +19,20 @@ function read(relPath: string): string {
 }
 
 describe("materialsNavigation", () => {
-  it("seções incluem Matérias-primas, Conferência e Inteligência de Mercado", () => {
+  it("seções incluem Matérias-primas, Conferência, Inteligência de Mercado e Planejamento", () => {
     assert.deepEqual(
       MATERIALS_SECTIONS.map((s) => s.label),
-      ["Matérias-primas", "Conferência de estoque", "Inteligência de Mercado"]
+      [
+        "Matérias-primas",
+        "Conferência de estoque",
+        "Inteligência de Mercado",
+        "Planejamento de Matéria-Prima",
+      ]
+    );
+    // Ordem e ids acompanham a navegação real — pega remoção ou reordenação.
+    assert.deepEqual(
+      MATERIALS_SECTIONS.map((s) => s.id),
+      ["catalog", "stockConference", "marketIntelligence", "planning"]
     );
   });
 
