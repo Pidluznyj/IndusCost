@@ -392,3 +392,33 @@ describe("QR de setor — folha de impressão", () => {
     assert.match(css, /\.inventory-labels-grid\s*\{[\s\S]*?page-break-before: always;/);
   });
 });
+
+/**
+ * A4 retrato. Vários CSS globais declaram `@page { size: A4 landscape }` e
+ * `@page` não obedece especificidade — vence o último em ordem de documento.
+ * Duas camadas, como já feito em commission-closing e service-termination.
+ */
+describe("QR de setor — A4 retrato", () => {
+  const PAGE = "src/components/inventory/collector/InventoryCountLabelsPage.tsx";
+  const CSS = "src/components/inventory/collector/inventory-labels-print.css";
+
+  it("o CSS declara retrato no topo E dentro do @media print", () => {
+    const css = read(CSS);
+    const topLevel = /^@page \{\s*\n\s*size: A4 portrait;/m.exec(css);
+    assert.ok(topLevel, "falta @page A4 portrait em nível de topo");
+    assert.match(css, /@media print \{\s*\n\s*@page \{\s*\n\s*size: A4 portrait;/);
+    assert.equal((css.match(/size: A4 portrait/g) ?? []).length, 2);
+    // Só o CSS executável: "landscape" aparece no comentário que explica o porquê.
+    const executable = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(executable, /landscape/);
+  });
+
+  it("a página reforça o retrato injetando @page no head em runtime", () => {
+    const page = read(PAGE);
+    assert.match(page, /data-inventory-labels-print-page/);
+    assert.match(page, /@page \{ size: A4 portrait; margin: 12mm; \}/);
+    assert.match(page, /document\.head\.appendChild\(style\)/);
+    // Removido no unmount: não vaza retrato para outras rotas.
+    assert.match(page, /return \(\) => \{\s*\n\s*style\.remove\(\);/);
+  });
+});

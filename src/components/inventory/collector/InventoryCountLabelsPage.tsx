@@ -65,6 +65,19 @@ export function InventoryCountLabelsPage() {
 
   usePrintRouteBodyClass(PRINT_ROUTE_BODY_CLASS);
 
+  // Garante A4 RETRATO nesta rota mesmo com @page landscape de outros CSS
+  // globais: `@page` não obedece especificidade, vence o último em ordem de
+  // documento — e um <style> no head, montado aqui, é o último.
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.setAttribute("data-inventory-labels-print-page", "1");
+    style.textContent = "@page { size: A4 portrait; margin: 12mm; }";
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {

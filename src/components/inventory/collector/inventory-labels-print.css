@@ -7,7 +7,19 @@
  *
  * A folha do QR de setor sai com apenas quatro coisas: nome do setor, o que o
  * QR faz, o QR e como ler. Nada de URL crua, botões ou cromo da aplicação.
+ *
+ * A4 RETRATO: vários CSS globais declaram `@page { size: A4 landscape }`
+ * (executivo, DRE, títulos AR/AP, planejamento de MP…). `@page` não obedece
+ * especificidade — vence o último na ordem do bundle. Por isso o retrato é
+ * declarado em nível de topo E dentro do @media print, e ainda reforçado por
+ * injeção em runtime na página, exatamente como em commission-closing-print.css
+ * e supplier-service-termination-print.css.
  */
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
 @media print {
   @page {
     size: A4 portrait;
