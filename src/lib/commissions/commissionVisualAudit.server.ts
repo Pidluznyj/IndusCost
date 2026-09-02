@@ -64,7 +64,14 @@ export type CommissionVisualAuditPayload = {
 };
 
 type ArMeta = {
+  /** Baixa administrativa — auditoria; nunca define competência. */
   settlementDate: Date | null;
+  /**
+   * Datas reais dos recebimentos do título (ordenadas) — fonte da competência.
+   * É lista porque o Nomus admite recebimento parcial: o mesmo título pode ter
+   * eventos em meses diferentes, e cada mês só reconhece os seus.
+   */
+  receiptDates: Date[];
   amountReceivable: number;
   amountReceived: number;
   balanceReceivable: number;
@@ -83,21 +90,35 @@ function documentKey(row: {
 async function loadArMeta(ids: number[]): Promise<Map<number, ArMeta>> {
   const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))];
   if (unique.length === 0) return new Map();
-  const rows = await prisma.nomusAccountsReceivable.findMany({
-    where: { externalId: { in: unique } },
-    select: {
-      externalId: true,
-      settlementDate: true,
-      amountReceivable: true,
-      amountReceived: true,
-      balanceReceivable: true,
-    },
-  });
+  const [rows, receipts] = await Promise.all([
+    prisma.nomusAccountsReceivable.findMany({
+      where: { externalId: { in: unique } },
+      select: {
+        externalId: true,
+        settlementDate: true,
+        amountReceivable: true,
+        amountReceived: true,
+        balanceReceivable: true,
+      },
+    }),
+    prisma.nomusReceivableReceipt.findMany({
+      where: { receivableExternalId: { in: unique } },
+      select: { receivableExternalId: true, receiptDate: true },
+      orderBy: { receiptDate: "asc" },
+    }),
+  ]);
+  const receiptDatesByReceivable = new Map<number, Date[]>();
+  for (const receipt of receipts) {
+    const list = receiptDatesByReceivable.get(receipt.receivableExternalId) ?? [];
+    list.push(receipt.receiptDate);
+    receiptDatesByReceivable.set(receipt.receivableExternalId, list);
+  }
   return new Map(
     rows.map((r) => [
       r.externalId,
       {
         settlementDate: r.settlementDate,
+        receiptDates: receiptDatesByReceivable.get(r.externalId) ?? [],
         amountReceivable: decimalToNumber(r.amountReceivable),
         amountReceived: decimalToNumber(r.amountReceived),
         balanceReceivable: decimalToNumber(r.balanceReceivable),
@@ -106,16 +127,22 @@ async function loadArMeta(ids: number[]): Promise<Map<number, ArMeta>> {
   );
 }
 
-async function loadSettledReceivableIds(query: CommissionVisualAuditQuery): Promise<number[]> {
+/**
+ * Títulos com recebimento real no período — "recebimentos do mês" da auditoria.
+ * Antes selecionava por `settlementDate`, o que jogava o recebimento de 31/07
+ * para agosto quando a baixa saía em 03/08.
+ */
+async function loadReceiptCompetenceReceivableIds(
+  query: CommissionVisualAuditQuery
+): Promise<number[]> {
   const range = resolvePeriodDateRange(query);
   if (!range) return [];
-  const rows = await prisma.nomusAccountsReceivable.findMany({
-    where: {
-      settlementDate: { gte: range.from, lte: range.to },
-    },
-    select: { externalId: true },
+  const rows = await prisma.nomusReceivableReceipt.findMany({
+    where: { receiptDate: { gte: range.from, lte: range.to } },
+    select: { receivableExternalId: true },
+    distinct: ["receivableExternalId"],
   });
-  return rows.map((row) => row.externalId);
+  return rows.map((row) => row.receivableExternalId);
 }
 
 async function loadCustomerExceptionIds(): Promise<Set<number>> {
@@ -163,7 +190,7 @@ async function buildVisualAuditWhere(
   const scopeWhere = buildScopeWhere(query, scope);
 
   if (query.appraisalMode === "PAYABLE") {
-    const settledIds = await loadSettledReceivableIds(query);
+    const settledIds = await loadReceiptCompetenceReceivableIds(query);
     if (settledIds.length === 0) {
       return { id: { in: [] } };
     }
@@ -354,6 +381,7 @@ async function buildVisualAuditRows(
         installmentNumber: null,
         dueDate: null,
         settlementDate: null,
+        receiptDate: null,
         receivableAmount: 0,
         receivedAmount: 0,
         openBalance: 0,
@@ -376,12 +404,25 @@ async function buildVisualAuditRows(
           ? arMeta.get(schedule.nomusReceivableId)
           : undefined;
       const settlementDate = ar?.settlementDate?.toISOString() ?? null;
+      const receiptDates = ar?.receiptDates ?? [];
 
-      if (query.appraisalMode === "PAYABLE" && period) {
-        if (!settlementDate) continue;
-        const settled = new Date(settlementDate).getTime();
-        if (settled < period.from.getTime() || settled > period.to.getTime()) continue;
+      // Competência do mês vem do RECEBIMENTO, não da baixa. Sem recebimento
+      // dentro do período a linha fica fora — a baixa nunca é fallback.
+      const receiptsInPeriod = period
+        ? receiptDates.filter(
+            (date) =>
+              date.getTime() >= period.from.getTime() &&
+              date.getTime() <= period.to.getTime()
+          )
+        : receiptDates;
+      if (query.appraisalMode === "PAYABLE" && period && receiptsInPeriod.length === 0) {
+        continue;
       }
+      const receiptDate =
+        (receiptsInPeriod.length > 0
+          ? receiptsInPeriod[receiptsInPeriod.length - 1]
+          : receiptDates[receiptDates.length - 1]
+        )?.toISOString() ?? null;
 
       const exclusionView = resolveVisualAuditCustomerExclusion({
         metadataJson: record.metadataJson,
@@ -416,6 +457,7 @@ async function buildVisualAuditRows(
         installmentNumber: schedule.installmentNumber,
         dueDate: schedule.dueDate?.toISOString() ?? null,
         settlementDate,
+        receiptDate,
         receivableAmount: roundMoney(
           ar?.amountReceivable ?? decimalToNumber(schedule.receivableAmount)
         ),

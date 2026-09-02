@@ -1,5 +1,7 @@
 import { prisma } from "@/src/lib/prisma.js";
+import { startOfCivilDate } from "@/src/lib/financeCivilDate.js";
 import { decimalToNumber } from "./commission-money.js";
+import { resolveCompetencePeriodUtcBounds } from "./commissionReceiptCompetence.js";
 import { listCommissionVisualAuditPage } from "./commissionVisualAudit.server.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { parseCommissionVisualAuditQuery } from "./commissionQuery.js";
@@ -17,13 +19,17 @@ const GLOBAL_SCOPE: CommissionAccessScope = {
   blockedMessage: null,
 };
 
-function toArSnapshot(row: ReturnType<typeof mapPrismaRowToFinanceArDashboardRow>): ArReceivableSnapshot {
+function toArSnapshot(
+  row: ReturnType<typeof mapPrismaRowToFinanceArDashboardRow>,
+  receiptDateByReceivable: Map<number, Date>
+): ArReceivableSnapshot {
   return {
     externalId: row.externalId,
     personName: row.personName,
     personId: row.personId,
     dueDate: row.dueDate,
     settlementDate: row.settlementDate,
+    receiptDate: receiptDateByReceivable.get(row.externalId) ?? null,
     amountReceivable: row.amountReceivable,
     amountReceived: row.amountReceived,
     balanceReceivable: row.balanceReceivable,
@@ -104,7 +110,27 @@ export async function runArVsCommissionReconcile(query: ReconcileArVsCommissionQ
           GLOBAL_SCOPE
         );
 
-  const arRows = arPrismaRows.map((row) => toArSnapshot(mapPrismaRowToFinanceArDashboardRow(row)));
+  // Recebimentos reais do período — base da reconciliação (não a baixa).
+  // A coluna é DATE (meia-noite UTC): o recorte usa limites UTC e o valor é
+  // renormalizado para meia-noite LOCAL, para comparar com os demais eixos
+  // deste módulo sem deslocar o dia civil na virada do mês.
+  const receiptBounds = resolveCompetencePeriodUtcBounds(query.year, query.month);
+  const receiptRows = await prisma.nomusReceivableReceipt.findMany({
+    where: { receiptDate: { gte: receiptBounds.from, lte: receiptBounds.to } },
+    select: { receivableExternalId: true, receiptDate: true },
+    orderBy: { receiptDate: "asc" },
+  });
+  const receiptDateByReceivable = new Map<number, Date>();
+  for (const receipt of receiptRows) {
+    receiptDateByReceivable.set(
+      receipt.receivableExternalId,
+      startOfCivilDate(receipt.receiptDate)
+    );
+  }
+
+  const arRows = arPrismaRows.map((row) =>
+    toArSnapshot(mapPrismaRowToFinanceArDashboardRow(row), receiptDateByReceivable)
+  );
   const { cards, rows: payableRows } = auditPayload ?? {
     cards: {
       receivableAmountTotal: officialPayable?.receivedAmountTotal ?? 0,

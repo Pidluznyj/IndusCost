@@ -147,7 +147,7 @@ export function CommissionsCustomerExclusionsPage() {
           monthLabel="Mês do fechamento"
         />
         <p className="text-xs text-muted-foreground">
-          A reconciliação abaixo usa o mesmo universo do Fechamento do mês (settlementDate).
+          A reconciliação abaixo usa o mesmo universo do Fechamento do mês (receiptDate).
         </p>
       </div>
 

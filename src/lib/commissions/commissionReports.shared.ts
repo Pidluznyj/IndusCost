@@ -1,6 +1,8 @@
 /**
  * Relatórios de comissão — tipos e lógica pura (seguro para frontend).
- * Fonte oficial: linhas do ledger de Fechamento por recebimento (settlementDate).
+ * Fonte oficial: linhas do ledger de Fechamento por recebimento.
+ * A competência do mês vem da data real do recebimento (receiptDate);
+ * `settlementDate` é a baixa administrativa transportada para auditoria.
  */
 import * as XLSX from "xlsx";
 import { roundMoney } from "./commission-money.shared.js";
@@ -100,6 +102,7 @@ export type CommissionReportRecord = {
   lineKey: string;
   year: number;
   month: number;
+  /** Baixa administrativa do CR — auditoria; a competência é o recebimento. */
   settlementDate: string | null;
   periodStatus: CommissionReportPeriodStatus;
   closingId: string | null;
@@ -775,7 +778,7 @@ export function buildCommissionReportsExportWorkbook(input: {
     ["Gerado em", new Date().toISOString()],
     [
       "Observação",
-      "Valores oficiais do ledger/prévia de Fechamento (settlementDate). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
+      "Valores oficiais do ledger/prévia de Fechamento (competência pela data real do recebimento; a coluna Baixa é informação administrativa). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
     ],
     ["Clientes excluídos (únicos)", summary?.excludedCustomerCount ?? ""],
     ["Comissão excluída por regra", summary?.excludedCommission ?? ""],

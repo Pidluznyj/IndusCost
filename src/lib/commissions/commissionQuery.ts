@@ -138,8 +138,12 @@ export type CommissionReleasesQuery = CommissionPeriodQuery & {
   receivableId: number | null;
   dueFrom: Date | null;
   dueTo: Date | null;
+  /** Filtro explícito "Baixa de/até" — permanece sobre settlementDate. */
   settlementFrom: Date | null;
   settlementTo: Date | null;
+  /** Competência por RECEBIMENTO real (NomusReceivableReceipt.receiptDate). */
+  receiptFrom: Date | null;
+  receiptTo: Date | null;
   accountStatus: string | null;
   releaseFilter: CommissionReleaseFilter;
   page: number;
@@ -614,6 +618,8 @@ export function parseCommissionReleasesQuery(
     dueTo: parseIsoDate(query.dueTo, "dueTo"),
     settlementFrom: parseIsoDate(query.settlementFrom, "settlementFrom"),
     settlementTo: parseIsoDate(query.settlementTo, "settlementTo"),
+    receiptFrom: parseIsoDate(query.receiptFrom, "receiptFrom"),
+    receiptTo: parseIsoDate(query.receiptTo, "receiptTo"),
     accountStatus,
     releaseFilter,
     page,

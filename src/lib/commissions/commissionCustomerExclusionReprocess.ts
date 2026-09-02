@@ -32,7 +32,10 @@ export type ExclusionReprocessScheduleInput = {
   id: string;
   nomusReceivableId: number | null;
   dueDate: Date | null;
+  /** Baixa administrativa do CR — sinal de movimento, não de competência. */
   settlementDate: Date | null;
+  /** Data real do recebimento — define o mês afetado pela liberação. */
+  receiptDate?: Date | null;
   commissionExpectedAmount: number;
   commissionReleasedAmount: number;
   receivedAmount: number | null;
@@ -352,8 +355,9 @@ export function simulateExclusionImpactLine(input: {
   const paidBlocked =
     input.paidBlockAutoChange && isPaidCommissionStatus(record.status);
 
+  // Mês afetado pela liberação = mês do RECEBIMENTO real (nunca o da baixa).
   const settlementMonthKeys = uniqueMonthKeys(
-    record.schedules.map((s) => monthKeyFromDate(s.settlementDate))
+    record.schedules.map((s) => monthKeyFromDate(s.receiptDate ?? null))
   );
   const dueMonthKeys = uniqueMonthKeys(
     record.schedules.map((s) => monthKeyFromDate(s.dueDate))

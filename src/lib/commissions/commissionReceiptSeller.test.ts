@@ -210,11 +210,22 @@ describe("NO_SCHEDULE + vendedor no motor de fechamento", () => {
   }
 
   function receivable(nomusReceivableId: number) {
+    const receiptDate = new Date("2026-06-15");
     return {
       nomusReceivableId,
       receivableNumber: "CR-1",
       installmentNumber: 1,
-      settlementDate: new Date("2026-06-15"),
+      settlementDate: receiptDate,
+      // Recebimento no mesmo dia da baixa — equivalente ao fixture anterior.
+      receiptCompetence: {
+        receivableExternalId: nomusReceivableId,
+        receiptDate,
+        firstReceiptDate: receiptDate,
+        receiptIds: [nomusReceivableId],
+        periodReceivedAmount: 5000,
+        priorReceivedAmount: 0,
+        cumulativeReceivedAmount: 5000,
+      },
       dueDate: new Date("2026-06-10"),
       amountReceivable: 5000,
       amountReceived: 5000,

@@ -92,6 +92,9 @@ export type CommissionsArViewRow = {
   nfeNumber: string | null;
   installmentNumber: number | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate?: string | null;
+  /** Baixa administrativa no Contas a Receber. */
   settlementDate: string | null;
   parcelAmount: number;
   commissionParcelAmount: number;
@@ -437,6 +440,9 @@ export type CommissionsReleaseItem = {
   nomusReceivableId: number | null;
   customerName: string | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate?: string | null;
+  /** Baixa administrativa no Contas a Receber. */
   settlementDate: string | null;
   installmentNumber: number | null;
   parcelAmount: number;
@@ -480,6 +486,9 @@ export type CommissionsReleaseDetailPayload = {
   nomusReceivableId: number | null;
   customerName: string | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate?: string | null;
+  /** Baixa administrativa no Contas a Receber. */
   settlementDate: string | null;
   installmentNumber: number | null;
   releaseRule: string;
@@ -813,6 +822,9 @@ export type CommissionsVisualAuditRow = {
   nomusReceivableId: number | null;
   installmentNumber: number | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate?: string | null;
+  /** Baixa administrativa no Contas a Receber. */
   settlementDate: string | null;
   receivableAmount: number;
   receivedAmount: number;

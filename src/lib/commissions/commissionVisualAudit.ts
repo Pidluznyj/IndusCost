@@ -75,7 +75,10 @@ export type VisualAuditRowInput = {
   nomusReceivableId: number | null;
   installmentNumber: number | null;
   dueDate: string | null;
+  /** Baixa administrativa do CR — auditoria; não define competência. */
   settlementDate: string | null;
+  /** Data real do recebimento no período — fonte da competência da comissão. */
+  receiptDate?: string | null;
   receivableAmount: number;
   receivedAmount: number;
   openBalance: number;

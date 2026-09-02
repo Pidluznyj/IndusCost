@@ -116,14 +116,29 @@ function resolvePeriodBound(from: string | null, to: string | null, which: "star
   return new Date();
 }
 
-async function resolveSettledNfeExternalIds(
-  db: Pick<PrismaClient, "nomusAccountsReceivable">,
+/**
+ * NFs cujo recebimento ocorreu na janela pedida (eixo `settlement` do reprocesso).
+ *
+ * A competência do reprocesso passou a ser a DATA REAL DO RECEBIMENTO: reprocessar
+ * julho tem de alcançar o CR recebido em 31/07 mesmo que a baixa tenha saído em
+ * 03/08. `settlementDate` não participa mais desta seleção.
+ */
+async function resolveReceiptNfeExternalIds(
+  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusReceivableReceipt">,
   dateRange: { gte?: Date; lte?: Date } | undefined
 ): Promise<number[]> {
+  const receipts = await db.nomusReceivableReceipt.findMany({
+    where: dateRange ? { receiptDate: dateRange } : {},
+    select: { receivableExternalId: true },
+    distinct: ["receivableExternalId"],
+  });
+  const receivableIds = receipts.map((row) => row.receivableExternalId);
+  if (receivableIds.length === 0) return [];
+
   const rows = await db.nomusAccountsReceivable.findMany({
     where: {
+      externalId: { in: receivableIds },
       sourceInvoiceId: { not: null },
-      settlementDate: dateRange ?? { not: null },
     },
     select: { sourceInvoiceId: true },
     distinct: ["sourceInvoiceId"],
@@ -145,12 +160,15 @@ async function resolvePriceTableProductIds(
   return rows.map((row) => row.productId);
 }
 
-type FindAffectedOrdersDb = Pick<PrismaClient, "salesOrder" | "nomusAccountsReceivable" | "priceTableItem">;
+type FindAffectedOrdersDb = Pick<
+  PrismaClient,
+  "salesOrder" | "nomusAccountsReceivable" | "nomusReceivableReceipt" | "priceTableItem"
+>;
 
 /**
  * Localiza pedidos de venda afetados pelos filtros de reprocessamento.
  * dateAxis: issue = SalesOrder.issueDate; nfe = SalesOrderNfeLink.dataProcessamento;
- * settlement = NomusAccountsReceivable.settlementDate (via nfeExternalId da NF vinculada).
+ * settlement = NomusReceivableReceipt.receiptDate (recebimento real, via nfeExternalId da NF vinculada).
  * priceTableId: Proposal.priceTableId OU produtos do pedido presentes na tabela de preço.
  */
 export async function findAffectedCommissionSalesOrderIds(
@@ -175,7 +193,7 @@ export async function findAffectedCommissionSalesOrderIds(
   } else if (filters.dateAxis === "nfe") {
     where.nfeLinks = { some: dateRange ? { dataProcessamento: dateRange } : {} };
   } else if (filters.dateAxis === "settlement") {
-    const settledNfeIds = await resolveSettledNfeExternalIds(db, dateRange);
+    const settledNfeIds = await resolveReceiptNfeExternalIds(db, dateRange);
     where.nfeLinks = { some: { nfeExternalId: { in: settledNfeIds.length > 0 ? settledNfeIds : [-1] } } };
   }
 
@@ -281,12 +299,42 @@ type LifecycleSignals = {
 
 type LoadLifecycleSignalsDb = Pick<
   PrismaClient,
-  "nomusAccountsReceivable" | "commissionReceiptLedgerLine" | "commissionRecord"
+  | "nomusAccountsReceivable"
+  | "nomusReceivableReceipt"
+  | "commissionReceiptLedgerLine"
+  | "commissionRecord"
 >;
 
+/** Títulos das NFs informadas que já tiveram recebimento real OU baixa. */
+async function loadReceivablesWithFinancialMovement(
+  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusReceivableReceipt">,
+  nfeIds: number[]
+): Promise<Array<{ sourceInvoiceId: number | null }>> {
+  const receivables = await db.nomusAccountsReceivable.findMany({
+    where: { sourceInvoiceId: { in: nfeIds } },
+    select: { externalId: true, sourceInvoiceId: true, settlementDate: true },
+  });
+  if (receivables.length === 0) return [];
+
+  const receiptRows = await db.nomusReceivableReceipt.findMany({
+    where: { receivableExternalId: { in: receivables.map((row) => row.externalId) } },
+    select: { receivableExternalId: true },
+    distinct: ["receivableExternalId"],
+  });
+  const withReceipt = new Set(receiptRows.map((row) => row.receivableExternalId));
+
+  return receivables
+    .filter((row) => row.settlementDate != null || withReceipt.has(row.externalId))
+    .map((row) => ({ sourceInvoiceId: row.sourceInvoiceId }));
+}
+
 /**
- * Sinais oficiais de ciclo de vida: recebível baixado (settlementDate), lançado no ledger
- * de fechamento por recebimento (closingId) ou já com CommissionRecord pago (PAID_PARTIAL/TOTAL).
+ * Sinais oficiais de ciclo de vida: recebível com movimento financeiro (recebimento
+ * real OU baixa), lançado no ledger de fechamento por recebimento (closingId) ou já
+ * com CommissionRecord pago (PAID_PARTIAL/TOTAL).
+ *
+ * Aqui o sinal é BOOLEANO ("houve movimento"), não de competência mensal — por isso
+ * a baixa continua contando: um título recebido sem baixa passou a contar também.
  */
 async function loadLifecycleSignals(
   db: LoadLifecycleSignalsDb,
@@ -303,10 +351,7 @@ async function loadLifecycleSignals(
 
   const [settledReceivables, ledgerLines, paidRecords] = await Promise.all([
     allNfeIds.length > 0
-      ? db.nomusAccountsReceivable.findMany({
-          where: { sourceInvoiceId: { in: allNfeIds }, settlementDate: { not: null } },
-          select: { sourceInvoiceId: true },
-        })
+      ? loadReceivablesWithFinancialMovement(db, allNfeIds)
       : Promise.resolve([]),
     externalOrderIds.length > 0
       ? db.commissionReceiptLedgerLine.findMany({

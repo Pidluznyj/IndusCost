@@ -38,7 +38,7 @@ const CONFIG: Record<CommissionsArViewMode, PageConfig> = {
     mode: "payable",
     title: "Comissão a Pagar",
     subtitle:
-      "Títulos baixados no Contas a Receber — comissão liberada pela data real de recebimento (settlementDate).",
+      "Títulos com recebimento no Contas a Receber — comissão liberada pela data real do recebimento (receiptDate).",
     testId: "commissions-payable-page",
     showSettlement: true,
     showDaysUntilDue: false,
@@ -150,6 +150,7 @@ export function CommissionsArViewPage({ mode }: { mode: CommissionsArViewMode })
                   <th className="px-3 py-2">NF</th>
                   <th className="px-3 py-2">Parcela</th>
                   <th className="px-3 py-2">Vencimento</th>
+                  {cfg.showSettlement ? <th className="px-3 py-2">Recebimento</th> : null}
                   {cfg.showSettlement ? <th className="px-3 py-2">Baixa</th> : null}
                   {cfg.showDaysUntilDue ? <th className="px-3 py-2">Dias p/ vencer</th> : null}
                   {cfg.showDaysOverdue ? <th className="px-3 py-2">Dias atraso</th> : null}
@@ -168,6 +169,9 @@ export function CommissionsArViewPage({ mode }: { mode: CommissionsArViewMode })
                     <td className="px-3 py-2">{row.nfeNumber ?? "—"}</td>
                     <td className="px-3 py-2">{row.installmentNumber ?? "—"}</td>
                     <td className="px-3 py-2">{formatDate(row.dueDate)}</td>
+                    {cfg.showSettlement ? (
+                      <td className="px-3 py-2">{formatDate(row.receiptDate)}</td>
+                    ) : null}
                     {cfg.showSettlement ? (
                       <td className="px-3 py-2">{formatDate(row.settlementDate)}</td>
                     ) : null}
