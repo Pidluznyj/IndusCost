@@ -274,3 +274,66 @@ export async function fetchCollectorEnrollmentStatus(): Promise<CollectorEnrollm
     suppressAuthEvent: true,
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * Retirada de material (saída de estoque pelo tablet)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Item retirável. Sem nenhuma quantidade, de propósito: o mesmo aparelho faz
+ * contagem cega no mesmo setor e não pode conhecer o saldo do sistema.
+ */
+export type CollectorWithdrawItemDto = {
+  itemId: string;
+  code: string;
+  description: string;
+  unit: string;
+  locationId: string | null;
+  locationCode: string | null;
+  locationName: string | null;
+};
+
+export type CollectorWithdrawResult = {
+  ok: true;
+  idempotent: boolean;
+  item: { code: string; description: string; unit: string };
+  quantity: number;
+  withdrawnBy: string;
+};
+
+export async function fetchCollectorWithdrawItems(input: {
+  sector: string;
+  warehouseId: string;
+  q?: string;
+}): Promise<{ items: CollectorWithdrawItemDto[] }> {
+  const params = new URLSearchParams({
+    sector: input.sector,
+    warehouseId: input.warehouseId,
+  });
+  if (input.q) params.set("q", input.q);
+  return fetchJsonOk<{ items: CollectorWithdrawItemDto[] }>(
+    `/api/inventory/collector/withdraw/items?${params.toString()}`,
+    { suppressAuthEvent: true }
+  );
+}
+
+/**
+ * Executa a retirada. `operationId` é gerado UMA vez por intenção e reenviado
+ * no retry — é ele que impede um segundo toque de debitar duas vezes.
+ */
+export async function submitCollectorWithdrawal(input: {
+  operationId: string;
+  sector: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: number;
+  person: string;
+}): Promise<CollectorWithdrawResult> {
+  return fetchJsonOk<CollectorWithdrawResult>("/api/inventory/collector/withdraw", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    suppressAuthEvent: true,
+  });
+}

@@ -52,6 +52,11 @@ import {
   getCollectorDeviceEnrollmentStatus,
   requestCollectorDeviceEnrollment,
 } from "./collectorDeviceEnrollment.server.js";
+import {
+  COLLECTOR_ITEM_NOT_ELIGIBLE,
+  listCollectorWithdrawItems,
+  withdrawCollectorMaterial,
+} from "./collectorWithdrawal.server.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -69,7 +74,8 @@ function respondCollectorValidationError(
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND" ||
     error.code === QR_TARGET_NOT_FOUND ||
-    error.code === QR_LINE_NOT_FOUND
+    error.code === QR_LINE_NOT_FOUND ||
+    error.code === COLLECTOR_ITEM_NOT_ELIGIBLE
       ? 404
       : error.code === "NOT_AUTHORIZED" || error.code === COLLECTOR_CAPABILITY_DENIED
         ? 403
@@ -761,4 +767,83 @@ export function registerInventoryCollectorRoutes(
       }
     }
   );
+
+  // -------------------------------------------------------------------
+  // Retirada de material (saída de estoque pelo tablet).
+  //
+  // Mesmo guard das demais rotas DEVICE. O bloqueio por saldo insuficiente
+  // NÃO é implementado aqui: vem do motor de movimentação, porque o
+  // contexto do dispositivo não carrega permissão de override.
+  // -------------------------------------------------------------------
+
+  app.get("/api/inventory/collector/withdraw/items", deviceAuth, async (req, res) => {
+    try {
+      const device = getCollectorDeviceContext(res);
+      if (!device) {
+        return res
+          .status(403)
+          .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+      }
+      const sector = parseCollectorSector(req.query.sector ?? "raw-material");
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      if (!UUID_RE.test(warehouseId)) {
+        return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
+      }
+      const q = typeof req.query.q === "string" ? req.query.q : null;
+      const items = await listCollectorWithdrawItems(prisma, { warehouseId, sector, q });
+      res.json({ items });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("GET /api/inventory/collector/withdraw/items", e);
+      res.status(500).json({ error: "Erro ao listar materiais." });
+    }
+  });
+
+  app.post("/api/inventory/collector/withdraw", deviceAuth, async (req, res) => {
+    try {
+      const device = getCollectorDeviceContext(res);
+      if (!device) {
+        return res
+          .status(403)
+          .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+      }
+      rejectIdentityFields(req.body);
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sector = parseCollectorSector(body.sector ?? "raw-material");
+      const itemId = String(body.itemId ?? "").trim();
+      const warehouseId = String(body.warehouseId ?? "").trim();
+      if (!UUID_RE.test(itemId) || !UUID_RE.test(warehouseId)) {
+        return res.status(400).json({ error: "Identificador inválido.", code: "INVALID_ID" });
+      }
+      const rawLocation = String(body.locationId ?? "").trim();
+      if (rawLocation && !UUID_RE.test(rawLocation)) {
+        return res.status(400).json({ error: "Endereço inválido.", code: "INVALID_ID" });
+      }
+
+      // movementType NUNCA vem do corpo: é constante no serviço.
+      const result = await withdrawCollectorMaterial(
+        prisma,
+        {
+          operationId: String(body.operationId ?? ""),
+          itemId,
+          warehouseId,
+          locationId: rawLocation || null,
+          quantity: body.quantity as number,
+          person: body.person as string,
+          sector,
+        },
+        { id: device.deviceId }
+      );
+      res.json(result);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("POST /api/inventory/collector/withdraw", e);
+      res.status(500).json({ error: "Erro ao registrar retirada." });
+    }
+  });
 }

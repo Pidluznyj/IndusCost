@@ -732,6 +732,7 @@ describe("2D regressão", () => {
       "20260819130000_inventory_collector_device_registry",
       "20260821140000_inventory_collector_device_autonomous_caps",
       "20260919120000_collector_device_enrollment",
+      "20260920120000_collector_material_withdrawal",
     ]);
     // A allow-list sozinha não prova aditividade: cada migration do Collector
     // é lida e auditada (comentários fora, `ON DELETE` não é DML).
