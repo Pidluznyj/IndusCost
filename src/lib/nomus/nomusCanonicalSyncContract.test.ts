@@ -189,6 +189,7 @@ describe("SYNC-07 — gateway canônico", () => {
       "scripts/runNomusSalesOrdersSync.sh",
       "scripts/runNomusAccountsReceivableSync.sh",
       "scripts/runNomusAccountsPayableSync.sh",
+      "scripts/runNomusReceivableReceiptsSync.sh",
     ]) {
       const src = read(shell);
       for (const pattern of SHELL_FORBIDDEN_BUSINESS_PATTERNS) {
