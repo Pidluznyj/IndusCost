@@ -422,3 +422,38 @@ describe("QR de setor — A4 retrato", () => {
     assert.match(page, /return \(\) => \{\s*\n\s*style\.remove\(\);/);
   });
 });
+
+/**
+ * Layout da folha. Dois resets do preflight do Tailwind quebravam a folha:
+ * `svg { display: block }` (text-align do pai não centraliza) e
+ * `ol { list-style: none }` (a numeração do "Como ler" sumia).
+ */
+describe("QR de setor — layout da folha impressa", () => {
+  const CSS = "src/components/inventory/collector/inventory-labels-print.css";
+
+  it("o QR é grande e centralizado por margem automática", () => {
+    const css = read(CSS);
+    const rule = /\.inventory-labels-sector-print > svg \{([\s\S]*?)\}/.exec(css);
+    assert.ok(rule, "falta regra dedicada para o SVG do QR");
+    // `text-align: center` do pai não centraliza um svg display:block.
+    assert.match(rule[1], /margin: 0 auto;/);
+    assert.match(rule[1], /width: 100mm;/);
+    assert.match(rule[1], /height: 100mm;/);
+  });
+
+  it("a numeração do 'Como ler' é restaurada sobre o preflight", () => {
+    const css = read(CSS);
+    assert.match(css, /\.sector-howto ol \{[\s\S]*?list-style: decimal outside;/);
+  });
+
+  it("o conteúdo cabe na área útil do A4 retrato (sem 2ª página)", () => {
+    const css = read(CSS);
+    const pad = /\.inventory-labels-sector-print \{[\s\S]*?padding-top: (\d+)mm;/.exec(css);
+    assert.ok(pad, "falta padding-top na folha");
+    const qr = /> svg \{[\s\S]*?height: (\d+)mm;/.exec(css);
+    assert.ok(qr);
+    // 273mm úteis = A4 retrato (297) menos 2 × 12mm de margem do @page.
+    const usados = Number(pad[1]) + Number(qr[1]) + 91; // título+texto+caixa ≈ 91mm
+    assert.ok(usados < 273, `folha estouraria a página: ~${usados}mm de 273mm`);
+  });
+});
