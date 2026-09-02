@@ -8,6 +8,7 @@ import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess";
+import { PurchaseOrderSupplierEvaluationCard } from "@/src/components/supply-chain/supplier-performance/PurchaseOrderSupplierEvaluationCard";
 
 type PoListRow = {
   id: string;
@@ -399,6 +400,13 @@ export function PurchaseOrderModule() {
           </button>
         ) : null}
       </div>
+
+      <PurchaseOrderSupplierEvaluationCard
+        purchaseOrderId={detail.id}
+        purchaseOrderCode={detail.code}
+        supplierName={detail.supplierDisplayNameSnapshot}
+        canEvaluate={allowEdit}
+      />
 
       <div className="rounded-2xl border border-border bg-card p-4 space-y-2">
         <h4 className="text-xs font-bold uppercase text-muted-foreground">Histórico</h4>

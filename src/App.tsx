@@ -16,6 +16,7 @@ import { TransformationCostSimulatorModule } from "./components/TransformationCo
 import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
 import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage";
+import { SupplierPerformanceReportPage } from "./components/supply-chain/supplier-performance/SupplierPerformanceReportPage";
 import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
@@ -1112,6 +1113,11 @@ export default function App() {
               <CommissionsModule />
             </ModulePageShell>
           }
+        />
+        {/* OP-26 — relatório de desempenho a partir de Financeiro > Fornecedores. */}
+        <Route
+          path="finance/suppliers/performance"
+          element={<SupplierPerformanceReportPage />}
         />
         <Route
           path="finance/suppliers"

@@ -7111,6 +7111,9 @@ model PurchaseOrder {
   approvals       PurchaseApproval[]          @relation("PurchaseApprovalPurchaseOrder")
   history         PurchaseOrderHistoryEvent[]
 
+  /// OP-26 — no máximo uma avaliação vigente por pedido (UNIQUE do lado filho).
+  supplierEvaluation PurchaseOrderSupplierEvaluation?
+
   @@index([status])
   @@index([supplierId])
   @@index([purchaseRequestId])
@@ -7182,6 +7185,39 @@ model PurchaseOrderHistoryEvent {
 
   @@index([purchaseOrderId, createdAt])
   @@index([action])
+}
+
+/// OP-26 — Avaliação do fornecedor PELO Pedido de Compra (0..10 em quatro
+/// critérios de peso igual). O desempenho do fornecedor é DERIVADO destas
+/// avaliações: FinancialSupplier não recebe coluna de nota (sem stale data,
+/// sem sincronização). Auditoria/revisões ficam em PurchaseOrderHistoryEvent.
+///
+/// A avaliação é EVIDÊNCIA AUDITÁVEL: a FK usa Restrict de propósito, para que
+/// uma exclusão física do PurchaseOrder não apague a avaliação em silêncio.
+/// Excluir um pedido avaliado passa a exigir decisão humana explícita.
+model PurchaseOrderSupplierEvaluation {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// UNIQUE — no máximo uma avaliação vigente por pedido.
+  purchaseOrderId    String   @unique @db.Uuid
+  qualityScore       Decimal  @db.Decimal(4, 2)
+  deliveryScore      Decimal  @db.Decimal(4, 2)
+  conformityScore    Decimal  @db.Decimal(4, 2)
+  serviceScore       Decimal  @db.Decimal(4, 2)
+  /// Média aritmética dos quatro critérios — calculada no servidor.
+  overallScore       Decimal  @db.Decimal(4, 2)
+  /// Versão da metodologia interna aplicada (V1 = 25% por critério).
+  methodologyVersion Int      @default(1)
+  notes              String?
+  /// Optimistic locking — 1 na criação, +1 a cada revisão.
+  revision           Int      @default(1)
+  createdByUserId    String?
+  createdByUserName  String?
+  updatedByUserId    String?
+  updatedByUserName  String?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 }
 
 /// Recebimento parcial/total — ledger só na confirmação (PURCHASE_RECEIPT).

@@ -20,6 +20,7 @@ export const SUPPLY_CHAIN_FEATURE_RESOURCES = {
   receiving: "operations.supply_chain.receiving.enabled",
   shadowPlanning: "operations.supply_chain.shadow_planning.enabled",
   indicators: "operations.supply_chain.indicators.enabled",
+  supplierPerformance: "operations.supply_chain.supplier_performance.enabled",
 } as const;
 
 /** Env vars oficiais (server-side). */
@@ -29,6 +30,7 @@ export const SUPPLY_CHAIN_FEATURE_ENV = {
   receiving: "SUPPLY_CHAIN_RECEIVING_MODULE_ENABLED",
   shadowPlanning: "SUPPLY_CHAIN_SHADOW_PLANNING_ENABLED",
   indicators: "SUPPLY_CHAIN_INDICATORS_ENABLED",
+  supplierPerformance: "SUPPLY_CHAIN_SUPPLIER_PERFORMANCE_ENABLED",
 } as const;
 
 export type SupplyChainFeatureKey = keyof typeof SUPPLY_CHAIN_FEATURE_ENV;
@@ -73,6 +75,16 @@ export function isSupplyChainIndicatorsEnabled(
   return isEnvFlagEnabled(SUPPLY_CHAIN_FEATURE_ENV.indicators, env);
 }
 
+/**
+ * OP-26 — Avaliação do pedido de compra + desempenho de fornecedor.
+ * Fail closed: ausente/inválida = desligada. Permissão ≠ flag.
+ */
+export function isSupplyChainSupplierPerformanceEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return isEnvFlagEnabled(SUPPLY_CHAIN_FEATURE_ENV.supplierPerformance, env);
+}
+
 export function isSupplyChainModuleEnabled(
   moduleId: SupplyChainModuleId,
   env: Record<string, string | undefined> = process.env
@@ -95,6 +107,7 @@ export type SupplyChainFeatureFlagsSnapshot = {
   receiving: boolean;
   shadowPlanning: boolean;
   indicators: boolean;
+  supplierPerformance: boolean;
   resources: typeof SUPPLY_CHAIN_FEATURE_RESOURCES;
   defaultWhenAbsent: false;
 };
@@ -108,6 +121,7 @@ export function getSupplyChainFeatureFlags(
     receiving: isSupplyChainReceivingModuleEnabled(env),
     shadowPlanning: isSupplyChainShadowPlanningEnabled(env),
     indicators: isSupplyChainIndicatorsEnabled(env),
+    supplierPerformance: isSupplyChainSupplierPerformanceEnabled(env),
     resources: SUPPLY_CHAIN_FEATURE_RESOURCES,
     defaultWhenAbsent: false,
   };
