@@ -22,6 +22,10 @@ import {
   mapOperationalStateToBootHint,
   type CollectorBootPhase,
 } from "./collectorBootError";
+import {
+  CollectorEnrollmentScreen,
+  useCollectorEnrollment,
+} from "./CollectorEnrollmentGate";
 
 type Boot =
   | { phase: "checking" }
@@ -72,8 +76,17 @@ export function CollectorSectorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowUncounted, setAllowUncounted] = useState(false);
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   const sectorParam = sectorSlug;
+
+  // Aparelho desconhecido: pede autorização e aguarda a decisão humana. Ao ser
+  // aprovado, recarrega o contexto sozinho — sem fechar e reabrir o Collector.
+  const enrollment = useCollectorEnrollment({
+    sector: sectorParam,
+    enabled: boot.phase === "unauthorized",
+    onAuthorized: useCallback(() => setBootAttempt((n) => n + 1), []),
+  });
 
   const loadItems = useCallback(async (id: string, f = filter, query = q) => {
     const data = await fetchCollectorSectorItems(id, { filter: f, q: query });
@@ -134,7 +147,7 @@ export function CollectorSectorPage() {
     return () => {
       cancelled = true;
     };
-  }, [sectorParam]);
+  }, [sectorParam, bootAttempt]);
 
   const startOrContinue = useCallback(async () => {
     if (boot.phase !== "ready") return;
@@ -280,13 +293,10 @@ export function CollectorSectorPage() {
   if (boot.phase === "unauthorized") {
     return (
       <Shell>
-        <div className="rounded-2xl border-2 border-red-500 bg-red-950/60 p-6 text-center">
-          <p className="text-2xl font-bold text-red-200">Dispositivo não autorizado</p>
-          <p className="mt-3 text-base text-red-100">
-            {boot.message ??
-              "Este aparelho não está liberado para contagem. Acione o supervisor de estoque."}
-          </p>
-        </div>
+        <CollectorEnrollmentScreen
+          state={enrollment.state}
+          onCheckNow={enrollment.checkNow}
+        />
       </Shell>
     );
   }

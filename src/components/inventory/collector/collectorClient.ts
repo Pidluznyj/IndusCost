@@ -241,3 +241,36 @@ export async function submitCollectorCount(
   );
   return { replayed: data.replayed === true };
 }
+
+/* ------------------------------------------------------------------ *
+ * Enrollment — primeiro acesso de um tablet ainda não autorizado.
+ *
+ * O browser continua sem enviar identidade: o servidor deriva tudo do peer
+ * Tailscale real. Solicitar NÃO autoriza — as demais rotas seguem em 403 até
+ * um humano aprovar.
+ * ------------------------------------------------------------------ */
+
+export type CollectorEnrollmentStatus = "AUTHORIZED" | "PENDING" | "REJECTED" | "NONE";
+
+export type CollectorEnrollmentResult = {
+  status: CollectorEnrollmentStatus;
+  message: string;
+};
+
+/** Registra/renova a solicitação. `sector` é só contexto do QR aberto. */
+export async function requestCollectorEnrollment(
+  sector?: string
+): Promise<CollectorEnrollmentResult> {
+  return fetchJsonOk<CollectorEnrollmentResult>("/api/inventory/collector/enrollment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sector ? { sector } : {}),
+    suppressAuthEvent: true,
+  });
+}
+
+export async function fetchCollectorEnrollmentStatus(): Promise<CollectorEnrollmentResult> {
+  return fetchJsonOk<CollectorEnrollmentResult>("/api/inventory/collector/enrollment", {
+    suppressAuthEvent: true,
+  });
+}

@@ -13,6 +13,7 @@ import { InventoryMovementsTab } from "@/src/components/inventory/InventoryMovem
 import { InventoryBalancesTab } from "@/src/components/inventory/InventoryBalancesTab";
 import { InventoryImplantationTab } from "@/src/components/inventory/InventoryImplantationTab";
 import { InventoryCountsTab } from "@/src/components/inventory/InventoryCountsTab";
+import { InventoryCollectorDevicesTab } from "@/src/components/inventory/InventoryCollectorDevicesTab";
 import { InventoryReservationsTab } from "@/src/components/inventory/InventoryReservationsTab";
 import { InventoryAuditTab } from "@/src/components/inventory/InventoryAuditTab";
 import { normalizeInventoryDashboard } from "@/src/components/inventory/inventoryDashboardPresentation";
@@ -66,6 +67,7 @@ export function InventoryModule({ initialTab }: Props = {}) {
       else if (next === "balances") navigate("/inventory/balances");
       else if (next === "implantation") navigate("/inventory/implantation");
       else if (next === "counts") navigate("/inventory/counts");
+      else if (next === "collectorDevices") navigate("/inventory/collector-devices");
       else if (next === "reservations") navigate("/inventory/reservations");
       else if (next === "audit") navigate("/inventory/audit");
       else navigate("/inventory");
@@ -173,6 +175,8 @@ export function InventoryModule({ initialTab }: Props = {}) {
         <InventoryBalancesTab />
       ) : tab === "implantation" ? (
         <InventoryImplantationTab />
+      ) : tab === "collectorDevices" ? (
+        <InventoryCollectorDevicesTab />
       ) : tab === "counts" ? (
         <InventoryCountsTab />
       ) : tab === "reservations" ? (

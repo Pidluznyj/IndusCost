@@ -39,6 +39,13 @@ import {
   setCollectorDeviceStatus,
 } from "@/src/lib/inventory/collector/collectorDeviceRegistry.server.js";
 import {
+  approveCollectorDeviceEnrollment,
+  listCollectorDeviceEnrollments,
+  parseApproveCollectorEnrollmentBody,
+  rejectCollectorDeviceEnrollment,
+  serializeCollectorDeviceEnrollment,
+} from "@/src/lib/inventory/collector/collectorDeviceEnrollment.server.js";
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   createInventoryCountSession,
@@ -2143,6 +2150,87 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
         console.error("PATCH /api/inventory/collector-devices/:id/status", e);
         res.status(500).json(inventoryApiError("Erro ao atualizar dispositivo."));
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // Solicitações de autorização de dispositivo (fluxo HUMANO).
+  // Mesmo guard do Device Registry: autorizar tablet é decisão do nível de
+  // quem aprova conferência. A identidade sai SEMPRE do enrollment (WhoIs),
+  // nunca do corpo enviado pelo administrador.
+  // ---------------------------------------------------------------------
+
+  app.get("/api/inventory/collector-device-enrollments", ...countApprove, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const rows = await listCollectorDeviceEnrollments(prisma, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      });
+      res.json({ enrollments: rows.map(serializeCollectorDeviceEnrollment) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/collector-device-enrollments", e);
+      res.status(500).json(inventoryApiError("Erro ao listar solicitações."));
+    }
+  });
+
+  app.post(
+    "/api/inventory/collector-device-enrollments/:id/approve",
+    ...countApprove,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+        const input = parseApproveCollectorEnrollmentBody(req.body);
+        const result = await approveCollectorDeviceEnrollment(prisma, id, input, {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        });
+        res.json({
+          enrollment: serializeCollectorDeviceEnrollment({ row: result.enrollment, expired: false }),
+          device: serializeCollectorDevice(result.device),
+        });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error("POST /api/inventory/collector-device-enrollments/:id/approve", e);
+        res.status(500).json(inventoryApiError("Erro ao autorizar dispositivo."));
+      }
+    }
+  );
+
+  app.post(
+    "/api/inventory/collector-device-enrollments/:id/reject",
+    ...countApprove,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+        const note = (req.body as Record<string, unknown> | undefined)?.decisionNote;
+        const enrollment = await rejectCollectorDeviceEnrollment(
+          prisma,
+          id,
+          { decisionNote: typeof note === "string" ? note : null },
+          { userId: user.id, permissions: user.effectivePermissions }
+        );
+        res.json({
+          enrollment: serializeCollectorDeviceEnrollment({ row: enrollment, expired: false }),
+        });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error("POST /api/inventory/collector-device-enrollments/:id/reject", e);
+        res.status(500).json(inventoryApiError("Erro ao recusar solicitação."));
       }
     }
   );

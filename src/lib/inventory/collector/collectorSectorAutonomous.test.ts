@@ -89,12 +89,46 @@ describe("collector autonomous security / wiring", () => {
     assert.match(src, /count-sessions\/:id\/apply-adjustments/);
     assert.match(src, /count-sessions\/:id\/items/);
 
-    // Toda rota registrada passa por deviceAuth na mesma chamada
-    const routeBlocks = src.match(/app\.(get|post|patch)\([\s\S]*?\);/g) ?? [];
-    assert.ok(routeBlocks.length >= 9);
-    for (const block of routeBlocks) {
-      assert.match(block, /deviceAuth/, `bloco sem deviceAuth: ${block.slice(0, 80)}`);
+    // Toda rota registrada passa por deviceAuth — exceto o enrollment, que
+    // existe justamente para o aparelho AINDA NAO autorizado: exigir
+    // deviceAuth ali seria um beco sem saida (so entraria quem nao precisa
+    // pedir). Em troca, ele carrega a propria checagem fail-closed.
+    const ENROLLMENT = "/api/inventory/collector/enrollment";
+    const starts: number[] = [];
+    for (const m of src.matchAll(/app\.(get|post|patch)\(/g)) {
+      starts.push(m.index ?? 0);
     }
+    assert.ok(starts.length >= 9, `esperado >=9 rotas, veio ${starts.length}`);
+
+    let enrollmentRoutes = 0;
+    starts.forEach((from, i) => {
+      const block = src.slice(from, starts[i + 1] ?? src.length);
+      // Cabecalho = do registro ate o handler: e onde vive a cadeia de guards.
+      const handlerAt = block.indexOf("async (");
+      const header = block.slice(0, handlerAt > 0 ? handlerAt : block.length);
+
+      if (block.includes(ENROLLMENT)) {
+        enrollmentRoutes += 1;
+        assert.doesNotMatch(
+          header,
+          /deviceAuth/,
+          "enrollment nao pode exigir dispositivo ja autorizado"
+        );
+        assert.match(
+          block,
+          /resolveInventoryCollectorPeerIdentity/,
+          "enrollment precisa resolver identidade Tailscale"
+        );
+        assert.match(
+          block,
+          /if \(!identity\) return denyEnrollment\(res\)/,
+          "enrollment precisa negar quando nao ha identidade"
+        );
+        return;
+      }
+      assert.match(header, /deviceAuth/, `rota sem deviceAuth: ${header.slice(0, 80)}`);
+    });
+    assert.equal(enrollmentRoutes, 2, "enrollment expoe exatamente POST e GET");
   });
 
   it("sector-qr humano fica em inventoryRoutes com countManage", () => {

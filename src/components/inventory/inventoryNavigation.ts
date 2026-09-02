@@ -10,6 +10,7 @@ export const INVENTORY_TAB_IDS = [
   "implantation",
   "movements",
   "counts",
+  "collectorDevices",
   "reservations",
   "audit",
 ] as const;
@@ -77,6 +78,13 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     navOrder: 60,
   },
   {
+    id: "collectorDevices",
+    label: "Dispositivos do Coletor",
+    description: "Autorização dos tablets que executam a contagem.",
+    showInNav: true,
+    navOrder: 65,
+  },
+  {
     id: "reservations",
     label: "Reservas",
     description: "Reservas ativas, bloqueios e cancelamentos autorizados.",
@@ -109,6 +117,7 @@ export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/balances")) return "balances";
   if (pathname.includes("/inventory/implantation")) return "implantation";
   if (pathname.includes("/inventory/counts")) return "counts";
+  if (pathname.includes("/inventory/collector-devices")) return "collectorDevices";
   if (pathname.includes("/inventory/reservations")) return "reservations";
   if (pathname.includes("/inventory/audit")) return "audit";
   return "overview";
