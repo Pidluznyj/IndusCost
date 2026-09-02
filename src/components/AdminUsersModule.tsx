@@ -92,6 +92,8 @@ import type {
   PermissionTreeDecisions,
   PermissionTreeNode,
 } from "@/src/lib/security/permissionsTreeUi/index.ts";
+import { mapPermissionTreeEffectives } from "@/src/lib/security/permissionsTreeUi/index.ts";
+import { arrangePermissionTreeBySidebar } from "@/src/lib/permissionTreeSidebarLayout";
 import {
   canViewFullPermissionAudit,
   permissionAuditActionLabel,
@@ -184,6 +186,10 @@ export const AdminUsersModule: React.FC = () => {
   const [roleBaseline, setRoleBaseline] = useState<PermissionMatrixDraft>({});
   /** Snapshot efetivo no load (dirty / cancelar). */
   const [loadedSnapshot, setLoadedSnapshot] = useState<PermissionMatrixDraft>({});
+  /**
+   * Árvore canônica do catálogo: fonte de verdade para decisões ⇄ draft e para
+   * o resultado efetivo (herança de pai). A exibição usa o layout da sidebar.
+   */
   const [treeNodes, setTreeNodes] = useState<PermissionTreeNode[]>([]);
   const [treeDecisions, setTreeDecisions] = useState<PermissionTreeDecisions>({});
   const [treeBaselineDecisions, setTreeBaselineDecisions] =
@@ -414,6 +420,22 @@ export const AdminUsersModule: React.FC = () => {
   const exceptionCounts = useMemo(
     () => countUserPermissionExceptions(treeDecisions),
     [treeDecisions]
+  );
+
+  /** Mesma disposição do menu lateral (grupos, ordem e rótulos da sidebar). */
+  const sidebarTreeNodes = useMemo(
+    () => arrangePermissionTreeBySidebar(treeNodes),
+    [treeNodes]
+  );
+
+  /**
+   * Efetivo calculado na árvore do catálogo, não na exibida: o resolvedor de
+   * runtime bloqueia por ancestral do catálogo, e o layout da sidebar move
+   * telas entre grupos (ex.: Compras sai de Operações).
+   */
+  const treeEffectives = useMemo(
+    () => mapPermissionTreeEffectives(treeNodes, treeDecisions),
+    [treeNodes, treeDecisions]
   );
 
   const profileDrift = useMemo(() => {
@@ -1637,9 +1659,10 @@ export const AdminUsersModule: React.FC = () => {
                       ) : null}
 
                       <PermissionsTree
-                        nodes={treeNodes}
+                        nodes={sidebarTreeNodes}
                         decisions={treeDecisions}
                         onDecisionsChange={handleTreeDecisionsChange}
+                        effectiveByNodeId={treeEffectives}
                         readOnly={detail.treeReadOnly}
                         highlightExceptions
                         enableBranchBatch={!detail.treeReadOnly}

@@ -16,6 +16,7 @@ import { cn } from "@/src/lib/utils";
 import {
   applyPermissionTreeDecisionToSubtree,
   collapseAllPermissionTreeKeys,
+  collectDecidablePermissionTreeSubtreeIds,
   collectPermissionTreeSubtreeIds,
   countPermissionTreeDecisions,
   decisionLabel,
@@ -25,6 +26,7 @@ import {
   filterPermissionTreeNodes,
   findPermissionTreeNode,
   getNodeDecision,
+  isStructuralPermissionTreeNode,
   kindLabel,
   mapPermissionTreeEffectives,
   setPermissionTreeDecision,
@@ -53,6 +55,13 @@ export type PermissionsTreeProps = {
   originColumnLabel?: string;
   configuredColumnLabel?: string;
   resultColumnLabel?: string;
+  /**
+   * Resultado efetivo por id de nó, calculado fora da árvore exibida.
+   * Necessário quando a exibição não segue a hierarquia do catálogo (ex.: layout
+   * do menu lateral) — a herança precisa continuar vindo da árvore canônica.
+   * Sem esta prop, o efetivo é derivado da própria árvore renderizada.
+   */
+  effectiveByNodeId?: ReadonlyMap<string, PermissionTreeEffective> | null;
   /**
    * Estado inicial da sanfona:
    * - `all` — tudo expandido (padrão legado)
@@ -215,11 +224,12 @@ function ExceptionOverlayChip({
   return null;
 }
 
-function depthPad(kind: PermissionTreeNode["kind"]): string {
-  if (kind === "page") return "pl-4";
-  if (kind === "tab") return "pl-8";
-  if (kind === "action") return "pl-12";
-  return "";
+/** Indentação por profundidade real da árvore exibida (não pelo tipo do nó). */
+const DEPTH_PADDINGS = ["", "pl-4", "pl-8", "pl-12", "pl-16", "pl-20"] as const;
+
+function depthPad(depth: number): string {
+  if (depth <= 0) return "";
+  return DEPTH_PADDINGS[Math.min(depth, DEPTH_PADDINGS.length - 1)];
 }
 
 export function PermissionsTree({
@@ -239,6 +249,7 @@ export function PermissionsTree({
   configuredColumnLabel = "Decisão individual",
   resultColumnLabel = "Resultado efetivo",
   initialExpandMode = "all",
+  effectiveByNodeId = null,
 }: PermissionsTreeProps) {
   const searchId = useId();
   const [search, setSearch] = useState("");
@@ -260,10 +271,12 @@ export function PermissionsTree({
     [nodes, search]
   );
 
-  const effectives = useMemo(
+  const derivedEffectives = useMemo(
     () => mapPermissionTreeEffectives(filtered, decisions),
     [filtered, decisions]
   );
+
+  const effectives = effectiveByNodeId ?? derivedEffectives;
 
   const counters = useMemo(
     () => countPermissionTreeDecisions(nodes, decisions),
@@ -281,7 +294,7 @@ export function PermissionsTree({
   const selectedSubtreeCount = useMemo(
     () =>
       selectedBranchId
-        ? collectPermissionTreeSubtreeIds(nodes, selectedBranchId).length
+        ? collectDecidablePermissionTreeSubtreeIds(nodes, selectedBranchId).length
         : 0,
     [nodes, selectedBranchId]
   );
@@ -300,7 +313,7 @@ export function PermissionsTree({
 
   const confirmBatch = () => {
     if (!selectedBranchId || !pendingBatchDecision || readOnly) return;
-    const ids = collectPermissionTreeSubtreeIds(nodes, selectedBranchId);
+    const ids = collectDecidablePermissionTreeSubtreeIds(nodes, selectedBranchId);
     onDecisionsChange(
       applyPermissionTreeDecisionToSubtree(
         decisions,
@@ -361,9 +374,13 @@ export function PermissionsTree({
     setPendingBatchDecision(null);
   };
 
-  const renderNode = (node: PermissionTreeNode): React.ReactNode => {
+  const renderNode = (
+    node: PermissionTreeNode,
+    depth = 0
+  ): React.ReactNode => {
     const hasChildren = node.children.length > 0;
     const isOpen = expanded.has(node.id);
+    const isSection = isStructuralPermissionTreeNode(node);
     const decision = getNodeDecision(decisions, node.id);
     const effective = effectives.get(node.id) ?? "inherited";
     const isModule = node.kind === "module";
@@ -373,6 +390,7 @@ export function PermissionsTree({
       enableBranchBatch && !readOnly && node.kind !== "action";
     const exceptionKind =
       highlightExceptions &&
+      !isSection &&
       ((decision === "deny" && node.baselineEffective === "allowed") ||
         (decision === "allow" && node.baselineEffective === "denied"))
         ? decision === "deny"
@@ -383,7 +401,8 @@ export function PermissionsTree({
     const rowShell = cn(
       "grid items-center gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2",
       COL_GRID,
-      !isModule && depthPad(node.kind),
+      depthPad(depth),
+      isSection && "bg-muted/20",
       isBranchRoot && "bg-accent/60",
       !isBranchRoot && inSelectedBranch && "bg-muted/30",
       exceptionKind === "deny" && "border-l-2 border-l-destructive",
@@ -451,24 +470,27 @@ export function PermissionsTree({
             <span
               className={cn(
                 "truncate text-sm text-foreground",
-                (isModule || node.kind === "page") && "font-medium"
+                (isModule || node.kind === "page") && "font-medium",
+                isSection && "font-semibold"
               )}
             >
               {node.label}
             </span>
             <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/80">
-              {kindLabel(node.kind)}
+              {isSection ? "Seção do menu" : kindLabel(node.kind)}
             </span>
-            {highlightExceptions ? (
+            {highlightExceptions && !isSection ? (
               <ExceptionOverlayChip
                 decision={decision}
                 baseline={node.baselineEffective}
               />
             ) : null}
           </div>
-          <p className="truncate font-mono text-[10px] text-muted-foreground/70">
-            {node.resourceKey}
-          </p>
+          {isSection ? null : (
+            <p className="truncate font-mono text-[10px] text-muted-foreground/70">
+              {node.resourceKey}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -490,12 +512,14 @@ export function PermissionsTree({
         <div
           data-testid={`permissions-tree-origin-${node.id}`}
           className="md:justify-self-start"
-          title={node.originLabel}
+          title={isSection ? undefined : node.originLabel}
         >
           <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
             {originColumnLabel}
           </span>
-          {highlightExceptions ? (
+          {isSection ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : highlightExceptions ? (
             <ProfileValueBadge baseline={node.baselineEffective} />
           ) : (
             <span className="truncate text-xs text-muted-foreground">
@@ -508,24 +532,37 @@ export function PermissionsTree({
           <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
             {configuredColumnLabel}
           </span>
-          <DecisionSegmented
-            value={decision}
-            disabled={readOnly}
-            ariaLabel={`Exceção do usuário para ${node.label}`}
-            testId={`permissions-tree-decision-${node.id}`}
-            onChange={(next) =>
-              onDecisionsChange(
-                setPermissionTreeDecision(decisions, node.id, next)
-              )
-            }
-          />
+          {isSection ? (
+            <span
+              data-testid={`permissions-tree-section-${node.id}`}
+              className="text-[11px] text-muted-foreground"
+            >
+              Decida nas telas do grupo
+            </span>
+          ) : (
+            <DecisionSegmented
+              value={decision}
+              disabled={readOnly}
+              ariaLabel={`Exceção do usuário para ${node.label}`}
+              testId={`permissions-tree-decision-${node.id}`}
+              onChange={(next) =>
+                onDecisionsChange(
+                  setPermissionTreeDecision(decisions, node.id, next)
+                )
+              }
+            />
+          )}
         </div>
 
         <div className="md:justify-self-end">
           <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
             {resultColumnLabel}
           </span>
-          <EffectiveBadge effective={effective} />
+          {isSection ? (
+            <span className="text-[12px] text-muted-foreground">—</span>
+          ) : (
+            <EffectiveBadge effective={effective} />
+          )}
         </div>
       </div>
     );
@@ -534,7 +571,7 @@ export function PermissionsTree({
       <React.Fragment key={node.id}>
         {row}
         {hasChildren && isOpen
-          ? node.children.map((child) => renderNode(child))
+          ? node.children.map((child) => renderNode(child, depth + 1))
           : null}
         {isModule && isOpen && !hasChildren ? (
           <p className="border-b border-border/60 px-3 py-2 pl-14 text-xs text-muted-foreground">
@@ -721,7 +758,7 @@ export function PermissionsTree({
             Nenhum recurso corresponde à busca.
           </p>
         ) : (
-          filtered.map((node) => renderNode(node))
+          filtered.map((node) => renderNode(node, 0))
         )}
       </div>
     </div>

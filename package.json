@@ -337,7 +337,7 @@
     "test:permission-override": "tsx --test src/lib/security/permissionOverrideState.test.ts",
     "test:require-resource": "tsx --test src/lib/security/requireResource.test.ts src/lib/security/requireResourceApis.perm32.test.ts src/lib/security/permissionGuards.test.ts",
     "test:finance-ap-access": "tsx --test src/lib/financeAccountsPayableAccess.test.ts src/lib/financeAccountsPayablePermissions.test.ts src/lib/actionPermissionAccess.test.ts",
-    "test:permissions-tree": "tsx --test src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts src/components/admin/PermissionsTree.test.tsx",
+    "test:permissions-tree": "tsx --test src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts src/components/admin/PermissionsTree.test.tsx src/lib/permissionTreeSidebarLayout.test.ts",
     "audit:sales-order:taxes": "tsx scripts/auditSalesOrderTaxes.ts",
     "audit:sales-order:effective-schedule": "tsx scripts/auditEffectiveSalesOrderSchedule.ts",
     "audit:sales-order:flow": "tsx scripts/auditSalesOrderFlow.ts",

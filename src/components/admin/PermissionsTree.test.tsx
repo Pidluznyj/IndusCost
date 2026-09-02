@@ -12,6 +12,7 @@ import {
   buildPermissionsTreeFixture,
   buildPermissionsTreeFixtureDecisions,
 } from "@/src/lib/security/permissionsTreeUi/index.ts";
+import type { PermissionTreeNode } from "@/src/lib/security/permissionsTreeUi/index.ts";
 
 describe("PermissionsTree component", () => {
   it("loading", () => {
@@ -115,5 +116,68 @@ describe("PermissionsTree component", () => {
     assert.ok(html.includes("Estado configurado"));
     assert.ok(html.includes("Resultado do perfil"));
     assert.ok(html.includes("Selecionar") || html.includes("Lote"));
+  });
+
+  it("seção do menu não recebe decisão e indenta por profundidade", () => {
+    const nodes: PermissionTreeNode[] = [
+      {
+        id: "sidebar-section:cadeia_suprimentos",
+        resourceKey: "",
+        label: "Cadeia de Suprimentos",
+        kind: "module",
+        originLabel: "",
+        baselineEffective: "inherited",
+        children: [
+          {
+            id: "operations.purchases",
+            resourceKey: "operations.purchases",
+            label: "Compras",
+            kind: "page",
+            originLabel: "Permitido no perfil",
+            baselineEffective: "allowed",
+            children: [],
+          },
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <PermissionsTree nodes={nodes} decisions={{}} onDecisionsChange={() => undefined} />
+    );
+    assert.ok(html.includes("Seção do menu"));
+    assert.ok(
+      !html.includes("permissions-tree-decision-sidebar-section:cadeia_suprimentos"),
+      "seção não pode expor Herdar/Permitir/Negar"
+    );
+    assert.ok(html.includes("permissions-tree-decision-operations.purchases"));
+    // Filho da seção fica um nível indentado (antes a indentação vinha do kind).
+    assert.match(
+      html,
+      /data-testid="permissions-tree-row-operations\.purchases"[^>]*class="[^"]*\bpl-4\b/
+    );
+    assert.ok(html.includes("0</span> permitidos"));
+    assert.ok(html.includes("1</span> herdados"), "seção não entra nos contadores");
+  });
+
+  it("effectiveByNodeId sobrepõe o efetivo derivado da árvore exibida", () => {
+    const nodes: PermissionTreeNode[] = [
+      {
+        id: "operations.purchases",
+        resourceKey: "operations.purchases",
+        label: "Compras",
+        kind: "page",
+        originLabel: "Permitido no perfil",
+        baselineEffective: "allowed",
+        children: [],
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <PermissionsTree
+        nodes={nodes}
+        decisions={{}}
+        onDecisionsChange={() => undefined}
+        effectiveByNodeId={new Map([["operations.purchases", "denied" as const]])}
+      />
+    );
+    assert.match(html, /data-effective="denied"/);
   });
 });
