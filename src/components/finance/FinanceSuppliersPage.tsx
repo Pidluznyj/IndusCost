@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Building2, RefreshCw } from "lucide-react";
+import { Building2, Gauge, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { createDefaultFinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
@@ -23,6 +23,11 @@ import { FinanceModuleEmptyState } from "@/src/components/finance/shared/Finance
 import { SuppliersManagementView } from "@/src/components/finance/cost-centers/SuppliersManagementView";
 import { useNavigate } from "react-router-dom";
 import { getFinanceSectionPath } from "@/src/lib/financeNavigation";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
+import { useSupplierPerformanceFeatureEnabled } from "@/src/lib/purchasing/supplierPerformanceClient";
 
 /**
  * Financeiro > Fornecedores — cadastro via APIs `finance.suppliers` (PERM-41).
@@ -49,6 +54,17 @@ export function FinanceSuppliersPage() {
     setReloadToken((n) => n + 1);
   }, []);
 
+  // OP-26 — entrada do relatório: flag off = ação ausente (fail closed).
+  const supplierPerformanceEnabled = useSupplierPerformanceFeatureEnabled();
+  const canViewPurchases =
+    auth.hasPermission("purchases.view") ||
+    permissions.canPerformAction(
+      OPERATIONS_RESOURCE_KEYS.purchases,
+      OPERATIONS_ACTIONS.view
+    );
+  const showPerformanceAction =
+    supplierPerformanceEnabled === true && canViewPurchases;
+
   if (!canViewSuppliers) {
     return (
       <FinanceModuleEmptyState
@@ -66,6 +82,16 @@ export function FinanceSuppliersPage() {
         title="Fornecedores"
         subtitle="Cadastro de fornecedores para padronização de nomes, documentos e vínculo operacional."
         actions={[
+          ...(showPerformanceAction
+            ? [
+                {
+                  id: "supplier-performance",
+                  label: "Desempenho dos fornecedores",
+                  onClick: () => navigate("/finance/suppliers/performance"),
+                  icon: <Gauge className="h-4 w-4" />,
+                },
+              ]
+            : []),
           {
             id: "refresh",
             label: FINANCE_HEADER_ACTION_REFRESH,

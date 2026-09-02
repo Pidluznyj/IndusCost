@@ -15,6 +15,7 @@ export type SupplyChainFeatureStatusResponse = {
     receiving: boolean;
     shadowPlanning: boolean;
     indicators: boolean;
+    supplierPerformance: boolean;
   };
   resources: typeof SUPPLY_CHAIN_FEATURE_RESOURCES;
   defaultWhenAbsent: false;

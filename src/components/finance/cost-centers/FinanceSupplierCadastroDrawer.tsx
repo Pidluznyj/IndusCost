@@ -21,6 +21,14 @@ import type {
 import { buildSupplierApplyPatch } from "@/src/lib/financeSupplierCnpjCompare";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { cn } from "@/src/lib/utils";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
+import { useSupplierPerformanceFeatureEnabled } from "@/src/lib/purchasing/supplierPerformanceClient";
+import { SupplierPerformanceTab } from "@/src/components/supply-chain/supplier-performance/SupplierPerformanceTab";
 import { usePortalContainer } from "@/src/components/finance/shared/usePortalContainer";
 import { SupplierServiceTerminationDialog } from "@/src/components/finance/cost-centers/SupplierServiceTerminationDialog";
 
@@ -31,7 +39,7 @@ export type FinanceSupplierCadastroMode = "create" | "edit";
  * (`CustomerModule`): identificação primeiro, o resto em abas para o modal
  * não virar uma coluna infinita de rolagem.
  */
-type SupplierFormTab = "cadastro" | "cnpj" | "financeiro";
+type SupplierFormTab = "cadastro" | "cnpj" | "financeiro" | "desempenho";
 
 /**
  * Classes do padrão de cadastro, iguais às do modal de Clientes — rótulo
@@ -106,6 +114,20 @@ export function FinanceSupplierCadastroDrawer({
   canExportServiceTermination = false,
 }: Props) {
   const portalContainer = usePortalContainer();
+  // OP-26 — Desempenho: flag (fail closed) + permissão de Pedidos de Compra.
+  // A permissão de fornecedor já é pré-requisito para o drawer estar aberto.
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const supplierPerformanceEnabled = useSupplierPerformanceFeatureEnabled();
+  const canViewPurchaseOrders =
+    auth.hasPermission("purchases.view") ||
+    permissions.canViewResource(OPERATIONS_RESOURCE_KEYS.purchases);
+  const canEvaluatePurchaseOrders =
+    auth.hasPermission("purchases.edit") ||
+    permissions.canPerformAction(
+      OPERATIONS_RESOURCE_KEYS.purchases,
+      OPERATIONS_ACTIONS.update
+    );
   const [formTab, setFormTab] = useState<SupplierFormTab>("cadastro");
   const [terminationOpen, setTerminationOpen] = useState(false);
   const [profile, setProfile] = useState<FinancialSupplierProfileDto | null>(null);
@@ -424,6 +446,13 @@ export function FinanceSupplierCadastroDrawer({
 
   const showForm = isCreate || Boolean(profile);
   const showFinanceTab = !isCreate && Boolean(profile) && showFinancialSummary;
+  // Nunca na criação do fornecedor: só existe desempenho de quem já tem pedidos.
+  const showPerformanceTab =
+    !isCreate &&
+    Boolean(profile) &&
+    Boolean(supplierId) &&
+    supplierPerformanceEnabled === true &&
+    canViewPurchaseOrders;
   const canSubmit = canManage && (isCreate || !isInactive);
 
   const submitForm = (e: React.FormEvent) => {
@@ -520,6 +549,19 @@ export function FinanceSupplierCadastroDrawer({
               )}
             >
               Financeiro (AP)
+            </button>
+          ) : null}
+          {showPerformanceTab ? (
+            <button
+              type="button"
+              data-testid="finance-supplier-tab-desempenho"
+              onClick={() => setFormTab("desempenho")}
+              className={cn(
+                TAB_BUTTON_BASE,
+                formTab === "desempenho" ? TAB_BUTTON_ACTIVE : TAB_BUTTON_IDLE
+              )}
+            >
+              Desempenho
             </button>
           ) : null}
         </div>
@@ -843,6 +885,19 @@ export function FinanceSupplierCadastroDrawer({
               </div>
             ) : null}
           </div>
+        ) : formTab === "desempenho" ? (
+          <div
+            className="flex-1 overflow-y-auto p-6"
+            data-testid="finance-supplier-performance-panel"
+          >
+            {showPerformanceTab && supplierId ? (
+              <SupplierPerformanceTab
+                supplierId={supplierId}
+                supplierName={displayName || profile?.displayName || null}
+                canEvaluate={canEvaluatePurchaseOrders}
+              />
+            ) : null}
+          </div>
         ) : (
           <div
             className="flex-1 space-y-6 overflow-y-auto p-6"
@@ -964,7 +1019,8 @@ export function FinanceSupplierCadastroDrawer({
             >
               Cancelar
             </button>
-            {canSubmit ? (
+            {/* Desempenho é somente leitura do consolidado: sem salvar cadastro. */}
+            {canSubmit && formTab !== "desempenho" ? (
               <button
                 type="submit"
                 form="finance-supplier-cadastro-form"

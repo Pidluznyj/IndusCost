@@ -498,6 +498,7 @@ import { registerPurchaseRequestWorkflowRoutes } from "./src/lib/purchasing/purc
 import { registerPurchaseQuotationCollectionRoutes } from "./src/lib/purchasing/purchaseQuotationRoutes.js";
 import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvidenceRoutes.js";
 import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
+import { registerSupplierPerformanceRoutes } from "./src/lib/purchasing/supplierPerformanceRoutes.js";
 import { registerPurchasingWorkstationRoutes } from "./src/lib/purchasing/purchasingWorkstationRoutes.js";
 import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseReceiptRoutes.js";
 import { registerShadowPurchasePlanningRoutes } from "./src/lib/purchasing/shadowPurchasePlanningRoutes.js";
@@ -16913,6 +16914,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerPurchaseOrderRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  // OP-26 — avaliação do pedido + desempenho do fornecedor (flag off por padrão).
+  registerSupplierPerformanceRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,

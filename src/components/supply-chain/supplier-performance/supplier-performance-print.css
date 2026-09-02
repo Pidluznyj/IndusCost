@@ -1,0 +1,55 @@
+/**
+ * OP-26 — Impressão do Relatório de Desempenho de Fornecedores.
+ * A4 paisagem (tabela larga). O usuário imprime e escolhe "Salvar como PDF"
+ * pelo próprio navegador — sem biblioteca de PDF nova para este relatório.
+ */
+@media print {
+  body.supplier-performance-print-route {
+    background: #fff;
+  }
+
+  /* Some com cromo da aplicação e com os controles da própria tela. */
+  body.supplier-performance-print-route aside,
+  body.supplier-performance-print-route nav,
+  body.supplier-performance-print-route header[data-app-header],
+  body.supplier-performance-print-route .supplier-performance-no-print {
+    display: none !important;
+  }
+
+  body.supplier-performance-print-route .supplier-performance-print-root {
+    padding: 0;
+    margin: 0;
+    color: #000;
+  }
+
+  body.supplier-performance-print-route table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  body.supplier-performance-print-route thead {
+    display: table-header-group;
+  }
+
+  body.supplier-performance-print-route tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.supplier-performance-print-route th,
+  body.supplier-performance-print-route td {
+    border: 1px solid #d1d5db;
+    padding: 3px 5px;
+  }
+
+  body.supplier-performance-print-route .supplier-performance-print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
