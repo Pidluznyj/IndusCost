@@ -8,10 +8,17 @@
  *
  * Etiqueta: QR grande + código do item + descrição curta + almoxarifado/
  * endereço legíveis, para operação manual quando o scanner falhar.
+ *
+ * Dois QRs distintos e NÃO intercambiáveis:
+ *  - QR de setor: deep-link ABSOLUTO `/collector/sector/raw-material`, lido pela
+ *    câmera nativa do tablet. Não carrega identidade nem credencial.
+ *  - Etiqueta por item: QR legado `inv-loc` (item × almoxarifado × endereço),
+ *    resolvido por POST /api/inventory/collector/resolve-qr no fluxo /collector.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
+import { isCollectorPublicBaseUrlErrorCode } from "@/src/lib/inventory/collector/collectorPublicBaseUrl";
 
 type LabelRow = {
   itemId: string;
@@ -29,17 +36,26 @@ type LabelRow = {
 
 type WarehouseOption = { id: string; code: string; name: string };
 
+/**
+ * Estados do QR de setor. Configuração ausente NÃO pode ser confundida com
+ * falta de permissão nem desaparecer da tela em silêncio.
+ */
+type SectorQrState =
+  | { status: "loading" }
+  | { status: "ready"; sector: string; label: string; url: string }
+  /** 401/403: usuário sem conferência de estoque — QR administrativo fica oculto. */
+  | { status: "forbidden" }
+  | { status: "config"; message: string }
+  | { status: "error"; message: string };
+
 export function InventoryCountLabelsPage() {
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
   const [labels, setLabels] = useState<LabelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sectorQr, setSectorQr] = useState<{
-    sector: string;
-    label: string;
-    url: string;
-  } | null>(null);
+  const [sectorQr, setSectorQr] = useState<SectorQrState>({ status: "loading" });
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -60,9 +76,23 @@ export function InventoryCountLabelsPage() {
         const data = await fetchJsonOk<{ sector: string; label: string; url: string }>(
           "/api/inventory/collector/sector-qr?sector=RAW_MATERIAL"
         );
-        setSectorQr(data);
-      } catch {
-        // Sem permissão humana: QR de setor fica oculto; etiquetas de item seguem.
+        setSectorQr({ status: "ready", sector: data.sector, label: data.label, url: data.url });
+      } catch (e: unknown) {
+        if (e instanceof HttpError) {
+          // Sem permissão humana: QR administrativo fica oculto; etiquetas seguem.
+          if (e.status === 401 || e.status === 403) {
+            setSectorQr({ status: "forbidden" });
+            return;
+          }
+          // Configuração da URL pública ausente/inválida: erro explícito, nunca oculto.
+          if (isCollectorPublicBaseUrlErrorCode(e.code)) {
+            setSectorQr({ status: "config", message: e.message });
+            return;
+          }
+          setSectorQr({ status: "error", message: e.message || "Erro ao gerar o QR de setor." });
+          return;
+        }
+        setSectorQr({ status: "error", message: "Falha de rede ao consultar o QR de setor." });
       }
     })();
   }, []);
@@ -84,21 +114,72 @@ export function InventoryCountLabelsPage() {
     }
   }, []);
 
+  const copySectorUrl = useCallback(async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-white p-6">
       <div className="mx-auto max-w-5xl">
-        {sectorQr ? (
+        {sectorQr.status === "ready" ? (
           <div className="mb-8 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-6 print:border print:bg-white">
             <h2 className="text-xl font-bold text-slate-900">
               QR de setor — {sectorQr.label}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Abra no tablet do Collector (Tailscale). Contagem cega autônoma de matéria-prima.
+              Aponte a câmera nativa do tablet (Tailscale) para abrir a contagem cega autônoma
+              de matéria-prima. O QR é apenas um link — não concede acesso.
             </p>
             <div className="mt-4 flex flex-col items-center gap-3">
               <QRCodeSVG value={sectorQr.url} size={200} marginSize={2} />
               <p className="break-all text-center text-xs text-slate-700">{sectorQr.url}</p>
+              <div className="flex gap-2 print:hidden">
+                <a
+                  href={sectorQr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-emerald-700 px-3 py-1 text-xs font-semibold text-emerald-800"
+                >
+                  Abrir link
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void copySectorUrl(sectorQr.url)}
+                  className="rounded border border-emerald-700 px-3 py-1 text-xs font-semibold text-emerald-800"
+                >
+                  {copied ? "Copiado!" : "Copiar link"}
+                </button>
+              </div>
             </div>
+          </div>
+        ) : null}
+
+        {sectorQr.status === "config" ? (
+          <div
+            className="mb-8 rounded-xl border-2 border-amber-500 bg-amber-50 p-4 text-sm text-amber-900 print:hidden"
+            data-testid="sector-qr-config-error"
+          >
+            <p className="font-semibold">QR de setor indisponível — configuração do ambiente.</p>
+            <p className="mt-1">{sectorQr.message}</p>
+            <p className="mt-1 text-xs">
+              Não é bloqueio de dispositivo: o servidor não tem uma URL pública absoluta para
+              colocar dentro do QR. As etiquetas por item abaixo seguem funcionando.
+            </p>
+          </div>
+        ) : null}
+
+        {sectorQr.status === "error" ? (
+          <div
+            className="mb-8 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 print:hidden"
+            data-testid="sector-qr-error"
+          >
+            {sectorQr.message}
           </div>
         ) : null}
 
@@ -129,7 +210,7 @@ export function InventoryCountLabelsPage() {
             <button
               type="button"
               onClick={() => window.print()}
-              disabled={labels.length === 0 && !sectorQr}
+              disabled={labels.length === 0 && sectorQr.status !== "ready"}
               className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             >
               Imprimir

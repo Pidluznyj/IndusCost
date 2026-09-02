@@ -6,6 +6,11 @@
  * em collectorQrContract.ts.
  */
 import { InventoryValidationError } from "./../inventoryTypes.js";
+import {
+  isCollectorPublicBaseUrlFailure,
+  joinCollectorPublicUrl,
+  resolveCollectorPublicBaseUrl,
+} from "./collectorPublicBaseUrl.js";
 
 export const COLLECTOR_SECTORS = {
   RAW_MATERIAL: {
@@ -21,7 +26,12 @@ export type CollectorSectorCode = keyof typeof COLLECTOR_SECTORS;
 export const COLLECTOR_SECTOR_CODES = Object.keys(COLLECTOR_SECTORS) as CollectorSectorCode[];
 
 export const COLLECTOR_INVALID_SECTOR = "COLLECTOR_INVALID_SECTOR";
-export const COLLECTOR_PUBLIC_BASE_URL_ENV = "INVENTORY_COLLECTOR_PUBLIC_BASE_URL";
+
+export {
+  COLLECTOR_PUBLIC_BASE_URL_ENV,
+  COLLECTOR_PUBLIC_BASE_URL_INVALID,
+  COLLECTOR_PUBLIC_BASE_URL_REQUIRED,
+} from "./collectorPublicBaseUrl.js";
 
 const SLUG_TO_SECTOR = new Map<string, CollectorSectorCode>(
   COLLECTOR_SECTOR_CODES.map((code) => [COLLECTOR_SECTORS[code].slug, code])
@@ -66,30 +76,30 @@ export function buildSectorCollectorPath(sector: CollectorSectorCode): string {
 }
 
 /**
- * Base pública HTTPS do Collector (QR / deep-link).
- * Preferência: INVENTORY_COLLECTOR_PUBLIC_BASE_URL → APP_URL.
- * Sem fallback local inventado: se nenhum estiver setado, retorna null.
+ * Base pública HTTPS do Collector (QR / deep-link), já validada.
+ * Sem fallback local inventado: se nada válido estiver setado, retorna null.
  */
 export function getCollectorPublicBaseUrl(
   env: NodeJS.ProcessEnv = process.env
 ): string | null {
-  const primary = String(env[COLLECTOR_PUBLIC_BASE_URL_ENV] ?? "").trim();
-  const fallback = String(env.APP_URL ?? "").trim();
-  const raw = primary || fallback;
-  if (!raw) return null;
-  return raw.replace(/\/+$/, "");
+  const resolution = resolveCollectorPublicBaseUrl(env);
+  return resolution.ok ? resolution.baseUrl : null;
 }
 
+/**
+ * URL ABSOLUTA do deep-link de setor — o conteúdo do QR físico.
+ *
+ * Fail-closed: sem base pública válida lança InventoryValidationError com
+ * COLLECTOR_PUBLIC_BASE_URL_REQUIRED / _INVALID. Nunca degrada para path
+ * relativo, que a câmera nativa do iPad não conseguiria abrir.
+ */
 export function buildSectorCollectorAbsoluteUrl(
   sector: CollectorSectorCode,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  const base = getCollectorPublicBaseUrl(env);
-  const path = buildSectorCollectorPath(sector);
-  if (!base) return path;
-  try {
-    return new URL(path, `${base}/`).toString();
-  } catch {
-    return `${base}${path}`;
+  const resolution = resolveCollectorPublicBaseUrl(env);
+  if (isCollectorPublicBaseUrlFailure(resolution)) {
+    throw new InventoryValidationError(resolution.message, resolution.code);
   }
+  return joinCollectorPublicUrl(resolution.baseUrl, buildSectorCollectorPath(sector));
 }

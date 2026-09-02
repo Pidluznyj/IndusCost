@@ -23,6 +23,8 @@ import {
 } from "@/src/lib/inventory/inventoryCountApplicationService.server.js";
 import { buildCollectorQrText } from "@/src/lib/inventory/collector/collectorQrContract.js";
 import {
+  COLLECTOR_PUBLIC_BASE_URL_INVALID,
+  COLLECTOR_PUBLIC_BASE_URL_REQUIRED,
   buildSectorCollectorAbsoluteUrl,
   collectorSectorLabel,
   parseCollectorSector,
@@ -159,7 +161,10 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
             error.code === "RESERVATION_NOT_ACTIVE" ||
             error.code === "BLOCK_NOT_ACTIVE"
           ? 409
-          : 400;
+          : error.code === COLLECTOR_PUBLIC_BASE_URL_REQUIRED ||
+              error.code === COLLECTOR_PUBLIC_BASE_URL_INVALID
+            ? 503
+            : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
