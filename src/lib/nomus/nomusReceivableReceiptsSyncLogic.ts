@@ -25,6 +25,18 @@ export type ReceiptsSyncCliOptions = {
   /** Para a paginação ao alcançar recebimentos anteriores a esta data civil (backfill). */
   sinceCivilDate: string | null;
   json: boolean;
+  /**
+   * Exige PROVA de varredura completa: sem ela, a execução termina em exit 1.
+   * É o que a rotina automática diária usa — uma carga truncada em silêncio
+   * seria pior que nenhuma carga, porque pareceria bem-sucedida.
+   * Ausente por padrão: execução manual com `--page`/`--since` segue igual.
+   */
+  requireFullScan: boolean;
+  /**
+   * Escala a auditoria de ausência de aviso para falha operacional.
+   * Desligado por padrão de propósito — ver `resolveReceiptsRunStatus`.
+   */
+  failOnMissing: boolean;
 };
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -36,6 +48,8 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 export function parseReceiptsSyncCli(argv: string[]): ReceiptsSyncCliOptions {
   const mode = argv.includes("apply") || argv.includes("--apply") ? "apply" : "preview";
   const json = argv.includes("--json");
+  const requireFullScan = argv.includes("--require-full-scan");
+  const failOnMissing = argv.includes("--fail-on-missing");
 
   let startPage = 1;
   let maxPages = NOMUS_RECEIPTS_DEFAULT_MAX_PAGES;
@@ -64,7 +78,16 @@ export function parseReceiptsSyncCli(argv: string[]): ReceiptsSyncCliOptions {
     maxPages = 1;
   }
 
-  return { mode, startPage, maxPages, singlePage, sinceCivilDate, json };
+  return {
+    mode,
+    startPage,
+    maxPages,
+    singlePage,
+    sinceCivilDate,
+    json,
+    requireFullScan,
+    failOnMissing,
+  };
 }
 
 /** Aceita `yyyy-MM-dd` ou `dd/MM/yyyy` e normaliza para chave civil `yyyy-MM-dd`. */
@@ -127,6 +150,132 @@ export function computeReceiptsPaginationPlan(options: ReceiptsSyncCliOptions): 
     firstPage: options.startPage,
     lastPage: options.startPage + options.maxPages - 1,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Prova de varredura completa
+ * ------------------------------------------------------------------ */
+
+/**
+ * Por que a varredura NÃO pode ser considerada completa.
+ *
+ * Existe porque "li algumas páginas sem erro" não é a mesma coisa que
+ * "percorri a origem inteira". Para uma fonte de competência de comissão,
+ * confundir as duas é o pior defeito possível: a carga fica truncada e o
+ * relatório diz sucesso.
+ */
+export type ReceiptsFullScanBlocker =
+  | "STARTED_AFTER_FIRST_PAGE"
+  | "SINGLE_PAGE"
+  | "STOPPED_BY_MAX_PAGES"
+  | "SINCE_WINDOW_APPLIED"
+  | "STOPPED_BY_SINCE"
+  | "NO_TERMINAL_PAGE";
+
+export type ReceiptsFullScanAssessment = {
+  complete: boolean;
+  blockers: ReceiptsFullScanBlocker[];
+};
+
+/**
+ * Uma varredura só é completa quando começou na página 1, não foi limitada por
+ * nenhum recorte e terminou no fim REAL da paginação — página vazia ou ausência
+ * de próxima página. Parar por `maxPages` significa que ainda havia origem.
+ *
+ * `--since` desqualifica mesmo que não tenha chegado a disparar: a intenção do
+ * chamador foi recortar a janela, então a execução não prova cobertura total.
+ */
+export function assessReceiptsFullScan(input: {
+  startPage: number;
+  singlePage: number | null;
+  sinceCivilDate: string | null;
+  stoppedBecauseEmpty: boolean;
+  stoppedBecauseNoNext: boolean;
+  stoppedBecauseMaxPages: boolean;
+  stoppedBecauseSince: boolean;
+}): ReceiptsFullScanAssessment {
+  const blockers: ReceiptsFullScanBlocker[] = [];
+
+  if (input.startPage !== 1) blockers.push("STARTED_AFTER_FIRST_PAGE");
+  if (input.singlePage != null) blockers.push("SINGLE_PAGE");
+  if (input.stoppedBecauseMaxPages) blockers.push("STOPPED_BY_MAX_PAGES");
+  if (input.sinceCivilDate != null) blockers.push("SINCE_WINDOW_APPLIED");
+  if (input.stoppedBecauseSince) blockers.push("STOPPED_BY_SINCE");
+  if (!input.stoppedBecauseEmpty && !input.stoppedBecauseNoNext) {
+    blockers.push("NO_TERMINAL_PAGE");
+  }
+
+  return { complete: blockers.length === 0, blockers: [...new Set(blockers)] };
+}
+
+/* ------------------------------------------------------------------ *
+ * Status operacional da execução
+ * ------------------------------------------------------------------ */
+
+export type ReceiptsRunStatus =
+  | "SUCCESS"
+  | "SUCCESS_WITH_WARNINGS"
+  | "INCOMPLETE"
+  | "FAILED";
+
+export type ReceiptsRunOutcome = {
+  status: ReceiptsRunStatus;
+  exitCode: 0 | 1;
+  reasons: string[];
+};
+
+/**
+ * Decide o veredito da execução.
+ *
+ * Três regras, em ordem de gravidade:
+ *
+ *  1. Falha de gravação NUNCA é sucesso, em modo nenhum. Antes desta função o
+ *     script contava os erros por linha e ainda assim saía com 0 — um cron em
+ *     cima disso reportaria carga saudável com o banco pela metade.
+ *
+ *  2. Varredura incompleta só derruba a execução quando o chamador declarou que
+ *     queria varredura completa (`--require-full-scan`). Sem isso, `--page 3` e
+ *     `--since` continuam sendo usos manuais legítimos que terminam em 0.
+ *
+ *  3. Ausência na origem é AVISO, não falha, por padrão. O endpoint não expõe
+ *     `deleted`/`cancelled`/estorno, então não existe contrato que prove
+ *     semântica de exclusão — e um cron que falha todas as noites por uma
+ *     condição permanente vira alerta ignorado e acaba desligado. Quem quiser
+ *     escalar usa `--fail-on-missing`. Em nenhum caso se apaga nada.
+ */
+export function resolveReceiptsRunStatus(input: {
+  requireFullScan: boolean;
+  failOnMissing: boolean;
+  fullScanComplete: boolean;
+  blockers: readonly ReceiptsFullScanBlocker[];
+  writeErrors: number;
+  missingInSource: number;
+}): ReceiptsRunOutcome {
+  if (input.writeErrors > 0) {
+    return {
+      status: "FAILED",
+      exitCode: 1,
+      reasons: [`erros_gravacao=${input.writeErrors}`],
+    };
+  }
+
+  if (input.requireFullScan && !input.fullScanComplete) {
+    return {
+      status: "INCOMPLETE",
+      exitCode: 1,
+      reasons: input.blockers.map((blocker) => `varredura_incompleta:${blocker}`),
+    };
+  }
+
+  if (input.missingInSource > 0) {
+    return {
+      status: "SUCCESS_WITH_WARNINGS",
+      exitCode: input.failOnMissing ? 1 : 0,
+      reasons: [`ausentes_na_origem=${input.missingInSource}`],
+    };
+  }
+
+  return { status: "SUCCESS", exitCode: 0, reasons: [] };
 }
 
 /**

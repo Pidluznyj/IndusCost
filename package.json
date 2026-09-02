@@ -45,6 +45,8 @@
     "sync:nomus:accounts-receivable:apply": "tsx scripts/nomusAccountsReceivableSync.ts apply",
     "sync:nomus:receipts:preview": "tsx scripts/nomusReceivableReceiptsSync.ts preview",
     "sync:nomus:receipts:apply": "tsx scripts/nomusReceivableReceiptsSync.ts apply",
+    "sync:nomus:receipts:fullscan:preview": "tsx scripts/nomusReceivableReceiptsSync.ts preview --maxPages 200 --json --require-full-scan",
+    "sync:nomus:receipts:fullscan:apply": "tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 200 --json --require-full-scan",
     "audit:commission:receipt-competence": "tsx scripts/auditCommissionReceiptCompetence.ts",
     "test:nomus:receipts": "tsx --test src/lib/nomus/nomusReceivableReceiptMapper.test.ts src/lib/nomus/nomusReceivableReceiptsSyncLogic.test.ts",
     "sync:nomus:accounts-payable:preview": "tsx scripts/nomusAccountsPayableSync.ts preview",
