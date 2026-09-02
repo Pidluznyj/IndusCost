@@ -6553,6 +6553,42 @@ model InventoryCollectorDeviceEnrollment {
   @@index([status, lastRequestedAt])
 }
 
+/// Retirada de material feita pelo tablet do Stock Collector.
+///
+/// Existe por dois motivos que o ledger sozinho não cobre:
+///  1. `operationId @unique` dá idempotência REAL — dois toques no botão
+///     não podem debitar duas vezes. Gravado na MESMA transação do
+///     movimento, então a duplicata aborta antes de mexer no saldo.
+///  2. `withdrawnBy` guarda quem retirou de forma consultável.
+///     InventoryMovement não tem coluna de pessoa nem de dispositivo — a
+///     atribuição lá vive só no texto livre de reason/notes.
+///
+/// Sem FOREIGN KEY, pela mesma razão do enrollment: este é o registro
+/// imutável de um fato logístico e não pode travar limpeza futura de
+/// device/item, nem acoplar exclusão entre tabelas.
+model InventoryCollectorWithdrawal {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Chave de idempotência gerada pelo tablet, uma por intenção de retirada.
+  operationId String   @unique
+  /// Dispositivo autorizado que executou (InventoryCollectorDevice.id).
+  deviceId    String   @db.Uuid
+  /// Setor do deep-link aberto (ex.: RAW_MATERIAL).
+  sector      String
+  itemId      String   @db.Uuid
+  warehouseId String   @db.Uuid
+  locationId  String?  @db.Uuid
+  quantity    Decimal  @db.Decimal(20, 6)
+  /// Nome informado na tela: o tablet é compartilhado e não tem login humano.
+  withdrawnBy String
+  /// Movimento REQUISITION_EXIT gerado (InventoryMovement.id).
+  movementId  String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([deviceId, createdAt])
+  @@index([itemId])
+  @@index([movementId])
+}
+
 model InventoryAuditLog {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType String

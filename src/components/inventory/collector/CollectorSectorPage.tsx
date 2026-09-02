@@ -16,6 +16,9 @@ import {
   type CollectorSectorContext,
   type CollectorSessionProgressDto,
   type CollectorDivergenceDto,
+  fetchCollectorWithdrawItems,
+  submitCollectorWithdrawal,
+  type CollectorWithdrawItemDto,
 } from "./collectorClient";
 import {
   mapCollectorBootError,
@@ -26,6 +29,7 @@ import {
   CollectorEnrollmentScreen,
   useCollectorEnrollment,
 } from "./CollectorEnrollmentGate";
+import { parseQuantityText } from "./collectorCountFlow";
 
 type Boot =
   | { phase: "checking" }
@@ -53,7 +57,35 @@ type Screen =
   | { name: "list" }
   | { name: "count"; item: CollectorBlindItemDto }
   | { name: "finalize"; divergences: CollectorDivergenceDto[]; progress: CollectorSessionProgressDto }
-  | { name: "done" };
+  | { name: "done" }
+  // Retirada: escolher material → quantidade + nome → comprovante.
+  | { name: "withdrawPick" }
+  | { name: "withdrawQty"; item: CollectorWithdrawItemDto; operationId: string }
+  | { name: "withdrawDone"; item: CollectorWithdrawItemDto; quantity: number; person: string };
+
+/**
+ * Destino do botão Voltar. null = tela raiz (não mostra o botão).
+ *
+ * Mapa explícito em vez de pilha de histórico: o caminho de volta de cada
+ * tela é determinístico, e uma pilha ainda permitiria voltar para estados já
+ * superados (finalize depois de aplicar ajustes, por exemplo).
+ *
+ * Tudo aqui é transição de estado local. Nada de navegação de rota: o
+ * operador chegou por deep-link do QR e não pode sair dele.
+ */
+const SCREEN_PARENT: Record<Screen["name"], Screen["name"] | null> = {
+  home: null,
+  list: "home",
+  count: "list",
+  // Não volta para "list": finalizeCollectorSession já tirou a sessão de
+  // COUNTING, então o botão "Finalizar contagem" de lá falharia com
+  // INVALID_STATUS. Voltar tem que levar a algum lugar que funcione.
+  finalize: "home",
+  done: null,
+  withdrawPick: "home",
+  withdrawQty: "withdrawPick",
+  withdrawDone: null,
+};
 
 function newOperationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -77,6 +109,9 @@ export function CollectorSectorPage() {
   const [error, setError] = useState<string | null>(null);
   const [allowUncounted, setAllowUncounted] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
+  const [withdrawItems, setWithdrawItems] = useState<CollectorWithdrawItemDto[]>([]);
+  const [withdrawQ, setWithdrawQ] = useState("");
+  const [person, setPerson] = useState("");
 
   const sectorParam = sectorSlug;
 
@@ -87,6 +122,22 @@ export function CollectorSectorPage() {
     enabled: boot.phase === "unauthorized",
     onAuthorized: useCallback(() => setBootAttempt((n) => n + 1), []),
   });
+
+  // Volta uma tela sem sair do deep-link. Limpa o erro para não arrastar
+  // mensagem de uma tela para outra.
+  const goBack = useCallback(() => {
+    setError(null);
+    setScreen((current) => {
+      const parent = SCREEN_PARENT[current.name];
+      return parent ? ({ name: parent } as Screen) : current;
+    });
+  }, []);
+
+  const retryBoot = useCallback(() => {
+    setError(null);
+    setBoot({ phase: "checking" });
+    setBootAttempt((n) => n + 1);
+  }, []);
 
   const loadItems = useCallback(async (id: string, f = filter, query = q) => {
     const data = await fetchCollectorSectorItems(id, { filter: f, q: query });
@@ -202,8 +253,10 @@ export function CollectorSectorPage() {
 
   const confirmCount = async () => {
     if (screen.name !== "count" || !sessionId) return;
-    const qty = Number(qtyText.replace(",", "."));
-    if (!Number.isFinite(qty) || qty < 0) {
+    // parseQuantityText rejeita vazio (Number("") era 0 e submetia contagem
+    // zero sem o operador digitar nada) e arredonda para Decimal(20,6).
+    const qty = parseQuantityText(qtyText);
+    if (qty == null) {
       setError("Informe uma quantidade ≥ 0.");
       return;
     }
@@ -275,6 +328,92 @@ export function CollectorSectorPage() {
     }
   };
 
+  /** Abre a lista de materiais retiráveis do almoxarifado corrente. */
+  const openWithdraw = useCallback(async () => {
+    if (boot.phase !== "ready") return;
+    const targetWarehouse = warehouseId || boot.context.warehouses?.[0]?.id || "";
+    if (!targetWarehouse) {
+      setError("Selecione o almoxarifado para retirar material.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await fetchCollectorWithdrawItems({
+        sector: boot.context.sector?.code ?? sectorParam,
+        warehouseId: targetWarehouse,
+      });
+      setWarehouseId(targetWarehouse);
+      setWithdrawItems(data.items);
+      setWithdrawQ("");
+      setScreen({ name: "withdrawPick" });
+    } catch (e: unknown) {
+      setError(toCollectorApiError(e).message ?? "Erro ao listar materiais.");
+    } finally {
+      setBusy(false);
+    }
+  }, [boot, warehouseId, sectorParam]);
+
+  /**
+   * O operationId nasce aqui, junto com a intenção, e é reenviado no retry —
+   * é ele que impede um segundo toque de debitar o estoque duas vezes.
+   */
+  const openWithdrawQty = (item: CollectorWithdrawItemDto) => {
+    setQtyText("");
+    setPerson("");
+    setError(null);
+    setScreen({ name: "withdrawQty", item, operationId: newOperationId() });
+  };
+
+  const confirmWithdraw = async () => {
+    if (screen.name !== "withdrawQty" || boot.phase !== "ready") return;
+    const qty = parseQuantityText(qtyText);
+    if (qty == null || qty <= 0) {
+      setError("Informe uma quantidade maior que zero.");
+      return;
+    }
+    const who = person.trim();
+    if (!who) {
+      setError("Informe o nome de quem está retirando.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await submitCollectorWithdrawal({
+        operationId: screen.operationId,
+        sector: boot.context.sector?.code ?? sectorParam,
+        itemId: screen.item.itemId,
+        warehouseId,
+        locationId: screen.item.locationId,
+        quantity: qty,
+        person: who,
+      });
+      setScreen({
+        name: "withdrawDone",
+        item: screen.item,
+        quantity: result.quantity,
+        person: result.withdrawnBy,
+      });
+    } catch (e: unknown) {
+      setError(toCollectorApiError(e).message ?? "Erro ao registrar retirada.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Busca local: a lista do setor cabe na memória e filtrar no aparelho
+  // evita uma ida ao servidor a cada tecla digitada com luva.
+  const visibleWithdrawItems = useMemo(() => {
+    const term = withdrawQ.trim().toLowerCase();
+    if (!term) return withdrawItems;
+    return withdrawItems.filter(
+      (item) =>
+        item.code.toLowerCase().includes(term) ||
+        item.description.toLowerCase().includes(term)
+    );
+  }, [withdrawItems, withdrawQ]);
+
   const sectorLabel = useMemo(() => {
     if (boot.phase === "ready") return boot.context.sector?.label ?? "Matéria-prima";
     if (boot.phase === "configuration_error" && boot.context?.sector?.label) {
@@ -309,6 +448,13 @@ export function CollectorSectorPage() {
           <p className="mt-4 text-sm text-slate-300">
             O dispositivo está autorizado. Ajuste almoxarifado / vínculos de estoque no IndusCost.
           </p>
+          <button
+            type="button"
+            onClick={retryBoot}
+            className="mt-6 min-h-[56px] w-full rounded-xl bg-amber-400 px-6 text-lg font-bold text-slate-900"
+          >
+            Tentar novamente
+          </button>
         </div>
       </Shell>
     );
@@ -319,6 +465,13 @@ export function CollectorSectorPage() {
         <div className="rounded-2xl border-2 border-orange-500 bg-orange-950/50 p-6 text-center">
           <p className="text-2xl font-bold text-orange-100">Erro ao carregar</p>
           <p className="mt-3 text-base text-orange-50">{boot.message}</p>
+          <button
+            type="button"
+            onClick={retryBoot}
+            className="mt-6 min-h-[56px] w-full rounded-xl bg-orange-400 px-6 text-lg font-bold text-slate-900"
+          >
+            Tentar novamente
+          </button>
         </div>
       </Shell>
     );
@@ -337,6 +490,8 @@ export function CollectorSectorPage() {
         <h1 className="text-2xl font-bold text-white">{sectorLabel}</h1>
         <p className="text-sm text-slate-300">{boot.context.device?.name}</p>
       </header>
+
+      <CollectorBackButton screen={screen.name} onBack={goBack} />
 
       {error ? (
         <div className="mb-3 rounded-xl border border-red-400 bg-red-950/50 p-3 text-red-100">
@@ -382,6 +537,15 @@ export function CollectorSectorPage() {
             className="w-full rounded-2xl bg-emerald-500 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
           >
             {sessionId ? "Continuar contagem" : "Nova contagem"}
+          </button>
+
+          <button
+            type="button"
+            disabled={busy || (warehouses.length > 1 && !warehouseId)}
+            onClick={() => void openWithdraw()}
+            className="w-full rounded-2xl bg-sky-500 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
+          >
+            Retirar material
           </button>
         </div>
       ) : null}
@@ -451,7 +615,7 @@ export function CollectorSectorPage() {
           </label>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || (progress != null && progress.status !== "COUNTING")}
             onClick={() => void runFinalize()}
             className="w-full rounded-2xl bg-amber-400 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
           >
@@ -462,13 +626,6 @@ export function CollectorSectorPage() {
 
       {screen.name === "count" ? (
         <div className="space-y-4">
-          <button
-            type="button"
-            className="text-sm text-slate-300 underline"
-            onClick={() => setScreen({ name: "list" })}
-          >
-            ← Voltar
-          </button>
           <p className="text-2xl font-bold text-white">{screen.item.code}</p>
           <p className="text-slate-300">{screen.item.description}</p>
           <p className="text-sm text-slate-400">Unidade: {screen.item.unit}</p>
@@ -546,7 +703,128 @@ export function CollectorSectorPage() {
           </button>
         </div>
       ) : null}
+
+      {screen.name === "withdrawPick" ? (
+        <div className="space-y-3">
+          <p className="text-xl font-bold text-white">Retirar material</p>
+          <input
+            value={withdrawQ}
+            onChange={(e) => setWithdrawQ(e.target.value)}
+            placeholder="Buscar código ou descrição"
+            className="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-3 text-lg text-white"
+          />
+          <ul className="max-h-[55vh] space-y-2 overflow-y-auto">
+            {visibleWithdrawItems.map((item) => (
+              <li key={`${item.itemId}:${item.locationId ?? "-"}`}>
+                <button
+                  type="button"
+                  onClick={() => openWithdrawQty(item)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-4 text-left"
+                >
+                  <p className="text-lg font-bold text-white">{item.code}</p>
+                  <p className="text-sm text-slate-300">{item.description}</p>
+                  <p className="mt-1 text-sm text-sky-300">
+                    {item.locationCode ? `Endereço ${item.locationCode} · ` : ""}
+                    {item.unit}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {visibleWithdrawItems.length === 0 ? (
+            <p className="text-slate-300">Nenhum material encontrado.</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {screen.name === "withdrawQty" ? (
+        <div className="space-y-4">
+          <p className="text-2xl font-bold text-white">{screen.item.code}</p>
+          <p className="text-slate-300">{screen.item.description}</p>
+          <p className="text-sm text-slate-400">
+            Unidade: {screen.item.unit}
+            {screen.item.locationCode ? ` · Endereço ${screen.item.locationCode}` : ""}
+          </p>
+          <label className="block">
+            <span className="mb-1 block text-sm text-slate-300">Quantidade a retirar</span>
+            <input
+              inputMode="decimal"
+              value={qtyText}
+              onChange={(e) => setQtyText(e.target.value)}
+              className="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-5 text-3xl text-white"
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-slate-300">Quem está retirando</span>
+            <input
+              type="text"
+              value={person}
+              onChange={(e) => setPerson(e.target.value)}
+              placeholder="Nome de quem leva o material"
+              className="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-4 text-xl text-white"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void confirmWithdraw()}
+            className="w-full rounded-2xl bg-sky-500 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
+          >
+            Confirmar retirada
+          </button>
+        </div>
+      ) : null}
+
+      {screen.name === "withdrawDone" ? (
+        <div className="rounded-2xl border border-sky-400 bg-sky-950/40 p-6 text-center">
+          <p className="text-2xl font-bold text-sky-200">Retirada registrada</p>
+          <p className="mt-2 text-slate-100">
+            {screen.quantity} {screen.item.unit} de {screen.item.code}
+          </p>
+          <p className="mt-1 text-sm text-slate-300">Retirado por {screen.person}</p>
+          <div className="mt-6 space-y-2">
+            <button
+              type="button"
+              onClick={() => void openWithdraw()}
+              className="min-h-[56px] w-full rounded-xl bg-sky-500 px-4 text-lg font-bold text-slate-950"
+            >
+              Nova retirada
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen({ name: "home" })}
+              className="min-h-[56px] w-full rounded-xl bg-slate-100 px-4 text-lg font-semibold text-slate-900"
+            >
+              Voltar ao início
+            </button>
+          </div>
+        </div>
+      ) : null}
     </Shell>
+  );
+}
+
+/**
+ * Voltar compartilhado. Alvo grande porque é usado de luva no chão de
+ * fábrica, e some nas telas raiz — onde voltar significaria sair do QR.
+ */
+function CollectorBackButton({
+  screen,
+  onBack,
+}: {
+  screen: Screen["name"];
+  onBack: () => void;
+}) {
+  if (!SCREEN_PARENT[screen]) return null;
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="mb-3 min-h-[56px] rounded-xl bg-slate-800 px-5 text-lg font-semibold text-slate-100"
+    >
+      ← Voltar
+    </button>
   );
 }
 
