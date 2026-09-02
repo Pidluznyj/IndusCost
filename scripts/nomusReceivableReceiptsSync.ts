@@ -11,8 +11,15 @@
  *   tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 40
  *   tsx scripts/nomusReceivableReceiptsSync.ts apply --since 2026-01-01   (backfill)
  *
+ * Rotina automática diária (full scan determinístico, sem `--since`):
+ *   tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 200 --json --require-full-scan
+ *
  * `preview` NÃO grava nada. `apply` é explícito.
  * HTTP/retry/429/backoff/redaction vêm de `fetchNomusJson` — nenhum cliente paralelo.
+ *
+ * EXIT CODE: 0 só quando a execução é defensável. Falha de gravação sempre
+ * derruba; varredura truncada derruba quando `--require-full-scan` foi pedido.
+ * Ver `resolveReceiptsRunStatus` para o contrato completo.
  */
 
 import "dotenv/config";
@@ -30,6 +37,7 @@ import {
   type NomusReceiptMapReason,
 } from "@/src/lib/nomus/nomusReceivableReceiptMapper.js";
 import {
+  assessReceiptsFullScan,
   buildReceiptsPageParams,
   computeReceiptsPaginationPlan,
   hasNextReceiptsPage,
@@ -37,6 +45,7 @@ import {
   pageIsFullyBeforeSince,
   parseReceiptsSyncCli,
   pickReceiptsArray,
+  resolveReceiptsRunStatus,
   type JsonObject,
   type ReceiptsSyncCliOptions,
 } from "@/src/lib/nomus/nomusReceivableReceiptsSyncLogic.js";
@@ -73,6 +82,13 @@ type FetchResult = {
   rows: MappedNomusReceivableReceipt[];
   rejected: Array<{ externalId: number | null; reasons: NomusReceiptMapReason[] }>;
   duplicateExternalIds: number[];
+  /**
+   * Todo id devolvido pela origem nesta varredura — inclusive os rejeitados no
+   * mapeamento. Um payload que passou a falhar a validação continua tendo sido
+   * DEVOLVIDO pelo Nomus; tratá-lo como ausente geraria alarme falso na
+   * reconciliação.
+   */
+  seenExternalIds: Set<number>;
   stoppedBecauseEmpty: boolean;
   stoppedBecauseNoNext: boolean;
   stoppedBecauseMaxPages: boolean;
@@ -88,6 +104,7 @@ async function fetchAllPages(
   const byExternalId = new Map<number, MappedNomusReceivableReceipt>();
   const duplicateExternalIds: number[] = [];
   const rejected: FetchResult["rejected"] = [];
+  const seenExternalIds = new Set<number>();
   let pagesRead = 0;
   let recordsRead = 0;
   let stoppedBecauseEmpty = false;
@@ -105,11 +122,14 @@ async function fetchAllPages(
       const mapped = mapNomusReceivableReceiptPayload(item);
       if (isNomusReceiptMapFailure(mapped)) {
         rejected.push({ externalId: mapped.externalId, reasons: mapped.reasons });
+        // Rejeitado no mapeamento ainda assim foi devolvido pela origem.
+        if (mapped.externalId != null) seenExternalIds.add(mapped.externalId);
         pageCivilDates.push(null);
         continue;
       }
       if (!isNomusReceiptMapSuccess(mapped)) continue;
       const row = mapped.row;
+      seenExternalIds.add(row.externalId);
       pageCivilDates.push(toCivilDateKey(row.receiptDate));
       // `recebimentos.id` é a identidade do evento: nunca duplicar na mesma rodada.
       if (byExternalId.has(row.externalId)) {
@@ -145,6 +165,7 @@ async function fetchAllPages(
     rows: [...byExternalId.values()],
     rejected,
     duplicateExternalIds: [...new Set(duplicateExternalIds)],
+    seenExternalIds,
     stoppedBecauseEmpty,
     stoppedBecauseNoNext,
     stoppedBecauseMaxPages,
@@ -270,6 +291,33 @@ async function reportUnlinkedReceipts(rows: MappedNomusReceivableReceipt[]) {
   };
 }
 
+/**
+ * Auditoria de ausência: recebimentos que existem localmente e NÃO apareceram
+ * na varredura da origem.
+ *
+ * Só faz sentido com prova de varredura completa — numa varredura truncada,
+ * "não apareceu" significa apenas "não chegamos lá", e o alarme seria falso.
+ *
+ * NUNCA apaga, nunca marca estorno, nunca mexe em comissão. O endpoint
+ * `/rest/recebimentos` não expõe `deleted`, `cancelled` nem status de estorno,
+ * então não existe contrato documental que prove semântica de exclusão. Sem
+ * esse contrato, apagar um recebimento seria inventar um fato financeiro.
+ * O que se faz aqui é contar, amostrar e deixar rastro auditável.
+ */
+async function auditReceiptsMissingInSource(seenExternalIds: Set<number>): Promise<{
+  localTotal: number;
+  missing: number[];
+}> {
+  const local = await prisma.nomusReceivableReceipt.findMany({
+    select: { externalId: true },
+  });
+  const missing = local
+    .map((row) => row.externalId)
+    .filter((externalId) => !seenExternalIds.has(externalId))
+    .sort((a, b) => a - b);
+  return { localTotal: local.length, missing };
+}
+
 function summarizeCivilRange(rows: MappedNomusReceivableReceipt[]): {
   min: string | null;
   max: string | null;
@@ -292,12 +340,22 @@ async function main() {
   console.warn(
     `${LOG_PREFIX} modo=${options.mode} startPage=${options.startPage} maxPages=${options.maxPages}` +
       `${options.sinceCivilDate ? ` since=${options.sinceCivilDate}` : ""}` +
+      `${options.requireFullScan ? " requireFullScan=1" : ""}` +
       ` credencial={presente:${credential.present},len:${credential.length},hash12:${credential.hash12}}`
   );
 
   const fetched = await fetchAllPages(baseUrl, options);
   const civilRange = summarizeCivilRange(fetched.rows);
   const linkage = await reportUnlinkedReceipts(fetched.rows);
+  const fullScan = assessReceiptsFullScan({
+    startPage: options.startPage,
+    singlePage: options.singlePage,
+    sinceCivilDate: options.sinceCivilDate,
+    stoppedBecauseEmpty: fetched.stoppedBecauseEmpty,
+    stoppedBecauseNoNext: fetched.stoppedBecauseNoNext,
+    stoppedBecauseMaxPages: fetched.stoppedBecauseMaxPages,
+    stoppedBecauseSince: fetched.stoppedBecauseSince,
+  });
 
   const summary: Record<string, unknown> = {
     modo: options.mode,
@@ -315,7 +373,13 @@ async function main() {
     parou_por_fim_da_paginacao: fetched.stoppedBecauseNoNext,
     parou_por_max_paginas: fetched.stoppedBecauseMaxPages,
     parou_por_since: fetched.stoppedBecauseSince,
+    varredura_completa: fullScan.complete,
+    exigiu_varredura_completa: options.requireFullScan,
   };
+
+  if (!fullScan.complete) {
+    summary.varredura_bloqueios = fullScan.blockers;
+  }
 
   if (fetched.rejected.length > 0) {
     const reasonCounts = new Map<string, number>();
@@ -327,8 +391,10 @@ async function main() {
     summary.motivos_rejeicao = Object.fromEntries(reasonCounts);
   }
 
+  let writeErrors = 0;
   if (options.mode === "apply") {
     const applied = await runApply(fetched.rows, syncedAt);
+    writeErrors = applied.errors;
     summary.criados = applied.created;
     summary.atualizados = applied.updated;
     summary.inalterados = applied.unchanged;
@@ -338,12 +404,49 @@ async function main() {
     summary.preview_sem_gravacao = true;
   }
 
+  // Ausência só é avaliada quando a varredura provou cobrir a origem inteira.
+  let missingInSource = 0;
+  summary.reconciliacao_avaliada = fullScan.complete;
+  if (fullScan.complete) {
+    const audit = await auditReceiptsMissingInSource(fetched.seenExternalIds);
+    missingInSource = audit.missing.length;
+    summary.recebimentos_locais = audit.localTotal;
+    summary.ausentes_na_origem = missingInSource;
+    summary.ausentes_na_origem_ids = audit.missing.slice(0, 50);
+    if (missingInSource > 0) {
+      console.warn(
+        `${LOG_PREFIX} ALERTA: ${missingInSource} recebimento(s) existem localmente e NÃO ` +
+          `apareceram na varredura completa da origem. NENHUM foi apagado ou alterado. ` +
+          `Amostra: ${JSON.stringify(audit.missing.slice(0, 50))}`
+      );
+    }
+  }
+
+  const outcome = resolveReceiptsRunStatus({
+    requireFullScan: options.requireFullScan,
+    failOnMissing: options.failOnMissing,
+    fullScanComplete: fullScan.complete,
+    blockers: fullScan.blockers,
+    writeErrors,
+    missingInSource,
+  });
+  summary.status = outcome.status;
+  summary.exit_code = outcome.exitCode;
+  if (outcome.reasons.length > 0) summary.status_motivos = outcome.reasons;
+
   if (options.json) {
     console.log(JSON.stringify(summary, null, 2));
   } else {
     for (const [key, value] of Object.entries(summary)) {
       console.log(`${key}=${Array.isArray(value) ? JSON.stringify(value) : String(value)}`);
     }
+  }
+
+  if (outcome.exitCode !== 0) {
+    console.error(
+      `${LOG_PREFIX} status=${outcome.status} — ${outcome.reasons.join("; ")}`
+    );
+    process.exitCode = outcome.exitCode;
   }
 }
 

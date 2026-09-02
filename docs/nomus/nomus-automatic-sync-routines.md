@@ -40,6 +40,7 @@
 | CP | ADMIN_PANEL | on demand | mesmo shell | idem | sim | AP | idem |
 | Propostas | SCHEDULED_DAILY | `0 2 * * *` | `runNomusDailySync.sh` (via orquestrador, `--only=proposals`) | full scan (sem checkpoint — arquitetura atual não é incremental) | sim | propostas (entity) | `nomusProposalsSyncV1.ts` (`sync:nomus:proposals:apply`) |
 | Propostas | SCHEDULED_HOURLY | `37 * * * *` | `runNomusProposalsHourlySync.sh` (SYNC-07) | full scan (idem) | sim | propostas (entity) + probe do lock global | idem |
+| Recebimentos | SCHEDULED_DAILY | `50 3 * * *` | `runNomusReceivableReceiptsSync.sh` | full scan página 1→fim (endpoint sem parâmetro de janela comprovado) | sim | recebimentos (entity) | `nomusReceivableReceiptsSync.ts` (`sync:nomus:receipts:fullscan:apply`) |
 
 \* Label legado `full_refresh_upsert` **não** prova completude.
 
@@ -108,6 +109,7 @@ CREATE/UPDATE/reativação de retornados ativos.
 | flock CP (shell) | `/tmp/induscost-nomus-accounts-payable.lock` (`NOMUS_AP_SYNC_LOCK_FILE`) |
 | canonical CP (TS) | `/tmp/induscost-nomus-accounts-payable.canonical.lock` (`NOMUS_ACCOUNTS_PAYABLE_CANONICAL_LOCK_FILE`) |
 | propostas (TS, PID+token) | `/tmp/induscost-nomus-proposals.lock` (`NOMUS_PROPOSALS_SYNC_LOCK_FILE`) — dentro de `nomusProposalsSyncV1.ts`; único ponto de entrada (CLI, orquestrador diário, cron horário), então um só lock basta |
+| flock Recebimentos (shell) | `/tmp/induscost-nomus-receivable-receipts.lock` (`NOMUS_RECEIPTS_SYNC_LOCK_FILE`) — exclusivo da entidade; **não** adquire o lock global (OP-04) |
 
 OP-04: flock e lock canônico **não** compartilham pathname (evita autolock `SKIPPED_LOCKED`).
 Colisão real (segunda execução da mesma entidade) → `SKIPPED_LOCKED` (não destrutivo).
@@ -252,6 +254,98 @@ npm run sync:nomus:proposals:hourly:apply   # roda o runner horário localmente 
 
 ## Código
 
+## Recebimentos — rotina diária (fonte da competência de comissão)
+
+`NomusReceivableReceipt.receiptDate` (← Nomus `dataRecebimento`) é a fonte
+**oficial da competência** da comissão. O `settlementDate` do Contas a Receber
+permanece apenas como baixa administrativa/auditoria e não foi alterado.
+
+### Por que full scan, e por que só uma vez ao dia
+
+`GET /rest/recebimentos` aceita **apenas** `pagina` — 50 registros por página.
+Não há parâmetro comprovado de `dataModificacao`, `dataRecebimento`, `since`,
+cursor, id mínimo nem ordenação, e **a ordenação do endpoint não é**
+**contratual**. Sem eixo incremental confiável, qualquer recorte seria
+adivinhação: a rotina automática varre da página 1 até o fim real da paginação
+e **nunca** usa `--since`.
+
+Custo medido no full scan de produção de 02/09/2026: 96 páginas, 4.789
+registros, ~12 minutos, 12 respostas HTTP 429 — todas recuperadas pelo
+retry/backoff do cliente compartilhado. Esse custo é aceitável uma vez por
+dia; a cada 2 horas não seria. Daí a janela isolada das **03:50**, entre o
+daily das 02:00 e o AR/AP das :17/:47.
+
+### Truncamento nunca passa por sucesso
+
+Para uma fonte financeira, uma carga truncada que se apresenta como sucesso é
+pior que nenhuma carga. O comando canônico passa `--require-full-scan`, e o
+script só termina em `exit 0` quando consegue **provar** a cobertura:
+
+| Condição | `status` | exit |
+|----------|----------|------|
+| começou na página 1, sem recorte, terminou em página vazia ou fim de paginação | `SUCCESS` | 0 |
+| parou por `maxPages`, `--page`, `--startPage` ou `--since` | `INCOMPLETE` | 1 |
+| qualquer erro de gravação (`erros_gravacao > 0`) | `FAILED` | 1 |
+| completa, porém com IDs locais ausentes na origem | `SUCCESS_WITH_WARNINGS` | 0 (1 com `--fail-on-missing`) |
+
+Os bloqueios ficam em `varredura_bloqueios` no resumo JSON
+(`STARTED_AFTER_FIRST_PAGE`, `SINGLE_PAGE`, `STOPPED_BY_MAX_PAGES`,
+`SINCE_WINDOW_APPLIED`, `STOPPED_BY_SINCE`, `NO_TERMINAL_PAGE`).
+
+Execução manual recortada (`--page 3`, `--since`) continua terminando em 0:
+sem `--require-full-scan` o contrato antigo é preservado.
+
+### Ausência na origem: audita, nunca apaga
+
+Só quando há **prova de varredura completa**, o script compara os IDs locais
+com os IDs devolvidos pela origem e reporta `ausentes_na_origem` +
+`ausentes_na_origem_ids` (amostra de até 50), com um `ALERTA` no log.
+
+**Nada é apagado, nenhum estorno é inventado, nenhuma comissão é alterada.**
+O payload não expõe `deleted`, `cancelled` nem status de estorno — sem
+contrato documental que prove semântica de exclusão, apagar um recebimento
+seria inventar um fato financeiro. Mesma disciplina do lifecycle canônico:
+detecção ≠ confirmação.
+
+É **aviso** por padrão (exit 0) e não falha: a condição pode ser permanente, e
+um cron que falha toda noite vira alerta ignorado e acaba desligado. Quem
+quiser escalar para falha operacional usa `--fail-on-missing`.
+
+Um payload que passou a falhar o mapeamento continua contando como
+**observado** na origem — senão a reconciliação geraria alarme falso.
+
+### Idempotência
+
+Identidade canônica: `externalId` (o `recebimentos.id` do Nomus).
+Inexistente → create; `payloadHash` mudou → update; igual → unchanged.
+
+`syncedAt` é atualizado **também** nos `unchanged`, de propósito: ele significa
+"registro reobservado na origem nesta varredura", não "registro alterado". Com
+o full scan diário, é justamente essa marca que dá evidência de frescor da
+carga inteira — inclusive das linhas que não mudaram. Não trocar por
+micro-otimização sem substituir essa evidência por outra.
+
+### Cron a instalar (após deploy e validação)
+
+> **Ainda NÃO instalado.** Instalar apenas após deploy e uma execução
+> `preview` validada no servidor.
+
+```bash
+50 3 * * * root INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusReceivableReceiptsSync.sh apply >> /var/log/induscost-nomus-receipts-cron.log 2>&1
+```
+
+Não existe fonte versionada do cron neste repositório — o agendamento vive em
+`/etc/cron.d/induscost-production` no host, e esta seção é a referência
+versionada dele.
+
+**Correção operacional pendente no host:** `/etc/cron.d/induscost-production`
+contém um comentário afirmando que o arquivo "não é lido automaticamente".
+Isso é **falso** — foi comprovado que o cron processa esse arquivo. O
+comentário deve ser corrigido no mesmo passo de deploy, antes que alguém
+confie nele e edite o arquivo achando que não tem efeito.
+
+---
+
 | Peça | Path |
 |------|------|
 | Contrato | `src/lib/nomus/nomusCanonicalSyncContract.ts` |
@@ -263,3 +357,6 @@ npm run sync:nomus:proposals:hourly:apply   # roda o runner horário localmente 
 | Propostas — runner horário | `scripts/runNomusProposalsHourlySync.sh` |
 | Propostas — auditoria (IntegrationRun) | `src/lib/nomusProposalsIntegrationRun.ts` (+ `.test.ts`) |
 | Cliente HTTP compartilhado (timeout/retry central) | `src/lib/nomusRestClient.ts` (+ `.test.ts`) |
+| Recebimentos — runner diário | `scripts/runNomusReceivableReceiptsSync.sh` |
+| Recebimentos — script oficial | `scripts/nomusReceivableReceiptsSync.ts` |
+| Recebimentos — lógica pura + testes | `src/lib/nomus/nomusReceivableReceiptsSyncLogic.ts` (+ `.test.ts`) |
