@@ -19,6 +19,12 @@ import React, { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { isCollectorPublicBaseUrlErrorCode } from "@/src/lib/inventory/collector/collectorPublicBaseUrl";
+import { usePrintRouteBodyClass } from "@/src/lib/usePrintDocument";
+import "./inventory-labels-print.css";
+
+/** Sem esta classe o `body * { visibility: hidden }` de reports-print.css
+ *  imprime a rota inteira em branco. */
+const PRINT_ROUTE_BODY_CLASS = "inventory-labels-print-route";
 
 type LabelRow = {
   itemId: string;
@@ -56,6 +62,8 @@ export function InventoryCountLabelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [sectorQr, setSectorQr] = useState<SectorQrState>({ status: "loading" });
   const [copied, setCopied] = useState(false);
+
+  usePrintRouteBodyClass(PRINT_ROUTE_BODY_CLASS);
 
   useEffect(() => {
     (async () => {
@@ -127,8 +135,34 @@ export function InventoryCountLabelsPage() {
   return (
     <div className="min-h-screen bg-white p-6">
       <div className="mx-auto max-w-5xl">
+        {/*
+          Folha de impressão do QR de setor: só nome do setor, o que o QR faz,
+          o QR e como ler. Sem URL crua, sem botões, sem cromo da aplicação.
+        */}
         {sectorQr.status === "ready" ? (
-          <div className="mb-8 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-6 print:border print:bg-white">
+          <section
+            className="inventory-labels-sector-print"
+            data-testid="sector-qr-print-sheet"
+          >
+            <h1>{sectorQr.label}</h1>
+            <p className="sector-purpose">
+              Este QR abre a contagem de estoque deste setor no tablet.
+            </p>
+            <QRCodeSVG value={sectorQr.url} size={220} marginSize={2} />
+            <div className="sector-howto">
+              <strong>Como ler:</strong>
+              <ol>
+                <li>Abra a câmera do tablet.</li>
+                <li>Aponte para o QR até aparecer o aviso de link na tela.</li>
+                <li>Toque no aviso para abrir a contagem.</li>
+                <li>Conte os itens do setor pelo próprio tablet.</li>
+              </ol>
+            </div>
+          </section>
+        ) : null}
+
+        {sectorQr.status === "ready" ? (
+          <div className="inventory-labels-no-print mb-8 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-6">
             <h2 className="text-xl font-bold text-slate-900">
               QR de setor — {sectorQr.label}
             </h2>
@@ -230,7 +264,7 @@ export function InventoryCountLabelsPage() {
           </p>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 print:grid-cols-3">
+        <div className="inventory-labels-grid grid grid-cols-2 gap-4 md:grid-cols-3 print:grid-cols-3">
           {labels.map((label) => (
             <div
               key={`${label.itemId}:${label.locationId ?? "-"}`}

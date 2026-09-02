@@ -1,0 +1,88 @@
+/* Impressão — Etiquetas / QR do inventário (rota /inventory-labels).
+ *
+ * `reports-print.css` aplica `body * { visibility: hidden }` no @media print e
+ * só devolve visibilidade para uma allow-list de print-roots. Sem o override
+ * abaixo esta rota imprime EM BRANCO — mesmo motivo já documentado em
+ * proposal-print.css.
+ *
+ * A folha do QR de setor sai com apenas quatro coisas: nome do setor, o que o
+ * QR faz, o QR e como ler. Nada de URL crua, botões ou cromo da aplicação.
+ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body.inventory-labels-print-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  /* Anula o visibility:hidden global nesta rota. */
+  body.inventory-labels-print-route,
+  body.inventory-labels-print-route * {
+    visibility: visible !important;
+  }
+
+  /* Controles de tela: nunca no papel. */
+  body.inventory-labels-print-route .inventory-labels-no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Bloco do QR de setor: só na impressão, uma folha limpa. */
+  body.inventory-labels-print-route .inventory-labels-sector-print {
+    display: block !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    text-align: center;
+    color: #000 !important;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-sector-print h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 2mm;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-sector-print .sector-purpose {
+    font-size: 13px;
+    margin: 0 auto 6mm;
+    max-width: 130mm;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto {
+    font-size: 12px;
+    margin: 6mm auto 0;
+    max-width: 130mm;
+    text-align: left;
+    border: 1px solid #000;
+    padding: 4mm;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto ol {
+    margin: 2mm 0 0;
+    padding-left: 5mm;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto li {
+    margin-bottom: 1.5mm;
+  }
+
+  /* Etiquetas por item continuam imprimindo quando houver almoxarifado escolhido. */
+  body.inventory-labels-print-route .inventory-labels-grid {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  body.inventory-labels-print-route .inventory-labels-grid:empty {
+    break-before: auto;
+    page-break-before: auto;
+  }
+}
+
+/* Fora da impressão a folha dedicada do QR de setor não aparece na tela. */
+.inventory-labels-sector-print {
+  display: none;
+}

@@ -328,3 +328,67 @@ describe("contagem cega preservada no fluxo autônomo (TESTE 18)", () => {
     assert.doesNotMatch(page, /item\.expectedQuantity/);
   });
 });
+
+/**
+ * Impressão da folha do QR de setor.
+ *
+ * `reports-print.css` aplica `body * { visibility: hidden }` no @media print e
+ * só devolve visibilidade a uma allow-list de print-roots. Sem override próprio
+ * a rota /inventory-labels imprimia EM BRANCO.
+ */
+describe("QR de setor — folha de impressão", () => {
+  const PAGE = "src/components/inventory/collector/InventoryCountLabelsPage.tsx";
+  const CSS = "src/components/inventory/collector/inventory-labels-print.css";
+
+  it("a rota marca o body e carrega o CSS de impressão próprio", () => {
+    const page = read(PAGE);
+    assert.match(page, /usePrintRouteBodyClass/);
+    assert.match(page, /inventory-labels-print-route/);
+    assert.match(page, /import "\.\/inventory-labels-print\.css"/);
+  });
+
+  it("o CSS anula o visibility:hidden global (senão imprime em branco)", () => {
+    const css = read(CSS);
+    assert.match(css, /@media print/);
+    assert.match(
+      css,
+      /body\.inventory-labels-print-route,\s*\n\s*body\.inventory-labels-print-route \*\s*\{\s*\n\s*visibility: visible !important;/
+    );
+  });
+
+  it("a folha traz nome do setor, o que o QR faz, o QR e como ler", () => {
+    const page = read(PAGE);
+    const sheet = /<section\s+className="inventory-labels-sector-print"[\s\S]*?<\/section>/.exec(
+      page
+    );
+    assert.ok(sheet, "folha de impressão do QR de setor não encontrada");
+    const html = sheet[0];
+    // 1) nome do setor
+    assert.match(html, /<h1>\{sectorQr\.label\}<\/h1>/);
+    // 2) o que o QR faz
+    assert.match(html, /Este QR abre a contagem de estoque deste setor no tablet\./);
+    // 3) o QR em si
+    assert.match(html, /<QRCodeSVG value=\{sectorQr\.url\}/);
+    // 4) instrução de leitura
+    assert.match(html, /Como ler:/);
+    assert.equal((html.match(/<li>/g) ?? []).length, 4);
+    // "somente isso": sem URL crua nem botões dentro da folha impressa.
+    assert.doesNotMatch(html, /\{sectorQr\.url\}<\/p>/);
+    assert.doesNotMatch(html, /<button/);
+    assert.doesNotMatch(html, /Copiar link|Abrir link/);
+  });
+
+  it("o bloco de tela do QR não é impresso (não duplica a folha)", () => {
+    const page = read(PAGE);
+    assert.match(page, /className="inventory-labels-no-print mb-8 rounded-xl border-2 border-emerald-600/);
+    const css = read(CSS);
+    assert.match(css, /\.inventory-labels-no-print\s*\{\s*\n\s*display: none !important;/);
+  });
+
+  it("etiquetas por item continuam imprimíveis, em página própria", () => {
+    const page = read(PAGE);
+    assert.match(page, /className="inventory-labels-grid grid/);
+    const css = read(CSS);
+    assert.match(css, /\.inventory-labels-grid\s*\{[\s\S]*?page-break-before: always;/);
+  });
+});
