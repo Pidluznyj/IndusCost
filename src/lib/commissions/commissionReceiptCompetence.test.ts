@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildReceiptCompetenceByReceivable,
+  classifyReceivableSettlement,
   computeCompetenceReleaseBreakdown,
   detectReceiptsWithoutLocalReceivable,
   detectSettledWithoutReceipt,
@@ -182,20 +183,68 @@ describe("commissionReceiptCompetence", () => {
     assert.equal(release.periodIgnoredFinancialChargesAmount, 3000);
   });
 
-  it("TESTE 6 — baixa no período sem recebimento vira inconsistência, não fallback", () => {
-    const competence = buildReceiptCompetenceByReceivable(
-      [receiptEvent(1, 18505, "2026-07-30", 2775.9)],
-      2026,
-      7
-    );
+  it("TESTE 4 — baixa no período sem NENHUM receipt vira inconsistência, não fallback", () => {
+    // Conjunto GLOBAL de títulos com qualquer receipt — 18505 tem, 99999 não.
+    const withAnyReceipt = new Set([18505]);
 
-    const inconsistencies = detectSettledWithoutReceipt([18505, 99999], competence);
+    const inconsistencies = detectSettledWithoutReceipt([18505, 99999], withAnyReceipt);
 
     assert.equal(inconsistencies.length, 1);
     assert.equal(inconsistencies[0].receivableExternalId, 99999);
     assert.equal(inconsistencies[0].code, "SETTLED_WITHOUT_RECEIPT");
-    // O título sem recebimento NÃO entrou na competência por causa da baixa.
-    assert.equal(competence.has(99999), false);
+  });
+
+  it("TESTE 7 — receipt FORA da janela analisada não vira baixa sem movimentação", () => {
+    // Processando JULHO. O CR foi recebido em JUNHO e baixado em JULHO.
+    // A competência de julho não contém o título — e isso é correto —, mas a
+    // existência global de receipt sim. Era exatamente aqui que nascia o falso
+    // positivo: usar a competência do mês como prova de "não tem receipt".
+    const competenciaDeJulho = buildReceiptCompetenceByReceivable(
+      [receiptEvent(900, 17480, "2026-06-30", 1527.55)],
+      2026,
+      7
+    );
+    assert.equal(competenciaDeJulho.has(17480), false);
+
+    const withAnyReceipt = new Set([17480]);
+    const inconsistencies = detectSettledWithoutReceipt([17480], withAnyReceipt);
+
+    assert.deepEqual(inconsistencies, []);
+  });
+
+  it("classifica os três casos pela existência GLOBAL de receipt", () => {
+    // CASO A — existe receipt (data irrelevante para a classificação).
+    assert.equal(
+      classifyReceivableSettlement({ hasAnyReceipt: true, isSettled: true }),
+      "FINANCIAL_RECEIPT"
+    );
+    assert.equal(
+      classifyReceivableSettlement({ hasAnyReceipt: true, isSettled: false }),
+      "FINANCIAL_RECEIPT"
+    );
+    // CASO B — baixado e sem nenhum receipt.
+    assert.equal(
+      classifyReceivableSettlement({ hasAnyReceipt: false, isSettled: true }),
+      "SETTLED_WITHOUT_RECEIPT"
+    );
+    // CASO C — sem receipt e sem baixa: título aberto, nada é inferido.
+    assert.equal(
+      classifyReceivableSettlement({ hasAnyReceipt: false, isSettled: false }),
+      "OPEN_NOT_RECEIVED"
+    );
+  });
+
+  it("baixa MUITO posterior ao recebimento continua sendo recebimento financeiro", () => {
+    // receipt 10/06, baixa 20/07 — a distância entre as datas é irrelevante.
+    assert.deepEqual(detectSettledWithoutReceipt([17809], new Set([17809])), []);
+    assert.equal(
+      buildReceiptCompetenceByReceivable(
+        [receiptEvent(1, 17809, "2026-06-10", 7605)],
+        2026,
+        6
+      ).get(17809)?.periodReceivedAmount,
+      7605
+    );
   });
 
   it("recebimento sem CR local é reportado sem join aproximado", () => {

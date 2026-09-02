@@ -18,7 +18,10 @@ import {
   buildReceiptCompetenceByReceivable,
   type CommissionReceiptEventInput,
 } from "./commissionReceiptCompetence.js";
-import { loadCommissionCompetenceReceivableIdsForPeriod } from "./commissionReceiptCompetence.server.js";
+import {
+  loadCommissionCompetenceReceivableIdsForPeriod,
+  loadSettledWithoutReceiptInconsistencies,
+} from "./commissionReceiptCompetence.server.js";
 import { discoverSalesOrderRefsForReceiptMonth } from "./commissionMaterializationOrchestrator.server.js";
 import { findAffectedCommissionSalesOrderIds } from "./commissionReprocess.server.js";
 import { defaultCommissionReprocessFilters } from "./commissionReprocess.js";
@@ -581,12 +584,136 @@ describe("seleção temporal do módulo (camada .server)", () => {
     assert.deepEqual(await discoverSalesOrderRefsForReceiptMonth(db as never, 2026, 8), []);
   });
 
+  it("TESTE 7 — julho encontra o receipt de junho e NÃO reporta baixa sem movimentação", async () => {
+    // Cenário real: recebimento em 30/06, baixa em 01/07.
+    // Processando JULHO, o título aparece como baixado no mês, mas possui
+    // receipt histórico em junho — logo teve movimentação financeira real.
+    const db = makeFakeDb({
+      receipts: [
+        {
+          externalId: 10500,
+          receivableExternalId: 17480,
+          receiptDate: prismaDate("2026-06-30"),
+          receivedAmount: 1527.55,
+        },
+      ],
+      receivables: [
+        {
+          externalId: 17480,
+          sourceInvoiceId: 7100,
+          personName: "Cliente A",
+          personCnpj: null,
+          settlementDate: prismaDate("2026-07-01"),
+        },
+      ],
+    });
+
+    // A competência de julho não contém o título — correto, o caixa foi em junho.
+    assert.deepEqual(
+      await loadCommissionCompetenceReceivableIdsForPeriod(db as never, 2026, 7),
+      []
+    );
+
+    // E mesmo assim ele NÃO é reportado como baixa sem movimentação financeira.
+    assert.deepEqual(
+      await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 7),
+      []
+    );
+  });
+
+  it("TESTE 4 — baixado em julho sem NENHUM receipt é reportado como baixa sem movimentação", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [
+        {
+          externalId: 90001,
+          sourceInvoiceId: 7200,
+          personName: "Cliente B",
+          personCnpj: null,
+          settlementDate: prismaDate("2026-07-15"),
+        },
+      ],
+    });
+
+    const inconsistencies = await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 7);
+
+    assert.equal(inconsistencies.length, 1);
+    assert.equal(inconsistencies[0].receivableExternalId, 90001);
+    assert.equal(inconsistencies[0].code, "SETTLED_WITHOUT_RECEIPT");
+    // A baixa não criou competência de comissão em julho.
+    assert.deepEqual(
+      await loadCommissionCompetenceReceivableIdsForPeriod(db as never, 2026, 7),
+      []
+    );
+  });
+
+  it("TESTE 5 — título aberto sem receipt não é baixa sem movimentação", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [
+        {
+          externalId: 90002,
+          sourceInvoiceId: 7300,
+          personName: "Cliente C",
+          personCnpj: null,
+          settlementDate: null,
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 7),
+      []
+    );
+  });
+
+  it("a verificação de receipt não depende da janela consultada (sem filtro temporal)", async () => {
+    const receiptQueries: Array<Record<string, unknown>> = [];
+    const base = makeFakeDb({
+      receipts: [
+        {
+          externalId: 10500,
+          receivableExternalId: 17480,
+          receiptDate: prismaDate("2026-06-30"),
+          receivedAmount: 1527.55,
+        },
+      ],
+      receivables: [
+        {
+          externalId: 17480,
+          sourceInvoiceId: 7100,
+          personName: "Cliente A",
+          personCnpj: null,
+          settlementDate: prismaDate("2026-07-01"),
+        },
+      ],
+    });
+    const spyDb = {
+      ...base,
+      nomusReceivableReceipt: {
+        findMany: async (args: Record<string, unknown>) => {
+          receiptQueries.push(args);
+          return base.nomusReceivableReceipt.findMany(args as never);
+        },
+      },
+    };
+
+    await loadSettledWithoutReceiptInconsistencies(spyDb as never, 2026, 7);
+
+    // Uma única consulta de receipts, em lote, e sem recorte por receiptDate.
+    assert.equal(receiptQueries.length, 1);
+    const where = receiptQueries[0].where as Record<string, unknown>;
+    assert.equal("receiptDate" in where, false);
+    assert.ok(where.receivableExternalId, "consulta deve filtrar por lote de ids");
+  });
+
   it("TESTE 9 — a camada de competência não toca fechamentos, ledger nem CommissionRecord", async () => {
     const touched = new Set<string>();
     const db = makeFakeDb({ ...REAL_CASE, touched });
 
     await loadCommissionCompetenceReceivableIdsForPeriod(db as never, 2026, 7);
     await discoverSalesOrderRefsForReceiptMonth(db as never, 2026, 7);
+    await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 7);
 
     for (const forbidden of [
       "commissionMonthlyClosing",

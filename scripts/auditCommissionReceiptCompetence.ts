@@ -20,9 +20,15 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import {
   loadCommissionReceiptCompetenceForPeriod,
+  loadReceivableIdsWithAnyReceipt,
   loadReceiptsWithoutLocalReceivable,
   loadSettledWithoutReceiptInconsistencies,
 } from "@/src/lib/commissions/commissionReceiptCompetence.server.js";
+import {
+  classifyReceivableSettlement,
+  resolveCompetencePeriodUtcBounds,
+} from "@/src/lib/commissions/commissionReceiptCompetence.js";
+import { isCommissionInternalGroupReceivable } from "@/src/lib/commissions/commissionInternalGroupExclusion.js";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 
 const prisma = new PrismaClient();
@@ -63,6 +69,39 @@ async function main() {
     0
   );
 
+  // Classificação dos títulos BAIXADOS no período (observabilidade agregada).
+  // Duas queries em lote: os baixados do mês e, para eles, a existência global
+  // de receipt. Nada por título.
+  const bounds = resolveCompetencePeriodUtcBounds(year, month);
+  const settledInPeriod = await prisma.nomusAccountsReceivable.findMany({
+    where: { settlementDate: { gte: bounds.from, lte: bounds.to }, amountReceived: { gt: 0 } },
+    select: { externalId: true, personName: true, personCnpj: true },
+  });
+  const withAnyReceipt = await loadReceivableIdsWithAnyReceipt(
+    prisma,
+    settledInPeriod.map((row) => row.externalId)
+  );
+  let comReceiptReal = 0;
+  let semReceipt = 0;
+  let intercompany = 0;
+  for (const row of settledInPeriod) {
+    // Intercompany é apenas CONTADO aqui; a política de elegibilidade não muda.
+    if (
+      isCommissionInternalGroupReceivable({
+        customerName: row.personName,
+        customerCnpj: row.personCnpj,
+      })
+    ) {
+      intercompany += 1;
+    }
+    const classification = classifyReceivableSettlement({
+      hasAnyReceipt: withAnyReceipt.has(row.externalId),
+      isSettled: true,
+    });
+    if (classification === "FINANCIAL_RECEIPT") comReceiptReal += 1;
+    else if (classification === "SETTLED_WITHOUT_RECEIPT") semReceipt += 1;
+  }
+
   const report = {
     periodo: `${year}-${String(month).padStart(2, "0")}`,
     titulos_com_recebimento_no_periodo: competence.size,
@@ -71,7 +110,12 @@ async function main() {
       0
     ),
     valor_recebido_no_periodo: Number(periodReceived.toFixed(2)),
-    titulos_com_baixa_no_periodo_sem_recebimento: settledWithoutReceipt.length,
+    titulos_baixados_no_periodo: settledInPeriod.length,
+    titulos_baixados_com_receipt_real: comReceiptReal,
+    titulos_baixados_intercompany: intercompany,
+    titulos_com_baixa_no_periodo_sem_recebimento: semReceipt,
+    // Conferência: as duas contagens vêm da mesma regra e têm de bater.
+    conferencia_sem_recebimento_bate: semReceipt === settledWithoutReceipt.length,
     titulos_com_baixa_no_periodo_sem_recebimento_ids: settledWithoutReceipt
       .slice(0, limit)
       .map((row) => row.receivableExternalId),
