@@ -43,6 +43,17 @@ export function getNodeDecision(
 }
 
 /**
+ * Nó estrutural: só agrupa visualmente (ex.: seção do menu lateral sem recurso
+ * 1:1 no catálogo). Não tem `resourceKey`, logo não recebe decisão individual
+ * nem entra nos contadores.
+ */
+export function isStructuralPermissionTreeNode(
+  node: Pick<PermissionTreeNode, "resourceKey">
+): boolean {
+  return String(node?.resourceKey ?? "").trim() === "";
+}
+
+/**
  * Resultado efetivo na árvore admin.
  * Alinhado ao resolvedor: só DENY explícito do ancestral bloqueia filhos
  * (ALLOW filho vence pai sem grant / baseline Negado).
@@ -100,6 +111,10 @@ export function countPermissionTreeDecisions(
   let total = 0;
   const walk = (list: readonly PermissionTreeNode[]) => {
     for (const n of list) {
+      if (isStructuralPermissionTreeNode(n)) {
+        walk(n.children);
+        continue;
+      }
       total += 1;
       const d = getNodeDecision(decisions, n.id);
       if (d === "allow") allowed += 1;
@@ -171,6 +186,22 @@ export function collectPermissionTreeSubtreeIds(
   const ids: string[] = [];
   const walk = (n: PermissionTreeNode) => {
     ids.push(n.id);
+    for (const c of n.children) walk(c);
+  };
+  walk(root);
+  return ids;
+}
+
+/** Ids do ramo que aceitam decisão (exclui seções estruturais). */
+export function collectDecidablePermissionTreeSubtreeIds(
+  nodes: readonly PermissionTreeNode[],
+  rootId: string
+): string[] {
+  const root = findPermissionTreeNode(nodes, rootId);
+  if (!root) return [];
+  const ids: string[] = [];
+  const walk = (n: PermissionTreeNode) => {
+    if (!isStructuralPermissionTreeNode(n)) ids.push(n.id);
     for (const c of n.children) walk(c);
   };
   walk(root);
