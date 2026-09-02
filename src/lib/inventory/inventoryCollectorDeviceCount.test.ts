@@ -731,7 +731,19 @@ describe("2D regressão", () => {
     assert.deepEqual(migrations.sort(), [
       "20260819130000_inventory_collector_device_registry",
       "20260821140000_inventory_collector_device_autonomous_caps",
+      "20260919120000_collector_device_enrollment",
     ]);
+    // A allow-list sozinha não prova aditividade: cada migration do Collector
+    // é lida e auditada (comentários fora, `ON DELETE` não é DML).
+    for (const dir of migrations) {
+      const sql = read(`prisma/migrations/${dir}/migration.sql`)
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join("\n");
+      assert.doesNotMatch(sql, /\bDROP\b/i, `${dir} contém DROP`);
+      assert.doesNotMatch(sql, /\bTRUNCATE\b/i, `${dir} contém TRUNCATE`);
+      assert.doesNotMatch(sql, /DELETE\s+FROM/i, `${dir} contém DELETE FROM`);
+    }
     const collector = read("src/lib/inventory/collector/collectorRoutes.server.ts");
     assert.doesNotMatch(collector, /nomus/i);
     assert.doesNotMatch(collector, /material\.update/i);

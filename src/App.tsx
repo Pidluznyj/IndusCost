@@ -506,6 +506,17 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/collector-devices"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Autorização dos tablets do Stock Collector."
+            >
+              <InventoryModule initialTab="collectorDevices" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="inventory/counts"
           element={
             <ModulePageShell

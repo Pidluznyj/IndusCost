@@ -214,7 +214,13 @@ describe("F3 flow — quantidade e ciclo", () => {
     const page = read("src/components/inventory/collector/CollectorPage.tsx");
     assert.match(page, /resolveError/);
     assert.match(page, /Verificando dispositivo/);
-    assert.match(page, /Dispositivo não autorizado/);
+    // O aparelho desconhecido nao morre mais numa tela sem saida: cai na
+    // tela de espera, que pede autorizacao e aguarda a decisao humana.
+    assert.match(page, /CollectorEnrollmentScreen/);
+    const gate = read(
+      "src/components/inventory/collector/CollectorEnrollmentGate.tsx"
+    );
+    assert.match(gate, /Dispositivo aguardando autorização/);
     assert.match(page, /Nenhuma conferência ativa/);
   });
 

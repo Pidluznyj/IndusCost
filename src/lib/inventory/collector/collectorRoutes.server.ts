@@ -46,6 +46,12 @@ import {
   createTailscalePeerIdentityResolver,
   type TailscalePeerIdentityResolver,
 } from "./tailscaleIdentity.server.js";
+import { resolveInventoryCollectorPeerIdentity } from "./collectorPeerIdentity.server.js";
+import {
+  assertNoIdentityFieldsInBody,
+  getCollectorDeviceEnrollmentStatus,
+  requestCollectorDeviceEnrollment,
+} from "./collectorDeviceEnrollment.server.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -134,6 +140,68 @@ export function registerInventoryCollectorRoutes(
     prisma,
     identityResolver,
     trustLocalProxy,
+  });
+
+  // -------------------------------------------------------------------------
+  // Enrollment — ÚNICAS rotas do Collector fora do deviceAuth.
+  //
+  // Precisam existir sem Device Registry porque servem justamente o aparelho
+  // que ainda NÃO está cadastrado. Mesmo assim exigem identidade Tailscale
+  // confirmada server-side (peer → WhoIs → stable id): sem isso, 403 igual ao
+  // deviceAuth. Solicitar não autoriza nada — as demais rotas continuam
+  // negando até um humano aprovar.
+  // -------------------------------------------------------------------------
+
+  const denyEnrollment = (res: express.Response) =>
+    res
+      .status(403)
+      .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
+
+  app.post("/api/inventory/collector/enrollment", async (req, res) => {
+    try {
+      // Identidade vinda do cliente é recusada explicitamente (contrato claro).
+      assertNoIdentityFieldsInBody(req.body);
+
+      const identity = await resolveInventoryCollectorPeerIdentity(req, {
+        identityResolver,
+        trustLocalProxy,
+      });
+      if (!identity) return denyEnrollment(res);
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      // Setor é só uma dica de contexto para o admin: qualquer coisa que não
+      // seja string vira null em vez de virar erro na cara do operador.
+      const rawSector = body.sector ?? body.requestedSectorSlug;
+      const result = await requestCollectorDeviceEnrollment(prisma, identity, {
+        requestedSectorSlug: typeof rawSector === "string" ? rawSector : null,
+      });
+      // 202: pedido aceito e registrado — NÃO é autorização.
+      const status = result.status === "AUTHORIZED" ? 200 : 202;
+      return res.status(status).json(result);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) {
+        return respondCollectorValidationError(res, e);
+      }
+      console.error("POST /api/inventory/collector/enrollment", e);
+      return res.status(500).json({ error: "Erro ao solicitar autorização." });
+    }
+  });
+
+  app.get("/api/inventory/collector/enrollment", async (req, res) => {
+    try {
+      const identity = await resolveInventoryCollectorPeerIdentity(req, {
+        identityResolver,
+        trustLocalProxy,
+      });
+      if (!identity) return denyEnrollment(res);
+
+      const result = await getCollectorDeviceEnrollmentStatus(prisma, identity);
+      return res.json(result);
+    } catch (e: unknown) {
+      // Polling não pode inundar o log: erro inesperado é raro e vai uma vez.
+      console.error("GET /api/inventory/collector/enrollment", e);
+      return res.status(500).json({ error: "Erro ao consultar autorização." });
+    }
   });
 
   // -------------------------------------------------------------------------

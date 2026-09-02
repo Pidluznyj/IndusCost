@@ -16,7 +16,7 @@
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
-import { resolveCollectorPeerFromRequest } from "./collectorProxyPeer.js";
+import { resolveInventoryCollectorPeerIdentity } from "./collectorPeerIdentity.server.js";
 import type { TailscalePeerIdentityResolver } from "./tailscaleIdentity.server.js";
 
 export const COLLECTOR_DEVICE_UNAUTHORIZED = "COLLECTOR_DEVICE_UNAUTHORIZED";
@@ -84,13 +84,14 @@ export function requireInventoryCollectorDevice(
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const peerAddress = resolveCollectorPeerFromRequest(req, {
-        trustLocalProxy: deps.trustLocalProxy === true,
+      // Etapas 1–3 (peer → WhoIs → stable id) vivem no resolver compartilhado
+      // com o enrollment: uma única implementação da cadeia de confiança.
+      const identity = await resolveInventoryCollectorPeerIdentity(req, {
+        identityResolver: deps.identityResolver,
+        trustLocalProxy: deps.trustLocalProxy,
       });
-      if (!peerAddress) return deny(res);
-
-      const identity = await deps.identityResolver.resolve(peerAddress);
-      if (!identity?.stableNodeId) return deny(res);
+      if (!identity) return deny(res);
+      const peerAddress = identity.peerAddress;
 
       const device = await deps.prisma.inventoryCollectorDevice.findUnique({
         where: { tailscaleStableNodeId: identity.stableNodeId },

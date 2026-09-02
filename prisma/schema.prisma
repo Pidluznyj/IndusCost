@@ -6519,6 +6519,40 @@ model InventoryCollectorDevice {
   @@index([active])
 }
 
+/// Solicitação de autorização de um tablet que ainda NÃO está no Device
+/// Registry. Existir aqui NÃO autoriza nada: o Collector segue negando até um
+/// humano aprovar e nascer um InventoryCollectorDevice ativo.
+///
+/// A identidade (stable id / node / login / ip) vem SEMPRE do WhoIs server-side
+/// — nunca do corpo enviado pelo tablet. UNIQUE no stable id garante uma única
+/// solicitação por aparelho, por mais que ele recarregue a tela.
+model InventoryCollectorDeviceEnrollment {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// WhoIs → Node.StableID. Mesma chave de identidade do Device Registry.
+  tailscaleStableNodeId String    @unique
+  tailscaleNodeName     String?
+  tailscaleLoginName    String?
+  lastSeenIp            String?
+  /// Só contexto operacional do QR aberto — não participa da autorização.
+  requestedSectorSlug   String?
+  /// PENDING | APPROVED | REJECTED. Expiração é derivada de expiresAt.
+  status                String    @default("PENDING")
+  requestCount          Int       @default(1)
+  firstRequestedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  lastRequestedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  /// PENDING vencido não vira autorização: só permite renovar a solicitação.
+  expiresAt             DateTime  @db.Timestamptz(6)
+  decidedAt             DateTime? @db.Timestamptz(6)
+  decidedByUserId       String?
+  decisionNote          String?
+  /// Preenchido na aprovação — liga a solicitação ao device criado/reutilizado.
+  approvedDeviceId      String?   @db.Uuid
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, lastRequestedAt])
+}
+
 model InventoryAuditLog {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType String

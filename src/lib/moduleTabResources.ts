@@ -196,6 +196,7 @@ export type InventoryUiTabId =
   | "balances"
   | "movements"
   | "counts"
+  | "collectorDevices"
   | "reservations"
   | "audit";
 
@@ -222,6 +223,11 @@ export const INVENTORY_UI_TABS: ReadonlyArray<{
     id: "counts",
     resourceKey: "operations.inventory.counts",
     label: "Conferência Física",
+  },
+  {
+    id: "collectorDevices",
+    resourceKey: "operations.inventory.counts",
+    label: "Dispositivos do Coletor",
   },
   { id: "reservations", resourceKey: "operations.inventory", label: "Reservas" },
   { id: "audit", resourceKey: "operations.inventory", label: "Auditoria" },

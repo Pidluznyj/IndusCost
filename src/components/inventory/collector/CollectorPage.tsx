@@ -23,6 +23,10 @@ import {
   type CollectorSessionSummary,
 } from "./collectorClient";
 import {
+  CollectorEnrollmentScreen,
+  useCollectorEnrollment,
+} from "./CollectorEnrollmentGate";
+import {
   applyFailure,
   applySuccess,
   beginCount,
@@ -49,6 +53,14 @@ export function CollectorPage() {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const lastScanRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+  const [bootAttempt, setBootAttempt] = useState(0);
+
+  // Aparelho desconhecido: pede autorizacao e aguarda a decisao humana. Ao ser
+  // aprovado, recarrega o contexto sozinho.
+  const enrollment = useCollectorEnrollment({
+    enabled: boot.phase === "unauthorized",
+    onAuthorized: useCallback(() => setBootAttempt((n) => n + 1), []),
+  });
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
 
@@ -79,7 +91,7 @@ export function CollectorPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadSessions]);
+  }, [loadSessions, bootAttempt]);
 
   const handleScan = useCallback(
     async (rawText: string) => {
@@ -137,12 +149,10 @@ export function CollectorPage() {
   if (boot.phase === "unauthorized") {
     return (
       <Shell>
-        <div className="rounded-2xl border-2 border-red-500 bg-red-950/60 p-6 text-center">
-          <p className="text-2xl font-bold text-red-200">Dispositivo não autorizado</p>
-          <p className="mt-3 text-base text-red-100">
-            Este aparelho não está liberado para contagem. Acione o supervisor de estoque.
-          </p>
-        </div>
+        <CollectorEnrollmentScreen
+          state={enrollment.state}
+          onCheckNow={enrollment.checkNow}
+        />
       </Shell>
     );
   }
