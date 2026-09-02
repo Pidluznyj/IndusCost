@@ -7191,6 +7191,10 @@ model PurchaseOrderHistoryEvent {
 /// critérios de peso igual). O desempenho do fornecedor é DERIVADO destas
 /// avaliações: FinancialSupplier não recebe coluna de nota (sem stale data,
 /// sem sincronização). Auditoria/revisões ficam em PurchaseOrderHistoryEvent.
+///
+/// A avaliação é EVIDÊNCIA AUDITÁVEL: a FK usa Restrict de propósito, para que
+/// uma exclusão física do PurchaseOrder não apague a avaliação em silêncio.
+/// Excluir um pedido avaliado passa a exigir decisão humana explícita.
 model PurchaseOrderSupplierEvaluation {
   id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// UNIQUE — no máximo uma avaliação vigente por pedido.
@@ -7213,7 +7217,7 @@ model PurchaseOrderSupplierEvaluation {
   createdAt          DateTime @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 }
 
 /// Recebimento parcial/total — ledger só na confirmação (PURCHASE_RECEIPT).

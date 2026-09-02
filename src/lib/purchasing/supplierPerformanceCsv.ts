@@ -48,6 +48,9 @@ export const SUPPLIER_PERFORMANCE_DETAIL_CSV_HEADERS = [
   "purchase_order_date",
   "purchase_order_status",
   "purchase_order_amount",
+  // Sem a moeda, o valor exportado é ambíguo (o pedido pode ser USD/EUR).
+  // Nenhuma conversão cambial: valor e moeda saem como negociados.
+  "purchase_order_currency",
   "quality_score",
   "delivery_score",
   "conformity_score",
@@ -73,6 +76,8 @@ export type SupplierPerformanceDetailCsvRow = {
   purchaseOrderDate: string;
   purchaseOrderStatus: string;
   purchaseOrderAmount: number | null;
+  /** Moeda do PurchaseOrder (BRL/USD/EUR…) — sem conversão cambial. */
+  purchaseOrderCurrency: string | null;
   qualityScore: number | null;
   deliveryScore: number | null;
   conformityScore: number | null;
@@ -104,6 +109,7 @@ export function buildSupplierPerformanceDetailCsv(
         csvIsoDate(row.purchaseOrderDate),
         row.purchaseOrderStatus,
         csvNumber(row.purchaseOrderAmount, 2),
+        row.purchaseOrderCurrency,
         csvNumber(row.qualityScore, 1),
         csvNumber(row.deliveryScore, 1),
         csvNumber(row.conformityScore, 1),

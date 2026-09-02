@@ -97,6 +97,7 @@ export const SUPPLIER_EVALUATION_SCORE_MAX = 10;
 export type SupplierEvaluationErrorCode =
   | "INVALID_SUPPLIER_EVALUATION_SCORE"
   | "INVALID_SUPPLIER_EVALUATION_PAYLOAD"
+  | "INVALID_SUPPLIER_PERFORMANCE_FILTER"
   | "PURCHASE_ORDER_NOT_FOUND"
   | "PURCHASE_ORDER_NOT_ELIGIBLE_FOR_SUPPLIER_EVALUATION"
   | "SUPPLIER_EVALUATION_REVISION_CONFLICT"
@@ -105,6 +106,7 @@ export type SupplierEvaluationErrorCode =
 const ERROR_HTTP_STATUS: Record<SupplierEvaluationErrorCode, number> = {
   INVALID_SUPPLIER_EVALUATION_SCORE: 400,
   INVALID_SUPPLIER_EVALUATION_PAYLOAD: 400,
+  INVALID_SUPPLIER_PERFORMANCE_FILTER: 400,
   PURCHASE_ORDER_NOT_FOUND: 404,
   PURCHASE_ORDER_NOT_ELIGIBLE_FOR_SUPPLIER_EVALUATION: 409,
   SUPPLIER_EVALUATION_REVISION_CONFLICT: 409,
@@ -538,6 +540,22 @@ export function parseSupplierPerformanceEvaluationStatusFilter(
   return found ? found.id : "all";
 }
 
+/**
+ * Status do cadastro de fornecedor aceitos no filtro do relatório.
+ * Espelha o enum canônico `FinancialSupplierStatus` do Prisma (o motor puro é
+ * browser-safe e não pode importar @prisma/client). A paridade com o schema é
+ * garantida por teste — ver supplierPerformanceSchema.test.ts.
+ */
+export const SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES = [
+  "ACTIVE",
+  "NEEDS_REVIEW",
+  "MERGED",
+  "INACTIVE",
+] as const;
+
+export type SupplierPerformanceSupplierStatus =
+  (typeof SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES)[number];
+
 export const SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT = 50;
 export const SUPPLIER_PERFORMANCE_PAGE_SIZE_MAX = 200;
 
@@ -550,6 +568,121 @@ export function normalizeSupplierPerformancePageSize(raw: unknown): number {
   const parsed = Number.parseInt(String(Array.isArray(raw) ? raw[0] : (raw ?? "")), 10);
   if (!Number.isFinite(parsed) || parsed < 1) return SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT;
   return Math.min(parsed, SUPPLIER_PERFORMANCE_PAGE_SIZE_MAX);
+}
+
+/* ------------------------------------------------------------------ *
+ * Boundary HTTP — parsers ESTRITOS (fail-fast)
+ *
+ * Os parsers acima são tolerantes de propósito: servem à UI, onde um valor
+ * intermediário não deve explodir a tela. A API é contrato formal: um filtro
+ * enviado explicitamente e inválido NÃO pode ser ignorado em silêncio e ampliar
+ * a consulta — ele vira 400. Parâmetro AUSENTE continua usando o default.
+ *
+ * Paginação segue normalizada/clamped (padrão do repositório): `page`/`pageSize`
+ * não são filtros semânticos, e valores fora da faixa não distorcem população.
+ * ------------------------------------------------------------------ */
+
+/** Valor ausente = não informado. String vazia conta como ausente. */
+function readSingleParam(raw: unknown): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function filterError(message: string, field: string): SupplierEvaluationError {
+  return new SupplierEvaluationError(
+    "INVALID_SUPPLIER_PERFORMANCE_FILTER",
+    message,
+    field
+  );
+}
+
+/** `YYYY-MM-DD` válido, ausente = null, presente e inválido = 400. */
+export function parseSupplierPerformanceApiCivilDate(
+  raw: unknown,
+  field: "from" | "to"
+): string | null {
+  const text = readSingleParam(raw);
+  if (text == null) return null;
+  const parsed = parseSupplierPerformanceCivilDateParam(text);
+  if (!parsed) {
+    throw filterError(
+      field === "from"
+        ? "Data inicial inválida. Use o formato aaaa-mm-dd."
+        : "Data final inválida. Use o formato aaaa-mm-dd.",
+      field
+    );
+  }
+  return parsed;
+}
+
+/** Período completo; `from > to` é erro explícito, nunca resultado vazio. */
+export function parseSupplierPerformanceApiPeriod(query: {
+  from?: unknown;
+  to?: unknown;
+}): SupplierPerformancePeriod {
+  const from = parseSupplierPerformanceApiCivilDate(query.from, "from");
+  const to = parseSupplierPerformanceApiCivilDate(query.to, "to");
+  if (from && to && from > to) {
+    throw filterError(
+      "A data inicial não pode ser maior que a data final.",
+      "period"
+    );
+  }
+  return { from, to };
+}
+
+/** Ausente = "all"; presente e inválido = 400 (sem fallback silencioso). */
+export function parseSupplierPerformanceApiEvaluationStatus(
+  raw: unknown
+): SupplierPerformanceEvaluationStatusFilter {
+  const text = readSingleParam(raw);
+  if (text == null) return "all";
+  const found = SUPPLIER_PERFORMANCE_EVALUATION_STATUS_FILTERS.find(
+    (f) => f.id === text
+  );
+  if (!found) {
+    throw filterError(
+      `Filtro de avaliação inválido. Use: ${SUPPLIER_PERFORMANCE_EVALUATION_STATUS_FILTERS.map(
+        (f) => f.id
+      ).join(", ")}.`,
+      "evaluationStatus"
+    );
+  }
+  return found.id;
+}
+
+/** Ausente = "name"; presente e inválido = 400. */
+export function parseSupplierPerformanceApiSort(
+  raw: unknown
+): SupplierPerformanceReportSort {
+  const text = readSingleParam(raw);
+  if (text == null) return "name";
+  if (!(SUPPLIER_PERFORMANCE_REPORT_SORTS as readonly string[]).includes(text)) {
+    throw filterError(
+      `Ordenação inválida. Use: ${SUPPLIER_PERFORMANCE_REPORT_SORTS.join(", ")}.`,
+      "sort"
+    );
+  }
+  return text as SupplierPerformanceReportSort;
+}
+
+/** Ausente = sem filtro (null); presente e inválido = 400. */
+export function parseSupplierPerformanceApiSupplierStatus(
+  raw: unknown
+): SupplierPerformanceSupplierStatus | null {
+  const text = readSingleParam(raw);
+  if (text == null) return null;
+  if (!(SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES as readonly string[]).includes(text)) {
+    throw filterError(
+      `Status de fornecedor inválido. Use: ${SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES.join(
+        ", "
+      )}.`,
+      "supplierStatus"
+    );
+  }
+  return text as SupplierPerformanceSupplierStatus;
 }
 
 /* ------------------------------------------------------------------ *
@@ -699,6 +832,45 @@ export function formatSupplierScore(
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
+}
+
+/** Código ISO-4217 tem exatamente 3 letras. */
+const CURRENCY_CODE_RE = /^[A-Za-z]{3}$/;
+
+/**
+ * Valor do Pedido de Compra na MOEDA DO PRÓPRIO PEDIDO.
+ *
+ * `PurchaseOrder.currency` pode ser BRL, USD, EUR… — presumir BRL falsifica o
+ * valor exibido. Não há conversão cambial em lugar nenhum: só apresentação do
+ * `totalAmountSnapshot` na moeda em que ele foi negociado.
+ *
+ * Moeda ausente/inválida por dado histórico inesperado não quebra a tela e
+ * NUNCA vira "R$": cai para `CÓDIGO 1.000,00`, preservando a rastreabilidade.
+ */
+export function formatPurchaseOrderAmount(
+  value: number | null | undefined,
+  currency: string | null | undefined
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const code = typeof currency === "string" ? currency.trim().toUpperCase() : "";
+  const amount = value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (!CURRENCY_CODE_RE.test(code)) {
+    return code ? `${code} ${amount}` : amount;
+  }
+  try {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    // Código com formato válido mas desconhecido pelo runtime (ex.: "XYZ").
+    return `${code} ${amount}`;
+  }
 }
 
 export function formatSupplierCoverage(value: number | null | undefined): string {

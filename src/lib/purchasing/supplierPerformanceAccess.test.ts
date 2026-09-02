@@ -288,6 +288,122 @@ describe("feature flag ligada — permissões", () => {
       query: { supplierId: "'; DROP TABLE x; --" },
     });
     assert.equal(res.statusCode, 400);
-    assert.deepEqual(res.body, { error: "supplierId inválido." });
+    assert.equal(
+      (res.body as { code?: string }).code,
+      "INVALID_SUPPLIER_PERFORMANCE_FILTER"
+    );
   });
+});
+
+/**
+ * Filtro enviado explicitamente e inválido NÃO pode ser ignorado: ignorar
+ * ampliaria a consulta (from inválido -> período aberto) ou devolveria dataset
+ * vazio silencioso (from > to). Contrato formal: 400.
+ */
+describe("filtros inválidos no boundary HTTP", () => {
+  const PERFORMANCE_ROUTES = [
+    "/api/supplier-performance/suppliers/:supplierId",
+    "/api/supplier-performance/report",
+    "/api/supplier-performance/report.csv",
+    "/api/supplier-performance/orders.csv",
+  ];
+
+  const VALID_SUPPLIER_ID = "11111111-1111-4111-8111-111111111111";
+
+  async function callReport(query: Record<string, string>) {
+    process.env[FLAG_ENV] = "1";
+    const { routes } = register(ALL_PERMISSIONS);
+    return runRoute(findRoute(routes, "GET", "/api/supplier-performance/report"), { query });
+  }
+
+  function assertFilterRejected(res: FakeResponse, field: string) {
+    assert.equal(res.statusCode, 400);
+    const body = res.body as { code?: string; field?: string; error?: string };
+    assert.equal(body.code, "INVALID_SUPPLIER_PERFORMANCE_FILTER");
+    assert.equal(body.field, field);
+    assert.ok(body.error && body.error.length > 0);
+  }
+
+  for (const bad of ["abc", "2026-13-01", "2026-02-30"]) {
+    it(`from="${bad}" -> 400 em todas as rotas de desempenho`, async () => {
+      process.env[FLAG_ENV] = "1";
+      const { routes } = register(ALL_PERMISSIONS);
+      for (const path of PERFORMANCE_ROUTES) {
+        const res = await runRoute(findRoute(routes, "GET", path), {
+          params: { supplierId: VALID_SUPPLIER_ID },
+          query: { from: bad },
+        });
+        assertFilterRejected(res, "from");
+      }
+    });
+  }
+
+  for (const bad of ["abc", "2026-00-10"]) {
+    it(`to="${bad}" -> 400`, async () => {
+      assertFilterRejected(await callReport({ to: bad }), "to");
+    });
+  }
+
+  it("from > to -> 400 (nunca dataset vazio silencioso)", async () => {
+    assertFilterRejected(
+      await callReport({ from: "2026-09-30", to: "2026-09-01" }),
+      "period"
+    );
+  });
+
+  it("evaluationStatus inválido -> 400 (sem fallback para all)", async () => {
+    process.env[FLAG_ENV] = "1";
+    const { routes } = register(ALL_PERMISSIONS);
+    const res = await runRoute(
+      findRoute(routes, "GET", "/api/supplier-performance/suppliers/:supplierId"),
+      {
+        params: { supplierId: VALID_SUPPLIER_ID },
+        query: { evaluationStatus: "banana" },
+      }
+    );
+    assertFilterRejected(res, "evaluationStatus");
+  });
+
+  it("sort inválido -> 400 (sem fallback para name)", async () => {
+    assertFilterRejected(await callReport({ sort: "foobar" }), "sort");
+  });
+
+  it("supplierStatus inválido -> 400 (não consulta todos)", async () => {
+    assertFilterRejected(await callReport({ supplierStatus: "INVALIDO" }), "supplierStatus");
+  });
+
+  /**
+   * Filtros ausentes ou válidos NÃO podem gerar erro de filtro. O 400 esperado
+   * aqui é o do `supplierId` do path (checado antes do banco), o que mantém o
+   * teste livre de PostgreSQL — o aceite dos valores em si está coberto nos
+   * testes do parser puro.
+   */
+  for (const [label, query] of [
+    ["ausentes", {}],
+    [
+      "válidos",
+      {
+        from: "2026-02-01",
+        to: "2026-02-28",
+        evaluationStatus: "pending",
+        page: "2",
+        pageSize: "10",
+      },
+    ],
+  ] as const) {
+    it(`filtros ${label} não produzem erro de filtro`, async () => {
+      process.env[FLAG_ENV] = "1";
+      const { routes } = register(ALL_PERMISSIONS);
+      const res = await runRoute(
+        findRoute(routes, "GET", "/api/supplier-performance/suppliers/:supplierId"),
+        { params: { supplierId: "nao-uuid" }, query }
+      );
+      assert.equal(res.statusCode, 400);
+      assert.deepEqual(res.body, { error: "supplierId inválido." });
+      assert.notEqual(
+        (res.body as { code?: string }).code,
+        "INVALID_SUPPLIER_PERFORMANCE_FILTER"
+      );
+    });
+  }
 });

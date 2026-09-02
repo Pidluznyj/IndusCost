@@ -14,6 +14,7 @@ import {
   SUPPLIER_PERFORMANCE_METHODOLOGY_TEXT,
   SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT,
   SUPPLIER_PERFORMANCE_PAGE_SIZE_MAX,
+  SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES,
   SupplierEvaluationError,
   assertPurchaseOrderSupplierEvaluationEligible,
   averageScoreOrNull,
@@ -21,6 +22,7 @@ import {
   buildSupplierPerformanceSummary,
   computeSupplierOrderEvaluation,
   describePurchaseOrderSupplierEvaluationEligibility,
+  formatPurchaseOrderAmount,
   formatSupplierCoverage,
   formatSupplierScore,
   isPurchaseOrderSupplierEvaluationEligible,
@@ -29,6 +31,10 @@ import {
   normalizeSupplierEvaluationRevisionReason,
   normalizeSupplierPerformancePage,
   normalizeSupplierPerformancePageSize,
+  parseSupplierPerformanceApiEvaluationStatus,
+  parseSupplierPerformanceApiPeriod,
+  parseSupplierPerformanceApiSort,
+  parseSupplierPerformanceApiSupplierStatus,
   parseSupplierPerformanceCivilDateParam,
   parseSupplierPerformanceEvaluationStatusFilter,
   parseSupplierPerformanceReportSort,
@@ -491,6 +497,158 @@ describe("apresentação pt-BR", () => {
   });
 });
 
+describe("moeda do Pedido de Compra", () => {
+  /** Intl separa símbolo e número com NBSP (U+00A0). */
+  const money = (value: number | null | undefined, currency: string | null | undefined) =>
+    formatPurchaseOrderAmount(value, currency).replace(/ /g, " ");
+
+  it("respeita a moeda negociada — BRL/USD/EUR", () => {
+    assert.equal(money(1000, "BRL"), "R$ 1.000,00");
+    assert.equal(money(1000, "USD"), "US$ 1.000,00");
+    assert.equal(money(1000, "EUR"), "€ 1.000,00");
+  });
+
+  it("não converte câmbio: mesmo número em moedas diferentes", () => {
+    const brl = formatPurchaseOrderAmount(1000, "BRL");
+    const usd = formatPurchaseOrderAmount(1000, "USD");
+    assert.notEqual(brl, usd);
+    assert.match(brl, /1\.000,00/);
+    assert.match(usd, /1\.000,00/);
+  });
+
+  it("aceita código em minúsculas", () => {
+    assert.equal(money(1000, "usd"), "US$ 1.000,00");
+  });
+
+  it("moeda ausente/inválida NUNCA vira R$", () => {
+    for (const currency of [null, undefined, "", "  ", "BRLL", "1"]) {
+      const out = formatPurchaseOrderAmount(1000, currency);
+      assert.doesNotMatch(out, /R\$/, `moeda ${JSON.stringify(currency)} virou R$`);
+      assert.match(out, /1\.000,00/);
+    }
+    assert.equal(formatPurchaseOrderAmount(1000, "BRLL"), "BRLL 1.000,00");
+  });
+
+  it("valor ausente vira traço", () => {
+    assert.equal(formatPurchaseOrderAmount(null, "BRL"), "—");
+    assert.equal(formatPurchaseOrderAmount(undefined, "USD"), "—");
+    assert.equal(formatPurchaseOrderAmount(Number.NaN, "USD"), "—");
+  });
+});
+
+describe("boundary HTTP — filtros estritos (fail-fast)", () => {
+  const expectFilterError = (fn: () => unknown, field: string) => {
+    assert.throws(fn, (error: unknown) => {
+      assert.ok(error instanceof SupplierEvaluationError);
+      assert.equal(error.code, "INVALID_SUPPLIER_PERFORMANCE_FILTER");
+      assert.equal(error.httpStatus, 400);
+      assert.equal(error.field, field);
+      return true;
+    });
+  };
+
+  it("período ausente continua sem recorte", () => {
+    assert.deepEqual(parseSupplierPerformanceApiPeriod({}), { from: null, to: null });
+    assert.deepEqual(parseSupplierPerformanceApiPeriod({ from: undefined, to: undefined }), {
+      from: null,
+      to: null,
+    });
+  });
+
+  it("período válido é aceito (só from, só to, ambos)", () => {
+    assert.deepEqual(parseSupplierPerformanceApiPeriod({ from: "2026-02-01" }), {
+      from: "2026-02-01",
+      to: null,
+    });
+    assert.deepEqual(parseSupplierPerformanceApiPeriod({ to: "2026-02-28" }), {
+      from: null,
+      to: "2026-02-28",
+    });
+    assert.deepEqual(
+      parseSupplierPerformanceApiPeriod({ from: "2026-02-01", to: "2026-02-28" }),
+      { from: "2026-02-01", to: "2026-02-28" }
+    );
+  });
+
+  for (const bad of ["abc", "2026-13-01", "2026-02-30", "01/02/2026", "2026-2-1"]) {
+    it(`from="${bad}" é 400, não vira consulta mais ampla`, () => {
+      expectFilterError(() => parseSupplierPerformanceApiPeriod({ from: bad }), "from");
+    });
+  }
+
+  for (const bad of ["abc", "2026-00-10", "2026-12-32"]) {
+    it(`to="${bad}" é 400`, () => {
+      expectFilterError(() => parseSupplierPerformanceApiPeriod({ to: bad }), "to");
+    });
+  }
+
+  it("from > to é 400, não dataset vazio silencioso", () => {
+    expectFilterError(
+      () => parseSupplierPerformanceApiPeriod({ from: "2026-09-30", to: "2026-09-01" }),
+      "period"
+    );
+  });
+
+  it("from == to é válido (janela de um dia)", () => {
+    assert.deepEqual(
+      parseSupplierPerformanceApiPeriod({ from: "2026-09-01", to: "2026-09-01" }),
+      { from: "2026-09-01", to: "2026-09-01" }
+    );
+  });
+
+  it("evaluationStatus: ausente=all, válidos aceitos, inválido=400", () => {
+    assert.equal(parseSupplierPerformanceApiEvaluationStatus(undefined), "all");
+    for (const id of ["all", "pending", "evaluated", "ineligible"] as const) {
+      assert.equal(parseSupplierPerformanceApiEvaluationStatus(id), id);
+    }
+    expectFilterError(
+      () => parseSupplierPerformanceApiEvaluationStatus("banana"),
+      "evaluationStatus"
+    );
+    expectFilterError(
+      () => parseSupplierPerformanceApiEvaluationStatus("PENDING"),
+      "evaluationStatus"
+    );
+  });
+
+  it("sort: ausente=name, válidos aceitos, inválido=400", () => {
+    assert.equal(parseSupplierPerformanceApiSort(undefined), "name");
+    assert.equal(parseSupplierPerformanceApiSort("score"), "score");
+    assert.equal(parseSupplierPerformanceApiSort("coverage"), "coverage");
+    expectFilterError(() => parseSupplierPerformanceApiSort("foobar"), "sort");
+  });
+
+  it("supplierStatus: ausente=null, válidos aceitos, inválido=400", () => {
+    assert.equal(parseSupplierPerformanceApiSupplierStatus(undefined), null);
+    for (const status of SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES) {
+      assert.equal(parseSupplierPerformanceApiSupplierStatus(status), status);
+    }
+    expectFilterError(
+      () => parseSupplierPerformanceApiSupplierStatus("foobar"),
+      "supplierStatus"
+    );
+    // Não normaliza caixa: valor fora do enum canônico é rejeitado.
+    expectFilterError(
+      () => parseSupplierPerformanceApiSupplierStatus("active"),
+      "supplierStatus"
+    );
+  });
+
+  it("paginação segue normalizada (não é filtro semântico)", () => {
+    assert.equal(normalizeSupplierPerformancePage("banana"), 1);
+    assert.equal(
+      normalizeSupplierPerformancePageSize("banana"),
+      SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT
+    );
+  });
+
+  it("os parsers tolerantes da UI continuam existindo e tolerantes", () => {
+    assert.equal(parseSupplierPerformanceCivilDateParam("abc"), null);
+    assert.equal(parseSupplierPerformanceEvaluationStatusFilter("banana"), "all");
+    assert.equal(parseSupplierPerformanceReportSort("foobar"), "name");
+  });
+});
+
 describe("CSV canônico", () => {
   const detailRow = {
     supplierId: "sup-1",
@@ -501,6 +659,7 @@ describe("CSV canônico", () => {
     purchaseOrderDate: "2026-02-15T00:00:00.000Z",
     purchaseOrderStatus: "RECEBIDO",
     purchaseOrderAmount: 42000,
+    purchaseOrderCurrency: "BRL",
     qualityScore: 9,
     deliveryScore: 8,
     conformityScore: 10,
@@ -520,10 +679,21 @@ describe("CSV canônico", () => {
     const [header, line] = csv.replace("﻿", "").split("\n");
     assert.equal(
       header,
-      "supplier_id,supplier_name,supplier_document,purchase_order_id,purchase_order_code,purchase_order_date,purchase_order_status,purchase_order_amount,quality_score,delivery_score,conformity_score,service_score,overall_score,methodology_version,evaluation_revision,evaluated_by,evaluated_at,updated_by,updated_at,notes"
+      "supplier_id,supplier_name,supplier_document,purchase_order_id,purchase_order_code,purchase_order_date,purchase_order_status,purchase_order_amount,purchase_order_currency,quality_score,delivery_score,conformity_score,service_score,overall_score,methodology_version,evaluation_revision,evaluated_by,evaluated_at,updated_by,updated_at,notes"
     );
     assert.match(line, /PC-2026-0001/);
     assert.match(line, /8\.75/);
+    assert.match(line, /42000\.00,BRL,/);
+  });
+
+  it("exporta a moeda de cada pedido, sem converter câmbio", () => {
+    const csv = buildSupplierPerformanceDetailCsv([
+      { ...detailRow, purchaseOrderAmount: 1000, purchaseOrderCurrency: "USD" },
+      { ...detailRow, purchaseOrderAmount: 1000, purchaseOrderCurrency: "EUR" },
+    ]);
+    const [, usd, eur] = csv.replace("﻿", "").split("\n");
+    assert.match(usd, /1000\.00,USD,/);
+    assert.match(eur, /1000\.00,EUR,/);
   });
 
   it("pedido elegível sem avaliação sai com colunas de nota vazias (não zero)", () => {
@@ -545,8 +715,8 @@ describe("CSV canônico", () => {
       },
     ]);
     const line = csv.replace("﻿", "").split("\n")[1];
-    // 12 colunas de avaliação vazias após o valor — nenhuma vira 0.
-    assert.match(line, /RECEBIDO,42000\.00,{12}$/);
+    // 12 colunas de avaliação vazias após valor+moeda — nenhuma vira 0.
+    assert.match(line, /RECEBIDO,42000\.00,BRL,{12}$/);
   });
 
   it("neutraliza formula injection", () => {

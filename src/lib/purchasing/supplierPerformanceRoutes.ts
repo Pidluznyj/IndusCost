@@ -29,10 +29,12 @@ import {
   SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
   normalizeSupplierPerformancePage,
   normalizeSupplierPerformancePageSize,
-  parseSupplierPerformanceCivilDateParam,
-  parseSupplierPerformanceEvaluationStatusFilter,
-  parseSupplierPerformanceReportSort,
+  parseSupplierPerformanceApiEvaluationStatus,
+  parseSupplierPerformanceApiPeriod,
+  parseSupplierPerformanceApiSort,
+  parseSupplierPerformanceApiSupplierStatus,
   SUPPLIER_PERFORMANCE_METHODOLOGY_TEXT,
+  SupplierEvaluationError,
   type SupplierPerformancePeriod,
 } from "./supplierPerformance.js";
 import {
@@ -66,19 +68,32 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
 }
 
-/** Status do cadastro de fornecedor aceitos no filtro do relatório. */
-const SUPPLIER_STATUS_VALUES = ["ACTIVE", "NEEDS_REVIEW", "MERGED", "INACTIVE"] as const;
-
-function parseSupplierStatusParam(raw: unknown): string | null {
-  const value = String(Array.isArray(raw) ? raw[0] : (raw ?? "")).trim().toUpperCase();
-  return (SUPPLIER_STATUS_VALUES as readonly string[]).includes(value) ? value : null;
+/**
+ * Período do boundary HTTP: ausente = sem recorte; explicitamente inválido ou
+ * `from > to` = 400 (nunca consulta mais ampla nem dataset vazio silencioso).
+ */
+function readPeriod(req: express.Request): SupplierPerformancePeriod {
+  return parseSupplierPerformanceApiPeriod({
+    from: req.query.from,
+    to: req.query.to,
+  });
 }
 
-function readPeriod(req: express.Request): SupplierPerformancePeriod {
-  return {
-    from: parseSupplierPerformanceCivilDateParam(req.query.from),
-    to: parseSupplierPerformanceCivilDateParam(req.query.to),
-  };
+/** `supplierId` é filtro semântico: enviado e não-UUID vira 400 de domínio. */
+function readSupplierIdFilter(req: express.Request): string | null {
+  const raw = req.query.supplierId;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  if (!isUuid(text)) {
+    throw new SupplierEvaluationError(
+      "INVALID_SUPPLIER_PERFORMANCE_FILTER",
+      "Fornecedor inválido.",
+      "supplierId"
+    );
+  }
+  return text;
 }
 
 function sendCsv(res: express.Response, filename: string, csv: string): void {
@@ -174,7 +189,7 @@ export function registerSupplierPerformanceRoutes(
         }
         const payload = await buildSupplierPerformanceDetail(prisma, supplierId, {
           period: readPeriod(req),
-          evaluationStatus: parseSupplierPerformanceEvaluationStatusFilter(
+          evaluationStatus: parseSupplierPerformanceApiEvaluationStatus(
             req.query.evaluationStatus
           ),
           page: normalizeSupplierPerformancePage(req.query.page),
@@ -191,19 +206,16 @@ export function registerSupplierPerformanceRoutes(
 
   app.get("/api/supplier-performance/report", ...performanceView, async (req, res) => {
     try {
-      const supplierIdParam = req.query.supplierId
-        ? String(req.query.supplierId)
-        : null;
-      if (supplierIdParam && !isUuid(supplierIdParam)) {
-        return res.status(400).json({ error: "supplierId inválido." });
-      }
+      const supplierIdParam = readSupplierIdFilter(req);
       const period = readPeriod(req);
-      const supplierStatus = parseSupplierStatusParam(req.query.supplierStatus);
+      const supplierStatus = parseSupplierPerformanceApiSupplierStatus(
+        req.query.supplierStatus
+      );
       const payload = await buildSupplierPerformanceReport(prisma, {
         period,
         supplierId: supplierIdParam,
         supplierStatus,
-        sort: parseSupplierPerformanceReportSort(req.query.sort),
+        sort: parseSupplierPerformanceApiSort(req.query.sort),
       });
 
       // Detalhe de pedidos só quando a tela pede (impressão com detalhamento).
@@ -235,16 +247,15 @@ export function registerSupplierPerformanceRoutes(
   /** CSV consolidado por fornecedor — mesma engine/período da tela. */
   app.get("/api/supplier-performance/report.csv", ...performanceView, async (req, res) => {
     try {
-      const supplierIdParam = req.query.supplierId ? String(req.query.supplierId) : null;
-      if (supplierIdParam && !isUuid(supplierIdParam)) {
-        return res.status(400).json({ error: "supplierId inválido." });
-      }
+      const supplierIdParam = readSupplierIdFilter(req);
       const period = readPeriod(req);
       const report = await buildSupplierPerformanceReport(prisma, {
         period,
         supplierId: supplierIdParam,
-        supplierStatus: parseSupplierStatusParam(req.query.supplierStatus),
-        sort: parseSupplierPerformanceReportSort(req.query.sort),
+        supplierStatus: parseSupplierPerformanceApiSupplierStatus(
+          req.query.supplierStatus
+        ),
+        sort: parseSupplierPerformanceApiSort(req.query.sort),
       });
       return sendCsv(
         res,
@@ -260,15 +271,14 @@ export function registerSupplierPerformanceRoutes(
   /** CSV detalhado (uma linha por pedido elegível) — gerado no backend. */
   app.get("/api/supplier-performance/orders.csv", ...performanceView, async (req, res) => {
     try {
-      const supplierIdParam = req.query.supplierId ? String(req.query.supplierId) : null;
-      if (supplierIdParam && !isUuid(supplierIdParam)) {
-        return res.status(400).json({ error: "supplierId inválido." });
-      }
+      const supplierIdParam = readSupplierIdFilter(req);
       const period = readPeriod(req);
       const rows = await buildSupplierPerformanceDetailCsvRows(prisma, {
         period,
         supplierId: supplierIdParam,
-        supplierStatus: parseSupplierStatusParam(req.query.supplierStatus),
+        supplierStatus: parseSupplierPerformanceApiSupplierStatus(
+          req.query.supplierStatus
+        ),
       });
       return sendCsv(
         res,

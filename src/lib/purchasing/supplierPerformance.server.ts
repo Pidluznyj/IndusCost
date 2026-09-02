@@ -825,6 +825,7 @@ export async function buildSupplierPerformanceDetailCsvRows(
       status: true,
       issuedAt: true,
       createdAt: true,
+      currency: true,
       totalAmountSnapshot: true,
       supplierId: true,
       supplierDisplayNameSnapshot: true,
@@ -850,6 +851,8 @@ export async function buildSupplierPerformanceDetailCsvRows(
       purchaseOrderStatus: order.status,
       purchaseOrderAmount:
         order.totalAmountSnapshot == null ? null : decToNumber(order.totalAmountSnapshot),
+      // Valor e moeda saem como negociados — sem conversão cambial.
+      purchaseOrderCurrency: order.currency ?? null,
       qualityScore: evaluation ? decToNumber(evaluation.qualityScore) : null,
       deliveryScore: evaluation ? decToNumber(evaluation.deliveryScore) : null,
       conformityScore: evaluation ? decToNumber(evaluation.conformityScore) : null,

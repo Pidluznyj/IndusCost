@@ -1,8 +1,19 @@
 -- OP-26 — Avaliação de Pedido de Compra e Desempenho de Fornecedores.
 --
--- Migration ADITIVA. Auditoria:
---   0 DROP, 0 RENAME, 0 DELETE, 0 TRUNCATE, 0 ALTER em tabela existente.
+-- Migration ADITIVA e DETERMINÍSTICA (fail-fast).
+--   Não executa DROP, TRUNCATE, RENAME nem DELETE FROM.
+--   Não altera nenhuma tabela existente: o único ALTER TABLE é a FK da tabela nova.
 --   1 CREATE TABLE, 1 índice único, 1 FOREIGN KEY.
+--
+-- DDL sem `IF NOT EXISTS` e sem `EXCEPTION WHEN duplicate_object` de propósito:
+-- migration versionada não pode mascarar drift nem estado parcial do banco. Se a
+-- tabela, o índice ou a constraint já existirem inesperadamente, esta migration
+-- DEVE falhar e exigir investigação.
+--
+-- FK com ON DELETE RESTRICT (referential action, não DML): a avaliação é
+-- evidência auditável do processo de qualificação de fornecedores. Uma exclusão
+-- física do PurchaseOrder não pode apagar a avaliação em silêncio — apagar um
+-- pedido avaliado passa a exigir decisão humana explícita.
 --
 -- A nota do fornecedor NÃO é materializada: `FinancialSupplier` não recebe
 -- coluna nova. O desempenho é sempre derivado por agregação sobre esta tabela
@@ -18,35 +29,29 @@
 -- Notas em NUMERIC(4,2) (0.00..10.00) — nunca ponto flutuante.
 
 -- CreateTable
-CREATE TABLE IF NOT EXISTS "PurchaseOrderSupplierEvaluation" (
-  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-  "purchaseOrderId" UUID NOT NULL,
-  "qualityScore" DECIMAL(4,2) NOT NULL,
-  "deliveryScore" DECIMAL(4,2) NOT NULL,
-  "conformityScore" DECIMAL(4,2) NOT NULL,
-  "serviceScore" DECIMAL(4,2) NOT NULL,
-  "overallScore" DECIMAL(4,2) NOT NULL,
-  "methodologyVersion" INTEGER NOT NULL DEFAULT 1,
-  "notes" TEXT,
-  "revision" INTEGER NOT NULL DEFAULT 1,
-  "createdByUserId" TEXT,
-  "createdByUserName" TEXT,
-  "updatedByUserId" TEXT,
-  "updatedByUserName" TEXT,
-  "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "PurchaseOrderSupplierEvaluation_pkey" PRIMARY KEY ("id")
+CREATE TABLE "PurchaseOrderSupplierEvaluation" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "purchaseOrderId" UUID NOT NULL,
+    "qualityScore" DECIMAL(4,2) NOT NULL,
+    "deliveryScore" DECIMAL(4,2) NOT NULL,
+    "conformityScore" DECIMAL(4,2) NOT NULL,
+    "serviceScore" DECIMAL(4,2) NOT NULL,
+    "overallScore" DECIMAL(4,2) NOT NULL,
+    "methodologyVersion" INTEGER NOT NULL DEFAULT 1,
+    "notes" TEXT,
+    "revision" INTEGER NOT NULL DEFAULT 1,
+    "createdByUserId" TEXT,
+    "createdByUserName" TEXT,
+    "updatedByUserId" TEXT,
+    "updatedByUserName" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PurchaseOrderSupplierEvaluation_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX IF NOT EXISTS "PurchaseOrderSupplierEvaluation_purchaseOrderId_key"
-  ON "PurchaseOrderSupplierEvaluation"("purchaseOrderId");
+CREATE UNIQUE INDEX "PurchaseOrderSupplierEvaluation_purchaseOrderId_key" ON "PurchaseOrderSupplierEvaluation"("purchaseOrderId");
 
 -- AddForeignKey
-DO $$ BEGIN
-  ALTER TABLE "PurchaseOrderSupplierEvaluation"
-    ADD CONSTRAINT "PurchaseOrderSupplierEvaluation_purchaseOrderId_fkey"
-    FOREIGN KEY ("purchaseOrderId") REFERENCES "PurchaseOrder"("id")
-    ON DELETE CASCADE ON UPDATE NO ACTION;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+ALTER TABLE "PurchaseOrderSupplierEvaluation" ADD CONSTRAINT "PurchaseOrderSupplierEvaluation_purchaseOrderId_fkey" FOREIGN KEY ("purchaseOrderId") REFERENCES "PurchaseOrder"("id") ON DELETE RESTRICT ON UPDATE NO ACTION;

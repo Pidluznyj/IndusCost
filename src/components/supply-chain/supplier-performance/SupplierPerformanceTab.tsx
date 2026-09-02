@@ -11,7 +11,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   SUPPLIER_EVALUATION_CRITERIA,
   SUPPLIER_PERFORMANCE_DEFAULT_PERIOD_PRESET,
@@ -21,6 +20,7 @@ import {
   SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT,
   SUPPLIER_PERFORMANCE_PERIOD_PRESETS,
   buildSupplierPerformancePeriodFromPreset,
+  formatPurchaseOrderAmount,
   formatSupplierCoverage,
   formatSupplierScore,
   parseSupplierPerformanceCivilDateParam,
@@ -385,8 +385,9 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
                       </td>
                       <td className="p-3 tabular-nums">{formatDate(order.referenceDate)}</td>
                       <td className="p-3">{PO_STATUS_LABEL[order.status] ?? order.status}</td>
+                      {/* Moeda do próprio pedido — nunca presume BRL. */}
                       <td className="p-3 tabular-nums">
-                        {order.totalAmount == null ? "—" : formatFinanceCurrency(order.totalAmount)}
+                        {formatPurchaseOrderAmount(order.totalAmount, order.currency)}
                       </td>
                       <td className="p-3 tabular-nums">
                         {order.evaluation

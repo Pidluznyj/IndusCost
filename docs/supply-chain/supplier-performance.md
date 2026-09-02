@@ -101,6 +101,15 @@ Entram no consolidado apenas pedidos que, **no momento da consulta**, estejam em
 sai do consolidado *live*, mas a avaliação e o histórico são preservados (nunca há
 DELETE).
 
+### A avaliação é evidência protegida
+
+A relação entre `PurchaseOrder` e a avaliação usa **restrição de exclusão**
+(`onDelete: Restrict` / `ON DELETE RESTRICT`). Uma avaliação **não** é removida
+automaticamente pela exclusão do pedido: apagar fisicamente um pedido já avaliado
+falha no banco e passa a exigir decisão humana explícita. Isso protege a
+evidência auditável do processo de qualificação de fornecedores — nada de
+cascade delete silencioso.
+
 ### Por que não gravar a nota em `FinancialSupplier`
 
 É proibido criar `FinancialSupplier.score` / `.rating` / `.qualityScore` /
@@ -230,17 +239,53 @@ Query do detalhe: `from`, `to` (civil `YYYY-MM-DD`), `evaluationStatus`
 Query do relatório: `from`, `to`, `supplierId`, `supplierStatus`, `sort`
 (`name|score|coverage`), `includeOrders=1`.
 
+### Filtros são fail-fast
+
+A API é contrato formal: um filtro **enviado explicitamente e inválido** retorna
+`400 INVALID_SUPPLIER_PERFORMANCE_FILTER` (com `field`) — nunca é ignorado em
+silêncio. Ignorar ampliaria a consulta (`from` inválido viraria período aberto)
+ou devolveria dataset vazio sem explicação (`from > to`).
+
+| Situação | Resultado |
+|---|---|
+| `from`/`to` ausentes | sem recorte de período |
+| `from`/`to` fora de `YYYY-MM-DD` ou data impossível | `400`, `field: from`/`to` |
+| `from > to` | `400`, `field: period` |
+| `evaluationStatus` ausente | `all` |
+| `evaluationStatus` fora da lista | `400` |
+| `sort` ausente | `name` |
+| `sort` fora da lista | `400` |
+| `supplierStatus` ausente | sem filtro |
+| `supplierStatus` fora de `FinancialSupplierStatus` | `400` |
+| `supplierId` não-UUID | `400` |
+| `page` / `pageSize` | normalizados/clamped (não são filtros semânticos) |
+
+Os parsers tolerantes (`parseSupplierPerformance*`) continuam existindo para a
+UI, onde um valor intermediário não deve explodir a tela; o boundary HTTP usa os
+parsers estritos `parseSupplierPerformanceApi*`.
+
 ### Códigos de erro
 
 ```text
 400  INVALID_SUPPLIER_EVALUATION_SCORE
 400  INVALID_SUPPLIER_EVALUATION_PAYLOAD
+400  INVALID_SUPPLIER_PERFORMANCE_FILTER
 403  (sem permissão)
 404  PURCHASE_ORDER_NOT_FOUND / SUPPLIER_NOT_FOUND
 404  API route not found          (feature flag OFF)
 409  PURCHASE_ORDER_NOT_ELIGIBLE_FOR_SUPPLIER_EVALUATION
 409  SUPPLIER_EVALUATION_REVISION_CONFLICT
 ```
+
+### Moeda
+
+O valor exibido/exportado respeita `PurchaseOrder.currency` (BRL, USD, EUR…) via
+`formatPurchaseOrderAmount`. **Não há conversão cambial em lugar nenhum**: valor
+e moeda saem exatamente como negociados. Moeda ausente ou inválida cai para
+`CÓDIGO 1.000,00` e nunca é apresentada como `R$`. O CSV detalhado traz
+`purchase_order_currency` ao lado de `purchase_order_amount`. O relatório
+consolidado não soma valores financeiros — a nota não depende de valor, então
+não existe total multi-moeda.
 
 ## 13. Experiência
 

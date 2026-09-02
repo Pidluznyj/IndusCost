@@ -9,6 +9,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { scanSourceForOfficialEngineBoundary } from "@/src/lib/supply-chain/officialEngineBoundaryScan.js";
+import { SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES } from "./supplierPerformance.js";
 
 const ROOT = process.cwd();
 const read = (relative: string) => readFileSync(join(ROOT, relative), "utf8");
@@ -69,6 +70,24 @@ describe("schema — aditivo e sem nota no cadastro do fornecedor", () => {
     assert.doesNotMatch(model[0], /Float/);
   });
 
+  it("avaliação é evidência: FK Restrict, nunca Cascade", () => {
+    const model = /model PurchaseOrderSupplierEvaluation \{[\s\S]*?\n\}/.exec(SCHEMA);
+    assert.ok(model);
+    assert.match(model[0], /onDelete: Restrict/);
+    assert.doesNotMatch(model[0], /onDelete: Cascade/);
+    assert.match(model[0], /onUpdate: NoAction/);
+  });
+
+  it("a lista de status de fornecedor espelha o enum canônico do Prisma", () => {
+    const block = /enum FinancialSupplierStatus \{([\s\S]*?)\n\}/.exec(SCHEMA);
+    assert.ok(block);
+    const fromSchema = block[1]
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("/"));
+    assert.deepEqual([...SUPPLIER_PERFORMANCE_SUPPLIER_STATUSES].sort(), fromSchema.sort());
+  });
+
   it("FinancialSupplier continua sem coluna de score/rating", () => {
     const model = /model FinancialSupplier \{[\s\S]*?\n\}/.exec(SCHEMA);
     assert.ok(model);
@@ -86,13 +105,29 @@ describe("migration — 100% aditiva e ordenada", () => {
 
   it("só CREATE TABLE + índice único + FK", () => {
     const sql = sqlStatements(MIGRATION);
-    assert.match(sql, /CREATE TABLE IF NOT EXISTS "PurchaseOrderSupplierEvaluation"/);
+    assert.match(sql, /CREATE TABLE "PurchaseOrderSupplierEvaluation"/);
     assert.match(
       sql,
-      /CREATE UNIQUE INDEX IF NOT EXISTS "PurchaseOrderSupplierEvaluation_purchaseOrderId_key"/
+      /CREATE UNIQUE INDEX "PurchaseOrderSupplierEvaluation_purchaseOrderId_key"/
     );
     assert.match(sql, /FOREIGN KEY \("purchaseOrderId"\) REFERENCES "PurchaseOrder"\("id"\)/);
     assert.match(sql, /DECIMAL\(4,2\)/);
+  });
+
+  it("DDL determinístico: sem IF NOT EXISTS nem silenciamento de erro", () => {
+    const sql = sqlStatements(MIGRATION);
+    // Migration versionada não pode mascarar drift: conflito inesperado DEVE falhar.
+    assert.doesNotMatch(sql, /IF NOT EXISTS/i);
+    assert.doesNotMatch(sql, /IF EXISTS/i);
+    assert.doesNotMatch(sql, /duplicate_object/i);
+    assert.doesNotMatch(sql, /EXCEPTION\s+WHEN/i);
+    assert.doesNotMatch(sql, /DO \$\$/);
+  });
+
+  it("FK preserva a avaliação: ON DELETE RESTRICT, nunca CASCADE", () => {
+    const sql = sqlStatements(MIGRATION);
+    assert.match(sql, /ON DELETE RESTRICT ON UPDATE NO ACTION/);
+    assert.doesNotMatch(sql, /ON DELETE CASCADE/i);
   });
 
   it("zero DROP / TRUNCATE / RENAME / DELETE FROM", () => {
@@ -100,7 +135,9 @@ describe("migration — 100% aditiva e ordenada", () => {
     assert.doesNotMatch(sql, /\bDROP\b/i);
     assert.doesNotMatch(sql, /\bTRUNCATE\b/i);
     assert.doesNotMatch(sql, /\bRENAME\b/i);
+    // DML apenas: `ON DELETE RESTRICT` é referential action e é esperado aqui.
     assert.doesNotMatch(sql, /DELETE\s+FROM/i);
+    assert.match(sql, /ON DELETE/);
   });
 
   it("não altera nenhuma tabela existente", () => {
@@ -113,9 +150,12 @@ describe("migration — 100% aditiva e ordenada", () => {
 
 describe("motor puro — fonte única da regra", () => {
   it("não importa Prisma nem Node", () => {
-    assert.doesNotMatch(ENGINE, /@prisma\/client/);
+    // Import real, não menção em comentário.
+    const IMPORT_PRISMA = /(?:from|import)\s*\(?\s*["']@prisma\/client["']/;
+    assert.doesNotMatch(ENGINE, IMPORT_PRISMA);
     assert.doesNotMatch(ENGINE, /from "node:/);
-    assert.doesNotMatch(CSV, /@prisma\/client/);
+    assert.doesNotMatch(CSV, IMPORT_PRISMA);
+    assert.doesNotMatch(CSV, /from "node:/);
   });
 
   it("elegibilidade centralizada em uma função", () => {
@@ -236,6 +276,23 @@ describe("rotas — flag + permissões no backend", () => {
     assert.match(ROUTES, /normalizeSupplierPerformancePageSize/);
   });
 
+  it("filtros do boundary usam os parsers ESTRITOS, não os tolerantes da UI", () => {
+    assert.match(ROUTES, /parseSupplierPerformanceApiPeriod/);
+    assert.match(ROUTES, /parseSupplierPerformanceApiEvaluationStatus/);
+    assert.match(ROUTES, /parseSupplierPerformanceApiSort/);
+    assert.match(ROUTES, /parseSupplierPerformanceApiSupplierStatus/);
+    // Nenhum parser tolerante pode voltar a mascarar filtro inválido na API.
+    assert.doesNotMatch(ROUTES, /parseSupplierPerformanceCivilDateParam/);
+    assert.doesNotMatch(ROUTES, /parseSupplierPerformanceEvaluationStatusFilter/);
+    assert.doesNotMatch(ROUTES, /parseSupplierPerformanceReportSort\b/);
+  });
+
+  it("erro de filtro é 400 de domínio, não 500", () => {
+    assert.match(ENGINE, /INVALID_SUPPLIER_PERFORMANCE_FILTER/);
+    assert.match(ENGINE, /INVALID_SUPPLIER_PERFORMANCE_FILTER: 400/);
+    assert.match(ROUTES, /INVALID_SUPPLIER_PERFORMANCE_FILTER/);
+  });
+
   it("registrada no server.ts", () => {
     assert.match(SERVER, /registerSupplierPerformanceRoutes/);
   });
@@ -274,6 +331,14 @@ describe("UI — integrada, fail closed e em pt-BR", () => {
     assert.match(TAB, /\/purchases\/orders\/\$\{order\.id\}/);
   });
 
+  it("valor do pedido usa a moeda do pedido, nunca BRL presumido", () => {
+    assert.match(TAB, /formatPurchaseOrderAmount\(order\.totalAmount, order\.currency\)/);
+    assert.doesNotMatch(TAB, /formatFinanceCurrency/);
+    assert.match(ENGINE, /export function formatPurchaseOrderAmount/);
+    // O relatório consolidado não soma valores de moedas diferentes.
+    assert.doesNotMatch(REPORT, /totalAmount/);
+  });
+
   it("relatório declara metodologia interna e exporta pelo backend", () => {
     assert.match(APP, /finance\/suppliers\/performance/);
     assert.match(SUPPLIERS_PAGE, /Desempenho dos fornecedores/);
@@ -304,6 +369,17 @@ describe("CSV — backend, mesma fonte, anti formula injection", () => {
     assert.match(CSV, /methodology_version/);
     assert.match(CSV, /evaluation_revision/);
     assert.match(CSV, /\^\[=\+\\-@\\t\\r\]/);
+  });
+
+  it("valor exportado é rastreável: traz a moeda do pedido", () => {
+    assert.match(CSV, /"purchase_order_amount"/);
+    assert.match(CSV, /"purchase_order_currency"/);
+    assert.match(CSV, /purchaseOrderCurrency/);
+    assert.match(SERVICE, /purchaseOrderCurrency: order\.currency \?\? null/);
+    // Formatação apenas — nenhuma conversão cambial na feature.
+    for (const source of [CSV, SERVICE, ENGINE, TAB, REPORT]) {
+      assert.doesNotMatch(source, /\b(ptax|exchangeRate|convertCurrency|cambio|câmbio)\b/i);
+    }
   });
 
   it("relatório detalhado reutiliza a mesma função do CSV", () => {
