@@ -327,6 +327,7 @@ export function CommissionsReleasesPage() {
                   <th className="px-3 py-2 text-right font-medium">Liberada</th>
                   <th className="px-3 py-2 text-right font-medium">Saldo</th>
                   <th className="px-3 py-2 text-left font-medium">Status</th>
+                  <th className="px-3 py-2 text-left font-medium">Recebimento</th>
                   <th className="px-3 py-2 text-left font-medium">Baixa</th>
                   <th className="px-3 py-2 text-right font-medium">Ações</th>
                 </tr>
@@ -367,6 +368,7 @@ export function CommissionsReleasesPage() {
                       {formatFinanceCurrency(row.balanceToRelease)}
                     </td>
                     <td className="px-3 py-2">{row.status}</td>
+                    <td className="px-3 py-2">{formatDate(row.receiptDate)}</td>
                     <td className="px-3 py-2">{formatDate(row.settlementDate)}</td>
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <ReleaseRowActions

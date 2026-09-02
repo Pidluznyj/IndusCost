@@ -78,6 +78,10 @@ function scheduleResult(
 
 function mockDb(overrides: Record<string, unknown> = {}) {
   return {
+    // Fonte oficial do universo temporal do mês (recebimento real).
+    nomusReceivableReceipt: {
+      findMany: async () => [],
+    },
     commissionMonthlyClosing: {
       findMany: async () => [],
     },
@@ -263,6 +267,9 @@ describe("commissionMaterializationOrchestrator", () => {
       nomusAccountsReceivable: {
         findMany: async () => [],
       },
+      nomusReceivableReceipt: {
+        findMany: async () => [],
+      },
       commissionMonthlyClosing: {
         findMany: async () => [closing],
         update: async () => {
@@ -366,6 +373,12 @@ describe("commissionMaterializationOrchestrator", () => {
     let scheduleCalls = 0;
 
     const db = {
+      // Recebimento real em junho: é ele que coloca o título no mês.
+      nomusReceivableReceipt: {
+        findMany: async () => [
+          { receivableExternalId: receivableId, receiptDate: new Date("2026-06-15T00:00:00.000Z") },
+        ],
+      },
       nomusAccountsReceivable: {
         findMany: async () => [
           {
@@ -411,6 +424,11 @@ describe("commissionMaterializationOrchestrator", () => {
   it("ensureCommissionMaterializationForReceiptMonth não materializa NF ambígua", async () => {
     let materializeCalls = 0;
     const db = {
+      nomusReceivableReceipt: {
+        findMany: async () => [
+          { receivableExternalId: 6594, receiptDate: new Date("2026-06-15T00:00:00.000Z") },
+        ],
+      },
       nomusAccountsReceivable: {
         findMany: async () => [
           {

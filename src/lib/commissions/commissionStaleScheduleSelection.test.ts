@@ -71,8 +71,10 @@ function receivable(
   partial: Partial<CommissionReceiptReceivableInput> &
     Pick<CommissionReceiptReceivableInput, "nomusReceivableId">
 ): CommissionReceiptReceivableInput {
+  const receiptDate = new Date("2026-06-15");
+  const amountReceived = partial.amountReceived ?? 3000;
   return {
-    settlementDate: new Date("2026-06-15"),
+    settlementDate: receiptDate,
     dueDate: new Date("2026-06-30"),
     amountReceivable: 3000,
     amountReceived: 3000,
@@ -81,6 +83,16 @@ function receivable(
     customerExternalId: 200,
     customerName: "Cliente Teste",
     ...partial,
+    // Recebimento no mesmo dia da baixa — equivalente ao fixture anterior.
+    receiptCompetence: partial.receiptCompetence ?? {
+      receivableExternalId: partial.nomusReceivableId,
+      receiptDate,
+      firstReceiptDate: receiptDate,
+      receiptIds: [partial.nomusReceivableId],
+      periodReceivedAmount: amountReceived,
+      priorReceivedAmount: 0,
+      cumulativeReceivedAmount: amountReceived,
+    },
   };
 }
 

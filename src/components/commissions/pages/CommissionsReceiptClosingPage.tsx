@@ -626,9 +626,10 @@ export function CommissionsReceiptClosingPage() {
             Fechamento por recebimento
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Fechamento oficial mensal com base nos títulos de Contas a Receber baixados no mês (
-            <code>settlementDate</code>). Valores vêm exclusivamente da API — sem recálculo no
-            frontend.
+            Fechamento oficial mensal com base nos recebimentos reais do mês (
+            <code>receiptDate</code>) — a baixa do Contas a Receber (<code>settlementDate</code>)
+            é informação administrativa e não define a competência. Valores vêm exclusivamente da
+            API — sem recálculo no frontend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -1,7 +1,18 @@
 /**
- * Motor puro de prévia de comissão por recebimento (settlementDate).
+ * Motor puro de prévia de comissão por recebimento.
+ *
+ * A competência do mês vem da DATA REAL DO RECEBIMENTO
+ * (`NomusReceivableReceipt.receiptDate`), nunca da baixa do Contas a Receber.
+ * `settlementDate` continua carregada nas linhas como dado administrativo
+ * auditável ("Baixa"), sem participar de nenhuma seleção temporal.
+ *
  * Não grava fechamento — apenas calcula/agrega linhas auditáveis.
  */
+import {
+  computeCompetenceReleaseBreakdown,
+  isReceiptInCompetencePeriod,
+  type CommissionReceiptCompetence,
+} from "./commissionReceiptCompetence.js";
 import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import {
   applyCustomerExclusionToCommission,
@@ -11,6 +22,7 @@ import {
 import {
   allocateProportional,
   computeCommissionAmount,
+  RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL,
   resolveReceivableCommissionPrincipal,
   roundMoney,
 } from "./commission-money.js";
@@ -175,7 +187,16 @@ export type CommissionReceiptReceivableInput = {
   nomusReceivableId: number;
   receivableNumber?: string | null;
   installmentNumber?: number | null;
+  /** Baixa administrativa (`contasReceber.dataBaixa`) — auditoria, NÃO competência. */
   settlementDate: Date | null;
+  /**
+   * Competência oficial do período: eventos de `NomusReceivableReceipt` do mês
+   * (somados) e o acumulado anterior, para liberação incremental.
+   *
+   * Ausente ⇒ o título NÃO tem recebimento no período e não entra no fechamento
+   * por recebimento. Não existe fallback para `settlementDate`.
+   */
+  receiptCompetence?: CommissionReceiptCompetence | null;
   dueDate?: Date | null;
   amountReceivable: number;
   amountReceived: number;
@@ -234,7 +255,12 @@ export type CommissionReceiptPreviewLine = {
   nomusReceivableId: number;
   receivableNumber: string | null;
   installmentNumber: number | null;
+  /** Baixa administrativa — exibida como "Baixa", nunca como "Recebimento". */
   settlementDate: string;
+  /** Data real do recebimento que definiu a competência — exibida como "Recebimento". */
+  receiptDate?: string | null;
+  /** Ids dos eventos `recebimentos` do período (auditoria; fora do hash do ledger). */
+  receiptIds?: number[];
   dueDate: string | null;
   receivableAmount: number;
   receivedAmount: number;
@@ -353,17 +379,75 @@ export function isDateInReceiptPreviewPeriod(
   return ts >= from.getTime() && ts <= to.getTime();
 }
 
-export function filterSettledReceivablesForPreview(
+/**
+ * Títulos cuja comissão é liberada NESTE mês.
+ *
+ * Fonte da competência: eventos de recebimento do período
+ * (`receiptCompetence`). A baixa (`settlementDate`) não é consultada aqui —
+ * recebimento em 31/07 baixado em 03/08 pertence a JULHO.
+ *
+ * Sem `receiptCompetence` o título simplesmente não entra: a ausência de
+ * recebimento é tratada como inconsistência a montante
+ * (`detectSettledWithoutReceipt`), nunca como fallback para a baixa.
+ */
+export function filterReceivablesByReceiptCompetence(
   receivables: CommissionReceiptReceivableInput[],
   year: number,
   month: number
 ): CommissionReceiptReceivableInput[] {
   return receivables.filter((row) => {
     if (row.cancelled || row.suspended) return false;
-    if (roundMoney(row.amountReceived) <= 0) return false;
-    if (!row.settlementDate) return false;
-    return isDateInReceiptPreviewPeriod(row.settlementDate, year, month);
+    const competence = row.receiptCompetence;
+    if (!competence) return false;
+    if (roundMoney(competence.periodReceivedAmount) <= 0) return false;
+    return isReceiptInCompetencePeriod(competence.receiptDate, year, month);
   });
+}
+
+/** Campos de auditoria da competência para a linha de prévia. */
+export function resolveReceiptCompetenceLineFields(
+  receivable: CommissionReceiptReceivableInput
+): { receiptDate: string | null; receiptIds: number[] } {
+  const competence = receivable.receiptCompetence;
+  if (!competence) return { receiptDate: null, receiptIds: [] };
+  return {
+    receiptDate: isoDate(competence.receiptDate),
+    receiptIds: [...competence.receiptIds],
+  };
+}
+
+/**
+ * Principal do período para linhas SEM schedule (exceções/diagnósticos).
+ * Com competência, reporta o recebido do MÊS; sem ela, o acumulado do título.
+ */
+export function resolveReceiptPeriodPrincipal(
+  receivable: CommissionReceiptReceivableInput
+): ReturnType<typeof resolveReceivableCommissionPrincipal> {
+  const competence = receivable.receiptCompetence;
+  if (!competence) {
+    return resolveReceivableCommissionPrincipal({
+      receivableOriginalAmount: receivable.amountReceivable,
+      receivedAmount: receivable.amountReceived,
+      openBalance: resolveOpenReceivableBalance(receivable),
+    });
+  }
+  const breakdown = computeCompetenceReleaseBreakdown({
+    receivableOriginalAmount: receivable.amountReceivable,
+    scheduledCommissionAmount: 0,
+    competence,
+  });
+  const original = roundMoney(Math.max(0, receivable.amountReceivable));
+  return {
+    receivableOriginalAmount: original,
+    receivedGrossAmount: breakdown.periodReceivedGrossAmount,
+    commissionPrincipalAmount: breakdown.periodPrincipalAmount,
+    ignoredFinancialChargesAmount: breakdown.periodIgnoredFinancialChargesAmount,
+    releaseRatio: original > 0 ? Math.min(1, breakdown.periodPrincipalAmount / original) : 0,
+    auditFlags:
+      breakdown.periodIgnoredFinancialChargesAmount > 0.009
+        ? [RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL]
+        : [],
+  };
 }
 
 export function resolveOpenReceivableBalance(
@@ -421,7 +505,7 @@ export function resolveScopedReceivablesForPreview(
       input.referenceDate ?? new Date()
     );
   }
-  return filterSettledReceivablesForPreview(input.receivables, input.year, input.month);
+  return filterReceivablesByReceiptCompetence(input.receivables, input.year, input.month);
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -606,16 +690,46 @@ export function releaseCommissionFromMaterializedSchedule(input: {
       ? input.schedule.receivableNominalAmount
       : input.receivable.amountReceivable
   );
+  const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
+  const effectiveRatePercent =
+    nominal > 0 ? roundMoney((scheduled / nominal) * 100) : 0;
+  const competence = input.receivable.receiptCompetence ?? null;
+
+  if (competence) {
+    // Liberação INCREMENTAL: o mês reconhece só o que foi recebido no mês.
+    // Recebimento parcial em julho e o restante em agosto liberam 40%/60% da
+    // mesma comissão — nunca 100% em cada mês.
+    const breakdown = computeCompetenceReleaseBreakdown({
+      receivableOriginalAmount: nominal,
+      scheduledCommissionAmount: scheduled,
+      competence,
+    });
+    const flags =
+      breakdown.periodIgnoredFinancialChargesAmount > 0.009
+        ? [RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL]
+        : [];
+    return {
+      receivedSharePercent: breakdown.periodSharePercent,
+      commissionableBaseAmount: breakdown.periodPrincipalAmount,
+      expectedCommissionAmount: breakdown.periodReleasedCommissionAmount,
+      effectiveRatePercent,
+      receivedGrossAmount: breakdown.periodReceivedGrossAmount,
+      commissionPrincipalAmount: breakdown.periodPrincipalAmount,
+      ignoredFinancialChargesAmount: breakdown.periodIgnoredFinancialChargesAmount,
+      auditFlags: flags,
+    };
+  }
+
+  // Sem competência de recebimento (previsão/auditoria fora de período): base no
+  // acumulado do título. Este caminho nunca é usado no fechamento mensal, porque
+  // `filterReceivablesByReceiptCompetence` só deixa passar quem tem recebimento.
   const received = roundMoney(input.receivable.amountReceived);
   const principal = resolveReceivableCommissionPrincipal({
     receivableOriginalAmount: nominal,
     receivedAmount: received,
     openBalance: resolveOpenReceivableBalance(input.receivable),
   });
-  const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
   const released = normalizeCommissionLedgerMoney(scheduled * principal.releaseRatio);
-  const effectiveRatePercent =
-    nominal > 0 ? roundMoney((scheduled / nominal) * 100) : 0;
 
   return {
     receivedSharePercent: roundMoney(principal.releaseRatio * 100),
@@ -1009,7 +1123,14 @@ function previewLineFromMaterializedSchedule(
     : null;
   const release = forecastRelease ?? settledRelease!;
   const openBalance = resolveOpenReceivableBalance(receivable);
-  const receivedAmount = isForecast ? openBalance : roundMoney(receivable.amountReceived);
+  // Fechamento reporta o recebido DO PERÍODO (evento), não o acumulado do CR.
+  const receivedAmount = isForecast
+    ? openBalance
+    : roundMoney(
+        receivable.receiptCompetence
+          ? receivable.receiptCompetence.periodReceivedAmount
+          : receivable.amountReceived
+      );
   const commissionableBase = release.commissionableBaseAmount;
   const showsSnapshotAmounts =
     status === "COMMISSIONABLE" || status === "COMMISSION_SOURCE_MISMATCH";
@@ -1090,6 +1211,8 @@ function previewLineFromMaterializedSchedule(
     receivableNumber: receivable.receivableNumber ?? schedule.receivableCode,
     installmentNumber: schedule.installmentNumber,
     settlementDate: isoDate(receivable.settlementDate) ?? "",
+    receiptDate: resolveReceiptCompetenceLineFields(receivable).receiptDate,
+    receiptIds: resolveReceiptCompetenceLineFields(receivable).receiptIds,
     dueDate: isoDate(receivable.dueDate),
     receivableAmount: normalizeCommissionLedgerMoney(
       schedule.receivableNominalAmount || receivable.amountReceivable
@@ -1302,11 +1425,8 @@ function buildExceptionLine(input: {
     identityCtx: input.identityCtx,
     preResolved: input.preResolvedSeller,
   });
-  const principal = resolveReceivableCommissionPrincipal({
-    receivableOriginalAmount: receivable.amountReceivable,
-    receivedAmount: receivable.amountReceived,
-    openBalance: resolveOpenReceivableBalance(receivable),
-  });
+  const principal = resolveReceiptPeriodPrincipal(receivable);
+  const competenceFields = resolveReceiptCompetenceLineFields(receivable);
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
       year,
@@ -1324,6 +1444,8 @@ function buildExceptionLine(input: {
     receivableNumber: receivable.receivableNumber ?? null,
     installmentNumber: receivable.installmentNumber ?? null,
     settlementDate: isoDate(receivable.settlementDate) ?? "",
+    receiptDate: competenceFields.receiptDate,
+    receiptIds: competenceFields.receiptIds,
     dueDate: isoDate(receivable.dueDate),
     receivableAmount: normalizeCommissionLedgerMoney(receivable.amountReceivable),
     receivedAmount: principal.receivedGrossAmount,
@@ -1552,12 +1674,8 @@ function calculatePreviewLinesForReceivable(input: {
   const orderItemsTotal = roundMoney(
     order.items.reduce((sum, item) => sum + item.itemNetAmount, 0)
   );
-  const receivedGross = roundMoney(receivable.amountReceived);
-  const principal = resolveReceivableCommissionPrincipal({
-    receivableOriginalAmount: receivable.amountReceivable,
-    receivedAmount: receivedGross,
-    openBalance: resolveOpenReceivableBalance(receivable),
-  });
+  // Com competência de recebimento, o rateio por item usa o principal DO MÊS.
+  const principal = resolveReceiptPeriodPrincipal(receivable);
   // Fallback perigosamente usava recebido bruto como base — agora rateia só o principal.
   const receivedAmount = principal.commissionPrincipalAmount;
   const allocations = allocateProportional(
@@ -1633,6 +1751,8 @@ function calculatePreviewLinesForReceivable(input: {
       receivableNumber: receivable.receivableNumber ?? null,
       installmentNumber: receivable.installmentNumber ?? null,
       settlementDate: isoDate(receivable.settlementDate) ?? "",
+      receiptDate: resolveReceiptCompetenceLineFields(receivable).receiptDate,
+      receiptIds: resolveReceiptCompetenceLineFields(receivable).receiptIds,
       dueDate: isoDate(receivable.dueDate),
       receivableAmount: normalizeCommissionLedgerMoney(receivable.amountReceivable),
       receivedAmount: principal.receivedGrossAmount,
@@ -2057,6 +2177,7 @@ export function receiptPreviewCsvHeader(): string[] {
     "ledgerLineKey",
     "nomusReceivableId",
     "installmentNumber",
+    "receiptDate",
     "settlementDate",
     "customerName",
     "orderCode",
@@ -2077,6 +2198,7 @@ export function receiptPreviewLineToCsvRow(line: CommissionReceiptPreviewLine): 
     line.ledgerLineKey,
     String(line.nomusReceivableId),
     line.installmentNumber != null ? String(line.installmentNumber) : "",
+    line.receiptDate ?? "",
     line.settlementDate,
     line.customerName ?? "",
     line.orderCode ?? "",

@@ -1,5 +1,7 @@
 /**
- * Resumo mensal oficial de comissão a pagar por recebimento (settlementDate).
+ * Resumo mensal oficial de comissão a pagar por recebimento.
+ * Competência = data real do recebimento (receiptDate). `settlementDate` viaja
+ * junto apenas como baixa administrativa auditável.
  * Lógica pura — reutiliza linhas da auditoria visual PAYABLE sem recalcular comissão.
  */
 import { roundMoney } from "./commission-money.js";

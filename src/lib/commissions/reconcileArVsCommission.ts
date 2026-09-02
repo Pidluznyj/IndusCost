@@ -16,7 +16,10 @@ export type ArReceivableSnapshot = {
   personName: string | null;
   personId: number | null;
   dueDate: Date | null;
+  /** Baixa administrativa — auditoria; não define competência. */
   settlementDate: Date | null;
+  /** Data real do recebimento — define se o título libera comissão no período. */
+  receiptDate: Date | null;
   amountReceivable: number;
   amountReceived: number;
   balanceReceivable: number;
@@ -48,6 +51,9 @@ export type ArCommissionDetailLine = {
   orderCode: string | null;
   nfeNumber: string | null;
   dueDate: string | null;
+  /** Data real do recebimento no período. */
+  receiptDate: string | null;
+  /** Baixa administrativa no CR. */
   settlementDate: string | null;
   titleAmount: number;
   receivedAmount: number;
@@ -404,15 +410,16 @@ export function buildArCommissionReconcile(input: {
     (row) => inPeriod(row.dueDate, periodFrom, periodTo),
     referenceDate
   );
+  // "Recebimentos que liberam comissão no período" = recebimento real, não baixa.
   const arBySettlement = aggregateArMetrics(
     arRows,
-    (row) => inPeriod(row.settlementDate, periodFrom, periodTo),
+    (row) => inPeriod(row.receiptDate, periodFrom, periodTo),
     referenceDate
   );
 
   const commissionByReceivable = aggregateCommissionByReceivable(payableRows, identityCtx);
   const settledInPeriod = arRows.filter((row) =>
-    inPeriod(row.settlementDate, periodFrom, periodTo)
+    inPeriod(row.receiptDate, periodFrom, periodTo)
   );
 
   const details: ArCommissionDetailLine[] = [];
@@ -478,6 +485,7 @@ export function buildArCommissionReconcile(input: {
       orderCode: firstRow?.orderCode ?? null,
       nfeNumber: firstRow?.nfeNumber ?? ar.sourceInvoiceNumber,
       dueDate: isoDate(ar.dueDate),
+      receiptDate: isoDate(ar.receiptDate),
       settlementDate: isoDate(ar.settlementDate),
       titleAmount: ar.amountReceivable,
       receivedAmount,
@@ -592,6 +600,7 @@ export function arCommissionDetailCsvHeader(): string[] {
     "clientId",
     "clientName",
     "dueDate",
+    "receiptDate",
     "settlementDate",
     "amount",
     "receivedAmount",
@@ -613,6 +622,7 @@ export function arCommissionDetailToCsvRow(line: ArCommissionDetailLine): unknow
     line.clientId,
     line.customer,
     line.dueDate,
+    line.receiptDate,
     line.settlementDate,
     line.titleAmount,
     line.receivedAmount,

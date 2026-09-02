@@ -1,3 +1,8 @@
+/**
+ * Carga do motor de prévia por recebimento.
+ * O universo do mês vem de `NomusReceivableReceipt.receiptDate`; a baixa
+ * (`settlementDate`) segue lida e anexada às linhas apenas como auditoria.
+ */
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
@@ -10,6 +15,8 @@ import {
   type MaterializedReceivableScheduleInput,
   resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
+import type { CommissionReceiptCompetence } from "./commissionReceiptCompetence.js";
+import { loadCommissionReceiptCompetenceForPeriod } from "./commissionReceiptCompetence.server.js";
 import type { CommissionReceiptSellerRecordInput } from "./commissionReceiptSeller.js";
 import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
@@ -190,41 +197,57 @@ export async function loadCommissionReceiptPreview(
 ): Promise<CommissionReceiptPreviewResult> {
   const period = resolveCommissionPeriod({ year: input.year, month: input.month });
 
-  const arPrismaRows = await prisma.nomusAccountsReceivable.findMany({
-    where: {
-      settlementDate: { gte: period.from, lte: period.to },
-      amountReceived: { gt: 0 },
-      suspendCollection: { not: true },
-      OR: [{ status: null }, { status: true }],
-    },
-    select: {
-      externalId: true,
-      personId: true,
-      personName: true,
-      personCnpj: true,
-      sourceInvoiceId: true,
-      sourceInvoiceNumber: true,
-      dueDate: true,
-      settlementDate: true,
-      amountReceivable: true,
-      amountReceived: true,
-      balanceReceivable: true,
-      description: true,
-      suspendCollection: true,
-      status: true,
-    },
-  });
+  // Universo temporal OFICIAL: títulos com recebimento real no mês.
+  // A baixa (`settlementDate`) não seleciona nada — CR recebido em 31/07 e
+  // baixado em 03/08 pertence a julho, e o inverso (baixa no mês sem
+  // recebimento) vira inconsistência, nunca entrada silenciosa.
+  const competenceByReceivable = await loadCommissionReceiptCompetenceForPeriod(
+    prisma,
+    input.year,
+    input.month
+  );
+  const competenceReceivableIds = [...competenceByReceivable.keys()];
+
+  const arPrismaRows =
+    competenceReceivableIds.length > 0
+      ? await prisma.nomusAccountsReceivable.findMany({
+          where: {
+            externalId: { in: competenceReceivableIds },
+            suspendCollection: { not: true },
+            OR: [{ status: null }, { status: true }],
+          },
+          select: {
+            externalId: true,
+            personId: true,
+            personName: true,
+            personCnpj: true,
+            sourceInvoiceId: true,
+            sourceInvoiceNumber: true,
+            dueDate: true,
+            settlementDate: true,
+            amountReceivable: true,
+            amountReceived: true,
+            balanceReceivable: true,
+            description: true,
+            suspendCollection: true,
+            status: true,
+          },
+        })
+      : [];
 
   const receivables = arPrismaRows
     .map((row) => {
       const source = mapReceivableSource(row);
-      if (!source.settlementDate || decimalToNumber(row.amountReceived) <= 0) return null;
       if (row.status === false || row.suspendCollection === true) return null;
+      const receiptCompetence = competenceByReceivable.get(source.nomusReceivableId);
+      if (!receiptCompetence) return null;
       return {
         nomusReceivableId: source.nomusReceivableId,
         receivableNumber: row.sourceInvoiceNumber ?? row.description ?? null,
         installmentNumber: source.installmentNumber,
+        // Preservada como informação administrativa/auditável.
         settlementDate: source.settlementDate,
+        receiptCompetence,
         dueDate: source.dueDate,
         amountReceivable: source.amountReceivable,
         amountReceived: source.amountReceived,
@@ -336,7 +359,13 @@ export async function loadCommissionReceiptPreview(
   });
 }
 
-/** Converte linha Prisma AR para input do motor (uso em testes integrados). */
+/**
+ * Converte linha Prisma AR para input do motor (uso em testes integrados).
+ *
+ * `receiptCompetence` é o que define a competência do mês. `settlementDate`
+ * segue anexada apenas como baixa administrativa — sem ela o título continua
+ * válido, desde que exista recebimento (TESTE 5).
+ */
 export function mapNomusArRowToReceiptReceivableInput(row: {
   externalId: number;
   sourceInvoiceId: number | null;
@@ -352,14 +381,15 @@ export function mapNomusArRowToReceiptReceivableInput(row: {
   description?: string | null;
   suspendCollection?: boolean | null;
   status?: boolean | null;
-}) {
+}, receiptCompetence?: CommissionReceiptCompetence | null) {
   const source = mapReceivableSource(row);
-  if (!source.settlementDate) return null;
+  if (!receiptCompetence) return null;
   return {
     nomusReceivableId: source.nomusReceivableId,
     receivableNumber: row.sourceInvoiceNumber ?? row.description ?? null,
     installmentNumber: source.installmentNumber,
     settlementDate: source.settlementDate,
+    receiptCompetence,
     dueDate: source.dueDate,
     amountReceivable: source.amountReceivable,
     amountReceived: source.amountReceived,

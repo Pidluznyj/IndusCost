@@ -88,6 +88,7 @@ function mapRecordRow(record: {
       nomusReceivableId: schedule.nomusReceivableId,
       dueDate: schedule.dueDate,
       settlementDate: null,
+      receiptDate: null,
       commissionExpectedAmount: decimalToNumber(schedule.commissionExpectedAmount),
       commissionReleasedAmount: decimalToNumber(schedule.commissionReleasedAmount),
       receivedAmount:
@@ -110,9 +111,29 @@ async function loadReceivableSettlementMap(
   return new Map(rows.map((row) => [row.externalId, row.settlementDate]));
 }
 
+/**
+ * Data real do último recebimento por título — define o mês afetado pela
+ * liberação. Sem recebimento fica `null`: a baixa nunca vira fallback.
+ */
+async function loadReceivableReceiptMap(
+  db: Pick<PrismaClient, "nomusReceivableReceipt">,
+  receivableIds: number[]
+): Promise<Map<number, Date | null>> {
+  if (receivableIds.length === 0) return new Map();
+  const rows = await db.nomusReceivableReceipt.findMany({
+    where: { receivableExternalId: { in: receivableIds } },
+    select: { receivableExternalId: true, receiptDate: true },
+    orderBy: { receiptDate: "asc" },
+  });
+  const map = new Map<number, Date | null>();
+  for (const row of rows) map.set(row.receivableExternalId, row.receiptDate);
+  return map;
+}
+
 function attachSettlementDates(
   records: ExclusionReprocessRecordInput[],
-  settlementMap: Map<number, Date | null>
+  settlementMap: Map<number, Date | null>,
+  receiptMap: Map<number, Date | null> = new Map()
 ): ExclusionReprocessRecordInput[] {
   return records.map((record) => ({
     ...record,
@@ -121,6 +142,10 @@ function attachSettlementDates(
       settlementDate:
         schedule.nomusReceivableId != null
           ? settlementMap.get(schedule.nomusReceivableId) ?? null
+          : null,
+      receiptDate:
+        schedule.nomusReceivableId != null
+          ? receiptMap.get(schedule.nomusReceivableId) ?? null
           : null,
     })),
   }));
@@ -185,8 +210,11 @@ export async function loadExclusionReprocessRecords(
       )
     ),
   ];
-  const settlementMap = await loadReceivableSettlementMap(db, receivableIds);
-  const withSettlement = attachSettlementDates(mapped, settlementMap);
+  const [settlementMap, receiptMap] = await Promise.all([
+    loadReceivableSettlementMap(db, receivableIds),
+    loadReceivableReceiptMap(db, receivableIds),
+  ]);
+  const withSettlement = attachSettlementDates(mapped, settlementMap, receiptMap);
 
   return withSettlement.filter((record) => {
     if (!recordMatchesCustomerFilter(record, input.customerFilter)) return false;

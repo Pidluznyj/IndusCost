@@ -65,7 +65,9 @@ function baseRecord(
         id: "sch-1",
         nomusReceivableId: 7001,
         dueDate: new Date("2026-04-01"),
+        // Recebimento no mesmo dia da baixa — o mês afetado agora vem do recebimento.
         settlementDate: new Date("2026-04-10"),
+        receiptDate: new Date("2026-04-10"),
         commissionExpectedAmount: 20,
         commissionReleasedAmount: 10,
         receivedAmount: 500,

@@ -1,6 +1,6 @@
 /**
  * Reconciliação IndusCost x referência Nomus (auditoria CLI).
- * Lógica pura — reutiliza resumo monthly payable (settlementDate) sem alterar cálculo.
+ * Lógica pura — reutiliza resumo monthly payable (competência por recebimento) sem alterar cálculo.
  */
 import { roundMoney } from "./commission-money.js";
 import {

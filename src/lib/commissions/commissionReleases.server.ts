@@ -38,6 +38,9 @@ export type CommissionReleaseParcelRow = {
   nomusReceivableId: number | null;
   customerName: string | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate: string | null;
+  /** Baixa administrativa no CR. */
   settlementDate: string | null;
   installmentNumber: number | null;
   parcelAmount: number;
@@ -69,6 +72,9 @@ export type CommissionReleaseDetailPayload = {
   nomusReceivableId: number | null;
   customerName: string | null;
   dueDate: string | null;
+  /** Data real do recebimento — competência da comissão. */
+  receiptDate: string | null;
+  /** Baixa administrativa no CR. */
   settlementDate: string | null;
   installmentNumber: number | null;
   releaseRule: string;
@@ -127,7 +133,10 @@ type ScheduleRow = {
 };
 
 type ReceivableMeta = {
+  /** Baixa administrativa. */
   settlementDate: Date | null;
+  /** Data real do último recebimento — competência da comissão. */
+  receiptDate: Date | null;
   balanceReceivable: number;
   amountReceived: number;
 };
@@ -195,6 +204,7 @@ function mapScheduleRow(
     nomusReceivableId: row.nomusReceivableId,
     customerName: row.commissionRecord.customerName,
     dueDate: row.dueDate?.toISOString() ?? null,
+    receiptDate: arMeta?.receiptDate?.toISOString() ?? null,
     settlementDate: arMeta?.settlementDate?.toISOString() ?? null,
     installmentNumber: row.installmentNumber,
     parcelAmount: receivableAmount > 0 ? receivableAmount : decimalToNumber(row.openBalance),
@@ -288,6 +298,21 @@ async function buildReleasesScheduleWhere(
     and.push(ids.length > 0 ? { nomusReceivableId: { in: ids } } : { id: { in: [] } });
   }
 
+  // Competência por RECEBIMENTO real — independente da baixa.
+  if (query.receiptFrom || query.receiptTo) {
+    const receiptDate: Prisma.DateTimeFilter = {};
+    if (query.receiptFrom) receiptDate.gte = query.receiptFrom;
+    if (query.receiptTo) receiptDate.lte = query.receiptTo;
+    const receipts = await prisma.nomusReceivableReceipt.findMany({
+      where: { receiptDate },
+      select: { receivableExternalId: true },
+      distinct: ["receivableExternalId"],
+      take: 5000,
+    });
+    const ids = receipts.map((r) => r.receivableExternalId);
+    and.push(ids.length > 0 ? { nomusReceivableId: { in: ids } } : { id: { in: [] } });
+  }
+
   const filtered = and.filter((p) => Object.keys(p).length > 0);
   if (filtered.length === 1) return filtered[0]!;
   return { AND: filtered };
@@ -298,20 +323,32 @@ async function loadReceivableMeta(
 ): Promise<Map<number, ReceivableMeta>> {
   const unique = [...new Set(receivableIds.filter((id) => Number.isFinite(id)))];
   if (unique.length === 0) return new Map();
-  const rows = await prisma.nomusAccountsReceivable.findMany({
-    where: { externalId: { in: unique } },
-    select: {
-      externalId: true,
-      settlementDate: true,
-      balanceReceivable: true,
-      amountReceived: true,
-    },
-  });
+  const [rows, receipts] = await Promise.all([
+    prisma.nomusAccountsReceivable.findMany({
+      where: { externalId: { in: unique } },
+      select: {
+        externalId: true,
+        settlementDate: true,
+        balanceReceivable: true,
+        amountReceived: true,
+      },
+    }),
+    prisma.nomusReceivableReceipt.findMany({
+      where: { receivableExternalId: { in: unique } },
+      select: { receivableExternalId: true, receiptDate: true },
+      orderBy: { receiptDate: "asc" },
+    }),
+  ]);
+  const lastReceiptByReceivable = new Map<number, Date>();
+  for (const receipt of receipts) {
+    lastReceiptByReceivable.set(receipt.receivableExternalId, receipt.receiptDate);
+  }
   return new Map(
     rows.map((row) => [
       row.externalId,
       {
         settlementDate: row.settlementDate,
+        receiptDate: lastReceiptByReceivable.get(row.externalId) ?? null,
         balanceReceivable: decimalToNumber(row.balanceReceivable),
         amountReceived: decimalToNumber(row.amountReceived),
       },
@@ -526,6 +563,7 @@ export async function getCommissionReleaseDetail(
     nomusReceivableId: mapped.nomusReceivableId,
     customerName: mapped.customerName,
     dueDate: mapped.dueDate,
+    receiptDate: mapped.receiptDate,
     settlementDate: mapped.settlementDate,
     installmentNumber: mapped.installmentNumber,
     releaseRule: row.commissionRecord.releaseRule,

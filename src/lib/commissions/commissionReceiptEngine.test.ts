@@ -6,7 +6,7 @@ import {
   buildCommissionReceiptPreview,
   COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
   COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
-  filterSettledReceivablesForPreview,
+  filterReceivablesByReceiptCompetence,
   mapSnapshotItemStatusesToLedgerDiagnosis,
   releaseCommissionFromMaterializedSchedule,
   type CommissionReceiptReceivableInput,
@@ -15,6 +15,7 @@ import type {
   CommissionOrderItemSource,
   CommissionOrderSourceBundle,
 } from "./commission-types.js";
+import type { CommissionReceiptCompetence } from "./commissionReceiptCompetence.js";
 import type { CommissionSellerIdentityContext } from "./commissionSellerIdentity.js";
 import { buildVisualAuditRow } from "./commissionVisualAudit.js";
 
@@ -105,11 +106,43 @@ function makeOrderBundle(
   };
 }
 
+/**
+ * Competência default do fixture: um recebimento único no mesmo dia da baixa.
+ * Antes da correção a baixa era a fonte temporal; agora ela é só auditoria e o
+ * evento de recebimento precisa ser declarado.
+ */
+function competenceFrom(
+  receiptDate: Date,
+  periodReceivedAmount: number,
+  overrides: Partial<CommissionReceiptCompetence> = {}
+): CommissionReceiptCompetence {
+  return {
+    receivableExternalId: overrides.receivableExternalId ?? 0,
+    receiptDate,
+    firstReceiptDate: receiptDate,
+    receiptIds: [1],
+    periodReceivedAmount,
+    priorReceivedAmount: 0,
+    cumulativeReceivedAmount: periodReceivedAmount,
+    ...overrides,
+  };
+}
+
 function receivable(
   partial: Partial<CommissionReceiptReceivableInput> & Pick<CommissionReceiptReceivableInput, "nomusReceivableId">
 ): CommissionReceiptReceivableInput {
+  const settlementDate =
+    partial.settlementDate === undefined ? new Date("2026-06-15") : partial.settlementDate;
+  const amountReceived = partial.amountReceived ?? 5000;
+  const receiptCompetence =
+    partial.receiptCompetence !== undefined
+      ? partial.receiptCompetence
+      : settlementDate && amountReceived > 0
+        ? competenceFrom(settlementDate, amountReceived, {
+            receivableExternalId: partial.nomusReceivableId,
+          })
+        : null;
   return {
-    settlementDate: new Date("2026-06-15"),
     dueDate: new Date("2026-06-30"),
     amountReceivable: 5000,
     amountReceived: 5000,
@@ -118,6 +151,8 @@ function receivable(
     customerExternalId: 200,
     customerName: "Cliente Teste",
     ...partial,
+    settlementDate,
+    receiptCompetence,
   };
 }
 
@@ -860,8 +895,8 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.totalReceivedAmount, 5000);
   });
 
-  it("filterSettledReceivablesForPreview ignora cancelados e sem recebimento", () => {
-    const rows = filterSettledReceivablesForPreview(
+  it("filterReceivablesByReceiptCompetence ignora cancelados e sem recebimento", () => {
+    const rows = filterReceivablesByReceiptCompetence(
       [
         receivable({ nomusReceivableId: 1, amountReceived: 100 }),
         receivable({ nomusReceivableId: 2, amountReceived: 0 }),

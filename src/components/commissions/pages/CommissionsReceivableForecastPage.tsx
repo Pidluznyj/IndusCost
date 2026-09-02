@@ -131,7 +131,7 @@ export function CommissionsReceivableForecastPage() {
             Comissão prevista sobre títulos a receber em aberto, agrupados por{" "}
             <strong>vencimento</strong> (<code>dueDate</code>). Usa o mesmo motor do Fechamento do
             mês (schedules materializados, vendedor Nomus, exclusões). O fechamento oficial ocorre
-            na baixa (<code>settlementDate</code>). Calculado exclusivamente no backend.
+            no recebimento (<code>receiptDate</code>). Calculado exclusivamente no backend.
           </p>
           {data?.reconciliationNote ? (
             <p

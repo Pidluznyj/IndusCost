@@ -109,12 +109,23 @@ function receivable(
   settlement: string,
   total = received
 ): CommissionReceiptReceivableInput {
+  const receiptDate = new Date(settlement);
   return {
     nomusReceivableId: id,
     receivableNumber: `CR-${id}`,
     installmentNumber: 1,
-    settlementDate: new Date(settlement),
-    dueDate: new Date(settlement),
+    settlementDate: receiptDate,
+    // Recebimento no mesmo dia da baixa — equivalente ao fixture anterior.
+    receiptCompetence: {
+      receivableExternalId: id,
+      receiptDate,
+      firstReceiptDate: receiptDate,
+      receiptIds: [id],
+      periodReceivedAmount: received,
+      priorReceivedAmount: 0,
+      cumulativeReceivedAmount: received,
+    },
+    dueDate: receiptDate,
     amountReceivable: total,
     amountReceived: received,
     nomusNfeId: 100,

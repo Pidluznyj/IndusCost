@@ -288,9 +288,9 @@ export function CommissionsMonthlyClosingPage() {
             Fechamento do mês
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Esta visão considera os títulos baixados/recebidos no mês. A data usada é a data de
-            baixa/recebimento do Contas a Receber (<code>settlementDate</code>). Resumo calculado no
-            backend — sem cálculo no frontend.
+            Esta visão considera os títulos com recebimento real no mês. A data usada é a data do
+            recebimento (<code>receiptDate</code>), não a da baixa do Contas a Receber
+            (<code>settlementDate</code>). Resumo calculado no backend — sem cálculo no frontend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

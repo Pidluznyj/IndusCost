@@ -18,7 +18,9 @@ function arRow(
     personName: "Cliente A",
     personId: 1,
     dueDate: new Date("2026-05-15"),
+    // Baixa e recebimento no mesmo mês: fixture equivalente ao comportamento anterior.
     settlementDate: new Date("2026-06-10"),
+    receiptDate: new Date("2026-06-10"),
     amountReceivable: 1000,
     amountReceived: 1000,
     balanceReceivable: 0,
@@ -107,6 +109,7 @@ describe("reconcileArVsCommission", () => {
       arRows: [
         arRow(5002, {
           dueDate: new Date("2026-06-20"),
+          receiptDate: new Date("2026-07-05"),
           settlementDate: new Date("2026-07-05"),
         }),
       ],

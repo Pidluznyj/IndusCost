@@ -10,6 +10,7 @@ import {
   type CommissionMaterializationRunSummary,
 } from "./commissionMaterializationOrchestrator.js";
 import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupExclusion.js";
+import { loadCommissionCompetenceReceivableIdsForPeriod } from "./commissionReceiptCompetence.server.js";
 import type { CommissionReceivableScheduleRebuildResult } from "./commissionReceivableScheduler.js";
 import {
   materializeCommissionForSalesOrder,
@@ -277,19 +278,31 @@ export async function discoverAffectedSalesOrderRefsSince(
   return mergeAffectedSalesOrderRefs(bucket);
 }
 
+/**
+ * Pedidos afetados pelos recebimentos do mês.
+ *
+ * CRÍTICO: usa exatamente o mesmo universo temporal do motor
+ * (`loadCommissionCompetenceReceivableIdsForPeriod`). Se a materialização
+ * selecionasse por baixa e o motor por recebimento, um CR recebido em 31/07 e
+ * baixado em 03/08 cairia em NO_SCHEDULE na prévia de julho.
+ */
 export async function discoverSalesOrderRefsForReceiptMonth(
-  db: Pick<PrismaClient, "nomusAccountsReceivable" | "salesOrderNfeLink">,
+  db: Pick<
+    PrismaClient,
+    "nomusAccountsReceivable" | "salesOrderNfeLink" | "nomusReceivableReceipt"
+  >,
   year: number,
   month: number
 ): Promise<AffectedSalesOrderRef[]> {
-  const from = new Date(year, month - 1, 1);
-  const to = new Date(year, month, 0, 23, 59, 59, 999);
+  const competenceReceivableIds = await loadCommissionCompetenceReceivableIdsForPeriod(
+    db,
+    year,
+    month
+  );
+  if (competenceReceivableIds.length === 0) return [];
 
   const receivables = await db.nomusAccountsReceivable.findMany({
-    where: {
-      settlementDate: { gte: from, lte: to },
-      amountReceived: { gt: 0 },
-    },
+    where: { externalId: { in: competenceReceivableIds } },
     select: { sourceInvoiceId: true, personName: true, personCnpj: true },
   });
 
@@ -566,19 +579,21 @@ type ReceiptMonthReceivableRef = {
   sourceInvoiceId: number | null;
 };
 
+/** Mesma população do motor: títulos com recebimento real no mês. */
 export async function loadCommercialReceiptMonthReceivableRefs(
-  db: Pick<PrismaClient, "nomusAccountsReceivable">,
+  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusReceivableReceipt">,
   year: number,
   month: number
 ): Promise<ReceiptMonthReceivableRef[]> {
-  const from = new Date(year, month - 1, 1);
-  const to = new Date(year, month, 0, 23, 59, 59, 999);
+  const competenceReceivableIds = await loadCommissionCompetenceReceivableIdsForPeriod(
+    db,
+    year,
+    month
+  );
+  if (competenceReceivableIds.length === 0) return [];
 
   const receivables = await db.nomusAccountsReceivable.findMany({
-    where: {
-      settlementDate: { gte: from, lte: to },
-      amountReceived: { gt: 0 },
-    },
+    where: { externalId: { in: competenceReceivableIds } },
     select: {
       externalId: true,
       sourceInvoiceId: true,

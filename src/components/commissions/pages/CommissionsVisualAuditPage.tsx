@@ -310,8 +310,9 @@ export function CommissionsVisualAuditPage() {
             Auditoria Visual — Fechamento por Recebimento
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Audite o mesmo universo do Fechamento do mês: títulos baixados por settlementDate,
-            schedules materializados, exclusões e divergências. Resumo calculado no backend.
+            Audite o mesmo universo do Fechamento do mês: títulos com recebimento real no período
+            (receiptDate), schedules materializados, exclusões e divergências. Resumo calculado no
+            backend.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -496,7 +497,7 @@ export function CommissionsVisualAuditPage() {
       {mode === "PAYABLE" && data?.materializationSummary ? (
         <CommissionsKpiSection
           title="Resumo oficial — mesmo universo do Fechamento do mês"
-          eyebrow="Títulos baixados no período (settlementDate)"
+          eyebrow="Títulos com recebimento no período (receiptDate)"
           testId="commissions-visual-audit-official-kpi"
           minColumnWidth={240}
         >
@@ -627,6 +628,7 @@ export function CommissionsVisualAuditPage() {
                   <th className="px-2 py-2">Cód. CR</th>
                   <th className="px-2 py-2">Parc.</th>
                   <th className="px-2 py-2">Vencimento</th>
+                  <th className="px-2 py-2">Recebimento</th>
                   <th className="px-2 py-2">Baixa</th>
                   <th className="px-2 py-2 text-right">Título</th>
                   <th className="px-2 py-2 text-right">Recebido</th>
@@ -661,6 +663,7 @@ export function CommissionsVisualAuditPage() {
                     <td className="px-2 py-2">{row.nomusReceivableId ?? "—"}</td>
                     <td className="px-2 py-2">{row.installmentNumber ?? "—"}</td>
                     <td className="px-2 py-2">{formatDate(row.dueDate)}</td>
+                    <td className="px-2 py-2">{formatDate(row.receiptDate)}</td>
                     <td className="px-2 py-2">{formatDate(row.settlementDate)}</td>
                     <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivableAmount)}</td>
                     <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.receivedAmount)}</td>

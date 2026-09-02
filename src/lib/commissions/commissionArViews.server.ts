@@ -49,25 +49,29 @@ function startOfDay(d: Date): Date {
   return x;
 }
 
-function resolveSettlementRange(query: CommissionReleasesQuery): {
-  settlementFrom: Date | null;
-  settlementTo: Date | null;
+/**
+ * Janela de competência da aba "A Pagar": vem do RECEBIMENTO real, não da baixa.
+ * O filtro explícito "Baixa de/até" continua existindo e é respeitado à parte.
+ */
+function resolveReceiptCompetenceRange(query: CommissionReleasesQuery): {
+  receiptFrom: Date | null;
+  receiptTo: Date | null;
 } {
-  if (query.settlementFrom || query.settlementTo) {
-    return { settlementFrom: query.settlementFrom, settlementTo: query.settlementTo };
+  if (query.receiptFrom || query.receiptTo) {
+    return { receiptFrom: query.receiptFrom, receiptTo: query.receiptTo };
   }
   if (query.year != null && query.month != null && query.month >= 1 && query.month <= 12) {
     const from = new Date(Date.UTC(query.year, query.month - 1, 1));
     const to = new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999));
-    return { settlementFrom: from, settlementTo: to };
+    return { receiptFrom: from, receiptTo: to };
   }
   if (query.year != null) {
     return {
-      settlementFrom: new Date(Date.UTC(query.year, 0, 1)),
-      settlementTo: new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999)),
+      receiptFrom: new Date(Date.UTC(query.year, 0, 1)),
+      receiptTo: new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999)),
     };
   }
-  return { settlementFrom: null, settlementTo: null };
+  return { receiptFrom: null, receiptTo: null };
 }
 
 function enrichRow(row: CommissionReleaseParcelRow): CommissionArParcelRow {
@@ -163,7 +167,9 @@ async function listArViewPage(
   mode: "payable" | "future" | "overdue"
 ): Promise<CommissionArViewPagePayload> {
   const settlementRange =
-    mode === "payable" ? resolveSettlementRange(query) : { settlementFrom: null, settlementTo: null };
+    mode === "payable"
+      ? resolveReceiptCompetenceRange(query)
+      : { receiptFrom: null, receiptTo: null };
 
   const base = await listCommissionReleasesPage(
     {
@@ -254,6 +260,8 @@ export async function getCommissionAuditTrailDetail(input: {
       dueTo: null,
       settlementFrom: null,
       settlementTo: null,
+      receiptFrom: null,
+      receiptTo: null,
       accountStatus: null,
       releaseFilter: null,
       page: 1,
@@ -409,8 +417,10 @@ export async function buildCommissionDashboardYtd(
     receivableId: null,
     dueFrom: null,
     dueTo: null,
-    settlementFrom: yearStart,
-    settlementTo: yearEnd,
+    settlementFrom: null,
+    settlementTo: null,
+    receiptFrom: yearStart,
+    receiptTo: yearEnd,
     accountStatus: null,
     releaseFilter: null,
     page: 1,
@@ -419,8 +429,8 @@ export async function buildCommissionDashboardYtd(
 
   const [payableAll, futureAll, overdueAll, exceptionsCount] = await Promise.all([
     listCommissionPayablePage(releasesQuery, scope),
-    listCommissionFuturePage({ ...releasesQuery, settlementFrom: null, settlementTo: null }, scope),
-    listCommissionOverduePage({ ...releasesQuery, settlementFrom: null, settlementTo: null }, scope),
+    listCommissionFuturePage({ ...releasesQuery, receiptFrom: null, receiptTo: null }, scope),
+    listCommissionOverduePage({ ...releasesQuery, receiptFrom: null, receiptTo: null }, scope),
     prisma.commissionCustomerException.count({ where: { active: true } }),
   ]);
 
@@ -428,7 +438,7 @@ export async function buildCommissionDashboardYtd(
   let payableInMonth = payableAll.cards.totalReleased;
   if (month != null && month >= 1 && month <= 12) {
     const monthPayable = await listCommissionPayablePage(
-      { ...releasesQuery, settlementFrom: new Date(Date.UTC(year, month - 1, 1)), settlementTo: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)) },
+      { ...releasesQuery, receiptFrom: new Date(Date.UTC(year, month - 1, 1)), receiptTo: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)) },
       scope
     );
     payableInMonth = monthPayable.cards.totalReleased;

@@ -2982,6 +2982,77 @@ model NomusAccountsReceivable {
   @@index([sourcePresenceStatus, dueDate])
 }
 
+/// Stage local de Recebimentos Nomus (`GET /rest/recebimentos`) — evento financeiro real.
+///
+/// Fonte OFICIAL da competência mensal da comissão: `receiptDate` (dataRecebimento).
+/// `NomusAccountsReceivable.settlementDate` (dataBaixa) continua existindo e significando
+/// BAIXA ADMINISTRATIVA — nunca é usada como substituto da data de recebimento.
+///
+/// Vínculo determinístico: `receivableExternalId` → `NomusAccountsReceivable.externalId`.
+/// Um CR pode ter N recebimentos (recebimento parcial suportado pelo Nomus).
+model NomusReceivableReceipt {
+  id String @id @default(uuid())
+
+  /// recebimentos.id — identidade do evento na origem.
+  externalId Int @unique
+
+  /// recebimentos.idContaReceber — vínculo com NomusAccountsReceivable.externalId.
+  receivableExternalId Int
+
+  /// dataRecebimento como DIA CIVIL (DATE): 31/07 nunca vira 01/08 por fuso.
+  receiptDate DateTime @db.Date
+
+  /// dataCompetencia da origem — auditoria; não substitui receiptDate.
+  competenceDate DateTime? @db.Date
+
+  /// baixaContaReceber — indica se este recebimento baixou o título.
+  closesReceivable Boolean?
+
+  receivedAmount        Decimal  @db.Decimal(20, 2)
+  bankFeeAmount         Decimal? @db.Decimal(20, 2)
+  lateFeeInterestAmount Decimal? @db.Decimal(20, 2)
+  discountAmount        Decimal? @db.Decimal(20, 2)
+
+  code        String?
+  description String?
+  comments    String? @db.Text
+
+  companyId   Int?
+  companyName String?
+
+  personId   Int?
+  personName String?
+
+  bankAccountId   Int?
+  bankAccountName String?
+
+  paymentMethodId   Int?
+  paymentMethodName String?
+
+  financialClassificationId   Int?
+  financialClassificationName String?
+
+  createdByUserId   Int?
+  createdByUserName String?
+
+  createdAtNomus  DateTime?
+  modifiedAtNomus DateTime?
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt  DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([receiptDate])
+  @@index([receivableExternalId])
+  @@index([receivableExternalId, receiptDate])
+  @@index([modifiedAtNomus])
+  @@index([payloadHash])
+  @@index([syncedAt])
+}
+
 /// Stage local de Contas a Pagar Nomus (read-only sync). Base para dashboards financeiros futuros.
 model NomusAccountsPayable {
   id String @id @default(uuid())
