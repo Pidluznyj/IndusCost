@@ -3,6 +3,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import type {
   TreasuryAccountAccessLevel,
   TreasuryAccountLiquidity,
@@ -48,6 +49,7 @@ import {
   type TreasuryAccountRepository,
   type TreasuryAccountUpdateData,
 } from "../repositories/treasuryAccountRepository.server.js";
+import type { TreasuryConsolidatedMembershipRepository } from "../repositories/treasuryConsolidatedMembershipRepository.server.js";
 import {
   writeTreasuryAuditLog,
   type TreasuryAuditDb,
@@ -147,10 +149,19 @@ function requireManage(actor: TreasuryAccountActor): void {
 export function createTreasuryAccountService(deps: {
   prisma: PrismaClient;
   repository?: TreasuryAccountRepository;
+  /**
+   * Membership temporal do consolidado — mantido na MESMA transação de
+   * create / includeInConsolidated / deactivate / reactivate. Default: Prisma.
+   */
+  membershipRepository?: TreasuryConsolidatedMembershipRepository;
   /** Override para testes (fake TX). Default: `prisma.$transaction`. */
   runTransaction?: <T>(fn: (tx: TreasuryAuditDb) => Promise<T>) => Promise<T>;
 }) {
   const repo = deps.repository ?? createTreasuryAccountRepository(deps.prisma);
+  // Default Prisma entra junto com a implementação da autoridade única;
+  // até lá, sem repositório injetado o serviço não mantém membership.
+  const membershipRepo: TreasuryConsolidatedMembershipRepository | null =
+    deps.membershipRepository ?? null;
   const prisma = deps.prisma;
 
   async function requireAccessibleAccount(
@@ -327,6 +338,17 @@ export function createTreasuryAccountService(deps: {
             actor: actorCtx(actor),
           })
         );
+        if (row.includeInConsolidated) {
+          await membershipRepo?.openInterval(
+            {
+              accountId: row.id,
+              validFrom: todayTreasuryCivilDateInSaoPaulo(),
+              reason: "ACCOUNT_CREATED",
+              createdByUserId: actor.userId,
+            },
+            tx
+          );
+        }
         return row;
       });
       return toDto(actor, created, null);
@@ -424,6 +446,32 @@ export function createTreasuryAccountService(deps: {
             actor: actorCtx(actor),
           })
         );
+        if (
+          command.includeInConsolidated != null &&
+          command.includeInConsolidated !== account.includeInConsolidated
+        ) {
+          if (command.includeInConsolidated === false) {
+            await membershipRepo?.closeInterval(
+              {
+                accountId,
+                validUntil: todayTreasuryCivilDateInSaoPaulo(),
+                reason: "INCLUDE_OFF",
+                closedByUserId: actor.userId,
+              },
+              tx
+            );
+          } else {
+            await membershipRepo?.openInterval(
+              {
+                accountId,
+                validFrom: todayTreasuryCivilDateInSaoPaulo(),
+                reason: "INCLUDE_ON",
+                createdByUserId: actor.userId,
+              },
+              tx
+            );
+          }
+        }
         return row;
       });
       return toDto(actor, updated, access);
@@ -578,6 +626,27 @@ export function createTreasuryAccountService(deps: {
             actor: actorCtx(actor),
           })
         );
+        if (input.includeInConsolidated === false) {
+          await membershipRepo?.closeInterval(
+            {
+              accountId,
+              validUntil: todayTreasuryCivilDateInSaoPaulo(),
+              reason: "INCLUDE_OFF",
+              closedByUserId: actor.userId,
+            },
+            tx
+          );
+        } else if (input.includeInConsolidated === true) {
+          await membershipRepo?.openInterval(
+            {
+              accountId,
+              validFrom: todayTreasuryCivilDateInSaoPaulo(),
+              reason: "INCLUDE_ON",
+              createdByUserId: actor.userId,
+            },
+            tx
+          );
+        }
         return row;
       });
       return toDto(actor, updated, access);
@@ -695,6 +764,15 @@ export function createTreasuryAccountService(deps: {
             actor: actorCtx(actor),
           })
         );
+        await membershipRepo?.closeInterval(
+          {
+            accountId,
+            validUntil: todayTreasuryCivilDateInSaoPaulo(),
+            reason: "DEACTIVATED",
+            closedByUserId: actor.userId,
+          },
+          tx
+        );
         return row;
       });
       return toDto(actor, updated, access);
@@ -736,6 +814,17 @@ export function createTreasuryAccountService(deps: {
             actor: actorCtx(actor),
           })
         );
+        if (row.includeInConsolidated) {
+          await membershipRepo?.openInterval(
+            {
+              accountId,
+              validFrom: todayTreasuryCivilDateInSaoPaulo(),
+              reason: "REACTIVATED",
+              createdByUserId: actor.userId,
+            },
+            tx
+          );
+        }
         return row;
       });
       return toDto(actor, updated, access);
