@@ -13,8 +13,16 @@
  * sua vez consome a agenda canônica — sem cálculo próprio aqui.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
-import { ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useEffect, useId, useMemo, useState } from "react";
+import {
+  ArrowDownCircle,
+  ArrowUpCircle,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  PencilLine,
+  TriangleAlert,
+} from "lucide-react";
 import type {
   TreasuryCaixaMonthlyDueEstimate,
   TreasuryCaixaTimeline,
@@ -234,6 +242,73 @@ function ForecastPortionMark({
   );
 }
 
+type TimelineNoteTone = "info" | "warning" | "adjustment";
+
+function stopRowToggle(e: React.MouseEvent | React.KeyboardEvent) {
+  e.stopPropagation();
+}
+
+/**
+ * Ícone discreto ao lado do valor. O detalhe de auditoria vive no painel
+ * (hover/foco/click) — sempre no DOM, sem JS de abrir/fechar, para SSR,
+ * leitor de tela e os testes de markup.
+ */
+function TimelineNote({
+  testId,
+  tone,
+  label,
+  heading,
+  children,
+}: {
+  testId: string;
+  tone: TimelineNoteTone;
+  label: string;
+  heading: string;
+  children: React.ReactNode;
+}) {
+  const panelId = useId();
+  const Icon =
+    tone === "warning" ? TriangleAlert : tone === "adjustment" ? PencilLine : Info;
+  return (
+    <span
+      className="caixa-timeline-note"
+      data-testid={testId}
+      onClick={stopRowToggle}
+      onKeyDown={stopRowToggle}
+    >
+      <button
+        type="button"
+        className={cn(
+          "caixa-timeline-note-trigger",
+          tone === "warning" && "text-[#B91C1C]",
+          tone === "adjustment" && "text-[#B45309]",
+          tone === "info" && "text-[#2563EB]"
+        )}
+        aria-label={label}
+        title={label}
+        aria-describedby={panelId}
+      >
+        <Icon className="h-3 w-3" aria-hidden />
+      </button>
+      <span
+        id={panelId}
+        role="tooltip"
+        className="caixa-timeline-note-panel"
+        data-testid={`${testId}-panel`}
+      >
+        <span className="caixa-timeline-note-title">{heading}</span>
+        {children}
+      </span>
+    </span>
+  );
+}
+
+function coverageLabel(
+  coverage: NonNullable<TreasuryCaixaTimelineRow["closingCoverage"]>
+): string {
+  return `${coverage.accountsCovered} de ${coverage.accountsExpected}`;
+}
+
 /**
  * Cobertura de FECHAMENTO parcial (algumas contas do consolidado informaram
  * o saldo do dia, outras não) — avisa que o subtotal parcial NUNCA vira
@@ -248,15 +323,30 @@ function ClosingCoveragePartialMark({
   const pendingNames = coverage.pendingAccounts
     .map((a) => a.accountName)
     .join(", ");
-  const title = `Fechamento parcial: ${coverage.accountsCovered}/${coverage.accountsExpected} contas informaram o saldo do dia. Pendente: ${pendingNames}. O subtotal informado NÃO foi usado como saldo consolidado — o dia segue a cadeia calculada.`;
+  const label = `Fechamento incompleto: ${coverage.accountsCovered}/${coverage.accountsExpected} contas`;
   return (
-    <span
-      className="ml-1 inline-block align-middle rounded border border-dashed border-[#FCA5A5] bg-[#FEF2F2] px-1 text-[9px] font-bold uppercase tracking-wide text-[#B91C1C]"
-      title={title}
-      data-testid="caixa-timeline-coverage-partial"
+    <TimelineNote
+      testId="caixa-timeline-coverage-partial"
+      tone="warning"
+      label={label}
+      heading="Fechamento incompleto"
     >
-      ⚠ {coverage.accountsCovered}/{coverage.accountsExpected}
-    </span>
+      <span className="block">
+        Fechamento incompleto: {coverageLabel(coverage)} contas informaram
+        saldo.
+      </span>
+      <span className="block">
+        O subtotal não foi usado para ancorar o caixa consolidado.
+      </span>
+      {pendingNames ? (
+        <span className="block">Pendente: {pendingNames}.</span>
+      ) : null}
+      {coverage.partialSum != null ? (
+        <span className="block">
+          Subtotal informado (não usado): {money(coverage.partialSum)}.
+        </span>
+      ) : null}
+    </TimelineNote>
   );
 }
 
@@ -270,26 +360,44 @@ function ClosingManualMark({
   coverage: NonNullable<TreasuryCaixaTimelineRow["closingCoverage"]>;
 }) {
   return (
-    <span
-      className="ml-1 inline-block align-middle rounded border border-[#A7F3D0] bg-[#ECFDF5] px-1 text-[9px] font-bold uppercase tracking-wide text-[#065F46]"
-      title={`Fechamento manual completo: ${coverage.accountsCovered}/${coverage.accountsExpected} contas informaram o saldo do dia.`}
-      data-testid="caixa-timeline-closing-manual"
+    <TimelineNote
+      testId="caixa-timeline-closing-manual"
+      tone="info"
+      label={`Saldo informado manualmente. Cobertura: ${coverage.accountsCovered}/${coverage.accountsExpected}`}
+      heading="Manual"
     >
-      manual {coverage.accountsCovered}/{coverage.accountsExpected}
-    </span>
+      <span className="block">Saldo informado manualmente.</span>
+      <span className="block">
+        Cobertura: {coverageLabel(coverage)} contas.
+      </span>
+    </TimelineNote>
   );
 }
 
 /** Abertura MANUAL (proveniência declarada — distingue de "segue o fechamento anterior"). */
-function OpeningManualMark() {
+function OpeningManualMark({
+  coverage,
+}: {
+  coverage?: TreasuryCaixaTimelineRow["openingCoverage"];
+}) {
   return (
-    <span
-      className="ml-1 inline-block align-middle rounded border border-[#A7F3D0] bg-[#ECFDF5] px-1 text-[9px] font-bold uppercase tracking-wide text-[#065F46]"
-      title="Abertura informada manualmente para este dia."
-      data-testid="caixa-timeline-opening-manual"
+    <TimelineNote
+      testId="caixa-timeline-opening-manual"
+      tone="info"
+      label={
+        coverage && coverage.accountsExpected > 0
+          ? `Saldo informado manualmente. Cobertura: ${coverage.accountsCovered}/${coverage.accountsExpected}`
+          : "Saldo informado manualmente"
+      }
+      heading="Manual"
     >
-      manual
-    </span>
+      <span className="block">Saldo informado manualmente.</span>
+      {coverage && coverage.accountsExpected > 0 ? (
+        <span className="block">
+          Cobertura: {coverageLabel(coverage)} contas.
+        </span>
+      ) : null}
+    </TimelineNote>
   );
 }
 
@@ -299,30 +407,47 @@ function OpeningManualMark() {
  */
 function OpeningAdjustmentMark({ amount }: { amount: number }) {
   return (
-    <span
-      className="ml-1 inline-block align-middle rounded border border-dashed border-[#FDE68A] bg-[#FFFBEB] px-1 text-[9px] font-bold text-[#92400E]"
-      title={`Ajuste de abertura: ${money(amount)} de diferença em relação ao fechamento efetivo do dia anterior.`}
-      data-testid="caixa-timeline-opening-adjustment"
+    <TimelineNote
+      testId="caixa-timeline-opening-adjustment"
+      tone="adjustment"
+      label={`Ajuste de abertura: ${money(amount)}`}
+      heading="Ajuste de abertura"
     >
-      ajuste {money(amount)}
-    </span>
+      <span className="block">
+        Abertura manual ajustou a continuidade em {money(amount)}.
+      </span>
+    </TimelineNote>
   );
 }
 
 /**
  * Linha de HOJE cujo fechamento realizado (sem a previsão do próprio dia)
- * difere do calculado (com previsão) — mostra o valor só-realizado, já que
- * a Divergência do dia é medida contra ele (`divergenceBaseline: "REALIZED"`).
+ * difere do calculado (com previsão) — o detalhe fica no ícone, porque a
+ * célula "Terminou" mostra o fechamento previsto da linha.
  */
-function TodayRealizedMark({ closingRealized }: { closingRealized: number }) {
+function TodayRealizedMark({
+  closingRealized,
+  closingCalculated,
+}: {
+  closingRealized: number;
+  closingCalculated: number | null;
+}) {
   return (
-    <span
-      className="ml-1 inline-block align-middle rounded border border-dashed border-[#93C5FD] bg-[#EFF6FF] px-1 text-[9px] font-bold uppercase tracking-wide text-[#1E3A8A]"
-      title={`Realizado agora (sem a previsão de hoje): ${money(closingRealized)}.`}
-      data-testid="caixa-timeline-today-realized"
+    <TimelineNote
+      testId="caixa-timeline-today-realized"
+      tone="info"
+      label={`Saldo realizado agora: ${money(closingRealized)}`}
+      heading="Realizado agora"
     >
-      Realizado agora: {money(closingRealized)}
-    </span>
+      <span className="block">
+        Saldo realizado agora: {money(closingRealized)}.
+      </span>
+      {closingCalculated != null ? (
+        <span className="block">
+          Fechamento previsto: {money(closingCalculated)}.
+        </span>
+      ) : null}
+    </TimelineNote>
   );
 }
 
@@ -338,11 +463,14 @@ function TodayRealizedMark({ closingRealized }: { closingRealized: number }) {
 function BalanceCell({
   value,
   boldWhenNegative = true,
+  emphasized = false,
   marks,
 }: {
   value: number | null;
   boldWhenNegative?: boolean;
-  /** Marcadores de proveniência/cobertura (abertura manual, ajuste) — só linhas de dia. */
+  /** "Terminou" — peso semibold mesmo quando positivo. */
+  emphasized?: boolean;
+  /** Ícones de auditoria (proveniência/cobertura) — só linhas de dia. */
   marks?: React.ReactNode;
 }) {
   const isPositive = value != null && value > 0;
@@ -350,15 +478,17 @@ function BalanceCell({
   return (
     <td
       className={cn(
-        "px-2 py-1.5 text-right tabular-nums",
+        "px-2 py-1.5 text-right tabular-nums whitespace-nowrap",
         isPositive && "text-[#059669]",
         isNegative && "text-[#DC2626]",
-        isNegative && boldWhenNegative && "font-semibold",
+        (emphasized || (isNegative && boldWhenNegative)) && "font-semibold",
         !isNegative && !isPositive && "text-foreground"
       )}
     >
-      {money(value)}
-      {marks}
+      <span className="inline-flex items-center justify-end gap-1">
+        {money(value)}
+        {marks}
+      </span>
     </td>
   );
 }
@@ -374,7 +504,7 @@ function RowOpeningMarks({ row }: { row: TreasuryCaixaTimelineRow }) {
   if (!showManual && !showAdjustment) return null;
   return (
     <>
-      {showManual ? <OpeningManualMark /> : null}
+      {showManual ? <OpeningManualMark coverage={row.openingCoverage} /> : null}
       {showAdjustment ? <OpeningAdjustmentMark amount={row.openingAdjustment as number} /> : null}
     </>
   );
@@ -401,7 +531,10 @@ function RowClosingMarks({ row }: { row: TreasuryCaixaTimelineRow }) {
       {showPartial ? <ClosingCoveragePartialMark coverage={coverage!} /> : null}
       {showManual ? <ClosingManualMark coverage={coverage!} /> : null}
       {showTodayRealized ? (
-        <TodayRealizedMark closingRealized={row.closingRealized as number} />
+        <TodayRealizedMark
+          closingRealized={row.closingRealized as number}
+          closingCalculated={row.closingCalculated}
+        />
       ) : null}
     </>
   );
@@ -961,7 +1094,7 @@ export function TreasuryCaixaTimeline({
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs" data-testid="caixa-timeline-table">
+            <table className="caixa-timeline-table w-full text-xs" data-testid="caixa-timeline-table">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
                   <th className="px-2 py-1.5">
@@ -1118,16 +1251,11 @@ export function TreasuryCaixaTimeline({
                                           />
                                         ) : null}
                                       </td>
-                                      <td
-                                        className={cn(
-                                          "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                          r.closing != null && r.closing > 0 && "text-[#059669]",
-                                          r.closing != null && r.closing < 0 && "text-[#DC2626]"
-                                        )}
-                                      >
-                                        {money(r.closing)}
-                                        <RowClosingMarks row={r} />
-                                      </td>
+                                      <BalanceCell
+                                        value={r.closing}
+                                        emphasized
+                                        marks={<RowClosingMarks row={r} />}
+                                      />
                                       <DivergenceCell
                                         value={r.divergence}
                                         informed={r.closingInformed}
@@ -1215,16 +1343,11 @@ export function TreasuryCaixaTimeline({
                                 />
                               ) : null}
                             </td>
-                            <td
-                              className={cn(
-                                "px-2 py-1.5 text-right tabular-nums font-semibold",
-                                r.closing != null && r.closing > 0 && "text-[#059669]",
-                                r.closing != null && r.closing < 0 && "text-[#DC2626]"
-                              )}
-                            >
-                              {money(r.closing)}
-                              <RowClosingMarks row={r} />
-                            </td>
+                            <BalanceCell
+                              value={r.closing}
+                              emphasized
+                              marks={<RowClosingMarks row={r} />}
+                            />
                             <DivergenceCell
                               value={r.divergence}
                               informed={r.closingInformed}
