@@ -88,3 +88,43 @@ export function todayTreasuryCivilDateInSaoPaulo(
   }).format(instant);
   return parseTreasuryCivilDate(formatted, "civilDate");
 }
+
+/**
+ * BUCKETING CANÔNICO: dia civil America/Sao_Paulo de um instante
+ * (`referenceAt`, `createdAt`, …). Único ponto de conversão instante→dia
+ * civil da Tesouraria — nunca `toISOString().slice(0, 10)` (UTC) nem
+ * componentes locais do servidor. 21:00 em São Paulo (= 00:00Z do dia
+ * seguinte) continua sendo o MESMO dia civil.
+ */
+export function civilDateFromInstantInSaoPaulo(instant: Date): TreasuryCivilDate {
+  void instant;
+  throw new Error("not implemented: civilDateFromInstantInSaoPaulo");
+}
+
+/**
+ * Janela de instantes [gte, lt) que cobre os dias civis [from, to] em
+ * America/Sao_Paulo — para filtrar colunas TIMESTAMPTZ (`referenceAt`) no
+ * banco sem depender do fuso do servidor. Para colunas DATE use
+ * {@link civilDateRangeForDbDate}.
+ */
+export function civilDateRangeInSaoPaulo(
+  fromCivilDate: TreasuryCivilDate,
+  toCivilDate: TreasuryCivilDate
+): { gte: Date; lt: Date } {
+  void fromCivilDate;
+  void toCivilDate;
+  throw new Error("not implemented: civilDateRangeInSaoPaulo");
+}
+
+/**
+ * Janela [gte, lt) para colunas `@db.Date` (Prisma entrega meia-noite UTC):
+ * `Date.UTC` puro, sem fuso.
+ */
+export function civilDateRangeForDbDate(
+  fromCivilDate: TreasuryCivilDate,
+  toCivilDate: TreasuryCivilDate
+): { gte: Date; lt: Date } {
+  void fromCivilDate;
+  void toCivilDate;
+  throw new Error("not implemented: civilDateRangeForDbDate");
+}

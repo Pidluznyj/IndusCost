@@ -51,6 +51,20 @@ export type TreasuryOfficialTodayBalance = {
   accountsWithoutBalance: number;
   /** Descrição pt-BR curta para a UI ("Fechamento CLOSED de 04/08/2026"). */
   sourceLabel: string;
+  /**
+   * Posição MAIS RECENTE por conta (informativo, card "Caixa hoje"). NUNCA é
+   * âncora: `amount` acima só existe com fechamento formal/manual COMPLETO
+   * de hoje. Ausente quando não há snapshot algum.
+   */
+  latestPosition?: {
+    amount: number;
+    accountsCovered: number;
+    accountsExpected: number;
+    /** Dia civil (SP) mais antigo entre as posições usadas. */
+    oldestCivilDate: string | null;
+    /** Quantas posições são de hoje. */
+    accountsUpdatedToday: number;
+  } | null;
 };
 
 function toIsoDate(d: Date): string {

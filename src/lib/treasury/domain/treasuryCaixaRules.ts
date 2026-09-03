@@ -9,6 +9,13 @@ import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import type { TreasuryCaixaCanonicalDay } from "./treasuryCaixaCanonicalDay.js";
+import type {
+  TreasuryBalanceCoverage,
+  TreasuryDailyBalanceAuthorityDay,
+  TreasuryDailyBalanceClosingSource,
+  TreasuryDailyBalanceDivergenceBaseline,
+  TreasuryDailyBalanceOpeningSource,
+} from "./treasuryDailyBalanceAuthority.js";
 
 export type TreasuryCaixaPeriodInput = {
   year: number;
@@ -503,6 +510,17 @@ export type TreasuryCaixaTimelineRow = {
    * agenda, que vem da projeção dia a dia oficial.
    */
   estimated?: boolean;
+  // ── Autoridade única de saldos (proveniência/cobertura) ────────────────
+  /** Fechamento só com o realizado (sem previsto). Em dia passado = closingCalculated. */
+  closingRealized?: number | null;
+  openingSource?: TreasuryDailyBalanceOpeningSource;
+  closingSource?: TreasuryDailyBalanceClosingSource;
+  /** Abertura manual completa − fechamento efetivo anterior; null sem abertura manual. */
+  openingAdjustment?: number | null;
+  /** Contra qual saldo a divergência foi medida (declarado para a UI). */
+  divergenceBaseline?: TreasuryDailyBalanceDivergenceBaseline;
+  openingCoverage?: TreasuryBalanceCoverage;
+  closingCoverage?: TreasuryBalanceCoverage;
   /**
    * Parte de `inflows`/`outflows` que ainda é PREVISÃO no dia de HOJE (títulos
    * em aberto vencendo hoje — regra D+1). Só a linha TODAY preenche; a UI usa
@@ -608,6 +626,10 @@ export type TreasuryCaixaTimelineMonth = {
   divergentDayCount: number;
   negative: boolean;
   firstNegativeDate: string | null;
+  /** Dias do mês com cobertura de saldo manual INCOMPLETA (subtotal não usado). */
+  coverageIncompleteDayCount?: number;
+  /** Soma dos `openingAdjustment` dos dias (aberturas manuais que quebraram continuidade). */
+  openingAdjustment?: number | null;
   days: TreasuryCaixaTimelineRow[];
   /**
    * `true` para mês complementado por {@link appendTreasuryCaixaMonthlyDueEstimates}
@@ -894,6 +916,13 @@ export type TreasuryCaixaRealizedDay = {
    * nada a comparar não é o mesmo que divergência zero.
    */
   divergence: number | null;
+  // ── Autoridade única de saldos (proveniência/cobertura) ────────────────
+  openingSource?: TreasuryDailyBalanceOpeningSource;
+  closingSource?: TreasuryDailyBalanceClosingSource;
+  openingAdjustment?: number | null;
+  divergenceBaseline?: TreasuryDailyBalanceDivergenceBaseline;
+  openingCoverage?: TreasuryBalanceCoverage;
+  closingCoverage?: TreasuryBalanceCoverage;
 };
 
 /**
@@ -1035,7 +1064,16 @@ export type TreasuryCaixaForecastDayInput = {
 export function buildTreasuryCaixaUnifiedTimeline(input: {
   todayCivilDate: string;
   realizedDays: readonly TreasuryCaixaRealizedDay[];
-  todayFlow: TreasuryCaixaDayFlow | null;
+  /**
+   * @deprecated Linha de HOJE passa a vir de `todayBalance` (autoridade
+   * única). Mantido só até a migração completa dos consumidores.
+   */
+  todayFlow?: TreasuryCaixaDayFlow | null;
+  /**
+   * Linha de HOJE resolvida pela autoridade única de saldos — mesma cadeia
+   * dos dias passados. Quando presente, é a ÚNICA fonte da linha TODAY.
+   */
+  todayBalance?: TreasuryDailyBalanceAuthorityDay | null;
   forecastDays: readonly TreasuryCaixaForecastDayInput[];
 }): TreasuryCaixaTimeline {
   const rows: TreasuryCaixaTimelineRow[] = [];
@@ -1531,4 +1569,30 @@ export type TreasuryCaixaBoardDto = {
     accountsWithoutBalance: number;
     sourceLabel: string;
   };
+  /**
+   * Linha de HOJE resolvida pela AUTORIDADE ÚNICA de saldos (mesma cadeia
+   * dos dias passados): abertura, realizado, previsto D+1, fechamento
+   * calculado/realizado/informado/efetivo, cobertura e proveniência. É a
+   * única fonte da linha "hoje" da linha do tempo e do bloco SALDO do card
+   * "Movimento de hoje". null só quando hoje está fora da cadeia resolvida.
+   */
+  todayBalance?: TreasuryDailyBalanceAuthorityDay | null;
+  /**
+   * Posição MAIS RECENTE por conta (qualquer data) — informativo para o card
+   * "Caixa hoje". NÃO é fechamento oficial: cada item declara o dia civil da
+   * posição para a UI mostrar frescor ("saldo de ontem").
+   */
+  accountPositions?: readonly TreasuryCaixaAccountPositionDto[];
+};
+
+export type TreasuryCaixaAccountPositionDto = {
+  accountId: string;
+  accountName: string;
+  companyCode: string;
+  amount: number;
+  referenceAt: string;
+  civilDate: string;
+  /** true quando `civilDate` é o dia civil de hoje (America/Sao_Paulo). */
+  isToday: boolean;
+  origin: string;
 };

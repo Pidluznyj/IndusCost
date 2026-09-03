@@ -48,6 +48,7 @@ import {
   type TreasuryAccountRepository,
   type TreasuryAccountUpdateData,
 } from "../repositories/treasuryAccountRepository.server.js";
+import type { TreasuryConsolidatedMembershipRepository } from "../repositories/treasuryConsolidatedMembershipRepository.server.js";
 import {
   writeTreasuryAuditLog,
   type TreasuryAuditDb,
@@ -147,10 +148,20 @@ function requireManage(actor: TreasuryAccountActor): void {
 export function createTreasuryAccountService(deps: {
   prisma: PrismaClient;
   repository?: TreasuryAccountRepository;
+  /**
+   * Membership temporal do consolidado — mantido na MESMA transação de
+   * create / includeInConsolidated / deactivate / reactivate. Default: Prisma.
+   */
+  membershipRepository?: TreasuryConsolidatedMembershipRepository;
   /** Override para testes (fake TX). Default: `prisma.$transaction`. */
   runTransaction?: <T>(fn: (tx: TreasuryAuditDb) => Promise<T>) => Promise<T>;
 }) {
   const repo = deps.repository ?? createTreasuryAccountRepository(deps.prisma);
+  // Default Prisma entra junto com a implementação da autoridade única;
+  // até lá, sem repositório injetado o serviço não mantém membership.
+  const membershipRepo: TreasuryConsolidatedMembershipRepository | null =
+    deps.membershipRepository ?? null;
+  void membershipRepo;
   const prisma = deps.prisma;
 
   async function requireAccessibleAccount(

@@ -60,9 +60,18 @@ import {
   resolveTreasuryCaixaDueDateRange,
   selectTreasuryCaixaCanonicalPopulation,
   TREASURY_CAIXA_GENESIS_CIVIL_DATE,
+  type TreasuryCaixaAccountPositionDto,
   type TreasuryCaixaBoardDto,
   type TreasuryCaixaPeriodInput,
+  type TreasuryCaixaRealizedDay,
 } from "../domain/treasuryCaixaRules.js";
+import type {
+  TreasuryDailyBalanceAuthorityDay,
+  TreasuryDailyBalanceAuthorityResult,
+  TreasuryGenericSnapshotPolicy,
+} from "../domain/treasuryDailyBalanceAuthority.js";
+import type { TreasuryConsolidatedAccountUniverse } from "./treasuryConsolidatedAccountUniverse.server.js";
+import type { TreasuryDailyBalanceEvidence } from "./treasuryDailyBalanceEvidence.server.js";
 import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
 import {
   loadTreasuryOfficialTodayBalance,
@@ -961,4 +970,47 @@ function officialTodayStrength(
   if (source === "DAILY_CLOSING") return "STRONG";
   if (source === "DAILY_ROUTINE_SNAPSHOT" || source === "GENERIC_MANUAL_SNAPSHOT") return "MEDIUM";
   return "WEAK";
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Autoridade única de saldos — composição PURA (testável sem banco)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type TreasuryCaixaBalanceAuthorityComposeInput = {
+  universe: TreasuryConsolidatedAccountUniverse;
+  evidence: TreasuryDailyBalanceEvidence;
+  /** Realizado consolidado por dia, cru (saída de `buildTreasuryCaixaRealizedDays`). */
+  realizedDaysAll: readonly TreasuryCaixaRealizedDay[];
+  todayCivilDate: string;
+  /** Período exibido (recorte DEPOIS de resolver a cadeia inteira). */
+  periodFrom: string;
+  periodTo: string;
+  /** Realizado/previsto de HOJE vindos do motor único-de-dia (canonicalDays[hoje]). */
+  todayRealized: { inflows: number; outflows: number } | null;
+  todayPredicted: { inflows: number; outflows: number } | null;
+  genesisCivilDate?: string;
+  genericSnapshotPolicy?: TreasuryGenericSnapshotPolicy;
+};
+
+export type TreasuryCaixaBalanceAuthorityComposeResult = {
+  authority: TreasuryDailyBalanceAuthorityResult;
+  /** Dias < hoje dentro do período, com saldos/cobertura/proveniência da autoridade. */
+  realizedDays: TreasuryCaixaRealizedDay[];
+  todayBalance: TreasuryDailyBalanceAuthorityDay | null;
+  /** DERIVADO da autoridade: só fechamento informado COMPLETO de hoje ancora. */
+  officialTodayBalance: TreasuryOfficialTodayBalance;
+  /** Fechamento efetivo do último dia ANTES de `firstWindowDay` (RC4). */
+  openingBalanceBefore(firstWindowDay: string): number | null;
+  accountPositions: TreasuryCaixaAccountPositionDto[];
+};
+
+/**
+ * Junta universo + evidências + fluxos numa única resolução de autoridade e
+ * projeta tudo que o board publica. `getBoard()` só carrega e delega para cá.
+ */
+export function composeTreasuryCaixaBalanceAuthority(
+  input: TreasuryCaixaBalanceAuthorityComposeInput
+): TreasuryCaixaBalanceAuthorityComposeResult {
+  void input;
+  throw new Error("not implemented: composeTreasuryCaixaBalanceAuthority");
 }
