@@ -4,6 +4,17 @@ import { ArrowLeft, Loader2, Plus, Save } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect, SelectOption } from "@/src/components/shared/SearchableSelect";
+import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
+import {
+  OverlayBadge,
+  OverlaySection,
+  OVERLAY_CONTROL_CLASS,
+  type OverlayBadgeTone,
+} from "@/src/components/ui/overlay";
+import {
+  OVERLAY_LABEL_DENSE,
+  OVERLAY_TABLE_HEAD,
+} from "@/src/lib/overlay/overlayTypography";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
@@ -15,7 +26,10 @@ import {
   type PurchaseQuotationDetail,
   type PurchaseQuotationListRow,
   type PurchaseQuotationOfferRow,
+  type PurchaseQuotationOfferStatus,
+  type PurchaseQuotationStatus,
   type PurchaseQuotationSupplierRow,
+  type PurchaseQuotationSupplierStatus,
 } from "@/src/types/purchasing";
 import { canEditInitialOffer } from "@/src/lib/purchasing/purchaseQuotationWorkflow";
 
@@ -93,6 +107,55 @@ function emptyOfferDraft(
   };
 }
 
+/**
+ * Rótulos e tons de status. Antes a tela imprimia o enum cru
+ * (`CONVIDADO`, `RECEBIDA`) e sem cor: a informação mais importante de cada
+ * fornecedor saía como texto cinza no meio de uma frase.
+ */
+const QUOTATION_STATUS_TONE: Record<PurchaseQuotationStatus, OverlayBadgeTone> = {
+  RASCUNHO: "slate",
+  ENVIADA: "sky",
+  EM_ANALISE: "violet",
+  ADJUDICADA: "emerald",
+  CANCELADA: "rose",
+  EXPIRADA: "amber",
+};
+
+const SUPPLIER_STATUS_LABEL: Record<PurchaseQuotationSupplierStatus, string> = {
+  CONVIDADO: "Convidado",
+  RESPONDIDO: "Respondido",
+  DESCARTADO: "Descartado",
+  VENCEDOR: "Vencedor",
+  RECUSADO: "Recusado",
+};
+
+const SUPPLIER_STATUS_TONE: Record<PurchaseQuotationSupplierStatus, OverlayBadgeTone> = {
+  CONVIDADO: "slate",
+  RESPONDIDO: "sky",
+  DESCARTADO: "slate",
+  VENCEDOR: "emerald",
+  RECUSADO: "rose",
+};
+
+const OFFER_STATUS_LABEL: Record<PurchaseQuotationOfferStatus, string> = {
+  RASCUNHO: "Oferta em rascunho",
+  RECEBIDA: "Proposta recebida",
+  DESCARTADA: "Descartada",
+  VENCEDORA: "Vencedora",
+};
+
+const OFFER_STATUS_TONE: Record<PurchaseQuotationOfferStatus, OverlayBadgeTone> = {
+  RASCUNHO: "slate",
+  RECEBIDA: "sky",
+  DESCARTADA: "slate",
+  VENCEDORA: "emerald",
+};
+
+/**
+ * Label e classe de controle delegam ao design system overlay. Ficam como
+ * helpers locais porque são consumidos por ~40 campos deste arquivo; trocar a
+ * implementação aqui alinha todos de uma vez.
+ */
 function Field({
   label,
   children,
@@ -101,18 +164,15 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-bold text-muted-foreground uppercase">{label}</label>
+    <div className="flex min-w-0 flex-col gap-1">
+      <label className={OVERLAY_LABEL_DENSE}>{label}</label>
       {children}
     </div>
   );
 }
 
 function inputCls(disabled: boolean) {
-  return cn(
-    "w-full p-2 rounded-lg border border-border bg-background text-sm",
-    disabled && "opacity-70 cursor-not-allowed"
-  );
+  return cn(OVERLAY_CONTROL_CLASS, disabled && "cursor-not-allowed");
 }
 
 export function PurchaseQuotationModule() {
@@ -635,51 +695,48 @@ export function PurchaseQuotationModule() {
 
   if (!quotationId) {
     return (
-      <div className="space-y-4" data-testid="purchase-quotations-list">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <h3 className="text-lg font-semibold">Cotações por fornecedor</h3>
-            <p className="text-sm text-muted-foreground">
-              Coleta de propostas iniciais. Sem escolha de vencedor nesta fase.
-            </p>
-          </div>
-          <Link to="/purchases" className="text-sm text-primary hover:underline">
-            Voltar às solicitações
-          </Link>
-        </div>
+      <div className="space-y-3" data-testid="purchase-quotations-list">
+        {/* A casca da página já titula "Cotações" e descreve o escopo. */}
+        <PurchaseChainViewNav current="quotations" />
         {list.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Nenhuma cotação. Encaminhe uma solicitação aprovada para cotação.
           </p>
         ) : (
-          <div className="rounded-2xl border border-border overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="p-3">Código</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">SC</th>
-                  <th className="p-3">Fornecedores</th>
-                  <th className="p-3" />
+              <thead className="border-b border-border bg-muted/40">
+                <tr className={cn(OVERLAY_TABLE_HEAD, "text-left")}>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="w-[130px] px-3 py-2">Status</th>
+                  <th className="w-[80px] px-3 py-2">SC</th>
+                  <th className="w-[120px] px-3 py-2 text-right">Fornecedores</th>
                 </tr>
               </thead>
               <tbody>
                 {list.map((q) => (
-                  <tr key={q.id} className="border-t border-border hover:bg-accent/20">
-                    <td className="p-3 font-mono">{q.code}</td>
-                    <td className="p-3">{PURCHASE_QUOTATION_STATUS_LABEL[q.status]}</td>
-                    <td className="p-3">
+                  <tr
+                    key={q.id}
+                    className="cursor-pointer border-t border-border hover:bg-accent/20"
+                    onClick={() => navigate(`/purchases/quotations/${q.id}`)}
+                    title="Abrir cotação"
+                  >
+                    <td className="px-3 py-2">
+                      <span className="font-mono">{q.code}</span>
+                      {q.title ? (
+                        <span className="ml-2 text-xs text-muted-foreground">{q.title}</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">
+                      <OverlayBadge tone={QUOTATION_STATUS_TONE[q.status]}>
+                        {PURCHASE_QUOTATION_STATUS_LABEL[q.status]}
+                      </OverlayBadge>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                       {q.purchaseRequest ? `#${q.purchaseRequest.number}` : "—"}
                     </td>
-                    <td className="p-3">{q._count?.suppliers ?? 0}</td>
-                    <td className="p-3 text-right">
-                      <button
-                        type="button"
-                        className="text-primary hover:underline"
-                        onClick={() => navigate(`/purchases/quotations/${q.id}`)}
-                      >
-                        Abrir
-                      </button>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {q._count?.suppliers ?? 0}
                     </td>
                   </tr>
                 ))}
@@ -694,54 +751,58 @@ export function PurchaseQuotationModule() {
   if (!detail) return null;
 
   return (
-    <div className="space-y-6" data-testid="purchase-quotation-detail">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
+    <div className="space-y-4" data-testid="purchase-quotation-detail">
+      {/* Cabeçalho do documento: identidade e situação numa faixa só. */}
+      <div className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <button
             type="button"
             onClick={() => navigate("/purchases/quotations")}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             Lista de cotações
           </button>
-          <h3 className="text-lg font-semibold font-mono">{detail.code}</h3>
-          <p className="text-sm text-muted-foreground">
-            {PURCHASE_QUOTATION_STATUS_LABEL[detail.status]}
-            {detail.purchaseRequest
-              ? ` · SC #${detail.purchaseRequest.number}`
-              : ""}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h3 className="font-mono text-base font-semibold">{detail.code}</h3>
+            <OverlayBadge tone={QUOTATION_STATUS_TONE[detail.status]} emphasized>
+              {PURCHASE_QUOTATION_STATUS_LABEL[detail.status]}
+            </OverlayBadge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {[
+              detail.title || null,
+              detail.purchaseRequest ? `SC #${detail.purchaseRequest.number}` : null,
+              `${detail.suppliers.length} ${detail.suppliers.length === 1 ? "fornecedor" : "fornecedores"}`,
+              `${detail.items.length} ${detail.items.length === 1 ? "item" : "itens"}`,
+            ]
+              .filter(Boolean)
+              .join("  ·  ")}
           </p>
         </div>
-        {allowEdit && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              to={`/purchases/quotations/${detail.id}/compare`}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted"
-            >
-              Comparar fornecedores
-            </Link>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Link
+            to={`/purchases/quotations/${detail.id}/compare`}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted"
+          >
+            Comparar fornecedores
+          </Link>
+          {allowEdit && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
             <button
               type="button"
               disabled={busy}
               onClick={() => void saveMeta()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar cabeçalho
             </button>
-          </div>
-        ) : (
-          <Link
-            to={`/purchases/quotations/${detail.id}/compare`}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted"
-          >
-            Comparar fornecedores
-          </Link>
-        )}
+          ) : null}
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <OverlaySection title="Cabeçalho da cotação">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <Field label="Título">
           <input
             className={inputCls(!allowEdit)}
@@ -777,29 +838,44 @@ export function PurchaseQuotationModule() {
           />
         </Field>
       </div>
+      </OverlaySection>
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Itens da demanda
-        </h4>
-        <ul className="space-y-2 text-sm">
-          {detail.items.map((it) => (
-            <li key={it.id} className="border-b border-border/50 pb-2">
-              <span className="font-mono text-xs text-muted-foreground">#{it.lineNumber}</span>{" "}
-              {it.materialCodeSnapshot ? `${it.materialCodeSnapshot} — ` : ""}
-              {it.description} · {numStr(it.quantity)} {it.unit}
-            </li>
-          ))}
-        </ul>
-      </div>
+      {/* Demanda em tabela: era uma lista de frases coladas com pontos. */}
+      <OverlaySection title={`Itens da demanda (${detail.items.length})`} padded={false}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm">
+            <thead className="border-b border-[color:var(--color-overlay-border)] bg-muted/40">
+              <tr className={cn(OVERLAY_TABLE_HEAD, "text-left")}>
+                <th className="w-[64px] px-3 py-2">Item</th>
+                <th className="w-[120px] px-3 py-2">Código</th>
+                <th className="px-3 py-2">Descrição</th>
+                <th className="w-[100px] px-3 py-2 text-right">Qtd.</th>
+                <th className="w-[64px] px-3 py-2">Un.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.items.map((it) => (
+                <tr key={it.id} className="border-b border-border/60">
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    #{it.lineNumber}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    {it.materialCodeSnapshot || "—"}
+                  </td>
+                  <td className="px-3 py-2 font-medium">{it.description}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{numStr(it.quantity)}</td>
+                  <td className="px-3 py-2 text-xs">{it.unit}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </OverlaySection>
 
       {allowEdit && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-3" data-testid="invite-supplier">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Convidar fornecedor oficial
-          </h4>
-          <div className="flex flex-col md:flex-row gap-3 items-end">
-            <div className="flex-1 w-full">
+        <OverlaySection title="Convidar fornecedor oficial" testId="invite-supplier">
+          <div className="flex flex-col items-end gap-2 md:flex-row">
+            <div className="w-full flex-1">
               <SearchableSelect
                 options={supplierOptions}
                 value={supplierId}
@@ -813,13 +889,13 @@ export function PurchaseQuotationModule() {
               type="button"
               disabled={busy || !supplierId}
               onClick={() => void inviteSupplier()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
               Convidar
             </button>
           </div>
-        </div>
+        </OverlaySection>
       ) : null}
 
       {detail.suppliers.map((supplier) => {
@@ -833,25 +909,43 @@ export function PurchaseQuotationModule() {
         return (
           <div
             key={supplier.id}
-            className="rounded-2xl border border-border bg-card p-6 space-y-4"
+            className="overflow-hidden rounded-[var(--radius-overlay-inner)] border border-[color:var(--color-overlay-border)] bg-white"
             data-testid={`supplier-offer-${supplier.id}`}
           >
-            <div className="flex items-start justify-between gap-2 flex-wrap">
-              <div>
-                <h4 className="font-semibold">{supplier.supplierDisplayNameSnapshot}</h4>
-                <p className="text-xs text-muted-foreground">
-                  {supplier.supplierDocumentSnapshot || "sem documento"} · {supplier.status}
-                  {offer?.proposalReceived ? " · proposta recebida" : ""}
-                  {locked ? " · oferta inicial congelada" : ""}
-                </p>
+            {/*
+             * Situação do fornecedor em pastilhas, não numa frase com pontos:
+             * antes "CONVIDADO · proposta recebida · oferta inicial congelada"
+             * saía como texto cinza de 12px, indistinguível do CNPJ ao lado.
+             */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--color-overlay-border)] px-3 py-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 className="truncate text-sm font-semibold">
+                  {supplier.supplierDisplayNameSnapshot}
+                </h4>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {supplier.supplierDocumentSnapshot || "sem documento"}
+                </span>
+                <OverlayBadge tone={SUPPLIER_STATUS_TONE[supplier.status]}>
+                  {SUPPLIER_STATUS_LABEL[supplier.status]}
+                </OverlayBadge>
+                {offer ? (
+                  <OverlayBadge tone={OFFER_STATUS_TONE[offer.status]}>
+                    {OFFER_STATUS_LABEL[offer.status]}
+                  </OverlayBadge>
+                ) : null}
+                {locked ? (
+                  <OverlayBadge tone="amber" title="A negociação começou; a oferta inicial não muda mais.">
+                    Oferta inicial congelada
+                  </OverlayBadge>
+                ) : null}
               </div>
               {allowEdit && !locked ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void saveOffer(supplier)}
-                    className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
+                    className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-50"
                   >
                     Salvar oferta
                   </button>
@@ -859,7 +953,7 @@ export function PurchaseQuotationModule() {
                     type="button"
                     disabled={busy}
                     onClick={() => void markReceived(supplier)}
-                    className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white disabled:opacity-50"
+                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
                   >
                     Registrar proposta recebida
                   </button>
@@ -867,7 +961,8 @@ export function PurchaseQuotationModule() {
               ) : null}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-3 px-3 py-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <Field label="Moeda">
                 <input
                   disabled={locked || !allowEdit}
@@ -972,19 +1067,29 @@ export function PurchaseQuotationModule() {
               </Field>
             </div>
 
-            <div className="space-y-4">
-              <h5 className="text-xs font-bold uppercase text-muted-foreground">Itens da oferta</h5>
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <h5 className={OVERLAY_LABEL_DENSE}>Itens da oferta</h5>
               {draft.items.map((it) => {
                 const demand = detail.items.find((d) => d.id === it.quotationItemId);
                 return (
                   <div
                     key={it.quotationItemId}
-                    className="rounded-xl border border-border/70 bg-accent/10 p-4 grid grid-cols-1 md:grid-cols-3 gap-3"
+                    className="grid grid-cols-2 gap-2.5 rounded-lg border border-border/70 bg-accent/10 px-3 py-2.5 md:grid-cols-4"
                   >
-                    <div className="md:col-span-3 text-sm font-medium">
-                      {demand
-                        ? `#${demand.lineNumber} ${demand.description} (${numStr(demand.quantity)} ${demand.unit})`
-                        : it.quotationItemId}
+                    <div className="col-span-2 flex flex-wrap items-baseline gap-x-2 text-sm md:col-span-4">
+                      {demand ? (
+                        <>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            #{demand.lineNumber}
+                          </span>
+                          <span className="font-medium">{demand.description}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {numStr(demand.quantity)} {demand.unit}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-mono text-xs">{it.quotationItemId}</span>
+                      )}
                     </div>
                     <Field label="Preço unitário inicial *">
                       <input
@@ -1113,35 +1218,29 @@ export function PurchaseQuotationModule() {
                 );
               })}
             </div>
+            </div>
           </div>
         );
       })}
 
-      <div
-        className="rounded-2xl border border-border bg-card p-6 space-y-4"
-        data-testid="negotiation-rounds-panel"
-      >
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Rodadas de negociação
-            </h4>
-            <p className="text-sm text-muted-foreground mt-1">
-              Histórico imutável. Prazo/pagamento/lote não entram como economia monetária.
-            </p>
-          </div>
-          {allowEdit && !openRound && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
+      <OverlaySection
+        title="Rodadas de negociação"
+        description="Histórico imutável. Prazo/pagamento/lote não entram como economia monetária."
+        testId="negotiation-rounds-panel"
+        actions={
+          allowEdit && !openRound && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
             <button
               type="button"
               disabled={busy}
               onClick={() => void openNegotiation()}
-              className="px-3 py-1.5 rounded-lg text-sm bg-violet-700 text-white disabled:opacity-50"
+              className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
             >
               Abrir rodada
             </button>
-          ) : null}
-        </div>
-
+          ) : null
+        }
+      >
+      <div className="space-y-3">
         <Field label="Relato do comprador">
           <textarea
             rows={2}
@@ -1248,8 +1347,8 @@ export function PurchaseQuotationModule() {
           </ul>
         )}
 
-        <div className="space-y-3" data-testid="negotiation-savings">
-          <h5 className="text-xs font-bold uppercase text-muted-foreground">Ganho comparável</h5>
+        <div className="space-y-2 border-t border-border/60 pt-3" data-testid="negotiation-savings">
+          <h5 className={OVERLAY_LABEL_DENSE}>Ganho comparável</h5>
           {detail.suppliers.map((supplier) => {
             const offer = supplier.offers[0];
             if (!offer || (offer.status !== "RECEBIDA" && offer.status !== "VENCEDORA")) return null;
@@ -1308,15 +1407,11 @@ export function PurchaseQuotationModule() {
           })}
         </div>
       </div>
+      </OverlaySection>
 
-      <div
-        className="rounded-2xl border border-border bg-card p-6 space-y-4"
-        data-testid="purchase-evidence-trail"
-      >
-        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Evidências da negociação
-        </h4>
-        <p className="text-sm text-muted-foreground">
+      <OverlaySection title="Evidências da negociação" testId="purchase-evidence-trail">
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
           Anexos com hash e histórico. Após vencedor/pedido, exclusão exige justificativa (sem apagar
           silenciosamente).
         </p>
@@ -1411,6 +1506,7 @@ export function PurchaseQuotationModule() {
           </ul>
         )}
       </div>
+      </OverlaySection>
     </div>
   );
 }

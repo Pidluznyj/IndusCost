@@ -31,6 +31,7 @@ import {
 } from "@/src/types/purchase";
 import { SearchableSelect, SelectOption } from "@/src/components/shared/SearchableSelect";
 import { AppAlert } from "@/src/components/shared/AppAlert";
+import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
 import {
   OverlayBadge,
   OverlayField,
@@ -110,14 +111,6 @@ const LINE_TYPE_SHORT = {
   MATERIA_PRIMA: "MP",
   INDIRETO: "Indireto",
 } as const;
-
-/** Vistas vizinhas da cadeia, na ordem do fluxo. Solicitações é a atual. */
-const CHAIN_VIEWS = [
-  { label: "Cotações", to: "/purchases/quotations" },
-  { label: "Pedidos", to: "/purchases/orders" },
-  { label: "Recebimento", to: "/purchases/receiving" },
-  { label: "Estação", to: "/purchases/workstation" },
-] as const;
 
 /** Numeração de linha do documento (00010, 00020, …) — igual à do PDF do pedido. */
 function itemLineCode(index: number): string {
@@ -1114,27 +1107,7 @@ export const PurchaseModule = () => {
           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-tour="purchases-toolbar"
         >
-          <nav
-            aria-label="Cadeia de compras"
-            className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-muted/40 p-1"
-          >
-            <span
-              aria-current="page"
-              className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm ring-1 ring-border"
-            >
-              Solicitações
-            </span>
-            {CHAIN_VIEWS.map((v) => (
-              <button
-                key={v.to}
-                type="button"
-                onClick={() => navigate(v.to)}
-                className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-white/70 hover:text-foreground"
-              >
-                {v.label}
-              </button>
-            ))}
-          </nav>
+          <PurchaseChainViewNav current="requests" />
           <div className="flex items-center gap-2">
             <TourHelpButton onClick={() => setTourOpen(true)} />
             {allowCreate ? (
