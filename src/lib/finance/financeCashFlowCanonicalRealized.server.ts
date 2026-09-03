@@ -7,7 +7,9 @@
  *
  * Pipeline replicado 1:1 do endpoint /api/finance/cash-flow/dashboard com os
  * filtros padrão da página (viewMode "projected", status "all", ano):
- *   1. carga AR via `loadFinanceArTitlesSourceBundle` (ano por vencimento);
+ *   1. carga AR via `loadFinanceArTitlesSourceBundle` — vencimento no ano OU
+ *      baixa no ano (`resolveCashFlowArSettlementLoadWindow`), porque o
+ *      realizado é alocado por data de baixa;
  *   2. carga AP via `buildCashFlowApPrismaWhere` + select do Fluxo;
  *   3. `filterArRowsForYtdReceived` / `filterApRowsForCashFlowExecutiveTimeline`
  *      (base saneada da timeline executiva);
@@ -25,6 +27,7 @@ import {
   FINANCE_CASH_FLOW_AP_SELECT,
   mapPrismaRowToFinanceCashFlowApRow,
   parseFinanceCashFlowDashboardFilters,
+  resolveCashFlowArSettlementLoadWindow,
   toApLoadFilters,
   toArLoadFilters,
   type FinanceCashFlowApRow,
@@ -44,7 +47,10 @@ import {
   filterArRowsForYtdReceived,
 } from "@/src/lib/financeCashFlowExecutiveYtd.js";
 import { filterApRowsForCashFlowExecutiveTimeline } from "@/src/lib/financeCashFlowExecutiveSummary.js";
-import { filterFinanceArManagementReportRows } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import {
+  filterFinanceArManagementReportRows,
+  toFinanceArSettlementScopeFilters,
+} from "@/src/lib/financeAccountsReceivableDashboard.js";
 import { filterFinanceApRows } from "@/src/lib/financeAccountsPayableDashboard.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import type { FinanceArNfeOrderLink } from "./financeArOperationalPortfolio.js";
@@ -101,9 +107,12 @@ export function deriveFinanceCashFlowCanonicalRealizedYearSets(
     input.apSyncCutoff
   );
 
+  // Mesmo refiltro da timeline (`buildExecutiveMonthlyTimeline`): a população do
+  // realizado não pode ser recortada por vencimento, senão a baixa de um título
+  // vencido em outro ano some — e os conjuntos deixariam de reproduzir a tela.
   const arReceivedRows = filterFinanceArManagementReportRows(
     arYtd,
-    toArLoadFilters(ytdFilters),
+    toFinanceArSettlementScopeFilters(toArLoadFilters(ytdFilters)),
     input.referenceDate,
     input.arSyncCutoff
   ) as FinanceCashFlowArRow[];
@@ -117,38 +126,35 @@ export function deriveFinanceCashFlowCanonicalRealizedYearSets(
   return { year: input.year, arReceivedRows, apPaidRows };
 }
 
-export type FinanceCashFlowCanonicalRealizedPreloadedAr = {
-  arRows: FinanceCashFlowArRow[];
-  syncCutoff: NomusArReportSyncCutoff | null;
-  orderContexts: FinanceArEffectiveOrderContext[];
-  nfeOrderLinks: FinanceArNfeOrderLink[];
-};
-
 /**
- * Carga + derivação para um ano. `preloadedAr` evita repetir a carga pesada de
- * AR quando o chamador já a fez com os MESMOS filtros canônicos
- * (`{ status: "all", year }` — ex.: o board da Caixa).
+ * Carga + derivação para um ano.
+ *
+ * A carga AR é sempre feita aqui, com a janela de baixa do ano
+ * (`resolveCashFlowArSettlementLoadWindow`) — a mesma que a rota do Fluxo usa.
+ * O parâmetro `preloadedAr` foi removido de propósito: o board da Caixa carrega
+ * AR só por vencimento (a carteira aberta dele não pode receber as linhas extras
+ * da janela de baixa), então reusar aquela carga aqui devolveria uma população
+ * menor que a da tela e quebraria de novo o contrato de paridade.
  */
 export async function loadFinanceCashFlowCanonicalRealizedYearSets(
   prisma: PrismaClient,
   year: number,
-  referenceDate: Date,
-  preloadedAr?: FinanceCashFlowCanonicalRealizedPreloadedAr
+  referenceDate: Date
 ): Promise<FinanceCashFlowCanonicalRealizedYearSets> {
   const filters = parseFinanceCashFlowDashboardFilters({ year: String(year) });
   const apFilters = toApLoadFilters(filters);
 
   const [arSource, apSyncCutoff] = await Promise.all([
-    preloadedAr ??
-      loadFinanceArTitlesSourceBundle(
-        prisma,
-        toArLoadFilters(filters),
-        referenceDate,
-        {
-          customerName: filters.customerName,
-          personCnpj: filters.personCnpj,
-        }
-      ),
+    loadFinanceArTitlesSourceBundle(
+      prisma,
+      toArLoadFilters(filters),
+      referenceDate,
+      {
+        customerName: filters.customerName,
+        personCnpj: filters.personCnpj,
+      },
+      { settlementWindow: resolveCashFlowArSettlementLoadWindow(filters) }
+    ),
     resolveNomusApReportSyncCutoffFromPrisma(prisma),
   ]);
 
