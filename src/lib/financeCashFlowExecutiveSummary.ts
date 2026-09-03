@@ -10,6 +10,7 @@ import {
 import {
   filterFinanceArManagementReportRows,
   sumFinanceArReceivedBySettlementInFilteredRows,
+  toFinanceArSettlementScopeFilters,
 } from "./financeAccountsReceivableDashboard.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
@@ -393,11 +394,16 @@ export function buildExecutiveMonthlyTimeline(
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;
 
+  // População do REALIZADO: o mês é aplicado sobre `settlementDate` mais abaixo,
+  // então o recorte por vencimento sai daqui — senão a baixa de um título
+  // vencido em outro ano some da linha do tempo. Todo o resto do saneamento
+  // gerencial (grupo interno, fantasma, stale, pré-NF, dedup, vencido sem NF)
+  // continua sendo aplicado pela mesma função canônica.
   const officialArFiltered =
     officialContext != null
       ? filterFinanceArManagementReportRows(
           arRows,
-          toArLoadFilters(officialContext.filters),
+          toFinanceArSettlementScopeFilters(toArLoadFilters(officialContext.filters)),
           referenceDate,
           officialContext.arSyncCutoff
         )

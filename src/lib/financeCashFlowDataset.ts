@@ -541,6 +541,12 @@ export type FinanceCashFlowDatasetOptions = FinanceCashFlowArFilterOptions & {
   /** Portfólio já filtrado pelo chamador — evita o segundo filter idêntico. */
   arPortfolioRows?: FinanceCashFlowArRow[];
   apPortfolioRows?: FinanceCashFlowApRow[];
+  /**
+   * Títulos que entraram na carga apenas pela janela de baixa (vencimento fora
+   * do recorte). Alimentam SÓ o realizado do resumo executivo — carteira aberta,
+   * projeção, calendário e radar continuam por vencimento, sem estas linhas.
+   */
+  arRealizedOnlyRows?: FinanceCashFlowArRow[];
 };
 
 export type { FinanceArEffectiveOrderContext };

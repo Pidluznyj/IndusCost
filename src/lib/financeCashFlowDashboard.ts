@@ -18,11 +18,13 @@ import {
   decimalFieldToNumber,
   filterFinanceArRows,
   mapPrismaRowToFinanceArDashboardRow,
+  matchesFinanceArDueDateWindow,
   parseFinanceArDashboardFilters,
   roundMoney,
   safeRatio,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
+  type FinanceArDateWindow,
   type FinanceArInvoiceIssuedFilter,
   FinanceArFilterParseError,
 } from "./financeAccountsReceivableDashboard.js";
@@ -417,6 +419,55 @@ export function toApLoadFilters(cf: FinanceCashFlowDashboardFilters): FinanceApD
     bankAccountName: cf.bankAccountName,
     managementScope: cf.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
   };
+}
+
+/**
+ * Janela de baixa que a carga AR do Fluxo precisa admitir além do recorte por
+ * vencimento: o ano civil filtrado — exatamente o intervalo coberto pela linha
+ * do tempo mensal e pelo YTD, onde o realizado é alocado por `settlementDate`.
+ * Sem ano no filtro não há recorte a ampliar.
+ */
+export function resolveCashFlowArSettlementLoadWindow(
+  cfFilters: FinanceCashFlowDashboardFilters
+): FinanceArDateWindow | null {
+  if (cfFilters.year == null) return null;
+  return {
+    from: new Date(cfFilters.year, 0, 1, 0, 0, 0, 0),
+    toExclusive: new Date(cfFilters.year + 1, 0, 1, 0, 0, 0, 0),
+  };
+}
+
+/**
+ * Separa as linhas que entraram na carga SÓ pela janela de baixa.
+ *
+ * - `periodRows`: exatamente a população de hoje (vencimento no recorte do
+ *   filtro). Alimenta carteira aberta, projeção, calendário, radar e blocos.
+ * - `settlementOnlyRows`: vencimento FORA do ano civil filtrado. Alimentam só o
+ *   realizado do resumo executivo. Como a linha do tempo mensal projeta o aberto
+ *   mês a mês dentro do ano, um vencimento fora do ano não pode virar previsão
+ *   de nenhum mês — a neutralidade do eixo `dueDate` fica garantida por
+ *   construção, inclusive quando há filtro de mês.
+ *
+ * Linhas vencidas dentro do ano mas fora do mês filtrado continuam de fora, como
+ * hoje: ampliar isso seria mudar o recorte do filtro, não corrigir o realizado.
+ */
+export function splitCashFlowArRowsBySettlementOnlyWindow(
+  rows: FinanceCashFlowArRow[],
+  cfFilters: FinanceCashFlowDashboardFilters
+): { periodRows: FinanceCashFlowArRow[]; settlementOnlyRows: FinanceCashFlowArRow[] } {
+  const loadFilters = toArLoadFilters(cfFilters);
+  const yearFilters: FinanceArDashboardFilters = { ...loadFilters, month: undefined };
+  const periodRows: FinanceCashFlowArRow[] = [];
+  const settlementOnlyRows: FinanceCashFlowArRow[] = [];
+  for (const row of rows) {
+    if (matchesFinanceArDueDateWindow(row, loadFilters)) periodRows.push(row);
+    else if (row.settlementDate && !matchesFinanceArDueDateWindow(row, yearFilters)) {
+      // Sem baixa não há realizado a recuperar — a linha só existiria para
+      // engordar a população.
+      settlementOnlyRows.push(row);
+    }
+  }
+  return { periodRows, settlementOnlyRows };
 }
 
 /** Filtros AR equivalentes ao portfólio do Fluxo (sem recorte de mês/ano). */
@@ -895,8 +946,14 @@ export function buildFinanceCashFlowDashboardFromDataset(
     arSyncCutoff
   );
   const executiveYtdReading = buildCashFlowExecutiveYtdReading(executiveYtd);
+  // Resumo executivo é o único bloco que soma realizado por data de baixa —
+  // por isso é o único que recebe as linhas admitidas só pela janela de baixa.
+  const executiveSummaryArRows =
+    datasetOptions?.arRealizedOnlyRows?.length
+      ? [...arRows, ...datasetOptions.arRealizedOnlyRows]
+      : arRows;
   const executiveSummary = buildFinanceCashFlowExecutiveSummary(
-    arRows,
+    executiveSummaryArRows,
     apRows,
     filters,
     referenceDate,

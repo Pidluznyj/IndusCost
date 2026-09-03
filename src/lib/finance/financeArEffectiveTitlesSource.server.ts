@@ -3,7 +3,10 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import type { FinanceArDashboardFilters } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import type {
+  FinanceArDashboardFilters,
+  FinanceArPrismaWhereOptions,
+} from "@/src/lib/financeAccountsReceivableDashboard.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import type { NomusArReportSyncCutoff } from "@/src/lib/financeNomusArReportFreshness.js";
@@ -28,10 +31,11 @@ export async function loadFinanceArTitlesSourceBundle(
   prisma: PrismaClient,
   arFilters: FinanceArDashboardFilters,
   referenceDate: Date = new Date(),
-  enrichInput?: FinanceCashFlowArEnrichInput
+  enrichInput?: FinanceCashFlowArEnrichInput,
+  whereOptions?: FinanceArPrismaWhereOptions
 ): Promise<FinanceArTitlesSourceBundle> {
   const { rows, syncCutoff } = await measureDevPerfPhase("arLoad", () =>
-    loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate)
+    loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate, whereOptions)
   );
   const arRows = rows as FinanceCashFlowArRow[];
   const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
