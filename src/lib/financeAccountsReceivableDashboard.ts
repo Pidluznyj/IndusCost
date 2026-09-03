@@ -455,11 +455,25 @@ function financeArNotSuspendedClause(): Prisma.NomusAccountsReceivableWhereInput
   return { OR: [{ suspendCollection: false }, { suspendCollection: null }] };
 }
 
+/** Janela civil `[from, toExclusive)` — mesma convenção de `resolveFinanceArDueDateBounds`. */
+export type FinanceArDateWindow = { from: Date; toExclusive: Date };
+
+export type FinanceArPrismaWhereOptions = {
+  /**
+   * Janela de baixa (`settlementDate`) admitida ALÉM da janela de vencimento.
+   * Quem aloca o realizado por data de baixa (Fluxo de Caixa) precisa disso:
+   * sem a alternativa, a carga por `dueDate` descarta recebimentos efetivados
+   * no período cujo título venceu em outro ano.
+   */
+  settlementWindow?: FinanceArDateWindow | null;
+};
+
 /** Pré-filtro seguro no banco — complementa `filterFinanceArRows` em memória. */
 export function buildFinanceArPrismaWhere(
   filters: FinanceArDashboardFilters,
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: FinanceArPrismaWhereOptions
 ): Prisma.NomusAccountsReceivableWhereInput {
   const and: Prisma.NomusAccountsReceivableWhereInput[] = [];
   const { from, toExclusive, empty } = resolveFinanceArDueDateBounds(filters);
@@ -468,7 +482,25 @@ export function buildFinanceArPrismaWhere(
     const dueDate: Prisma.DateTimeNullableFilter = {};
     if (from != null) dueDate.gte = from;
     if (toExclusive != null) dueDate.lt = toExclusive;
-    and.push({ dueDate });
+    const settlementWindow = options?.settlementWindow;
+    if (settlementWindow) {
+      // União lógica: vencimento no recorte OU baixa dentro da janela do
+      // realizado. Um título que satisfaz as duas volta uma única vez (OR do
+      // Prisma não duplica linha).
+      and.push({
+        OR: [
+          { dueDate },
+          {
+            settlementDate: {
+              gte: settlementWindow.from,
+              lt: settlementWindow.toExclusive,
+            },
+          },
+        ],
+      });
+    } else {
+      and.push({ dueDate });
+    }
   }
 
   pushFinanceArPrismaContains(and, "companyName", filters.companyName);
@@ -538,6 +570,46 @@ export function buildFinanceArPrismaWhere(
   });
 }
 
+/**
+ * Recorte por vencimento (ano/mês/intervalo) — fonte única da regra usada tanto
+ * pelo filtro em memória quanto por quem precisa saber se uma linha entrou na
+ * população por `dueDate`. Linha sem vencimento fica fora quando há janela.
+ */
+export function matchesFinanceArDueDateWindow(
+  row: Pick<FinanceArDashboardRow, "dueDate">,
+  filters: Pick<FinanceArDashboardFilters, "dueDateFrom" | "dueDateTo" | "year" | "month">
+): boolean {
+  const { from, toExclusive } = resolveFinanceArDueDateBounds(filters);
+  if (from && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < from.getTime())) {
+    return false;
+  }
+  if (
+    toExclusive &&
+    (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= toExclusive.getTime())
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Filtros da população do REALIZADO (recebido por data de baixa): preserva todo
+ * o saneamento gerencial e remove apenas o recorte por vencimento. O período do
+ * realizado é aplicado sobre `settlementDate`; recortar por `dueDate` antes
+ * descartaria baixas de títulos vencidos em outro período.
+ */
+export function toFinanceArSettlementScopeFilters(
+  filters: FinanceArDashboardFilters
+): FinanceArDashboardFilters {
+  return {
+    ...filters,
+    year: undefined,
+    month: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+  };
+}
+
 export function matchesFinanceArDashboardFilters(
   row: FinanceArDashboardRow,
   filters: FinanceArDashboardFilters,
@@ -556,18 +628,7 @@ export function matchesFinanceArDashboardFilters(
   if (!textMatchesFilter(row.paymentMethodName, paymentFilter)) return false;
   if (!textMatchesFilter(row.bankAccountName, bankFilter)) return false;
 
-  const { from: dueFrom, toExclusive: dueToExclusive } =
-    resolveFinanceArDueDateBounds(filters);
-
-  if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
-    return false;
-  }
-  if (
-    dueToExclusive &&
-    (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
-  ) {
-    return false;
-  }
+  if (!matchesFinanceArDueDateWindow(row, filters)) return false;
 
   const invoiceFilter = filters.invoiceIssued ?? "all";
   if (invoiceFilter !== "all") {
@@ -1248,7 +1309,13 @@ export function sumFinanceArReceivedBySettlementInFilteredRows(
   return roundMoney(total);
 }
 
-/** Soma recebimentos por data de baixa — mesma regra de `receivedThisMonthAmount` no dashboard. */
+/**
+ * Soma recebimentos por data de baixa — mesma regra de `receivedThisMonthAmount`
+ * no dashboard. O período vem de `periodStart`/`periodEnd` aplicados sobre
+ * `settlementDate`; o recorte por vencimento dos filtros é removido da população
+ * (`toFinanceArSettlementScopeFilters`) para não descartar baixas do período cujo
+ * título venceu fora dele. Demais filtros gerenciais seguem valendo.
+ */
 export function sumFinanceArReceivedBySettlementInPeriod(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
@@ -1259,7 +1326,7 @@ export function sumFinanceArReceivedBySettlementInPeriod(
 ): number {
   const filteredRows = filterFinanceArManagementReportRows(
     rows,
-    filters,
+    toFinanceArSettlementScopeFilters(filters),
     referenceDate,
     syncCutoff
   );

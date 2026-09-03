@@ -59,6 +59,8 @@ import {
 } from "@/src/lib/financeCashFlowAnnualComparison.js";
 import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
 import {
+  resolveCashFlowArSettlementLoadWindow,
+  splitCashFlowArRowsBySettlementOnlyWindow,
   toCashFlowPortfolioApFilters,
   toCashFlowPortfolioArFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
@@ -126,13 +128,25 @@ export async function loadCashFlowRows(
       const arFilters = toArLoadFilters(filters);
       const apFilters = toApLoadFilters(filters);
       const [arBundle, apSyncCutoff] = await Promise.all([
-        loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
-          customerName: filters.customerName,
-          personCnpj: filters.personCnpj,
-          projectionMode,
-        }),
+        loadFinanceArTitlesSourceBundle(
+          prisma,
+          arFilters,
+          referenceDate,
+          {
+            customerName: filters.customerName,
+            personCnpj: filters.personCnpj,
+            projectionMode,
+          },
+          // O realizado da tela é alocado por data de baixa: a carga precisa
+          // admitir também os títulos baixados dentro do ano, mesmo vencendo
+          // fora dele. Eles ficam separados em `arRealizedOnlyRows` e não
+          // entram na carteira aberta nem na projeção por vencimento.
+          { settlementWindow: resolveCashFlowArSettlementLoadWindow(filters) }
+        ),
         measureDevPerfPhase("apCutoff", () => resolveNomusApReportSyncCutoffFromPrisma(prisma)),
       ]);
+      const { periodRows: arPeriodRows, settlementOnlyRows: arRealizedOnlyRows } =
+        splitCashFlowArRowsBySettlementOnlyWindow(arBundle.arRows, filters);
       const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
       const apPrisma = await measureDevPerfPhase("apLoad", () =>
         prisma.nomusAccountsPayable.findMany({
@@ -143,13 +157,14 @@ export async function loadCashFlowRows(
       );
 
       noteDevPerfRowCounts({
-        ar: arBundle.arRows.length,
+        ar: arPeriodRows.length,
         ap: apPrisma.length,
         orders: arBundle.orderContexts.length,
       });
 
       return {
-        arRows: arBundle.arRows,
+        arRows: arPeriodRows,
+        arRealizedOnlyRows,
         apRows: measureDevPerfPhaseSync("mapApRows", () =>
           apPrisma.map(mapPrismaRowToFinanceCashFlowApRow)
         ),
@@ -197,6 +212,9 @@ export async function loadDailyRadarPortfolioRows(
 
       return {
         arRows: arBundle.arRows,
+        // Radar carrega a carteira aberta inteira (sem recorte de período):
+        // não existe "linha extra por data de baixa" a separar aqui.
+        arRealizedOnlyRows: [] as FinanceCashFlowArRow[],
         apRows: measureDevPerfPhaseSync("mapApRows", () =>
           apPrisma.map(mapPrismaRowToFinanceCashFlowApRow)
         ),
@@ -258,8 +276,11 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         filters,
         resolveCashFlowProjectionMode()
       );
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
-      const arOptions = cashFlowArFilterOptions(load);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, arRealizedOnlyRows } = load;
+      const arOptions = {
+        ...cashFlowArFilterOptions(load),
+        arRealizedOnlyRows,
+      };
       const auditMode = String(req.query.audit ?? "").trim() === "1";
       if (auditMode) {
         const dataset = buildFinanceCashFlowDataset(
@@ -304,8 +325,11 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       if (!filters) return;
 
       const load = await loadCashFlowRows(filters);
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
-      const arOptions = cashFlowArFilterOptions(load);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, arRealizedOnlyRows } = load;
+      const arOptions = {
+        ...cashFlowArFilterOptions(load),
+        arRealizedOnlyRows,
+      };
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,

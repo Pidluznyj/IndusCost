@@ -8,6 +8,7 @@ import {
   mapPrismaRowToFinanceArDashboardRow,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
+  type FinanceArPrismaWhereOptions,
 } from "./financeAccountsReceivableDashboard.js";
 import { FINANCE_AR_TITLE_SELECT } from "./financeAccountsReceivableTitles.js";
 import {
@@ -22,10 +23,11 @@ import { buildFinanceArPrismaWhereForOpenHorizon } from "./financeAccountsReceiv
 export async function loadFinanceArManagementRowsFromPrisma(
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "salesOrder" | "salesOrderNfeLink">,
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  whereOptions?: FinanceArPrismaWhereOptions
 ): Promise<FinanceArManagementRowsLoadResult> {
   const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(db);
-  const where = buildFinanceArPrismaWhere(filters, referenceDate, syncCutoff);
+  const where = buildFinanceArPrismaWhere(filters, referenceDate, syncCutoff, whereOptions);
   const [rawRows, cancelledExclusion] = await Promise.all([
     db.nomusAccountsReceivable.findMany({
       where,

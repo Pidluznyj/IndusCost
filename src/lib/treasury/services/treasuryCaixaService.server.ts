@@ -555,8 +555,14 @@ export function createTreasuryCaixaService(input: {
       // gênese até o ano filtrado. CR usa a regra dos N dias
       // (`reconciliationPolicy`); CP ancora sempre no vencimento (baixa Nomus
       // retroativa não desloca o mês). As duas telas (Tesouraria vs Fluxo)
-      // permanecem autoridades DESACOPLADAS. Baixa de CR cruzando ano além da
-      // tolerância fica fora, como já era.
+      // permanecem autoridades DESACOPLADAS: o que é comum é a POPULAÇÃO; o
+      // consumo (data efetiva do CR, vencimento do CP) continua só daqui.
+      //
+      // A população canônica é sempre carregada pelo próprio loader — inclusive
+      // no ano filtrado. O `arRows` do board é carregado só por vencimento
+      // (a carteira aberta não pode receber as linhas da janela de baixa), então
+      // reusá-lo aqui devolveria uma população menor que a da tela de Fluxo e
+      // quebraria a paridade. Custo: uma consulta AR a mais por render.
       const chainYears = resolveTreasuryCaixaChainYears(period.year);
       const canonicalContexts: FinanceCashFlowCanonicalRealizedYearSets[] = [];
       for (const year of chainYears) {
@@ -564,17 +570,7 @@ export function createTreasuryCaixaService(input: {
           await loadFinanceCashFlowCanonicalRealizedYearSets(
             prisma,
             year,
-            referenceDate,
-            // O board já carregou o AR canônico do ano filtrado
-            // ({ status: "all", year }) — reusa em vez de recarregar.
-            year === period.year
-              ? {
-                  arRows,
-                  syncCutoff: arLoaded.syncCutoff,
-                  orderContexts,
-                  nfeOrderLinks,
-                }
-              : undefined
+            referenceDate
           )
         );
       }
