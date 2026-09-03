@@ -9,11 +9,12 @@ import {
   Loader2,
   Package,
   Plus,
+  Printer,
+  RefreshCw,
   Search,
   ShoppingCart,
   Trash2,
   ExternalLink,
-  AlertTriangle,
   X,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
@@ -30,6 +31,21 @@ import {
   PurchaseRequestEmittedOrderRow,
 } from "@/src/types/purchase";
 import { SearchableSelect, SelectOption } from "@/src/components/shared/SearchableSelect";
+import { AppAlert } from "@/src/components/shared/AppAlert";
+import {
+  OverlayBadge,
+  OverlayField,
+  OverlayFieldGrid,
+  OverlaySection,
+  OverlayTextarea,
+  OVERLAY_CONTROL_CLASS,
+  type OverlayBadgeTone,
+} from "@/src/components/ui/overlay";
+import {
+  OVERLAY_EYEBROW,
+  OVERLAY_LABEL_DENSE,
+  OVERLAY_TABLE_HEAD,
+} from "@/src/lib/overlay/overlayTypography";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
@@ -55,6 +71,21 @@ const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   ENCERRADA: "Pedido emitido",
 };
 
+/**
+ * Tom por significado, mesma doutrina do Pedido de Compra (`purchaseOrderUi`):
+ * âmbar = espera alguém agir, sky = em trânsito, violet = orçamentação,
+ * emerald = deu certo, rose = morreu, slate = nem começou.
+ */
+const STATUS_TONE: Record<PurchaseRequestStatus, OverlayBadgeTone> = {
+  RASCUNHO: "slate",
+  AGUARDANDO_APROVACAO: "amber",
+  ABERTA: "sky",
+  REJEITADA: "amber",
+  EM_COTACAO: "violet",
+  CANCELADA: "rose",
+  ENCERRADA: "emerald",
+};
+
 const PRIORITY_LABEL: Record<PurchasePriority, string> = {
   BAIXA: "Baixa",
   NORMAL: "Normal",
@@ -62,91 +93,145 @@ const PRIORITY_LABEL: Record<PurchasePriority, string> = {
   URGENTE: "Urgente",
 };
 
+/** Prioridade só merece cor quando exige reação — o resto é ruído. */
+const PRIORITY_TONE: Record<PurchasePriority, OverlayBadgeTone> = {
+  BAIXA: "slate",
+  NORMAL: "slate",
+  ALTA: "amber",
+  URGENTE: "rose",
+};
+
 const LINE_TYPE_LABEL = {
   MATERIA_PRIMA: "Matéria-prima",
   INDIRETO: "Indireto / insumo / uso geral",
 } as const;
 
+/** Rótulo curto para tabela/chip, onde o texto longo do tipo não cabe. */
+const LINE_TYPE_SHORT = {
+  MATERIA_PRIMA: "MP",
+  INDIRETO: "Indireto",
+} as const;
+
+/** Numeração de linha do documento (00010, 00020, …) — igual à do PDF do pedido. */
+function itemLineCode(index: number): string {
+  return String((index + 1) * 10).padStart(5, "0");
+}
+
+/**
+ * Campo somente-leitura no padrão do repositório (dl/dt/dd), como no Pedido de
+ * Compra. Existe porque campo travado renderizado como `<input disabled>` custa
+ * três vezes mais altura e ainda sugere que dá para editar.
+ */
+function Term({
+  label,
+  value,
+  span,
+}: {
+  label: string;
+  value: React.ReactNode;
+  span?: 2 | 4;
+}) {
+  const empty = value == null || value === "";
+  return (
+    <div
+      className={cn(
+        "min-w-0",
+        span === 2 && "sm:col-span-2",
+        span === 4 && "sm:col-span-2 lg:col-span-4"
+      )}
+    >
+      <dt className={OVERLAY_LABEL_DENSE}>{label}</dt>
+      <dd className="mt-0.5 break-words text-sm font-medium text-foreground">
+        {empty ? "—" : value}
+      </dd>
+    </div>
+  );
+}
+
+/** Par rótulo/valor da faixa densa de contexto do material. */
+function MaterialFact({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="truncate text-xs font-medium text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Contexto do material vinculado, em faixa densa.
+ *
+ * Antes eram onze campos de custo empilhados em duas colunas dentro de cada
+ * item — a maior fonte de altura da tela. Quem escreve uma solicitação decide
+ * com unidade, categoria, custo de referência e fornecedor; custo médio,
+ * padrão, frete, fator e perda são detalhe de custeio e ficam a um clique,
+ * sem sair da tela e sem sumir do sistema.
+ */
 function MaterialMpSummaryCard({ material: m, readOnly: ro }: { material: Material; readOnly: boolean }) {
+  const [showCosts, setShowCosts] = useState(false);
   const cat = m.category.replace(/_/g, " ");
   const active = m.status === "ACTIVE";
   return (
     <div
       className={cn(
-        "rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3 text-sm",
+        "rounded-lg border border-primary/25 bg-primary/5 px-3 py-2.5 space-y-2",
         ro && "opacity-95"
       )}
     >
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Material vinculado (cadastro Suprimentos)</p>
-          <p className="font-mono text-xs text-muted-foreground mt-0.5">{m.code}</p>
-          <p className="font-medium leading-snug">{m.description}</p>
-        </div>
-        <span
-          className={cn(
-            "text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0",
-            active ? "bg-green-500/15 text-green-800" : "bg-amber-500/15 text-amber-900"
-          )}
-        >
-          {active ? "Ativo no cadastro" : "Inativo no cadastro"}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-mono text-xs font-semibold text-primary">{m.code}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" title={m.description}>
+          {m.description}
         </span>
+        {active ? null : (
+          <OverlayBadge tone="amber">Inativo no cadastro</OverlayBadge>
+        )}
       </div>
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
-        <div>
-          <dt className="text-muted-foreground">Unidade</dt>
-          <dd className="font-medium">{m.unit}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Categoria</dt>
-          <dd className="font-medium">{cat}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Custo atual</dt>
-          <dd className="font-medium">{formatCurrency(m.currentCost)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Custo médio</dt>
-          <dd className="font-medium">{formatCurrency(m.averageCost)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Custo padrão</dt>
-          <dd className="font-medium">{formatCurrency(m.standardCost)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Frete (cadastro)</dt>
-          <dd className="font-medium">{formatCurrency(m.freight ?? 0)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Fator de conversão</dt>
-          <dd className="font-medium">{formatNumber(m.conversionFactor ?? 1, 4)}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Perda padrão</dt>
-          <dd className="font-medium">{formatNumber(m.standardLoss ?? 0, 2)}%</dd>
-        </div>
-        {m.supplier ? (
-          <div className="sm:col-span-2">
-            <dt className="text-muted-foreground">Fornecedor no cadastro</dt>
-            <dd className="font-medium">{m.supplier}</dd>
-          </div>
-        ) : null}
-        {m.calculations ? (
-          <>
-            <div>
-              <dt className="text-muted-foreground">Posto fábrica (ref. cadastro)</dt>
-              <dd className="font-medium">{formatCurrency(m.calculations.landedCost)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Efetivo c/ perda (ref. cadastro)</dt>
-              <dd className="font-medium">{formatCurrency(m.calculations.effectiveCost)}</dd>
-            </div>
-          </>
-        ) : null}
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+        <MaterialFact label="Unidade" value={m.unit} />
+        <MaterialFact label="Categoria" value={cat} />
+        <MaterialFact label="Custo atual" value={formatCurrency(m.currentCost)} />
+        <MaterialFact label="Fornecedor" value={m.supplier || "—"} />
       </dl>
-      <p className="text-[10px] text-muted-foreground border-t border-border/60 pt-2">
-        Valores acima vêm do cadastro de materiais. Esta solicitação <strong>não altera</strong> custos nem precificação automaticamente.
-      </p>
+
+      {showCosts ? (
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-primary/20 pt-2 sm:grid-cols-4">
+          <MaterialFact label="Custo médio" value={formatCurrency(m.averageCost)} />
+          <MaterialFact label="Custo padrão" value={formatCurrency(m.standardCost)} />
+          <MaterialFact label="Frete (cadastro)" value={formatCurrency(m.freight ?? 0)} />
+          <MaterialFact label="Fator de conversão" value={formatNumber(m.conversionFactor ?? 1, 4)} />
+          <MaterialFact label="Perda padrão" value={`${formatNumber(m.standardLoss ?? 0, 2)}%`} />
+          {m.calculations ? (
+            <>
+              <MaterialFact
+                label="Posto fábrica (ref.)"
+                value={formatCurrency(m.calculations.landedCost)}
+              />
+              <MaterialFact
+                label="Efetivo c/ perda (ref.)"
+                value={formatCurrency(m.calculations.effectiveCost)}
+              />
+            </>
+          ) : null}
+          <p className="col-span-2 text-[10px] leading-snug text-muted-foreground sm:col-span-4">
+            Valores vêm do cadastro de materiais. Esta solicitação <strong>não altera</strong> custos
+            nem precificação.
+          </p>
+        </dl>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => setShowCosts((v) => !v)}
+        aria-expanded={showCosts}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+      >
+        {showCosts ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {showCosts ? "Ocultar custos do cadastro" : "Custos do cadastro"}
+      </button>
     </div>
   );
 }
@@ -157,6 +242,15 @@ function formatDt(iso: string) {
   } catch {
     return iso;
   }
+}
+
+/**
+ * `YYYY-MM-DD` → `DD/MM/AAAA` sem passar por `Date`: a data desejada não tem
+ * hora, e converter meia-noite UTC em horário de Brasília adiantaria o dia.
+ */
+function formatIsoDate(value: string): string {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return parts ? `${parts[3]}/${parts[2]}/${parts[1]}` : value;
 }
 
 function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
@@ -267,6 +361,19 @@ export const PurchaseModule = () => {
   const readOnly = formMode === "view";
   const contentLocked = status !== "RASCUNHO" && status !== "REJEITADA";
   const fieldsDisabled = readOnly || (formMode === "edit" && contentLocked);
+
+  /**
+   * Campo travado é dado, não formulário: nesse estado a tela vira documento
+   * (dl/dt/dd + tabela de itens) em vez de uma pilha de inputs cinza.
+   */
+  const documentMode = fieldsDisabled;
+
+  /** Espelha as condições dos botões de workflow, para não desenhar barra vazia. */
+  const hasWorkflowActions =
+    (status === "RASCUNHO" && allowCreate) ||
+    (allowEdit &&
+      ["ABERTA", "EM_COTACAO", "AGUARDANDO_APROVACAO", "REJEITADA"].includes(status)) ||
+    (allowEdit && status !== "CANCELADA" && status !== "ENCERRADA");
 
   /** Inclui materiais inativos já vinculados à linha para o seletor não ficar “órfão” na edição */
   const mpSelectableMaterials = useMemo(() => {
@@ -664,7 +771,7 @@ export const PurchaseModule = () => {
     const rowsHtml = items
       .map(
         (it, i) => `<tr class="${i % 2 === 1 ? "stripe" : ""}">
-  <td class="num">${String((i + 1) * 10).padStart(5, "0")}</td>
+  <td class="num">${itemLineCode(i)}</td>
   <td>${esc(it.description)}</td>
   <td class="right">${formatNumber(it.quantity)}</td>
   <td class="center">${esc(it.unit)}</td>
@@ -949,6 +1056,13 @@ export const PurchaseModule = () => {
     return [inherit, ...financialCcOptions];
   }, [financialCcOptions]);
 
+  const mpLineCount = useMemo(
+    () => items.filter((i) => i.lineType === "MATERIA_PRIMA").length,
+    [items]
+  );
+  /** Ações do cadastro de materiais só fazem sentido se existe linha de MP. */
+  const hasMpLine = mpLineCount > 0;
+
   const resolvedCcLabel = (item: PurchaseItemDraft) => {
     if (item.financialCostCenterId) {
       const f = financialCcs.find((x) => x.id === item.financialCostCenterId);
@@ -1147,20 +1261,9 @@ export const PurchaseModule = () => {
                     <tr key={r.id} className="hover:bg-accent/20 transition-colors">
                       <td className="p-4 font-mono text-sm">#{r.number}</td>
                       <td className="p-4">
-                        <span
-                          className={cn(
-                            "text-[10px] font-bold uppercase px-2 py-1 rounded-full",
-                            r.status === "ABERTA" && "bg-blue-500/15 text-blue-700",
-                            r.status === "RASCUNHO" && "bg-muted text-muted-foreground",
-                            r.status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
-                            r.status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
-                            r.status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
-                            r.status === "CANCELADA" && "bg-red-500/15 text-red-700",
-                            r.status === "ENCERRADA" && "bg-green-500/15 text-green-800"
-                          )}
-                        >
+                        <OverlayBadge tone={STATUS_TONE[r.status]}>
                           {STATUS_LABEL[r.status]}
-                        </span>
+                        </OverlayBadge>
                       </td>
                       <td className="p-4 text-sm">{r.requester}</td>
                       <td className="p-4 text-sm">{r.department}</td>
@@ -1227,66 +1330,60 @@ export const PurchaseModule = () => {
     );
   }
 
+  const guidance = resolvePurchaseRequestGuidance(status);
+
   return (
-    <div className="space-y-6" data-tour="purchases-root">
+    <div className="space-y-4" data-tour="purchases-root">
+      {/* Cabeçalho do documento: identidade, situação e metadados numa faixa só. */}
       <div
-        className="flex flex-col sm:flex-row sm:items-start justify-between gap-4"
+        className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between"
         data-tour="purchases-toolbar"
       >
-        <div>
+        <div className="min-w-0">
           <button
             type="button"
             onClick={() => {
               setView("list");
               loadLists();
             }}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             Voltar à lista
           </button>
-          <h3 className="text-lg font-semibold flex items-center gap-2 flex-wrap">
-            <Package className="h-5 w-5 text-primary" />
-            {formMode === "create"
-              ? "Nova solicitação de compra"
-              : `Solicitação ${requestNumber != null ? `#${requestNumber}` : ""}`}
-            <span
-              title="Use as ações de workflow abaixo para mudar o status."
-              className={cn(
-                "text-[11px] font-bold uppercase px-2.5 py-1 rounded-full",
-                status === "ABERTA" && "bg-blue-500/15 text-blue-700",
-                status === "RASCUNHO" && "bg-muted text-muted-foreground",
-                status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
-                status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
-                status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
-                status === "CANCELADA" && "bg-red-500/15 text-red-700",
-                status === "ENCERRADA" && "bg-green-500/15 text-green-800"
-              )}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <Package className="h-4 w-4 shrink-0 text-primary" />
+            <h3 className="text-base font-semibold text-foreground">
+              {formMode === "create"
+                ? "Nova solicitação de compra"
+                : `Solicitação ${requestNumber != null ? `#${requestNumber}` : ""}`}
+            </h3>
+            <OverlayBadge
+              tone={STATUS_TONE[status]}
+              emphasized
+              title="Use as ações de workflow para mudar o status."
             >
               {STATUS_LABEL[status]}
-            </span>
-          </h3>
-          {/* Mesmo vocabulário do Pedido: por que está aqui, o que falta. */}
-          {formMode !== "create" ? (
-            <div
-              className="mt-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2"
-              data-testid="purchase-request-next-step"
-            >
-              <p className="text-sm leading-snug text-foreground">
-                <span className="font-medium text-muted-foreground">Aqui porque </span>
-                {resolvePurchaseRequestGuidance(status).stayReason}
-              </p>
-              <p className="mt-1 text-sm leading-snug text-foreground">
-                <span className="font-medium text-sky-800">Para sair · </span>
-                {resolvePurchaseRequestGuidance(status).nextAction}
-              </p>
-            </div>
-          ) : null}
-          {createdAt && (
-            <p className="text-xs text-muted-foreground mt-1">Criada em {formatDt(createdAt)}</p>
-          )}
+            </OverlayBadge>
+            {priority === "ALTA" || priority === "URGENTE" ? (
+              <OverlayBadge tone={PRIORITY_TONE[priority]}>
+                {PRIORITY_LABEL[priority]}
+              </OverlayBadge>
+            ) : null}
+          </div>
+          {/* Metadados do documento em uma linha, no lugar de parágrafos soltos. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {[
+              createdAt ? `Criada em ${formatDt(createdAt)}` : null,
+              requester || null,
+              department || null,
+              `${items.length} ${items.length === 1 ? "item" : "itens"}`,
+            ]
+              .filter(Boolean)
+              .join("  ·  ")}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
           {!fieldsDisabled && (
             <button
@@ -1302,290 +1399,825 @@ export const PurchaseModule = () => {
         </div>
       </div>
 
-      {headerCc?.code === "A-CLASS" && (
-        <div className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-          <AlertTriangle className="h-5 w-5 text-amber-700 shrink-0" />
-          <div>
-            <p className="font-medium text-amber-900">Centro de custo &quot;A classificar&quot;</p>
-            <p className="text-amber-900/90 mt-1">
-              Esta solicitação usa o fallback controlado <strong>{headerCc.code}</strong>. O vínculo é explícito e
-              rastreável — substitua por um centro definitivo quando souber a alocação.
+      {/* O pedido emitido é o documento que o usuário vem buscar — fica no topo. */}
+      {status === "ENCERRADA" && emittedOrder ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              Pedido de compra emitido
+            </p>
+            <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm">
+              <span className="font-mono font-semibold text-emerald-950">{emittedOrder.code}</span>
+              <span className="text-emerald-900">{emittedOrder.supplierDisplayNameSnapshot}</span>
+              {winnerQuote ? (
+                <span className="font-semibold text-emerald-950">
+                  {formatCurrency(Number(winnerQuote.totalValue))}
+                </span>
+              ) : null}
             </p>
           </div>
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-8" data-tour="purchases-header-block">
-        <h4 className="text-sm font-semibold text-foreground">Dados da solicitação</h4>
-
-        <div className="space-y-4">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Quem solicita</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">
-                Solicitante <span className="text-primary">*</span>
-              </label>
-              <SearchableSelect
-                options={employeeOptions}
-                value={requesterEmployeeId}
-                onChange={handleRequesterSelect}
-                placeholder="Selecione o funcionário..."
-                disabled={fieldsDisabled}
-                required
-              />
-              {!requesterEmployeeId && requester ? (
-                <p className="text-[11px] text-muted-foreground">
-                  Registro antigo: {requester}. Selecione o funcionário para oficializar.
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">
-                Departamento / área <span className="text-primary">*</span>
-              </label>
-              <input
-                disabled
-                readOnly
-                className="w-full p-2 rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground"
-                value={department}
-                placeholder="Definido pelo funcionário selecionado"
-                title="Preenchido automaticamente a partir do setor do funcionário"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-6 border-t border-border/60">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Classificação e alocação</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">Tipo / categoria</label>
-              <select
-                disabled={fieldsDisabled}
-                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                value={requestCategoryId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setRequestCategoryId(id);
-                  setRequestCategory(requestCategories.find((c) => c.id === id)?.name ?? "");
-                }}
-              >
-                <option value="">— Sem categoria —</option>
-                {requestCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">Prioridade</label>
-              <select
-                disabled={fieldsDisabled}
-                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as PurchasePriority)}
-              >
-                {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_LABEL[p]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">
-                Centro de custo <span className="text-primary">*</span>
-              </label>
-              <SearchableSelect
-                options={financialCcOptions}
-                value={defaultFinancialCostCenterId}
-                onChange={setDefaultFinancialCostCenterId}
-                placeholder="Selecione o centro de custo..."
-                disabled={fieldsDisabled}
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-6 border-t border-border/60">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary/80">Justificativa</p>
-          <div className="space-y-1.5">
-            <label className="text-[13px] font-medium text-foreground/80">
-              Por que essa compra é necessária? <span className="text-primary">*</span>
-            </label>
-            <textarea
-              disabled={fieldsDisabled}
-              rows={3}
-              className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={justification}
-              onChange={(e) => setJustification(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-muted/30 border border-border/60 p-4 space-y-4">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Informações complementares (opcional)
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">Projeto oficial</label>
-              <SearchableSelect
-                options={[{ value: "", label: "— Sem projeto —" }, ...projectOptions]}
-                value={projectId}
-                onChange={setProjectId}
-                placeholder="Buscar projeto oficial…"
-                disabled={fieldsDisabled}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground/80">Referência externa</label>
-              <input
-                disabled={fieldsDisabled}
-                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                placeholder="OS, contrato, etc."
-                value={externalReference}
-                onChange={(e) => setExternalReference(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <label className="text-[13px] font-medium text-foreground/80">Observações</label>
-              <textarea
-                disabled={fieldsDisabled}
-                rows={2}
-                className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {editingId ? (
-        <div
-          className="rounded-2xl border border-border bg-card p-6 space-y-3"
-          data-testid="purchase-request-workflow"
-        >
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Workflow
-          </h4>
-          <div className="flex flex-wrap gap-2">
-            {status === "RASCUNHO" && allowCreate ? (
-              <button
-                type="button"
-                disabled={workflowBusy}
-                onClick={() => void runWorkflow("submit")}
-                className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
-              >
-                Enviar para compras
-              </button>
-            ) : null}
-            {status === "ABERTA" && allowEdit ? (
-              <button
-                type="button"
-                disabled={workflowBusy}
-                onClick={() => void runWorkflow("validate")}
-                className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
-              >
-                Validar e iniciar orçamentos
-              </button>
-            ) : null}
-            {status === "EM_COTACAO" && allowEdit ? (
-              <button
-                type="button"
-                disabled={workflowBusy || !quotes.some((q) => q.isWinner)}
-                onClick={() => void runWorkflow("send-to-approval")}
-                title={quotes.some((q) => q.isWinner) ? "" : "Marque um orçamento vencedor primeiro"}
-                className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
-              >
-                Enviar para aprovação
-              </button>
-            ) : null}
-            {status === "AGUARDANDO_APROVACAO" && allowEdit ? (
-              <>
-                <button
-                  type="button"
-                  disabled={workflowBusy}
-                  onClick={() => void runWorkflow("approve")}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white disabled:opacity-50"
-                >
-                  Aprovar e emitir pedido
-                </button>
-                <button
-                  type="button"
-                  disabled={workflowBusy}
-                  onClick={() => void runWorkflow("reject")}
-                  className="px-3 py-1.5 rounded-lg text-sm border border-orange-300 text-orange-900 disabled:opacity-50"
-                >
-                  Rejeitar
-                </button>
-              </>
-            ) : null}
-            {status === "REJEITADA" && allowEdit ? (
-              <>
-                <button
-                  type="button"
-                  disabled={workflowBusy}
-                  onClick={() => void runWorkflow("reopen-quoting")}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
-                >
-                  Reabrir orçamentos
-                </button>
-                <button
-                  type="button"
-                  disabled={workflowBusy}
-                  onClick={() => void runWorkflow("reopen-draft")}
-                  className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
-                >
-                  Reabrir rascunho
-                </button>
-              </>
-            ) : null}
-            {status === "ENCERRADA" && emittedOrder ? (
-              <>
-                <button
-                  type="button"
-                  onClick={openOrderPdf}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white"
-                >
-                  Pedido {emittedOrder.code} (PDF)
-                </button>
-                <button
-                  type="button"
-                  onClick={emailOrder}
-                  className="px-3 py-1.5 rounded-lg text-sm border border-border"
-                >
-                  Enviar por e-mail
-                </button>
-              </>
-            ) : null}
-            {status !== "CANCELADA" && status !== "ENCERRADA" && allowEdit ? (
-              <button
-                type="button"
-                disabled={workflowBusy}
-                onClick={() => void runWorkflow("cancel")}
-                className="px-3 py-1.5 rounded-lg text-sm border border-red-200 text-red-800 disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-            ) : null}
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={openOrderPdf}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+            >
+              <Printer className="h-4 w-4" />
+              Abrir PDF
+            </button>
+            <button
+              type="button"
+              onClick={emailOrder}
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-900 hover:bg-emerald-50"
+            >
+              Enviar por e-mail
+            </button>
           </div>
         </div>
       ) : null}
 
+      {headerCc?.code === "A-CLASS" && (
+        <AppAlert variant="warning" density="compact" title={'Centro de custo "A classificar"'}>
+          Esta solicitação usa o fallback controlado <strong>{headerCc.code}</strong>. O vínculo é
+          explícito e rastreável — substitua por um centro definitivo quando souber a alocação.
+        </AppAlert>
+      )}
+
+      {/* Uma decisão, um lugar: por que está parada, o que falta e os botões. */}
+      {formMode !== "create" || editingId ? (
+        <OverlaySection
+          title="Próximo passo"
+          className="border-primary/25 bg-primary/5"
+        >
+          {formMode !== "create" ? (
+            <div className="space-y-1.5" data-testid="purchase-request-next-step">
+              <p className="text-sm leading-snug text-foreground">
+                <span className="font-medium text-muted-foreground">Aqui porque </span>
+                {guidance.stayReason}
+              </p>
+              <p className="text-sm leading-snug text-foreground">
+                <span className="font-medium text-sky-800">Para sair · </span>
+                {guidance.nextAction}
+              </p>
+            </div>
+          ) : null}
+          {editingId ? (
+            <div
+              data-testid="purchase-request-workflow"
+              className={cn(
+                "flex flex-wrap gap-2",
+                // Sem ação disponível o bloco não ocupa espaço, mas o nó
+                // permanece para quem observa o workflow por este testid.
+                hasWorkflowActions && "mt-3 border-t border-primary/20 pt-3"
+              )}
+            >
+              {status === "RASCUNHO" && allowCreate ? (
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("submit")}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
+                >
+                  Enviar para compras
+                </button>
+              ) : null}
+              {status === "ABERTA" && allowEdit ? (
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("validate")}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
+                >
+                  Validar e iniciar orçamentos
+                </button>
+              ) : null}
+              {status === "EM_COTACAO" && allowEdit ? (
+                <button
+                  type="button"
+                  disabled={workflowBusy || !quotes.some((q) => q.isWinner)}
+                  onClick={() => void runWorkflow("send-to-approval")}
+                  title={quotes.some((q) => q.isWinner) ? "" : "Marque um orçamento vencedor primeiro"}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
+                >
+                  Enviar para aprovação
+                </button>
+              ) : null}
+              {status === "AGUARDANDO_APROVACAO" && allowEdit ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={workflowBusy}
+                    onClick={() => void runWorkflow("approve")}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white disabled:opacity-50"
+                  >
+                    Aprovar e emitir pedido
+                  </button>
+                  <button
+                    type="button"
+                    disabled={workflowBusy}
+                    onClick={() => void runWorkflow("reject")}
+                    className="px-3 py-1.5 rounded-lg text-sm border border-orange-300 text-orange-900 disabled:opacity-50"
+                  >
+                    Rejeitar
+                  </button>
+                </>
+              ) : null}
+              {status === "REJEITADA" && allowEdit ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={workflowBusy}
+                    onClick={() => void runWorkflow("reopen-quoting")}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-blue-700 text-white disabled:opacity-50"
+                  >
+                    Reabrir orçamentos
+                  </button>
+                  <button
+                    type="button"
+                    disabled={workflowBusy}
+                    onClick={() => void runWorkflow("reopen-draft")}
+                    className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
+                  >
+                    Reabrir rascunho
+                  </button>
+                </>
+              ) : null}
+              {status !== "CANCELADA" && status !== "ENCERRADA" && allowEdit ? (
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("cancel")}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-red-200 text-red-800 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </OverlaySection>
+      ) : null}
+
+      <OverlaySection
+        title="Dados da solicitação"
+        actions={
+          documentMode ? (
+            <span className={OVERLAY_EYEBROW}>Somente leitura</span>
+          ) : null
+        }
+      >
+        <div data-tour="purchases-header-block">
+          {documentMode ? (
+            /* Documento: quatro colunas densas de rótulo/valor, sem input morto. */
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Term label="Solicitante" value={requester} />
+              <Term label="Departamento / área" value={department} />
+              <Term label="Tipo / categoria" value={requestCategory} />
+              <Term label="Prioridade" value={PRIORITY_LABEL[priority]} />
+              <Term
+                label="Centro de custo"
+                span={2}
+                value={headerCc ? `${headerCc.code} — ${headerCc.name}` : null}
+              />
+              <Term
+                label="Projeto oficial"
+                span={2}
+                value={projectOptions.find((p) => p.value === projectId)?.label}
+              />
+              <Term label="Referência externa" value={externalReference} />
+              <Term label="Comprador" value={buyerNameView} />
+              <Term label="Criada em" value={createdAt ? formatDt(createdAt) : null} />
+              <Term label="Justificativa" span={4} value={justification} />
+              {notes ? <Term label="Observações" span={4} value={notes} /> : null}
+            </dl>
+          ) : (
+            <OverlayFieldGrid columns={4}>
+              <OverlayField
+                label="Solicitante"
+                required
+                colSpan={2}
+                density="dense"
+                description={
+                  !requesterEmployeeId && requester
+                    ? `Registro antigo: ${requester}. Selecione o funcionário para oficializar.`
+                    : undefined
+                }
+              >
+                {() => (
+                  <SearchableSelect
+                    options={employeeOptions}
+                    value={requesterEmployeeId}
+                    onChange={handleRequesterSelect}
+                    placeholder="Selecione o funcionário..."
+                    disabled={fieldsDisabled}
+                    required
+                  />
+                )}
+              </OverlayField>
+              <OverlayField
+                label="Departamento / área"
+                required
+                colSpan={2}
+                density="dense"
+                description="Preenchido pelo setor do funcionário selecionado."
+              >
+                {(p) => (
+                  <input
+                    {...p}
+                    disabled
+                    readOnly
+                    className={cn(OVERLAY_CONTROL_CLASS, "bg-slate-50 text-muted-foreground")}
+                    value={department}
+                    placeholder="Definido pelo funcionário selecionado"
+                  />
+                )}
+              </OverlayField>
+
+              <OverlayField label="Tipo / categoria" density="dense">
+                {(p) => (
+                  <select
+                    {...p}
+                    disabled={fieldsDisabled}
+                    className={OVERLAY_CONTROL_CLASS}
+                    value={requestCategoryId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setRequestCategoryId(id);
+                      setRequestCategory(requestCategories.find((c) => c.id === id)?.name ?? "");
+                    }}
+                  >
+                    <option value="">— Sem categoria —</option>
+                    {requestCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </OverlayField>
+              <OverlayField label="Prioridade" density="dense">
+                {(p) => (
+                  <select
+                    {...p}
+                    disabled={fieldsDisabled}
+                    className={OVERLAY_CONTROL_CLASS}
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as PurchasePriority)}
+                  >
+                    {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p2) => (
+                      <option key={p2} value={p2}>
+                        {PRIORITY_LABEL[p2]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </OverlayField>
+              <OverlayField label="Centro de custo" required colSpan={2} density="dense">
+                {() => (
+                  <SearchableSelect
+                    options={financialCcOptions}
+                    value={defaultFinancialCostCenterId}
+                    onChange={setDefaultFinancialCostCenterId}
+                    placeholder="Selecione o centro de custo..."
+                    disabled={fieldsDisabled}
+                    required
+                  />
+                )}
+              </OverlayField>
+
+              <OverlayField
+                label="Por que essa compra é necessária?"
+                required
+                colSpan={4}
+                density="dense"
+              >
+                {(p) => (
+                  <OverlayTextarea
+                    {...p}
+                    disabled={fieldsDisabled}
+                    rows={2}
+                    value={justification}
+                    onChange={(e) => setJustification(e.target.value)}
+                  />
+                )}
+              </OverlayField>
+
+              <OverlayField label="Projeto oficial" colSpan={2} density="dense">
+                {() => (
+                  <SearchableSelect
+                    options={[{ value: "", label: "— Sem projeto —" }, ...projectOptions]}
+                    value={projectId}
+                    onChange={setProjectId}
+                    placeholder="Buscar projeto oficial…"
+                    disabled={fieldsDisabled}
+                  />
+                )}
+              </OverlayField>
+              <OverlayField label="Referência externa" colSpan={2} density="dense">
+                {(p) => (
+                  <input
+                    {...p}
+                    disabled={fieldsDisabled}
+                    className={OVERLAY_CONTROL_CLASS}
+                    placeholder="OS, contrato, etc."
+                    value={externalReference}
+                    onChange={(e) => setExternalReference(e.target.value)}
+                  />
+                )}
+              </OverlayField>
+              <OverlayField label="Observações" colSpan={4} density="dense">
+                {(p) => (
+                  <OverlayTextarea
+                    {...p}
+                    disabled={fieldsDisabled}
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
+                )}
+              </OverlayField>
+            </OverlayFieldGrid>
+          )}
+        </div>
+      </OverlaySection>
+
+      <OverlaySection
+        title={`Itens da solicitação (${items.length})`}
+        padded={false}
+        actions={
+          fieldsDisabled ? null : (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Ações do cadastro de materiais são globais: uma vez, não por linha. */}
+              {hasMpLine ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => refreshMaterials()}
+                    title="Recarrega a lista após cadastrar material em outra aba"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Atualizar lista
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open("/materials", "_blank", "noopener,noreferrer")}
+                    title="Abre o cadastro em outra aba para não perder este rascunho"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Nova matéria-prima
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/materials")}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                  >
+                    Ir em Suprimentos
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={addItem}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
+              >
+                <Plus className="h-3 w-3" />
+                Adicionar item
+              </button>
+            </div>
+          )
+        }
+      >
+        <div data-tour="purchases-items-block">
+        {items.length === 0 ? (
+          <p className="px-3 py-3 text-sm text-muted-foreground">Nenhum item. Adicione ao menos um item para registrar a demanda.</p>
+        ) : documentMode ? (
+          /* Solicitação travada é documento: linhas em tabela, como todo pedido. */
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[780px] text-sm">
+              <thead className="border-b border-[color:var(--color-overlay-border)] bg-muted/40">
+                <tr className={OVERLAY_TABLE_HEAD}>
+                  <th className="w-[76px] px-3 py-2 text-left">Item</th>
+                  <th className="px-3 py-2 text-left">Descrição</th>
+                  <th className="w-[84px] px-3 py-2 text-left">Tipo</th>
+                  <th className="w-[100px] px-3 py-2 text-right">Qtd.</th>
+                  <th className="w-[64px] px-3 py-2 text-left">Un.</th>
+                  <th className="px-3 py-2 text-left">Centro de custo</th>
+                  <th className="w-[104px] px-3 py-2 text-left">Entrega</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => {
+                  const mat = it.materialId
+                    ? materials.find((m) => m.id === it.materialId)
+                    : undefined;
+                  const cancelled = it.lineStatus === "CANCELADA";
+                  // Detalhe da linha vira uma linha de metadados, não oito campos.
+                  const meta = [
+                    it.suggestedSupplier ? `Fornecedor sugerido: ${it.suggestedSupplier}` : null,
+                    it.supplierReference ? `Ref. fornecedor: ${it.supplierReference}` : null,
+                    it.packagingPresentation ? `Embalagem: ${it.packagingPresentation}` : null,
+                    it.minOrderQtySuggested ? `MOQ: ${it.minOrderQtySuggested}` : null,
+                    it.priority ? `Prioridade: ${PRIORITY_LABEL[it.priority as PurchasePriority]}` : null,
+                    it.notes || null,
+                  ].filter(Boolean);
+                  return (
+                    <tr
+                      key={it.tempId}
+                      className={cn("border-b border-border/60 align-top", cancelled && "opacity-60")}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {itemLineCode(idx)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className={cn("font-medium text-foreground", cancelled && "line-through")}>
+                          {it.description || "—"}
+                        </p>
+                        {mat ? (
+                          <p className="font-mono text-[11px] text-muted-foreground">{mat.code}</p>
+                        ) : null}
+                        {meta.length ? (
+                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                            {meta.join(" · ")}
+                          </p>
+                        ) : null}
+                        {cancelled ? (
+                          <OverlayBadge tone="rose" className="mt-1">
+                            Linha cancelada
+                          </OverlayBadge>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {LINE_TYPE_SHORT[it.lineType]}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(it.quantity)}</td>
+                      <td className="px-3 py-2 text-xs">{it.unit}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{resolvedCcLabel(it)}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {it.desiredDate ? formatIsoDate(it.desiredDate) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t border-[color:var(--color-overlay-border)] bg-muted/30 text-xs font-semibold">
+                <tr>
+                  <td className="px-3 py-2" colSpan={3}>
+                    {items.length} {items.length === 1 ? "linha" : "linhas"}
+                  </td>
+                  <td className="px-3 py-2 text-right text-muted-foreground" colSpan={4}>
+                    {mpLineCount} matéria-prima · {items.length - mpLineCount} indireto
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+        <div className="space-y-3 px-3 py-3">
+          {items.map((it, idx) => {
+            const selectedMaterial = it.materialId
+              ? materials.find((m) => m.id === it.materialId)
+              : undefined;
+            const hasAdvancedData = Boolean(
+              it.financialCostCenterId ||
+                it.desiredDate ||
+                it.priority ||
+                it.suggestedSupplier ||
+                it.notes ||
+                it.supplierReference ||
+                it.packagingPresentation ||
+                it.minOrderQtySuggested ||
+                it.lineStatus !== "ABERTA"
+            );
+            const isExpanded = expandedItemIds[it.tempId] ?? hasAdvancedData;
+            const itemTitle =
+              it.lineType === "MATERIA_PRIMA"
+                ? selectedMaterial?.description || it.description || `Item ${idx + 1}`
+                : it.description || `Item ${idx + 1}`;
+            return (
+            <div
+              key={it.tempId}
+              className={cn(
+                "overflow-hidden rounded-lg border border-border/80 bg-accent/10",
+                it.lineType === "MATERIA_PRIMA" && "border-l-[3px] border-l-primary/60"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-background/60 px-3 py-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 font-mono text-[11px] font-semibold text-muted-foreground">
+                    {itemLineCode(idx)}
+                  </span>
+                  <p className="truncate text-sm font-medium">{itemTitle}</p>
+                  <OverlayBadge tone={it.lineType === "MATERIA_PRIMA" ? "primary" : "slate"}>
+                    {LINE_TYPE_SHORT[it.lineType]}
+                  </OverlayBadge>
+                </div>
+                {!fieldsDisabled && allowDelete && items.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(it.tempId)}
+                    className="shrink-0 rounded-md p-1.5 text-red-600 hover:bg-red-500/10"
+                    title="Remover item"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3 px-3 py-3">
+                {/* O material vem primeiro: é ele que preenche descrição e unidade. */}
+                {it.lineType === "MATERIA_PRIMA" && (
+                  <OverlayField
+                    label="Material (cadastro Suprimentos)"
+                    required
+                    density="dense"
+                    description={
+                      it.materialId
+                        ? undefined
+                        : "Cadastrou agora em outra aba? Use Atualizar lista no topo desta seção."
+                    }
+                  >
+                    {() => (
+                      <SearchableSelect
+                        options={materialOptionsMp}
+                        value={it.materialId}
+                        onChange={(v) => updateItem(it.tempId, { materialId: v })}
+                        placeholder="Pesquisar por código, descrição, unidade…"
+                        disabled={fieldsDisabled}
+                      />
+                    )}
+                  </OverlayField>
+                )}
+
+                {it.lineType === "MATERIA_PRIMA" && selectedMaterial ? (
+                  <MaterialMpSummaryCard material={selectedMaterial} readOnly={fieldsDisabled} />
+                ) : it.lineType === "MATERIA_PRIMA" && it.materialId ? (
+                  <AppAlert variant="warning" density="compact">
+                    Material não encontrado na lista local. Salve a solicitação apenas após atualizar a
+                    lista ou verificar o cadastro.
+                  </AppAlert>
+                ) : null}
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                  <OverlayField
+                    label="Tipo do item"
+                    required
+                    density="dense"
+                    className="md:col-span-3"
+                  >
+                    {(p) => (
+                      <select
+                        {...p}
+                        disabled={fieldsDisabled}
+                        className={OVERLAY_CONTROL_CLASS}
+                        value={it.lineType}
+                        onChange={(e) =>
+                          updateItem(it.tempId, { lineType: e.target.value as PurchaseItemDraft["lineType"] })
+                        }
+                      >
+                        <option value="MATERIA_PRIMA">{LINE_TYPE_LABEL.MATERIA_PRIMA}</option>
+                        <option value="INDIRETO">{LINE_TYPE_LABEL.INDIRETO}</option>
+                      </select>
+                    )}
+                  </OverlayField>
+                  <OverlayField
+                    label="Quantidade"
+                    required
+                    density="dense"
+                    className="md:col-span-2"
+                  >
+                    {(p) => (
+                      <input
+                        {...p}
+                        disabled={fieldsDisabled}
+                        type="number"
+                        min={0}
+                        step="any"
+                        className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
+                        value={it.quantity}
+                        onChange={(e) => updateItem(it.tempId, { quantity: parseFloat(e.target.value) || 0 })}
+                      />
+                    )}
+                  </OverlayField>
+                  <OverlayField
+                    label={it.lineType === "MATERIA_PRIMA" ? "Unidade (cadastro)" : "Unidade"}
+                    required
+                    density="dense"
+                    className="md:col-span-2"
+                  >
+                    {(p) => (
+                      <input
+                        {...p}
+                        disabled={fieldsDisabled}
+                        className={OVERLAY_CONTROL_CLASS}
+                        value={it.unit}
+                        onChange={(e) => updateItem(it.tempId, { unit: e.target.value })}
+                      />
+                    )}
+                  </OverlayField>
+                  <OverlayField
+                    label={it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação" : "Descrição"}
+                    required
+                    density="dense"
+                    className="md:col-span-5"
+                    description={
+                      it.lineType === "MATERIA_PRIMA"
+                        ? "Vem do cadastro; ajuste para detalhar a especificação da compra."
+                        : undefined
+                    }
+                  >
+                    {(p) => (
+                      <input
+                        {...p}
+                        disabled={fieldsDisabled}
+                        className={OVERLAY_CONTROL_CLASS}
+                        value={it.description}
+                        onChange={(e) => updateItem(it.tempId, { description: e.target.value })}
+                      />
+                    )}
+                  </OverlayField>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => toggleItemDetails(it.tempId)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  aria-expanded={isExpanded}
+                >
+                  {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  {isExpanded ? "Ocultar detalhes" : "Mais detalhes"}
+                  {!isExpanded && hasAdvancedData ? (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-primary"
+                      title="Há dados preenchidos nos detalhes avançados"
+                    />
+                  ) : null}
+                </button>
+
+                {isExpanded && (
+                  <OverlayFieldGrid columns={4} className="border-t border-border/60 pt-3">
+                    <OverlayField
+                      label="Centro de custo do item"
+                      colSpan={2}
+                      density="dense"
+                      description={`CC efetivo: ${resolvedCcLabel(it)}`}
+                    >
+                      {() => (
+                        <SearchableSelect
+                          options={itemCcOptions}
+                          value={it.financialCostCenterId}
+                          onChange={(v) => updateItem(it.tempId, { financialCostCenterId: v })}
+                          placeholder="Herdar ou sobrescrever..."
+                          disabled={fieldsDisabled}
+                        />
+                      )}
+                    </OverlayField>
+                    <OverlayField label="Data desejada" density="dense">
+                      {(p) => (
+                        <input
+                          {...p}
+                          disabled={fieldsDisabled}
+                          type="date"
+                          className={OVERLAY_CONTROL_CLASS}
+                          value={it.desiredDate}
+                          onChange={(e) => updateItem(it.tempId, { desiredDate: e.target.value })}
+                        />
+                      )}
+                    </OverlayField>
+                    <OverlayField label="Prioridade do item" density="dense">
+                      {(p) => (
+                        <select
+                          {...p}
+                          disabled={fieldsDisabled}
+                          className={OVERLAY_CONTROL_CLASS}
+                          value={it.priority}
+                          onChange={(e) =>
+                            updateItem(it.tempId, {
+                              priority: (e.target.value || "") as PurchaseItemDraft["priority"],
+                            })
+                          }
+                        >
+                          <option value="">(herdar / não definir)</option>
+                          {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p2) => (
+                            <option key={p2} value={p2}>
+                              {PRIORITY_LABEL[p2]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </OverlayField>
+
+                    <OverlayField label="Status da linha" density="dense">
+                      {(p) => (
+                        <select
+                          {...p}
+                          disabled={fieldsDisabled}
+                          className={OVERLAY_CONTROL_CLASS}
+                          value={it.lineStatus}
+                          onChange={(e) =>
+                            updateItem(it.tempId, {
+                              lineStatus: e.target.value as PurchaseItemDraft["lineStatus"],
+                            })
+                          }
+                        >
+                          <option value="ABERTA">Aberta</option>
+                          <option value="CANCELADA">Cancelada</option>
+                        </select>
+                      )}
+                    </OverlayField>
+                    <OverlayField label="Fornecedor sugerido" density="dense">
+                      {(p) => (
+                        <input
+                          {...p}
+                          disabled={fieldsDisabled}
+                          className={OVERLAY_CONTROL_CLASS}
+                          value={it.suggestedSupplier}
+                          onChange={(e) => updateItem(it.tempId, { suggestedSupplier: e.target.value })}
+                        />
+                      )}
+                    </OverlayField>
+
+                    {it.lineType === "MATERIA_PRIMA" && (
+                      <>
+                        <OverlayField label="Referência no fornecedor" density="dense">
+                          {(p) => (
+                            <input
+                              {...p}
+                              disabled={fieldsDisabled}
+                              placeholder="Código / item na lista do fornecedor"
+                              className={OVERLAY_CONTROL_CLASS}
+                              value={it.supplierReference}
+                              onChange={(e) => updateItem(it.tempId, { supplierReference: e.target.value })}
+                            />
+                          )}
+                        </OverlayField>
+                        <OverlayField label="Embalagem / apresentação" density="dense">
+                          {(p) => (
+                            <input
+                              {...p}
+                              disabled={fieldsDisabled}
+                              placeholder="Ex.: fardo 25 kg, bobina, caixa"
+                              className={OVERLAY_CONTROL_CLASS}
+                              value={it.packagingPresentation}
+                              onChange={(e) =>
+                                updateItem(it.tempId, { packagingPresentation: e.target.value })
+                              }
+                            />
+                          )}
+                        </OverlayField>
+                        <OverlayField
+                          label="Qtd. mínima sugerida — MOQ"
+                          density="dense"
+                          description="Somente referência de compra."
+                        >
+                          {(p) => (
+                            <input
+                              {...p}
+                              disabled={fieldsDisabled}
+                              type="number"
+                              min={0}
+                              step="any"
+                              className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
+                              value={it.minOrderQtySuggested}
+                              onChange={(e) =>
+                                updateItem(it.tempId, { minOrderQtySuggested: e.target.value })
+                              }
+                            />
+                          )}
+                        </OverlayField>
+                      </>
+                    )}
+
+                    <OverlayField label="Observação do item" colSpan={4} density="dense">
+                      {(p) => (
+                        <OverlayTextarea
+                          {...p}
+                          disabled={fieldsDisabled}
+                          rows={2}
+                          value={it.notes}
+                          onChange={(e) => updateItem(it.tempId, { notes: e.target.value })}
+                        />
+                      )}
+                    </OverlayField>
+                  </OverlayFieldGrid>
+                )}
+              </div>
+            </div>
+            );
+          })}
+        </div>
+        )}
+        </div>
+      </OverlaySection>
+
       {editingId && ["EM_COTACAO", "AGUARDANDO_APROVACAO", "ENCERRADA", "REJEITADA"].includes(status) ? (
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-quotes-block">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Orçamentos ({quotes.length})
-          </h4>
+        <OverlaySection title={`Orçamentos (${quotes.length})`}>
+        <div className="space-y-3" data-tour="purchases-quotes-block">
           {quotes.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase text-muted-foreground border-b border-border">
+                  <tr className={cn(OVERLAY_TABLE_HEAD, "border-b border-border text-left")}>
                     <th className="py-2 pr-3">Fornecedor</th>
                     <th className="py-2 pr-3 text-right">Valor total</th>
                     <th className="py-2 pr-3">Pagamento</th>
@@ -1647,55 +2279,60 @@ export const PurchaseModule = () => {
             <p className="text-sm text-muted-foreground">Nenhum orçamento registrado ainda.</p>
           )}
           {status === "EM_COTACAO" ? (
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end border-t border-border pt-4">
-              <div className="md:col-span-2 space-y-1">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor *</label>
-                <SearchableSelect
-                  options={supplierOptions}
-                  value={quoteSupplierId}
-                  onChange={setQuoteSupplierId}
-                  placeholder="Buscar fornecedor…"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Valor total *</label>
+            <div className="grid grid-cols-1 items-end gap-3 border-t border-border pt-3 md:grid-cols-6">
+              <OverlayField label="Fornecedor" required density="dense" className="md:col-span-2">
+                {() => (
+                  <SearchableSelect
+                    options={supplierOptions}
+                    value={quoteSupplierId}
+                    onChange={setQuoteSupplierId}
+                    placeholder="Buscar fornecedor…"
+                  />
+                )}
+              </OverlayField>
+              <OverlayField label="Valor total" required density="dense">
+                {(p) => (
+                  <input
+                    {...p}
+                    className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
+                    placeholder="0,00"
+                    value={quoteTotal}
+                    onChange={(e) => setQuoteTotal(e.target.value)}
+                  />
+                )}
+              </OverlayField>
+              <OverlayField label="Pagamento" density="dense">
+                {(p) => (
+                  <input
+                    {...p}
+                    className={OVERLAY_CONTROL_CLASS}
+                    placeholder="Ex.: 30/60"
+                    value={quotePaymentTerms}
+                    onChange={(e) => setQuotePaymentTerms(e.target.value)}
+                  />
+                )}
+              </OverlayField>
+              <OverlayField label="Entrega (dias)" density="dense">
+                {(p) => (
+                  <input
+                    {...p}
+                    className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
+                    value={quoteDeliveryDays}
+                    onChange={(e) => setQuoteDeliveryDays(e.target.value.replace(/\D/g, ""))}
+                  />
+                )}
+              </OverlayField>
+              <button
+                type="button"
+                disabled={quoteBusy}
+                onClick={() => void addQuote()}
+                className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                Adicionar
+              </button>
+              <div className="md:col-span-6">
                 <input
-                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                  placeholder="0,00"
-                  value={quoteTotal}
-                  onChange={(e) => setQuoteTotal(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Pagamento</label>
-                <input
-                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                  placeholder="Ex.: 30/60"
-                  value={quotePaymentTerms}
-                  onChange={(e) => setQuotePaymentTerms(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Entrega (dias)</label>
-                <input
-                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                  value={quoteDeliveryDays}
-                  onChange={(e) => setQuoteDeliveryDays(e.target.value.replace(/\D/g, ""))}
-                />
-              </div>
-              <div className="space-y-1">
-                <button
-                  type="button"
-                  disabled={quoteBusy}
-                  onClick={() => void addQuote()}
-                  className="w-full px-3 py-2 rounded-lg text-sm bg-primary text-primary-foreground disabled:opacity-50"
-                >
-                  Adicionar orçamento
-                </button>
-              </div>
-              <div className="md:col-span-6 space-y-1">
-                <input
-                  className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                  className={OVERLAY_CONTROL_CLASS}
                   placeholder="Observações do orçamento (opcional)"
                   value={quoteNotes}
                   onChange={(e) => setQuoteNotes(e.target.value)}
@@ -1704,38 +2341,36 @@ export const PurchaseModule = () => {
             </div>
           ) : null}
         </div>
+        </OverlaySection>
       ) : null}
 
       {editingId && linkedQuotations.length > 0 ? (
-        <div className="rounded-2xl border border-violet-200 bg-violet-500/5 p-6 space-y-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Cotações vinculadas
-          </h4>
-          <ul className="space-y-1 text-sm">
+        <OverlaySection title="Cotações vinculadas" className="border-violet-200 bg-violet-500/5">
+          <ul className="flex flex-wrap gap-2 text-sm">
             {linkedQuotations.map((q) => (
               <li key={q.id}>
                 <button
                   type="button"
-                  className="text-primary hover:underline font-mono"
+                  className="inline-flex items-center gap-2 rounded-md border border-violet-200 bg-white px-2 py-1 font-mono text-xs text-primary hover:bg-violet-50"
                   onClick={() => navigate(`/purchases/quotations/${q.id}`)}
                 >
                   {q.code}
+                  <span className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {q.status}
+                  </span>
                 </button>
-                <span className="text-xs text-muted-foreground ml-2">{q.status}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </OverlaySection>
       ) : null}
 
       {editingId ? (
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Anexos / evidências
-            </h4>
-            {allowEdit ? (
-              <label className="text-sm text-primary hover:underline cursor-pointer">
+        <OverlaySection
+          title={`Anexos / evidências (${evidences.length})`}
+          actions={
+            allowEdit ? (
+              <label className="cursor-pointer rounded-md border border-border px-2 py-1 text-[11px] font-medium text-primary hover:bg-accent">
                 + Anexar arquivo
                 <input
                   type="file"
@@ -1747,408 +2382,52 @@ export const PurchaseModule = () => {
                   }}
                 />
               </label>
-            ) : null}
-          </div>
+            ) : null
+          }
+        >
           {evidences.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum anexo.</p>
           ) : (
             <ul className="space-y-1 text-sm">
               {evidences.map((ev) => (
-                <li key={ev.id}>
+                <li key={ev.id} className="flex items-baseline gap-2">
                   <a
-                    className="text-primary hover:underline"
+                    className="truncate text-primary hover:underline"
                     href={`/api/purchase-requests/${editingId}/evidences/${ev.id}/download`}
                   >
                     {ev.originalFileName}
                   </a>
-                  <span className="text-xs text-muted-foreground ml-2">
-                    ({Math.round(ev.fileSize / 1024)} KB)
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {Math.round(ev.fileSize / 1024)} KB
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </OverlaySection>
       ) : null}
 
       {historyEvents.length > 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-3" data-testid="purchase-request-history">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Histórico
-          </h4>
-          <ul className="space-y-2 text-sm">
+        <OverlaySection title={`Histórico (${historyEvents.length})`}>
+          <ol className="space-y-2 text-sm" data-testid="purchase-request-history">
             {historyEvents.map((h) => (
-              <li key={h.id} className="border-b border-border/60 pb-2">
+              <li key={h.id} className="border-l-2 border-border pl-3">
                 <div className="font-medium">
                   {h.action}
                   {h.fromStatus || h.toStatus
                     ? ` · ${h.fromStatus ?? "—"} → ${h.toStatus ?? "—"}`
                     : ""}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[11px] text-muted-foreground">
                   {new Date(h.createdAt).toLocaleString("pt-BR")}
                   {h.userName ? ` · ${h.userName}` : ""}
                   {h.reason ? ` · ${h.reason}` : ""}
                 </div>
               </li>
             ))}
-          </ul>
-        </div>
+          </ol>
+        </OverlaySection>
       ) : null}
-
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-items-block">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-foreground">Itens</h4>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-              {items.length}
-            </span>
-          </div>
-          {!fieldsDisabled && (
-            <button
-              type="button"
-              onClick={addItem}
-              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar item
-            </button>
-          )}
-        </div>
-
-        {items.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhum item. Adicione ao menos um item para registrar a demanda.</p>
-        )}
-
-        <div className="space-y-4">
-          {items.map((it, idx) => {
-            const selectedMaterial = it.materialId
-              ? materials.find((m) => m.id === it.materialId)
-              : undefined;
-            const hasAdvancedData = Boolean(
-              it.financialCostCenterId ||
-                it.desiredDate ||
-                it.priority ||
-                it.suggestedSupplier ||
-                it.notes ||
-                it.supplierReference ||
-                it.packagingPresentation ||
-                it.minOrderQtySuggested ||
-                it.lineStatus !== "ABERTA"
-            );
-            const isExpanded = expandedItemIds[it.tempId] ?? hasAdvancedData;
-            const itemTitle =
-              it.lineType === "MATERIA_PRIMA"
-                ? selectedMaterial?.description || it.description || `Item ${idx + 1}`
-                : it.description || `Item ${idx + 1}`;
-            return (
-            <div
-              key={it.tempId}
-              className={cn(
-                "rounded-xl border border-border/80 bg-accent/10 overflow-hidden",
-                it.lineType === "MATERIA_PRIMA" && "border-l-4 border-l-primary/60"
-              )}
-            >
-              <div className="flex items-start justify-between gap-3 p-4">
-                <div className="flex items-start gap-3 min-w-0">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">
-                    {idx + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{itemTitle}</p>
-                    <p className="text-[11px] text-muted-foreground">{LINE_TYPE_LABEL[it.lineType]}</p>
-                  </div>
-                </div>
-                {!fieldsDisabled && allowDelete && items.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeItem(it.tempId)}
-                    className="p-2 rounded-md hover:bg-red-500/10 text-red-600 shrink-0"
-                    title="Remover item"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="px-4 pb-4 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[13px] font-medium text-foreground/80">
-                      Tipo do item <span className="text-primary">*</span>
-                    </label>
-                    <select
-                      disabled={fieldsDisabled}
-                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                      value={it.lineType}
-                      onChange={(e) =>
-                        updateItem(it.tempId, { lineType: e.target.value as PurchaseItemDraft["lineType"] })
-                      }
-                    >
-                      <option value="MATERIA_PRIMA">{LINE_TYPE_LABEL.MATERIA_PRIMA}</option>
-                      <option value="INDIRETO">{LINE_TYPE_LABEL.INDIRETO}</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[13px] font-medium text-foreground/80">
-                      Quantidade <span className="text-primary">*</span>
-                    </label>
-                    <input
-                      disabled={fieldsDisabled}
-                      type="number"
-                      min={0}
-                      step="any"
-                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                      value={it.quantity}
-                      onChange={(e) => updateItem(it.tempId, { quantity: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[13px] font-medium text-foreground/80">
-                      Unidade <span className="text-primary">*</span>
-                      {it.lineType === "MATERIA_PRIMA" ? " (do cadastro)" : ""}
-                    </label>
-                    <input
-                      disabled={fieldsDisabled}
-                      className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                      value={it.unit}
-                      onChange={(e) => updateItem(it.tempId, { unit: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {it.lineType === "MATERIA_PRIMA" && (
-                  <div className="space-y-1.5">
-                    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-                      <div className="flex-1 w-full space-y-1.5 min-w-0">
-                        <label className="text-[13px] font-medium text-foreground/80">
-                          Material (cadastro Suprimentos) <span className="text-primary">*</span>
-                        </label>
-                        <SearchableSelect
-                          options={materialOptionsMp}
-                          value={it.materialId}
-                          onChange={(v) => updateItem(it.tempId, { materialId: v })}
-                          placeholder="Pesquisar por código, descrição, unidade…"
-                          disabled={fieldsDisabled}
-                        />
-                      </div>
-                      {!fieldsDisabled && (
-                        <div className="flex flex-wrap gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => refreshMaterials()}
-                            className="inline-flex items-center gap-2 text-xs border border-border rounded-lg px-3 py-2 hover:bg-accent"
-                            title="Recarrega a lista após cadastrar material em outra aba"
-                          >
-                            Atualizar lista
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => window.open("/materials", "_blank", "noopener,noreferrer")}
-                            className="inline-flex items-center gap-2 text-sm text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                            Nova matéria-prima (nova aba)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate("/materials")}
-                            className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-accent"
-                          >
-                            Ir em Suprimentos
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Dica: use <strong>Nova matéria-prima (nova aba)</strong> para não perder o rascunho desta solicitação; depois clique em{" "}
-                      <strong>Atualizar lista</strong>.
-                    </p>
-                  </div>
-                )}
-
-                {it.lineType === "MATERIA_PRIMA" && selectedMaterial ? (
-                  <MaterialMpSummaryCard material={selectedMaterial} readOnly={fieldsDisabled} />
-                ) : it.lineType === "MATERIA_PRIMA" && it.materialId ? (
-                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950">
-                    Material não encontrado na lista local. Salve a solicitação apenas após atualizar a lista ou verificar o cadastro.
-                  </div>
-                ) : null}
-
-                <div className="space-y-1.5">
-                  <label className="text-[13px] font-medium text-foreground/80">
-                    {it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação" : "Descrição"}{" "}
-                    <span className="text-primary">*</span>
-                  </label>
-                  <input
-                    disabled={fieldsDisabled}
-                    className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                    value={it.description}
-                    onChange={(e) => updateItem(it.tempId, { description: e.target.value })}
-                  />
-                  {it.lineType === "MATERIA_PRIMA" && (
-                    <p className="text-[11px] text-muted-foreground">
-                      Preenchida a partir do cadastro ao selecionar o material; ajuste se precisar detalhar especificação da compra.
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-1 border-t border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => toggleItemDetails(it.tempId)}
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    {isExpanded ? "Ocultar detalhes avançados" : "Mais detalhes"}
-                    {!isExpanded && hasAdvancedData ? (
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-primary"
-                        title="Há dados preenchidos nos detalhes avançados"
-                      />
-                    ) : null}
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[13px] font-medium text-foreground/80">
-                        Centro de custo do item
-                      </label>
-                      <SearchableSelect
-                        options={itemCcOptions}
-                        value={it.financialCostCenterId}
-                        onChange={(v) => updateItem(it.tempId, { financialCostCenterId: v })}
-                        placeholder="Herdar ou sobrescrever..."
-                        disabled={fieldsDisabled}
-                      />
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        CC efetivo: <strong>{resolvedCcLabel(it)}</strong>
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-foreground/80">Data desejada</label>
-                      <input
-                        disabled={fieldsDisabled}
-                        type="date"
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.desiredDate}
-                        onChange={(e) => updateItem(it.tempId, { desiredDate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-foreground/80">Prioridade do item</label>
-                      <select
-                        disabled={fieldsDisabled}
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.priority}
-                        onChange={(e) =>
-                          updateItem(it.tempId, {
-                            priority: (e.target.value || "") as PurchaseItemDraft["priority"],
-                          })
-                        }
-                      >
-                        <option value="">(herdar / não definir)</option>
-                        {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
-                          <option key={p} value={p}>
-                            {PRIORITY_LABEL[p]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-foreground/80">Status da linha</label>
-                      <select
-                        disabled={fieldsDisabled}
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.lineStatus}
-                        onChange={(e) =>
-                          updateItem(it.tempId, {
-                            lineStatus: e.target.value as PurchaseItemDraft["lineStatus"],
-                          })
-                        }
-                      >
-                        <option value="ABERTA">Aberta</option>
-                        <option value="CANCELADA">Cancelada</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-foreground/80">Fornecedor sugerido</label>
-                      <input
-                        disabled={fieldsDisabled}
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.suggestedSupplier}
-                        onChange={(e) => updateItem(it.tempId, { suggestedSupplier: e.target.value })}
-                      />
-                    </div>
-
-                    {it.lineType === "MATERIA_PRIMA" && (
-                      <>
-                        <div className="space-y-1.5">
-                          <label className="text-[13px] font-medium text-foreground/80">
-                            Referência no fornecedor
-                          </label>
-                          <input
-                            disabled={fieldsDisabled}
-                            placeholder="Código / item na lista do fornecedor"
-                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                            value={it.supplierReference}
-                            onChange={(e) => updateItem(it.tempId, { supplierReference: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[13px] font-medium text-foreground/80">
-                            Embalagem / apresentação
-                          </label>
-                          <input
-                            disabled={fieldsDisabled}
-                            placeholder="Ex.: fardo 25 kg, bobina, caixa"
-                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                            value={it.packagingPresentation}
-                            onChange={(e) => updateItem(it.tempId, { packagingPresentation: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[13px] font-medium text-foreground/80">
-                            Qtd. mínima sugerida — MOQ
-                          </label>
-                          <input
-                            disabled={fieldsDisabled}
-                            type="number"
-                            min={0}
-                            step="any"
-                            placeholder="Somente referência de compra"
-                            className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                            value={it.minOrderQtySuggested}
-                            onChange={(e) => updateItem(it.tempId, { minOrderQtySuggested: e.target.value })}
-                          />
-                        </div>
-                      </>
-                    )}
-
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[13px] font-medium text-foreground/80">Observação do item</label>
-                      <textarea
-                        disabled={fieldsDisabled}
-                        rows={2}
-                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-                        value={it.notes}
-                        onChange={(e) => updateItem(it.tempId, { notes: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            );
-          })}
-        </div>
-      </div>
-
       <GuidedTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
