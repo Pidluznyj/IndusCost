@@ -9,6 +9,7 @@ import {
   PurchaseOrderWorkflowError,
   resolvePurchaseOrderTransition,
   assertAwardApprovedForPo,
+  assertPurchaseOrderCloseReason,
   assertQuotationAdjudicated,
   type PurchaseOrderAction,
   type PurchaseOrderStatusName,
@@ -409,6 +410,13 @@ export async function transitionPurchaseOrder(
       }
       data.cancelledAt = now;
       data.cancelReason = reason;
+      data.futureEntryPending = false;
+    } else if (action === "CLOSE") {
+      // Encerrar com saldo pendente exige motivo — quem fecha um pedido
+      // incompleto precisa dizer por quê. Quem fecha um RECEBIDO não precisa:
+      // não sobrou nada em aberto para justificar.
+      assertPurchaseOrderCloseReason(from, input?.reason);
+      // Não há entrada futura a esperar em pedido encerrado.
       data.futureEntryPending = false;
     }
 

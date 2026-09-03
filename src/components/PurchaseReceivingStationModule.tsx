@@ -25,6 +25,13 @@ import {
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { PurchaseChainTrail } from "@/src/components/supply-chain/flow/PurchaseChainTrail";
+import {
+  resolvePurchaseOrderGuidance,
+  stageForPurchaseOrderStatus,
+} from "@/src/lib/purchasing/purchaseChainGuidance";
+import { purchaseOrderStatusLabel } from "@/src/lib/purchasing/purchaseOrderUi";
+import type { PurchaseOrderStatusName } from "@/src/lib/purchasing/purchaseOrderWorkflow";
 
 type BoardRow = {
   id: string;
@@ -570,7 +577,7 @@ export function PurchaseReceivingStationModule() {
                     </td>
                     <td className="p-3">{row.supplierName}</td>
                     <td className="p-3 whitespace-nowrap">
-                      {PO_STATUS_LABEL[row.status] ?? row.status}
+                      {purchaseOrderStatusLabel(row.status)}
                     </td>
                     <td className="p-3">{qty(row.quantityOrdered)}</td>
                     <td className="p-3">{qty(row.quantityReceived)}</td>
@@ -635,7 +642,7 @@ export function PurchaseReceivingStationModule() {
             {detail.order.supplierName}
             {detail.order.supplierDocument ? ` · ${detail.order.supplierDocument}` : ""}
             {" · "}
-            {PO_STATUS_LABEL[detail.order.status] ?? detail.order.status}
+            {purchaseOrderStatusLabel(detail.order.status)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -663,6 +670,19 @@ export function PurchaseReceivingStationModule() {
           ) : null}
         </div>
       </div>
+
+      {/* Mesma trilha do Pedido: as duas telas contam a mesma história. */}
+      <PurchaseChainTrail
+        currentStage={stageForPurchaseOrderStatus(
+          detail.order.status as PurchaseOrderStatusName
+        )}
+        guidance={resolvePurchaseOrderGuidance({
+          status: detail.order.status as PurchaseOrderStatusName,
+          // Estar nesta tela já prova que o módulo de Recebimento está ligado.
+          flags: { receiving: true, supplierPerformance: false },
+          permissions: { canUpdate: allowUpdate, canApprove: allowApprove },
+        })}
+      />
 
       <ReceivingBanners banners={detail.banners} />
 
