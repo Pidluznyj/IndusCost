@@ -20,6 +20,7 @@ import { createTreasuryDashboardControllers } from "./controllers/treasuryDashbo
 import { createTreasuryGuidedTodayControllers } from "./controllers/treasuryGuidedTodayController.js";
 import { createTreasuryGuidedDailyOpeningControllers } from "./controllers/treasuryGuidedDailyOpeningController.js";
 import { createTreasuryGuidedDailyClosingControllers } from "./controllers/treasuryGuidedDailyClosingController.js";
+import { createTreasuryAccountDailyBalanceControllers } from "./controllers/treasuryAccountDailyBalanceController.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryPredictiveCrCpByAccountControllers } from "./controllers/treasuryPredictiveCrCpByAccountController.js";
 import { createTreasuryCaixaControllers } from "./controllers/treasuryCaixaController.js";
@@ -40,6 +41,7 @@ import { createTreasuryManualLedgerControllers } from "./controllers/treasuryMan
 import { createTreasuryTraceabilityGapControllers } from "./controllers/treasuryTraceabilityGapController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
+  TREASURY_ACCOUNT_DAILY_BALANCE_PATH_SUFFIX,
   TREASURY_AGENDA_PATH,
   TREASURY_PREDICTIVE_CRCP_BY_ACCOUNT_PATH,
   TREASURY_CAIXA_PATH,
@@ -130,6 +132,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const guidedClosing = createTreasuryGuidedDailyClosingControllers({
+    getCurrentAppUser,
+  });
+  const accountDailyBalance = createTreasuryAccountDailyBalanceControllers({
     getCurrentAppUser,
   });
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
@@ -914,6 +919,22 @@ export function registerTreasuryRoutes(
     balancesEnabled,
     viewAccounts,
     gaps.balancePosition
+  );
+
+  /**
+   * Leitura leve do saldo inicial/final do dia de UMA conta (modal do Caixa).
+   * Mesmos guards do GET dos workspaces guiados — sem bypass de permissão.
+   * Precisa vir antes da rota genérica de conta por id, senão
+   * "daily-balance" seria capturado como se fosse um id.
+   */
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/${TREASURY_ACCOUNT_DAILY_BALANCE_PATH_SUFFIX}`,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    balancesEnabled,
+    viewAccounts,
+    accountDailyBalance.getDailyBalance
   );
 
   app.post(

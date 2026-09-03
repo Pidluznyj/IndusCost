@@ -202,6 +202,21 @@ export function parseTreasuryDailyRoutineSnapshotKey(key: string): {
 }
 
 /**
+ * Versão otimista corrente da rotina de uma conta/data: o maior número de
+ * versão entre saldo inicial e saldo final bancário já gravados (0 = nada
+ * gravado). Fonte única — abertura e fechamento compartilham o contador.
+ */
+export function resolveTreasuryDailyRoutineExpectedVersion(input: {
+  opening: { version: number } | null | undefined;
+  closingBank: { version: number } | null | undefined;
+}): number {
+  return Math.max(
+    input.opening?.version ?? 0,
+    input.closingBank?.version ?? 0
+  );
+}
+
+/**
  * Sugere saldo inicial a partir do último observedBalance fechado da conta.
  * Sem fechamento anterior: sugestão null e exige informação manual (não assume 0).
  */

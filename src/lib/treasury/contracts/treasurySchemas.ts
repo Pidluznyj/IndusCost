@@ -2670,6 +2670,22 @@ export function parseTreasuryGuidedDailyOpeningSaveInput(
   return { civilDate, items };
 }
 
+export type TreasuryAccountDailyBalanceQuery = {
+  date: TreasuryCivilDate;
+};
+
+/** Mesma tolerância de nomes de campo do workspace guiado (date/civilDate). */
+export function parseTreasuryAccountDailyBalanceQuery(
+  query: Record<string, unknown>
+): TreasuryAccountDailyBalanceQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  return { date };
+}
+
 export type TreasuryGuidedDailyClosingQuery = {
   date: TreasuryCivilDate;
 };

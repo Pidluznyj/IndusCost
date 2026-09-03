@@ -1,25 +1,33 @@
 /**
  * Informar saldo inicial e final do dia — Fluxo Gerencial.
- * Usa APIs canônicas /today/opening e /today/closing (audit + usuário).
+ * Grava nas rotinas canônicas /today/opening e /today/closing (audit + usuário).
  * Dias passados: somente SUPER_ADMIN.
+ *
+ * Leitura: o modal edita UMA conta, então hidrata pela leitura leve
+ * `accounts/:id/daily-balance` — não pelos workspaces completos de abertura e
+ * fechamento (que varrem todas as contas e, no fechamento, ainda carregam
+ * CR/CP, ledger, transferências, preview e previsão do dia).
+ *
+ * Enquanto hidrata, o modal não trava: os campos já ficam editáveis e só o
+ * submit espera a versão persistida (optimistic lock). Valor digitado pelo
+ * usuário nunca é sobrescrito por resposta que chegou depois.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { PredictiveCashFlowAccount } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
-import {
-  fetchTreasuryTodayOpening,
-  saveTreasuryTodayOpening,
-} from "@/src/lib/treasury/treasuryTodayOpeningApi.js";
-import {
-  fetchTreasuryTodayClosing,
-  saveTreasuryTodayClosing,
-} from "@/src/lib/treasury/treasuryTodayClosingApi.js";
+import { saveTreasuryTodayOpening } from "@/src/lib/treasury/treasuryTodayOpeningApi.js";
+import { saveTreasuryTodayClosing } from "@/src/lib/treasury/treasuryTodayClosingApi.js";
+import { fetchTreasuryAccountDailyBalance } from "@/src/lib/treasury/treasuryAccountDailyBalanceApi.js";
 import {
   canEditTreasuryCivilDateBalances,
-  formatMoneyInputFromString,
+  canSubmitTreasuryBalanceEdit,
   parseMoneyInputPtBr,
+  resolveTreasuryClosingInputValue,
+  resolveTreasuryOpeningInputValue,
+  shouldApplyTreasuryBalanceHydration,
+  treasuryBalanceHydrationKey,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlowBalanceEdit.js";
 import {
   financeModuleFilterFieldClass,
@@ -53,11 +61,30 @@ export function PredictiveCashFlowBalanceCorrectDialog({
   const [openingInput, setOpeningInput] = useState("");
   const [closingInput, setClosingInput] = useState("");
   const [justification, setJustification] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openingVersion, setOpeningVersion] = useState(1);
-  const [closingVersion, setClosingVersion] = useState(1);
+  const [openingVersion, setOpeningVersion] = useState(0);
+  const [closingVersion, setClosingVersion] = useState(0);
+  const [openingExists, setOpeningExists] = useState(false);
+  const [closingExists, setClosingExists] = useState(false);
+  /** Conta/data cuja versão persistida já é conhecida (libera o submit). */
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
+
+  /**
+   * Campo "sujo" = o usuário já digitou nele. Em ref porque a resposta HTTP
+   * precisa do valor no instante em que chega, não do valor capturado quando
+   * o efeito foi montado.
+   */
+  const openingDirtyRef = useRef(false);
+  const closingDirtyRef = useRef(false);
+
+  const currentKey = treasuryBalanceHydrationKey({
+    accountId: account.id,
+    civilDate,
+  });
+  const currentKeyRef = useRef(currentKey);
+  currentKeyRef.current = currentKey;
 
   const dateGate = canEditTreasuryCivilDateBalances({
     civilDate,
@@ -77,8 +104,13 @@ export function PredictiveCashFlowBalanceCorrectDialog({
       })
     );
     setClosingInput("");
-    setOpeningVersion(1);
-    setClosingVersion(1);
+    setOpeningVersion(0);
+    setClosingVersion(0);
+    setOpeningExists(false);
+    setClosingExists(false);
+    setHydratedKey(null);
+    openingDirtyRef.current = false;
+    closingDirtyRef.current = false;
   }, [open, account.id, account.initialBalance, today]);
 
   useEffect(() => {
@@ -92,39 +124,64 @@ export function PredictiveCashFlowBalanceCorrectDialog({
       setError(gate.reason);
       return;
     }
-    setLoading(true);
+
+    // Troca de conta/data: o que já foi digitado não vale para a nova chave.
+    const requestKey = treasuryBalanceHydrationKey({
+      accountId: account.id,
+      civilDate,
+    });
+    openingDirtyRef.current = false;
+    closingDirtyRef.current = false;
+    setHydratedKey(null);
+    setHydrating(true);
     setError(null);
+
     const ac = new AbortController();
-    void Promise.all([
-      fetchTreasuryTodayOpening({ date: civilDate, signal: ac.signal }),
-      fetchTreasuryTodayClosing({ date: civilDate, signal: ac.signal }),
-    ])
-      .then(([openingWs, closingWs]) => {
+    void fetchTreasuryAccountDailyBalance({
+      accountId: account.id,
+      date: civilDate,
+      signal: ac.signal,
+    })
+      .then((data) => {
         if (ac.signal.aborted) return;
-        const openingAcc = openingWs.accounts.find(
-          (a) => a.accountId === account.id
-        );
-        const closingAcc = closingWs.accounts.find(
-          (a) => a.accountId === account.id
-        );
-        if (openingAcc) {
-          setOpeningVersion(openingAcc.expectedVersion);
+        // Resposta de conta/data que já não está em edição não contamina.
+        if (requestKey !== currentKeyRef.current) return;
+
+        setOpeningVersion(data.opening.expectedVersion);
+        setClosingVersion(data.closing.expectedVersion);
+        setOpeningExists(data.opening.exists);
+        setClosingExists(data.closing.exists);
+        setHydratedKey(requestKey);
+
+        if (
+          shouldApplyTreasuryBalanceHydration({
+            responseKey: requestKey,
+            currentKey: currentKeyRef.current,
+            dirty: openingDirtyRef.current,
+          })
+        ) {
           setOpeningInput(
-            formatMoneyInputFromString(
-              openingAcc.currentOpeningBalance ??
-                openingAcc.suggestedOpeningBalance
-            )
+            resolveTreasuryOpeningInputValue({
+              amount: data.opening.amount,
+              suggestedBalance: data.opening.suggestedBalance,
+            })
           );
         }
-        if (closingAcc) {
-          setClosingVersion(closingAcc.expectedVersion);
+        if (
+          shouldApplyTreasuryBalanceHydration({
+            responseKey: requestKey,
+            currentKey: currentKeyRef.current,
+            dirty: closingDirtyRef.current,
+          })
+        ) {
           setClosingInput(
-            formatMoneyInputFromString(closingAcc.informedClosingBalance)
+            resolveTreasuryClosingInputValue({ amount: data.closing.amount })
           );
         }
       })
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
+        if (requestKey !== currentKeyRef.current) return;
         setError(
           err instanceof Error
             ? err.message
@@ -132,12 +189,20 @@ export function PredictiveCashFlowBalanceCorrectDialog({
         );
       })
       .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
+        if (!ac.signal.aborted) setHydrating(false);
       });
     return () => ac.abort();
   }, [open, civilDate, account.id, isSuperAdmin, today]);
 
   if (!open) return null;
+
+  const canSubmit = canSubmitTreasuryBalanceEdit({
+    hydratedKey,
+    currentKey,
+    dateAllowed: dateGate.allowed,
+    saving,
+    disabled,
+  });
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -164,9 +229,10 @@ export function PredictiveCashFlowBalanceCorrectDialog({
       return;
     }
 
-    setBusy(true);
+    setSaving(true);
     setError(null);
     try {
+      let closingExpectedVersion = closingVersion;
       if (openingBalance != null) {
         await saveTreasuryTodayOpening({
           civilDate,
@@ -181,20 +247,27 @@ export function PredictiveCashFlowBalanceCorrectDialog({
             },
           ],
         });
+        if (closingBalance != null) {
+          /**
+           * Abertura e fechamento compartilham o contador de versão da rotina
+           * (a versão do fechamento é o max das duas), então gravar a abertura
+           * invalida o expectedVersion do fechamento. Reconsulta a versão pela
+           * leitura leve da própria conta/data — não pelo workspace completo.
+           */
+          const refreshed = await fetchTreasuryAccountDailyBalance({
+            accountId: account.id,
+            date: civilDate,
+          });
+          closingExpectedVersion = refreshed.closing.expectedVersion;
+        }
       }
       if (closingBalance != null) {
-        // Reconsulta versão após possível abertura (optimistic lock).
-        const closingWs = await fetchTreasuryTodayClosing({ date: civilDate });
-        const closingAcc = closingWs.accounts.find(
-          (a) => a.accountId === account.id
-        );
-        const version = closingAcc?.expectedVersion ?? closingVersion;
         await saveTreasuryTodayClosing({
           civilDate,
           items: [
             {
               accountId: account.id,
-              expectedVersion: version,
+              expectedVersion: closingExpectedVersion,
               amount: closingBalance,
               notes: `Fluxo Gerencial · saldo final ${civilDate} · ${reason}`,
             },
@@ -210,11 +283,28 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           : "Não foi possível gravar os saldos do dia."
       );
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
   const pastDay = civilDate < today;
+  const fieldsDisabled = disabled || saving || !dateGate.allowed;
+  const hydrated = hydratedKey === currentKey;
+
+  /**
+   * "Criando" vs. "corrigindo" só pode ser afirmado depois de hidratar —
+   * antes disso o texto informa que a consulta está em curso, nunca que não
+   * existe saldo gravado.
+   */
+  function fieldStateText(
+    exists: boolean,
+    existingText: string,
+    missingText: string
+  ): string | null {
+    if (hydrating) return "Carregando saldo gravado…";
+    if (!hydrated) return null;
+    return exists ? existingText : missingText;
+  }
 
   return (
     <div
@@ -224,7 +314,7 @@ export function PredictiveCashFlowBalanceCorrectDialog({
       aria-labelledby="pcf-balance-correct-title"
       data-testid="predictive-cf-balance-correct-dialog"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
+        if (e.target === e.currentTarget && !saving) onClose();
       }}
     >
       <form
@@ -261,7 +351,7 @@ export function PredictiveCashFlowBalanceCorrectDialog({
             className={financeModuleFilterFieldClass()}
             value={civilDate}
             max={today}
-            disabled={disabled || busy || !isSuperAdmin}
+            disabled={disabled || saving || !isSuperAdmin}
             onChange={(e) => {
               if (!isSuperAdmin) return;
               setCivilDate(e.target.value);
@@ -290,13 +380,26 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           <input
             className={financeModuleFilterFieldClass()}
             value={openingInput}
-            disabled={disabled || busy || loading || !dateGate.allowed}
-            onChange={(e) => setOpeningInput(e.target.value)}
+            disabled={fieldsDisabled}
+            onChange={(e) => {
+              openingDirtyRef.current = true;
+              setOpeningInput(e.target.value);
+            }}
             inputMode="decimal"
             placeholder="Ex.: 60351,00"
             autoFocus
             data-testid="predictive-cf-balance-correct-opening"
           />
+          <p
+            className="text-[11px] text-[#6B7280]"
+            data-testid="predictive-cf-balance-correct-opening-state"
+          >
+            {fieldStateText(
+              openingExists,
+              "Corrigindo o saldo inicial já informado neste dia.",
+              "Nenhum saldo inicial informado ainda para este dia."
+            )}
+          </p>
         </label>
 
         <label className="block space-y-1.5">
@@ -306,12 +409,25 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           <input
             className={financeModuleFilterFieldClass()}
             value={closingInput}
-            disabled={disabled || busy || loading || !dateGate.allowed}
-            onChange={(e) => setClosingInput(e.target.value)}
+            disabled={fieldsDisabled}
+            onChange={(e) => {
+              closingDirtyRef.current = true;
+              setClosingInput(e.target.value);
+            }}
             inputMode="decimal"
             placeholder="Ex.: 61200,50"
             data-testid="predictive-cf-balance-correct-closing"
           />
+          <p
+            className="text-[11px] text-[#6B7280]"
+            data-testid="predictive-cf-balance-correct-closing-state"
+          >
+            {fieldStateText(
+              closingExists,
+              "Corrigindo o saldo final já informado neste dia.",
+              "Nenhum saldo final informado ainda para este dia."
+            )}
+          </p>
         </label>
 
         <label className="block space-y-1.5">
@@ -321,7 +437,7 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           <textarea
             className={cn(financeModuleFilterFieldClass(), "min-h-[72px] resize-y")}
             value={justification}
-            disabled={disabled || busy}
+            disabled={disabled || saving}
             onChange={(e) => setJustification(e.target.value)}
             placeholder="Ex.: conferência com extrato do dia"
             data-testid="predictive-cf-balance-correct-reason"
@@ -338,7 +454,7 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           <button
             type="button"
             className={financeBiButtonOutlineClass}
-            disabled={busy}
+            disabled={saving}
             onClick={onClose}
           >
             Cancelar
@@ -346,12 +462,10 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           <button
             type="submit"
             className={financeBiButtonPrimaryClass}
-            disabled={
-              disabled || busy || loading || !dateGate.allowed
-            }
+            disabled={!canSubmit}
             data-testid="predictive-cf-balance-correct-submit"
           >
-            {busy ? "Salvando…" : "Salvar saldos do dia"}
+            {saving ? "Salvando…" : "Salvar saldos do dia"}
           </button>
         </div>
       </form>

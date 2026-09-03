@@ -49,3 +49,66 @@ export function parseMoneyInputPtBr(raw: string): string | null {
   if (!Number.isFinite(n)) return null;
   return n.toFixed(2);
 }
+
+/**
+ * Identidade do que está sendo editado. A hidratação é assíncrona, então cada
+ * resposta carrega a chave que pediu: resposta de outra conta/data (request
+ * abortado que chegou atrasado) é descartada em vez de contaminar a tela.
+ */
+export function treasuryBalanceHydrationKey(input: {
+  accountId: string;
+  civilDate: string;
+}): string {
+  return `${input.accountId}|${input.civilDate}`;
+}
+
+/**
+ * Só escreve o valor persistido no campo se a resposta for da conta/data em
+ * edição e o usuário ainda não tiver digitado ali (dirty). Digitação do
+ * usuário nunca é sobrescrita por resposta tardia.
+ */
+export function shouldApplyTreasuryBalanceHydration(input: {
+  responseKey: string;
+  currentKey: string;
+  dirty: boolean;
+}): boolean {
+  if (input.responseKey !== input.currentKey) return false;
+  return !input.dirty;
+}
+
+/**
+ * Saldo inicial exibido após hidratar: o valor já gravado; sem valor gravado,
+ * a sugestão canônica do fechamento anterior; sem nenhum dos dois, campo vazio
+ * (a regra canônica exige digitação — nunca assumir zero).
+ */
+export function resolveTreasuryOpeningInputValue(input: {
+  amount: string | null;
+  suggestedBalance: string | null;
+}): string {
+  return formatMoneyInputFromString(input.amount ?? input.suggestedBalance);
+}
+
+/** Saldo final exibido: só o valor informado; sem valor informado, vazio. */
+export function resolveTreasuryClosingInputValue(input: {
+  amount: string | null;
+}): string {
+  return formatMoneyInputFromString(input.amount);
+}
+
+/**
+ * Optimistic lock: gravar exige conhecer a versão persistida da conta/data em
+ * edição. Enquanto a hidratação daquela chave não terminou, o submit fica
+ * bloqueado — mas os campos seguem editáveis (o usuário não espera parado).
+ */
+export function canSubmitTreasuryBalanceEdit(input: {
+  hydratedKey: string | null;
+  currentKey: string;
+  dateAllowed: boolean;
+  saving: boolean;
+  disabled?: boolean;
+}): boolean {
+  if (input.disabled) return false;
+  if (input.saving) return false;
+  if (!input.dateAllowed) return false;
+  return input.hydratedKey === input.currentKey;
+}

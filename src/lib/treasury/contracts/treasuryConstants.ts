@@ -15,6 +15,20 @@ export const TREASURY_AVAILABILITY_PATH =
 export const TREASURY_ACCOUNTS_PATH =
   `${TREASURY_API_PREFIX}/accounts` as const;
 
+/**
+ * Sufixo da leitura leve de saldo inicial/final de UMA conta em UMA data.
+ * Rota registrada como `${TREASURY_ACCOUNTS_PATH}/:id/daily-balance`.
+ */
+export const TREASURY_ACCOUNT_DAILY_BALANCE_PATH_SUFFIX =
+  "daily-balance" as const;
+
+/** URL da leitura leve de saldo do dia de uma conta específica. */
+export function buildTreasuryAccountDailyBalancePath(accountId: string): string {
+  return `${TREASURY_ACCOUNTS_PATH}/${encodeURIComponent(
+    accountId
+  )}/${TREASURY_ACCOUNT_DAILY_BALANCE_PATH_SUFFIX}`;
+}
+
 export const TREASURY_RECEIVABLES_PATH =
   `${TREASURY_API_PREFIX}/receivables` as const;
 

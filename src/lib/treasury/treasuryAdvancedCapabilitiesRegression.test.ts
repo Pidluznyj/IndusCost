@@ -90,8 +90,11 @@ const EXPECTED_HTTP_HANDLERS = {
   // +3 GET: cash-support, cash-support/summary, cash-support/suggestions (CS-006/008).
   // +2 GET +1 POST: Conciliação Bancária — title-grid, history (leitura) e
   // auto-reconcile (escrita idempotente de matches locais; nunca baixa oficial).
-  total: 105,
-  get: 58,
+  // +1 GET: accounts/:id/daily-balance — leitura leve do saldo inicial/final
+  // do dia de UMA conta (modal do Caixa), sem workspace completo. Nenhum
+  // endpoint removido: os workspaces guiados seguem registrados.
+  total: 106,
+  get: 59,
   post: 41,
   put: 4,
   patch: 2,
@@ -307,7 +310,7 @@ function migrationsTouchingTreasury(): string[] {
 }
 
 describe("treasury advanced capabilities — API handlers", () => {
-  it("quantidade e métodos HTTP permanecem iguais (105 = 58/41/4/2/0)", () => {
+  it("quantidade e métodos HTTP permanecem iguais (106 = 59/41/4/2/0)", () => {
     const routesSrc = readFileSync(join(treasuryRoot, "treasuryRoutes.ts"), "utf8");
     const counts = countHandlers(routesSrc);
     assert.equal(counts.total, EXPECTED_HTTP_HANDLERS.total);

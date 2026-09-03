@@ -426,6 +426,48 @@ export type TreasuryGuidedDailyOpeningSaveResultDto = {
   nextStepHref: string;
 };
 
+/** Rotina diária por conta: saldo inicial ou saldo final bancário. */
+export type TreasuryAccountDailyBalanceRoutineKind = "opening" | "closingBank";
+
+export type TreasuryAccountDailyBalanceOpeningDto = {
+  /** Já existe saldo inicial gravado nesta conta/data (criar vs. corrigir). */
+  exists: boolean;
+  /** Valor gravado — equivale a `currentOpeningBalance` do workspace. */
+  amount: TreasuryMoneyString | null;
+  /** Sugestão canônica (último fechamento CLOSED anterior); null se não houver. */
+  suggestedBalance: TreasuryMoneyString | null;
+  /** Sem sugestão disponível: o valor precisa ser digitado (nunca assumir 0). */
+  requiresManualInput: boolean;
+  expectedVersion: number;
+};
+
+export type TreasuryAccountDailyBalanceClosingDto = {
+  /** Já existe saldo final gravado nesta conta/data (criar vs. corrigir). */
+  exists: boolean;
+  /** Valor gravado — equivale a `informedClosingBalance` do workspace. */
+  amount: TreasuryMoneyString | null;
+  /** Contador compartilhado da rotina: max(abertura, fechamento bancário). */
+  expectedVersion: number;
+};
+
+/**
+ * Resposta GET /api/finance/treasury/accounts/:id/daily-balance?date=…
+ *
+ * Leitura leve para editar o saldo do dia de UMA conta: mesmas permissões e
+ * mesma semântica dos workspaces guiados, sem varrer a Tesouraria inteira.
+ */
+export type TreasuryAccountDailyBalanceDto = {
+  ok: true;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  bank: string | null;
+  isActive: boolean;
+  civilDate: TreasuryCivilDate;
+  opening: TreasuryAccountDailyBalanceOpeningDto;
+  closing: TreasuryAccountDailyBalanceClosingDto;
+};
+
 /** Situação do saldo final guiado por conta. */
 export type TreasuryGuidedDailyClosingSituation =
   | "NEEDS_OPENING"

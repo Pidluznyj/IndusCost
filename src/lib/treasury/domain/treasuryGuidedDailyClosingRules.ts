@@ -25,6 +25,7 @@ import {
   emptyTreasuryDailyAccountRoutineDayFlow,
   planTreasuryDailyClosingBankBalance,
   refreshTreasuryDailyAccountRoutineCalculations,
+  resolveTreasuryDailyRoutineExpectedVersion,
   type TreasuryDailyAccountRoutineDayFlow,
   type TreasuryDailyAccountRoutineState,
 } from "./treasuryDailyAccountRoutineRules.js";
@@ -154,10 +155,10 @@ export function deriveTreasuryGuidedDailyClosingSituation(input: {
 export function buildTreasuryGuidedDailyClosingAccountDto(
   seed: TreasuryGuidedDailyClosingAccountSeed
 ): TreasuryGuidedDailyClosingAccountDto {
-  const expectedVersion = Math.max(
-    seed.opening?.version ?? 0,
-    seed.closingBank?.version ?? 0
-  );
+  const expectedVersion = resolveTreasuryDailyRoutineExpectedVersion({
+    opening: seed.opening,
+    closingBank: seed.closingBank,
+  });
 
   const openingBalance = seed.opening?.amount ?? null;
   let realizedClosingBalance: TreasuryMoneyString | null = null;
@@ -381,10 +382,10 @@ export function planTreasuryGuidedDailyClosingSaveItem(input: {
     );
   }
 
-  const expectedVersion = Math.max(
-    input.seed.opening.version,
-    input.seed.closingBank?.version ?? 0
-  );
+  const expectedVersion = resolveTreasuryDailyRoutineExpectedVersion({
+    opening: input.seed.opening,
+    closingBank: input.seed.closingBank,
+  });
   if (input.item.expectedVersion !== expectedVersion) {
     // planTreasuryDailyClosingBankBalance also checks; keep seed aligned.
   }
