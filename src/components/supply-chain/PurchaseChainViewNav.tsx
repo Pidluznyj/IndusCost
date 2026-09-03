@@ -35,7 +35,7 @@ export function PurchaseChainViewNav({
 }: {
   current: PurchaseChainViewId;
   className?: string;
-}): JSX.Element {
+}) {
   return (
     <nav
       aria-label="Cadeia de compras"
