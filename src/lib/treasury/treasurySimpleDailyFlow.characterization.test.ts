@@ -57,8 +57,14 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-/** +3 GET: cash-support, cash-support/summary, cash-support/suggestions (CS-006/008). */
-const EXPECTED_HTTP_HANDLERS = 102;
+/**
+ * Guard redundante ao de `treasuryAdvancedCapabilitiesRegression.test.ts`
+ * (que já documenta o histórico completo com breakdown por método) — mantido
+ * em sincronia aqui. Consolidação main 20260903: +1 GET
+ * accounts/:id/daily-balance (modal-performance) sobre os 105 já existentes
+ * em main (Conciliação Bancária + cash-support, anteriores a esta consolidação).
+ */
+const EXPECTED_HTTP_HANDLERS = 106;
 /** home + 4 primárias + 16 avançadas (+1: cash-support) + hub advanced */
 const EXPECTED_UI_SECTIONS = 23;
 const EXPECTED_FEATURE_FLAGS = 15;
