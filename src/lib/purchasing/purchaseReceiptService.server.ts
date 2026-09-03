@@ -12,6 +12,8 @@ import {
 } from "@/src/lib/inventory/inventoryService.server.js";
 import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js";
 import {
+  resolvePurchaseOrderTransition,
+  type PurchaseOrderAction,
   type PurchaseOrderStatusName,
 } from "./purchaseOrderWorkflow.js";
 import {
@@ -228,6 +230,22 @@ async function syncPurchaseOrderStatusFromReceipts(
   const current = po.status as PurchaseOrderStatusName;
   const resolved: PurchaseOrderStatusName = next ?? "CONFIRMADO";
   if (current === resolved) return;
+
+  // O recebimento gravava o status direto, por fora da máquina de estados —
+  // inclusive o RECEBIDO → CONFIRMADO do estorno, que nem sequer era uma
+  // transição declarada. Agora o alvo calculado é validado pela máquina, que
+  // volta a ser fonte única. O conjunto é fechado: `current` só pode ser
+  // CONFIRMADO | PARCIALMENTE_RECEBIDO | RECEBIDO (guarda acima) e `resolved`
+  // só pode ser esses mesmos três, então são 6 pares possíveis — todos
+  // declarados. Se algum dia surgir um sétimo, isto falha alto em vez de
+  // gravar um status que a máquina não reconhece.
+  const action: PurchaseOrderAction =
+    resolved === "RECEBIDO"
+      ? "MARK_RECEIVED"
+      : resolved === "PARCIALMENTE_RECEBIDO"
+        ? "MARK_PARTIAL_RECEIVED"
+        : "REOPEN_FROM_RECEIPT";
+  resolvePurchaseOrderTransition(current, action);
 
   await db.purchaseOrder.update({
     where: { id: purchaseOrderId },

@@ -22,6 +22,7 @@ import {
   resolvePurchaseOrderTransition,
   type PurchaseOrderStatusName,
 } from "./purchaseOrderWorkflow.js";
+import { isOpenPurchaseOrderStatus } from "./supplyChainIndicatorsEngine.js";
 import {
   PURCHASE_RECEIVING_FLAG,
   pipelineStageIndex,
@@ -105,16 +106,80 @@ describe("encerramento do pedido", () => {
     );
   });
 
-  it("6. EMITIDO deixou de ser origem de transição", () => {
-    // Era legado inalcançável: nenhuma transição o produz e nenhuma criação o
-    // usa. Aceitá-lo como origem só gerava botão morto na tela.
-    for (const action of ["SEND", "CONFIRM", "CANCEL"] as const) {
+  it("6. EMITIDO não avança, mas nunca fica preso", () => {
+    // Legado inalcançável: nenhum commit da história jamais gravou EMITIDO,
+    // então progredir a partir dele seria botão morto.
+    for (const action of ["SEND", "CONFIRM"] as const) {
       assert.throws(
         () => resolvePurchaseOrderTransition("EMITIDO", action),
         (e: unknown) => (e as PurchaseOrderWorkflowError).code === "INVALID_TRANSITION",
-        `${action} não deveria mais aceitar EMITIDO`
+        `${action} não deveria aceitar EMITIDO`
       );
     }
+    // Mas o enum do banco permite o valor, e no domínio original ele ocupava
+    // o lugar de ENVIADO. Cancelar é a válvula de escape: nenhum status pode
+    // ficar sem saída — foi exatamente esse o defeito que ENCERRADO tinha.
+    assert.equal(resolvePurchaseOrderTransition("EMITIDO", "CANCEL"), "CANCELADO");
+  });
+
+  it("7. todo status não-terminal tem ao menos uma saída", () => {
+    const ACOES = [
+      "APPROVE",
+      "SEND",
+      "CONFIRM",
+      "CANCEL",
+      "MARK_PARTIAL_RECEIVED",
+      "MARK_RECEIVED",
+      "REOPEN_FROM_RECEIPT",
+      "CLOSE",
+    ] as const;
+    for (const status of PURCHASE_ORDER_STATUSES) {
+      if (PURCHASE_ORDER_TERMINAL_STATUSES.includes(status)) continue;
+      const saidas = ACOES.filter((a) => {
+        try {
+          resolvePurchaseOrderTransition(status, a);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      assert.ok(saidas.length > 0, `${status} ficou sem nenhuma saída`);
+    }
+  });
+
+  it("8. o recebimento só produz transições declaradas (6 pares fechados)", () => {
+    // syncPurchaseOrderStatusFromReceipts restringe origem e destino a estes
+    // três status e retorna cedo quando são iguais. Se algum par não
+    // estivesse declarado, o recebimento gravaria status por fora da máquina.
+    const ESTADOS = ["CONFIRMADO", "PARCIALMENTE_RECEBIDO", "RECEBIDO"] as const;
+    const acaoPara = (destino: (typeof ESTADOS)[number]) =>
+      destino === "RECEBIDO"
+        ? "MARK_RECEIVED"
+        : destino === "PARCIALMENTE_RECEBIDO"
+          ? "MARK_PARTIAL_RECEIVED"
+          : "REOPEN_FROM_RECEIPT";
+    let pares = 0;
+    for (const origem of ESTADOS) {
+      for (const destino of ESTADOS) {
+        if (origem === destino) continue;
+        pares += 1;
+        assert.equal(
+          resolvePurchaseOrderTransition(origem, acaoPara(destino)),
+          destino,
+          `${origem} → ${destino} não está declarado`
+        );
+      }
+    }
+    assert.equal(pares, 6, "o conjunto do recebimento deve ser fechado em 6 pares");
+  });
+
+  it("9. pedido ENCERRADO sai do funil operacional", () => {
+    // O gate de verdade: um parcial encerrado não pode continuar contando
+    // como pedido em aberto nem como quantidade pendente.
+    assert.equal(isOpenPurchaseOrderStatus("PARCIALMENTE_RECEBIDO"), true);
+    assert.equal(isOpenPurchaseOrderStatus("ENCERRADO"), false);
+    assert.equal(isOpenPurchaseOrderStatus("CANCELADO"), false);
+    assert.equal(isOpenPurchaseOrderStatus("RECEBIDO"), false);
   });
 });
 

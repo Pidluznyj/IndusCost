@@ -63,7 +63,13 @@ const TRANSITIONS: Record<
   SEND: { from: ["APROVADO"], to: "ENVIADO" },
   CONFIRM: { from: ["ENVIADO", "APROVADO"], to: "CONFIRMADO" },
   CANCEL: {
-    from: ["RASCUNHO", "APROVADO", "ENVIADO"],
+    // EMITIDO continua aceito AQUI e só aqui. É inalcançável por código —
+    // nenhum commit da história jamais o gravou — mas o enum do banco
+    // permite o valor, e no domínio original ele ocupava o lugar de
+    // ENVIADO. Tirá-lo de TODAS as origens deixaria uma eventual linha
+    // legada sem nenhuma saída: nem avançar, nem encerrar, nem cancelar.
+    // Cancelar é a válvula de escape; nenhum status pode ficar preso.
+    from: ["RASCUNHO", "APROVADO", "ENVIADO", "EMITIDO"],
     to: "CANCELADO",
   },
   MARK_PARTIAL_RECEIVED: {
