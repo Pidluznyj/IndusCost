@@ -2637,6 +2637,8 @@ model AppUser {
   treasuryAccountAccessGrantedBy         TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
   treasuryBalanceSnapshotsCreated        TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
   treasuryBalanceSnapshotsCancelled      TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCancelledBy")
+  treasuryConsolidatedMembershipsCreated TreasuryConsolidatedAccountMembership[] @relation("TreasuryConsolidatedMembershipCreatedBy")
+  treasuryConsolidatedMembershipsClosed  TreasuryConsolidatedAccountMembership[] @relation("TreasuryConsolidatedMembershipClosedBy")
   treasuryAuditLogs                      TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
   treasuryTitleComplementsCreated        TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
   treasuryTitleComplementsUpdated        TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
@@ -8838,6 +8840,7 @@ model TreasuryFinancialAccount {
   bankImportBatches           TreasuryBankImportBatch[]
   bankMovements               TreasuryBankMovement[]
   reconciliationMatches       TreasuryReconciliationMatch[]
+  consolidatedMemberships     TreasuryConsolidatedAccountMembership[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -8876,6 +8879,36 @@ model TreasuryFinancialAccountAccess {
   @@index([isActive])
   @@index([accessLevel])
   @@index([grantedByUserId])
+}
+
+/// Membership TEMPORAL da conta no caixa consolidado — "esta conta fazia
+/// parte do consolidado NESTE dia civil?". Intervalos [validFrom, validUntil]
+/// em dia civil America/Sao_Paulo; validUntil NULL = vigente. Autoridade
+/// única de saldos (ver src/lib/treasury/domain/treasuryDailyBalanceAuthority.ts)
+/// usa isto para nunca deixar uma conta nova contaminar dias anteriores à sua
+/// entrada, nem uma conta removida contaminar dias posteriores à sua saída.
+model TreasuryConsolidatedAccountMembership {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId       String    @db.Uuid
+  /// Primeiro dia civil (America/Sao_Paulo) em que a conta integra o consolidado.
+  validFrom       DateTime  @db.Date
+  /// Último dia civil INCLUSIVO em que a conta integrou o consolidado; NULL = vigente.
+  validUntil      DateTime? @db.Date
+  /// BOOTSTRAP | ACCOUNT_CREATED | INCLUDE_ON | INCLUDE_OFF | DEACTIVATED | REACTIVATED | MANUAL
+  reason          String
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  closedAt        DateTime? @db.Timestamptz(6)
+  closedByUserId  String?   @db.Uuid
+
+  account         TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser   AppUser?                 @relation("TreasuryConsolidatedMembershipCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  closedByUser    AppUser?                 @relation("TreasuryConsolidatedMembershipClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([accountId, validFrom])
+  @@index([validFrom, validUntil])
+  @@index([createdByUserId])
+  @@index([closedByUserId])
 }
 
 /// Snapshot versionado de saldo — imutável na prática (novo registro; previousSnapshotId).

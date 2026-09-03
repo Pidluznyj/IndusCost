@@ -238,17 +238,411 @@ export function resolveTreasuryExpectedAccountsOn(
   accounts: readonly TreasuryConsolidatedAccountMembershipView[],
   civilDate: string
 ): TreasuryConsolidatedAccountRef[] {
-  void accounts;
-  void civilDate;
-  throw new Error("not implemented: resolveTreasuryExpectedAccountsOn");
+  const result: TreasuryConsolidatedAccountRef[] = [];
+  for (const acc of accounts) {
+    const isExpected = acc.memberships.some(
+      (m) => civilDate >= m.validFrom && (m.validUntil == null || civilDate <= m.validUntil)
+    );
+    if (isExpected) {
+      result.push({
+        accountId: acc.accountId,
+        accountName: acc.accountName,
+        companyCode: acc.companyCode,
+      });
+    }
+  }
+  return result;
 }
 
-/** Resolve a autoridade de saldo dia a dia, encadeando o fechamento efetivo. */
+/** Pega, dentre as evidências de uma conta+dia, a de maior `version` (empate: a última do array). */
+function pickLatestManualEvidence(
+  entries: readonly TreasuryManualBalanceEvidenceInput[],
+  accountId: string,
+  civilDate: string
+): TreasuryManualBalanceEvidenceInput | null {
+  let best: TreasuryManualBalanceEvidenceInput | null = null;
+  for (const e of entries) {
+    if (e.accountId !== accountId || e.civilDate !== civilDate) continue;
+    if (!best) {
+      best = e;
+      continue;
+    }
+    const bestVersion = best.version ?? Number.NEGATIVE_INFINITY;
+    const version = e.version ?? Number.NEGATIVE_INFINITY;
+    if (version >= bestVersion) best = e;
+  }
+  return best;
+}
+
+type ClosingCoverageResolution = {
+  coverage: TreasuryBalanceCoverage;
+  /** Soma quando cobertura COMPLETA; null caso contrário. Nunca ancora parcial. */
+  sum: number | null;
+  anyFormal: boolean;
+  warnings: TreasuryDailyBalanceWarning[];
+};
+
+/**
+ * Cobertura/proveniência de FECHAMENTO de um dia. Fechamento formal é POR
+ * EMPRESA (uma única `observedBalance` cobre todas as contas daquela
+ * `companyCode` naquele dia) — por isso agrupa as contas esperadas por
+ * empresa antes de aplicar a precedência FORMAL_CLOSING > MANUAL_CLOSING >
+ * GENERIC_MANUAL (esta última só quando `genericSnapshotPolicy` não for
+ * "IGNORE"). Nunca soma subtotal de contas pendentes na `closingInformed`.
+ */
+function resolveClosingCoverage(input: {
+  civilDate: string;
+  expectedAccounts: readonly TreasuryConsolidatedAccountRef[];
+  manualClosings: readonly TreasuryManualBalanceEvidenceInput[];
+  genericSnapshots: readonly TreasuryManualBalanceEvidenceInput[];
+  formalClosingsByCompanyDay: ReadonlyMap<string, TreasuryFormalClosingEvidenceInput>;
+  allFormalClosingsForDay: readonly TreasuryFormalClosingEvidenceInput[];
+  genericSnapshotPolicy: TreasuryGenericSnapshotPolicy;
+}): ClosingCoverageResolution {
+  const warnings: TreasuryDailyBalanceWarning[] = [];
+  const accounts: TreasuryAccountBalanceEvidence[] = [];
+  const pendingAccounts: TreasuryConsolidatedAccountRef[] = [];
+  let sum = 0;
+  let anyFormal = false;
+  let ignoredGeneric = false;
+
+  const byCompany = new Map<string, TreasuryConsolidatedAccountRef[]>();
+  for (const acc of input.expectedAccounts) {
+    const list = byCompany.get(acc.companyCode);
+    if (list) list.push(acc);
+    else byCompany.set(acc.companyCode, [acc]);
+  }
+
+  for (const [companyCode, refs] of byCompany) {
+    const formal = input.formalClosingsByCompanyDay.get(`${companyCode}|${input.civilDate}`);
+    if (formal) {
+      anyFormal = true;
+      sum += formal.observedBalance;
+      for (const ref of refs) {
+        accounts.push({
+          accountId: ref.accountId,
+          accountName: ref.accountName,
+          companyCode: ref.companyCode,
+          source: "FORMAL_CLOSING",
+          amount: formal.observedBalance,
+          informedAt: formal.closedAt,
+          referenceDate: input.civilDate,
+        });
+      }
+      continue;
+    }
+    for (const ref of refs) {
+      const manual = pickLatestManualEvidence(input.manualClosings, ref.accountId, input.civilDate);
+      if (manual) {
+        sum += manual.amount;
+        accounts.push({
+          accountId: ref.accountId,
+          accountName: ref.accountName,
+          companyCode: ref.companyCode,
+          source: "MANUAL_CLOSING",
+          amount: manual.amount,
+          informedAt: manual.informedAt,
+          referenceDate: input.civilDate,
+        });
+        continue;
+      }
+      const generic = pickLatestManualEvidence(input.genericSnapshots, ref.accountId, input.civilDate);
+      if (generic) {
+        if (input.genericSnapshotPolicy === "IGNORE") {
+          ignoredGeneric = true;
+          pendingAccounts.push(ref);
+          continue;
+        }
+        sum += generic.amount;
+        accounts.push({
+          accountId: ref.accountId,
+          accountName: ref.accountName,
+          companyCode: ref.companyCode,
+          source: "GENERIC_MANUAL",
+          amount: generic.amount,
+          informedAt: generic.informedAt,
+          referenceDate: input.civilDate,
+        });
+        continue;
+      }
+      pendingAccounts.push(ref);
+    }
+  }
+
+  for (const formal of input.allFormalClosingsForDay) {
+    if (!byCompany.has(formal.companyCode)) {
+      warnings.push({
+        code: "FORMAL_CLOSING_OTHER_COMPANY_IGNORED",
+        message: `Fechamento formal de ${formal.companyCode} em ${input.civilDate} ignorado — nenhuma conta esperada dessa empresa neste dia.`,
+      });
+    }
+  }
+  if (ignoredGeneric) {
+    warnings.push({
+      code: "GENERIC_SNAPSHOT_IGNORED",
+      message: `Saldo genérico informado em ${input.civilDate} foi ignorado (política de cobertura IGNORE) e não conta como fechamento.`,
+    });
+  }
+
+  const accountsExpected = input.expectedAccounts.length;
+  const accountsCovered = accounts.length;
+  const complete = accountsExpected > 0 && accountsCovered === accountsExpected;
+  if (accountsExpected > 0 && accountsCovered > 0 && accountsCovered < accountsExpected) {
+    warnings.push({
+      code: "PARTIAL_CLOSING_COVERAGE",
+      message: `Fechamento informado incompleto em ${input.civilDate}: ${accountsCovered}/${accountsExpected} contas — o subtotal NÃO foi usado como saldo consolidado.`,
+    });
+  }
+
+  const coverage: TreasuryBalanceCoverage = {
+    accountsExpected,
+    accountsCovered,
+    complete,
+    accounts,
+    pendingAccounts,
+    partialSum: complete || accountsCovered === 0 ? null : roundTreasuryBalanceMoney(sum),
+  };
+
+  return {
+    coverage,
+    sum: complete ? roundTreasuryBalanceMoney(sum) : null,
+    anyFormal,
+    warnings,
+  };
+}
+
+type OpeningCoverageResolution = {
+  coverage: TreasuryBalanceCoverage;
+  sum: number | null;
+  warnings: TreasuryDailyBalanceWarning[];
+};
+
+/** Cobertura/proveniência de ABERTURA de um dia — só `manualOpenings` conta (sem análogo formal). */
+function resolveOpeningCoverage(input: {
+  civilDate: string;
+  expectedAccounts: readonly TreasuryConsolidatedAccountRef[];
+  manualOpenings: readonly TreasuryManualBalanceEvidenceInput[];
+}): OpeningCoverageResolution {
+  const warnings: TreasuryDailyBalanceWarning[] = [];
+  const accounts: TreasuryAccountBalanceEvidence[] = [];
+  const pendingAccounts: TreasuryConsolidatedAccountRef[] = [];
+  let sum = 0;
+
+  for (const ref of input.expectedAccounts) {
+    const manual = pickLatestManualEvidence(input.manualOpenings, ref.accountId, input.civilDate);
+    if (manual) {
+      sum += manual.amount;
+      accounts.push({
+        accountId: ref.accountId,
+        accountName: ref.accountName,
+        companyCode: ref.companyCode,
+        source: "MANUAL_OPENING",
+        amount: manual.amount,
+        informedAt: manual.informedAt,
+        referenceDate: input.civilDate,
+      });
+    } else {
+      pendingAccounts.push(ref);
+    }
+  }
+
+  const accountsExpected = input.expectedAccounts.length;
+  const accountsCovered = accounts.length;
+  const complete = accountsExpected > 0 && accountsCovered === accountsExpected;
+  if (accountsExpected > 0 && accountsCovered > 0 && accountsCovered < accountsExpected) {
+    warnings.push({
+      code: "PARTIAL_OPENING_COVERAGE",
+      message: `Abertura informada incompleta em ${input.civilDate}: ${accountsCovered}/${accountsExpected} contas — "Começou" segue o fechamento efetivo do dia anterior.`,
+    });
+  }
+
+  const coverage: TreasuryBalanceCoverage = {
+    accountsExpected,
+    accountsCovered,
+    complete,
+    accounts,
+    pendingAccounts,
+    partialSum: complete || accountsCovered === 0 ? null : roundTreasuryBalanceMoney(sum),
+  };
+
+  return { coverage, sum: complete ? roundTreasuryBalanceMoney(sum) : null, warnings };
+}
+
+/**
+ * Resolve a autoridade de saldo dia a dia, encadeando o fechamento efetivo.
+ *
+ * Cadeia: `opening(D) = closingEffective(D-1)` (ou saldo inicial manual
+ * COMPLETO de D, ou zero na gênese sem predecessor). `closingEffective(D) =
+ * closingInformed(D) ?? closingCalculated(D)` — nunca um subtotal parcial.
+ */
 export function resolveTreasuryDailyBalanceAuthority(
   input: TreasuryDailyBalanceAuthorityInput
 ): TreasuryDailyBalanceAuthorityResult {
-  void input;
-  throw new Error("not implemented: resolveTreasuryDailyBalanceAuthority");
+  const genesisCivilDate = input.genesisCivilDate ?? "1970-01-01";
+  const genericSnapshotPolicy = input.genericSnapshotPolicy ?? "CLOSING_EVIDENCE";
+
+  const formalClosingsByCompanyDay = new Map<string, TreasuryFormalClosingEvidenceInput>();
+  for (const fc of input.formalClosings) {
+    const key = `${fc.companyCode}|${fc.civilDate}`;
+    const existing = formalClosingsByCompanyDay.get(key);
+    if (!existing || fc.version > existing.version) formalClosingsByCompanyDay.set(key, fc);
+  }
+  const formalClosingsByDay = new Map<string, TreasuryFormalClosingEvidenceInput[]>();
+  for (const fc of formalClosingsByCompanyDay.values()) {
+    const list = formalClosingsByDay.get(fc.civilDate);
+    if (list) list.push(fc);
+    else formalClosingsByDay.set(fc.civilDate, [fc]);
+  }
+
+  const flowsByDay = new Map<string, TreasuryDailyFlowInput>();
+  for (const f of input.flows) flowsByDay.set(f.civilDate, f);
+
+  const civilDates = [...new Set(input.civilDates)].sort((a, b) => a.localeCompare(b));
+
+  const days: TreasuryDailyBalanceAuthorityDay[] = [];
+  const byCivilDate = new Map<string, TreasuryDailyBalanceAuthorityDay>();
+  let previousEffectiveClosing: number | null = null;
+
+  for (const civilDate of civilDates) {
+    const kind: TreasuryDailyBalanceKind = civilDate === input.todayCivilDate ? "TODAY" : "REALIZED";
+    const expectedAccounts = resolveTreasuryExpectedAccountsOn(input.accounts, civilDate);
+    const warnings: TreasuryDailyBalanceWarning[] = [];
+
+    if (expectedAccounts.length === 0) {
+      warnings.push({
+        code: "NO_EXPECTED_ACCOUNTS",
+        message: `Nenhuma conta esperada no consolidado em ${civilDate} — sem cobertura possível.`,
+      });
+    }
+
+    if (civilDate < genesisCivilDate) {
+      const emptyCoverage = emptyTreasuryBalanceCoverage(expectedAccounts);
+      const day: TreasuryDailyBalanceAuthorityDay = {
+        civilDate,
+        kind,
+        expectedAccounts,
+        openingCoverage: emptyCoverage,
+        closingCoverage: emptyCoverage,
+        previousEffectiveClosing: null,
+        opening: null,
+        openingSource: "NONE",
+        openingManual: null,
+        openingAdjustment: null,
+        inflows: 0,
+        outflows: 0,
+        predictedInflows: 0,
+        predictedOutflows: 0,
+        closingCalculated: null,
+        closingRealized: null,
+        closingInformed: null,
+        closingSource: "NONE",
+        closingEffective: null,
+        divergence: null,
+        divergenceBaseline: kind === "TODAY" ? "REALIZED" : "CALCULATED",
+        warnings,
+      };
+      days.push(day);
+      byCivilDate.set(civilDate, day);
+      continue;
+    }
+
+    const openingResult = resolveOpeningCoverage({
+      civilDate,
+      expectedAccounts,
+      manualOpenings: input.manualOpenings,
+    });
+    warnings.push(...openingResult.warnings);
+
+    let opening: number;
+    let openingSource: TreasuryDailyBalanceOpeningSource;
+    let openingAdjustment: number | null = null;
+    if (openingResult.sum != null) {
+      opening = openingResult.sum;
+      openingSource = "MANUAL_OPENING";
+      if (previousEffectiveClosing != null) {
+        openingAdjustment = roundTreasuryBalanceMoney(opening - previousEffectiveClosing);
+        if (openingAdjustment !== 0) {
+          warnings.push({
+            code: "OPENING_ADJUSTMENT",
+            message: `Saldo inicial informado de ${civilDate} ficou ${
+              openingAdjustment > 0 ? "acima" : "abaixo"
+            } do fechamento efetivo do dia anterior (ajuste de ${openingAdjustment}).`,
+          });
+        }
+      }
+    } else if (previousEffectiveClosing != null) {
+      opening = previousEffectiveClosing;
+      openingSource = "PREVIOUS_CLOSING";
+    } else {
+      opening = 0;
+      openingSource = "GENESIS";
+    }
+
+    const flow = flowsByDay.get(civilDate);
+    const inflows = flow ? roundTreasuryBalanceMoney(flow.inflows) : 0;
+    const outflows = flow ? roundTreasuryBalanceMoney(flow.outflows) : 0;
+    const predictedInflows =
+      kind === "TODAY" ? roundTreasuryBalanceMoney(input.todayPredicted?.inflows ?? 0) : 0;
+    const predictedOutflows =
+      kind === "TODAY" ? roundTreasuryBalanceMoney(input.todayPredicted?.outflows ?? 0) : 0;
+
+    const closingRealized = roundTreasuryBalanceMoney(opening + inflows - outflows);
+    const closingCalculated = roundTreasuryBalanceMoney(
+      closingRealized + predictedInflows - predictedOutflows
+    );
+
+    const closingResult = resolveClosingCoverage({
+      civilDate,
+      expectedAccounts,
+      manualClosings: input.manualClosings,
+      genericSnapshots: input.genericSnapshots,
+      formalClosingsByCompanyDay,
+      allFormalClosingsForDay: formalClosingsByDay.get(civilDate) ?? [],
+      genericSnapshotPolicy,
+    });
+    warnings.push(...closingResult.warnings);
+
+    const closingInformed = closingResult.sum;
+    const closingSource: TreasuryDailyBalanceClosingSource =
+      closingInformed != null ? (closingResult.anyFormal ? "FORMAL_CLOSING" : "MANUAL_CLOSING") : "CALCULATED";
+    const closingEffective = closingInformed ?? closingCalculated;
+
+    const divergenceBaseline: TreasuryDailyBalanceDivergenceBaseline =
+      kind === "TODAY" ? "REALIZED" : "CALCULATED";
+    const divergenceBase = divergenceBaseline === "REALIZED" ? closingRealized : closingCalculated;
+    const divergence =
+      closingInformed != null ? roundTreasuryBalanceMoney(closingInformed - divergenceBase) : null;
+
+    const day: TreasuryDailyBalanceAuthorityDay = {
+      civilDate,
+      kind,
+      expectedAccounts,
+      openingCoverage: openingResult.coverage,
+      closingCoverage: closingResult.coverage,
+      previousEffectiveClosing,
+      opening,
+      openingSource,
+      openingManual: openingResult.sum,
+      openingAdjustment,
+      inflows,
+      outflows,
+      predictedInflows,
+      predictedOutflows,
+      closingCalculated,
+      closingRealized,
+      closingInformed,
+      closingSource,
+      closingEffective,
+      divergence,
+      divergenceBaseline,
+      warnings,
+    };
+    days.push(day);
+    byCivilDate.set(civilDate, day);
+    previousEffectiveClosing = closingEffective;
+  }
+
+  return { days, byCivilDate, warnings: [] };
 }
 
 /** Cobertura vazia (helper para testes e para dias sem contas esperadas). */

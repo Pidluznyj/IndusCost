@@ -21,6 +21,7 @@ import type {
   TreasuryCaixaTimelineMonth,
   TreasuryCaixaTimelineRow,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import type { TreasuryDailyBalanceDivergenceBaseline } from "@/src/lib/treasury/domain/treasuryDailyBalanceAuthority.js";
 import {
   appendTreasuryCaixaMonthlyDueEstimates,
   buildTreasuryCaixaMonthlyTimeline,
@@ -116,24 +117,35 @@ function MonthKindBadge({
  * Divergência: saldo informado no extrato menos o calculado pelos títulos.
  * Zero explícito ≠ ausência — "—" quer dizer que ninguém informou saldo no dia,
  * então não há o que comparar. Só o valor diferente de zero ganha cor.
+ *
+ * `divergenceBaseline` (linha de HOJE) declara contra qual saldo a divergência
+ * foi medida: "REALIZED" compara contra o fechamento só do que já foi
+ * baixado (sem a previsão do próprio dia) — o tooltip precisa deixar isso
+ * explícito, senão parece divergência contra o previsto.
  */
 function DivergenceCell({
   value,
   informed,
   scope,
+  divergenceBaseline,
 }: {
   value: number | null;
   /** Saldo informado do dia; irrelevante (e ausente) na linha de mês. */
   informed?: number | null;
   scope: "day" | "month";
+  divergenceBaseline?: TreasuryDailyBalanceDivergenceBaseline;
 }) {
+  const baselineSuffix =
+    divergenceBaseline === "REALIZED"
+      ? " — comparado ao saldo realizado agora, sem a previsão do dia"
+      : "";
   if (value == null) {
     return (
       <td
         className="px-2 py-1.5 text-right tabular-nums text-muted-foreground"
         title={
           scope === "day"
-            ? "Nenhum saldo informado neste dia — nada a comparar."
+            ? `Nenhum saldo informado neste dia — nada a comparar${baselineSuffix}.`
             : "Nenhum dia deste mês teve saldo informado — nada a comparar."
         }
       >
@@ -147,7 +159,7 @@ function DivergenceCell({
         className="px-2 py-1.5 text-right tabular-nums text-[#059669]"
         title={
           scope === "day"
-            ? "Saldo informado bate exatamente com o calculado pelos títulos."
+            ? `Saldo informado bate exatamente com o calculado pelos títulos${baselineSuffix}.`
             : "No total do mês, o informado bate com o calculado."
         }
       >
@@ -169,7 +181,7 @@ function DivergenceCell({
         "px-2 py-1.5 text-right tabular-nums font-semibold",
         value > 0 ? "text-[#0369A1]" : "text-[#B45309]"
       )}
-      title={`${direction} ${amount} a mais do que os títulos explicam${suffix}.`}
+      title={`${direction} ${amount} a mais do que os títulos explicam${suffix}${baselineSuffix}.`}
     >
       {value > 0 ? "+" : ""}
       {money(value)}
@@ -223,6 +235,98 @@ function ForecastPortionMark({
 }
 
 /**
+ * Cobertura de FECHAMENTO parcial (algumas contas do consolidado informaram
+ * o saldo do dia, outras não) — avisa que o subtotal parcial NUNCA vira
+ * saldo consolidado (missão 03/09/2026, `treasuryDailyBalanceAuthority.ts`).
+ * Só renderiza quando há contas esperadas e a cobertura está incompleta.
+ */
+function ClosingCoveragePartialMark({
+  coverage,
+}: {
+  coverage: NonNullable<TreasuryCaixaTimelineRow["closingCoverage"]>;
+}) {
+  const pendingNames = coverage.pendingAccounts
+    .map((a) => a.accountName)
+    .join(", ");
+  const title = `Fechamento parcial: ${coverage.accountsCovered}/${coverage.accountsExpected} contas informaram o saldo do dia. Pendente: ${pendingNames}. O subtotal informado NÃO foi usado como saldo consolidado — o dia segue a cadeia calculada.`;
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-dashed border-[#FCA5A5] bg-[#FEF2F2] px-1 text-[9px] font-bold uppercase tracking-wide text-[#B91C1C]"
+      title={title}
+      data-testid="caixa-timeline-coverage-partial"
+    >
+      ⚠ {coverage.accountsCovered}/{coverage.accountsExpected}
+    </span>
+  );
+}
+
+/**
+ * Fechamento MANUAL com cobertura COMPLETA (todas as contas esperadas
+ * informaram o saldo manualmente) — distingue de fechamento formal/calculado.
+ */
+function ClosingManualMark({
+  coverage,
+}: {
+  coverage: NonNullable<TreasuryCaixaTimelineRow["closingCoverage"]>;
+}) {
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-[#A7F3D0] bg-[#ECFDF5] px-1 text-[9px] font-bold uppercase tracking-wide text-[#065F46]"
+      title={`Fechamento manual completo: ${coverage.accountsCovered}/${coverage.accountsExpected} contas informaram o saldo do dia.`}
+      data-testid="caixa-timeline-closing-manual"
+    >
+      manual {coverage.accountsCovered}/{coverage.accountsExpected}
+    </span>
+  );
+}
+
+/** Abertura MANUAL (proveniência declarada — distingue de "segue o fechamento anterior"). */
+function OpeningManualMark() {
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-[#A7F3D0] bg-[#ECFDF5] px-1 text-[9px] font-bold uppercase tracking-wide text-[#065F46]"
+      title="Abertura informada manualmente para este dia."
+      data-testid="caixa-timeline-opening-manual"
+    >
+      manual
+    </span>
+  );
+}
+
+/**
+ * Ajuste de abertura: diferença entre a abertura manual completa do dia e o
+ * fechamento efetivo do dia anterior — nunca escondida (missão 03/09/2026).
+ */
+function OpeningAdjustmentMark({ amount }: { amount: number }) {
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-dashed border-[#FDE68A] bg-[#FFFBEB] px-1 text-[9px] font-bold text-[#92400E]"
+      title={`Ajuste de abertura: ${money(amount)} de diferença em relação ao fechamento efetivo do dia anterior.`}
+      data-testid="caixa-timeline-opening-adjustment"
+    >
+      ajuste {money(amount)}
+    </span>
+  );
+}
+
+/**
+ * Linha de HOJE cujo fechamento realizado (sem a previsão do próprio dia)
+ * difere do calculado (com previsão) — mostra o valor só-realizado, já que
+ * a Divergência do dia é medida contra ele (`divergenceBaseline: "REALIZED"`).
+ */
+function TodayRealizedMark({ closingRealized }: { closingRealized: number }) {
+  return (
+    <span
+      className="ml-1 inline-block align-middle rounded border border-dashed border-[#93C5FD] bg-[#EFF6FF] px-1 text-[9px] font-bold uppercase tracking-wide text-[#1E3A8A]"
+      title={`Realizado agora (sem a previsão de hoje): ${money(closingRealized)}.`}
+      data-testid="caixa-timeline-today-realized"
+    >
+      Realizado agora: {money(closingRealized)}
+    </span>
+  );
+}
+
+/**
  * Célula de saldo com cor por sinal (positivo → verde; negativo → vermelho;
  * zero/null → neutro). Usada em "Começou" e "Terminou" — dá leitura visual
  * imediata do sinal do saldo, mantendo tabular-nums e alinhamento à direita.
@@ -234,9 +338,12 @@ function ForecastPortionMark({
 function BalanceCell({
   value,
   boldWhenNegative = true,
+  marks,
 }: {
   value: number | null;
   boldWhenNegative?: boolean;
+  /** Marcadores de proveniência/cobertura (abertura manual, ajuste) — só linhas de dia. */
+  marks?: React.ReactNode;
 }) {
   const isPositive = value != null && value > 0;
   const isNegative = value != null && value < 0;
@@ -251,7 +358,52 @@ function BalanceCell({
       )}
     >
       {money(value)}
+      {marks}
     </td>
+  );
+}
+
+/**
+ * Marcadores de proveniência da ABERTURA de uma linha de dia — abertura
+ * manual e/ou ajuste em relação ao fechamento efetivo anterior. `null` quando
+ * a linha não tem nada a sinalizar (comportamento padrão, sem regressão).
+ */
+function RowOpeningMarks({ row }: { row: TreasuryCaixaTimelineRow }) {
+  const showManual = row.openingSource === "MANUAL_OPENING";
+  const showAdjustment = row.openingAdjustment != null && row.openingAdjustment !== 0;
+  if (!showManual && !showAdjustment) return null;
+  return (
+    <>
+      {showManual ? <OpeningManualMark /> : null}
+      {showAdjustment ? <OpeningAdjustmentMark amount={row.openingAdjustment as number} /> : null}
+    </>
+  );
+}
+
+/**
+ * Marcadores de proveniência/cobertura do FECHAMENTO de uma linha de dia —
+ * cobertura parcial (subtotal não usado), fechamento manual completo e/ou
+ * HOJE com realizado diferente do calculado. `null` quando não há nada a
+ * sinalizar.
+ */
+function RowClosingMarks({ row }: { row: TreasuryCaixaTimelineRow }) {
+  const coverage = row.closingCoverage;
+  const showPartial = coverage != null && coverage.accountsExpected > 0 && !coverage.complete;
+  const showManual =
+    row.closingSource === "MANUAL_CLOSING" && coverage != null && coverage.complete === true;
+  const showTodayRealized =
+    row.kind === "TODAY" &&
+    row.closingRealized != null &&
+    row.closingRealized !== row.closingCalculated;
+  if (!showPartial && !showManual && !showTodayRealized) return null;
+  return (
+    <>
+      {showPartial ? <ClosingCoveragePartialMark coverage={coverage!} /> : null}
+      {showManual ? <ClosingManualMark coverage={coverage!} /> : null}
+      {showTodayRealized ? (
+        <TodayRealizedMark closingRealized={row.closingRealized as number} />
+      ) : null}
+    </>
   );
 }
 
@@ -929,7 +1081,11 @@ export function TreasuryCaixaTimeline({
                                       <td className="px-2 py-1.5">
                                         <KindBadge kind={r.kind} estimated={r.estimated} />
                                       </td>
-                                      <BalanceCell value={r.opening} boldWhenNegative={false} />
+                                      <BalanceCell
+                                        value={r.opening}
+                                        boldWhenNegative={false}
+                                        marks={<RowOpeningMarks row={r} />}
+                                      />
                                       <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                                         {r.inflows === 0 ? "—" : money(r.inflows)}
                                         {outliers.has(`${r.civilDate}|inflows`) ? (
@@ -970,11 +1126,13 @@ export function TreasuryCaixaTimeline({
                                         )}
                                       >
                                         {money(r.closing)}
+                                        <RowClosingMarks row={r} />
                                       </td>
                                       <DivergenceCell
                                         value={r.divergence}
                                         informed={r.closingInformed}
                                         scope="day"
+                                        divergenceBaseline={r.divergenceBaseline}
                                       />
                                     </tr>
                                     {dayOpen ? (
@@ -1024,7 +1182,11 @@ export function TreasuryCaixaTimeline({
                             <td className="px-2 py-1.5">
                               <KindBadge kind={r.kind} estimated={r.estimated} />
                             </td>
-                            <BalanceCell value={r.opening} boldWhenNegative={false} />
+                            <BalanceCell
+                              value={r.opening}
+                              boldWhenNegative={false}
+                              marks={<RowOpeningMarks row={r} />}
+                            />
                             <td className="px-2 py-1.5 text-right tabular-nums text-[#059669]">
                               {r.inflows === 0 ? "—" : money(r.inflows)}
                               {outliers.has(`${r.civilDate}|inflows`) ? (
@@ -1061,10 +1223,12 @@ export function TreasuryCaixaTimeline({
                               )}
                             >
                               {money(r.closing)}
+                              <RowClosingMarks row={r} />
                             </td>
                             <DivergenceCell
                               value={r.divergence}
                               informed={r.closingInformed}
+                              divergenceBaseline={r.divergenceBaseline}
                               scope="day"
                             />
                           </tr>

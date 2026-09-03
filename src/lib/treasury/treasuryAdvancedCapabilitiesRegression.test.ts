@@ -129,10 +129,15 @@ const EXPECTED_TREASURY_MODELS = [
   // Adicionado na consolidação dos cenários da Caixa (Fase 2 —
   // política persistida, singleton "GLOBAL", auditada via TreasuryAuditLog).
   "TreasuryScenarioPolicy",
+  // Adicionado na correção da autoridade única de saldos da Caixa —
+  // membership TEMPORAL do consolidado (uma conta nova não contamina dias
+  // anteriores à sua entrada; ver treasuryDailyBalanceAuthority.ts).
+  "TreasuryConsolidatedAccountMembership",
 ] as const;
 
 // +1: 20260905120000_treasury_reconciliation_idempotency (aditiva — ADD COLUMN + CREATE INDEX).
-const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 21;
+// +1: 20260921120000_treasury_consolidated_account_membership (aditiva — CREATE TABLE + FKs + índices).
+const EXPECTED_TREASURY_MIGRATIONS_WITH_MODEL = 22;
 
 const EXPECTED_LAYER_COUNTS = {
   controllersMin: 27,

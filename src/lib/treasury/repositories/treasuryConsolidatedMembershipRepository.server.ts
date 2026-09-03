@@ -62,9 +62,89 @@ export type TreasuryConsolidatedMembershipRepository = {
   ): Promise<TreasuryConsolidatedMembershipRow | null>;
 };
 
+type TreasuryConsolidatedMembershipPrismaRow = {
+  id: string;
+  accountId: string;
+  validFrom: Date;
+  validUntil: Date | null;
+  reason: string;
+  createdByUserId: string | null;
+  createdAt: Date;
+  closedAt: Date | null;
+  closedByUserId: string | null;
+};
+
+function toCivilDateString(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function civilDateStringToUtcMidnight(civilDate: string): Date {
+  return new Date(`${civilDate}T00:00:00.000Z`);
+}
+
+function toRow(
+  row: TreasuryConsolidatedMembershipPrismaRow
+): TreasuryConsolidatedMembershipRow {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    validFrom: toCivilDateString(row.validFrom),
+    validUntil: row.validUntil == null ? null : toCivilDateString(row.validUntil),
+    reason: row.reason,
+    createdByUserId: row.createdByUserId,
+    createdAt: row.createdAt,
+    closedAt: row.closedAt,
+    closedByUserId: row.closedByUserId,
+  };
+}
+
 export function createTreasuryConsolidatedMembershipRepository(
   prisma: PrismaClient
 ): TreasuryConsolidatedMembershipRepository {
-  void prisma;
-  throw new Error("not implemented: createTreasuryConsolidatedMembershipRepository");
+  return {
+    async listByAccountIds(accountIds, db) {
+      const client = db ?? prisma;
+      const rows = await client.treasuryConsolidatedAccountMembership.findMany({
+        where: { accountId: { in: [...accountIds] } },
+        orderBy: [{ accountId: "asc" }, { validFrom: "asc" }],
+      });
+      return rows.map(toRow);
+    },
+
+    async openInterval(input, db) {
+      const client = db ?? prisma;
+      const open = await client.treasuryConsolidatedAccountMembership.findFirst({
+        where: { accountId: input.accountId, validUntil: null },
+      });
+      if (open) return toRow(open);
+      const created = await client.treasuryConsolidatedAccountMembership.create({
+        data: {
+          accountId: input.accountId,
+          validFrom: civilDateStringToUtcMidnight(input.validFrom),
+          validUntil: null,
+          reason: input.reason,
+          createdByUserId: input.createdByUserId,
+        },
+      });
+      return toRow(created);
+    },
+
+    async closeInterval(input, db) {
+      const client = db ?? prisma;
+      const open = await client.treasuryConsolidatedAccountMembership.findFirst({
+        where: { accountId: input.accountId, validUntil: null },
+      });
+      if (!open) return null;
+      const updated = await client.treasuryConsolidatedAccountMembership.update({
+        where: { id: open.id },
+        data: {
+          validUntil: civilDateStringToUtcMidnight(input.validUntil),
+          closedAt: new Date(),
+          closedByUserId: input.closedByUserId,
+          reason: input.reason,
+        },
+      });
+      return toRow(updated);
+    },
+  };
 }

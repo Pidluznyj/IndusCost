@@ -94,11 +94,30 @@ export function todayTreasuryCivilDateInSaoPaulo(
  * (`referenceAt`, `createdAt`, …). Único ponto de conversão instante→dia
  * civil da Tesouraria — nunca `toISOString().slice(0, 10)` (UTC) nem
  * componentes locais do servidor. 21:00 em São Paulo (= 00:00Z do dia
- * seguinte) continua sendo o MESMO dia civil.
+ * seguinte) continua sendo o MESMO dia civil. Reaproveita
+ * {@link todayTreasuryCivilDateInSaoPaulo}, que já resolve isso via
+ * `Intl.DateTimeFormat` (timezone-aware de verdade, não offset fixo).
  */
 export function civilDateFromInstantInSaoPaulo(instant: Date): TreasuryCivilDate {
-  void instant;
-  throw new Error("not implemented: civilDateFromInstantInSaoPaulo");
+  return todayTreasuryCivilDateInSaoPaulo(instant);
+}
+
+/**
+ * America/Sao_Paulo não observa horário de verão desde a extinção nacional
+ * em 2019 — o offset é -03:00 o ano inteiro. Usado só para CONSTRUIR os
+ * limites gte/lt de uma janela a partir de uma data civil (a direção
+ * inversa, instante→dia civil, usa `Intl.DateTimeFormat` acima, que é
+ * timezone-aware de verdade e não depende desta constante).
+ */
+const SAO_PAULO_UTC_OFFSET_HOURS = 3;
+
+function civilDateToUtcMidnightPlusOffset(civilDate: TreasuryCivilDate): Date {
+  const parsed = parseTreasuryCivilDate(civilDate);
+  const match = CIVIL_DATE_RE.exec(parsed)!;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return new Date(Date.UTC(year, month - 1, day, SAO_PAULO_UTC_OFFSET_HOURS, 0, 0, 0));
 }
 
 /**
@@ -111,9 +130,10 @@ export function civilDateRangeInSaoPaulo(
   fromCivilDate: TreasuryCivilDate,
   toCivilDate: TreasuryCivilDate
 ): { gte: Date; lt: Date } {
-  void fromCivilDate;
-  void toCivilDate;
-  throw new Error("not implemented: civilDateRangeInSaoPaulo");
+  const gte = civilDateToUtcMidnightPlusOffset(fromCivilDate);
+  const toStart = civilDateToUtcMidnightPlusOffset(toCivilDate);
+  const lt = new Date(toStart.getTime() + 24 * 60 * 60 * 1000);
+  return { gte, lt };
 }
 
 /**
@@ -124,7 +144,16 @@ export function civilDateRangeForDbDate(
   fromCivilDate: TreasuryCivilDate,
   toCivilDate: TreasuryCivilDate
 ): { gte: Date; lt: Date } {
-  void fromCivilDate;
-  void toCivilDate;
-  throw new Error("not implemented: civilDateRangeForDbDate");
+  const from = parseTreasuryCivilDate(fromCivilDate);
+  const fromMatch = CIVIL_DATE_RE.exec(from)!;
+  const gte = new Date(
+    Date.UTC(Number(fromMatch[1]), Number(fromMatch[2]) - 1, Number(fromMatch[3]))
+  );
+  const to = parseTreasuryCivilDate(toCivilDate);
+  const toMatch = CIVIL_DATE_RE.exec(to)!;
+  const toStart = new Date(
+    Date.UTC(Number(toMatch[1]), Number(toMatch[2]) - 1, Number(toMatch[3]))
+  );
+  const lt = new Date(toStart.getTime() + 24 * 60 * 60 * 1000);
+  return { gte, lt };
 }

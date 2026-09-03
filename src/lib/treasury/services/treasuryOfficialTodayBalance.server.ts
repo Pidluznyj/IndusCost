@@ -29,6 +29,8 @@ import {
   TREASURY_DAILY_CLOSING_BANK_SNAPSHOT_KEY_PREFIX,
 } from "../domain/treasuryDailyAccountRoutineRules.js";
 import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
+import { civilDateFromInstantInSaoPaulo } from "../contracts/treasuryCivilDate.js";
+import { roundTreasuryBalanceMoney } from "../domain/treasuryDailyBalanceAuthority.js";
 
 export type TreasuryOfficialTodayBalanceSource =
   | "DAILY_CLOSING"
@@ -145,9 +147,19 @@ export async function loadTreasuryOfficialTodayBalance(
     }
   }
 
+  // Melhor cobertura PARCIAL vista até agora (passos 2 e 3) — nunca vira
+  // âncora (`amount`), mas fica visível em `accountsCovered`/
+  // `accountsWithoutBalance` mesmo quando a resposta final é `amount: null`.
+  // Sem isso, "2/3 contas informaram" ficava indistinguível de "ninguém
+  // informou nada" — exatamente o defeito que promovia o subtotal a âncora.
+  let bestPartialCovered = 0;
+  let bestPartialWithoutBalance = totalAccounts;
+
   // ── 2) Snapshot da rotina "Saldos do Dia" por conta ───────────────────
   //     Consulta todos os snapshots da rotina; para cada conta pega o mais
-  //     recente daquele dia civil (idempotencyKey embute a data).
+  //     recente daquele dia civil (idempotencyKey embute a data). Só ANCORA
+  //     (vira `amount`) quando TODAS as contas do consolidado informaram —
+  //     um subconjunto nunca é promovido ao saldo da empresa inteira.
   if (accountIds.length > 0) {
     const routineSnapshots = await prisma.treasuryBalanceSnapshot.findMany({
       where: {
@@ -183,28 +195,32 @@ export async function loadTreasuryOfficialTodayBalance(
       });
     }
     if (routineByAccount.size > 0) {
-      let total = 0;
-      let latest: Date | null = null;
-      for (const v of routineByAccount.values()) {
-        total += v.amount;
-        if (!latest || v.informedAt > latest) latest = v.informedAt;
+      if (routineByAccount.size > bestPartialCovered) {
+        bestPartialCovered = routineByAccount.size;
+        bestPartialWithoutBalance = totalAccounts - routineByAccount.size;
       }
-      return {
-        amount: total,
-        source: "DAILY_ROUTINE_SNAPSHOT",
-        civilDate,
-        informedAt: latest?.toISOString() ?? null,
-        accountsCovered: routineByAccount.size,
-        accountsWithoutBalance: totalAccounts - routineByAccount.size,
-        sourceLabel:
-          routineByAccount.size === totalAccounts
-            ? `Rotina "Saldos do Dia" de ${formatBrDate(civilDate)}`
-            : `Rotina "Saldos do Dia" (${routineByAccount.size}/${totalAccounts} contas)`,
-      };
+      if (routineByAccount.size === totalAccounts) {
+        let total = 0;
+        let latest: Date | null = null;
+        for (const v of routineByAccount.values()) {
+          total += v.amount;
+          if (!latest || v.informedAt > latest) latest = v.informedAt;
+        }
+        return {
+          amount: roundTreasuryBalanceMoney(total),
+          source: "DAILY_ROUTINE_SNAPSHOT",
+          civilDate,
+          informedAt: latest?.toISOString() ?? null,
+          accountsCovered: routineByAccount.size,
+          accountsWithoutBalance: 0,
+          sourceLabel: `Rotina "Saldos do Dia" de ${formatBrDate(civilDate)}`,
+        };
+      }
     }
   }
 
   // ── 3) Snapshot MANUAL genérico (tela "Saldo") do dia ─────────────────
+  //     Mesma regra: só ancora com cobertura COMPLETA.
   if (accountIds.length > 0) {
     const dayStart = civilDateToLocalDate(civilDate);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -240,33 +256,36 @@ export async function loadTreasuryOfficialTodayBalance(
       });
     }
     if (genericByAccount.size > 0) {
-      let total = 0;
-      let latest: Date | null = null;
-      for (const v of genericByAccount.values()) {
-        total += v.amount;
-        if (!latest || v.informedAt > latest) latest = v.informedAt;
+      if (genericByAccount.size > bestPartialCovered) {
+        bestPartialCovered = genericByAccount.size;
+        bestPartialWithoutBalance = totalAccounts - genericByAccount.size;
       }
-      return {
-        amount: total,
-        source: "GENERIC_MANUAL_SNAPSHOT",
-        civilDate,
-        informedAt: latest?.toISOString() ?? null,
-        accountsCovered: genericByAccount.size,
-        accountsWithoutBalance: totalAccounts - genericByAccount.size,
-        sourceLabel:
-          genericByAccount.size === totalAccounts
-            ? `Saldo informado de ${formatBrDate(civilDate)}`
-            : `Saldo informado (${genericByAccount.size}/${totalAccounts} contas)`,
-      };
+      if (genericByAccount.size === totalAccounts) {
+        let total = 0;
+        let latest: Date | null = null;
+        for (const v of genericByAccount.values()) {
+          total += v.amount;
+          if (!latest || v.informedAt > latest) latest = v.informedAt;
+        }
+        return {
+          amount: roundTreasuryBalanceMoney(total),
+          source: "GENERIC_MANUAL_SNAPSHOT",
+          civilDate,
+          informedAt: latest?.toISOString() ?? null,
+          accountsCovered: genericByAccount.size,
+          accountsWithoutBalance: 0,
+          sourceLabel: `Saldo informado de ${formatBrDate(civilDate)}`,
+        };
+      }
     }
   }
 
-  // ── 4) TreasuryFinancialAccount.availableBalance (snapshot Nomus) ─────
-  //     É o valor que já aparece no card superior — o mais fresco disponível.
+  // ── 4) Posição mais recente por conta (INFORMATIVA — nunca ancora) ────
+  //     Antes, esta etapa promovia o "estoque corrente" (qualquer data, até
+  //     ontem) a saldo oficial de HOJE — o segundo defeito real observado em
+  //     produção. Agora só alimenta `latestPosition`, nunca `amount`.
+  let latestPosition: TreasuryOfficialTodayBalance["latestPosition"] = null;
   if (accountIds.length > 0) {
-    // O saldo mais recente por conta vem de TreasuryBalanceSnapshot ordenado
-    // por referenceAt/createdAt (independente da data pedida) — é o "estoque
-    // corrente" que o front usa em fetchTreasuryAccountLatestBalance.
     const latestByAccount = await prisma.treasuryBalanceSnapshot.findMany({
       where: {
         accountId: { in: accountIds },
@@ -294,22 +313,20 @@ export async function loadTreasuryOfficialTodayBalance(
     }
     if (byAccount.size > 0) {
       let total = 0;
-      let latest: Date | null = null;
+      let oldest: string | null = null;
+      let updatedToday = 0;
       for (const v of byAccount.values()) {
         total += v.amount;
-        if (!latest || v.informedAt > latest) latest = v.informedAt;
+        const posCivilDate = civilDateFromInstantInSaoPaulo(v.informedAt);
+        if (oldest == null || posCivilDate < oldest) oldest = posCivilDate;
+        if (posCivilDate === civilDate) updatedToday += 1;
       }
-      return {
-        amount: total,
-        source: "ACCOUNT_LATEST_BALANCE",
-        civilDate,
-        informedAt: latest?.toISOString() ?? null,
+      latestPosition = {
+        amount: roundTreasuryBalanceMoney(total),
         accountsCovered: byAccount.size,
-        accountsWithoutBalance: totalAccounts - byAccount.size,
-        sourceLabel:
-          byAccount.size === totalAccounts
-            ? `Saldo mais recente das contas (Nomus)`
-            : `Saldo mais recente (${byAccount.size}/${totalAccounts} contas)`,
+        accountsExpected: totalAccounts,
+        oldestCivilDate: oldest,
+        accountsUpdatedToday: updatedToday,
       };
     }
   }
@@ -319,8 +336,12 @@ export async function loadTreasuryOfficialTodayBalance(
     source: "NONE",
     civilDate,
     informedAt: null,
-    accountsCovered: 0,
-    accountsWithoutBalance: totalAccounts,
-    sourceLabel: "Sem saldo informado — motor cai na cadeia calculada.",
+    accountsCovered: bestPartialCovered,
+    accountsWithoutBalance: bestPartialWithoutBalance,
+    sourceLabel:
+      bestPartialCovered > 0
+        ? `Saldo informado incompleto (${bestPartialCovered}/${totalAccounts} contas) — motor cai na cadeia calculada.`
+        : "Sem saldo informado — motor cai na cadeia calculada.",
+    latestPosition,
   };
 }

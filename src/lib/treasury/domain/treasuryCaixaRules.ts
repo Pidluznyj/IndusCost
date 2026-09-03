@@ -862,6 +862,17 @@ export function buildTreasuryCaixaMonthlyTimeline(
         (d) => d.divergence != null && d.divergence !== 0
       );
       const hasAnyInformed = days.some((d) => d.divergence != null);
+      const coverageIncompleteDays = days.filter(
+        (d) =>
+          d.closingCoverage != null &&
+          d.closingCoverage.accountsExpected > 0 &&
+          !d.closingCoverage.complete
+      );
+      const hasOpeningAdjustment = days.some((d) => d.openingAdjustment != null);
+      const openingAdjustmentSum = days.reduce(
+        (s, d) => s + (d.openingAdjustment ?? 0),
+        0
+      );
       return {
         monthKey,
         kind: resolveMonthKind(days),
@@ -879,6 +890,8 @@ export function buildTreasuryCaixaMonthlyTimeline(
         // Mês cujos dias são TODOS estimados por vencimento herda o selo de
         // estimativa — a UI o distingue da projeção materializada.
         estimateOnly: days.every((d) => d.estimated === true) || undefined,
+        coverageIncompleteDayCount: coverageIncompleteDays.length,
+        openingAdjustment: hasOpeningAdjustment ? roundMoney(openingAdjustmentSum) : null,
       };
     });
 }
@@ -1097,6 +1110,14 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
       closingInformed: num(d.closingInformed),
       divergence: num(d.divergence),
       negative: closing != null && closing < 0,
+      // Proveniência/cobertura da autoridade única — repassada intacta
+      // (ausente = `undefined`, dia resolvido pela cadeia legada antiga).
+      openingCoverage: d.openingCoverage,
+      closingCoverage: d.closingCoverage,
+      openingSource: d.openingSource,
+      closingSource: d.closingSource,
+      openingAdjustment: d.openingAdjustment,
+      divergenceBaseline: d.divergenceBaseline,
     });
   }
 
@@ -1114,7 +1135,39 @@ export function buildTreasuryCaixaUnifiedTimeline(input: {
   );
   /** Fechamento real de hoje — âncora da cadeia futura. */
   let anchorClosing: number | null = null;
-  if (input.todayFlow) {
+  if (input.todayBalance) {
+    // Autoridade única de saldos — MESMA cadeia dos dias passados. Manda
+    // sobre `todayFlow` (legado, `/today/closing`) sempre que presente: é
+    // exatamente o defeito de produção (card "Caixa hoje" × "Começou" de
+    // hoje divergindo por virem de fontes diferentes) que esta prioridade
+    // fecha — ver treasuryCaixaRulesAuthority.test.ts (RC5).
+    const tb = input.todayBalance;
+    const closing = tb.closingEffective;
+    const forecastInflows = numOrZero(tb.predictedInflows);
+    const forecastOutflows = numOrZero(tb.predictedOutflows);
+    rows.push({
+      civilDate: tb.civilDate,
+      kind: "TODAY",
+      opening: tb.opening,
+      inflows: roundMoney(tb.inflows + forecastInflows),
+      outflows: roundMoney(tb.outflows + forecastOutflows),
+      closing,
+      closingCalculated: tb.closingCalculated,
+      closingInformed: tb.closingInformed,
+      divergence: tb.divergence,
+      negative: closing != null && closing < 0,
+      forecastInflows: forecastInflows > 0 ? forecastInflows : undefined,
+      forecastOutflows: forecastOutflows > 0 ? forecastOutflows : undefined,
+      closingRealized: tb.closingRealized,
+      openingSource: tb.openingSource,
+      closingSource: tb.closingSource,
+      openingAdjustment: tb.openingAdjustment,
+      divergenceBaseline: tb.divergenceBaseline,
+      openingCoverage: tb.openingCoverage,
+      closingCoverage: tb.closingCoverage,
+    });
+    anchorClosing = closing;
+  } else if (input.todayFlow) {
     const closing =
       input.todayFlow.closingInformed ?? input.todayFlow.closingCalculated;
     const forecastInflows = numOrZero(input.todayFlow.predictedInflows);

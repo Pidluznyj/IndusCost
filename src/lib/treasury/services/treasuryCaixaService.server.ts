@@ -50,9 +50,7 @@ import type {
   FinanceCashFlowArRow,
 } from "@/src/lib/financeCashFlowDashboard.js";
 import { civilDateToLocalDate, toCivilDateKey } from "@/src/lib/financeCivilDate.js";
-import { treasuryCompanyCodePresentWhere } from "../treasuryPrismaFilters.js";
 import {
-  applyTreasuryCaixaRunningBalance,
   buildTreasuryCaixaOverdue,
   buildTreasuryCaixaRealizedDays,
   computeTreasuryCaixaTotals,
@@ -65,18 +63,26 @@ import {
   type TreasuryCaixaPeriodInput,
   type TreasuryCaixaRealizedDay,
 } from "../domain/treasuryCaixaRules.js";
-import type {
-  TreasuryDailyBalanceAuthorityDay,
-  TreasuryDailyBalanceAuthorityResult,
-  TreasuryGenericSnapshotPolicy,
-} from "../domain/treasuryDailyBalanceAuthority.js";
-import type { TreasuryConsolidatedAccountUniverse } from "./treasuryConsolidatedAccountUniverse.server.js";
-import type { TreasuryDailyBalanceEvidence } from "./treasuryDailyBalanceEvidence.server.js";
-import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
 import {
-  loadTreasuryOfficialTodayBalance,
-  type TreasuryOfficialTodayBalance,
-} from "./treasuryOfficialTodayBalance.server.js";
+  resolveTreasuryDailyBalanceAuthority,
+  roundTreasuryBalanceMoney,
+  type TreasuryDailyBalanceAuthorityDay,
+  type TreasuryDailyBalanceAuthorityResult,
+  type TreasuryFormalClosingEvidenceInput,
+  type TreasuryGenericSnapshotPolicy,
+  type TreasuryManualBalanceEvidenceInput,
+} from "../domain/treasuryDailyBalanceAuthority.js";
+import {
+  loadTreasuryConsolidatedAccountUniverse,
+  type TreasuryConsolidatedAccountUniverse,
+} from "./treasuryConsolidatedAccountUniverse.server.js";
+import {
+  loadTreasuryDailyBalanceEvidence,
+  type TreasuryAccountLatestPosition,
+  type TreasuryDailyBalanceEvidence,
+} from "./treasuryDailyBalanceEvidence.server.js";
+import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
+import type { TreasuryOfficialTodayBalance } from "./treasuryOfficialTodayBalance.server.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import { createTreasuryScenarioPolicyService } from "./treasuryScenarioPolicyService.server.js";
 import {
@@ -598,104 +604,28 @@ export function createTreasuryCaixaService(input: {
         `${period.year - 1}-01-01` < TREASURY_CAIXA_GENESIS_CIVIL_DATE
           ? `${period.year - 1}-01-01`
           : TREASURY_CAIXA_GENESIS_CIVIL_DATE;
-      // Saldo INFORMADO por dia — motor canônico de fechamento diário.
-      // Espelha a carga do relatório oficial (treasuryReportRepository):
-      // só CLOSED e, por dia, a versão mais alta (reabertura gera nova versão).
-      // `observedBalance` é o saldo do extrato; `closingBalance` é o calculado.
-      // A divergência entre os dois é apurada no domínio, não aqui.
-      const companyAccounts = await prisma.treasuryFinancialAccount.findMany({
-        where: { isActive: true, ...treasuryCompanyCodePresentWhere() },
-        select: { id: true, companyCode: true },
-        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      });
-      const companyCode = companyAccounts[0]?.companyCode?.trim() || null;
 
-      const informedClosingByCivilDate = new Map<string, number>();
-      if (companyCode) {
-        const closingRange = civilDateUtcRange(
-          settlementWindowFromCivilDate,
-          periodTo
-        );
-        const closings = await prisma.treasuryDailyClosing.findMany({
-          where: {
-            companyCode,
-            status: "CLOSED",
-            civilDate: { gte: closingRange.gte, lt: closingRange.lt },
-          },
-          orderBy: [{ civilDate: "asc" }, { version: "desc" }],
-          distinct: ["civilDate"],
-          select: { civilDate: true, observedBalance: true },
-        });
-        for (const c of closings) {
-          const value = Number(c.observedBalance);
-          if (!Number.isFinite(value)) continue;
-          informedClosingByCivilDate.set(toIsoDate(c.civilDate), value);
-        }
-
-        // Fallback: dia sem fechamento formal, mas com saldo informado via
-        // "Saldos do Dia" — não sobrepõe o fechamento formal, só preenche o
-        // que falta (evita que o atalho rápido fique invisível na tela).
-        const accountIds = companyAccounts.map((a) => a.id);
-        const fallbackByCivilDate = await loadFallbackDailyClosingBankSumByCivilDate(
-          prisma,
-          accountIds,
-          settlementWindowFromCivilDate,
-          periodTo
-        );
-        for (const [civilDate, value] of fallbackByCivilDate) {
-          if (informedClosingByCivilDate.has(civilDate)) continue;
-          informedClosingByCivilDate.set(civilDate, value);
-        }
-
-        // Fallback: saldo informado pela tela genérica "Saldo" (fora da
-        // rotina diária guiada) — cobre backfill retroativo de saldo
-        // inicial/final por mês. Só preenche o que os dois anteriores não
-        // cobriram (fechamento formal e "Saldos do Dia" continuam prioritários).
-        const genericByCivilDate =
-          await loadFallbackGenericManualBalanceSumByCivilDate(
-            prisma,
-            accountIds,
-            settlementWindowFromCivilDate,
-            periodTo
-          );
-        for (const [civilDate, value] of genericByCivilDate) {
-          if (informedClosingByCivilDate.has(civilDate)) continue;
-          informedClosingByCivilDate.set(civilDate, value);
-        }
-      }
-
-      // Âncora oficial de saldo de HOJE — mesma precedência que o motor
-      // único-de-dia consome. Carregada aqui (e não depois) para também
-      // re-ancorar a cadeia da Linha do tempo mensal / gráfico de saldo
-      // por mês, que é montada por `applyTreasuryCaixaRunningBalance`.
-      // Sem esta injeção, a linha do tempo mensal e os cenários apresentam
-      // saldos divergentes para o mesmo dia (a linha do tempo reconstruía
-      // do zero desde a gênese, ignorando o saldo real no banco).
+      // Autoridade única de saldos: universo de contas com membership
+      // TEMPORAL (uma conta nova nunca contamina dias anteriores à sua
+      // entrada no consolidado) + evidências (aberturas/fechamentos manuais,
+      // genéricos, formais, posição mais recente por conta). A composição
+      // completa (`composeTreasuryCaixaBalanceAuthority`, mais abaixo) só
+      // roda depois que o motor único-de-dia calcular o realizado/previsto
+      // de HOJE — universo e evidência não dependem disso, então carregam já.
       const todayCivilDate = todayTreasuryCivilDateInSaoPaulo();
-      const officialToday = await loadTreasuryOfficialTodayBalance(
+      const consolidatedUniverse = await loadTreasuryConsolidatedAccountUniverse(
         prisma,
-        todayCivilDate
+        { fromCivilDate: settlementWindowFromCivilDate, toCivilDate: periodTo }
       );
-      // Só injeta se ainda não houver fonte mais forte para o dia (a
-      // precedência foi resolvida por `loadTreasuryOfficialTodayBalance`,
-      // e os mapas anteriores — TreasuryDailyClosing CLOSED e snapshots —
-      // podem já ter posto valor). Prevalência coerente com a precedência
-      // canônica: CLOSED > rotina > genérico > Nomus.
-      if (
-        officialToday.amount != null &&
-        !informedClosingByCivilDate.has(todayCivilDate)
-      ) {
-        informedClosingByCivilDate.set(todayCivilDate, officialToday.amount);
-      }
-
-      // Acumula saldo desde a gênese ANTES de cortar pelo período filtrado —
-      // senão um filtro de março recomeçaria a soma do zero em março e
-      // perderia o efeito de janeiro/fevereiro. O saldo informado sobrepõe o
-      // calculado e re-ancora a cadeia a partir dali. Agora com a âncora
-      // oficial de HOJE, a cadeia mensal converge com o gráfico dos cenários.
-      const realizedDays = applyTreasuryCaixaRunningBalance(realizedDaysAll, {
-        informedClosingByCivilDate,
-      }).filter((d) => d.civilDate >= periodFrom && d.civilDate <= periodTo);
+      const consolidatedAccountIds = consolidatedUniverse.accounts.map(
+        (a) => a.accountId
+      );
+      const dailyBalanceEvidence = await loadTreasuryDailyBalanceEvidence(prisma, {
+        accountIds: consolidatedAccountIds,
+        companyCodes: consolidatedUniverse.companyCodes,
+        fromCivilDate: settlementWindowFromCivilDate,
+        toCivilDate: periodTo,
+      });
 
       // Atrasados são ESTOQUE: o que está vencido hoje, independente do período
       // filtrado. Por isso carrega com status "overdue" e sem recorte de data —
@@ -893,26 +823,69 @@ export function createTreasuryCaixaService(input: {
           row.amountPaid > 0 ? (row.paymentDate ?? row.settlementDate ?? null) : null
       );
 
-      // Saldo inicial da janela canônica: fechamento REALIZADO do último dia
-      // conhecido anterior ao primeiro dia da janela. Reaproveita `realizedDaysAll`
-      // (já com running balance encadeado desde a gênese), sem consulta nova.
-      // Sem histórico anterior → null, que emite warning `NO_OPENING_BALANCE`
-      // no primeiro dia canônico (indisponível ≠ zero falso).
-      const firstWindowDay = canonicalWindowDays[0] ?? null;
-      let openingBalanceOfFirstDay: number | null = null;
-      if (firstWindowDay) {
-        for (let i = realizedDaysAll.length - 1; i >= 0; i -= 1) {
-          const rd = realizedDaysAll[i]!;
-          if (rd.civilDate < firstWindowDay && rd.closing != null) {
-            openingBalanceOfFirstDay = rd.closing;
-            break;
-          }
-        }
-      }
+      // Motor único-de-dia — PASSO 1 (sem âncora): as seis dimensões
+      // disjuntas (a receber/recebido/a pagar/pago por dia) não dependem de
+      // nenhum saldo — só de título. Roda primeiro só para dar à autoridade
+      // única o realizado/previsto de HOJE (`receivableReceived`/`payablePaid`
+      // /`receivableDue`/`payableDue`), na MESMA fonte que "Movimento de hoje"
+      // já usa. O passo 2, mais abaixo, refaz com a âncora resolvida — barato
+      // (função pura, sem I/O), e mantém `canonicalDays.openingBalance` etc.
+      // corretos para quem mais consome (cenários, drill-down).
+      const canonicalDaysUnanchored = buildTreasuryCaixaCanonicalDays({
+        civilDatesInWindow: canonicalWindowDays,
+        receivables: canonicalReceivables,
+        payables: canonicalPayables,
+        otherMovementsLoadStatus: "not_loaded",
+        openingBalanceOfFirstDay: null,
+        officialTodayBalance: null,
+        reconciliationPolicy,
+      });
+      const todayCanonicalUnanchored =
+        canonicalDaysUnanchored.find((d) => d.civilDate === todayCivilDate) ?? null;
 
-      // Âncora oficial já foi carregada acima (linha ~561) para injetar no
-      // running balance da Linha do tempo mensal. Reusa a mesma instância
-      // aqui — o motor único-de-dia também re-ancora no dia da âncora.
+      // Autoridade única de saldos: junta universo + evidências + fluxo
+      // realizado (dias passados) com o realizado/previsto de HOJE do motor
+      // único-de-dia. Nunca soma subtotal parcial de contas como saldo
+      // consolidado — é a correção central desta missão (ver
+      // treasuryDailyBalanceAuthority.ts). Substitui o antigo
+      // `applyTreasuryCaixaRunningBalance` + `informedClosingByCivilDate`.
+      const balanceAuthority = composeTreasuryCaixaBalanceAuthority({
+        universe: consolidatedUniverse,
+        evidence: dailyBalanceEvidence,
+        realizedDaysAll,
+        todayCivilDate,
+        periodFrom,
+        periodTo,
+        todayRealized: todayCanonicalUnanchored
+          ? {
+              inflows: todayCanonicalUnanchored.receivableReceived,
+              outflows: todayCanonicalUnanchored.payablePaid,
+            }
+          : { inflows: 0, outflows: 0 },
+        todayPredicted: todayCanonicalUnanchored
+          ? {
+              inflows: todayCanonicalUnanchored.receivableDue,
+              outflows: todayCanonicalUnanchored.payableDue,
+            }
+          : { inflows: 0, outflows: 0 },
+        genesisCivilDate: TREASURY_CAIXA_GENESIS_CIVIL_DATE,
+      });
+      const realizedDays = balanceAuthority.realizedDays;
+      const officialToday = balanceAuthority.officialTodayBalance;
+
+      // Saldo inicial da janela canônica: fechamento EFETIVO do último dia
+      // conhecido da cadeia INTEIRA antes do primeiro dia da janela — vem da
+      // própria autoridade (RC4: antes lia `realizedDaysAll` cru, que nunca
+      // tinha `closing` preenchido e por isso ficava sempre null). Sem
+      // histórico anterior → null, que emite warning `NO_OPENING_BALANCE` no
+      // primeiro dia canônico (indisponível ≠ zero falso).
+      const firstWindowDay = canonicalWindowDays[0] ?? null;
+      const openingBalanceOfFirstDay = firstWindowDay
+        ? balanceAuthority.openingBalanceBefore(firstWindowDay)
+        : null;
+
+      // Âncora oficial de HOJE — MESMA autoridade que resolveu `realizedDays`
+      // acima (nunca mais um subtotal parcial de contas vira âncora).
       const anchor =
         officialToday.amount != null &&
         canonicalWindowDays.some((d) => d === todayCivilDate)
@@ -925,9 +898,10 @@ export function createTreasuryCaixaService(input: {
             }
           : null;
 
-      // Política de conciliação já carregada no topo de `getBoard()` — a
-      // MESMA instância que corrigiu `realizedDaysAll` alimenta o motor
-      // único-de-dia aqui, sem round-trip duplicado nem risco de divergir.
+      // Motor único-de-dia — PASSO 2 (com âncora): mesma população de
+      // títulos do passo 1, agora com `openingBalance`/`closingRealizedBalance`
+      // /`closingProjectedBalance` corretos (consumidos por cenários e pelo
+      // drill-down "Movimento de hoje").
       const canonicalDays = buildTreasuryCaixaCanonicalDays({
         civilDatesInWindow: canonicalWindowDays,
         receivables: canonicalReceivables,
@@ -954,6 +928,8 @@ export function createTreasuryCaixaService(input: {
         dailyDueEstimates,
         canonicalDays,
         officialTodayBalance: officialToday,
+        todayBalance: balanceAuthority.todayBalance,
+        accountPositions: balanceAuthority.accountPositions,
       };
     },
   };
@@ -990,6 +966,16 @@ export type TreasuryCaixaBalanceAuthorityComposeInput = {
   todayPredicted: { inflows: number; outflows: number } | null;
   genesisCivilDate?: string;
   genericSnapshotPolicy?: TreasuryGenericSnapshotPolicy;
+  /**
+   * Atalhos opcionais que SOBREPÕEM o campo correspondente de `evidence` —
+   * conveniência para quem já tem só esse pedaço em mãos (ex.: testes que
+   * montam um cenário sem reconstruir o `TreasuryDailyBalanceEvidence`
+   * inteiro). Ausente = usa `evidence.<campo>`.
+   */
+  manualOpenings?: readonly TreasuryManualBalanceEvidenceInput[];
+  manualClosings?: readonly TreasuryManualBalanceEvidenceInput[];
+  genericSnapshots?: readonly TreasuryManualBalanceEvidenceInput[];
+  formalClosings?: readonly TreasuryFormalClosingEvidenceInput[];
 };
 
 export type TreasuryCaixaBalanceAuthorityComposeResult = {
@@ -1004,13 +990,214 @@ export type TreasuryCaixaBalanceAuthorityComposeResult = {
   accountPositions: TreasuryCaixaAccountPositionDto[];
 };
 
+function formatBrDate(civilDate: string): string {
+  const [y, m, d] = civilDate.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function buildComposedAccountPositions(
+  latestPositions: readonly TreasuryAccountLatestPosition[],
+  universe: TreasuryConsolidatedAccountUniverse,
+  todayCivilDate: string
+): TreasuryCaixaAccountPositionDto[] {
+  const byId = new Map(universe.accounts.map((a) => [a.accountId, a]));
+  return latestPositions.map((p) => {
+    const acc = byId.get(p.accountId);
+    return {
+      accountId: p.accountId,
+      accountName: acc?.accountName ?? p.accountId,
+      companyCode: acc?.companyCode ?? "",
+      amount: p.amount,
+      referenceAt: p.referenceAt,
+      civilDate: p.civilDate,
+      isToday: p.civilDate === todayCivilDate,
+      origin: p.origin,
+    };
+  });
+}
+
+/**
+ * `officialTodayBalance` composto a partir da MESMA autoridade que resolve a
+ * linha do tempo — nunca um subtotal parcial. Quando o fechamento de hoje não
+ * está completo, devolve `amount: null` + a posição mais recente por conta
+ * (informativa, `latestPosition`) em vez de inventar uma âncora.
+ */
+function deriveComposedOfficialTodayBalance(input: {
+  todayBalance: TreasuryDailyBalanceAuthorityDay | null;
+  todayCivilDate: string;
+  latestPositions: readonly TreasuryAccountLatestPosition[];
+}): TreasuryOfficialTodayBalance {
+  const tb = input.todayBalance;
+  const accountsExpected = tb?.closingCoverage.accountsExpected ?? 0;
+  const accountsCovered = tb?.closingCoverage.accountsCovered ?? 0;
+
+  if (tb && tb.closingInformed != null) {
+    const source = tb.closingSource === "FORMAL_CLOSING" ? "DAILY_CLOSING" : "DAILY_ROUTINE_SNAPSHOT";
+    const latestInformedAt = tb.closingCoverage.accounts.reduce<string | null>((latest, a) => {
+      if (!a.informedAt) return latest;
+      if (!latest || a.informedAt > latest) return a.informedAt;
+      return latest;
+    }, null);
+    return {
+      amount: tb.closingInformed,
+      source,
+      civilDate: input.todayCivilDate,
+      informedAt: latestInformedAt,
+      accountsCovered,
+      accountsWithoutBalance: accountsExpected - accountsCovered,
+      sourceLabel:
+        source === "DAILY_CLOSING"
+          ? `Fechamento formal de ${formatBrDate(input.todayCivilDate)}`
+          : `Saldo informado de ${formatBrDate(input.todayCivilDate)}`,
+    };
+  }
+
+  const byAccount = new Map<string, TreasuryAccountLatestPosition>();
+  for (const p of input.latestPositions) {
+    const existing = byAccount.get(p.accountId);
+    if (!existing || p.referenceAt > existing.referenceAt) byAccount.set(p.accountId, p);
+  }
+  let latestPosition: TreasuryOfficialTodayBalance["latestPosition"] = null;
+  if (byAccount.size > 0) {
+    let sum = 0;
+    let oldest: string | null = null;
+    let updatedToday = 0;
+    for (const p of byAccount.values()) {
+      sum += p.amount;
+      if (oldest == null || p.civilDate < oldest) oldest = p.civilDate;
+      if (p.civilDate === input.todayCivilDate) updatedToday += 1;
+    }
+    latestPosition = {
+      amount: roundTreasuryBalanceMoney(sum),
+      accountsCovered: byAccount.size,
+      accountsExpected,
+      oldestCivilDate: oldest,
+      accountsUpdatedToday: updatedToday,
+    };
+  }
+
+  return {
+    amount: null,
+    source: "NONE",
+    civilDate: input.todayCivilDate,
+    informedAt: null,
+    accountsCovered,
+    accountsWithoutBalance: accountsExpected - accountsCovered,
+    sourceLabel:
+      accountsCovered > 0
+        ? `Saldo informado incompleto (${accountsCovered}/${accountsExpected} contas) — motor cai na cadeia calculada.`
+        : "Sem saldo informado — motor cai na cadeia calculada.",
+    latestPosition,
+  };
+}
+
 /**
  * Junta universo + evidências + fluxos numa única resolução de autoridade e
  * projeta tudo que o board publica. `getBoard()` só carrega e delega para cá.
+ *
+ * `civilDates` resolvidos = todo dia com movimento em `realizedDaysAll` ∪
+ * todo dia com QUALQUER evidência manual/formal ∪ hoje — sempre a cadeia
+ * INTEIRA (nunca recortada pelo período exibido; `realizedDays` é filtrado
+ * DEPOIS, para RC4 continuar respondendo mesmo quando o dia anterior à
+ * janela ficou fora do recorte).
+ *
+ * O realizado de HOJE vem de `todayRealized` (motor único-de-dia, mesma
+ * fonte do card "Movimento de hoje"), não do bucket de liquidação bruto —
+ * mesma correção que `applyTreasuryCaixaCanonicalTodayFlow` já fazia.
  */
 export function composeTreasuryCaixaBalanceAuthority(
   input: TreasuryCaixaBalanceAuthorityComposeInput
 ): TreasuryCaixaBalanceAuthorityComposeResult {
-  void input;
-  throw new Error("not implemented: composeTreasuryCaixaBalanceAuthority");
+  const manualOpenings = input.manualOpenings ?? input.evidence.manualOpenings;
+  const manualClosings = input.manualClosings ?? input.evidence.manualClosings;
+  const genericSnapshots = input.genericSnapshots ?? input.evidence.genericSnapshots;
+  const formalClosings = input.formalClosings ?? input.evidence.formalClosings;
+
+  const civilDateSet = new Set<string>();
+  const rawByDate = new Map<string, TreasuryCaixaRealizedDay>();
+  for (const d of input.realizedDaysAll) {
+    civilDateSet.add(d.civilDate);
+    rawByDate.set(d.civilDate, d);
+  }
+  for (const e of manualOpenings) civilDateSet.add(e.civilDate);
+  for (const e of manualClosings) civilDateSet.add(e.civilDate);
+  for (const e of genericSnapshots) civilDateSet.add(e.civilDate);
+  for (const f of formalClosings) civilDateSet.add(f.civilDate);
+  civilDateSet.add(input.todayCivilDate);
+
+  const flows = input.realizedDaysAll
+    .filter((d) => d.civilDate !== input.todayCivilDate)
+    .map((d) => ({ civilDate: d.civilDate, inflows: d.inflows, outflows: d.outflows }));
+  if (input.todayRealized) {
+    flows.push({
+      civilDate: input.todayCivilDate,
+      inflows: input.todayRealized.inflows,
+      outflows: input.todayRealized.outflows,
+    });
+  }
+
+  const authority = resolveTreasuryDailyBalanceAuthority({
+    civilDates: [...civilDateSet],
+    genesisCivilDate: input.genesisCivilDate,
+    todayCivilDate: input.todayCivilDate,
+    accounts: input.universe.accounts,
+    manualOpenings,
+    manualClosings,
+    genericSnapshots,
+    formalClosings,
+    flows,
+    todayPredicted: input.todayPredicted,
+    genericSnapshotPolicy: input.genericSnapshotPolicy,
+  });
+
+  const realizedDays: TreasuryCaixaRealizedDay[] = authority.days
+    .filter(
+      (d) =>
+        d.civilDate < input.todayCivilDate &&
+        d.civilDate >= input.periodFrom &&
+        d.civilDate <= input.periodTo
+    )
+    .map((d) => {
+      const raw = rawByDate.get(d.civilDate);
+      return {
+        civilDate: d.civilDate,
+        inflows: d.inflows,
+        outflows: d.outflows,
+        receivableCount: raw?.receivableCount ?? 0,
+        payableCount: raw?.payableCount ?? 0,
+        opening: d.opening,
+        closing: d.closingEffective,
+        closingCalculated: d.closingCalculated,
+        closingInformed: d.closingInformed,
+        divergence: d.divergence,
+        openingCoverage: d.openingCoverage,
+        closingCoverage: d.closingCoverage,
+        openingSource: d.openingSource,
+        closingSource: d.closingSource,
+        openingAdjustment: d.openingAdjustment,
+        divergenceBaseline: d.divergenceBaseline,
+      };
+    });
+
+  const todayBalance = authority.byCivilDate.get(input.todayCivilDate) ?? null;
+  const officialTodayBalance = deriveComposedOfficialTodayBalance({
+    todayBalance,
+    todayCivilDate: input.todayCivilDate,
+    latestPositions: input.evidence.latestPositions,
+  });
+  const accountPositions = buildComposedAccountPositions(
+    input.evidence.latestPositions,
+    input.universe,
+    input.todayCivilDate
+  );
+
+  return {
+    authority,
+    realizedDays,
+    todayBalance,
+    officialTodayBalance,
+    openingBalanceBefore: (civilDate: string) =>
+      authority.byCivilDate.get(civilDate)?.previousEffectiveClosing ?? null,
+    accountPositions,
+  };
 }

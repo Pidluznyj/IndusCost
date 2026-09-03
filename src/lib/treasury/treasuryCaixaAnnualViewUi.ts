@@ -49,6 +49,11 @@ export function buildTreasuryCaixaTimelineFromBoardSources(
   return buildTreasuryCaixaUnifiedTimeline({
     todayCivilDate: todayTreasuryCivilDateInSaoPaulo(),
     realizedDays: board.realizedDays ?? [],
+    // Autoridade única de saldos (mesma que resolve `board.realizedDays`) —
+    // manda sobre `todayFlow` legado quando presente. É o que fecha o
+    // defeito real de produção: card "Caixa hoje" e "Começou" de hoje na
+    // Linha do tempo vinham de fontes diferentes e podiam divergir.
+    todayBalance: board.todayBalance ?? null,
     todayFlow,
     // `inflows`/`outflows` = cenário pedido; são os que movem o closingBalance.
     // Os buckets `planned*` não servem: plannedOutflows só vem do contratual e
