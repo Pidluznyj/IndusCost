@@ -7,11 +7,14 @@ import {
   ClipboardCheck,
   Loader2,
   Package,
-  PackageOpen,
   RotateCcw,
   ShoppingCart,
 } from "lucide-react";
+import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
+import { OverlayBadge, OVERLAY_CONTROL_CLASS } from "@/src/components/ui/overlay";
+import { OVERLAY_LABEL_DENSE, OVERLAY_TABLE_HEAD } from "@/src/lib/overlay/overlayTypography";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -30,7 +33,10 @@ import {
   resolvePurchaseOrderGuidance,
   stageForPurchaseOrderStatus,
 } from "@/src/lib/purchasing/purchaseChainGuidance";
-import { purchaseOrderStatusLabel } from "@/src/lib/purchasing/purchaseOrderUi";
+import {
+  purchaseOrderStatusLabel,
+  purchaseOrderStatusTone,
+} from "@/src/lib/purchasing/purchaseOrderUi";
 import type { PurchaseOrderStatusName } from "@/src/lib/purchasing/purchaseOrderWorkflow";
 
 type BoardRow = {
@@ -456,27 +462,14 @@ export function PurchaseReceivingStationModule() {
 
   if (!orderId) {
     return (
-      <div className="space-y-6" data-testid="receiving-station-board">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <PackageOpen className="h-5 w-5 text-primary" />
-              Estação de Recebimento
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Conferência, recebimento parcial e confirmação que altera o ledger SC. Pedido confirmado
-              não é estoque.
-            </p>
-          </div>
-          <Link
-            to="/purchases/orders"
-            className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent"
-          >
-            Pedidos de compra
-          </Link>
-        </div>
+      <div className="space-y-3" data-testid="receiving-station-board">
+        {/* Título e descrição já vêm da casca da página; aqui vale a navegação. */}
+        <PurchaseChainViewNav current="receiving" />
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" data-testid="receiving-board-banner">
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          data-testid="receiving-board-banner"
+        >
           <strong>Pedido confirmado ≠ estoque.</strong> Somente o recebimento confirmado gera{" "}
           <code>PURCHASE_RECEIPT</code> e altera o saldo físico.
         </div>
@@ -512,7 +505,7 @@ export function PurchaseReceivingStationModule() {
         </SummaryKpiGrid>
 
         <form
-          className="rounded-2xl border border-border bg-card p-4 flex flex-wrap gap-3"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2"
           data-testid="receiving-station-filters"
           onSubmit={(e) => {
             e.preventDefault();
@@ -522,13 +515,15 @@ export function PurchaseReceivingStationModule() {
           }}
         >
           <input
-            className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm min-w-[220px] flex-1"
+            aria-label="Buscar pedido ou fornecedor"
+            className={cn(OVERLAY_CONTROL_CLASS, "min-w-[220px] flex-1")}
             placeholder="Buscar PC ou fornecedor"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
           <select
-            className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            aria-label="Filtrar por status do pedido"
+            className={cn(OVERLAY_CONTROL_CLASS, "sm:w-[190px]")}
             value={poStatus}
             onChange={(e) => setPoStatus(e.target.value)}
           >
@@ -537,67 +532,79 @@ export function PurchaseReceivingStationModule() {
             <option value="PARCIALMENTE_RECEBIDO">Parcial</option>
             <option value="RECEBIDO">Recebido</option>
           </select>
-          <button type="submit" className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm">
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"
+          >
             Filtrar
           </button>
         </form>
 
-        <div className="rounded-2xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="p-3">Pedido</th>
-                <th className="p-3">Fornecedor</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Pedida</th>
-                <th className="p-3">Recebida</th>
-                <th className="p-3">Aceita</th>
-                <th className="p-3">Rejeitada</th>
-                <th className="p-3">Cancelada</th>
-                <th className="p-3">Pendente</th>
-              </tr>
-            </thead>
-            <tbody>
-              {board.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="p-6 text-center text-muted-foreground">
-                    Nenhum pedido elegível para recebimento.
-                  </td>
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] text-sm">
+              <thead className="border-b border-border bg-muted/40">
+                <tr className={cn(OVERLAY_TABLE_HEAD, "text-left")}>
+                  <th className="px-3 py-2">Pedido</th>
+                  <th className="px-3 py-2">Fornecedor</th>
+                  <th className="w-[150px] px-3 py-2">Status</th>
+                  {/* Quantidade se lê alinhada à direita, não à esquerda. */}
+                  <th className="w-[84px] px-3 py-2 text-right">Pedida</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Recebida</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Aceita</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Rejeitada</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Cancelada</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Pendente</th>
                 </tr>
-              ) : (
-                board.map((row) => (
-                  <tr key={row.id} className="border-t border-border hover:bg-muted/20">
-                    <td className="p-3">
-                      <Link to={row.href} className="text-primary hover:underline font-medium">
-                        {row.code}
-                      </Link>
-                      <div className="text-xs text-muted-foreground">
-                        {row.itemCount} iten(s) · {row.receiptCount} receb.
-                      </div>
+              </thead>
+              <tbody>
+                {board.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-6 text-center text-muted-foreground">
+                      Nenhum pedido elegível para recebimento.
                     </td>
-                    <td className="p-3">{row.supplierName}</td>
-                    <td className="p-3 whitespace-nowrap">
-                      {purchaseOrderStatusLabel(row.status)}
-                    </td>
-                    <td className="p-3">{qty(row.quantityOrdered)}</td>
-                    <td className="p-3">{qty(row.quantityReceived)}</td>
-                    <td className="p-3">{qty(row.quantityAcceptedConfirmed)}</td>
-                    <td className="p-3">{qty(row.quantityRejected)}</td>
-                    <td className="p-3">{qty(row.quantityCancelled)}</td>
-                    <td className="p-3 font-medium">{qty(row.quantityPending)}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between p-3 border-t border-border text-sm">
+                ) : (
+                  board.map((row) => (
+                    <tr key={row.id} className="border-t border-border hover:bg-muted/20">
+                      <td className="px-3 py-2">
+                        <Link to={row.href} className="font-mono font-medium text-primary hover:underline">
+                          {row.code}
+                        </Link>
+                        <div className="text-[11px] text-muted-foreground">
+                          {row.itemCount} iten(s) · {row.receiptCount} receb.
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">{row.supplierName}</td>
+                      <td className="px-3 py-2">
+                        <OverlayBadge tone={purchaseOrderStatusTone(row.status)}>
+                          {purchaseOrderStatusLabel(row.status)}
+                        </OverlayBadge>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{qty(row.quantityOrdered)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{qty(row.quantityReceived)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {qty(row.quantityAcceptedConfirmed)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{qty(row.quantityRejected)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{qty(row.quantityCancelled)}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                        {qty(row.quantityPending)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs">
             <span className="text-muted-foreground">
               Página {pagination.page} de {pagination.totalPages}
             </span>
             <div className="flex gap-2">
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-lg border border-border disabled:opacity-40"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
@@ -605,7 +612,7 @@ export function PurchaseReceivingStationModule() {
               </button>
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-lg border border-border disabled:opacity-40"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-40"
                 disabled={page >= pagination.totalPages}
                 onClick={() => setPage((p) => p + 1)}
               >
@@ -623,45 +630,48 @@ export function PurchaseReceivingStationModule() {
   }
 
   return (
-    <div className="space-y-6" data-testid="receiving-station-detail">
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-        <div>
+    <div className="space-y-3" data-testid="receiving-station-detail">
+      {/* Cabeçalho do documento: código, partes e situação numa faixa só. */}
+      <div className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => navigate("/purchases/receiving")}
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             Voltar à estação
           </button>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-primary" />
-            Recebimento — {detail.order.code}
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            {detail.order.supplierName}
-            {detail.order.supplierDocument ? ` · ${detail.order.supplierDocument}` : ""}
-            {" · "}
-            {purchaseOrderStatusLabel(detail.order.status)}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <ShoppingCart className="h-4 w-4 shrink-0 text-primary" />
+            <h3 className="font-mono text-base font-semibold">{detail.order.code}</h3>
+            <OverlayBadge tone={purchaseOrderStatusTone(detail.order.status)} emphasized>
+              {purchaseOrderStatusLabel(detail.order.status)}
+            </OverlayBadge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {[detail.order.supplierName, detail.order.supplierDocument || null]
+              .filter(Boolean)
+              .join("  ·  ")}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to={`/purchases/orders/${detail.order.id}`}
-            className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent"
+            className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
           >
             Ver pedido
           </Link>
           <Link
             to={`/purchases/orders/${detail.order.id}/savings`}
-            className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent"
+            className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
           >
             Ganho negociado × realizado
           </Link>
           {allowUpdate && detail.order.status !== "RECEBIDO" ? (
             <button
               type="button"
-              className="text-sm px-3 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
               disabled={busy || draftLines.length === 0}
               onClick={() => setShowDraft((v) => !v)}
             >
@@ -686,57 +696,76 @@ export function PurchaseReceivingStationModule() {
 
       <ReceivingBanners banners={detail.banners} />
 
-      <div className="rounded-2xl border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/30 font-medium text-sm">
-          Itens do pedido
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="border-b border-border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Itens do pedido ({detail.lines.length})
         </div>
-        <table className="w-full text-sm" data-testid="receiving-lines-table">
-          <thead className="bg-muted/20 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="p-3">Item</th>
-              <th className="p-3">Pedida</th>
-              <th className="p-3">Recebida</th>
-              <th className="p-3">Aceita</th>
-              <th className="p-3">Rejeitada</th>
-              <th className="p-3">Cancelada</th>
-              <th className="p-3">Pendente</th>
-              <th className="p-3">Lote(s)</th>
-              <th className="p-3">Custo neg.</th>
-              <th className="p-3">Custo rec.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.lines.map((line) => (
-              <tr key={line.id} className="border-t border-border">
-                <td className="p-3">
-                  <div className="font-medium">
-                    {line.lineNumber}. {line.materialCode ?? "—"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">{line.description}</div>
-                </td>
-                <td className="p-3">{qty(line.quantityOrdered)} {line.unit}</td>
-                <td className="p-3">{qty(line.quantityReceived)}</td>
-                <td className="p-3">{qty(line.quantityAcceptedConfirmed)}</td>
-                <td className="p-3">{qty(line.quantityRejected)}</td>
-                <td className="p-3">{qty(line.quantityCancelled)}</td>
-                <td className="p-3 font-medium">{qty(line.quantityPending)}</td>
-                <td className="p-3">{line.lots.filter(Boolean).join(", ") || "—"}</td>
-                <td className="p-3">{money(line.negotiatedUnitCost)}</td>
-                <td className="p-3">{money(line.receivedUnitCost)}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1040px] text-sm" data-testid="receiving-lines-table">
+            <thead className="border-b border-border bg-muted/20">
+              <tr className={cn(OVERLAY_TABLE_HEAD, "text-left")}>
+                <th className="px-3 py-2">Item</th>
+                <th className="w-[96px] px-3 py-2 text-right">Pedida</th>
+                <th className="w-[84px] px-3 py-2 text-right">Recebida</th>
+                <th className="w-[84px] px-3 py-2 text-right">Aceita</th>
+                <th className="w-[84px] px-3 py-2 text-right">Rejeitada</th>
+                <th className="w-[84px] px-3 py-2 text-right">Cancelada</th>
+                <th className="w-[84px] px-3 py-2 text-right">Pendente</th>
+                <th className="w-[120px] px-3 py-2">Lote(s)</th>
+                <th className="w-[96px] px-3 py-2 text-right">Custo neg.</th>
+                <th className="w-[96px] px-3 py-2 text-right">Custo rec.</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {detail.lines.map((line) => (
+                <tr key={line.id} className="border-t border-border align-top">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {line.lineNumber}.
+                      </span>{" "}
+                      {line.materialCode ?? "—"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{line.description}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {qty(line.quantityOrdered)}{" "}
+                    <span className="text-[11px] text-muted-foreground">{line.unit}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{qty(line.quantityReceived)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {qty(line.quantityAcceptedConfirmed)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{qty(line.quantityRejected)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{qty(line.quantityCancelled)}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                    {qty(line.quantityPending)}
+                  </td>
+                  <td className="px-3 py-2 text-xs">{line.lots.filter(Boolean).join(", ") || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {money(line.negotiatedUnitCost)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {money(line.receivedUnitCost)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showDraft ? (
-        <div className="rounded-2xl border border-border bg-card p-4 space-y-4" data-testid="receiving-draft-form">
-          <h4 className="font-medium">Conferência / recebimento parcial</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+        <div className="rounded-xl border border-border bg-card" data-testid="receiving-draft-form">
+          <h4 className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Conferência / recebimento parcial
+          </h4>
+          <div className="space-y-3 px-3 py-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
               Almoxarifado destino *
               <select
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={OVERLAY_CONTROL_CLASS}
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(e.target.value)}
               >
@@ -748,51 +777,51 @@ export function PurchaseReceivingStationModule() {
                 ))}
               </select>
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
               Documento
               <input
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={OVERLAY_CONTROL_CLASS}
                 value={documentNumber}
                 onChange={(e) => setDocumentNumber(e.target.value)}
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
               NF-e / doc. entrada (referência)
               <input
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={OVERLAY_CONTROL_CLASS}
                 value={entryDocumentRef}
                 onChange={(e) => setEntryDocumentRef(e.target.value)}
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
               Frete real
               <input
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
                 value={freight}
                 onChange={(e) => setFreight(e.target.value)}
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
               Despesas reais
               <input
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={cn(OVERLAY_CONTROL_CLASS, "text-right tabular-nums")}
                 value={expenses}
                 onChange={(e) => setExpenses(e.target.value)}
               />
             </label>
-            <label className="text-xs text-muted-foreground flex flex-col gap-1 md:col-span-2">
+            <label className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1 md:col-span-3")}>
               Observações
               <input
-                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                className={OVERLAY_CONTROL_CLASS}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
             </label>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             {draftLines.map((line, idx) => (
-              <div key={line.purchaseOrderItemId} className="rounded-xl border border-border p-3 grid grid-cols-2 md:grid-cols-6 gap-2">
+              <div key={line.purchaseOrderItemId} className="grid grid-cols-2 gap-2 rounded-lg border border-border px-3 py-2.5 md:grid-cols-6">
                 <div className="md:col-span-2 text-sm">
                   <div className="font-medium">{line.label}</div>
                   <div className="text-xs text-muted-foreground">
@@ -808,10 +837,14 @@ export function PurchaseReceivingStationModule() {
                     ["Custo efetivo", "effectiveUnitCost"],
                   ] as const
                 ).map(([label, key]) => (
-                  <label key={key} className="text-xs text-muted-foreground flex flex-col gap-1">
+                  <label key={key} className={cn(OVERLAY_LABEL_DENSE, "flex flex-col gap-1")}>
                     {label}
                     <input
-                      className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                      className={cn(
+                        OVERLAY_CONTROL_CLASS,
+                        "px-2 py-1.5",
+                        key !== "lotNumber" && "text-right tabular-nums"
+                      )}
                       value={line[key]}
                       onChange={(e) => {
                         const next = [...draftLines];
@@ -825,10 +858,10 @@ export function PurchaseReceivingStationModule() {
             ))}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             <button
               type="button"
-              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
               disabled={busy}
               onClick={() => void submitDraft()}
             >
@@ -836,20 +869,21 @@ export function PurchaseReceivingStationModule() {
             </button>
             <button
               type="button"
-              className="px-4 py-2 rounded-lg border border-border text-sm"
+              className="rounded-lg border border-border px-4 py-2 text-sm"
               onClick={() => setShowDraft(false)}
             >
               Fechar
             </button>
+            <p className="text-[11px] text-muted-foreground">
+              O rascunho não altera estoque. Use Confirmar no recebimento para gerar PURCHASE_RECEIPT.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            O rascunho não altera estoque. Use Confirmar no recebimento para gerar PURCHASE_RECEIPT.
-          </p>
+          </div>
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-border overflow-hidden" data-testid="receiving-receipts-list">
-        <div className="px-4 py-3 border-b border-border bg-muted/30 font-medium text-sm">
+      <div className="overflow-hidden rounded-xl border border-border bg-card" data-testid="receiving-receipts-list">
+        <div className="border-b border-border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Recebimentos · documentos · destino
         </div>
         {detail.receipts.length === 0 ? (
