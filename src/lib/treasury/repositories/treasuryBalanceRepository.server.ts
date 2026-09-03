@@ -73,6 +73,21 @@ export type TreasuryBalanceRepository = {
     accountId: string,
     db?: TreasuryBalanceDb
   ): Promise<TreasuryBalanceSnapshotRow | null>;
+  /**
+   * Snapshots ativos de UMA conta cuja chave idempotente começa com o prefixo,
+   * mais recentes primeiro. Serve leituras versionadas por conta/data (rotina
+   * diária) sem varrer todas as contas: o índice único
+   * `(accountId, origin, idempotencyKey)` cobre a igualdade conta+origem.
+   */
+  listActiveByIdempotencyPrefix(
+    input: {
+      accountId: string;
+      origin: TreasuryBalanceOrigin | string;
+      idempotencyKeyPrefix: string;
+      limit?: number;
+    },
+    db?: TreasuryBalanceDb
+  ): Promise<TreasuryBalanceSnapshotRow[]>;
   /** Último snapshot por conta em uma query (DISTINCT ON). */
   findLatestByAccountIds(
     accountIds: string[],
@@ -126,6 +141,20 @@ export function createTreasuryBalanceRepository(
         orderBy: [{ referenceAt: "desc" }, { createdAt: "desc" }],
       });
       return row ? mapRow(row) : null;
+    },
+
+    async listActiveByIdempotencyPrefix(input, db) {
+      const rows = await client(db).treasuryBalanceSnapshot.findMany({
+        where: {
+          accountId: input.accountId,
+          origin: input.origin as TreasuryBalanceOrigin,
+          cancelledAt: null,
+          idempotencyKey: { startsWith: input.idempotencyKeyPrefix },
+        },
+        orderBy: { createdAt: "desc" },
+        take: input.limit ?? 200,
+      });
+      return rows.map(mapRow);
     },
 
     async findLatestByAccountIds(accountIds, db) {

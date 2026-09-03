@@ -57,6 +57,20 @@ export function createMemoryTreasuryBalanceRepository(
       return rows[0] ? clone(rows[0]) : null;
     },
 
+    async listActiveByIdempotencyPrefix(input) {
+      return store.snapshots
+        .filter(
+          (s) =>
+            s.accountId === input.accountId &&
+            s.origin === input.origin &&
+            !s.cancelledAt &&
+            s.idempotencyKey.startsWith(input.idempotencyKeyPrefix)
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, input.limit ?? 200)
+        .map(clone);
+    },
+
     async findLatestByAccountIds(accountIds) {
       const out = new Map<string, TreasuryBalanceSnapshotRow>();
       for (const id of accountIds) {
