@@ -12,7 +12,6 @@ import {
   Printer,
   RefreshCw,
   Search,
-  ShoppingCart,
   Trash2,
   ExternalLink,
   X,
@@ -111,6 +110,14 @@ const LINE_TYPE_SHORT = {
   MATERIA_PRIMA: "MP",
   INDIRETO: "Indireto",
 } as const;
+
+/** Vistas vizinhas da cadeia, na ordem do fluxo. Solicitações é a atual. */
+const CHAIN_VIEWS = [
+  { label: "Cotações", to: "/purchases/quotations" },
+  { label: "Pedidos", to: "/purchases/orders" },
+  { label: "Recebimento", to: "/purchases/receiving" },
+  { label: "Estação", to: "/purchases/workstation" },
+] as const;
 
 /** Numeração de linha do documento (00010, 00020, …) — igual à do PDF do pedido. */
 function itemLineCode(index: number): string {
@@ -764,7 +771,7 @@ export const PurchaseModule = () => {
         /[&<>"']/g,
         (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
       );
-    const logoSrc = resolvePrintLogoSrc(branding);
+    const logoSrc = printLogoSrc;
     const accentTint = `${branding.primaryColor || DEFAULT_BRANDING.primaryColor}14`;
     const total = win ? formatCurrency(Number(win.totalValue)) : "—";
     const issuedAt = new Date(emittedOrder.createdAt).toLocaleDateString("pt-BR");
@@ -1056,6 +1063,9 @@ export const PurchaseModule = () => {
     return [inherit, ...financialCcOptions];
   }, [financialCcOptions]);
 
+  /** Um logo só, consumido pelo cabeçalho da tela e pelo PDF do pedido. */
+  const printLogoSrc = useMemo(() => resolvePrintLogoSrc(branding), [branding]);
+
   const mpLineCount = useMemo(
     () => items.filter((i) => i.lineType === "MATERIA_PRIMA").length,
     [items]
@@ -1093,50 +1103,40 @@ export const PurchaseModule = () => {
 
   if (view === "list") {
     return (
-      <div className="space-y-6" data-tour="purchases-root">
+      <div className="space-y-3" data-tour="purchases-root">
+        {/*
+         * A casca da página já diz "Compras" e descreve o escopo. Em vez de
+         * repetir isso num h3 + subtítulo, esta faixa nomeia a vista atual e
+         * leva às vizinhas — os quatro botões soltos de antes eram navegação
+         * disfarçada de ação, competindo com "Nova solicitação".
+         */}
         <div
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-tour="purchases-toolbar"
         >
-          <div>
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-primary" />
-              Solicitações de compra
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Demanda de compra classificada por tipo e centro de custo — sem pedido, recebimento ou financeiro nesta fase.
-            </p>
-          </div>
+          <nav
+            aria-label="Cadeia de compras"
+            className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-muted/40 p-1"
+          >
+            <span
+              aria-current="page"
+              className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm ring-1 ring-border"
+            >
+              Solicitações
+            </span>
+            {CHAIN_VIEWS.map((v) => (
+              <button
+                key={v.to}
+                type="button"
+                onClick={() => navigate(v.to)}
+                className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-white/70 hover:text-foreground"
+              >
+                {v.label}
+              </button>
+            ))}
+          </nav>
           <div className="flex items-center gap-2">
             <TourHelpButton onClick={() => setTourOpen(true)} />
-            <button
-              type="button"
-              onClick={() => navigate("/purchases/receiving")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
-            >
-              Recebimento
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/purchases/workstation")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
-            >
-              Estação
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/purchases/quotations")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
-            >
-              Cotações
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/purchases/orders")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
-            >
-              Pedidos
-            </button>
             {allowCreate ? (
               <button
                 type="button"
@@ -1151,132 +1151,155 @@ export const PurchaseModule = () => {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="relative flex-1 min-w-[260px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nº, solicitante, área ou centro de custo..."
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                  value={listSearch}
-                  onChange={(e) => setListSearch(e.target.value)}
-                />
-              </div>
+        {/* Filtros e contagem na mesma linha: o contador é resultado do filtro. */}
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 lg:flex-row lg:items-center">
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              aria-label="Buscar solicitações"
+              placeholder="Buscar por nº, solicitante, área ou centro de custo..."
+              className={cn(OVERLAY_CONTROL_CLASS, "pl-8")}
+              value={listSearch}
+              onChange={(e) => setListSearch(e.target.value)}
+            />
+          </div>
 
-              <select
-                className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
-                value={listStatus}
-                onChange={(e) => setListStatus(e.target.value as any)}
-              >
-                <option value="">Todos os status</option>
-                {(Object.keys(STATUS_LABEL) as PurchaseRequestStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
+          <select
+            aria-label="Filtrar por status"
+            className={cn(OVERLAY_CONTROL_CLASS, "lg:w-[170px]")}
+            value={listStatus}
+            onChange={(e) => setListStatus(e.target.value as any)}
+          >
+            <option value="">Todos os status</option>
+            {(Object.keys(STATUS_LABEL) as PurchaseRequestStatus[]).map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
 
-              <select
-                className="min-w-[220px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
-                value={listCostCenterId}
-                onChange={(e) => setListCostCenterId(e.target.value)}
-              >
-                <option value="">Todos os centros de custo</option>
-                {costCenters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.code} — {c.name}
-                  </option>
-                ))}
-              </select>
+          <select
+            aria-label="Filtrar por centro de custo"
+            className={cn(OVERLAY_CONTROL_CLASS, "lg:w-[200px]")}
+            value={listCostCenterId}
+            onChange={(e) => setListCostCenterId(e.target.value)}
+          >
+            <option value="">Todos os centros de custo</option>
+            {costCenters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
 
-              <select
-                className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
-                value={listPriority}
-                onChange={(e) => setListPriority(e.target.value as any)}
-              >
-                <option value="">Todas as prioridades</option>
-                {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_LABEL[p]}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <select
+            aria-label="Filtrar por prioridade"
+            className={cn(OVERLAY_CONTROL_CLASS, "lg:w-[160px]")}
+            value={listPriority}
+            onChange={(e) => setListPriority(e.target.value as any)}
+          >
+            <option value="">Todas as prioridades</option>
+            {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABEL[p]}
+              </option>
+            ))}
+          </select>
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                Exibindo <span className="font-bold text-foreground">{filteredRequests.length}</span> de{" "}
-                <span className="font-bold text-foreground">{requests.length}</span> solicitação(ões).
-              </p>
-              <button
-                type="button"
-                onClick={clearListFilters}
-                disabled={!listSearch.trim() && !listStatus && !listPriority && !listCostCenterId}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
-              >
-                <X className="h-4 w-4" />
-                Limpar filtros
-              </button>
-            </div>
+          <div className="flex shrink-0 items-center gap-2 lg:pl-1">
+            <p className="whitespace-nowrap text-[11px] text-muted-foreground">
+              <span className="font-semibold text-foreground">{filteredRequests.length}</span>
+              {" de "}
+              <span className="font-semibold text-foreground">{requests.length}</span>
+            </p>
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!listSearch.trim() && !listStatus && !listPriority && !listCostCenterId}
+              title="Limpar filtros"
+              aria-label="Limpar filtros"
+              className="rounded-md border border-border bg-background p-2 text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:hover:bg-background"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card overflow-hidden" data-tour="purchases-list">
+        <div className="rounded-xl border border-border bg-card overflow-hidden" data-tour="purchases-list">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-accent/40 border-b border-border">
-                <tr>
-                  <th className="p-4 font-semibold text-sm">Nº</th>
-                  <th className="p-4 font-semibold text-sm">Status</th>
-                  <th className="p-4 font-semibold text-sm">Solicitante</th>
-                  <th className="p-4 font-semibold text-sm">Área</th>
-                  <th className="p-4 font-semibold text-sm">Centro de custo</th>
-                  <th className="p-4 font-semibold text-sm">Atualização</th>
-                  <th className="p-4 font-semibold text-sm text-right">Ações</th>
+            <table className="w-full min-w-[880px] text-left">
+              <thead className="border-b border-border bg-accent/40">
+                <tr className={OVERLAY_TABLE_HEAD}>
+                  <th className="w-[72px] px-3 py-2">Nº</th>
+                  <th className="w-[130px] px-3 py-2">Status</th>
+                  <th className="w-[92px] px-3 py-2">Prioridade</th>
+                  <th className="px-3 py-2">Solicitante</th>
+                  <th className="px-3 py-2">Área</th>
+                  <th className="px-3 py-2">Centro de custo</th>
+                  <th className="w-[124px] px-3 py-2">Atualização</th>
+                  <th className="w-[84px] px-3 py-2 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {loadingList ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                    <td colSpan={8} className="p-6 text-center">
+                      <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
                     </td>
                   </tr>
                 ) : requests.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground text-sm">
+                    <td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">
                       Nenhuma solicitação cadastrada.
                     </td>
                   </tr>
                 ) : filteredRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground text-sm">
+                    <td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado encontrado com os filtros aplicados.
                     </td>
                   </tr>
                 ) : (
                   filteredRequests.map((r) => (
-                    <tr key={r.id} className="hover:bg-accent/20 transition-colors">
-                      <td className="p-4 font-mono text-sm">#{r.number}</td>
-                      <td className="p-4">
+                    <tr
+                      key={r.id}
+                      className="cursor-pointer transition-colors hover:bg-accent/20"
+                      onClick={() => openEdit(r.id, "view")}
+                      title="Abrir solicitação"
+                    >
+                      <td className="px-3 py-2 font-mono text-sm">#{r.number}</td>
+                      <td className="px-3 py-2">
                         <OverlayBadge tone={STATUS_TONE[r.status]}>
                           {STATUS_LABEL[r.status]}
                         </OverlayBadge>
                       </td>
-                      <td className="p-4 text-sm">{r.requester}</td>
-                      <td className="p-4 text-sm">{r.department}</td>
-                      <td className="p-4 text-sm">
+                      <td className="px-3 py-2">
+                        {/* Prioridade era filtrável mas invisível na lista. */}
+                        {r.priority === "ALTA" || r.priority === "URGENTE" ? (
+                          <OverlayBadge tone={PRIORITY_TONE[r.priority]}>
+                            {PRIORITY_LABEL[r.priority]}
+                          </OverlayBadge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {PRIORITY_LABEL[r.priority]}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-sm">{r.requester}</td>
+                      <td className="px-3 py-2 text-sm">{r.department}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
                         {r.defaultCostCenter.code} — {r.defaultCostCenter.name}
                       </td>
-                      <td className="p-4 text-xs text-muted-foreground">{formatDt(r.updatedAt)}</td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1">
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {formatDt(r.updatedAt)}
+                      </td>
+                      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-end gap-0.5">
                           <button
                             type="button"
                             title="Ver"
-                            className="p-2 rounded-md hover:bg-accent text-muted-foreground"
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
                             onClick={() => openEdit(r.id, "view")}
                           >
                             <Eye className="h-4 w-4" />
@@ -1285,7 +1308,7 @@ export const PurchaseModule = () => {
                             <button
                               type="button"
                               title="Editar"
-                              className="p-2 rounded-md hover:bg-accent text-muted-foreground"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
                               onClick={() => openEdit(r.id, "edit")}
                             >
                               <Edit2 className="h-4 w-4" />
@@ -1399,28 +1422,26 @@ export const PurchaseModule = () => {
         </div>
       </div>
 
-      {/* O pedido emitido é o documento que o usuário vem buscar — fica no topo. */}
+      {/*
+       * Barra de ação do pedido emitido. Fornecedor e valor não vivem aqui:
+       * são dados do documento e aparecem no cabeçalho institucional abaixo,
+       * no bloco de partes — como em qualquer pedido de compra.
+       */}
       {status === "ENCERRADA" && emittedOrder ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+        <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
               Pedido de compra emitido
-            </p>
-            <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-mono font-semibold text-emerald-950">{emittedOrder.code}</span>
-              <span className="text-emerald-900">{emittedOrder.supplierDisplayNameSnapshot}</span>
-              {winnerQuote ? (
-                <span className="font-semibold text-emerald-950">
-                  {formatCurrency(Number(winnerQuote.totalValue))}
-                </span>
-              ) : null}
-            </p>
-          </div>
+            </span>
+            <span className="font-mono text-sm font-semibold text-emerald-950">
+              {emittedOrder.code}
+            </span>
+          </p>
           <div className="flex shrink-0 flex-wrap gap-2">
             <button
               type="button"
               onClick={openOrderPdf}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
             >
               <Printer className="h-4 w-4" />
               Abrir PDF
@@ -1428,7 +1449,7 @@ export const PurchaseModule = () => {
             <button
               type="button"
               onClick={emailOrder}
-              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-900 hover:bg-emerald-50"
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm text-emerald-900 hover:bg-emerald-50"
             >
               Enviar por e-mail
             </button>
@@ -1567,7 +1588,68 @@ export const PurchaseModule = () => {
       >
         <div data-tour="purchases-header-block">
           {documentMode ? (
-            /* Documento: quatro colunas densas de rótulo/valor, sem input morto. */
+            <>
+            {/*
+             * Cabeçalho institucional com a mesma estrutura do PDF gerado por
+             * `openOrderPdf`: emissor, fornecedor e identificação do documento.
+             * A tela passa a parecer o papel que ela produz.
+             */}
+            <div className="mb-3 grid grid-cols-1 gap-3 border-b border-border pb-3 sm:grid-cols-3">
+              <div className="flex min-w-0 items-start gap-2">
+                {printLogoSrc ? (
+                  <img
+                    src={printLogoSrc}
+                    alt={branding.companyName || DEFAULT_BRANDING.companyName}
+                    className="h-9 w-auto max-w-[88px] shrink-0 object-contain object-left"
+                  />
+                ) : null}
+                <div className="min-w-0 text-[11px] leading-snug text-muted-foreground">
+                  <p className="truncate text-xs font-semibold text-foreground">
+                    {branding.companyName || DEFAULT_BRANDING.companyName}
+                  </p>
+                  <p>CNPJ {PRINT_COMPANY_DOC_FALLBACK.taxId}</p>
+                  <p className="truncate" title={PRINT_COMPANY_DOC_FALLBACK.addressLine}>
+                    {PRINT_COMPANY_DOC_FALLBACK.addressLine}
+                  </p>
+                </div>
+              </div>
+
+              <div className="min-w-0 text-[11px] leading-snug text-muted-foreground">
+                <p className={OVERLAY_EYEBROW}>Fornecedor</p>
+                {emittedOrder ? (
+                  <>
+                    <p className="truncate text-xs font-semibold text-foreground">
+                      {emittedOrder.supplierDisplayNameSnapshot}
+                    </p>
+                    <p>CNPJ {winnerQuote?.supplierDocumentSnapshot || "—"}</p>
+                    {winnerQuote ? (
+                      <p className="font-semibold text-foreground">
+                        {formatCurrency(Number(winnerQuote.totalValue))}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Definido na emissão do pedido.
+                  </p>
+                )}
+              </div>
+
+              <div className="min-w-0 text-[11px] leading-snug text-muted-foreground sm:text-right">
+                <p className={OVERLAY_EYEBROW}>Solicitação de compra</p>
+                <p className="font-mono text-xs font-semibold text-foreground">
+                  SC {requestNumber ?? "—"}
+                </p>
+                {createdAt ? <p>{formatDt(createdAt)}</p> : null}
+                {emittedOrder ? (
+                  <p>
+                    Pedido <span className="font-mono">{emittedOrder.code}</span>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Identificação: quatro colunas densas de rótulo/valor, sem input morto. */}
             <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
               <Term label="Solicitante" value={requester} />
               <Term label="Departamento / área" value={department} />
@@ -1585,10 +1667,10 @@ export const PurchaseModule = () => {
               />
               <Term label="Referência externa" value={externalReference} />
               <Term label="Comprador" value={buyerNameView} />
-              <Term label="Criada em" value={createdAt ? formatDt(createdAt) : null} />
               <Term label="Justificativa" span={4} value={justification} />
               {notes ? <Term label="Observações" span={4} value={notes} /> : null}
             </dl>
+            </>
           ) : (
             <OverlayFieldGrid columns={4}>
               <OverlayField
