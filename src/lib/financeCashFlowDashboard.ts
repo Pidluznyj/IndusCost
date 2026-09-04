@@ -980,7 +980,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     filteredAp,
     filters,
     referenceDate,
-    { monthlySeries, executiveMonthlyTimeline: executiveSummary.monthlyTimeline }
+    { monthlySeries, executiveMonthlyTimeline: executiveSummary.plannedMonthlyTimeline }
   );
   const dailyCalendar = calendar.days
     .filter((d) => d.movementCount > 0)

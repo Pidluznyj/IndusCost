@@ -455,23 +455,29 @@ export function auditCashFlowExecutiveTimelineInternal(
   const mismatches: string[] = [];
   let expectedAccum = 0;
 
-  for (const row of payload.executiveSummary.monthlyTimeline) {
-    const expectedInflow = roundMoney(row.received + row.receivableOpenDue);
-    const expectedOutflow = roundMoney(row.paid + row.payableOpenDue);
-    const expectedNet = roundMoney(expectedInflow - expectedOutflow);
-    expectedAccum = roundMoney(expectedAccum + expectedNet);
+  for (const [seriesName, series] of [
+    ["monthlyTimeline", payload.executiveSummary.monthlyTimeline],
+    ["plannedMonthlyTimeline", payload.executiveSummary.plannedMonthlyTimeline],
+  ] as const) {
+    expectedAccum = 0;
+    for (const row of series) {
+      const expectedInflow = roundMoney(row.received + row.receivableOpenDue);
+      const expectedOutflow = roundMoney(row.paid + row.payableOpenDue);
+      const expectedNet = roundMoney(expectedInflow - expectedOutflow);
+      expectedAccum = roundMoney(expectedAccum + expectedNet);
 
-    if (!nearlyEqual(row.estimatedInflow, expectedInflow)) {
-      mismatches.push(`timeline m${row.month} estimatedInflow`);
-    }
-    if (!nearlyEqual(row.estimatedOutflow, expectedOutflow)) {
-      mismatches.push(`timeline m${row.month} estimatedOutflow`);
-    }
-    if (!nearlyEqual(row.netFlow, expectedNet)) {
-      mismatches.push(`timeline m${row.month} netFlow`);
-    }
-    if (!nearlyEqual(row.accumulatedNet, expectedAccum)) {
-      mismatches.push(`timeline m${row.month} accumulatedNet`);
+      if (!nearlyEqual(row.estimatedInflow, expectedInflow)) {
+        mismatches.push(`${seriesName} m${row.month} estimatedInflow`);
+      }
+      if (!nearlyEqual(row.estimatedOutflow, expectedOutflow)) {
+        mismatches.push(`${seriesName} m${row.month} estimatedOutflow`);
+      }
+      if (!nearlyEqual(row.netFlow, expectedNet)) {
+        mismatches.push(`${seriesName} m${row.month} netFlow`);
+      }
+      if (!nearlyEqual(row.accumulatedNet, expectedAccum)) {
+        mismatches.push(`${seriesName} m${row.month} accumulatedNet`);
+      }
     }
   }
 

@@ -354,6 +354,7 @@ describe("Fluxo de Caixa — baixa que cruza o ano do filtro", () => {
       filters: CF_FILTERS,
       arSyncCutoff: null,
       apSyncCutoff: null,
+      dateAxis: "movement",
     });
     const jan = timeline.find((m) => m.month === 1);
     assert.ok(jan);

@@ -132,7 +132,13 @@ export type FinanceCashFlowExecutiveSummary = {
   };
   net: FinanceCashFlowExecutiveSummaryNet;
   period: FinanceCashFlowExecutiveSummaryPeriod;
+  /** Linha do tempo mensal: Recebido/Pago por data de movimento; aberto por vencimento. */
   monthlyTimeline: FinanceCashFlowExecutiveMonthlyRow[];
+  /**
+   * Fluxo planejado / comparativo anual / calendário: Recebido/Pago e aberto
+   * alocados por vencimento (`dueDate`). Distinto de `monthlyTimeline`.
+   */
+  plannedMonthlyTimeline: FinanceCashFlowExecutiveMonthlyRow[];
   metadata: FinanceCashFlowExecutiveSummaryMetadata;
 };
 
@@ -381,6 +387,8 @@ export function buildPeriodVsForwardPayableComparison(input: {
   };
 }
 
+export type FinanceCashFlowTimelineDateAxis = "dueDate" | "movement";
+
 export function buildExecutiveMonthlyTimeline(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -390,57 +398,54 @@ export function buildExecutiveMonthlyTimeline(
     filters: FinanceCashFlowDashboardFilters;
     arSyncCutoff?: NomusArReportSyncCutoff | null;
     apSyncCutoff?: NomusApReportSyncCutoff | null;
-    /** População do pago (sem recorte por dueDate). Default: `apRows`. */
+    /** População do pago realizado (sem recorte por dueDate). Default: `apRows`. */
     apPaidSourceRows?: FinanceCashFlowApRow[];
+    /**
+     * `dueDate` — fluxo planejado, comparativo anual e calendário.
+     * `movement` — linha do tempo mensal (AR settlementDate, AP data efetiva).
+     * Default: `dueDate` para não contaminar gráficos de vencimento.
+     */
+    dateAxis?: FinanceCashFlowTimelineDateAxis;
   }
 ): FinanceCashFlowExecutiveMonthlyRow[] {
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;
+  const dateAxis: FinanceCashFlowTimelineDateAxis = officialContext?.dateAxis ?? "dueDate";
+  const useMovementAxis = officialContext != null && dateAxis === "movement";
 
-  // População do REALIZADO: o mês é aplicado sobre `settlementDate` mais abaixo,
-  // então o recorte por vencimento sai daqui — senão a baixa de um título
-  // vencido em outro ano some da linha do tempo. Todo o resto do saneamento
-  // gerencial (grupo interno, fantasma, stale, pré-NF, dedup, vencido sem NF)
-  // continua sendo aplicado pela mesma função canônica.
-  const officialArFiltered =
-    officialContext != null
-      ? filterFinanceArManagementReportRows(
+  const arForReceived =
+    officialContext == null
+      ? arRows
+      : filterFinanceArManagementReportRows(
           arRows,
-          toFinanceArSettlementScopeFilters(toArLoadFilters(officialContext.filters)),
+          useMovementAxis
+            ? toFinanceArSettlementScopeFilters(toArLoadFilters(officialContext.filters))
+            : toArLoadFilters(officialContext.filters),
           referenceDate,
           officialContext.arSyncCutoff
-        )
-      : null;
-  const officialApFiltered =
-    officialContext != null
-      ? filterFinanceApRows(
-          officialContext.apPaidSourceRows ?? apRows,
-          toFinanceApPaymentScopeFilters(toApLoadFilters(officialContext.filters)),
+        );
+  const apForPaid =
+    officialContext == null
+      ? apRows
+      : filterFinanceApRows(
+          useMovementAxis ? (officialContext.apPaidSourceRows ?? apRows) : apRows,
+          useMovementAxis
+            ? toFinanceApPaymentScopeFilters(toApLoadFilters(officialContext.filters))
+            : toApLoadFilters(officialContext.filters),
           referenceDate,
           officialContext.apSyncCutoff
-        )
-      : null;
+        );
 
   for (let m = 1; m <= 12; m += 1) {
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
-    const received =
-      officialArFiltered != null
-        ? sumFinanceArReceivedBySettlementInFilteredRows(
-            officialArFiltered,
-            monthStart,
-            monthEndDate
-          )
-        : sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
+    const received = useMovementAxis
+      ? sumFinanceArReceivedBySettlementInFilteredRows(arForReceived, monthStart, monthEndDate)
+      : sumArReceivedInPeriod(arForReceived, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
-    const paid =
-      officialApFiltered != null
-        ? sumFinanceApPaidInPaymentPeriodFromFilteredRows(
-            officialApFiltered,
-            monthStart,
-            monthEndDate
-          )
-        : sumApPaidInPeriod(apRows, monthStart, monthEndDate);
+    const paid = useMovementAxis
+      ? sumFinanceApPaidInPaymentPeriodFromFilteredRows(apForPaid, monthStart, monthEndDate)
+      : sumApPaidInPeriod(apForPaid, monthStart, monthEndDate);
     const payableOpenDue = sumApOpenDueInPeriod(apRows, monthStart, monthEndDate);
     const estimatedInflow = roundMoney(received + receivableOpenDue);
     const estimatedOutflow = roundMoney(paid + payableOpenDue);
@@ -549,7 +554,20 @@ export function buildFinanceCashFlowExecutiveSummary(
     arSyncCutoff: syncCutoff,
     apSyncCutoff,
     apPaidSourceRows: allApRows,
+    dateAxis: "movement",
   });
+  const plannedMonthlyTimeline = buildExecutiveMonthlyTimeline(
+    arYtd,
+    apYtd,
+    year,
+    referenceDate,
+    {
+      filters: ytdFilters,
+      arSyncCutoff: syncCutoff,
+      apSyncCutoff,
+      dateAxis: "dueDate",
+    }
+  );
 
   const openForwardByMonth = buildApOpenForwardMonthlyBreakdown(apYtd, year, forward);
   const periodVsForward = buildPeriodVsForwardPayableComparison({
@@ -588,6 +606,7 @@ export function buildFinanceCashFlowExecutiveSummary(
       periodLabel: resolvePeriodLabel(filters, referenceDate),
     },
     monthlyTimeline,
+    plannedMonthlyTimeline,
     metadata: {
       year,
       month: filters.month,
@@ -624,7 +643,7 @@ export function executiveSummaryMetricsAreFinite(
     summary.period.accumulatedBalance,
   ];
   if (!nums.every((n) => Number.isFinite(n))) return false;
-  for (const row of summary.monthlyTimeline) {
+  for (const row of [...summary.monthlyTimeline, ...summary.plannedMonthlyTimeline]) {
     for (const v of Object.values(row)) {
       if (typeof v === "number" && !Number.isFinite(v)) return false;
     }

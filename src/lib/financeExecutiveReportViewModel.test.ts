@@ -127,6 +127,7 @@ function minimalReport(overrides: Partial<FinanceExecutiveReport> = {}): Finance
       source: {} as never,
       calendar: {} as never,
       executiveSummary: {
+        plannedMonthlyTimeline: [],
         monthlyTimeline: [
           {
             year: 2026,
