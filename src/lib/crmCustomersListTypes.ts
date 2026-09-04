@@ -64,6 +64,8 @@ export type CrmCustomerListItem = {
 };
 
 export type CrmCustomersListTotals = {
+  /** Universo total de clientes no escopo/filtro (mesmo `where` da página — não é a contagem da página atual). */
+  totalCustomersInScope: number;
   customersWithoutCommercialOwner: number;
   customersWithoutPurchase: number;
   customersWithOrderWithoutNomusSeller: number;

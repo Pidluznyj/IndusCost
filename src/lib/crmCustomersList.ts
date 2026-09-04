@@ -799,6 +799,7 @@ function emptyListResponse(args: {
     },
     period: args.period,
     totals: {
+      totalCustomersInScope: 0,
       customersWithoutCommercialOwner: 0,
       customersWithoutPurchase: 0,
       customersWithOrderWithoutNomusSeller: 0,
@@ -856,23 +857,30 @@ export async function fetchCrmCustomersList(
   }
 
   const take = limit + 1;
-  const rows = await prisma.customer.findMany({
-    where,
-    orderBy: { companyName: "asc" },
-    skip: offset,
-    take,
-    select: {
-      id: true,
-      companyName: true,
-      tradeName: true,
-      taxId: true,
-      email: true,
-      phone: true,
-      city: true,
-      state: true,
-      address: true,
-    },
-  });
+  // `totalCustomersInScope` usa o MESMO `where` da página — nunca conte a
+  // partir do array paginado (bug corrigido na auditoria 09/2026: os
+  // sub-totais de qualidade abaixo ainda são só da página; ver
+  // docs/commercial/crm-commercial-cockpit-redesign.md).
+  const [rows, totalCustomersInScope] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      orderBy: { companyName: "asc" },
+      skip: offset,
+      take,
+      select: {
+        id: true,
+        companyName: true,
+        tradeName: true,
+        taxId: true,
+        email: true,
+        phone: true,
+        city: true,
+        state: true,
+        address: true,
+      },
+    }),
+    prisma.customer.count({ where }),
+  ]);
 
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
@@ -1010,6 +1018,7 @@ export async function fetchCrmCustomersList(
     },
     period,
     totals: {
+      totalCustomersInScope,
       customersWithoutCommercialOwner: customers.filter((c) => !c.hasCommercialOwner).length,
       customersWithoutPurchase: customers.filter((c) => !c.hasPurchaseHistory).length,
       customersWithOrderWithoutNomusSeller: customers.filter((c) => c.hasOrderWithoutNomusSeller)
