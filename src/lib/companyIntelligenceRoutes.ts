@@ -7,6 +7,7 @@ import {
   createCustomerFromCompanyIntelligence,
   getCustomerCompanyIntelligenceHistory,
 } from "@/src/lib/companyCnpjLookup.js";
+import { getEconomicContextSafe } from "@/src/lib/economic-context/economicContextService.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -37,6 +38,21 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
     "crm.view",
     "crm.customer_cockpit.view",
   ]);
+
+  app.get(
+    "/api/company-intelligence/economic-context",
+    requireAppAuth,
+    canView,
+    async (req, res) => {
+      try {
+        const forceRefresh = req.query.refresh === "true";
+        const payload = await getEconomicContextSafe({ forceRefresh });
+        res.json(payload);
+      } catch (e) {
+        handleError(res, e);
+      }
+    }
+  );
 
   app.get(
     "/api/company-intelligence/cnpj/:cnpj",

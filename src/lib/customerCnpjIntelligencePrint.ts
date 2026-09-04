@@ -15,6 +15,9 @@ export type CnpjIntelligencePrintPayload = {
   commercial: CnpjIntelligencePayload["commercial"];
   comparison: CnpjIntelligencePayload["comparison"];
   publicContactSuggestion: CnpjIntelligencePayload["publicContactSuggestion"];
+  sources: CnpjIntelligencePayload["sources"];
+  conflicts: CnpjIntelligencePayload["conflicts"];
+  economicContext: CnpjIntelligencePayload["economicContext"];
 };
 
 export function canPrintCnpjIntelligenceReport(
@@ -45,6 +48,9 @@ export function toCnpjIntelligencePrintPayload(
     commercial: data.commercial,
     comparison: data.comparison,
     publicContactSuggestion: data.publicContactSuggestion,
+    sources: data.sources,
+    conflicts: data.conflicts,
+    economicContext: data.economicContext,
   };
 }
 

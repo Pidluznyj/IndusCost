@@ -97,6 +97,28 @@ function samplePayload(over: Partial<CnpjIntelligencePayload> = {}): CnpjIntelli
     customerDraft: null,
     filledFieldCount: 42,
     rawJson: { secret: "must-not-print" },
+    sources: [
+      {
+        source: "publica.cnpj.ws",
+        displayName: "publica.cnpj.ws",
+        role: "primary",
+        status: "SUCCESS",
+        fetchedAt: "2026-06-09T14:00:00.000Z",
+        fromCache: false,
+        latencyMs: 110,
+        message: null,
+      },
+      {
+        source: "brasilapi.com.br",
+        displayName: "BrasilAPI",
+        role: "secondary",
+        status: "SUCCESS",
+        fetchedAt: "2026-06-09T14:00:00.000Z",
+        fromCache: false,
+        latencyMs: 90,
+        message: null,
+      },
+    ],
     ...over,
   };
 }
@@ -136,6 +158,8 @@ describe("CnpjCommercialIntelligencePrintReport", () => {
     assert.ok(html.includes("Quadro societário (QSA)"));
     assert.ok(html.includes("João Silva"));
     assert.ok(html.includes("publica.cnpj.ws"));
+    assert.ok(html.includes("Fontes consultadas"));
+    assert.ok(html.includes("BrasilAPI"));
   });
 
   it("não expõe payload bruto nem valores inválidos", () => {
