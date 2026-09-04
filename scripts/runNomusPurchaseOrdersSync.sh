@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# PURCH-MIRROR-01 — Runner do sync recorrente (janela recente, sem cursor)
-# de Pedidos de Compra Nomus. Candidato de cron: 27 */2 * * * (a cada 2h).
+# PURCH-MIRROR-01 / NOMUS-CRON-02 — Runner do sync recorrente (janela
+# recente, sem cursor) de Pedidos de Compra Nomus.
+#
+# NÃO tem mais cron próprio independente. O candidato original
+# (`27 */2 * * *`) foi ABANDONADO — ver docs/NOMUS_PURCHASE_ORDERS_MIRROR.md
+# seção 10 para a justificativa (risco de disputar 429 com NF-e/AR sem
+# nenhuma garantia de minuto livre). Este runner agora é disparado como
+# ETAPA 2 do wrapper `runNomusAccountsReceivableThenPurchaseOrdersSync.sh`,
+# na sequência: cron AR (2h) → AR roda e termina → Pedidos de Compra.
+# Continua podendo ser chamado isoladamente (manual/debug) — o lock e o
+# probe do lock global abaixo continuam válidos nesse uso direto.
 #
 # NÃO instalar no host nesta entrega — ver docs/NOMUS_PURCHASE_ORDERS_MIRROR.md
-# "Cron futuro" para o pré-requisito de deploy (checar CRON_JOBS 8→9 antes de
-# adicionar este job).
+# seção 10 ("Cron — o que muda no host, NOT EXECUTED").
 
 APP_DIR="/opt/induscost"
 LOG_DIR="${NOMUS_SYNC_LOG_DIR:-/tmp/induscost-nomus-sync}"
-LOCK_FILE="/tmp/induscost-nomus-purchase-orders-sync-global.lock"
+# Lock de defesa em profundidade DESTA entidade (não é o lock global
+# compartilhado — esse é probado, não adquirido, pelo lock Node em
+# nomusPurchaseOrdersSyncLock.ts). Nome corrigido nesta entrega: o path
+# antigo (`...-purchase-orders-sync-global.lock`) sugeria erroneamente ser o
+# lock global compartilhado do ecossistema Nomus; não era — era só o próprio
+# lock de shell de Pedidos de Compra.
+LOCK_FILE="${NOMUS_PURCHASE_ORDERS_SHELL_LOCK_FILE:-/tmp/induscost-nomus-purchase-orders-shell.lock}"
 MODE="${1:-apply}"
 
 case "$MODE" in

@@ -2,6 +2,13 @@
 
 Data: 2026-09-04 (branch `feat/nomus-purchase-orders-mirror`).
 
+**Atualização (mesma data, mesma branch) — NOMUS-CRON-02**: o cron fixo
+independente originalmente proposto (`27 */2 * * *`) foi abandonado com
+base em diagnóstico real de produção (rate limit/concorrência entre jobs
+Nomus). Pedidos de Compra agora é disparado como trigger pós-Contas a
+Receber — ver seção 10 (reescrita) para a arquitetura completa, a
+justificativa e o comando de cron NOT EXECUTED.
+
 ## 1. Objetivo e autoridade
 
 A operação real de Pedido de Compra acontece no ERP Nomus. Este documento
@@ -275,30 +282,241 @@ sem controle.
 Todos os status são importados, incluindo cancelados/devolvidos/concluídos
 históricos — não há filtro de status no backfill.
 
-## 10. Sync recorrente (2h)
+## 10. Agendamento — trigger pós-Contas a Receber (NOMUS-CRON-02)
 
 `npm run sync:nomus:purchase-orders:sync:apply` (strategy `recent-window`,
 sem janela de data — reprocessa a listagem completa a cada execução e
 resolve create/update/unchanged por `payloadHash`, sem inventar cursor:
 não há confirmação de `updatedAt`/`modifiedSince` no contrato desta API,
-então a estratégia robusta adotada é: listar tudo → detail para
-create/update prováveis → resolver por hash). Runner:
-`scripts/runNomusPurchaseOrdersSync.sh sync-apply` — wrapper com lock de
-host (`flock`) por cima do lock de processo (`nomusPurchaseOrdersSyncLock.ts`,
-arquivo em `os.tmpdir()`, portável Windows/Linux — desvio deliberado do
-default POSIX-only `/tmp/...` dos outros locks do repositório, que o
-CODEBASE_MAP.md já documenta como pegadinha em dev Windows).
+então a estratégia robusta adotada é uma **sincronização periódica
+idempotente** (`periodic idempotent synchronization`) — listar tudo →
+detail para create/update prováveis → resolver por hash — e explicitamente
+**não** uma sincronização incremental real (não existe cursor/
+`updatedSince` confirmado; ver seção 2). Runner:
+`scripts/runNomusPurchaseOrdersSync.sh apply` — wrapper com lock de shell
+próprio (`flock`, defesa em profundidade) por cima do lock de processo
+(`nomusPurchaseOrdersSyncLock.ts`, arquivo em `os.tmpdir()`, portável
+Windows/Linux — desvio deliberado do default POSIX-only `/tmp/...` dos
+outros locks do repositório, que o CODEBASE_MAP.md já documenta como
+pegadinha em dev Windows).
 
-**Cron candidato**: `27 */2 * * *` (a cada 2h) chamando
-`scripts/runNomusPurchaseOrdersSync.sh apply`. **Não instalado nesta
-entrega.** Produção historicamente tem 8 jobs Nomus ativos — este seria o
-9º. Antes de instalar em deploy futuro: **confirmar a contagem real atual de
-jobs no host** e só então atualizar qualquer guard `CRON_JOBS` esperado de
-8→9 — nunca assumir 8 sem checar.
+### 10.1 O que mudou e por quê
 
-**Lock**: segunda execução concorrente do mesmo modo recebe `SKIPPED` e sai
-com código 0 (não é erro) — testado em `nomusPurchaseOrdersSyncLock.test.ts`,
-incluindo self-heal de lock de PID morto.
+A proposta original desta missão era um **cron fixo independente**:
+`27 */2 * * *` chamando `scripts/runNomusPurchaseOrdersSync.sh apply`
+diretamente. **Essa estratégia foi ABANDONADA** com base em diagnóstico real
+feito em produção (fora deste ambiente de execução, apenas observado —
+nenhum acesso a produção/homologação foi feito nesta entrega):
+
+- O cron Nomus real em produção tem, entre outros: `00 02 * * *` (daily),
+  `17 */2 * * *` (Contas a Receber), `7 1-23/2 * * *` (NF-e), `47 */2 * * *`
+  (Contas a Pagar), `17 * * * *` (Pedidos de Venda → Documentos de Saída),
+  `37 * * * *` (Propostas), `50 3 * * *` (Recebimentos).
+- NF-e faz full scan de ~160 páginas / ~8 mil registros, recebe HTTP 429
+  regularmente (o cliente oficial espera o `tempoAteLiberar` informado pelo
+  Nomus e tenta de novo) e a execução normalmente leva de ~8 a ~11 minutos,
+  podendo chegar a ~17 minutos.
+- Um Contas a Receber iniciado às 14:17 só terminou às 14:38:24 — mais que
+  o dobro do esperado para um job de 2h.
+- Conclusão: **escolher um minuto "aparentemente vazio" na grade de cron
+  não garante ausência de concorrência.** Qualquer minuto fixo escolhido a
+  priori é uma aposta, não uma garantia — os jobs vizinhos variam de
+  duração e podem se sobrepor de forma imprevisível.
+
+**Nova estratégia**: Pedidos de Compra deixa de ter cron próprio e passa a
+ser disparado como **trigger** logo após o runner de Contas a Receber (que
+já roda a cada 2h, `17 */2 * * *`) terminar:
+
+```
+cron AR (17 */2 * * *)
+  → Accounts Receivable executa
+  → AR termina (libera seus próprios recursos/lock)
+  → dispara Purchase Orders
+  → Purchase Orders adquire seu próprio lock de entidade
+    (+ probe do lock global Nomus, ver 10.3)
+  → sincroniza
+  → libera lock
+```
+
+O horário passa a ser **consequência** do término do AR, não um minuto
+fixo escolhido a priori. **O trigger é temporal/orquestracional — não
+significa que Pedidos de Compra só roda se os dados do AR tiverem
+mudado.** Ele dispara sempre que o AR concluiu tecnicamente nesta execução
+(`SUCCESS` ou `SKIPPED` — ver 10.2), independente de o AR ter de fato
+produzido linhas novas.
+
+Implementação: `scripts/runNomusAccountsReceivableThenPurchaseOrdersSync.sh`
+(novo wrapper). Segue o mesmo padrão conceitual já usado no host para
+Pedidos de Venda → Documentos de Saída (etapa 1 termina → dispara etapa 2),
+citado como precedente nesta missão. **Nota de auditoria**: uma busca
+exaustiva neste repositório (código, scripts, `docs/`) não encontrou nenhum
+wrapper `.sh` versionado nem documentado com esse nome ou equivalente
+(`sales-then-ds`) — se ele existe, é um artefato do host, não versionado
+neste repositório. O novo wrapper de AR→Pedidos de Compra foi desenhado
+seguindo a mesma lógica conceitual (encadeamento sequencial simples, sem
+lock próprio do wrapper, delegando a cada runner filho seu próprio lock),
+não copiado de um arquivo real inspecionado.
+
+### 10.2 Semântica de falha (auditada antes de decidir)
+
+Runners auditados antes desta decisão: `runNomusAccountsReceivableSync.sh`,
+`runNomusSalesOrdersSync.sh`, `runNomusStockDocumentsSync.sh`, além do
+próprio `runNomusPurchaseOrdersSync.sh` (criado no commit `47707cd`).
+
+`runNomusAccountsReceivableSync.sh` grava `EXIT_CODE=0` tanto em sucesso
+real quanto quando o próprio lock de AR (`/tmp/induscost-nomus-accounts-receivable.lock`)
+está ocupado por outra execução (`SKIPPED`) — os dois casos são
+tecnicamente "exit 0", mas não são a mesma coisa. Decisão adotada no
+wrapper:
+
+| Resultado do AR nesta execução | Dispara Pedidos de Compra? | Por quê |
+|---|---|---|
+| `SUCCESS` (exit 0) | **Sim** | Ciclo concluído normalmente. |
+| `SKIPPED` (exit 0, lock de AR ocupado por outra execução) | **Sim** | O trigger é temporal, não depende do AR ter produzido dados nesta execução específica; não é uma falha. |
+| `FAILED` (exit != 0) | **Não** | Encadear uma nova chamada à API Nomus em cima de uma falha técnica ativa do AR poderia agravar a causa raiz (Nomus fora do ar, rede instável) ou disputar limite de taxa já sob pressão. |
+
+Regras preservadas (nenhuma delas foi violada):
+- **Comportamento do AR não foi alterado** — o wrapper chama
+  `runNomusAccountsReceivableSync.sh` sem nenhuma modificação nesse script.
+- **Exit code nunca é escondido** — o wrapper propaga o exit code do AR
+  quando o AR falha, e o exit code de Pedidos de Compra quando o AR
+  concluiu; ambos ficam gravados separadamente no log
+  (`AR_EXIT_CODE=`/`PO_EXIT_CODE=`).
+- **Falha de Pedidos de Compra nunca vira sucesso (nem falha) do AR** — o
+  log grava explicitamente `CHAIN_RESULT=AR_OK_PO_FAILED` quando isso
+  acontece, e uma linha própria confirma que o resultado do AR não foi
+  reclassificado.
+- Logs permitem distinguir os dois: `AR_EXIT_CODE=N` e `PO_EXIT_CODE=N`
+  (ou `NOT_RUN` quando o AR falhou e Pedidos de Compra nem chegou a rodar)
+  aparecem em linhas separadas, mais `CHAIN_RESULT` com um dos três valores
+  (`AR_FAILED` | `AR_OK_PO_OK` | `AR_OK_PO_FAILED`).
+
+### 10.3 Lock
+
+Auditoria do lock global (`/tmp/induscost-nomus-sync-global.lock`,
+`flock`, usado pelo sync diário e por Pedidos de Venda): **Contas a
+Receber NÃO participa desse lock global** — usa um lock de entidade
+próprio (`/tmp/induscost-nomus-accounts-receivable.lock`, shell) mais um
+lock canônico próprio (`.../accounts-receivable.canonical.lock`, TS). Isso
+está documentado em `docs/nomus/nomus-automatic-sync-routines.md` (tabela
+de locks) e foi reconfirmado lendo o script real nesta missão. Ou seja: a
+premissa "o AR já usa o lock global" **não se confirmou**. Seguindo a
+instrução desta missão para esse cenário — não fazer uma refatoração ampla
+de todos os coletores, e implementar a menor coordenação segura necessária,
+documentando a limitação — nenhuma mudança foi feita no lock do AR.
+
+O que foi feito no lado de Pedidos de Compra (menor mudança suficiente,
+reaproveitando mecanismo já existente no repositório — o mesmo padrão do
+precedente mais recente, Ordens de Produção/OP-11):
+
+- **Lock de entidade** (`nomusPurchaseOrdersSyncLock.ts`, arquivo
+  PID+token, self-heal de PID morto): inalterado, continua sendo a única
+  proteção formal contra duas execuções de Pedidos de Compra em paralelo.
+  Testado (`nomusPurchaseOrdersSyncLock.test.ts`).
+- **Probe (não aquisição) do lock global Nomus**: adicionado a
+  `acquireNomusPurchaseOrdersSyncLock`, reaproveitando a função já
+  existente `probeGlobalNomusSyncLockHeld` (de
+  `nomusProductionOrdersSyncLock.ts` — não foi reimplementada checagem de
+  `flock`). Se o lock global estiver ocupado (sync diário ou Pedidos de
+  Venda em andamento), a execução de Pedidos de Compra sai como `SKIPPED`
+  (`GLOBAL_LOCK_HELD`, exit 0) em vez de disputar a API Nomus ao mesmo
+  tempo. Controlável via `NOMUS_PURCHASE_ORDERS_RESPECT_GLOBAL_LOCK` (default
+  `1`). Como o AR não detém esse lock global, esse probe não coordena com o
+  próprio AR — coordena com o sync diário/Pedidos de Venda, que ainda podem
+  estar em andamento no mesmo horário por outros motivos.
+- **Lock de shell** (`runNomusPurchaseOrdersSync.sh`): o arquivo próprio
+  de defesa em profundidade foi renomeado de
+  `/tmp/induscost-nomus-purchase-orders-sync-global.lock` para
+  `/tmp/induscost-nomus-purchase-orders-shell.lock` — o nome antigo
+  sugeria (incorretamente) ser o lock global compartilhado do ecossistema
+  Nomus; não era, era só o lock de shell próprio de Pedidos de Compra. Pura
+  correção de nomenclatura, sem mudança de comportamento (continua sendo
+  só uma segunda camada por cima do lock de processo).
+
+**Limitação documentada explicitamente**: não existe hoje nenhuma
+coordenação direta entre o runner de AR e o de Pedidos de Compra além da
+ordem de execução do wrapper (AR sempre roda antes, sequencialmente, dentro
+do mesmo processo do wrapper — não há como o Pedidos de Compra desta cadeia
+começar antes do AR terminar). Se um AR de um ciclo anterior (ex.: cron
+anterior, ainda rodando por estar demorado) estiver ativo quando o wrapper
+deste ciclo dispara, o `runNomusAccountsReceivableSync.sh` desta execução
+sai como `SKIPPED` pelo próprio lock de AR — e, por decisão de 10.2, o
+wrapper ainda assim dispara Pedidos de Compra (trigger temporal). Isso é
+aceito conscientemente: não expandir o lock global para cobrir também o AR
+seria uma refatoração maior, fora do escopo desta missão (que é
+especificamente sobre o agendamento de Pedidos de Compra).
+
+### 10.4 Rate limit / HTTP 429
+
+Não foi implementado nenhum retry improvisado. `nomusPurchaseOrdersClient.ts`
+já reaproveita 100% de `fetchNomusJson` (`src/lib/nomusRestClient.ts`) —
+o mesmo cliente HTTP compartilhado usado por AR/AP/NF-e/Pedidos de
+Venda/Documentos de Saída, com timeout por tentativa, retry exponencial e
+tratamento de HTTP 429 (`tempoAteLiberar`/`Retry-After`). Confirmado por
+auditoria de código nesta missão (`grep` por `429`/`retry`/`setTimeout`
+em `nomusPurchaseOrdersClient.ts` e `nomusPurchaseOrdersSync.server.ts`):
+não existe nenhuma implementação paralela de retry/backoff em nenhum dos
+dois arquivos, nem no runner shell — nada para consolidar aqui.
+
+Um probe real feito em produção (fora deste ambiente, apenas observado)
+contra `/rest/pedidoscompra` retornou HTTP 429 com corpo `tempoAteLiberar`,
+porque coincidiu com um sync de NF-e ativo. **Isso não valida nem invalida
+o endpoint** — só confirma que o comportamento de 429 observado é
+consistente com o já documentado para os demais coletores. Nenhum
+parser/schema/status foi alterado só com base nesse 429 (ver seção 2).
+
+### 10.5 Contrato Nomus — continua não validado
+
+Nada na seção 2 (endpoint, paginação, campos, status brutos) foi
+confirmado por um probe HTTP 200 real nesta missão — apenas observado um
+429 (10.4). Em particular, `GET /rest/pedidoscompra/{id}` (detail-by-path-id)
+continua sendo uma **hipótese não validada**: uma auditoria anterior desta
+mesma missão constatou que esse padrão (id no path da URL) não tem nenhum
+precedente nos demais coletores Nomus deste repositório — Ordens de
+Produção e a resolução de bridge de clientes usam RSQL na própria listagem
+(`query=id==N`), não um path `/recurso/{id}` separado (confirmado nesta
+sessão: `id==` aparece em `nomusProductionOrdersClient.ts`,
+`nomusProductionOrdersLookup.ts` e `nomusCustomerBridgeResolution.ts`, mas
+em nenhum lugar como detail-by-path-id). Isso **não** foi "corrigido" para
+`query=id==N` nesta entrega — trocar a estratégia de detail é uma decisão
+de implementação do contrato, fora do escopo desta missão de
+agendamento/orquestração. Nenhum dado real foi importado até hoje (nenhum
+backfill/sync real foi executado, nem nesta entrega nem na anterior).
+
+### 10.6 Cron — o que muda no host (NOT EXECUTED)
+
+Nada foi instalado em `/etc/cron.d` nem em nenhum outro lugar do host nesta
+entrega. Os comandos abaixo são a referência exata do que mudaria em
+homologação/produção — **NOT EXECUTED**:
+
+```bash
+# ANTES (proposta original desta missão, já abandonada — nunca chegou a
+# ser instalada):
+# 27 */2 * * * INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusPurchaseOrdersSync.sh apply >> /var/log/induscost-nomus-purchase-orders-cron.log 2>&1
+
+# DEPOIS (esta entrega): o cron de AR (17 */2 * * *, já existente e ativo em
+# produção) deixa de chamar runNomusAccountsReceivableSync.sh diretamente e
+# passa a chamar o wrapper — que chama o AR primeiro, sem alterar seu
+# comportamento, e encadeia Pedidos de Compra depois:
+17 */2 * * * INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusAccountsReceivableThenPurchaseOrdersSync.sh apply apply >> /var/log/induscost-nomus-ar-then-purchase-orders-cron.log 2>&1
+```
+
+Isso **substitui** a linha de cron do AR — não adiciona uma linha nova.
+Contagem líquida de jobs Nomus no host permanece a mesma (nenhum job novo
+é criado; o job de AR passa a apontar para o wrapper em vez do runner
+direto). Antes de aplicar essa mudança em homologação/produção: validar o
+wrapper com `preview`/`dry` no host, conferir que o log
+`/var/log/induscost-nomus-ar-then-purchase-orders-cron.log` está sendo
+escrito pelo usuário/cron correto, e só então trocar a linha no
+`/etc/cron.d/induscost-production` (mesmo arquivo referenciado na seção de
+Recebimentos de `docs/nomus/nomus-automatic-sync-routines.md` — inclusive o
+alerta já registrado lá de que o comentário "não é lido automaticamente"
+naquele arquivo é falso).
+
+**Lock**: segunda execução concorrente do mesmo modo de Pedidos de Compra
+recebe `SKIPPED` e sai com código 0 (não é erro) — testado em
+`nomusPurchaseOrdersSyncLock.test.ts`, incluindo self-heal de lock de PID
+morto e o novo probe de lock global (10.3).
 
 ## 11. API interna de leitura
 
