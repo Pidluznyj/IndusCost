@@ -10,9 +10,9 @@ import {
 } from "./financeAccountsPayableDashboard.js";
 import {
   filterFinanceArManagementReportRows,
-  sumFinanceArReceivedBySettlementInFilteredRows,
   toFinanceArSettlementScopeFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { sumFinanceArReceivedByHistoricalTimelineDateInFilteredRows } from "./finance/financeHistoricalArTimelineDate.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
   resolveOfficialArCashFlowExecutiveMetrics,
@@ -402,8 +402,8 @@ export function buildExecutiveMonthlyTimeline(
     apPaidSourceRows?: FinanceCashFlowApRow[];
     /**
      * `dueDate` — fluxo planejado, comparativo anual e calendário.
-     * `movement` — linha do tempo mensal (AR settlementDate, AP data efetiva).
-     * Default: `dueDate` para não contaminar gráficos de vencimento.
+     * `movement` — linha do tempo mensal (AR data de baixa com normalização
+     *   histórica pontual; AP data efetiva). Default: `dueDate`.
      */
     dateAxis?: FinanceCashFlowTimelineDateAxis;
   }
@@ -440,7 +440,11 @@ export function buildExecutiveMonthlyTimeline(
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
     const received = useMovementAxis
-      ? sumFinanceArReceivedBySettlementInFilteredRows(arForReceived, monthStart, monthEndDate)
+      ? sumFinanceArReceivedByHistoricalTimelineDateInFilteredRows(
+          arForReceived,
+          monthStart,
+          monthEndDate
+        )
       : sumArReceivedInPeriod(arForReceived, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
     const paid = useMovementAxis
