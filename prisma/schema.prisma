@@ -490,6 +490,8 @@ model Material {
   PurchaseOrderItem              PurchaseOrderItem[]
   PurchaseReceiptItem            PurchaseReceiptItem[]
   purchasePlan                   MaterialPurchasePlan?
+  /// PURCH-MIRROR-01 — linhas do mirror Nomus casadas por externalProductId (read-only).
+  nomusPurchaseOrderItems        NomusPurchaseOrderItem[]
 }
 
 /// Anotações manuais de compra do Planejamento de Matéria-Prima (uma por
@@ -1690,6 +1692,141 @@ model SalesOrderItem {
   @@index([nomusIsStale])
   @@index([nomusIsCut])
   @@index([nomusMatchConfidence])
+}
+
+/// Status de conciliação de fornecedor Nomus (NomusPurchaseOrder.supplierMatchStatus).
+enum NomusPurchaseOrderSupplierMatchStatus {
+  MATCHED
+  UNMATCHED
+  AMBIGUOUS
+}
+
+/// Status de conciliação de produto Nomus (NomusPurchaseOrderItem.productMatchStatus).
+enum NomusPurchaseOrderProductMatchStatus {
+  MATCHED
+  UNMATCHED
+}
+
+/// Fase operacional derivada (classifyNomusPurchaseOrderStage) — nunca escrita de volta ao Nomus.
+enum NomusPurchaseOrderDerivedStage {
+  AGUARDANDO_LIBERACAO
+  LIBERADO
+  PARCIALMENTE_ATENDIDO
+  CONCLUIDO
+  ATENDIDO_COM_CORTE
+  CANCELADO
+  DEVOLUCAO
+  MISTO
+}
+
+/// PURCH-MIRROR-01 — Espelho oficial (mirror) do Pedido de Compra do Nomus.
+/// NÃO é o PurchaseOrder interno (cadeia de cotação/adjudicação em
+/// src/lib/purchasing/*) — este modelo nunca é escrito pelo workflow interno
+/// e o mirror nunca escreve de volta no Nomus (somente GET). Ver
+/// docs/NOMUS_PURCHASE_ORDERS_MIRROR.md.
+model NomusPurchaseOrder {
+  id                       String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId               Int                                   @unique
+  code                     String?
+  externalCompanyId        Int?
+  companyCode              String?
+  companyName              String?
+  externalSupplierId       Int?
+  supplierNameSnapshot     String?
+  supplierDocumentSnapshot String?
+  financialSupplierId      String?                               @db.Uuid
+  supplierMatchStatus      NomusPurchaseOrderSupplierMatchStatus  @default(UNMATCHED)
+  externalBuyerId          Int?
+  buyerNameSnapshot        String?
+  issueDate                DateTime?
+  expectedDeliveryDate     DateTime?
+  paymentConditionId       Int?
+  paymentConditionText     String?
+  paymentMethodId          Int?
+  paymentMethodText        String?
+  freightValue             Decimal?                              @db.Decimal(20, 6)
+  insuranceValue           Decimal?                              @db.Decimal(20, 6)
+  otherExpensesValue       Decimal?                              @db.Decimal(20, 6)
+  discountValue            Decimal?                              @db.Decimal(20, 6)
+  subtotalValue            Decimal?                              @db.Decimal(20, 6)
+  totalValue               Decimal?                              @db.Decimal(20, 6)
+  nomusStatusCode          String?
+  derivedStage             NomusPurchaseOrderDerivedStage         @default(MISTO)
+  rawPayload               Json?
+  payloadHash              String?
+  /// SYNC-02 — ciclo de vida na origem (mesma política das outras entidades Nomus).
+  sourcePresenceStatus     NomusSourcePresenceStatus              @default(PRESENT)
+  presentInLastPayload     Boolean                                @default(true)
+  firstSeenAt              DateTime                               @default(now())
+  lastSeenAt               DateTime                               @default(now())
+  missingSince             DateTime?
+  missingConsecutiveRuns   Int                                    @default(0)
+  sourceRemovedAt          DateTime?
+  lastSyncRunId            String?                                @db.Uuid
+  syncedAt                 DateTime                               @default(now())
+  createdAt                DateTime                               @default(now())
+  updatedAt                DateTime                               @default(now()) @updatedAt
+
+  financialSupplier FinancialSupplier?       @relation(fields: [financialSupplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  lastSourceSyncRun NomusSourceSyncRun?      @relation("PurchaseOrderLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items             NomusPurchaseOrderItem[]
+
+  @@index([code])
+  @@index([issueDate])
+  @@index([externalSupplierId])
+  @@index([financialSupplierId])
+  @@index([externalBuyerId])
+  @@index([derivedStage])
+  @@index([syncedAt])
+  @@index([sourcePresenceStatus])
+  @@index([lastSeenAt])
+  @@index([lastSyncRunId])
+  @@index([payloadHash])
+}
+
+/// PURCH-MIRROR-01 — item/linha do NomusPurchaseOrder. Chave natural estável:
+/// externalItemId quando o payload traz id de linha; senão chave determinística
+/// `lineNumber` dentro do pedido (ver buildNomusPurchaseOrderItemNaturalKey).
+model NomusPurchaseOrderItem {
+  id                          String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId             String                                @db.Uuid
+  externalItemId              Int?
+  lineNumber                  Int
+  externalProductId           Int?
+  productCodeSnapshot         String?
+  productDescriptionSnapshot  String?
+  unitSnapshot                String?
+  quantityOrdered              Decimal?                             @db.Decimal(20, 6)
+  quantityAttended             Decimal?                             @db.Decimal(20, 6)
+  quantityPending               Decimal?                            @db.Decimal(20, 6)
+  unitPrice                    Decimal?                             @db.Decimal(20, 6)
+  discountPercent               Decimal?                            @db.Decimal(10, 6)
+  discountValue                 Decimal?                            @db.Decimal(20, 6)
+  lineTotal                     Decimal?                            @db.Decimal(20, 6)
+  expectedDeliveryDate          DateTime?
+  nomusStatusCode               String?
+  nomusStatusName               String?
+  materialId                    String?                             @db.Uuid
+  inventoryItemId               String?                             @db.Uuid
+  productMatchStatus            NomusPurchaseOrderProductMatchStatus @default(UNMATCHED)
+  rawPayload                    Json?
+  payloadHash                   String?
+  syncedAt                      DateTime                            @default(now())
+  createdAt                     DateTime                            @default(now())
+  updatedAt                     DateTime                            @default(now()) @updatedAt
+
+  purchaseOrder NomusPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  material      Material?          @relation(fields: [materialId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  inventoryItem InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([purchaseOrderId, lineNumber])
+  @@index([purchaseOrderId])
+  @@index([externalItemId])
+  @@index([externalProductId])
+  @@index([materialId])
+  @@index([inventoryItemId])
+  @@index([productMatchStatus])
+  @@index([nomusStatusCode])
 }
 
 /// Tabela de preço comercial (catálogo; margem padrão para futuras publicações).
@@ -3152,6 +3289,7 @@ enum NomusSourceSyncEntityType {
   SALES_ORDER
   ACCOUNTS_RECEIVABLE
   ACCOUNTS_PAYABLE
+  PURCHASE_ORDER
 }
 
 enum NomusSourceSyncRunStatus {
@@ -3198,6 +3336,7 @@ model NomusSourceSyncRun {
   salesOrdersLastSeen        SalesOrder[]              @relation("SalesOrderLastSourceSyncRun")
   accountsReceivableLastSeen NomusAccountsReceivable[] @relation("ArLastSourceSyncRun")
   accountsPayableLastSeen    NomusAccountsPayable[]    @relation("ApLastSourceSyncRun")
+  purchaseOrdersLastSeen     NomusPurchaseOrder[]      @relation("PurchaseOrderLastSourceSyncRun")
 
   @@index([entityType, status, startedAt])
   @@index([status])
@@ -5484,6 +5623,8 @@ model FinancialSupplier {
   purchaseQuotationSuppliers PurchaseQuotationSupplier[]
   purchaseOrders             PurchaseOrder[]
   purchaseRequestQuotes      PurchaseRequestQuote[]
+  /// PURCH-MIRROR-01 — Pedidos de Compra Nomus casados por externalSupplierId via alias.
+  nomusPurchaseOrders        NomusPurchaseOrder[]
 
   @@index([normalizedDocument])
   @@index([normalizedName])
@@ -6044,6 +6185,8 @@ model InventoryItem {
   blocks             InventoryBlock[]
   countLines         InventoryCountLine[]
   stockSnapshotLines InventoryStockSnapshotLine[]
+  /// PURCH-MIRROR-01 — linhas do mirror Nomus casadas por nomusProductId (read-only).
+  nomusPurchaseOrderItems NomusPurchaseOrderItem[]
 
   @@index([itemType])
   @@index([status])

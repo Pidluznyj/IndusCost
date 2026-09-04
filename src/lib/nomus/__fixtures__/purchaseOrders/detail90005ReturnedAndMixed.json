@@ -1,0 +1,24 @@
+{
+  "id": 90005,
+  "codigoPedido": "PC-90005",
+  "idEmpresa": 1,
+  "idFornecedor": 5002,
+  "dataEmissao": "2026-06-05T00:00:00.000Z",
+  "status": "7",
+  "itens": [
+    {
+      "id": 800040,
+      "sequencia": "1",
+      "idProduto": 40002,
+      "quantidade": 10,
+      "status": "7"
+    },
+    {
+      "id": 800041,
+      "sequencia": "2",
+      "idProduto": 40003,
+      "quantidade": 5,
+      "status": "8"
+    }
+  ]
+}

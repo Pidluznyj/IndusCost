@@ -1,0 +1,43 @@
+{
+  "id": 90001,
+  "codigoPedido": "PC-90001",
+  "idEmpresa": 1,
+  "codigoEmpresa": "01",
+  "nomeEmpresa": "IndusCost Industrial Fictícia Ltda",
+  "idFornecedor": 5001,
+  "nomeFornecedor": "Fornecedor Alfa Metais Ltda",
+  "cnpjFornecedor": "11.111.111/0001-11",
+  "idComprador": 701,
+  "nomeComprador": "Comprador Ficticio Um",
+  "dataEmissao": "2026-03-10T00:00:00.000Z",
+  "dataPrevisaoEntrega": "2026-03-25T00:00:00.000Z",
+  "idCondicaoPagamento": 12,
+  "condicaoPagamento": "30/60/90 dias",
+  "idFormaPagamento": 3,
+  "formaPagamento": "Boleto",
+  "valorFrete": 150.5,
+  "valorSeguro": 0,
+  "valorOutrasDespesas": 0,
+  "valorDesconto": 0,
+  "valorSubtotal": 10000,
+  "valorTotal": 10150.5,
+  "status": "2",
+  "itens": [
+    {
+      "id": 800001,
+      "sequencia": "1",
+      "idProduto": 40001,
+      "codigoProduto": "MP-0001",
+      "descricaoProduto": "Chapa de Aço Ficticia 2mm",
+      "unidade": "KG",
+      "quantidade": 500,
+      "quantidadeAtendida": 0,
+      "quantidadePendente": 500,
+      "precoUnitario": 20,
+      "percentualDesconto": 0,
+      "valorDesconto": 0,
+      "valorTotal": 10000,
+      "status": "2"
+    }
+  ]
+}

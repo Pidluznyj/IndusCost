@@ -1,0 +1,33 @@
+{
+  "id": 90003,
+  "codigoPedido": "PC-90003",
+  "idEmpresa": 1,
+  "codigoEmpresa": "01",
+  "nomeEmpresa": "IndusCost Industrial Fictícia Ltda",
+  "idFornecedor": 5003,
+  "nomeFornecedor": "Fornecedor Gama Componentes Ltda",
+  "cnpjFornecedor": "33.333.333/0001-33",
+  "idComprador": 702,
+  "nomeComprador": "Comprador Ficticio Dois",
+  "dataEmissao": "2026-05-15T00:00:00.000Z",
+  "dataPrevisaoEntrega": "2026-05-30T00:00:00.000Z",
+  "status": "6",
+  "valorSubtotal": 2000,
+  "valorTotal": 2000,
+  "itens": [
+    {
+      "id": 800020,
+      "sequencia": "1",
+      "idProduto": 40004,
+      "codigoProduto": "MP-0004",
+      "descricaoProduto": "Rolamento Ficticio 6205",
+      "unidade": "UN",
+      "quantidade": 100,
+      "quantidadeAtendida": 0,
+      "quantidadePendente": 0,
+      "precoUnitario": 20,
+      "valorTotal": 2000,
+      "status": "6"
+    }
+  ]
+}

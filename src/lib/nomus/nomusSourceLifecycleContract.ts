@@ -19,6 +19,7 @@ export const NOMUS_SOURCE_SYNC_ENTITY_TYPES = [
   "SALES_ORDER",
   "ACCOUNTS_RECEIVABLE",
   "ACCOUNTS_PAYABLE",
+  "PURCHASE_ORDER",
 ] as const;
 
 export type NomusSourceSyncEntityType =
@@ -98,7 +99,7 @@ export function parseNomusSourceSyncEntityType(
     return value as NomusSourceSyncEntityType;
   }
   throw new Error(
-    `NomusSourceSyncEntityType inválido: ${String(value)}. Use SALES_ORDER | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE.`
+    `NomusSourceSyncEntityType inválido: ${String(value)}. Use SALES_ORDER | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE | PURCHASE_ORDER.`
   );
 }
 

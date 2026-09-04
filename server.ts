@@ -498,6 +498,7 @@ import { registerPurchaseRequestWorkflowRoutes } from "./src/lib/purchasing/purc
 import { registerPurchaseQuotationCollectionRoutes } from "./src/lib/purchasing/purchaseQuotationRoutes.js";
 import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvidenceRoutes.js";
 import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
+import { registerNomusPurchaseOrderReadRoutes } from "./src/lib/purchasing/nomusPurchaseOrderReadRoutes.js";
 import { registerSupplierPerformanceRoutes } from "./src/lib/purchasing/supplierPerformanceRoutes.js";
 import { registerPurchasingWorkstationRoutes } from "./src/lib/purchasing/purchasingWorkstationRoutes.js";
 import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseReceiptRoutes.js";
@@ -16935,6 +16936,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  // PURCH-MIRROR-01 — mirror read-only de Pedidos de Compra Nomus (não é o
+  // PurchaseOrder interno acima). Ver docs/NOMUS_PURCHASE_ORDERS_MIRROR.md.
+  registerNomusPurchaseOrderReadRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   registerShadowPurchasePlanningRoutes(app, {

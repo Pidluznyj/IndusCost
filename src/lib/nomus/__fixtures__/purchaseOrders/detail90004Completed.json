@@ -1,0 +1,23 @@
+{
+  "id": 90004,
+  "codigoPedido": "PC-90004",
+  "idEmpresa": 1,
+  "idFornecedor": 5001,
+  "nomeFornecedor": "Fornecedor Alfa Metais Ltda",
+  "dataEmissao": "2026-06-01T00:00:00.000Z",
+  "status": "4",
+  "valorTotal": 500,
+  "itens": [
+    {
+      "id": 800030,
+      "sequencia": "1",
+      "idProduto": 40001,
+      "quantidade": 25,
+      "quantidadeAtendida": 25,
+      "quantidadePendente": 0,
+      "precoUnitario": 20,
+      "valorTotal": 500,
+      "status": "4"
+    }
+  ]
+}

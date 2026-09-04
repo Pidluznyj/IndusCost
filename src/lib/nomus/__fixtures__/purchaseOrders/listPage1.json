@@ -1,0 +1,35 @@
+{
+  "pedidosCompra": [
+    {
+      "id": 90001,
+      "codigoPedido": "PC-90001",
+      "idEmpresa": 1,
+      "codigoEmpresa": "01",
+      "nomeEmpresa": "IndusCost Industrial Fictícia Ltda",
+      "idFornecedor": 5001,
+      "nomeFornecedor": "Fornecedor Alfa Metais Ltda",
+      "cnpjFornecedor": "11.111.111/0001-11",
+      "idComprador": 701,
+      "nomeComprador": "Comprador Ficticio Um",
+      "dataEmissao": "2026-03-10T00:00:00.000Z",
+      "dataPrevisaoEntrega": "2026-03-25T00:00:00.000Z",
+      "status": "2"
+    },
+    {
+      "id": 90002,
+      "codigoPedido": "PC-90002",
+      "idEmpresa": 1,
+      "codigoEmpresa": "01",
+      "nomeEmpresa": "IndusCost Industrial Fictícia Ltda",
+      "idFornecedor": 5002,
+      "nomeFornecedor": "Fornecedor Beta Insumos S.A.",
+      "cnpjFornecedor": "22.222.222/0001-22",
+      "idComprador": 701,
+      "nomeComprador": "Comprador Ficticio Um",
+      "dataEmissao": "2026-04-02T00:00:00.000Z",
+      "dataPrevisaoEntrega": "2026-04-20T00:00:00.000Z",
+      "status": "3"
+    }
+  ],
+  "totalPaginas": 2
+}
