@@ -12,7 +12,7 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import {
   formatInventoryApiError,
@@ -25,6 +25,14 @@ import {
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
+import { InventoryCollectorSectorQrSection } from "@/src/components/inventory/collector/InventoryCollectorSectorQrSection";
+import type { InventoryCollectorSectorQrState } from "@/src/components/inventory/collector/InventoryCollectorSectorQrSection";
+import {
+  buildCollectorSectorQrEndpoint,
+  classifyCollectorSectorQrError,
+  parseCollectorSectorQrPayload,
+} from "@/src/lib/inventory/collector/collectorSectorQrUi";
+import "@/src/components/inventory/collector/inventory-collector-sector-qr-print.css";
 
 export type CollectorEnrollmentRow = {
   id: string;
@@ -88,6 +96,40 @@ export function InventoryCollectorDevicesTab() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ApproveDraft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sectorQr, setSectorQr] = useState<InventoryCollectorSectorQrState>({ status: "loading" });
+  const [sectorQrRefreshing, setSectorQrRefreshing] = useState(false);
+
+  const loadSectorQr = useCallback(async () => {
+    setSectorQrRefreshing(true);
+    try {
+      const data = await fetchJsonOk<unknown>(buildCollectorSectorQrEndpoint());
+      setSectorQr({ status: "ready", data: parseCollectorSectorQrPayload(data) });
+    } catch (e: unknown) {
+      if (e instanceof HttpError) {
+        const classified = classifyCollectorSectorQrError({
+          status: e.status,
+          code: e.code,
+          message: e.message,
+        });
+        if (classified.kind === "forbidden") {
+          setSectorQr({ status: "forbidden" });
+        } else if (classified.kind === "config") {
+          setSectorQr({ status: "config", message: classified.message });
+        } else {
+          setSectorQr({ status: "error", message: classified.message });
+        }
+      } else {
+        setSectorQr({ status: "error", message: "Falha de rede ao consultar o QR do Collector." });
+      }
+    } finally {
+      setSectorQrRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!canApproveCount) return;
+    void loadSectorQr();
+  }, [canApproveCount, loadSectorQr]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -240,6 +282,12 @@ export function InventoryCollectorDevicesTab() {
           {notice}
         </div>
       ) : null}
+
+      <InventoryCollectorSectorQrSection
+        state={sectorQr}
+        onRefresh={() => void loadSectorQr()}
+        refreshing={sectorQrRefreshing}
+      />
 
       {loading ? (
         <InventoryLoading label="Carregando dispositivos…" />
