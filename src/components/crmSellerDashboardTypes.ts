@@ -83,6 +83,22 @@ export type SellerDashboardSummary = {
   ordersWithDifferentNomusSeller?: number;
 };
 
+/** Uma linha do ranking por Responsável Comercial (mesmo motor de `topCommercialOwners`). */
+export type SellerDashboardOwnerBreakdownRow = {
+  key: string;
+  label: string;
+  orders: number;
+  value: number;
+};
+
+/** Reconciliação do ranking por responsável — soma de TODOS os grupos, não só o Top N exibido. */
+export type SellerDashboardOwnerRankingTotals = {
+  groups: number;
+  value: number;
+  orders: number;
+  truncatedForDisplay: boolean;
+};
+
 export type SellerDashboardBySeller = {
   displayName?: string;
   sellerIdentityKey?: string;
@@ -165,6 +181,13 @@ export type SellerDashboardResponse = {
   ordersWithoutNomusSeller: number;
   ordersWithDifferentNomusSeller: number;
   bySeller: SellerDashboardBySeller[];
+  /**
+   * Ranking por Responsável Comercial (mesmo motor de `loadCrmSalesOrderMetrics`
+   * usado na Gestão Geral). Útil para comparar carteiras quando nenhum
+   * responsável específico está selecionado ("Todos os responsáveis").
+   */
+  commercialOwnerBreakdown: SellerDashboardOwnerBreakdownRow[];
+  commercialOwnerRankingTotals: SellerDashboardOwnerRankingTotals;
   openPortfolioOrders: SellerDashboardOrder[];
   invoicedOrders: SellerDashboardOrder[];
   ordersWithoutLinkedProposal: SellerDashboardOrder[];

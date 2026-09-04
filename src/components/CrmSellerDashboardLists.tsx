@@ -2,8 +2,10 @@ import React from "react";
 import { cn } from "@/src/lib/utils";
 import { ManagementListPanel } from "@/src/components/CrmManagementDashboardSection";
 import type {
+  SellerDashboardFollowUpCandidate,
   SellerDashboardOrder,
   SellerDashboardResponse,
+  SellerDashboardTopRow,
 } from "@/src/components/crmSellerDashboardTypes";
 import { truncateMiddle } from "@/src/components/crmSellerDashboardUi";
 import { CRM_UI_TOOLTIPS } from "@/src/components/crm/crmCommercialUiConcepts";
@@ -182,6 +184,69 @@ export const CrmSellerDashboardLists: React.FC<CrmSellerDashboardListsProps> = (
                 {row.isInvoiced ? "Faturado" : "Em carteira"}
               </p>
               <OrderAuditFooter row={row} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </ManagementListPanel>
+
+    <ManagementListPanel
+      title="Top clientes da carteira"
+      description="Maior valor comprado no período, entre os clientes deste responsável."
+      emptyMessage="Nenhum cliente com pedido no período."
+      isEmpty={data.topCustomers.length === 0}
+    >
+      <ul className="space-y-1.5">
+        {data.topCustomers.map((row: SellerDashboardTopRow, idx) => (
+          <li key={row.key}>
+            <button
+              type="button"
+              onClick={() => onSelectCustomer(row.key, { displayName: row.label })}
+              className={listButtonClass}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-semibold text-foreground line-clamp-1">
+                  {idx + 1}. {row.label}
+                </p>
+                <span className="shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-900">
+                  Top {idx + 1}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {formatIntelCurrency(row.value)} · {row.orders} pedido(s) no período
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </ManagementListPanel>
+
+    <ManagementListPanel
+      title="Pedidos sem follow-up"
+      description="Pedidos em carteira sem contato registrado — oportunidade de ação."
+      emptyMessage="Todos os pedidos em carteira têm follow-up."
+      isEmpty={data.followUpCandidates.length === 0}
+    >
+      <ul className="space-y-1.5">
+        {data.followUpCandidates.map((row: SellerDashboardFollowUpCandidate) => (
+          <li key={row.salesOrderId}>
+            <button
+              type="button"
+              onClick={() => onSelectCustomer(row.customerId, { displayName: row.customerName })}
+              className={listButtonClass}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-semibold text-foreground">{row.orderCode}</p>
+                <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-900">
+                  {row.daysWithoutFollowUp} dia(s) sem contato
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                {row.customerName}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {formatDateShortPt(row.issueDate)} · {formatIntelCurrency(row.totalNetValue)}
+              </p>
             </button>
           </li>
         ))}
