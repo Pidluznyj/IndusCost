@@ -1,0 +1,91 @@
+/**
+ * Linha do tempo do Caixa — notas de proveniência/cobertura.
+ *
+ * As células "Começou"/"Terminou" mostram só o VALOR; o detalhe de auditoria
+ * (cobertura de contas, ajuste de abertura, realizado de hoje) vive num painel
+ * que só aparece no hover/foco do ícone. O painel é `position: absolute`, então
+ * não ocupa espaço na tabela nem empurra o valor para outra linha.
+ *
+ * Mesmo padrão de `sales-order-list-table.css` (tooltip de margem): o conteúdo
+ * fica sempre no DOM — some via CSS, não via JS —, o que preserva leitor de
+ * tela, funciona sem hidratação e mantém a informação auditável.
+ */
+
+.caixa-timeline-note {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A linha com o painel aberto passa por cima das vizinhas. */
+.caixa-timeline-table tbody tr:has(.caixa-timeline-note:hover),
+.caixa-timeline-table tbody tr:has(.caixa-timeline-note:focus-within) {
+  position: relative;
+  z-index: 60;
+}
+
+.caixa-timeline-note-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  border: 0;
+  background: transparent;
+  padding: 0.1rem;
+  line-height: 0;
+  opacity: 0.8;
+  color: inherit;
+}
+
+.caixa-timeline-note-trigger:hover,
+.caixa-timeline-note-trigger:focus-visible {
+  opacity: 1;
+}
+
+.caixa-timeline-note-trigger:focus-visible {
+  outline: 2px solid var(--color-primary, hsl(221.2 83.2% 53.3%));
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+.caixa-timeline-note-panel {
+  display: none;
+  position: absolute;
+  z-index: 80;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  width: min(22rem, 74vw);
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border, hsl(214.3 31.8% 91.4%));
+  background: var(--color-popover, hsl(0 0% 100%));
+  color: var(--color-popover-foreground, hsl(222.2 84% 4.9%));
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.14),
+    0 2px 8px rgb(0 0 0 / 0.08);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: pre-wrap;
+  text-transform: none;
+  letter-spacing: normal;
+  font-variant-numeric: normal;
+  pointer-events: none;
+}
+
+.caixa-timeline-note:hover .caixa-timeline-note-panel,
+.caixa-timeline-note:focus-within .caixa-timeline-note-panel {
+  display: block;
+}
+
+/* Última(s) linha(s): abre para cima, senão o painel cairia fora da tabela. */
+.caixa-timeline-table tbody tr:nth-last-child(-n + 3) .caixa-timeline-note-panel {
+  top: auto;
+  bottom: calc(100% + 0.35rem);
+}
+
+.caixa-timeline-note-title {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}

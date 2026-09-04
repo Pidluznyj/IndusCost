@@ -40,6 +40,7 @@ import {
   TreasuryCaixaTimeline,
   TitleStatusBadge,
 } from "@/src/components/finance/treasury/TreasuryCaixaTimeline";
+import "./treasury-caixa-timeline.css";
 import { TreasuryCaixaBalanceChart } from "@/src/components/finance/treasury/TreasuryCaixaBalanceChart";
 import { TreasuryCaixaScenariosChart } from "@/src/components/finance/treasury/TreasuryCaixaScenariosChart";
 import {
