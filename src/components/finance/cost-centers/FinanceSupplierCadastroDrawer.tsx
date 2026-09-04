@@ -13,6 +13,11 @@ import {
 import { motion } from "motion/react";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { CNPJ_COMPARE_STATUS_LABEL } from "@/src/lib/customerCnpjIntelligenceTypes";
+import {
+  CnpjSourceConflictsPanel,
+  CnpjSourcesStatusPanel,
+  EconomicContextPanel,
+} from "@/src/components/company-intelligence/CnpjIntelligenceExtras";
 import type {
   FinanceSupplierCnpjLookupPayload,
   FinanceSupplierIntelligencePayload,
@@ -743,7 +748,7 @@ export function FinanceSupplierCadastroDrawer({
               <p className="text-xs text-muted-foreground">
                 {isCreate
                   ? "Opcional. Informe o CNPJ e consulte para preencher o formulário. Você também pode cadastrar manualmente sem consultar."
-                  : "Mesma rotina de Clientes (publica.cnpj.ws). Endereço e contatos públicos são exibidos para comparação; apenas razão social, fantasia e CNPJ (se vazio) podem ser aplicados ao cadastro consolidado."}
+                  : "Mesma rotina de Clientes (multi-fonte). Endereço e contatos públicos são exibidos para comparação; apenas razão social, fantasia e CNPJ (se vazio) podem ser aplicados ao cadastro consolidado."}
               </p>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[220px] flex-1 space-y-1.5">
@@ -806,8 +811,14 @@ export function FinanceSupplierCadastroDrawer({
                   <p className="mt-1 text-xs text-muted-foreground">
                     Situação: {cnpjData.summary.registrationStatus ?? "—"} ·{" "}
                     {new Date(cnpjData.fetchedAt).toLocaleString("pt-BR")}
+                    {cnpjData.source ? ` · Fonte: ${cnpjData.source}` : ""}
+                    {cnpjData.partialResult ? " · resultado parcial" : ""}
                   </p>
                 </div>
+
+                <CnpjSourcesStatusPanel sources={cnpjData.sources} />
+                <EconomicContextPanel economicContext={cnpjData.economicContext} />
+                <CnpjSourceConflictsPanel conflicts={cnpjData.conflicts} />
 
                 {cnpjData.comparison ? (
                   <div className="overflow-hidden rounded-xl border border-border">

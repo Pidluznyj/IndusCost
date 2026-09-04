@@ -23,6 +23,11 @@ import {
   CNPJ_COMPARE_STATUS_LABEL,
   type CnpjIntelligencePayload,
 } from "@/src/lib/customerCnpjIntelligenceTypes";
+import {
+  CnpjSourceConflictsPanel,
+  CnpjSourcesStatusPanel,
+  EconomicContextPanel,
+} from "@/src/components/company-intelligence/CnpjIntelligenceExtras";
 import { cn } from "@/src/lib/utils";
 import { resolveModalStackZIndex } from "@/src/lib/modalStack";
 import type { Customer } from "@/src/types/commercial";
@@ -317,7 +322,8 @@ export function CustomerCnpjIntelligencePanel({
               Consulta CNPJ / Inteligência Comercial
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Dados públicos via publica.cnpj.ws — apoio à decisão comercial.
+              Inteligência cadastral multi-fonte — apoio à decisão comercial. Não substitui o
+              cadastro oficial.
             </p>
           </div>
           <button
@@ -384,6 +390,8 @@ export function CustomerCnpjIntelligencePanel({
                     Situação: {data.summary.registrationStatus ?? "—"} · Consulta:{" "}
                     {new Date(data.fetchedAt).toLocaleString("pt-BR")} · Fonte: {data.source}
                     {data.fromCache ? " (cache)" : ""}
+                    {data.partialResult ? " · resultado parcial" : ""}
+                    {data.registryRole === "fallback" ? " · fallback" : ""}
                   </p>
                 </div>
                 <div className="cnpj-intelligence-no-print flex flex-wrap gap-2">
@@ -420,6 +428,10 @@ export function CustomerCnpjIntelligencePanel({
                   </button>
                 </div>
               </div>
+
+              <CnpjSourcesStatusPanel sources={data.sources} />
+              <EconomicContextPanel economicContext={data.economicContext} />
+              <CnpjSourceConflictsPanel conflicts={data.conflicts} />
 
               <div className={cn("rounded-lg border p-4", verdictClass)}>
                 <div className="flex items-center gap-2 font-semibold">

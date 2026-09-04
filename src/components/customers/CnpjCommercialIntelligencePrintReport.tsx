@@ -6,7 +6,10 @@ import {
   formatCnpjPrintText,
   type CnpjIntelligencePrintPayload,
 } from "@/src/lib/customerCnpjIntelligencePrint";
-import { CNPJ_COMPARE_STATUS_LABEL } from "@/src/lib/customerCnpjIntelligenceTypes";
+import {
+  CNPJ_COMPARE_STATUS_LABEL,
+  CNPJ_PROVIDER_STATUS_LABEL,
+} from "@/src/lib/customerCnpjIntelligenceTypes";
 
 type Props = {
   data: CnpjIntelligencePrintPayload;
@@ -58,6 +61,78 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
           </tbody>
         </table>
       </header>
+
+      {data.sources && data.sources.length > 0 ? (
+        <section className="cnpj-intelligence-print-section">
+          <h2 className="cnpj-intelligence-print-section-title">Fontes consultadas</h2>
+          <table className="cnpj-intelligence-print-data-table">
+            <thead>
+              <tr>
+                <th>Fonte</th>
+                <th>Situação</th>
+                <th>Atualizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sources.map((source) => (
+                <tr key={`${source.source}-${source.role}`}>
+                  <td>{formatCnpjPrintText(source.displayName)}</td>
+                  <td>{CNPJ_PROVIDER_STATUS_LABEL[source.status] ?? source.status}</td>
+                  <td>{formatCnpjPrintDateTime(source.fetchedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      {data.economicContext ? (
+        <section className="cnpj-intelligence-print-section">
+          <h2 className="cnpj-intelligence-print-section-title">Contexto econômico — Brasil</h2>
+          <p className="cnpj-intelligence-print-note">{data.economicContext.disclaimer}</p>
+          {data.economicContext.status === "unavailable" ? (
+            <p>Contexto econômico temporariamente indisponível.</p>
+          ) : (
+            <table className="cnpj-intelligence-print-kv-table">
+              <tbody>
+                {data.economicContext.indicators.map((indicator) => (
+                  <tr key={indicator.code}>
+                    <th>{indicator.name}</th>
+                    <td>
+                      {indicator.status === "ok" ? indicator.displayValue : "—"} · Referência:{" "}
+                      {formatCnpjPrintText(indicator.referenceDate)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      ) : null}
+
+      {data.conflicts && data.conflicts.length > 0 ? (
+        <section className="cnpj-intelligence-print-section">
+          <h2 className="cnpj-intelligence-print-section-title">Divergências entre fontes</h2>
+          <table className="cnpj-intelligence-print-data-table">
+            <thead>
+              <tr>
+                <th>Campo</th>
+                <th>Consolidado</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.conflicts.map((row) => (
+                <tr key={row.field}>
+                  <td>{row.label}</td>
+                  <td>{formatCnpjPrintText(row.chosenValue)}</td>
+                  <td>{row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">
         <h2 className="cnpj-intelligence-print-section-title">Análise de risco comercial</h2>
