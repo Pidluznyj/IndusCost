@@ -430,7 +430,7 @@ export async function buildFinanceSupplierCnpjLookupPayloadDefault(input: {
   return buildFinanceSupplierCnpjLookupPayload(input);
 }
 
-/** Consulta CNPJ sem fornecedor persistido (modo create) — mesma base publica.cnpj.ws. */
+/** Consulta CNPJ sem fornecedor persistido (modo create) — agregador multi-fonte. */
 export async function buildFinanceSupplierCnpjLookupPayload(input: {
   cnpj: string;
   forceRefresh?: boolean;

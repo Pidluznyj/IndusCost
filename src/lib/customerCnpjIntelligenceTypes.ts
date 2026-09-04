@@ -25,6 +25,46 @@ export type CnpjErpCommercialField = {
   kindLabel: string;
 };
 
+export type CnpjSourceStatusView = {
+  source: string;
+  displayName: string;
+  role: string;
+  status: string;
+  fetchedAt: string | null;
+  fromCache: boolean;
+  latencyMs: number | null;
+  message: string | null;
+};
+
+export type CnpjFieldProvenanceView = {
+  field: string;
+  label: string;
+  chosenValue: string | null;
+  chosenSource: string | null;
+  values: { source: string; value: string | null }[];
+  status: string;
+};
+
+export type CnpjEconomicIndicatorView = {
+  code: string;
+  name: string;
+  value: number | null;
+  unit: string;
+  referenceDate: string | null;
+  displayValue: string;
+  status: string;
+  source: string;
+};
+
+export type CnpjEconomicContextView = {
+  status: string;
+  fetchedAt: string;
+  fromCache: boolean;
+  sourceLabel: string;
+  disclaimer: string;
+  indicators: CnpjEconomicIndicatorView[];
+};
+
 export type CnpjIntelligencePayload = {
   lookupId: string;
   cnpj: string;
@@ -83,6 +123,12 @@ export type CnpjIntelligencePayload = {
   customerDraft: Record<string, string> | null;
   filledFieldCount: number;
   rawJson: unknown;
+  sources?: CnpjSourceStatusView[];
+  provenance?: CnpjFieldProvenanceView[];
+  conflicts?: CnpjFieldProvenanceView[];
+  partialResult?: boolean;
+  registryRole?: "primary" | "fallback";
+  economicContext?: CnpjEconomicContextView | null;
 };
 
 export const CNPJ_COMPARE_STATUS_LABEL: Record<string, string> = {
@@ -91,4 +137,23 @@ export const CNPJ_COMPARE_STATUS_LABEL: Record<string, string> = {
   EMPTY_ERP: "Vazio no ERP",
   EMPTY_API: "Vazio na API",
   SUGGESTED: "Novo dado sugerido",
+};
+
+export const CNPJ_PROVIDER_STATUS_LABEL: Record<string, string> = {
+  SUCCESS: "OK",
+  NOT_FOUND: "Não encontrado",
+  RATE_LIMIT: "Limite atingido",
+  TIMEOUT: "Tempo esgotado",
+  ERROR: "Indisponível",
+  INVALID_PAYLOAD: "Resposta inválida",
+  SKIPPED_CACHE: "Cache",
+  UNAVAILABLE: "Indisponível",
+};
+
+export const CNPJ_REGISTRY_COMPARE_LABEL: Record<string, string> = {
+  MATCH: "Iguais",
+  DIFFERENT: "Divergente",
+  MISSING_PRIMARY: "Só na complementar",
+  MISSING_SECONDARY: "Só na principal",
+  SINGLE_SOURCE: "Uma fonte",
 };

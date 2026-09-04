@@ -1,7 +1,6 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { isValidCnpj, normalizeCnpj } from "./companyCnpjFormat.js";
 import {
-  normalizePublicCnpjPayload,
   buildStructuredNormalizedSummary,
   buildPublicContactNote,
   summaryToCustomerDraft,
@@ -19,21 +18,22 @@ import {
   type CustomerCompareResult,
 } from "./companyCnpjCompare.js";
 import { writeCommercialAuditLog } from "./commercialAuditLog.js";
+import { CompanyIntelligenceError } from "./company-intelligence/errors.js";
+import { lookupCompanyRegistry } from "./company-intelligence/lookupCompanyRegistry.js";
+import { isProviderSuccess } from "./company-intelligence/providers/types.js";
+import { publicaCnpjWsProvider } from "./company-intelligence/providers/publicaCnpjWsProvider.js";
+import {
+  CNPJ_SOURCE_DISPLAY_NAME,
+  ECONOMIC_SOURCE_BCB,
+  type CnpjFieldProvenance,
+  type CnpjSourceStatus,
+} from "./company-intelligence/registryTypes.js";
+import { getEconomicContextSafe } from "./economic-context/economicContextService.js";
+import type { EconomicContextPayload } from "./economic-context/economicContextTypes.js";
+import { CNPJ_CACHE_TTL_MS } from "./companyCnpjLookupConstants.js";
 
-export class CompanyIntelligenceError extends Error {
-  readonly code: string;
-  readonly httpStatus: number;
-
-  constructor(message: string, code: string, httpStatus: number) {
-    super(message);
-    this.name = "CompanyIntelligenceError";
-    this.code = code;
-    this.httpStatus = httpStatus;
-  }
-}
-
-export const CNPJ_LOOKUP_SOURCE = "publica.cnpj.ws";
-export const CNPJ_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export { CompanyIntelligenceError } from "./company-intelligence/errors.js";
+export { CNPJ_CACHE_TTL_MS, CNPJ_LOOKUP_SOURCE } from "./companyCnpjLookupConstants.js";
 
 export type CompanyIntelligencePayload = {
   lookupId: string;
@@ -53,6 +53,12 @@ export type CompanyIntelligencePayload = {
   publicContactSuggestion: { phone: string | null; email: string | null; disclaimer: string } | null;
   filledFieldCount: number;
   rawJson: unknown;
+  sources: CnpjSourceStatus[];
+  provenance: CnpjFieldProvenance[];
+  conflicts: CnpjFieldProvenance[];
+  partialResult: boolean;
+  registryRole: "primary" | "fallback";
+  economicContext: EconomicContextPayload | null;
 };
 
 function sellerUfFromEnv(): string {
@@ -67,49 +73,23 @@ export async function fetchPublicCnpj(
   if (!isValidCnpj(digits)) {
     throw new CompanyIntelligenceError("CNPJ inválido.", "INVALID_CNPJ", 422);
   }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const res = await fetchImpl(`https://publica.cnpj.ws/cnpj/${digits}`, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-    if (res.status === 404) {
-      throw new CompanyIntelligenceError("CNPJ não encontrado na base pública.", "CNPJ_NOT_FOUND", 404);
-    }
-    if (res.status === 429) {
-      throw new CompanyIntelligenceError(
-        "Limite de consultas da API pública atingido. Tente novamente em alguns minutos.",
-        "RATE_LIMIT",
-        429
-      );
-    }
-    if (!res.ok) {
-      throw new CompanyIntelligenceError(
-        `Falha na consulta pública (HTTP ${res.status}).`,
-        "UPSTREAM_ERROR",
-        502
-      );
-    }
-    const json = await res.json();
-    if (!json || typeof json !== "object") {
-      throw new CompanyIntelligenceError("Resposta inesperada da API pública.", "INVALID_PAYLOAD", 502);
-    }
-    return json;
-  } catch (e: unknown) {
-    if (e instanceof CompanyIntelligenceError) throw e;
-    if (e instanceof Error && e.name === "AbortError") {
-      throw new CompanyIntelligenceError("Tempo esgotado na consulta pública.", "TIMEOUT", 504);
-    }
-    throw new CompanyIntelligenceError(
-      "Serviço de consulta CNPJ indisponível no momento.",
-      "UPSTREAM_UNAVAILABLE",
-      502
-    );
-  } finally {
-    clearTimeout(timer);
-  }
+  const outcome = await publicaCnpjWsProvider.lookup(digits, fetchImpl);
+  if (isProviderSuccess(outcome)) return outcome.rawJson;
+  const code =
+    outcome.status === "NOT_FOUND"
+      ? "CNPJ_NOT_FOUND"
+      : outcome.status === "RATE_LIMIT"
+        ? "RATE_LIMIT"
+        : outcome.status === "TIMEOUT"
+          ? "TIMEOUT"
+          : outcome.status === "INVALID_PAYLOAD"
+            ? "INVALID_PAYLOAD"
+            : "UPSTREAM_UNAVAILABLE";
+  throw new CompanyIntelligenceError(
+    outcome.message,
+    code,
+    outcome.httpStatus ?? 502
+  );
 }
 
 function serializeLookup(row: {
@@ -127,7 +107,17 @@ function serializeLookup(row: {
   expiresAt: Date;
 }): Omit<
   CompanyIntelligencePayload,
-  "comparison" | "customerDraft" | "filledFieldCount" | "erpCommercialData" | "publicContactSuggestion"
+  | "comparison"
+  | "customerDraft"
+  | "filledFieldCount"
+  | "erpCommercialData"
+  | "publicContactSuggestion"
+  | "sources"
+  | "provenance"
+  | "conflicts"
+  | "partialResult"
+  | "registryRole"
+  | "economicContext"
 > & {
   summary: NormalizedCnpjSummary;
   risk: CommercialRiskResult;
@@ -160,6 +150,34 @@ async function findValidCache(cnpj: string) {
   });
 }
 
+function extractSummary(normalizedSummary: unknown): NormalizedCnpjSummary {
+  return normalizedSummary as NormalizedCnpjSummary;
+}
+
+function economicSourceStatus(economic: EconomicContextPayload): CnpjSourceStatus {
+  const status =
+    economic.status === "ok"
+      ? "SUCCESS"
+      : economic.status === "partial"
+        ? "SUCCESS"
+        : "UNAVAILABLE";
+  return {
+    source: ECONOMIC_SOURCE_BCB,
+    displayName: CNPJ_SOURCE_DISPLAY_NAME[ECONOMIC_SOURCE_BCB] ?? "Banco Central do Brasil",
+    role: "economic",
+    status,
+    fetchedAt: economic.fetchedAt,
+    fromCache: economic.fromCache,
+    latencyMs: null,
+    message:
+      economic.status === "unavailable"
+        ? "Contexto econômico temporariamente indisponível"
+        : economic.status === "partial"
+          ? "Contexto econômico parcial"
+          : null,
+  };
+}
+
 export async function buildCompanyIntelligencePayload(input: {
   cnpj: string;
   customerId?: string | null;
@@ -175,9 +193,23 @@ export async function buildCompanyIntelligencePayload(input: {
   let fromCache = false;
   let row = !input.forceRefresh ? await findValidCache(cnpj) : null;
 
+  const registry = await lookupCompanyRegistry({
+    cnpj,
+    fetchImpl: input.fetchImpl,
+    forceRefresh: Boolean(input.forceRefresh),
+    primaryFromCache:
+      row && row.source !== "brasilapi.com.br"
+        ? {
+            source: row.source,
+            rawJson: row.rawJson,
+            summary: extractSummary(row.normalizedSummary),
+            fetchedAt: row.fetchedAt,
+          }
+        : null,
+  });
+
   if (!row) {
-    const rawJson = await fetchPublicCnpj(cnpj, input.fetchImpl);
-    const summary = normalizePublicCnpjPayload(rawJson);
+    const summary = registry.summary;
     const structuredSummary = buildStructuredNormalizedSummary(summary);
     const risk = calculateCommercialRiskScore(summary);
     const commercial = buildCommercialInsightsBundle(summary, risk, sellerUfFromEnv());
@@ -188,8 +220,8 @@ export async function buildCompanyIntelligencePayload(input: {
       data: {
         cnpj,
         customerId: input.customerId ?? null,
-        source: CNPJ_LOOKUP_SOURCE,
-        rawJson: rawJson as object,
+        source: registry.winningSource,
+        rawJson: registry.rawJson as object,
         normalizedSummary: { ...summary, ...structuredSummary } as object,
         riskScore: risk.score,
         riskVerdict: risk.verdict,
@@ -205,7 +237,7 @@ export async function buildCompanyIntelligencePayload(input: {
       entityType: input.customerId ? "Customer" : "CustomerCnpjLookup",
       entityId: input.customerId ?? row.id,
       action: input.forceRefresh ? "CNPJ_LOOKUP_REFRESH" : "CNPJ_LOOKUP",
-      newValue: cnpj,
+      newValue: "cnpj-lookup",
       performedBy: input.userId ?? null,
     });
   } else {
@@ -255,15 +287,23 @@ export async function buildCompanyIntelligencePayload(input: {
   };
 
   const { countFilledJsonFields } = await import("./companyCnpjFormat.js");
+  const economicContext = await getEconomicContextSafe({ fetchImpl: input.fetchImpl });
 
   return {
     ...base,
+    source: registry.winningSource || base.source,
     fromCache,
     comparison,
     erpCommercialData,
     customerDraft,
     publicContactSuggestion,
     filledFieldCount: countFilledJsonFields(base.rawJson),
+    sources: [...registry.sources, economicSourceStatus(economicContext)],
+    provenance: registry.provenance,
+    conflicts: registry.conflicts,
+    partialResult: registry.partialResult,
+    registryRole: registry.registryRole,
+    economicContext,
   };
 }
 
