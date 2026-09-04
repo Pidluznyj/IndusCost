@@ -4,6 +4,7 @@ import {
   CNPJ_SOURCE_BRASIL_API,
   CNPJ_SOURCE_PUBLICA,
   PROVENANCE_FIELDS,
+  type CnpjCadastreSourceId,
   type CnpjFieldProvenance,
   type RegistryCompareStatus,
 } from "./registryTypes.js";
@@ -110,7 +111,9 @@ export function buildRegistryProvenance(
     const values = [
       hasPrimary ? { source: CNPJ_SOURCE_PUBLICA, value: primaryValue } : null,
       hasSecondary ? { source: CNPJ_SOURCE_BRASIL_API, value: secondaryValue } : null,
-    ].filter((row): row is { source: string; value: string | null } => row != null);
+    ].filter(
+      (row): row is { source: CnpjCadastreSourceId; value: string | null } => row != null
+    );
 
     const chosenValue = primaryValue ?? secondaryValue;
     const chosenSource = primaryValue

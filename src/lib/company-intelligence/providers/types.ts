@@ -1,5 +1,5 @@
 import type { NormalizedCnpjSummary } from "@/src/lib/companyCnpjNormalize.js";
-import type { CnpjCadastreSourceId, CnpjProviderStatus } from "./registryTypes.js";
+import type { CnpjCadastreSourceId, CnpjProviderStatus } from "../registryTypes.js";
 
 export type ProviderSuccess = {
   status: "SUCCESS";
