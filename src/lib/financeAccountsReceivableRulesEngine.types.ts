@@ -38,7 +38,8 @@ export type FinanceArRulesMetricKey =
   | "openUntilYearEnd"
   | "estimatedYearTotal"
   | "periodReceivedAmount"
-  | "periodExpectedInflowAmount";
+  | "periodExpectedInflowAmount"
+  | "receivedInAppliedPeriod";
 
 export type FinanceArRulesInput = {
   externalId?: number;
@@ -98,6 +99,9 @@ export type FinanceAccountsReceivableRulesContext = {
   monthEnd: Date;
   yearEnd: Date;
   forwardFromDate: Date;
+  realizedPeriodKind: "month" | "ytd";
+  realizedPeriodStart: Date;
+  realizedPeriodEnd: Date;
 };
 
 export type FinanceAccountsReceivableMetricDefinition = {
@@ -131,6 +135,12 @@ export type FinanceAccountsReceivableMetrics = {
   estimatedYearTotal: number;
   periodReceivedAmount: number;
   periodExpectedInflowAmount: number;
+  /**
+   * Recebido do recorte temporal aplicado, por settlementDate.
+   * Mês explícito → aquele mês; senão YTD oficial. Não usa dueDate.
+   */
+  receivedInAppliedPeriod: number;
+  receivedInAppliedPeriodKind: "month" | "ytd";
 };
 
 export type FinanceAccountsReceivableHorizonBucket = AccountsReceivableOpenHorizon["buckets"][number];

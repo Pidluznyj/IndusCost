@@ -262,8 +262,13 @@ describe("financeExecutiveReportDataSources", () => {
       year: 2026,
       month: 6,
     });
-    assert.equal(section.kpis.paidMonthCurrent, official.cards.paidThisMonthAmount);
+    assert.equal(section.kpis.paidMonthCurrent, 500);
     assert.equal(section.kpis.paidThisMonthAmount, official.cards.paidThisMonthAmount);
+    assert.notEqual(
+      section.kpis.paidMonthCurrent,
+      official.cards.paidThisMonthAmount,
+      "Pago do mês no relatório usa data efetiva canônica, não o card legado por vencimento"
+    );
   });
 
   it("variação percentual não produz NaN no payload de KPIs", () => {

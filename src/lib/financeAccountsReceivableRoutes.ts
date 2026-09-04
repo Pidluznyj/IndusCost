@@ -9,6 +9,7 @@ import {
   parseFinanceArDashboardFilters,
   type FinanceArDashboardFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import { resolveFinanceCanonicalRealizedLoadWindow } from "@/src/lib/financeCanonicalRealizedPeriod.js";
 import {
   buildFinanceArExportCsv,
 } from "@/src/lib/financeAccountsReceivableExport.js";
@@ -67,7 +68,9 @@ export const FINANCE_AR_EXPORT_PERMISSIONS = [
 ] as const;
 
 async function loadFinanceArRows(filters: FinanceArDashboardFilters) {
-  return loadFinanceArManagementRowsFromPrisma(prisma, filters);
+  return loadFinanceArManagementRowsFromPrisma(prisma, filters, new Date(), {
+    settlementWindow: resolveFinanceCanonicalRealizedLoadWindow(filters.year),
+  });
 }
 
 function parseFinanceArFiltersOrRespond(

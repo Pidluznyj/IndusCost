@@ -30,7 +30,8 @@ export type FinanceApRulesMetricKey =
   | "openUntilYearEnd"
   | "estimatedYearTotal"
   | "periodPaidAmount"
-  | "periodExpectedOutflowAmount";
+  | "periodExpectedOutflowAmount"
+  | "paidInAppliedPeriod";
 
 export type FinanceAccountsPayableRulesFilters = FinanceApDashboardFilters;
 
@@ -47,6 +48,9 @@ export type FinanceAccountsPayableRulesContext = {
   monthEnd: Date;
   yearEnd: Date;
   forwardFromDate: Date;
+  realizedPeriodKind: "month" | "ytd";
+  realizedPeriodStart: Date;
+  realizedPeriodEnd: Date;
 };
 
 export type FinanceAccountsPayableMetricDefinition = {
@@ -76,6 +80,12 @@ export type FinanceAccountsPayableMetrics = {
   estimatedYearTotal: number;
   periodPaidAmount: number;
   periodExpectedOutflowAmount: number;
+  /**
+   * Pago do recorte temporal aplicado, pela data efetiva canônica.
+   * Mês explícito → aquele mês; senão YTD oficial. Não usa dueDate.
+   */
+  paidInAppliedPeriod: number;
+  paidInAppliedPeriodKind: "month" | "ytd";
 };
 
 export type FinanceAccountsPayableDayBucket = {

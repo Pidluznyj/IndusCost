@@ -63,7 +63,7 @@ describe("financeAccountsPayableCalculationAudit", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
+    assert.ok(page.includes("FINANCE_KPI_AP_PAID"));
     assert.ok(FINANCE_AP_PAID_THIS_MONTH_SCOPE.includes("vencimento"));
   });
 

@@ -136,7 +136,7 @@ import {
   FINANCE_KPI_AP_DUE_TODAY,
   FINANCE_KPI_AP_OPEN,
   FINANCE_KPI_AP_OVERDUE,
-  FINANCE_KPI_AP_PAID_THIS_MONTH,
+  FINANCE_KPI_AP_PAID,
   FINANCE_KPI_AP_SCHEDULED,
   FINANCE_KPI_AP_TOP_SUPPLIER,
   FINANCE_KPI_AP_TOTAL_PAYABLE,
@@ -943,12 +943,17 @@ export function FinanceAccountsPayablePage() {
           />
           <FinanceExecutiveTotalizerCard
             icon={Landmark}
-            label="Pago no mês"
+            label="Pago"
             value="—"
-            amount={loading ? undefined : cards?.paidThisMonthAmount}
+            amount={loading ? undefined : data?.metrics?.paidInAppliedPeriod}
             amountFormat="currency"
-            subtitle={withAppliedFilterSub("Mês atual, dentro do filtro", Boolean(filtersActive))}
-            helperText={FINANCE_KPI_AP_PAID_THIS_MONTH}
+            subtitle={withAppliedFilterSub(
+              data?.metrics?.paidInAppliedPeriodKind === "month"
+                ? "Pagamentos pela data efetiva no período"
+                : "Pagamentos de 01/01 até a data-base",
+              Boolean(filtersActive)
+            )}
+            helperText={FINANCE_KPI_AP_PAID}
             tone="success"
             loading={loading}
           />

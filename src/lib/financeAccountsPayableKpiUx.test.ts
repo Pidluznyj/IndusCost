@@ -30,7 +30,7 @@ describe("financeAccountsPayableKpiUx", () => {
     const page = readFileSync(pagePath, "utf8");
     const labels = [
       "Total a pagar",
-      "Pago no mês",
+      "Pago",
       "Em aberto",
       "Vencido gerencial",
       "Vence hoje",
@@ -49,10 +49,10 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.match(page, /FinanceExecutiveTotalizerCard/);
   });
 
-  it("card Pago no mês usa subtítulo curto e explicação negocial no tooltip", () => {
+  it("card Pago usa subtítulo curto e explicação negocial no tooltip", () => {
     const page = readFileSync(pagePath, "utf8");
-    assert.ok(page.includes("Mês atual, dentro do filtro"));
-    assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
+    assert.ok(page.includes("Pagamentos pela data efetiva no período") || page.includes("Pagamentos de 01/01 até a data-base"));
+    assert.ok(page.includes("FINANCE_KPI_AP_PAID"));
     assert.ok(page.includes("formatFinanceKpiCurrency"));
     assert.equal(page.includes("scopeNote={FINANCE_AP_PAID_THIS_MONTH_SCOPE}"), false);
   });

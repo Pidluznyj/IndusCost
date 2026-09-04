@@ -200,6 +200,19 @@ export type FinanceApDashboardPayload = {
   financialHorizon: FinanceHorizonSummary;
   classificationSummary?: FinanceApClassificationSummary;
   classificationFilterOptions?: FinanceApClassificationFilterOptions;
+  /**
+   * Métricas do motor oficial. `paidInAppliedPeriod` é o KPI Pago
+   * (data efetiva canônica). `cards.paidThisMonthAmount` permanece o mês
+   * calendário na carteira recortada por vencimento — outro conceito.
+   */
+  metrics?: {
+    paidYtd: number;
+    paidThisMonth: number;
+    paidInAppliedPeriod: number;
+    paidInAppliedPeriodKind: "month" | "ytd";
+    openAmount: number;
+    overdueAmount: number;
+  };
 };
 
 export type FinanceApUiFilters = {

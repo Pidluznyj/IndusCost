@@ -11,8 +11,9 @@
  *      baixa no ano (`resolveCashFlowArSettlementLoadWindow`), porque o
  *      realizado é alocado por data de baixa;
  *   2. carga AP via `buildCashFlowApPrismaWhere` + select do Fluxo;
- *   3. `filterArRowsForYtdReceived` / `filterApRowsForCashFlowExecutiveTimeline`
- *      (base saneada da timeline executiva);
+ *   3. `filterArRowsForYtdReceived` (AR) e `toFinanceApPaymentScopeFilters` (AP);
+ *      (base saneada do realizado — sem recorte por vencimento);
+
  *   4. o refiltro interno das somas oficiais
  *      (`filterFinanceArManagementReportRows` / `filterFinanceApRows`).
  *
@@ -46,12 +47,11 @@ import {
   buildYtdDashboardFilters,
   filterArRowsForYtdReceived,
 } from "@/src/lib/financeCashFlowExecutiveYtd.js";
-import { filterApRowsForCashFlowExecutiveTimeline } from "@/src/lib/financeCashFlowExecutiveSummary.js";
 import {
   filterFinanceArManagementReportRows,
   toFinanceArSettlementScopeFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
-import { filterFinanceApRows } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { filterFinanceApRows, toFinanceApPaymentScopeFilters } from "@/src/lib/financeAccountsPayableDashboard.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import type { FinanceArNfeOrderLink } from "./financeArOperationalPortfolio.js";
 
@@ -100,12 +100,6 @@ export function deriveFinanceCashFlowCanonicalRealizedYearSets(
       nfeOrderLinks: input.nfeOrderLinks,
     }
   );
-  const apYtd = filterApRowsForCashFlowExecutiveTimeline(
-    input.apRows,
-    ytdFilters,
-    input.referenceDate,
-    input.apSyncCutoff
-  );
 
   // Mesmo refiltro da timeline (`buildExecutiveMonthlyTimeline`): a população do
   // realizado não pode ser recortada por vencimento, senão a baixa de um título
@@ -117,8 +111,8 @@ export function deriveFinanceCashFlowCanonicalRealizedYearSets(
     input.arSyncCutoff
   ) as FinanceCashFlowArRow[];
   const apPaidRows = filterFinanceApRows(
-    apYtd,
-    toApLoadFilters(ytdFilters),
+    input.apRows,
+    toFinanceApPaymentScopeFilters(toApLoadFilters(ytdFilters)),
     input.referenceDate,
     input.apSyncCutoff
   ) as FinanceCashFlowApRow[];

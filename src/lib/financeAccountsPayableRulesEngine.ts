@@ -41,6 +41,7 @@ import {
 } from "./financeOfficialEngineProjection.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
+import { resolveFinanceCanonicalRealizedPeriod } from "./financeCanonicalRealizedPeriod.js";
 import type {
   FinanceAccountsPayableDayBucket,
   FinanceAccountsPayableGridRow,
@@ -57,7 +58,7 @@ import type {
 export const FINANCE_AP_RULES_ENGINE_VERSION = "1.0.0";
 
 export const FINANCE_AP_RULES_ENGINE_NOTE =
-  "Contas a Pagar gerencial: carteira aberta e aging por data de vencimento; pago alocado por vencimento (dueDate). Agenda de pedido de compra excluída da visão gerencial." as const;
+  "Contas a Pagar gerencial: carteira aberta e aging por data de vencimento; pago por data efetiva canônica de pagamento. Agenda de pedido de compra excluída da visão gerencial." as const;
 
 export type {
   FinanceAccountsPayableDayBucket,
@@ -91,16 +92,17 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     dateField: "effectivePaymentDate",
     includes: ["Quitados com baixa no mês"],
     excludes: ["Cancelados"],
-    dateBasisNote: "Data efetiva gerencial — vencimento para títulos quitados.",
+    dateBasisNote: "Data efetiva canônica — resolveFinanceApEffectivePaymentDate com política de conciliação.",
   },
   {
     key: "paidYtd",
     label: "Pago YTD",
-    description: "Soma de pagamentos efetivos entre 01/01 do ano e a data-base.",
+    description: "Soma de pagamentos efetivos entre 01/01 do ano e a data-base, pela data efetiva canônica.",
     valueField: "realizedAmount",
     dateField: "effectivePaymentDate",
     includes: ["Pagamentos no acumulado do ano"],
     excludes: ["Pagamentos fora do YTD"],
+    dateBasisNote: "resolveFinanceApEffectivePaymentDate — não usa dueDate para o período do realizado.",
   },
   {
     key: "openAmount",
@@ -192,6 +194,17 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     includes: ["paidYtd", "openUntilYearEnd"],
     excludes: [],
   },
+  {
+    key: "paidInAppliedPeriod",
+    label: "Pago no período aplicado",
+    description:
+      "Soma de realizedAmount cuja data efetiva canônica cai no recorte temporal aplicado (mês explícito ou YTD). Não usa dueDate.",
+    valueField: "realizedAmount",
+    dateField: "effectivePaymentDate",
+    includes: ["Pagamentos pela data efetiva no período aplicado"],
+    excludes: ["Recorte por vencimento"],
+    dateBasisNote: "KPI Pago da tela Contas a Pagar.",
+  },
 ];
 
 export function normalizeAccountsPayableFilters(
@@ -230,6 +243,7 @@ export function buildAccountsPayableRulesContext(
   const monthEnd = endOfLocalDay(new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0));
   const yearEnd = startOfLocalDay(new Date(year, 11, 31));
   const forward = resolveForwardYearRange(year, referenceDate);
+  const realizedPeriod = resolveFinanceCanonicalRealizedPeriod(filters, referenceDate);
 
   return {
     referenceDate,
@@ -244,6 +258,9 @@ export function buildAccountsPayableRulesContext(
     monthEnd,
     yearEnd,
     forwardFromDate: forward.fromDate,
+    realizedPeriodKind: realizedPeriod.kind,
+    realizedPeriodStart: realizedPeriod.periodStart,
+    realizedPeriodEnd: realizedPeriod.periodEnd,
   };
 }
 
@@ -410,6 +427,18 @@ export function buildAccountsPayableMetrics(
     context.ytdEnd
   );
 
+  const paidInAppliedPeriod =
+    context.realizedPeriodKind === "ytd"
+      ? paidYtd
+      : sumFinanceApPaidInPaymentPeriod(
+          titles,
+          context.filters,
+          context.referenceDate,
+          context.syncCutoff,
+          context.realizedPeriodStart,
+          context.realizedPeriodEnd
+        );
+
   const openUntilYearEnd = sumOpenOperationalDueInPeriod(
     filterFinanceApRows(
       titles,
@@ -449,6 +478,8 @@ export function buildAccountsPayableMetrics(
     estimatedYearTotal: roundMoney(paidYtd + openUntilYearEnd),
     periodPaidAmount: paidYtd,
     periodExpectedOutflowAmount: openUntilYearEnd,
+    paidInAppliedPeriod,
+    paidInAppliedPeriodKind: context.realizedPeriodKind,
   };
 }
 
@@ -539,7 +570,7 @@ export function auditAccountsPayableRules(
   result: FinanceAccountsPayableRulesResult
 ): FinanceAccountsPayableRulesAuditResult {
   const warnings: string[] = [];
-  const metricValues = Object.values(result.metrics);
+  const metricValues = Object.values(result.metrics).filter((v): v is number => typeof v === "number");
   const isFinite = metricValues.every((v) => Number.isFinite(v));
 
   if (!isFinite) {

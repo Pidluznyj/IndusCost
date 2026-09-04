@@ -568,7 +568,7 @@ export function ExecutiveReportDocument({
             />
             <ExecutiveKpiCard
               label="Pago no mês"
-              value={formatExecutiveReportPresentationCurrency(apKpis.paidThisMonthAmount)}
+              value={formatExecutiveReportPresentationCurrency(apKpis.paidMonthCurrent)}
               sub={`Mês de ${String(month).padStart(2, "0")}/${report.year}`}
               hint={kpiHint("Pago")}
               highlight

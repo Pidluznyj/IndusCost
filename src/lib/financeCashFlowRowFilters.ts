@@ -14,6 +14,7 @@ import {
   resolveFinanceApDueDateBounds,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
+import { resolveFinanceCanonicalRealizedLoadWindow } from "./financeCanonicalRealizedPeriod.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -359,16 +360,31 @@ export function buildCashFlowApPrismaWhere(
     dueDateTo: undefined,
   }, syncCutoff);
 
+  const paymentWindow = resolveFinanceCanonicalRealizedLoadWindow(filters.year);
+
   if (filters.viewMode === "projected") {
-    return buildFinanceApPrismaWhere(apFilters, syncCutoff);
+    return buildFinanceApPrismaWhere(apFilters, syncCutoff, { paymentWindow });
   }
 
   const dueFilter: Prisma.DateTimeNullableFilter = {};
   if (from != null) dueFilter.gte = from;
   if (toExclusive != null) dueFilter.lt = toExclusive;
   const dueClause = { dueDate: dueFilter } as Prisma.NomusAccountsPayableWhereInput;
-
+  if (!paymentWindow) {
+    return {
+      AND: [portfolioWhere, dueClause],
+    };
+  }
+  const paymentBounds = {
+    gte: paymentWindow.from,
+    lt: paymentWindow.toExclusive,
+  };
   return {
-    AND: [portfolioWhere, dueClause],
+    AND: [
+      portfolioWhere,
+      {
+        OR: [dueClause, { paymentDate: paymentBounds }, { settlementDate: paymentBounds }],
+      },
+    ],
   };
 }

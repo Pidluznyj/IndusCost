@@ -13,6 +13,7 @@ import {
   resolveFinanceApDashboardFiltersForLoad,
   type FinanceApDashboardFilters,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { resolveFinanceCanonicalRealizedLoadWindow } from "@/src/lib/financeCanonicalRealizedPeriod.js";
 import {
   buildApClassificationFilterOptions,
   buildApCostCenterIntegrationContext,
@@ -67,7 +68,9 @@ export const FINANCE_AP_CLASSIFICATION_READ_PERMISSIONS = [
 ] as const;
 
 async function loadFinanceApRows(filters: FinanceApDashboardFilters) {
-  return loadFinanceApManagementRowsFromPrisma(prisma, filters);
+  return loadFinanceApManagementRowsFromPrisma(prisma, filters, new Date(), {
+    paymentWindow: resolveFinanceCanonicalRealizedLoadWindow(filters.year),
+  });
 }
 
 function resolveFinanceApLoadFilters(

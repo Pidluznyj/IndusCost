@@ -52,6 +52,8 @@ import {
   resolveFinanceApOpenAmount,
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
+import { FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS } from "./finance/financeSettlementReconciliation.js";
+import type { FinanceCanonicalRealizedLoadWindow } from "./financeCanonicalRealizedPeriod.js";
 
 export type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 
@@ -397,9 +399,20 @@ function pushFinanceApPrismaContains(
   and.push({ [field]: { contains: trimmed, mode: "insensitive" } });
 }
 
+export type FinanceApPrismaWhereOptions = {
+  /**
+   * Janela de pagamento efetivo (`paymentDate` / `settlementDate`) admitida
+   * ALÉM da janela de vencimento. Quem aloca o realizado por data efetiva
+   * precisa disso: sem a alternativa, a carga por `dueDate` descarta
+   * pagamentos efetivados no período cujo título venceu em outro ano.
+   */
+  paymentWindow?: FinanceCanonicalRealizedLoadWindow | null;
+};
+
 export function buildFinanceApPrismaWhere(
   filters: FinanceApDashboardFilters,
-  syncCutoff?: NomusApReportSyncCutoff | null
+  syncCutoff?: NomusApReportSyncCutoff | null,
+  options?: FinanceApPrismaWhereOptions
 ): Prisma.NomusAccountsPayableWhereInput {
   const and: Prisma.NomusAccountsPayableWhereInput[] = [];
   const { from, toExclusive, empty } = resolveFinanceApDueDateBounds(filters);
@@ -408,7 +421,18 @@ export function buildFinanceApPrismaWhere(
     const dueDate: Prisma.DateTimeNullableFilter = {};
     if (from != null) dueDate.gte = from;
     if (toExclusive != null) dueDate.lt = toExclusive;
-    and.push({ dueDate });
+    const paymentWindow = options?.paymentWindow;
+    if (paymentWindow) {
+      const paymentBounds = {
+        gte: paymentWindow.from,
+        lt: paymentWindow.toExclusive,
+      };
+      and.push({
+        OR: [{ dueDate }, { paymentDate: paymentBounds }, { settlementDate: paymentBounds }],
+      });
+    } else {
+      and.push({ dueDate });
+    }
   }
 
   pushFinanceApPrismaContains(and, "companyName", filters.companyName);
@@ -675,6 +699,24 @@ export function filterFinanceApManagementReportRows(
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApDashboardRow[] {
   return filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+}
+
+/**
+ * Filtros da população do REALIZADO (pago por data efetiva): preserva todo
+ * o saneamento gerencial e remove apenas o recorte por vencimento. O período
+ * do realizado é aplicado sobre a data efetiva de pagamento; recortar por
+ * `dueDate` antes descartaria baixas de títulos vencidos em outro período.
+ */
+export function toFinanceApPaymentScopeFilters(
+  filters: FinanceApDashboardFilters
+): FinanceApDashboardFilters {
+  return {
+    ...filters,
+    year: undefined,
+    month: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+  };
 }
 
 /** @deprecated Preferir buildOfficialAccountsPayableDashboard (financeAccountsPayableRulesAdapter). */
@@ -1244,7 +1286,9 @@ export function sumFinanceApPaidInPaymentPeriodFromFilteredRows(
   let total = 0;
   for (const row of rows) {
     if (isFinanceApCancelledTitle(row)) continue;
-    const paidAt = resolveFinanceApEffectivePaymentDate(row);
+    const paidAt = resolveFinanceApEffectivePaymentDate(row, {
+      reconciliation: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+    });
     const realized = resolveFinanceApRealizedAmount(row);
     if (
       paidAt &&
@@ -1258,7 +1302,12 @@ export function sumFinanceApPaidInPaymentPeriodFromFilteredRows(
   return roundMoney(total);
 }
 
-/** Soma pagamentos por data efetiva — mesma regra de `paidThisMonthAmount` no dashboard. */
+/**
+ * Soma pagamentos por data efetiva canônica. O recorte por vencimento dos
+ * filtros é removido da população (`toFinanceApPaymentScopeFilters`) para não
+ * descartar baixas do período cujo título venceu fora dele. Demais filtros
+ * gerenciais seguem valendo.
+ */
 export function sumFinanceApPaidInPaymentPeriod(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
@@ -1267,7 +1316,12 @@ export function sumFinanceApPaidInPaymentPeriod(
   periodStart: Date,
   periodEnd: Date
 ): number {
-  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+  const filteredRows = filterFinanceApRows(
+    rows,
+    toFinanceApPaymentScopeFilters(filters),
+    referenceDate,
+    syncCutoff
+  );
   return sumFinanceApPaidInPaymentPeriodFromFilteredRows(filteredRows, periodStart, periodEnd);
 }
 
@@ -1280,10 +1334,11 @@ export type FinanceApManagementRowsLoadResult = {
 export async function loadFinanceApManagementRowsFromPrisma(
   db: Pick<PrismaClient, "nomusAccountsPayable">,
   filters: FinanceApDashboardFilters,
-  _referenceDate: Date = new Date()
+  _referenceDate: Date = new Date(),
+  options?: FinanceApPrismaWhereOptions
 ): Promise<FinanceApManagementRowsLoadResult> {
   const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(db);
-  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
+  const where = buildFinanceApPrismaWhere(filters, syncCutoff, options);
   const rows = await db.nomusAccountsPayable.findMany({
     where,
     select: FINANCE_AP_TITLE_SELECT,

@@ -30,6 +30,7 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import { startOfCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { resolveForwardYearRange } from "./financeCashFlowExecutiveSummary.js";
+import { resolveFinanceCanonicalRealizedPeriod } from "./financeCanonicalRealizedPeriod.js";
 import { isFinanceArOverdueWithoutFiscalDocument } from "./financeAccountsReceivableManagement.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { FinanceArDashboardCards } from "./financeAccountsReceivableDashboardTypes.js";
@@ -240,6 +241,18 @@ const METRIC_DEFINITIONS: FinanceAccountsReceivableMetricDefinition[] = [
     includes: ["Abertos com vencimento futuro no ano"],
     excludes: ["Quitados"],
   },
+  {
+    key: "receivedInAppliedPeriod",
+    label: "Recebido no período aplicado",
+    description:
+      "Soma de amountReceived cuja settlementDate cai no recorte temporal aplicado (mês explícito ou YTD). Não usa dueDate.",
+    valueField: "amountReceived",
+    dateField: "settlementDate",
+    includes: ["Baixas pela data de recebimento no período aplicado"],
+    excludes: ["Títulos sem settlementDate no período", "Recorte por vencimento"],
+    dateBasisNote:
+      "KPI Recebido da tela Contas a Receber. Distinto de cards.totalReceivedAmount (soma na carteira recortada por dueDate).",
+  },
 ];
 
 function safeMoney(value: unknown): number {
@@ -315,6 +328,7 @@ export function buildAccountsReceivableRulesContext(
   const monthEnd = endOfLocalDay(new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0));
   const yearEnd = startOfLocalDay(new Date(year, 11, 31));
   const forward = resolveForwardYearRange(year, referenceDate);
+  const realizedPeriod = resolveFinanceCanonicalRealizedPeriod(filters, referenceDate);
 
   return {
     referenceDate,
@@ -329,6 +343,9 @@ export function buildAccountsReceivableRulesContext(
     monthEnd,
     yearEnd,
     forwardFromDate: forward.fromDate,
+    realizedPeriodKind: realizedPeriod.kind,
+    realizedPeriodStart: realizedPeriod.periodStart,
+    realizedPeriodEnd: realizedPeriod.periodEnd,
   };
 }
 
@@ -422,6 +439,10 @@ export function getAccountsReceivableValue(
         : 0;
     case "periodReceivedAmount":
       return isReceivedInPeriod(row, context.ytdStart, context.ytdEnd) ? normalized.amountReceived : 0;
+    case "receivedInAppliedPeriod":
+      return isReceivedInPeriod(row, context.realizedPeriodStart, context.realizedPeriodEnd)
+        ? normalized.amountReceived
+        : 0;
     case "periodExpectedInflowAmount":
       return normalized.isOpen && isOpenDueInPeriod(row, context.forwardFromDate, context.yearEnd)
         ? normalized.openAmount
@@ -650,6 +671,18 @@ export function buildAccountsReceivableMetrics(
     context.ytdEnd
   );
 
+  const receivedInAppliedPeriod =
+    context.realizedPeriodKind === "ytd"
+      ? receivedYtd
+      : sumFinanceArReceivedBySettlementInPeriod(
+          titles,
+          context.filters,
+          context.referenceDate,
+          context.syncCutoff,
+          context.realizedPeriodStart,
+          context.realizedPeriodEnd
+        );
+
   const openUntilYearEnd = sumOpenDueInPeriod(
     filterFinanceArManagementReportRows(
       titles,
@@ -691,6 +724,8 @@ export function buildAccountsReceivableMetrics(
     estimatedYearTotal: roundMoney(receivedYtd + openUntilYearEnd),
     periodReceivedAmount: receivedYtd,
     periodExpectedInflowAmount: openUntilYearEnd,
+    receivedInAppliedPeriod,
+    receivedInAppliedPeriodKind: context.realizedPeriodKind,
   };
 }
 
@@ -773,7 +808,7 @@ export function auditAccountsReceivableRules(
   result: FinanceAccountsReceivableRulesResult
 ): FinanceAccountsReceivableRulesAuditResult {
   const warnings: string[] = [];
-  const metricValues = Object.values(result.metrics);
+  const metricValues = Object.values(result.metrics).filter((v): v is number => typeof v === "number");
   const isFinite = metricValues.every((v) => Number.isFinite(v));
 
   if (!isFinite) {

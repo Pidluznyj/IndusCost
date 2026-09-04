@@ -40,7 +40,10 @@ export const FINANCE_KPI_AP_TOTAL_PAYABLE =
   "Soma do valor original dos títulos no universo filtrado. Respeita filtros de ano, mês, fornecedor, empresa e status aplicados na tela." as const;
 
 export const FINANCE_KPI_AP_PAID_THIS_MONTH =
-  "Pagamentos realizados alocados no mês calendário atual pelo vencimento (dueDate), dentre os títulos que passam pelo filtro. A data de baixa/pagamento é mantida apenas para auditoria operacional." as const;
+  "Pagamentos realizados no mês calendário atual, dentre os títulos da carteira filtrada por vencimento. Distinto do KPI Pago, que usa a data efetiva de pagamento no período aplicado." as const;
+
+export const FINANCE_KPI_AP_PAID =
+  "Dinheiro efetivamente pago no recorte temporal aplicado, pela data efetiva canônica de pagamento. Ano sem mês usa YTD (01/01 até a data-base no ano corrente). Não usa vencimento para decidir em qual período o pagamento ocorreu." as const;
 
 export const FINANCE_KPI_AP_OPEN =
   "Saldo em aberto na visão gerencial: títulos com saldo positivo após filtros. Exclui agendas de pedido de compra da visão gerencial." as const;
@@ -67,7 +70,7 @@ export const FINANCE_KPI_AR_TOTAL_RECEIVABLE =
   "Soma do valor original dos títulos no universo filtrado. Respeita filtros de ano, mês, cliente, empresa e status aplicados na carteira." as const;
 
 export const FINANCE_KPI_AR_RECEIVED =
-  "Total de valores já recebidos (baixas) dentre os títulos que passam pelo filtro aplicado." as const;
+  "Dinheiro efetivamente recebido no recorte temporal aplicado, pela data de baixa (settlementDate). Ano sem mês usa YTD (01/01 até a data-base no ano corrente). Não usa vencimento para decidir em qual período o recebimento ocorreu." as const;
 
 export const FINANCE_KPI_AR_OPEN =
   "Saldo em aberto na carteira: soma dos saldos positivos após os filtros aplicados." as const;
@@ -126,7 +129,7 @@ export const FINANCE_HORIZON_AR_BUCKET_TOOLTIPS = {
 } as const;
 
 export const FINANCE_KPI_CF_RECEIVED_YTD =
-  "Soma dos valores recebidos em Contas a Receber no ano selecionado, alocados pelo vencimento (dueDate). settlementDate permanece apenas para auditoria operacional. Fórmula: SUM(amountReceived) de 01/01 até a data de corte." as const;
+  "Soma dos valores recebidos em Contas a Receber no ano selecionado, alocados pela data de baixa (settlementDate). Fórmula: SUM(amountReceived) de 01/01 até a data de corte, após saneamento gerencial." as const;
 
 export const FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END =
   "Saldo em aberto a receber no restante do ano selecionado (de hoje até 31/12). Ignora filtro de mês. Fórmula: SUM(balanceReceivable) por dueDate no intervalo futuro. Não inclui títulos liquidados." as const;
@@ -135,7 +138,7 @@ export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
   "Estimativa total de entradas do ano: Recebido YTD + saldo em aberto a receber até 31/12. Fórmula: Recebido YTD + A receber até fim do ano." as const;
 
 export const FINANCE_KPI_CF_PAID_YTD =
-  "Soma dos valores realizados em Contas a Pagar no ano selecionado, alocados pela data de vencimento (dueDate). Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. A data de baixa/pagamento é mantida apenas para auditoria operacional. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
+  "Soma dos valores efetivamente pagos em Contas a Pagar no ano selecionado, alocados pela data efetiva canônica de pagamento. Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros gerenciais de AP — não usa vencimento para o período do realizado." as const;
 
 export const FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END =
   "Saldo em aberto a pagar no restante do ano selecionado (de hoje até 31/12). Ignora filtro de mês — distinto de Saídas do período. Fórmula: SUM(openAmount) por vencimento operacional no intervalo futuro. Não inclui títulos baixados." as const;

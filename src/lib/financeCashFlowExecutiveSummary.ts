@@ -5,6 +5,7 @@ import {
   roundMoney,
   startOfLocalDay,
   sumFinanceApPaidInPaymentPeriodFromFilteredRows,
+  toFinanceApPaymentScopeFilters,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
 import {
@@ -389,6 +390,8 @@ export function buildExecutiveMonthlyTimeline(
     filters: FinanceCashFlowDashboardFilters;
     arSyncCutoff?: NomusArReportSyncCutoff | null;
     apSyncCutoff?: NomusApReportSyncCutoff | null;
+    /** População do pago (sem recorte por dueDate). Default: `apRows`. */
+    apPaidSourceRows?: FinanceCashFlowApRow[];
   }
 ): FinanceCashFlowExecutiveMonthlyRow[] {
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
@@ -411,8 +414,8 @@ export function buildExecutiveMonthlyTimeline(
   const officialApFiltered =
     officialContext != null
       ? filterFinanceApRows(
-          apRows,
-          toApLoadFilters(officialContext.filters),
+          officialContext.apPaidSourceRows ?? apRows,
+          toFinanceApPaymentScopeFilters(toApLoadFilters(officialContext.filters)),
           referenceDate,
           officialContext.apSyncCutoff
         )
@@ -545,6 +548,7 @@ export function buildFinanceCashFlowExecutiveSummary(
     filters: ytdFilters,
     arSyncCutoff: syncCutoff,
     apSyncCutoff,
+    apPaidSourceRows: allApRows,
   });
 
   const openForwardByMonth = buildApOpenForwardMonthlyBreakdown(apYtd, year, forward);

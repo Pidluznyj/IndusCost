@@ -33,7 +33,7 @@ export type FinanceArDashboardCards = {
   totalRecords: number;
   /** Σ amountReceivable no universo filtrado. */
   totalAmountReceivable: number;
-  /** Σ amountReceived no universo filtrado. */
+  /** Σ amountReceived no universo filtrado por vencimento (dueDate). Não é o KPI Recebido. */
   totalReceivedAmount: number;
   openTitlesCount: number;
   settledTitlesCount: number;
@@ -192,6 +192,20 @@ export type FinanceArDashboardPayload = {
   dataQualitySummary: FinanceArDataQualityAlertItem[];
   dataSanitization: FinanceArDashboardSanitization;
   financialHorizon: AccountsReceivableOpenHorizon;
+  /**
+   * Métricas do motor oficial. `receivedInAppliedPeriod` é o KPI Recebido
+   * (settlementDate). `cards.totalReceivedAmount` permanece a soma na carteira
+   * recortada por vencimento — outro conceito.
+   */
+  metrics?: {
+    receivedYtd: number;
+    receivedThisMonth: number;
+    receivedInAppliedPeriod: number;
+    receivedInAppliedPeriodKind: "month" | "ytd";
+    openAmount: number;
+    overdueAmount: number;
+    dueTodayAmount: number;
+  };
 };
 
 export type FinanceArUiFilters = {

@@ -438,7 +438,7 @@ describe("Fluxo de Caixa — baixa que cruza o ano do filtro", () => {
     );
   });
 
-  it("10. Contas a Receber segue com a semântica atual (recorte por vencimento)", () => {
+  it("10. card legado do CR por vencimento permanece; KPI Recebido usa settlementDate", () => {
     const crRows = ALL_ROWS.filter((row) => {
       const { from, toExclusive } = resolveFinanceArDueDateBounds({
         year: 2026,
@@ -456,7 +456,7 @@ describe("Fluxo de Caixa — baixa que cruza o ano do filtro", () => {
     assert.equal(
       dashboard.cards.totalReceivedAmount,
       20000,
-      "card legado do CR continua somando a safra de vencimento — não muda nesta correção"
+      "cards.totalReceivedAmount continua sendo a safra de vencimento (outro conceito)"
     );
   });
 });

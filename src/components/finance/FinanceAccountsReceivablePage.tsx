@@ -938,9 +938,14 @@ export function FinanceAccountsReceivablePage() {
             icon={TrendingUp}
             label="Recebido"
             value="—"
-            amount={loading ? undefined : cards?.totalReceivedAmount}
+            amount={loading ? undefined : data?.metrics?.receivedInAppliedPeriod}
             amountFormat="currency"
-            sub={withAppliedFilterSub("Baixas acumuladas no filtro", Boolean(filtersActive))}
+            sub={withAppliedFilterSub(
+              data?.metrics?.receivedInAppliedPeriodKind === "month"
+                ? "Baixas pela data de recebimento no período"
+                : "Baixas de 01/01 até a data-base",
+              Boolean(filtersActive)
+            )}
             hint={FINANCE_KPI_AR_RECEIVED}
             colorClass="text-[#059669]"
             loading={loading}

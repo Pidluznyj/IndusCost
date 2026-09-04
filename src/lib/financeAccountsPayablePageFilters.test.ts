@@ -43,7 +43,7 @@ describe("financeAccountsPayablePageFilters", () => {
       "utf8"
     );
     assert.ok(page.includes("Total a pagar"));
-    assert.ok(page.includes("Pago no mês"));
+    assert.ok(page.includes("Pago"));
     assert.ok(page.includes("Vencido gerencial"));
     assert.ok(page.includes("Centro de Ações"));
     assert.ok(page.includes("Títulos Críticos"));
@@ -85,7 +85,7 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("alwaysVisible"));
-    assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
+    assert.ok(page.includes("FINANCE_KPI_AP_PAID"));
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(page.includes("titlesLocalFilter"));

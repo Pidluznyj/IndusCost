@@ -3,6 +3,7 @@
  * Não altera regra financeira; só elimina leituras/enriches duplicados no mesmo request.
  */
 import type { PrismaClient } from "@prisma/client";
+import { resolveFinanceCanonicalRealizedLoadWindow } from "./financeCanonicalRealizedPeriod.js";
 import {
   buildFinanceApPrismaWhere,
   mapPrismaRowToFinanceApDashboardRow,
@@ -153,7 +154,12 @@ export async function loadExecutiveReportArRows(
     kind,
     fingerprint: fingerprintFilters(filters),
   });
-  const where = buildFinanceArPrismaWhere(filters, referenceDate, shared.arSyncCutoff);
+  const where = buildFinanceArPrismaWhere(
+    filters,
+    referenceDate,
+    shared.arSyncCutoff,
+    { settlementWindow: resolveFinanceCanonicalRealizedLoadWindow(filters.year) }
+  );
   const rawRows = await db.nomusAccountsReceivable.findMany({
     where,
     select: FINANCE_AR_TITLE_SELECT,
@@ -174,7 +180,9 @@ export async function loadExecutiveReportApRows(
     kind,
     fingerprint: fingerprintFilters(filters),
   });
-  const where = buildFinanceApPrismaWhere(filters, shared.apSyncCutoff);
+  const where = buildFinanceApPrismaWhere(filters, shared.apSyncCutoff, {
+    paymentWindow: resolveFinanceCanonicalRealizedLoadWindow(filters.year),
+  });
   const rows = await db.nomusAccountsPayable.findMany({
     where,
     select: FINANCE_AP_TITLE_SELECT,
