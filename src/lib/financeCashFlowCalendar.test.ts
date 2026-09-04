@@ -468,7 +468,7 @@ describe("financeCashFlowCalendar", () => {
     );
     const monthInflow = payload.calendar.days.reduce((s, d) => s + d.inflow, 0);
     const monthOutflow = payload.calendar.days.reduce((s, d) => s + d.outflow, 0);
-    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    const jun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(monthInflow, jun.estimatedInflow);
     assert.equal(monthOutflow, jun.estimatedOutflow);
     assert.equal(payload.calendar.reconciliation.status, "ok");
@@ -485,7 +485,7 @@ describe("financeCashFlowCalendar", () => {
       REF
     );
     const calendarOutflow = payload.calendar.days.reduce((s, d) => s + d.outflow, 0);
-    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    const jun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(calendarOutflow, jun.estimatedOutflow);
   });
 
@@ -499,7 +499,7 @@ describe("financeCashFlowCalendar", () => {
       REF
     );
     const calendarInflow = payload.calendar.days.reduce((s, d) => s + d.inflow, 0);
-    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    const jun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(calendarInflow, jun.estimatedInflow);
   });
 
@@ -546,7 +546,7 @@ describe("financeCashFlowCalendar", () => {
     assert.equal(payload.calendar.reconciliation.estimatedOutflowDiff, 0);
     assert.equal(payload.calendar.reconciliation.paidDiff, 0);
     assert.equal(payload.calendar.reconciliation.openPayableDiff, 0);
-    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    const jun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(jun.estimatedOutflow, 1_270_773.31);
   });
 

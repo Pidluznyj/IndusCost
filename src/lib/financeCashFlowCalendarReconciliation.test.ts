@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildCalendarReconciliation,
   buildFinanceCashFlowCalendar,
+  getCalendarDayByDate,
   resolveCalendarDisplayMonth,
   sumCalendarDays,
 } from "./financeCashFlowCalendar.js";
@@ -136,7 +137,7 @@ describe("financeCashFlowCalendarReconciliation", () => {
     assert.equal(monthInflow, payload.calendar.monthSummary.inflow);
     assert.equal(payload.calendar.reconciliation.status, "ok");
     assert.equal(payload.calendar.reconciliation.calendarEstimatedInflow, monthInflow);
-    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    const jun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(
       payload.calendar.reconciliation.timelineEstimatedInflow,
       jun.estimatedInflow
@@ -246,5 +247,84 @@ describe("financeCashFlowCalendarReconciliation", () => {
       REF
     );
     assert.deepEqual(sumCalendarDays(calendar.days), calendar.monthSummary);
+  });
+
+  it("A. calendário planejado aloca CR por vencimento em maio, não pela baixa em junho", () => {
+    const arRows = [
+      arRow({
+        amountReceivable: 1500,
+        amountReceived: 1500,
+        balanceReceivable: 0,
+        dueDate: new Date(2026, 4, 15),
+        settlementDate: new Date(2026, 5, 20),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      arRows,
+      [],
+      {
+        viewMode: "projected",
+        dateBase: "due",
+        status: "all",
+        year: 2026,
+        calendarDisplayMonth: 5,
+      },
+      REF
+    );
+    const mayDay = getCalendarDayByDate(payload.calendar, "2026-05-15")!;
+    const junNav = payload.calendar.monthNav.find((m) => m.month === 6)!;
+    const plannedMay = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 5)!;
+    const plannedJun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
+
+    assert.equal(payload.calendar.displayMonth, 5);
+    assert.equal(mayDay.inflow, 1500);
+    assert.equal(payload.calendar.monthSummary.inflow, 1500);
+    assert.equal(junNav.inflow, 0);
+    assert.equal(plannedMay.received, 1500);
+    assert.equal(plannedJun.received, 0);
+    assert.equal(payload.calendar.reconciliation.status, "ok");
+    assert.equal(payload.calendar.reconciliation.timelineEstimatedInflow, plannedMay.estimatedInflow);
+    assert.equal(payload.calendar.reconciliation.estimatedInflowDiff, 0);
+  });
+
+  it("B. calendário planejado aloca CP por vencimento em maio, não pelo pagamento em junho", () => {
+    const apRows = [
+      apRow({
+        amountPayable: 4000,
+        amountPaid: 4000,
+        balancePayable: 0,
+        dueDate: new Date(2026, 4, 10),
+        paymentDate: new Date(2026, 5, 20),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      apRows,
+      {
+        viewMode: "projected",
+        dateBase: "due",
+        status: "all",
+        year: 2026,
+        calendarDisplayMonth: 5,
+      },
+      REF
+    );
+    const mayDay = getCalendarDayByDate(payload.calendar, "2026-05-10")!;
+    const junNav = payload.calendar.monthNav.find((m) => m.month === 6)!;
+    const plannedMay = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 5)!;
+    const plannedJun = payload.executiveSummary.plannedMonthlyTimeline.find((p) => p.month === 6)!;
+
+    assert.equal(payload.calendar.displayMonth, 5);
+    assert.equal(mayDay.outflow, 4000);
+    assert.equal(payload.calendar.monthSummary.outflow, 4000);
+    assert.equal(junNav.outflow, 0);
+    assert.equal(plannedMay.paid, 4000);
+    assert.equal(plannedJun.paid, 0);
+    assert.equal(payload.calendar.reconciliation.status, "ok");
+    assert.equal(
+      payload.calendar.reconciliation.timelineEstimatedOutflow,
+      plannedMay.estimatedOutflow
+    );
+    assert.equal(payload.calendar.reconciliation.estimatedOutflowDiff, 0);
   });
 });

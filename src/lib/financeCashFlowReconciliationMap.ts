@@ -516,7 +516,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       id: "monthly_timeline_chart",
       uiBlock: "FinanceCashFlowMonthlyPlannedChart",
       uiTab: "overview",
-      payloadPath: "executiveSummary.monthlyTimeline",
+      payloadPath: "executiveSummary.plannedMonthlyTimeline",
       label: "Linha do tempo mensal (gráfico)",
       sourceModule: "financeCashFlowExecutiveSummary.ts",
       sourceFunction: "buildExecutiveMonthlyTimeline",
@@ -535,7 +535,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       respectsAppliedFilters: true,
       cashFlowInternalOracle: FINANCE_CASH_FLOW_TIMELINE_ORACLE.executiveMonthlyTimeline.builder,
       conceptualException:
-        "Oráculo interno validado — ignora viewMode; sempre estima inflow/outflow mensal.",
+        "Gráfico planejado (`plannedMonthlyTimeline`) aloca Recebido/Pago por vencimento; ignora viewMode.",
       alternatePath: "monthlySeries (respeita viewMode projected/realized/combined)",
     },
     {

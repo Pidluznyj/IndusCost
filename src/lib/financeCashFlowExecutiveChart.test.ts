@@ -210,6 +210,7 @@ describe("FinanceCashFlowMonthlyPlannedChart UI", () => {
     assert.ok(chartIdx >= 0);
     assert.ok(tableIdx >= 0);
     assert.ok(chartIdx < tableIdx);
+    assert.match(page, /executiveSummary\.plannedMonthlyTimeline/);
     assert.match(page, /executiveSummary\.monthlyTimeline/);
   });
 

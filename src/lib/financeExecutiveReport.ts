@@ -279,13 +279,17 @@ export function resolveExecutiveReportCashFlowMonthlyTimeline(
   return cashFlowAnnualPayload.executiveSummary.monthlyTimeline;
 }
 
+/**
+ * Gráfico anual planejado do Relatório Presidencial — alocação por vencimento.
+ * Distinto de `resolveExecutiveReportCashFlowMonthlyTimeline` (realizado por movimento).
+ */
 export function buildExecutiveReportCashFlowAnnualChart(
   cashFlowAnnualPayload: ReturnType<typeof buildFinanceCashFlowDashboard>,
   year: number,
   highlightMonth: number
 ) {
   const built = buildExecutiveCashFlowAnnualChart(
-    cashFlowAnnualPayload.executiveSummary.monthlyTimeline,
+    cashFlowAnnualPayload.executiveSummary.plannedMonthlyTimeline,
     year,
     highlightMonth
   );

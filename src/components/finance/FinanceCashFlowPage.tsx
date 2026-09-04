@@ -519,7 +519,7 @@ export function FinanceCashFlowPage() {
 
           <FinanceCashFlowMonthlyPlannedChart
             year={payload.executiveSummary.metadata.year}
-            rows={payload.executiveSummary.monthlyTimeline}
+            rows={payload.executiveSummary.plannedMonthlyTimeline}
           />
 
           <FinanceCashFlowMonthlyTimelineTable

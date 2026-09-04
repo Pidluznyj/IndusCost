@@ -606,6 +606,44 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(jun?.estimatedOutflow, 950);
   });
 
+  it("gráfico planejado aloca por vencimento; tabela mensal aloca por movimento", () => {
+    const arRows = [
+      arRow({
+        amountReceivable: 1500,
+        amountReceived: 1500,
+        balanceReceivable: 0,
+        dueDate: new Date(2026, 4, 15),
+        settlementDate: new Date(2026, 5, 20),
+        sourceInvoiceId: 100,
+        sourceInvoiceNumber: "NF-100",
+      }),
+    ];
+    const apRows = [
+      apRow({
+        amountPayable: 4000,
+        amountPaid: 4000,
+        balancePayable: 0,
+        dueDate: new Date(2026, 4, 10),
+        paymentDate: new Date(2026, 5, 20),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters, REF);
+    const plannedMay = payload.executiveSummary.plannedMonthlyTimeline.find((r) => r.month === 5);
+    const plannedJun = payload.executiveSummary.plannedMonthlyTimeline.find((r) => r.month === 6);
+    const tableMay = payload.executiveSummary.monthlyTimeline.find((r) => r.month === 5);
+    const tableJun = payload.executiveSummary.monthlyTimeline.find((r) => r.month === 6);
+
+    assert.equal(plannedMay?.received, 1500);
+    assert.equal(plannedMay?.paid, 4000);
+    assert.equal(plannedJun?.received, 0);
+    assert.equal(plannedJun?.paid, 0);
+
+    assert.equal(tableMay?.received, 0);
+    assert.equal(tableMay?.paid, 0);
+    assert.equal(tableJun?.received, 1500);
+    assert.equal(tableJun?.paid, 4000);
+  });
+
   it("timeline mensal exclui intercompany e pedido de compra como Contas a Pagar", () => {
     const rows: FinanceApDashboardRow[] = [
       apRow({

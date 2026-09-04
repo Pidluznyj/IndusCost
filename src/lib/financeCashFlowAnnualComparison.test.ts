@@ -121,7 +121,7 @@ describe("financeCashFlowAnnualComparison", () => {
     const routes = read("src/lib/financeCashFlowRoutes.ts");
     assert.ok(routes.includes("/api/finance/cash-flow/annual-comparison"));
     assert.ok(routes.includes("loadAnnualComparisonPortfolioRows"));
-    assert.ok(routes.includes("buildCashFlowAnnualComparison"));
+    assert.ok(routes.includes("timedBuildAnnual"));
     assert.doesNotMatch(routes, /annual-comparison[\s\S]*parseFiltersOrRespond/);
     assert.match(routes, /annual-comparison[\s\S]*?loadAnnualComparisonPortfolioRows/);
   });
@@ -158,7 +158,7 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[11]?.paidAmount, 0);
   });
 
-  it("3. AR recebido entra em receivedAmount pela data de realização (baixa)", () => {
+  it("3. AR recebido entra em receivedAmount pelo vencimento, não pela baixa", () => {
     const arRows = [
       arRow({
         externalId: 1,
@@ -169,9 +169,9 @@ describe("financeCashFlowAnnualComparison", () => {
       }),
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
-    assert.equal(payload.months[0]?.receivedAmount, 800);
-    assert.equal(payload.months[2]?.receivedAmount, 0);
-    assert.equal(payload.months[0]?.receivableOpenAmount, 0);
+    assert.equal(payload.months[0]?.receivedAmount, 0);
+    assert.equal(payload.months[2]?.receivedAmount, 800);
+    assert.equal(payload.months[2]?.receivableOpenAmount, 0);
   });
 
   it("4. AR aberto entra em receivableOpenAmount pela data de vencimento", () => {
@@ -202,6 +202,45 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(payload.months[0]?.paidAmount, 0);
     assert.equal(payload.months[2]?.paidAmount, 450);
     assert.equal(payload.months[0]?.payableOpenAmount, 0);
+  });
+
+  it("5b. comparativo anual não segue a data de movimento da tabela mensal", () => {
+    const arRows = [
+      arRow({
+        externalId: 1,
+        dueDate: new Date(2026, 4, 15),
+        settlementDate: new Date(2026, 5, 20),
+        amountReceived: 1500,
+        balanceReceivable: 0,
+      }),
+    ];
+    const apRows = [
+      apRow({
+        externalId: 3,
+        dueDate: new Date(2026, 4, 10),
+        paymentDate: new Date(2026, 5, 20),
+        amountPaid: 4000,
+        balancePayable: 0,
+      }),
+    ];
+    const dashboard = buildFinanceCashFlowDashboard(
+      arRows,
+      apRows,
+      createAnnualComparisonBaseFilters(),
+      BASE
+    );
+    const annual = buildCashFlowAnnualComparison(arRows, apRows, 2026, BASE);
+    const plannedMay = dashboard.executiveSummary.plannedMonthlyTimeline.find((r) => r.month === 5)!;
+    const tableJun = dashboard.executiveSummary.monthlyTimeline.find((r) => r.month === 6)!;
+
+    assert.equal(annual.months[4]?.receivedAmount, 1500);
+    assert.equal(annual.months[4]?.paidAmount, 4000);
+    assert.equal(annual.months[5]?.receivedAmount, 0);
+    assert.equal(annual.months[5]?.paidAmount, 0);
+    assert.equal(annual.months[4]?.receivedAmount, plannedMay.received);
+    assert.equal(annual.months[4]?.paidAmount, plannedMay.paid);
+    assert.equal(tableJun.received, 1500);
+    assert.equal(tableJun.paid, 4000);
   });
 
   it("6. AP aberto entra em payableOpenAmount pela data de vencimento", () => {
@@ -378,7 +417,7 @@ describe("financeCashFlowAnnualComparison", () => {
     ];
     const payload = buildCashFlowAnnualComparison(arRows, [], 2026, BASE);
     assert.equal(payload.hasReceivableGoal, true);
-    assert.equal(payload.months[0]?.receivableGoal, 1300);
+    assert.equal(payload.months[0]?.receivableGoal, 1200);
   });
 
   it("7b. netCashAmount bate com saldo líquido do gráfico planejado", () => {
@@ -410,7 +449,7 @@ describe("financeCashFlowAnnualComparison", () => {
       BASE
     );
     const plannedRows = buildExecutiveMonthlyPlannedChartRows(
-      dashboard.executiveSummary.monthlyTimeline
+      dashboard.executiveSummary.plannedMonthlyTimeline
     );
     const annual = buildCashFlowAnnualComparison(arRows, apRows, 2026, BASE);
 

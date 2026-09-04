@@ -472,6 +472,7 @@ export function buildCashFlowAnnualComparison(
     filters: ytdFilters,
     arSyncCutoff,
     apSyncCutoff,
+    dateAxis: "dueDate",
   });
 
   const previousYear = year - 1;
@@ -484,6 +485,7 @@ export function buildCashFlowAnnualComparison(
       filters: { ...ytdFilters, year: previousYear },
       arSyncCutoff,
       apSyncCutoff,
+      dateAxis: "dueDate",
     }
   );
 

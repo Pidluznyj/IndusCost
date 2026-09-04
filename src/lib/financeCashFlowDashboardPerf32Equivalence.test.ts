@@ -280,6 +280,7 @@ describe("PERF 3.2 cash-flow dashboard equivalence", () => {
     const { ar, ap } = representativeRows();
     const timeline = buildExecutiveMonthlyTimeline(ar, ap, 2026, REF, {
       filters: FILTERS,
+      dateAxis: "movement",
     });
     assert.equal(timeline.length, 12);
     for (let month = 1; month <= 12; month += 1) {
