@@ -52,6 +52,7 @@ export function pickFirstDateTime(raw: JsonObject, keys: readonly string[]): Dat
 
 export function pickPurchaseOrderItemsArray(raw: JsonObject): JsonObject[] {
   const candidates = [
+    raw.itensPedidoCompra,
     raw.itens,
     raw.items,
     raw.pedidosCompraItens,

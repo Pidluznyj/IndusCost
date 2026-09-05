@@ -3,12 +3,32 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { hasPermission } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { mapNomusPurchaseOrderItemStatus } from "@/src/lib/nomus/nomusPurchaseOrderClassifier.js";
+import { asString } from "@/src/lib/nomus/nomusPurchaseOrderParser.js";
 import {
   buildNomusPurchaseOrderKpis,
   buildNomusPurchaseOrderWhere,
   parseNomusPurchaseOrderListFilters,
   serializeNomusPurchaseOrderListRow,
 } from "@/src/lib/nomus/nomusPurchaseOrderQuery.js";
+
+function extrasFromItemRaw(raw: unknown): {
+  lineCode: string | null;
+  itemStatusCode: number | null;
+  itemStatusKey: string | null;
+  itemStatusLabel: string | null;
+} {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { lineCode: null, itemStatusCode: null, itemStatusKey: null, itemStatusLabel: null };
+  }
+  const status = mapNomusPurchaseOrderItemStatus((raw as Record<string, unknown>).status);
+  return {
+    lineCode: asString((raw as Record<string, unknown>).item),
+    itemStatusCode: status.code,
+    itemStatusKey: status.key,
+    itemStatusLabel: status.label,
+  };
+}
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -155,6 +175,7 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
           id: item.id,
           lineIndex: item.lineIndex,
           lineExternalId: item.lineExternalId,
+          ...extrasFromItemRaw(item.rawPayload),
           productExternalId: item.productExternalId,
           productCode: item.productCode,
           description: item.description,

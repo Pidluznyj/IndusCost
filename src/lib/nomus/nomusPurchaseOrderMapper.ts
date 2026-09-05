@@ -1,5 +1,8 @@
 import { stableNomusPayloadHash } from "@/src/lib/nomusAccountsReceivableMapper.js";
-import { classifyNomusPurchaseOrderStage } from "./nomusPurchaseOrderClassifier.js";
+import {
+  classifyNomusPurchaseOrderStage,
+  mapNomusPurchaseOrderItemStatus,
+} from "./nomusPurchaseOrderClassifier.js";
 import {
   pickFirstBoolean,
   pickFirstDate,
@@ -20,22 +23,22 @@ import type {
 export { stableNomusPayloadHash };
 
 const HEADER_ID_KEYS = ["id", "idPedidoCompra", "idPedido", "codigoInterno"] as const;
-const ORDER_NUMBER_KEYS = ["numero", "numeroPedido", "codigo", "pedido", "numeroDocumento"] as const;
-const SUPPLIER_ID_KEYS = ["idFornecedor", "idPessoa", "idFornecedorPessoa"] as const;
+const ORDER_NUMBER_KEYS = ["codigoPedido", "numero", "numeroPedido", "codigo", "pedido", "numeroDocumento"] as const;
+const SUPPLIER_ID_KEYS = ["idPessoaFornecedor", "idFornecedor", "idPessoa", "idFornecedorPessoa"] as const;
 const SUPPLIER_NAME_KEYS = ["nomeFornecedor", "nomePessoa", "fornecedor"] as const;
 const SUPPLIER_TAX_KEYS = ["cnpjFornecedor", "cnpjPessoa", "cpfCnpj", "cpfCnpjPessoa", "documentoFornecedor"] as const;
 const STATUS_KEYS = ["status", "situacao", "statusPedido", "descricaoStatus"] as const;
 const CANCELED_KEYS = ["cancelado", "cancelada", "isCancelado"] as const;
 const ISSUED_KEYS = ["dataEmissao", "data", "dataPedido"] as const;
-const EXPECTED_KEYS = ["dataPrevisao", "dataEntrega", "previsaoEntrega", "dataPrevisaoEntrega"] as const;
+const EXPECTED_KEYS = ["dataEntregaPadrao", "dataPrevisao", "dataEntrega", "previsaoEntrega", "dataPrevisaoEntrega"] as const;
 const CREATED_KEYS = ["dataCriacao", "dataHoraCriacao"] as const;
 const MODIFIED_KEYS = ["dataModificacao", "atualizadoEm", "dataAtualizacao"] as const;
-const PAYMENT_KEYS = ["condicaoPagamento", "nomeFormaPagamento", "formaPagamento"] as const;
+const PAYMENT_KEYS = ["condicaoPagamentoTexto", "condicaoPagamento", "nomeFormaPagamento", "formaPagamento"] as const;
 const COMMENT_KEYS = ["observacoes", "comentarios", "observacao"] as const;
 const CURRENCY_KEYS = ["moeda", "siglaMoeda"] as const;
 const TOTAL_KEYS = ["valorTotal", "valor", "total"] as const;
 const DISCOUNT_KEYS = ["valorDesconto", "desconto"] as const;
-const FREIGHT_KEYS = ["valorFrete", "frete"] as const;
+const FREIGHT_KEYS = ["valorTotalFrete", "valorFrete", "frete"] as const;
 
 const LINE_ID_KEYS = ["id", "idItem", "idLinha", "sequencia"] as const;
 const PRODUCT_ID_KEYS = ["idProduto", "idMaterial", "idItemProduto"] as const;
@@ -70,9 +73,14 @@ export function mapNomusPurchaseOrderItemPayload(
     pickFirstMoney(raw, REMAINING_QTY_KEYS)
   );
 
+  const itemStatus = mapNomusPurchaseOrderItemStatus(raw.status);
+
   return {
     lineIndex,
     lineExternalId: pickFirstInt(raw, LINE_ID_KEYS),
+    lineCode: pickFirstString(raw, ["item"]),
+    itemStatusCode: itemStatus.code,
+    itemStatusKey: itemStatus.key,
     productExternalId: pickFirstInt(raw, PRODUCT_ID_KEYS),
     productCode: pickFirstString(raw, PRODUCT_CODE_KEYS),
     description: pickFirstString(raw, DESCRIPTION_KEYS),
@@ -116,6 +124,7 @@ export function mapNomusPurchaseOrderPayload(raw: JsonObject): MapNomusPurchaseO
     statusRaw,
     orderedQuantity,
     receivedQuantity,
+    itemStatusCodes: items.map((item) => item.itemStatusCode),
   });
 
   const row: MappedNomusPurchaseOrder = {

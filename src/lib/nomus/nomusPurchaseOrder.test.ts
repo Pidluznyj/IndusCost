@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { classifyNomusPurchaseOrderStage, isNomusPurchaseOrderOverdue } from "./nomusPurchaseOrderClassifier.js";
+import {
+  classifyNomusPurchaseOrderStage,
+  classifyNomusPurchaseOrderStageFromItemStatuses,
+  isNomusPurchaseOrderOverdue,
+  mapNomusPurchaseOrderItemStatus,
+} from "./nomusPurchaseOrderClassifier.js";
 import {
   mapNomusPurchaseOrderPayload,
   stableNomusPayloadHash,
@@ -66,6 +71,66 @@ const SANITIZED_PAYLOAD = {
   ],
 };
 
+const LIVE_PAYLOAD = {
+  codigoPedido: "PC00612",
+  condicaoPagamentoTexto: ".",
+  dataEmissao: "02/09/2026",
+  dataEntregaPadrao: "11/09/2026",
+  id: 613,
+  idCondicaoPagamento: 86,
+  idContato: 51,
+  idEmpresa: 2,
+  idFormaPagamento: 10,
+  idPessoaComprador: 1120,
+  idPessoaFornecedor: 215,
+  idSetorEntrada: 9,
+  idTipoMovimentacao: 17,
+  itensPedidoCompra: [
+    {
+      idProduto: 1292,
+      idSetorEntrada: 9,
+      idTipoMovimentacao: 17,
+      idUnidadeMedida: 46,
+      item: "000010",
+      observacoes: "Temos 50 rolos em estoque",
+      percentualDesconto: "0",
+      quantidade: "50",
+      status: 2,
+      valorDesconto: "0",
+      valorUnitario: "62,77",
+    },
+  ],
+  parcelas: [
+    {
+      dataVencimento: "16/10/2026",
+      geraAdiantamento: false,
+      idFormaPagamento: 10,
+      valorParcela: "1.136,68",
+    },
+  ],
+  valorTotalFrete: "0",
+  valorTotalOutrasDespesasAcessorias: "0",
+  valorTotalSeguro: "0",
+};
+
+function liveWithItemStatus(status: number) {
+  return {
+    ...LIVE_PAYLOAD,
+    itensPedidoCompra: LIVE_PAYLOAD.itensPedidoCompra.map((item) => ({ ...item, status })),
+  };
+}
+
+function liveWithItemStatuses(statuses: number[]) {
+  return {
+    ...LIVE_PAYLOAD,
+    itensPedidoCompra: statuses.map((status, index) => ({
+      ...LIVE_PAYLOAD.itensPedidoCompra[0],
+      item: String(10 * (index + 1)).padStart(6, "0"),
+      status,
+    })),
+  };
+}
+
 describe("nomusPurchaseOrderParser", () => {
   it("extrai array de pedidos de envelopes conhecidos", () => {
     assert.equal(pickPurchaseOrderArray({ pedidoscompra: [SANITIZED_PAYLOAD] }).length, 1);
@@ -78,6 +143,11 @@ describe("nomusPurchaseOrderParser", () => {
     assert.equal(pickFirstInt({ id: "90001" }, ["id"]), 90001);
     assert.equal(pickFirstInt({ id: null }, ["id"]), null);
     assert.equal(pickPurchaseOrderItemsArray({ itens: null }).length, 0);
+  });
+
+  it("reconhece itensPedidoCompra do contrato real", () => {
+    assert.equal(pickPurchaseOrderItemsArray(LIVE_PAYLOAD).length, 1);
+    assert.equal(pickPurchaseOrderItemsArray(LIVE_PAYLOAD)[0].item, "000010");
   });
 });
 
@@ -110,6 +180,50 @@ describe("nomusPurchaseOrderMapper", () => {
     assert.equal(first, second);
     assert.notEqual(first, changed);
   });
+
+  it("mapeia o contrato real validado (PC00612)", () => {
+    const mapped = mapNomusPurchaseOrderPayload(LIVE_PAYLOAD);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.externalId, 613);
+    assert.equal(mapped.row.orderNumber, "PC00612");
+    assert.equal(mapped.row.supplierExternalId, 215);
+    assert.equal(mapped.row.supplierName, null);
+    assert.equal(mapped.row.paymentTerms, ".");
+    assert.equal(mapped.row.freightAmount, 0);
+    assert.equal(mapped.row.totalAmount, null);
+    assert.equal(mapped.row.itemCount, 1);
+    assert.equal(mapped.row.orderedQuantity, 50);
+    assert.equal(mapped.row.receivedQuantity, null);
+    assert.equal(mapped.row.stage, "APPROVED");
+    assert.notEqual(mapped.row.stage, "UNKNOWN");
+    assert.ok(mapped.row.issuedAt);
+    assert.equal(mapped.row.issuedAt!.getFullYear(), 2026);
+    assert.equal(mapped.row.issuedAt!.getMonth(), 8);
+    assert.equal(mapped.row.issuedAt!.getDate(), 2);
+    assert.ok(mapped.row.expectedAt);
+    assert.equal(mapped.row.expectedAt!.getFullYear(), 2026);
+    assert.equal(mapped.row.expectedAt!.getMonth(), 8);
+    assert.equal(mapped.row.expectedAt!.getDate(), 11);
+    const item = mapped.row.items[0];
+    assert.equal(item.productExternalId, 1292);
+    assert.equal(item.orderedQuantity, 50);
+    assert.equal(item.receivedQuantity, null);
+    assert.equal(item.unitPrice, 62.77);
+    assert.equal(item.lineCode, "000010");
+    assert.equal(item.lineExternalId, null);
+    assert.equal(item.itemStatusCode, 2);
+    assert.equal(item.itemStatusKey, "RELEASED");
+  });
+
+  it("não fabrica quantidade recebida a partir do status 4", () => {
+    const mapped = mapNomusPurchaseOrderPayload(liveWithItemStatus(4));
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.items[0].receivedQuantity, null);
+    assert.equal(mapped.row.receivedQuantity, null);
+    assert.equal(mapped.row.stage, "RECEIVED");
+  });
 });
 
 describe("nomusPurchaseOrderClassifier", () => {
@@ -134,6 +248,46 @@ describe("nomusPurchaseOrderClassifier", () => {
   it("não classifica ausência de quantidade como recebido", () => {
     assert.notEqual(classifyNomusPurchaseOrderStage({ statusRaw: "Aberto" }), "RECEIVED");
     assert.equal(classifyNomusPurchaseOrderStage({}), "UNKNOWN");
+  });
+
+  it("mapeia status oficial de item 1–8", () => {
+    assert.deepEqual(mapNomusPurchaseOrderItemStatus(1), {
+      code: 1,
+      key: "WAITING_RELEASE",
+      label: "Aguardando liberação",
+    });
+    assert.equal(mapNomusPurchaseOrderItemStatus(2).key, "RELEASED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(3).key, "PARTIALLY_RECEIVED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(4).key, "FULLY_RECEIVED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(5).key, "RECEIVED_WITH_CUT");
+    assert.equal(mapNomusPurchaseOrderItemStatus(6).key, "CANCELED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(7).key, "PARTIALLY_RETURNED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(8).key, "FULLY_RETURNED");
+    assert.equal(mapNomusPurchaseOrderItemStatus(9).key, null);
+    assert.equal(mapNomusPurchaseOrderItemStatus("2").code, 2);
+  });
+
+  it("deriva fase do pedido pelos status dos itens", () => {
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([1]), "OPEN");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([2]), "APPROVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([3]), "PARTIALLY_RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([4]), "RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([6]), "CANCELED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([6, 6]), "CANCELED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([4, 4]), "RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([2, 4]), "PARTIALLY_RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([1, 2]), "OPEN");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([5]), "PARTIALLY_RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([7]), "PARTIALLY_RECEIVED");
+    assert.equal(classifyNomusPurchaseOrderStageFromItemStatuses([8]), "UNKNOWN");
+    const waiting = mapNomusPurchaseOrderPayload(liveWithItemStatus(1));
+    assert.equal(waiting.ok && waiting.row.stage, "OPEN");
+    const mixed = mapNomusPurchaseOrderPayload(liveWithItemStatuses([2, 4]));
+    assert.equal(mixed.ok && mixed.row.stage, "PARTIALLY_RECEIVED");
+    const allCanceled = mapNomusPurchaseOrderPayload(liveWithItemStatuses([6, 6]));
+    assert.equal(allCanceled.ok && allCanceled.row.stage, "CANCELED");
+    const allReceived = mapNomusPurchaseOrderPayload(liveWithItemStatuses([4, 4]));
+    assert.equal(allReceived.ok && allReceived.row.stage, "RECEIVED");
   });
 
   it("atraso só em fase aberta com previsão vencida", () => {

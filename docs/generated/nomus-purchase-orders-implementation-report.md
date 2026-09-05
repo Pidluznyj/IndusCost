@@ -18,7 +18,7 @@ Sem writeback. Sem vínculo automático com Solicitação de Compra, recebimento
 
 ## Endpoint
 
-Recurso `pedidoscompra` via `buildNomusUrl`. Contrato real **não validado ao vivo** neste worktree (sem credencial local). Aliases documentados em `nomus-purchase-orders-contract.md`.
+Recurso `pedidoscompra` via `buildNomusUrl`. Contrato **validado ao vivo em 05/09/2026** (HTTP 200, raiz = array, 50 registros/página). Campos oficiais em `nomus-purchase-orders-contract.md`.
 
 ## Paginação
 
@@ -36,7 +36,7 @@ Migration aditiva: `prisma/migrations/20260922120000_nomus_purchase_orders`.
 
 Fases: `CANCELED`, `OPEN`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `UNKNOWN`.
 
-Regras: cancelamento primeiro; `RECEIVED` só com quantidade suficiente; ausência de dado ≠ recebido; status desconhecido → `UNKNOWN`.
+O live não traz status de cabeçalho. A fase sai dos status oficiais 1–8 dos itens (`mapNomusPurchaseOrderItemStatus`). `RECEIVED` só se todos os itens forem `4`. Status `5`/`7`/`8` não viram recebimento/cancelamento financeiro. Quantidade recebida só se a API enviar; status 4 não fabrica `receivedQuantity`.
 
 ## Sync
 
@@ -74,9 +74,9 @@ Idempotência: `sha256(JSON.stringify(raw))`. Hash igual → só `syncedAt`/`las
 
 ## Limitações
 
-- Contrato Nomus ainda parcial (probe local indisponível).
-- Filtro `dataInicio`/`dataFim` é best-effort até homolog confirmar.
-- Recebimento/saldo só se o payload trouxer quantidade atendida.
+- Contrato live validado; `dataInicio`/`dataFim` ainda best-effort.
+- Listagem não trouxe `quantidadeAtendida`; recebimento/saldo só se a API enviar.
+- Nome/CNPJ do fornecedor e `valorTotal` de cabeçalho não vieram no live.
 - Sem vínculo com PurchaseRequest, estoque interno ou AP.
 - Preview de 12 meses **não** foi aplicado em banco (sem API local).
 

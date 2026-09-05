@@ -60,6 +60,9 @@ type DetailResponse = ListItem & {
   rawPayload?: unknown;
   items: Array<{
     id: string;
+    lineCode: string | null;
+    itemStatusCode: number | null;
+    itemStatusLabel: string | null;
     productCode: string | null;
     description: string | null;
     unit: string | null;
@@ -367,8 +370,10 @@ function NomusPurchaseOrderDetail({ id }: { id: string }) {
             <table className="min-w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2">Item</th>
                   <th className="px-3 py-2">Código</th>
                   <th className="px-3 py-2">Produto</th>
+                  <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Qtd pedida</th>
                   <th className="px-3 py-2">Qtd recebida</th>
                   <th className="px-3 py-2">Saldo</th>
@@ -379,8 +384,12 @@ function NomusPurchaseOrderDetail({ id }: { id: string }) {
               <tbody>
                 {row.items.map((item) => (
                   <tr key={item.id} className="border-t border-border">
+                    <td className="px-3 py-2 font-mono">{item.lineCode ?? "—"}</td>
                     <td className="px-3 py-2">{item.productCode ?? "—"}</td>
                     <td className="px-3 py-2">{item.description ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {item.itemStatusLabel ?? (item.itemStatusCode != null ? String(item.itemStatusCode) : "—")}
+                    </td>
                     <td className="px-3 py-2">{item.orderedQuantity ?? "—"}</td>
                     <td className="px-3 py-2">{item.receivedQuantity ?? "—"}</td>
                     <td className="px-3 py-2">{item.remainingQuantity ?? "—"}</td>
@@ -390,7 +399,7 @@ function NomusPurchaseOrderDetail({ id }: { id: string }) {
                 ))}
                 {row.items.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-6 text-center text-muted-foreground" colSpan={7}>
+                    <td className="px-3 py-6 text-center text-muted-foreground" colSpan={9}>
                       {row.receivingAvailable
                         ? "Sem linhas neste pedido."
                         : "Informação de recebimento indisponível."}

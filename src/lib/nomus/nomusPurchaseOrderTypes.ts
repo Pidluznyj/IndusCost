@@ -11,11 +11,28 @@ export const NOMUS_PURCHASE_ORDER_STAGES = [
 
 export type NomusPurchaseOrderStage = (typeof NOMUS_PURCHASE_ORDER_STAGES)[number];
 
+export const NOMUS_PURCHASE_ORDER_ITEM_STATUS_KEYS = [
+  "WAITING_RELEASE",
+  "RELEASED",
+  "PARTIALLY_RECEIVED",
+  "FULLY_RECEIVED",
+  "RECEIVED_WITH_CUT",
+  "CANCELED",
+  "PARTIALLY_RETURNED",
+  "FULLY_RETURNED",
+] as const;
+
+export type NomusPurchaseOrderItemStatusKey =
+  (typeof NOMUS_PURCHASE_ORDER_ITEM_STATUS_KEYS)[number];
+
 export type JsonObject = Record<string, unknown>;
 
 export type MappedNomusPurchaseOrderItem = {
   lineIndex: number;
   lineExternalId: number | null;
+  lineCode: string | null;
+  itemStatusCode: number | null;
+  itemStatusKey: NomusPurchaseOrderItemStatusKey | null;
   productExternalId: number | null;
   productCode: string | null;
   description: string | null;

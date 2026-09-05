@@ -1,110 +1,144 @@
 # Contrato Nomus — Pedidos de Compra
 
-**Status:** parcial. Não houve probe HTTP autenticada neste worktree (sem `.env` / `NOMUS_BASE_URL` local).
+**Status:** validado ao vivo em 05/09/2026.
 
-O parser **não fabrica** um contrato oficial. Ele aceita aliases observados nos irmãos Nomus (`contasPagar`, `contasReceber`, `pedidos`, `recebimentos`) e preserva o `rawPayload` integral para auditoria e reprocessamento.
+Probe autenticada:
 
-## Endpoint esperado
+```text
+GET https://lazarios.nomus.com.br/lazarios/rest/pedidoscompra
+```
 
-| Recurso | Método | Caminho relativo a `NOMUS_BASE_URL` |
-| --- | --- | --- |
-| Lista | GET | `pedidoscompra?pagina=1&tamanhoPagina=50` |
-| Detalhe | GET | `pedidoscompra/{id}` (não usado na 1ª versão; a lista já carrega itens quando presentes) |
+Resultado:
 
-`NOMUS_BASE_URL` no projeto já termina em `/rest/`. O cliente oficial é `buildNomusUrl` + `fetchNomusJson` (`src/lib/nomusRestClient.ts`): timeout, retry, 429 com backoff, sem logar token.
+* HTTP 200
+* payload raiz = **array**
+* 50 registros na primeira página (limite observado)
+* sem status de cabeçalho; a fase vem dos itens
 
-## Probe
+O cliente oficial continua sendo `buildNomusUrl` + `fetchNomusJson`. Recurso: `pedidoscompra`.
+
+## Probe operacional
 
 ```bash
 npm run nomus:purchase-orders:probe
 ```
 
-Política: 1 página, `tamanhoPagina=1`, no máximo 2 retries, sem paralelismo, sem escrita no Nomus.
+Política: poucas requisições, timeout, retry de 429, sem escrita no Nomus.
 
-Histórico conhecido: tentativa antiga a `/pedidoscompra?pagina=1` retornou **HTTP 429**. Respeitar `Retry-After`. Não martelar.
+## Paginação
 
-## Paginação (inferida dos irmãos)
+Observado/confirmado:
 
-Campos aceitos no envelope:
+* raiz = array de pedidos
+* primeira página = 50 registros
+* query usada: `pagina` + `tamanhoPagina`
 
-- `pagina`
-- `tamanhoPagina`
-- `totalPaginas` / `totalPages` / `paginas`
-- `hasMore`
-- arrays em `pedidoscompra`, `pedidosCompra`, `dados`, `data`, `results`, `items`
+Ainda não confirmado no live:
 
-Parada: página vazia, página menor que `tamanhoPagina`, ou `page >= totalPaginas`.
+* `totalPaginas` / `hasMore` no envelope (a raiz é array, não objeto)
+* se `dataInicio` / `dataFim` filtram de fato
 
-Janela temporal enviada como `dataInicio` / `dataFim` (`dd/MM/yyyy`), no mesmo espírito de AP/AR. Se a API ignorar esses parâmetros, o sync continua por paginação e a idempotência/hash evita churn.
+Parada conservadora: página vazia, página menor que `tamanhoPagina`, ou fim de `totalPaginas` se o envelope trouxer.
 
-## Campos de cabeçalho (aliases tolerados)
+## Campos oficiais de cabeçalho (validados)
 
-| Conceito | Aliases lidos | Persistido |
+| Campo Nomus | Persistido | Notas |
 | --- | --- | --- |
-| ID oficial | `id`, `idPedidoCompra`, `idPedido` | `externalId` (obrigatório) |
-| Número | `numero`, `numeroPedido`, `codigo` | `orderNumber` |
-| Fornecedor ID | `idFornecedor`, `idPessoa` | `supplierExternalId` |
-| Fornecedor nome | `nomeFornecedor`, `nomePessoa`, `fornecedor` | `supplierName` |
-| Documento | `cnpjFornecedor`, `cnpjPessoa`, `cpfCnpj` | `supplierTaxId` |
-| Status | `status`, `situacao`, `statusPedido` | `statusRaw` |
-| Cancelado | `cancelado`, `cancelada` | `canceled` |
-| Emissão | `dataEmissao`, `data`, `dataPedido` | `issuedAt` |
-| Previsão | `dataPrevisao`, `dataEntrega`, `previsaoEntrega` | `expectedAt` |
-| Criação | `dataCriacao`, `dataHoraCriacao` | `createdAtNomus` |
-| Alteração | `dataModificacao`, `atualizadoEm` | `modifiedAtNomus` |
-| Condição | `condicaoPagamento`, `nomeFormaPagamento` | `paymentTerms` |
-| Observações | `observacoes`, `comentarios` | `comments` |
-| Moeda | `moeda`, `siglaMoeda` | `currency` |
-| Totais | `valorTotal`, `valorDesconto`, `valorFrete` | decimais opcionais |
-| Itens | `itens`, `items`, `pedidosCompraItens` | `NomusPurchaseOrderItem` |
+| `id` | `externalId` | obrigatório |
+| `codigoPedido` | `orderNumber` | ex.: `PC00612` |
+| `idPessoaFornecedor` | `supplierExternalId` | ex.: 215; **sem nome** no payload |
+| `idPessoaComprador` | — | só no raw |
+| `idEmpresa` | — | só no raw |
+| `dataEmissao` | `issuedAt` | `dd/MM/yyyy` |
+| `dataEntregaPadrao` | `expectedAt` | `dd/MM/yyyy` |
+| `condicaoPagamentoTexto` | `paymentTerms` | pode ser `"."` |
+| `observacoes` | `comments` | quando presente |
+| `itensPedidoCompra` | itens | array oficial |
+| `parcelas` | — | só no raw; não é Contas a Pagar |
+| `valorTotalFrete` | `freightAmount` | |
+| `valorTotalSeguro` | — | só no raw (sem coluna nova) |
+| `valorTotalOutrasDespesasAcessorias` | — | só no raw |
 
-## Campos de item (aliases tolerados)
+**Não presentes / não confirmados no live:**
 
-| Conceito | Aliases |
+* nome do fornecedor / CNPJ
+* status textual de cabeçalho
+* `valorTotal` de cabeçalho
+* `quantidadeAtendida` / saldo
+* `dataModificacao` confiável para incremental
+
+`totalAmount` do cabeçalho **não é calculado** a partir das linhas nesta versão.
+
+## Campos oficiais de item (validados)
+
+| Campo Nomus | Persistido / mapeado | Notas |
+| --- | --- | --- |
+| `item` | `lineCode` (memória) + raw | texto; preservar zeros (`"000010"`). **Não** vira `lineExternalId` |
+| `idProduto` | `productExternalId` | |
+| `quantidade` | `orderedQuantity` | |
+| `valorUnitario` | `unitPrice` | BR `"62,77"` → 62.77 |
+| `status` | código 1–8 no raw | status **do item**, não do cabeçalho |
+| `idUnidadeMedida` | — | só no raw |
+| `idSetorEntrada` | — | só no raw |
+| `idTipoMovimentacao` | — | só no raw |
+| `percentualDesconto` / `valorDesconto` | — | só no raw |
+| `dataEntrega` | — | quando existir no item |
+| `observacoes` | — | do item, no raw |
+
+`quantidadeAtendida` **não veio** na listagem. `receivedQuantity` fica null. Status 4 **não** fabrica quantidade recebida.
+
+## Status oficial dos itens
+
+```text
+1 = Aguardando liberação   WAITING_RELEASE
+2 = Liberado               RELEASED
+3 = Atendido parcialmente  PARTIALLY_RECEIVED
+4 = Atendido totalmente    FULLY_RECEIVED
+5 = Atendido com corte     RECEIVED_WITH_CUT
+6 = Cancelado              CANCELED
+7 = Devolvido parcialmente PARTIALLY_RETURNED
+8 = Devolvido totalmente   FULLY_RETURNED
+```
+
+## Fase canônica do pedido
+
+O live não traz status de cabeçalho. A fase é derivada dos status dos itens:
+
+| Itens | Fase |
 | --- | --- |
-| ID linha | `id`, `idItem`, `idLinha`, `sequencia` |
-| Produto | `idProduto`, `codigoProduto`, `descricao` |
-| Unidade | `unidade`, `unidadeMedida` |
-| Qtd pedida | `quantidade`, `qtde`, `quantidadePedida` |
-| Qtd atendida | `quantidadeAtendida`, `quantidadeRecebida` |
-| Saldo | `saldo`, `quantidadeSaldo` (ou `pedida − atendida` se ambos existirem) |
-| Preço / total | `valorUnitario`, `valorTotal` |
+| todos `1` | `OPEN` |
+| todos `2` | `APPROVED` |
+| mistura só `1`+`2` | `OPEN` |
+| todos `3` ou algum `3`/`5`/`7` | `PARTIALLY_RECEIVED` |
+| todos `4` | `RECEIVED` |
+| `4` + aberto/liberado/cancelado/devolvido | `PARTIALLY_RECEIVED` |
+| todos `6` | `CANCELED` |
+| todos `5` ou todos `7` | `PARTIALLY_RECEIVED` (conservador; não é RECEIVED) |
+| todos `8` ou só `6`+`8` | `UNKNOWN` (não inventar cancelamento/recebimento) |
 
-## Exemplo sanitizado (estrutura, não prova de produção)
+Um único item `2` (caso PC00612) → `APPROVED`.
+
+## Exemplo sanitizado real (PC00612)
 
 ```json
 {
-  "id": 90001,
-  "numero": "PC-1001",
-  "idFornecedor": 77,
-  "nomeFornecedor": "Fornecedor Exemplo LTDA",
-  "cnpjFornecedor": "<redigido>",
-  "status": "Aberto",
-  "cancelado": false,
-  "dataEmissao": "15/03/2026",
-  "dataPrevisao": "20/03/2026",
-  "valorTotal": "1.250,50",
-  "itens": [
+  "codigoPedido": "PC00612",
+  "condicaoPagamentoTexto": ".",
+  "dataEmissao": "02/09/2026",
+  "dataEntregaPadrao": "11/09/2026",
+  "id": 613,
+  "idPessoaFornecedor": 215,
+  "itensPedidoCompra": [
     {
-      "id": 1,
-      "idProduto": 501,
-      "codigoProduto": "MP-001",
-      "descricao": "Chapa sanitizada",
-      "quantidade": "10,000",
-      "quantidadeAtendida": "4,000",
-      "valorUnitario": "100,00"
+      "idProduto": 1292,
+      "item": "000010",
+      "quantidade": "50",
+      "status": 2,
+      "valorUnitario": "62,77"
     }
-  ]
+  ],
+  "valorTotalFrete": "0"
 }
 ```
 
-## O que precisa ser validado em homolog
-
-1. HTTP 200 em `GET /rest/pedidoscompra?pagina=1`.
-2. Nome real do array e de `totalPaginas`.
-3. Se `dataInicio`/`dataFim` filtram de fato.
-4. Se itens vêm na lista ou só no detalhe `{id}`.
-5. Nomes reais de status/cancelamento.
-6. Se existe quantidade atendida oficial.
-
-Até lá: `CONTRATO_NOMUS_VALIDADO=PARCIAL`.
+Aliases anteriores (`numero`, `itens`, `idFornecedor`, …) continuam aceitos para não quebrar fixtures antigas.
