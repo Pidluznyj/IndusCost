@@ -46,6 +46,14 @@ import {
   savePurchaseOrderSupplierEvaluation,
 } from "./supplierPerformance.server.js";
 import {
+  buildNomusSupplierEvaluationWorklist,
+  saveNomusPurchaseOrderSupplierEvaluation,
+  saveNomusPurchaseOrderSupplierEvaluationsBatch,
+} from "./nomusPurchaseOrderEvaluation.server.js";
+import {
+  NOMUS_SUPPLIER_EVALUATION_BATCH_MAX_ITEMS,
+} from "./nomusPurchaseOrderEvaluation.js";
+import {
   buildSupplierPerformanceCsvFilename,
   buildSupplierPerformanceDetailCsv,
   buildSupplierPerformanceSummaryCsv,
@@ -290,4 +298,92 @@ export function registerSupplierPerformanceRoutes(
       return res.status(mapped.status).json(mapped.body);
     }
   });
+
+  app.get("/api/supplier-performance/nomus-orders/worklist", ...orderView, async (req, res) => {
+    try {
+      const payload = await buildNomusSupplierEvaluationWorklist(
+        prisma,
+        req.query as Record<string, unknown>
+      );
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(payload);
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.put(
+    "/api/supplier-performance/nomus-orders/:id",
+    ...orderUpdate,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!id || typeof id !== "string") {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const payload = await saveNomusPurchaseOrderSupplierEvaluation(
+          prisma,
+          id,
+          { userId: user.id, userName: user.name ?? user.email ?? null },
+          {
+            qualityScore: body.qualityScore,
+            deliveryScore: body.deliveryScore,
+            conformityScore: body.conformityScore,
+            serviceScore: body.serviceScore,
+            notes: body.notes,
+            expectedRevision: body.expectedRevision,
+            revisionReason: body.revisionReason,
+          }
+        );
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(payload);
+      } catch (error) {
+        const mapped = mapSupplierEvaluationError(error);
+        return res.status(mapped.status).json(mapped.body);
+      }
+    }
+  );
+
+  app.post(
+    "/api/supplier-performance/nomus-orders/batch",
+    ...orderUpdate,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const items = Array.isArray(body.items) ? body.items : [];
+        if (items.length > NOMUS_SUPPLIER_EVALUATION_BATCH_MAX_ITEMS) {
+          return res.status(400).json({
+            error: `No máximo ${NOMUS_SUPPLIER_EVALUATION_BATCH_MAX_ITEMS} pedidos por lote.`,
+            code: "INVALID_SUPPLIER_EVALUATION_PAYLOAD",
+            field: "items",
+          });
+        }
+        const payload = await saveNomusPurchaseOrderSupplierEvaluationsBatch(
+          prisma,
+          { userId: user.id, userName: user.name ?? user.email ?? null },
+          items as Array<{
+            nomusPurchaseOrderId: unknown;
+            qualityScore: unknown;
+            deliveryScore: unknown;
+            conformityScore: unknown;
+            serviceScore: unknown;
+            notes?: unknown;
+            expectedRevision?: unknown;
+            revisionReason?: unknown;
+          }>
+        );
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(payload);
+      } catch (error) {
+        const mapped = mapSupplierEvaluationError(error);
+        return res.status(mapped.status).json(mapped.body);
+      }
+    }
+  );
 }

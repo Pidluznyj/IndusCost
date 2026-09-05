@@ -25,7 +25,7 @@ function createFakeApp() {
     routes.push({ method, path, handlers });
   };
   return {
-    app: { get: push("GET"), put: push("PUT") } as never,
+    app: { get: push("GET"), put: push("PUT"), post: push("POST") } as never,
     routes,
   };
 }
@@ -134,17 +134,20 @@ function findRoute(routes: Registered[], method: string, path: string): Register
 }
 
 describe("registro das rotas", () => {
-  it("registra as seis rotas da feature", () => {
+  it("registra as rotas da feature incluindo a worklist Nomus", () => {
     const { routes } = register(ALL_PERMISSIONS);
     assert.deepEqual(
       routes.map((r) => `${r.method} ${r.path}`).sort(),
       [
         "GET /api/purchase-orders/:id/supplier-evaluation",
+        "GET /api/supplier-performance/nomus-orders/worklist",
         "GET /api/supplier-performance/orders.csv",
         "GET /api/supplier-performance/report",
         "GET /api/supplier-performance/report.csv",
         "GET /api/supplier-performance/suppliers/:supplierId",
+        "POST /api/supplier-performance/nomus-orders/batch",
         "PUT /api/purchase-orders/:id/supplier-evaluation",
+        "PUT /api/supplier-performance/nomus-orders/:id",
       ]
     );
   });
@@ -232,6 +235,46 @@ describe("feature flag ligada — permissões", () => {
       { params: { id: "nao-uuid" } }
     );
     assert.equal(ok.statusCode, 400);
+  });
+
+  it("worklist Nomus exige view; escrita exige update", async () => {
+    process.env[FLAG_ENV] = "1";
+    const denied = register([]);
+    assert.equal(
+      (
+        await runRoute(
+          findRoute(denied.routes, "GET", "/api/supplier-performance/nomus-orders/worklist"),
+          { query: { evaluationStatus: "nope" } }
+        )
+      ).statusCode,
+      403
+    );
+
+    const viewer = register(["operations.purchases:view"]);
+    const badFilter = await runRoute(
+      findRoute(viewer.routes, "GET", "/api/supplier-performance/nomus-orders/worklist"),
+      { query: { evaluationStatus: "nope" } }
+    );
+    assert.equal(badFilter.statusCode, 400);
+
+    const viewOnlyPut = await runRoute(
+      findRoute(viewer.routes, "PUT", "/api/supplier-performance/nomus-orders/:id"),
+      { params: { id: "abc" } }
+    );
+    assert.equal(viewOnlyPut.statusCode, 403);
+
+    const writer = register(["operations.purchases:update"]);
+    const put = await runRoute(
+      findRoute(writer.routes, "PUT", "/api/supplier-performance/nomus-orders/:id"),
+      { params: { id: "abc" }, body: {} }
+    );
+    assert.equal(put.statusCode, 400);
+
+    const batchDenied = await runRoute(
+      findRoute(viewer.routes, "POST", "/api/supplier-performance/nomus-orders/batch"),
+      { body: { items: [] } }
+    );
+    assert.equal(batchDenied.statusCode, 403);
   });
 
   it("desempenho exige finance.suppliers:view E operations.purchases:view", async () => {
