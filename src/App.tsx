@@ -42,6 +42,7 @@ import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
 import { NomusPurchaseOrderModule } from "./components/NomusPurchaseOrderModule";
+import { NomusSupplierEvaluationWorklistPage } from "./components/supply-chain/supplier-performance/NomusSupplierEvaluationWorklistPage";
 import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
@@ -404,6 +405,17 @@ export default function App() {
               description="Detalhe do pedido oficial do ERP, itens e metadados de sincronização."
             >
               <NomusPurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/supplier-evaluation"
+          element={
+            <ModulePageShell
+              title="Avaliação Fornecedor"
+              description="Avalie Pedidos Nomus em lote. A nota do fornecedor é derivada das avaliações finalizadas."
+            >
+              <NomusSupplierEvaluationWorklistPage />
             </ModulePageShell>
           }
         />

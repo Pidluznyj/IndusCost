@@ -333,7 +333,23 @@ Nomus / Contas a Pagar / custo / estoque / Material / Product / BOM, snapshot
 congelado de relatório, tabela configurável de metodologia, cron/job, backfill
 automático de avaliações históricas e exclusão física de avaliações.
 
-## 16. Arquivos
+## 17. Worklist de Pedidos Nomus
+
+A tela **Compras → Avaliação Fornecedor** avalia o **Pedido Nomus**
+(`NomusPurchaseOrder.id`). Isso é uma identidade distinta do `PurchaseOrder`
+interno: não há FK entre os dois, e a feature **não** associa por número,
+fornecedor, valor ou data.
+
+- Tabela: `NomusPurchaseOrderSupplierEvaluation` (UNIQUE por pedido Nomus).
+- Motor de nota: o mesmo `computeSupplierOrderEvaluation` (V1, 25% cada).
+- Elegibilidade Nomus: `stage = RECEIVED` e não cancelado.
+- Fornecedor só é gravado com confiança EXACT/HIGH e `financialSupplierId` conhecido.
+- Sem writeback Nomus. Sem rascunho persistido (as quatro notas continuam obrigatórias).
+- Sem sugestão automática (MVP OP-26: desconhecido = null, nunca 0).
+- Lote: `POST /api/supplier-performance/nomus-orders/batch` chama o save unitário
+  por item; falha em um pedido não apaga o sucesso dos outros.
+
+## 18. Arquivos
 
 ```text
 src/lib/purchasing/supplierPerformance.ts             motor puro (fórmula, elegibilidade, período, DTOs)
@@ -344,5 +360,8 @@ src/lib/purchasing/supplierPerformanceClient.ts       cliente HTTP + hook da fla
 src/lib/purchasing/supplierPerformance.test.ts        testes do motor
 src/lib/purchasing/supplierPerformanceSchema.test.ts  contrato schema/migration/rotas/UI
 src/components/supply-chain/supplier-performance/     UI (form, card, aba, relatório, print CSS)
-prisma/migrations/20260918120000_purchase_order_supplier_evaluation/
+src/lib/purchasing/nomusPurchaseOrderEvaluation.ts            elegibilidade/identidade Nomus
+src/lib/purchasing/nomusPurchaseOrderEvaluation.server.ts     worklist + save/batch
+src/components/supply-chain/supplier-performance/NomusSupplierEvaluationWorklistPage.tsx
+prisma/migrations/20260923120000_nomus_purchase_order_supplier_evaluation/
 ```

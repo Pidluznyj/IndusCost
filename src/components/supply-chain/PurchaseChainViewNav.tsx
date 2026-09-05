@@ -19,6 +19,7 @@ export type PurchaseChainViewId =
   | "quotations"
   | "orders"
   | "nomus-orders"
+  | "supplier-evaluation"
   | "receiving"
   | "workstation";
 
@@ -31,23 +32,44 @@ const VIEWS: ReadonlyArray<{ id: PurchaseChainViewId; label: string; to: string 
   { id: "workstation", label: "Estação", to: "/purchases/workstation" },
 ];
 
+const NOMUS_CONTEXT_VIEWS: ReadonlyArray<{
+  id: PurchaseChainViewId;
+  label: string;
+  to: string;
+}> = [
+  { id: "nomus-orders", label: "Pedidos Nomus", to: "/purchases/nomus-orders" },
+  { id: "supplier-evaluation", label: "Avaliação Fornecedor", to: "/purchases/supplier-evaluation" },
+];
+
 export function PurchaseChainViewNav({
   current,
   className,
+  variant = "full",
+  showSupplierEvaluation = true,
 }: {
   current: PurchaseChainViewId;
   className?: string;
+  variant?: "full" | "nomus";
+  showSupplierEvaluation?: boolean;
 }) {
+  const views =
+    variant === "nomus"
+      ? NOMUS_CONTEXT_VIEWS.filter(
+          (view) => view.id !== "supplier-evaluation" || showSupplierEvaluation
+        )
+      : VIEWS;
+
   return (
     <nav
       aria-label="Cadeia de compras"
       data-testid="purchase-chain-view-nav"
+      data-variant={variant}
       className={cn(
         "flex flex-wrap items-center gap-1 rounded-lg border border-border bg-muted/40 p-1",
         className
       )}
     >
-      {VIEWS.map((view) =>
+      {views.map((view) =>
         view.id === current ? (
           <span
             key={view.id}

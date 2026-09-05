@@ -121,7 +121,7 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
 
   return (
     <div className="space-y-4" data-testid="nomus-purchase-order-list">
-      <PurchaseChainViewNav current="nomus-orders" />
+      <PurchaseChainViewNav current="nomus-orders" variant="nomus" />
       <p className="text-sm text-muted-foreground">
         Espelho somente leitura dos pedidos oficiais do Nomus. Não edita o ERP e não se mistura com
         a solicitação de compra interna.

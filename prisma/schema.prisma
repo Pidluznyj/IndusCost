@@ -3185,6 +3185,8 @@ model NomusPurchaseOrder {
   updatedAt   DateTime @updatedAt
 
   items NomusPurchaseOrderItem[]
+  /// Avaliação local do IndusCost — não é o PurchaseOrder interno e não vai ao Nomus.
+  supplierEvaluation NomusPurchaseOrderSupplierEvaluation?
 
   @@index([orderNumber])
   @@index([supplierExternalId])
@@ -3230,6 +3232,59 @@ model NomusPurchaseOrderItem {
   @@index([lineExternalId])
   @@index([productExternalId])
   @@index([productCode])
+}
+
+/// Avaliação do fornecedor pelo Pedido de Compra Nomus (espelho local).
+/// Identidade determinística: NomusPurchaseOrder.id. Não mistura com PurchaseOrder interno.
+/// A nota do FinancialSupplier continua DERIVADA — nenhuma coluna de score no cadastro.
+model NomusPurchaseOrderSupplierEvaluation {
+  id                    String   @id @default(uuid()) @db.Uuid
+  nomusPurchaseOrderId  String   @unique
+  /// Preenchido só com identidade EXACT/HIGH e financialSupplierId conhecido.
+  financialSupplierId   String?  @db.Uuid
+  supplierMatchMethod   String
+  supplierMatchConfidence String
+  qualityScore          Decimal  @db.Decimal(4, 2)
+  deliveryScore         Decimal  @db.Decimal(4, 2)
+  conformityScore       Decimal  @db.Decimal(4, 2)
+  serviceScore          Decimal  @db.Decimal(4, 2)
+  overallScore          Decimal  @db.Decimal(4, 2)
+  methodologyVersion    Int      @default(1)
+  notes                 String?
+  revision              Int      @default(1)
+  createdByUserId       String?
+  createdByUserName     String?
+  updatedByUserId       String?
+  updatedByUserName     String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  nomusPurchaseOrder NomusPurchaseOrder @relation(fields: [nomusPurchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  financialSupplier  FinancialSupplier? @relation(fields: [financialSupplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  history            NomusPurchaseOrderSupplierEvaluationHistory[]
+
+  @@index([financialSupplierId])
+  @@index([createdAt])
+}
+
+model NomusPurchaseOrderSupplierEvaluationHistory {
+  id                   String   @id @default(uuid()) @db.Uuid
+  evaluationId         String   @db.Uuid
+  nomusPurchaseOrderId String
+  action               String
+  revision             Int
+  reason               String?
+  beforeJson           Json?
+  afterJson            Json
+  userId               String?
+  userName             String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+
+  evaluation NomusPurchaseOrderSupplierEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([evaluationId, createdAt])
+  @@index([nomusPurchaseOrderId])
+  @@index([action])
 }
 
 /// SYNC-02 — presença do registro na origem Nomus (campos nas entidades oficiais).
@@ -5575,6 +5630,7 @@ model FinancialSupplier {
   purchaseQuotationSuppliers PurchaseQuotationSupplier[]
   purchaseOrders             PurchaseOrder[]
   purchaseRequestQuotes      PurchaseRequestQuote[]
+  nomusPurchaseOrderEvaluations NomusPurchaseOrderSupplierEvaluation[]
 
   @@index([normalizedDocument])
   @@index([normalizedName])

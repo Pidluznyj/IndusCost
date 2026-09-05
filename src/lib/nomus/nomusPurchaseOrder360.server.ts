@@ -129,7 +129,9 @@ export async function expandPurchaseOrderSupplierSearchIds(term: string | null |
   return [...ids];
 }
 
-async function loadSupplierMaps(orders: PurchaseOrderMirrorHeader[]) {
+async function loadSupplierMaps(
+  orders: Array<Pick<PurchaseOrderMirrorHeader, "supplierExternalId" | "supplierName" | "supplierTaxId">>
+) {
   const supplierIds = [
     ...new Set(orders.map((row) => row.supplierExternalId).filter((id): id is number => id != null)),
   ];
@@ -209,7 +211,7 @@ async function loadSupplierMaps(orders: PurchaseOrderMirrorHeader[]) {
 }
 
 function resolveOneSupplier(
-  order: PurchaseOrderMirrorHeader,
+  order: Pick<PurchaseOrderMirrorHeader, "supplierExternalId" | "supplierName" | "supplierTaxId">,
   maps: Awaited<ReturnType<typeof loadSupplierMaps>>
 ): ResolvedPurchaseOrderSupplier {
   return resolvePurchaseOrderSupplier({
@@ -221,6 +223,14 @@ function resolveOneSupplier(
     apIdentities: maps.apIdentities,
     nameCandidates: maps.nameCandidates,
   });
+}
+
+export async function resolveNomusOrderSuppliersBatch(
+  orders: Array<Pick<PurchaseOrderMirrorHeader, "supplierExternalId" | "supplierName" | "supplierTaxId">>
+): Promise<ResolvedPurchaseOrderSupplier[]> {
+  if (orders.length === 0) return [];
+  const maps = await loadSupplierMaps(orders);
+  return orders.map((order) => resolveOneSupplier(order, maps));
 }
 
 function toNfeSnapshot(
