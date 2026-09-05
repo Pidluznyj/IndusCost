@@ -94,6 +94,7 @@ log "=== PROCESSOS CONCORRENTES (avisos) ==="
 for lf in \
   /tmp/induscost-nomus-sync-global.lock \
   /tmp/induscost-nomus-accounts-receivable.lock \
+  /tmp/induscost-nomus-purchase-orders.lock \
   /tmp/induscost-nomus-accounts-payable.lock
 do
   if [[ -e "$lf" ]] && command -v fuser >/dev/null 2>&1; then

@@ -74,8 +74,28 @@ EXIT_CODE=$?
 set -e
 
 echo
-echo "=== RESULTADO ==="
+echo "=== RESULTADO AR ==="
 echo "EXIT_CODE=$EXIT_CODE"
 echo "FINISHED_AT=$(date -Iseconds)"
+
+# Encadeamento AR → Pedido de Compra Nomus.
+# Só inicia se AR terminou com sucesso técnico. Falha de PO não altera EXIT_CODE do AR.
+PO_CHAIN_ENABLED="${NOMUS_PO_CHAIN_AFTER_AR:-1}"
+if [[ "$EXIT_CODE" -ne 0 ]]; then
+  echo "[nomus-accounts-receivable-runner] PO_CHAIN=SKIPPED reason=AR_TECHNICAL_FAILURE"
+elif [[ "$PO_CHAIN_ENABLED" != "1" ]]; then
+  echo "[nomus-accounts-receivable-runner] PO_CHAIN=SKIPPED reason=PO_CHAIN_DISABLED"
+else
+  echo
+  echo "=== ENCADEAMENTO PEDIDOS DE COMPRA NOMUS ==="
+  set +e
+  bash "$APP_DIR/scripts/runNomusPurchaseOrdersSync.sh" "$MODE" incremental
+  PO_EXIT_CODE=$?
+  set -e
+  echo "[nomus-accounts-receivable-runner] PO_CHAIN=DONE PO_EXIT_CODE=$PO_EXIT_CODE AR_EXIT_CODE=$EXIT_CODE"
+  if [[ "$PO_EXIT_CODE" -ne 0 ]]; then
+    echo "[nomus-accounts-receivable-runner] PO falhou; EXIT_CODE original de AR preservado ($EXIT_CODE)."
+  fi
+fi
 
 exit "$EXIT_CODE"

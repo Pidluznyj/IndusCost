@@ -410,6 +410,7 @@ import {
 import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
 import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
 import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
+import { registerNomusPurchaseOrderRoutes } from "./src/lib/nomusPurchaseOrderRoutes.js";
 import {
   registerFinanceArDueRadarRoutes,
   registerFinanceApDueRadarRoutes,
@@ -16693,6 +16694,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerNomusAccountsPayableRoutes(app, {
     requireAppAuth,
     requireResource,
+    getCurrentAppUser,
+  });
+
+  registerNomusPurchaseOrderRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
     getCurrentAppUser,
   });
 

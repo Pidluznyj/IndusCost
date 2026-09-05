@@ -100,7 +100,11 @@ describe("migration — 100% aditiva e ordenada", () => {
     const all = readdirSync(join(ROOT, "prisma/migrations"))
       .filter((name) => /^\d{14}_/.test(name))
       .sort();
-    assert.equal(all[all.length - 1], "20260918120000_purchase_order_supplier_evaluation");
+    const ours = "20260918120000_purchase_order_supplier_evaluation";
+    assert.ok(all.includes(ours), ours);
+    const predecessor = all.find((name) => name.startsWith("20260815120000_"));
+    assert.ok(predecessor, "predecessor purchase_receipt_ledger");
+    assert.ok(all.indexOf(ours) > all.indexOf(predecessor!));
   });
 
   it("só CREATE TABLE + índice único + FK", () => {

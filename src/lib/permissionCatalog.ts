@@ -1428,6 +1428,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "purchases.view",
     requires: ["purchases.view"],
   }),
+  perm({
+    key: "purchases.nomusPurchaseOrders.view",
+    label: "Compras — Pedidos Nomus",
+    group: COMP,
+    module: "purchases",
+    description: "Consultar o espelho somente leitura dos pedidos de compra oficiais do Nomus.",
+    type: "section",
+    parentKey: "purchases.view",
+    requires: ["purchases.view"],
+  }),
 
   // —— Precificação / Impostos ——
   perm({

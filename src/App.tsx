@@ -41,6 +41,7 @@ import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
+import { NomusPurchaseOrderModule } from "./components/NomusPurchaseOrderModule";
 import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
@@ -381,6 +382,28 @@ export default function App() {
               description="Pedidos formais a partir da cotação adjudicada. Aprovação cria compromisso operacional sem estoque nem Contas a Pagar."
             >
               <PurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/nomus-orders"
+          element={
+            <ModulePageShell
+              title="Pedidos de Compra — Nomus"
+              description="Espelho somente leitura dos pedidos oficiais do ERP. Sem escrita no Nomus e sem mistura com a solicitação interna."
+            >
+              <NomusPurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/nomus-orders/:orderId"
+          element={
+            <ModulePageShell
+              title="Pedido de Compra — Nomus"
+              description="Detalhe do pedido oficial do ERP, itens e metadados de sincronização."
+            >
+              <NomusPurchaseOrderModule />
             </ModulePageShell>
           }
         />

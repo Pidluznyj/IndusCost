@@ -3141,6 +3141,97 @@ model NomusAccountsPayable {
   @@index([sourcePresenceStatus, dueDate])
 }
 
+/// Espelho read-only de Pedido de Compra oficial do Nomus (`GET /rest/pedidoscompra`).
+/// NÃO é PurchaseOrder interno da cadeia de suprimentos.
+model NomusPurchaseOrder {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+  orderNumber String?
+
+  supplierExternalId Int?
+  supplierName       String?
+  supplierTaxId      String?
+
+  statusRaw  String?
+  canceled   Boolean?
+  stage      String
+
+  issuedAt        DateTime?
+  expectedAt      DateTime?
+  createdAtNomus  DateTime?
+  modifiedAtNomus DateTime?
+
+  paymentTerms String?
+  comments     String? @db.Text
+  currency     String?
+
+  totalAmount    Decimal? @db.Decimal(20, 2)
+  discountAmount Decimal? @db.Decimal(20, 2)
+  freightAmount  Decimal? @db.Decimal(20, 2)
+
+  itemCount          Int @default(0)
+  orderedQuantity    Decimal? @db.Decimal(20, 6)
+  receivedQuantity   Decimal? @db.Decimal(20, 6)
+  remainingQuantity  Decimal? @db.Decimal(20, 6)
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt    DateTime
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items NomusPurchaseOrderItem[]
+
+  @@index([orderNumber])
+  @@index([supplierExternalId])
+  @@index([supplierName])
+  @@index([supplierTaxId])
+  @@index([issuedAt])
+  @@index([expectedAt])
+  @@index([stage])
+  @@index([statusRaw])
+  @@index([canceled])
+  @@index([syncedAt])
+  @@index([lastSeenAt])
+  @@index([payloadHash])
+}
+
+model NomusPurchaseOrderItem {
+  id String @id @default(uuid())
+
+  purchaseOrderId String
+  purchaseOrder   NomusPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  lineIndex         Int
+  lineExternalId    Int?
+  productExternalId Int?
+  productCode       String?
+  description       String?
+  unit              String?
+
+  orderedQuantity   Decimal? @db.Decimal(20, 6)
+  receivedQuantity  Decimal? @db.Decimal(20, 6)
+  remainingQuantity Decimal? @db.Decimal(20, 6)
+  unitPrice         Decimal? @db.Decimal(20, 6)
+  totalAmount       Decimal? @db.Decimal(20, 2)
+
+  rawPayload  Json?
+  payloadHash String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([purchaseOrderId, lineIndex])
+  @@index([purchaseOrderId])
+  @@index([lineExternalId])
+  @@index([productExternalId])
+  @@index([productCode])
+}
+
 /// SYNC-02 — presença do registro na origem Nomus (campos nas entidades oficiais).
 enum NomusSourcePresenceStatus {
   PRESENT

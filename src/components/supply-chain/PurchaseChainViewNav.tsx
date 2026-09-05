@@ -18,6 +18,7 @@ export type PurchaseChainViewId =
   | "requests"
   | "quotations"
   | "orders"
+  | "nomus-orders"
   | "receiving"
   | "workstation";
 
@@ -25,6 +26,7 @@ const VIEWS: ReadonlyArray<{ id: PurchaseChainViewId; label: string; to: string 
   { id: "requests", label: "Solicitações", to: "/purchases" },
   { id: "quotations", label: "Cotações", to: "/purchases/quotations" },
   { id: "orders", label: "Pedidos", to: "/purchases/orders" },
+  { id: "nomus-orders", label: "Pedidos Nomus", to: "/purchases/nomus-orders" },
   { id: "receiving", label: "Recebimento", to: "/purchases/receiving" },
   { id: "workstation", label: "Estação", to: "/purchases/workstation" },
 ];

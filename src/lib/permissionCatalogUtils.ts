@@ -115,6 +115,7 @@ export const PERMISSION_TEMPLATES: Record<
       "purchases.create",
       "purchases.edit",
       "purchases.indicators.view",
+      "purchases.nomusPurchaseOrders.view",
       "materials.view",
       "products.view",
     ],
