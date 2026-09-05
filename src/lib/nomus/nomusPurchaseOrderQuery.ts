@@ -1,11 +1,16 @@
 import type { Prisma } from "@prisma/client";
 import { isNomusPurchaseOrderOpenStage, isNomusPurchaseOrderOverdue } from "./nomusPurchaseOrderClassifier.js";
+import type { PurchaseOrderFinancialStatus } from "./nomusPurchaseOrder360.js";
 import type { NomusPurchaseOrderStage } from "./nomusPurchaseOrderTypes.js";
+
+export type NomusPurchaseOrderFiscalFilter = "WITH_NFE" | "WITHOUT_NFE";
 
 export type NomusPurchaseOrderListFilters = {
   q?: string | null;
   orderNumber?: string | null;
   supplier?: string | null;
+  extraSupplierExternalIds?: number[];
+  extraSearchSupplierExternalIds?: number[];
   status?: string | null;
   stage?: string | null;
   product?: string | null;
@@ -16,6 +21,8 @@ export type NomusPurchaseOrderListFilters = {
   openOnly?: boolean;
   overdueOnly?: boolean;
   canceledOnly?: boolean;
+  fiscalStatus?: NomusPurchaseOrderFiscalFilter | null;
+  financialStatus?: PurchaseOrderFinancialStatus | null;
   page?: number;
   pageSize?: number;
 };
@@ -37,6 +44,27 @@ export function parseNomusPurchaseOrderListFilters(
   };
   const page = Math.max(1, Number.parseInt(String(query.page ?? "1"), 10) || 1);
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(query.pageSize ?? "25"), 10) || 25));
+  const fiscalRaw = String(query.fiscalStatus ?? query.situacaoFiscal ?? "").trim().toUpperCase();
+  const financialRaw = String(query.financialStatus ?? query.situacaoFinanceira ?? "").trim().toUpperCase();
+  const fiscalStatus: NomusPurchaseOrderFiscalFilter | null =
+    fiscalRaw === "WITH_NFE" || fiscalRaw === "COM_NF" || fiscalRaw === "COM-NF"
+      ? "WITH_NFE"
+      : fiscalRaw === "WITHOUT_NFE" || fiscalRaw === "SEM_NF" || fiscalRaw === "SEM-NF"
+        ? "WITHOUT_NFE"
+        : null;
+  const financialAliases: Record<string, PurchaseOrderFinancialStatus> = {
+    PLANNED_ONLY: "PLANNED_ONLY",
+    PLANEJADO: "PLANNED_ONLY",
+    PARTIALLY_CONFIRMED: "PARTIALLY_CONFIRMED",
+    CONFIRMED: "CONFIRMED",
+    CONFIRMADO: "CONFIRMED",
+    PARTIALLY_PAID: "PARTIALLY_PAID",
+    PARCIAL_PAGO: "PARTIALLY_PAID",
+    PAID: "PAID",
+    PAGO: "PAID",
+    NO_FINANCIAL_DATA: "NO_FINANCIAL_DATA",
+    SEM_VINCULO: "NO_FINANCIAL_DATA",
+  };
   return {
     q: String(query.q ?? query.search ?? "").trim() || null,
     orderNumber: String(query.orderNumber ?? query.pedido ?? "").trim() || null,
@@ -44,6 +72,8 @@ export function parseNomusPurchaseOrderListFilters(
     status: String(query.status ?? "").trim() || null,
     stage: String(query.stage ?? query.fase ?? "").trim() || null,
     product: String(query.product ?? query.produto ?? "").trim() || null,
+    fiscalStatus,
+    financialStatus: financialAliases[financialRaw] ?? null,
     issuedFrom: parseOptionalDate(query.issuedFrom ?? query.emissaoDe),
     issuedTo: parseOptionalDate(query.issuedTo ?? query.emissaoAte),
     expectedFrom: parseOptionalDate(query.expectedFrom ?? query.previsaoDe),
@@ -63,12 +93,19 @@ export function buildNomusPurchaseOrderWhere(
   const AND: Prisma.NomusPurchaseOrderWhereInput[] = [];
 
   if (filters.q) {
+    const numericId = /^\d+$/.test(filters.q) ? Number(filters.q) : null;
     AND.push({
       OR: [
         { orderNumber: { contains: filters.q, mode: "insensitive" } },
         { supplierName: { contains: filters.q, mode: "insensitive" } },
         { supplierTaxId: { contains: filters.q, mode: "insensitive" } },
         { statusRaw: { contains: filters.q, mode: "insensitive" } },
+        ...(numericId != null
+          ? [{ externalId: numericId }, { supplierExternalId: numericId }]
+          : []),
+        ...((filters.extraSearchSupplierExternalIds?.length ?? 0) > 0
+          ? [{ supplierExternalId: { in: filters.extraSearchSupplierExternalIds } }]
+          : []),
         { items: { some: { OR: [
           { productCode: { contains: filters.q, mode: "insensitive" } },
           { description: { contains: filters.q, mode: "insensitive" } },
@@ -79,11 +116,21 @@ export function buildNomusPurchaseOrderWhere(
   if (filters.orderNumber) {
     AND.push({ orderNumber: { contains: filters.orderNumber, mode: "insensitive" } });
   }
-  if (filters.supplier) {
+  if (filters.supplier || (filters.extraSupplierExternalIds?.length ?? 0) > 0) {
     AND.push({
       OR: [
-        { supplierName: { contains: filters.supplier, mode: "insensitive" } },
-        { supplierTaxId: { contains: filters.supplier, mode: "insensitive" } },
+        ...(filters.supplier
+          ? [
+              { supplierName: { contains: filters.supplier, mode: "insensitive" as const } },
+              { supplierTaxId: { contains: filters.supplier, mode: "insensitive" as const } },
+              ...(/^\d+$/.test(filters.supplier)
+                ? [{ supplierExternalId: Number(filters.supplier) }]
+                : []),
+            ]
+          : []),
+        ...((filters.extraSupplierExternalIds?.length ?? 0) > 0
+          ? [{ supplierExternalId: { in: filters.extraSupplierExternalIds } }]
+          : []),
       ],
     });
   }

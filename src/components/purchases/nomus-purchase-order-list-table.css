@@ -1,0 +1,10 @@
+.npo-list-section {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.npo-list-table {
+  min-width: 1080px;
+}

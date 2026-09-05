@@ -3,32 +3,20 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { hasPermission } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
-import { mapNomusPurchaseOrderItemStatus } from "@/src/lib/nomus/nomusPurchaseOrderClassifier.js";
-import { asString } from "@/src/lib/nomus/nomusPurchaseOrderParser.js";
+import {
+  buildNomusPurchaseOrder360,
+  enrichNomusPurchaseOrderListRows,
+  expandPurchaseOrderSupplierSearchIds,
+} from "@/src/lib/nomus/nomusPurchaseOrder360.server.js";
+import {
+  matchesPurchaseOrderFinancialFilter,
+  matchesPurchaseOrderFiscalFilter,
+} from "@/src/lib/nomus/nomusPurchaseOrder360.js";
 import {
   buildNomusPurchaseOrderKpis,
   buildNomusPurchaseOrderWhere,
   parseNomusPurchaseOrderListFilters,
-  serializeNomusPurchaseOrderListRow,
 } from "@/src/lib/nomus/nomusPurchaseOrderQuery.js";
-
-function extrasFromItemRaw(raw: unknown): {
-  lineCode: string | null;
-  itemStatusCode: number | null;
-  itemStatusKey: string | null;
-  itemStatusLabel: string | null;
-} {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { lineCode: null, itemStatusCode: null, itemStatusKey: null, itemStatusLabel: null };
-  }
-  const status = mapNomusPurchaseOrderItemStatus((raw as Record<string, unknown>).status);
-  return {
-    lineCode: asString((raw as Record<string, unknown>).item),
-    itemStatusCode: status.code,
-    itemStatusKey: status.key,
-    itemStatusLabel: status.label,
-  };
-}
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -68,6 +56,7 @@ const LIST_SELECT = {
   remainingQuantity: true,
   syncedAt: true,
   lastSeenAt: true,
+  rawPayload: true,
 } as const;
 
 export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: AuthGuards) {
@@ -106,18 +95,21 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
 
       const filters = parseNomusPurchaseOrderListFilters(req.query as Record<string, unknown>);
       const now = new Date();
-      const where = buildNomusPurchaseOrderWhere(filters, now);
+      const extraSearchSupplierExternalIds = filters.q
+        ? await expandPurchaseOrderSupplierSearchIds(filters.q)
+        : [];
+      const extraSupplierExternalIds = filters.supplier
+        ? await expandPurchaseOrderSupplierSearchIds(filters.supplier)
+        : [];
+      const where = buildNomusPurchaseOrderWhere(
+        { ...filters, extraSupplierExternalIds, extraSearchSupplierExternalIds },
+        now
+      );
       const skip = ((filters.page ?? 1) - 1) * (filters.pageSize ?? 25);
+      const pageSize = filters.pageSize ?? 25;
+      const needsPostFilter = Boolean(filters.fiscalStatus || filters.financialStatus);
 
-      const [total, rows, kpiRows, health] = await Promise.all([
-        prisma.nomusPurchaseOrder.count({ where }),
-        prisma.nomusPurchaseOrder.findMany({
-          where,
-          select: LIST_SELECT,
-          orderBy: [{ issuedAt: "desc" }, { externalId: "desc" }],
-          skip,
-          take: filters.pageSize ?? 25,
-        }),
+      const [kpiRows, health] = await Promise.all([
         prisma.nomusPurchaseOrder.findMany({
           where,
           select: { stage: true, expectedAt: true, totalAmount: true },
@@ -128,13 +120,46 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
         }),
       ]);
 
+      if (needsPostFilter) {
+        const candidates = await prisma.nomusPurchaseOrder.findMany({
+          where,
+          select: LIST_SELECT,
+          orderBy: [{ issuedAt: "desc" }, { externalId: "desc" }],
+        });
+        const enriched = await enrichNomusPurchaseOrderListRows(candidates, now);
+        const filtered = enriched.filter(
+          (row) =>
+            matchesPurchaseOrderFiscalFilter(row.invoiceCount, filters.fiscalStatus) &&
+            matchesPurchaseOrderFinancialFilter(row.financialStatus, filters.financialStatus)
+        );
+        return res.json({
+          page: filters.page ?? 1,
+          pageSize,
+          total: filtered.length,
+          kpis: buildNomusPurchaseOrderKpis(kpiRows, now),
+          lastSyncedAt: health?.syncedAt?.toISOString() ?? null,
+          items: filtered.slice(skip, skip + pageSize),
+        });
+      }
+
+      const [total, rows] = await Promise.all([
+        prisma.nomusPurchaseOrder.count({ where }),
+        prisma.nomusPurchaseOrder.findMany({
+          where,
+          select: LIST_SELECT,
+          orderBy: [{ issuedAt: "desc" }, { externalId: "desc" }],
+          skip,
+          take: pageSize,
+        }),
+      ]);
+
       return res.json({
         page: filters.page ?? 1,
-        pageSize: filters.pageSize ?? 25,
+        pageSize,
         total,
         kpis: buildNomusPurchaseOrderKpis(kpiRows, now),
         lastSyncedAt: health?.syncedAt?.toISOString() ?? null,
-        items: rows.map((row) => serializeNomusPurchaseOrderListRow(row, now)),
+        items: await enrichNomusPurchaseOrderListRows(rows, now),
       });
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders", error);
@@ -158,36 +183,7 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
       if (!row) return res.status(404).json({ error: "Pedido de compra Nomus não encontrado." });
 
       const includeRaw = String(req.query.includeRaw ?? "").trim() === "1" && canSeeRawPayload(user);
-      return res.json({
-        ...serializeNomusPurchaseOrderListRow(row),
-        paymentTerms: row.paymentTerms,
-        comments: row.comments,
-        currency: row.currency,
-        discountAmount: row.discountAmount ? Number(row.discountAmount.toString()) : null,
-        freightAmount: row.freightAmount ? Number(row.freightAmount.toString()) : null,
-        createdAtNomus: row.createdAtNomus?.toISOString() ?? null,
-        modifiedAtNomus: row.modifiedAtNomus?.toISOString() ?? null,
-        firstSeenAt: row.firstSeenAt.toISOString(),
-        payloadHash: row.payloadHash,
-        receivingAvailable:
-          row.receivedQuantity != null || row.items.some((item) => item.receivedQuantity != null),
-        items: row.items.map((item) => ({
-          id: item.id,
-          lineIndex: item.lineIndex,
-          lineExternalId: item.lineExternalId,
-          ...extrasFromItemRaw(item.rawPayload),
-          productExternalId: item.productExternalId,
-          productCode: item.productCode,
-          description: item.description,
-          unit: item.unit,
-          orderedQuantity: item.orderedQuantity ? Number(item.orderedQuantity.toString()) : null,
-          receivedQuantity: item.receivedQuantity ? Number(item.receivedQuantity.toString()) : null,
-          remainingQuantity: item.remainingQuantity ? Number(item.remainingQuantity.toString()) : null,
-          unitPrice: item.unitPrice ? Number(item.unitPrice.toString()) : null,
-          totalAmount: item.totalAmount ? Number(item.totalAmount.toString()) : null,
-        })),
-        rawPayload: includeRaw ? row.rawPayload : undefined,
-      });
+      return res.json(await buildNomusPurchaseOrder360({ order: row, includeRaw }));
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders/:id", error);
       return res.status(500).json({ error: "Erro ao carregar pedido de compra Nomus." });

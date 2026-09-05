@@ -22,6 +22,15 @@ describe("nomusPurchaseOrder API contract", () => {
     assert.equal(filters.pageSize, 25);
   });
 
+  it("filtros fiscais e financeiros são server-side", () => {
+    const filters = parseNomusPurchaseOrderListFilters({
+      situacaoFiscal: "sem-nf",
+      situacaoFinanceira: "planejado",
+    });
+    assert.equal(filters.fiscalStatus, "WITHOUT_NFE");
+    assert.equal(filters.financialStatus, "PLANNED_ONLY");
+  });
+
   it("permissões de leitura não incluem escrita", () => {
     assert.ok(VIEW_PERMISSIONS.includes("purchases.nomusPurchaseOrders.view"));
     assert.ok(!VIEW_PERMISSIONS.some((key) => /create|edit|delete|approve|sync/i.test(key)));
