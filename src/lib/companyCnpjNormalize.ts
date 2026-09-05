@@ -54,11 +54,20 @@ function readCnae(item: unknown): { code: string; description: string } | null {
   return { code: code ?? "—", description: description ?? "—" };
 }
 
-function normalizeRegistrationStatus(status: string | null): string | null {
+export function normalizeRegistrationStatusExport(status: string | null): string | null {
   if (!status) return null;
   const s = status.trim().toUpperCase();
   if (s.startsWith("ATIV")) return "ATIVA";
+  if (s.startsWith("BAIX")) return "BAIXADA";
+  if (s.startsWith("SUSP")) return "SUSPENSA";
+  if (s.startsWith("INAPT")) return "INAPTA";
+  if (s.startsWith("NUL")) return "NULA";
   return s;
+}
+
+/** @deprecated use normalizeRegistrationStatusExport */
+function normalizeRegistrationStatus(status: string | null): string | null {
+  return normalizeRegistrationStatusExport(status);
 }
 
 export function isRegistrationActive(statusNormalized: string | null): boolean {

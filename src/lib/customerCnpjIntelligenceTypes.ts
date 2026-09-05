@@ -83,6 +83,15 @@ export type CnpjIntelligencePayload = {
   customerDraft: Record<string, string> | null;
   filledFieldCount: number;
   rawJson: unknown;
+  sources?: Array<{
+    id: string;
+    label: string;
+    status: string;
+    message?: string;
+  }>;
+  warnings?: string[];
+  partialSuccess?: boolean;
+  fieldProvenance?: Record<string, string>;
 };
 
 export const CNPJ_COMPARE_STATUS_LABEL: Record<string, string> = {

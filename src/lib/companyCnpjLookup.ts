@@ -1,7 +1,6 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { isValidCnpj, normalizeCnpj } from "./companyCnpjFormat.js";
 import {
-  normalizePublicCnpjPayload,
   buildStructuredNormalizedSummary,
   buildPublicContactNote,
   summaryToCustomerDraft,
@@ -19,19 +18,19 @@ import {
   type CustomerCompareResult,
 } from "./companyCnpjCompare.js";
 import { writeCommercialAuditLog } from "./commercialAuditLog.js";
+import { CompanyIntelligenceError } from "./companyCnpjErrors.js";
+import { fetchPublicCnpj } from "./companyCnpjPublicaWs.js";
+import {
+  aggregateCnpjIntelligence,
+  resolveAggregateSourceLabel,
+  type CnpjFieldProvenance,
+} from "./companyCnpjAggregator.js";
+import type { CnpjSourceReport } from "./companyCnpjSources.js";
 
-export class CompanyIntelligenceError extends Error {
-  readonly code: string;
-  readonly httpStatus: number;
+export { CompanyIntelligenceError } from "./companyCnpjErrors.js";
+export { fetchPublicCnpj } from "./companyCnpjPublicaWs.js";
 
-  constructor(message: string, code: string, httpStatus: number) {
-    super(message);
-    this.name = "CompanyIntelligenceError";
-    this.code = code;
-    this.httpStatus = httpStatus;
-  }
-}
-
+/** @deprecated Prefer rótulo agregado multi-source; mantido para compatibilidade. */
 export const CNPJ_LOOKUP_SOURCE = "publica.cnpj.ws";
 export const CNPJ_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -53,63 +52,67 @@ export type CompanyIntelligencePayload = {
   publicContactSuggestion: { phone: string | null; email: string | null; disclaimer: string } | null;
   filledFieldCount: number;
   rawJson: unknown;
+  /** Multi-source */
+  sources: CnpjSourceReport[];
+  warnings: string[];
+  partialSuccess: boolean;
+  fieldProvenance: CnpjFieldProvenance;
 };
 
 function sellerUfFromEnv(): string {
   return (process.env.COMPANY_INTELLIGENCE_SELLER_UF ?? "PR").trim().toUpperCase();
 }
 
-export async function fetchPublicCnpj(
-  cnpj: string,
-  fetchImpl: typeof fetch = fetch
-): Promise<unknown> {
-  const digits = normalizeCnpj(cnpj);
-  if (!isValidCnpj(digits)) {
-    throw new CompanyIntelligenceError("CNPJ inválido.", "INVALID_CNPJ", 422);
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const res = await fetchImpl(`https://publica.cnpj.ws/cnpj/${digits}`, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-    if (res.status === 404) {
-      throw new CompanyIntelligenceError("CNPJ não encontrado na base pública.", "CNPJ_NOT_FOUND", 404);
+function extractCachedMeta(rawJson: unknown): {
+  sources: CnpjSourceReport[];
+  warnings: string[];
+  partialSuccess: boolean;
+  fieldProvenance: CnpjFieldProvenance;
+} {
+  const root =
+    rawJson != null && typeof rawJson === "object" && !Array.isArray(rawJson)
+      ? (rawJson as Record<string, unknown>)
+      : null;
+  if (root && root.aggregateVersion === 1 && Array.isArray(root.reports)) {
+    const reports = root.reports as CnpjSourceReport[];
+    const ok = reports.filter((r) => r.status === "ok").length;
+    const active = reports.filter((r) => r.id !== "bcb").length;
+    const warnings: string[] = [];
+    for (const r of reports) {
+      if (r.status !== "ok" && r.status !== "not_applicable") {
+        warnings.push(`${r.label} indisponível` + (r.message ? `: ${r.message}` : "."));
+      }
     }
-    if (res.status === 429) {
-      throw new CompanyIntelligenceError(
-        "Limite de consultas da API pública atingido. Tente novamente em alguns minutos.",
-        "RATE_LIMIT",
-        429
+    const partialSuccess = ok > 0 && ok < active;
+    if (partialSuccess) {
+      warnings.unshift(
+        "Consulta parcial: pelo menos uma fonte pública falhou; os dados disponíveis foram combinados."
       );
     }
-    if (!res.ok) {
-      throw new CompanyIntelligenceError(
-        `Falha na consulta pública (HTTP ${res.status}).`,
-        "UPSTREAM_ERROR",
-        502
-      );
-    }
-    const json = await res.json();
-    if (!json || typeof json !== "object") {
-      throw new CompanyIntelligenceError("Resposta inesperada da API pública.", "INVALID_PAYLOAD", 502);
-    }
-    return json;
-  } catch (e: unknown) {
-    if (e instanceof CompanyIntelligenceError) throw e;
-    if (e instanceof Error && e.name === "AbortError") {
-      throw new CompanyIntelligenceError("Tempo esgotado na consulta pública.", "TIMEOUT", 504);
-    }
-    throw new CompanyIntelligenceError(
-      "Serviço de consulta CNPJ indisponível no momento.",
-      "UPSTREAM_UNAVAILABLE",
-      502
-    );
-  } finally {
-    clearTimeout(timer);
+    const provenance =
+      root.fieldProvenance && typeof root.fieldProvenance === "object"
+        ? (root.fieldProvenance as CnpjFieldProvenance)
+        : {};
+    return {
+      sources: reports,
+      warnings,
+      partialSuccess,
+      fieldProvenance: provenance,
+    };
   }
+  return {
+    sources: [
+      {
+        id: "publica.cnpj.ws",
+        label: "publica.cnpj.ws",
+        status: "ok",
+        message: "Cache legado (fonte única).",
+      },
+    ],
+    warnings: [],
+    partialSuccess: false,
+    fieldProvenance: {},
+  };
 }
 
 function serializeLookup(row: {
@@ -137,6 +140,7 @@ function serializeLookup(row: {
   const risk = row.riskDetails as CommercialRiskResult;
   const commercial = row.commercialInsights as ReturnType<typeof buildCommercialInsightsBundle>;
   const structuredSummary = buildStructuredNormalizedSummary(summary);
+  const meta = extractCachedMeta(row.rawJson);
   return {
     lookupId: row.id,
     cnpj: row.cnpj,
@@ -150,6 +154,10 @@ function serializeLookup(row: {
     risk,
     commercial,
     rawJson: row.rawJson,
+    sources: meta.sources,
+    warnings: meta.warnings,
+    partialSuccess: meta.partialSuccess,
+    fieldProvenance: meta.fieldProvenance,
   };
 }
 
@@ -176,20 +184,30 @@ export async function buildCompanyIntelligencePayload(input: {
   let row = !input.forceRefresh ? await findValidCache(cnpj) : null;
 
   if (!row) {
-    const rawJson = await fetchPublicCnpj(cnpj, input.fetchImpl);
-    const summary = normalizePublicCnpjPayload(rawJson);
+    const freshAggregate = await aggregateCnpjIntelligence({
+      cnpj,
+      fetchImpl: input.fetchImpl,
+    });
+    const summary = freshAggregate.summary;
     const structuredSummary = buildStructuredNormalizedSummary(summary);
     const risk = calculateCommercialRiskScore(summary);
     const commercial = buildCommercialInsightsBundle(summary, risk, sellerUfFromEnv());
     const now = new Date();
     const expiresAt = new Date(now.getTime() + CNPJ_CACHE_TTL_MS);
+    const sourceLabel = resolveAggregateSourceLabel(freshAggregate.sources);
+    const rawEnvelope = {
+      ...freshAggregate.rawEnvelope,
+      fieldProvenance: freshAggregate.fieldProvenance,
+      warnings: freshAggregate.warnings,
+      partialSuccess: freshAggregate.partialSuccess,
+    };
 
     row = await prisma.customerCnpjLookup.create({
       data: {
         cnpj,
         customerId: input.customerId ?? null,
-        source: CNPJ_LOOKUP_SOURCE,
-        rawJson: rawJson as object,
+        source: sourceLabel,
+        rawJson: rawEnvelope as object,
         normalizedSummary: { ...summary, ...structuredSummary } as object,
         riskScore: risk.score,
         riskVerdict: risk.verdict,

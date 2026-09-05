@@ -317,7 +317,9 @@ export function CustomerCnpjIntelligencePanel({
               Consulta CNPJ / Inteligência Comercial
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Dados públicos via publica.cnpj.ws — apoio à decisão comercial.
+              Inteligência multi-source (BrasilAPI + publica.cnpj.ws). Contatos e
+              endereço comerciais internos do IndusCost não são sobrescritos
+              automaticamente.
             </p>
           </div>
           <button
@@ -384,7 +386,26 @@ export function CustomerCnpjIntelligencePanel({
                     Situação: {data.summary.registrationStatus ?? "—"} · Consulta:{" "}
                     {new Date(data.fetchedAt).toLocaleString("pt-BR")} · Fonte: {data.source}
                     {data.fromCache ? " (cache)" : ""}
+                    {data.partialSuccess ? " · parcial" : ""}
                   </p>
+                  {data.warnings && data.warnings.length > 0 ? (
+                    <ul
+                      className="mt-2 list-disc space-y-1 pl-4 text-amber-800"
+                      data-testid="cnpj-intelligence-warnings"
+                    >
+                      {data.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {data.sources && data.sources.length > 0 ? (
+                    <p className="mt-1 text-[11px] text-slate-500" data-testid="cnpj-intelligence-sources">
+                      Fontes:{" "}
+                      {data.sources
+                        .map((s) => `${s.label} (${s.status})`)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="cnpj-intelligence-no-print flex flex-wrap gap-2">
                   <button
