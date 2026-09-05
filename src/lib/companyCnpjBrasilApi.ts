@@ -12,6 +12,14 @@ import {
 
 const BRASIL_API_CNPJ_HOST = "https://brasilapi.com.br";
 
+/** CDN/WAF da BrasilAPI rejeita clientes Node sem User-Agent (HTTP 403). */
+export const BRASIL_API_USER_AGENT = "IndusCost/1.0 Company Intelligence";
+
+export const BRASIL_API_REQUEST_HEADERS = {
+  Accept: "application/json",
+  "User-Agent": BRASIL_API_USER_AGENT,
+} as const;
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -134,7 +142,7 @@ export async function fetchBrasilApiCnpj(
   try {
     const res = await fetchImpl(`${BRASIL_API_CNPJ_HOST}/api/cnpj/v1/${digits}`, {
       signal: controller.signal,
-      headers: { Accept: "application/json" },
+      headers: { ...BRASIL_API_REQUEST_HEADERS },
     });
     if (res.status === 404) {
       throw new CompanyIntelligenceError("CNPJ não encontrado na BrasilAPI.", "CNPJ_NOT_FOUND", 404);
