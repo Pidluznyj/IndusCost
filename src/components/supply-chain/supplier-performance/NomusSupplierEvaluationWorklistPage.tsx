@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess";
 import {
   SUPPLIER_EVALUATION_CRITERIA,
@@ -50,11 +51,14 @@ function evaluationStatusLabel(status: NomusSupplierEvaluationWorklistRow["evalu
 
 export function NomusSupplierEvaluationWorklistPage() {
   const featureEnabled = useSupplierPerformanceFeatureEnabled();
-  const { permissions } = useAuth();
-  const canUpdate = permissions.canPerformAction(
-    OPERATIONS_RESOURCE_KEYS.purchases,
-    OPERATIONS_ACTIONS.update
-  );
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const canUpdate =
+    auth.hasPermission("purchases.edit") ||
+    permissions.canPerformAction(
+      OPERATIONS_RESOURCE_KEYS.purchases,
+      OPERATIONS_ACTIONS.update
+    );
 
   const [periodPreset, setPeriodPreset] = useState<SupplierPerformancePeriodPresetId>("last12m");
   const period = useMemo(
@@ -189,6 +193,18 @@ export function NomusSupplierEvaluationWorklistPage() {
       setSaving(false);
     }
   };
+
+  if (featureEnabled == null) {
+    return (
+      <div className="space-y-4">
+        <PurchaseChainViewNav current="supplier-evaluation" variant="nomus" />
+        <p className="text-sm text-muted-foreground">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Verificando a avaliação de fornecedor…
+        </p>
+      </div>
+    );
+  }
 
   if (featureEnabled === false) {
     return (
