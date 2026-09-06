@@ -122,6 +122,8 @@ describe("worklist UI", () => {
     assert.match(page, /SUPPLIER_EVALUATION_CRITERIA/);
     assert.match(page, /computeSupplierOrderEvaluation/);
     assert.match(page, /nse-filter-period/);
+    assert.match(page, /usePermissions/);
+    assert.doesNotMatch(page, /const \{ permissions \} = useAuth\(\)/);
     assert.match(page, /nse-save-selected/);
     assert.match(page, /não há “aplicar a mesma nota a todos”/i);
     assert.doesNotMatch(page, /Aplicar esta nota a todos/);
