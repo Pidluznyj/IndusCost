@@ -11,6 +11,7 @@ import { SupplierEvaluationError } from "./supplierPerformance.js";
 import {
   buildSupplierPerformanceDetail,
   buildSupplierPerformanceReport,
+  loadSupplierEvaluationListSummaries,
   mapSupplierEvaluationError,
   savePurchaseOrderSupplierEvaluation,
 } from "./supplierPerformance.server.js";
@@ -199,17 +200,17 @@ describe("criação da avaliação", () => {
   it("grava notas, nota geral do servidor e auditoria na mesma transação", async () => {
     const fake = createWriteFake();
     const result = await savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
-      qualityScore: 9,
-      deliveryScore: 8,
-      conformityScore: 10,
-      serviceScore: 8,
+      qualityScore: 5,
+      deliveryScore: 4,
+      conformityScore: 5,
+      serviceScore: 3,
       notes: "  Fornecedor cumpriu o combinado.  ",
     });
 
-    assert.equal(result.evaluation?.scores.overall, 8.75);
-    assert.equal(fake.evaluation?.overallScore, 8.75);
+    assert.equal(result.evaluation?.scores.overall, 4.25);
+    assert.equal(fake.evaluation?.overallScore, 4.25);
     assert.equal(fake.evaluation?.revision, 1);
-    assert.equal(fake.evaluation?.methodologyVersion, 1);
+    assert.equal(fake.evaluation?.methodologyVersion, 2);
     assert.equal(fake.evaluation?.notes, "Fornecedor cumpriu o combinado.");
     assert.equal(fake.evaluation?.createdByUserId, "user-b");
 
@@ -217,31 +218,46 @@ describe("criação da avaliação", () => {
     assert.equal(fake.history[0].action, "SUPPLIER_EVALUATION_CREATED");
     assert.equal(fake.history[0].userId, "user-b");
     const meta = fake.history[0].metaJson as Record<string, unknown>;
-    assert.equal((meta.scores as Record<string, number>).overall, 8.75);
+    assert.equal((meta.scores as Record<string, number>).overall, 4.25);
     assert.equal(meta.supplierId, "sup-1");
     assert.equal(meta.revision, 1);
+  });
+
+  it("ignora overallScore enviado pelo cliente — o servidor calcula 4,25", async () => {
+    const fake = createWriteFake();
+    const result = await savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
+      qualityScore: 5,
+      deliveryScore: 4,
+      conformityScore: 5,
+      serviceScore: 3,
+      overallScore: 99,
+      methodologyVersion: 1,
+    } as never);
+    assert.equal(result.evaluation?.scores.overall, 4.25);
+    assert.equal(fake.evaluation?.overallScore, 4.25);
+    assert.equal(fake.evaluation?.methodologyVersion, 2);
   });
 
   it("ENCERRADO também é elegível", async () => {
     const fake = createWriteFake({ status: "ENCERRADO" });
     await savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
-      qualityScore: 10,
-      deliveryScore: 10,
-      conformityScore: 10,
-      serviceScore: 10,
+      qualityScore: 5,
+      deliveryScore: 5,
+      conformityScore: 5,
+      serviceScore: 5,
     });
-    assert.equal(fake.evaluation?.overallScore, 10);
+    assert.equal(fake.evaluation?.overallScore, 5);
   });
 
-  it("nota 0 é válida e não vira ausência de avaliação", async () => {
+  it("nota 1 é válida e não vira ausência de avaliação", async () => {
     const fake = createWriteFake();
     const result = await savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
-      qualityScore: 0,
-      deliveryScore: 0,
-      conformityScore: 0,
-      serviceScore: 0,
+      qualityScore: 1,
+      deliveryScore: 1,
+      conformityScore: 1,
+      serviceScore: 1,
     });
-    assert.equal(result.evaluation?.scores.overall, 0);
+    assert.equal(result.evaluation?.scores.overall, 1);
     assert.equal(fake.history.length, 1);
   });
 
@@ -297,10 +313,10 @@ describe("criação da avaliação", () => {
     const fake = createWriteFake({ failCreateUnique: true });
     await assert.rejects(
       savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
-        qualityScore: 9,
-        deliveryScore: 9,
-        conformityScore: 9,
-        serviceScore: 9,
+        qualityScore: 5,
+        deliveryScore: 4,
+        conformityScore: 5,
+        serviceScore: 3,
       }),
       (error: unknown) => {
         assert.ok(error instanceof SupplierEvaluationError);
@@ -450,10 +466,10 @@ describe("transação — auditoria e avaliação são indivisíveis", () => {
     });
     await assert.rejects(
       savePurchaseOrderSupplierEvaluation(fake.prisma, ORDER_ID, ACTOR, {
-        qualityScore: 10,
-        deliveryScore: 10,
-        conformityScore: 10,
-        serviceScore: 10,
+        qualityScore: 5,
+        deliveryScore: 5,
+        conformityScore: 5,
+        serviceScore: 5,
         expectedRevision: 1,
         revisionReason: "Correção.",
       })
@@ -472,7 +488,7 @@ type QueryLog = Array<{ model: string; op: string; args: Record<string, unknown>
 
 function createReadFake(input: {
   eligibleCount: number;
-  evaluatedRows: Array<{ supplierId: string; scores: number[] }>;
+  evaluatedRows: Array<{ supplierId: string; scores: number[]; methodologyVersion?: number }>;
   listTotal: number;
   listItems?: unknown[];
   supplier?: { id: string; displayName: string; document: string | null; status: string } | null;
@@ -488,6 +504,7 @@ function createReadFake(input: {
       deliveryScore: row.scores[2] ?? row.scores[0],
       conformityScore: row.scores[3] ?? row.scores[0],
       serviceScore: row.scores[4] ?? row.scores[0],
+      methodologyVersion: row.methodologyVersion ?? 1,
     },
   }));
 
@@ -576,6 +593,48 @@ describe("detalhe do fornecedor — população e cobertura", () => {
       pageSize: 50,
     });
     assert.equal(result.summary.overallScore, 7.5);
+  });
+
+  it("V2: 4,50 / 3,80 / 4,20 / 5,00 -> 4,38 e rascunho não entra", async () => {
+    const fake = createReadFake({
+      eligibleCount: 5,
+      evaluatedRows: [
+        { supplierId: "sup-1", scores: [4.5, 5, 4, 5, 4], methodologyVersion: 2 },
+        { supplierId: "sup-1", scores: [3.8, 4, 3, 4, 4], methodologyVersion: 2 },
+        { supplierId: "sup-1", scores: [4.2, 4, 4, 5, 4], methodologyVersion: 2 },
+        { supplierId: "sup-1", scores: [5, 5, 5, 5, 5], methodologyVersion: 2 },
+      ],
+      listTotal: 5,
+    });
+    const result = await buildSupplierPerformanceDetail(fake.prisma, "sup-1", {
+      period: PERIOD,
+      evaluationStatus: "all",
+      page: 1,
+      pageSize: 50,
+    });
+    assert.equal(result.summary.overallScore, 4.38);
+    assert.equal(result.summary.evaluatedOrders, 4);
+    assert.equal(result.scaleMax, 5);
+    assert.equal(result.summary.coverage, 0.8);
+  });
+
+  it("V2 sem ponderação financeira: 1 e 5 -> 3,00", async () => {
+    const fake = createReadFake({
+      eligibleCount: 2,
+      evaluatedRows: [
+        { supplierId: "sup-1", scores: [1], methodologyVersion: 2 },
+        { supplierId: "sup-1", scores: [5], methodologyVersion: 2 },
+      ],
+      listTotal: 2,
+    });
+    const result = await buildSupplierPerformanceDetail(fake.prisma, "sup-1", {
+      period: PERIOD,
+      evaluationStatus: "all",
+      page: 1,
+      pageSize: 50,
+    });
+    assert.equal(result.summary.overallScore, 3);
+    assert.equal(result.scaleMax, 5);
   });
 
   it("sem pedidos elegíveis: cobertura null e nota null", async () => {
@@ -817,7 +876,91 @@ describe("nº de queries — sem N+1", () => {
     });
     assert.deepEqual(report.rows, []);
     assert.equal(report.totals.coverage, null);
-    assert.equal(report.methodologyVersion, 1);
+    assert.equal(report.methodologyVersion, 2);
+  });
+});
+
+describe("lista de fornecedores — resumo em lote", () => {
+  function createListSummaryFake(input: {
+    nomusEvals?: Array<{
+      financialSupplierId: string;
+      supplierMatchConfidence: string;
+      overallScore: number;
+      qualityScore: number;
+      deliveryScore: number;
+      conformityScore: number;
+      serviceScore: number;
+      methodologyVersion: number;
+      nomusPurchaseOrder: { supplierExternalId: number | null };
+    }>;
+    internalOrders?: Array<{
+      supplierId: string;
+      supplierEvaluation: {
+        overallScore: number;
+        qualityScore: number;
+        deliveryScore: number;
+        conformityScore: number;
+        serviceScore: number;
+        methodologyVersion: number;
+      } | null;
+    }>;
+    nomusEligible?: Array<{ supplierExternalId: number; _count: { _all: number } }>;
+  }) {
+    const log: QueryLog = [];
+    const prisma = {
+      nomusPurchaseOrderSupplierEvaluation: {
+        findMany: async (args: Record<string, unknown>) => {
+          log.push({ model: "nomusPurchaseOrderSupplierEvaluation", op: "findMany", args });
+          return input.nomusEvals ?? [];
+        },
+      },
+      purchaseOrder: {
+        findMany: async (args: Record<string, unknown>) => {
+          log.push({ model: "purchaseOrder", op: "findMany", args });
+          return input.internalOrders ?? [];
+        },
+      },
+      nomusPurchaseOrder: {
+        groupBy: async (args: Record<string, unknown>) => {
+          log.push({ model: "nomusPurchaseOrder", op: "groupBy", args });
+          return input.nomusEligible ?? [];
+        },
+      },
+    };
+    return { prisma: prisma as unknown as PrismaClient, log };
+  }
+
+  it("5 e 50 fornecedores usam o mesmo número de consultas", async () => {
+    const five = Array.from({ length: 5 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`);
+    const fifty = Array.from({ length: 50 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    const fake5 = createListSummaryFake({});
+    const fake50 = createListSummaryFake({});
+    await loadSupplierEvaluationListSummaries(fake5.prisma, five);
+    await loadSupplierEvaluationListSummaries(fake50.prisma, fifty);
+    assert.equal(fake5.log.length, fake50.log.length);
+    assert.ok(fake5.log.length >= 2 && fake5.log.length <= 3);
+  });
+
+  it("não associa avaliação Nomus com identidade FALLBACK", async () => {
+    const supplierId = "11111111-1111-4111-8111-111111111111";
+    const fake = createListSummaryFake({
+      nomusEvals: [
+        {
+          financialSupplierId: supplierId,
+          supplierMatchConfidence: "FALLBACK",
+          overallScore: 5,
+          qualityScore: 5,
+          deliveryScore: 5,
+          conformityScore: 5,
+          serviceScore: 5,
+          methodologyVersion: 2,
+          nomusPurchaseOrder: { supplierExternalId: 99 },
+        },
+      ],
+      internalOrders: [],
+    });
+    const result = await loadSupplierEvaluationListSummaries(fake.prisma, [supplierId]);
+    assert.equal(result.items[0]?.summary.overallScore, null);
   });
 });
 

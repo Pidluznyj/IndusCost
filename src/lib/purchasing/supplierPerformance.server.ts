@@ -23,6 +23,7 @@ import {
   buildSupplierPerformanceSummary,
   computeSupplierOrderEvaluation,
   describePurchaseOrderSupplierEvaluationEligibility,
+  resolveSupplierEvaluationAggregation,
   normalizeSupplierEvaluationExpectedRevision,
   normalizeSupplierEvaluationNotes,
   normalizeSupplierEvaluationRevisionReason,
@@ -38,8 +39,13 @@ import {
   type SupplierPerformanceReportResponse,
   type SupplierPerformanceReportRowDto,
   type SupplierPerformanceReportSort,
+  type SupplierEvaluationListSummaryDto,
 } from "./supplierPerformance.js";
 import type { SupplierPerformanceDetailCsvRow } from "./supplierPerformanceCsv.js";
+import {
+  isSupplierIdentitySafeForEvaluation,
+  NOMUS_SUPPLIER_EVALUATION_SAFE_CONFIDENCE,
+} from "./nomusPurchaseOrderEvaluation.js";
 
 export type SupplierEvaluationActor = {
   userId: string;
@@ -277,7 +283,6 @@ export async function savePurchaseOrderSupplierEvaluation(
   actor: SupplierEvaluationActor,
   payload: SupplierEvaluationWritePayload
 ): Promise<PurchaseOrderSupplierEvaluationResponse> {
-  const { scores, overallScore } = computeSupplierOrderEvaluation(payload);
   const notes = normalizeSupplierEvaluationNotes(payload.notes);
   const expectedRevision = normalizeSupplierEvaluationExpectedRevision(
     payload.expectedRevision
@@ -304,6 +309,12 @@ export async function savePurchaseOrderSupplierEvaluation(
     assertPurchaseOrderSupplierEvaluationEligible(order.status);
 
     const current = order.supplierEvaluation as EvaluationRow | null;
+    const methodologyVersion =
+      current?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION;
+    const { scores, overallScore } = computeSupplierOrderEvaluation(
+      payload,
+      methodologyVersion
+    );
 
     if (!current) {
       if (expectedRevision != null) {
@@ -388,7 +399,7 @@ export async function savePurchaseOrderSupplierEvaluation(
         conformityScore: dec(scores.conformity),
         serviceScore: dec(scores.service),
         overallScore: dec(overallScore),
-        methodologyVersion: SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
+        methodologyVersion: current.methodologyVersion,
         notes,
         revision: expectedRevision + 1,
         updatedByUserId: actor.userId,
@@ -410,7 +421,7 @@ export async function savePurchaseOrderSupplierEvaluation(
       metaJson: {
         evaluationId: current.id,
         revision: expectedRevision + 1,
-        methodologyVersion: SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
+        methodologyVersion: current.methodologyVersion,
         before: {
           quality: decToNumber(current.qualityScore),
           delivery: decToNumber(current.deliveryScore),
@@ -447,6 +458,7 @@ const EVALUATED_ROW_SELECT = {
       deliveryScore: true,
       conformityScore: true,
       serviceScore: true,
+      methodologyVersion: true,
     },
   },
 } as const;
@@ -459,6 +471,7 @@ const EVALUATION_LIST_SELECT = {
   conformityScore: true,
   serviceScore: true,
   overallScore: true,
+  methodologyVersion: true,
   revision: true,
   createdAt: true,
   createdByUserName: true,
@@ -487,32 +500,44 @@ type EvaluatedAggregationRow = {
     deliveryScore: Prisma.Decimal;
     conformityScore: Prisma.Decimal;
     serviceScore: Prisma.Decimal;
+    methodologyVersion: number;
   } | null;
 };
 
-function averagesFromRows(rows: readonly EvaluatedAggregationRow[]) {
-  const overall: number[] = [];
-  const quality: number[] = [];
-  const delivery: number[] = [];
-  const conformity: number[] = [];
-  const service: number[] = [];
-  for (const row of rows) {
-    const e = row.supplierEvaluation;
-    if (!e) continue;
-    overall.push(decToNumber(e.overallScore));
-    quality.push(decToNumber(e.qualityScore));
-    delivery.push(decToNumber(e.deliveryScore));
-    conformity.push(decToNumber(e.conformityScore));
-    service.push(decToNumber(e.serviceScore));
-  }
+function toScoreRow(evaluation: {
+  overallScore: Prisma.Decimal;
+  qualityScore: Prisma.Decimal;
+  deliveryScore: Prisma.Decimal;
+  conformityScore: Prisma.Decimal;
+  serviceScore: Prisma.Decimal;
+  methodologyVersion: number;
+}) {
   return {
-    count: overall.length,
+    overallScore: decToNumber(evaluation.overallScore),
+    qualityScore: decToNumber(evaluation.qualityScore),
+    deliveryScore: decToNumber(evaluation.deliveryScore),
+    conformityScore: decToNumber(evaluation.conformityScore),
+    serviceScore: decToNumber(evaluation.serviceScore),
+    methodologyVersion: evaluation.methodologyVersion,
+  };
+}
+
+function averagesFromRows(rows: readonly EvaluatedAggregationRow[]) {
+  const aggregated = resolveSupplierEvaluationAggregation(
+    rows
+      .map((row) => row.supplierEvaluation)
+      .filter((evaluation): evaluation is NonNullable<typeof evaluation> => evaluation != null)
+      .map(toScoreRow)
+  );
+  return {
+    count: aggregated.overall.length,
+    methodology: aggregated.methodology,
     averages: {
-      overall: averageScoreOrNull(overall),
-      quality: averageScoreOrNull(quality),
-      delivery: averageScoreOrNull(delivery),
-      conformity: averageScoreOrNull(conformity),
-      service: averageScoreOrNull(service),
+      overall: averageScoreOrNull(aggregated.overall),
+      quality: averageScoreOrNull(aggregated.quality),
+      delivery: averageScoreOrNull(aggregated.delivery),
+      conformity: averageScoreOrNull(aggregated.conformity),
+      service: averageScoreOrNull(aggregated.service),
     },
   };
 }
@@ -640,6 +665,8 @@ export async function buildSupplierPerformanceDetail(
       status: supplier.status,
     },
     period: params.period,
+    scaleMin: aggregated.methodology.scaleMin,
+    scaleMax: aggregated.methodology.scaleMax,
     summary: buildSupplierPerformanceSummary({
       eligibleOrders,
       evaluatedOrders: aggregated.count,
@@ -867,6 +894,168 @@ export async function buildSupplierPerformanceDetailCsvRows(
       notes: evaluation ? evaluation.notes : null,
     };
   });
+}
+
+const LIST_SUMMARY_MAX_IDS = 200;
+
+export type SupplierEvaluationListSummariesResult = {
+  items: SupplierEvaluationListSummaryDto[];
+  queryCount: number;
+};
+
+/**
+ * Notas da página de Fornecedores: agregação em lote, sem N+1.
+ * FinancialSupplier só é chave — nenhuma coluna de nota é lida/gravada no cadastro.
+ */
+export async function loadSupplierEvaluationListSummaries(
+  prisma: PrismaClient,
+  supplierIds: readonly string[]
+): Promise<SupplierEvaluationListSummariesResult> {
+  const uniqueIds = [...new Set(supplierIds.filter((id) => typeof id === "string" && id.length > 0))];
+  if (uniqueIds.length === 0) return { items: [], queryCount: 0 };
+  if (uniqueIds.length > LIST_SUMMARY_MAX_IDS) {
+    throw new SupplierEvaluationError(
+      "INVALID_SUPPLIER_PERFORMANCE_FILTER",
+      `Informe no máximo ${LIST_SUMMARY_MAX_IDS} fornecedores.`
+    );
+  }
+
+  let queryCount = 0;
+
+  queryCount += 1;
+  const nomusEvals = await prisma.nomusPurchaseOrderSupplierEvaluation.findMany({
+    where: {
+      financialSupplierId: { in: uniqueIds },
+      supplierMatchConfidence: { in: [...NOMUS_SUPPLIER_EVALUATION_SAFE_CONFIDENCE] },
+    },
+    select: {
+      financialSupplierId: true,
+      supplierMatchConfidence: true,
+      overallScore: true,
+      qualityScore: true,
+      deliveryScore: true,
+      conformityScore: true,
+      serviceScore: true,
+      methodologyVersion: true,
+      nomusPurchaseOrder: { select: { supplierExternalId: true } },
+    },
+  });
+
+  queryCount += 1;
+  const internalOrders = await prisma.purchaseOrder.findMany({
+    where: {
+      supplierId: { in: uniqueIds },
+      status: { in: ELIGIBLE_STATUSES },
+    },
+    select: {
+      supplierId: true,
+      supplierEvaluation: {
+        select: {
+          overallScore: true,
+          qualityScore: true,
+          deliveryScore: true,
+          conformityScore: true,
+          serviceScore: true,
+          methodologyVersion: true,
+        },
+      },
+    },
+  });
+
+  const externalIds = [
+    ...new Set(
+      nomusEvals
+        .map((row) => row.nomusPurchaseOrder.supplierExternalId)
+        .filter((id): id is number => id != null)
+    ),
+  ];
+  queryCount += 1;
+  const nomusEligibleRows =
+    externalIds.length === 0
+      ? []
+      : await prisma.nomusPurchaseOrder.groupBy({
+          by: ["supplierExternalId"],
+          where: { supplierExternalId: { in: externalIds } },
+          _count: { _all: true },
+        });
+
+  const nomusEligibleByExternalId = new Map<number, number>();
+  for (const row of nomusEligibleRows) {
+    if (row.supplierExternalId == null) continue;
+    nomusEligibleByExternalId.set(row.supplierExternalId, row._count._all);
+  }
+
+  type Bucket = {
+    scores: ReturnType<typeof toScoreRow>[];
+    internalEligible: number;
+    nomusExternalIds: Set<number>;
+  };
+  const buckets = new Map<string, Bucket>();
+  const bucketOf = (id: string): Bucket => {
+    let bucket = buckets.get(id);
+    if (!bucket) {
+      bucket = {
+        scores: [],
+        internalEligible: 0,
+        nomusExternalIds: new Set(),
+      };
+      buckets.set(id, bucket);
+    }
+    return bucket;
+  };
+
+  for (const row of nomusEvals) {
+    if (!row.financialSupplierId) continue;
+    if (
+      !isSupplierIdentitySafeForEvaluation({
+        matchConfidence: row.supplierMatchConfidence,
+        financialSupplierId: row.financialSupplierId,
+      })
+    ) {
+      continue;
+    }
+    const bucket = bucketOf(row.financialSupplierId);
+    bucket.scores.push(toScoreRow(row));
+    if (row.nomusPurchaseOrder.supplierExternalId != null) {
+      bucket.nomusExternalIds.add(row.nomusPurchaseOrder.supplierExternalId);
+    }
+  }
+
+  for (const row of internalOrders) {
+    const bucket = bucketOf(row.supplierId);
+    bucket.internalEligible += 1;
+    if (row.supplierEvaluation) bucket.scores.push(toScoreRow(row.supplierEvaluation));
+  }
+
+  const items: SupplierEvaluationListSummaryDto[] = uniqueIds.map((supplierId) => {
+    const bucket = buckets.get(supplierId);
+    let nomusEligible = 0;
+    if (bucket) {
+      for (const externalId of bucket.nomusExternalIds) {
+        nomusEligible += nomusEligibleByExternalId.get(externalId) ?? 0;
+      }
+    }
+    const aggregated = resolveSupplierEvaluationAggregation(bucket?.scores ?? []);
+    const eligibleOrders = (bucket?.internalEligible ?? 0) + nomusEligible;
+    return {
+      supplierId,
+      scaleMin: aggregated.methodology.scaleMin,
+      scaleMax: aggregated.methodology.scaleMax,
+      summary: buildSupplierPerformanceSummary({
+        eligibleOrders,
+        evaluatedOrders: aggregated.overall.length,
+        averages: {
+          overall: averageScoreOrNull(aggregated.overall),
+          quality: averageScoreOrNull(aggregated.quality),
+          delivery: averageScoreOrNull(aggregated.delivery),
+          conformity: averageScoreOrNull(aggregated.conformity),
+          service: averageScoreOrNull(aggregated.service),
+        },
+      }),
+    };
+  });
+
+  return { items, queryCount };
 }
 
 /* ------------------------------------------------------------------ *

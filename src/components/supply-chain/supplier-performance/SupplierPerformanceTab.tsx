@@ -23,6 +23,8 @@ import {
   formatPurchaseOrderAmount,
   formatSupplierCoverage,
   formatSupplierScore,
+  formatSupplierScoreWithScale,
+  formatSupplierEvaluationCount,
   parseSupplierPerformanceCivilDateParam,
   type PurchaseOrderSupplierEvaluationDto,
   type SupplierPerformanceDetailResponse,
@@ -265,7 +267,13 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
                 className="mt-1 text-2xl font-bold tabular-nums"
                 data-testid="supplier-performance-overall"
               >
-                {formatSupplierScore(summary?.overallScore ?? null)}
+                {formatSupplierScoreWithScale(summary?.overallScore ?? null, data.scaleMax)}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {formatSupplierEvaluationCount(summary?.evaluatedOrders ?? 0)}
+                {summary?.eligibleOrders
+                  ? ` · ${summary.evaluatedOrders} de ${summary.eligibleOrders} pedidos`
+                  : ""}
               </p>
             </div>
 

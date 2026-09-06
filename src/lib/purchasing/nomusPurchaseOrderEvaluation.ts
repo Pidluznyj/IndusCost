@@ -145,6 +145,8 @@ export type NomusSupplierEvaluationWorklistResponse = {
   page: number;
   pageSize: number;
   total: number;
+  scaleMin: number;
+  scaleMax: number;
   kpis: NomusSupplierEvaluationWorklistKpis;
   items: NomusSupplierEvaluationWorklistRow[];
 };

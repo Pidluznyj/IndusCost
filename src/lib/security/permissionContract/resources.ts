@@ -2201,6 +2201,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/purchase-quotations/:id/awards/:awardId/approve",
       "/api/purchase-orders/:id/approve",
       "/api/purchase-orders/:id/supplier-evaluation",
+      "/api/supplier-performance/suppliers/summaries",
       "/api/supplier-performance/suppliers/:supplierId",
       "/api/supplier-performance/report",
       "/api/supplier-performance/nomus-orders/worklist",

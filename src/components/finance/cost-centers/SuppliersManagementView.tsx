@@ -55,6 +55,22 @@ import { FinanceSupplierCadastroDrawer } from "@/src/components/finance/cost-cen
 import { FinanceSupplierPaymentDrilldownSection } from "@/src/components/finance/cost-centers/FinanceSupplierPaymentDrilldownSection";
 import { FinanceSupplierTitlesModal } from "@/src/components/finance/cost-centers/FinanceSupplierTitlesModal";
 import { SupplierServiceTerminationDialog } from "@/src/components/finance/cost-centers/SupplierServiceTerminationDialog";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
+import {
+  fetchSupplierEvaluationListSummaries,
+  useSupplierPerformanceFeatureEnabled,
+} from "@/src/lib/purchasing/supplierPerformanceClient";
+import type { SupplierEvaluationListSummaryDto } from "@/src/lib/purchasing/supplierPerformance";
+import {
+  formatSupplierCoverage,
+  formatSupplierEvaluationCount,
+  formatSupplierScoreWithScale,
+} from "@/src/lib/purchasing/supplierPerformance";
 
 export type SuppliersManagementContext = "finance-menu" | "cost-center-tab";
 
@@ -95,6 +111,17 @@ export function SuppliersManagementView({
   onSuppliersChanged,
 }: Props) {
   const navigate = useNavigate();
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const supplierPerformanceEnabled = useSupplierPerformanceFeatureEnabled();
+  const canViewEvaluation =
+    auth.hasPermission("purchases.view") ||
+    permissions.canPerformAction(
+      OPERATIONS_RESOURCE_KEYS.purchases,
+      OPERATIONS_ACTIONS.view
+    );
+  const showEvaluationScore =
+    supplierPerformanceEnabled === true && canViewEvaluation;
   const [searchParams, setSearchParams] = useSearchParams();
   const [preview, setPreview] = useState<FinanceSupplierRebuildPreviewPayload | null>(null);
   const [rules, setRules] = useState<SupplierCostCenterRuleDto[]>([]);
@@ -290,6 +317,41 @@ export function SuppliersManagementView({
     const paged = paginateFinanceGridRows(gridRows, { page, pageSize });
     return { ...paged, page: clampFinanceGridPage(page, paged.totalPages) };
   }, [gridRows, page, pageSize]);
+
+  const [evaluationSummaries, setEvaluationSummaries] = useState<
+    Record<string, SupplierEvaluationListSummaryDto>
+  >({});
+
+  const pageSupplierIds = useMemo(
+    () =>
+      pageRows
+        .map((row) => row.supplierId)
+        .filter((id): id is string => Boolean(id)),
+    [pageRows]
+  );
+  const pageSupplierIdsKey = pageSupplierIds.join(",");
+
+  useEffect(() => {
+    if (!showEvaluationScore) {
+      setEvaluationSummaries({});
+      return;
+    }
+    if (!pageSupplierIdsKey) {
+      setEvaluationSummaries({});
+      return;
+    }
+    const controller = new AbortController();
+    void fetchSupplierEvaluationListSummaries(pageSupplierIdsKey.split(","), controller.signal)
+      .then((payload) => {
+        const next: Record<string, SupplierEvaluationListSummaryDto> = {};
+        for (const item of payload.items) next[item.supplierId] = item;
+        setEvaluationSummaries(next);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setEvaluationSummaries({});
+      });
+    return () => controller.abort();
+  }, [showEvaluationScore, pageSupplierIdsKey]);
 
   const hasActiveFilters =
     Boolean(search.trim()) ||
@@ -540,7 +602,14 @@ export function SuppliersManagementView({
           >
             {pageRows.map((row) => (
               <tr key={row.supplierKey} className="border-b border-border/60">
-                <td className="px-3 py-2 font-semibold">{row.name}</td>
+                <td className="px-3 py-2 font-semibold">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span>{row.name}</span>
+                    {showEvaluationScore && row.supplierId ? (
+                      <SupplierListEvaluationBadge summary={evaluationSummaries[row.supplierId]} />
+                    ) : null}
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-muted-foreground">{row.document ?? "—"}</td>
                 <td className="px-3 py-2">
                   {row.status === "INACTIVE" ? (
@@ -722,5 +791,42 @@ export function SuppliersManagementView({
         </>
       ) : null}
     </div>
+  );
+}
+
+function SupplierListEvaluationBadge({
+  summary,
+}: {
+  summary: SupplierEvaluationListSummaryDto | undefined;
+}) {
+  if (!summary || summary.summary.overallScore == null) {
+    return (
+      <span
+        className="text-xs font-medium text-muted-foreground"
+        data-testid="supplier-list-evaluation-empty"
+        title="Sem avaliações"
+      >
+        Sem avaliações
+      </span>
+    );
+  }
+  const title = [
+    formatSupplierScoreWithScale(summary.summary.overallScore, summary.scaleMax),
+    formatSupplierEvaluationCount(summary.summary.evaluatedOrders),
+    summary.summary.coverage == null ? null : `Cobertura ${formatSupplierCoverage(summary.summary.coverage)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <span
+      className="inline-flex flex-wrap items-baseline gap-x-1.5 text-xs font-semibold tabular-nums text-primary"
+      data-testid="supplier-list-evaluation-score"
+      title={title}
+    >
+      <span>{formatSupplierScoreWithScale(summary.summary.overallScore, summary.scaleMax)}</span>
+      <span className="font-medium text-muted-foreground">
+        {formatSupplierEvaluationCount(summary.summary.evaluatedOrders)}
+      </span>
+    </span>
   );
 }

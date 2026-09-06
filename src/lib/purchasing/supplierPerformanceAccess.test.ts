@@ -146,6 +146,7 @@ describe("registro das rotas", () => {
         "GET /api/supplier-performance/report",
         "GET /api/supplier-performance/report.csv",
         "GET /api/supplier-performance/suppliers/:supplierId",
+        "GET /api/supplier-performance/suppliers/summaries",
         "POST /api/supplier-performance/nomus-orders/batch",
         "PUT /api/purchase-orders/:id/supplier-evaluation",
         "PUT /api/supplier-performance/nomus-orders/:id",
@@ -282,6 +283,7 @@ describe("feature flag ligada — permissões", () => {
     process.env[FLAG_ENV] = "1";
     const paths = [
       "/api/supplier-performance/suppliers/:supplierId",
+      "/api/supplier-performance/suppliers/summaries",
       "/api/supplier-performance/report",
       "/api/supplier-performance/report.csv",
       "/api/supplier-performance/orders.csv",

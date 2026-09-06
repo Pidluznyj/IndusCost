@@ -13,6 +13,7 @@ import type {
   SupplierPerformancePeriod,
   SupplierPerformanceReportResponse,
   SupplierPerformanceReportSort,
+  SupplierEvaluationListSummaryDto,
 } from "./supplierPerformance";
 import type { SupplierPerformanceDetailCsvRow } from "./supplierPerformanceCsv";
 
@@ -75,6 +76,20 @@ export function savePurchaseOrderSupplierEvaluationRequest(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }
+  );
+}
+
+export function fetchSupplierEvaluationListSummaries(
+  supplierIds: readonly string[],
+  signal?: AbortSignal
+): Promise<{ items: SupplierEvaluationListSummaryDto[] }> {
+  const ids = supplierIds.filter(Boolean);
+  if (ids.length === 0) return Promise.resolve({ items: [] });
+  const params = new URLSearchParams();
+  params.set("ids", ids.join(","));
+  return fetchJsonOk<{ items: SupplierEvaluationListSummaryDto[] }>(
+    `/api/supplier-performance/suppliers/summaries?${params.toString()}`,
+    signal ? { signal } : undefined
   );
 }
 

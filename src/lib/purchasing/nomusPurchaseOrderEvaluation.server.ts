@@ -16,6 +16,7 @@ import {
   parseNomusPurchaseOrderListFilters,
 } from "@/src/lib/nomus/nomusPurchaseOrderQuery.js";
 import {
+  resolveSupplierEvaluationAggregation,
   SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
   SupplierEvaluationError,
   averageScoreOrNull,
@@ -219,10 +220,8 @@ export async function saveNomusPurchaseOrderSupplierEvaluation(
   actor: SupplierEvaluationActor,
   payload: SupplierEvaluationWritePayload
 ): Promise<NomusSupplierEvaluationDto> {
-  const { scores, overallScore } = computeSupplierOrderEvaluation(payload);
   const notes = normalizeSupplierEvaluationNotes(payload.notes);
   const expectedRevision = normalizeSupplierEvaluationExpectedRevision(payload.expectedRevision);
-  const afterJson = snapshotScores({ ...scores, overall: overallScore });
 
   await prisma.$transaction(async (tx) => {
     const order = await tx.nomusPurchaseOrder.findUnique({
@@ -262,6 +261,13 @@ export async function saveNomusPurchaseOrderSupplierEvaluation(
     });
     const financialSupplierId = identitySafe ? resolved.financialSupplierId : null;
     const current = order.supplierEvaluation as EvaluationRow | null;
+    const methodologyVersion =
+      current?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION;
+    const { scores, overallScore } = computeSupplierOrderEvaluation(
+      payload,
+      methodologyVersion
+    );
+    const afterJson = snapshotScores({ ...scores, overall: overallScore });
 
     if (!current) {
       if (expectedRevision != null) {
@@ -338,6 +344,7 @@ export async function saveNomusPurchaseOrderSupplierEvaluation(
         conformityScore: dec(scores.conformity),
         serviceScore: dec(scores.service),
         overallScore: dec(overallScore),
+        methodologyVersion: current.methodologyVersion,
         notes,
         revision: expectedRevision + 1,
         updatedByUserId: actor.userId,
@@ -568,6 +575,7 @@ export async function buildNomusSupplierEvaluationWorklist(
             deliveryScore: true,
             conformityScore: true,
             serviceScore: true,
+            methodologyVersion: true,
           },
         },
       },
@@ -592,30 +600,29 @@ export async function buildNomusSupplierEvaluationWorklist(
     }),
   ]);
 
-  const overall: number[] = [];
-  const quality: number[] = [];
-  const delivery: number[] = [];
-  const conformity: number[] = [];
-  const service: number[] = [];
-  for (const row of evaluatedRows) {
-    const e = row.supplierEvaluation;
-    if (!e) continue;
-    overall.push(decToNumber(e.overallScore));
-    quality.push(decToNumber(e.qualityScore));
-    delivery.push(decToNumber(e.deliveryScore));
-    conformity.push(decToNumber(e.conformityScore));
-    service.push(decToNumber(e.serviceScore));
-  }
+  const aggregated = resolveSupplierEvaluationAggregation(
+    evaluatedRows
+      .map((row) => row.supplierEvaluation)
+      .filter((evaluation): evaluation is NonNullable<typeof evaluation> => evaluation != null)
+      .map((evaluation) => ({
+        overallScore: decToNumber(evaluation.overallScore),
+        qualityScore: decToNumber(evaluation.qualityScore),
+        deliveryScore: decToNumber(evaluation.deliveryScore),
+        conformityScore: decToNumber(evaluation.conformityScore),
+        serviceScore: decToNumber(evaluation.serviceScore),
+        methodologyVersion: evaluation.methodologyVersion,
+      }))
+  );
 
   const kpis = buildSupplierPerformanceSummary({
     eligibleOrders: eligibleCount,
-    evaluatedOrders: overall.length,
+    evaluatedOrders: aggregated.overall.length,
     averages: {
-      overall: averageScoreOrNull(overall),
-      quality: averageScoreOrNull(quality),
-      delivery: averageScoreOrNull(delivery),
-      conformity: averageScoreOrNull(conformity),
-      service: averageScoreOrNull(service),
+      overall: averageScoreOrNull(aggregated.overall),
+      quality: averageScoreOrNull(aggregated.quality),
+      delivery: averageScoreOrNull(aggregated.delivery),
+      conformity: averageScoreOrNull(aggregated.conformity),
+      service: averageScoreOrNull(aggregated.service),
     },
   });
 
@@ -661,6 +668,14 @@ export async function buildNomusSupplierEvaluationWorklist(
     };
   });
 
-  return { page, pageSize, total, kpis, items };
+  return {
+    page,
+    pageSize,
+    total,
+    scaleMin: aggregated.methodology.scaleMin,
+    scaleMax: aggregated.methodology.scaleMax,
+    kpis,
+    items,
+  };
 }
 
