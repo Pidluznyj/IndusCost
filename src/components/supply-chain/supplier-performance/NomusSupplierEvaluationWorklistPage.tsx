@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
+import { NomusEvaluationSupplierAutocomplete } from "@/src/components/supply-chain/supplier-performance/NomusEvaluationSupplierAutocomplete";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess";
@@ -21,6 +22,7 @@ import {
 import {
   fetchNomusSupplierEvaluationWorklist,
   saveNomusPurchaseOrderSupplierEvaluationsBatchRequest,
+  type NomusEvaluationSupplierSuggestion,
 } from "@/src/lib/purchasing/nomusPurchaseOrderEvaluationClient";
 import { useSupplierPerformanceFeatureEnabled } from "@/src/lib/purchasing/supplierPerformanceClient";
 import type {
@@ -28,6 +30,7 @@ import type {
   NomusSupplierEvaluationWorklistRow,
 } from "@/src/lib/purchasing/nomusPurchaseOrderEvaluation";
 import { nomusPurchaseOrderStageLabel } from "@/src/lib/nomus/nomusPurchaseOrderUi";
+import { NOMUS_PURCHASE_ORDER_STAGES } from "@/src/lib/nomus/nomusPurchaseOrderTypes";
 
 type ScoreDraft = Record<SupplierEvaluationCriterionKey, string>;
 const EMPTY: ScoreDraft = { quality: "", delivery: "", conformity: "", service: "" };
@@ -66,7 +69,8 @@ export function NomusSupplierEvaluationWorklistPage() {
     [periodPreset]
   );
   const [q, setQ] = useState("");
-  const [supplier, setSupplier] = useState("");
+  const [selectedSupplier, setSelectedSupplier] = useState<NomusEvaluationSupplierSuggestion | null>(null);
+  const [stage, setStage] = useState("");
   const [evaluationStatus, setEvaluationStatus] = useState("pending");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -86,7 +90,12 @@ export function NomusSupplierEvaluationWorklistPage() {
       const payload = await fetchNomusSupplierEvaluationWorklist({
         ...period,
         q: q.trim() || null,
-        supplier: supplier.trim() || null,
+        supplierExternalId: selectedSupplier?.supplierExternalId ?? null,
+        supplier:
+          selectedSupplier && selectedSupplier.supplierExternalId == null
+            ? selectedSupplier.nomusName
+            : null,
+        stage: stage || null,
         evaluationStatus,
         page,
         pageSize: 50,
@@ -104,7 +113,7 @@ export function NomusSupplierEvaluationWorklistPage() {
     } finally {
       setLoading(false);
     }
-  }, [period, q, supplier, evaluationStatus, page]);
+  }, [period, q, selectedSupplier, stage, evaluationStatus, page]);
 
   useEffect(() => {
     if (featureEnabled === true) void load();
@@ -221,8 +230,8 @@ export function NomusSupplierEvaluationWorklistPage() {
     <div className="space-y-4" data-testid="nomus-supplier-evaluation-worklist">
       <PurchaseChainViewNav current="supplier-evaluation" variant="nomus" />
       <p className="text-sm text-muted-foreground">
-        Avaliação local do IndusCost pelo Pedido Nomus. A nota do fornecedor é a média das avaliações
-        finalizadas — não é digitada no cadastro e não vai ao Nomus.
+        Cada Pedido Nomus tem a sua avaliação. A nota do fornecedor é a média simples dos pedidos
+        avaliados — por quesito e no geral, sem ponderar valor financeiro e sem writeback no Nomus.
       </p>
 
       {kpis ? (
@@ -236,7 +245,10 @@ export function NomusSupplierEvaluationWorklistPage() {
               kpis.coverage == null ? "Sem pedidos elegíveis no período" : formatSupplierCoverage(kpis.coverage)
             }
           />
-          <Kpi label="Nota média" value={formatSupplierScore(kpis.overallScore)} />
+          <Kpi
+            label={selectedSupplier ? "Nota do fornecedor" : "Nota média"}
+            value={formatSupplierScore(kpis.overallScore)}
+          />
           <Kpi
             label="Q / P / C / A"
             value={`${formatSupplierScore(kpis.qualityScore, 2)} · ${formatSupplierScore(kpis.deliveryScore, 2)} · ${formatSupplierScore(kpis.conformityScore, 2)} · ${formatSupplierScore(kpis.serviceScore, 2)}`}
@@ -258,17 +270,31 @@ export function NomusSupplierEvaluationWorklistPage() {
             data-testid="nse-filter-q"
           />
         </label>
-        <label className="flex min-w-[12rem] flex-col gap-1 text-xs text-muted-foreground">
-          Fornecedor
-          <input
-            value={supplier}
+        <NomusEvaluationSupplierAutocomplete
+          selected={selectedSupplier}
+          onSelect={(next) => {
+            setPage(1);
+            setSelectedSupplier(next);
+          }}
+        />
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Status do pedido
+          <select
+            value={stage}
             onChange={(e) => {
               setPage(1);
-              setSupplier(e.target.value);
+              setStage(e.target.value);
             }}
             className="rounded-md border border-border bg-white px-2 py-1.5 text-sm"
-            data-testid="nse-filter-supplier"
-          />
+            data-testid="nse-filter-stage"
+          >
+            <option value="">Todos os status</option>
+            {NOMUS_PURCHASE_ORDER_STAGES.map((value) => (
+              <option key={value} value={value}>
+                {nomusPurchaseOrderStageLabel(value)}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Período
@@ -301,7 +327,6 @@ export function NomusSupplierEvaluationWorklistPage() {
           >
             <option value="pending">Pendentes</option>
             <option value="evaluated">Finalizados</option>
-            <option value="ineligible">Não elegíveis</option>
             <option value="all">Todos</option>
           </select>
         </label>

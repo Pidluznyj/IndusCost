@@ -6,7 +6,10 @@
  * Sugestão automática não existe no MVP OP-26 — devolve null, nunca 0.
  */
 
-import type { NomusPurchaseOrderStage } from "@/src/lib/nomus/nomusPurchaseOrderTypes.js";
+import {
+  NOMUS_PURCHASE_ORDER_STAGES,
+  type NomusPurchaseOrderStage,
+} from "@/src/lib/nomus/nomusPurchaseOrderTypes.js";
 import type {
   PurchaseOrderRelationConfidence,
   PurchaseOrderRelationMethod,
@@ -22,9 +25,9 @@ import {
   type SupplierPerformanceSummaryDto,
 } from "./supplierPerformance.js";
 
-export const NOMUS_SUPPLIER_EVALUATION_ELIGIBLE_STAGES: readonly NomusPurchaseOrderStage[] = [
-  "RECEIVED",
-];
+/** Toda a base Nomus é avaliável — inclusive pedidos novos/abertos. */
+export const NOMUS_SUPPLIER_EVALUATION_ELIGIBLE_STAGES: readonly NomusPurchaseOrderStage[] =
+  NOMUS_PURCHASE_ORDER_STAGES;
 
 export const NOMUS_SUPPLIER_EVALUATION_SAFE_CONFIDENCE: readonly PurchaseOrderRelationConfidence[] =
   ["EXACT", "HIGH"];
@@ -41,31 +44,17 @@ export type NomusSupplierEvaluationSuggestion = Record<
 >;
 
 export function isNomusPurchaseOrderSupplierEvaluationEligible(
-  stage: string | null | undefined,
-  canceled?: boolean | null
+  _stage?: string | null,
+  _canceled?: boolean | null
 ): boolean {
-  if (canceled === true) return false;
-  if (!stage) return false;
-  return (NOMUS_SUPPLIER_EVALUATION_ELIGIBLE_STAGES as readonly string[]).includes(stage);
+  return true;
 }
 
 export function describeNomusPurchaseOrderSupplierEvaluationEligibility(
-  stage: string | null | undefined,
-  canceled?: boolean | null
+  _stage?: string | null,
+  _canceled?: boolean | null
 ): { eligible: boolean; eligibilityReason: string | null } {
-  if (canceled === true || stage === "CANCELED") {
-    return {
-      eligible: false,
-      eligibilityReason: "Pedido cancelado não é elegível para avaliação de fornecedor.",
-    };
-  }
-  if (isNomusPurchaseOrderSupplierEvaluationEligible(stage, canceled)) {
-    return { eligible: true, eligibilityReason: null };
-  }
-  return {
-    eligible: false,
-    eligibilityReason: "Pedido Nomus ainda não está recebido por completo.",
-  };
+  return { eligible: true, eligibilityReason: null };
 }
 
 export function nomusSupplierEvaluationStatus(input: {
@@ -186,6 +175,18 @@ export type NomusSupplierEvaluationBatchItemResult =
 
 export type NomusSupplierEvaluationWorklistFilter = {
   evaluationStatus: SupplierPerformanceEvaluationStatusFilter;
+};
+
+/** Sugestão de autocomplete: vem da base Nomus, não de uma lista paralela. */
+export type NomusEvaluationSupplierSuggestion = {
+  supplierExternalId: number | null;
+  nomusName: string | null;
+  resolvedName: string | null;
+  resolvedDocument: string | null;
+  financialSupplierId: string | null;
+  matchConfidence: string;
+  identitySafe: boolean;
+  orderCount: number;
 };
 
 /** Confirma que o motor interno de PO não é a identidade desta aba. */

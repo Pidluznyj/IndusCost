@@ -140,6 +140,7 @@ describe("registro das rotas", () => {
       routes.map((r) => `${r.method} ${r.path}`).sort(),
       [
         "GET /api/purchase-orders/:id/supplier-evaluation",
+        "GET /api/supplier-performance/nomus-orders/suppliers",
         "GET /api/supplier-performance/nomus-orders/worklist",
         "GET /api/supplier-performance/orders.csv",
         "GET /api/supplier-performance/report",

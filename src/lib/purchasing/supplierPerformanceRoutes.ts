@@ -49,6 +49,7 @@ import {
   buildNomusSupplierEvaluationWorklist,
   saveNomusPurchaseOrderSupplierEvaluation,
   saveNomusPurchaseOrderSupplierEvaluationsBatch,
+  searchNomusEvaluationSuppliers,
 } from "./nomusPurchaseOrderEvaluation.server.js";
 import {
   NOMUS_SUPPLIER_EVALUATION_BATCH_MAX_ITEMS,
@@ -304,6 +305,21 @@ export function registerSupplierPerformanceRoutes(
       const payload = await buildNomusSupplierEvaluationWorklist(
         prisma,
         req.query as Record<string, unknown>
+      );
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(payload);
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/supplier-performance/nomus-orders/suppliers", ...orderView, async (req, res) => {
+    try {
+      const payload = await searchNomusEvaluationSuppliers(
+        prisma,
+        req.query.q ?? req.query.search,
+        req.query.limit
       );
       res.setHeader("Cache-Control", "no-store");
       return res.json(payload);
