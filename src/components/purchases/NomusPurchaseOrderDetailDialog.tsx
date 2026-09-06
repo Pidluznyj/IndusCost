@@ -1,10 +1,19 @@
+import "./nomus-purchase-order-detail-print.css";
+import "@/src/sales-order-print.css";
+import "@/src/proposal-print.css";
+
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, ExternalLink, Loader2, Printer, X } from "lucide-react";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { cn, formatCurrency } from "@/src/lib/utils";
+import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
+import { mergePrintBranding } from "@/src/lib/printBranding";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { OverlayBadge } from "@/src/components/ui/overlay";
+import { NomusPurchaseOrderPrintDocument } from "@/src/components/purchases/NomusPurchaseOrderPrintDocument";
+import type { NomusPurchaseOrder360Detail } from "@/src/lib/nomus/nomusPurchaseOrder360Client";
 import {
   nomusPurchaseOrderFinancialLabel,
   nomusPurchaseOrderFinancialTone,
@@ -12,137 +21,11 @@ import {
   nomusPurchaseOrderStageTone,
 } from "@/src/lib/nomus/nomusPurchaseOrderUi";
 
+const DETAIL_PRINT_BODY_CLASS = "npo-detail-print-route";
+
 type DetailTabId = "geral" | "itens" | "fiscal" | "financeiro" | "nomus";
 
-type SupplierDto = {
-  nomusExternalId: number | null;
-  nomusName: string | null;
-  nomusDocument: string | null;
-  resolvedName: string | null;
-  resolvedDocument: string | null;
-  financialSupplierId: string | null;
-  matchMethod: string;
-  matchConfidence: string;
-  matched: boolean;
-  ambiguous: boolean;
-};
-
-type Detail360 = {
-  order: {
-    id: string;
-    externalId: number;
-    orderNumber: string | null;
-    statusRaw: string | null;
-    canceled: boolean | null;
-    stage: string;
-    issuedAt: string | null;
-    expectedAt: string | null;
-    overdue: boolean;
-    paymentTerms: string | null;
-    comments: string | null;
-    header: Record<string, unknown>;
-  };
-  supplier: SupplierDto;
-  items: Array<{
-    id: string;
-    lineCode: string | null;
-    productExternalId: number | null;
-    productCode: string | null;
-    description: string | null;
-    descriptionSource: string | null;
-    unit: string | null;
-    orderedQuantity: number | null;
-    receivedQuantity: number | null;
-    remainingQuantity: number | null;
-    unitPrice: number | null;
-    discountPercent: number | null;
-    discountAmount: number | null;
-    surchargePercent: number | null;
-    surchargeAmount: number | null;
-    totalAmount: number | null;
-    deliveryDate: string | null;
-    comments: string | null;
-    itemStatusCode: number | null;
-    itemStatusLabel: string | null;
-    unitId: number | null;
-    entrySectorId: number | null;
-    financialClassificationId: number | null;
-    movementTypeId: number | null;
-  }>;
-  plannedInstallments: Array<{
-    index: number;
-    dueDate: string | null;
-    dueDateRaw: string | null;
-    amount: number | null;
-    paymentMethodId: number | null;
-    bankAccountId: number | null;
-    generatesAdvance: boolean | null;
-  }>;
-  receiving: {
-    stage: string;
-    itemCount: number;
-    waitingRelease: number;
-    released: number;
-    partial: number;
-    received: number;
-    receivedWithCut: number;
-    canceled: number;
-    returnedPartial: number;
-    returnedFull: number;
-    receivingQuantityAvailable: boolean;
-  };
-  fiscal: {
-    invoices: Array<{
-      externalId: number;
-      number: string | null;
-      series: string | null;
-      key: string | null;
-      issuedAt: string | null;
-      processedAt: string | null;
-      issuerDocument: string | null;
-      status: number | null;
-      operationType: number | null;
-      amount: number | null;
-      canceled: boolean;
-      foundLocally: boolean;
-    }>;
-    unresolvedLabel: string | null;
-  };
-  confirmedPayables: Array<{
-    externalId: number;
-    sourceInvoiceNumber: string | null;
-    personName: string | null;
-    dueDate: string | null;
-    paymentDate: string | null;
-    settlementDate: string | null;
-    amountPayable: number | null;
-    amountPaid: number | null;
-    balancePayable: number | null;
-    paymentMethodName: string | null;
-    hasBoletoDocument: boolean;
-    boletoIsPaymentMethodOnly: boolean;
-  }>;
-  financialSummary: {
-    plannedInstallmentsTotal: number | null;
-    plannedInstallmentsCount: number;
-    financialStatus: string;
-    count: number;
-    confirmedAmount: number;
-    paidAmount: number;
-    openAmount: number;
-    hasBoletoDocument: boolean;
-  };
-  relationEvidence: Array<{ method: string; confidence: string; source: string; detail: string }>;
-  syncMetadata: {
-    firstSeenAt: string | null;
-    lastSeenAt: string | null;
-    syncedAt: string | null;
-    payloadHash: string | null;
-    createdAtNomus: string | null;
-    modifiedAtNomus: string | null;
-  };
-  rawPayload?: unknown;
-};
+type Detail360 = NomusPurchaseOrder360Detail;
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -215,6 +98,7 @@ export function NomusPurchaseOrderDetailDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTabId>("geral");
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
 
   useEffect(() => {
     if (!open || !orderId) {
@@ -249,6 +133,22 @@ export function NomusPurchaseOrderDetailDialog({
 
   useEffect(() => {
     if (!open) return;
+    const ac = new AbortController();
+    void fetchUiSessionCachedJson<BrandingSettingsDTO>("/api/branding-settings", {
+      signal: ac.signal,
+      ttlMs: 60_000,
+    })
+      .then((data) => {
+        if (!ac.signal.aborted) setBranding(mergePrintBranding(data, DEFAULT_BRANDING));
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setBranding(DEFAULT_BRANDING);
+      });
+    return () => ac.abort();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -271,7 +171,16 @@ export function NomusPurchaseOrderDetailDialog({
 
   const handlePrint = useCallback(() => {
     if (!payload) return;
-    window.print();
+    document.body.classList.add(DETAIL_PRINT_BODY_CLASS);
+    let fallbackTimer: number | null = null;
+    const cleanup = () => {
+      document.body.classList.remove(DETAIL_PRINT_BODY_CLASS);
+      window.removeEventListener("afterprint", cleanup);
+      if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
+    };
+    window.addEventListener("afterprint", cleanup);
+    fallbackTimer = window.setTimeout(cleanup, 60_000);
+    triggerBrowserPrint(120);
   }, [payload]);
 
   const apSearch =
@@ -284,7 +193,7 @@ export function NomusPurchaseOrderDetailDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/40 p-2 sm:p-4"
+      className="npo-detail-dialog-shell fixed inset-0 z-[70] flex items-stretch justify-center bg-black/40 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Detalhe do Pedido de Compra Nomus"
@@ -293,8 +202,8 @@ export function NomusPurchaseOrderDetailDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex w-full max-w-[1400px] max-h-[95vh] flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl sm:max-h-[92vh]">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-4 py-3">
+      <div className="npo-detail-dialog-panel flex w-full max-w-[1400px] max-h-[95vh] flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl sm:max-h-[92vh]">
+        <header className="npo-detail-no-print print-no-print flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-4 py-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1e3a8a]">
               Compras · Pedidos Nomus
@@ -328,6 +237,8 @@ export function NomusPurchaseOrderDetailDialog({
               onClick={handlePrint}
               disabled={!payload}
               className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-50"
+              data-testid="npo-detail-print"
+              title="Imprimir / Gerar PDF em A4 retrato"
             >
               <Printer className="h-3 w-3" />
               Imprimir / PDF
@@ -344,7 +255,7 @@ export function NomusPurchaseOrderDetailDialog({
           </div>
         </header>
 
-        <nav className="flex flex-wrap gap-1 border-b border-[#E5E7EB] px-4 py-2">
+        <nav className="npo-detail-no-print print-no-print flex flex-wrap gap-1 border-b border-[#E5E7EB] px-4 py-2">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -363,7 +274,7 @@ export function NomusPurchaseOrderDetailDialog({
           ))}
         </nav>
 
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+        <div className="npo-detail-no-print print-no-print min-h-0 flex-1 overflow-auto px-4 py-4">
           {loading ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="npo-detail-loading">
               <Loader2 className="h-4 w-4 animate-spin" /> Carregando ficha 360º…
@@ -382,6 +293,7 @@ export function NomusPurchaseOrderDetailDialog({
             <NomusTab payload={payload} canSeeRaw={canSeeRaw} />
           ) : null}
         </div>
+        {payload ? <NomusPurchaseOrderPrintDocument payload={payload} branding={branding} /> : null}
       </div>
     </div>,
     document.body

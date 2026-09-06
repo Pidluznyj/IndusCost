@@ -74,8 +74,39 @@ describe("NomusPurchaseOrder 360 UI", () => {
     assert.match(dialog, /npo-detail-loading/);
     assert.match(dialog, /npo-detail-error/);
     assert.match(dialog, /npo-raw-gated/);
+    assert.match(dialog, /NomusPurchaseOrderPrintDocument/);
+    assert.match(dialog, /triggerBrowserPrint/);
+    assert.match(dialog, /npo-detail-print-route/);
     assert.doesNotMatch(dialog, /NOMUS_TOKEN|Authorization|password|secret/i);
     assert.doesNotMatch(dialog, /Boleto disponível/);
+  });
+
+  it("impressão do detalhe usa A4 retrato e cabeçalho institucional com logo", () => {
+    const printCss = readFileSync(
+      "src/components/purchases/nomus-purchase-order-detail-print.css",
+      "utf8"
+    );
+    const printDoc = readFileSync(
+      "src/components/purchases/NomusPurchaseOrderPrintDocument.tsx",
+      "utf8"
+    );
+    assert.match(printCss, /size:\s*A4 portrait/);
+    assert.match(printCss, /npo-detail-print-root/);
+    assert.match(printCss, /print-doc-header-grid/);
+    assert.match(printCss, /print-doc-logo/);
+    assert.match(printCss, /max-height:\s*24mm/);
+    assert.match(printDoc, /PrintHeader/);
+    assert.match(printDoc, /PrintDocumentShell/);
+    assert.match(printDoc, /documentTitle="PEDIDO DE COMPRA"/);
+    assert.match(printDoc, /sales-order-print-document/);
+    assert.match(printDoc, /proposal-compact-document/);
+    assert.match(printDoc, /proposal-compact-header/);
+    assert.match(printDoc, /Documento gerado pelo IndusCost/);
+    assert.doesNotMatch(printDoc, /unitPrice \* orderedQuantity/);
+    assert.doesNotMatch(printDoc, /rawPayload/);
+    const reportsCss = readFileSync("src/reports-print.css", "utf8");
+    assert.match(reportsCss, /npo-detail-print-route/);
+    assert.match(reportsCss, /#npo-detail-print-root/);
   });
 
   it("rotas não escrevem no Nomus e não misturam PurchaseOrder interno", () => {

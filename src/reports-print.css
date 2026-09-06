@@ -14,6 +14,7 @@
   body.ar-titles-print-route #root,
   body.ap-titles-print-route #root,
   body.sales-order-detail-print-route #root,
+  body.npo-detail-print-route #root,
   body.finance-dre-print-route #root {
     display: none !important;
   }
@@ -40,6 +41,8 @@
   #ap-titles-print-root *,
   #sales-order-detail-print-root,
   #sales-order-detail-print-root *,
+  #npo-detail-print-root,
+  #npo-detail-print-root *,
   #finance-dre-print-root,
   #finance-dre-print-root * {
     visibility: visible !important;
