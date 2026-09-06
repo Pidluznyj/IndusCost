@@ -90,6 +90,12 @@ export type SatisfactionPublicFormDto = {
     respondentPhone: string | null;
   } | null;
   ratingScale: Array<{ value: number; label: string }>;
+  /** Contrato da verificação humana. `siteKey` é pública; o secret nunca entra aqui. */
+  turnstile: {
+    required: boolean;
+    siteKey: string | null;
+  };
+  /** Alias legado da site key pública. Preferir `turnstile.siteKey`. */
   turnstileSiteKey: string | null;
   /**
    * Identidade visual (Configurações > Identidade visual). A logo expandida
@@ -102,6 +108,19 @@ export type SatisfactionPublicFormDto = {
     companyName: string | null;
   };
 };
+
+function normalizePublicTurnstile(
+  turnstile: string | null | { required: boolean; siteKey: string | null }
+): { required: boolean; siteKey: string | null } {
+  if (turnstile && typeof turnstile === "object") {
+    return {
+      required: turnstile.required === true,
+      siteKey: turnstile.siteKey ?? null,
+    };
+  }
+  const siteKey = typeof turnstile === "string" && turnstile.trim() ? turnstile : null;
+  return { required: Boolean(siteKey), siteKey };
+}
 
 const UNAVAILABLE_MESSAGES: Record<SatisfactionUnavailableReason, string> = {
   NOT_OPEN: "Esta pesquisa não está disponível.",
@@ -300,7 +319,10 @@ export function createSatisfactionPublicService(deps: {
     /** DTO do formulário. Minimizado por construção. */
     async getForm(
       sessionToken: string | null,
-      turnstileSiteKey: string | null
+      turnstile:
+        | string
+        | null
+        | { required: boolean; siteKey: string | null }
     ): Promise<{ ok: true; form: SatisfactionPublicFormDto } | SatisfactionPublicFailure> {
       const session = await resolveSession(sessionToken);
       if (!session) return fail("INVALID");
@@ -430,7 +452,8 @@ export function createSatisfactionPublicService(deps: {
             value,
             label: ["", "Ruim", "Regular", "Bom", "Ótimo", "Excelente"][value] ?? String(value),
           })),
-          turnstileSiteKey,
+          turnstile: normalizePublicTurnstile(turnstile),
+          turnstileSiteKey: normalizePublicTurnstile(turnstile).siteKey,
           branding: {
             logoDataUrl: brandingLogoDataUrl,
             companyName: brandingCompanyName,
