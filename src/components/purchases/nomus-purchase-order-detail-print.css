@@ -1,0 +1,135 @@
+/**
+ * Impressão / PDF do Pedido de Compra Nomus 360º.
+ * Mesmo contrato do Pedido de Venda (`sales-order-print.css` + proposta compacta):
+ * A4 retrato, PrintHeader institucional (logo, empresa, CNPJ) e chrome do modal oculto.
+ * Necessário porque reports-print.css usa `body * { visibility: hidden }`.
+ */
+
+#npo-detail-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.npo-detail-print-route #root {
+    display: none !important;
+  }
+
+  body.npo-detail-print-route .npo-detail-dialog-shell,
+  body.npo-detail-print-route .npo-detail-dialog-shell *,
+  body.npo-detail-print-route .npo-detail-dialog-panel {
+    visibility: visible !important;
+  }
+
+  body.npo-detail-print-route .npo-detail-dialog-shell,
+  body.npo-detail-print-route .npo-detail-dialog-panel {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  body.npo-detail-print-route .npo-detail-no-print,
+  body.npo-detail-print-route .print-no-print {
+    display: none !important;
+  }
+
+  body.npo-detail-print-route .print-doc-header,
+  body.npo-detail-print-route .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.npo-detail-print-route .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: 28mm minmax(0, 1fr) 56mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
+    visibility: visible !important;
+  }
+
+  body.npo-detail-print-route .print-doc-logo-wrap,
+  body.npo-detail-print-route .print-doc-company-text,
+  body.npo-detail-print-route .print-doc-meta {
+    display: block !important;
+    visibility: visible !important;
+    min-width: 0 !important;
+  }
+
+  body.npo-detail-print-route .print-doc-logo,
+  #npo-detail-print-root .print-doc-logo {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+    width: auto !important;
+    max-height: 24mm !important;
+    max-width: 58mm !important;
+    object-fit: contain !important;
+    object-position: left top !important;
+  }
+
+  #npo-detail-print-root,
+  #npo-detail-print-root * {
+    visibility: visible !important;
+  }
+
+  #npo-detail-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #111 !important;
+    overflow: visible !important;
+  }
+
+  #npo-detail-print-root .print-document,
+  #npo-detail-print-root .print-section,
+  #npo-detail-print-root .sales-order-print-document,
+  #npo-detail-print-root .proposal-print-document,
+  #npo-detail-print-root .proposal-print-sheet {
+    max-width: none !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #npo-detail-print-root .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #npo-detail-print-root .print-section--flow {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  #npo-detail-print-root .print-doc-header.proposal-compact-header {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}

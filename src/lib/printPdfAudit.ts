@@ -284,6 +284,28 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
     ],
   },
   {
+    id: "nomus-purchase-order-360-print",
+    module: "Cadeia de Suprimentos",
+    feature: "Pedido de Compra Nomus 360º — Imprimir / PDF",
+    route: "/purchases/nomus-orders",
+    files: [
+      "src/components/purchases/NomusPurchaseOrderDetailDialog.tsx",
+      "src/components/purchases/NomusPurchaseOrderPrintDocument.tsx",
+      "src/components/purchases/nomus-purchase-order-detail-print.css",
+    ],
+    printMode: "browser-print",
+    hasPrintCss: true,
+    hasNoPrintShell: true,
+    hasSafePageBreaks: true,
+    hasFooterSafeArea: true,
+    hasChartPrintRules: false,
+    risk: "ok",
+    notes: [
+      "A4 portrait; PrintHeader institucional (logo, empresa, CNPJ) no mesmo padrão do Pedido de Venda.",
+      "Documento composto no backend mirror; sem raw JSON e sem escrita no Nomus.",
+    ],
+  },
+  {
     id: "material-demand-print",
     module: "Comercial / Engenharia",
     feature: "Uso de Matéria-Prima — Imprimir + CSV",
