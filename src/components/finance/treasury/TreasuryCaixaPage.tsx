@@ -470,10 +470,13 @@ export function TreasuryCaixaPage() {
     () =>
       timeline
         ? buildTreasuryCaixaMonthlyBalanceChart(
-            buildTreasuryCaixaMonthlyTimeline(timeline.rows)
+            buildTreasuryCaixaMonthlyTimeline(timeline.rows, {
+              historicalArMonthlyInflowDeltaByMonth:
+                data?.historicalArMonthlyInflowDeltaByMonth,
+            })
           )
         : [],
-    [timeline]
+    [timeline, data?.historicalArMonthlyInflowDeltaByMonth]
   );
 
   function handleMonthChange(value: string) {
@@ -596,6 +599,9 @@ export function TreasuryCaixaPage() {
             receivables={data?.receivables}
             payables={data?.payables}
             canonicalDays={data?.canonicalDays}
+            historicalArMonthlyInflowDeltaByMonth={
+              data?.historicalArMonthlyInflowDeltaByMonth
+            }
           />
         ) : null}
 

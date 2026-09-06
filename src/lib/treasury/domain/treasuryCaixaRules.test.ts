@@ -816,6 +816,34 @@ describe("treasuryCaixaRules — buildTreasuryCaixaMonthlyTimeline", () => {
     assert.equal(jul.days.length, 2);
   });
 
+  it("overlay histórico mensal ajusta Entrou sem mudar Saiu, dias nem fechamento", () => {
+    const months = buildTreasuryCaixaMonthlyTimeline(
+      tl([
+        d("2026-02-05", {
+          opening: 0,
+          inflows: 100,
+          outflows: 40,
+          closing: 60,
+        }),
+        d("2026-02-20", {
+          opening: 60,
+          inflows: 300,
+          outflows: 10,
+          closing: 350,
+        }),
+      ]),
+      { historicalArMonthlyInflowDeltaByMonth: { "2026-02": -100, "2026-01": 80 } }
+    );
+    const jan = months.find((m) => m.monthKey === "2026-01");
+    const feb = months.find((m) => m.monthKey === "2026-02");
+    assert.equal(feb?.inflows, 300);
+    assert.equal(feb?.outflows, 50);
+    assert.equal(feb?.closing, 350);
+    assert.equal(feb?.days.length, 2);
+    assert.equal(jan?.inflows, 80);
+    assert.equal(jan?.outflows, 0);
+  });
+
   it("separa os meses e ordena cronologicamente", () => {
     const months = buildTreasuryCaixaMonthlyTimeline(
       tl([d("2026-09-01"), d("2026-07-01"), d("2026-08-01")])

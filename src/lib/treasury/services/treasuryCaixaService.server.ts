@@ -43,6 +43,7 @@ import {
   resolveFinanceApRealizedAmount,
 } from "@/src/lib/financeAccountsPayableRules.js";
 import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
+import { resolveFinanceArHistoricalMonthlyMovementDate } from "@/src/lib/finance/financeArHistoricalMonthlyAttribution.js";
 import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import { FINANCE_SETTLEMENT_RECONCILIATION_LEGACY } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import type {
@@ -169,10 +170,19 @@ export function resolveTreasuryCaixaChainYears(
  * tempo mensal" do Fluxo de Caixa, que tem sua própria composição em
  * `financeCashFlowExecutiveSummary.ts`) — mudar a regra aqui não altera
  * aquela tela; as duas autoridades são deliberadamente desacopladas.
+ *
+ * O overlay histórico mensal (lotes administrativos fevereiro/2026) NÃO entra
+ * no default. Só quando `historicalMonthlyAttribution` é true — read model
+ * mensal — depois da regra canônica dos 3 dias.
  */
+export type TreasuryCaixaCanonicalRealizedOptions = {
+  historicalMonthlyAttribution?: boolean;
+};
+
 export function buildTreasuryCaixaCanonicalRealizedInputs(
   contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
-  reconciliation: FinanceSettlementReconciliationPolicy
+  reconciliation: FinanceSettlementReconciliationPolicy,
+  options?: TreasuryCaixaCanonicalRealizedOptions
 ): {
   receivables: { settlementDate: string | null; amountReceived: number }[];
   payables: {
@@ -188,6 +198,7 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
     paymentDate: string | null;
     amountPaid: number;
   }[] = [];
+  const historicalMonthlyAttribution = options?.historicalMonthlyAttribution === true;
 
   for (const ctx of contexts) {
     const yearPrefix = `${ctx.year}-`;
@@ -206,7 +217,14 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
         { reconciliation }
       );
       if (!effective) continue;
-      const key = toCivilDateKey(effective);
+      const attributed = historicalMonthlyAttribution
+        ? resolveFinanceArHistoricalMonthlyMovementDate({
+            dueDate: row.dueDate,
+            settlementDate: row.settlementDate,
+            normalDate: effective,
+          })
+        : effective;
+      const key = toCivilDateKey(attributed);
       if (!key || !key.startsWith(yearPrefix)) continue;
       const amount = Number(row.amountReceived);
       if (!Number.isFinite(amount) || amount === 0) continue;
@@ -228,6 +246,50 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
   }
 
   return { receivables, payables };
+}
+
+function roundMoneyDelta(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function arReceivedByMonth(
+  receivables: readonly { settlementDate: string | null; amountReceived: number }[]
+): Map<string, number> {
+  const byMonth = new Map<string, number>();
+  for (const row of receivables) {
+    const monthKey = row.settlementDate?.slice(0, 7);
+    if (!monthKey) continue;
+    byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + row.amountReceived);
+  }
+  return byMonth;
+}
+
+/**
+ * Deltas mensais de entrada AR: overlay histórico V1 minus regra canônica
+ * (3 dias). In-memory; zero query. Default diário permanece intacto.
+ */
+export function computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
+  contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
+  reconciliation: FinanceSettlementReconciliationPolicy
+): Record<string, number> {
+  const baseline = buildTreasuryCaixaCanonicalRealizedInputs(
+    contexts,
+    reconciliation
+  );
+  const overlay = buildTreasuryCaixaCanonicalRealizedInputs(
+    contexts,
+    reconciliation,
+    { historicalMonthlyAttribution: true }
+  );
+  const before = arReceivedByMonth(baseline.receivables);
+  const after = arReceivedByMonth(overlay.receivables);
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  const deltas: Record<string, number> = {};
+  for (const key of keys) {
+    const delta = roundMoneyDelta((after.get(key) ?? 0) - (before.get(key) ?? 0));
+    if (delta !== 0) deltas[key] = delta;
+  }
+  return deltas;
 }
 
 /**
@@ -597,6 +659,11 @@ export function createTreasuryCaixaService(input: {
           reconciliationPolicy
         )
       );
+      const historicalArMonthlyInflowDeltaByMonth =
+        computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
+          canonicalContexts,
+          reconciliationPolicy
+        );
       // Janela dos saldos informados (fechamentos/snapshots): da gênese (ou do
       // ano filtrado, se anterior a ela) até o fim do período — independe do
       // recorte de vencimento dos títulos.
@@ -930,6 +997,7 @@ export function createTreasuryCaixaService(input: {
         officialTodayBalance: officialToday,
         todayBalance: balanceAuthority.todayBalance,
         accountPositions: balanceAuthority.accountPositions,
+        historicalArMonthlyInflowDeltaByMonth,
       };
     },
   };

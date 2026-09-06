@@ -145,6 +145,8 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 
 **Linha do tempo mensal** (`executiveSummary.monthlyTimeline`): por mês — recebido, a receber (aberto por vencimento), entradas estimadas, pago, a pagar, saídas estimadas, saldo líquido, acumulado.
 
+Eixo da coluna **Recebido**: `dateAxis === "movement"` (baixa / `settlementDate`), com overlay **HISTORICAL SETTLEMENT NORMALIZATION V1** — ver `docs/finance/FINANCE_AR_HISTORICAL_SETTLEMENT_NORMALIZATION_V1.md`. O eixo planejado (`plannedMonthlyTimeline`) permanece `dueDate` e **não** recebe esse overlay.
+
 **Ano passado:** quando `hoje > 31/12` do ano selecionado, `openFromTodayToYearEnd` = 0 (sem projeção futura).
 
 **Origem Com NF / Sem NF:** afeta apenas AR (`invoiceIssued`).

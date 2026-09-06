@@ -838,8 +838,18 @@ function resolveMonthKind(
   return "REALIZED";
 }
 
+export type TreasuryCaixaMonthlyTimelineOptions = {
+  /**
+   * Overlay HISTORICAL SETTLEMENT NORMALIZATION V1 — só no read model mensal.
+   * Dias, saldo, previsão e AP permanecem na regra canônica. A soma dos dias
+   * pode divergir da coluna "Entrou" do mês quando o overlay realoca AR.
+   */
+  historicalArMonthlyInflowDeltaByMonth?: Readonly<Record<string, number>>;
+};
+
 export function buildTreasuryCaixaMonthlyTimeline(
-  rows: readonly TreasuryCaixaTimelineRow[]
+  rows: readonly TreasuryCaixaTimelineRow[],
+  options?: TreasuryCaixaMonthlyTimelineOptions
 ): TreasuryCaixaTimelineMonth[] {
   const byMonth = new Map<string, TreasuryCaixaTimelineRow[]>();
   for (const row of rows) {
@@ -849,7 +859,7 @@ export function buildTreasuryCaixaMonthlyTimeline(
     else byMonth.set(key, [row]);
   }
 
-  return [...byMonth.entries()]
+  const months = [...byMonth.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([monthKey, unsorted]) => {
       const days = [...unsorted].sort((a, b) =>
@@ -894,6 +904,37 @@ export function buildTreasuryCaixaMonthlyTimeline(
         openingAdjustment: hasOpeningAdjustment ? roundMoney(openingAdjustmentSum) : null,
       };
     });
+
+  const deltas = options?.historicalArMonthlyInflowDeltaByMonth;
+  if (!deltas) return months;
+
+  const byKey = new Map<string, TreasuryCaixaTimelineMonth>(
+    months.map((m) => [m.monthKey, { ...m }])
+  );
+  for (const [monthKey, delta] of Object.entries(deltas)) {
+    if (!Number.isFinite(delta) || delta === 0) continue;
+    const existing = byKey.get(monthKey);
+    if (existing) {
+      existing.inflows = roundMoney(existing.inflows + delta);
+      continue;
+    }
+    if (delta < 0) continue;
+    const stub: TreasuryCaixaTimelineMonth = {
+      monthKey,
+      kind: "REALIZED",
+      opening: null,
+      inflows: roundMoney(delta),
+      outflows: 0,
+      closing: null,
+      divergence: null,
+      divergentDayCount: 0,
+      negative: false,
+      firstNegativeDate: null,
+      days: [],
+    };
+    byKey.set(monthKey, stub);
+  }
+  return [...byKey.values()].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
 /**
@@ -1636,6 +1677,12 @@ export type TreasuryCaixaBoardDto = {
    * posição para a UI mostrar frescor ("saldo de ontem").
    */
   accountPositions?: readonly TreasuryCaixaAccountPositionDto[];
+  /**
+   * Overlay HISTORICAL SETTLEMENT NORMALIZATION V1 — deltas de entrada AR
+   * para a linha do tempo mensal. Não altera dias, saldo, AP, previsão nem
+   * a regra dos 3 dias. Ausente/vazio = nenhum título do lote histórico.
+   */
+  historicalArMonthlyInflowDeltaByMonth?: Readonly<Record<string, number>>;
 };
 
 export type TreasuryCaixaAccountPositionDto = {

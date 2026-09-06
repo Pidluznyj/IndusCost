@@ -66,6 +66,11 @@ export type TreasuryCaixaTimelineProps = {
    * no centavo. Elimina o filtro por `dueDate` no frontend.
    */
   canonicalDays?: readonly TreasuryCaixaCanonicalDay[];
+  /**
+   * Overlay histórico mensal de AR (lotes fevereiro/2026). Não altera a
+   * visão dia a dia nem o drill-down canônico.
+   */
+  historicalArMonthlyInflowDeltaByMonth?: Readonly<Record<string, number>>;
 };
 
 type ViewMode = "month" | "day";
@@ -985,6 +990,7 @@ export function TreasuryCaixaTimeline({
   receivables = [],
   payables = [],
   canonicalDays = [],
+  historicalArMonthlyInflowDeltaByMonth,
 }: TreasuryCaixaTimelineProps) {
   const canonicalByDay = useMemo(() => {
     const map = new Map<string, TreasuryCaixaCanonicalDay>();
@@ -993,9 +999,11 @@ export function TreasuryCaixaTimeline({
   }, [canonicalDays]);
   const months = useMemo(() => {
     if (!timeline) return [];
-    const fromDays = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
+    const fromDays = buildTreasuryCaixaMonthlyTimeline(timeline.rows, {
+      historicalArMonthlyInflowDeltaByMonth,
+    });
     return appendTreasuryCaixaMonthlyDueEstimates(fromDays, monthlyDueEstimates);
-  }, [timeline, monthlyDueEstimates]);
+  }, [timeline, monthlyDueEstimates, historicalArMonthlyInflowDeltaByMonth]);
   const spansMultipleMonths = months.length > 1;
   /** Anomalias indexadas por dia+campo, para marcar a célula direto na tabela. */
   const outliers = useMemo(() => {

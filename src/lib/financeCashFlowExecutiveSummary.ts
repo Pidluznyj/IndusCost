@@ -9,10 +9,11 @@ import {
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
 import {
+  endOfLocalDay,
   filterFinanceArManagementReportRows,
-  sumFinanceArReceivedBySettlementInFilteredRows,
   toFinanceArSettlementScopeFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { resolveFinanceArHistoricalMonthlyMovementDate } from "./finance/financeArHistoricalMonthlyAttribution.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
   resolveOfficialArCashFlowExecutiveMetrics,
@@ -320,6 +321,36 @@ function calendarMonthEnd(year: number, month: number): Date {
   return startOfLocalDay(new Date(year, month, 0));
 }
 
+/**
+ * Recebido da linha do tempo mensal no eixo `movement`: motor normal =
+ * settlementDate; overlay histórico V1 só para o lote administrativo
+ * fevereiro/2026 com lag > 15. Não usado no eixo planejado (dueDate).
+ */
+function sumArReceivedByHistoricalMonthlyMovement(
+  rows: ReadonlyArray<{
+    dueDate: Date | null;
+    settlementDate: Date | null;
+    amountReceived: number;
+  }>,
+  periodStart: Date,
+  periodEnd: Date
+): number {
+  const startMs = periodStart.getTime();
+  const endMs = endOfLocalDay(periodEnd).getTime();
+  let total = 0;
+  for (const row of rows) {
+    const movement = resolveFinanceArHistoricalMonthlyMovementDate({
+      dueDate: row.dueDate,
+      settlementDate: row.settlementDate,
+      normalDate: row.settlementDate,
+    });
+    if (!(movement instanceof Date)) continue;
+    const t = movement.getTime();
+    if (t >= startMs && t <= endMs) total += row.amountReceived;
+  }
+  return roundMoney(total);
+}
+
 /** Saldo AP em aberto por mês calendário, recortado ao intervalo futuro (hoje → 31/12). */
 export function buildApOpenForwardMonthlyBreakdown(
   rows: FinanceCashFlowApRow[],
@@ -440,7 +471,7 @@ export function buildExecutiveMonthlyTimeline(
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
     const monthEndDate = calendarMonthEnd(year, m);
     const received = useMovementAxis
-      ? sumFinanceArReceivedBySettlementInFilteredRows(arForReceived, monthStart, monthEndDate)
+      ? sumArReceivedByHistoricalMonthlyMovement(arForReceived, monthStart, monthEndDate)
       : sumArReceivedInPeriod(arForReceived, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
     const paid = useMovementAxis

@@ -17,10 +17,10 @@
  *   4. o refiltro interno das somas oficiais
  *      (`filterFinanceArManagementReportRows` / `filterFinanceApRows`).
  *
- * Somar `amountReceived` por settlementDate (AR) e `realizedAmount` por
- * `resolveFinanceApEffectivePaymentDate` (AP) sobre estes conjuntos reproduz,
- * por construção, os números "Recebido"/"Pago" daquela tela — qualquer mês,
- * mesmo particionado por dia.
+ * População: estes conjuntos são a fonte do realizado mensal. A atribuição
+ * do mês de "Recebido" no eixo `movement` aplica ainda o overlay
+ * HISTORICAL SETTLEMENT NORMALIZATION V1 (`resolveFinanceArHistoricalMonthlyMovementDate`).
+ * Somar cru por `settlementDate` reproduz o realizado *antes* desse overlay.
  */
 
 import type { PrismaClient } from "@prisma/client";

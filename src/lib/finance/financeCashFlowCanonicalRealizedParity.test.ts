@@ -5,8 +5,8 @@
  * Contrato provado aqui (declarado em dois lugares no código):
  *   - `financeCashFlowCanonicalRealized.server.ts` (cabeçalho): expõe
  *     "exatamente os MESMOS conjuntos que alimentam a Linha do tempo mensal";
- *     somar `amountReceived` por `settlementDate` sobre eles "reproduz, por
- *     construção, os números Recebido/Pago daquela tela".
+ *     somar `amountReceived` pela mesma atribuição histórica mensal V1
+ *     reproduz os números Recebido/Pago daquela tela.
  *   - `treasuryCaixaService.server.ts` (getBoard): "MESMA população de títulos
  *     (CR/CP) que a Linha do tempo mensal do Fluxo de Caixa carrega".
  *
@@ -28,6 +28,7 @@ import {
 } from "@/src/lib/financeCashFlowDashboard.js";
 import { buildFinanceCashFlowExecutiveSummary } from "@/src/lib/financeCashFlowExecutiveSummary.js";
 import { deriveFinanceCashFlowCanonicalRealizedYearSets } from "./financeCashFlowCanonicalRealized.server.js";
+import { resolveFinanceArHistoricalMonthlyMovementDate } from "./financeArHistoricalMonthlyAttribution.js";
 import { buildTreasuryCaixaCanonicalRealizedInputs } from "@/src/lib/treasury/services/treasuryCaixaService.server.js";
 import { FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS } from "./financeSettlementReconciliation.js";
 
@@ -171,16 +172,21 @@ function cashFlowSummary(rows: FinanceCashFlowArRow[] = BASE_ROWS) {
   );
 }
 
-/** Soma canônica do realizado: `amountReceived` por `settlementDate` no mês. */
+/** Soma canônica do realizado mensal: mesma atribuição histórica da tela. */
 function canonicalReceivedInMonth(
   sets: ReturnType<typeof canonicalSets>,
   month: number
 ): number {
   let total = 0;
   for (const row of sets.arReceivedRows) {
-    if (!row.settlementDate) continue;
-    if (row.settlementDate.getFullYear() !== YEAR) continue;
-    if (row.settlementDate.getMonth() + 1 !== month) continue;
+    const movement = resolveFinanceArHistoricalMonthlyMovementDate({
+      dueDate: row.dueDate,
+      settlementDate: row.settlementDate,
+      normalDate: row.settlementDate,
+    });
+    if (!(movement instanceof Date)) continue;
+    if (movement.getFullYear() !== YEAR) continue;
+    if (movement.getMonth() + 1 !== month) continue;
     total += row.amountReceived;
   }
   return Math.round(total * 100) / 100;

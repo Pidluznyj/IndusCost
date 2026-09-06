@@ -17,6 +17,7 @@ import {
 } from "@/src/lib/finance/financeSettlementReconciliation.js";
 import {
   buildTreasuryCaixaCanonicalRealizedInputs,
+  computeTreasuryCaixaHistoricalArMonthlyInflowDeltas,
   resolveTreasuryCaixaChainYears,
 } from "./treasuryCaixaService.server.js";
 
@@ -345,5 +346,135 @@ describe("buildTreasuryCaixaCanonicalRealizedInputs", () => {
     assert.deepEqual(inputs.payables, [
       { dueDate: null, paymentDate: "2026-01-01", amountPaid: 700 },
     ]);
+  });
+});
+
+describe("overlay histórico mensal AR — Tesouraria", () => {
+  it("default NÃO aplica o overlay (dias/regra dos 3 dias intactos)", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [
+          arRow({
+            dueDate: new Date(2025, 11, 1),
+            settlementDate: new Date(2026, 1, 5),
+            amountReceived: 100,
+          }),
+        ], []),
+      ],
+      POLICY
+    );
+    assert.deepEqual(inputs.receivables, [
+      { settlementDate: "2026-02-05", amountReceived: 100 },
+    ]);
+  });
+
+  it("historicalMonthlyAttribution: lote >15 vai ao dueDate; ano 2026 perde o título de 2025", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [
+          arRow({
+            dueDate: new Date(2025, 11, 1),
+            settlementDate: new Date(2026, 1, 5),
+            amountReceived: 100,
+          }),
+        ], []),
+      ],
+      POLICY,
+      { historicalMonthlyAttribution: true }
+    );
+    assert.deepEqual(inputs.receivables, []);
+  });
+
+  it("D+1 / D+2 / D+3 continuam na regra canônica mesmo com overlay ligado", () => {
+    const DUE = new Date(2026, 7, 5);
+    for (const [label, settled] of [
+      ["D+1", new Date(2026, 7, 6)],
+      ["D+2", new Date(2026, 7, 7)],
+      ["D+3", new Date(2026, 7, 8)],
+    ] as const) {
+      const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+        [ctx(2026, [arRow({ dueDate: DUE, settlementDate: settled, amountReceived: 100 })], [])],
+        POLICY,
+        { historicalMonthlyAttribution: true }
+      );
+      assert.deepEqual(
+        inputs.receivables,
+        [{ settlementDate: "2026-08-05", amountReceived: 100 }],
+        label
+      );
+    }
+  });
+
+  it("lag >15 fora dos quatro dias permanece na data efetiva normal", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [
+          arRow({
+            dueDate: new Date(2026, 0, 1),
+            settlementDate: new Date(2026, 1, 20),
+            amountReceived: 300,
+          }),
+        ], []),
+      ],
+      POLICY,
+      { historicalMonthlyAttribution: true }
+    );
+    assert.deepEqual(inputs.receivables, [
+      { settlementDate: "2026-02-20", amountReceived: 300 },
+    ]);
+  });
+
+  it("AP permanece idêntico com overlay ligado", () => {
+    const ap = [
+      apRow({
+        dueDate: new Date(2026, 1, 10),
+        paymentDate: new Date(2026, 1, 20),
+        amountPayable: 50,
+        amountPaid: 50,
+        balancePayable: 0,
+      }),
+    ];
+    const without = buildTreasuryCaixaCanonicalRealizedInputs(
+      [ctx(2026, [], ap)],
+      POLICY
+    );
+    const withOverlay = buildTreasuryCaixaCanonicalRealizedInputs(
+      [ctx(2026, [], ap)],
+      POLICY,
+      { historicalMonthlyAttribution: true }
+    );
+    assert.deepEqual(withOverlay.payables, without.payables);
+    assert.deepEqual(withOverlay.payables, [
+      { dueDate: null, paymentDate: "2026-02-10", amountPaid: 50 },
+    ]);
+  });
+
+  it("deltas mensais: lote histórico sai de Fev e não duplica; título 20/02 fica", () => {
+    const contexts = [
+      ctx(2026, [
+        arRow({
+          dueDate: new Date(2025, 11, 6),
+          settlementDate: new Date(2026, 1, 5),
+          amountReceived: 100,
+        }),
+        arRow({
+          dueDate: new Date(2026, 0, 31),
+          settlementDate: new Date(2026, 1, 2),
+          amountReceived: 200,
+        }),
+        arRow({
+          dueDate: new Date(2026, 0, 1),
+          settlementDate: new Date(2026, 1, 20),
+          amountReceived: 300,
+        }),
+      ], []),
+    ];
+    const deltas = computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
+      contexts,
+      POLICY
+    );
+    assert.equal(deltas["2026-02"], -100);
+    assert.equal(deltas["2026-01"], undefined);
+    assert.equal(Object.keys(deltas).includes("2026-02"), true);
   });
 });

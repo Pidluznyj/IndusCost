@@ -112,7 +112,10 @@ export function buildTreasuryCaixaAnnualSeries(input: {
     base,
     board.dailyDueEstimates ?? []
   );
-  const months = buildTreasuryCaixaMonthlyTimeline(timeline.rows);
+  const months = buildTreasuryCaixaMonthlyTimeline(timeline.rows, {
+    historicalArMonthlyInflowDeltaByMonth:
+      board.historicalArMonthlyInflowDeltaByMonth,
+  });
   const points = buildTreasuryCaixaMonthlyBalanceChart(months);
   return { timeline, months, points };
 }

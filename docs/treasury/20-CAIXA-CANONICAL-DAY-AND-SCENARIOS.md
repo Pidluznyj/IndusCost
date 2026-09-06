@@ -237,3 +237,10 @@ gráficos. Alteração da política é auditada no `TreasuryAuditLog`.
 - Âncora oficial cai para cadeia calculada quando nenhuma fonte estiver
   disponível — mecânica prevista com warning explícito, não é fallback
   silencioso.
+
+## 10. Overlay histórico mensal AR (fevereiro/2026)
+
+A linha do tempo **por mês** aplica `HISTORICAL_SETTLEMENT_NORMALIZATION_V1`
+somente na coluna Entrou de AR, depois da regra canônica dos 3 dias.
+O motor único-de-dia, o dia a dia, cenários e a regra dos N dias **não**
+mudam. Ver `docs/finance/FINANCE_AR_HISTORICAL_SETTLEMENT_NORMALIZATION_V1.md`.
