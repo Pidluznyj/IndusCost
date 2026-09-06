@@ -462,6 +462,11 @@ function SummaryCard({
   );
 }
 
+function prefixPresentationAdjustment(day: TreasuryScenarioDay): number {
+  const extra = day as TreasuryScenarioDay & { presentationAdjustment?: number };
+  return extra.presentationAdjustment ?? 0;
+}
+
 function ScenarioTooltip({
   active,
   payload,
@@ -480,6 +485,7 @@ function ScenarioTooltip({
   if (!row) return null;
   const day = daysByLabel.get(row.civilDate);
   if (!day) return null;
+  const historicalPresentationAdjustment = prefixPresentationAdjustment(day);
 
   const Line = ({
     label,
@@ -549,7 +555,15 @@ function ScenarioTooltip({
         </div>
       ) : (
         <div className="mt-2 border-t border-[#E5E7EB]/60 pt-1.5 text-[10px] text-[#6B7280]">
-          Realizado: +{money(day.realizedInflows)} / −{money(day.realizedOutflows)}
+          <div>
+            Realizado: +{money(day.realizedInflows)} / −{money(day.realizedOutflows)}
+          </div>
+          {historicalPresentationAdjustment !== 0 ? (
+            <div>
+              Ajuste histórico de apresentação:{" "}
+              {money(historicalPresentationAdjustment)}
+            </div>
+          ) : null}
         </div>
       )}
       {day.warnings.length > 0 ? (

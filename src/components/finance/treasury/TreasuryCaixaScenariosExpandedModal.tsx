@@ -43,7 +43,10 @@ import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/index.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
-import type { TreasuryCaixaDayFlow } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import type {
+  TreasuryCaixaDayFlow,
+  TreasuryCaixaHistoricalArPresentationBridge,
+} from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import { buildTreasuryCaixaAnnualSeries } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import {
   buildScenarioPastPrefix,
@@ -115,6 +118,8 @@ type LoadedData = {
     inflows: number;
     outflows: number;
   }[];
+  /** Ponte de apresentação histórica — só o prefixo do gráfico consome. */
+  presentationBridge: TreasuryCaixaHistoricalArPresentationBridge | null;
 };
 
 export type TreasuryCaixaScenariosExpandedModalProps = {
@@ -189,10 +194,12 @@ export function TreasuryCaixaScenariosExpandedModal({
 
     const applyLoaded = (loaded: LoadedData) => {
       setData(loaded);
-      const pastCount = loaded.annualRows.filter(
-        (r) => r.civilDate < loaded.payload.asOfCivilDate
-      ).length;
-      const total = pastCount + loaded.payload.days.length;
+      const prefix = buildScenarioPastPrefix({
+        timelineRows: loaded.annualRows,
+        asOfCivilDate: loaded.payload.asOfCivilDate,
+        presentationBridge: loaded.presentationBridge,
+      });
+      const total = prefix.rows.length + loaded.payload.days.length;
       setRange(total > 0 ? { startIndex: 0, endIndex: total - 1 } : null);
       setError(null);
     };
@@ -249,6 +256,7 @@ export function TreasuryCaixaScenariosExpandedModal({
       const loaded: LoadedData = {
         payload,
         annualRows: annual.timeline.rows,
+        presentationBridge: board.historicalArGraphPresentationBridge ?? null,
       };
       cacheRef.current = loaded;
       applyLoaded(loaded);
@@ -269,9 +277,16 @@ export function TreasuryCaixaScenariosExpandedModal({
         ? buildScenarioPastPrefix({
             timelineRows: data.annualRows,
             asOfCivilDate: data.payload.asOfCivilDate,
+            presentationBridge: data.presentationBridge,
           })
         : null,
     [data]
+  );
+
+  const hasHistoricalPresentationBridge = Boolean(
+    data?.presentationBridge &&
+      (data.presentationBridge.openingAdjustment !== 0 ||
+        Object.keys(data.presentationBridge.adjustmentByCivilDate).length > 0)
   );
 
   const timelineByDate = useMemo(() => {
@@ -505,6 +520,15 @@ export function TreasuryCaixaScenariosExpandedModal({
               coincidem); a partir de hoje, cenários do motor oficial. Tudo
               local — nenhum novo carregamento ao recortar.
             </p>
+            {hasHistoricalPresentationBridge ? (
+              <p
+                className="-mt-1 text-[10px] text-muted-foreground"
+                data-testid="caixa-scenarios-expanded-historical-note"
+              >
+                Histórico do gráfico ajustado por competência para baixas
+                administrativas. A tabela diária mantém os movimentos factuais.
+              </p>
+            ) : null}
 
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <KpiCard

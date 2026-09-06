@@ -368,6 +368,86 @@ describe("visão ampliada — prefixo do passado realizado", () => {
       []
     );
   });
+
+  it("A/B. displayClosing = canonical + running; row.closing canônico não é mutado", () => {
+    const rows = [
+      { civilDate: "2026-01-15", opening: 1000, closing: 1000, inflows: 0, outflows: 0 },
+      { civilDate: "2026-02-05", opening: 1000, closing: 1100, inflows: 100, outflows: 0 },
+      { civilDate: "2026-02-20", opening: 1100, closing: 1100, inflows: 0, outflows: 0 },
+    ];
+    const frozen = rows.map((r) => ({ ...r }));
+    const { rows: prefixRows, days } = buildScenarioPastPrefix({
+      timelineRows: rows,
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 0,
+        adjustmentByCivilDate: { "2026-01-31": 100, "2026-02-05": -100 },
+      },
+    });
+    assert.deepEqual(rows, frozen, "timeline canônica permanece intacta");
+    const byDate = Object.fromEntries(prefixRows.map((r) => [r.civilDate, r]));
+    assert.equal(byDate["2026-01-15"]!.real, 1000);
+    assert.equal(byDate["2026-01-31"]!.real, 1100, "fechamento gerencial de janeiro");
+    assert.equal(byDate["2026-02-05"]!.real, 1100);
+    assert.equal(byDate["2026-02-20"]!.real, 1100);
+    const jan31 = days.find((d) => d.civilDate === "2026-01-31");
+    assert.equal(jan31?.realizedInflows, 0);
+    assert.equal(jan31?.realizedOutflows, 0);
+    assert.equal(jan31?.presentationAdjustment, 100);
+    const feb5 = days.find((d) => d.civilDate === "2026-02-05");
+    assert.equal(feb5?.realizedInflows, 100, "inflow factual preservado");
+    assert.equal(feb5?.presentationAdjustment, -100);
+  });
+
+  it("C/D. opt/real/pes iguais no passado; sim permanece null", () => {
+    const { rows: prefixRows } = buildScenarioPastPrefix({
+      timelineRows,
+      asOfCivilDate: "2026-08-24",
+      presentationBridge: {
+        openingAdjustment: 12,
+        adjustmentByCivilDate: { "2026-08-20": -12 },
+      },
+    });
+    for (const r of prefixRows) {
+      assert.equal(r.opt, r.real);
+      assert.equal(r.pes, r.real);
+      assert.equal(r.sim, null);
+    }
+  });
+
+  it("J. após o bridge zerar, a linha histórica volta ao closing canônico", () => {
+    const { rows: prefixRows } = buildScenarioPastPrefix({
+      timelineRows: [
+        { civilDate: "2026-01-10", opening: 200, closing: 200, inflows: 0, outflows: 0 },
+        { civilDate: "2026-02-05", opening: 200, closing: 280, inflows: 80, outflows: 0 },
+        { civilDate: "2026-03-01", opening: 280, closing: 280, inflows: 0, outflows: 0 },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 80,
+        adjustmentByCivilDate: { "2026-02-05": -80 },
+      },
+    });
+    const byDate = Object.fromEntries(prefixRows.map((r) => [r.civilDate, r]));
+    assert.equal(byDate["2026-01-10"]!.real, 280);
+    assert.equal(byDate["2026-02-05"]!.real, 280);
+    assert.equal(byDate["2026-03-01"]!.real, 280);
+  });
+
+  it("H. prefixo nunca inclui asOf nem futuro — forecast permanece fora da ponte", () => {
+    const { rows: prefixRows } = buildScenarioPastPrefix({
+      timelineRows: [
+        { civilDate: "2026-09-01", opening: 10, closing: 10, inflows: 0, outflows: 0 },
+        { civilDate: "2026-09-02", opening: 10, closing: 20, inflows: 10, outflows: 0 },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 5,
+        adjustmentByCivilDate: { "2026-09-01": -5, "2026-09-02": 99 },
+      },
+    });
+    assert.deepEqual(prefixRows.map((r) => r.civilDate), []);
+  });
 });
 
 describe("visão ampliada — presets da janela completa (passado+futuro)", () => {
@@ -627,6 +707,54 @@ describe("visão ampliada — gates estruturais", () => {
       chart.includes("prefix?:"),
       "prefix deve ser OPCIONAL no chart — card atual não passa a prop"
     );
+    assert.ok(
+      modal.includes("presentationBridge: data.presentationBridge"),
+      "a visão ampliada aplica a ponte só no prefixo histórico"
+    );
+    assert.ok(
+      modal.includes("caixa-scenarios-expanded-historical-note"),
+      "indicação discreta do ajuste histórico no modal"
+    );
+    assert.equal(
+      page.includes("historicalArGraphPresentationBridge"),
+      false,
+      "o card pequeno / tabela da página não consomem a ponte do gráfico"
+    );
+  });
+
+  it("E/F/G. ponte exclusiva do gráfico: tabela diária, mensal e fluxo não consomem", () => {
+    const timeline = readSource("./domain/treasuryCaixaRules.ts");
+    const annual = readSource("./treasuryCaixaAnnualViewUi.ts");
+    const timelineUi = readSource(
+      "../../components/finance/treasury/TreasuryCaixaTimeline.tsx"
+    );
+    const pageSrc = readSource(
+      "../../components/finance/treasury/TreasuryCaixaPage.tsx"
+    );
+    const cashFlow = readSource("../financeCashFlowExecutiveSummary.ts");
+    assert.ok(
+      timeline.includes("historicalArMonthlyInflowDeltaByMonth"),
+      "overlay mensal permanece no read model mensal"
+    );
+    assert.equal(annual.includes("historicalArGraphPresentationBridge"), false);
+    assert.equal(timelineUi.includes("historicalArGraphPresentationBridge"), false);
+    assert.equal(pageSrc.includes("historicalArGraphPresentationBridge"), false);
+    assert.equal(cashFlow.includes("historicalArGraphPresentationBridge"), false);
+    assert.equal(
+      modal.includes("historicalArMonthlyInflowDeltaByMonth"),
+      false,
+      "o gráfico não pode somar o overlay mensal por cima da ponte"
+    );
+  });
+
+  it("I. officialTodayBalance e forecast opening não são reescritos pelo prefixo", () => {
+    const prefixSrc = readSource("./treasuryCaixaScenariosExpandedUi.ts");
+    const fnStart = prefixSrc.indexOf("export function buildScenarioPastPrefix");
+    const fnEnd = prefixSrc.indexOf("export type TreasuryScenarioFullPreset");
+    const fn = prefixSrc.slice(fnStart, fnEnd);
+    assert.equal(fn.includes("officialTodayBalance"), false);
+    assert.equal(fn.includes("computeTreasuryCaixaScenarios"), false);
+    assert.ok(fn.includes("displayClosing"));
   });
 
   it("slicer não dispara fetch: interações apenas recortam índices", () => {

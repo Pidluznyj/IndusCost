@@ -19,6 +19,7 @@
 
 import { normalizeAnnualRange } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import type { TreasuryCaixaAnnualRange } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
+import type { TreasuryCaixaHistoricalArPresentationBridge } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 
 export type { TreasuryCaixaAnnualRange as TreasuryScenarioExpandedRange };
 export { normalizeAnnualRange as normalizeScenarioExpandedRange };
@@ -158,6 +159,11 @@ export type TreasuryScenarioPrefixDay = {
   realistic: TreasuryScenarioPrefixDayFacts;
   pessimistic: TreasuryScenarioPrefixDayFacts;
   warnings: string[];
+  /**
+   * Delta de apresentação deste dia civil (não é inflow factual).
+   * 0 quando a ponte não move este ponto.
+   */
+  presentationAdjustment: number;
 };
 
 type TreasuryScenarioPrefixDayFacts = {
@@ -174,27 +180,96 @@ function shortDayLabel(civilDate: string): string {
   return `${civilDate.slice(8, 10)}/${civilDate.slice(5, 7)}`;
 }
 
+function roundPresentationMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function carriedCanonicalClosing(
+  date: string,
+  factual: readonly TreasuryScenarioPastTimelineRow[]
+): number | null {
+  for (let i = factual.length - 1; i >= 0; i -= 1) {
+    const row = factual[i]!;
+    if (row.civilDate < date && row.closing != null) return row.closing;
+  }
+  for (const row of factual) {
+    if (row.civilDate > date && row.opening != null) return row.opening;
+  }
+  return null;
+}
+
+/**
+ * Prefixo histórico do gráfico de projeção.
+ *
+ * `row.closing` canônico NÃO é mutado. O Y desenhado é
+ * displayClosing = canonicalClosing + presentationAdjustmentRunning.
+ * Inflows/outflows permanecem factuais. A ponte NÃO alimenta o motor de
+ * cenários nem a tabela diária.
+ */
 export function buildScenarioPastPrefix(input: {
   timelineRows: readonly TreasuryScenarioPastTimelineRow[];
   asOfCivilDate: string;
+  presentationBridge?: TreasuryCaixaHistoricalArPresentationBridge | null;
 }): { rows: TreasuryScenarioPrefixRow[]; days: TreasuryScenarioPrefixDay[] } {
-  const past = input.timelineRows
+  const factual = input.timelineRows
     .filter((r) => r.civilDate < input.asOfCivilDate)
     .slice()
     .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  const factualByDate = new Map(factual.map((r) => [r.civilDate, r]));
+  const adj = input.presentationBridge?.adjustmentByCivilDate ?? {};
 
+  const dates = new Set(factual.map((r) => r.civilDate));
+  for (const date of Object.keys(adj)) {
+    if (date < input.asOfCivilDate) dates.add(date);
+  }
+  const orderedDates = [...dates].sort((a, b) => a.localeCompare(b));
+
+  let running = roundPresentationMoney(
+    input.presentationBridge?.openingAdjustment ?? 0
+  );
   const rows: TreasuryScenarioPrefixRow[] = [];
   const days: TreasuryScenarioPrefixDay[] = [];
-  for (const r of past) {
-    const closing = r.closing;
-    const neg = closing != null && closing <= 0 ? closing : null;
+
+  for (const date of orderedDates) {
+    const source = factualByDate.get(date);
+    const dayAdj = roundPresentationMoney(adj[date] ?? 0);
+
+    let opening: number | null;
+    let closing: number | null;
+    let inflows: number;
+    let outflows: number;
+    if (source) {
+      opening = source.opening;
+      closing = source.closing;
+      inflows = source.inflows;
+      outflows = source.outflows;
+    } else {
+      const carried = carriedCanonicalClosing(date, factual);
+      if (carried == null) {
+        running = roundPresentationMoney(running + dayAdj);
+        continue;
+      }
+      opening = carried;
+      closing = carried;
+      inflows = 0;
+      outflows = 0;
+    }
+
+    const displayOpening =
+      opening == null ? null : roundPresentationMoney(opening + running);
+    running = roundPresentationMoney(running + dayAdj);
+    const displayClosing =
+      closing == null ? null : roundPresentationMoney(closing + running);
+    const neg =
+      displayClosing != null && displayClosing <= 0 ? displayClosing : null;
+
     rows.push({
-      civilDate: r.civilDate,
-      label: shortDayLabel(r.civilDate),
-      // Passado: os três cenários SÃO o realizado (linhas coincidem).
-      opt: closing,
-      real: closing,
-      pes: closing,
+      civilDate: date,
+      label: shortDayLabel(date),
+      // Passado: os três cenários coincidem com o Y de apresentação.
+      opt: displayClosing,
+      real: displayClosing,
+      pes: displayClosing,
       optNeg: neg,
       realNeg: neg,
       pesNeg: neg,
@@ -203,7 +278,7 @@ export function buildScenarioPastPrefix(input: {
       bandLow: null,
       bandRange: null,
       isPast: true,
-      openingShown: r.opening,
+      openingShown: displayOpening,
     });
     const facts: TreasuryScenarioPrefixDayFacts = {
       receivableInflows: 0,
@@ -212,19 +287,20 @@ export function buildScenarioPastPrefix(input: {
       payableCount: 0,
       receivableProjections: [],
       payableProjections: [],
-      closingBalance: closing,
+      closingBalance: displayClosing,
     };
     days.push({
-      civilDate: r.civilDate,
-      openingBalance: r.opening,
-      realizedInflows: r.inflows,
-      realizedOutflows: r.outflows,
+      civilDate: date,
+      openingBalance: displayOpening,
+      realizedInflows: inflows,
+      realizedOutflows: outflows,
       otherInflows: 0,
       otherOutflows: 0,
       optimistic: facts,
       realistic: { ...facts },
       pessimistic: { ...facts },
       warnings: [],
+      presentationAdjustment: dayAdj,
     });
   }
   return { rows, days };

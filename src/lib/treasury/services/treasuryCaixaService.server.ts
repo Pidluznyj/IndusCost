@@ -61,6 +61,7 @@ import {
   TREASURY_CAIXA_GENESIS_CIVIL_DATE,
   type TreasuryCaixaAccountPositionDto,
   type TreasuryCaixaBoardDto,
+  type TreasuryCaixaHistoricalArPresentationBridge,
   type TreasuryCaixaPeriodInput,
   type TreasuryCaixaRealizedDay,
 } from "../domain/treasuryCaixaRules.js";
@@ -267,6 +268,8 @@ function arReceivedByMonth(
 /**
  * Deltas mensais de entrada AR: overlay histórico V1 minus regra canônica
  * (3 dias). In-memory; zero query. Default diário permanece intacto.
+ * Consumidor exclusivo: linha do tempo mensal ("Entrou"). Não misturar com
+ * {@link computeTreasuryCaixaHistoricalArGraphPresentationBridge}.
  */
 export function computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
   contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
@@ -290,6 +293,114 @@ export function computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
     if (delta !== 0) deltas[key] = delta;
   }
   return deltas;
+}
+
+function lastCivilDateOfMonth(yearMonth: string): string | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) return null;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${yearMonth}-${String(lastDay).padStart(2, "0")}`;
+}
+
+function addCivilAmount(
+  map: Record<string, number>,
+  civilDate: string,
+  amount: number
+): void {
+  const next = roundMoneyDelta((map[civilDate] ?? 0) + amount);
+  if (next === 0) delete map[civilDate];
+  else map[civilDate] = next;
+}
+
+function presentationTitleDedupKey(
+  row: Pick<FinanceCashFlowArRow, "dueDate" | "settlementDate" | "amountReceived"> & {
+    externalId?: number;
+  }
+): string {
+  if (row.externalId != null) return `id:${row.externalId}`;
+  return `fp:${toCivilDateKey(row.dueDate) ?? ""}|${toCivilDateKey(row.settlementDate) ?? ""}|${row.amountReceived}`;
+}
+
+/**
+ * Ponte de APRESENTAÇÃO do gráfico histórico de projeção.
+ *
+ * Mesma população sanitizada de {@link buildTreasuryCaixaCanonicalRealizedInputs}
+ * (sem query extra). A autoridade de competência continua sendo
+ * `resolveFinanceArHistoricalMonthlyMovementDate`. Só cria eventos quando o
+ * mês de competência difere do mês da data efetiva canônica.
+ *
+ * Não altera realizado diário, overlay mensal, motor de cenários nem saldo
+ * oficial. Consumidor exclusivo: prefixo histórico de "Projeção do caixa".
+ */
+export function computeTreasuryCaixaHistoricalArGraphPresentationBridge(
+  contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
+  reconciliation: FinanceSettlementReconciliationPolicy,
+  graphYear: number
+): TreasuryCaixaHistoricalArPresentationBridge {
+  const yearStart = `${graphYear}-01-01`;
+  const yearPrefix = `${graphYear}-`;
+  const seen = new Set<string>();
+  let openingAdjustment = 0;
+  const adjustmentByCivilDate: Record<string, number> = {};
+
+  for (const ctx of contexts) {
+    for (const row of ctx.arReceivedRows as readonly (Pick<
+      FinanceCashFlowArRow,
+      "dueDate" | "settlementDate" | "amountReceived" | "balanceReceivable"
+    > & { externalId?: number })[]) {
+      const dedupKey = presentationTitleDedupKey(row);
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+
+      const effective = resolveFinanceArEffectiveSettlementDate(
+        {
+          dueDate: row.dueDate,
+          settlementDate: row.settlementDate,
+          amountReceived: row.amountReceived,
+          balanceReceivable: row.balanceReceivable,
+        },
+        { reconciliation }
+      );
+      if (!effective) continue;
+      const amount = Number(row.amountReceived);
+      if (!Number.isFinite(amount) || amount === 0) continue;
+
+      const baselineKey = toCivilDateKey(effective);
+      if (!baselineKey) continue;
+
+      const normalized = resolveFinanceArHistoricalMonthlyMovementDate({
+        dueDate: row.dueDate,
+        settlementDate: row.settlementDate,
+        normalDate: effective,
+      });
+      const normalizedKey = toCivilDateKey(normalized);
+      if (!normalizedKey) continue;
+
+      const baselineMonth = baselineKey.slice(0, 7);
+      const normalizedMonth = normalizedKey.slice(0, 7);
+      if (baselineMonth === normalizedMonth) continue;
+
+      const destMonthEnd = lastCivilDateOfMonth(normalizedMonth);
+      if (!destMonthEnd) continue;
+
+      if (destMonthEnd < yearStart) {
+        openingAdjustment = roundMoneyDelta(openingAdjustment + amount);
+      } else if (destMonthEnd.startsWith(yearPrefix)) {
+        addCivilAmount(adjustmentByCivilDate, destMonthEnd, amount);
+      }
+
+      if (baselineKey < yearStart) {
+        openingAdjustment = roundMoneyDelta(openingAdjustment - amount);
+      } else if (baselineKey.startsWith(yearPrefix)) {
+        addCivilAmount(adjustmentByCivilDate, baselineKey, -amount);
+      }
+    }
+  }
+
+  return { openingAdjustment, adjustmentByCivilDate };
 }
 
 /**
@@ -664,6 +775,12 @@ export function createTreasuryCaixaService(input: {
           canonicalContexts,
           reconciliationPolicy
         );
+      const historicalArGraphPresentationBridge =
+        computeTreasuryCaixaHistoricalArGraphPresentationBridge(
+          canonicalContexts,
+          reconciliationPolicy,
+          period.year
+        );
       // Janela dos saldos informados (fechamentos/snapshots): da gênese (ou do
       // ano filtrado, se anterior a ela) até o fim do período — independe do
       // recorte de vencimento dos títulos.
@@ -998,6 +1115,7 @@ export function createTreasuryCaixaService(input: {
         todayBalance: balanceAuthority.todayBalance,
         accountPositions: balanceAuthority.accountPositions,
         historicalArMonthlyInflowDeltaByMonth,
+        historicalArGraphPresentationBridge,
       };
     },
   };

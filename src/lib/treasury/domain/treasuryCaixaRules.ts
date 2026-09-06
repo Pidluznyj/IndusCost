@@ -1681,8 +1681,29 @@ export type TreasuryCaixaBoardDto = {
    * Overlay HISTORICAL SETTLEMENT NORMALIZATION V1 — deltas de entrada AR
    * para a linha do tempo mensal. Não altera dias, saldo, AP, previsão nem
    * a regra dos 3 dias. Ausente/vazio = nenhum título do lote histórico.
+   * Exclusivo do read model mensal — não alimentar o gráfico de projeção.
    */
   historicalArMonthlyInflowDeltaByMonth?: Readonly<Record<string, number>>;
+  /**
+   * Ponte de APRESENTAÇÃO do gráfico histórico de projeção. Não representa
+   * lançamento financeiro: reconcilia visualmente competência histórica
+   * normalizada vs. baixas administrativas. Não altera tabela diária,
+   * overlay mensal, motor de cenários nem saldo oficial de hoje.
+   * Consumida somente pelo prefixo histórico de "Projeção do caixa".
+   */
+  historicalArGraphPresentationBridge?: TreasuryCaixaHistoricalArPresentationBridge;
+};
+
+/**
+ * Ajustes visuais do prefixo histórico do gráfico de projeção.
+ * `openingAdjustment` entra no Y desde o primeiro ponto (competências
+ * anteriores a 01/01 do ano do gráfico). `adjustmentByCivilDate` soma no
+ * fechamento gerencial do mês de competência e subtrai no dia efetivo
+ * canônico da baixa administrativa.
+ */
+export type TreasuryCaixaHistoricalArPresentationBridge = {
+  openingAdjustment: number;
+  adjustmentByCivilDate: Readonly<Record<string, number>>;
 };
 
 export type TreasuryCaixaAccountPositionDto = {
