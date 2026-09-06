@@ -55,7 +55,11 @@ import {
   MODULE_LABELS,
   type AppModuleId,
 } from "@/src/lib/modulePermissions";
-import type { NavigationGroupId, NavigationGroupedItem } from "@/src/lib/navigationGroups";
+import {
+  isPurchasesModulePath,
+  type NavigationGroupId,
+  type NavigationGroupedItem,
+} from "@/src/lib/navigationGroups";
 import { buildResourceAwareSidebarNavigation } from "@/src/lib/resourceNavigationAccess";
 import { fetchSalesOrderFlowFeatureStatus } from "@/src/lib/salesOrderFlowClient";
 import { filterSalesOrderFlowMenuNavigation } from "@/src/lib/salesOrderFlowNavigation";
@@ -187,6 +191,8 @@ function SidebarNavLink({
   const shortLabel = resolveModuleShortLabel(moduleId);
   const path = item.path;
   const Icon = MENU_ITEM_ICONS[moduleId] ?? HelpCircle;
+  const location = useLocation();
+  const purchasesActive = moduleId === "purchases" && isPurchasesModulePath(location.pathname);
 
   return (
     <NavLink
@@ -196,27 +202,28 @@ function SidebarNavLink({
       aria-label={label}
       data-sidebar-item={moduleId}
       onClick={onNavigate}
-      className={({ isActive }) =>
-        cn(
+      className={({ isActive }) => {
+        const active = moduleId === "purchases" ? purchasesActive : isActive;
+        return cn(
           SIDEBAR_LAYOUT_MARKERS.navLink,
           "group flex items-center w-full rounded-md transition-colors duration-200 min-w-0",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           collapsed
             ? cn(
                 "flex-col justify-center gap-0.5 min-h-11 px-1 py-2",
-                isActive && "border-l-[3px] border-l-primary pl-0.5"
+                active && "border-l-[3px] border-l-primary pl-0.5"
               )
             : nested
               ? "min-h-11 py-2 pl-2.5 pr-2.5"
               : "min-h-11 px-3 py-2.5",
-          isActive
+          active
             ? cn(
                 SIDEBAR_LAYOUT_MARKERS.navLinkActive,
                 "bg-primary text-primary-foreground shadow-sm font-medium"
               )
             : "text-muted-foreground hover:bg-accent/80 hover:text-foreground"
-        )
-      }
+        );
+      }}
     >
       <Icon
         className={cn(

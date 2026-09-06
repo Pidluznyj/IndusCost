@@ -114,6 +114,32 @@ describe("navegação Compras — contexto Nomus", () => {
     assert.match(app, /path="purchases\/supplier-evaluation"/);
     assert.match(app, /NomusSupplierEvaluationWorklistPage/);
   });
+
+  it("landing de Compras é Nomus; cadeia interna só no botão Solicitações IndusCost", () => {
+    const nav = read("src/components/supply-chain/PurchaseChainViewNav.tsx");
+    const app = read("src/App.tsx");
+    const groups = read("src/lib/navigationGroups.ts");
+    const purchaseModule = read("src/components/PurchaseModule.tsx");
+    const header = read("src/components/purchases/PurchaseModuleHeaderActions.tsx");
+    const menu = read("src/components/purchases/PurchaseIndusCostRequestsMenuButton.tsx");
+    assert.match(groups, /PURCHASES_LANDING_PATH = "\/purchases\/nomus-orders"/);
+    assert.match(app, /PurchaseModuleHeaderActions/);
+    assert.match(header, /ModuleIndicatorsButton/);
+    assert.match(header, /PurchaseIndusCostRequestsMenuButton/);
+    assert.match(menu, /Solicitações IndusCost/);
+    assert.match(menu, /INDUSCOST_CHAIN_VIEWS/);
+    assert.match(nav, /export const INDUSCOST_CHAIN_VIEWS/);
+    assert.match(purchaseModule, /variant="nomus"/);
+    const indusBlock = /export const INDUSCOST_CHAIN_VIEWS[\s\S]*?];/.exec(nav);
+    assert.ok(indusBlock);
+    assert.match(indusBlock[0], /Solicitações/);
+    assert.match(indusBlock[0], /Cotações/);
+    assert.match(indusBlock[0], /Pedidos/);
+    assert.match(indusBlock[0], /Recebimento/);
+    assert.match(indusBlock[0], /Estação/);
+    assert.doesNotMatch(indusBlock[0], /Pedidos Nomus/);
+    assert.doesNotMatch(indusBlock[0], /Avaliação Fornecedor/);
+  });
 });
 
 describe("worklist UI", () => {

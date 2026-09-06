@@ -1107,7 +1107,7 @@ export const PurchaseModule = () => {
           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-tour="purchases-toolbar"
         >
-          <PurchaseChainViewNav current="requests" />
+          <PurchaseChainViewNav current="requests" variant="nomus" />
           <div className="flex items-center gap-2">
             <TourHelpButton onClick={() => setTourOpen(true)} />
             {allowCreate ? (

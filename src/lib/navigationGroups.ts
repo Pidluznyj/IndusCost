@@ -266,7 +266,16 @@ const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
   )
 );
 
+/** Entrada do menu Compras: Pedidos Nomus + Avaliação. A cadeia interna fica no botão. */
+export const PURCHASES_LANDING_PATH = "/purchases/nomus-orders";
+
+export function isPurchasesModulePath(pathname: string): boolean {
+  const normalized = pathname.split("?")[0] ?? pathname;
+  return normalized === "/purchases" || normalized.startsWith("/purchases/");
+}
+
 export function getModulePath(moduleId: AppModuleId): string {
+  if (moduleId === "purchases") return PURCHASES_LANDING_PATH;
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
   if (moduleId === "treasury") return "/finance/treasury";

@@ -25,6 +25,7 @@ import {
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
 
 type WorkstationCards = {
   solicitado: number;
@@ -189,6 +190,7 @@ export function PurchaseWorkstationModule() {
 
   return (
     <div className="space-y-6" data-testid="purchase-workstation">
+      <PurchaseChainViewNav current="workstation" variant="nomus" />
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">

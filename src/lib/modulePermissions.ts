@@ -407,6 +407,7 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
 export function getFirstAllowedModulePath(check: PermissionChecker): string | null {
   for (const moduleId of SIDEBAR_MODULE_ORDER) {
     if (canAccessModule(moduleId, check)) {
+      if (moduleId === "purchases") return "/purchases/nomus-orders";
       if (moduleId === "sc-purchases") return "/supply-chain/purchases";
       if (moduleId === "sc-inventory") return "/supply-chain/inventory";
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";

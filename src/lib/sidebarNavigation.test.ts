@@ -152,7 +152,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
     assert.deepEqual(group?.items.map((i) => i.path), [
       "/materials",
-      "/purchases",
+      "/purchases/nomus-orders",
       "/supply-chain/purchases",
       "/inventory",
       "/supply-chain/inventory",
