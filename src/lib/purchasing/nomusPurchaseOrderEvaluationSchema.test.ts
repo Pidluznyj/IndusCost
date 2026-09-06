@@ -136,6 +136,9 @@ describe("worklist UI", () => {
     assert.doesNotMatch(page, /const \{ permissions \} = useAuth\(\)/);
     assert.match(page, /nse-save-selected/);
     assert.match(page, /não há “aplicar a mesma nota a todos”/i);
+    assert.match(page, /SupplierEvaluationRatingSelector/);
+    assert.match(page, /SupplierEvaluationRatingLegend/);
+    assert.match(page, /SUPPLIER_EVALUATION_METHODOLOGY_V1/);
     assert.doesNotMatch(page, /Aplicar esta nota a todos/);
     assert.doesNotMatch(page, /overallScore:/);
     assert.match(client, /\/api\/supplier-performance\/nomus-orders\/worklist/);

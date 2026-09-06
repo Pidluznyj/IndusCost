@@ -11,39 +11,46 @@ import React, { useMemo, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import {
   SUPPLIER_EVALUATION_CRITERIA,
+  SUPPLIER_EVALUATION_METHODOLOGY_V1,
+  SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
   SUPPLIER_EVALUATION_NOTES_MAX_LENGTH,
   SUPPLIER_EVALUATION_REVISION_REASON_MAX_LENGTH,
   computeSupplierOrderEvaluation,
-  formatSupplierScore,
+  formatSupplierScoreWithScale,
+  getSupplierEvaluationMethodology,
   type PurchaseOrderSupplierEvaluationDto,
   type PurchaseOrderSupplierEvaluationResponse,
   type SupplierEvaluationCriterionKey,
+  type SupplierEvaluationRatingValue,
 } from "@/src/lib/purchasing/supplierPerformance";
 import { savePurchaseOrderSupplierEvaluationRequest } from "@/src/lib/purchasing/supplierPerformanceClient";
+import {
+  SupplierEvaluationRatingLegend,
+  SupplierEvaluationRatingSelector,
+} from "./SupplierEvaluationRatingScale";
 
 const FIELD_LABEL = "text-xs font-bold uppercase text-muted-foreground";
 const FIELD_INPUT =
   "w-full rounded-lg border border-border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
 
-type ScoreDraft = Record<SupplierEvaluationCriterionKey, string>;
+type ScoreDraft = Record<SupplierEvaluationCriterionKey, number | null>;
 
 const EMPTY_DRAFT: ScoreDraft = {
-  quality: "",
-  delivery: "",
-  conformity: "",
-  service: "",
+  quality: null,
+  delivery: null,
+  conformity: null,
+  service: null,
 };
 
 function draftFromEvaluation(
   evaluation: PurchaseOrderSupplierEvaluationDto | null
 ): ScoreDraft {
   if (!evaluation) return EMPTY_DRAFT;
-  const asText = (v: number) => String(v).replace(".", ",");
   return {
-    quality: asText(evaluation.scores.quality),
-    delivery: asText(evaluation.scores.delivery),
-    conformity: asText(evaluation.scores.conformity),
-    service: asText(evaluation.scores.service),
+    quality: evaluation.scores.quality,
+    delivery: evaluation.scores.delivery,
+    conformity: evaluation.scores.conformity,
+    service: evaluation.scores.service,
   };
 }
 
@@ -66,6 +73,9 @@ export function PurchaseOrderSupplierEvaluationForm({
   onSaved,
 }: Props) {
   const isRevision = evaluation != null;
+  const methodologyVersion = evaluation?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION;
+  const methodology = getSupplierEvaluationMethodology(methodologyVersion);
+  const isLegacyScale = methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V1;
   const [draft, setDraft] = useState<ScoreDraft>(() => draftFromEvaluation(evaluation));
   const [notes, setNotes] = useState(evaluation?.notes ?? "");
   const [revisionReason, setRevisionReason] = useState("");
@@ -74,16 +84,19 @@ export function PurchaseOrderSupplierEvaluationForm({
 
   const preview = useMemo(() => {
     try {
-      return computeSupplierOrderEvaluation({
-        qualityScore: draft.quality,
-        deliveryScore: draft.delivery,
-        conformityScore: draft.conformity,
-        serviceScore: draft.service,
-      });
+      return computeSupplierOrderEvaluation(
+        {
+          qualityScore: draft.quality,
+          deliveryScore: draft.delivery,
+          conformityScore: draft.conformity,
+          serviceScore: draft.service,
+        },
+        methodologyVersion
+      );
     } catch {
       return null;
     }
-  }, [draft]);
+  }, [draft, methodologyVersion]);
 
   const canSubmit =
     preview != null && !saving && (!isRevision || revisionReason.trim().length > 0);
@@ -91,7 +104,11 @@ export function PurchaseOrderSupplierEvaluationForm({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!preview) {
-      setError("Informe as quatro notas de 0 a 10 com no máximo uma casa decimal.");
+      setError(
+        isLegacyScale
+          ? "Informe as quatro notas de 0 a 10 com no máximo uma casa decimal."
+          : "Escolha 1, 2, 3, 4 ou 5 nos quatro critérios."
+      );
       return;
     }
     setSaving(true);
@@ -126,31 +143,50 @@ export function PurchaseOrderSupplierEvaluationForm({
         </h4>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {purchaseOrderCode ? `Pedido ${purchaseOrderCode}` : "Pedido de compra"}
-          {supplierName ? ` · ${supplierName}` : ""} · notas de 0 a 10, uma casa decimal.
+          {supplierName ? ` · ${supplierName}` : ""}
+          {isLegacyScale ? " · metodologia anterior (0 a 10)." : " · régua de 1 a 5."}
         </p>
       </div>
 
+      {isLegacyScale ? null : <SupplierEvaluationRatingLegend />}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {SUPPLIER_EVALUATION_CRITERIA.map((criterion) => (
-          <label key={criterion.key} className="space-y-1">
-            <span className={FIELD_LABEL}>{criterion.label}</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              max={10}
-              step={0.1}
-              required
-              disabled={saving}
-              className={FIELD_INPUT}
-              data-testid={`supplier-evaluation-score-${criterion.key}`}
+        {SUPPLIER_EVALUATION_CRITERIA.map((criterion) =>
+          isLegacyScale ? (
+            <label key={criterion.key} className="space-y-1">
+              <span className={FIELD_LABEL}>{criterion.label}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={10}
+                step={0.1}
+                required
+                disabled={saving}
+                className={FIELD_INPUT}
+                data-testid={`supplier-evaluation-score-${criterion.key}`}
+                value={draft[criterion.key] ?? ""}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    [criterion.key]: e.target.value === "" ? null : Number(e.target.value.replace(",", ".")),
+                  }))
+                }
+              />
+            </label>
+          ) : (
+            <SupplierEvaluationRatingSelector
+              key={criterion.key}
+              criterionKey={criterion.key}
+              criterionLabel={criterion.label}
               value={draft[criterion.key]}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, [criterion.key]: e.target.value }))
+              disabled={saving}
+              onChange={(value: SupplierEvaluationRatingValue) =>
+                setDraft((prev) => ({ ...prev, [criterion.key]: value }))
               }
             />
-          </label>
-        ))}
+          )
+        )}
       </div>
 
       <label className="block space-y-1">
@@ -191,10 +227,10 @@ export function PurchaseOrderSupplierEvaluationForm({
           className="mt-1 text-2xl font-bold tabular-nums"
           data-testid="supplier-evaluation-overall-preview"
         >
-          {formatSupplierScore(preview ? preview.overallScore : null)}
+          {formatSupplierScoreWithScale(preview ? preview.overallScore : null, methodology.scaleMax)}
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Média aritmética dos quatro critérios (25% cada). Confirmada pelo servidor ao salvar.
+          Média ponderada dos quatro critérios (pesos do modelo). Confirmada pelo servidor ao salvar.
         </p>
       </div>
 

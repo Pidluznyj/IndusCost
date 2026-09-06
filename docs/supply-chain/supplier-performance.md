@@ -18,11 +18,11 @@ O processo inteiro é:
 ```text
 PEDIDO DE COMPRA FINALIZADO
         ↓
-AVALIAÇÃO DO PEDIDO (4 notas de 0 a 10)
+AVALIAÇÃO DO PEDIDO (4 notas de 1 a 5)
         ↓
-NOTA MÉDIA DO PEDIDO
+NOTA PONDERADA DO PEDIDO
         ↓
-CONSOLIDAÇÃO AUTOMÁTICA
+CONSOLIDAÇÃO AUTOMÁTICA DAS FINALIZADAS
         ↓
 DESEMPENHO DO FORNECEDOR
 ```
@@ -58,7 +58,19 @@ A regra vive em **uma** função de domínio,
 (`src/lib/purchasing/supplierPerformance.ts`). O backend é a autoridade: a rota
 revalida a elegibilidade **dentro da transação**, com o status corrente.
 
-## 4. Critérios e fórmula (metodologia V1)
+## 4. Critérios e fórmula
+
+### Metodologia V2 (vigente nas novas gravações)
+
+Escala discreta **1 a 5**:
+
+| Nota | Significado |
+|---|---|
+| 1 | Não atende aos nossos padrões |
+| 2 | Atende parcialmente / abaixo do esperado |
+| 3 | Atende aos nossos padrões |
+| 4 | Acima do esperado |
+| 5 | Superou as expectativas |
 
 | Critério | Rótulo na UI | Peso |
 |---|---|---|
@@ -67,21 +79,35 @@ revalida a elegibilidade **dentro da transação**, com o status corrente.
 | `conformity` | Quantidade / conformidade | 25% |
 | `service` | Atendimento / solução de problemas | 25% |
 
-Cada nota vai de `0` a `10`, com **no máximo uma casa decimal** (0, 5, 7,5, 8,7, 10).
-Os quatro critérios são obrigatórios — não existe rascunho de avaliação.
+```text
+NotaPedido = (Qualidade×25 + Prazo×25 + Conformidade×25 + Atendimento×25) / 100
+```
+
+- Identificador interno: `SUPPLIER_ORDER_EVALUATION_V2`, `methodologyVersion = 2`.
+- Notas individuais são inteiras 1–5. A nota do pedido pode ter duas casas.
+- Valor financeiro **não** pondera.
+- O frontend nunca envia `overallScore`.
+- Revisão de uma avaliação V1 **não** a migra para V2.
+
+### Metodologia V1 (histórica, 0–10)
+
+Avaliações já persistidas com `methodologyVersion = 1` permanecem na escala 0–10
+com uma casa decimal. Não são convertidas, divididas por 2 nem reescritas.
+O consolidado vigente prefere overallScores da escala 1–5. Se o fornecedor
+só tiver avaliações V1, a nota é exibida na escala 0–10. Escalas diferentes
+nunca entram na mesma média.
+
+## 4b. Critérios V1 (referência histórica)
+
+Cada nota ia de `0` a `10`, com no máximo uma casa decimal.
 
 ```text
 NotaPedido = (Qualidade + Prazo + Conformidade + Atendimento) / 4
 ```
 
-- Identificador interno: `SUPPLIER_ORDER_EVALUATION_V1`, `methodologyVersion = 1`,
-  persistido em cada avaliação.
-- Valor financeiro, quantidade comprada e número de itens **não** influenciam.
+- Identificador interno: `SUPPLIER_ORDER_EVALUATION_V1`, `methodologyVersion = 1`.
 - Persistência em `NUMERIC(4,2)` — nunca `Float`.
-- Cálculo em inteiros (décimos → centésimos) com arredondamento **HALF-UP**
-  determinístico: `9,1 + 9,1 + 9,1 + 9,2 → 9,125 → 9,13`.
-- O frontend nunca envia `overallScore`: exibe a prévia usando o **mesmo** motor
-  puro e o servidor recalcula e grava.
+- HALF-UP: `9,1 + 9,1 + 9,1 + 9,2 → 9,13`.
 
 Não há tela de configuração de pesos no MVP.
 

@@ -70,63 +70,63 @@ describe("identidade do fornecedor", () => {
 });
 
 describe("notas e sugestões", () => {
-  it("reusa o motor OP-26 — 8+9+10+9 = 9", () => {
+  it("reusa o motor OP-26 — 5+4+5+3 = 4,25", () => {
     const preview = previewNomusPurchaseOrderEvaluation({
-      qualityScore: 8,
-      deliveryScore: 9,
-      conformityScore: 10,
-      serviceScore: 9,
+      qualityScore: 5,
+      deliveryScore: 4,
+      conformityScore: 5,
+      serviceScore: 3,
     });
     assert.equal(preview.overallScore, computeSupplierOrderEvaluation({
-      qualityScore: 8,
-      deliveryScore: 9,
-      conformityScore: 10,
-      serviceScore: 9,
+      qualityScore: 5,
+      deliveryScore: 4,
+      conformityScore: 5,
+      serviceScore: 3,
     }).overallScore);
-    assert.equal(preview.overallScore, 9);
+    assert.equal(preview.overallScore, 4.25);
   });
 
-  it("0 e 10 são válidos; <0 e >10 inválidos; null não vira 0", () => {
+  it("1 e 5 são válidos; 0, 10 e decimal inválidos; null não vira 0", () => {
     assert.equal(
       previewNomusPurchaseOrderEvaluation({
-        qualityScore: 0,
-        deliveryScore: 0,
-        conformityScore: 0,
-        serviceScore: 0,
+        qualityScore: 1,
+        deliveryScore: 1,
+        conformityScore: 1,
+        serviceScore: 1,
       }).overallScore,
-      0
+      1
     );
     assert.equal(
       previewNomusPurchaseOrderEvaluation({
-        qualityScore: 10,
-        deliveryScore: 10,
-        conformityScore: 10,
-        serviceScore: 10,
+        qualityScore: 5,
+        deliveryScore: 5,
+        conformityScore: 5,
+        serviceScore: 5,
       }).overallScore,
-      10
+      5
     );
     assert.throws(() =>
       previewNomusPurchaseOrderEvaluation({
-        qualityScore: -0.1,
-        deliveryScore: 8,
-        conformityScore: 8,
-        serviceScore: 8,
+        qualityScore: 0,
+        deliveryScore: 3,
+        conformityScore: 3,
+        serviceScore: 3,
       })
     );
     assert.throws(() =>
       previewNomusPurchaseOrderEvaluation({
-        qualityScore: 10.1,
-        deliveryScore: 8,
-        conformityScore: 8,
-        serviceScore: 8,
+        qualityScore: 10,
+        deliveryScore: 3,
+        conformityScore: 3,
+        serviceScore: 3,
       })
     );
     assert.throws(() =>
       previewNomusPurchaseOrderEvaluation({
         qualityScore: null,
-        deliveryScore: 8,
-        conformityScore: 8,
-        serviceScore: 8,
+        deliveryScore: 3,
+        conformityScore: 3,
+        serviceScore: 3,
       })
     );
   });
