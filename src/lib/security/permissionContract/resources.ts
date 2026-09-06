@@ -2204,6 +2204,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/supplier-performance/suppliers/:supplierId",
       "/api/supplier-performance/report",
       "/api/supplier-performance/nomus-orders/worklist",
+      "/api/supplier-performance/nomus-orders/suppliers",
       "/api/supplier-performance/nomus-orders/:id",
       "/api/supplier-performance/nomus-orders/batch",
       "/api/purchase-receipts/:id/confirm",

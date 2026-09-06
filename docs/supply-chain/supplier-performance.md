@@ -342,7 +342,9 @@ fornecedor, valor ou data.
 
 - Tabela: `NomusPurchaseOrderSupplierEvaluation` (UNIQUE por pedido Nomus).
 - Motor de nota: o mesmo `computeSupplierOrderEvaluation` (V1, 25% cada).
-- Elegibilidade Nomus: `stage = RECEIVED` e não cancelado.
+- Elegibilidade Nomus: **toda a base** do espelho `NomusPurchaseOrder` (aberto, parcial, recebido, cancelado).
+- Consolidado do fornecedor: média simples das avaliações gravadas, por quesito e no geral. Pedidos têm o mesmo peso; valor financeiro não pondera.
+- Busca de fornecedor: autocomplete sobre nomes da própria base Nomus (`GET /api/supplier-performance/nomus-orders/suppliers`); a seleção filtra pelo `supplierExternalId` quando existir.
 - Fornecedor só é gravado com confiança EXACT/HIGH e `financialSupplierId` conhecido.
 - Sem writeback Nomus. Sem rascunho persistido (as quatro notas continuam obrigatórias).
 - Sem sugestão automática (MVP OP-26: desconhecido = null, nunca 0).

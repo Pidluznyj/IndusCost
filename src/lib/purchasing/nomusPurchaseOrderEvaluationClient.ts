@@ -5,6 +5,7 @@
 import { fetchJsonOk } from "@/src/lib/http";
 import type { SupplierEvaluationSavePayload } from "./supplierPerformanceClient";
 import type {
+  NomusEvaluationSupplierSuggestion,
   NomusSupplierEvaluationBatchItemResult,
   NomusSupplierEvaluationDto,
   NomusSupplierEvaluationWorklistResponse,
@@ -15,6 +16,7 @@ import type { SupplierPerformancePeriod } from "./supplierPerformance";
 export type NomusSupplierEvaluationWorklistQuery = SupplierPerformancePeriod & {
   q?: string | null;
   supplier?: string | null;
+  supplierExternalId?: number | null;
   stage?: string | null;
   evaluationStatus?: string | null;
   page?: number;
@@ -29,6 +31,7 @@ export function buildNomusSupplierEvaluationWorklistQuery(
   if (input.to) params.set("to", input.to);
   if (input.q) params.set("q", input.q);
   if (input.supplier) params.set("supplier", input.supplier);
+  if (input.supplierExternalId != null) params.set("supplierExternalId", String(input.supplierExternalId));
   if (input.stage) params.set("stage", input.stage);
   if (input.evaluationStatus) params.set("evaluationStatus", input.evaluationStatus);
   if (input.page) params.set("page", String(input.page));
@@ -76,4 +79,17 @@ export function saveNomusPurchaseOrderSupplierEvaluationsBatchRequest(
   );
 }
 
-export type { NomusSupplierEvaluationWorklistRow, NomusSupplierEvaluationWorklistResponse };
+export function searchNomusEvaluationSuppliersRequest(
+  q: string,
+  signal?: AbortSignal
+): Promise<{ suppliers: NomusEvaluationSupplierSuggestion[] }> {
+  const params = new URLSearchParams();
+  params.set("q", q);
+  params.set("limit", "20");
+  return fetchJsonOk<{ suppliers: NomusEvaluationSupplierSuggestion[] }>(
+    `/api/supplier-performance/nomus-orders/suppliers?${params}`,
+    signal ? { signal } : undefined
+  );
+}
+
+export type { NomusSupplierEvaluationWorklistRow, NomusSupplierEvaluationWorklistResponse, NomusEvaluationSupplierSuggestion };
