@@ -298,7 +298,7 @@ describe("rotas e grupo Cadeia de Suprimentos", () => {
     assert.equal(getModulePath("sc-purchases"), "/supply-chain/purchases");
     assert.equal(getModulePath("sc-inventory"), "/supply-chain/inventory");
     assert.equal(getModulePath("sc-receiving"), "/supply-chain/receiving");
-    assert.equal(getModulePath("purchases"), "/purchases");
+    assert.equal(getModulePath("purchases"), "/purchases/nomus-orders");
     assert.equal(getModulePath("inventory"), "/inventory");
   });
 

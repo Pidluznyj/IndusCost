@@ -464,7 +464,7 @@ export function PurchaseReceivingStationModule() {
     return (
       <div className="space-y-3" data-testid="receiving-station-board">
         {/* Título e descrição já vêm da casca da página; aqui vale a navegação. */}
-        <PurchaseChainViewNav current="receiving" />
+        <PurchaseChainViewNav current="receiving" variant="nomus" />
 
         <div
           className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"

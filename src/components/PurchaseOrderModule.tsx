@@ -11,6 +11,7 @@ import {
 import { PurchaseOrderSupplierEvaluationCard } from "@/src/components/supply-chain/supplier-performance/PurchaseOrderSupplierEvaluationCard";
 import { OverlayBadge, OverlaySection } from "@/src/components/ui/overlay";
 import { PurchaseChainTrail } from "@/src/components/supply-chain/flow/PurchaseChainTrail";
+import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
 import { useSupplyChainFeatureFlags } from "@/src/lib/supply-chain/supplyChainClient";
 import {
   resolvePurchaseOrderGuidance,
@@ -209,6 +210,7 @@ export function PurchaseOrderModule() {
   if (!orderId) {
     return (
       <div className="space-y-4" data-testid="purchase-orders-list">
+        <PurchaseChainViewNav current="orders" variant="nomus" />
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <h3 className="text-lg font-semibold">Pedidos de compra</h3>

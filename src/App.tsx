@@ -70,6 +70,7 @@ import { PublicLoginRoute } from "./components/PublicLoginRoute";
 import { HomePage } from "./components/HomePage";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
+import { PurchaseModuleHeaderActions } from "@/src/components/purchases/PurchaseModuleHeaderActions";
 import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
 import { ProposalIndicatorsDashboard } from "@/src/components/contextual/ProposalIndicatorsDashboard";
 import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
@@ -281,6 +282,7 @@ export default function App() {
             <ModulePageShell
               title="Compras — Indicadores"
               description="Indicadores executivos SC (valores, ganhos, estoque, atrasos) com bases declaradas — sem alterar relatórios oficiais. Panorama legado de solicitações permanece abaixo."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseIndicatorsDashboard />
             </ModulePageShell>
@@ -292,7 +294,7 @@ export default function App() {
             <ModulePageShell
               title="Compras"
               description="Solicitações de compra, centro de custo e classificação da demanda (sem pedido, recebimento ou financeiro nesta fase)."
-              headerActions={<ModuleIndicatorsButton to="/purchases/indicators" />}
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseModule />
             </ModulePageShell>
@@ -304,6 +306,7 @@ export default function App() {
             <ModulePageShell
               title="Cotações"
               description="Coleta de propostas por fornecedor oficial. Sem adjudicação nem pedido nesta fase."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseQuotationModule />
             </ModulePageShell>
@@ -315,6 +318,7 @@ export default function App() {
             <ModulePageShell
               title="Cotação"
               description="Entrada de propostas iniciais por fornecedor. A primeira oferta fica congelada após o registro."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseQuotationModule />
             </ModulePageShell>
@@ -326,6 +330,7 @@ export default function App() {
             <ModulePageShell
               title="Comparação de cotações"
               description="Compare fornecedores na mesma base. A escolha do vencedor é humana e justificada — não automática pelo menor preço."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseQuotationComparisonModule />
             </ModulePageShell>
@@ -337,6 +342,7 @@ export default function App() {
             <ModulePageShell
               title="Estação de Compras"
               description="Visão operacional integrada: solicitações, cotações, negociações, evidências, aprovações e pedidos."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseWorkstationModule />
             </ModulePageShell>
@@ -348,6 +354,7 @@ export default function App() {
             <ModulePageShell
               title="Estação de Recebimento"
               description="Conferência e recebimento físico. Pedido confirmado não é estoque — só o recebimento confirmado altera o saldo."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseReceivingStationModule />
             </ModulePageShell>
@@ -359,6 +366,7 @@ export default function App() {
             <ModulePageShell
               title="Recebimento do pedido"
               description="Itens, lotes, documentos, evidências e movimentos PURCHASE_RECEIPT do ledger SC."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseReceivingStationModule />
             </ModulePageShell>
@@ -370,6 +378,7 @@ export default function App() {
             <ModulePageShell
               title="Planejamento de compra (sombra)"
               description="Sugestão read-only: demanda + segurança − disponível − compras confirmadas no prazo. Não altera BOM/OP/custo; rascunho de SC só com ação humana."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <ShadowPurchasePlanningModule />
             </ModulePageShell>
@@ -381,6 +390,7 @@ export default function App() {
             <ModulePageShell
               title="Pedidos de compra"
               description="Pedidos formais a partir da cotação adjudicada. Aprovação cria compromisso operacional sem estoque nem Contas a Pagar."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseOrderModule />
             </ModulePageShell>
@@ -392,6 +402,7 @@ export default function App() {
             <ModulePageShell
               title="Pedidos de Compra — Nomus"
               description="Espelho somente leitura dos pedidos oficiais do ERP. Sem escrita no Nomus e sem mistura com a solicitação interna."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <NomusPurchaseOrderModule />
             </ModulePageShell>
@@ -403,6 +414,7 @@ export default function App() {
             <ModulePageShell
               title="Pedido de Compra — Nomus"
               description="Detalhe do pedido oficial do ERP, itens e metadados de sincronização."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <NomusPurchaseOrderModule />
             </ModulePageShell>
@@ -414,6 +426,7 @@ export default function App() {
             <ModulePageShell
               title="Avaliação Fornecedor"
               description="Avalie Pedidos Nomus em lote. A nota do fornecedor é derivada das avaliações finalizadas."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <NomusSupplierEvaluationWorklistPage />
             </ModulePageShell>
@@ -425,6 +438,7 @@ export default function App() {
             <ModulePageShell
               title="Ganho negociado × realizado"
               description="Compara preço inicial, negociado, pedido e custo efetivo recebido — sem alterar o mérito histórico da negociação."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseSavingsComparisonModule />
             </ModulePageShell>
@@ -436,6 +450,7 @@ export default function App() {
             <ModulePageShell
               title="Pedido de compra"
               description="Snapshots congelados da negociação. Sem recebimento de estoque nesta etapa."
+              headerActions={<PurchaseModuleHeaderActions />}
             >
               <PurchaseOrderModule />
             </ModulePageShell>

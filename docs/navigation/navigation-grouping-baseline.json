@@ -80,7 +80,7 @@
       "order": 7,
       "itemId": "purchases",
       "label": "Compras",
-      "path": "/purchases",
+      "path": "/purchases/nomus-orders",
       "groupId": "cadeia_suprimentos",
       "groupLabel": "Cadeia de Suprimentos",
       "isDirect": false,

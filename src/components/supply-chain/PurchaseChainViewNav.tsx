@@ -41,6 +41,19 @@ const NOMUS_CONTEXT_VIEWS: ReadonlyArray<{
   { id: "supplier-evaluation", label: "Avaliação Fornecedor", to: "/purchases/supplier-evaluation" },
 ];
 
+/** Cadeia interna IndusCost — oculta no landing de Compras; acessível pelo botão do header. */
+export const INDUSCOST_CHAIN_VIEWS: ReadonlyArray<{
+  id: PurchaseChainViewId;
+  label: string;
+  to: string;
+}> = [
+  { id: "requests", label: "Solicitações", to: "/purchases" },
+  { id: "quotations", label: "Cotações", to: "/purchases/quotations" },
+  { id: "orders", label: "Pedidos", to: "/purchases/orders" },
+  { id: "receiving", label: "Recebimento", to: "/purchases/receiving" },
+  { id: "workstation", label: "Estação", to: "/purchases/workstation" },
+];
+
 export function PurchaseChainViewNav({
   current,
   className,

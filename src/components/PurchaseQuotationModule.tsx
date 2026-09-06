@@ -697,7 +697,7 @@ export function PurchaseQuotationModule() {
     return (
       <div className="space-y-3" data-testid="purchase-quotations-list">
         {/* A casca da página já titula "Cotações" e descreve o escopo. */}
-        <PurchaseChainViewNav current="quotations" />
+        <PurchaseChainViewNav current="quotations" variant="nomus" />
         {list.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Nenhuma cotação. Encaminhe uma solicitação aprovada para cotação.

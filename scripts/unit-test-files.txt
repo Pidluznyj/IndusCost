@@ -203,6 +203,7 @@ src/lib/finance/orderFullAuditDocuments.test.ts
 src/components/shared/BomCostDetailRow.test.tsx
 src/components/NewProductSimulationReport.test.tsx
 src/components/contextual/ModuleIndicatorsButton.test.tsx
+src/components/purchases/PurchaseModuleHeaderActions.test.tsx
 src/lib/suppliers/supplierServiceTerminationCalc.test.ts
 src/lib/suppliers/supplierServiceTerminationDistrato.test.ts
 src/lib/prismaMigrationsBom.test.ts

@@ -6,8 +6,10 @@ import {
   buildGroupedNavigationStructure,
   flattenGroupedNavigationItems,
   getModulePath,
+  isPurchasesModulePath,
   MODULE_MENU_PERMISSION_KEYS,
   NAVIGATION_GROUP_DEFINITIONS,
+  PURCHASES_LANDING_PATH,
   resolveNavigationGroupIdForModule,
 } from "./navigationGroups.js";
 import {
@@ -83,6 +85,7 @@ const CANONICAL_PATH_OVERRIDES: Partial<Record<AppModuleId, string>> = {
   "sales-order-flow": "/commercial/sales-order-flow",
   "commercial-price-table": "/commercial/price-table",
   satisfaction: "/commercial/satisfaction",
+  purchases: "/purchases/nomus-orders",
   "sc-purchases": "/supply-chain/purchases",
   "sc-inventory": "/supply-chain/inventory",
   "sc-receiving": "/supply-chain/receiving",
@@ -233,5 +236,19 @@ describe("navigationGroups — integração com sidebar agrupada", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.ok(sidebar.includes("buildResourceAwareSidebarNavigation"));
     assert.ok(sidebar.includes("@/src/lib/navigationGroups"));
+    assert.ok(sidebar.includes("isPurchasesModulePath"));
+  });
+});
+
+describe("Compras — landing Nomus", () => {
+  it("menu Compras abre Pedidos Nomus e reconhece subrotas do módulo", () => {
+    assert.equal(PURCHASES_LANDING_PATH, "/purchases/nomus-orders");
+    assert.equal(getModulePath("purchases"), PURCHASES_LANDING_PATH);
+    assert.equal(isPurchasesModulePath("/purchases"), true);
+    assert.equal(isPurchasesModulePath("/purchases/nomus-orders"), true);
+    assert.equal(isPurchasesModulePath("/purchases/supplier-evaluation"), true);
+    assert.equal(isPurchasesModulePath("/purchases/quotations"), true);
+    assert.equal(isPurchasesModulePath("/supply-chain/purchases"), false);
+    assert.equal(isPurchasesModulePath("/inventory"), false);
   });
 });
