@@ -71,6 +71,9 @@ describe("identidade Nomus × PurchaseOrder interno", () => {
       service,
       /await saveNomusPurchaseOrderSupplierEvaluation\(\s*prisma,\s*nomusPurchaseOrderId/
     );
+    assert.match(service, /searchNomusEvaluationSuppliers/);
+    assert.match(service, /groupBy/);
+    assert.doesNotMatch(service, /stage: "RECEIVED"/);
   });
 });
 
@@ -122,6 +125,13 @@ describe("worklist UI", () => {
     assert.match(page, /SUPPLIER_EVALUATION_CRITERIA/);
     assert.match(page, /computeSupplierOrderEvaluation/);
     assert.match(page, /nse-filter-period/);
+    const autocomplete = read(
+      "src/components/supply-chain/supplier-performance/NomusEvaluationSupplierAutocomplete.tsx"
+    );
+    assert.match(page, /nse-filter-stage/);
+    assert.match(page, /NomusEvaluationSupplierAutocomplete/);
+    assert.match(autocomplete, /nse-filter-supplier/);
+    assert.match(autocomplete, /Digite o nome para selecionar/);
     assert.match(page, /usePermissions/);
     assert.doesNotMatch(page, /const \{ permissions \} = useAuth\(\)/);
     assert.match(page, /nse-save-selected/);
@@ -129,6 +139,7 @@ describe("worklist UI", () => {
     assert.doesNotMatch(page, /Aplicar esta nota a todos/);
     assert.doesNotMatch(page, /overallScore:/);
     assert.match(client, /\/api\/supplier-performance\/nomus-orders\/worklist/);
+    assert.match(client, /\/api\/supplier-performance\/nomus-orders\/suppliers/);
     assert.match(client, /\/api\/supplier-performance\/nomus-orders\/batch/);
     assert.doesNotMatch(client, /nomusPurchaseOrderEvaluation\.server/);
   });

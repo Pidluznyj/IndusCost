@@ -11,22 +11,18 @@ import {
 } from "./nomusPurchaseOrderEvaluation.js";
 
 describe("elegibilidade Nomus", () => {
-  it("RECEIVED não cancelado é elegível", () => {
-    assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible("RECEIVED", false), true);
-    assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible("RECEIVED", null), true);
-  });
-
-  it("parcial, aberto, cancelado e unknown não são elegíveis", () => {
-    for (const stage of ["OPEN", "APPROVED", "PARTIALLY_RECEIVED", "CANCELED", "UNKNOWN"]) {
-      assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible(stage, false), false, stage);
+  it("toda a base Nomus é elegível, inclusive pedidos novos e cancelados", () => {
+    for (const stage of ["OPEN", "APPROVED", "PARTIALLY_RECEIVED", "RECEIVED", "CANCELED", "UNKNOWN"]) {
+      assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible(stage, false), true, stage);
     }
-    assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible("RECEIVED", true), false);
+    assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible("RECEIVED", true), true);
+    assert.equal(isNomusPurchaseOrderSupplierEvaluationEligible(null, null), true);
   });
 
-  it("cancelado tem motivo próprio", () => {
-    const d = describeNomusPurchaseOrderSupplierEvaluationEligibility("RECEIVED", true);
-    assert.equal(d.eligible, false);
-    assert.match(d.eligibilityReason ?? "", /cancelado/i);
+  it("não bloqueia por status do pedido", () => {
+    const d = describeNomusPurchaseOrderSupplierEvaluationEligibility("OPEN", false);
+    assert.equal(d.eligible, true);
+    assert.equal(d.eligibilityReason, null);
   });
 });
 

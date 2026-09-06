@@ -39,6 +39,7 @@ import {
   isSupplierIdentitySafeForEvaluation,
   nomusSupplierEvaluationStatus,
   suggestNomusPurchaseOrderEvaluationScores,
+  type NomusEvaluationSupplierSuggestion,
   type NomusSupplierEvaluationBatchItemInput,
   type NomusSupplierEvaluationBatchItemResult,
   type NomusSupplierEvaluationDto,
@@ -136,10 +137,7 @@ function toEvaluationDto(row: EvaluationRow): NomusSupplierEvaluationDto {
 }
 
 function eligibleWhere(): Prisma.NomusPurchaseOrderWhereInput {
-  return {
-    stage: "RECEIVED",
-    NOT: { canceled: true },
-  };
+  return {};
 }
 
 function periodWhere(period: SupplierPerformancePeriod): Prisma.NomusPurchaseOrderWhereInput | null {
@@ -167,16 +165,11 @@ function applyEvaluationStatusFilter(
 ): Prisma.NomusPurchaseOrderWhereInput {
   switch (filter) {
     case "pending":
-      return andWhere([base, eligibleWhere(), { supplierEvaluation: { is: null } }]);
+      return andWhere([base, { supplierEvaluation: { is: null } }]);
     case "evaluated":
       return { ...base, supplierEvaluation: { isNot: null } };
     case "ineligible":
-      return andWhere([
-        base,
-        {
-          OR: [{ canceled: true }, { stage: { not: "RECEIVED" } }],
-        },
-      ]);
+      return andWhere([base, { id: "__none__" }]);
     default:
       return base;
   }
@@ -461,6 +454,75 @@ export async function saveNomusPurchaseOrderSupplierEvaluationsBatch(
   return { results };
 }
 
+export async function searchNomusEvaluationSuppliers(
+  prisma: PrismaClient,
+  rawQuery: unknown,
+  rawLimit?: unknown
+): Promise<{ suppliers: NomusEvaluationSupplierSuggestion[] }> {
+  const q = String(rawQuery ?? "").trim();
+  if (q.length < 2) return { suppliers: [] };
+  const limit = Math.min(30, Math.max(1, Number.parseInt(String(rawLimit ?? "20"), 10) || 20));
+  const extraIds = await expandPurchaseOrderSupplierSearchIds(q);
+  const where: Prisma.NomusPurchaseOrderWhereInput = {
+    OR: [
+      { supplierName: { contains: q, mode: "insensitive" } },
+      { supplierTaxId: { contains: q, mode: "insensitive" } },
+      ...(extraIds.length > 0 ? [{ supplierExternalId: { in: extraIds } }] : []),
+    ],
+  };
+
+  const grouped = await prisma.nomusPurchaseOrder.groupBy({
+    by: ["supplierExternalId", "supplierName"],
+    where,
+    _count: { _all: true },
+  });
+  grouped.sort((a, b) => {
+    const byCount = b._count._all - a._count._all;
+    if (byCount !== 0) return byCount;
+    return String(a.supplierName ?? "").localeCompare(String(b.supplierName ?? ""), "pt-BR");
+  });
+  const top = grouped.slice(0, limit);
+  if (top.length === 0) return { suppliers: [] };
+
+  const samples = await prisma.nomusPurchaseOrder.findMany({
+    where: {
+      OR: top.map((row) => ({
+        supplierExternalId: row.supplierExternalId,
+        supplierName: row.supplierName,
+      })),
+    },
+    select: { supplierExternalId: true, supplierName: true, supplierTaxId: true },
+    distinct: ["supplierExternalId", "supplierName"],
+  });
+  const resolved = await resolveNomusOrderSuppliersBatch(samples);
+  const sampleByKey = new Map<string, (typeof resolved)[number]>();
+  samples.forEach((row, index) => {
+    sampleByKey.set(`${row.supplierExternalId ?? "n"}::${row.supplierName ?? ""}`, resolved[index]!);
+  });
+
+  return {
+    suppliers: top.map((row) => {
+      const key = `${row.supplierExternalId ?? "n"}::${row.supplierName ?? ""}`;
+      const supplier = sampleByKey.get(key);
+      const financialSupplierId = supplier?.financialSupplierId ?? null;
+      const matchConfidence = supplier?.matchConfidence ?? "UNRESOLVED";
+      return {
+        supplierExternalId: row.supplierExternalId,
+        nomusName: row.supplierName,
+        resolvedName: supplier?.resolvedName ?? row.supplierName,
+        resolvedDocument: supplier?.resolvedDocument ?? null,
+        financialSupplierId,
+        matchConfidence,
+        identitySafe: isSupplierIdentitySafeForEvaluation({
+          matchConfidence,
+          financialSupplierId,
+        }),
+        orderCount: row._count._all,
+      };
+    }),
+  };
+}
+
 export async function buildNomusSupplierEvaluationWorklist(
   prisma: PrismaClient,
   query: Record<string, unknown>
@@ -470,7 +532,11 @@ export async function buildNomusSupplierEvaluationWorklist(
   const page = normalizeSupplierPerformancePage(query.page);
   const pageSize = normalizeSupplierPerformancePageSize(query.pageSize);
   const listFilters = parseNomusPurchaseOrderListFilters(query);
-  if (query.supplier && !listFilters.supplier) {
+  const supplierExternalIdRaw = String(query.supplierExternalId ?? "").trim();
+  if (/^\d+$/.test(supplierExternalIdRaw)) {
+    listFilters.extraSupplierExternalIds = [Number(supplierExternalIdRaw)];
+    listFilters.supplier = null;
+  } else if (query.supplier && !listFilters.supplier) {
     listFilters.supplier = String(query.supplier);
   }
   if (listFilters.supplier) {
