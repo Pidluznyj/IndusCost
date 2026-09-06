@@ -42,6 +42,10 @@ const REPORT = read(
   "src/components/supply-chain/supplier-performance/SupplierPerformanceReportPage.tsx"
 );
 const SUPPLIERS_PAGE = read("src/components/finance/FinanceSuppliersPage.tsx");
+const SUPPLIERS_VIEW = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
+const RATING = read(
+  "src/components/supply-chain/supplier-performance/SupplierEvaluationRatingScale.tsx"
+);
 const ENV_EXAMPLE = read(".env.example");
 const DOC = read("docs/supply-chain/supplier-performance.md");
 
@@ -260,6 +264,7 @@ describe("rotas — flag + permissões no backend", () => {
   it("não pendura rota nova sob o prefixo oficial de fornecedores", () => {
     assert.doesNotMatch(ROUTES, /"\/api\/finance\/suppliers/);
     assert.match(ROUTES, /"\/api\/supplier-performance\/suppliers\/:supplierId"/);
+    assert.match(ROUTES, /"\/api\/supplier-performance\/suppliers\/summaries"/);
     assert.match(ROUTES, /"\/api\/purchase-orders\/:id\/supplier-evaluation"/);
   });
 
@@ -315,6 +320,33 @@ describe("UI — integrada, fail closed e em pt-BR", () => {
     assert.match(TAB, /PurchaseOrderSupplierEvaluationForm/);
     assert.match(FORM, /Revisar avaliação/);
     assert.match(FORM, /Motivo da revisão \(obrigatório\)/);
+    assert.match(FORM, /SupplierEvaluationRatingSelector/);
+    assert.match(FORM, /SupplierEvaluationRatingLegend/);
+    assert.doesNotMatch(FORM, /notas de 0 a 10, uma casa decimal/);
+  });
+
+  it("régua 1–5 visível com significado textual, sem depender só de estrela", () => {
+    assert.match(ENGINE, /Não atende aos nossos padrões/);
+    assert.match(ENGINE, /Atende parcialmente \/ abaixo do esperado/);
+    assert.match(ENGINE, /Atende aos nossos padrões/);
+    assert.match(ENGINE, /Acima do esperado/);
+    assert.match(ENGINE, /Superou as expectativas/);
+    assert.match(RATING, /SUPPLIER_EVALUATION_RATING_LABELS/);
+    assert.match(RATING, /Régua de avaliação/);
+    assert.match(RATING, /Não atende/);
+    assert.match(RATING, /Parcial/);
+    assert.match(RATING, /role="radiogroup"/);
+    assert.match(RATING, /supplierEvaluationRatingAriaLabel/);
+    assert.doesNotMatch(RATING, /★★/);
+  });
+
+  it("lista de Fornecedores mostra nota ao lado do nome, só com flag e permissão", () => {
+    assert.match(SUPPLIERS_VIEW, /supplier-list-evaluation-score/);
+    assert.match(SUPPLIERS_VIEW, /Sem avaliações/);
+    assert.match(SUPPLIERS_VIEW, /fetchSupplierEvaluationListSummaries/);
+    assert.match(SUPPLIERS_VIEW, /supplierPerformanceEnabled === true && canViewEvaluation/);
+    assert.match(SERVICE, /loadSupplierEvaluationListSummaries/);
+    assert.doesNotMatch(SUPPLIERS_VIEW, /for \(const .+ of pageRows\)[\s\S]{0,80}fetchSupplier/);
   });
 
   it("aba Desempenho só em edição, com flag e permissão", () => {

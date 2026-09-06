@@ -42,6 +42,7 @@ import {
   buildSupplierPerformanceDetailCsvRows,
   buildSupplierPerformanceReport,
   getPurchaseOrderSupplierEvaluation,
+  loadSupplierEvaluationListSummaries,
   mapSupplierEvaluationError,
   savePurchaseOrderSupplierEvaluation,
 } from "./supplierPerformance.server.js";
@@ -181,6 +182,32 @@ export function registerSupplierPerformanceRoutes(
       );
       res.setHeader("Cache-Control", "no-store");
       return res.json(payload);
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/supplier-performance/suppliers/summaries", ...performanceView, async (req, res) => {
+    try {
+      const raw = req.query.ids ?? req.query.supplierIds;
+      const text = Array.isArray(raw) ? raw.join(",") : String(raw ?? "");
+      const ids = text
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      for (const id of ids) {
+        if (!isUuid(id)) {
+          throw new SupplierEvaluationError(
+            "INVALID_SUPPLIER_PERFORMANCE_FILTER",
+            "Fornecedor inválido.",
+            "ids"
+          );
+        }
+      }
+      const payload = await loadSupplierEvaluationListSummaries(prisma, ids);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ items: payload.items });
     } catch (error) {
       const mapped = mapSupplierEvaluationError(error);
       return res.status(mapped.status).json(mapped.body);
@@ -335,7 +362,7 @@ export function registerSupplierPerformanceRoutes(
     async (req, res) => {
       try {
         const { id } = req.params;
-        if (!id || typeof id !== "string") {
+        if (!isUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
         const user = await auth.getCurrentAppUser(req);

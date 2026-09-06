@@ -10,7 +10,16 @@ import {
   SUPPLIER_EVALUATION_ELIGIBLE_STATUSES,
   SUPPLIER_EVALUATION_HISTORY_ACTIONS,
   SUPPLIER_EVALUATION_METHODOLOGY_ID,
+  SUPPLIER_EVALUATION_METHODOLOGY_V1,
   SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
+  SUPPLIER_EVALUATION_RATING_LABELS,
+  SUPPLIER_EVALUATION_RATING_VALUES,
+  SUPPLIER_EVALUATION_SCORE_MAX,
+  SUPPLIER_EVALUATION_SCORE_MIN,
+  assertSupplierEvaluationWeightsValid,
+  computeWeightedSupplierOverallScore,
+  overallScoresCompatibleWithMethodology,
+  resolveSupplierEvaluationAggregation,
   SUPPLIER_PERFORMANCE_METHODOLOGY_TEXT,
   SUPPLIER_PERFORMANCE_PAGE_SIZE_DEFAULT,
   SUPPLIER_PERFORMANCE_PAGE_SIZE_MAX,
@@ -25,6 +34,8 @@ import {
   formatPurchaseOrderAmount,
   formatSupplierCoverage,
   formatSupplierScore,
+  formatSupplierScoreWithScale,
+  formatSupplierEvaluationCount,
   isPurchaseOrderSupplierEvaluationEligible,
   normalizeSupplierEvaluationExpectedRevision,
   normalizeSupplierEvaluationNotes,
@@ -60,9 +71,11 @@ const scores = (q: unknown, d: unknown, c: unknown, s: unknown) => ({
 });
 
 describe("metodologia — quatro critérios de peso igual", () => {
-  it("declara V1 com 25% em cada critério e sem menção ao Inmetro", () => {
-    assert.equal(SUPPLIER_EVALUATION_METHODOLOGY_VERSION, 1);
-    assert.equal(SUPPLIER_EVALUATION_METHODOLOGY_ID, "SUPPLIER_ORDER_EVALUATION_V1");
+  it("declara V2 com escala 1–5, 25% em cada critério e sem menção ao Inmetro", () => {
+    assert.equal(SUPPLIER_EVALUATION_METHODOLOGY_VERSION, 2);
+    assert.equal(SUPPLIER_EVALUATION_METHODOLOGY_ID, "SUPPLIER_ORDER_EVALUATION_V2");
+    assert.equal(SUPPLIER_EVALUATION_SCORE_MIN, 1);
+    assert.equal(SUPPLIER_EVALUATION_SCORE_MAX, 5);
     assert.equal(SUPPLIER_EVALUATION_CRITERIA.length, 4);
     assert.deepEqual(
       SUPPLIER_EVALUATION_CRITERIA.map((c) => c.key),
@@ -71,8 +84,10 @@ describe("metodologia — quatro critérios de peso igual", () => {
     for (const criterion of SUPPLIER_EVALUATION_CRITERIA) {
       assert.equal(criterion.weightPercent, 25);
     }
+    assert.equal(assertSupplierEvaluationWeightsValid(), 100);
     const text = SUPPLIER_PERFORMANCE_METHODOLOGY_TEXT.join(" ");
     assert.match(text, /Metodologia interna de avaliação de fornecedores/);
+    assert.match(text, /média ponderada/);
     assert.doesNotMatch(text, /Inmetro/i);
     assert.doesNotMatch(text, /ISO 9001/i);
   });
@@ -89,21 +104,80 @@ describe("metodologia — quatro critérios de peso igual", () => {
   });
 });
 
-describe("nota do pedido — média aritmética determinística", () => {
+describe("nota do pedido — média ponderada V2 (1–5)", () => {
+  it("1/1/1/1 -> 1,00", () => {
+    assert.equal(computeSupplierOrderEvaluation(scores(1, 1, 1, 1)).overallScore, 1);
+  });
+
+  it("5/5/5/5 -> 5,00", () => {
+    assert.equal(computeSupplierOrderEvaluation(scores(5, 5, 5, 5)).overallScore, 5);
+  });
+
+  it("5/4/5/3 -> 4,25 com pesos 25%", () => {
+    assert.equal(computeSupplierOrderEvaluation(scores(5, 4, 5, 3)).overallScore, 4.25);
+  });
+
+  it("pesos 40/30/20/10 com 5/4/5/3 -> 4,50", () => {
+    assert.equal(
+      computeWeightedSupplierOverallScore(
+        { quality: 5, delivery: 4, conformity: 5, service: 3 },
+        [
+          { ...SUPPLIER_EVALUATION_CRITERIA[0], weightPercent: 40 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[1], weightPercent: 30 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[2], weightPercent: 20 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[3], weightPercent: 10 },
+        ]
+      ),
+      4.5
+    );
+  });
+
+  it("pesos != 100% falham explicitamente", () => {
+    assert.throws(
+      () =>
+        assertSupplierEvaluationWeightsValid([
+          { ...SUPPLIER_EVALUATION_CRITERIA[0], weightPercent: 40 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[1], weightPercent: 30 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[2], weightPercent: 20 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[3], weightPercent: 5 },
+        ]),
+      /100%/
+    );
+  });
+
+  it("peso negativo é inválido", () => {
+    assert.throws(
+      () =>
+        assertSupplierEvaluationWeightsValid([
+          { ...SUPPLIER_EVALUATION_CRITERIA[0], weightPercent: -25 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[1], weightPercent: 50 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[2], weightPercent: 50 },
+          { ...SUPPLIER_EVALUATION_CRITERIA[3], weightPercent: 25 },
+        ]),
+      /negativo/
+    );
+  });
+
+  it("não pondera por valor financeiro do pedido", () => {
+    assert.equal(computeSupplierOrderEvaluation(scores(1, 5, 1, 5)).overallScore, 3);
+  });
+});
+
+describe("nota do pedido — média ponderada V1 histórica (0–10)", () => {
   it("0/0/0/0 -> 0,00", () => {
-    assert.equal(computeSupplierOrderEvaluation(scores(0, 0, 0, 0)).overallScore, 0);
+    assert.equal(computeSupplierOrderEvaluation(scores(0, 0, 0, 0), 1).overallScore, 0);
   });
 
   it("10/10/10/10 -> 10,00", () => {
-    assert.equal(computeSupplierOrderEvaluation(scores(10, 10, 10, 10)).overallScore, 10);
+    assert.equal(computeSupplierOrderEvaluation(scores(10, 10, 10, 10), 1).overallScore, 10);
   });
 
   it("9/8/10/8 -> 8,75", () => {
-    assert.equal(computeSupplierOrderEvaluation(scores(9, 8, 10, 8)).overallScore, 8.75);
+    assert.equal(computeSupplierOrderEvaluation(scores(9, 8, 10, 8), 1).overallScore, 8.75);
   });
 
   it("9,1/9,1/9,1/9,2 -> 9,13 (HALF-UP sobre 9,125)", () => {
-    const result = computeSupplierOrderEvaluation(scores(9.1, 9.1, 9.1, 9.2));
+    const result = computeSupplierOrderEvaluation(scores(9.1, 9.1, 9.1, 9.2), 1);
     assert.equal(result.overallScore, 9.13);
     assert.deepEqual(result.scores, {
       quality: 9.1,
@@ -114,23 +188,22 @@ describe("nota do pedido — média aritmética determinística", () => {
   });
 
   it("9/8/10/9 -> 9,00 (exemplo da API)", () => {
-    assert.equal(computeSupplierOrderEvaluation(scores(9, 8, 10, 9)).overallScore, 9);
+    assert.equal(computeSupplierOrderEvaluation(scores(9, 8, 10, 9), 1).overallScore, 9);
   });
 
   it("0,1/0,1/0,1/0,2 -> 0,13 (mesmo arredondamento na faixa baixa)", () => {
     assert.equal(
-      computeSupplierOrderEvaluation(scores(0.1, 0.1, 0.1, 0.2)).overallScore,
+      computeSupplierOrderEvaluation(scores(0.1, 0.1, 0.1, 0.2), 1).overallScore,
       0.13
     );
   });
 
   it("aceita string com vírgula pt-BR", () => {
-    assert.equal(computeSupplierOrderEvaluation(scores("7,5", "7,5", "7,5", "7,5")).overallScore, 7.5);
+    assert.equal(computeSupplierOrderEvaluation(scores("7,5", "7,5", "7,5", "7,5"), 1).overallScore, 7.5);
   });
 
   it("não pondera por valor: aritmética pura dos critérios", () => {
-    // Um critério altíssimo não domina — cada um vale exatamente 25%.
-    assert.equal(computeSupplierOrderEvaluation(scores(10, 0, 0, 0)).overallScore, 2.5);
+    assert.equal(computeSupplierOrderEvaluation(scores(10, 0, 0, 0), 1).overallScore, 2.5);
   });
 
   it("roundHalfUpToHundredths arredonda .5 para cima", () => {
@@ -140,7 +213,100 @@ describe("nota do pedido — média aritmética determinística", () => {
   });
 });
 
-describe("validação das notas", () => {
+describe("validação das notas V2", () => {
+  for (const value of SUPPLIER_EVALUATION_RATING_VALUES) {
+    it(`${value} é válido`, () => {
+      assert.doesNotThrow(() => computeSupplierOrderEvaluation(scores(value, 3, 3, 3)));
+    });
+  }
+
+  const invalid: Array<[string, unknown]> = [
+    ["0", 0],
+    ["6", 6],
+    ["-1", -1],
+    ["10", 10],
+    ["1.5", 1.5],
+    ["4.5", 4.5],
+    ["NaN", Number.NaN],
+    ["null", null],
+  ];
+  for (const [label, value] of invalid) {
+    it(`rejeita ${label}`, () => {
+      assert.throws(
+        () => computeSupplierOrderEvaluation(scores(value, 3, 3, 3)),
+        SupplierEvaluationError
+      );
+    });
+  }
+
+  it("null é permitido só como rascunho de UI, não na finalização", () => {
+    assert.throws(
+      () => computeSupplierOrderEvaluation(scores(null, 3, 3, 3)),
+      SupplierEvaluationError
+    );
+  });
+});
+
+describe("legenda 1–5", () => {
+  it("mantém o significado de cada nota", () => {
+    assert.equal(SUPPLIER_EVALUATION_RATING_LABELS[1], "Não atende aos nossos padrões");
+    assert.equal(SUPPLIER_EVALUATION_RATING_LABELS[2], "Atende parcialmente / abaixo do esperado");
+    assert.equal(SUPPLIER_EVALUATION_RATING_LABELS[3], "Atende aos nossos padrões");
+    assert.equal(SUPPLIER_EVALUATION_RATING_LABELS[4], "Acima do esperado");
+    assert.equal(SUPPLIER_EVALUATION_RATING_LABELS[5], "Superou as expectativas");
+    assert.deepEqual([...SUPPLIER_EVALUATION_RATING_VALUES], [1, 2, 3, 4, 5]);
+  });
+});
+
+describe("escalas incompatíveis não se misturam", () => {
+  it("não agrega 8,5 (V1) com 4,5 (V2)", () => {
+    const mixed = overallScoresCompatibleWithMethodology([
+      { overallScore: 8.5, methodologyVersion: SUPPLIER_EVALUATION_METHODOLOGY_V1 },
+      { overallScore: 4.5, methodologyVersion: SUPPLIER_EVALUATION_METHODOLOGY_VERSION },
+    ]);
+    assert.deepEqual(mixed, [4.5]);
+  });
+
+  it("consolidado prefere V2 e ignora V1 na mesma média", () => {
+    const aggregated = resolveSupplierEvaluationAggregation([
+      {
+        overallScore: 8.5,
+        qualityScore: 8,
+        deliveryScore: 9,
+        conformityScore: 8,
+        serviceScore: 9,
+        methodologyVersion: 1,
+      },
+      {
+        overallScore: 4.5,
+        qualityScore: 5,
+        deliveryScore: 4,
+        conformityScore: 5,
+        serviceScore: 4,
+        methodologyVersion: 2,
+      },
+    ]);
+    assert.equal(aggregated.methodology.scaleMax, 5);
+    assert.deepEqual(aggregated.overall, [4.5]);
+  });
+
+  it("só V1 cai para a escala histórica 0–10", () => {
+    const aggregated = resolveSupplierEvaluationAggregation([
+      {
+        overallScore: 8.5,
+        qualityScore: 8,
+        deliveryScore: 9,
+        conformityScore: 8,
+        serviceScore: 9,
+        methodologyVersion: 1,
+      },
+    ]);
+    assert.equal(aggregated.methodology.scaleMax, 10);
+    assert.deepEqual(aggregated.overall, [8.5]);
+  });
+});
+
+describe("validação das notas V1 histórica", () => {
   const invalid: Array<[string, unknown]> = [
     ["negativo", -0.1],
     ["acima de 10", 10.1],
@@ -159,7 +325,7 @@ describe("validação das notas", () => {
   for (const [label, value] of invalid) {
     it(`rejeita ${label}`, () => {
       assert.throws(
-        () => computeSupplierOrderEvaluation(scores(value, 8, 8, 8)),
+        () => computeSupplierOrderEvaluation(scores(value, 8, 8, 8), 1),
         (error: unknown) => {
           assert.ok(error instanceof SupplierEvaluationError);
           assert.equal(error.code, "INVALID_SUPPLIER_EVALUATION_SCORE");
@@ -173,13 +339,13 @@ describe("validação das notas", () => {
   const valid = [0, 0.5, 7, 8.7, 10];
   for (const value of valid) {
     it(`aceita ${value}`, () => {
-      assert.doesNotThrow(() => computeSupplierOrderEvaluation(scores(value, 0, 0, 0)));
+      assert.doesNotThrow(() => computeSupplierOrderEvaluation(scores(value, 0, 0, 0), 1));
     });
   }
 
   it("exige os quatro critérios", () => {
     assert.throws(
-      () => computeSupplierOrderEvaluation(scores(9, 9, 9, undefined)),
+      () => computeSupplierOrderEvaluation(scores(9, 9, 9, undefined), 1),
       SupplierEvaluationError
     );
   });
@@ -296,15 +462,31 @@ describe("agregação do fornecedor", () => {
     assert.equal(averageScoreOrNull([8, 9, 10]), 9);
   });
 
+  it("V2: 4,50 / 3,80 / 4,20 / 5,00 -> 4,38", () => {
+    assert.equal(averageScoreOrNull([4.5, 3.8, 4.2, 5]), 4.38);
+  });
+
   it("valor financeiro do pedido não pondera: nota 5 (R$1.000.000) e 10 (R$1.000) -> 7,50", () => {
     assert.equal(averageScoreOrNull([5, 10]), 7.5);
+  });
+
+  it("V2 sem ponderação financeira: 1 (R$1.000.000) e 5 (R$1) -> 3,00", () => {
+    assert.equal(averageScoreOrNull([1, 5]), 3);
   });
 
   it("lista vazia -> null (nunca 0)", () => {
     assert.equal(averageScoreOrNull([]), null);
   });
 
-  it("cobertura 8/10 = 80% com notas consolidadas", () => {
+  it("cobertura 1/10 = 10% e 8/10 = 80%", () => {
+    assert.equal(
+      buildSupplierPerformanceSummary({
+        eligibleOrders: 10,
+        evaluatedOrders: 1,
+        averages: { overall: 5, quality: null, delivery: null, conformity: null, service: null },
+      }).coverage,
+      0.1
+    );
     const summary = buildSupplierPerformanceSummary({
       eligibleOrders: 10,
       evaluatedOrders: 8,
@@ -491,6 +673,11 @@ describe("apresentação pt-BR", () => {
     assert.equal(formatSupplierScore(8.7), "8,70");
     assert.equal(formatSupplierScore(9, 1), "9,0");
     assert.equal(formatSupplierScore(null), "—");
+    assert.equal(formatSupplierScoreWithScale(4.38, 5), "4,38 / 5");
+    assert.equal(formatSupplierScoreWithScale(null, 5), "—");
+    assert.equal(formatSupplierEvaluationCount(0), "0 avaliações");
+    assert.equal(formatSupplierEvaluationCount(1), "1 avaliação");
+    assert.equal(formatSupplierEvaluationCount(18), "18 avaliações");
     assert.equal(formatSupplierCoverage(0.880952), "88,10%");
     assert.equal(formatSupplierCoverage(0), "0,00%");
     assert.equal(formatSupplierCoverage(null), "—");

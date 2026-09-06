@@ -11,11 +11,15 @@ import { usePermissions } from "@/src/hooks/usePermissions";
 import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess";
 import {
   SUPPLIER_EVALUATION_CRITERIA,
+  SUPPLIER_EVALUATION_METHODOLOGY_V1,
+  SUPPLIER_EVALUATION_METHODOLOGY_VERSION,
   SUPPLIER_PERFORMANCE_PERIOD_PRESETS,
   buildSupplierPerformancePeriodFromPreset,
   computeSupplierOrderEvaluation,
   formatSupplierCoverage,
   formatSupplierScore,
+  formatSupplierScoreWithScale,
+  getSupplierEvaluationMethodology,
   type SupplierEvaluationCriterionKey,
   type SupplierPerformancePeriodPresetId,
 } from "@/src/lib/purchasing/supplierPerformance";
@@ -31,18 +35,21 @@ import type {
 } from "@/src/lib/purchasing/nomusPurchaseOrderEvaluation";
 import { nomusPurchaseOrderStageLabel } from "@/src/lib/nomus/nomusPurchaseOrderUi";
 import { NOMUS_PURCHASE_ORDER_STAGES } from "@/src/lib/nomus/nomusPurchaseOrderTypes";
+import {
+  SupplierEvaluationRatingLegend,
+  SupplierEvaluationRatingSelector,
+} from "@/src/components/supply-chain/supplier-performance/SupplierEvaluationRatingScale";
 
-type ScoreDraft = Record<SupplierEvaluationCriterionKey, string>;
-const EMPTY: ScoreDraft = { quality: "", delivery: "", conformity: "", service: "" };
+type ScoreDraft = Record<SupplierEvaluationCriterionKey, number | null>;
+const EMPTY: ScoreDraft = { quality: null, delivery: null, conformity: null, service: null };
 
 function draftFromRow(row: NomusSupplierEvaluationWorklistRow): ScoreDraft {
   if (!row.evaluation) return EMPTY;
-  const asText = (v: number) => String(v).replace(".", ",");
   return {
-    quality: asText(row.evaluation.scores.quality),
-    delivery: asText(row.evaluation.scores.delivery),
-    conformity: asText(row.evaluation.scores.conformity),
-    service: asText(row.evaluation.scores.service),
+    quality: row.evaluation.scores.quality,
+    delivery: row.evaluation.scores.delivery,
+    conformity: row.evaluation.scores.conformity,
+    service: row.evaluation.scores.service,
   };
 }
 
@@ -128,20 +135,23 @@ export function NomusSupplierEvaluationWorklistPage() {
     .filter(([, on]) => on)
     .map(([id]) => id);
 
-  const setScore = (id: string, key: SupplierEvaluationCriterionKey, value: string) => {
+  const setScore = (id: string, key: SupplierEvaluationCriterionKey, value: number | null) => {
     setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY), [key]: value } }));
   };
 
-  const previewOf = (id: string) => {
+  const previewOf = (id: string, methodologyVersion = SUPPLIER_EVALUATION_METHODOLOGY_VERSION) => {
     const draft = drafts[id];
     if (!draft) return null;
     try {
-      return computeSupplierOrderEvaluation({
-        qualityScore: draft.quality,
-        deliveryScore: draft.delivery,
-        conformityScore: draft.conformity,
-        serviceScore: draft.service,
-      });
+      return computeSupplierOrderEvaluation(
+        {
+          qualityScore: draft.quality,
+          deliveryScore: draft.delivery,
+          conformityScore: draft.conformity,
+          serviceScore: draft.service,
+        },
+        methodologyVersion
+      );
     } catch {
       return null;
     }
@@ -165,10 +175,13 @@ export function NomusSupplierEvaluationWorklistPage() {
           localErrors[row.nomusPurchaseOrderId] = "Clique em Revisar antes de alterar uma avaliação finalizada.";
           continue;
         }
-        const preview = previewOf(row.nomusPurchaseOrderId);
+        const preview = previewOf(
+          row.nomusPurchaseOrderId,
+          row.evaluation?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION
+        );
         if (!preview) {
           localErrors[row.nomusPurchaseOrderId] =
-            "Informe as quatro notas de 0 a 10 com no máximo uma casa decimal.";
+            "Escolha 1, 2, 3, 4 ou 5 nos quatro critérios.";
           continue;
         }
         const revisionReason = (reasons[row.nomusPurchaseOrderId] ?? "").trim();
@@ -192,7 +205,7 @@ export function NomusSupplierEvaluationWorklistPage() {
       const payload = await saveNomusPurchaseOrderSupplierEvaluationsBatchRequest(items);
       const nextErrors = { ...localErrors };
       for (const result of payload.results) {
-        if (!result.success) nextErrors[result.nomusPurchaseOrderId] = result.error;
+        if (result.success === false) nextErrors[result.nomusPurchaseOrderId] = result.error;
       }
       setRowErrors(nextErrors);
       await load();
@@ -230,9 +243,11 @@ export function NomusSupplierEvaluationWorklistPage() {
     <div className="space-y-4" data-testid="nomus-supplier-evaluation-worklist">
       <PurchaseChainViewNav current="supplier-evaluation" variant="nomus" />
       <p className="text-sm text-muted-foreground">
-        Cada Pedido Nomus tem a sua avaliação. A nota do fornecedor é a média simples dos pedidos
-        avaliados — por quesito e no geral, sem ponderar valor financeiro e sem writeback no Nomus.
+        Cada Pedido Nomus tem a sua avaliação na régua 1 a 5. A nota do pedido é a média ponderada
+        dos critérios; a nota do fornecedor é a média das avaliações finalizadas — sem ponderar valor
+        financeiro e sem writeback no Nomus.
       </p>
+      <SupplierEvaluationRatingLegend compact />
 
       {kpis ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -247,7 +262,7 @@ export function NomusSupplierEvaluationWorklistPage() {
           />
           <Kpi
             label={selectedSupplier ? "Nota do fornecedor" : "Nota média"}
-            value={formatSupplierScore(kpis.overallScore)}
+            value={formatSupplierScoreWithScale(kpis.overallScore, data?.scaleMax)}
           />
           <Kpi
             label="Q / P / C / A"
@@ -387,7 +402,10 @@ export function NomusSupplierEvaluationWorklistPage() {
               data!.items.map((row) => {
                 const id = row.nomusPurchaseOrderId;
                 const draft = drafts[id] ?? EMPTY;
-                const preview = previewOf(id);
+                const preview = previewOf(
+                  id,
+                  row.evaluation?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION
+                );
                 const locked = !row.eligible || (row.evaluation != null && !reviewing[id]) || !canUpdate;
                 const supplierName =
                   row.supplier.resolvedName || row.supplier.nomusName || "Fornecedor não identificado";
@@ -414,22 +432,56 @@ export function NomusSupplierEvaluationWorklistPage() {
                     <td className="px-2 py-1.5">{nomusPurchaseOrderStageLabel(row.stage)}</td>
                     <td className="px-2 py-1.5">
                       {evaluationStatusLabel(row.evaluationStatus)}
-                      {row.evaluation ? ` · ${formatSupplierScore(row.evaluation.scores.overall)}` : ""}
+                      {row.evaluation
+                        ? ` · ${formatSupplierScoreWithScale(
+                            row.evaluation.scores.overall,
+                            getSupplierEvaluationMethodology(row.evaluation.methodologyVersion).scaleMax
+                          )}`
+                        : ""}
                     </td>
                     {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
                       <td key={c.key} className="px-2 py-1.5">
-                        <input
-                          value={draft[c.key]}
-                          disabled={locked}
-                          onChange={(e) => setScore(id, c.key, e.target.value)}
-                          className="w-16 rounded border border-border px-1 py-0.5 font-mono disabled:bg-muted"
-                          inputMode="decimal"
-                          aria-label={c.shortLabel}
-                        />
+                        {row.evaluation?.methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V1 ? (
+                          <label className="block">
+                            <span className="sr-only">{c.shortLabel}</span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={10}
+                              step={0.1}
+                              disabled={locked}
+                              aria-label={`${c.shortLabel} (metodologia 0 a 10)`}
+                              className="w-16 rounded border border-border bg-background px-1 py-0.5 text-xs tabular-nums disabled:opacity-50"
+                              value={draft[c.key] ?? ""}
+                              onChange={(e) =>
+                                setScore(
+                                  id,
+                                  c.key,
+                                  e.target.value === "" ? null : Number(e.target.value.replace(",", "."))
+                                )
+                              }
+                            />
+                          </label>
+                        ) : (
+                          <SupplierEvaluationRatingSelector
+                            criterionKey={c.key}
+                            criterionLabel={c.shortLabel}
+                            value={draft[c.key]}
+                            disabled={locked}
+                            compact
+                            onChange={(value) => setScore(id, c.key, value)}
+                          />
+                        )}
                       </td>
                     ))}
                     <td className="px-2 py-1.5 font-mono font-semibold">
-                      {formatSupplierScore(preview?.overallScore ?? row.evaluation?.scores.overall ?? null)}
+                      {formatSupplierScoreWithScale(
+                        preview?.overallScore ?? row.evaluation?.scores.overall ?? null,
+                        getSupplierEvaluationMethodology(
+                          row.evaluation?.methodologyVersion ?? SUPPLIER_EVALUATION_METHODOLOGY_VERSION
+                        ).scaleMax
+                      )}
                     </td>
                     <td className="px-2 py-1.5">
                       {row.evaluation && canUpdate ? (
