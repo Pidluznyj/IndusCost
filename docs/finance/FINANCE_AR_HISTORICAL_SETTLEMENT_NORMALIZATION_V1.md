@@ -1,7 +1,9 @@
 # Normalização histórica de baixas administrativas AR — fevereiro/2026
 
-**Política:** `HISTORICAL_SETTLEMENT_NORMALIZATION_V1`  
-**Autoridade única:** `src/lib/finance/financeArHistoricalMonthlyAttribution.ts`  
+**Política:** `HISTORICAL_SETTLEMENT_NORMALIZATION_V1`
+
+**Autoridade única:** `src/lib/finance/financeArHistoricalMonthlyAttribution.ts`
+
 **Helper:** `resolveFinanceArHistoricalMonthlyMovementDate`
 
 ## Motivo
