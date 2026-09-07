@@ -882,7 +882,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       uiBlock: "PartyList",
       uiTab: "overview",
       payloadPath: "topCustomers",
-      label: "Top clientes por entrada",
+      label: "Top clientes por saldo AR em aberto",
       sourceModule: "financeCashFlowDataset.ts",
       sourceFunction: "buildBlocksFromPortfolio → aggregate by customer (balanceReceivable)",
       rowScope: "portfolio",
@@ -1231,7 +1231,7 @@ export const FINANCE_CASH_FLOW_REQUIRED_UI_BLOCKS = [
   "pagamentos vencidos",
   "maiores entradas previstas",
   "maiores saídas previstas",
-  "top clientes por entrada",
+  "top clientes por saldo AR em aberto",
   "top fornecedores por saída",
   "linha do tempo mensal",
   "calendário",
@@ -1295,7 +1295,7 @@ export function validateReconciliationMapCoverage(): {
     ),
     "maiores entradas previstas": coveredLabels.has("maiores entradas previstas"),
     "maiores saídas previstas": coveredLabels.has("maiores saídas previstas"),
-    "top clientes por entrada": coveredLabels.has("top clientes por entrada"),
+    "top clientes por saldo AR em aberto": coveredLabels.has("top clientes por saldo ar em aberto"),
     "top fornecedores por saída": coveredLabels.has("top fornecedores por saída"),
     "linha do tempo mensal": FINANCE_CASH_FLOW_RECONCILIATION_MAP.some((e) =>
       e.usesExecutiveTimeline

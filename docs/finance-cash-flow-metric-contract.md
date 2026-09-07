@@ -1,8 +1,11 @@
 # Contrato de métricas AR — Fluxo de Caixa
 
-**Tela:** Financeiro → Fluxo de Caixa  
-**Autoridade:** motor oficial de Contas a Receber (`financeAccountsReceivableRulesEngine`) + adapters  
-**Camada de contrato:** `src/lib/financeCashFlowArMetrics.ts`  
+**Tela:** Financeiro → Fluxo de Caixa
+
+**Autoridade:** motor oficial de Contas a Receber (`financeAccountsReceivableRulesEngine`) + adapters
+
+**Camada de contrato:** `src/lib/financeCashFlowArMetrics.ts`
+
 **Regra:** mesmo conceito → um helper / mesmo resultado até o centavo. Conceitos diferentes permanecem diferentes e testados como diferentes.
 
 Não altera fórmulas financeiras validadas. Não generaliza o overlay histórico de fevereiro/2026.
@@ -15,7 +18,7 @@ Não altera fórmulas financeiras validadas. Não generaliza o overlay históric
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Carteira AR aberta | `AR_OPEN_PORTFOLIO` | `computeOfficialArMetrics.openAmount` / `buildBlocksFromPortfolio` | `balanceReceivable` | nenhum | gerencial AR | identidade sim; **ignora year/month/viewMode/dateBase** | SUM saldo aberto elegível | cards de carteira, reconciliação, Top clientes (por cliente) | recon `cashFlowOpenPortfolio` vs AR oficial | recorte anual, forward até 31/12, radar | Portfólio ≠ período |
 | Aberto no período | `AR_OPEN_DUE_IN_PERIOD` | `sumOfficialArOpenDueInPeriod` | `balanceReceivable` | `dueDate` | gerencial AR | year/mês do recorte + identidade | SUM aberto com vencimento no intervalo | timeline mensal «A receber», planejado mensal, calendário (mês) | planejado vs calendário no mesmo escopo | YTD oficial, forward | Recorte temporal explícito |
-| Aberto no ano | `AR_OPEN_DUE_IN_YEAR` | YTD `totalReceivableOpen` | `balanceReceivable` | `dueDate` (ano) | gerencial AR | year sim; **ignora month** | SUM aberto da população YTD | card «A receber YTD» | totais YTD `openAmount` | `AR_OPEN_PORTFOLIO`, `AR_OPEN_FORWARD_TO_YEAR_END` | Ano civil ≠ carteira total ≠ restante do ano |
+| Aberto no ano | `AR_OPEN_DUE_IN_YEAR` | YTD `totalReceivableOpen` | `balanceReceivable` | `dueDate` no ano civil selecionado, **incluindo vencimentos futuros** | gerencial AR | year sim; **ignora month** | SUM aberto da população do ano (não é 01/01→hoje) | card «A receber no ano» | totais YTD `openAmount` | `AR_OPEN_PORTFOLIO`, `AR_OPEN_FORWARD_TO_YEAR_END` | Ano civil ≠ carteira total ≠ restante do ano; **não chamar de YTD** |
 | Restante até 31/12 | `AR_OPEN_FORWARD_TO_YEAR_END` | motor oficial `openUntilYearEnd` | `balanceReceivable` | `dueDate` hoje→31/12 | gerencial AR | year sim; **ignora month** | SUM aberto no intervalo futuro | card «A receber restante no ano», export | addendo da estimativa anual | aberto do mês original (vencidos), YTD de carteira | Forward começa na data-base |
 | Recebido YTD oficial | `AR_RECEIVED_YTD` | motor oficial `receivedYtd` | `amountReceived` | `settlementDate` (regra vigente) | gerencial AR | year sim; **ignora month** | SUM recebido 01/01→data-base | card executivo «Recebido YTD», export `resumo_recebido_ytd` | addendo da estimativa anual | «Recebido YTD por vencimento», timeline de movimento, planejado | Baixa ≠ vencimento |
 | Estimativa AR do ano | `AR_ESTIMATED_YEAR_TOTAL` | `composeCanonicalArEstimatedYearTotal` sobre addendos oficiais | misto | settlement + due | gerencial AR | iguais aos addendos | `receivedYtd + openUntilYearEnd` (`roundMoney`) | card «Estimativa AR do ano», export | os dois addendos oficiais | total anual do comparativo (Σ 12 meses por dueDate) | Conceitos diferentes |
@@ -29,10 +32,10 @@ Não altera fórmulas financeiras validadas. Não generaliza o overlay históric
 ## Divergências intencionais
 
 1. **Planejado por dueDate ≠ realizado por settlementDate** (e ≠ overlay de movimento).
-2. **Carteira YTD (aberto no ano) ≠ restante do ano (hoje→31/12)**.
-3. **Portfólio aberto ≠ recorte de período/mês**.
-4. **Radar Diário ≠ filtros globais da página**.
-5. **Comparativo anual ignora filtros da página**; o gráfico planejado do dashboard respeita identidade/ano YTD.
+2. **Aberto no ano (vencimento no ano civil, inclusive futuro) ≠ restante do ano (hoje→31/12) ≠ YTD 01/01→hoje**.
+3. **Portfólio aberto ≠ recorte de período/mês**. Top clientes usa carteira; ano/mês da página não se aplicam.
+4. **Radar Diário ≠ filtros globais da página** (visão operacional independente).
+5. **Comparativo anual ignora filtros da página** (visão consolidada do ano); o gráfico planejado do dashboard respeita identidade/ano YTD.
 6. **Estimativa AR do ano ≠ total de entradas do comparativo anual**.
 7. Overlay histórico fev/2026 (datas 04, 05, 09, 19 e lag > 15) **só** na timeline de movimento. Não altera planejado, estimativa anual, YTD oficial, radar, forecast, carteira nem comissão.
 
@@ -47,3 +50,16 @@ Não altera fórmulas financeiras validadas. Não generaliza o overlay históric
 - Top cliente = soma canônica dos títulos abertos daquele cliente (`balanceReceivable`)
 - Export CSV dos resumos executivos = payload do dashboard
 - Frontend apenas formata; não soma received+open
+
+---
+
+## Escopos de filtro na tela (UI)
+
+Estes blocos **não** usam os mesmos filtros do dashboard filtrado. A interface deve deixar o contrato visível; a lógica não deve ser “forçada” a coincidir.
+
+| Superfície | Filtros da página | Contrato visual |
+|---|---|---|
+| Comparativo anual (`AR_PLANNED_BY_DUE_MONTH` na população anual) | **Ignora** filtros da página (visão consolidada do ano) | «Visão consolidada do ano — independente dos filtros da página.» |
+| Radar Diário (`AR_DAILY_RADAR_OPEN_DUE`) | **Independente** dos filtros globais | «Visão operacional independente dos filtros da página.» |
+| Top clientes (`AR_OPEN_PORTFOLIO` por cliente) | Identidade (empresa/cliente/NF) sim; **ano/mês não se aplicam** | «Top clientes por saldo AR em aberto» · «Carteira atual; o período da página não se aplica.» |
+| Card «A receber no ano» (`AR_OPEN_DUE_IN_YEAR`) | Ano sim; mês ignorado; inclui vencimentos futuros no ano | Não rotular como «A receber YTD» (YTD seria 01/01→hoje) |

@@ -83,7 +83,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
   const year = payload?.year ?? new Date().getFullYear();
   const title = `Fluxo anual — Entradas, Saídas e Saldo (${year})`;
   const subtitle =
-    "Mesma autoridade do fluxo planejado: movimentos alocados pelo vencimento (dueDate). Independente dos filtros da página. Distinto da estimativa AR do ano (YTD por baixa + restante até 31/12).";
+    "Visão consolidada do ano — independente dos filtros da página. Mesma autoridade do fluxo planejado: movimentos alocados pelo vencimento (dueDate).";
 
   if (!visible || (loading && !payload)) {
     return (

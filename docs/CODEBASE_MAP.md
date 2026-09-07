@@ -195,7 +195,7 @@ IndusCost/
 **Exports**: `buildFinanceCashFlowDashboard`, `buildCashFlowForecastWithScenarios`, `buildFinanceCashFlowDailyRadar`, `financeCashFlowMetricsAreFinite` (test guard).
 **Dependencies**: `financeAccountsReceivableDashboard.js`, `financeAccountsPayableDashboard.js`, `financeHorizonBuckets.js`.
 **Dependents**: `src/components/finance/cash-flow/*`, Executive Report, Treasury Caixa (reuses the same AR/AP engines).
-**Gotchas**: Planned chart / annual comparison allocate by `dueDate`. Movement timeline uses settlementDate plus the Feb/2026 historical overlay. Official YTD received uses settlementDate. Same concept must share `financeCashFlowArMetrics.ts`; different concepts stay different. See `docs/finance-cash-flow-metric-contract.md`.
+**Gotchas**: Planned chart / annual comparison allocate by `dueDate`. Movement timeline uses settlementDate plus the Feb/2026 historical overlay. Official YTD received uses settlementDate. `AR_OPEN_DUE_IN_YEAR` is open balance with dueDate in the selected calendar year (including future dues) — not 01/01→today; UI label is «A receber no ano». Same concept must share `financeCashFlowArMetrics.ts`; different concepts stay different. See `docs/finance-cash-flow-metric-contract.md`.
 
 ---
 

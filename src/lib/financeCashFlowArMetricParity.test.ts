@@ -553,6 +553,22 @@ describe("financeCashFlowArMetricParity", () => {
     assertCanonicalArMoneyEqual(payload.calendar.monthSummary.inflow, jun.estimatedInflow);
   });
 
+  it("contratos visuais deixam escopos distintos explícitos", () => {
+    const ytd = read("src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx");
+    const page = read("src/components/finance/FinanceCashFlowPage.tsx");
+    const annual = read(
+      "src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx"
+    );
+    const radar = read("src/components/finance/cash-flow/FinanceCashFlowDailyRadar.tsx");
+    assert.match(ytd, /label="A receber no ano"/);
+    assert.doesNotMatch(ytd, /label="A receber YTD"/);
+    assert.match(ytd, /vencimento no ano selecionado/);
+    assert.match(page, /Top clientes por saldo AR em aberto/);
+    assert.match(page, /o período da página não se aplica/);
+    assert.match(annual, /independente dos filtros da página/);
+    assert.match(radar, /independente dos filtros da página/);
+  });
+
   it("frontend do Fluxo de Caixa não recalcula received+open nem soma balanceReceivable", () => {
     const files = [
       "src/components/finance/FinanceCashFlowPage.tsx",

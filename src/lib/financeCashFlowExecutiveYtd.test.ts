@@ -144,6 +144,36 @@ describe("financeCashFlowExecutiveYtd", () => {
     assert.notEqual(withMonth.cards.inflowAmount, withoutMonth.cards.inflowAmount);
   });
 
+  it("AR aberto no ano inclui vencimento futuro no mesmo ano — não é YTD 01/01→hoje", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [
+        arRow({
+          dueDate: new Date(2026, 11, 20),
+          balanceReceivable: 777,
+          amountReceivable: 777,
+        }),
+      ],
+      [],
+      filters,
+      REF
+    );
+    assert.equal(payload.executiveYtd.totalReceivableOpen, 777);
+    assert.equal(payload.executiveSummary.receivable.openFromTodayToYearEnd, 777);
+    const summary = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowYtdSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.ok(summary.includes('label="A receber no ano"'));
+    assert.ok(!summary.includes('label="A receber YTD"'));
+  });
+
   it("tendência improving, worsening, stable e dados insuficientes", () => {
     assert.equal(
       resolveYtdTrendDirection([

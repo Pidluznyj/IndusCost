@@ -506,7 +506,7 @@ export function FinanceCashFlowDailyRadar() {
       <div>
         <h2 className="text-sm font-bold text-[#111827]">Radar Diário de Caixa</h2>
         <p className="text-[11px] text-[#6B7280] mt-0.5">
-          Comparativo diário de entradas e saídas, independente dos filtros gerais da página.
+          Visão operacional independente dos filtros da página.
         </p>
         {payload?.baseDate ? (
           <p className="text-[10px] text-[#9CA3AF] mt-1">
