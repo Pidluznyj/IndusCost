@@ -537,7 +537,7 @@ export function FinanceCashFlowPage() {
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <PartyList
               title="Top clientes por entrada"
-              subtitle="Saldo em aberto AR — filtros aplicados"
+              subtitle="Saldo AR em aberto por cliente — carteira (ano/mês da página ignorados)"
               help={FINANCE_CF_HELP_TOP_CUSTOMERS}
               testId="cash-flow-top-customers"
               items={payload.topCustomers}

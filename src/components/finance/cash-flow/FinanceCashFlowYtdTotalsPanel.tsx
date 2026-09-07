@@ -68,7 +68,8 @@ export function FinanceCashFlowYtdTotalsPanel({
       <div>
         <h3 className="text-[11px] font-bold text-[#111827]">Totais financeiros YTD</h3>
         <p className="text-[10px] text-[#6B7280]">
-          Carteira saneada de contas a receber e contas a pagar no ano selecionado.
+          Carteira saneada no ano selecionado. Valor a receber = face (amountReceivable);
+          recebido = amountReceived dos títulos; em aberto = balanceReceivable.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

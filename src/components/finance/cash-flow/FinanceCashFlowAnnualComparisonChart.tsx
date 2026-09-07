@@ -83,7 +83,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
   const year = payload?.year ?? new Date().getFullYear();
   const title = `Fluxo anual — Entradas, Saídas e Saldo (${year})`;
   const subtitle =
-    "Mesma base do fluxo de caixa planejado. Entradas mostram Recebido + A Receber; Saídas mostram Pago + A Pagar; o saldo é a diferença mensal.";
+    "Mesma autoridade do fluxo planejado: movimentos alocados pelo vencimento (dueDate). Independente dos filtros da página. Distinto da estimativa AR do ano (YTD por baixa + restante até 31/12).";
 
   if (!visible || (loading && !payload)) {
     return (
