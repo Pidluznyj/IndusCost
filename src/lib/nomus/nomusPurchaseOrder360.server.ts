@@ -20,6 +20,7 @@ import {
   type ResolvedPurchaseOrderSupplier,
 } from "./nomusPurchaseOrder360.js";
 import type { NomusPurchaseOrderStage } from "./nomusPurchaseOrderTypes.js";
+import { loadConfirmedPayableSnapshotsByOrder } from "./nomusPurchaseOrderPayableLink.server.js";
 
 type DecimalLike = { toString(): string } | null;
 
@@ -416,11 +417,21 @@ async function loadFiscalMaps(orders: PurchaseOrderMirrorHeader[]) {
 
 function bundleForOrder(
   order: PurchaseOrderMirrorHeader,
-  fiscal: Awaited<ReturnType<typeof loadFiscalMaps>>
+  fiscal: Awaited<ReturnType<typeof loadFiscalMaps>>,
+  /** Títulos vinculados por confirmação humana (NomusPurchaseOrderPayableLink) — somados aos da NF-e, sem duplicar. */
+  linkedPayables: ConfirmedPayableSnapshot[] = []
 ) {
   const refs = fiscal.refsByOrderId.get(order.id) ?? [];
   const invoices = refs.map((ref) => toNfeSnapshot(ref, fiscal.nfeById.get(ref.externalId)));
-  const confirmedPayables = invoices.flatMap((nfe) => fiscal.payablesByNfeId.get(nfe.externalId) ?? []);
+  const seen = new Set<number>();
+  const confirmedPayables = [
+    ...invoices.flatMap((nfe) => fiscal.payablesByNfeId.get(nfe.externalId) ?? []),
+    ...linkedPayables,
+  ].filter((row) => {
+    if (seen.has(row.externalId)) return false;
+    seen.add(row.externalId);
+    return true;
+  });
   return {
     ...buildPurchaseOrderFinancialBundle({
       rawPayload: order.rawPayload,
@@ -436,14 +447,15 @@ export async function enrichNomusPurchaseOrderListRows(
   now: Date = new Date()
 ): Promise<NomusPurchaseOrderListRowDto[]> {
   if (orders.length === 0) return [];
-  const [supplierMaps, fiscalMaps] = await Promise.all([
+  const [supplierMaps, fiscalMaps, linkedByOrder] = await Promise.all([
     loadSupplierMaps(orders),
     loadFiscalMaps(orders),
+    loadConfirmedPayableSnapshotsByOrder(orders.map((order) => order.id)),
   ]);
 
   return orders.map((order) => {
     const supplier = resolveOneSupplier(order, supplierMaps);
-    const bundle = bundleForOrder(order, fiscalMaps);
+    const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? []);
     const header = extractPurchaseOrderHeaderFields(order.rawPayload);
     const stage = order.stage as NomusPurchaseOrderStage;
     return {
@@ -499,9 +511,10 @@ export async function buildNomusPurchaseOrder360(input: {
     ),
   ];
 
-  const [supplierMaps, fiscalMaps, products, catalogs] = await Promise.all([
+  const [supplierMaps, fiscalMaps, linkedByOrder, products, catalogs] = await Promise.all([
     loadSupplierMaps([order]),
     loadFiscalMaps([order]),
+    loadConfirmedPayableSnapshotsByOrder([order.id]),
     productKeys.length
       ? prisma.product.findMany({
           where: { sourceExternalId: { in: productKeys } },
@@ -528,7 +541,7 @@ export async function buildNomusPurchaseOrder360(input: {
   );
 
   const supplier = resolveOneSupplier(order, supplierMaps);
-  const bundle = bundleForOrder(order, fiscalMaps);
+  const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? []);
   const header = extractPurchaseOrderHeaderFields(order.rawPayload);
   const itemStatusCodes = order.items.map((item) => {
     const fields = extractPurchaseOrderItemFields(item.rawPayload);

@@ -411,6 +411,7 @@ import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRo
 import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
 import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
 import { registerNomusPurchaseOrderRoutes } from "./src/lib/nomusPurchaseOrderRoutes.js";
+import { registerNomusPurchaseOrderPayableLinkRoutes } from "./src/lib/nomusPurchaseOrderPayableLinkRoutes.js";
 import {
   registerFinanceArDueRadarRoutes,
   registerFinanceApDueRadarRoutes,
@@ -16702,6 +16703,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerNomusPurchaseOrderRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  // Pedido Nomus ↔ Contas a Pagar — reconciliação e vínculos confirmados (locais).
+  registerNomusPurchaseOrderPayableLinkRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 

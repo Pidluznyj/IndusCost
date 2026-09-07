@@ -11,6 +11,9 @@ import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
 import { mergePrintBranding } from "@/src/lib/printBranding";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess";
+import { NomusPurchaseOrderPayablesPanel } from "@/src/components/purchases/NomusPurchaseOrderPayablesPanel";
 import { OverlayBadge } from "@/src/components/ui/overlay";
 import { NomusPurchaseOrderPrintDocument } from "@/src/components/purchases/NomusPurchaseOrderPrintDocument";
 import type { NomusPurchaseOrder360Detail } from "@/src/lib/nomus/nomusPurchaseOrder360Client";
@@ -93,12 +96,21 @@ export function NomusPurchaseOrderDetailDialog({
 }): React.ReactElement | null {
   const { hasPermission } = useAuth();
   const canSeeRaw = hasPermission("settings.nomus.view") || hasPermission("settings.view");
+  const permissions = usePermissions();
+  const canLinkPayables =
+    hasPermission("purchases.edit") ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update);
+  const [detailReloadToken, setDetailReloadToken] = useState(0);
   const [payload, setPayload] = useState<Detail360 | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTabId>("geral");
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+
+  useEffect(() => {
+    setActiveTab("geral");
+  }, [open, orderId]);
 
   useEffect(() => {
     if (!open || !orderId) {
@@ -110,7 +122,6 @@ export function NomusPurchaseOrderDetailDialog({
     const ac = new AbortController();
     setLoading(true);
     setError(null);
-    setActiveTab("geral");
     const qs = canSeeRaw ? "?includeRaw=1" : "";
     void fetchUiSessionCachedJson<Detail360>(`/api/nomus/purchase-orders/${orderId}${qs}`, {
       signal: ac.signal,
@@ -129,7 +140,7 @@ export function NomusPurchaseOrderDetailDialog({
         if (!ac.signal.aborted) setLoading(false);
       });
     return () => ac.abort();
-  }, [open, orderId, canSeeRaw]);
+  }, [open, orderId, canSeeRaw, detailReloadToken]);
 
   useEffect(() => {
     if (!open) return;
@@ -288,7 +299,13 @@ export function NomusPurchaseOrderDetailDialog({
           {payload && activeTab === "geral" ? <GeralTab payload={payload} /> : null}
           {payload && activeTab === "itens" ? <ItensTab payload={payload} /> : null}
           {payload && activeTab === "fiscal" ? <FiscalTab payload={payload} /> : null}
-          {payload && activeTab === "financeiro" ? <FinanceiroTab payload={payload} /> : null}
+          {payload && activeTab === "financeiro" ? (
+            <FinanceiroTab
+              payload={payload}
+              canLinkPayables={canLinkPayables}
+              onPayablesChanged={() => setDetailReloadToken((token) => token + 1)}
+            />
+          ) : null}
           {payload && activeTab === "nomus" ? (
             <NomusTab payload={payload} canSeeRaw={canSeeRaw} />
           ) : null}
@@ -577,8 +594,15 @@ function FiscalTab({ payload }: { payload: Detail360 }) {
   );
 }
 
-function FinanceiroTab({ payload }: { payload: Detail360 }) {
-  const now = Date.now();
+function FinanceiroTab({
+  payload,
+  canLinkPayables,
+  onPayablesChanged,
+}: {
+  payload: Detail360;
+  canLinkPayables: boolean;
+  onPayablesChanged: () => void;
+}) {
   return (
     <div className="space-y-6" data-testid="npo-tab-panel-financeiro">
       <section>
@@ -586,7 +610,7 @@ function FinanceiroTab({ payload }: { payload: Detail360 }) {
           Planejado no pedido
         </h2>
         <p className="mb-2 text-xs text-slate-500">
-          Parcelas do Pedido de Compra. Não são títulos confirmados de Contas a Pagar.
+          Parcelas do Pedido de Compra no Nomus. Não são títulos de Contas a Pagar.
         </p>
         <div className="mb-3 grid gap-2 sm:grid-cols-3">
           <SummaryCard
@@ -594,6 +618,14 @@ function FinanceiroTab({ payload }: { payload: Detail360 }) {
             value={money(payload.financialSummary.plannedInstallmentsTotal)}
           />
           <SummaryCard label="Parcelas" value={String(payload.financialSummary.plannedInstallmentsCount)} />
+          <SummaryCard
+            label="Situação financeira"
+            value={
+              <OverlayBadge tone={nomusPurchaseOrderFinancialTone(payload.financialSummary.financialStatus)}>
+                {nomusPurchaseOrderFinancialLabel(payload.financialSummary.financialStatus)}
+              </OverlayBadge>
+            }
+          />
         </div>
         <table className="min-w-full text-xs">
           <thead className="bg-slate-50 text-left uppercase text-slate-500">
@@ -604,86 +636,28 @@ function FinanceiroTab({ payload }: { payload: Detail360 }) {
               <th className="px-2 py-2">Forma</th>
               <th className="px-2 py-2">Conta</th>
               <th className="px-2 py-2">Adiantamento</th>
-              <th className="px-2 py-2">Situação</th>
             </tr>
           </thead>
           <tbody>
-            {payload.plannedInstallments.map((row) => {
-              const due = row.dueDate ? new Date(row.dueDate).getTime() : null;
-              const temporal =
-                due == null ? "—" : due < now ? "Vencida" : "A vencer";
-              return (
-                <tr key={row.index} className="border-t border-slate-100">
-                  <td className="px-2 py-2">{row.index + 1}</td>
-                  <td className="px-2 py-2">{formatDate(row.dueDate) !== "—" ? formatDate(row.dueDate) : display(row.dueDateRaw)}</td>
-                  <td className="px-2 py-2 tabular-nums">{money(row.amount)}</td>
-                  <td className="px-2 py-2">{row.paymentMethodId != null ? `#${row.paymentMethodId}` : "—"}</td>
-                  <td className="px-2 py-2">{row.bankAccountId != null ? `#${row.bankAccountId}` : "—"}</td>
-                  <td className="px-2 py-2">{row.generatesAdvance == null ? "—" : row.generatesAdvance ? "Sim" : "Não"}</td>
-                  <td className="px-2 py-2">{temporal}</td>
-                </tr>
-              );
-            })}
+            {payload.plannedInstallments.map((row) => (
+              <tr key={row.index} className="border-t border-slate-100">
+                <td className="px-2 py-2">{row.index + 1}</td>
+                <td className="px-2 py-2">{formatDate(row.dueDate) !== "—" ? formatDate(row.dueDate) : display(row.dueDateRaw)}</td>
+                <td className="px-2 py-2 tabular-nums">{money(row.amount)}</td>
+                <td className="px-2 py-2">{row.paymentMethodId != null ? `#${row.paymentMethodId}` : "—"}</td>
+                <td className="px-2 py-2">{row.bankAccountId != null ? `#${row.bankAccountId}` : "—"}</td>
+                <td className="px-2 py-2">{row.generatesAdvance == null ? "—" : row.generatesAdvance ? "Sim" : "Não"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </section>
 
-      <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#1e3a8a]">
-          Contas a Pagar confirmadas
-        </h2>
-        <p className="mb-2 text-xs text-slate-500">
-          Somente títulos com vínculo determinístico NF-e → sourceInvoiceId.
-        </p>
-        <div className="mb-3 grid gap-2 sm:grid-cols-4">
-          <SummaryCard label="Total confirmado" value={money(payload.financialSummary.confirmedAmount)} />
-          <SummaryCard label="Total pago" value={money(payload.financialSummary.paidAmount)} />
-          <SummaryCard label="Saldo" value={money(payload.financialSummary.openAmount)} />
-          <SummaryCard label="Títulos" value={String(payload.financialSummary.count)} />
-        </div>
-        {payload.confirmedPayables.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-600">
-            Nenhuma Conta a Pagar confirmada foi identificada pelos dados disponíveis. O mesmo
-            fornecedor, sozinho, não gera vínculo.
-          </p>
-        ) : (
-          <table className="min-w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase text-slate-500">
-              <tr>
-                <th className="px-2 py-2">Título</th>
-                <th className="px-2 py-2">NF origem</th>
-                <th className="px-2 py-2">Vencimento</th>
-                <th className="px-2 py-2">Valor</th>
-                <th className="px-2 py-2">Pago</th>
-                <th className="px-2 py-2">Saldo</th>
-                <th className="px-2 py-2">Forma</th>
-                <th className="px-2 py-2">Pagamento</th>
-                <th className="px-2 py-2">Baixa</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payload.confirmedPayables.map((row) => (
-                <tr key={row.externalId} className="border-t border-slate-100">
-                  <td className="px-2 py-2">{row.externalId}</td>
-                  <td className="px-2 py-2">{row.sourceInvoiceNumber ?? "—"}</td>
-                  <td className="px-2 py-2">{formatDate(row.dueDate)}</td>
-                  <td className="px-2 py-2 tabular-nums">{money(row.amountPayable)}</td>
-                  <td className="px-2 py-2 tabular-nums">{money(row.amountPaid)}</td>
-                  <td className="px-2 py-2 tabular-nums">{money(row.balancePayable)}</td>
-                  <td className="px-2 py-2">
-                    {row.paymentMethodName ?? "—"}
-                    {row.boletoIsPaymentMethodOnly && !row.hasBoletoDocument ? (
-                      <div className="text-[10px] text-slate-500">Forma apenas — sem documento de boleto</div>
-                    ) : null}
-                  </td>
-                  <td className="px-2 py-2">{formatDate(row.paymentDate)}</td>
-                  <td className="px-2 py-2">{formatDate(row.settlementDate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <NomusPurchaseOrderPayablesPanel
+        orderId={payload.order.id}
+        canLink={canLinkPayables}
+        onChanged={onPayablesChanged}
+      />
     </div>
   );
 }

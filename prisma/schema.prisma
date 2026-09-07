@@ -3187,6 +3187,8 @@ model NomusPurchaseOrder {
   items NomusPurchaseOrderItem[]
   /// Avaliação local do IndusCost — não é o PurchaseOrder interno e não vai ao Nomus.
   supplierEvaluation NomusPurchaseOrderSupplierEvaluation?
+  /// Vínculos locais com títulos de Contas a Pagar (baixa do pedido derivada dos títulos). Sem writeback Nomus.
+  payableLinks NomusPurchaseOrderPayableLink[]
 
   @@index([orderNumber])
   @@index([supplierExternalId])
@@ -3284,6 +3286,50 @@ model NomusPurchaseOrderSupplierEvaluationHistory {
 
   @@index([evaluationId, createdAt])
   @@index([nomusPurchaseOrderId])
+  @@index([action])
+}
+
+/// Vínculo Pedido de Compra Nomus ↔ título de Contas a Pagar (NomusAccountsPayable.externalId).
+/// Identidade determinística dos dois lados. Métodos automáticos (NF-e, documento de entrada,
+/// nº do documento) ou confirmados por humano (parcela conferida, manual). Nunca por nome.
+model NomusPurchaseOrderPayableLink {
+  id                   String   @id @default(uuid()) @db.Uuid
+  nomusPurchaseOrderId String
+  /// NomusAccountsPayable.externalId — sem FK: o espelho pode ser reconciliado/recriado pelo sync.
+  payableExternalId    Int
+  /// Índice da parcela planejada (rawPayload.parcelas[]) quando o vínculo é por parcela.
+  installmentIndex     Int?
+  method               String
+  confidence           String
+  evidence             String?
+  reason               String?
+  createdByUserId      String?
+  createdByUserName    String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  nomusPurchaseOrder NomusPurchaseOrder @relation(fields: [nomusPurchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([nomusPurchaseOrderId, payableExternalId])
+  @@index([payableExternalId])
+  @@index([nomusPurchaseOrderId])
+}
+
+/// Trilha de auditoria do vínculo (sem FK ao vínculo: o desvínculo apaga a linha, o histórico fica).
+model NomusPurchaseOrderPayableLinkHistory {
+  id                   String   @id @default(uuid()) @db.Uuid
+  linkId               String   @db.Uuid
+  nomusPurchaseOrderId String
+  payableExternalId    Int
+  action               String
+  reason               String?
+  detailsJson          Json
+  userId               String?
+  userName             String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([nomusPurchaseOrderId, createdAt])
+  @@index([payableExternalId])
   @@index([action])
 }
 
