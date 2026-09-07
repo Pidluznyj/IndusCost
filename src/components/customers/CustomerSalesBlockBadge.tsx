@@ -2,11 +2,12 @@ import React from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
-  CUSTOMER_SALES_BLOCKED_BUTTON_HINT,
   customerHasFinancialSalesBlockDetails,
+  customerSalesBlockButtonHint,
   customerSalesBlockTooltip,
   formatCustomerCadastralStatus,
   isCustomerCadastralActive,
+  isCustomerSalesBlockIdentityUnresolved,
   type CustomerSalesBlockPublic,
 } from "@/src/lib/commercial/customerSalesBlockView";
 
@@ -35,6 +36,11 @@ export function CustomerCadastralStatusBadge({
   );
 }
 
+/**
+ * Badge vermelho [🔒 Venda bloqueada]. O tooltip distingue inadimplência
+ * provada de identidade financeira não validável — nunca afirma boleto
+ * vencido quando o motivo é FINANCIAL_IDENTITY_UNRESOLVED.
+ */
 export function CustomerSalesBlockBadge({
   salesBlock,
   className,
@@ -45,6 +51,7 @@ export function CustomerSalesBlockBadge({
   if (!salesBlock?.blocked) return null;
   const includeFinancial = customerHasFinancialSalesBlockDetails(salesBlock);
   const title = customerSalesBlockTooltip(salesBlock, includeFinancial);
+  const reason = salesBlock.reason ?? "OVERDUE_BOLETO";
   return (
     <div
       className={cn(
@@ -53,31 +60,43 @@ export function CustomerSalesBlockBadge({
       )}
       title={title}
       data-testid="customer-sales-block-badge"
+      data-reason={reason}
     >
       <Lock className="h-3 w-3" aria-hidden />
       Venda bloqueada
+      {isCustomerSalesBlockIdentityUnresolved(salesBlock) ? (
+        <span className="sr-only">situação financeira não validada</span>
+      ) : null}
     </div>
   );
 }
 
 export function CustomerNewSaleButton({
+  salesBlock,
   blocked,
   disabled,
   onClick,
   className,
 }: {
-  blocked: boolean;
+  /** Payload do backend; decide bloqueio e dica pelo motivo real. */
+  salesBlock?: CustomerSalesBlockPublic | null;
+  /** Compatibilidade: bloqueio explícito quando não há payload. */
+  blocked?: boolean;
   disabled?: boolean;
   onClick?: () => void;
   className?: string;
 }) {
-  const isDisabled = Boolean(disabled || blocked);
+  const isBlocked = blocked === true || salesBlock?.blocked === true;
+  const isDisabled = Boolean(disabled || isBlocked);
+  const hint = isBlocked
+    ? customerSalesBlockButtonHint(salesBlock ?? { blocked: true, reason: "OVERDUE_BOLETO" })
+    : null;
   return (
     <button
       type="button"
       disabled={isDisabled}
       onClick={onClick}
-      title={blocked ? CUSTOMER_SALES_BLOCKED_BUTTON_HINT : "Nova venda"}
+      title={hint ?? "Nova venda"}
       className={cn(
         "rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50",
         className

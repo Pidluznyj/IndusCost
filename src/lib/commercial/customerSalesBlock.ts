@@ -1,9 +1,20 @@
 /**
  * Trava comercial de venda por boleto vencido — regras PURAS.
  *
- * Autoridade financeira: motor oficial de AR.
- * Identidade: SalesOrder.externalCustomerId = Nomus idPessoaCliente = AR.personId.
- * Sem persistência em Customer.status. Sem matching por nome.
+ * Autoridade financeira: motor oficial de AR (`filterOfficialArOverdueTitles`).
+ *
+ * Identidade financeira (ver docs/commercial/customer-overdue-boleto-sales-block.md):
+ *   primária   Customer.nomusExternalPersonId  ← Nomus `pessoas[].id` (idPessoa),
+ *              gravado exclusivamente por scripts/nomusCustomersSyncV1.ts;
+ *   evidência  SalesOrder.externalCustomerId    ← Nomus idPessoaCliente — só
+ *              valida consistência, NÃO é requisito (863 clientes sem pedido);
+ *   AR         NomusAccountsReceivable.personId.
+ *
+ * Boleto: decidido por `paymentMethodId` (catálogo Nomus observado: 10 =
+ * "Boleto Bancário"). `paymentMethodName` é rótulo/diagnóstico, nunca decisão.
+ *
+ * Identidade não validável ⇒ fail closed para criação de venda, sem afirmar
+ * inadimplência. Sem persistência em Customer.status. Sem matching por nome.
  */
 
 import {
@@ -13,75 +24,55 @@ import {
   type FinanceArDashboardRow,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import { filterOfficialArOverdueTitles } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
-import { isBoletoPaymentMethod } from "@/src/lib/nomus/nomusPurchaseOrder360.js";
 import type { NomusArReportSyncCutoff } from "@/src/lib/financeNomusArReportFreshness.js";
-import type {
-  CustomerSalesBlockPublic,
-  CustomerSalesBlockResolution,
+import {
+  CUSTOMER_SALES_BLOCK_ERROR_CODES,
+  CUSTOMER_SALES_BLOCK_MESSAGES,
+  type CustomerSalesBlockErrorCode,
+  type CustomerSalesBlockPublic,
+  type CustomerSalesBlockReason,
+  type CustomerSalesBlockResolution,
 } from "./customerSalesBlockView.js";
 
 export {
   CUSTOMER_SALES_BLOCKED_BUTTON_HINT,
+  CUSTOMER_SALES_BLOCKED_FINANCIAL_IDENTITY_UNRESOLVED,
   CUSTOMER_SALES_BLOCKED_GENERIC_HINT,
+  CUSTOMER_SALES_BLOCKED_IDENTITY_HINT,
+  CUSTOMER_SALES_BLOCKED_IDENTITY_MESSAGE,
   CUSTOMER_SALES_BLOCKED_MESSAGE,
   CUSTOMER_SALES_BLOCKED_OVERDUE_BOLETO,
+  customerSalesBlockButtonHint,
   customerSalesBlockTooltip,
   formatCustomerCadastralStatus,
+  isCustomerSalesBlockIdentityUnresolved,
+  type CustomerSalesBlockErrorCode,
   type CustomerSalesBlockPublic,
+  type CustomerSalesBlockReason,
   type CustomerSalesBlockResolution,
 } from "./customerSalesBlockView.js";
 
+/* ------------------------------------------------------------------ *
+ * Boleto — autoridade por ID Nomus
+ * ------------------------------------------------------------------ */
+
 /**
- * IDs Nomus `idFormaPagamento` confirmados como boleto. Vazio até o domínio
- * publicar o catálogo — a detecção vigente é o classificador de token já usado
- * em Compras (`isBoletoPaymentMethod` sobre `nomeFormaPagamento`).
+ * Nomus `idFormaPagamento` de boleto no Contas a Receber. Catálogo observado na
+ * homologação (4.835 títulos, 290 clientes): 10 = "Boleto Bancário"; nenhum
+ * outro ID apareceu com nome contendo "boleto". O ID é a autoridade.
  */
-export const CANONICAL_AR_BOLETO_PAYMENT_METHOD_IDS: readonly number[] = [];
+export const CANONICAL_AR_BOLETO_PAYMENT_METHOD_IDS: ReadonlySet<number> = new Set([10]);
 
-export type CustomerNomusPersonResolution =
-  | { kind: "RESOLVED"; personId: number }
-  | { kind: "MISSING" }
-  | { kind: "CONFLICT"; personIds: number[] };
-
-export type CustomerSalesBlockArTitle = FinanceArDashboardRow & {
-  paymentMethodId?: number | null;
-};
-
-export type CustomerSalesBlockStatus = {
-  blocked: boolean;
-  reason: "OVERDUE_BOLETO" | null;
-  overdueBoletoCount: number;
-  overdueOpenBalance: number;
-  oldestDueDate: string | null;
-  maxDaysOverdue: number | null;
-  nomusPersonId: number | null;
-  evaluatedAt: string;
-  resolution: CustomerSalesBlockResolution;
-};
-
-export function resolveUniqueNomusPersonId(
-  externalCustomerIds: ReadonlyArray<number | null | undefined>
-): CustomerNomusPersonResolution {
-  const unique = [
-    ...new Set(
-      externalCustomerIds.filter((id): id is number => Number.isInteger(id) && (id as number) > 0)
-    ),
-  ].sort((a, b) => a - b);
-  if (unique.length === 0) return { kind: "MISSING" };
-  if (unique.length > 1) return { kind: "CONFLICT", personIds: unique };
-  return { kind: "RESOLVED", personId: unique[0]! };
-}
-
+/** Decide boleto exclusivamente por `paymentMethodId`. O nome não participa. */
 export function isOfficialArBoletoPaymentMethod(row: {
   paymentMethodId?: number | null;
   paymentMethodName?: string | null;
 }): boolean {
-  if (row.paymentMethodId != null && CANONICAL_AR_BOLETO_PAYMENT_METHOD_IDS.includes(row.paymentMethodId)) {
-    return true;
-  }
-  return isBoletoPaymentMethod(row.paymentMethodName);
+  const id = row.paymentMethodId;
+  return id != null && Number.isInteger(id) && CANONICAL_AR_BOLETO_PAYMENT_METHOD_IDS.has(id);
 }
 
+/** Título sem forma de pagamento informada (nem ID nem nome): não prova boleto. */
 export function isUnclassifiedArPaymentMethod(row: {
   paymentMethodId?: number | null;
   paymentMethodName?: string | null;
@@ -90,6 +81,87 @@ export function isUnclassifiedArPaymentMethod(row: {
   const name = row.paymentMethodName?.trim() ?? "";
   return (id == null || id <= 0) && name.length === 0;
 }
+
+/* ------------------------------------------------------------------ *
+ * Identidade financeira do cliente
+ * ------------------------------------------------------------------ */
+
+export type CustomerFinancialIdentityInput = {
+  /** Customer.nomusExternalPersonId — Nomus idPessoa (autoridade primária). */
+  nomusExternalPersonId: number | null | undefined;
+  /** SalesOrder.externalCustomerId dos pedidos do cliente — evidência de consistência. */
+  salesOrderExternalCustomerIds: ReadonlyArray<number | null | undefined>;
+};
+
+export type CustomerFinancialIdentityResolution =
+  | {
+      kind: "RESOLVED";
+      personId: number;
+      /** IDs distintos vistos nos pedidos (vazio para cliente sem pedido). */
+      salesOrderPersonIds: number[];
+    }
+  | { kind: "MISSING"; salesOrderPersonIds: number[] }
+  | {
+      kind: "CONFLICT";
+      /** Customer.nomusExternalPersonId — NÃO usado para consultar AR. */
+      customerPersonId: number;
+      /** IDs distintos vistos nos pedidos, incluindo os divergentes. */
+      salesOrderPersonIds: number[];
+    };
+
+function toPositiveInt(value: number | null | undefined): number | null {
+  return value != null && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** IDs Nomus distintos e válidos (>0), ordenados — sem escolher nenhum. */
+export function uniqueNomusPersonIds(ids: ReadonlyArray<number | null | undefined>): number[] {
+  return [...new Set(ids.map(toPositiveInt).filter((id): id is number => id != null))].sort((a, b) => a - b);
+}
+
+/**
+ * Resolve a identidade financeira do cliente sem heurística:
+ *
+ * A/B. nomusExternalPersonId presente e nenhum pedido diverge (inclui cliente
+ *      sem pedido) → RESOLVED com o ID do Customer.
+ * C.   nomusExternalPersonId presente e algum pedido diverge → CONFLICT
+ *      (não escolhe, não soma, não infere).
+ * D/E. nomusExternalPersonId ausente → MISSING. Não há regra oficial que
+ *      promova SalesOrder.externalCustomerId a identidade do Customer
+ *      (a Inteligência do Cliente liga AR por CNPJ, não por pedido), e a
+ *      evidência da homologação tem 0 casos de D — nada a inventar.
+ */
+export function resolveCustomerFinancialIdentity(
+  input: CustomerFinancialIdentityInput
+): CustomerFinancialIdentityResolution {
+  const salesOrderPersonIds = uniqueNomusPersonIds(input.salesOrderExternalCustomerIds);
+  const customerPersonId = toPositiveInt(input.nomusExternalPersonId);
+  if (customerPersonId == null) return { kind: "MISSING", salesOrderPersonIds };
+  const conflicting = salesOrderPersonIds.filter((id) => id !== customerPersonId);
+  if (conflicting.length > 0) {
+    return { kind: "CONFLICT", customerPersonId, salesOrderPersonIds };
+  }
+  return { kind: "RESOLVED", personId: customerPersonId, salesOrderPersonIds };
+}
+
+/* ------------------------------------------------------------------ *
+ * Status da trava
+ * ------------------------------------------------------------------ */
+
+export type CustomerSalesBlockArTitle = FinanceArDashboardRow & {
+  paymentMethodId?: number | null;
+};
+
+export type CustomerSalesBlockStatus = {
+  blocked: boolean;
+  reason: CustomerSalesBlockReason | null;
+  overdueBoletoCount: number;
+  overdueOpenBalance: number;
+  oldestDueDate: string | null;
+  maxDaysOverdue: number | null;
+  nomusPersonId: number | null;
+  evaluatedAt: string;
+  resolution: CustomerSalesBlockResolution;
+};
 
 function toIsoDateOnly(value: Date | null): string | null {
   if (!value || Number.isNaN(value.getTime())) return null;
@@ -102,14 +174,14 @@ function toIsoDateOnly(value: Date | null): string | null {
 const DEFAULT_AR_FILTERS: FinanceArDashboardFilters = { status: "all" };
 
 export function buildCustomerSalesBlockStatus(input: {
-  personResolution: CustomerNomusPersonResolution;
+  identity: CustomerFinancialIdentityResolution;
   titles: readonly CustomerSalesBlockArTitle[];
   today: Date;
   evaluatedAt?: Date;
   syncCutoff?: NomusArReportSyncCutoff | null;
 }): CustomerSalesBlockStatus {
   const evaluatedAt = (input.evaluatedAt ?? input.today).toISOString();
-  const empty = (
+  const base = (
     resolution: CustomerSalesBlockResolution,
     nomusPersonId: number | null
   ): CustomerSalesBlockStatus => ({
@@ -124,11 +196,20 @@ export function buildCustomerSalesBlockStatus(input: {
     resolution,
   });
 
-  if (input.personResolution.kind === "MISSING" || input.personResolution.kind === "CONFLICT") {
-    return empty("UNRESOLVED_IDENTITY", null);
+  // Fail closed: sem identidade validável não se afirma dívida, mas também
+  // não se libera venda. nomusPersonId fica null — nenhum AR foi consultado.
+  if (input.identity.kind === "MISSING") {
+    return { ...base("UNRESOLVED_IDENTITY", null), blocked: true, reason: "FINANCIAL_IDENTITY_UNRESOLVED" };
+  }
+  if (input.identity.kind === "CONFLICT") {
+    return {
+      ...base("UNRESOLVED_IDENTITY_CONFLICT", null),
+      blocked: true,
+      reason: "FINANCIAL_IDENTITY_UNRESOLVED",
+    };
   }
 
-  const personId = input.personResolution.personId;
+  const personId = input.identity.personId;
   const ofPerson = input.titles.filter((row) => row.personId === personId);
   const officialOverdue = filterOfficialArOverdueTitles(
     [...ofPerson],
@@ -164,10 +245,10 @@ export function buildCustomerSalesBlockStatus(input: {
 
   const unclassifiableOverdue = officialOverdue.filter((row) => isUnclassifiedArPaymentMethod(row));
   if (officialOverdue.length > 0 && unclassifiableOverdue.length === officialOverdue.length) {
-    return empty("UNRESOLVED_PAYMENT_METHOD", personId);
+    return base("UNRESOLVED_PAYMENT_METHOD", personId);
   }
 
-  return empty("RESOLVED", personId);
+  return base("RESOLVED", personId);
 }
 
 export function toPublicCustomerSalesBlock(
@@ -191,12 +272,16 @@ export function toPublicCustomerSalesBlock(
   };
 }
 
+/** Erro de domínio do hard block. Código e mensagem seguem o motivo real. */
 export class CustomerSalesBlockedError extends Error {
-  readonly code = "CUSTOMER_SALES_BLOCKED_OVERDUE_BOLETO";
+  readonly reason: CustomerSalesBlockReason;
+  readonly code: CustomerSalesBlockErrorCode;
   readonly httpStatus = 409;
 
-  constructor(message = "Venda bloqueada. O cliente possui boleto(s) vencido(s) em aberto.") {
-    super(message);
+  constructor(reason: CustomerSalesBlockReason = "OVERDUE_BOLETO") {
+    super(CUSTOMER_SALES_BLOCK_MESSAGES[reason]);
     this.name = "CustomerSalesBlockedError";
+    this.reason = reason;
+    this.code = CUSTOMER_SALES_BLOCK_ERROR_CODES[reason];
   }
 }

@@ -560,7 +560,7 @@ import {
   assertCustomerSalesAllowed,
   canExposeCustomerSalesBlockFinancialDetails,
 } from "./src/lib/commercial/customerSalesBlock.server.js";
-import { CustomerSalesBlockedError, CUSTOMER_SALES_BLOCKED_OVERDUE_BOLETO } from "./src/lib/commercial/customerSalesBlock.js";
+import { CustomerSalesBlockedError } from "./src/lib/commercial/customerSalesBlock.js";
 import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
@@ -15748,7 +15748,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       if (error instanceof CustomerSalesBlockedError) {
         return res.status(error.httpStatus).json({
           error: error.message,
-          code: CUSTOMER_SALES_BLOCKED_OVERDUE_BOLETO,
+          code: error.code,
+          reason: error.reason,
         });
       }
       throw error;

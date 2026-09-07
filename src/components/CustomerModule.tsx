@@ -552,7 +552,7 @@ export const CustomerModule = () => {
                 {editingCustomer && (
                   <>
                     <CustomerNewSaleButton
-                      blocked={editingCustomer.salesBlock?.blocked === true}
+                      salesBlock={editingCustomer.salesBlock}
                       onClick={() => navigate(`/proposals?customerId=${editingCustomer.id}`)}
                     />
                     <CustomerNewQuoteButton

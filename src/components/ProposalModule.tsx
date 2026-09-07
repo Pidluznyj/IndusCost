@@ -36,7 +36,7 @@ import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { moneyAmountToFilterParam } from "@/src/lib/moneyRangeFilter";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
-import { CUSTOMER_SALES_BLOCKED_BUTTON_HINT } from "@/src/lib/commercial/customerSalesBlockView";
+import { customerSalesBlockButtonHint } from "@/src/lib/commercial/customerSalesBlockView";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
@@ -2990,7 +2990,7 @@ export const ProposalModule = () => {
                             className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-violet-600 transition-all disabled:cursor-not-allowed disabled:opacity-50"
                             title={
                               p.Customer?.salesBlock?.blocked === true && !p.salesOrder
-                                ? CUSTOMER_SALES_BLOCKED_BUTTON_HINT
+                                ? customerSalesBlockButtonHint(p.Customer.salesBlock) ?? "Venda bloqueada"
                                 : p.salesOrder
                                   ? "Abrir pedido de venda"
                                   : "Gerar pedido de venda"
