@@ -553,6 +553,7 @@ import {
   parseCustomerListQuery,
   shouldUseCustomerPagination,
 } from "./src/lib/customerListQuery.js";
+import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
 import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
@@ -13829,7 +13830,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);
-      res.json(buildCustomerListResponse(items, meta));
+      res.json(buildCustomerListResponse(await attachCustomerCnpjRisk(prisma, items), meta));
     } catch (error) {
       console.error("GET /api/customers", error);
       res.status(500).json({ error: "Erro ao listar clientes." });

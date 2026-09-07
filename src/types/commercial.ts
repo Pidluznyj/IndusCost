@@ -1,6 +1,7 @@
 // src/types/commercial.ts
 import { Product } from "./product";
 import type { CalculationExplanation } from "./calculation";
+import type { CustomerCnpjRiskSummary } from "../lib/customerCnpjRiskSummary";
 
 export type ProposalStatus = 
   | "DRAFT" 
@@ -30,6 +31,8 @@ export interface Customer {
   status: string;
   createdAt: string;
   updatedAt: string;
+  /** Última consulta CNPJ persistida (score + veredito). Ausente/null = sem consulta. */
+  cnpjRisk?: CustomerCnpjRiskSummary | null;
 }
 
 export interface ProposalItem {
