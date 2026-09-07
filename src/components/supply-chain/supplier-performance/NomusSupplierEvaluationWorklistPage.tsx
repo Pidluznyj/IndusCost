@@ -2,7 +2,7 @@
  * Worklist operacional: avaliar Pedidos Nomus em grade, sem abrir o 360º.
  * Fórmula e persistência continuam no backend OP-26.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
 import { NomusEvaluationSupplierAutocomplete } from "@/src/components/supply-chain/supplier-performance/NomusEvaluationSupplierAutocomplete";
@@ -39,6 +39,12 @@ import {
   SupplierEvaluationRatingLegend,
   SupplierEvaluationRatingSelector,
 } from "@/src/components/supply-chain/supplier-performance/SupplierEvaluationRatingScale";
+import { SupplierEvaluationWorklistTableScroll } from "@/src/components/supply-chain/supplier-performance/SupplierEvaluationWorklistTableScroll";
+import {
+  applySelectAllEligible,
+  eligibleWorklistRowIds,
+  supplierEvaluationSelectAllState,
+} from "@/src/lib/purchasing/supplierEvaluationWorklistSelection";
 
 type ScoreDraft = Record<SupplierEvaluationCriterionKey, number | null>;
 const EMPTY: ScoreDraft = { quality: null, delivery: null, conformity: null, service: null };
@@ -134,6 +140,22 @@ export function NomusSupplierEvaluationWorklistPage() {
   const selectedIds = Object.entries(selected)
     .filter(([, on]) => on)
     .map(([id]) => id);
+
+  const eligibleIds = useMemo(
+    () => eligibleWorklistRowIds(data?.items ?? []),
+    [data]
+  );
+  const selectAll = useMemo(
+    () => supplierEvaluationSelectAllState(eligibleIds, selected),
+    [eligibleIds, selected]
+  );
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectAll.indeterminate;
+    }
+  }, [selectAll.indeterminate]);
 
   const setScore = (id: string, key: SupplierEvaluationCriterionKey, value: number | null) => {
     setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY), [key]: value } }));
@@ -364,12 +386,21 @@ export function NomusSupplierEvaluationWorklistPage() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="min-w-max w-full text-left text-xs" data-testid="nse-grid">
+      <SupplierEvaluationWorklistTableScroll>
           <thead className="bg-muted text-[10px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="sticky left-0 z-20 w-10 min-w-10 bg-muted px-2 py-2">
-                <span className="sr-only">Selecionar</span>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={selectAll.checked}
+                  disabled={selectAll.disabled}
+                  onChange={(e) =>
+                    setSelected((prev) => applySelectAllEligible(prev, eligibleIds, e.target.checked))
+                  }
+                  aria-label="Selecionar todos os pedidos elegíveis desta página"
+                  data-testid="nse-select-all"
+                />
               </th>
               <th className="sticky left-10 z-20 min-w-[7.5rem] bg-muted px-2 py-2">Pedido</th>
               <th className="sticky left-[10rem] z-20 min-w-[12rem] max-w-[14rem] bg-muted px-2 py-2 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.18)]">
@@ -514,8 +545,7 @@ export function NomusSupplierEvaluationWorklistPage() {
               })
             )}
           </tbody>
-        </table>
-      </div>
+      </SupplierEvaluationWorklistTableScroll>
 
       <div className="flex items-center justify-end gap-2 text-xs">
         <button

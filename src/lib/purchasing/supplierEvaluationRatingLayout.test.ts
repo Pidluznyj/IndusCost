@@ -65,13 +65,27 @@ describe("supplier evaluation rating layout", () => {
     );
   });
 
-  it("a tabela preserva geometria e usa scroll horizontal", () => {
-    assert.match(PAGE, /overflow-x-auto/);
-    assert.match(PAGE, /min-w-max/);
+  it("a tabela preserva geometria; a barra horizontal só existe se transbordar, também no topo", () => {
+    const SCROLL = read(
+      "src/components/supply-chain/supplier-performance/SupplierEvaluationWorklistTableScroll.tsx"
+    );
+    assert.match(PAGE, /SupplierEvaluationWorklistTableScroll/);
+    assert.match(SCROLL, /nse-grid-top-scroll/);
+    assert.match(SCROLL, /overflows \? \(/);
+    assert.match(SCROLL, /el\.scrollWidth > el\.clientWidth \+ 1/);
+    assert.match(SCROLL, /min-w-full/);
+    assert.doesNotMatch(SCROLL, /min-w-max/);
     assert.match(PAGE, /min-w-\[11rem\]/);
     assert.match(PAGE, /sticky left-0/);
     assert.match(PAGE, /sticky left-10/);
     assert.match(PAGE, /sticky left-\[10rem\]/);
     assert.match(PAGE, /truncate/);
+  });
+
+  it("o cabeçalho tem checkbox de selecionar todos os elegíveis da página", () => {
+    assert.match(PAGE, /data-testid="nse-select-all"/);
+    assert.match(PAGE, /applySelectAllEligible/);
+    assert.match(PAGE, /eligibleWorklistRowIds/);
+    assert.match(PAGE, /selectAllRef\.current\.indeterminate/);
   });
 });
