@@ -191,11 +191,11 @@ IndusCost/
 
 **Purpose**: Managerial cash-flow dashboard built exclusively from the official AR/AP engines (never recomputes them) — executive/YTD summaries, CFO diagnostics, forecasting/scenarios, Daily Radar drill-down, calendar reconciliation, and a large reconciliation-map "oracle" documenting every number's source.
 **Entry point**: `financeCashFlowRoutes.ts` (`/api/finance/cash-flow/*`).
-**Key files**: `financeCashFlowDashboard.ts`, `financeCashFlowLedger.ts` (movement-resolution core), `financeCashFlowRulesAdapter.ts`, `financeCashFlowForecast.ts`, `financeCashFlowCfoDiagnostics.ts`, `financeCashFlowDailyRadar.ts`, `financeCashFlowReconciliationMap.ts`.
+**Key files**: `financeCashFlowArMetrics.ts` (contratos canônicos AR), `financeCashFlowDashboard.ts`, `financeCashFlowLedger.ts` (movement-resolution core), `financeCashFlowRulesAdapter.ts`, `financeCashFlowForecast.ts`, `financeCashFlowCfoDiagnostics.ts`, `financeCashFlowDailyRadar.ts`, `financeCashFlowReconciliationMap.ts`.
 **Exports**: `buildFinanceCashFlowDashboard`, `buildCashFlowForecastWithScenarios`, `buildFinanceCashFlowDailyRadar`, `financeCashFlowMetricsAreFinite` (test guard).
 **Dependencies**: `financeAccountsReceivableDashboard.js`, `financeAccountsPayableDashboard.js`, `financeHorizonBuckets.js`.
 **Dependents**: `src/components/finance/cash-flow/*`, Executive Report, Treasury Caixa (reuses the same AR/AP engines).
-**Gotchas**: The "planned" view always allocates by `dueDate` regardless of filter; "realized" allocates by `dueDate` too (not `settlementDate`) — documented, easy-to-miss divergences tracked as risks R1–R7 in the reconciliation map.
+**Gotchas**: Planned chart / annual comparison allocate by `dueDate`. Movement timeline uses settlementDate plus the Feb/2026 historical overlay. Official YTD received uses settlementDate. Same concept must share `financeCashFlowArMetrics.ts`; different concepts stay different. See `docs/finance-cash-flow-metric-contract.md`.
 
 ---
 

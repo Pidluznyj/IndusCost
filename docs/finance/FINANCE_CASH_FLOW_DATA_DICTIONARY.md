@@ -5,7 +5,7 @@
 **Data:** 2026-06-12  
 **Tipo:** Documentação técnica e negocial (auditoria — sem alteração de regras)
 
-Documento complementar: `docs/finance/FINANCE_CASH_FLOW_BLUEPRINT.md`, `docs/generated/finance-cash-flow-dashboard-spec.md`.
+Documento complementar: `docs/finance/FINANCE_CASH_FLOW_BLUEPRINT.md`, `docs/generated/finance-cash-flow-dashboard-spec.md`, **`docs/finance-cash-flow-metric-contract.md`** (contratos canônicos AR e paridade de superfícies).
 
 ---
 
