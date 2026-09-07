@@ -17,10 +17,12 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { CollectorSectorQrPrintSheet } from "./CollectorSectorQrPrintSheet";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { isCollectorPublicBaseUrlErrorCode } from "@/src/lib/inventory/collector/collectorPublicBaseUrl";
 import { usePrintRouteBodyClass } from "@/src/lib/usePrintDocument";
 import "./inventory-labels-print.css";
+import "./collector-sector-qr-sheet.css";
 
 /** Sem esta classe o `body * { visibility: hidden }` de reports-print.css
  *  imprime a rota inteira em branco. */
@@ -149,29 +151,17 @@ export function InventoryCountLabelsPage() {
     <div className="min-h-screen bg-white p-6">
       <div className="mx-auto max-w-5xl">
         {/*
-          Folha de impressão do QR de setor: só nome do setor, o que o QR faz,
-          o QR e como ler. Sem URL crua, sem botões, sem cromo da aplicação.
+          Folha de impressão do QR de setor — componente canônico compartilhado
+          com Dispositivos do Coletor: nome do setor, o que o QR faz, o QR e
+          como ler. Sem URL crua, sem botões, sem cromo da aplicação.
         */}
         {sectorQr.status === "ready" ? (
-          <section
-            className="inventory-labels-sector-print"
-            data-testid="sector-qr-print-sheet"
-          >
-            <h1>{sectorQr.label}</h1>
-            <p className="sector-purpose">
-              Este QR abre a contagem de estoque deste setor no tablet.
-            </p>
-            <QRCodeSVG value={sectorQr.url} size={220} marginSize={2} />
-            <div className="sector-howto">
-              <strong>Como ler:</strong>
-              <ol>
-                <li>Abra a câmera do tablet.</li>
-                <li>Aponte para o QR até aparecer o aviso de link na tela.</li>
-                <li>Toque no aviso para abrir a contagem.</li>
-                <li>Conte os itens do setor pelo próprio tablet.</li>
-              </ol>
-            </div>
-          </section>
+          <CollectorSectorQrPrintSheet
+            label={sectorQr.label}
+            url={sectorQr.url}
+            mode="print"
+            testId="sector-qr-print-sheet"
+          />
         ) : null}
 
         {sectorQr.status === "ready" ? (
@@ -184,7 +174,12 @@ export function InventoryCountLabelsPage() {
               de matéria-prima. O QR é apenas um link — não concede acesso.
             </p>
             <div className="mt-4 flex flex-col items-center gap-3">
-              <QRCodeSVG value={sectorQr.url} size={200} marginSize={2} />
+              <CollectorSectorQrPrintSheet
+                label={sectorQr.label}
+                url={sectorQr.url}
+                mode="preview"
+                testId="sector-qr-preview"
+              />
               <p className="break-all text-center text-xs text-slate-700">{sectorQr.url}</p>
               <div className="flex gap-2 print:hidden">
                 <a

@@ -11,15 +11,24 @@
  * !important) em QUALQUER impressão do app. O `!important` abaixo é o que
  * revela apenas #collector-sector-qr-print-root — sem ele a folha sai em
  * branco, mesmo motivo documentado em inventory-labels-print.css.
+ *
+ * Este arquivo só decide O QUE fica visível. O layout da folha (nome do
+ * setor, o que o QR faz, o QR de 100mm e "Como ler") é o de
+ * collector-sector-qr-sheet.css — o mesmo de Estoque → Etiquetas QR.
  */
 #collector-sector-qr-print-root {
   display: none;
 }
 
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
 @media print {
   @page {
     size: A4 portrait;
-    margin: 16mm;
+    margin: 12mm;
   }
 
   html,
@@ -37,66 +46,17 @@
   }
 
   body.collector-sector-qr-print-route #collector-sector-qr-print-root {
+    display: block !important;
     visibility: visible !important;
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
+    background: #fff !important;
+    color: #000 !important;
   }
 
   body.collector-sector-qr-print-route #collector-sector-qr-print-root * {
     visibility: visible !important;
-  }
-
-  #collector-sector-qr-print-root {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    background: #fff !important;
-    color: #111 !important;
-  }
-
-  #collector-sector-qr-print-root .collector-sector-qr-print-document {
-    text-align: center;
-    padding-top: 30mm;
-  }
-
-  #collector-sector-qr-print-root .collector-sector-qr-print-brand {
-    font-size: 14pt;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-  }
-
-  #collector-sector-qr-print-root .collector-sector-qr-print-subbrand {
-    font-size: 10pt;
-    color: #555;
-    letter-spacing: 0.05em;
-    margin: 0 0 14mm;
-  }
-
-  #collector-sector-qr-print-root h1 {
-    font-size: 26pt;
-    font-weight: 700;
-    margin: 0 0 10mm;
-  }
-
-  /* O preflight do Tailwind aplica `svg { display: block }`, então
-   * `text-align: center` do pai não centraliza o QR sem margem automática. */
-  #collector-sector-qr-print-root svg {
-    display: block;
-    width: 90mm;
-    height: 90mm;
-    margin: 0 auto 10mm;
-  }
-
-  #collector-sector-qr-print-root .collector-sector-qr-print-instruction {
-    font-size: 12pt;
-    margin: 0 0 16mm;
-  }
-
-  #collector-sector-qr-print-root .collector-sector-qr-print-url {
-    font-size: 8pt;
-    color: #777;
-    word-break: break-all;
   }
 }

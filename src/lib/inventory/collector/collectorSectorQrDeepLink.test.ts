@@ -332,19 +332,27 @@ describe("contagem cega preservada no fluxo autônomo (TESTE 18)", () => {
 /**
  * Impressão da folha do QR de setor.
  *
- * `reports-print.css` aplica `body * { visibility: hidden }` no @media print e
- * só devolve visibilidade a uma allow-list de print-roots. Sem override próprio
- * a rota /inventory-labels imprimia EM BRANCO.
+ * A folha é um componente canônico (`CollectorSectorQrPrintSheet`) compartilhado
+ * por /inventory-labels e por Estoque → Dispositivos do Coletor, para que as
+ * duas telas nunca voltem a imprimir folhas diferentes. `reports-print.css`
+ * aplica `body * { visibility: hidden }` no @media print e só devolve
+ * visibilidade a uma allow-list de print-roots — sem override próprio a rota
+ * /inventory-labels imprimia EM BRANCO.
  */
 describe("QR de setor — folha de impressão", () => {
+  const SHEET = "src/components/inventory/collector/CollectorSectorQrPrintSheet.tsx";
+  const SHEET_CSS = "src/components/inventory/collector/collector-sector-qr-sheet.css";
   const PAGE = "src/components/inventory/collector/InventoryCountLabelsPage.tsx";
+  const SECTION = "src/components/inventory/collector/InventoryCollectorSectorQrSection.tsx";
+  const SECTION_CSS = "src/components/inventory/collector/inventory-collector-sector-qr-print.css";
   const CSS = "src/components/inventory/collector/inventory-labels-print.css";
 
-  it("a rota marca o body e carrega o CSS de impressão próprio", () => {
+  it("a rota marca o body e carrega os CSS de impressão (rota + folha)", () => {
     const page = read(PAGE);
     assert.match(page, /usePrintRouteBodyClass/);
     assert.match(page, /inventory-labels-print-route/);
     assert.match(page, /import "\.\/inventory-labels-print\.css"/);
+    assert.match(page, /import "\.\/collector-sector-qr-sheet\.css"/);
   });
 
   it("o CSS anula o visibility:hidden global (senão imprime em branco)", () => {
@@ -356,33 +364,69 @@ describe("QR de setor — folha de impressão", () => {
     );
   });
 
-  it("a folha traz nome do setor, o que o QR faz, o QR e como ler", () => {
-    const page = read(PAGE);
-    const sheet = /<section\s+className="inventory-labels-sector-print"[\s\S]*?<\/section>/.exec(
-      page
-    );
-    assert.ok(sheet, "folha de impressão do QR de setor não encontrada");
-    const html = sheet[0];
+  it("a folha traz nome do setor, o que o QR faz, o QR e como ler — e só isso", () => {
+    const sheet = read(SHEET);
     // 1) nome do setor
-    assert.match(html, /<h1>\{sectorQr\.label\}<\/h1>/);
+    assert.match(sheet, /<h1>\{label\}<\/h1>/);
     // 2) o que o QR faz
-    assert.match(html, /Este QR abre a contagem de estoque deste setor no tablet\./);
-    // 3) o QR em si
-    assert.match(html, /<QRCodeSVG value=\{sectorQr\.url\}/);
-    // 4) instrução de leitura
-    assert.match(html, /Como ler:/);
-    assert.equal((html.match(/<li>/g) ?? []).length, 4);
-    // "somente isso": sem URL crua nem botões dentro da folha impressa.
-    assert.doesNotMatch(html, /\{sectorQr\.url\}<\/p>/);
-    assert.doesNotMatch(html, /<button/);
-    assert.doesNotMatch(html, /Copiar link|Abrir link/);
+    assert.match(sheet, /Este QR abre a contagem de estoque deste setor no tablet\./);
+    // 3) o QR em si, com correção de erro alta (vai ser fixado fisicamente)
+    assert.match(sheet, /<QRCodeSVG\s*\n?\s*value=\{url\}/);
+    assert.match(sheet, /COLLECTOR_SECTOR_QR_ERROR_LEVEL = "H"/);
+    // 4) instrução de leitura em quatro passos
+    assert.match(sheet, /Como ler:/);
+    const steps = /COLLECTOR_SECTOR_QR_HOWTO_STEPS: readonly string\[\] = \[([\s\S]*?)\];/.exec(sheet);
+    assert.ok(steps, "lista de passos não encontrada");
+    assert.equal((steps[1].match(/^\s*"/gm) ?? []).length, 4);
+    assert.match(steps[1], /Abra a câmera do tablet\./);
+    assert.match(steps[1], /Conte os itens do setor pelo próprio tablet\./);
+    // "somente isso": sem URL crua, botões, links ou marca dentro da folha.
+    assert.doesNotMatch(sheet, /\{url\}<\/p>/);
+    assert.doesNotMatch(sheet, /<button|<a /);
+    assert.doesNotMatch(sheet, /INDUSCOST|STOCK COLLECTOR/);
+    // Sem CSS importado no componente: testável sem loader.
+    assert.doesNotMatch(sheet, /import "\.\/.*\.css"/);
   });
 
-  it("o bloco de tela do QR não é impresso (não duplica a folha)", () => {
+  it("as duas telas imprimem a MESMA folha e pré-visualizam com o mesmo componente", () => {
+    const page = read(PAGE);
+    assert.match(page, /<CollectorSectorQrPrintSheet[\s\S]*?mode="print"[\s\S]*?testId="sector-qr-print-sheet"/);
+    assert.match(page, /<CollectorSectorQrPrintSheet[\s\S]*?mode="preview"/);
+    assert.doesNotMatch(page, /inventory-labels-sector-print/);
+
+    const section = read(SECTION);
+    const printRoot = /<div id="collector-sector-qr-print-root">[\s\S]*?<\/div>,/.exec(section);
+    assert.ok(printRoot, "print-root da aba Dispositivos não encontrado");
+    assert.match(printRoot[0], /<CollectorSectorQrPrintSheet[\s\S]*?mode="print"/);
+    // Nada além da folha no papel: sem URL crua nem marca própria.
+    assert.doesNotMatch(printRoot[0], /\{state\.data\.url\}<\/p>|STOCK COLLECTOR|INDUSCOST/);
+    assert.match(section, /<CollectorSectorQrPrintSheet[\s\S]*?mode="preview"/);
+    assert.match(section, /import "\.\/collector-sector-qr-sheet\.css"/);
+    assert.match(section, /import "\.\/inventory-collector-sector-qr-print\.css"/);
+  });
+
+  it("a pré-visualização em tela nunca vai para o papel (não duplica a folha)", () => {
     const page = read(PAGE);
     assert.match(page, /className="inventory-labels-no-print mb-8 rounded-xl border-2 border-emerald-600/);
     const css = read(CSS);
     assert.match(css, /\.inventory-labels-no-print\s*\{\s*\n\s*display: none !important;/);
+    const sheetCss = read(SHEET_CSS);
+    assert.match(
+      sheetCss,
+      /@media print \{[\s\S]*?\.collector-sector-qr-sheet\.collector-sector-qr-sheet--preview \{\s*\n\s*display: none !important;/
+    );
+    // Fora do papel, o modo print fica oculto e só o preview aparece.
+    assert.match(sheetCss, /^\.collector-sector-qr-sheet \{\s*\n\s*display: none;/m);
+  });
+
+  it("na aba Dispositivos, o print-root só é revelado durante o clique em Imprimir", () => {
+    const section = read(SECTION);
+    assert.match(section, /document\.body\.classList\.add\(PRINT_BODY_CLASS\)/);
+    assert.match(section, /document\.body\.classList\.remove\(PRINT_BODY_CLASS\)/);
+    const css = read(SECTION_CSS);
+    assert.match(css, /^#collector-sector-qr-print-root \{\s*\n\s*display: none;/m);
+    assert.match(css, /body\.collector-sector-qr-print-route #root \{\s*\n\s*visibility: hidden !important;/);
+    assert.match(css, /body\.collector-sector-qr-print-route #collector-sector-qr-print-root \* \{\s*\n\s*visibility: visible !important;/);
   });
 
   it("etiquetas por item continuam imprimíveis, em página própria", () => {
@@ -396,30 +440,46 @@ describe("QR de setor — folha de impressão", () => {
 /**
  * A4 retrato. Vários CSS globais declaram `@page { size: A4 landscape }` e
  * `@page` não obedece especificidade — vence o último em ordem de documento.
- * Duas camadas, como já feito em commission-closing e service-termination.
+ * Duas camadas (CSS + <style> em runtime), como já feito em commission-closing
+ * e service-termination — agora nas DUAS telas que imprimem a folha.
  */
 describe("QR de setor — A4 retrato", () => {
   const PAGE = "src/components/inventory/collector/InventoryCountLabelsPage.tsx";
-  const CSS = "src/components/inventory/collector/inventory-labels-print.css";
+  const SECTION = "src/components/inventory/collector/InventoryCollectorSectorQrSection.tsx";
+  const CSS_FILES = [
+    "src/components/inventory/collector/inventory-labels-print.css",
+    "src/components/inventory/collector/collector-sector-qr-sheet.css",
+    "src/components/inventory/collector/inventory-collector-sector-qr-print.css",
+  ];
 
-  it("o CSS declara retrato no topo E dentro do @media print", () => {
-    const css = read(CSS);
-    const topLevel = /^@page \{\s*\n\s*size: A4 portrait;/m.exec(css);
-    assert.ok(topLevel, "falta @page A4 portrait em nível de topo");
-    assert.match(css, /@media print \{\s*\n\s*@page \{\s*\n\s*size: A4 portrait;/);
-    assert.equal((css.match(/size: A4 portrait/g) ?? []).length, 2);
-    // Só o CSS executável: "landscape" aparece no comentário que explica o porquê.
-    const executable = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    assert.doesNotMatch(executable, /landscape/);
+  it("cada CSS declara retrato no topo E dentro do @media print", () => {
+    for (const file of CSS_FILES) {
+      const css = read(file);
+      const topLevel = /^@page \{\s*\n\s*size: A4 portrait;/m.exec(css);
+      assert.ok(topLevel, `${file}: falta @page A4 portrait em nível de topo`);
+      assert.match(css, /@media print \{\s*\n\s*@page \{\s*\n\s*size: A4 portrait;/, file);
+      assert.equal((css.match(/size: A4 portrait/g) ?? []).length, 2, file);
+      // Só o CSS executável: "landscape" aparece no comentário que explica o porquê.
+      const executable = css.replace(/\/\*[\s\S]*?\*\//g, "");
+      assert.doesNotMatch(executable, /landscape/, file);
+    }
   });
 
-  it("a página reforça o retrato injetando @page no head em runtime", () => {
+  it("a página de etiquetas reforça o retrato injetando @page no head em runtime", () => {
     const page = read(PAGE);
     assert.match(page, /data-inventory-labels-print-page/);
     assert.match(page, /@page \{ size: A4 portrait; margin: 12mm; \}/);
     assert.match(page, /document\.head\.appendChild\(style\)/);
     // Removido no unmount: não vaza retrato para outras rotas.
     assert.match(page, /return \(\) => \{\s*\n\s*style\.remove\(\);/);
+  });
+
+  it("a aba Dispositivos reforça o retrato só durante a impressão e limpa depois", () => {
+    const section = read(SECTION);
+    assert.match(section, /data-collector-sector-qr-print-page/);
+    assert.match(section, /@page \{ size: A4 portrait; margin: 12mm; \}/);
+    assert.match(section, /document\.head\.appendChild\(pageStyle\)/);
+    assert.match(section, /const cleanup = \(\) => \{[\s\S]*?pageStyle\.remove\(\);/);
   });
 });
 
@@ -429,27 +489,30 @@ describe("QR de setor — A4 retrato", () => {
  * `ol { list-style: none }` (a numeração do "Como ler" sumia).
  */
 describe("QR de setor — layout da folha impressa", () => {
-  const CSS = "src/components/inventory/collector/inventory-labels-print.css";
+  const CSS = "src/components/inventory/collector/collector-sector-qr-sheet.css";
+  const PRINT_SHEET = ".collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview)";
+  const escape = (s: string) => s.replace(/[.()]/g, "\\$&");
 
   it("o QR é grande e centralizado por margem automática", () => {
     const css = read(CSS);
-    const rule = /\.inventory-labels-sector-print > svg \{([\s\S]*?)\}/.exec(css);
-    assert.ok(rule, "falta regra dedicada para o SVG do QR");
+    const rule = new RegExp(`${escape(PRINT_SHEET)} > svg \\{([\\s\\S]*?)\\}`).exec(css);
+    assert.ok(rule, "falta regra dedicada para o SVG do QR impresso");
     // `text-align: center` do pai não centraliza um svg display:block.
     assert.match(rule[1], /margin: 0 auto;/);
     assert.match(rule[1], /width: 100mm;/);
     assert.match(rule[1], /height: 100mm;/);
   });
 
-  it("a numeração do 'Como ler' é restaurada sobre o preflight", () => {
+  it("a numeração do 'Como ler' é restaurada sobre o preflight (tela e papel)", () => {
     const css = read(CSS);
-    assert.match(css, /\.sector-howto ol \{[\s\S]*?list-style: decimal outside;/);
+    assert.match(css, /\.collector-sector-qr-sheet \.sector-howto ol \{[\s\S]*?list-style: decimal outside;/);
+    assert.match(css, /\.sector-howto ol \{\s*\n\s*list-style: decimal outside;\s*\n\s*margin: 0;\s*\n\s*padding-left: 7mm;/);
   });
 
   it("o conteúdo cabe na área útil do A4 retrato (sem 2ª página)", () => {
     const css = read(CSS);
-    const pad = /\.inventory-labels-sector-print \{[\s\S]*?padding-top: (\d+)mm;/.exec(css);
-    assert.ok(pad, "falta padding-top na folha");
+    const pad = new RegExp(`${escape(PRINT_SHEET)} \\{[\\s\\S]*?padding-top: (\\d+)mm;`).exec(css);
+    assert.ok(pad, "falta padding-top na folha impressa");
     const qr = /> svg \{[\s\S]*?height: (\d+)mm;/.exec(css);
     assert.ok(qr);
     // 273mm úteis = A4 retrato (297) menos 2 × 12mm de margem do @page.

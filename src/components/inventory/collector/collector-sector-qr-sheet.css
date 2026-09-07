@@ -1,0 +1,175 @@
+/*
+ * Folha do QR GERAL DE SETOR — layout canônico (tela e papel).
+ *
+ * Importado pelas duas telas que imprimem a folha: /inventory-labels
+ * (inventory-labels-print.css cuida da visibilidade da rota) e a seção "QR de
+ * acesso ao Collector" da aba Dispositivos do Coletor
+ * (inventory-collector-sector-qr-print.css cuida do print-root portado). Este
+ * arquivo só descreve COMO a folha se parece — não decide o que fica visível.
+ *
+ * A4 RETRATO: vários CSS globais declaram `@page { size: A4 landscape }` e
+ * `@page` não obedece especificidade — vence o último na ordem do bundle. Por
+ * isso o retrato é declarado em nível de topo E dentro do @media print, e as
+ * telas ainda reforçam por injeção de <style> em runtime durante a impressão.
+ */
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+/* Modo `print`: fora do papel a folha não aparece. */
+.collector-sector-qr-sheet {
+  display: none;
+}
+
+/* Modo `preview`: a mesma folha, em tela, como "papel" branco. */
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview {
+  display: block;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 10px 30px -12px rgb(15 23 42 / 0.35);
+}
+
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview .sector-purpose {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: #334155;
+  margin: 0 auto 18px;
+}
+
+/* O preflight do Tailwind aplica `svg { display: block }`: `text-align` do pai
+ * não centraliza sem margem automática. */
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview > svg {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+}
+
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview .sector-howto {
+  margin: 20px auto 0;
+  text-align: left;
+  border: 1.5px solid #0f172a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.collector-sector-qr-sheet.collector-sector-qr-sheet--preview .sector-howto strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+}
+
+/* O preflight zera `list-style` em ol/ul: sem isto a numeração some. */
+.collector-sector-qr-sheet .sector-howto ol {
+  list-style: decimal outside;
+  margin: 0;
+  padding-left: 1.5em;
+}
+
+.collector-sector-qr-sheet .sector-howto li {
+  margin-bottom: 4px;
+  padding-left: 2px;
+}
+
+.collector-sector-qr-sheet .sector-howto li:last-child {
+  margin-bottom: 0;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  /* A pré-visualização nunca vai para o papel (evita folha duplicada). */
+  .collector-sector-qr-sheet.collector-sector-qr-sheet--preview {
+    display: none !important;
+  }
+
+  /*
+   * A folha impressa. A4 retrato com margem de 12mm = 186mm úteis de largura
+   * e 273mm de altura. O bloco mede ~191mm (título + texto + QR de 100mm +
+   * caixa); o recuo de 24mm aproxima o conjunto do centro óptico da folha sem
+   * risco de estourar para uma segunda página, mesmo com o nome do setor em
+   * duas linhas.
+   */
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) {
+    display: block !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    text-align: center;
+    color: #000 !important;
+    background: #fff !important;
+    padding-top: 24mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) h1 {
+    font-size: 30pt;
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0 0 4mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-purpose {
+    font-size: 13pt;
+    line-height: 1.35;
+    margin: 0 auto 12mm;
+    max-width: 140mm;
+  }
+
+  /* QR de 100mm: leitura confortável a ~1m. O QRCodeSVG traz viewBox, então
+   * escalar em mm não perde nitidez. */
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) > svg {
+    display: block;
+    width: 100mm;
+    height: 100mm;
+    margin: 0 auto;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-howto {
+    font-size: 12pt;
+    line-height: 1.5;
+    margin: 14mm auto 0;
+    max-width: 140mm;
+    text-align: left;
+    border: 1.5pt solid #000;
+    padding: 6mm 8mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-howto strong {
+    display: block;
+    font-size: 13pt;
+    margin-bottom: 3mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-howto ol {
+    list-style: decimal outside;
+    margin: 0;
+    padding-left: 7mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-howto li {
+    margin-bottom: 2.5mm;
+    padding-left: 1mm;
+  }
+
+  .collector-sector-qr-sheet:not(.collector-sector-qr-sheet--preview) .sector-howto li:last-child {
+    margin-bottom: 0;
+  }
+}
