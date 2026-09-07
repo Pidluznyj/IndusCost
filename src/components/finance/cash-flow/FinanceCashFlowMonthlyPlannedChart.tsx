@@ -26,7 +26,7 @@ export function FinanceCashFlowMonthlyPlannedChart({
     <FinanceCashFlowChartShell
       testId="cash-flow-monthly-planned-chart"
       title={`Fluxo de caixa planejado — ${year}`}
-      subtitle="Saldo líquido mensal e acumulado calculados por vencimento de contas a receber e contas a pagar."
+      subtitle="Movimentos alocados pelo vencimento (dueDate). Distinto da linha do tempo mensal, que usa realizado por movimento."
       help={FINANCE_CF_HELP_MONTHLY_CHART}
       empty={empty}
       emptyDescription="Sem dados para montar o fluxo planejado do período filtrado."

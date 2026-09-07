@@ -132,10 +132,10 @@ export const FINANCE_KPI_CF_RECEIVED_YTD =
   "Soma dos valores recebidos em Contas a Receber no ano selecionado, alocados pela data de baixa (settlementDate). Fórmula: SUM(amountReceived) de 01/01 até a data de corte, após saneamento gerencial." as const;
 
 export const FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END =
-  "Saldo em aberto a receber no restante do ano selecionado (de hoje até 31/12). Ignora filtro de mês. Fórmula: SUM(balanceReceivable) por dueDate no intervalo futuro. Não inclui títulos liquidados." as const;
+  "Saldo AR aberto com vencimento de hoje até 31/12 do ano selecionado. Ignora filtro de mês. Fórmula: SUM(balanceReceivable) por dueDate no intervalo futuro. Não inclui vencidos anteriores à data-base nem títulos liquidados." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
-  "Estimativa total de entradas do ano: Recebido YTD + saldo em aberto a receber até 31/12. Fórmula: Recebido YTD + A receber até fim do ano." as const;
+  "Estimativa gerencial do ano: Recebido YTD (baixa/settlementDate) + saldo aberto a vencer até 31/12 (dueDate). Fórmula oficial: receivedYtd + openUntilYearEnd." as const;
 
 export const FINANCE_KPI_CF_PAID_YTD =
   "Soma dos valores efetivamente pagos em Contas a Pagar no ano selecionado, alocados pela data efetiva canônica de pagamento. Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros gerenciais de AP — não usa vencimento para o período do realizado." as const;

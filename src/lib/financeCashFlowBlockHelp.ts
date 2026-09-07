@@ -16,19 +16,19 @@ export const FINANCE_CF_HELP_LARGEST_PROJECTED_OUTFLOWS =
   "Usa Contas a Pagar saneado por data operacional." as const;
 
 export const FINANCE_CF_HELP_TOP_CUSTOMERS =
-  "Ranking por saldo em aberto AR — mesma base das entradas previstas exibidas nesta visão (portfólio filtrado)." as const;
+  "Ranking Top N por saldo AR em aberto da carteira gerencial. Ano e mês da página são ignorados; demais filtros de identidade (empresa, cliente, NF, etc.) continuam aplicados. A soma dos itens exibidos não é a carteira inteira." as const;
 
 export const FINANCE_CF_HELP_TOP_SUPPLIERS =
   "Ranking por saldo em aberto AP — mesma base das saídas previstas exibidas nesta visão (portfólio filtrado)." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_TIMELINE =
-  "Consolida entradas e saídas mensais usando os motores saneados de Contas a Receber e Contas a Pagar." as const;
+  "Linha do tempo mensal: realizado por movimento (AR: settlementDate com overlay histórico fev/2026; AP: data efetiva) + saldo aberto por vencimento. Distinta do fluxo planejado por dueDate." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_TIMELINE_EXCEPTION =
-  "Exceção: esta linha do tempo executiva estima inflow/outflow mensal independentemente do modo Previsto/Realizado do filtro global." as const;
+  "Exceção deliberada: esta linha do tempo não precisa bater mês a mês com o gráfico planejado. Estimativas mensais independem do modo Previsto/Realizado do filtro global." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_CHART =
-  `${FINANCE_CF_HELP_MONTHLY_TIMELINE} ${FINANCE_CF_HELP_MONTHLY_TIMELINE_EXCEPTION}` as const;
+  "Fluxo planejado: movimentos de AR/AP alocados pelo vencimento (dueDate). Mesma autoridade do comparativo anual quando o ano e a população são equivalentes." as const;
 
 export const FINANCE_CF_HELP_CALENDAR =
   "Calendário reconciliado com a linha do tempo do Fluxo. Movimentos diários usam as mesmas regras do ledger (CR/AP saneados)." as const;

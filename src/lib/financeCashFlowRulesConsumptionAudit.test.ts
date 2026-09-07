@@ -33,10 +33,14 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
 
   it("resumo executivo usa métricas oficiais AR/AP", () => {
     const summary = read("src/lib/financeCashFlowExecutiveSummary.ts");
-    assert.match(summary, /resolveOfficialArCashFlowExecutiveMetrics/);
+    const arMetrics = read("src/lib/financeCashFlowArMetrics.ts");
+    assert.match(summary, /resolveCanonicalArYearMetrics/);
+    assert.match(summary, /composeCanonicalArPlannedEstimatedInflow/);
     assert.match(summary, /resolveOfficialApCashFlowExecutiveMetrics/);
     assert.match(summary, /sumOfficialArOpenDueInPeriod/);
     assert.match(summary, /sumOfficialApOpenDueInPeriod/);
+    assert.match(arMetrics, /resolveOfficialArCashFlowExecutiveMetrics/);
+    assert.match(arMetrics, /AR_ESTIMATED_YEAR_TOTAL/);
   });
 
   it("radar diário usa ledger oficial AR/AP", () => {

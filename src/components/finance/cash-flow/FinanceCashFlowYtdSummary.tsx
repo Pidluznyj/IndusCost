@@ -117,15 +117,15 @@ export function FinanceCashFlowYtdSummary({
           />
           <FinanceCashFlowExecutiveMetricCard
             testId="ytd-kpi-receivable"
-            label="A receber YTD"
+            label="A receber no ano"
             amount={executiveYtd.totalReceivableOpen}
-            subtitle="Saldo AR em aberto"
+            subtitle="Saldo atualmente em aberto com vencimento no ano selecionado."
             icon={ArrowDownRight}
             tone="positive"
           />
           <FinanceCashFlowExecutiveMetricCard
             testId="ytd-kpi-received"
-            label="Recebido YTD"
+            label="Recebido YTD por vencimento"
             amount={executiveYtd.received.currentAmount}
             subtitle={receivedSub.short}
             hint={receivedSub.full}

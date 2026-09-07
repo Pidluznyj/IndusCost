@@ -589,7 +589,8 @@ describe("financeCashFlowAnnualComparison UI", () => {
   it("título e subtítulo atualizados no componente", () => {
     const wrapper = read("src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart.tsx");
     assert.ok(wrapper.includes("Fluxo anual — Entradas, Saídas e Saldo"));
-    assert.ok(wrapper.includes("Mesma base do fluxo de caixa planejado"));
+    assert.ok(wrapper.includes("Mesma autoridade do fluxo planejado"));
+    assert.ok(wrapper.includes("independente dos filtros da página"));
   });
 
   it("resumo anual com MetricCardGrid", () => {

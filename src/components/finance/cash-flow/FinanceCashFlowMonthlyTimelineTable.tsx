@@ -22,7 +22,7 @@ export function FinanceCashFlowMonthlyTimelineTable({
         <FinanceCashFlowBlockTitle
           testId="cash-flow-monthly-timeline-header"
           title={`Linha do tempo mensal — ${year}`}
-          subtitle="Recebido/pago realizados + saldos em aberto por vencimento. Estimativas mensais independentes do modo Previsto/Realizado do filtro global."
+          subtitle="Realizado por movimento (baixa) + aberto por vencimento. Distinta do fluxo planejado por dueDate. Independente do modo Previsto/Realizado do filtro global."
           help={FINANCE_CF_HELP_MONTHLY_TIMELINE}
         />
       </div>

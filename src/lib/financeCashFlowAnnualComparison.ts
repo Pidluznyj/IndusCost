@@ -444,6 +444,29 @@ export function filterApRowsForAnnualComparison(
   ) as FinanceCashFlowApRow[];
 }
 
+/** Totais do comparativo anual = soma dos 12 meses mapeados da timeline planejada. */
+export function sumAnnualComparisonTotalsFromMonths(
+  months: FinanceCashFlowAnnualComparisonMonth[],
+  hasReceivableGoal: boolean
+): FinanceCashFlowAnnualComparisonTotals {
+  const lastMonth = months[months.length - 1];
+  return {
+    receivedAmount: roundMoney(months.reduce((acc, m) => acc + m.receivedAmount, 0)),
+    receivableOpenAmount: roundMoney(
+      months.reduce((acc, m) => acc + m.receivableOpenAmount, 0)
+    ),
+    cashInTotalAmount: roundMoney(months.reduce((acc, m) => acc + m.cashInTotalAmount, 0)),
+    paidAmount: roundMoney(months.reduce((acc, m) => acc + m.paidAmount, 0)),
+    payableOpenAmount: roundMoney(months.reduce((acc, m) => acc + m.payableOpenAmount, 0)),
+    cashOutTotalAmount: roundMoney(months.reduce((acc, m) => acc + m.cashOutTotalAmount, 0)),
+    netCashAmount: roundMoney(months.reduce((acc, m) => acc + m.netCashAmount, 0)),
+    accumulatedCashAmount: lastMonth?.accumulatedCashAmount ?? 0,
+    receivableGoal: hasReceivableGoal
+      ? roundMoney(months.reduce((acc, m) => acc + (m.receivableGoal ?? 0), 0))
+      : null,
+  };
+}
+
 export function buildCashFlowAnnualComparison(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -506,23 +529,7 @@ export function buildCashFlowAnnualComparison(
   );
   const hasReceivableGoal = totalPreviousInflow > 0;
 
-  const lastMonth = months[months.length - 1];
-
-  const totals: FinanceCashFlowAnnualComparisonTotals = {
-    receivedAmount: roundMoney(months.reduce((acc, m) => acc + m.receivedAmount, 0)),
-    receivableOpenAmount: roundMoney(
-      months.reduce((acc, m) => acc + m.receivableOpenAmount, 0)
-    ),
-    cashInTotalAmount: roundMoney(months.reduce((acc, m) => acc + m.cashInTotalAmount, 0)),
-    paidAmount: roundMoney(months.reduce((acc, m) => acc + m.paidAmount, 0)),
-    payableOpenAmount: roundMoney(months.reduce((acc, m) => acc + m.payableOpenAmount, 0)),
-    cashOutTotalAmount: roundMoney(months.reduce((acc, m) => acc + m.cashOutTotalAmount, 0)),
-    netCashAmount: roundMoney(months.reduce((acc, m) => acc + m.netCashAmount, 0)),
-    accumulatedCashAmount: lastMonth?.accumulatedCashAmount ?? 0,
-    receivableGoal: hasReceivableGoal
-      ? roundMoney(months.reduce((acc, m) => acc + (m.receivableGoal ?? 0), 0))
-      : null,
-  };
+  const totals = sumAnnualComparisonTotalsFromMonths(months, hasReceivableGoal);
 
   return {
     year,
