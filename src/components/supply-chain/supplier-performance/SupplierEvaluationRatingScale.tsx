@@ -20,6 +20,13 @@ const SHORT_LABEL: Record<SupplierEvaluationRatingValue, string> = {
   5: "Superou",
 };
 
+/** Grupo 1–5 compacto: uma linha, sem wrap, largura uniforme. */
+export const SUPPLIER_EVALUATION_RATING_GROUP_CLASS =
+  "inline-flex w-max flex-nowrap whitespace-nowrap overflow-hidden rounded-md border border-border" as const;
+
+export const SUPPLIER_EVALUATION_RATING_OPTION_CLASS =
+  "h-8 w-8 shrink-0 grow-0 basis-8 rounded-none border-0 border-r border-border last:border-r-0 font-semibold tabular-nums transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50" as const;
+
 export function SupplierEvaluationRatingLegend({ compact = false }: { compact?: boolean }) {
   const fullTitle = SUPPLIER_EVALUATION_RATING_VALUES.map(
     (value) => `${value} — ${SUPPLIER_EVALUATION_RATING_LABELS[value]}`
@@ -74,13 +81,18 @@ export function SupplierEvaluationRatingSelector({
 }: SelectorProps) {
   return (
     <div
-      className="space-y-1"
+      className={cn(!compact && "space-y-1")}
       data-testid={`supplier-evaluation-score-${criterionKey}`}
     >
-      <p className={cn("font-semibold text-muted-foreground", compact ? "text-[10px] uppercase" : "text-xs")}>
-        {criterionLabel}
-      </p>
-      <div role="radiogroup" aria-label={criterionLabel} className="flex flex-wrap gap-0.5"
+      {compact ? (
+        <span className="sr-only">{criterionLabel}</span>
+      ) : (
+        <p className="text-xs font-semibold text-muted-foreground">{criterionLabel}</p>
+      )}
+      <div
+        role="radiogroup"
+        aria-label={criterionLabel}
+        className={SUPPLIER_EVALUATION_RATING_GROUP_CLASS}
         onKeyDown={(event) => {
           if (disabled) return;
           const values = SUPPLIER_EVALUATION_RATING_VALUES;
@@ -113,17 +125,16 @@ export function SupplierEvaluationRatingSelector({
               type="button"
               role="radio"
               aria-checked={selected}
-              aria-label={supplierEvaluationRatingAriaLabel(rating)}
+              aria-label={`${criterionLabel}: ${supplierEvaluationRatingAriaLabel(rating)}`}
               title={SUPPLIER_EVALUATION_RATING_LABELS[rating]}
               tabIndex={tabbable ? 0 : -1}
               disabled={disabled}
               onClick={() => onChange(rating)}
               className={cn(
-                "rounded border font-semibold tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50",
-                compact ? "h-7 min-w-[1.75rem] px-1.5 text-xs" : "h-8 min-w-[2rem] px-2 text-sm",
+                SUPPLIER_EVALUATION_RATING_OPTION_CLASS,
                 selected
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-background hover:bg-accent"
+                  : "bg-background hover:bg-accent"
               )}
             >
               {rating}

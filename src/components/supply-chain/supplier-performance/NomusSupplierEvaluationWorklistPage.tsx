@@ -365,22 +365,24 @@ export function NomusSupplierEvaluationWorklistPage() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="min-w-full text-left text-xs" data-testid="nse-grid">
-          <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <table className="min-w-max w-full text-left text-xs" data-testid="nse-grid">
+          <thead className="bg-muted text-[10px] uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-2 py-2">
+              <th className="sticky left-0 z-20 w-10 min-w-10 bg-muted px-2 py-2">
                 <span className="sr-only">Selecionar</span>
               </th>
-              <th className="px-2 py-2">Pedido</th>
-              <th className="px-2 py-2">Fornecedor</th>
-              <th className="px-2 py-2">Pedido</th>
-              <th className="px-2 py-2">Avaliação</th>
+              <th className="sticky left-10 z-20 min-w-[7.5rem] bg-muted px-2 py-2">Pedido</th>
+              <th className="sticky left-[10rem] z-20 min-w-[12rem] max-w-[14rem] bg-muted px-2 py-2 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.18)]">
+                Fornecedor
+              </th>
+              <th className="whitespace-nowrap px-2 py-2">Status</th>
+              <th className="whitespace-nowrap px-2 py-2">Avaliação</th>
               {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
-                <th key={c.key} className="px-2 py-2">
+                <th key={c.key} className="min-w-[11rem] whitespace-nowrap px-2 py-2">
                   {c.shortLabel}
                 </th>
               ))}
-              <th className="px-2 py-2">Nota</th>
+              <th className="whitespace-nowrap px-2 py-2 text-center">Nota</th>
               <th className="px-2 py-2">Ação</th>
             </tr>
           </thead>
@@ -411,7 +413,7 @@ export function NomusSupplierEvaluationWorklistPage() {
                   row.supplier.resolvedName || row.supplier.nomusName || "Fornecedor não identificado";
                 return (
                   <tr key={id} className="border-t border-border" data-testid={`nse-row-${row.orderNumber ?? row.externalId}`}>
-                    <td className="px-2 py-1.5">
+                    <td className="sticky left-0 z-10 w-10 min-w-10 bg-white px-2 py-1.5">
                       <input
                         type="checkbox"
                         checked={!!selected[id]}
@@ -420,17 +422,19 @@ export function NomusSupplierEvaluationWorklistPage() {
                         aria-label={`Selecionar ${row.orderNumber ?? row.externalId}`}
                       />
                     </td>
-                    <td className="px-2 py-1.5 font-mono font-semibold">
+                    <td className="sticky left-10 z-10 min-w-[7.5rem] whitespace-nowrap bg-white px-2 py-1.5 font-mono font-semibold">
                       {row.orderNumber ?? `Nomus #${row.externalId}`}
                     </td>
-                    <td className="px-2 py-1.5">
-                      <div>{supplierName}</div>
+                    <td className="sticky left-[10rem] z-10 min-w-[12rem] max-w-[14rem] bg-white px-2 py-1.5 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.18)]">
+                      <div className="truncate" title={supplierName}>
+                        {supplierName}
+                      </div>
                       {!row.supplier.identitySafe ? (
-                        <div className="text-[10px] text-amber-700">Identidade insegura — não consolida</div>
+                        <div className="truncate text-[10px] text-amber-700">Identidade insegura — não consolida</div>
                       ) : null}
                     </td>
-                    <td className="px-2 py-1.5">{nomusPurchaseOrderStageLabel(row.stage)}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="whitespace-nowrap px-2 py-1.5">{nomusPurchaseOrderStageLabel(row.stage)}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5">
                       {evaluationStatusLabel(row.evaluationStatus)}
                       {row.evaluation
                         ? ` · ${formatSupplierScoreWithScale(
@@ -440,7 +444,7 @@ export function NomusSupplierEvaluationWorklistPage() {
                         : ""}
                     </td>
                     {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
-                      <td key={c.key} className="px-2 py-1.5">
+                      <td key={c.key} className="min-w-[11rem] whitespace-nowrap px-2 py-1.5 align-middle">
                         {row.evaluation?.methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V1 ? (
                           <label className="block">
                             <span className="sr-only">{c.shortLabel}</span>
@@ -475,7 +479,7 @@ export function NomusSupplierEvaluationWorklistPage() {
                         )}
                       </td>
                     ))}
-                    <td className="px-2 py-1.5 font-mono font-semibold">
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center font-mono font-semibold">
                       {formatSupplierScoreWithScale(
                         preview?.overallScore ?? row.evaluation?.scores.overall ?? null,
                         getSupplierEvaluationMethodology(
