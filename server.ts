@@ -500,6 +500,7 @@ import { registerPurchaseQuotationCollectionRoutes } from "./src/lib/purchasing/
 import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvidenceRoutes.js";
 import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
 import { registerSupplierPerformanceRoutes } from "./src/lib/purchasing/supplierPerformanceRoutes.js";
+import { registerSupplierPerformanceDashboardRoutes } from "./src/lib/purchasing/supplierPerformanceDashboardRoutes.js";
 import { registerPurchasingWorkstationRoutes } from "./src/lib/purchasing/purchasingWorkstationRoutes.js";
 import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseReceiptRoutes.js";
 import { registerShadowPurchasePlanningRoutes } from "./src/lib/purchasing/shadowPurchasePlanningRoutes.js";
@@ -16931,6 +16932,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  // Compras → Performance — dashboard read-only de fornecedores (Pedido Nomus + avaliação).
+  registerSupplierPerformanceDashboardRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   registerPurchasingWorkstationRoutes(app, {
