@@ -375,6 +375,23 @@ describe("confirmPurchaseOrderPayableLink", () => {
     assert.equal(fake.links.length, 1);
     assert.equal(fake.history.length, 0);
   });
+
+  it("o mesmo título pode ser confirmado em outro pedido — unique é só o par pedido×título", async () => {
+    const fake = createDb({
+      payables: [apRow(9410)],
+      links: [{ payableExternalId: 9410, nomusPurchaseOrderId: OTHER_ORDER_ID }],
+    });
+    const view = await confirmPurchaseOrderPayableLink(
+      ORDER_ID,
+      ACTOR,
+      { payableExternalId: 9410, reason: "mesmo boleto no segundo pedido" },
+      { db: fake.db, now: NOW }
+    );
+    assert.equal(fake.links.length, 2);
+    assert.equal(fake.links.filter((row) => row.payableExternalId === 9410).length, 2);
+    assert.equal(view.unassignedPayables[0]?.payableExternalId, 9410);
+    assert.equal(view.unassignedPayables[0]?.linkedToOtherOrder, true);
+  });
 });
 
 describe("removePurchaseOrderPayableLink", () => {
