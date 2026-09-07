@@ -37,6 +37,7 @@ import {
   canImportCustomers,
 } from "@/src/lib/commercialEngineeringPermissions";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
+import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
@@ -336,14 +337,23 @@ export const CustomerModule = () => {
         className="bg-card rounded-xl border border-border overflow-hidden shadow-sm flex flex-col"
         data-tour="customers-table"
       >
-        <div className="overflow-x-auto overflow-y-auto max-h-[min(70vh,640px)]">
-          <table className="w-full min-w-[880px] text-left border-collapse">
+        <div className="overflow-x-hidden overflow-y-auto max-h-[min(70vh,640px)]">
+          <table className="w-full table-fixed text-left border-collapse">
+            {/* Larguras fixas: sem quebra de linha e sem rolagem horizontal — textos longos truncam com reticências. */}
+            <colgroup>
+              <col />
+              <col className="w-[190px]" />
+              <col className="w-[20%]" />
+              <col className="w-[15%]" />
+              <col className="w-[84px]" />
+              <col className="w-[150px]" />
+            </colgroup>
             <thead className="sticky top-0 z-30">
               <tr className="bg-accent/80 backdrop-blur-sm border-b border-border">
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Cliente</th>
-                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Documento</th>
-                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap max-w-[180px]">Contato</th>
-                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap max-w-[160px]">Localização</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Score CNPJ</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Contato</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Status</th>
                 <th className={cn("px-3 py-2 font-semibold text-xs text-right whitespace-nowrap", STICKY_ACTIONS_HEAD)}>
                   Ações
@@ -367,7 +377,7 @@ export const CustomerModule = () => {
               ) : (
                 listRows.map((c) => (
                   <tr key={c.id} className="hover:bg-accent/30 transition-colors group">
-                    <td className="px-3 py-1.5 max-w-[220px]">
+                    <td className="px-3 py-1.5">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 flex items-center justify-center text-primary">
                           <Building2 className="h-3.5 w-3.5" />
@@ -382,8 +392,10 @@ export const CustomerModule = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-1.5 text-xs font-mono whitespace-nowrap">{c.taxId}</td>
-                    <td className="px-3 py-1.5 max-w-[180px]">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <CustomerCnpjRiskTag risk={c.cnpjRisk} onConsult={() => openCnpjLookup({ customer: c })} />
+                    </td>
+                    <td className="px-3 py-1.5">
                       <div className="space-y-0.5 min-w-0">
                         <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
                           <Mail className="h-3 w-3 shrink-0" />
@@ -399,7 +411,7 @@ export const CustomerModule = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-1.5 max-w-[160px]">
+                    <td className="px-3 py-1.5">
                       <p className="text-[11px] font-medium truncate" title={`${c.city ?? ""} - ${c.state ?? ""}`}>
                         {c.city || "—"} - {c.state || "—"}
                       </p>
