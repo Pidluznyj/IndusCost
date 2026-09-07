@@ -211,6 +211,8 @@ src/lib/purchasing/supplierPerformanceDashboardEvaluation.test.ts
 src/lib/purchasing/supplierPerformanceDashboardService.test.ts
 src/lib/purchasing/supplierPerformanceDashboardRoutes.test.ts
 src/lib/purchasing/supplierPerformanceDashboardAccess.test.ts
+src/lib/purchasing/supplierEvaluationRatingLayout.test.ts
+src/lib/purchasing/supplierEvaluationWorklistSelection.test.ts
 src/components/purchases/performance/SupplierPerformanceDashboardUi.test.tsx
 src/lib/suppliers/supplierServiceTerminationCalc.test.ts
 src/lib/suppliers/supplierServiceTerminationDistrato.test.ts
