@@ -415,7 +415,7 @@ describe("visão ampliada — prefixo do passado realizado", () => {
     }
   });
 
-  it("J. após o bridge zerar, a linha histórica volta ao closing canônico", () => {
+  it("5. sem reancoragem: +amount permanece até a origem e a reversão zera o running", () => {
     const { rows: prefixRows } = buildScenarioPastPrefix({
       timelineRows: [
         { civilDate: "2026-01-10", opening: 200, closing: 200, inflows: 0, outflows: 0 },
@@ -432,6 +432,165 @@ describe("visão ampliada — prefixo do passado realizado", () => {
     assert.equal(byDate["2026-01-10"]!.real, 280);
     assert.equal(byDate["2026-02-05"]!.real, 280);
     assert.equal(byDate["2026-03-01"]!.real, 280);
+  });
+
+  it("1. closing informado é âncora absoluta — NÃO somar overlay (caso que bloqueou a feature)", () => {
+    const timelineRows = [
+      { civilDate: "2026-01-15", opening: 1000, closing: 1000, inflows: 0, outflows: 0 },
+      {
+        civilDate: "2026-02-03",
+        opening: 1000,
+        closing: 5000,
+        inflows: 0,
+        outflows: 0,
+        closingInformed: 5000,
+      },
+      { civilDate: "2026-02-05", opening: 5000, closing: 5100, inflows: 100, outflows: 0 },
+      { civilDate: "2026-02-20", opening: 5100, closing: 5100, inflows: 0, outflows: 0 },
+    ];
+    const frozen = timelineRows.map((r) => ({ ...r }));
+    const { rows: prefixRows, days } = buildScenarioPastPrefix({
+      timelineRows,
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 0,
+        adjustmentByCivilDate: { "2026-01-31": 100, "2026-02-05": -100 },
+      },
+    });
+    assert.deepEqual(timelineRows, frozen, "canonical closing da timeline não muda");
+    const byDate = Object.fromEntries(prefixRows.map((r) => [r.civilDate, r]));
+
+    assert.equal(byDate["2026-01-31"]!.real, 1100);
+    assert.equal(byDate["2026-02-03"]!.real, 5000, "informed closing EXATO, não 5100");
+    assert.equal(byDate["2026-02-05"]!.real, 5000, "reversão posterior continua: 5100-100");
+    assert.equal(byDate["2026-02-20"]!.real, 5000);
+
+    const feb3 = days.find((d) => d.civilDate === "2026-02-03");
+    assert.equal(feb3?.presentationAdjustment, 0);
+    assert.equal(feb3?.realizedInflows, 0);
+    const feb5 = days.find((d) => d.civilDate === "2026-02-05");
+    assert.equal(feb5?.presentationAdjustment, -100);
+    assert.equal(feb5?.realizedInflows, 100, "inflow factual preservado");
+    assert.equal(byDate["2026-09-01"], undefined);
+  });
+
+  it("2. segunda âncora informada zera o offset da reversão", () => {
+    const { rows: prefixRows } = buildScenarioPastPrefix({
+      timelineRows: [
+        { civilDate: "2026-01-15", opening: 1000, closing: 1000, inflows: 0, outflows: 0 },
+        {
+          civilDate: "2026-02-03",
+          opening: 1000,
+          closing: 5000,
+          inflows: 0,
+          outflows: 0,
+          closingInformed: 5000,
+        },
+        { civilDate: "2026-02-05", opening: 5000, closing: 5100, inflows: 100, outflows: 0 },
+        {
+          civilDate: "2026-02-07",
+          opening: 5100,
+          closing: 5000,
+          inflows: 0,
+          outflows: 0,
+          closingInformed: 5000,
+        },
+        { civilDate: "2026-02-08", opening: 5000, closing: 5000, inflows: 0, outflows: 0 },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 0,
+        adjustmentByCivilDate: { "2026-01-31": 100, "2026-02-05": -100 },
+      },
+    });
+    const byDate = Object.fromEntries(prefixRows.map((r) => [r.civilDate, r]));
+    assert.equal(byDate["2026-02-05"]!.real, 5000);
+    assert.equal(byDate["2026-02-07"]!.real, 5000);
+    assert.equal(byDate["2026-02-08"]!.real, 5000, "após âncora, display == canonical");
+  });
+
+  it("3. cross-year: openingAdjustment zera no primeiro informed; reversão segue; 2ª âncora reseta", () => {
+    const { rows: prefixRows } = buildScenarioPastPrefix({
+      timelineRows: [
+        { civilDate: "2026-01-05", opening: 3900, closing: 3900, inflows: 0, outflows: 0 },
+        {
+          civilDate: "2026-01-10",
+          opening: 3900,
+          closing: 4000,
+          inflows: 0,
+          outflows: 0,
+          closingInformed: 4000,
+        },
+        { civilDate: "2026-01-11", opening: 4000, closing: 4000, inflows: 0, outflows: 0 },
+        { civilDate: "2026-02-05", opening: 4000, closing: 4100, inflows: 100, outflows: 0 },
+        { civilDate: "2026-02-19", opening: 4100, closing: 4100, inflows: 0, outflows: 0 },
+        {
+          civilDate: "2026-02-20",
+          opening: 4100,
+          closing: 4000,
+          inflows: 0,
+          outflows: 0,
+          closingInformed: 4000,
+        },
+        { civilDate: "2026-02-21", opening: 4000, closing: 4000, inflows: 0, outflows: 0 },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 100,
+        adjustmentByCivilDate: { "2026-02-05": -100 },
+      },
+    });
+    const byDate = Object.fromEntries(prefixRows.map((r) => [r.civilDate, r]));
+    assert.equal(byDate["2026-01-05"]!.real, 4000, "canonical + openingAdjustment");
+    assert.equal(byDate["2026-01-10"]!.real, 4000, "primeiro informed zera running");
+    assert.equal(byDate["2026-01-11"]!.real, 4000);
+    assert.equal(byDate["2026-02-05"]!.real, 4000, "reversão após âncora: 4100-100");
+    assert.equal(byDate["2026-02-19"]!.real, 4000);
+    assert.equal(byDate["2026-02-20"]!.real, 4000, "segunda âncora zera o offset");
+    assert.equal(byDate["2026-02-21"]!.real, 4000);
+  });
+
+  it("4. mesmo dia: informed closing domina o adjustment da ponte", () => {
+    const competenceSameDay = buildScenarioPastPrefix({
+      timelineRows: [
+        {
+          civilDate: "2026-01-31",
+          opening: 1000,
+          closing: 2000,
+          inflows: 0,
+          outflows: 0,
+          closingInformed: 2000,
+        },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 0,
+        adjustmentByCivilDate: { "2026-01-31": 100 },
+      },
+    });
+    assert.equal(competenceSameDay.rows[0]!.real, 2000);
+    assert.equal(competenceSameDay.days[0]!.presentationAdjustment, 100);
+
+    const reversalSameDay = buildScenarioPastPrefix({
+      timelineRows: [
+        {
+          civilDate: "2026-02-05",
+          opening: 5000,
+          closing: 5000,
+          inflows: 100,
+          outflows: 0,
+          closingInformed: 5000,
+        },
+        { civilDate: "2026-02-06", opening: 5000, closing: 5000, inflows: 0, outflows: 0 },
+      ],
+      asOfCivilDate: "2026-09-01",
+      presentationBridge: {
+        openingAdjustment: 0,
+        adjustmentByCivilDate: { "2026-02-05": -100 },
+      },
+    });
+    assert.equal(reversalSameDay.rows[0]!.real, 5000);
+    assert.equal(reversalSameDay.rows[1]!.real, 5000, "running termina o dia informado em 0");
   });
 
   it("H. prefixo nunca inclui asOf nem futuro — forecast permanece fora da ponte", () => {
@@ -755,6 +914,8 @@ describe("visão ampliada — gates estruturais", () => {
     assert.equal(fn.includes("officialTodayBalance"), false);
     assert.equal(fn.includes("computeTreasuryCaixaScenarios"), false);
     assert.ok(fn.includes("displayClosing"));
+    assert.ok(fn.includes("closingInformed"), "reancoragem usa closingInformed explícito");
+    assert.equal(fn.includes("divergence"), false, "não inferir âncora por divergência");
   });
 
   it("slicer não dispara fetch: interações apenas recortam índices", () => {

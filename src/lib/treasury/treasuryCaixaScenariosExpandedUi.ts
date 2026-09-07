@@ -127,6 +127,11 @@ export type TreasuryScenarioPastTimelineRow = {
   closing: number | null;
   inflows: number;
   outflows: number;
+  /**
+   * Fechamento INFORMADO canônico (`closingInformed` da linha do tempo).
+   * `null`/ausente = sem âncora factual. Não inferir por valor ou divergência.
+   */
+  closingInformed?: number | null;
 };
 
 /** Subconjunto do ScenarioChartRow que o prefixo precisa produzir. */
@@ -202,7 +207,8 @@ function carriedCanonicalClosing(
  * Prefixo histórico do gráfico de projeção.
  *
  * `row.closing` canônico NÃO é mutado. O Y desenhado é
- * displayClosing = canonicalClosing + presentationAdjustmentRunning.
+ * displayClosing = canonicalClosing + presentationAdjustmentRunning,
+ * com reset do running quando `closingInformed` é autoridade factual.
  * Inflows/outflows permanecem factuais. A ponte NÃO alimenta o motor de
  * cenários nem a tabela diária.
  */
@@ -258,6 +264,13 @@ export function buildScenarioPastPrefix(input: {
     const displayOpening =
       opening == null ? null : roundPresentationMoney(opening + running);
     running = roundPresentationMoney(running + dayAdj);
+    const informedClosing =
+      source != null &&
+      source.closingInformed != null &&
+      Number.isFinite(source.closingInformed);
+    if (informedClosing) {
+      running = 0;
+    }
     const displayClosing =
       closing == null ? null : roundPresentationMoney(closing + running);
     const neg =

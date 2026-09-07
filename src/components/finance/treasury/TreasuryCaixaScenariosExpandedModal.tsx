@@ -117,6 +117,7 @@ type LoadedData = {
     closing: number | null;
     inflows: number;
     outflows: number;
+    closingInformed?: number | null;
   }[];
   /** Ponte de apresentação histórica — só o prefixo do gráfico consome. */
   presentationBridge: TreasuryCaixaHistoricalArPresentationBridge | null;
