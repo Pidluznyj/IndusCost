@@ -141,7 +141,8 @@ function eligibleWhere(): Prisma.NomusPurchaseOrderWhereInput {
   return {};
 }
 
-function periodWhere(period: SupplierPerformancePeriod): Prisma.NomusPurchaseOrderWhereInput | null {
+/** Janela oficial de período do Pedido Nomus — COALESCE(issuedAt, firstSeenAt). Reutilizada pela aba Performance. */
+export function periodWhere(period: SupplierPerformancePeriod): Prisma.NomusPurchaseOrderWhereInput | null {
   const { gte, lt } = resolveSupplierPerformanceDateRange(period);
   if (!gte && !lt) return null;
   const bounds = {

@@ -20,6 +20,7 @@ export type PurchaseChainViewId =
   | "orders"
   | "nomus-orders"
   | "supplier-evaluation"
+  | "performance"
   | "receiving"
   | "workstation";
 
@@ -39,6 +40,7 @@ const NOMUS_CONTEXT_VIEWS: ReadonlyArray<{
 }> = [
   { id: "nomus-orders", label: "Pedidos Nomus", to: "/purchases/nomus-orders" },
   { id: "supplier-evaluation", label: "Avaliação Fornecedor", to: "/purchases/supplier-evaluation" },
+  { id: "performance", label: "Performance", to: "/purchases/performance" },
 ];
 
 /** Cadeia interna IndusCost — oculta no landing de Compras; acessível pelo botão do header. */

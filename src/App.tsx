@@ -43,6 +43,7 @@ import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotatio
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
 import { NomusPurchaseOrderModule } from "./components/NomusPurchaseOrderModule";
 import { NomusSupplierEvaluationWorklistPage } from "./components/supply-chain/supplier-performance/NomusSupplierEvaluationWorklistPage";
+import { SupplierPerformanceDashboardPage } from "./components/purchases/performance/SupplierPerformanceDashboardPage";
 import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
@@ -429,6 +430,18 @@ export default function App() {
               headerActions={<PurchaseModuleHeaderActions />}
             >
               <NomusSupplierEvaluationWorklistPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/performance"
+          element={
+            <ModulePageShell
+              title="Performance de Fornecedores"
+              description="Compras, concentração, mix, avaliação e competitividade da base de fornecedores. Somente leitura do espelho Nomus."
+              headerActions={<PurchaseModuleHeaderActions />}
+            >
+              <SupplierPerformanceDashboardPage />
             </ModulePageShell>
           }
         />
