@@ -22,6 +22,7 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import { sumCanonicalArReceivedByDueInPeriod } from "./financeCashFlowArMetrics.js";
 import { filterFinanceArOperationalPortfolioRows } from "./finance/financeArOperationalPortfolio.js";
 import type { FinanceCashFlowArFilterOptions } from "./financeCashFlowRowFilters.js";
 import {
@@ -197,12 +198,7 @@ export function sumArReceivedInPeriod(
   startDate: Date,
   endDate: Date
 ): number {
-  let total = 0;
-  for (const row of rows) {
-    if (!isArReceivedInPeriod(row, startDate, endDate)) continue;
-    total += row.amountReceived;
-  }
-  return roundMoney(total);
+  return sumCanonicalArReceivedByDueInPeriod(rows, startDate, endDate);
 }
 
 function monthPeriodEnd(year: number, month: number, capDate: Date | null): Date {
@@ -627,15 +623,15 @@ export function buildCashFlowExecutiveYtdReading(
     );
   } else if (received.direction === "up" && received.deltaPercent != null) {
     lines.push(
-      `Recebido YTD está ${formatFinanceCurrency(received.deltaAmount)} acima do mesmo período de ${received.previousYear} (+${Math.abs(received.deltaPercent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
+      `Recebido YTD por vencimento está ${formatFinanceCurrency(received.deltaAmount)} acima do mesmo período de ${received.previousYear} (+${Math.abs(received.deltaPercent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
     );
   } else if (received.direction === "down" && received.deltaPercent != null) {
     lines.push(
-      `Recebido YTD está ${formatFinanceCurrency(Math.abs(received.deltaAmount))} abaixo do mesmo período de ${received.previousYear} (${received.deltaPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
+      `Recebido YTD por vencimento está ${formatFinanceCurrency(Math.abs(received.deltaAmount))} abaixo do mesmo período de ${received.previousYear} (${received.deltaPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
     );
   } else if (received.direction === "stable" && received.previousAmount > 0) {
     lines.push(
-      `Recebido YTD está estável em relação ao mesmo período de ${received.previousYear}.`
+      `Recebido YTD por vencimento está estável em relação ao mesmo período de ${received.previousYear}.`
     );
   }
 

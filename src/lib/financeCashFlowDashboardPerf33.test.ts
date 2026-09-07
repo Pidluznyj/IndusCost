@@ -354,8 +354,10 @@ describe("PERF 3.3 guard contra motor paralelo", () => {
 
   it("resumo executivo continua nos adapters oficiais", () => {
     const summary = read("src/lib/financeCashFlowExecutiveSummary.ts");
-    assert.match(summary, /resolveOfficialArCashFlowExecutiveMetrics/);
+    const arMetrics = read("src/lib/financeCashFlowArMetrics.ts");
+    assert.match(summary, /resolveCanonicalArYearMetrics/);
     assert.match(summary, /resolveOfficialApCashFlowExecutiveMetrics/);
+    assert.match(arMetrics, /resolveOfficialArCashFlowExecutiveMetrics/);
     assert.doesNotMatch(summary, /openAmount\s*=\s*row\.balanceReceivable/);
   });
 });

@@ -15,10 +15,11 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import { resolveFinanceArHistoricalMonthlyMovementDate } from "./finance/financeArHistoricalMonthlyAttribution.js";
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
-import {
-  resolveOfficialArCashFlowExecutiveMetrics,
-} from "./financeAccountsReceivableRulesAdapter.js";
 import { sumOfficialArOpenDueInPeriod } from "./financeAccountsReceivableRulesEngine.js";
+import {
+  composeCanonicalArPlannedEstimatedInflow,
+  resolveCanonicalArYearMetrics,
+} from "./financeCashFlowArMetrics.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
@@ -478,7 +479,10 @@ export function buildExecutiveMonthlyTimeline(
       ? sumFinanceApPaidInPaymentPeriodFromFilteredRows(apForPaid, monthStart, monthEndDate)
       : sumApPaidInPeriod(apForPaid, monthStart, monthEndDate);
     const payableOpenDue = sumApOpenDueInPeriod(apRows, monthStart, monthEndDate);
-    const estimatedInflow = roundMoney(received + receivableOpenDue);
+    const estimatedInflow = composeCanonicalArPlannedEstimatedInflow(
+      received,
+      receivableOpenDue
+    );
     const estimatedOutflow = roundMoney(paid + payableOpenDue);
     const netFlow = roundMoney(estimatedInflow - estimatedOutflow);
     accumulated = roundMoney(accumulated + netFlow);
@@ -554,7 +558,7 @@ export function buildFinanceCashFlowExecutiveSummary(
   );
 
   const arOfficialFilters = toArLoadFilters(ytdFilters);
-  const arOfficial = resolveOfficialArCashFlowExecutiveMetrics(
+  const arOfficial = resolveCanonicalArYearMetrics(
     arYtd,
     arOfficialFilters,
     referenceDate,
@@ -571,7 +575,7 @@ export function buildFinanceCashFlowExecutiveSummary(
   );
   const receivedYtd = arOfficial.receivedYtd;
   const paidYtd = apOfficial.paidYtd;
-  const openArForward = arOfficial.openUntilYearEnd;
+  const openArForward = arOfficial.openForwardToYearEnd;
   const openApForward = apOfficial.openUntilYearEnd;
 
   const estimatedArYear = arOfficial.estimatedYearTotal;

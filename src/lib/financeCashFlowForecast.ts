@@ -172,6 +172,8 @@ function buildForwardBucketsForFactors(
   referenceDate: Date,
   inflowFactors: InflowFactorFn[]
 ): Map<string, MonthBucket>[] {
+  // Base de entrada: resolveCashFlowArAmount (projected = balanceReceivable).
+  // Fatores conservador/stress permanecem os percentuais já validados; não recalcular a população.
   const refYm = { year: referenceDate.getFullYear(), month: referenceDate.getMonth() + 1 };
   const maps = inflowFactors.map(() => emptyForwardBuckets(referenceDate));
   const modes = cashFlowViewModeSlices(filters.viewMode);
