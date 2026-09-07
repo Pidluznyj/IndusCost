@@ -33,6 +33,7 @@ export interface Customer {
   updatedAt: string;
   /** Última consulta CNPJ persistida (score + veredito). Ausente/null = sem consulta. */
   cnpjRisk?: CustomerCnpjRiskSummary | null;
+  salesBlock?: import("../lib/commercial/customerSalesBlockView").CustomerSalesBlockPublic | null;
 }
 
 export interface ProposalItem {

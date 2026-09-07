@@ -28,6 +28,10 @@ import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNav
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
+import {
+  CustomerCadastralStatusBadge,
+  CustomerSalesBlockBadge,
+} from "@/src/components/customers/CustomerSalesBlockBadge";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
@@ -543,9 +547,13 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
               <BarChart3 className="h-6 w-6 text-primary" />
               Visão comercial do cliente
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {customer?.companyName || "..."}{" "}
-              {customer?.tradeName ? `· ${customer.tradeName}` : ""}
+            <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-1.5">
+              <span>
+                {customer?.companyName || "..."}{" "}
+                {customer?.tradeName ? `· ${customer.tradeName}` : ""}
+              </span>
+              <CustomerCadastralStatusBadge status={customer?.status} />
+              <CustomerSalesBlockBadge salesBlock={customer?.salesBlock} />
             </p>
             <p className="text-[10px] text-muted-foreground mt-2 max-w-2xl flex gap-1">
               <Info className="h-3 w-3 shrink-0 mt-0.5" />

@@ -36,6 +36,7 @@ import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { moneyAmountToFilterParam } from "@/src/lib/moneyRangeFilter";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
+import { customerSalesBlockButtonHint } from "@/src/lib/commercial/customerSalesBlockView";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
@@ -2982,9 +2983,19 @@ export const ProposalModule = () => {
                           <button
                             type="button"
                             onClick={() => void handleSalesOrderFromProposal(p)}
-                            disabled={salesOrderActionId === p.id}
-                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-violet-600 transition-all disabled:opacity-50"
-                            title={p.salesOrder ? "Abrir pedido de venda" : "Gerar pedido de venda"}
+                            disabled={
+                              salesOrderActionId === p.id ||
+                              (p.Customer?.salesBlock?.blocked === true && !p.salesOrder)
+                            }
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-violet-600 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                            title={
+                              p.Customer?.salesBlock?.blocked === true && !p.salesOrder
+                                ? customerSalesBlockButtonHint(p.Customer.salesBlock) ?? "Venda bloqueada"
+                                : p.salesOrder
+                                  ? "Abrir pedido de venda"
+                                  : "Gerar pedido de venda"
+                            }
+                            data-testid={`proposal-generate-sales-order-${p.id}`}
                           >
                             {salesOrderActionId === p.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />

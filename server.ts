@@ -556,6 +556,13 @@ import {
 } from "./src/lib/customerListQuery.js";
 import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
 import {
+  attachCustomerSalesBlocks,
+  attachSalesBlockToNestedCustomers,
+  assertCustomerSalesAllowed,
+  canExposeCustomerSalesBlockFinancialDetails,
+} from "./src/lib/commercial/customerSalesBlock.server.js";
+import { CustomerSalesBlockedError } from "./src/lib/commercial/customerSalesBlock.js";
+import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
   APP_SESSION_TTL_MS,
@@ -13811,11 +13818,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get("/api/customers", requireAppAuth, requireResource("commercial.customers", "view"), async (req, res) => {
     try {
       const query = req.query as Record<string, unknown>;
+      const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const includeFinancialDetails = canExposeCustomerSalesBlockFinancialDetails(auth);
       if (!shouldUseCustomerPagination(query)) {
         const customers = await prisma.customer.findMany({
           orderBy: { companyName: "asc" },
         });
-        return res.json(customers);
+        const withRisk = await attachCustomerCnpjRisk(prisma, customers);
+        return res.json(await attachCustomerSalesBlocks(prisma, withRisk, { includeFinancialDetails }));
       }
 
       const list = parseCustomerListQuery(query);
@@ -13831,7 +13841,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);
-      res.json(buildCustomerListResponse(await attachCustomerCnpjRisk(prisma, items), meta));
+      const withRisk = await attachCustomerCnpjRisk(prisma, items);
+      res.json(
+        buildCustomerListResponse(
+          await attachCustomerSalesBlocks(prisma, withRisk, { includeFinancialDetails }),
+          meta
+        )
+      );
     } catch (error) {
       console.error("GET /api/customers", error);
       res.status(500).json({ error: "Erro ao listar clientes." });
@@ -14003,8 +14019,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const { salesOrders: salesOrdersWithOfficialMargin, officialMarginMetrics } =
         await loadOfficialCommercial360MarginBundle(prisma, salesOrders);
 
+      const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const [customerWithSalesBlock] = await attachCustomerSalesBlocks(prisma, [customer], {
+        includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
+      });
+
       res.json({
-        customer,
+        customer: customerWithSalesBlock,
         salesOrders: salesOrdersWithOfficialMargin,
         portfolioAbc,
         officialOrderMetrics,
@@ -15528,9 +15549,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         },
         orderBy: buildProposalListOrderBy(),
       });
+      const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const withBlock = await attachSalesBlockToNestedCustomers(prisma, proposals, {
+        includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
+      });
       return res.json(
         await withOfficialProposalListMargin(
-          proposals as Array<Record<string, unknown>>
+          withBlock as Array<Record<string, unknown>>
         )
       );
     }
@@ -15624,9 +15649,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       conversionRate,
     };
 
-    const rows = await withOfficialProposalListMargin(
-      rowsRaw.slice(0, pageSize) as Array<Record<string, unknown>>
+    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+    const withBlock = await attachSalesBlockToNestedCustomers(
+      prisma,
+      rowsRaw.slice(0, pageSize) as Array<{ customerId: string; Customer?: { id: string } | null }>,
+      { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth) }
     );
+    const rows = await withOfficialProposalListMargin(withBlock as Array<Record<string, unknown>>);
 
     res.json({
       data: rows,
@@ -15712,6 +15741,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const d = new Date(issueDate);
       d.setDate(d.getDate() + Number(proposal.deliveryTimeDays));
       expectedDeliveryDate = d;
+    }
+
+    try {
+      await assertCustomerSalesAllowed(prisma, proposal.customerId);
+    } catch (error) {
+      if (error instanceof CustomerSalesBlockedError) {
+        return res.status(error.httpStatus).json({
+          error: error.message,
+          code: error.code,
+          reason: error.reason,
+        });
+      }
+      throw error;
     }
 
     try {
