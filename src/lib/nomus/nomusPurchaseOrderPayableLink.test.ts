@@ -398,6 +398,77 @@ describe("buildPurchaseOrderPayableReconciliation — parcela × título", () =>
     assert.deepEqual(view.warnings, []);
   });
 
+  it("somente título cancelado: visível, não infla vinculado e não marca quitado", () => {
+    const view = buildPurchaseOrderPayableReconciliation({
+      order: ORDER,
+      installments: [INSTALLMENTS[0]],
+      plannedInstallmentsTotal: 1136.68,
+      payables: [payable(9001, { sourceInvoiceId: 501, description: "CANCELADO" })],
+      automatic: [{ payableExternalId: 9001, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+      persisted: [persisted(9001, { installmentIndex: 0 })],
+      now: NOW,
+    });
+    assert.equal(view.installments[0].payables[0].status, "CANCELLED");
+    assert.equal(view.installments[0].status, "UNLINKED");
+    assert.equal(view.totals.linkedCount, 0);
+    assert.equal(view.totals.linkedAmount, 0);
+    assert.equal(view.totals.paidAmount, 0);
+    assert.equal(view.fullySettled, false);
+    assert.equal(view.financialStatus, "PLANNED_ONLY");
+  });
+
+  it("ativo + cancelado: só o ativo entra nos totais; cancelado continua visível", () => {
+    const view = buildPurchaseOrderPayableReconciliation({
+      order: ORDER,
+      installments: [INSTALLMENTS[0]],
+      plannedInstallmentsTotal: 1136.68,
+      payables: [
+        payable(9001, { sourceInvoiceId: 501 }),
+        payable(9002, { sourceInvoiceId: 502, description: "CANCELADO" }),
+      ],
+      automatic: [
+        { payableExternalId: 9001, method: "DIRECT_NOMUS_NFE", evidence: "nf" },
+        { payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" },
+      ],
+      persisted: [
+        persisted(9001, { installmentIndex: 0 }),
+        persisted(9002, { installmentIndex: 0 }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.installments[0].payables.length, 2);
+    assert.equal(view.totals.linkedCount, 1);
+    assert.equal(view.totals.linkedAmount, 1136.68);
+    assert.equal(view.totals.paidAmount, 0);
+    assert.equal(view.fullySettled, false);
+    assert.equal(view.financialStatus, "CONFIRMED");
+  });
+
+  it("pago + cancelado: quitado pelo título baixado; cancelado não soma nem impede", () => {
+    const view = buildPurchaseOrderPayableReconciliation({
+      order: ORDER,
+      installments: [INSTALLMENTS[0]],
+      plannedInstallmentsTotal: 1136.68,
+      payables: [
+        settled(9001, { sourceInvoiceId: 501 }),
+        payable(9002, { sourceInvoiceId: 502, description: "CANCELADO" }),
+      ],
+      automatic: [
+        { payableExternalId: 9001, method: "DIRECT_NOMUS_NFE", evidence: "nf" },
+        { payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" },
+      ],
+      persisted: [
+        persisted(9001, { installmentIndex: 0 }),
+        persisted(9002, { installmentIndex: 0 }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.totals.linkedCount, 1);
+    assert.equal(view.totals.paidAmount, 1136.68);
+    assert.equal(view.fullySettled, true);
+    assert.equal(view.financialStatus, "PAID");
+  });
+
   it("título vencido, suspenso e parcialmente pago têm status próprios", () => {
     const rows = [
       payable(9001, { dueDate: localDate("2026-10-01") }),

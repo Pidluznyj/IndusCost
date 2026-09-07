@@ -382,7 +382,8 @@ export function summarizeConfirmedPayables(rows: ConfirmedPayableSnapshot[]): {
   let confirmedAmount = 0;
   let paidAmount = 0;
   let openAmount = 0;
-  let allSettled = rows.length > 0;
+  let activeCount = 0;
+  let allSettled = true;
   let anyPaid = false;
   let anyOpen = false;
   for (const row of rows) {
@@ -401,6 +402,10 @@ export function summarizeConfirmedPayables(rows: ConfirmedPayableSnapshot[]): {
       nomusStatus: row.nomusStatus,
       suspendPayment: row.suspendPayment,
     });
+    // Cancelado permanece no array de títulos (visível), mas não infla vinculado/pago/aberto
+    // nem marca o pedido como quitado — mesma política da aba Financeiro.
+    if (normalized.isCancelled) continue;
+    activeCount += 1;
     confirmedAmount += normalized.amountPayable;
     paidAmount += normalized.realizedAmount;
     openAmount += normalized.openAmount;
@@ -409,11 +414,11 @@ export function summarizeConfirmedPayables(rows: ConfirmedPayableSnapshot[]): {
     if (normalized.isOpen) anyOpen = true;
   }
   return {
-    count: rows.length,
+    count: activeCount,
     confirmedAmount: Math.round(confirmedAmount * 100) / 100,
     paidAmount: Math.round(paidAmount * 100) / 100,
     openAmount: Math.round(openAmount * 100) / 100,
-    allSettled,
+    allSettled: activeCount > 0 && allSettled,
     anyPaid,
     anyOpen,
     hasBoletoDocument: false,

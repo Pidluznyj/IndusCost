@@ -284,6 +284,41 @@ describe("nomusPurchaseOrder360 financeiro", () => {
     );
   });
 
+  it("títulos cancelados não inflam vinculado/pago e não marcam quitado na listagem/360", () => {
+    const cancelled = payable({ externalId: 9002, description: "CANCELADO", amountPayable: 5000, amountPaid: 0, balancePayable: 5000 });
+    const onlyCancelled = summarizeConfirmedPayables([cancelled]);
+    assert.equal(onlyCancelled.count, 0);
+    assert.equal(onlyCancelled.confirmedAmount, 0);
+    assert.equal(onlyCancelled.paidAmount, 0);
+    assert.equal(onlyCancelled.allSettled, false);
+    assert.equal(
+      classifyPurchaseOrderFinancialStatus({
+        plannedCount: 1,
+        confirmedCount: onlyCancelled.count,
+        confirmedAmount: onlyCancelled.confirmedAmount,
+        allSettled: onlyCancelled.allSettled,
+        anyPaid: onlyCancelled.anyPaid,
+        anyOpen: onlyCancelled.anyOpen,
+      }),
+      "PLANNED_ONLY"
+    );
+
+    const activePlusCancelled = summarizeConfirmedPayables([
+      payable({ amountPayable: 1136.68, amountPaid: 0, balancePayable: 1136.68 }),
+      cancelled,
+    ]);
+    assert.equal(activePlusCancelled.count, 1);
+    assert.equal(activePlusCancelled.confirmedAmount, 1136.68);
+
+    const paidPlusCancelled = summarizeConfirmedPayables([
+      payable({ amountPaid: 1136.68, balancePayable: 0 }),
+      cancelled,
+    ]);
+    assert.equal(paidPlusCancelled.count, 1);
+    assert.equal(paidPlusCancelled.paidAmount, 1136.68);
+    assert.equal(paidPlusCancelled.allSettled, true);
+  });
+
   it("5. supplier igual sem NFe link NÃO vincula CP", () => {
     const bundle = buildPurchaseOrderFinancialBundle({
       rawPayload: PC00612_RAW,

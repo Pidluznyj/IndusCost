@@ -35,9 +35,34 @@ leitura). Camadas 4–5 persistem em `NomusPurchaseOrderPayableLink` e geram
 para o mesmo título (o humano pode ter corrigido a parcela).
 
 Mesmo fornecedor, sozinho, nunca vincula: se faltar valor ou vencimento
-idênticos, o título simplesmente não aparece como sugestão. Título vinculado a
-outro pedido é sinalizado ("Em outro pedido") para evitar contar o pagamento
-duas vezes.
+idênticos, o título simplesmente não aparece como sugestão.
+
+## Cardinalidade título AP ↔ pedido
+
+O espelho `NomusAccountsPayable` **não** carrega `idPedidoCompra`. Não há
+prova, no schema nem no sync atuais, de que um título pertence a um único
+pedido ou de que um único boleto possa liquidar vários pedidos com alocação
+de valor.
+
+O que o modelo faz hoje:
+
+- unique composta `nomusPurchaseOrderId + payableExternalId` — impede o mesmo
+  par duas vezes;
+- **não** há unique em `payableExternalId` sozinho — o mesmo título pode ter
+  dois vínculos confirmados em pedidos diferentes;
+- o servidor só recusa `PAYABLE_ALREADY_LINKED` no mesmo pedido (P2002);
+- a UI alerta "Em outro pedido" e ainda oferece confirmação.
+
+Isso é um risco de dupla contagem se o mesmo pagamento de R$ 10.000 for
+confirmado em PO A e PO B: cada pedido soma 10.000 no próprio total
+vinculado/pago. Agregações que somam esses totais entre pedidos duplicam.
+
+Enquanto a cardinalidade oficial não for comprovada (ou uma regra de alocação
+for definida), **não** se adiciona unique indevida nem se bloqueia o segundo
+vínculo no backend. A decisão fica para a integração.
+
+Título vinculado a outro pedido é sinalizado ("Em outro pedido") para o
+operador conferir.
 
 ## Situação derivada
 
@@ -46,9 +71,11 @@ títulos vinculados àquela parcela (cancelados ficam visíveis, mas não somam)
 
 Por pedido: `financialStatus` (`PLANNED_ONLY`, `PARTIALLY_CONFIRMED`,
 `CONFIRMED`, `PARTIALLY_PAID`, `PAID`, `NO_FINANCIAL_DATA`) e `fullySettled`
-(todos os títulos vinculados não cancelados estão baixados → "Quitado").
+(todos os títulos vinculados **não cancelados** estão baixados → "Quitado").
 A listagem de Pedidos Nomus e a ficha 360 usam os mesmos títulos (NF-e +
-confirmados), via `loadConfirmedPayableSnapshotsByOrder`.
+confirmados), via `loadConfirmedPayableSnapshotsByOrder`, e
+`summarizeConfirmedPayables` ignora cancelados nos totais (o título continua
+visível na aba Financeiro).
 
 Avisos: total vinculado diferente do planejado; título persistido que sumiu do
 espelho; título também vinculado a outro pedido.
