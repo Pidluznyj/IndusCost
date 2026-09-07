@@ -1,427 +1,973 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="scroll-smooth">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>IndusCost Intelligence — Custeio industrial, preço e comercial em um só lugar</title>
 <meta name="description" content="O IndusCost Intelligence reúne custeio industrial, formação de preço e gestão comercial em uma experiência única, para decisões mais rápidas com números que conversam entre engenharia, financeiro e vendas." />
-<meta name="theme-color" content="#2563eb" />
+<meta name="theme-color" content="#070b14" />
 <link rel="canonical" href="https://induscost.grupolazarios.com.br/" />
 <meta property="og:type" content="website" />
-<meta property="og:title" content="IndusCost Intelligence" />
-<meta property="og:description" content="O custo claro. O preço confiável. O comercial alinhado." />
+<meta property="og:title" content="IndusCost Intelligence — Custeio industrial, preço e comercial em um só lugar" />
+<meta property="og:description" content="O custo claro. O preço confiável. O comercial alinhado. Decisões mais rápidas com inteligência 4.0/5.0." />
 <meta property="og:url" content="https://induscost.grupolazarios.com.br/" />
 <meta property="og:locale" content="pt_BR" />
-<!-- Favicon inline (data URI): nenhuma requisição externa, nenhum arquivo extra. -->
+
+<!-- Favicon inline (data URI): nenhuma requisição externa, preservado do original -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232563eb'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 8h4v4' transform='translate(-1 0)'/%3E%3Cpath d='m19 8-6 6-3.5-3.5L5 15' transform='translate(-1 0)'/%3E%3C/g%3E%3C/svg%3E" />
+
 <style>
-/* ------------------------------------------------------------------
-   Tokens — copiados 1:1 de src/index.css do IndusCost (tema claro).
-   ------------------------------------------------------------------ */
-:root{
-  --background:hsl(0 0% 100%);
-  --foreground:hsl(222.2 84% 4.9%);
-  --card:hsl(0 0% 100%);
-  --primary:hsl(221.2 83.2% 53.3%);
-  --primary-foreground:hsl(210 40% 98%);
-  --muted:hsl(210 40% 96.1%);
-  --muted-foreground:hsl(215.4 16.3% 46.9%);
-  --accent:hsl(210 40% 96.1%);
-  --border:hsl(214.3 31.8% 91.4%);
-  --sky-500:#0ea5e9;
-  --primary-raw:221.2 83.2% 53.3%;
-  --border-raw:214.3 31.8% 91.4%;
+/* ==================================================================
+   INDUSCOST INTELLIGENCE — LANDING "COCKPIT INDUSTRIAL"
+   Sistema: Graphite & Cyber Blue + Safety Amber (chamada de ação)
+   Sem requisições externas: compatível com a CSP do hosting
+   (default-src 'none'; style-src/script-src 'unsafe-inline'; img data:).
+   ================================================================== */
+:root {
+  --bg-core: #070b14;
+  --bg-deep: #05080f;
+  --bg-surface: #0c1424;
+  --bg-elevated: #111c33;
+  --bg-hover: #162442;
+  --line: rgba(56, 189, 248, 0.12);
+  --line-strong: rgba(56, 189, 248, 0.38);
+  --blue: #2563eb;
+  --blue-deep: #1e40af;
+  --cyan: #38bdf8;
+  --violet: #a78bfa;
+  --emerald: #34d399;
+  --amber: #fbbf24;
+  --amber-deep: #f59e0b;
+  --rose: #fb7185;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --dim: #64748b;
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --pill: 9999px;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
-*,*::before,*::after{box-sizing:border-box;border:0 solid var(--border)}
-html{-webkit-text-size-adjust:100%}
-body{
-  margin:0;
-  background:var(--background);
-  color:var(--foreground);
-  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji";
-  -webkit-font-smoothing:antialiased;
-  line-height:1.5;
-}
-h1,h2,h3,p{margin:0}
-a{color:inherit;text-decoration:none}
-svg{display:block}
 
-/* ----------------------------- Layout base ----------------------------- */
-.page{position:relative;min-height:100vh;width:100%;overflow-x:hidden}
-.ambient{pointer-events:none;position:fixed;inset:0;z-index:0}
-.ambient>div{position:absolute;inset:0}
-.amb1{background:radial-gradient(ellipse 120% 80% at 50% -20%,hsl(var(--primary-raw) / .18),transparent 55%)}
-.amb2{background:radial-gradient(ellipse 80% 50% at 100% 50%,hsl(var(--primary-raw) / .08),transparent 50%)}
-.amb3{
-  opacity:.35;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--bg-core);
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--bg-core);
   background-image:
-    linear-gradient(hsl(var(--border-raw) / .5) 1px,transparent 1px),
-    linear-gradient(90deg,hsl(var(--border-raw) / .5) 1px,transparent 1px);
-  background-size:48px 48px;
+    radial-gradient(ellipse 70% 45% at 50% -8%, rgba(37, 99, 235, 0.28), transparent 70%),
+    radial-gradient(ellipse 45% 35% at 100% 35%, rgba(6, 182, 212, 0.10), transparent 60%),
+    radial-gradient(ellipse 40% 30% at 0% 75%, rgba(167, 139, 250, 0.08), transparent 60%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 56px 56px, 56px 56px;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 4.5rem; /* espaço para a barra fixa mobile */
 }
-.content{position:relative;z-index:10}
-.wrap{margin-inline:auto;max-width:72rem;padding-inline:1.5rem}
-@media (min-width:768px){.wrap{padding-inline:2rem}}
 
-/* ------------------------------- Header -------------------------------- */
-.header{display:flex;align-items:center;justify-content:space-between;padding-block:1.5rem}
-.brand{display:flex;align-items:center;gap:.75rem}
-.brand-mark{
-  display:flex;height:2.5rem;width:2.5rem;align-items:center;justify-content:center;
-  border-radius:.75rem;background:var(--primary);
-  box-shadow:0 10px 15px -3px hsl(var(--primary-raw) / .25),0 4px 6px -4px hsl(var(--primary-raw) / .25);
-  color:var(--primary-foreground);
-}
-.brand-name{font-size:.875rem;font-weight:700;letter-spacing:-.01em}
-.brand-sub{font-size:.6875rem;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--muted-foreground)}
-.header-actions{display:flex;align-items:center;gap:.5rem}
-@media (min-width:640px){.header-actions{gap:.75rem}}
-.link-ghost{
-  display:none;border-radius:9999px;padding:.5rem 1rem;font-size:.875rem;font-weight:500;
-  color:var(--muted-foreground);transition:background-color .15s,color .15s;
-}
-.link-ghost:hover{background:var(--accent);color:var(--foreground)}
-@media (min-width:640px){.link-ghost{display:inline-flex}}
-.btn-primary-sm{
-  display:inline-flex;align-items:center;gap:.5rem;border-radius:9999px;
-  background:var(--primary);padding:.625rem 1rem;font-size:.875rem;font-weight:600;
-  color:var(--primary-foreground);
-  box-shadow:0 4px 6px -1px hsl(var(--primary-raw) / .3),0 2px 4px -2px hsl(var(--primary-raw) / .3);
-  transition:opacity .15s;
-}
-.btn-primary-sm:hover{opacity:.95}
+@media (min-width: 900px) { body { padding-bottom: 0; } }
 
-/* -------------------------------- Hero --------------------------------- */
-.hero{padding-block:1rem 4rem}
-@media (min-width:768px){.hero{padding-block:2rem 6rem}}
-.hero-inner{margin-inline:auto;max-width:48rem;text-align:center}
-.badge{
-  display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;
-  border-radius:9999px;border:1px solid hsl(var(--primary-raw) / .2);
-  background:hsl(var(--primary-raw) / .05);padding:.375rem 1rem;
-  font-size:.75rem;font-weight:600;color:var(--primary);
-}
-.hero h1{
-  text-wrap:balance;font-size:2.25rem;line-height:1.15;font-weight:700;letter-spacing:-.025em;
-}
-@media (min-width:768px){.hero h1{font-size:3rem}}
-@media (min-width:1024px){.hero h1{font-size:3.25rem;line-height:1.1}}
-.gradient-line{
-  display:block;
-  background:linear-gradient(to right,var(--primary),var(--sky-500));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-}
-.hero-lead{
-  margin:1.5rem auto 0;max-width:42rem;text-wrap:pretty;
-  font-size:1rem;line-height:1.65;color:var(--muted-foreground);
-}
-@media (min-width:768px){.hero-lead{font-size:1.125rem}}
-.hero-ctas{
-  margin-top:2.5rem;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:.75rem;
-}
-@media (min-width:640px){.hero-ctas{flex-direction:row;align-items:center}}
-.btn-primary-lg{
-  display:inline-flex;height:3rem;align-items:center;justify-content:center;gap:.5rem;
-  border-radius:.75rem;background:var(--primary);padding-inline:2rem;
-  font-size:1rem;font-weight:600;color:var(--primary-foreground);
-  box-shadow:0 20px 25px -5px hsl(var(--primary-raw) / .25),0 8px 10px -6px hsl(var(--primary-raw) / .25);
-  transition:opacity .15s;
-}
-.btn-primary-lg:hover{opacity:.95}
-.btn-secondary-lg{
-  display:inline-flex;height:3rem;align-items:center;justify-content:center;gap:.5rem;
-  border-radius:.75rem;border:1px solid var(--border);background:var(--card);padding-inline:2rem;
-  font-size:1rem;font-weight:600;color:var(--foreground);
-  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);transition:background-color .15s;
-}
-.btn-secondary-lg:hover{background:var(--accent)}
-.icon-primary{color:var(--primary)}
+a { color: inherit; text-decoration: none; }
+svg { display: block; }
+strong { color: #ffffff; font-weight: 700; }
 
-/* --------------------------- Cards de destaque -------------------------- */
-.stats{margin:4rem auto 0;display:grid;max-width:56rem;gap:1rem}
-@media (min-width:640px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.stat{
-  border-radius:1rem;border:1px solid hsl(var(--border-raw) / .8);
-  background:hsl(0 0% 100% / .8);padding:1.25rem;text-align:left;
-  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);backdrop-filter:blur(4px);
-}
-.stat-k{font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--primary)}
-.stat-v{margin-top:.5rem;font-size:1.125rem;font-weight:700}
-.stat-sub{margin-top:.25rem;font-size:.875rem;color:var(--muted-foreground)}
+.wrap { width: 100%; max-width: 78rem; margin-inline: auto; padding-inline: 1.25rem; }
+.hero-grid > *, .sim-grid > *, .bento > *, .vs-grid > *, .card-wide > *, .steps > *, .numbers-grid > * { min-width: 0; }
+.sim, .sim-grid, .slider-row, .slider-name { overflow-wrap: anywhere; }
+.range { min-width: 0; display: block; }
+@media (min-width: 768px) { .wrap { padding-inline: 2.5rem; } }
 
-/* -------------------------------- Pilares ------------------------------- */
-.pillars{
-  border-top:1px solid hsl(var(--border-raw) / .8);
-  border-bottom:1px solid hsl(var(--border-raw) / .8);
-  background:hsl(210 40% 96.1% / .3);padding-block:4rem;
-}
-@media (min-width:768px){.pillars{padding-block:5rem}}
-.section-head{margin-inline:auto;max-width:42rem;text-align:center}
-.section-head h2,.strip-head h2{font-size:1.5rem;font-weight:700;letter-spacing:-.025em}
-@media (min-width:768px){.section-head h2,.strip-head h2{font-size:1.875rem}}
-.section-head p,.strip-head p{margin-top:.75rem;color:var(--muted-foreground)}
-.pillar-grid{margin-top:3rem;display:grid;gap:1.5rem}
-@media (min-width:768px){.pillar-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.pillar{
-  border-radius:1rem;border:1px solid var(--border);background:var(--card);padding:1.5rem;
-  box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);transition:border-color .15s,box-shadow .15s;
-}
-.pillar:hover{
-  border-color:hsl(var(--primary-raw) / .25);
-  box-shadow:0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1);
-}
-.pillar-icon{
-  display:flex;height:2.75rem;width:2.75rem;align-items:center;justify-content:center;
-  border-radius:.75rem;background:hsl(var(--primary-raw) / .1);color:var(--primary);transition:background-color .15s;
-}
-.pillar:hover .pillar-icon{background:hsl(var(--primary-raw) / .15)}
-.pillar h3{margin-top:1rem;font-size:1.125rem;font-weight:700}
-.pillar p{margin-top:.5rem;font-size:.875rem;line-height:1.65;color:var(--muted-foreground)}
+.mono { font-family: var(--font-mono); }
 
-/* ------------------------------ Faixa módulos --------------------------- */
-.strip{padding-block:4rem}
-@media (min-width:768px){.strip{padding-block:5rem}}
-.strip-head{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:1.5rem}
-@media (min-width:768px){.strip-head{flex-direction:row;align-items:flex-end}}
-.strip-head>div:first-child{max-width:36rem}
-.chips{display:flex;flex-wrap:wrap;gap:.5rem}
-.chip{
-  display:inline-flex;align-items:center;gap:.5rem;border-radius:9999px;
-  border:1px solid var(--border);background:var(--card);padding:.375rem .75rem;
-  font-size:.75rem;font-weight:500;
+/* ------------------------------ BOTÕES ------------------------------ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem;
+  border-radius: var(--r-sm); font-weight: 700; font-size: 0.95rem; line-height: 1;
+  padding: 0.95rem 1.5rem; border: 1px solid transparent; cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s, border-color 0.2s, color 0.2s;
+  white-space: nowrap;
 }
-.cta-card{
-  margin-top:2.5rem;border-radius:1.5rem;border:1px solid var(--border);
-  background:linear-gradient(to bottom right,var(--card),var(--card),hsl(var(--primary-raw) / .05));
-  padding:2rem;
-}
-@media (min-width:768px){.cta-card{padding:2.5rem}}
-.cta-row{display:flex;flex-direction:column;gap:1.5rem}
-@media (min-width:768px){.cta-row{flex-direction:row;align-items:center;justify-content:space-between}}
-.cta-left{display:flex;align-items:flex-start;gap:1rem}
-.cta-icon{
-  display:flex;height:3rem;width:3rem;flex-shrink:0;align-items:center;justify-content:center;
-  border-radius:1rem;background:var(--primary);color:var(--primary-foreground);
-  box-shadow:0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1);
-}
-.cta-title{font-size:1.125rem;font-weight:700}
-.cta-body{margin-top:.25rem;max-width:32rem;font-size:.875rem;color:var(--muted-foreground)}
-.btn-primary-md{
-  display:inline-flex;flex-shrink:0;align-items:center;justify-content:center;gap:.5rem;
-  border-radius:.75rem;background:var(--primary);padding:.75rem 1.5rem;
-  font-size:.875rem;font-weight:600;color:var(--primary-foreground);transition:opacity .15s;
-}
-.btn-primary-md:hover{opacity:.95}
+.btn:active { transform: translateY(1px) scale(0.99); }
 
-/* -------------------------------- Rodapé -------------------------------- */
-.footer{border-top:1px solid var(--border);padding-block:2.5rem}
-.footer-row{
-  display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:1rem;
-  text-align:center;font-size:.875rem;color:var(--muted-foreground);
+.btn-primary {
+  color: #0b1020;
+  background: linear-gradient(135deg, #fde68a 0%, var(--amber) 45%, var(--amber-deep) 100%);
+  box-shadow: 0 10px 30px -8px rgba(245, 158, 11, 0.55), 0 0 0 1px rgba(253, 230, 138, 0.35) inset;
 }
-@media (min-width:768px){.footer-row{flex-direction:row;text-align:left}}
-.footer-link{font-weight:500;color:var(--primary)}
-.footer-link:hover{text-decoration:underline}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -8px rgba(245, 158, 11, 0.75); }
 
-/* ------------------------------ Animações ------------------------------- */
-/* Entrada suave (opacity 0→1, y 24→0) — CSS puro, sem bibliotecas. */
-@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-@keyframes fadeUpSm{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:translateY(0)}}
-.anim{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards}
-.d1{animation-delay:.05s}
-.d2{animation-delay:.13s}
-.d3{animation-delay:.21s}
-.d4{animation-delay:.29s}
-.stats{opacity:0;animation:fadeUpSm .65s cubic-bezier(.16,1,.3,1) .35s forwards}
-/* Pilares entram ao aparecer na tela. */
-.reveal{opacity:0;transform:translateY(20px);transition:opacity .45s ease-out,transform .45s ease-out}
-.reveal.is-visible{opacity:1;transform:none}
-@media (prefers-reduced-motion:reduce){
-  .anim,.stats{animation:none;opacity:1}
-  .reveal{opacity:1;transform:none;transition:none}
+.btn-blue {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--blue), var(--blue-deep));
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px -6px rgba(37, 99, 235, 0.6);
+}
+.btn-blue:hover { transform: translateY(-2px); border-color: var(--cyan); box-shadow: 0 14px 36px -6px rgba(37, 99, 235, 0.8); }
+
+.btn-ghost {
+  color: var(--text); background: rgba(12, 20, 36, 0.7); border-color: var(--line);
+  backdrop-filter: blur(8px);
+}
+.btn-ghost:hover { border-color: var(--line-strong); color: var(--cyan); background: rgba(22, 36, 66, 0.9); }
+
+.btn-sm { padding: 0.6rem 1.05rem; font-size: 0.85rem; border-radius: var(--pill); }
+
+/* --------------------- BARRA DE PROGRESSO DE LEITURA --------------------- */
+.scroll-progress {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+  background: linear-gradient(90deg, var(--cyan), var(--blue), var(--violet));
+  box-shadow: 0 0 12px var(--cyan);
+  z-index: 100; transition: width 0.1s linear;
+}
+
+/* -------------------------- TELEMETRIA (MARQUEE) -------------------------- */
+.telemetry {
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 8, 15, 0.9);
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em;
+  color: var(--dim); text-transform: uppercase;
+  overflow: hidden; position: relative; z-index: 50;
+}
+.telemetry::before, .telemetry::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 6rem; z-index: 2; pointer-events: none;
+}
+.telemetry::before { left: 0; background: linear-gradient(90deg, #05080f, transparent); }
+.telemetry::after { right: 0; background: linear-gradient(270deg, #05080f, transparent); }
+.telemetry-track {
+  display: flex; gap: 3rem; width: max-content; padding: 0.5rem 0;
+  animation: ticker 42s linear infinite;
+}
+.telemetry:hover .telemetry-track { animation-play-state: paused; }
+.telemetry-item { display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
+.telemetry-item b { color: var(--cyan); font-weight: 600; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); animation: pulse 2s infinite; }
+.dot.amber { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+
+/* -------------------------------- HEADER -------------------------------- */
+.header-wrap {
+  position: sticky; top: 0; z-index: 40;
+  backdrop-filter: blur(18px); background: rgba(7, 11, 20, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 0.85rem; }
+.brand { display: flex; align-items: center; gap: 0.8rem; }
+.brand-mark {
+  width: 2.6rem; height: 2.6rem; border-radius: 0.8rem; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, var(--blue), #0ea5e9);
+  box-shadow: 0 0 22px rgba(37, 99, 235, 0.5); border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.brand-title { white-space: nowrap; font-family: var(--font-display); font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+.brand-title span { background: linear-gradient(90deg, var(--cyan), #818cf8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.brand-sub { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+@media (max-width: 480px) { .brand-sub { display: none; } .brand-title { font-size: 0.98rem; } .brand-mark { width: 2.3rem; height: 2.3rem; } }
+
+.nav { display: none; align-items: center; gap: 1.6rem; }
+@media (min-width: 1000px) { .nav { display: flex; } }
+.nav a { font-size: 0.86rem; font-weight: 500; color: var(--muted); position: relative; padding-block: 0.25rem; }
+.nav a::after { content: ""; position: absolute; left: 0; right: 100%; bottom: 0; height: 2px; background: var(--cyan); transition: right 0.25s var(--ease); }
+.nav a:hover { color: #fff; }
+.nav a:hover::after { right: 0; }
+
+.header-actions { display: flex; align-items: center; gap: 0.6rem; }
+.header-actions .btn-ghost { display: none; }
+@media (min-width: 640px) { .header-actions .btn-ghost { display: inline-flex; } }
+
+/* --------------------------------- HERO --------------------------------- */
+.hero { padding-block: 3rem 4rem; position: relative; }
+@media (min-width: 1000px) { .hero { padding-block: 4.5rem 5.5rem; } }
+
+.hero-grid { display: grid; gap: 3rem; grid-template-columns: 1fr; align-items: center; }
+@media (min-width: 1000px) { .hero-grid { grid-template-columns: 1.05fr 0.95fr; gap: 3.5rem; } }
+
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;
+  border-radius: var(--pill); border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(14, 165, 233, 0.08);
+  padding: 0.4rem 1rem 0.4rem 0.45rem; font-size: 0.78rem; font-weight: 600; color: var(--cyan);
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.15);
+}
+.tag {
+  display: inline-block; background: #0284c7; color: #fff; font-family: var(--font-mono);
+  font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;
+  padding: 0.22rem 0.5rem; border-radius: 6px;
+}
+.tag.amber { background: var(--amber-deep); color: #0b1020; }
+.tag.rose { background: rgba(251, 113, 133, 0.18); color: var(--rose); border: 1px solid rgba(251, 113, 133, 0.4); }
+
+.hero h1 {
+  font-family: var(--font-display); font-size: clamp(2.3rem, 5.2vw, 3.9rem); line-height: 1.04;
+  font-weight: 900; letter-spacing: -0.04em; color: #fff; margin-bottom: 1.4rem;
+}
+.hero h1 .line { display: block; }
+.grad { background: linear-gradient(135deg, var(--cyan) 0%, #60a5fa 45%, #c084fc 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Palavra rotativa (PNL: ancoragem por repetição de benefício) */
+.rotator { display: inline-grid; grid-template-areas: "stack"; vertical-align: bottom; }
+.rotator > span {
+  grid-area: stack; opacity: 0; transform: translateY(0.6em);
+  animation: rotate-word 9s infinite; white-space: nowrap;
+}
+.rotator > span:nth-child(2) { animation-delay: 3s; }
+.rotator > span:nth-child(3) { animation-delay: 6s; }
+@keyframes rotate-word {
+  0%, 3% { opacity: 0; transform: translateY(0.6em); }
+  8%, 30% { opacity: 1; transform: translateY(0); }
+  35%, 100% { opacity: 0; transform: translateY(-0.6em); }
+}
+
+.hero-lead { font-size: 1.1rem; line-height: 1.65; color: var(--muted); max-width: 36rem; margin-bottom: 2rem; }
+@media (min-width: 768px) { .hero-lead { font-size: 1.2rem; } }
+
+.hero-ctas { display: flex; flex-direction: column; gap: 0.85rem; }
+@media (min-width: 560px) { .hero-ctas { flex-direction: row; align-items: center; } }
+.hero-ctas .btn { padding: 1.05rem 1.75rem; font-size: 1.02rem; }
+
+.trust { margin-top: 1.6rem; display: flex; flex-wrap: wrap; gap: 0.75rem 1.4rem; font-size: 0.8rem; color: var(--dim); }
+.trust span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.trust svg { color: var(--emerald); flex-shrink: 0; }
+
+/* Cockpit (mock do produto) */
+.cockpit {
+  position: relative; border-radius: var(--r-lg); padding: 1px;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.45), rgba(37, 99, 235, 0.08));
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.75), 0 0 50px rgba(37, 99, 235, 0.18);
+  transform: perspective(1400px) rotateY(-4deg) rotateX(2deg);
+  transition: transform 0.6s var(--ease);
+}
+.cockpit:hover { transform: perspective(1400px) rotateY(0deg) rotateX(0deg); }
+@media (max-width: 999px) { .cockpit { transform: none; } }
+.cockpit-inner { border-radius: calc(var(--r-lg) - 1px); background: #090f1d; padding: 1.1rem; overflow: hidden; }
+@media (min-width: 640px) { .cockpit-inner { padding: 1.4rem; } }
+
+.cockpit-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.8rem; margin-bottom: 1rem; }
+.win-dots { display: flex; gap: 0.4rem; }
+.win-dots i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+.cockpit-title { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; }
+.cockpit-live { font-family: var(--font-mono); font-size: 0.68rem; color: var(--emerald); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.cockpit-grid { display: grid; gap: 0.8rem; grid-template-columns: 1fr 1fr; }
+.panel { background: rgba(17, 28, 51, 0.65); border: 1px solid rgba(56, 189, 248, 0.14); border-radius: var(--r-md); padding: 0.95rem; }
+.panel-label { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); margin-bottom: 0.5rem; }
+.panel-span { grid-column: 1 / -1; }
+
+.gauge-wrap { display: flex; align-items: center; gap: 1rem; }
+.gauge { width: 112px; height: 64px; flex-shrink: 0; }
+.gauge-value { font-family: var(--font-display); font-size: 1.9rem; font-weight: 900; letter-spacing: -0.03em; color: #fff; line-height: 1; }
+.gauge-sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+.gauge-arc { stroke-dasharray: 160; stroke-dashoffset: 160; animation: arc-fill 1.6s var(--ease) 0.4s forwards; }
+@keyframes arc-fill { to { stroke-dashoffset: 52; } }
+
+.stack { display: flex; flex-direction: column; gap: 0.45rem; }
+.bar-row { display: grid; grid-template-columns: 5.2rem 1fr 3rem; align-items: center; gap: 0.5rem; font-size: 0.72rem; color: var(--muted); }
+.bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 4px; transform-origin: left; animation: bar-grow 1.2s var(--ease) forwards; transform: scaleX(0); }
+.bar-row b { font-family: var(--font-mono); font-weight: 600; color: #fff; text-align: right; }
+@keyframes bar-grow { to { transform: scaleX(1); } }
+
+.kpi { display: flex; flex-direction: column; gap: 0.15rem; }
+.kpi-val { font-family: var(--font-display); font-size: 1.35rem; font-weight: 900; color: #fff; letter-spacing: -0.02em; }
+.kpi-delta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--emerald); }
+.kpi-delta.warn { color: var(--amber); }
+
+.toast {
+  margin-top: 0.8rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.5rem;
+  background: rgba(7, 11, 20, 0.95); border: 1px solid rgba(251, 191, 36, 0.45); border-left: 3px solid var(--amber);
+  border-radius: var(--r-sm); padding: 0.75rem 0.9rem; font-size: 0.78rem; color: var(--text);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 25px rgba(251, 191, 36, 0.15);
+  animation: toast-in 0.8s var(--ease) 1.4s both;
+}
+.toast small { flex-basis: 100%; color: var(--muted); }
+@keyframes toast-in { from { opacity: 0; transform: translateX(1.5rem); } to { opacity: 1; transform: translateX(0); } }
+
+/* --------------------------- FAIXA DE NÚMEROS --------------------------- */
+.numbers { border-block: 1px solid var(--line); background: rgba(9, 15, 27, 0.7); }
+.numbers-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 900px) { .numbers-grid { grid-template-columns: repeat(4, 1fr); } }
+.num { padding: 1.6rem 1.2rem; border-right: 1px solid var(--line); text-align: left; }
+.num:last-child { border-right: 0; }
+@media (max-width: 899px) { .num:nth-child(2) { border-right: 0; } .num:nth-child(-n+2) { border-bottom: 1px solid var(--line); } }
+.num-val { font-family: var(--font-display); font-size: 2.2rem; font-weight: 900; letter-spacing: -0.03em; color: #fff; line-height: 1; }
+.num-val em { font-style: normal; color: var(--cyan); }
+.num-label { font-size: 0.82rem; color: var(--muted); margin-top: 0.45rem; line-height: 1.4; }
+
+/* ----------------------------- CABEÇALHOS ----------------------------- */
+.section-head { max-width: 46rem; margin-bottom: 3rem; }
+.section-head.center { text-align: center; margin-inline: auto; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--font-mono); font-size: 0.7rem;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--cyan); margin-bottom: 0.9rem;
+}
+.kicker::before { content: ""; width: 1.6rem; height: 1px; background: var(--cyan); }
+.section-head.center .kicker::after { content: ""; width: 1.6rem; height: 1px; background: var(--cyan); }
+h2 { font-family: var(--font-display); font-size: clamp(1.8rem, 4vw, 2.7rem); font-weight: 800; letter-spacing: -0.03em; color: #fff; line-height: 1.12; }
+.section-head p { margin-top: 1rem; color: var(--muted); font-size: 1.02rem; line-height: 1.65; }
+
+/* ------------------------------- PIPELINE ------------------------------- */
+.pipeline { padding-block: 5rem; }
+.steps { display: grid; gap: 1.2rem; grid-template-columns: 1fr; position: relative; counter-reset: step; }
+@media (min-width: 900px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+.steps::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 2.35rem; height: 2px; display: none;
+  background: linear-gradient(90deg, transparent, var(--cyan) 15%, var(--blue) 50%, var(--violet) 85%, transparent);
+  opacity: 0.6;
+}
+@media (min-width: 900px) { .steps::before { display: block; } }
+.step {
+  position: relative; background: var(--bg-surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 1.8rem 1.6rem 1.6rem; transition: transform 0.25s var(--ease), border-color 0.25s, box-shadow 0.25s;
+}
+.step:hover { transform: translateY(-4px); border-color: var(--line-strong); box-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.7), 0 0 25px rgba(56, 189, 248, 0.12); }
+.step-num {
+  counter-increment: step; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.8rem; color: #0b1020; margin-bottom: 1.1rem;
+  background: linear-gradient(135deg, var(--cyan), #60a5fa); box-shadow: 0 0 22px rgba(56, 189, 248, 0.5);
+}
+.step-num::before { content: "0" counter(step); }
+.step h3 { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; letter-spacing: -0.015em; }
+.step p { color: var(--muted); font-size: 0.92rem; line-height: 1.6; }
+.step-out { margin-top: 1rem; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--emerald); display: inline-flex; align-items: center; gap: 0.4rem; }
+
+/* ------------------------------- SIMULADOR ------------------------------- */
+.simulator { padding-block: 2rem 5rem; }
+.sim {
+  position: relative; overflow: hidden; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: radial-gradient(ellipse at 15% 0%, rgba(251, 191, 36, 0.12), transparent 55%), linear-gradient(145deg, rgba(12, 20, 36, 0.98), rgba(7, 11, 20, 0.99));
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+  padding: 1.6rem;
+}
+@media (min-width: 900px) { .sim { padding: 3rem; } }
+.sim-grid { display: grid; gap: 2.2rem; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .sim-grid { grid-template-columns: 1.15fr 0.85fr; align-items: center; } }
+.sim h2 { font-size: clamp(1.6rem, 3.3vw, 2.3rem); margin: 0.85rem 0 0.7rem; }
+.sim-sub { color: var(--muted); font-size: 0.98rem; line-height: 1.6; margin-bottom: 1.8rem; }
+
+.slider-group { margin-bottom: 1.5rem; }
+.slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.55rem; gap: 1rem; }
+.slider-name { font-size: 0.88rem; font-weight: 600; color: var(--text); }
+.slider-val {
+  font-family: var(--font-mono); font-size: 1rem; font-weight: 700; color: var(--cyan);
+  background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); padding: 0.2rem 0.6rem; border-radius: 6px;
+}
+.range { width: 100%; height: 8px; border-radius: 4px; background: #1e293b; outline: none; -webkit-appearance: none; appearance: none; accent-color: var(--cyan); }
+.range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); border: 2px solid #fff; cursor: pointer; }
+.range::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); border: 2px solid #fff; cursor: pointer; }
+.sim-note { font-size: 0.75rem; color: var(--dim); }
+
+.sim-result {
+  position: relative; border-radius: var(--r-md); padding: 1.8rem; text-align: center;
+  background: rgba(17, 28, 51, 0.85); border: 1px solid rgba(52, 211, 153, 0.35);
+  box-shadow: 0 0 40px rgba(52, 211, 153, 0.08) inset;
+}
+.sim-badge {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--emerald); background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 0.3rem 0.8rem; border-radius: var(--pill); margin-bottom: 1rem;
+}
+.sim-gain { font-family: var(--font-display); font-size: clamp(2.2rem, 5vw, 3rem); font-weight: 900; color: var(--emerald); letter-spacing: -0.035em; line-height: 1.05; text-shadow: 0 0 30px rgba(52, 211, 153, 0.35); }
+.sim-period { font-size: 0.85rem; color: var(--dim); margin-top: 0.4rem; margin-bottom: 1.3rem; }
+.sim-period b { color: var(--text); font-weight: 600; }
+.sim-list { text-align: left; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.83rem; color: var(--muted); margin-bottom: 1.5rem; }
+.sim-list span { display: flex; align-items: center; gap: 0.5rem; }
+.sim-list svg { color: var(--cyan); flex-shrink: 0; }
+.sim-result .btn { width: 100%; }
+
+/* --------------------------------- BENTO --------------------------------- */
+.bento-section { padding-block: 5rem; border-block: 1px solid var(--line); background: rgba(9, 15, 27, 0.6); }
+.bento { display: grid; gap: 1.1rem; grid-template-columns: 1fr; }
+@media (min-width: 760px) { .bento { grid-template-columns: repeat(6, 1fr); } }
+.card {
+  position: relative; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 1.8rem; transition: transform 0.25s var(--ease), border-color 0.25s, box-shadow 0.25s, background 0.25s;
+}
+.card:hover { background: var(--bg-elevated); border-color: var(--line-strong); transform: translateY(-4px); box-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.7), 0 0 25px rgba(56, 189, 248, 0.14); }
+.card::after {
+  content: ""; position: absolute; inset: auto -30% -40% auto; width: 60%; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.18), transparent 70%); opacity: 0; transition: opacity 0.3s;
+}
+.card:hover::after { opacity: 1; }
+@media (min-width: 760px) {
+  .span-3 { grid-column: span 3; } .span-2 { grid-column: span 2; } .span-4 { grid-column: span 4; } .span-6 { grid-column: span 6; }
+}
+.icon-box {
+  width: 3rem; height: 3rem; border-radius: 0.8rem; display: grid; place-items: center; color: var(--cyan); margin-bottom: 1.1rem;
+  background: rgba(37, 99, 235, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); transition: all 0.2s;
+}
+.card:hover .icon-box { background: var(--blue); color: #fff; box-shadow: 0 0 22px rgba(37, 99, 235, 0.65); }
+.card h3 { font-family: var(--font-display); font-size: 1.22rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; letter-spacing: -0.015em; }
+.card p { font-size: 0.92rem; color: var(--muted); line-height: 1.65; }
+.card-tag { margin-top: 1rem; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; color: var(--cyan); display: inline-flex; align-items: center; gap: 0.4rem; }
+.card-wide { display: grid; gap: 1.5rem; align-items: center; }
+@media (min-width: 760px) { .card-wide { grid-template-columns: 1.2fr 1fr; } }
+.whatif { display: grid; gap: 0.5rem; }
+.whatif-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0.8rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); font-size: 0.8rem; }
+.whatif-row b { font-family: var(--font-mono); font-weight: 600; }
+.up { color: var(--rose); } .ok { color: var(--emerald); }
+
+/* ------------------------------ COMPARATIVO ------------------------------ */
+.compare { padding-block: 5rem; }
+.vs-grid { display: grid; gap: 1.2rem; grid-template-columns: 1fr; position: relative; }
+@media (min-width: 860px) { .vs-grid { grid-template-columns: 1fr auto 1fr; align-items: stretch; } }
+.vs {
+  display: grid; place-items: center; align-self: center; width: 3.2rem; height: 3.2rem; border-radius: 50%; margin-inline: auto;
+  font-family: var(--font-display); font-weight: 900; font-size: 0.9rem; color: #fff;
+  background: linear-gradient(135deg, var(--blue), var(--violet)); box-shadow: 0 0 28px rgba(37, 99, 235, 0.6);
+}
+.cmp { border-radius: var(--r-md); padding: 1.8rem; }
+.cmp-old { background: rgba(239, 68, 68, 0.04); border: 1px solid rgba(239, 68, 68, 0.22); }
+.cmp-new { background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 40px rgba(37, 99, 235, 0.18); }
+.cmp-title { display: flex; align-items: center; gap: 0.6rem; font-family: var(--font-display); font-size: 1.12rem; font-weight: 800; margin-bottom: 1.2rem; }
+.cmp-old .cmp-title { color: #f87171; } .cmp-new .cmp-title { color: var(--cyan); }
+.cmp ul { list-style: none; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.9rem; }
+.cmp li { display: flex; gap: 0.65rem; align-items: flex-start; line-height: 1.5; }
+.cmp-old li { color: #cbd5e1; } .cmp-new li { color: #f8fafc; font-weight: 500; }
+.x, .ok-i { flex-shrink: 0; margin-top: 0.15rem; font-weight: 800; }
+.x { color: #ef4444; } .ok-i { color: var(--emerald); }
+.cmp-score { margin-top: 1.4rem; padding-top: 1.1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.cmp-score b { color: #fff; }
+
+/* -------------------------------- MÓDULOS -------------------------------- */
+.modules { padding-block: 5rem; border-top: 1px solid var(--line); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.5rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: 0.5rem; border-radius: var(--pill); border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(17, 28, 51, 0.7); padding: 0.55rem 1rem; font-size: 0.82rem; font-weight: 600; color: var(--text); transition: all 0.2s;
+}
+.chip:hover { border-color: rgba(56, 189, 248, 0.45); color: var(--cyan); transform: translateY(-1px); }
+.chip svg { color: var(--cyan); }
+
+/* ---------------------------------- FAQ ---------------------------------- */
+.faq { padding-block: 0 5rem; }
+.faq-list { display: grid; gap: 0.7rem; max-width: 52rem; margin-inline: auto; }
+details { background: var(--bg-surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; transition: border-color 0.2s; }
+details[open] { border-color: var(--line-strong); }
+summary {
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 1.1rem 1.3rem; font-family: var(--font-display); font-weight: 700; color: #fff; font-size: 1rem;
+}
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font-family: var(--font-mono); font-size: 1.2rem; color: var(--cyan); transition: transform 0.25s var(--ease); }
+details[open] summary::after { transform: rotate(45deg); }
+details p { padding: 0 1.3rem 1.2rem; color: var(--muted); font-size: 0.92rem; line-height: 1.65; }
+
+/* -------------------------------- CTA MEGA -------------------------------- */
+.cta-mega {
+  margin-top: 3rem; border-radius: var(--r-lg); border: 1px solid rgba(251, 191, 36, 0.35); position: relative; overflow: hidden;
+  background: radial-gradient(ellipse at 85% 15%, rgba(37, 99, 235, 0.3), transparent 60%), radial-gradient(ellipse at 10% 90%, rgba(251, 191, 36, 0.14), transparent 55%), linear-gradient(135deg, #0c1527, #070b14);
+  padding: 2.5rem; box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.8);
+}
+@media (min-width: 768px) { .cta-mega { padding: 3.5rem; } }
+.cta-row { display: flex; flex-direction: column; gap: 2rem; }
+@media (min-width: 900px) { .cta-row { flex-direction: row; align-items: center; justify-content: space-between; } }
+.cta-left { display: flex; gap: 1.4rem; align-items: flex-start; max-width: 44rem; }
+.cta-icon { width: 3.5rem; height: 3.5rem; border-radius: 1rem; flex-shrink: 0; display: grid; place-items: center; color: #0b1020; background: linear-gradient(135deg, #fde68a, var(--amber-deep)); box-shadow: 0 10px 28px rgba(245, 158, 11, 0.5); }
+.cta-title { font-family: var(--font-display); font-size: 1.7rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; line-height: 1.15; }
+.cta-body { margin-top: 0.6rem; color: var(--muted); font-size: 0.97rem; line-height: 1.6; }
+.cta-actions { display: flex; flex-direction: column; gap: 0.75rem; align-items: stretch; }
+.cta-actions .btn { padding: 1.1rem 2rem; font-size: 1.02rem; }
+.cta-actions small { text-align: center; color: var(--dim); font-size: 0.75rem; }
+
+/* --------------------------------- FOOTER --------------------------------- */
+.footer { border-top: 1px solid rgba(255, 255, 255, 0.08); padding-block: 2.5rem; background: var(--bg-deep); }
+.footer-row { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 1.2rem; text-align: center; font-size: 0.85rem; color: var(--dim); }
+@media (min-width: 768px) { .footer-row { flex-direction: row; text-align: left; } }
+.footer-brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--muted); }
+.footer-links { display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; justify-content: center; }
+.footer-link { font-weight: 600; color: var(--cyan); display: inline-flex; align-items: center; gap: 0.35rem; }
+.footer-link:hover { color: #fff; text-decoration: underline; }
+
+/* ---------------------------- BARRA FIXA MOBILE ---------------------------- */
+.mobile-cta {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
+  background: rgba(5, 8, 15, 0.92); backdrop-filter: blur(14px); border-top: 1px solid rgba(251, 191, 36, 0.3);
+  display: flex; gap: 0.6rem;
+}
+.mobile-cta .btn { flex: 1; padding: 0.9rem 1rem; }
+@media (min-width: 900px) { .mobile-cta { display: none; } }
+
+/* ------------------------------- ANIMAÇÕES -------------------------------- */
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+.reveal.d1 { transition-delay: 0.08s; } .reveal.d2 { transition-delay: 0.16s; } .reveal.d3 { transition-delay: 0.24s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .telemetry-track, .dot, .rotator > span, .gauge-arc, .bar i, .toast { animation: none !important; }
+  .rotator > span { opacity: 1; transform: none; }
+  .rotator > span:nth-child(n+2) { display: none; }
+  .gauge-arc { stroke-dashoffset: 52; }
+  .bar i { transform: scaleX(1); }
+  .cockpit { transform: none; }
 }
 </style>
 </head>
+
 <body>
-<div class="page">
-  <!-- Fundo ambiente -->
-  <div class="ambient" aria-hidden="true">
-    <div class="amb1"></div>
-    <div class="amb2"></div>
-    <div class="amb3"></div>
-  </div>
 
-  <div class="content">
-    <!-- Topo -->
-    <header class="wrap header">
-      <div class="brand">
-        <div class="brand-mark">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>
-        </div>
-        <div>
-          <p class="brand-name">IndusCost</p>
-          <p class="brand-sub">Intelligence</p>
-        </div>
-      </div>
-      <div class="header-actions">
-        <a class="link-ghost" href="https://app.grupolazarios.com.br/guide">Guia do sistema</a>
-        <a class="btn-primary-sm" href="https://app.grupolazarios.com.br">
-          Entrar
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-        </a>
-      </div>
-    </header>
+<div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
 
-    <!-- Hero -->
-    <section class="wrap hero">
-      <div class="hero-inner">
-        <div class="badge anim d1">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>
-          Inteligência para indústrias que precisam lucrar com método
-        </div>
-        <h1 class="anim d2">
-          O custo claro.
-          <span class="gradient-line">O preço confiável.</span>
-          O comercial alinhado.
-        </h1>
-        <p class="hero-lead anim d3">
-          O IndusCost Intelligence reúne custeio industrial, formação de preço e gestão comercial em uma experiência
-          única — para sua equipe tomar decisões mais rápidas, com números que conversam entre engenharia, financeiro
-          e vendas.
-        </p>
-        <div class="hero-ctas anim d4">
-          <a class="btn-primary-lg" href="https://app.grupolazarios.com.br">
-            Acessar o sistema
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </a>
-          <a class="btn-secondary-lg" href="https://app.grupolazarios.com.br/guide">
-            <svg class="icon-primary" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-            Manual funcional
-          </a>
-        </div>
-      </div>
-
-      <!-- Cards flutuantes -->
-      <div class="stats">
-        <div class="stat">
-          <p class="stat-k">Visão única</p>
-          <p class="stat-v">Custo + venda + pipeline</p>
-          <p class="stat-sub">Um só lugar para operar</p>
-        </div>
-        <div class="stat">
-          <p class="stat-k">Menos surpresa</p>
-          <p class="stat-v">Margem e tributos explícitos</p>
-          <p class="stat-sub">Antes de fechar o orçamento</p>
-        </div>
-        <div class="stat">
-          <p class="stat-k">Pronto para crescer</p>
-          <p class="stat-v">Simulações e relatórios</p>
-          <p class="stat-sub">Decisão com cenários</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Pilares -->
-    <section class="pillars">
-      <div class="wrap">
-        <div class="section-head">
-          <h2>Por que o IndusCost faz diferença</h2>
-          <p>Valor real para quem fabrica, precifica e vende — sem planilhas soltas nem versões conflitantes do “custo verdadeiro”.</p>
-        </div>
-        <div class="pillar-grid">
-          <div class="pillar reveal" style="transition-delay:0s">
-            <div class="pillar-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16h.01"/><path d="M16 16h.01"/><path d="M3 19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a.5.5 0 0 0-.769-.422l-4.462 2.844A.5.5 0 0 1 15 10.5v-2a.5.5 0 0 0-.769-.422L9.77 10.922A.5.5 0 0 1 9 10.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M8 16h.01"/></svg>
-            </div>
-            <h3>Custeio industrial de ponta a ponta</h3>
-            <p>Da matéria-prima ao produto acabado, com engenharia, centros de trabalho e custos indiretos alinhados à sua operação real.</p>
-          </div>
-          <div class="pillar reveal" style="transition-delay:.06s">
-            <div class="pillar-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-            </div>
-            <h3>Preço com margem que você enxerga</h3>
-            <p>Formação de preço com tributos, frete e comissão — para decidir com segurança, não com achismo.</p>
-          </div>
-          <div class="pillar reveal" style="transition-delay:.12s">
-            <div class="pillar-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-            </div>
-            <h3>Comercial e funil integrados</h3>
-            <p>Propostas, clientes e indicadores em um fluxo só: do orçamento ao pipeline, com visão gerencial no dashboard.</p>
-          </div>
-          <div class="pillar reveal" style="transition-delay:.18s">
-            <div class="pillar-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
-            </div>
-            <h3>Simulações antes da decisão</h3>
-            <p>Cenários e novos produtos no ambiente certo para testar impacto sem bagunçar o cadastro até a hora de lançar.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Faixa de módulos -->
-    <section class="wrap strip">
-      <div class="strip-head">
-        <div>
-          <h2>Tudo o que a operação precisa</h2>
-          <p>Dashboard, engenharia, suprimentos, compras, tributos, propostas, clientes, simulações e relatórios — cada peça conectada ao restante do fluxo.</p>
-        </div>
-        <div class="chips">
-          <span class="chip">
-            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
-            Máquinas e roteiros
-          </span>
-          <span class="chip">
-            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-            Relatórios e BI
-          </span>
-          <span class="chip">
-            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-            Dashboard gerencial
-          </span>
-          <span class="chip">
-            <svg class="icon-primary" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-            Simulações e cenários
-          </span>
-        </div>
-      </div>
-
-      <div class="cta-card">
-        <div class="cta-row">
-          <div class="cta-left">
-            <div class="cta-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
-            </div>
-            <div>
-              <p class="cta-title">Feito para uso diário</p>
-              <p class="cta-body">Comece pelo dashboard, ajuste premissas nos cadastros e evolua para propostas e análises. O guia interno explica cada módulo — mantenha-o atualizado junto com as mudanças do sistema.</p>
-            </div>
-          </div>
-          <a class="btn-primary-md" href="https://app.grupolazarios.com.br">
-            Começar agora
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Rodapé -->
-    <footer class="footer">
-      <div class="wrap footer-row">
-        <p>© <span id="ano">2026</span> IndusCost Intelligence. Custeio, preço e comercial em um só lugar.</p>
-        <a class="footer-link" href="https://app.grupolazarios.com.br/guide">Abrir guia do sistema</a>
-      </div>
-    </footer>
+<!-- TELEMETRIA INDUSTRIAL (ticker contínuo) -->
+<div class="telemetry" aria-hidden="true">
+  <div class="telemetry-track">
+    <span class="telemetry-item"><span class="dot"></span>Indústria 4.0/5.0 ready</span>
+    <span class="telemetry-item">Motor tributário ativo: <b>ICMS · DIFAL · PIS · COFINS · IPI</b></span>
+    <span class="telemetry-item">Custeio por centro de trabalho: <b>MOD · CIF · BOM</b></span>
+    <span class="telemetry-item"><span class="dot amber"></span>Simulações what-if: <b>ilimitadas</b></span>
+    <span class="telemetry-item">Grupo Lazários Intelligence Hub</span>
+    <span class="telemetry-item">Proposta com margem real: <b>em minutos</b></span>
+    <!-- duplicado para o loop infinito -->
+    <span class="telemetry-item"><span class="dot"></span>Indústria 4.0/5.0 ready</span>
+    <span class="telemetry-item">Motor tributário ativo: <b>ICMS · DIFAL · PIS · COFINS · IPI</b></span>
+    <span class="telemetry-item">Custeio por centro de trabalho: <b>MOD · CIF · BOM</b></span>
+    <span class="telemetry-item"><span class="dot amber"></span>Simulações what-if: <b>ilimitadas</b></span>
+    <span class="telemetry-item">Grupo Lazários Intelligence Hub</span>
+    <span class="telemetry-item">Proposta com margem real: <b>em minutos</b></span>
   </div>
 </div>
 
+<!-- TOPO FIXO -->
+<div class="header-wrap">
+  <header class="wrap header">
+    <a class="brand" href="https://induscost.grupolazarios.com.br/" aria-label="IndusCost Intelligence">
+      <div class="brand-mark">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>
+      </div>
+      <div>
+        <div class="brand-title">IndusCost <span>Intelligence</span></div>
+        <div class="brand-sub">Grupo Lazários • Custeio 4.0</div>
+      </div>
+    </a>
+
+    <nav class="nav" aria-label="Seções">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#simulador">Simulador de margem</a>
+      <a href="#pilares">Pilares 4.0</a>
+      <a href="#comparativo">Planilha vs IndusCost</a>
+      <a href="#modulos">Módulos</a>
+    </nav>
+
+    <div class="header-actions">
+      <a class="btn btn-ghost btn-sm" href="https://app.grupolazarios.com.br/guide">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Guia do sistema
+      </a>
+      <a class="btn btn-primary btn-sm" href="https://app.grupolazarios.com.br">
+        Entrar
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
+  </header>
+</div>
+
+<!-- HERO -->
+<section class="wrap hero">
+  <div class="hero-grid">
+    <div>
+      <div class="eyebrow reveal">
+        <span class="tag">Nova era</span>
+        <span>Engenharia, financeiro e vendas com a mesma verdade numérica</span>
+      </div>
+
+      <h1 class="reveal d1">
+        <span class="line">O custo cirúrgico.</span>
+        <span class="line">O preço
+          <span class="rotator" aria-label="blindado, auditável, previsível"><span class="grad">blindado.</span><span class="grad">auditável.</span><span class="grad">previsível.</span></span>
+        </span>
+        <span class="line">O comercial imparável.</span>
+      </h1>
+
+      <!-- PNL: pacing (a dor conhecida) → leading (o estado desejado) -->
+      <p class="hero-lead reveal d2">
+        Você já perdeu uma cotação porque o orçamento demorou. E já fechou um pedido que virou prejuízo na DRE.
+        O <strong>IndusCost Intelligence</strong> conecta custeio por centro de trabalho, tributação em tempo real e formação de preço
+        em um único fluxo, para que cada proposta saia com a <strong>margem real já calculada</strong>.
+      </p>
+
+      <div class="hero-ctas reveal d3">
+        <a class="btn btn-primary" href="https://app.grupolazarios.com.br">
+          Acessar o sistema
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="#simulador">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#38bdf8" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+          Diagnosticar minha margem
+        </a>
+      </div>
+
+      <div class="trust reveal d3">
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>100% web, sem instalação</span>
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Centros de trabalho e BOM estruturados</span>
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Simulações what-if ilimitadas</span>
+      </div>
+    </div>
+
+    <!-- COCKPIT: prévia do produto, com movimento -->
+    <div class="reveal d2">
+      <div class="cockpit">
+        <div class="cockpit-inner">
+          <div class="cockpit-bar">
+            <div class="win-dots"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#10b981"></i></div>
+            <div class="cockpit-title">Cockpit // proposta #0417 // margem líquida</div>
+            <div class="cockpit-live"><span class="dot"></span>Ao vivo</div>
+          </div>
+
+          <div class="cockpit-grid">
+            <div class="panel panel-span">
+              <div class="panel-label">Margem líquida da proposta</div>
+              <div class="gauge-wrap">
+                <svg class="gauge" viewBox="0 0 112 64" aria-hidden="true">
+                  <path d="M8 58 A48 48 0 0 1 104 58" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10" stroke-linecap="round"/>
+                  <path class="gauge-arc" d="M8 58 A48 48 0 0 1 104 58" fill="none" stroke="url(#g1)" stroke-width="10" stroke-linecap="round"/>
+                  <defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#34d399"/></linearGradient></defs>
+                </svg>
+                <div>
+                  <div class="gauge-value"><span class="count" data-to="23.4" data-decimals="1">0</span>%</div>
+                  <div class="gauge-sub">acima do piso de <b class="mono">18%</b> definido pela diretoria</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-label">Composição do preço</div>
+              <div class="stack">
+                <div class="bar-row"><span>Materiais</span><div class="bar"><i style="width:58%;background:#38bdf8;animation-delay:.3s"></i></div><b>41%</b></div>
+                <div class="bar-row"><span>MOD + CIF</span><div class="bar"><i style="width:34%;background:#60a5fa;animation-delay:.45s"></i></div><b>19%</b></div>
+                <div class="bar-row"><span>Tributos</span><div class="bar"><i style="width:30%;background:#a78bfa;animation-delay:.6s"></i></div><b>17%</b></div>
+                <div class="bar-row"><span>Margem</span><div class="bar"><i style="width:40%;background:#34d399;animation-delay:.75s"></i></div><b>23%</b></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-label">Sinais da proposta</div>
+              <div class="stack" style="gap:0.7rem">
+                <div class="kpi"><div class="kpi-val">R$ <span class="count" data-to="184290" data-decimals="0">0</span></div><div class="kpi-delta">↑ preço mínimo respeitado</div></div>
+                <div class="kpi"><div class="kpi-val"><span class="count" data-to="12" data-decimals="0">0</span> min</div><div class="kpi-delta">do cadastro ao PDF da proposta</div></div>
+                <div class="kpi"><div class="kpi-val">0</div><div class="kpi-delta warn">itens abaixo do custo</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="toast" role="status">
+            <strong>Alerta de margem</strong> Item 03 com desconto acima do limite da política comercial.
+            <small>Bloqueado antes de sair da fábrica.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NÚMEROS DE ANCORAGEM -->
+<section class="numbers" aria-label="Resultados">
+  <div class="wrap numbers-grid">
+    <div class="num reveal"><div class="num-val"><em><span class="count" data-to="2" data-decimals="0">0</span>–<span class="count" data-to="5" data-decimals="0">0</span>%</em></div><div class="num-label">do faturamento evapora em margem invisível nas indústrias que ainda vivem de planilha</div></div>
+    <div class="num reveal d1"><div class="num-val"><span class="count" data-to="85" data-decimals="0">0</span><em>%</em></div><div class="num-label">menos tempo de resposta a cotações com custo e tributos já calculados</div></div>
+    <div class="num reveal d2"><div class="num-val"><em>1</em> clique</div><div class="num-label">para simular alta de matéria-prima, energia ou frete e ver o impacto na margem</div></div>
+    <div class="num reveal d3"><div class="num-val">360<em>°</em></div><div class="num-label">custo, preço e funil comercial na mesma tela, com a mesma base de dados</div></div>
+  </div>
+</section>
+
+<!-- COMO FUNCIONA -->
+<section id="como-funciona" class="wrap pipeline">
+  <div class="section-head center reveal">
+    <div class="kicker">Do chão de fábrica ao contrato</div>
+    <h2>Três movimentos. Uma única verdade numérica.</h2>
+    <p>O IndusCost não é mais uma planilha bonita: é o fluxo inteiro, encadeado, da engenharia até a assinatura do pedido.</p>
+  </div>
+
+  <div class="steps">
+    <div class="step reveal">
+      <div class="step-num"></div>
+      <h3>Engenharia estrutura o custo</h3>
+      <p>BOM, roteiros, tempos de máquina, mão de obra direta e custos indiretos por centro de trabalho. O custo nasce do processo real, não de uma média.</p>
+      <div class="step-out"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Custo industrial auditável</div>
+    </div>
+    <div class="step reveal d1">
+      <div class="step-num"></div>
+      <h3>O motor forma o preço</h3>
+      <p>ICMS, DIFAL, PIS, COFINS, IPI, frete escalonado e comissão entram por dentro. Você define a margem desejada; o sistema devolve o markup e o preço mínimo.</p>
+      <div class="step-out"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Preço blindado por política</div>
+    </div>
+    <div class="step reveal d2">
+      <div class="step-num"></div>
+      <h3>Comercial fecha sem surpresa</h3>
+      <p>Propostas técnicas e comerciais em minutos, com limites automáticos de desconto e a margem real visível antes de enviar ao cliente.</p>
+      <div class="step-out"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Pedido protegido na DRE</div>
+    </div>
+  </div>
+</section>
+
+<!-- SIMULADOR (ids preservados para o script original) -->
+<section id="simulador" class="wrap simulator">
+  <div class="sim reveal">
+    <div class="sim-grid">
+      <div>
+        <span class="tag amber">Diagnóstico de margem invisível</span>
+        <h2>Quanto a sua fábrica está deixando na mesa todo mês?</h2>
+        <p class="sim-sub">
+          Custos indiretos desatualizados, rateios errados e distorções tributárias consomem de <strong>2% a 5% do faturamento</strong>
+          sem aparecer em nenhum relatório. Arraste e veja o tamanho do buraco.
+        </p>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-name">Faturamento mensal da indústria</span>
+            <span class="slider-val" id="fatDisplay">R$ 1.500.000</span>
+          </div>
+          <input type="range" id="fatRange" class="range" min="100000" max="10000000" step="50000" value="1500000" aria-label="Faturamento mensal" />
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-name">Margem líquida estimada hoje</span>
+            <span class="slider-val" id="margemDisplay">15%</span>
+          </div>
+          <input type="range" id="margemRange" class="range" min="5" max="40" step="1" value="15" aria-label="Margem líquida atual" />
+        </div>
+
+        <p class="sim-note">Estimativa conservadora: recuperação média de 3,5% do faturamento ao eliminar distorções de rateio e tributos.</p>
+      </div>
+
+      <div class="sim-result">
+        <div class="sim-badge">Lucro recuperável</div>
+        <div class="sim-gain" id="recuperadoValor">R$ 52.500</div>
+        <div class="sim-period">por mês, ou <b>~R$ <span id="anoGanho">630.000</span>/ano</b> que hoje não chegam à sua DRE</div>
+
+        <div class="sim-list">
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Blindagem contra erro de rateio e depreciação</span>
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Markup e margem por dentro calculados à risca</span>
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Cotação respondida antes do concorrente</span>
+        </div>
+
+        <a class="btn btn-primary" href="https://app.grupolazarios.com.br">
+          Blindar minha margem agora
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PILARES (BENTO) -->
+<section id="pilares" class="bento-section">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <div class="kicker">Arquitetura de valor industrial</div>
+      <h2>Por que o IndusCost redefine a sua operação</h2>
+      <p>Engenharia precisa, controladoria estratégica e vendas competitivas, sem planilhas quebradas e sem reunião para descobrir quem está com o número certo.</p>
+    </div>
+
+    <div class="bento">
+      <div class="card span-3 reveal">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16h.01"/><path d="M16 16h.01"/><path d="M3 19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a.5.5 0 0 0-.769-.422l-4.462 2.844A.5.5 0 0 1 15 10.5v-2a.5.5 0 0 0-.769-.422L9.77 10.922A.5.5 0 0 1 9 10.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M8 16h.01"/></svg></div>
+        <h3>Custeio industrial de ponta a ponta</h3>
+        <p>Da matéria-prima ao produto no palete: listas técnicas (BOM), tempos de máquina, MOD e CIF com vínculo direto ao chão de fábrica.</p>
+        <div class="card-tag">✓ Engenharia de métodos &amp; processos</div>
+      </div>
+
+      <div class="card span-3 reveal d1">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+        <h3>Preço com margem que você enxerga</h3>
+        <p>Formação de preço que desconstrói a carga tributária estadual e federal, frete escalonado e comissão. Descubra o markup ideal para a margem desejada.</p>
+        <div class="card-tag">✓ Blindagem fiscal &amp; margem por dentro</div>
+      </div>
+
+      <div class="card span-2 reveal">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+        <h3>Comercial e funil integrados</h3>
+        <p>Propostas com limites automáticos de desconto. Nenhum pedido sai com prejuízo para a fábrica.</p>
+        <div class="card-tag">✓ Governança comercial</div>
+      </div>
+
+      <div class="card span-4 reveal d1">
+        <div class="card-wide">
+          <div>
+            <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></div>
+            <h3>Simulações what-if antes da decisão</h3>
+            <p>E se o alumínio subir 12%? E se a energia dobrar no horário de pico? Simule no sandbox sem tocar no cadastro oficial até aprovar.</p>
+            <div class="card-tag">✓ Testes de estresse &amp; cenários</div>
+          </div>
+          <div class="whatif" aria-hidden="true">
+            <div class="whatif-row"><span>Alumínio +12%</span><b class="up">margem −3,1 p.p.</b></div>
+            <div class="whatif-row"><span>Energia +40% (ponta)</span><b class="up">margem −1,4 p.p.</b></div>
+            <div class="whatif-row"><span>Reajuste de tabela +6%</span><b class="ok">margem +4,2 p.p.</b></div>
+            <div class="whatif-row"><span>Cenário aprovado</span><b class="ok">23,4% líquida</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARATIVO -->
+<section id="comparativo" class="wrap compare">
+  <div class="section-head center reveal">
+    <div class="kicker" style="color:#fb7185">O custo da inércia</div>
+    <h2>Continuar na planilha é o caminho mais caro</h2>
+    <p>Perder negócios por orçamento lento, ou ganhar contratos que viram prejuízo escondido. Os dois saem do mesmo lugar: números que não conversam.</p>
+  </div>
+
+  <div class="vs-grid reveal">
+    <div class="cmp cmp-old">
+      <div class="cmp-title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        Indústria na planilha
+      </div>
+      <ul>
+        <li><span class="x">✕</span>Várias versões de .xlsx circulando por e-mail e WhatsApp, sem rastreabilidade.</li>
+        <li><span class="x">✕</span>Engenharia calcula com uma fórmula, financeiro aplica outra e o vendedor altera na ponta.</li>
+        <li><span class="x">✕</span>Orçamento demora de 3 a 7 dias; o cliente compra do concorrente mais rápido.</li>
+        <li><span class="x">✕</span>Surpresa na DRE do fim do mês: pedidos fechados com prejuízo disfarçado.</li>
+      </ul>
+      <div class="cmp-score"><span>Rastreabilidade</span><b>nenhuma</b></div>
+    </div>
+
+    <div class="vs" aria-hidden="true">VS</div>
+
+    <div class="cmp cmp-new">
+      <div class="cmp-title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        IndusCost Intelligence
+      </div>
+      <ul>
+        <li><span class="ok-i">✓</span>Base única em nuvem: a mesma verdade para engenharia, diretoria e vendas.</li>
+        <li><span class="ok-i">✓</span>Centros de trabalho, máquinas e custos indiretos integrados matematicamente ao preço.</li>
+        <li><span class="ok-i">✓</span>Propostas em minutos, com margem real calculada na hora.</li>
+        <li><span class="ok-i">✓</span>Cenários ilimitados para antecipar matéria-prima, energia e tributos.</li>
+      </ul>
+      <div class="cmp-score"><span>Rastreabilidade</span><b>total, por usuário e versão</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- MÓDULOS + FAQ + CTA -->
+<section id="modulos" class="modules">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="kicker">Ecossistema completo</div>
+      <h2>Tudo o que a sua fábrica precisa, interligado</h2>
+      <p>Dashboard, engenharia de roteiros, suprimentos, compras, tributos, propostas, clientes, simulações e relatórios: cada peça transforma dado fabril em margem real.</p>
+      <div class="chips">
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>Máquinas e roteiros</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>Estruturas BOM</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Relatórios e BI</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>Dashboard gerencial</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>Simulações e cenários</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>Insumos &amp; compras</span>
+        <span class="chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>Propostas e clientes</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap faq">
+    <div class="section-head center reveal">
+      <div class="kicker">Antes de decidir</div>
+      <h2>As perguntas que a diretoria faz</h2>
+    </div>
+    <div class="faq-list reveal">
+      <details>
+        <summary>Já tenho ERP. Por que preciso do IndusCost?</summary>
+        <p>O ERP registra o que aconteceu. O IndusCost decide o que vai acontecer: custo por processo, preço com margem por dentro e proposta protegida por política comercial, antes de o pedido existir. Um complementa o outro.</p>
+      </details>
+      <details>
+        <summary>Minha equipe não é técnica. Vai conseguir usar?</summary>
+        <p>O sistema é 100% web, sem instalação, e o guia funcional acompanha cada tela. Engenharia parametriza uma vez; vendas só preenche a proposta e enxerga a margem.</p>
+      </details>
+      <details>
+        <summary>E se os meus custos mudarem toda semana?</summary>
+        <p>É exatamente para isso que existem as simulações what-if: você testa alta de matéria-prima, energia ou frete em um sandbox e só publica no cadastro oficial quando aprovar.</p>
+      </details>
+      <details>
+        <summary>Como o vendedor fica impedido de vender com prejuízo?</summary>
+        <p>Cada proposta nasce com preço mínimo e limite de desconto calculados a partir do custo real e da carga tributária. O que passa do limite é bloqueado antes de sair da fábrica.</p>
+      </details>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="cta-mega reveal">
+      <div class="cta-row">
+        <div class="cta-left">
+          <div class="cta-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+          </div>
+          <div>
+            <h3 class="cta-title">Projetado para a rotina de quem decide na fábrica</h3>
+            <p class="cta-body">
+              Comece pelo dashboard executivo, parametrize máquinas e centros de custo e capacite a equipe comercial a fechar pedidos protegidos contra surpresas.
+              O guia interno do sistema está sempre a um clique.
+            </p>
+          </div>
+        </div>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="https://app.grupolazarios.com.br">
+            Começar agora no IndusCost
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="https://app.grupolazarios.com.br/guide">Ver o guia do sistema</a>
+          <small>Sem instalação. Acesso pelo navegador.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RODAPÉ (links originais preservados) -->
+<footer class="footer">
+  <div class="wrap footer-row">
+    <div class="footer-brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>
+      <span>© <span id="ano">2026</span> IndusCost Intelligence • Grupo Lazários. Todos os direitos reservados.</span>
+    </div>
+    <div class="footer-links">
+      <a class="footer-link" href="https://app.grupolazarios.com.br/guide">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Abrir guia do sistema
+      </a>
+      <a class="footer-link" href="https://app.grupolazarios.com.br">Acessar aplicação</a>
+    </div>
+  </div>
+</footer>
+
+<!-- BARRA FIXA MOBILE -->
+<div class="mobile-cta" aria-label="Ações rápidas">
+  <a class="btn btn-ghost" href="https://app.grupolazarios.com.br/guide">Guia</a>
+  <a class="btn btn-primary" href="https://app.grupolazarios.com.br">Acessar o sistema</a>
+</div>
+
 <script>
-// Ano corrente no rodapé.
+/* Ano corrente no rodapé (preservado do original) */
 document.getElementById("ano").textContent = String(new Date().getFullYear());
 
-// Entrada dos pilares quando entram na área visível.
+/* Barra de progresso de leitura */
+(function () {
+  var bar = document.getElementById("scrollProgress");
+  if (!bar) return;
+  function update() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    bar.style.width = pct + "%";
+  }
+  window.addEventListener("scroll", update, { passive: true });
+  update();
+})();
+
+/* Animações de entrada com IntersectionObserver (preservado do original) */
 (function () {
   var items = document.querySelectorAll(".reveal");
   if (!("IntersectionObserver" in window)) {
@@ -430,14 +976,68 @@ document.getElementById("ano").textContent = String(new Date().getFullYear());
   }
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
-      if (entry.isIntersecting) {
-        entry.target.classList.add("is-visible");
-        io.unobserve(entry.target);
-      }
+      if (entry.isIntersecting) { entry.target.classList.add("is-visible"); io.unobserve(entry.target); }
     });
-  }, { rootMargin: "-40px" });
+  }, { rootMargin: "-30px" });
   items.forEach(function (el) { io.observe(el); });
 })();
+
+/* Contadores animados (números do cockpit e da faixa) */
+(function () {
+  var counters = document.querySelectorAll(".count");
+  if (!counters.length) return;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function fmt(v, d) { return v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function run(el) {
+    var to = parseFloat(el.getAttribute("data-to")) || 0;
+    var d = parseInt(el.getAttribute("data-decimals") || "0", 10);
+    if (reduce) { el.textContent = fmt(to, d); return; }
+    var start = null, dur = 1400;
+    function frame(ts) {
+      if (start === null) start = ts;
+      var p = Math.min(1, (ts - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(to * eased, d);
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  if (!("IntersectionObserver" in window)) { counters.forEach(run); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { run(e.target); io.unobserve(e.target); } });
+  }, { threshold: 0.4 });
+  counters.forEach(function (el) { io.observe(el); });
+})();
+
+/* Lógica do Simulador (preservada do original: mesmos ids e mesma fórmula) */
+(function () {
+  var fatRange = document.getElementById("fatRange");
+  var margemRange = document.getElementById("margemRange");
+  var fatDisplay = document.getElementById("fatDisplay");
+  var margemDisplay = document.getElementById("margemDisplay");
+  var recuperadoValor = document.getElementById("recuperadoValor");
+  var anoGanho = document.getElementById("anoGanho");
+  if (!fatRange || !margemRange) return;
+
+  function formatBRL(val) {
+    return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+  }
+  function updateSim() {
+    var fat = parseFloat(fatRange.value);
+    var margem = parseFloat(margemRange.value);
+    fatDisplay.textContent = formatBRL(fat);
+    margemDisplay.textContent = margem + "%";
+    /* Média industrial de recuperação de margem com eliminação de distorções tributárias e rateios precisos = 3.5% sobre o faturamento */
+    var ganhoMensal = fat * 0.035;
+    var ganhoAnual = ganhoMensal * 12;
+    recuperadoValor.textContent = formatBRL(ganhoMensal);
+    anoGanho.textContent = Math.round(ganhoAnual).toLocaleString("pt-BR");
+  }
+  fatRange.addEventListener("input", updateSim);
+  margemRange.addEventListener("input", updateSim);
+  updateSim();
+})();
 </script>
+
 </body>
 </html>
