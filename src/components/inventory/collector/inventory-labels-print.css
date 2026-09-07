@@ -5,8 +5,9 @@
  * abaixo esta rota imprime EM BRANCO — mesmo motivo já documentado em
  * proposal-print.css.
  *
- * A folha do QR de setor sai com apenas quatro coisas: nome do setor, o que o
- * QR faz, o QR e como ler. Nada de URL crua, botões ou cromo da aplicação.
+ * Este arquivo decide o que FICA VISÍVEL na rota. O layout da folha do QR de
+ * setor (nome do setor, o que o QR faz, o QR e como ler) vive em
+ * collector-sector-qr-sheet.css, compartilhado com Dispositivos do Coletor.
  *
  * A4 RETRATO: vários CSS globais declaram `@page { size: A4 landscape }`
  * (executivo, DRE, títulos AR/AP, planejamento de MP…). `@page` não obedece
@@ -43,83 +44,6 @@
     visibility: hidden !important;
   }
 
-  /*
-   * Folha do QR de setor. A4 retrato com margem de 12mm = 186mm úteis de
-   * largura. QR de 100mm para leitura confortável a ~1m de distância.
-   */
-  body.inventory-labels-print-route .inventory-labels-sector-print {
-    display: block !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
-    text-align: center;
-    color: #000 !important;
-    /*
-     * Área útil do A4 retrato com margem de 12mm = 273mm. O bloco mede ~191mm
-     * (título + texto + QR de 100mm + caixa). Este recuo aproxima o conjunto do
-     * centro óptico da folha sem risco de estourar para uma segunda página,
-     * mesmo se o nome do setor quebrar em duas linhas.
-     */
-    padding-top: 24mm;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print h1 {
-    font-size: 30pt;
-    font-weight: 700;
-    line-height: 1.15;
-    margin: 0 0 4mm;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-purpose {
-    font-size: 13pt;
-    line-height: 1.35;
-    margin: 0 auto 12mm;
-    max-width: 140mm;
-  }
-
-  /*
-   * O preflight do Tailwind aplica `svg { display: block }`, então
-   * `text-align: center` do pai NÃO centraliza o QR — é preciso margem auto.
-   * O QRCodeSVG traz viewBox, então escalar em mm não perde nitidez.
-   */
-  body.inventory-labels-print-route .inventory-labels-sector-print > svg {
-    display: block;
-    width: 100mm;
-    height: 100mm;
-    margin: 0 auto;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto {
-    font-size: 12pt;
-    line-height: 1.5;
-    margin: 14mm auto 0;
-    max-width: 140mm;
-    text-align: left;
-    border: 1.5pt solid #000;
-    padding: 6mm 8mm;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto strong {
-    display: block;
-    font-size: 13pt;
-    margin-bottom: 3mm;
-  }
-
-  /* O preflight zera `list-style` em ol/ul: sem isto a numeração some. */
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto ol {
-    list-style: decimal outside;
-    margin: 0;
-    padding-left: 7mm;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto li {
-    margin-bottom: 2.5mm;
-    padding-left: 1mm;
-  }
-
-  body.inventory-labels-print-route .inventory-labels-sector-print .sector-howto li:last-child {
-    margin-bottom: 0;
-  }
-
   /* Etiquetas por item continuam imprimindo quando houver almoxarifado escolhido. */
   body.inventory-labels-print-route .inventory-labels-grid {
     break-before: page;
@@ -130,9 +54,4 @@
     break-before: auto;
     page-break-before: auto;
   }
-}
-
-/* Fora da impressão a folha dedicada do QR de setor não aparece na tela. */
-.inventory-labels-sector-print {
-  display: none;
 }

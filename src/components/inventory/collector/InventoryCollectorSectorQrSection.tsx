@@ -7,6 +7,11 @@
  * autorização do tablet continua 100% a cargo do fluxo Tailscale existente
  * logo abaixo, que esta seção não toca.
  *
+ * A folha impressa é a MESMA de Estoque → Etiquetas QR
+ * (`CollectorSectorQrPrintSheet`): nome do setor, o que o QR faz, o QR e
+ * como ler. A pré-visualização em tela usa o mesmo componente, então o que se
+ * vê é o que sai no papel.
+ *
  * Puramente apresentacional: recebe o estado já resolvido (sem fetch/hooks
  * de auth aqui dentro) para poder ser testada com renderToStaticMarkup, na
  * convenção deste repo (sem jsdom/testing-library).
@@ -14,9 +19,10 @@
 import React, { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, Printer, RefreshCw } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { InventoryErrorBanner, InventoryLoading } from "@/src/components/inventory/inventoryUi";
 import type { CollectorSectorQrResponse } from "@/src/lib/inventory/collector/collectorSectorQrUi";
+import { CollectorSectorQrPrintSheet } from "./CollectorSectorQrPrintSheet";
+import "./collector-sector-qr-sheet.css";
 import "./inventory-collector-sector-qr-print.css";
 
 export type InventoryCollectorSectorQrState =
@@ -28,25 +34,9 @@ export type InventoryCollectorSectorQrState =
   | { status: "error"; message: string };
 
 const PRINT_BODY_CLASS = "collector-sector-qr-print-route";
-const QR_SIZE = 260;
-/** Alta correção de erro: o QR sai impresso e fixado fisicamente — precisa
- *  continuar legível mesmo sujo/amassado/com reflexo de luz. */
-const QR_ERROR_LEVEL = "H" as const;
-
-function CollectorSectorQrPrintSheet({ data }: { data: CollectorSectorQrResponse }) {
-  return (
-    <div id="collector-sector-qr-print-root">
-      <div className="collector-sector-qr-print-document">
-        <p className="collector-sector-qr-print-brand">INDUSCOST</p>
-        <p className="collector-sector-qr-print-subbrand">STOCK COLLECTOR</p>
-        <h1>{data.label.toUpperCase()}</h1>
-        <QRCodeSVG value={data.url} size={QR_SIZE} level={QR_ERROR_LEVEL} marginSize={2} />
-        <p className="collector-sector-qr-print-instruction">Escaneie para abrir o Collector</p>
-        <p className="collector-sector-qr-print-url">{data.url}</p>
-      </div>
-    </div>
-  );
-}
+/** Marca o <style> injetado durante a impressão (removido no cleanup). */
+const PRINT_PAGE_STYLE_ATTR = "data-collector-sector-qr-print-page";
+const PRINT_PAGE_STYLE = "@page { size: A4 portrait; margin: 12mm; }";
 
 export function InventoryCollectorSectorQrSection({
   state,
@@ -65,8 +55,17 @@ export function InventoryCollectorSectorQrSection({
     setPrinting(true);
     document.body.classList.add(PRINT_BODY_CLASS);
 
+    // A4 RETRATO garantido mesmo com `@page landscape` de outros CSS globais:
+    // `@page` não obedece especificidade, vence o último em ordem de documento —
+    // e um <style> no head, montado agora, é o último.
+    const pageStyle = document.createElement("style");
+    pageStyle.setAttribute(PRINT_PAGE_STYLE_ATTR, "1");
+    pageStyle.textContent = PRINT_PAGE_STYLE;
+    document.head.appendChild(pageStyle);
+
     const cleanup = () => {
       document.body.classList.remove(PRINT_BODY_CLASS);
+      pageStyle.remove();
       window.removeEventListener("afterprint", cleanup);
       if (printCleanupRef.current != null) {
         window.clearTimeout(printCleanupRef.current);
@@ -91,16 +90,26 @@ export function InventoryCollectorSectorQrSection({
   return (
     <section className="space-y-3" data-testid="collector-sector-qr-section">
       {state.status === "ready"
-        ? createPortal(<CollectorSectorQrPrintSheet data={state.data} />, document.body)
+        ? createPortal(
+            <div id="collector-sector-qr-print-root">
+              <CollectorSectorQrPrintSheet
+                label={state.data.label}
+                url={state.data.url}
+                mode="print"
+                testId="collector-sector-qr-print-sheet"
+              />
+            </div>,
+            document.body
+          )
         : null}
 
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-slate-100">QR de acesso ao Collector</h3>
           <p className="mt-1 max-w-2xl text-sm text-slate-400">
-            Imprima este QR e fixe na área correspondente. O operador abre o Collector
+            Imprima esta folha e fixe na área correspondente. O operador abre o Collector
             diretamente pelo setor e o dispositivo continua sujeito à autorização do
-            Tailscale.
+            Tailscale. A pré-visualização abaixo é exatamente o que sai no papel.
           </p>
         </div>
         <button
@@ -139,17 +148,13 @@ export function InventoryCollectorSectorQrSection({
           className="rounded-xl border border-slate-700 bg-slate-900/60 p-6"
           data-testid="collector-sector-qr-ready"
         >
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="rounded-lg bg-white p-3">
-              <QRCodeSVG
-                value={state.data.url}
-                size={QR_SIZE}
-                level={QR_ERROR_LEVEL}
-                marginSize={2}
-                data-testid="collector-sector-qr-code"
-              />
-            </div>
-            <p className="text-lg font-semibold text-slate-100">{state.data.label}</p>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <CollectorSectorQrPrintSheet
+              label={state.data.label}
+              url={state.data.url}
+              mode="preview"
+              testId="collector-sector-qr-preview"
+            />
             <p
               className="max-w-md select-all break-all text-xs text-slate-400"
               data-testid="collector-sector-qr-url"
@@ -157,7 +162,7 @@ export function InventoryCollectorSectorQrSection({
               {state.data.url}
             </p>
 
-            <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               <a
                 href={state.data.url}
                 target="_blank"
