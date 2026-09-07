@@ -172,7 +172,8 @@ describe("grid de Clientes — contrato", () => {
   const server = readFileSync("server.ts", "utf8");
 
   it("API paginada anexa cnpjRisk a cada cliente", () => {
-    assert.match(server, /buildCustomerListResponse\(await attachCustomerCnpjRisk\(prisma, items\), meta\)/);
+    assert.match(server, /attachCustomerCnpjRisk\(prisma, items\)/);
+    assert.match(server, /buildCustomerListResponse\(/);
   });
 
   it("coluna Documento saiu; coluna Score CNPJ entrou com a tag", () => {

@@ -71,6 +71,7 @@ function baseProfile(): CustomerIntelligenceProfile {
     registrationSourceLabel: "Nomus",
     registrationHeaderLabel: "Cadastro no Nomus",
     isNomusSynced: true,
+    cadastralStatus: "ACTIVE",
     firstOrderDate: "2024-06-01",
     lastOrderDate: "2024-01-01",
     commercialOwner: "Maria",

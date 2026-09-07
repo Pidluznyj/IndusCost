@@ -44,6 +44,9 @@ src/lib/operationalListFilters.test.ts
 src/lib/productEngineeringExport.test.ts
 src/lib/customerIndicators.test.ts
 src/lib/customerCnpjRiskSummary.test.ts
+src/lib/commercial/customerSalesBlock.test.ts
+src/lib/commercial/customerSalesBlock.server.test.ts
+src/lib/commercial/customerSalesBlockUi.test.tsx
 src/components/customers/CustomerCnpjRiskTag.test.tsx
 src/lib/crmSellerMatchSql.test.ts
 src/lib/crmSellerDashboard.test.ts

@@ -164,6 +164,7 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
       registrationSourceLabel: "Nomus",
       registrationHeaderLabel: "Cadastro no Nomus",
       isNomusSynced: true,
+      cadastralStatus: "ACTIVE",
       firstOrderDate: "2024-06-01",
       lastOrderDate: "2025-12-01",
       commercialOwner: "Maria",
