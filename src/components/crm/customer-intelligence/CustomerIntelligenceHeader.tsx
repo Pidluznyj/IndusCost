@@ -7,6 +7,10 @@ import {
   HEALTH_CLASSIFICATION_LABEL_PT,
 } from "@/src/lib/customerIntelligenceNavigation";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
+import {
+  CustomerCadastralStatusBadge,
+  CustomerSalesBlockBadge,
+} from "../../customers/CustomerSalesBlockBadge.js";
 
 function formatDatePt(iso: string | null | undefined): string {
   if (!iso) return "Não informado";
@@ -68,6 +72,8 @@ export function CustomerIntelligenceHeader({
               <p className="text-sm text-muted-foreground">{customer.legalName}</p>
             ) : null}
             <div className="flex flex-wrap items-center gap-2 pt-1">
+              <CustomerCadastralStatusBadge status={customer.cadastralStatus} />
+              <CustomerSalesBlockBadge salesBlock={report.salesBlock} />
               <span
                 className={cn(
                   "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",

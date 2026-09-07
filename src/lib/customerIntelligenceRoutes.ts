@@ -14,6 +14,12 @@ import {
 import { enrichCustomerIntelligenceOrdersWithOfficialMargin } from "@/src/lib/salesMarginRulesAdapter.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "@/src/lib/customerIntelligencePermissions.js";
+import {
+  canExposeCustomerSalesBlockFinancialDetails,
+  resolveCustomerSalesBlockStatus,
+} from "@/src/lib/commercial/customerSalesBlock.server.js";
+import { toPublicCustomerSalesBlock } from "@/src/lib/commercial/customerSalesBlock.js";
+import type { AppAuthContext } from "@/src/lib/auth/appAuth.shared.js";
 
 export { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS };
 
@@ -186,6 +192,13 @@ export function registerCustomerIntelligenceRoutes(app: express.Express, auth: A
         loaded.orders
       );
 
+      const auth = (req as { appAuth?: AppAuthContext }).appAuth;
+      const salesBlockStatus = await resolveCustomerSalesBlockStatus(prisma, customerId);
+      const salesBlock = toPublicCustomerSalesBlock(
+        salesBlockStatus,
+        canExposeCustomerSalesBlockFinancialDetails(auth)
+      );
+
       const payload = buildCustomerIntelligenceReport({
         customer: loaded.customer,
         orders: ordersWithOfficialMargin,
@@ -195,6 +208,7 @@ export function registerCustomerIntelligenceRoutes(app: express.Express, auth: A
         arSyncCutoff: loaded.arSyncCutoff,
         arLinkedByCnpj: loaded.arLinkedByCnpj,
         filters,
+        salesBlock,
       });
 
       return res.json(payload);

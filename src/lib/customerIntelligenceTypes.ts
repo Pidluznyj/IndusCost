@@ -38,6 +38,7 @@ export type CustomerIntelligenceProfile = {
   /** Rótulo do cabeçalho: Cadastro no Nomus | Importado no IndusCost */
   registrationHeaderLabel: string;
   isNomusSynced: boolean;
+  cadastralStatus: string | null;
   /** Primeira compra — histórico completo (SalesOrder válidos). */
   firstOrderDate: string | null;
   /** Última compra — histórico completo (SalesOrder válidos). */
@@ -483,6 +484,7 @@ export type CustomerIntelligenceReport = {
   products: CustomerIntelligenceProductMix;
   repurchase: CustomerIntelligenceRepurchase;
   financial: CustomerIntelligenceFinancial;
+  salesBlock?: import("./commercial/customerSalesBlockView.js").CustomerSalesBlockPublic | null;
   crm: CustomerIntelligenceCrm;
   scoring: CustomerIntelligenceScoring;
   opportunities: CustomerIntelligenceOpportunity[];
@@ -574,5 +576,6 @@ export type CustomerIntelligenceBuildInput = {
   arSyncCutoff: NomusArReportSyncCutoff | null;
   arLinkedByCnpj: boolean;
   filters: CustomerIntelligenceFilters;
+  salesBlock?: import("./commercial/customerSalesBlockView.js").CustomerSalesBlockPublic | null;
   now?: Date;
 };

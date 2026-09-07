@@ -1,6 +1,6 @@
 // src/components/CustomerModule.tsx
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -38,6 +38,12 @@ import {
 } from "@/src/lib/commercialEngineeringPermissions";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
 import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
+import {
+  CustomerCadastralStatusBadge,
+  CustomerNewQuoteButton,
+  CustomerNewSaleButton,
+  CustomerSalesBlockBadge,
+} from "./customers/CustomerSalesBlockBadge";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
@@ -70,6 +76,7 @@ export const CustomerModule = () => {
   const allowEdit = canEditCustomers(resourceCheck);
   const allowImport = canImportCustomers(resourceCheck);
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -420,19 +427,9 @@ export const CustomerModule = () => {
                       </p>
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <div
-                        className={cn(
-                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                          c.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                        )}
-                      >
-                        <div
-                          className={cn(
-                            "h-1.5 w-1.5 rounded-full",
-                            c.status === "ACTIVE" ? "bg-green-600" : "bg-red-600"
-                          )}
-                        />
-                        {c.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                      <div className="flex flex-wrap items-center gap-1">
+                        <CustomerCadastralStatusBadge status={c.status} />
+                        <CustomerSalesBlockBadge salesBlock={c.salesBlock} />
                       </div>
                     </td>
                     <td className={cn("px-2 py-1.5 text-right whitespace-nowrap", STICKY_ACTIONS)}>
@@ -542,10 +539,25 @@ export const CustomerModule = () => {
             className="bg-card w-full max-w-4xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
             <div className="p-6 border-b border-border flex items-center justify-between gap-3 bg-accent/30">
-              <h3 className="text-xl font-bold">{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</h3>
+              <div className="min-w-0">
+                <h3 className="text-xl font-bold">{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</h3>
+                {editingCustomer ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <CustomerCadastralStatusBadge status={editingCustomer.status} />
+                    <CustomerSalesBlockBadge salesBlock={editingCustomer.salesBlock} />
+                  </div>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 {editingCustomer && (
                   <>
+                    <CustomerNewSaleButton
+                      blocked={editingCustomer.salesBlock?.blocked === true}
+                      onClick={() => navigate(`/proposals?customerId=${editingCustomer.id}`)}
+                    />
+                    <CustomerNewQuoteButton
+                      onClick={() => navigate(`/proposals?customerId=${editingCustomer.id}`)}
+                    />
                     <button
                       type="button"
                       onClick={() => openCnpjLookup({ customer: editingCustomer })}
