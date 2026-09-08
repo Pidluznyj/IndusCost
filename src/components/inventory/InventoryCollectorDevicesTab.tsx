@@ -30,6 +30,8 @@ import {
   type InventoryCollectorSectorQrState,
 } from "@/src/components/inventory/collector/InventoryCollectorSectorQrSection";
 import {
+  COLLECTOR_SECTOR_QR_DEFAULT_SECTOR,
+  COLLECTOR_SECTOR_QR_OPTIONS,
   buildCollectorSectorQrEndpoint,
   classifyCollectorSectorQrError,
   parseCollectorSectorQrPayload,
@@ -97,10 +99,14 @@ export function InventoryCollectorDevicesTab() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ApproveDraft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sectorQrState, setSectorQrState] = useState<InventoryCollectorSectorQrState>({
-    status: "loading",
-  });
-  const [sectorQrRefreshing, setSectorQrRefreshing] = useState(false);
+  const [sectorQrSector, setSectorQrSector] = useState<string>(COLLECTOR_SECTOR_QR_DEFAULT_SECTOR);
+  /**
+   * QR emitido por setor. Uma vez `ready`, nunca é sobrescrito nesta aba: o
+   * QR do setor é fixo (deep-link determinístico) e reemitir só reabre o modal.
+   */
+  const [sectorQrBySector, setSectorQrBySector] = useState<Record<string, InventoryCollectorSectorQrState>>({});
+  const [sectorQrModalOpen, setSectorQrModalOpen] = useState(false);
+  const sectorQrState: InventoryCollectorSectorQrState = sectorQrBySector[sectorQrSector] ?? { status: "idle" };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,32 +127,41 @@ export function InventoryCollectorDevicesTab() {
     }
   }, []);
 
-  const loadSectorQr = useCallback(async () => {
-    setSectorQrRefreshing(true);
-    setSectorQrState((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
-    try {
-      const raw = await fetchJsonOk(buildCollectorSectorQrEndpoint());
-      const data = parseCollectorSectorQrPayload(raw);
-      setSectorQrState({ status: "ready", data });
-    } catch (e: unknown) {
-      const classified = classifyCollectorSectorQrError(
-        e instanceof HttpError
-          ? { status: e.status, code: e.code ?? null, message: e.message }
-          : e instanceof Error
-            ? { message: e.message }
-            : {}
-      );
-      if (classified.kind === "forbidden") {
-        setSectorQrState({ status: "forbidden" });
-      } else if (classified.kind === "config") {
-        setSectorQrState({ status: "config", message: classified.message });
-      } else {
-        setSectorQrState({ status: "error", message: classified.message });
+  /**
+   * Emite o QR do setor sob demanda (clique em "Emitir QR do setor") e abre o
+   * modal. Um QR já emitido (`ready`) é reaproveitado: nada de refetch nem de
+   * "regenerar" — o conteúdo é fixo por setor.
+   */
+  const emitSectorQr = useCallback(
+    async (sector: string, options: { force?: boolean } = {}) => {
+      setSectorQrModalOpen(true);
+      const current = sectorQrBySector[sector];
+      if (current?.status === "ready" && !options.force) return;
+      setSectorQrBySector((prev) => ({ ...prev, [sector]: { status: "loading" } }));
+      let next: InventoryCollectorSectorQrState;
+      try {
+        const raw = await fetchJsonOk(buildCollectorSectorQrEndpoint(sector));
+        next = { status: "ready", data: parseCollectorSectorQrPayload(raw) };
+      } catch (e: unknown) {
+        const classified = classifyCollectorSectorQrError(
+          e instanceof HttpError
+            ? { status: e.status, code: e.code ?? null, message: e.message }
+            : e instanceof Error
+              ? { message: e.message }
+              : {}
+        );
+        next =
+          classified.kind === "forbidden"
+            ? { status: "forbidden" }
+            : classified.kind === "config"
+              ? { status: "config", message: classified.message }
+              : { status: "error", message: classified.message };
+        if (next.status === "forbidden") setSectorQrModalOpen(false);
       }
-    } finally {
-      setSectorQrRefreshing(false);
-    }
-  }, []);
+      setSectorQrBySector((prev) => ({ ...prev, [sector]: next }));
+    },
+    [sectorQrBySector]
+  );
 
   useEffect(() => {
     if (!canApproveCount) {
@@ -154,8 +169,7 @@ export function InventoryCollectorDevicesTab() {
       return;
     }
     void load();
-    void loadSectorQr();
-  }, [canApproveCount, load, loadSectorQr]);
+  }, [canApproveCount, load]);
 
   const approve = useCallback(async () => {
     if (!draft) return;
@@ -255,9 +269,14 @@ export function InventoryCollectorDevicesTab() {
       />
 
       <InventoryCollectorSectorQrSection
+        sectors={COLLECTOR_SECTOR_QR_OPTIONS}
+        selectedSector={sectorQrSector}
+        onSelectSector={setSectorQrSector}
+        onEmit={() => void emitSectorQr(sectorQrSector)}
         state={sectorQrState}
-        onRefresh={() => void loadSectorQr()}
-        refreshing={sectorQrRefreshing}
+        modalOpen={sectorQrModalOpen}
+        onCloseModal={() => setSectorQrModalOpen(false)}
+        onRetry={() => void emitSectorQr(sectorQrSector, { force: true })}
       />
 
       <div className="flex items-center justify-between gap-3">
