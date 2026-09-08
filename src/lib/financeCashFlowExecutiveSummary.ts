@@ -45,7 +45,6 @@ import {
 import {
   resolveFinanceApCashRealizedAmount,
   resolveFinanceApEffectivePaymentDate,
-  resolveFinanceApRealizedAmount,
   resolveFinanceApSettledWithoutCashAmount,
 } from "./financeAccountsPayableRules.js";
 
@@ -117,9 +116,10 @@ export type FinanceCashFlowExecutiveMonthlyRow = {
   /** AP aberto: saldo em aberto dos títulos com dueDate no mês. */
   payableOpenDue: number;
   /**
-   * Baixas sem numerário (WITHOUT_CASH) dos títulos com dueDate no mês —
-   * encerradas pelo motor oficial, mas não são saída de caixa; ficam fora de
-   * `paid` e de `estimatedOutflow`.
+   * Realizado gerencial SEM evidência de caixa dos títulos com dueDate no mês
+   * (baixa sem numerário, baixa forçada, quitação sem amountPaid) — encerrado
+   * pelo motor oficial, mas não é saída de caixa; fica fora de `paid` e de
+   * `estimatedOutflow`.
    */
   payableSettledWithoutCash?: number;
   estimatedOutflow: number;
@@ -250,8 +250,9 @@ export function isApPaidInPeriod(
   endDate: Date
 ): boolean {
   // Fluxo de Caixa planejado aloca entradas/saídas pelo vencimento (dueDate),
-  // mantendo paymentDate apenas como auditoria operacional.
-  const realized = resolveFinanceApRealizedAmount(row);
+  // mantendo paymentDate apenas como auditoria operacional. Valor = caixa
+  // realizado (AP_CASH_REALIZED), nunca amountPayable inferido.
+  const realized = resolveFinanceApCashRealizedAmount(row);
   if (realized <= 0 || row.dueDate == null) return false;
   const due = startOfLocalDay(row.dueDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
@@ -267,7 +268,7 @@ export function sumApPaidInPeriod(
   let total = 0;
   for (const row of rows) {
     if (!isApPaidInPeriod(row, startDate, endDate)) continue;
-    total += resolveFinanceApRealizedAmount(row);
+    total += resolveFinanceApCashRealizedAmount(row);
   }
   return roundMoney(total);
 }
@@ -294,7 +295,7 @@ export function sumApCashRealizedDueInPeriod(
   return roundMoney(total);
 }
 
-/** Baixas sem numerário dos títulos com dueDate no período (informativo; fora de paid). */
+/** Realizado sem evidência de caixa dos títulos com dueDate no período (informativo; fora de paid). */
 export function sumApSettledWithoutCashDueInPeriod(
   rows: FinanceCashFlowApRow[],
   startDate: Date,
@@ -653,7 +654,8 @@ export function buildFinanceCashFlowExecutiveSummary(
     year
   );
   const receivedYtd = arOfficial.receivedYtd;
-  const paidYtd = apOfficial.paidYtd;
+  // Fluxo de Caixa: pago = AP_CASH_REALIZED (cashPaidYtd), não AP_SETTLED.
+  const paidYtd = apOfficial.cashPaidYtd;
   const openArForward = arOfficial.openForwardToYearEnd;
   const openApForward = apOfficial.openUntilYearEnd;
   const apOverdueOpen = apOfficial.overdueOpenBeforeBase;
@@ -661,7 +663,7 @@ export function buildFinanceCashFlowExecutiveSummary(
   const apOpenRemaining = apOfficial.openRemainingObligation;
 
   const estimatedArYear = arOfficial.estimatedYearTotal;
-  const estimatedApYear = apOfficial.estimatedYearTotal;
+  const estimatedApYear = apOfficial.cashEstimatedYearTotal;
   const realizedYtd = roundMoney(receivedYtd - paidYtd);
   // Saldo projetado restante subtrai a obrigação AP ainda existente (com
   // vencidos em aberto), mantendo estimatedYearNet = realizedYtd + projectedRemaining.

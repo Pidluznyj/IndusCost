@@ -28,7 +28,7 @@ export const FINANCE_CF_HELP_MONTHLY_TIMELINE_EXCEPTION =
   "Exceção deliberada: esta linha do tempo não precisa bater mês a mês com o gráfico planejado. Estimativas mensais independem do modo Previsto/Realizado do filtro global." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_CHART =
-  "Fluxo planejado: movimentos de AR/AP alocados pelo vencimento (dueDate). Mesma autoridade do comparativo anual quando o ano e a população são equivalentes." as const;
+  "Fluxo planejado: movimentos de AR/AP alocados pelo vencimento (dueDate); AP realizado = caixa pago informado (baixas sem numerário/forçadas/sem valor pago ficam fora). Mesma autoridade do comparativo anual quando o ano e a população são equivalentes." as const;
 
 export const FINANCE_CF_HELP_CALENDAR =
   "Calendário reconciliado com a linha do tempo do Fluxo. Movimentos diários usam as mesmas regras do ledger (CR/AP saneados)." as const;

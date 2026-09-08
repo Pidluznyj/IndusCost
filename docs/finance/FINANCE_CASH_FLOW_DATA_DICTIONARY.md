@@ -390,12 +390,15 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 
 Fonte única: `src/lib/financeAccountsPayableRules.ts` (`normalizeAccountsPayableTitle`).
 
-| Situação | Data efetiva (dashboard) | Valor realizado | Em aberto |
-|----------|--------------------------|-----------------|-----------|
-| AP normal pago | **`dueDate`** | `amountPaid` (ou `amountPayable` se baixado sem valor pago) | 0 |
-| AP em aberto | `dueDate` | 0 | `balancePayable` |
-| Baixa sem numerário / forçada | **`dueDate`** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | 0 |
-| Cancelado (`CANCELLED`, `CANCELADO`, `ERROR`, …) | — | excluído das métricas | excluído |
+| Situação | Data efetiva (dashboard) | Realizado gerencial (AP_SETTLED, tela Contas a Pagar) | **Caixa realizado (AP_CASH_REALIZED, Fluxo de Caixa)** | Em aberto |
+|----------|--------------------------|-----------------|-----------------|-----------|
+| AP normal pago | **`dueDate`** | `amountPaid` (ou `amountPayable` se baixado sem valor pago) | `amountPaid` informado; **0** se baixado sem valor pago | 0 |
+| AP em aberto / parcial | `dueDate` | `amountPaid` | `amountPaid` | `balancePayable` |
+| Baixa sem numerário (WITHOUT_CASH) | **`dueDate`** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | `amountPaid` informado (normalmente 0) | 0 |
+| Baixa forçada (FORCED) | **`dueDate`** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | `amountPaid` informado — semântica de caixa não resolvida, nunca infere `amountPayable` | 0 |
+| Cancelado (`CANCELLED`, `CANCELADO`, `ERROR`, …) | — | excluído das métricas | 0 | excluído |
+
+`resolveFinanceApRealizedAmount` = AP_SETTLED; `resolveFinanceApCashRealizedAmount` = AP_CASH_REALIZED (`cashRealizedAmount`, nunca acima de `amountPaid`). Tudo que no Fluxo de Caixa se chama pago/realizado/saída (Pago YTD = `cashPaidYtd`, Saldo realizado YTD, Saídas do período e série mensal realizada, fluxo planejado "Pago", comparativo anual, Linha do tempo mensal, Estimativa AP do ano = `cashEstimatedYearTotal`) usa AP_CASH_REALIZED. A tela Contas a Pagar mantém AP_SETTLED em "Pago". A parcela sem evidência de caixa fica exposta em `monthlyTimeline[].payableSettledWithoutCash`. Auditoria read-only para quantificar: `scripts/audit-finance-ap-forced-cash-semantics.sql`.
 
 `paymentDate` e `settlementDate` originais permanecem em `originalPaymentDate` / `originalSettlementDate` para auditoria operacional.
 

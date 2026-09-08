@@ -138,7 +138,7 @@ export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
   "Estimativa gerencial do ano: Recebido YTD (baixa/settlementDate) + saldo aberto a vencer até 31/12 (dueDate). Fórmula oficial: receivedYtd + openUntilYearEnd." as const;
 
 export const FINANCE_KPI_CF_PAID_YTD =
-  "Soma dos valores efetivamente pagos em Contas a Pagar no ano selecionado, alocados pela data efetiva canônica de pagamento. Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros gerenciais de AP — não usa vencimento para o período do realizado." as const;
+  "Saída de caixa de Contas a Pagar no ano selecionado: soma do valor pago informado (amountPaid) pela data efetiva canônica de pagamento, de 01/01 até a data de corte. Baixas sem numerário, baixas forçadas e quitações sem valor pago informado não entram (encerram o título, mas não são caixa). Eixo por data de pagamento — por isso pode diferir da soma mensal da Linha do tempo, que é por vencimento. Respeita filtros gerenciais de AP." as const;
 
 export const FINANCE_KPI_CF_AP_OVERDUE_OPEN =
   "Títulos de Contas a Pagar ainda em aberto com vencimento operacional anterior à data-base, dentro do ano selecionado. Continuam alocados na dueDate original (eixo oficial AP) — não são deslocados para o mês atual, mas seguem sendo obrigação de caixa." as const;
@@ -153,13 +153,13 @@ export const FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN =
   "Composição do total ainda a pagar: vencido antes da data-base (alocado na dueDate original) + saldo a vencer mês a mês da data-base até 31/12. A soma dos meses iguala o card A vencer até 31/12; vencido + a vencer iguala Total ainda a pagar." as const;
 
 export const FINANCE_KPI_CF_PERIOD_OUTFLOW =
-  "Saídas do mês ou ano filtrado, conforme modo Previsto/Realizado/Combinado. Respeita filtro de mês. Distinto dos cards anuais A vencer até 31/12 e Total ainda a pagar (que ignoram o mês filtrado)." as const;
+  "Saídas do mês ou ano filtrado, conforme modo Previsto/Realizado/Combinado (realizado = caixa pago informado, sem baixas sem numerário; previsto = saldo aberto), alocadas por vencimento. Respeita filtro de mês. Distinto dos cards anuais A vencer até 31/12 e Total ainda a pagar (que ignoram o mês filtrado)." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AP_YEAR =
-  "Estimativa total de saídas do ano: Pago no ano + total de obrigações ainda em aberto consideradas para o ano (vencidos + vencendo hoje + a vencer até 31/12). Fórmula: Pago YTD + Total ainda a pagar." as const;
+  "Estimativa total de saídas do ano: Pago YTD (caixa realizado) + total de obrigações ainda em aberto consideradas para o ano (vencidos + vencendo hoje + a vencer até 31/12). Fórmula: Pago YTD + Total ainda a pagar." as const;
 
 export const FINANCE_KPI_CF_REALIZED_YTD =
-  "Saldo de caixa realizado no ano: Recebido YTD − Pago YTD. Reflete liquidações efetivas, não faturamento." as const;
+  "Saldo de caixa realizado no ano: Recebido YTD − Pago YTD (caixa realizado, sem baixas sem numerário). Reflete liquidações efetivas, não faturamento." as const;
 
 export const FINANCE_KPI_CF_PROJECTED_REMAINING =
   "Saldo projetado do restante do ano: A receber até 31/12 − Total ainda a pagar (inclui AP vencido em aberto). Mede o fluxo futuro esperado dentro do ano; Saldo realizado YTD + Saldo projetado restante = Estimativa líquida anual." as const;

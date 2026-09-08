@@ -19,6 +19,7 @@ export type FinanceApRulesMetricKey =
   | "totalPayable"
   | "paidThisMonth"
   | "paidYtd"
+  | "cashPaidYtd"
   | "openAmount"
   | "overdueAmount"
   | "dueTodayAmount"
@@ -32,6 +33,7 @@ export type FinanceApRulesMetricKey =
   | "openUntilYearEnd"
   | "openRemainingObligation"
   | "estimatedYearTotal"
+  | "cashEstimatedYearTotal"
   | "periodPaidAmount"
   | "periodExpectedOutflowAmount"
   | "paidInAppliedPeriod";
@@ -71,6 +73,12 @@ export type FinanceAccountsPayableMetrics = {
   totalPayable: number;
   paidThisMonth: number;
   paidYtd: number;
+  /**
+   * AP_CASH_REALIZED no ano: só amountPaid informado, pela data efetiva
+   * canônica. Fluxo de Caixa usa este; paidYtd (AP_SETTLED) é o da tela
+   * Contas a Pagar.
+   */
+  cashPaidYtd: number;
   openAmount: number;
   overdueAmount: number;
   dueTodayAmount: number;
@@ -99,8 +107,10 @@ export type FinanceAccountsPayableMetrics = {
    * Obrigação de caixa ainda existente no ano.
    */
   openRemainingObligation: number;
-  /** AP_ESTIMATED_YEAR_TOTAL — paidYtd + openRemainingObligation. */
+  /** AP_ESTIMATED_YEAR_TOTAL — paidYtd + openRemainingObligation (tela Contas a Pagar). */
   estimatedYearTotal: number;
+  /** Fluxo de Caixa: cashPaidYtd + openRemainingObligation. */
+  cashEstimatedYearTotal: number;
   periodPaidAmount: number;
   periodExpectedOutflowAmount: number;
   /**

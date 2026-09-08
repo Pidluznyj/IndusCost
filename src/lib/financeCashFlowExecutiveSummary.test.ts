@@ -1250,3 +1250,83 @@ describe("AP_MONTHLY_DUE_TIMELINE — dueDate define o mês; a baixa define o st
     assert.equal(month(payload.executiveSummary.monthlyTimeline, 6).paid, 0);
   });
 });
+
+describe("Fluxo de Caixa — pago/realizado/saída usam AP_CASH_REALIZED", () => {
+  const ref = new Date(2026, 8, 8);
+  const withoutCash = apRow({
+    externalId: 1,
+    amountPayable: 300,
+    amountPaid: 0,
+    balancePayable: 0,
+    dueDate: new Date(2026, 3, 15),
+    settlementDate: new Date(2026, 3, 20),
+    description: "BAIXA SEM NUMERARIO",
+  });
+  const settledZeroPaid = apRow({
+    externalId: 2,
+    amountPayable: 200,
+    amountPaid: 0,
+    balancePayable: 0,
+    dueDate: new Date(2026, 4, 10),
+    settlementDate: new Date(2026, 4, 12),
+  });
+  const cashPaid = apRow({
+    externalId: 3,
+    amountPayable: 50,
+    amountPaid: 50,
+    balancePayable: 0,
+    dueDate: new Date(2026, 5, 10),
+    paymentDate: new Date(2026, 5, 10),
+  });
+  const openTitle = apRow({ externalId: 4, amountPayable: 70, amountPaid: 0, balancePayable: 70, dueDate: new Date(2026, 9, 1) });
+
+  it("Pago YTD, Saldo realizado e Estimativa AP do ano não contam baixa sem numerário nem quitação sem amountPaid", () => {
+    const payload = buildFinanceCashFlowDashboard([], [withoutCash, settledZeroPaid, cashPaid, openTitle], filters, ref);
+    const { payable, net } = payload.executiveSummary;
+    assert.equal(payable.paidYtd, 50);
+    assert.equal(payable.openRemainingObligation, 70);
+    assert.equal(payable.estimatedYearTotal, 120);
+    assert.equal(net.realizedYtd, -50);
+    assert.equal(net.estimatedYearNet, net.realizedYtd + net.projectedRemaining);
+  });
+
+  it("Saídas do período (série mensal, modo realizado) = caixa realizado; baixa sem numerário = 0", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      [withoutCash, settledZeroPaid, cashPaid],
+      { ...filters, viewMode: "realized" },
+      ref
+    );
+    assert.equal(payload.executiveSummary.period.outflowAmount, 50);
+    const april = payload.executiveSummary.monthlyTimeline.find((r) => r.month === 4)!;
+    assert.equal(april.paid, 0);
+    assert.equal(april.payableSettledWithoutCash, 300);
+    const may = payload.executiveSummary.monthlyTimeline.find((r) => r.month === 5)!;
+    assert.equal(may.paid, 0);
+    assert.equal(may.payableSettledWithoutCash, 200);
+    assert.equal(may.payableOpenDue, 0, "quitação sem amountPaid continua encerrada: não reaparece em aberto");
+  });
+
+  it("fluxo planejado (por dueDate) também usa caixa realizado", () => {
+    const payload = buildFinanceCashFlowDashboard([], [withoutCash, cashPaid], filters, ref);
+    const plannedApr = payload.executiveSummary.plannedMonthlyTimeline.find((r) => r.month === 4)!;
+    const plannedJun = payload.executiveSummary.plannedMonthlyTimeline.find((r) => r.month === 6)!;
+    assert.equal(plannedApr.paid, 0);
+    assert.equal(plannedJun.paid, 50);
+  });
+
+  it("eixos distintos documentados: soma mensal por dueDate ≠ Pago YTD por data efetiva não é bug", () => {
+    const late = apRow({
+      externalId: 9,
+      amountPayable: 80,
+      amountPaid: 80,
+      balancePayable: 0,
+      dueDate: new Date(2025, 11, 20),
+      paymentDate: new Date(2026, 0, 10),
+    });
+    const payload = buildFinanceCashFlowDashboard([], [late, cashPaid], filters, ref);
+    const monthlySum = payload.executiveSummary.monthlyTimeline.reduce((sum, r) => sum + r.paid, 0);
+    assert.equal(monthlySum, 50);
+    assert.equal(payload.executiveSummary.payable.paidYtd, 130);
+  });
+});

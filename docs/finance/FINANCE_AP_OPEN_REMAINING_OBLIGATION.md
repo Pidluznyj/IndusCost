@@ -93,9 +93,11 @@ Regra corporativa agora aplicada: **dueDate define o mês; a baixa define o stat
 | (info) | `payableSettledWithoutCash` | baixas `WITHOUT_CASH` dos títulos do mês — encerradas pelo motor oficial, **fora** de Pago e de Saídas est. |
 | Saídas est. | `estimatedOutflow` | `paid + payableOpenDue` |
 
-Semântica de caixa (`resolveFinanceApCashRealizedAmount`): cancelado → 0; `WITHOUT_CASH` → só `amountPaid`
-informado (nunca infere `amountPayable`); `FORCED` → comportamento canônico atual
-(**FORCED_CASH_SEMANTICS=UNRESOLVED**, sem ampliar nem restringir sem prova).
+Semântica de caixa (`resolveFinanceApCashRealizedAmount` = `cashRealizedAmount`): cancelado → 0; em qualquer
+baixa (normal, `WITHOUT_CASH`, `FORCED`) só o `amountPaid` informado conta; quitação com `amountPaid = 0`
+encerra o título mas **não** vira caixa (nunca infere `amountPayable`). **FORCED_CASH_SEMANTICS=UNRESOLVED**:
+o espelho não distingue baixa forçada com ou sem dinheiro; a regra de segurança limita o caixa ao
+`amountPaid` comprovado. Ver seção "AP_SETTLED × AP_CASH_REALIZED".
 
 O card **Pago YTD** continua com sua semântica própria (realizado pela data efetiva canônica no
 ano — pergunta "quanto saiu no ano"), documentada como eixo distinto; a linha mensal responde
@@ -107,3 +109,24 @@ Invariantes testadas: um título aparece em no máximo um mês; `month = month(d
 **no mesmo mês**; `WITHOUT_CASH` não aumenta Pago; cancelado não entra; baixas atrasadas (abr→jun,
 jan→ago, dez/2025→jan/2026) não deslocam o valor. SQL read-only para decompor um mês real:
 `scripts/audit-cash-flow-ap-monthly-due-vs-settlement.sql`.
+
+## AP_SETTLED × AP_CASH_REALIZED (terceiro commit)
+
+| Conceito | Resolver | Significado |
+|---|---|---|
+| **AP_SETTLED** | `resolveFinanceApRealizedAmount` (`realizedAmount`) | Obrigação encerrada pelo estado operacional: `amountPaid`, ou `amountPayable` quando baixado sem valor pago. Tela Contas a Pagar ("Pago", `paidYtd`, `paidInAppliedPeriod`). |
+| **AP_CASH_REALIZED** | `resolveFinanceApCashRealizedAmount` (`cashRealizedAmount`) | Saída financeira afirmável pela evidência do título: só `amountPaid > 0`. Nunca acima de `amountPaid`; nunca `amountPayable` inferido. |
+
+Consumidores do Fluxo de Caixa que passam a usar **AP_CASH_REALIZED**: Pago YTD (`cashPaidYtd`), Saldo
+realizado YTD, Estimativa AP do ano (`cashEstimatedYearTotal` = cashPaidYtd + total ainda a pagar), Estimativa
+líquida anual, Saídas do período e série mensal realizada/combinada (`financeCashFlowLedger`), calendário
+realizado, fluxo planejado "Pago" (`sumApPaidInPeriod`), comparativo anual (`sumApPaidByPaymentInPeriod`),
+totais da carteira YTD e Linha do tempo mensal. Consumidores fora do Fluxo que mantêm **AP_SETTLED**: tela
+Contas a Pagar, auditoria de cálculo AP, drill-down de fornecedores por centro de custo, Relatório Presidencial
+(`paidYtd` do motor AP) e Tesouraria (fronteira própria).
+
+Eixos: Linha do tempo mensal = **dueDate**; Pago YTD = **data efetiva de pagamento**. A soma mensal por
+vencimento não precisa bater com o Pago YTD por pagamento — não é bug; a definição de caixa por título é a
+mesma nos dois. Invariantes testadas: `cashRealized ≤ amountPaid`, `cashRealized ≤ realized`,
+`cashPaidYtd ≤ paidYtd`, WITHOUT_CASH/FORCED/quitação sem valor não viram saída, cancelado = 0, parcial = só
+`amountPaid`, e o título encerrado sem caixa não reaparece em aberto.

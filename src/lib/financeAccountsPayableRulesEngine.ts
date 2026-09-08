@@ -105,6 +105,17 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     dateBasisNote: "resolveFinanceApEffectivePaymentDate — não usa dueDate para o período do realizado.",
   },
   {
+    key: "cashPaidYtd",
+    label: "Pago com caixa YTD",
+    description:
+      "Saída de caixa afirmável no ano: soma de amountPaid informado (nunca amountPayable inferido), pela data efetiva canônica. Baixas sem numerário, forçadas ou sem valor pago ficam fora.",
+    valueField: "cashRealizedAmount",
+    dateField: "effectivePaymentDate",
+    includes: ["Pagamentos com amountPaid informado no acumulado do ano"],
+    excludes: ["Baixas sem evidência de caixa", "Cancelados"],
+    dateBasisNote: "Fluxo de Caixa (AP_CASH_REALIZED). Distinto de paidYtd (AP_SETTLED).",
+  },
+  {
     key: "openAmount",
     label: "Em aberto",
     description: "Soma de saldo em aberto saneado (resolveFinanceApOpenAmount).",
@@ -223,6 +234,15 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     valueField: "mixed",
     dateField: "mixed",
     includes: ["paidYtd", "openRemainingObligation"],
+    excludes: [],
+  },
+  {
+    key: "cashEstimatedYearTotal",
+    label: "Estimativa AP do ano (caixa)",
+    description: "Pago com caixa YTD + total ainda a pagar (inclui vencidos em aberto). Fluxo de Caixa.",
+    valueField: "mixed",
+    dateField: "mixed",
+    includes: ["cashPaidYtd", "openRemainingObligation"],
     excludes: [],
   },
   {
@@ -458,6 +478,16 @@ export function buildAccountsPayableMetrics(
     context.ytdEnd
   );
 
+  const cashPaidYtd = sumFinanceApPaidInPaymentPeriod(
+    titles,
+    context.filters,
+    context.referenceDate,
+    context.syncCutoff,
+    context.ytdStart,
+    context.ytdEnd,
+    "cash"
+  );
+
   const paidInAppliedPeriod =
     context.realizedPeriodKind === "ytd"
       ? paidYtd
@@ -522,6 +552,7 @@ export function buildAccountsPayableMetrics(
     totalPayable: resolvedCards.totalPayableAmount,
     paidThisMonth: resolvedCards.paidThisMonthAmount,
     paidYtd,
+    cashPaidYtd,
     openAmount: resolvedCards.totalOpenAmount,
     overdueAmount: resolvedCards.overdueAmount,
     dueTodayAmount: resolvedCards.dueTodayAmount,
@@ -536,6 +567,7 @@ export function buildAccountsPayableMetrics(
     openRemainingObligation,
     // AP_ESTIMATED_YEAR_TOTAL = pago no ano + obrigação ainda em aberto (com vencidos).
     estimatedYearTotal: roundMoney(paidYtd + openRemainingObligation),
+    cashEstimatedYearTotal: roundMoney(cashPaidYtd + openRemainingObligation),
     periodPaidAmount: paidYtd,
     periodExpectedOutflowAmount: openUntilYearEnd,
     paidInAppliedPeriod,
@@ -655,6 +687,16 @@ export function auditAccountsPayableRules(
     warnings.push(
       `estimatedYearTotal (${m.estimatedYearTotal}) != paidYtd (${m.paidYtd}) + openRemainingObligation (${m.openRemainingObligation}).`
     );
+  }
+  if (
+    Math.abs(m.cashEstimatedYearTotal - roundMoney(m.cashPaidYtd + m.openRemainingObligation)) > 0.01
+  ) {
+    warnings.push(
+      `cashEstimatedYearTotal (${m.cashEstimatedYearTotal}) != cashPaidYtd (${m.cashPaidYtd}) + openRemainingObligation (${m.openRemainingObligation}).`
+    );
+  }
+  if (m.cashPaidYtd > m.paidYtd + 0.01) {
+    warnings.push("cashPaidYtd excede paidYtd — caixa acima do realizado gerencial.");
   }
   if (m.openUntilYearEnd > m.openRemainingObligation + 0.01) {
     warnings.push("openUntilYearEnd excede openRemainingObligation — vencido em aberto negativo?");

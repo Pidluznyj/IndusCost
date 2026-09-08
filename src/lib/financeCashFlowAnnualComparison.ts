@@ -15,7 +15,7 @@ import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplicati
 import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
-  resolveFinanceApRealizedAmount,
+  resolveFinanceApCashRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import type {
   FinanceCashFlowApRow,
@@ -188,7 +188,7 @@ export function resolveAnnualComparisonArRealizationDate(
 export function resolveAnnualComparisonApPaymentDate(
   row: FinanceCashFlowApRow
 ): Date | null {
-  const realized = resolveFinanceApRealizedAmount(row);
+  const realized = resolveFinanceApCashRealizedAmount(row);
   if (realized <= 0) return null;
   const payment = row.paymentDate ?? row.settlementDate ?? null;
   if (payment) return payment;
@@ -227,7 +227,7 @@ export function isApPaidByPaymentInPeriod(
 ): boolean {
   const payment = resolveAnnualComparisonApPaymentDate(row);
   if (!payment) return false;
-  if (resolveFinanceApRealizedAmount(row) <= 0) return false;
+  if (resolveFinanceApCashRealizedAmount(row) <= 0) return false;
   return isDateInPeriod(payment, startDate, endDate);
 }
 
@@ -239,7 +239,7 @@ export function sumApPaidByPaymentInPeriod(
   let total = 0;
   for (const row of rows) {
     if (!isApPaidByPaymentInPeriod(row, startDate, endDate)) continue;
-    total += resolveFinanceApRealizedAmount(row);
+    total += resolveFinanceApCashRealizedAmount(row);
   }
   return roundMoney(total);
 }

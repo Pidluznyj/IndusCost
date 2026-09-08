@@ -132,11 +132,13 @@ export function sumOfficialApPaidInPaymentPeriod(
 export type OfficialApCashFlowExecutiveMetrics = Pick<
   FinanceAccountsPayableMetrics,
   | "paidYtd"
+  | "cashPaidYtd"
   | "overdueOpenBeforeBase"
   | "dueTodayOpenInYear"
   | "openUntilYearEnd"
   | "openRemainingObligation"
   | "estimatedYearTotal"
+  | "cashEstimatedYearTotal"
   | "paidThisMonth"
   | "openAmount"
 >;
@@ -158,11 +160,13 @@ export function resolveOfficialApCashFlowExecutiveMetrics(
   });
   return {
     paidYtd: result.metrics.paidYtd,
+    cashPaidYtd: result.metrics.cashPaidYtd,
     overdueOpenBeforeBase: result.metrics.overdueOpenBeforeBase,
     dueTodayOpenInYear: result.metrics.dueTodayOpenInYear,
     openUntilYearEnd: result.metrics.openUntilYearEnd,
     openRemainingObligation: result.metrics.openRemainingObligation,
     estimatedYearTotal: result.metrics.estimatedYearTotal,
+    cashEstimatedYearTotal: result.metrics.cashEstimatedYearTotal,
     paidThisMonth: result.metrics.paidThisMonth,
     openAmount: result.metrics.openAmount,
   };

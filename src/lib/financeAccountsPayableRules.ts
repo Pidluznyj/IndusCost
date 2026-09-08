@@ -44,7 +44,18 @@ export type NormalizedAccountsPayableTitle = {
   settlementKind: FinanceApSettlementKind;
   amountPayable: number;
   amountPaid: number;
+  /**
+   * AP_SETTLED — realizado gerencial (estado operacional do título): quitado
+   * com `amountPaid`, ou `amountPayable` quando baixado sem valor pago
+   * informado (regra documentada de Contas a Pagar).
+   */
   realizedAmount: number;
+  /**
+   * AP_CASH_REALIZED — saída de caixa afirmável pela evidência do título:
+   * somente `amountPaid` informado (> 0), nunca `amountPayable` inferido.
+   * Cancelado → 0. Vale para baixa normal, WITHOUT_CASH e FORCED.
+   */
+  cashRealizedAmount: number;
   openAmount: number;
   isOpen: boolean;
   isSettled: boolean;
@@ -170,6 +181,7 @@ export function normalizeAccountsPayableTitle(
   }
 
   const openAmount = isOpen ? balancePayable : 0;
+  const cashRealizedAmount = !isCancelled && amountPaid > 0 ? amountPaid : 0;
 
   const effectiveDashboardDate = isCancelled ? null : dueDate;
 
@@ -202,6 +214,7 @@ export function normalizeAccountsPayableTitle(
     amountPayable,
     amountPaid,
     realizedAmount,
+    cashRealizedAmount,
     openAmount,
     isOpen,
     isSettled,
@@ -239,30 +252,34 @@ export function resolveFinanceApOpenAmount(row: FinanceApRulesInput): number {
 }
 
 /**
- * Realizado COM caixa (AP_CASH_REALIZED) — para a linha mensal corporativa de
- * Contas a Pagar. Diferente de `resolveFinanceApRealizedAmount` (AP_SETTLED):
+ * AP_CASH_REALIZED — saída de caixa afirmável pela evidência do título, para
+ * tudo que no Fluxo de Caixa se apresenta como pago/realizado/saída.
+ * Diferente de `resolveFinanceApRealizedAmount` (AP_SETTLED, estado
+ * operacional). Regra de segurança: cashRealized nunca excede o `amountPaid`
+ * informado pelo Nomus —
  * - cancelado → 0;
- * - baixa `WITHOUT_CASH` ("baixa sem numerário") → só o que foi efetivamente
- *   informado como pago (`amountPaid`); nunca infere `amountPayable` como caixa;
- * - `FORCED` → mantém o comportamento canônico atual (contado como realizado).
- *   FORCED_CASH_SEMANTICS=UNRESOLVED: sem prova de que a baixa forçada não
- *   representa saída de caixa, a regra não é ampliada nem restringida aqui.
+ * - baixa normal com `amountPaid` → `amountPaid` (parcial inclusive);
+ * - quitado com `amountPaid = 0` (baixa sem valor pago) → 0: o título fica
+ *   encerrado (fora do saldo em aberto), mas não vira saída de caixa;
+ * - `WITHOUT_CASH` ("baixa sem numerário") → só `amountPaid` informado;
+ * - `FORCED` ("baixa forçada") → só `amountPaid` informado.
+ *   FORCED_CASH_SEMANTICS=UNRESOLVED: o espelho não distingue baixa forçada
+ *   com ou sem dinheiro; sem inferir `amountPayable` como caixa.
  * Nunca muda o mês do título: a atribuição mensal é sempre pela dueDate.
  */
 export function resolveFinanceApCashRealizedAmount(row: FinanceApRulesInput): number {
-  const normalized = normalizeAccountsPayableTitle(row);
-  if (normalized.isCancelled) return 0;
-  if (normalized.settlementKind === "WITHOUT_CASH") {
-    return normalized.amountPaid > 0 ? normalized.amountPaid : 0;
-  }
-  return normalized.realizedAmount;
+  return normalizeAccountsPayableTitle(row).cashRealizedAmount;
 }
 
-/** Parcela do realizado canônico que NÃO representa caixa (baixa sem numerário). */
+/**
+ * Parcela do realizado gerencial (AP_SETTLED) SEM evidência de caixa:
+ * baixa sem numerário, baixa forçada ou quitação sem valor pago informado.
+ * Encerrada pelo motor oficial, mas não é saída de caixa.
+ */
 export function resolveFinanceApSettledWithoutCashAmount(row: FinanceApRulesInput): number {
   const normalized = normalizeAccountsPayableTitle(row);
-  if (normalized.isCancelled || normalized.settlementKind !== "WITHOUT_CASH") return 0;
-  return roundMoney(normalized.realizedAmount - resolveFinanceApCashRealizedAmount(row));
+  if (normalized.isCancelled) return 0;
+  return roundMoney(Math.max(0, normalized.realizedAmount - normalized.cashRealizedAmount));
 }
 
 export const FINANCE_AP_CASH_FLOW_RULES_NOTE =
