@@ -76,3 +76,34 @@ Pago YTD · **Vencido em aberto** · **A vencer até 31/12** (antes "A pagar res
 - UI: `src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel.tsx`, tooltips em `src/lib/financeKpiTooltips.ts`
 - Export CSV: `resumo_ap_vencido_em_aberto`, `resumo_ap_total_ainda_a_pagar`
 - Testes: `financeAccountsPayableRulesEngine.test.ts` (A–I, invariantes, paridade), `financeCashFlowExecutiveSummary.test.ts`, `financeCashFlowArApReconciliation.test.ts`
+
+## Linha do tempo mensal — AP_CORPORATE_MONTHLY_AXIS = dueDate
+
+A tabela **Linha do tempo mensal** (`executiveSummary.monthlyTimeline`) atribuía o **Pago** de Contas a
+Pagar ao mês da **data efetiva de pagamento** (paymentDate/settlementDate), sobre a população
+recortada por data de pagamento. Baixas atrasadas inflavam o mês da baixa (junho/2026 concentrava
+títulos vencidos em abril/maio baixados em junho).
+
+Regra corporativa agora aplicada: **dueDate define o mês; a baixa define o status.**
+
+| Coluna | Campo | Regra |
+|---|---|---|
+| Pago | `paid` | `sumApCashRealizedDueInPeriod` — realizado **com caixa** (`resolveFinanceApCashRealizedAmount`) dos títulos cuja dueDate cai no mês |
+| A pagar | `payableOpenDue` | `sumApOpenDueInPeriod` — saldo aberto dos títulos cuja dueDate cai no mês (inalterado) |
+| (info) | `payableSettledWithoutCash` | baixas `WITHOUT_CASH` dos títulos do mês — encerradas pelo motor oficial, **fora** de Pago e de Saídas est. |
+| Saídas est. | `estimatedOutflow` | `paid + payableOpenDue` |
+
+Semântica de caixa (`resolveFinanceApCashRealizedAmount`): cancelado → 0; `WITHOUT_CASH` → só `amountPaid`
+informado (nunca infere `amountPayable`); `FORCED` → comportamento canônico atual
+(**FORCED_CASH_SEMANTICS=UNRESOLVED**, sem ampliar nem restringir sem prova).
+
+O card **Pago YTD** continua com sua semântica própria (realizado pela data efetiva canônica no
+ano — pergunta "quanto saiu no ano"), documentada como eixo distinto; a linha mensal responde
+"a que mês pertence a obrigação". O fluxo planejado (`plannedMonthlyTimeline`) já era por dueDate
+e não muda. AR não foi alterado. Nenhuma exceção específica de mês existe.
+
+Invariantes testadas: um título aparece em no máximo um mês; `month = month(dueDate)`; mudar
+`settlementDate` sem mudar `dueDate` não muda o mês; OPEN → SETTLED move o valor de A pagar para Pago
+**no mesmo mês**; `WITHOUT_CASH` não aumenta Pago; cancelado não entra; baixas atrasadas (abr→jun,
+jan→ago, dez/2025→jan/2026) não deslocam o valor. SQL read-only para decompor um mês real:
+`scripts/audit-cash-flow-ap-monthly-due-vs-settlement.sql`.

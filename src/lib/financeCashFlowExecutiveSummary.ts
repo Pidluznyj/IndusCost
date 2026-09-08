@@ -4,8 +4,6 @@ import {
   isFinanceApOpen,
   roundMoney,
   startOfLocalDay,
-  sumFinanceApPaidInPaymentPeriodFromFilteredRows,
-  toFinanceApPaymentScopeFilters,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
 import {
@@ -45,8 +43,10 @@ import {
   type NomusApReportSyncCutoff,
 } from "./financeNomusApReportFreshness.js";
 import {
+  resolveFinanceApCashRealizedAmount,
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApRealizedAmount,
+  resolveFinanceApSettledWithoutCashAmount,
 } from "./financeAccountsPayableRules.js";
 
 export type FinanceCashFlowExecutiveSummaryMetadata = {
@@ -112,8 +112,16 @@ export type FinanceCashFlowExecutiveMonthlyRow = {
   received: number;
   receivableOpenDue: number;
   estimatedInflow: number;
+  /** AP pago: realizado com caixa dos títulos com dueDate no mês (AP_CASH_REALIZED por dueMonth). */
   paid: number;
+  /** AP aberto: saldo em aberto dos títulos com dueDate no mês. */
   payableOpenDue: number;
+  /**
+   * Baixas sem numerário (WITHOUT_CASH) dos títulos com dueDate no mês —
+   * encerradas pelo motor oficial, mas não são saída de caixa; ficam fora de
+   * `paid` e de `estimatedOutflow`.
+   */
+  payableSettledWithoutCash?: number;
   estimatedOutflow: number;
   netFlow: number;
   accumulatedNet: number;
@@ -147,7 +155,11 @@ export type FinanceCashFlowExecutiveSummary = {
   };
   net: FinanceCashFlowExecutiveSummaryNet;
   period: FinanceCashFlowExecutiveSummaryPeriod;
-  /** Linha do tempo mensal: Recebido/Pago por data de movimento; aberto por vencimento. */
+  /**
+   * Linha do tempo mensal: AR recebido por data de movimento (baixa) e aberto
+   * por vencimento; AP SEMPRE por dueDate (AP_CORPORATE_MONTHLY_AXIS) — pago com
+   * caixa e aberto dos títulos que vencem no mês.
+   */
   monthlyTimeline: FinanceCashFlowExecutiveMonthlyRow[];
   /**
    * Fluxo planejado / comparativo anual / calendário: Recebido/Pago e aberto
@@ -256,6 +268,46 @@ export function sumApPaidInPeriod(
   for (const row of rows) {
     if (!isApPaidInPeriod(row, startDate, endDate)) continue;
     total += resolveFinanceApRealizedAmount(row);
+  }
+  return roundMoney(total);
+}
+
+/**
+ * AP_MONTHLY_DUE_TIMELINE — realizado COM caixa dos títulos cuja dueDate cai no
+ * período. Eixo corporativo AP: o mês é o do vencimento; a baixa muda o status
+ * do título, nunca sua competência mensal (baixa atrasada não desloca valor).
+ */
+export function sumApCashRealizedDueInPeriod(
+  rows: FinanceCashFlowApRow[],
+  startDate: Date,
+  endDate: Date
+): number {
+  const start = startOfLocalDay(startDate).getTime();
+  const end = startOfLocalDay(endDate).getTime();
+  let total = 0;
+  for (const row of rows) {
+    if (row.dueDate == null) continue;
+    const due = startOfLocalDay(row.dueDate).getTime();
+    if (due < start || due > end) continue;
+    total += resolveFinanceApCashRealizedAmount(row);
+  }
+  return roundMoney(total);
+}
+
+/** Baixas sem numerário dos títulos com dueDate no período (informativo; fora de paid). */
+export function sumApSettledWithoutCashDueInPeriod(
+  rows: FinanceCashFlowApRow[],
+  startDate: Date,
+  endDate: Date
+): number {
+  const start = startOfLocalDay(startDate).getTime();
+  const end = startOfLocalDay(endDate).getTime();
+  let total = 0;
+  for (const row of rows) {
+    if (row.dueDate == null) continue;
+    const due = startOfLocalDay(row.dueDate).getTime();
+    if (due < start || due > end) continue;
+    total += resolveFinanceApSettledWithoutCashAmount(row);
   }
   return roundMoney(total);
 }
@@ -443,11 +495,17 @@ export function buildExecutiveMonthlyTimeline(
     filters: FinanceCashFlowDashboardFilters;
     arSyncCutoff?: NomusArReportSyncCutoff | null;
     apSyncCutoff?: NomusApReportSyncCutoff | null;
-    /** População do pago realizado (sem recorte por dueDate). Default: `apRows`. */
+    /**
+     * @deprecated Sem efeito desde a regra AP_CORPORATE_MONTHLY_AXIS=dueDate:
+     * Contas a Pagar nunca é atribuído pela data da baixa. Mantido só para
+     * compatibilidade de chamada.
+     */
     apPaidSourceRows?: FinanceCashFlowApRow[];
     /**
-     * `dueDate` — fluxo planejado, comparativo anual e calendário.
-     * `movement` — linha do tempo mensal (AR settlementDate, AP data efetiva).
+     * `dueDate` — fluxo planejado, comparativo anual e calendário (AR e AP por vencimento).
+     * `movement` — linha do tempo mensal: AR recebido por settlementDate (+ overlay);
+     * AP SEMPRE por dueDate (AP_CORPORATE_MONTHLY_AXIS) — pago = realizado com caixa
+     * dos títulos que vencem no mês; a baixa altera o status, não o mês.
      * Default: `dueDate` para não contaminar gráficos de vencimento.
      */
     dateAxis?: FinanceCashFlowTimelineDateAxis;
@@ -469,14 +527,15 @@ export function buildExecutiveMonthlyTimeline(
           referenceDate,
           officialContext.arSyncCutoff
         );
+  // AP_CORPORATE_MONTHLY_AXIS = dueDate: a população AP é a carteira do ano
+  // por vencimento (mesma dos cards), em qualquer eixo. Nenhum recorte por
+  // data de pagamento/baixa entra aqui.
   const apForPaid =
     officialContext == null
       ? apRows
       : filterFinanceApRows(
-          useMovementAxis ? (officialContext.apPaidSourceRows ?? apRows) : apRows,
-          useMovementAxis
-            ? toFinanceApPaymentScopeFilters(toApLoadFilters(officialContext.filters))
-            : toApLoadFilters(officialContext.filters),
+          apRows,
+          toApLoadFilters(officialContext.filters),
           referenceDate,
           officialContext.apSyncCutoff
         );
@@ -488,9 +547,15 @@ export function buildExecutiveMonthlyTimeline(
       ? sumArReceivedByHistoricalMonthlyMovement(arForReceived, monthStart, monthEndDate)
       : sumArReceivedInPeriod(arForReceived, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
+    // Linha mensal (movement): AP pago = realizado COM caixa por dueMonth
+    // (WITHOUT_CASH fora). Planejado (dueDate): realizado canônico por dueDate.
+    // Em ambos, o mês do título é o do vencimento.
     const paid = useMovementAxis
-      ? sumFinanceApPaidInPaymentPeriodFromFilteredRows(apForPaid, monthStart, monthEndDate)
+      ? sumApCashRealizedDueInPeriod(apForPaid, monthStart, monthEndDate)
       : sumApPaidInPeriod(apForPaid, monthStart, monthEndDate);
+    const payableSettledWithoutCash = useMovementAxis
+      ? sumApSettledWithoutCashDueInPeriod(apForPaid, monthStart, monthEndDate)
+      : 0;
     const payableOpenDue = sumApOpenDueInPeriod(apRows, monthStart, monthEndDate);
     const estimatedInflow = composeCanonicalArPlannedEstimatedInflow(
       received,
@@ -509,6 +574,7 @@ export function buildExecutiveMonthlyTimeline(
       estimatedInflow,
       paid,
       payableOpenDue,
+      payableSettledWithoutCash,
       estimatedOutflow,
       netFlow,
       accumulatedNet: accumulated,

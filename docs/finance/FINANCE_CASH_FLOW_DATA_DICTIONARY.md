@@ -145,7 +145,7 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 
 **Período filtrado** (`executiveSummary.period`): espelha `cards` — entradas/saídas/saldo/acumulado do recorte mês/ano conforme `viewMode`.
 
-**Linha do tempo mensal** (`executiveSummary.monthlyTimeline`): por mês — recebido, a receber (aberto por vencimento), entradas estimadas, pago, a pagar, saídas estimadas, saldo líquido, acumulado.
+**Linha do tempo mensal** (`executiveSummary.monthlyTimeline`): por mês — recebido, a receber (aberto por vencimento), entradas estimadas, pago, a pagar, saídas estimadas, saldo líquido, acumulado. **Contas a Pagar: AP_CORPORATE_MONTHLY_AXIS = `dueDate`** — `paid` é o realizado com caixa (`resolveFinanceApCashRealizedAmount`) dos títulos que vencem no mês, `payableOpenDue` o saldo aberto dos que vencem no mês, `payableSettledWithoutCash` as baixas sem numerário (fora de `paid`). A baixa altera o status do título, não seu mês; baixa atrasada não desloca valor para o mês da baixa. Ver `docs/finance/FINANCE_AP_OPEN_REMAINING_OBLIGATION.md`.
 
 Eixo da coluna **Recebido**: `dateAxis === "movement"` (baixa / `settlementDate`), com overlay **HISTORICAL SETTLEMENT NORMALIZATION V1** — ver `docs/finance/FINANCE_AR_HISTORICAL_SETTLEMENT_NORMALIZATION_V1.md`. O eixo planejado (`plannedMonthlyTimeline`) permanece `dueDate` e **não** recebe esse overlay.
 

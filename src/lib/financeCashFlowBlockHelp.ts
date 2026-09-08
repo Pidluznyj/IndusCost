@@ -22,7 +22,7 @@ export const FINANCE_CF_HELP_TOP_SUPPLIERS =
   "Ranking por saldo em aberto AP — mesma base das saídas previstas exibidas nesta visão (portfólio filtrado)." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_TIMELINE =
-  "Linha do tempo mensal: realizado por movimento (AR: settlementDate com overlay histórico fev/2026; AP: data efetiva) + saldo aberto por vencimento. Distinta do fluxo planejado por dueDate." as const;
+  "Linha do tempo mensal: AR recebido por movimento (settlementDate com overlay histórico fev/2026). Contas a Pagar são atribuídas ao mês do vencimento (dueDate): pago = realizado com caixa dos títulos que vencem no mês, a pagar = saldo aberto dos títulos que vencem no mês. Baixas posteriores não deslocam o título para outro mês; baixas sem numerário ficam fora de Pago." as const;
 
 export const FINANCE_CF_HELP_MONTHLY_TIMELINE_EXCEPTION =
   "Exceção deliberada: esta linha do tempo não precisa bater mês a mês com o gráfico planejado. Estimativas mensais independem do modo Previsto/Realizado do filtro global." as const;

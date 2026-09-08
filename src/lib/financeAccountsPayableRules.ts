@@ -238,5 +238,32 @@ export function resolveFinanceApOpenAmount(row: FinanceApRulesInput): number {
   return normalizeAccountsPayableTitle(row).openAmount;
 }
 
+/**
+ * Realizado COM caixa (AP_CASH_REALIZED) — para a linha mensal corporativa de
+ * Contas a Pagar. Diferente de `resolveFinanceApRealizedAmount` (AP_SETTLED):
+ * - cancelado → 0;
+ * - baixa `WITHOUT_CASH` ("baixa sem numerário") → só o que foi efetivamente
+ *   informado como pago (`amountPaid`); nunca infere `amountPayable` como caixa;
+ * - `FORCED` → mantém o comportamento canônico atual (contado como realizado).
+ *   FORCED_CASH_SEMANTICS=UNRESOLVED: sem prova de que a baixa forçada não
+ *   representa saída de caixa, a regra não é ampliada nem restringida aqui.
+ * Nunca muda o mês do título: a atribuição mensal é sempre pela dueDate.
+ */
+export function resolveFinanceApCashRealizedAmount(row: FinanceApRulesInput): number {
+  const normalized = normalizeAccountsPayableTitle(row);
+  if (normalized.isCancelled) return 0;
+  if (normalized.settlementKind === "WITHOUT_CASH") {
+    return normalized.amountPaid > 0 ? normalized.amountPaid : 0;
+  }
+  return normalized.realizedAmount;
+}
+
+/** Parcela do realizado canônico que NÃO representa caixa (baixa sem numerário). */
+export function resolveFinanceApSettledWithoutCashAmount(row: FinanceApRulesInput): number {
+  const normalized = normalizeAccountsPayableTitle(row);
+  if (normalized.isCancelled || normalized.settlementKind !== "WITHOUT_CASH") return 0;
+  return roundMoney(normalized.realizedAmount - resolveFinanceApCashRealizedAmount(row));
+}
+
 export const FINANCE_AP_CASH_FLOW_RULES_NOTE =
   "Fluxo de Caixa AP: agrupamento sempre por data de vencimento (dueDate). scheduleDate, competência e baixa são apenas informativos." as const;

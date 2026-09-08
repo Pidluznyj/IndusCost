@@ -240,7 +240,10 @@ describe("financeCashFlowAnnualComparison", () => {
     assert.equal(annual.months[4]?.receivedAmount, plannedMay.received);
     assert.equal(annual.months[4]?.paidAmount, plannedMay.paid);
     assert.equal(tableJun.received, 1500);
-    assert.equal(tableJun.paid, 4000);
+    // AP_CORPORATE_MONTHLY_AXIS = dueDate: a tabela mensal também aloca o AP pago no mês do vencimento.
+    const tableMay = dashboard.executiveSummary.monthlyTimeline.find((r) => r.month === 5)!;
+    assert.equal(tableMay.paid, 4000);
+    assert.equal(tableJun.paid, 0);
   });
 
   it("6. AP aberto entra em payableOpenAmount pela data de vencimento", () => {

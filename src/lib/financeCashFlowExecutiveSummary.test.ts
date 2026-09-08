@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildFinanceAccountsPayableDashboard,
+  sumFinanceApPaidInPaymentPeriodFromFilteredRows,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
 import {
@@ -649,7 +650,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(jun?.estimatedOutflow, 950);
   });
 
-  it("gráfico planejado aloca por vencimento; tabela mensal aloca por movimento", () => {
+  it("gráfico planejado aloca por vencimento; tabela mensal: AR por movimento, AP sempre por dueDate", () => {
     const arRows = [
       arRow({
         amountReceivable: 1500,
@@ -682,9 +683,10 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(plannedJun?.paid, 0);
 
     assert.equal(tableMay?.received, 0);
-    assert.equal(tableMay?.paid, 0);
     assert.equal(tableJun?.received, 1500);
-    assert.equal(tableJun?.paid, 4000);
+    // AP_CORPORATE_MONTHLY_AXIS = dueDate: a baixa em junho não desloca o título de maio.
+    assert.equal(tableMay?.paid, 4000);
+    assert.equal(tableJun?.paid, 0);
   });
 
   it("timeline mensal exclui intercompany e pedido de compra como Contas a Pagar", () => {
@@ -1087,5 +1089,164 @@ describe("FinanceCashFlowExecutiveSummary UI", () => {
     assert.match(panel, /Estimativa líquida anual/);
     assert.match(panel, /Período filtrado/);
     assert.match(panel, /Faturamento não é caixa/);
+  });
+});
+
+describe("AP_MONTHLY_DUE_TIMELINE — dueDate define o mês; a baixa define o status", () => {
+  const year = 2026;
+  const cf = (rows: FinanceCashFlowApRow[], ref = REF, extra: Record<string, unknown> = {}) =>
+    buildFinanceCashFlowDashboard([], rows, { ...filters, ...extra }, ref).executiveSummary.monthlyTimeline;
+  const month = (timeline: ReturnType<typeof cf>, m: number) => timeline.find((r) => r.month === m)!;
+  const settled = (externalId: number, amount: number, due: Date, settledOn: Date, extra: Partial<FinanceCashFlowApRow> = {}) =>
+    apRow({
+      externalId,
+      amountPayable: amount,
+      amountPaid: amount,
+      balancePayable: 0,
+      dueDate: due,
+      paymentDate: settledOn,
+      settlementDate: settledOn,
+      ...extra,
+    });
+  const open = (externalId: number, amount: number, due: Date, extra: Partial<FinanceCashFlowApRow> = {}) =>
+    apRow({ externalId, amountPayable: amount, amountPaid: 0, balancePayable: amount, dueDate: due, ...extra });
+
+  it("CASO A / TESTE 17 — baixa atrasada: dueDate abril, baixa em junho → abril recebe o pago; junho não", () => {
+    const rows = [settled(1, 50_000, new Date(year, 3, 10), new Date(year, 5, 20))];
+    const timeline = cf(rows, new Date(year, 8, 8));
+    assert.equal(month(timeline, 4).paid, 50_000);
+    assert.equal(month(timeline, 4).payableOpenDue, 0);
+    assert.equal(month(timeline, 6).paid, 0);
+    assert.equal(month(timeline, 6).estimatedOutflow, 0);
+  });
+
+  it("TESTE 18 — baixa muito atrasada: dueDate janeiro, baixa em agosto → janeiro, nunca agosto", () => {
+    const timeline = cf([settled(1, 1_000, new Date(year, 0, 15), new Date(year, 7, 30))], new Date(year, 8, 8));
+    assert.equal(month(timeline, 1).paid, 1_000);
+    assert.equal(month(timeline, 8).paid, 0);
+  });
+
+  it("CASO B — aberto com dueDate junho continua em junho na data-base de setembro (não vai para setembro)", () => {
+    const timeline = cf([open(1, 100, new Date(year, 5, 15))], new Date(year, 8, 8));
+    assert.equal(month(timeline, 6).payableOpenDue, 100);
+    assert.equal(month(timeline, 9).payableOpenDue, 0);
+    assert.equal(month(timeline, 6).estimatedOutflow, 100);
+  });
+
+  it("TESTE 16 — estabilidade temporal: OPEN → SETTLED muda de coluna, não de mês", () => {
+    const t1 = cf([open(1, 100, new Date(year, 5, 15))], new Date(year, 8, 8));
+    assert.equal(month(t1, 6).payableOpenDue, 100);
+    assert.equal(month(t1, 6).paid, 0);
+    const t2 = cf([settled(1, 100, new Date(year, 5, 15), new Date(year, 7, 20))], new Date(year, 8, 8));
+    assert.equal(month(t2, 6).paid, 100);
+    assert.equal(month(t2, 6).payableOpenDue, 0);
+    assert.equal(month(t2, 8).paid, 0);
+    assert.equal(month(t2, 8).payableOpenDue, 0);
+    assert.equal(month(t1, 6).estimatedOutflow, month(t2, 6).estimatedOutflow);
+  });
+
+  it("TESTE 19 — cross-year: dueDate dez/2025 baixado em jan/2026 pertence a 2025; não entra em jan/2026", () => {
+    const row = settled(1, 700, new Date(2025, 11, 20), new Date(2026, 0, 10));
+    const t2026 = cf([row], new Date(2026, 8, 8));
+    assert.equal(month(t2026, 1).paid, 0);
+    assert.equal(t2026.reduce((sum, r) => sum + r.paid + r.payableOpenDue, 0), 0);
+    const t2025 = buildFinanceCashFlowDashboard([], [row], { ...filters, year: 2025 }, new Date(2026, 8, 8))
+      .executiveSummary.monthlyTimeline;
+    assert.equal(month(t2025, 12).paid, 700);
+  });
+
+  it("CASO C / TESTE 22-E — baixa WITHOUT_CASH em agosto: fica em junho, fora de Pago e de Saídas est.", () => {
+    const rows = [
+      apRow({
+        externalId: 1,
+        amountPayable: 300,
+        amountPaid: 0,
+        balancePayable: 0,
+        dueDate: new Date(year, 5, 15),
+        settlementDate: new Date(year, 7, 5),
+        description: "BAIXA SEM NUMERARIO",
+      }),
+      settled(2, 50, new Date(year, 5, 20), new Date(year, 5, 20)),
+    ];
+    const timeline = cf(rows, new Date(year, 8, 8));
+    assert.equal(month(timeline, 6).paid, 50);
+    assert.equal(month(timeline, 6).payableSettledWithoutCash, 300);
+    assert.equal(month(timeline, 6).payableOpenDue, 0);
+    assert.equal(month(timeline, 6).estimatedOutflow, 50);
+    assert.equal(month(timeline, 8).paid, 0);
+    assert.equal(month(timeline, 8).payableSettledWithoutCash, 0);
+  });
+
+  it("CASO D / TESTE 22-F — cancelado não entra como pago nem como aberto", () => {
+    const rows = [
+      open(1, 900, new Date(year, 5, 15), { description: "TITULO CANCELADO" }),
+      settled(2, 800, new Date(year, 5, 16), new Date(year, 5, 16), { description: "Titulo cancelado" }),
+    ];
+    const timeline = cf(rows, new Date(year, 8, 8));
+    assert.equal(month(timeline, 6).paid, 0);
+    assert.equal(month(timeline, 6).payableOpenDue, 0);
+    assert.equal(month(timeline, 6).estimatedOutflow, 0);
+  });
+
+  it("CASO E — parcialmente pago: realizado e saldo aberto ficam ambos no mês da dueDate", () => {
+    const rows = [
+      apRow({
+        externalId: 1,
+        amountPayable: 1_000,
+        amountPaid: 400,
+        balancePayable: 600,
+        dueDate: new Date(year, 5, 15),
+        paymentDate: new Date(year, 7, 1),
+      }),
+    ];
+    const timeline = cf(rows, new Date(year, 8, 8));
+    assert.equal(month(timeline, 6).paid, 400);
+    assert.equal(month(timeline, 6).payableOpenDue, 600);
+    assert.equal(month(timeline, 6).estimatedOutflow, 1_000);
+    assert.equal(month(timeline, 8).paid, 0);
+  });
+
+  it("late settlements do not inflate settlement month in AP due-date timeline (regressão do junho/2026)", () => {
+    const ref = new Date(year, 8, 8);
+    const rows = [
+      settled(1, 1_500_000, new Date(year, 3, 10), new Date(year, 5, 2)), // venceu abr, baixado jun
+      settled(2, 1_200_000, new Date(year, 4, 5), new Date(year, 5, 3)), // venceu mai, baixado jun
+      settled(3, 900_000, new Date(year, 5, 12), new Date(year, 5, 12)), // venceu e baixado em jun
+      settled(4, 700_000, new Date(year, 5, 25), new Date(year, 7, 15)), // venceu jun, baixado ago
+      open(5, 48_298.69, new Date(year, 5, 28)), // venceu jun, aberto
+    ];
+    const timeline = cf(rows, ref);
+    // regra antiga (data efetiva de pagamento): junho concentraria 3,6 Mi
+    const oldJune = sumFinanceApPaidInPaymentPeriodFromFilteredRows(rows, new Date(year, 5, 1), new Date(year, 5, 30));
+    assert.equal(oldJune, 3_600_000);
+    // regra nova: cada título no seu dueMonth
+    assert.equal(month(timeline, 4).paid, 1_500_000);
+    assert.equal(month(timeline, 5).paid, 1_200_000);
+    assert.equal(month(timeline, 6).paid, 1_600_000);
+    assert.equal(month(timeline, 6).payableOpenDue, 48_298.69);
+    assert.equal(month(timeline, 6).estimatedOutflow, 1_648_298.69);
+    assert.equal(month(timeline, 8).paid, 0);
+    assert.notEqual(month(timeline, 6).paid, oldJune);
+    // TESTE 22-A/B: cada título aparece em exatamente um mês e o total bate com a população
+    const totalPaid = timeline.reduce((sum, r) => sum + r.paid, 0);
+    assert.equal(totalPaid, 4_300_000);
+  });
+
+  it("TESTE 22-C — mudar settlementDate sem mudar dueDate não muda o mês", () => {
+    const a = cf([settled(1, 250, new Date(year, 2, 10), new Date(year, 2, 12))], new Date(year, 8, 8));
+    const b = cf([settled(1, 250, new Date(year, 2, 10), new Date(year, 6, 30))], new Date(year, 8, 8));
+    assert.deepEqual(
+      a.map((r) => [r.month, r.paid, r.payableOpenDue]),
+      b.map((r) => [r.month, r.paid, r.payableOpenDue])
+    );
+    assert.equal(month(a, 3).paid, 250);
+  });
+
+  it("Pago YTD mantém a semântica própria (data efetiva no ano) e não redefine o mês da linha", () => {
+    const rows = [settled(1, 50_000, new Date(year, 3, 10), new Date(year, 5, 20))];
+    const payload = buildFinanceCashFlowDashboard([], rows, filters, new Date(year, 8, 8));
+    assert.equal(payload.executiveSummary.payable.paidYtd, 50_000);
+    assert.equal(month(payload.executiveSummary.monthlyTimeline, 4).paid, 50_000);
+    assert.equal(month(payload.executiveSummary.monthlyTimeline, 6).paid, 0);
   });
 });

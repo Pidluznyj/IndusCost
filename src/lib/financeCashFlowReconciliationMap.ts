@@ -591,7 +591,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       payloadPath: "executiveSummary.monthlyTimeline",
       label: "Linha do tempo mensal (tabela)",
       sourceModule: "financeCashFlowExecutiveSummary.ts",
-      sourceFunction: "buildExecutiveMonthlyTimeline dateAxis=movement",
+      sourceFunction: "buildExecutiveMonthlyTimeline dateAxis=movement (AR por settlement; AP SEMPRE por dueDate — sumApCashRealizedDueInPeriod + sumApOpenDueInPeriod)",
       rowScope: "executive_timeline",
       officialBase: "mixed",
       usesArOfficial: true,
@@ -607,7 +607,7 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_MAP: readonly FinanceCashFlowRecon
       respectsAppliedFilters: true,
       cashFlowInternalOracle: FINANCE_CASH_FLOW_TIMELINE_ORACLE.executiveMonthlyTimeline.builder,
       conceptualException:
-        "SEMANTICALLY_DIFFERENT do fluxo planejado: realizado no eixo movement (settlement + overlay fev/2026); aberto por dueDate.",
+        "SEMANTICALLY_DIFFERENT do fluxo planejado apenas em AR (recebido no eixo movement: settlement + overlay fev/2026). AP_CORPORATE_MONTHLY_AXIS=dueDate: pago e aberto de Contas a Pagar pelo mês do vencimento; a baixa altera status, não competência; WITHOUT_CASH fora de pago.",
       alternatePath: "executiveSummary.plannedMonthlyTimeline",
     },
     {
