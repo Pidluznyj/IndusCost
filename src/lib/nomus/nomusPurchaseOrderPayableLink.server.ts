@@ -226,9 +226,33 @@ export const PAYABLE_LINK_SQL_MARKERS = {
   payablesByDocumentNumber: "po-payable:payables-by-document-number",
 } as const;
 
-const REVERSE_LOOKUP_ORDER_LIMIT = 2000;
-const REVERSE_LOOKUP_STOCK_DOCUMENT_LIMIT = 2000;
-const DOCUMENT_NUMBER_PAYABLE_LIMIT = 500;
+/**
+ * Tamanho da página dos pré-filtros. NÃO é um cap: toda consulta de descoberta é
+ * consumida ATÉ O FIM por paginação keyset determinística (chave estável
+ * `externalId`, única em pedidos, documentos de entrada e títulos), e só então
+ * o extrator canônico decide. Nenhum candidato pode ser descartado antes.
+ */
+export const PAYABLE_LINK_DISCOVERY_PAGE_SIZE = 1000;
+
+/**
+ * Consome TODAS as páginas de um pré-filtro: `fetchPage(afterExternalId)` devolve
+ * até `PAYABLE_LINK_DISCOVERY_PAGE_SIZE` linhas ordenadas por `externalId` ASC e
+ * estritamente maiores que o cursor; termina quando uma página vem incompleta.
+ */
+async function fetchAllPages<T extends { externalId: number }>(
+  fetchPage: (afterExternalId: number) => Promise<T[]>
+): Promise<T[]> {
+  const out: T[] = [];
+  let cursor = -1;
+  for (;;) {
+    const page = await fetchPage(cursor);
+    if (page.length === 0) break;
+    out.push(...page);
+    cursor = page[page.length - 1]!.externalId;
+    if (page.length < PAYABLE_LINK_DISCOVERY_PAGE_SIZE) break;
+  }
+  return out;
+}
 
 /** Projeção mínima de pedido devolvida pelos pré-filtros (com `rawPayload->'nfes'`). */
 export type PurchaseOrderNfeProjectionRow = PurchaseOrderIdentityRow & { nfes: unknown };
@@ -258,20 +282,24 @@ function sqlDigits(expression: Prisma.Sql): Prisma.Sql {
 async function queryOrdersDeclaringInvoices(db: Db, invoiceIds: readonly number[]): Promise<PurchaseOrderNfeProjectionRow[]> {
   if (invoiceIds.length === 0) return [];
   const patterns = invoiceIds.map(digitPrefixPattern);
-  return db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
-    /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersDeclaringInvoices)} */
-    SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
-           o."rawPayload"->'nfes' AS "nfes"
-    FROM "NomusPurchaseOrder" o
-    WHERE jsonb_typeof(o."rawPayload"->'nfes') = 'array'
-      AND EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(o."rawPayload"->'nfes') AS e
-        WHERE ${sqlDigits(Prisma.sql`coalesce(e->>'id', e->>'idNfe', e->>'externalId', e #>> '{}')`)}
-              LIKE ANY(ARRAY[${Prisma.join(patterns)}]::text[])
-      )
-    LIMIT ${REVERSE_LOOKUP_ORDER_LIMIT}
-  `);
+  return fetchAllPages((after) =>
+    db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
+      /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersDeclaringInvoices)} */
+      SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
+             o."rawPayload"->'nfes' AS "nfes"
+      FROM "NomusPurchaseOrder" o
+      WHERE jsonb_typeof(o."rawPayload"->'nfes') = 'array'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(o."rawPayload"->'nfes') AS e
+          WHERE ${sqlDigits(Prisma.sql`coalesce(e->>'id', e->>'idNfe', e->>'externalId', e #>> '{}')`)}
+                LIKE ANY(ARRAY[${Prisma.join(patterns)}]::text[])
+        )
+        AND o."externalId" > ${after}
+      ORDER BY o."externalId" ASC
+      LIMIT ${PAYABLE_LINK_DISCOVERY_PAGE_SIZE}
+    `)
+  );
 }
 
 /**
@@ -288,29 +316,37 @@ async function queryOrdersBySupplierScope(
   const byCnpj = scope.cnpjs.length
     ? Prisma.sql`regexp_replace(coalesce(o."supplierTaxId", ''), '[^0-9]', '', 'g') IN (${Prisma.join(scope.cnpjs)})`
     : Prisma.sql`false`;
-  return db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
-    /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersBySupplierScope)} */
-    SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
-           o."rawPayload"->'nfes' AS "nfes"
-    FROM "NomusPurchaseOrder" o
-    WHERE ${byId} OR ${byCnpj}
-    LIMIT ${REVERSE_LOOKUP_ORDER_LIMIT}
-  `);
+  return fetchAllPages((after) =>
+    db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
+      /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersBySupplierScope)} */
+      SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
+             o."rawPayload"->'nfes' AS "nfes"
+      FROM "NomusPurchaseOrder" o
+      WHERE (${byId} OR ${byCnpj})
+        AND o."externalId" > ${after}
+      ORDER BY o."externalId" ASC
+      LIMIT ${PAYABLE_LINK_DISCOVERY_PAGE_SIZE}
+    `)
+  );
 }
 
 async function queryOrdersByExternalId(db: Db, externalIds: readonly number[]): Promise<PurchaseOrderNfeProjectionRow[]> {
   if (externalIds.length === 0) return [];
-  return db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
-    /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersByExternalId)} */
-    SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
-           o."rawPayload"->'nfes' AS "nfes"
-    FROM "NomusPurchaseOrder" o
-    WHERE o."externalId" IN (${Prisma.join(externalIds)})
-    LIMIT ${REVERSE_LOOKUP_ORDER_LIMIT}
-  `);
+  return fetchAllPages((after) =>
+    db.$queryRaw<PurchaseOrderNfeProjectionRow[]>(Prisma.sql`
+      /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.ordersByExternalId)} */
+      SELECT o."id", o."externalId", o."orderNumber", o."supplierExternalId", o."supplierTaxId",
+             o."rawPayload"->'nfes' AS "nfes"
+      FROM "NomusPurchaseOrder" o
+      WHERE o."externalId" IN (${Prisma.join(externalIds)})
+        AND o."externalId" > ${after}
+      ORDER BY o."externalId" ASC
+      LIMIT ${PAYABLE_LINK_DISCOVERY_PAGE_SIZE}
+    `)
+  );
 }
 
-type StockDocumentPointerRow = { idNfe: number | null; rawJson: unknown };
+type StockDocumentPointerRow = { externalId: number; idNfe: number | null; rawJson: unknown };
 
 /**
  * Camada 2 direta (pedido → documentos de entrada): superconjunto pelas mesmas
@@ -320,16 +356,33 @@ type StockDocumentPointerRow = { idNfe: number | null; rawJson: unknown };
 async function queryStockDocumentsPointingToOrders(db: Db, externalIds: readonly number[]): Promise<StockDocumentPointerRow[]> {
   if (externalIds.length === 0) return [];
   const patterns = externalIds.map(digitPrefixPattern);
-  return db.$queryRaw<StockDocumentPointerRow[]>(Prisma.sql`
-    /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.stockDocumentsPointingToOrders)} */
-    SELECT d."idNfe", d."rawJson"
-    FROM "NomusStockDocument" d
-    WHERE d."isCancelled" = false
-      AND d."idNfe" IS NOT NULL
-      AND ${sqlDigits(Prisma.sql`coalesce(d."rawJson"->>'idPedidoCompra', d."rawJson"->>'idPedido', d."rawJson"->>'pedidoCompraId')`)}
-          LIKE ANY(ARRAY[${Prisma.join(patterns)}]::text[])
-    LIMIT ${REVERSE_LOOKUP_STOCK_DOCUMENT_LIMIT}
-  `);
+  return fetchAllPages((after) =>
+    db.$queryRaw<StockDocumentPointerRow[]>(Prisma.sql`
+      /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.stockDocumentsPointingToOrders)} */
+      SELECT d."externalId", d."idNfe", d."rawJson"
+      FROM "NomusStockDocument" d
+      WHERE d."isCancelled" = false
+        AND d."idNfe" IS NOT NULL
+        AND ${sqlDigits(Prisma.sql`coalesce(d."rawJson"->>'idPedidoCompra', d."rawJson"->>'idPedido', d."rawJson"->>'pedidoCompraId')`)}
+            LIKE ANY(ARRAY[${Prisma.join(patterns)}]::text[])
+        AND d."externalId" > ${after}
+      ORDER BY d."externalId" ASC
+      LIMIT ${PAYABLE_LINK_DISCOVERY_PAGE_SIZE}
+    `)
+  );
+}
+
+/** Camada 2 reversa (NF-e dos títulos → documentos de entrada), completa por paginação keyset. */
+async function queryStockDocumentsByInvoice(db: Db, invoiceIds: readonly number[]): Promise<StockDocumentPointerRow[]> {
+  if (invoiceIds.length === 0) return [];
+  return fetchAllPages((after) =>
+    db.nomusStockDocument.findMany({
+      where: { isCancelled: false, idNfe: { in: [...invoiceIds] }, externalId: { gt: after } },
+      select: { externalId: true, idNfe: true, rawJson: true },
+      orderBy: { externalId: "asc" },
+      take: PAYABLE_LINK_DISCOVERY_PAGE_SIZE,
+    })
+  );
 }
 
 /**
@@ -347,15 +400,19 @@ async function queryPayablesByDocumentNumber(
   const byCnpj = input.cnpjs.length
     ? Prisma.sql`regexp_replace(coalesce(p."personCnpj", ''), '[^0-9]', '', 'g') IN (${Prisma.join(input.cnpjs)})`
     : Prisma.sql`false`;
-  return db.$queryRaw<PayableSelectRow[]>(Prisma.sql`
-    /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.payablesByDocumentNumber)} */
-    SELECT ${PAYABLE_SQL_COLUMNS}
-    FROM "NomusAccountsPayable" p
-    WHERE (${byId} OR ${byCnpj})
-      AND regexp_replace(regexp_replace(upper(coalesce(p."documentNumber", '')), '[^A-Z0-9]', '', 'g'), '^0+(?=[0-9])', '')
-          IN (${Prisma.join(input.normalizedKeys)})
-    LIMIT ${DOCUMENT_NUMBER_PAYABLE_LIMIT}
-  `);
+  return fetchAllPages((after) =>
+    db.$queryRaw<PayableSelectRow[]>(Prisma.sql`
+      /* ${Prisma.raw(PAYABLE_LINK_SQL_MARKERS.payablesByDocumentNumber)} */
+      SELECT ${PAYABLE_SQL_COLUMNS}
+      FROM "NomusAccountsPayable" p
+      WHERE (${byId} OR ${byCnpj})
+        AND regexp_replace(regexp_replace(upper(coalesce(p."documentNumber", '')), '[^A-Z0-9]', '', 'g'), '^0+(?=[0-9])', '')
+            IN (${Prisma.join(input.normalizedKeys)})
+        AND p."externalId" > ${after}
+      ORDER BY p."externalId" ASC
+      LIMIT ${PAYABLE_LINK_DISCOVERY_PAGE_SIZE}
+    `)
+  );
 }
 
 function projectionIdentity(row: PurchaseOrderIdentityRow): PurchaseOrderLinkIdentity {
@@ -503,13 +560,7 @@ export async function loadAutomaticPayableClaimsAcrossOrders(
   const [declaring, bySupplier, stockDocuments] = await Promise.all([
     queryOrdersDeclaringInvoices(db, invoiceIds),
     hasDocumentNumber ? queryOrdersBySupplierScope(db, payableScopeOf(payables)) : Promise.resolve([] as PurchaseOrderNfeProjectionRow[]),
-    invoiceIds.length
-      ? db.nomusStockDocument.findMany({
-          where: { isCancelled: false, idNfe: { in: invoiceIds } },
-          select: { idNfe: true, rawJson: true },
-          take: REVERSE_LOOKUP_STOCK_DOCUMENT_LIMIT,
-        })
-      : Promise.resolve([] as StockDocumentPointerRow[]),
+    queryStockDocumentsByInvoice(db, invoiceIds),
   ]);
 
   const ordersById = new Map<string, PurchaseOrderNfeProjectionRow>();
@@ -594,9 +645,14 @@ export async function resolvePayableOwnershipAcrossOrders(
  * Contexto do pedido (aba Financeiro)
  * ------------------------------------------------------------------ */
 
-/** Janela de vencimento em torno das parcelas para sugestões (camada 4) do fornecedor. */
+/**
+ * Janela de vencimento em torno das parcelas para SUGESTÕES (camada 4) do
+ * fornecedor. O limite abaixo vale só para sugestões: nunca para candidatos
+ * automáticos (camadas 1–3) nem para vínculos persistidos, que são carregados
+ * completos.
+ */
 const CANDIDATE_WINDOW_DAYS = 400;
-const CANDIDATE_LIMIT = 500;
+const SUGGESTION_CANDIDATE_LIMIT = 500;
 
 function candidateDateWindow(installmentDueDates: Array<Date | null>): { gte: Date; lte: Date } | null {
   const times = installmentDueDates
@@ -640,29 +696,31 @@ export async function loadPurchaseOrderPayableContext(
   const candidates = candidatesByOrder.get(order.id)!;
   const identity = candidates.identity;
 
-  // Sugestões (camada 4) e títulos persistidos: fornecedor na janela das parcelas + ids já vinculados.
+  // Títulos persistidos (completos, sem cap) e sugestões (camada 4): fornecedor na janela das parcelas.
   const persistedIds = persistedRows.map((row) => row.payableExternalId);
   const window = candidateDateWindow(installments.map((row) => row.dueDate));
-  const or: Prisma.NomusAccountsPayableWhereInput[] = [];
-  if (persistedIds.length) or.push({ externalId: { in: persistedIds } });
-  if (order.supplierExternalId != null) {
-    or.push({
-      personId: order.supplierExternalId,
-      ...(window ? { dueDate: { gte: window.gte, lte: window.lte } } : {}),
-    });
-  }
-  const extraRows = or.length
-    ? await db.nomusAccountsPayable.findMany({
-        where: { OR: or },
-        select: PAYABLE_SELECT,
-        orderBy: [{ dueDate: "asc" }, { externalId: "asc" }],
-        take: CANDIDATE_LIMIT,
-      })
-    : [];
+  const [persistedPayableRows, suggestionRows] = await Promise.all([
+    persistedIds.length
+      ? db.nomusAccountsPayable.findMany({ where: { externalId: { in: persistedIds } }, select: PAYABLE_SELECT })
+      : Promise.resolve([] as PayableSelectRow[]),
+    order.supplierExternalId != null
+      ? db.nomusAccountsPayable.findMany({
+          where: {
+            personId: order.supplierExternalId,
+            ...(window ? { dueDate: { gte: window.gte, lte: window.lte } } : {}),
+          },
+          select: PAYABLE_SELECT,
+          orderBy: [{ dueDate: "asc" }, { externalId: "asc" }],
+          take: SUGGESTION_CANDIDATE_LIMIT,
+        })
+      : Promise.resolve([] as PayableSelectRow[]),
+  ]);
 
   const payableById = new Map<number, PayableCandidateRow>();
   for (const row of candidates.payables) payableById.set(row.externalId, row);
-  for (const row of extraRows) if (!payableById.has(row.externalId)) payableById.set(row.externalId, toPayableCandidateRow(row));
+  for (const row of [...persistedPayableRows, ...suggestionRows]) {
+    if (!payableById.has(row.externalId)) payableById.set(row.externalId, toPayableCandidateRow(row));
+  }
   const payables = [...payableById.values()].sort(
     (a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0) || a.externalId - b.externalId
   );

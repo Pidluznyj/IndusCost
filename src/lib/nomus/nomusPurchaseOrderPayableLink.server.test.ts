@@ -16,6 +16,7 @@ import type { PrismaClient } from "@prisma/client";
 import { parsePurchaseOrderPlannedInstallments } from "./nomusPurchaseOrder360.js";
 import { PurchaseOrderPayableLinkError } from "./nomusPurchaseOrderPayableLink.js";
 import {
+  PAYABLE_LINK_DISCOVERY_PAGE_SIZE,
   PAYABLE_LINK_SQL_MARKERS,
   buildPurchaseOrderPayableReconciliationForOrder,
   confirmPurchaseOrderPayableLink,
@@ -130,7 +131,7 @@ type LinkRow = {
   updatedAt: Date;
 };
 
-type StockDocumentSeed = { idNfe: number | null; isCancelled: boolean; rawJson: Record<string, unknown> };
+type StockDocumentSeed = { externalId?: number; idNfe: number | null; isCancelled: boolean; rawJson: Record<string, unknown> };
 
 type Seed = {
   orders?: OrderSeed[];
@@ -165,10 +166,18 @@ function matchesClause(row: Record<string, unknown>, clause: Record<string, unkn
   });
 }
 
+/** Paginação keyset do fake: `externalId > cursor`, ordem estável por externalId, no máximo `pageSize` linhas. */
+function keysetPage<T extends { externalId: number }>(rows: T[], cursor: number, pageSize: number): T[] {
+  return rows
+    .filter((row) => row.externalId > cursor)
+    .sort((a, b) => a.externalId - b.externalId)
+    .slice(0, pageSize);
+}
+
 function createDb(seed: Seed) {
   const orders = seed.orders ?? [ORDER];
   const payables = seed.payables ?? [];
-  const stockDocuments = seed.stockDocuments ?? [];
+  const stockDocuments = (seed.stockDocuments ?? []).map((row, index) => ({ ...row, externalId: row.externalId ?? 70_000 + index }));
   let linkSeq = 0;
   const links: LinkRow[] = (seed.links ?? []).map((row) => ({
     id: row.id ?? `link-${++linkSeq}`,
@@ -212,34 +221,47 @@ function createDb(seed: Seed) {
       },
     },
     /**
-     * Pré-filtros SQL: devolvem o SUPERCONJUNTO trivial (tudo do seed). Se a
-     * regra em memória não for canônica, os testes de paridade quebram.
+     * Pré-filtros SQL: devolvem o SUPERCONJUNTO trivial (tudo do seed), paginado
+     * por keyset exatamente como o SQL real (`externalId > cursor ORDER BY
+     * externalId LIMIT pageSize`, cursor e página são os dois últimos parâmetros).
+     * Se a regra em memória não for canônica ou se alguma página deixar de ser
+     * consumida, os testes de paridade/completude quebram.
      */
-    $queryRaw: async (query: { sql: string; values: unknown[] }) => {
+    $queryRaw: async (query: { sql: string; text: string; values: unknown[] }) => {
       const marker = Object.entries(PAYABLE_LINK_SQL_MARKERS).find(([, value]) => query.sql.includes(value))?.[0];
       queries.push(`raw:${marker ?? "?"}`);
+      assert.match(
+        query.text,
+        /"externalId" > \$\d+\s+ORDER BY \w+\."externalId" ASC\s+LIMIT \$\d+\s*$/,
+        "pré-filtro paginado por keyset; cursor e página são os dois últimos parâmetros"
+      );
+      const cursor = query.values[query.values.length - 2] as number;
+      const pageSize = query.values[query.values.length - 1] as number;
+      assert.equal(pageSize, PAYABLE_LINK_DISCOVERY_PAGE_SIZE);
+      const page = <T extends { externalId: number }>(rows: T[]) => keysetPage(rows, cursor, pageSize);
       switch (marker) {
         case "ordersDeclaringInvoices":
-          return orders.filter((o) => Array.isArray((o.rawPayload as { nfes?: unknown }).nfes)).map(projection);
+          return page(orders.filter((o) => Array.isArray((o.rawPayload as { nfes?: unknown }).nfes)).map(projection));
         case "ordersBySupplierScope":
-          return orders.map(projection);
+          return page(orders.map(projection));
         case "ordersByExternalId":
-          return orders.filter((o) => query.values.includes(o.externalId)).map(projection);
+          return page(orders.filter((o) => query.values.slice(0, -2).includes(o.externalId)).map(projection));
         case "stockDocumentsPointingToOrders":
-          return stockDocuments.filter((d) => !d.isCancelled && d.idNfe != null).map((d) => ({ idNfe: d.idNfe, rawJson: d.rawJson }));
+          return page(stockDocuments.filter((d) => !d.isCancelled && d.idNfe != null).map((d) => ({ externalId: d.externalId, idNfe: d.idNfe, rawJson: d.rawJson })));
         case "payablesByDocumentNumber":
-          return payables.filter((p) => typeof p.documentNumber === "string" && p.documentNumber.length > 0);
+          return page(payables.filter((p) => typeof p.documentNumber === "string" && p.documentNumber.length > 0));
         default:
           throw new Error(`consulta raw sem marcador conhecido: ${query.sql.slice(0, 80)}`);
       }
     },
     nomusStockDocument: {
-      findMany: async (args: { where: { idNfe?: { in?: number[] } } }) => {
+      findMany: async (args: { where: { idNfe?: { in?: number[] }; externalId?: { gt: number } }; take?: number }) => {
         queries.push("stockDocument.findMany");
         const ids = args.where.idNfe?.in ?? [];
-        return stockDocuments
+        const rows = stockDocuments
           .filter((row) => !row.isCancelled && row.idNfe != null && ids.includes(row.idNfe))
-          .map((row) => ({ idNfe: row.idNfe, rawJson: row.rawJson }));
+          .map((row) => ({ externalId: row.externalId, idNfe: row.idNfe, rawJson: row.rawJson }));
+        return keysetPage(rows, args.where.externalId?.gt ?? -1, args.take ?? rows.length);
       },
     },
     nomusAccountsPayable: {
@@ -247,8 +269,8 @@ function createDb(seed: Seed) {
         queries.push("accountsPayable.findMany");
         if (args.where.externalId) return payables.filter((row) => args.where.externalId!.in.includes(row.externalId));
         if (args.where.sourceInvoiceId) return payables.filter((row) => args.where.sourceInvoiceId!.in.includes(row.sourceInvoiceId as number));
-        const or = args.where.OR ?? [];
-        return payables.filter((row) => or.some((clause) => matchesClause(row, clause)));
+        const clauses = args.where.OR ?? [args.where as Record<string, unknown>];
+        return payables.filter((row) => clauses.some((clause) => matchesClause(row, clause)));
       },
       findUnique: async (args: { where: { externalId: number } }) => {
         queries.push("accountsPayable.findUnique");
@@ -592,6 +614,66 @@ describe("simetria auto-link direto × descoberta global de ownership", () => {
     assert.equal(financial.ownership.get(9005)!.kind, "AUTO_CONFLICT", "C por idNfe (fornecedor 300) e A por documento de entrada da NF-e 502");
     assert.equal(financial.ownership.get(9006), undefined, "ID 615 é do pedido C, mas o título é do fornecedor 215 ≠ 300: nenhum candidato, sem dono");
     assert.ok(!direct.some((key) => key.includes("|9006|")), "camada 3 exige o mesmo fornecedor nos dois lados");
+  });
+});
+
+describe("completude da descoberta — nenhum cap antes do filtro canônico", () => {
+  const PAGE = PAYABLE_LINK_DISCOVERY_PAGE_SIZE;
+  const X = 501;
+  const title = () => apRow(9001, { sourceInvoiceId: X, amountPayable: new Dec(10000), amountPaid: new Dec(10000), balancePayable: new Dec(0), settlementDate: NOW });
+  /** Pedido "ruído": passa no pré-filtro amplo (declara NF-e com dígitos que começam por 501) mas NÃO é candidato (NF-e 5010…). */
+  const noise = (n: number): OrderSeed =>
+    orderWith(OTHER_ORDER, { id: `noise-${n}`, externalId: 100_000 + n, orderNumber: `PCN${n}`, supplierExternalId: 777, supplierTaxId: null, nfes: [{ id: 5010 + n }] });
+  const noiseOrders = (count: number) => Array.from({ length: count }, (_, i) => noise(i));
+
+  it("> tamanho da página de falsos positivos: candidato verdadeiro depois da fronteira ainda chega ao resolver (várias páginas consumidas)", async () => {
+    const early = orderWith(ORDER, { externalId: 1, nfes: [{ id: X }] });
+    const late = orderWith(OTHER_ORDER, { externalId: 999_999, nfes: [{ idNfe: "0501" }] });
+    const fake = createDb({ orders: [early, ...noiseOrders(PAGE * 2 + 500), late], payables: [title()] });
+    const global = await globalClaims(fake, [title()]);
+    assert.deepEqual(global, [`${ORDER_ID}|9001|DIRECT_NOMUS_NFE`, `${OTHER_ORDER_ID}|9001|DIRECT_NOMUS_NFE`]);
+    assert.deepEqual(global, await directClaims(fake));
+    assert.equal(fake.queries.filter((q) => q === "raw:ordersDeclaringInvoices").length, 3, "3 páginas de pedidos declarando NF-e (2 cheias + 1 parcial)");
+    const financial = await loadOrderFinancialPayablesWithOwnership([early], { db: fake.db });
+    assert.equal(financial.ownership.get(9001)!.kind, "AUTO_CONFLICT", "nunca AUTO_SINGLE_OWNER por truncamento");
+  });
+
+  it("candidato único só em página posterior (primeira página só com falsos positivos) → AUTO_SINGLE_OWNER, nunca UNOWNED", async () => {
+    const late = orderWith(OTHER_ORDER, { externalId: 999_999, nfes: ["501"] });
+    const fake = createDb({ orders: [...noiseOrders(PAGE + 10), late], payables: [title()] });
+    const financial = await loadOrderFinancialPayablesWithOwnership([late], { db: fake.db });
+    assert.equal(financial.ownership.get(9001)!.kind, "AUTO_SINGLE_OWNER");
+    assert.equal(financial.ownership.get(9001)!.ownerOrderId, OTHER_ORDER_ID);
+    assert.deepEqual(await globalClaims(fake, [title()]), [`${OTHER_ORDER_ID}|9001|DIRECT_NOMUS_NFE`]);
+  });
+
+  it("conflito entre páginas: A na primeira página, B em página posterior → AUTO_CONFLICT (decisão só após o conjunto completo)", async () => {
+    const first = orderWith(ORDER, { externalId: 1, nfes: [X] });
+    const later = orderWith(OTHER_ORDER, { externalId: 999_999, nfes: [{ externalId: X }] });
+    const fake = createDb({ orders: [first, ...noiseOrders(PAGE + 10), later], payables: [title()] });
+    const viewA = await buildPurchaseOrderPayableReconciliationForOrder(ORDER_ID, { db: fake.db, now: NOW });
+    const viewB = await buildPurchaseOrderPayableReconciliationForOrder(OTHER_ORDER_ID, { db: fake.db, now: NOW });
+    for (const view of [viewA, viewB]) {
+      assert.equal(view.unassignedPayables[0].ownership.kind, "AUTO_CONFLICT");
+      assert.equal(view.totals.paidAmount, 0);
+      assert.equal(view.fullySettled, false);
+    }
+  });
+
+  it("camada 2 e camada 3 também consomem todas as páginas (documento e título verdadeiros após a fronteira)", async () => {
+    // Camada 2: PAGE+5 documentos apontando o pedido (idNfe sem título) e o verdadeiro por último.
+    const docs: StockDocumentSeed[] = Array.from({ length: PAGE + 5 }, (_, i) => ({ externalId: 1 + i, idNfe: 90_000 + i, isCancelled: false, rawJson: { idPedidoCompra: 613 } }));
+    docs.push({ externalId: 999_999, idNfe: 777, isCancelled: false, rawJson: { idPedidoCompra: "613" } });
+    const stock = createDb({ orders: [orderWith(ORDER, { nfes: [] })], payables: [apRow(9002, { sourceInvoiceId: 777 })], stockDocuments: docs });
+    assert.deepEqual(await directClaims(stock), [`${ORDER_ID}|9002|STOCK_DOCUMENT_PURCHASE_ORDER`]);
+    assert.deepEqual(await globalClaims(stock, [apRow(9002, { sourceInvoiceId: 777 })]), [`${ORDER_ID}|9002|STOCK_DOCUMENT_PURCHASE_ORDER`]);
+
+    // Camada 3: PAGE+5 títulos com número parecido (não idêntico) e o verdadeiro com o maior externalId.
+    const payables = Array.from({ length: PAGE + 5 }, (_, i) => apRow(10_000 + i, { documentNumber: `PC00612-${i}`, dueDate: new Date(2031, 0, 1) }));
+    payables.push(apRow(999_999, { documentNumber: "pc-00612", dueDate: new Date(2031, 0, 1) }));
+    const doc = createDb({ orders: [orderWith(ORDER, { nfes: [] })], payables });
+    assert.deepEqual(await directClaims(doc), [`${ORDER_ID}|999999|AP_DOCUMENT_NUMBER`]);
+    assert.deepEqual(await globalClaims(doc, payables), [`${ORDER_ID}|999999|AP_DOCUMENT_NUMBER`]);
   });
 });
 

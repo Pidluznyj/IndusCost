@@ -197,9 +197,20 @@ financeiro; `details.ownerOrderId`/`ownerOrderNumber`) (409).
    não carregados)
 
 Listagem/360: as mesmas consultas (2 e 5) em lote para a página inteira —
-nenhuma consulta por pedido nem por título. Os pré-filtros SQL são varreduras
-indexáveis/limitadas (`LIMIT`) sobre pedidos, documentos de entrada e títulos;
-nunca `for título → varrer pedidos`.
+nenhuma consulta por pedido nem por título.
+
+**Sem cap antes do filtro canônico.** Todo pré-filtro de descoberta (camadas
+1–3, direto e reverso) é consumido até o fim por paginação keyset
+determinística: `externalId > cursor ORDER BY externalId ASC LIMIT
+PAYABLE_LINK_DISCOVERY_PAGE_SIZE` (1000), página a página, até uma página
+incompleta — só então o extrator canônico decide (`fetchAllPages`). Um
+candidato verdadeiro nunca pode ser descartado por posição; o dono nunca é
+decidido a partir de um conjunto parcial (testes "completude da descoberta").
+O único `take` remanescente (500) é da janela de **sugestões** (camada 4) e não
+participa de vínculo automático nem de dono; vínculos persistidos são
+carregados completos. Nunca `for título → varrer pedidos`; os IDs, números,
+CNPJs e cursores entram no SQL como parâmetros (`Prisma.sql`/`Prisma.join`),
+nunca concatenados.
 
 ## Migração
 
