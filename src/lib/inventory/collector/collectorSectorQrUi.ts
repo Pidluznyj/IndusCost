@@ -9,9 +9,30 @@
  * collectorSectorQrDeepLink.test.ts).
  */
 import { isCollectorPublicBaseUrlErrorCode } from "./collectorPublicBaseUrl.js";
+import { COLLECTOR_SECTOR_CODES, COLLECTOR_SECTORS } from "./collectorSectorContract.js";
 
 /** Único setor existente no contrato hoje — ver collectorSectorContract.ts. */
 export const COLLECTOR_SECTOR_QR_DEFAULT_SECTOR = "RAW_MATERIAL";
+
+export type CollectorSectorQrOption = { code: string; label: string };
+
+/**
+ * Setores que podem ter QR emitido — derivados do contrato canônico, nunca
+ * digitados na UI. O seletor da aba Dispositivos do Coletor usa esta lista.
+ */
+export const COLLECTOR_SECTOR_QR_OPTIONS: readonly CollectorSectorQrOption[] = COLLECTOR_SECTOR_CODES.map(
+  (code) => ({ code, label: COLLECTOR_SECTORS[code].label })
+);
+
+/**
+ * O QR de um setor é FIXO: o conteúdo é o deep-link do setor
+ * (`/collector/sector/<slug>` sobre a base pública configurada), sem token,
+ * data, sessão ou aleatoriedade. Emitir de novo mostra exatamente o mesmo QR —
+ * por isso a UI não oferece "regenerar", só "emitir/ver". Texto exibido no modal.
+ */
+export const COLLECTOR_SECTOR_QR_FIXED_NOTICE =
+  "QR fixo do setor: o conteúdo é o endereço do setor e não muda entre emissões. " +
+  "Imprima e fixe uma única vez — emitir de novo mostra o mesmo QR.";
 
 /**
  * Monta a URL do endpoint de leitura. Não constrói o deep-link do QR em si —

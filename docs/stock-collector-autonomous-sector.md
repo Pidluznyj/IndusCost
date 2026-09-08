@@ -61,6 +61,28 @@ variável; falha de rede/backend aparece como erro. **Nada é ocultado em
 silêncio**, e configuração ausente nunca é apresentada como "dispositivo não
 autorizado".
 
+### Emissão na aba Dispositivos do Coletor (botão + modal)
+
+Em Estoque → Dispositivos do Coletor, a seção "QR de acesso ao Collector"
+**não** mostra o QR inline: o operador escolhe o setor (lista derivada de
+`COLLECTOR_SECTORS`, via `COLLECTOR_SECTOR_QR_OPTIONS`) e clica em **Emitir QR
+do setor**; o QR abre em um modal (`Overlay`) com a mesma folha canônica de
+Estoque → Etiquetas QR em pré-visualização, a URL, **Abrir Collector** e
+**Imprimir QR** (A4 retrato, mesmo print-root de antes).
+
+**QR fixo por setor.** O conteúdo é o deep-link determinístico do setor —
+sem token, data, sessão ou aleatoriedade —, logo emitir de novo produz
+exatamente o mesmo QR (teste de determinismo em
+`InventoryCollectorSectorQrSection.test.tsx`). Por isso a UI não oferece
+"Atualizar/Regenerar": a aba guarda o QR emitido por setor e reemitir só
+reabre o modal; a única ação de nova chamada é **Tentar novamente** após
+erro de rede/servidor. O único evento que altera o QR de um setor é a
+mudança da base pública (`INVENTORY_COLLECTOR_PUBLIC_BASE_URL`), que é uma
+decisão de infraestrutura — nesse caso as folhas fixadas precisam ser
+reimpressas. Não há persistência de QR em banco de propósito: um QR
+"congelado" em tabela apontaria para um host antigo depois de uma troca de
+base e deixaria de abrir o Collector.
+
 ### Não confundir com o QR legado
 
 | | QR de setor (novo) | QR `inv-loc` (legado) |
