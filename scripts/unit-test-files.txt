@@ -278,3 +278,4 @@ src/lib/sales/salesOrderResultChartsCache.test.ts
 src/lib/rawMaterialPlanning.shared.test.ts
 src/lib/rawMaterialPlanning.server.test.ts
 src/lib/landingPage.test.tsx
+src/lib/nomus/nomusPurchaseOrderPayableOwnership.test.ts

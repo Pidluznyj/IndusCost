@@ -57,7 +57,7 @@
     "nomus:purchase-orders:backfill:apply": "tsx scripts/nomusPurchaseOrdersSync.ts apply --backfill",
     "nomus:purchase-orders:sync": "tsx scripts/nomusPurchaseOrdersSync.ts apply --incremental",
     "nomus:purchase-orders:apply": "tsx scripts/nomusPurchaseOrdersSync.ts apply --incremental",
-    "test:nomus:purchase-orders": "tsx --test src/lib/nomus/nomusPurchaseOrder.test.ts src/lib/nomus/nomusPurchaseOrderRoutes.test.ts src/lib/nomus/nomusPurchaseOrder360.test.ts src/lib/nomus/nomusPurchaseOrder360Ui.test.ts src/lib/nomus/nomusPurchaseOrderPayableLink.test.ts src/lib/nomus/nomusPurchaseOrderPayableLink.server.test.ts src/lib/nomus/nomusPurchaseOrderPayableLinkRoutes.test.ts src/components/purchases/NomusPurchaseOrderPayablesPanel.test.tsx",
+    "test:nomus:purchase-orders": "tsx --test src/lib/nomus/nomusPurchaseOrder.test.ts src/lib/nomus/nomusPurchaseOrderRoutes.test.ts src/lib/nomus/nomusPurchaseOrder360.test.ts src/lib/nomus/nomusPurchaseOrder360Ui.test.ts src/lib/nomus/nomusPurchaseOrderPayableOwnership.test.ts src/lib/nomus/nomusPurchaseOrderPayableLink.test.ts src/lib/nomus/nomusPurchaseOrderPayableLink.server.test.ts src/lib/nomus/nomusPurchaseOrderPayableLinkRoutes.test.ts src/components/purchases/NomusPurchaseOrderPayablesPanel.test.tsx",
     "sync:nomus:accounts-payable:preview": "tsx scripts/nomusAccountsPayableSync.ts preview",
     "sync:nomus:accounts-payable:apply": "tsx scripts/nomusAccountsPayableSync.ts apply",
     "sync:nomus:nfes:preview": "tsx scripts/nomusNfesSync.ts preview",
