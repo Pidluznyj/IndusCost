@@ -11,7 +11,7 @@ import {
 import {
   isFinanceApCancelledTitle,
   resolveFinanceApOpenAmount,
-  resolveFinanceApRealizedAmount,
+  resolveFinanceApCashRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
 import type {
@@ -445,7 +445,7 @@ export function buildExecutiveYtdCarteiraTotals(
   for (const row of apRows) {
     if (isFinanceApCancelledTitle(row)) continue;
     apTotal += row.amountPayable > 0 ? row.amountPayable : 0;
-    apPaid += resolveFinanceApRealizedAmount(row);
+    apPaid += resolveFinanceApCashRealizedAmount(row);
     apOpen += resolveFinanceApOpenAmount(row);
   }
 

@@ -50,6 +50,7 @@ import {
   isFinanceApSettledByRules,
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
+  resolveFinanceApCashRealizedAmount,
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import { FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS } from "./finance/financeSettlementReconciliation.js";
@@ -1276,10 +1277,17 @@ export function buildFinanceAccountsPayableDashboard(
 }
 
 /** Soma pagamentos por data efetiva em linhas já filtradas — sem refiltrar. */
+/**
+ * `amountKind`: "settled" (AP_SETTLED — realizado gerencial, tela Contas a Pagar)
+ * ou "cash" (AP_CASH_REALIZED — só `amountPaid` informado; Fluxo de Caixa).
+ */
+export type FinanceApPaidAmountKind = "settled" | "cash";
+
 export function sumFinanceApPaidInPaymentPeriodFromFilteredRows(
   rows: FinanceApDashboardRow[],
   periodStart: Date,
-  periodEnd: Date
+  periodEnd: Date,
+  amountKind: FinanceApPaidAmountKind = "settled"
 ): number {
   const startMs = periodStart.getTime();
   const endMs = endOfLocalDay(periodEnd).getTime();
@@ -1289,7 +1297,10 @@ export function sumFinanceApPaidInPaymentPeriodFromFilteredRows(
     const paidAt = resolveFinanceApEffectivePaymentDate(row, {
       reconciliation: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
     });
-    const realized = resolveFinanceApRealizedAmount(row);
+    const realized =
+      amountKind === "cash"
+        ? resolveFinanceApCashRealizedAmount(row)
+        : resolveFinanceApRealizedAmount(row);
     if (
       paidAt &&
       realized > 0 &&
@@ -1314,7 +1325,8 @@ export function sumFinanceApPaidInPaymentPeriod(
   referenceDate: Date,
   syncCutoff: NomusApReportSyncCutoff | null | undefined,
   periodStart: Date,
-  periodEnd: Date
+  periodEnd: Date,
+  amountKind: FinanceApPaidAmountKind = "settled"
 ): number {
   const filteredRows = filterFinanceApRows(
     rows,
@@ -1322,7 +1334,12 @@ export function sumFinanceApPaidInPaymentPeriod(
     referenceDate,
     syncCutoff
   );
-  return sumFinanceApPaidInPaymentPeriodFromFilteredRows(filteredRows, periodStart, periodEnd);
+  return sumFinanceApPaidInPaymentPeriodFromFilteredRows(
+    filteredRows,
+    periodStart,
+    periodEnd,
+    amountKind
+  );
 }
 
 export type FinanceApManagementRowsLoadResult = {

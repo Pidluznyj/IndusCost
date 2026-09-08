@@ -598,6 +598,67 @@ export function auditCashFlowApOperationalDateParity(
 }
 
 /** Relatório consolidado de paridade para uma fixture. */
+/**
+ * Paridade Contas a Pagar × Fluxo de Caixa para AP_OPEN_REMAINING_OBLIGATION:
+ * "Total ainda a pagar" do resumo executivo (vencido em aberto + a vencer até
+ * 31/12) deve reconciliar com o "Em aberto" da tela Contas a Pagar no mesmo
+ * ano, mesma data-base e mesmos filtros gerenciais, sem filtro de mês.
+ *
+ * Diferença de escopo documentada: título aberto cujo vencimento operacional
+ * (reagendamento) cai depois de 31/12 do ano conta no Em aberto de Contas a
+ * Pagar (filtro por dueDate do ano) e fica fora do horizonte anual do Fluxo.
+ */
+export function auditCashFlowApOpenRemainingObligationParityWithAp(
+  apRows: FinanceApDashboardRow[],
+  cfFilters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date,
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  arRows: FinanceCashFlowArRow[] = []
+): FinanceCashFlowArApAuditResult {
+  const mismatches: string[] = [];
+  const cf = buildFinanceCashFlowDashboard(
+    arRows,
+    apRows as FinanceCashFlowApRow[],
+    cfFilters,
+    referenceDate,
+    arSyncCutoff,
+    apSyncCutoff
+  );
+  const payable = cf.executiveSummary.payable;
+  const year = cf.executiveSummary.metadata.year;
+  const apDashYear = buildOfficialAccountsPayableDashboard({
+    rows: apRows,
+    filters: { ...toApLoadFilters(cfFilters), year, month: undefined },
+    referenceDate,
+    syncCutoff: apSyncCutoff,
+    year,
+  });
+
+  const composed = roundMoney(payable.overdueOpenBeforeBase + payable.openFromTodayToYearEnd);
+  if (!nearlyEqual(payable.openRemainingObligation, composed)) {
+    mismatches.push(
+      `openRemainingObligation ${payable.openRemainingObligation} != vencido ${payable.overdueOpenBeforeBase} + a vencer ${payable.openFromTodayToYearEnd}`
+    );
+  }
+  if (!nearlyEqual(payable.estimatedYearTotal, roundMoney(payable.paidYtd + payable.openRemainingObligation))) {
+    mismatches.push(
+      `estimatedYearTotal ${payable.estimatedYearTotal} != paidYtd ${payable.paidYtd} + openRemainingObligation ${payable.openRemainingObligation}`
+    );
+  }
+  if (!nearlyEqual(payable.openRemainingObligation, apDashYear.cards.totalOpenAmount)) {
+    mismatches.push(
+      `Total ainda a pagar (fluxo) ${payable.openRemainingObligation} != Em aberto Contas a Pagar ano ${year} ${apDashYear.cards.totalOpenAmount}`
+    );
+  }
+  if (!nearlyEqual(payable.overdueOpenBeforeBase, apDashYear.cards.overdueAmount)) {
+    mismatches.push(
+      `Vencido em aberto (fluxo) ${payable.overdueOpenBeforeBase} != Vencido gerencial Contas a Pagar ano ${year} ${apDashYear.cards.overdueAmount}`
+    );
+  }
+  return { ok: mismatches.length === 0, mismatches };
+}
+
 export function buildCashFlowArApReconciliationReport(
   arRows: FinanceArDashboardRow[],
   apRows: FinanceApDashboardRow[],
@@ -620,6 +681,7 @@ export function buildCashFlowArApReconciliationReport(
     auditCashFlowPortfolioOpenParityWithArAp(arRows, apRows, cfFilters, referenceDate, arSyncCutoff, apSyncCutoff),
     auditCashFlowArProjectedListsParity(arRows, cfFilters, referenceDate, arSyncCutoff, apSyncCutoff, apRows as FinanceCashFlowApRow[]),
     auditCashFlowApProjectedListsParity(apRows, cfFilters, referenceDate, apSyncCutoff, arSyncCutoff, arRows as FinanceCashFlowArRow[]),
+    auditCashFlowApOpenRemainingObligationParityWithAp(apRows, cfFilters, referenceDate, apSyncCutoff, arSyncCutoff, arRows as FinanceCashFlowArRow[]),
     auditCashFlowArFiscalBackingParity(arRows, cfFilters, referenceDate, arSyncCutoff),
     auditCashFlowExecutiveTimelineInternal(cf),
     auditCashFlowPeriodCardsParity(cf),

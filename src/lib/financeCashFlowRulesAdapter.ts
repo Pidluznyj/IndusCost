@@ -104,7 +104,10 @@ export type OfficialCashFlowExecutiveSideMetrics = {
   receivable: ReturnType<typeof resolveOfficialArCashFlowExecutiveMetrics>;
   payable: ReturnType<typeof resolveOfficialApCashFlowExecutiveMetrics>;
   netRealizedYtd: number;
+  /** A receber até 31/12 − A pagar a vencer até 31/12 (ambos a partir da data-base). */
   netOpenUntilYearEnd: number;
+  /** A receber até 31/12 − Total ainda a pagar (AP inclui vencidos em aberto). */
+  netOpenRemainingObligation: number;
   netEstimatedYearTotal: number;
   metricsSource: OfficialCashFlowSources;
 };
@@ -142,6 +145,10 @@ export function resolveOfficialCashFlowExecutiveSideMetrics(input: {
     netOpenUntilYearEnd: computeCashFlowNetBalance(
       receivable.openUntilYearEnd,
       payable.openUntilYearEnd
+    ),
+    netOpenRemainingObligation: computeCashFlowNetBalance(
+      receivable.openUntilYearEnd,
+      payable.openRemainingObligation
     ),
     netEstimatedYearTotal: computeCashFlowNetBalance(
       receivable.estimatedYearTotal,

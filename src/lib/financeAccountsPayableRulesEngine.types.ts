@@ -19,6 +19,7 @@ export type FinanceApRulesMetricKey =
   | "totalPayable"
   | "paidThisMonth"
   | "paidYtd"
+  | "cashPaidYtd"
   | "openAmount"
   | "overdueAmount"
   | "dueTodayAmount"
@@ -27,8 +28,12 @@ export type FinanceApRulesMetricKey =
   | "dueNext60DaysAmount"
   | "dueNext90DaysAmount"
   | "scheduledOpenAmount"
+  | "overdueOpenBeforeBase"
+  | "dueTodayOpenInYear"
   | "openUntilYearEnd"
+  | "openRemainingObligation"
   | "estimatedYearTotal"
+  | "cashEstimatedYearTotal"
   | "periodPaidAmount"
   | "periodExpectedOutflowAmount"
   | "paidInAppliedPeriod";
@@ -68,6 +73,12 @@ export type FinanceAccountsPayableMetrics = {
   totalPayable: number;
   paidThisMonth: number;
   paidYtd: number;
+  /**
+   * AP_CASH_REALIZED no ano: só amountPaid informado, pela data efetiva
+   * canônica. Fluxo de Caixa usa este; paidYtd (AP_SETTLED) é o da tela
+   * Contas a Pagar.
+   */
+  cashPaidYtd: number;
   openAmount: number;
   overdueAmount: number;
   dueTodayAmount: number;
@@ -76,8 +87,30 @@ export type FinanceAccountsPayableMetrics = {
   dueNext60DaysAmount: number;
   dueNext90DaysAmount: number;
   scheduledOpenAmount: number;
+  /**
+   * AP_OVERDUE_OPEN — saldo aberto (motor oficial) com vencimento operacional
+   * ANTERIOR à data-base, dentro do ano selecionado. Continua alocado na
+   * dueDate original (eixo corporativo AP); nunca é deslocado para hoje.
+   */
+  overdueOpenBeforeBase: number;
+  /** AP_DUE_TODAY_OPEN — saldo aberto com vencimento operacional na data-base (dentro do ano). */
+  dueTodayOpenInYear: number;
+  /**
+   * AP_DUE_REMAINING_TO_YEAR_END — "A vencer até 31/12": saldo aberto com
+   * vencimento operacional da data-base (inclusive) até 31/12. NÃO inclui
+   * vencidos antes da data-base.
+   */
   openUntilYearEnd: number;
+  /**
+   * AP_OPEN_REMAINING_OBLIGATION — "Total ainda a pagar":
+   * overdueOpenBeforeBase + openUntilYearEnd (vencido + hoje + a vencer).
+   * Obrigação de caixa ainda existente no ano.
+   */
+  openRemainingObligation: number;
+  /** AP_ESTIMATED_YEAR_TOTAL — paidYtd + openRemainingObligation (tela Contas a Pagar). */
   estimatedYearTotal: number;
+  /** Fluxo de Caixa: cashPaidYtd + openRemainingObligation. */
+  cashEstimatedYearTotal: number;
   periodPaidAmount: number;
   periodExpectedOutflowAmount: number;
   /**

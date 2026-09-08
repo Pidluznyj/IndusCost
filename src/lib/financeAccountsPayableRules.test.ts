@@ -14,7 +14,9 @@ import {
   isFinanceApCancelledTitle,
   normalizeAccountsPayableTitle,
   resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApCashRealizedAmount,
   resolveFinanceApOpenAmount,
+  resolveFinanceApSettledWithoutCashAmount,
   resolveFinanceApRealizedAmount,
   type FinanceApRulesInput,
 } from "./financeAccountsPayableRules.js";
@@ -264,8 +266,13 @@ describe("financeAccountsPayableRules", () => {
     );
 
     assert.equal(cf.cards.totalPayableOpen, apDash.cards.totalOpenAmount);
-    assert.equal(realizedLedger.outflow, resolveFinanceApRealizedAmount(rows[0]));
+    // AP_SETTLED: a baixa sem numerário encerra o título (realizado gerencial 1000, aberto 0)…
+    assert.equal(resolveFinanceApRealizedAmount(rows[0]), 1000);
     assert.equal(resolveFinanceApOpenAmount(rows[0]), 0);
+    // …mas AP_CASH_REALIZED é 0: o Fluxo de Caixa não a apresenta como saída de caixa.
+    assert.equal(resolveFinanceApCashRealizedAmount(rows[0]), 0);
+    assert.equal(realizedLedger.outflow, resolveFinanceApCashRealizedAmount(rows[0]));
+    assert.equal(realizedLedger.outflow, 0);
     assert.equal(resolveFinanceApOpenAmount(rows[1]), 500);
   });
 
@@ -334,5 +341,75 @@ describe("financeAccountsPayableRules", () => {
     const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
     assert.equal(dash.cards.openTitlesCount, 0);
     assert.equal(dash.dataSanitization.ignoredPurchaseOrderAgendaPayables, 1);
+  });
+});
+
+describe("AP_SETTLED × AP_CASH_REALIZED — caixa só com evidência (amountPaid informado)", () => {
+  const settledZero = (extra: Record<string, unknown> = {}) =>
+    apInput({ amountPayable: 100, amountPaid: 0, balancePayable: 0, dueDate: new Date(2026, 2, 10), settlementDate: new Date(2026, 2, 12), ...extra });
+
+  it("TESTE 12 — WITHOUT_CASH: settled 100, cashRealized 0, open 0 (não reaparece em aberto)", () => {
+    const n = normalizeAccountsPayableTitle(settledZero({ balancePayable: 100, paymentMethodName: "Baixa sem numerário" }));
+    assert.equal(n.settlementKind, "WITHOUT_CASH");
+    assert.equal(n.isSettled, true);
+    assert.equal(n.realizedAmount, 100);
+    assert.equal(n.cashRealizedAmount, 0);
+    assert.equal(n.openAmount, 0);
+    assert.equal(resolveFinanceApSettledWithoutCashAmount(settledZero({ balancePayable: 100, paymentMethodName: "Baixa sem numerário" })), 100);
+  });
+
+  it("TESTE 13 — baixa normal com amountPaid = 100 → cashRealized 100", () => {
+    const row = apInput({ amountPayable: 100, amountPaid: 100, balancePayable: 0, dueDate: new Date(2026, 2, 10), paymentDate: new Date(2026, 2, 10) });
+    assert.equal(resolveFinanceApRealizedAmount(row), 100);
+    assert.equal(resolveFinanceApCashRealizedAmount(row), 100);
+    assert.equal(resolveFinanceApSettledWithoutCashAmount(row), 0);
+  });
+
+  it("TESTE 14 — parcial: amountPaid 40, saldo 60 → cashRealized 40, open 60; os 60 não viram realizado", () => {
+    const row = apInput({ amountPayable: 100, amountPaid: 40, balancePayable: 60, dueDate: new Date(2026, 2, 10) });
+    assert.equal(resolveFinanceApCashRealizedAmount(row), 40);
+    assert.equal(resolveFinanceApRealizedAmount(row), 40);
+    assert.equal(resolveFinanceApOpenAmount(row), 60);
+  });
+
+  it("TESTE 15 — invariante de segurança: settled com amountPaid = 0 NÃO vira caixa de 100", () => {
+    const row = settledZero();
+    const n = normalizeAccountsPayableTitle(row);
+    assert.equal(n.isSettled, true);
+    assert.equal(n.realizedAmount, 100, "AP_SETTLED mantém a inferência gerencial documentada");
+    assert.equal(n.cashRealizedAmount, 0, "AP_CASH_REALIZED nunca infere amountPayable");
+    assert.equal(resolveFinanceApSettledWithoutCashAmount(row), 100);
+  });
+
+  it("TESTE 16 — FORCED: caixa só até o amountPaid comprovado (0 → 0; 30 → 30), nunca amountPayable", () => {
+    const zero = settledZero({ balancePayable: 100, description: "Baixa forçada" });
+    assert.equal(normalizeAccountsPayableTitle(zero).settlementKind, "FORCED");
+    assert.equal(resolveFinanceApRealizedAmount(zero), 100);
+    assert.equal(resolveFinanceApCashRealizedAmount(zero), 0);
+    const partial = settledZero({ amountPaid: 30, balancePayable: 70, description: "Baixa forçada" });
+    assert.equal(resolveFinanceApCashRealizedAmount(partial), 30);
+    assert.ok(resolveFinanceApCashRealizedAmount(partial) <= 30);
+  });
+
+  it("cancelado: settled 0, cashRealized 0, open 0", () => {
+    const row = settledZero({ amountPaid: 100, description: "Titulo cancelado" });
+    assert.equal(resolveFinanceApRealizedAmount(row), 0);
+    assert.equal(resolveFinanceApCashRealizedAmount(row), 0);
+    assert.equal(resolveFinanceApOpenAmount(row), 0);
+  });
+
+  it("invariante: cashRealized ≤ amountPaid e cashRealized ≤ realized para qualquer título", () => {
+    const samples = [
+      settledZero(),
+      settledZero({ amountPaid: 100 }),
+      settledZero({ amountPaid: 25, balancePayable: 75 }),
+      settledZero({ balancePayable: 100, paymentMethodName: "Baixa sem numerário" }),
+      settledZero({ balancePayable: 100, description: "Baixa forçada", amountPaid: 10 }),
+    ];
+    for (const row of samples) {
+      const n = normalizeAccountsPayableTitle(row);
+      assert.ok(n.cashRealizedAmount <= n.amountPaid + 0.005);
+      assert.ok(n.cashRealizedAmount <= n.realizedAmount + 0.005);
+    }
   });
 });

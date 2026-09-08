@@ -12,7 +12,7 @@ import {
 import {
   isFinanceApCancelledTitle,
   resolveFinanceApOpenAmount,
-  resolveFinanceApRealizedAmount,
+  resolveFinanceApCashRealizedAmount,
   FINANCE_AP_CASH_FLOW_RULES_NOTE,
 } from "./financeAccountsPayableRules.js";
 import type {
@@ -50,7 +50,7 @@ export function shouldIncludeCalendarApRealizedMovement(
   row: FinanceCashFlowApRow
 ): boolean {
   if (isFinanceApCancelledTitle(row)) return false;
-  return resolveFinanceApRealizedAmount(row) > 0 && row.dueDate != null;
+  return resolveFinanceApCashRealizedAmount(row) > 0 && row.dueDate != null;
 }
 
 export function resolveCalendarApRealizedMovementDate(
@@ -98,7 +98,8 @@ export function resolveCashFlowApAmount(
     if (!isFinanceApOpen(row) || row.suspendPayment) return 0;
     return resolveFinanceApOpenAmount(row);
   }
-  return resolveFinanceApRealizedAmount(row);
+  // Fluxo de Caixa realizado = AP_CASH_REALIZED (só amountPaid informado).
+  return resolveFinanceApCashRealizedAmount(row);
 }
 
 export function shouldIncludeCashFlowArMovement(
@@ -119,7 +120,7 @@ export function shouldIncludeCashFlowApMovement(
   if (slice === "projected") {
     return isFinanceApOpen(row) && !row.suspendPayment && resolveFinanceApOpenAmount(row) > 0;
   }
-  const realized = resolveFinanceApRealizedAmount(row);
+  const realized = resolveFinanceApCashRealizedAmount(row);
   return realized > 0 && row.dueDate != null;
 }
 

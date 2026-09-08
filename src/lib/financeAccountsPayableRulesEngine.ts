@@ -105,6 +105,17 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     dateBasisNote: "resolveFinanceApEffectivePaymentDate — não usa dueDate para o período do realizado.",
   },
   {
+    key: "cashPaidYtd",
+    label: "Pago com caixa YTD",
+    description:
+      "Saída de caixa afirmável no ano: soma de amountPaid informado (nunca amountPayable inferido), pela data efetiva canônica. Baixas sem numerário, forçadas ou sem valor pago ficam fora.",
+    valueField: "cashRealizedAmount",
+    dateField: "effectivePaymentDate",
+    includes: ["Pagamentos com amountPaid informado no acumulado do ano"],
+    excludes: ["Baixas sem evidência de caixa", "Cancelados"],
+    dateBasisNote: "Fluxo de Caixa (AP_CASH_REALIZED). Distinto de paidYtd (AP_SETTLED).",
+  },
+  {
     key: "openAmount",
     label: "Em aberto",
     description: "Soma de saldo em aberto saneado (resolveFinanceApOpenAmount).",
@@ -177,21 +188,61 @@ const METRIC_DEFINITIONS: FinanceAccountsPayableMetricDefinition[] = [
     excludes: ["Quitados"],
   },
   {
-    key: "openUntilYearEnd",
-    label: "A pagar restante no ano",
-    description: "Saldo em aberto com vencimento operacional entre hoje e fim do ano.",
+    key: "overdueOpenBeforeBase",
+    label: "Vencido em aberto",
+    description:
+      "Saldo em aberto com vencimento operacional anterior à data-base, dentro do ano selecionado. Continua alocado na dueDate original.",
     valueField: "balancePayable",
     dateField: "operationalDueDate",
-    includes: ["Abertos com vencimento futuro no ano"],
+    includes: ["Abertos vencidos antes da data-base no ano"],
+    excludes: ["Quitados", "Cancelados", "Pagamento suspenso"],
+    dateBasisNote: "Eixo corporativo AP = dueDate; o vencido não é deslocado para o mês atual.",
+  },
+  {
+    key: "dueTodayOpenInYear",
+    label: "Vence na data-base",
+    description: "Saldo em aberto com vencimento operacional igual à data-base, dentro do ano selecionado.",
+    valueField: "balancePayable",
+    dateField: "operationalDueDate",
+    includes: ["Abertos que vencem na data-base"],
     excludes: ["Quitados"],
+  },
+  {
+    key: "openUntilYearEnd",
+    label: "A vencer até 31/12",
+    description:
+      "Saldo em aberto com vencimento operacional da data-base (inclusive) até 31/12 do ano selecionado. Não inclui vencidos antes da data-base.",
+    valueField: "balancePayable",
+    dateField: "operationalDueDate",
+    includes: ["Abertos que vencem na data-base", "Abertos com vencimento futuro no ano"],
+    excludes: ["Quitados", "Vencidos antes da data-base"],
+  },
+  {
+    key: "openRemainingObligation",
+    label: "Total ainda a pagar",
+    description:
+      "Obrigação de caixa ainda em aberto no ano: vencido antes da data-base + vence na data-base + a vencer até 31/12.",
+    valueField: "balancePayable",
+    dateField: "operationalDueDate",
+    includes: ["overdueOpenBeforeBase", "openUntilYearEnd"],
+    excludes: ["Quitados", "Cancelados", "Pagamento suspenso"],
   },
   {
     key: "estimatedYearTotal",
     label: "Estimativa AP do ano",
-    description: "Pago YTD + a pagar até 31/12.",
+    description: "Pago YTD + total ainda a pagar (inclui vencidos em aberto).",
     valueField: "mixed",
     dateField: "mixed",
-    includes: ["paidYtd", "openUntilYearEnd"],
+    includes: ["paidYtd", "openRemainingObligation"],
+    excludes: [],
+  },
+  {
+    key: "cashEstimatedYearTotal",
+    label: "Estimativa AP do ano (caixa)",
+    description: "Pago com caixa YTD + total ainda a pagar (inclui vencidos em aberto). Fluxo de Caixa.",
+    valueField: "mixed",
+    dateField: "mixed",
+    includes: ["cashPaidYtd", "openRemainingObligation"],
     excludes: [],
   },
   {
@@ -427,6 +478,16 @@ export function buildAccountsPayableMetrics(
     context.ytdEnd
   );
 
+  const cashPaidYtd = sumFinanceApPaidInPaymentPeriod(
+    titles,
+    context.filters,
+    context.referenceDate,
+    context.syncCutoff,
+    context.ytdStart,
+    context.ytdEnd,
+    "cash"
+  );
+
   const paidInAppliedPeriod =
     context.realizedPeriodKind === "ytd"
       ? paidYtd
@@ -439,16 +500,41 @@ export function buildAccountsPayableMetrics(
           context.realizedPeriodEnd
         );
 
+  // Carteira do ano (ignora filtro de mês): mesma população saneada da tela
+  // Contas a Pagar com filtro de ano. Todas as métricas anuais abaixo derivam
+  // desta única passada — sem nova consulta.
+  const yearScopedRows = filterFinanceApRows(
+    titles,
+    { ...context.filters, year: context.year, month: undefined },
+    context.referenceDate,
+    context.syncCutoff
+  );
+  const yearStart = startOfLocalDay(new Date(context.year, 0, 1));
+  // AP_DUE_REMAINING_TO_YEAR_END: data-base (inclusive) → 31/12.
   const openUntilYearEnd = sumOpenOperationalDueInPeriod(
-    filterFinanceApRows(
-      titles,
-      { ...context.filters, year: context.year, month: undefined },
-      context.referenceDate,
-      context.syncCutoff
-    ),
+    yearScopedRows,
     context.forwardFromDate,
     context.yearEnd
   );
+  // AP_OVERDUE_OPEN: vencido antes da data-base, ainda aberto, alocado na
+  // dueDate original (eixo corporativo AP). Ano futuro → 0 por construção.
+  const overdueOpenBeforeBase =
+    context.forwardFromDate.getTime() > yearStart.getTime()
+      ? sumOpenOperationalDueInPeriod(
+          yearScopedRows,
+          yearStart,
+          addLocalDays(context.forwardFromDate, -1)
+        )
+      : 0;
+  // AP_DUE_TODAY_OPEN: só existe quando a data-base cai dentro do ano.
+  const dueTodayOpenInYear =
+    context.today.getTime() >= yearStart.getTime() &&
+    context.today.getTime() <= context.yearEnd.getTime()
+      ? sumOpenOperationalDueInPeriod(yearScopedRows, context.today, context.today)
+      : 0;
+  // AP_OPEN_REMAINING_OBLIGATION: vencido + (hoje + a vencer). Uma obrigação
+  // vencida e não paga não deixa de ser obrigação de caixa.
+  const openRemainingObligation = roundMoney(overdueOpenBeforeBase + openUntilYearEnd);
 
   const dueNext60DaysAmount = sumOpenOperationalDueInCumulativeWindow(
     filtered,
@@ -466,6 +552,7 @@ export function buildAccountsPayableMetrics(
     totalPayable: resolvedCards.totalPayableAmount,
     paidThisMonth: resolvedCards.paidThisMonthAmount,
     paidYtd,
+    cashPaidYtd,
     openAmount: resolvedCards.totalOpenAmount,
     overdueAmount: resolvedCards.overdueAmount,
     dueTodayAmount: resolvedCards.dueTodayAmount,
@@ -474,8 +561,13 @@ export function buildAccountsPayableMetrics(
     dueNext60DaysAmount,
     dueNext90DaysAmount,
     scheduledOpenAmount,
+    overdueOpenBeforeBase,
+    dueTodayOpenInYear,
     openUntilYearEnd,
-    estimatedYearTotal: roundMoney(paidYtd + openUntilYearEnd),
+    openRemainingObligation,
+    // AP_ESTIMATED_YEAR_TOTAL = pago no ano + obrigação ainda em aberto (com vencidos).
+    estimatedYearTotal: roundMoney(paidYtd + openRemainingObligation),
+    cashEstimatedYearTotal: roundMoney(cashPaidYtd + openRemainingObligation),
     periodPaidAmount: paidYtd,
     periodExpectedOutflowAmount: openUntilYearEnd,
     paidInAppliedPeriod,
@@ -579,6 +671,41 @@ export function auditAccountsPayableRules(
 
   if (result.metrics.openAmount < result.metrics.overdueAmount) {
     warnings.push("overdueAmount excede openAmount — revisar classificação.");
+  }
+
+  // Invariantes da obrigação remanescente do ano (AP_OPEN_REMAINING_OBLIGATION).
+  const m = result.metrics;
+  if (
+    Math.abs(m.openRemainingObligation - roundMoney(m.overdueOpenBeforeBase + m.openUntilYearEnd)) >
+    0.01
+  ) {
+    warnings.push(
+      `openRemainingObligation (${m.openRemainingObligation}) != overdueOpenBeforeBase (${m.overdueOpenBeforeBase}) + openUntilYearEnd (${m.openUntilYearEnd}).`
+    );
+  }
+  if (Math.abs(m.estimatedYearTotal - roundMoney(m.paidYtd + m.openRemainingObligation)) > 0.01) {
+    warnings.push(
+      `estimatedYearTotal (${m.estimatedYearTotal}) != paidYtd (${m.paidYtd}) + openRemainingObligation (${m.openRemainingObligation}).`
+    );
+  }
+  if (
+    Math.abs(m.cashEstimatedYearTotal - roundMoney(m.cashPaidYtd + m.openRemainingObligation)) > 0.01
+  ) {
+    warnings.push(
+      `cashEstimatedYearTotal (${m.cashEstimatedYearTotal}) != cashPaidYtd (${m.cashPaidYtd}) + openRemainingObligation (${m.openRemainingObligation}).`
+    );
+  }
+  if (m.cashPaidYtd > m.paidYtd + 0.01) {
+    warnings.push("cashPaidYtd excede paidYtd — caixa acima do realizado gerencial.");
+  }
+  if (m.openUntilYearEnd > m.openRemainingObligation + 0.01) {
+    warnings.push("openUntilYearEnd excede openRemainingObligation — vencido em aberto negativo?");
+  }
+  if (m.dueTodayOpenInYear > m.openUntilYearEnd + 0.01) {
+    warnings.push("dueTodayOpenInYear excede openUntilYearEnd — a data-base saiu do intervalo a vencer.");
+  }
+  if (m.overdueOpenBeforeBase < 0 || m.dueTodayOpenInYear < 0 || m.openRemainingObligation < 0) {
+    warnings.push("Métricas de obrigação remanescente negativas.");
   }
 
   if (Math.abs(result.metrics.openAmount - result.cards.totalOpenAmount) > 0.01) {

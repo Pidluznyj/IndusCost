@@ -6,6 +6,7 @@ import type { FinanceApDashboardRow } from "./financeAccountsPayableDashboard.js
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 import {
   auditCashFlowApOverdueParityWithAp,
+  auditCashFlowApOpenRemainingObligationParityWithAp,
   auditCashFlowApProjectedListsParity,
   auditCashFlowArFiscalBackingParity,
   auditCashFlowArOverdueParityWithAr,
@@ -307,6 +308,35 @@ describe("financeCashFlowArApReconciliation — linha do tempo e cards", () => {
     assert.equal(cf.cards.netCashPosition, 3800);
     assert.equal(cf.reconciliation.receivable.matchesArOpen, true);
     assert.equal(cf.reconciliation.payable.matchesApOpen, true);
+  });
+
+  it("Total ainda a pagar do Fluxo bate com Em aberto de Contas a Pagar no mesmo ano (vencido incluído)", () => {
+    const ap = [
+      apRow({
+        externalId: 1,
+        amountPayable: 100,
+        amountPaid: 100,
+        balancePayable: 0,
+        dueDate: new Date(2026, 1, 1),
+        paymentDate: new Date(2026, 1, 1),
+        settlementDate: new Date(2026, 1, 1),
+      }),
+      apRow({ externalId: 2, amountPayable: 20, balancePayable: 20, dueDate: new Date(2026, 3, 15) }),
+      apRow({ externalId: 3, amountPayable: 30, balancePayable: 30, dueDate: new Date(2026, 8, 1) }),
+    ];
+    assertAuditOk(
+      auditCashFlowApOpenRemainingObligationParityWithAp(ap, BASE_CF_FILTERS, REF, apCutoff(), arCutoff()),
+      "ap open remaining obligation"
+    );
+    const cf = buildFinanceCashFlowDashboard([], ap, BASE_CF_FILTERS, REF, arCutoff(), apCutoff());
+    assert.equal(cf.executiveSummary.payable.overdueOpenBeforeBase, 20);
+    assert.equal(cf.executiveSummary.payable.openRemainingObligation, 50);
+    assert.equal(cf.executiveSummary.payable.estimatedYearTotal, 150);
+    // com filtro de mês a visão anual não muda (ignora mês)
+    assertAuditOk(
+      auditCashFlowApOpenRemainingObligationParityWithAp(ap, { ...BASE_CF_FILTERS, month: 9 }, REF, apCutoff(), arCutoff()),
+      "ap open remaining obligation (mês filtrado)"
+    );
   });
 
   it("modo previsto: entradas/saídas do período batem com cross-module reconciliation", () => {

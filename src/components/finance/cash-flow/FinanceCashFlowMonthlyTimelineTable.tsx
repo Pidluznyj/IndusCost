@@ -22,7 +22,7 @@ export function FinanceCashFlowMonthlyTimelineTable({
         <FinanceCashFlowBlockTitle
           testId="cash-flow-monthly-timeline-header"
           title={`Linha do tempo mensal — ${year}`}
-          subtitle="Realizado por movimento (baixa) + aberto por vencimento. Distinta do fluxo planejado por dueDate. Independente do modo Previsto/Realizado do filtro global."
+          subtitle="Contas a Pagar: pago e em aberto atribuídos ao mês de vencimento (dueDate) — a baixa altera o status do título, não sua competência mensal. Contas a Receber: recebido por baixa. Independente do modo Previsto/Realizado do filtro global."
           help={FINANCE_CF_HELP_MONTHLY_TIMELINE}
         />
       </div>
@@ -37,9 +37,24 @@ export function FinanceCashFlowMonthlyTimelineTable({
                 <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Recebido</th>
                 <th className="px-3 py-2 font-bold text-[#6B7280] text-right">A receber</th>
                 <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Entradas est.</th>
-                <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Pago</th>
-                <th className="px-3 py-2 font-bold text-[#6B7280] text-right">A pagar</th>
-                <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Saídas est.</th>
+                <th
+                  className="px-3 py-2 font-bold text-[#6B7280] text-right"
+                  title="Realizado com caixa dos títulos que vencem no mês. Baixas posteriores não deslocam o título para outro mês; baixas sem numerário ficam fora."
+                >
+                  Pago
+                </th>
+                <th
+                  className="px-3 py-2 font-bold text-[#6B7280] text-right"
+                  title="Saldo em aberto dos títulos que vencem no mês (dueDate)."
+                >
+                  A pagar
+                </th>
+                <th
+                  className="px-3 py-2 font-bold text-[#6B7280] text-right"
+                  title="Pago + A pagar dos títulos que vencem no mês."
+                >
+                  Saídas est.
+                </th>
                 <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Saldo líq.</th>
                 <th className="px-3 py-2 font-bold text-[#6B7280] text-right">Acumulado</th>
               </tr>
