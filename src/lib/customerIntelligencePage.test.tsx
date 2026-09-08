@@ -1,21 +1,61 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { register } from "node:module";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CustomerIntelligenceReport } from "./customerIntelligenceTypes.js";
-import { CustomerIntelligenceDataQuality } from "../components/crm/customer-intelligence/CustomerIntelligenceDataQuality.js";
 import { buildCustomerIntelligenceKpiItems } from "./customerIntelligenceKpiItems.js";
-import { CustomerIntelligenceTabs } from "../components/crm/customer-intelligence/CustomerIntelligenceTabs.js";
-import { CustomerIntelligenceHeader } from "../components/crm/customer-intelligence/CustomerIntelligenceHeader.js";
-import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
-import { CustomerIntelligenceProductsTab } from "../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js";
-import { CustomerIntelligenceFinancialTab } from "../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js";
-import { CustomerIntelligenceCrmTab } from "../components/crm/customer-intelligence/CustomerIntelligenceCrmTab.js";
-import { CustomerIntelligenceSignals } from "../components/crm/customer-intelligence/CustomerIntelligenceSignals.js";
-import { CustomerIntelligenceOpportunitiesTab } from "../components/crm/customer-intelligence/CustomerIntelligenceOpportunitiesTab.js";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "./financeAccountsReceivableDashboard.js";
+
+/**
+ * As abas (Compras, Produtos, Financeiro, CRM) chegam a `MetricCard` /
+ * `ExecutiveSummarySection`, que importam CSS do design system. O runner
+ * canônico `tsx --test` não carrega CSS (ERR_UNKNOWN_FILE_EXTENSION), então
+ * registramos um hook que devolve módulo vazio para `.css` e carregamos os
+ * componentes React dinamicamente em `before()`, depois do registro — imports
+ * ESM estáticos seriam resolvidos antes do `register()`. Mesmo padrão de
+ * src/components/purchases/performance/SupplierPerformanceDashboardUi.test.tsx.
+ */
+register(
+  `data:text/javascript,${encodeURIComponent(
+    'export async function load(url, context, next) { if (url.endsWith(".css")) return { format: "module", source: "", shortCircuit: true }; return next(url, context); }'
+  )}`,
+  import.meta.url
+);
+
+type CustomerIntelligenceDataQualityModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceDataQuality.js");
+type CustomerIntelligenceTabsModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceTabs.js");
+type CustomerIntelligenceHeaderModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceHeader.js");
+type CustomerIntelligencePurchasesTabModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js");
+type CustomerIntelligenceProductsTabModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js");
+type CustomerIntelligenceFinancialTabModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js");
+type CustomerIntelligenceCrmTabModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceCrmTab.js");
+type CustomerIntelligenceSignalsModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceSignals.js");
+type CustomerIntelligenceOpportunitiesTabModule = typeof import("../components/crm/customer-intelligence/CustomerIntelligenceOpportunitiesTab.js");
+
+let CustomerIntelligenceDataQuality: CustomerIntelligenceDataQualityModule["CustomerIntelligenceDataQuality"];
+let CustomerIntelligenceTabs: CustomerIntelligenceTabsModule["CustomerIntelligenceTabs"];
+let CustomerIntelligenceHeader: CustomerIntelligenceHeaderModule["CustomerIntelligenceHeader"];
+let CustomerIntelligencePurchasesTab: CustomerIntelligencePurchasesTabModule["CustomerIntelligencePurchasesTab"];
+let CustomerIntelligenceProductsTab: CustomerIntelligenceProductsTabModule["CustomerIntelligenceProductsTab"];
+let CustomerIntelligenceFinancialTab: CustomerIntelligenceFinancialTabModule["CustomerIntelligenceFinancialTab"];
+let CustomerIntelligenceCrmTab: CustomerIntelligenceCrmTabModule["CustomerIntelligenceCrmTab"];
+let CustomerIntelligenceSignals: CustomerIntelligenceSignalsModule["CustomerIntelligenceSignals"];
+let CustomerIntelligenceOpportunitiesTab: CustomerIntelligenceOpportunitiesTabModule["CustomerIntelligenceOpportunitiesTab"];
+
+before(async () => {
+  CustomerIntelligenceDataQuality = (await import("../components/crm/customer-intelligence/CustomerIntelligenceDataQuality.js")).CustomerIntelligenceDataQuality;
+  CustomerIntelligenceTabs = (await import("../components/crm/customer-intelligence/CustomerIntelligenceTabs.js")).CustomerIntelligenceTabs;
+  CustomerIntelligenceHeader = (await import("../components/crm/customer-intelligence/CustomerIntelligenceHeader.js")).CustomerIntelligenceHeader;
+  CustomerIntelligencePurchasesTab = (await import("../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js")).CustomerIntelligencePurchasesTab;
+  CustomerIntelligenceProductsTab = (await import("../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js")).CustomerIntelligenceProductsTab;
+  CustomerIntelligenceFinancialTab = (await import("../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js")).CustomerIntelligenceFinancialTab;
+  CustomerIntelligenceCrmTab = (await import("../components/crm/customer-intelligence/CustomerIntelligenceCrmTab.js")).CustomerIntelligenceCrmTab;
+  CustomerIntelligenceSignals = (await import("../components/crm/customer-intelligence/CustomerIntelligenceSignals.js")).CustomerIntelligenceSignals;
+  CustomerIntelligenceOpportunitiesTab = (await import("../components/crm/customer-intelligence/CustomerIntelligenceOpportunitiesTab.js")).CustomerIntelligenceOpportunitiesTab;
+});
 
 function mockFinancial(
   overrides: Partial<CustomerIntelligenceReport["financial"]> = {}
@@ -433,7 +473,8 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     assert.ok(!kpiSrc.includes("prisma"));
     assert.match(kpiSrc, /ExecutiveSummarySection/);
     assert.match(kpiSrc, /SummaryKpiGrid/);
-    assert.match(kpiSrc, /MetricCard/);
+    // e5310719 migrou os cards de MetricCard para o totalizador oficial do sistema.
+    assert.match(kpiSrc, /FinanceExecutiveTotalizerCard|SystemTotalizerCard/);
   });
 
   it("aba Compras exibe tabela anual e leitura gerencial", () => {
