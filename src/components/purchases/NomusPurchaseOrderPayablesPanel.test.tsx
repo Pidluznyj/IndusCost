@@ -38,6 +38,8 @@ const linked: LinkedPayableView = {
   statusLabel: "Baixado",
   isSettled: true,
   linkedToOtherOrder: false,
+  ownership: { kind: "AUTO_SINGLE_OWNER", ownerOrderId: "o1", ownerOrderNumber: null, label: "Dono financeiro por evidência automática" },
+  countsForThisOrder: true,
 };
 
 const confirmed: LinkedPayableView = {
@@ -58,6 +60,27 @@ const confirmed: LinkedPayableView = {
   statusLabel: "Em aberto",
   isSettled: false,
   linkedToOtherOrder: true,
+  ownership: { kind: "CONFIRMED_OWNER", ownerOrderId: "o1", ownerOrderNumber: null, label: "Dono financeiro confirmado" },
+  countsForThisOrder: true,
+};
+
+/** NF-e deste pedido, mas título confirmado em OUTRO pedido: visível, fora dos totais, sem ação. */
+const ownedElsewhere: LinkedPayableView = {
+  ...linked,
+  payableExternalId: 9004,
+  installmentIndex: null,
+  linkedToOtherOrder: true,
+  ownership: { kind: "CONFIRMED_OWNER", ownerOrderId: "o2", ownerOrderNumber: "PC00613", label: "Vinculado a outro pedido" },
+  countsForThisOrder: false,
+};
+
+/** Evidência automática em mais de um pedido: conflito, fora dos totais. */
+const conflicted: LinkedPayableView = {
+  ...linked,
+  payableExternalId: 9005,
+  installmentIndex: null,
+  ownership: { kind: "AUTO_CONFLICT", ownerOrderId: null, ownerOrderNumber: null, label: "Conflito de vínculo — evidência em mais de um pedido" },
+  countsForThisOrder: false,
 };
 
 const data: PurchaseOrderPayableReconciliation = {
@@ -115,6 +138,8 @@ const data: PurchaseOrderPayableReconciliation = {
           matchedOn: { supplier: true, company: true, amount: true, dueDate: true, paymentMethod: true, bankAccount: false },
           evidence: "parcela 3 · vencimento 2026-11-09 · valor 1171.14",
           linkedToOtherOrder: false,
+          confirmable: true,
+          ownerOrderNumber: null,
         },
       ],
       linkedAmount: 0,
@@ -124,7 +149,7 @@ const data: PurchaseOrderPayableReconciliation = {
       statusLabel: "Sem título vinculado",
     },
   ],
-  unassignedPayables: [],
+  unassignedPayables: [ownedElsewhere, conflicted],
   suggestions: [],
   totals: {
     plannedAmount: 3444.5,
@@ -135,6 +160,7 @@ const data: PurchaseOrderPayableReconciliation = {
     openAmount: 1136.68,
     unlinkedInstallmentCount: 1,
     suggestionCount: 1,
+    excludedByOwnershipCount: 2,
   },
   financialStatus: "PARTIALLY_PAID",
   fullySettled: false,
@@ -228,5 +254,47 @@ describe("NomusPurchaseOrderPayablesPanelView", () => {
       data: { ...data, installments: [], totals: { ...data.totals, plannedCount: 0, unlinkedInstallmentCount: 0 } },
     });
     assert.match(html, /O pedido não traz parcelas planejadas\./);
+  });
+
+  describe("cardinalidade V1 — dono financeiro é outro pedido / conflito", () => {
+    it("R. sugestão de título confirmado em outro pedido: status 'Vinculado a outro pedido (PC…)', SEM botão Confirmar, mesmo com permissão", () => {
+      const blocked = {
+        ...data.installments[2].suggestions[0],
+        payableExternalId: 9006,
+        linkedToOtherOrder: true,
+        confirmable: false,
+        ownerOrderNumber: "PC00613",
+      };
+      const html = render({
+        data: { ...data, installments: [data.installments[0], data.installments[1], { ...data.installments[2], suggestions: [blocked] }] },
+      });
+      assert.match(html, /data-testid="npo-suggestion-9006"/);
+      assert.match(html, /data-testid="npo-suggestion-blocked-9006"[^>]*><span class="truncate">Vinculado a outro pedido \(PC00613\)</);
+      assert.doesNotMatch(html, /npo-confirm-suggestion-9006/);
+      assert.match(html, /Desvincule no pedido dono antes de confirmar aqui\./);
+      // A sugestão confirmável continua com o botão.
+      const free = render();
+      assert.match(free, /data-testid="npo-confirm-suggestion-9003"/);
+      assert.doesNotMatch(free, /npo-suggestion-blocked-/);
+    });
+
+    it("título com dono confirmado em outro pedido: visível, 'Vinculado a outro pedido (PC00613)', fora dos totais e sem Desvincular", () => {
+      const html = render();
+      assert.match(html, /data-testid="npo-linked-payable-9004"[^>]*data-counts="0"/);
+      assert.match(html, /data-testid="npo-ownership-other-9004"[^>]*><span class="truncate">Vinculado a outro pedido \(PC00613\)</);
+      assert.match(html, /não entra nos totais/);
+      assert.doesNotMatch(html, /npo-unlink-9004/);
+      assert.doesNotMatch(html, /npo-confirm-suggestion-9004/);
+    });
+
+    it("conflito automático: badge 'Conflito de vínculo', fora dos totais; o card Vinculado explica a exclusão", () => {
+      const html = render();
+      assert.match(html, /data-testid="npo-linked-payable-9005"[^>]*data-counts="0"/);
+      assert.match(html, /data-testid="npo-ownership-conflict-9005"[^>]*><span class="truncate">Conflito de vínculo</);
+      assert.match(html, /2 de outro pedido\/conflito fora dos totais/);
+      // Títulos que contam continuam sem badge de exclusão.
+      assert.match(html, /data-testid="npo-linked-payable-9001"[^>]*data-counts="1"/);
+      assert.doesNotMatch(html, /npo-ownership-(other|conflict)-9001/);
+    });
   });
 });

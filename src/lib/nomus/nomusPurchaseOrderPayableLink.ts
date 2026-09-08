@@ -28,6 +28,13 @@
  * Fornecedor igual, sozinho, NUNCA gera vínculo (regra preservada do 360).
  * A baixa continua sendo do Nomus: aqui só se lê `NomusAccountsPayable` pela
  * autoridade oficial `normalizeAccountsPayableTitle` (Contas a Pagar).
+ *
+ * CARDINALIDADE FINANCEIRA V1 (`nomusPurchaseOrderPayableOwnership.ts`): um
+ * título pode ter várias evidências, mas só UM dono financeiro. Aqui, cada
+ * título vinculado sabe se conta para ESTE pedido (`countsForThisOrder`); os
+ * totais, a situação e o "quitado" só somam os títulos cujo dono é o pedido.
+ * Vínculo confirmado em outro pedido bloqueia a confirmação (409) e conflito
+ * automático não conta em ninguém.
  */
 
 import {
@@ -39,6 +46,13 @@ import {
   type PlannedInstallment,
   type PurchaseOrderFinancialStatus,
 } from "./nomusPurchaseOrder360.js";
+import {
+  PAYABLE_FINANCIAL_OWNERSHIP_LABELS,
+  isPayableOwnershipConflict,
+  type PayableFinancialOwnership,
+  type PayableFinancialOwnershipKind,
+  type PayableFinancialOwnershipMap,
+} from "./nomusPurchaseOrderPayableOwnership.js";
 
 /* ------------------------------------------------------------------ *
  * Vocabulário
@@ -100,13 +114,78 @@ export class PurchaseOrderPayableLinkError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly field?: string;
+  /** Dados funcionais extras (ex.: pedido dono do título) — nunca stack/SQL. */
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, httpStatus = 400, field?: string) {
+  constructor(
+    code: string,
+    message: string,
+    httpStatus = 400,
+    field?: string,
+    details?: Record<string, unknown>
+  ) {
     super(message);
     this.name = "PurchaseOrderPayableLinkError";
     this.code = code;
     this.httpStatus = httpStatus;
     this.field = field;
+    this.details = details;
+  }
+}
+
+/** Códigos de conflito de dono financeiro (HTTP 409). */
+export const PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES = {
+  /** Mesmo título já vinculado a ESTE pedido (idempotência: não cria segunda linha). */
+  alreadyLinkedHere: "PAYABLE_ALREADY_LINKED",
+  /** Título com dono financeiro confirmado em OUTRO pedido. */
+  linkedToAnotherOrder: "PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER",
+} as const;
+
+export const PAYABLE_ALREADY_LINKED_TO_ANOTHER_ORDER_MESSAGE =
+  "Este título já está vinculado financeiramente a outro pedido.";
+
+/**
+ * AUTORIDADE ÚNICA da regra "um título AP = no máximo um dono financeiro".
+ * Chamada antes de persistir QUALQUER vínculo (sugestão, INSTALLMENT_MATCH,
+ * manual, POST direto) e novamente ao traduzir a violação de unicidade do banco
+ * (P2002) — o banco é a autoridade final na corrida.
+ *
+ * - nenhum dono confirmado → pode confirmar (evidência automática de outro
+ *   pedido não bloqueia: o vínculo confirmado passa a ter precedência);
+ * - dono confirmado = este pedido → PAYABLE_ALREADY_LINKED (409, idempotente);
+ * - dono confirmado = outro pedido (ou conflito confirmado) → 409
+ *   PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER.
+ */
+export function assertPayableFinancialOwnerAvailable(input: {
+  payableExternalId: number;
+  orderId: string;
+  /** Pedidos com vínculo persistido ATIVO para o título (0 ou 1 após a unique global). */
+  confirmedOrderIds: readonly string[];
+  orderNumbersById?: ReadonlyMap<string, string | null>;
+}): void {
+  const others = [...new Set(input.confirmedOrderIds)].filter((id) => id !== input.orderId);
+  if (others.length > 0) {
+    const ownerOrderId = others[0];
+    throw new PurchaseOrderPayableLinkError(
+      PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES.linkedToAnotherOrder,
+      PAYABLE_ALREADY_LINKED_TO_ANOTHER_ORDER_MESSAGE,
+      409,
+      "payableExternalId",
+      {
+        payableExternalId: input.payableExternalId,
+        ownerOrderId,
+        ownerOrderNumber: input.orderNumbersById?.get(ownerOrderId) ?? null,
+      }
+    );
+  }
+  if (input.confirmedOrderIds.includes(input.orderId)) {
+    throw new PurchaseOrderPayableLinkError(
+      PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES.alreadyLinkedHere,
+      "Este título já está vinculado a este pedido.",
+      409,
+      "payableExternalId",
+      { payableExternalId: input.payableExternalId, ownerOrderId: input.orderId }
+    );
   }
 }
 
@@ -241,6 +320,12 @@ export type AutomaticLinkResolution = {
   evidence: string;
 };
 
+/** Campos de título que as camadas automáticas 1–3 realmente usam. */
+export type AutomaticLinkPayableRef = Pick<
+  PayableCandidateRow,
+  "externalId" | "sourceInvoiceId" | "documentNumber" | "personId" | "personCnpj"
+>;
+
 /**
  * Camadas 1–3. Cada uma exige uma chave oficial presente nos DOIS lados; a
  * ausência de chave nunca vira aproximação.
@@ -250,7 +335,7 @@ export type AutomaticLinkResolution = {
  */
 export function resolveAutomaticPayableLinks(input: {
   order: PurchaseOrderLinkIdentity;
-  payables: readonly PayableCandidateRow[];
+  payables: readonly AutomaticLinkPayableRef[];
   /** NF-e declaradas no próprio pedido. */
   directInvoiceIds: readonly number[];
   /** NF-e alcançadas por documento de entrada com idPedidoCompra deste pedido. */
@@ -338,6 +423,13 @@ export type PayableLinkSuggestion = {
   evidence: string;
   /** Título já vinculado a outro pedido — alerta de possível dupla contagem. */
   linkedToOtherOrder: boolean;
+  /**
+   * false quando o título tem dono financeiro CONFIRMADO em outro pedido: a UI
+   * não oferece "Confirmar vínculo" e o servidor recusa com 409 de qualquer forma.
+   */
+  confirmable: boolean;
+  /** Número do pedido dono (quando conhecido e permitido na UI). */
+  ownerOrderNumber: string | null;
 };
 
 export type SuggestionInput = {
@@ -348,7 +440,21 @@ export type SuggestionInput = {
   alreadyLinkedPayableIds?: readonly number[];
   /** externalIds vinculados a QUALQUER outro pedido. */
   linkedElsewherePayableIds?: readonly number[];
+  /** Dono financeiro por título (autoridade única) — define `confirmable`. */
+  ownership?: PayableFinancialOwnershipMap;
+  orderNumbersById?: ReadonlyMap<string, string | null>;
 };
+
+/** Pedido com vínculo CONFIRMADO para o título, diferente deste pedido (null se nenhum). */
+function confirmedOwnerElsewhere(
+  ownership: PayableFinancialOwnershipMap | undefined,
+  payableExternalId: number,
+  orderId: string
+): string | null {
+  const entry = ownership?.get(payableExternalId);
+  if (!entry) return null;
+  return entry.confirmedOrderIds.find((id) => id !== orderId) ?? null;
+}
 
 /**
  * Sugere pares parcela × título. Exigências mínimas e não negociáveis:
@@ -393,6 +499,7 @@ export function buildPayableLinkSuggestions(input: SuggestionInput): PayableLink
       installment.paymentMethodId != null && best.paymentMethodId === installment.paymentMethodId;
     const sameBankAccount =
       installment.bankAccountId != null && best.bankAccountId === installment.bankAccountId;
+    const ownerElsewhere = confirmedOwnerElsewhere(input.ownership, best.externalId, input.order.id);
     suggestions.push({
       payableExternalId: best.externalId,
       installmentIndex: installment.index,
@@ -415,7 +522,9 @@ export function buildPayableLinkSuggestions(input: SuggestionInput): PayableLink
       ]
         .filter(Boolean)
         .join(" · "),
-      linkedToOtherOrder: elsewhere.has(best.externalId),
+      linkedToOtherOrder: elsewhere.has(best.externalId) || ownerElsewhere != null,
+      confirmable: ownerElsewhere == null,
+      ownerOrderNumber: ownerElsewhere ? (input.orderNumbersById?.get(ownerElsewhere) ?? null) : null,
     });
   }
 
@@ -470,6 +579,23 @@ export type LinkedPayableView = {
   statusLabel: string;
   isSettled: boolean;
   linkedToOtherOrder: boolean;
+  /** Dono financeiro do título (cardinalidade V1) e se ele conta para ESTE pedido. */
+  ownership: LinkedPayableOwnershipView;
+  /**
+   * true quando o título entra em vinculado/pago/saldo/quitado deste pedido.
+   * false = visível, mas fora dos totais (dono confirmado em outro pedido, conflito
+   * automático ou cancelado).
+   */
+  countsForThisOrder: boolean;
+};
+
+export type LinkedPayableOwnershipView = {
+  kind: PayableFinancialOwnershipKind;
+  ownerOrderId: string | null;
+  /** Número do pedido dono, quando é outro pedido e o número é conhecido. */
+  ownerOrderNumber: string | null;
+  /** Rótulo funcional para a UI (nunca recalculado no frontend). */
+  label: string;
 };
 
 export type ReconciledInstallmentView = {
@@ -509,9 +635,14 @@ export type PurchaseOrderPayableReconciliation = {
     /** Parcelas planejadas ainda sem título vinculado. */
     unlinkedInstallmentCount: number;
     suggestionCount: number;
+    /**
+     * Títulos visíveis que NÃO contam para este pedido por dono financeiro
+     * (confirmado em outro pedido ou conflito automático). Cancelados não entram aqui.
+     */
+    excludedByOwnershipCount: number;
   };
   financialStatus: PurchaseOrderFinancialStatus;
-  /** Todos os títulos vinculados estão baixados → o pedido está quitado. */
+  /** Todos os títulos vinculados (que contam para este pedido) estão baixados → quitado. */
   fullySettled: boolean;
   warnings: string[];
 };
@@ -534,6 +665,40 @@ function toIso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
 }
 
+/**
+ * Visão de dono financeiro de um título para ESTE pedido. Sem mapa de ownership
+ * (chamador puro/legado), o título apresentado conta para o pedido — o mesmo
+ * comportamento anterior à cardinalidade V1.
+ */
+function ownershipViewFor(input: {
+  entry: PayableFinancialOwnership | undefined;
+  orderId: string;
+  orderNumbersById?: ReadonlyMap<string, string | null>;
+}): { view: LinkedPayableOwnershipView; counts: boolean } {
+  const entry = input.entry;
+  if (!entry) {
+    return {
+      view: { kind: "AUTO_SINGLE_OWNER", ownerOrderId: input.orderId, ownerOrderNumber: null, label: PAYABLE_FINANCIAL_OWNERSHIP_LABELS.AUTO_SINGLE_OWNER },
+      counts: true,
+    };
+  }
+  const isOwner = entry.ownerOrderId === input.orderId;
+  const otherOwner = entry.ownerOrderId != null && !isOwner ? entry.ownerOrderId : null;
+  let label = PAYABLE_FINANCIAL_OWNERSHIP_LABELS[entry.kind];
+  if (otherOwner) {
+    label = entry.kind === "CONFIRMED_OWNER" ? "Vinculado a outro pedido" : "Dono financeiro é outro pedido";
+  }
+  return {
+    view: {
+      kind: entry.kind,
+      ownerOrderId: entry.ownerOrderId,
+      ownerOrderNumber: otherOwner ? (input.orderNumbersById?.get(otherOwner) ?? null) : null,
+      label,
+    },
+    counts: isOwner,
+  };
+}
+
 function buildLinkedView(input: {
   payable: PayableCandidateRow;
   method: PurchaseOrderPayableLinkMethod;
@@ -544,6 +709,7 @@ function buildLinkedView(input: {
   linkedByUserName: string | null;
   linkedAt: Date | null;
   linkedToOtherOrder: boolean;
+  ownership: { view: LinkedPayableOwnershipView; counts: boolean };
   now: Date;
 }): LinkedPayableView {
   const normalized = normalizePayable(input.payable);
@@ -573,6 +739,9 @@ function buildLinkedView(input: {
     statusLabel,
     isSettled: normalized.isSettled,
     linkedToOtherOrder: input.linkedToOtherOrder,
+    ownership: input.ownership.view,
+    // Cancelado nunca conta (regra aprovada); dono financeiro decide o resto.
+    countsForThisOrder: input.ownership.counts && !normalized.isCancelled,
   };
 }
 
@@ -601,6 +770,14 @@ export type ReconciliationInput = {
   persisted: readonly PersistedPayableLinkRow[];
   /** externalIds vinculados a outros pedidos (aviso de dupla contagem). */
   linkedElsewherePayableIds?: readonly number[];
+  /**
+   * Dono financeiro por título — autoridade única (`resolvePayableFinancialOwnership`)
+   * calculada pelo servidor com as evidências de TODOS os pedidos. Sem ele, cada
+   * título apresentado conta para o pedido (uso puro/legado em testes).
+   */
+  ownership?: PayableFinancialOwnershipMap;
+  /** Números dos pedidos (para nomear o pedido dono na UI). */
+  orderNumbersById?: ReadonlyMap<string, string | null>;
   now?: Date;
 };
 
@@ -608,6 +785,10 @@ export type ReconciliationInput = {
  * Monta a visão parcela × título. Vínculos persistidos vencem os automáticos
  * (o humano pode ter corrigido a parcela); títulos automáticos sem vínculo
  * persistido aparecem como EXACT, sem exigir ação.
+ *
+ * Cardinalidade V1: só títulos cujo dono financeiro é este pedido entram em
+ * vinculado/pago/saldo/situação/quitado. Os demais continuam visíveis
+ * (`countsForThisOrder = false`) com o motivo em `ownership.label`.
  */
 export function buildPurchaseOrderPayableReconciliation(
   input: ReconciliationInput
@@ -615,7 +796,18 @@ export function buildPurchaseOrderPayableReconciliation(
   const now = input.now ?? new Date();
   const payableById = new Map(input.payables.map((row) => [row.externalId, row]));
   const elsewhere = new Set(input.linkedElsewherePayableIds ?? []);
+  if (input.ownership) {
+    for (const entry of input.ownership.values()) {
+      if (entry.confirmedOrderIds.some((id) => id !== input.order.id)) elsewhere.add(entry.payableExternalId);
+    }
+  }
   const warnings: string[] = [];
+  const ownershipFor = (payableExternalId: number) =>
+    ownershipViewFor({
+      entry: input.ownership?.get(payableExternalId),
+      orderId: input.order.id,
+      orderNumbersById: input.orderNumbersById,
+    });
 
   const linked = new Map<number, LinkedPayableView>();
 
@@ -634,6 +826,7 @@ export function buildPurchaseOrderPayableReconciliation(
         linkedByUserName: null,
         linkedAt: null,
         linkedToOtherOrder: elsewhere.has(auto.payableExternalId),
+        ownership: ownershipFor(auto.payableExternalId),
         now,
       })
     );
@@ -660,6 +853,7 @@ export function buildPurchaseOrderPayableReconciliation(
         linkedByUserName: row.createdByUserName,
         linkedAt: row.createdAt,
         linkedToOtherOrder: elsewhere.has(row.payableExternalId),
+        ownership: ownershipFor(row.payableExternalId),
         now,
       })
     );
@@ -672,15 +866,18 @@ export function buildPurchaseOrderPayableReconciliation(
     installments: input.installments,
     payables: input.payables,
     alreadyLinkedPayableIds: alreadyLinkedIds,
-    linkedElsewherePayableIds: input.linkedElsewherePayableIds,
+    linkedElsewherePayableIds: [...elsewhere],
+    ownership: input.ownership,
+    orderNumbersById: input.orderNumbersById,
   });
 
   const installments: ReconciledInstallmentView[] = [...input.installments]
     .sort((a, b) => a.index - b.index)
     .map((installment) => {
       const rows = linkedViews.filter((row) => row.installmentIndex === installment.index);
-      // Cancelado continua visível na parcela, mas não soma nem conta como pendência.
-      const active = rows.filter((row) => row.status !== "CANCELLED");
+      // Cancelado e título de outro dono financeiro continuam visíveis na parcela,
+      // mas não somam nem contam como pendência.
+      const active = rows.filter((row) => row.countsForThisOrder);
       const linkedAmount = roundMoney(active.reduce((sum, row) => sum + row.amountPayable, 0));
       const paidAmount = roundMoney(active.reduce((sum, row) => sum + row.realizedAmount, 0));
       const openAmount = roundMoney(active.reduce((sum, row) => sum + row.openAmount, 0));
@@ -713,7 +910,9 @@ export function buildPurchaseOrderPayableReconciliation(
     .filter((row) => row.installmentIndex == null)
     .sort((a, b) => a.payableExternalId - b.payableExternalId);
 
-  const activeLinks = linkedViews.filter((row) => row.status !== "CANCELLED");
+  // Só o dono financeiro soma: cancelado, confirmado em outro pedido e conflito ficam fora.
+  const activeLinks = linkedViews.filter((row) => row.countsForThisOrder);
+  const excludedByOwnership = linkedViews.filter((row) => !row.countsForThisOrder && row.status !== "CANCELLED");
   const linkedAmount = roundMoney(activeLinks.reduce((sum, row) => sum + row.amountPayable, 0));
   const paidAmount = roundMoney(activeLinks.reduce((sum, row) => sum + row.realizedAmount, 0));
   const openAmount = roundMoney(activeLinks.reduce((sum, row) => sum + row.openAmount, 0));
@@ -730,9 +929,26 @@ export function buildPurchaseOrderPayableReconciliation(
   });
 
   for (const row of linkedViews) {
-    if (row.linkedToOtherOrder) {
+    if (row.ownership.kind === "CONFIRMED_OWNER" && row.ownership.ownerOrderId !== input.order.id) {
+      const owner = row.ownership.ownerOrderNumber ? ` (${row.ownership.ownerOrderNumber})` : "";
+      warnings.push(
+        `Título ${row.payableExternalId} está vinculado financeiramente a outro pedido${owner} — não entra nos totais deste pedido.`
+      );
+    } else if (isPayableOwnershipConflict(row.ownership.kind)) {
+      warnings.push(
+        `Título ${row.payableExternalId} tem evidência de vínculo em mais de um pedido — não entra nos totais de nenhum até um vínculo ser confirmado.`
+      );
+    } else if (row.linkedToOtherOrder) {
       warnings.push(
         `Título ${row.payableExternalId} também está vinculado a outro pedido — confira para não contar o pagamento duas vezes.`
+      );
+    }
+  }
+  for (const row of suggestions) {
+    if (!row.confirmable) {
+      const owner = row.ownerOrderNumber ? ` (${row.ownerOrderNumber})` : "";
+      warnings.push(
+        `Título ${row.payableExternalId} sugerido para a parcela ${(row.installmentIndex ?? 0) + 1} já está vinculado financeiramente a outro pedido${owner} — não pode ser confirmado aqui.`
       );
     }
   }
@@ -762,6 +978,7 @@ export function buildPurchaseOrderPayableReconciliation(
       openAmount,
       unlinkedInstallmentCount: installments.filter((row) => row.status === "UNLINKED").length,
       suggestionCount: suggestions.length,
+      excludedByOwnershipCount: excludedByOwnership.length,
     },
     financialStatus,
     fullySettled,

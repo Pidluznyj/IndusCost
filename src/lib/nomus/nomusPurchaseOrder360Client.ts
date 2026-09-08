@@ -115,6 +115,12 @@ export type NomusPurchaseOrder360Detail = {
     paidAmount: number;
     openAmount: number;
     hasBoletoDocument: boolean;
+    /** Títulos apresentados que não contam (dono financeiro é outro pedido / conflito). */
+    excludedPayableCount?: number;
+  };
+  /** Cardinalidade financeira V1 — calculada no servidor; a UI só apresenta. */
+  payableOwnership?: {
+    excluded: Array<{ externalId: number; kind: string; ownerOrderId: string | null }>;
   };
   relationEvidence: Array<{ method: string; confidence: string; source: string; detail: string }>;
   syncMetadata: {

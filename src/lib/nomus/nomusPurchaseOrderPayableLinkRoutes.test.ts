@@ -94,17 +94,73 @@ const ORDER = {
   rawPayload: { id: 613, codigoPedido: "PC00612", idPessoaFornecedor: 215, parcelas: [] },
 };
 
-/** Prisma mínimo: um pedido, nenhum título, nenhum vínculo. */
-function createDb(options: { orderExists?: boolean } = {}) {
+const OTHER_ORDER_ID = "22222222-2222-4222-8222-222222222222";
+
+/**
+ * Prisma mínimo: um pedido, nenhum título, nenhum vínculo — ou, com
+ * `payableOwnedElsewhere`, um título do fornecedor já confirmado em OUTRO pedido.
+ */
+function createDb(options: { orderExists?: boolean; payableOwnedElsewhere?: number } = {}) {
+  const writes: string[] = [];
+  const payable = options.payableOwnedElsewhere
+    ? {
+        externalId: options.payableOwnedElsewhere,
+        companyId: 1,
+        personId: 215,
+        personName: "ACME",
+        personCnpj: null,
+        documentNumber: null,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        dueDate: new Date("2026-10-16T00:00:00.000Z"),
+        paymentDate: null,
+        settlementDate: null,
+        amountPayable: 100,
+        amountPaid: 0,
+        balancePayable: 100,
+        paymentMethodId: null,
+        paymentMethodName: null,
+        bankAccountId: null,
+        description: null,
+        comments: null,
+        classification: null,
+        status: true,
+        suspendPayment: false,
+      }
+    : null;
+  const ownerLink = payable
+    ? { nomusPurchaseOrderId: OTHER_ORDER_ID, payableExternalId: payable.externalId, nomusPurchaseOrder: { orderNumber: "PC00613" } }
+    : null;
   const db = {
-    nomusPurchaseOrder: { findUnique: async () => (options.orderExists === false ? null : ORDER) },
+    nomusPurchaseOrder: {
+      findUnique: async () => (options.orderExists === false ? null : ORDER),
+    },
+    /** Pré-filtros SQL (superconjunto) devolvem vazio: a decisão é do extrator canônico em memória. */
+    $queryRaw: async () => [],
     nomusStockDocument: { findMany: async () => [] },
-    nomusAccountsPayable: { findMany: async () => [], findUnique: async () => null },
-    nomusPurchaseOrderPayableLink: { findMany: async () => [], findUnique: async () => null },
-    nomusPurchaseOrderPayableLinkHistory: { create: async () => ({}) },
+    nomusAccountsPayable: {
+      findMany: async () => (payable ? [payable] : []),
+      findUnique: async () => payable,
+    },
+    nomusPurchaseOrderPayableLink: {
+      findMany: async (args: { where: Record<string, unknown> }) =>
+        ownerLink && !("nomusPurchaseOrderId" in args.where) ? [ownerLink] : [],
+      findFirst: async () => ownerLink,
+      findUnique: async () => null,
+      create: async () => {
+        writes.push("link.create");
+        throw new Error("não deveria gravar");
+      },
+    },
+    nomusPurchaseOrderPayableLinkHistory: {
+      create: async () => {
+        writes.push("history.create");
+        return {};
+      },
+    },
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(db),
   };
-  return db as unknown as PrismaClient;
+  return Object.assign(db as unknown as PrismaClient, { writes });
 }
 
 function setup(auth: ReturnType<typeof createAuth>, db = createDb()) {
@@ -187,6 +243,25 @@ describe("rotas Pedido Nomus ↔ Contas a Pagar", () => {
     assert.equal((missing.body as { code: string }).code, "PAYABLE_NOT_FOUND");
   });
 
+  it("D. POST direto (ignorando a UI) para título já confirmado em outro pedido → 409 PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER, sem gravar", async () => {
+    const db = createDb({ payableOwnedElsewhere: 77 });
+    const { post } = setup(EDITOR, db);
+    for (const body of [
+      { payableExternalId: 77, reason: "manual direto" },
+      { payableExternalId: 77, method: "MANUAL", reason: "manual direto" },
+      { payableExternalId: 77, method: "INSTALLMENT_MATCH", installmentIndex: null },
+    ]) {
+      const state = await run(post, { params: { id: ORDER_ID }, body });
+      assert.equal(state.status, 409, JSON.stringify(body));
+      const payload = state.body as { code: string; error: string; details?: { ownerOrderId?: string; ownerOrderNumber?: string } };
+      assert.equal(payload.code, "PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER");
+      assert.equal(payload.error, "Este título já está vinculado financeiramente a outro pedido.");
+      assert.equal(payload.details?.ownerOrderId, OTHER_ORDER_ID);
+      assert.equal(payload.details?.ownerOrderNumber, "PC00613");
+    }
+    assert.deepEqual(db.writes, []);
+  });
+
   it("DELETE: título não numérico 400; vínculo inexistente 404; motivo obrigatório 400", async () => {
     const { del } = setup(EDITOR);
     assert.equal((await run(del, { params: { id: ORDER_ID, payableExternalId: "x" }, body: { reason: "x" } })).status, 400);
@@ -227,5 +302,34 @@ describe("fiação estática", () => {
     assert.match(sql, /CREATE TABLE "NomusPurchaseOrderPayableLink"/);
     assert.match(sql, /CREATE TABLE "NomusPurchaseOrderPayableLinkHistory"/);
     assert.doesNotMatch(sql, /DROP /i);
+    // A migration original já está aplicada em homologação: continua sem unique global (corrigida à parte).
+    assert.doesNotMatch(sql, /NomusPurchaseOrderPayableLink_payableExternalId_key/);
+  });
+
+  it("cardinalidade V1: migration corretiva cria a unique global de payableExternalId sem tocar em dados; schema declara @unique", () => {
+    const sql = read(
+      "../../../prisma/migrations/20260925120000_nomus_purchase_order_payable_single_financial_owner/migration.sql"
+    );
+    assert.match(
+      sql,
+      /CREATE UNIQUE INDEX "NomusPurchaseOrderPayableLink_payableExternalId_key"\s+ON "NomusPurchaseOrderPayableLink"\("payableExternalId"\);/
+    );
+    const statements = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    assert.doesNotMatch(statements, /\b(DELETE|UPDATE|TRUNCATE|DROP|INSERT|DISTINCT ON|MIN\(|MAX\()\b/i, "sem dedupe/limpeza automática de dados");
+    const schema = read("../../../prisma/schema.prisma");
+    const model = (name: string) => {
+      const match = schema.match(new RegExp(`model ${name} \\{([\\s\\S]*?)\\r?\\n\\}`));
+      assert.ok(match, `model ${name} ausente`);
+      return match![1];
+    };
+    const link = model("NomusPurchaseOrderPayableLink");
+    assert.match(link, /payableExternalId\s+Int\s+@unique/, "unique global de payableExternalId no schema");
+    assert.match(link, /@@unique\(\[nomusPurchaseOrderId, payableExternalId\]\)/, "unique composta preservada");
+    const history = model("NomusPurchaseOrderPayableLinkHistory");
+    assert.match(history, /linkId\s+String\s+@db\.Uuid/);
+    assert.doesNotMatch(history, /@relation/, "histórico sem FK → vínculo ativo (sobrevive ao unlink)");
   });
 });

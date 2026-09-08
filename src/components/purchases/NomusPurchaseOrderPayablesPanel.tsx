@@ -84,8 +84,14 @@ function LinkedPayableRow({
   busy: boolean;
   onUnlink: (payable: LinkedPayableView) => void;
 }) {
+  const ownedElsewhere = payable.ownership.ownerOrderId != null && !payable.countsForThisOrder;
+  const conflict = payable.ownership.kind === "AUTO_CONFLICT" || payable.ownership.kind === "CONFIRMED_CONFLICT";
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs" data-testid={`npo-linked-payable-${payable.payableExternalId}`}>
+    <div
+      className={`flex flex-wrap items-center gap-2 text-xs${payable.countsForThisOrder ? "" : " text-slate-500"}`}
+      data-testid={`npo-linked-payable-${payable.payableExternalId}`}
+      data-counts={payable.countsForThisOrder ? "1" : "0"}
+    >
       <span className="font-mono">#{payable.payableExternalId}</span>
       <OverlayBadge tone={PAYABLE_STATUS_TONE[payable.status]}>{payable.statusLabel}</OverlayBadge>
       <span title={payable.evidence ?? undefined} className="text-slate-500">
@@ -97,8 +103,28 @@ function LinkedPayableRow({
       {payable.settlementDate || payable.paymentDate ? (
         <span className="text-slate-500">baixa {formatDate(payable.settlementDate ?? payable.paymentDate)}</span>
       ) : null}
-      {payable.linkedToOtherOrder ? (
+      {ownedElsewhere ? (
+        <OverlayBadge
+          tone="amber"
+          title={`${payable.ownership.label}. O título não entra nos totais deste pedido.`}
+          testId={`npo-ownership-other-${payable.payableExternalId}`}
+        >
+          {payable.ownership.kind === "CONFIRMED_OWNER" ? "Vinculado a outro pedido" : "Dono financeiro: outro pedido"}
+          {payable.ownership.ownerOrderNumber ? ` (${payable.ownership.ownerOrderNumber})` : ""}
+        </OverlayBadge>
+      ) : conflict ? (
+        <OverlayBadge
+          tone="rose"
+          title="Evidência de vínculo em mais de um pedido. Não entra nos totais de nenhum até um vínculo ser confirmado."
+          testId={`npo-ownership-conflict-${payable.payableExternalId}`}
+        >
+          Conflito de vínculo
+        </OverlayBadge>
+      ) : payable.linkedToOtherOrder ? (
         <OverlayBadge tone="amber" title="Este título também está vinculado a outro pedido.">Em outro pedido</OverlayBadge>
+      ) : null}
+      {!payable.countsForThisOrder && payable.status !== "CANCELLED" ? (
+        <span className="text-[11px] italic">não entra nos totais</span>
       ) : null}
       {canLink && payable.linkId ? (
         <button
@@ -133,8 +159,20 @@ function SuggestionRow({
     >
       <span className="font-mono">#{suggestion.payableExternalId}</span>
       <span>Sugestão — {suggestion.evidence}</span>
-      {suggestion.linkedToOtherOrder ? <OverlayBadge tone="amber">Em outro pedido</OverlayBadge> : null}
-      {canLink ? (
+      {!suggestion.confirmable ? (
+        <OverlayBadge
+          tone="amber"
+          title="Este título já está vinculado financeiramente a outro pedido; não pode ser confirmado aqui."
+          testId={`npo-suggestion-blocked-${suggestion.payableExternalId}`}
+        >
+          Vinculado a outro pedido{suggestion.ownerOrderNumber ? ` (${suggestion.ownerOrderNumber})` : ""}
+        </OverlayBadge>
+      ) : suggestion.linkedToOtherOrder ? (
+        <OverlayBadge tone="amber">Em outro pedido</OverlayBadge>
+      ) : null}
+      {!suggestion.confirmable ? (
+        <span className="text-[11px]">Desvincule no pedido dono antes de confirmar aqui.</span>
+      ) : canLink ? (
         <button
           type="button"
           disabled={busy}
@@ -206,7 +244,15 @@ export function NomusPurchaseOrderPayablesPanelView({
         <>
           <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <SummaryCard label="Planejado" value={money(data.totals.plannedAmount)} hint={`${data.totals.plannedCount} parcela(s)`} />
-            <SummaryCard label="Vinculado" value={money(data.totals.linkedAmount)} hint={`${data.totals.linkedCount} título(s)`} />
+            <SummaryCard
+              label="Vinculado"
+              value={money(data.totals.linkedAmount)}
+              hint={
+                data.totals.excludedByOwnershipCount > 0
+                  ? `${data.totals.linkedCount} título(s) · ${data.totals.excludedByOwnershipCount} de outro pedido/conflito fora dos totais`
+                  : `${data.totals.linkedCount} título(s)`
+              }
+            />
             <SummaryCard label="Pago" value={money(data.totals.paidAmount)} />
             <SummaryCard label="Saldo" value={money(data.totals.openAmount)} />
             <SummaryCard label="Parcelas sem título" value={String(data.totals.unlinkedInstallmentCount)} hint={data.totals.suggestionCount > 0 ? `${data.totals.suggestionCount} sugestão(ões)` : undefined} />

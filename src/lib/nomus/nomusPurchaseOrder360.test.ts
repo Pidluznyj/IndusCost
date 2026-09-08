@@ -11,11 +11,13 @@ import {
   matchesPurchaseOrderFinancialFilter,
   matchesPurchaseOrderFiscalFilter,
   parsePurchaseOrderPlannedInstallments,
+  partitionPayablesByFinancialOwner,
   resolvePurchaseOrderSupplier,
   sumPlannedInstallmentsTotal,
   summarizeConfirmedPayables,
   type ConfirmedPayableSnapshot,
 } from "./nomusPurchaseOrder360.js";
+import { resolvePayableFinancialOwnership } from "./nomusPurchaseOrderPayableOwnership.js";
 
 const PC00612_RAW = {
   codigoPedido: "PC00612",
@@ -317,6 +319,48 @@ describe("nomusPurchaseOrder360 financeiro", () => {
     assert.equal(paidPlusCancelled.count, 1);
     assert.equal(paidPlusCancelled.paidAmount, 1136.68);
     assert.equal(paidPlusCancelled.allSettled, true);
+  });
+
+  it("cardinalidade V1 na listagem/360: só o dono financeiro soma; R$ 10.000 pagos não quitam dois pedidos", () => {
+    const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const paid = payable({ externalId: 9001, amountPayable: 10000, amountPaid: 10000, balancePayable: 0, settlementDate: new Date("2026-10-15"), nomusStatus: true });
+    const claim = (order: string, source: "CONFIRMED" | "AUTOMATIC") => ({ nomusPurchaseOrderId: order, payableExternalId: 9001, source });
+    const bundleFor = (order: string, ownership: ReturnType<typeof resolvePayableFinancialOwnership>) => {
+      const { owned, excluded } = partitionPayablesByFinancialOwner({ orderId: order, rows: [paid, paid], ownership });
+      return { bundle: buildPurchaseOrderFinancialBundle({ rawPayload: PC00612_RAW, invoices: [], confirmedPayables: owned }), excluded };
+    };
+
+    // I. confirmado em A + NF-e em B → A quita, B fica PLANNED_ONLY com o título excluído por dono.
+    const confirmedA = resolvePayableFinancialOwnership([claim(A, "CONFIRMED"), claim(B, "AUTOMATIC")]);
+    const a = bundleFor(A, confirmedA);
+    const b = bundleFor(B, confirmedA);
+    assert.equal(a.bundle.payableSummary.paidAmount, 10000);
+    assert.equal(a.bundle.financialStatus, "PAID");
+    assert.equal(b.bundle.payableSummary.paidAmount, 0);
+    assert.equal(b.bundle.payableSummary.count, 0);
+    assert.equal(b.bundle.financialStatus, "PLANNED_ONLY");
+    assert.deepEqual(b.excluded, [{ externalId: 9001, kind: "CONFIRMED_OWNER", ownerOrderId: A }]);
+    assert.equal(a.bundle.payableSummary.paidAmount + b.bundle.payableSummary.paidAmount, 10000);
+
+    // K. NF-e em A e B sem confirmação → conflito: 0 nos dois, nenhum quitado.
+    const conflict = resolvePayableFinancialOwnership([claim(A, "AUTOMATIC"), claim(B, "AUTOMATIC")]);
+    for (const order of [A, B]) {
+      const { bundle, excluded } = bundleFor(order, conflict);
+      assert.equal(bundle.payableSummary.paidAmount, 0);
+      assert.equal(bundle.financialStatus, "PLANNED_ONLY");
+      assert.equal(excluded[0]?.kind, "AUTO_CONFLICT");
+    }
+
+    // M. confirmado + NF-e no mesmo pedido (linhas duplicadas) → conta uma vez.
+    const same = resolvePayableFinancialOwnership([claim(A, "CONFIRMED"), claim(A, "AUTOMATIC")]);
+    assert.equal(bundleFor(A, same).bundle.payableSummary.count, 1);
+
+    // P. cancelado continua fora mesmo sendo o dono; sem mapa (legado), o título conta para quem o apresenta.
+    const cancelled = payable({ externalId: 9002, description: "CANCELADO", amountPayable: 5000 });
+    const owned = partitionPayablesByFinancialOwner({ orderId: A, rows: [cancelled], ownership: resolvePayableFinancialOwnership([{ nomusPurchaseOrderId: A, payableExternalId: 9002, source: "AUTOMATIC" }]) });
+    assert.equal(summarizeConfirmedPayables(owned.owned).count, 0);
+    assert.equal(partitionPayablesByFinancialOwner({ orderId: A, rows: [paid], ownership: null }).owned.length, 1);
   });
 
   it("5. supplier igual sem NFe link NÃO vincula CP", () => {

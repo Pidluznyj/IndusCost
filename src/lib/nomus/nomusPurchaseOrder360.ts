@@ -20,6 +20,11 @@ import {
   toInt,
 } from "./nomusPurchaseOrderParser.js";
 import type { JsonObject } from "./nomusPurchaseOrderTypes.js";
+import {
+  payableCountsForOrder,
+  type PayableFinancialOwnership,
+  type PayableFinancialOwnershipMap,
+} from "./nomusPurchaseOrderPayableOwnership.js";
 
 export type PurchaseOrderRelationMethod =
   | "DIRECT_NOMUS_NFE"
@@ -145,6 +150,19 @@ export function sumPlannedInstallmentsTotal(installments: PlannedInstallment[]):
   return seen ? Math.round(total * 100) / 100 : null;
 }
 
+/**
+ * AUTORIDADE ÚNICA das formas aceitas de NF-e em `rawPayload.nfes[]`:
+ *  - elemento escalar (número ou texto) → `toInt`;
+ *  - objeto: PRIMEIRA chave presente e não nula entre `id`, `idNfe`, `externalId` → `toInt`.
+ * `toInt` remove tudo que não é dígito/sinal e faz `parseInt` (ex.: "0501", "501/A" → 501).
+ * Consumida por: auto-link direto (camada 1), busca reversa/global de ownership
+ * (`nomusPurchaseOrderPayableLink.server.ts`), listagem/360 e testes. Nunca duplicar.
+ */
+export const NOMUS_PURCHASE_ORDER_NFE_ID_KEYS = ["id", "idNfe", "externalId"] as const;
+
+/** Chaves aceitas em `NomusStockDocument.rawJson` para o pedido apontado (primeira presente e não nula vence). */
+export const NOMUS_DOCUMENT_ENTRY_PURCHASE_ORDER_KEYS = ["idPedidoCompra", "idPedido", "pedidoCompraId"] as const;
+
 export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
   if (!raw || typeof raw !== "object") return [];
   const nfes = (raw as JsonObject).nfes;
@@ -158,7 +176,7 @@ export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
     }
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const obj = entry as JsonObject;
-    const id = pickFirstInt(obj, ["id", "idNfe", "externalId"]);
+    const id = pickFirstInt(obj, NOMUS_PURCHASE_ORDER_NFE_ID_KEYS);
     if (id == null) continue;
     out.push({
       externalId: id,
@@ -175,9 +193,23 @@ export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
   });
 }
 
+/**
+ * IDs de NF-e declaradas no pedido — extrator canônico (camada 1 direta, busca
+ * reversa global e listagem usam ESTA função). Aceita o `rawPayload` inteiro ou
+ * só `{ nfes }` (projeção `rawPayload->'nfes'` da busca reversa).
+ */
+export function extractNomusPurchaseOrderNfeIds(raw: unknown): number[] {
+  return extractDirectNomusNfeRefs(raw).map((ref) => ref.externalId);
+}
+
+/**
+ * Pedido apontado por um documento de entrada — extrator canônico (camada 2 direta
+ * e reversa usam ESTA função): primeira chave presente e não nula entre
+ * `idPedidoCompra`, `idPedido`, `pedidoCompraId`, via `toInt`.
+ */
 export function extractDocumentEntryPurchaseOrderId(raw: unknown): number | null {
   if (!raw || typeof raw !== "object") return null;
-  return pickFirstInt(raw as JsonObject, ["idPedidoCompra", "idPedido", "pedidoCompraId"]);
+  return pickFirstInt(raw as JsonObject, NOMUS_DOCUMENT_ENTRY_PURCHASE_ORDER_KEYS);
 }
 
 export function extractPurchaseOrderHeaderFields(raw: unknown): Record<string, unknown> {
@@ -352,6 +384,8 @@ export type ConfirmedPayableSnapshot = {
   externalId: number;
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
+  /** Número do documento no título (camada 3 do vínculo automático / busca reversa de dono). */
+  documentNumber?: string | null;
   personId: number | null;
   personName: string | null;
   personCnpj: string | null;
@@ -423,6 +457,45 @@ export function summarizeConfirmedPayables(rows: ConfirmedPayableSnapshot[]): {
     anyOpen,
     hasBoletoDocument: false,
   };
+}
+
+export type ExcludedPayableByOwnership = {
+  externalId: number;
+  kind: PayableFinancialOwnership["kind"];
+  ownerOrderId: string | null;
+};
+
+/**
+ * Cardinalidade financeira V1 para listagem/360: dos títulos que o pedido
+ * apresenta (NF-e + confirmados, já deduplicados por externalId), só os que têm
+ * este pedido como dono financeiro entram em `summarizeConfirmedPayables`.
+ * Os demais (dono confirmado em outro pedido ou conflito automático) ficam em
+ * `excluded` — visíveis para auditoria, fora de vinculado/pago/aberto/quitado.
+ * Sem mapa de ownership, o comportamento é o anterior (todos contam).
+ */
+export function partitionPayablesByFinancialOwner(input: {
+  orderId: string;
+  rows: readonly ConfirmedPayableSnapshot[];
+  ownership: PayableFinancialOwnershipMap | null | undefined;
+}): { owned: ConfirmedPayableSnapshot[]; excluded: ExcludedPayableByOwnership[] } {
+  const seen = new Set<number>();
+  const owned: ConfirmedPayableSnapshot[] = [];
+  const excluded: ExcludedPayableByOwnership[] = [];
+  for (const row of input.rows) {
+    if (seen.has(row.externalId)) continue;
+    seen.add(row.externalId);
+    if (payableCountsForOrder(input.ownership, row.externalId, input.orderId)) {
+      owned.push(row);
+      continue;
+    }
+    const entry = input.ownership?.get(row.externalId);
+    excluded.push({
+      externalId: row.externalId,
+      kind: entry?.kind ?? "UNOWNED",
+      ownerOrderId: entry?.ownerOrderId ?? null,
+    });
+  }
+  return { owned, excluded };
 }
 
 export function classifyPurchaseOrderFinancialStatus(input: {
@@ -615,6 +688,8 @@ export type NomusPurchaseOrderListRowDto = {
   confirmedAmount: number;
   paidAmount: number;
   openAmount: number;
+  /** Títulos apresentados pelo pedido que NÃO contam (dono financeiro é outro pedido / conflito). */
+  excludedPayableCount?: number;
   overdue: boolean;
   open: boolean;
   syncedAt: string;

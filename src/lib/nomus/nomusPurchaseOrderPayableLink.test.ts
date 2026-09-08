@@ -8,9 +8,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PlannedInstallment } from "./nomusPurchaseOrder360.js";
+import { resolvePayableFinancialOwnership } from "./nomusPurchaseOrderPayableOwnership.js";
 import {
   PURCHASE_ORDER_PAYABLE_LINK_METHODS,
   PurchaseOrderPayableLinkError,
+  assertPayableFinancialOwnerAvailable,
   buildPayableLinkSuggestions,
   buildPurchaseOrderPayableReconciliation,
   civilDayKey,
@@ -510,6 +512,129 @@ describe("buildPurchaseOrderPayableReconciliation — parcela × título", () =>
     assert.ok(view.warnings.some((w) => /Título 9999 vinculado manualmente não está mais no espelho/.test(w)));
     assert.ok(view.warnings.some((w) => /Título 9002 também está vinculado a outro pedido/.test(w)));
     assert.equal(view.unassignedPayables[0].linkedToOtherOrder, true);
+    // Sem mapa de ownership (chamador legado), o título apresentado ainda conta para o pedido.
+    assert.equal(view.unassignedPayables[0].countsForThisOrder, true);
+  });
+
+  describe("cardinalidade financeira V1 — dono por título decide quem soma", () => {
+    const OTHER = "22222222-2222-4222-8222-222222222222";
+    const numbers = new Map([[ORDER.id, "PC00612"], [OTHER, "PC00613"]]);
+    const claim = (order: string, source: "CONFIRMED" | "AUTOMATIC", payableExternalId = 9002) => ({ nomusPurchaseOrderId: order, payableExternalId, source });
+    const base = {
+      order: ORDER,
+      installments: INSTALLMENTS,
+      plannedInstallmentsTotal: PLANNED_TOTAL,
+      orderNumbersById: numbers,
+      now: NOW,
+    };
+
+    it("I. NF-e aqui + confirmado em outro pedido → visível, 'Vinculado a outro pedido (PC00613)', fora dos totais, não quita", () => {
+      const view = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [settled(9002, { sourceInvoiceId: 502 })],
+        automatic: [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+        persisted: [],
+        ownership: resolvePayableFinancialOwnership([claim(OTHER, "CONFIRMED"), claim(ORDER.id, "AUTOMATIC")]),
+      });
+      const row = view.unassignedPayables[0];
+      assert.equal(row.countsForThisOrder, false);
+      assert.equal(row.linkedToOtherOrder, true);
+      assert.deepEqual(row.ownership, { kind: "CONFIRMED_OWNER", ownerOrderId: OTHER, ownerOrderNumber: "PC00613", label: "Vinculado a outro pedido" });
+      assert.equal(view.totals.linkedCount, 0);
+      assert.equal(view.totals.linkedAmount, 0);
+      assert.equal(view.totals.paidAmount, 0);
+      assert.equal(view.totals.excludedByOwnershipCount, 1);
+      assert.equal(view.fullySettled, false);
+      assert.equal(view.financialStatus, "PLANNED_ONLY");
+      assert.ok(view.warnings.some((w) => /9002 está vinculado financeiramente a outro pedido \(PC00613\) — não entra nos totais/.test(w)));
+    });
+
+    it("K. conflito automático (NF-e em dois pedidos) → visível como conflito, 0 aqui", () => {
+      const view = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [settled(9002, { sourceInvoiceId: 502 })],
+        automatic: [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+        persisted: [],
+        ownership: resolvePayableFinancialOwnership([claim(ORDER.id, "AUTOMATIC"), claim(OTHER, "AUTOMATIC")]),
+      });
+      assert.equal(view.unassignedPayables[0].ownership.kind, "AUTO_CONFLICT");
+      assert.equal(view.unassignedPayables[0].countsForThisOrder, false);
+      assert.equal(view.totals.paidAmount, 0);
+      assert.equal(view.fullySettled, false);
+      assert.ok(view.warnings.some((w) => /9002 tem evidência de vínculo em mais de um pedido/.test(w)));
+    });
+
+    it("M/J. confirmado aqui (mesmo com NF-e aqui e evidência em outro) → conta uma vez; automático só daqui → conta", () => {
+      const persistedHere = persisted(9002, { installmentIndex: 1 });
+      const view = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [payable(9002, { sourceInvoiceId: 502, dueDate: localDate("2026-10-30") })],
+        automatic: [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+        persisted: [persistedHere],
+        ownership: resolvePayableFinancialOwnership([claim(ORDER.id, "CONFIRMED"), claim(ORDER.id, "AUTOMATIC"), claim(OTHER, "AUTOMATIC")]),
+      });
+      assert.equal(view.totals.linkedCount, 1);
+      assert.equal(view.totals.linkedAmount, 1136.68);
+      assert.equal(view.installments[1].payables[0].countsForThisOrder, true);
+      assert.equal(view.installments[1].status, "LINKED");
+
+      const single = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [payable(9002, { sourceInvoiceId: 502 })],
+        automatic: [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+        persisted: [],
+        ownership: resolvePayableFinancialOwnership([claim(ORDER.id, "AUTOMATIC")]),
+      });
+      assert.equal(single.unassignedPayables[0].ownership.kind, "AUTO_SINGLE_OWNER");
+      assert.equal(single.totals.linkedCount, 1);
+    });
+
+    it("R/sugestão: título confirmado em outro pedido não é confirmável aqui (confirmable=false, número do dono)", () => {
+      const view = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [payable(9101)],
+        automatic: [],
+        persisted: [],
+        ownership: resolvePayableFinancialOwnership([claim(OTHER, "CONFIRMED", 9101)]),
+      });
+      assert.equal(view.suggestions.length, 1);
+      assert.equal(view.suggestions[0].confirmable, false);
+      assert.equal(view.suggestions[0].linkedToOtherOrder, true);
+      assert.equal(view.suggestions[0].ownerOrderNumber, "PC00613");
+      assert.ok(view.warnings.some((w) => /9101 sugerido para a parcela 1 já está vinculado financeiramente a outro pedido \(PC00613\)/.test(w)));
+      const free = buildPayableLinkSuggestions({ order: ORDER, installments: INSTALLMENTS, payables: [payable(9101)] });
+      assert.equal(free[0].confirmable, true);
+      assert.equal(free[0].ownerOrderNumber, null);
+    });
+
+    it("P/N. cancelado nunca conta; o mesmo título nunca soma 100% em dois pedidos", () => {
+      const cancelled = settled(9002, { sourceInvoiceId: 502, description: "CANCELADO" });
+      const view = buildPurchaseOrderPayableReconciliation({
+        ...base,
+        payables: [cancelled],
+        automatic: [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE", evidence: "nf" }],
+        persisted: [],
+        ownership: resolvePayableFinancialOwnership([claim(ORDER.id, "AUTOMATIC")]),
+      });
+      assert.equal(view.unassignedPayables[0].status, "CANCELLED");
+      assert.equal(view.unassignedPayables[0].countsForThisOrder, false);
+      assert.equal(view.totals.excludedByOwnershipCount, 0);
+      assert.equal(view.totals.linkedAmount, 0);
+
+      const paidTitle = settled(9002, { sourceInvoiceId: 502, amountPayable: 10000, amountPaid: 10000 });
+      const auto = [{ payableExternalId: 9002, method: "DIRECT_NOMUS_NFE" as const, evidence: "nf" }];
+      for (const claims of [
+        [claim(ORDER.id, "CONFIRMED"), claim(OTHER, "AUTOMATIC")],
+        [claim(OTHER, "CONFIRMED"), claim(ORDER.id, "AUTOMATIC")],
+        [claim(ORDER.id, "AUTOMATIC"), claim(OTHER, "AUTOMATIC")],
+      ]) {
+        const ownership = resolvePayableFinancialOwnership(claims);
+        const here = buildPurchaseOrderPayableReconciliation({ ...base, payables: [paidTitle], automatic: auto, persisted: [], ownership });
+        const there = buildPurchaseOrderPayableReconciliation({ ...base, order: { ...ORDER, id: OTHER }, payables: [paidTitle], automatic: auto, persisted: [], ownership });
+        assert.ok(here.totals.paidAmount + there.totals.paidAmount <= 10000);
+        assert.ok(!(here.fullySettled && there.fullySettled), "o mesmo pagamento não quita dois pedidos");
+      }
+    });
   });
 
   it("pedido sem parcelas e sem títulos: NO_FINANCIAL_DATA", () => {
@@ -524,6 +649,33 @@ describe("buildPurchaseOrderPayableReconciliation — parcela × título", () =>
     });
     assert.equal(view.financialStatus, "NO_FINANCIAL_DATA");
     assert.equal(view.totals.plannedCount, 0);
+  });
+});
+
+describe("assertPayableFinancialOwnerAvailable — autoridade única do segundo dono", () => {
+  const OTHER = "22222222-2222-4222-8222-222222222222";
+  const run = (confirmedOrderIds: string[]) => {
+    try {
+      assertPayableFinancialOwnerAvailable({ payableExternalId: 9001, orderId: ORDER.id, confirmedOrderIds, orderNumbersById: new Map([[OTHER, "PC00613"]]) });
+      return null;
+    } catch (error) {
+      return error as PurchaseOrderPayableLinkError;
+    }
+  };
+
+  it("sem dono → livre; dono aqui → PAYABLE_ALREADY_LINKED 409; dono em outro → PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER 409 com número do dono", () => {
+    assert.equal(run([]), null);
+    const here = run([ORDER.id])!;
+    assert.equal(here.code, "PAYABLE_ALREADY_LINKED");
+    assert.equal(here.httpStatus, 409);
+    const other = run([OTHER])!;
+    assert.equal(other.code, "PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER");
+    assert.equal(other.httpStatus, 409);
+    assert.equal(other.message, "Este título já está vinculado financeiramente a outro pedido.");
+    assert.equal(other.field, "payableExternalId");
+    assert.deepEqual(other.details, { payableExternalId: 9001, ownerOrderId: OTHER, ownerOrderNumber: "PC00613" });
+    // Conflito confirmado (dado anterior à unique): outro pedido vence a idempotência local — 409 de outro pedido.
+    assert.equal(run([ORDER.id, OTHER])!.code, "PAYABLE_ALREADY_LINKED_TO_ANOTHER_PURCHASE_ORDER");
   });
 });
 
