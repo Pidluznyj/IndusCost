@@ -12,6 +12,7 @@ import {
   extractDocumentEntryPurchaseOrderId,
   formatSupplierDisplayName,
   lastInvoiceNumberFromLinks,
+  partitionPayablesByFinancialOwner,
   resolvePurchaseOrderSupplier,
   summarizeItemStatuses,
   type ConfirmedPayableSnapshot,
@@ -20,7 +21,11 @@ import {
   type ResolvedPurchaseOrderSupplier,
 } from "./nomusPurchaseOrder360.js";
 import type { NomusPurchaseOrderStage } from "./nomusPurchaseOrderTypes.js";
-import { loadConfirmedPayableSnapshotsByOrder } from "./nomusPurchaseOrderPayableLink.server.js";
+import {
+  loadConfirmedPayableSnapshotsByOrder,
+  resolvePayableOwnershipForOrderPayables,
+} from "./nomusPurchaseOrderPayableLink.server.js";
+import type { PayableFinancialOwnershipMap } from "./nomusPurchaseOrderPayableOwnership.js";
 
 type DecimalLike = { toString(): string } | null;
 
@@ -275,6 +280,7 @@ function toPayableSnapshot(row: {
   externalId: number;
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
+  documentNumber: string | null;
   personId: number | null;
   personName: string | null;
   personCnpj: string | null;
@@ -295,6 +301,7 @@ function toPayableSnapshot(row: {
     externalId: row.externalId,
     sourceInvoiceId: row.sourceInvoiceId,
     sourceInvoiceNumber: row.sourceInvoiceNumber,
+    documentNumber: row.documentNumber,
     personId: row.personId,
     personName: row.personName,
     personCnpj: row.personCnpj,
@@ -350,6 +357,7 @@ async function loadFiscalMaps(orders: PurchaseOrderMirrorHeader[]) {
             externalId: true,
             sourceInvoiceId: true,
             sourceInvoiceNumber: true,
+            documentNumber: true,
             personId: true,
             personName: true,
             personCnpj: true,
@@ -415,29 +423,60 @@ async function loadFiscalMaps(orders: PurchaseOrderMirrorHeader[]) {
   return { refsByOrderId, nfeById, payablesByNfeId, documentEntryByNfeId };
 }
 
+/** Títulos alcançados pela NF-e declarada no pedido (camada 1 — evidência automática). */
+function nfePayablesForOrder(
+  order: PurchaseOrderMirrorHeader,
+  fiscal: Awaited<ReturnType<typeof loadFiscalMaps>>
+): ConfirmedPayableSnapshot[] {
+  const refs = fiscal.refsByOrderId.get(order.id) ?? [];
+  return refs.flatMap((ref) => fiscal.payablesByNfeId.get(ref.externalId) ?? []);
+}
+
+/**
+ * Dono financeiro dos títulos apresentados por estes pedidos — MESMA autoridade
+ * da aba Financeiro (`resolvePayableOwnershipForOrderPayables`), resolvida em
+ * lote para a página inteira (sem N+1).
+ */
+async function resolveListOwnership(
+  orders: PurchaseOrderMirrorHeader[],
+  fiscal: Awaited<ReturnType<typeof loadFiscalMaps>>,
+  linkedByOrder: Map<string, ConfirmedPayableSnapshot[]>
+): Promise<PayableFinancialOwnershipMap> {
+  const payablesByOrder = new Map<string, ConfirmedPayableSnapshot[]>();
+  for (const order of orders) {
+    const rows = nfePayablesForOrder(order, fiscal);
+    if (rows.length) payablesByOrder.set(order.id, rows);
+  }
+  if (payablesByOrder.size === 0 && linkedByOrder.size === 0) return new Map();
+  const resolution = await resolvePayableOwnershipForOrderPayables({
+    payablesByOrder,
+    confirmedByOrder: linkedByOrder,
+  });
+  return resolution.ownership;
+}
+
 function bundleForOrder(
   order: PurchaseOrderMirrorHeader,
   fiscal: Awaited<ReturnType<typeof loadFiscalMaps>>,
   /** Títulos vinculados por confirmação humana (NomusPurchaseOrderPayableLink) — somados aos da NF-e, sem duplicar. */
-  linkedPayables: ConfirmedPayableSnapshot[] = []
+  linkedPayables: ConfirmedPayableSnapshot[] = [],
+  /** Dono financeiro por título (cardinalidade V1) — só o dono soma. */
+  ownership: PayableFinancialOwnershipMap | null = null
 ) {
   const refs = fiscal.refsByOrderId.get(order.id) ?? [];
   const invoices = refs.map((ref) => toNfeSnapshot(ref, fiscal.nfeById.get(ref.externalId)));
-  const seen = new Set<number>();
-  const confirmedPayables = [
-    ...invoices.flatMap((nfe) => fiscal.payablesByNfeId.get(nfe.externalId) ?? []),
-    ...linkedPayables,
-  ].filter((row) => {
-    if (seen.has(row.externalId)) return false;
-    seen.add(row.externalId);
-    return true;
+  const { owned, excluded } = partitionPayablesByFinancialOwner({
+    orderId: order.id,
+    rows: [...nfePayablesForOrder(order, fiscal), ...linkedPayables],
+    ownership,
   });
   return {
     ...buildPurchaseOrderFinancialBundle({
       rawPayload: order.rawPayload,
       invoices,
-      confirmedPayables,
+      confirmedPayables: owned,
     }),
+    excludedPayables: excluded,
     documentEntries: invoices.flatMap((nfe) => fiscal.documentEntryByNfeId.get(nfe.externalId) ?? []),
   };
 }
@@ -452,10 +491,11 @@ export async function enrichNomusPurchaseOrderListRows(
     loadFiscalMaps(orders),
     loadConfirmedPayableSnapshotsByOrder(orders.map((order) => order.id)),
   ]);
+  const ownership = await resolveListOwnership(orders, fiscalMaps, linkedByOrder);
 
   return orders.map((order) => {
     const supplier = resolveOneSupplier(order, supplierMaps);
-    const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? []);
+    const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? [], ownership);
     const header = extractPurchaseOrderHeaderFields(order.rawPayload);
     const stage = order.stage as NomusPurchaseOrderStage;
     return {
@@ -488,6 +528,7 @@ export async function enrichNomusPurchaseOrderListRows(
       confirmedAmount: bundle.payableSummary.confirmedAmount,
       paidAmount: bundle.payableSummary.paidAmount,
       openAmount: bundle.payableSummary.openAmount,
+      excludedPayableCount: bundle.excludedPayables.length,
       overdue: isNomusPurchaseOrderOverdue({ stage, expectedAt: order.expectedAt, now }),
       open: isNomusPurchaseOrderOpenStage(stage),
       syncedAt: order.syncedAt.toISOString(),
@@ -541,7 +582,8 @@ export async function buildNomusPurchaseOrder360(input: {
   );
 
   const supplier = resolveOneSupplier(order, supplierMaps);
-  const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? []);
+  const ownership = await resolveListOwnership([order], fiscalMaps, linkedByOrder);
+  const bundle = bundleForOrder(order, fiscalMaps, linkedByOrder.get(order.id) ?? [], ownership);
   const header = extractPurchaseOrderHeaderFields(order.rawPayload);
   const itemStatusCodes = order.items.map((item) => {
     const fields = extractPurchaseOrderItemFields(item.rawPayload);
@@ -658,7 +700,10 @@ export async function buildNomusPurchaseOrder360(input: {
       financialStatus: bundle.financialStatus,
       ...bundle.payableSummary,
       hasBoletoDocument: false,
+      excludedPayableCount: bundle.excludedPayables.length,
     },
+    /** Cardinalidade V1: títulos apresentados que não contam para este pedido (dono é outro / conflito). */
+    payableOwnership: { excluded: bundle.excludedPayables },
     relationEvidence: bundle.relationEvidence,
     syncMetadata: {
       firstSeenAt: iso(order.firstSeenAt ?? null),

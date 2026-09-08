@@ -3296,7 +3296,9 @@ model NomusPurchaseOrderPayableLink {
   id                   String   @id @default(uuid()) @db.Uuid
   nomusPurchaseOrderId String
   /// NomusAccountsPayable.externalId — sem FK: o espelho pode ser reconciliado/recriado pelo sync.
-  payableExternalId    Int
+  /// ÚNICO globalmente (cardinalidade financeira V1): sem rateio explícito, um título de Contas a
+  /// Pagar tem no máximo um dono financeiro no IndusCost. O banco é a autoridade final na corrida.
+  payableExternalId    Int      @unique
   /// Índice da parcela planejada (rawPayload.parcelas[]) quando o vínculo é por parcela.
   installmentIndex     Int?
   method               String

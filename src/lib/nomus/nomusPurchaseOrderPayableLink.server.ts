@@ -3,14 +3,22 @@
  *
  * Número constante de consultas por pedido: vínculos persistidos, documentos
  * de entrada que apontam o pedido, títulos candidatos (uma consulta com OR),
- * vínculos do mesmo título em outros pedidos. Toda a regra vive no motor
- * puro (`nomusPurchaseOrderPayableLink.ts`). Nada é escrito no Nomus.
+ * dono financeiro dos mesmos títulos (vínculos confirmados de qualquer pedido +
+ * busca reversa, em lote, das evidências automáticas de outros pedidos).
+ * Toda a regra vive no motor puro (`nomusPurchaseOrderPayableLink.ts` e
+ * `nomusPurchaseOrderPayableOwnership.ts`). Nada é escrito no Nomus.
+ *
+ * CARDINALIDADE FINANCEIRA V1: `payableExternalId` é ÚNICO na tabela de
+ * vínculos (migration 20260925120000). A pré-checagem de dono acontece aqui,
+ * mas o banco é a autoridade final na corrida: a violação P2002 vira 409 de
+ * domínio, nunca 500.
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "@/src/lib/prisma.js";
 import {
   extractDirectNomusNfeRefs,
+  extractDocumentEntryPurchaseOrderId,
   extractPurchaseOrderHeaderFields,
   parsePurchaseOrderPlannedInstallments,
   sumPlannedInstallmentsTotal,
@@ -18,17 +26,26 @@ import {
 } from "./nomusPurchaseOrder360.js";
 import {
   PURCHASE_ORDER_PAYABLE_LINK_HISTORY_ACTIONS,
+  PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES,
   PurchaseOrderPayableLinkError,
+  assertPayableFinancialOwnerAvailable,
   buildPurchaseOrderPayableReconciliation,
   isSameSupplier,
+  normalizeDocumentNumber,
   normalizePurchaseOrderPayableLinkReason,
   parseConfirmPayableLinkPayload,
   resolveAutomaticPayableLinks,
+  type AutomaticLinkPayableRef,
   type PayableCandidateRow,
   type PersistedPayableLinkRow,
   type PurchaseOrderLinkIdentity,
   type PurchaseOrderPayableReconciliation,
 } from "./nomusPurchaseOrderPayableLink.js";
+import {
+  resolvePayableFinancialOwnership,
+  type PayableFinancialOwnership,
+  type PayableOwnershipClaim,
+} from "./nomusPurchaseOrderPayableOwnership.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -124,6 +141,7 @@ export function toConfirmedPayableSnapshot(row: PayableCandidateRow): ConfirmedP
     externalId: row.externalId,
     sourceInvoiceId: row.sourceInvoiceId,
     sourceInvoiceNumber: row.sourceInvoiceNumber,
+    documentNumber: row.documentNumber,
     personId: row.personId,
     personName: row.personName,
     personCnpj: row.personCnpj,
@@ -206,6 +224,224 @@ async function loadStockDocumentInvoiceIds(db: Db, externalId: number): Promise<
   return [...new Set(rows.map((row) => row.idNfe).filter((id): id is number => id != null))];
 }
 
+/* ------------------------------------------------------------------ *
+ * Dono financeiro — resolução em lote (aba, listagem e 360 usam a mesma)
+ * ------------------------------------------------------------------ */
+
+/** Campos mínimos de um título para resolver seu dono financeiro. */
+export type OwnershipPayableRef = AutomaticLinkPayableRef;
+
+export type PayableOwnershipResolution = {
+  ownership: Map<number, PayableFinancialOwnership>;
+  /** Números dos pedidos envolvidos (para nomear o pedido dono na UI/erro). */
+  orderNumbersById: Map<string, string | null>;
+  /** Vínculos persistidos ATIVOS dos títulos analisados (qualquer pedido). */
+  confirmedLinks: Array<{ nomusPurchaseOrderId: string; payableExternalId: number }>;
+};
+
+/** Lote de NF-e por consulta de busca reversa (limita o tamanho do OR no Postgres). */
+const REVERSE_LOOKUP_INVOICE_CHUNK = 100;
+const REVERSE_LOOKUP_ORDER_LIMIT = 1000;
+const REVERSE_LOOKUP_STOCK_DOCUMENT_LIMIT = 2000;
+
+function chunk<T>(values: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Busca reversa das evidências automáticas: quais pedidos (de QUALQUER página)
+ * reivindicam algum destes títulos pelas camadas 1–3? Set-based e em lote:
+ *
+ *  - camada 1: pedidos cujo `rawPayload.nfes[].id` é uma NF-e dos títulos
+ *    (filtro JSON `array_contains`, id numérico ou texto — mesma tolerância da
+ *    camada 2 direta);
+ *  - camada 2: documentos de entrada com `idNfe` dos títulos → pedido apontado
+ *    em `idPedidoCompra`;
+ *  - camada 3: pedidos cujo número/ID é o `documentNumber` do título.
+ *
+ * Escopo: pedidos do mesmo fornecedor dos títulos (ou sem fornecedor informado)
+ * — NF-e e número de pedido pertencem ao fornecedor. A decisão final por
+ * título usa o MESMO `resolveAutomaticPayableLinks` do caminho direto, com o
+ * rawPayload real de cada pedido encontrado (paridade de regra, sem N+1).
+ */
+export async function loadAutomaticPayableClaimsAcrossOrders(
+  db: Db,
+  payables: readonly OwnershipPayableRef[],
+  options: { orderNumbersById?: Map<string, string | null> } = {}
+): Promise<PayableOwnershipClaim[]> {
+  if (payables.length === 0) return [];
+  const invoiceIds = [...new Set(payables.map((row) => row.sourceInvoiceId).filter((id): id is number => id != null))];
+  const personIds = [...new Set(payables.map((row) => row.personId).filter((id): id is number => id != null))];
+  const documentNumbers = [
+    ...new Set(
+      payables
+        .map((row) => row.documentNumber?.trim() ?? "")
+        .filter((value) => value.length > 0)
+        .flatMap((value) => [value, value.toUpperCase()])
+    ),
+  ];
+  const documentExternalIds = [
+    ...new Set(
+      payables
+        .map((row) => normalizeDocumentNumber(row.documentNumber))
+        .filter((key) => /^\d+$/.test(key))
+        .map((key) => Number.parseInt(key, 10))
+        .filter((value) => Number.isSafeInteger(value) && value > 0)
+    ),
+  ];
+
+  const supplierClause: Prisma.NomusPurchaseOrderWhereInput = {
+    OR: [...(personIds.length ? [{ supplierExternalId: { in: personIds } }] : []), { supplierExternalId: null }],
+  };
+
+  const orderQueries: Array<Promise<OrderRow[]>> = [];
+  for (const ids of chunk(invoiceIds, REVERSE_LOOKUP_INVOICE_CHUNK)) {
+    orderQueries.push(
+      db.nomusPurchaseOrder.findMany({
+        where: {
+          AND: [
+            supplierClause,
+            {
+              OR: ids.flatMap((id) => [
+                { rawPayload: { path: ["nfes"], array_contains: [{ id }] } },
+                { rawPayload: { path: ["nfes"], array_contains: [{ id: String(id) }] } },
+              ]),
+            },
+          ],
+        },
+        select: ORDER_SELECT,
+        take: REVERSE_LOOKUP_ORDER_LIMIT,
+      })
+    );
+  }
+  if (documentNumbers.length || documentExternalIds.length) {
+    orderQueries.push(
+      db.nomusPurchaseOrder.findMany({
+        where: {
+          AND: [
+            supplierClause,
+            {
+              OR: [
+                ...(documentNumbers.length ? [{ orderNumber: { in: documentNumbers } }] : []),
+                ...(documentExternalIds.length ? [{ externalId: { in: documentExternalIds } }] : []),
+              ],
+            },
+          ],
+        },
+        select: ORDER_SELECT,
+        take: REVERSE_LOOKUP_ORDER_LIMIT,
+      })
+    );
+  }
+
+  const [orderBatches, stockDocuments] = await Promise.all([
+    Promise.all(orderQueries),
+    invoiceIds.length
+      ? db.nomusStockDocument.findMany({
+          where: { isCancelled: false, idNfe: { in: invoiceIds } },
+          select: { idNfe: true, rawJson: true },
+          take: REVERSE_LOOKUP_STOCK_DOCUMENT_LIMIT,
+        })
+      : Promise.resolve([] as Array<{ idNfe: number | null; rawJson: unknown }>),
+  ]);
+
+  const ordersById = new Map<string, OrderRow>();
+  for (const batch of orderBatches) for (const row of batch) ordersById.set(row.id, row);
+
+  const stockInvoiceIdsByOrderExternalId = new Map<number, Set<number>>();
+  for (const doc of stockDocuments) {
+    const purchaseOrderExternalId = extractDocumentEntryPurchaseOrderId(doc.rawJson);
+    if (purchaseOrderExternalId == null || doc.idNfe == null) continue;
+    const set = stockInvoiceIdsByOrderExternalId.get(purchaseOrderExternalId) ?? new Set<number>();
+    set.add(doc.idNfe);
+    stockInvoiceIdsByOrderExternalId.set(purchaseOrderExternalId, set);
+  }
+  const loadedExternalIds = new Set([...ordersById.values()].map((row) => row.externalId));
+  const missingExternalIds = [...stockInvoiceIdsByOrderExternalId.keys()].filter((id) => !loadedExternalIds.has(id));
+  if (missingExternalIds.length) {
+    const rows = await db.nomusPurchaseOrder.findMany({
+      where: { externalId: { in: missingExternalIds } },
+      select: ORDER_SELECT,
+      take: REVERSE_LOOKUP_ORDER_LIMIT,
+    });
+    for (const row of rows) ordersById.set(row.id, row);
+  }
+
+  const claims: PayableOwnershipClaim[] = [];
+  for (const order of ordersById.values()) {
+    options.orderNumbersById?.set(order.id, order.orderNumber);
+    const identity = identityFromOrder(order);
+    const resolved = resolveAutomaticPayableLinks({
+      order: identity,
+      payables,
+      directInvoiceIds: extractDirectNomusNfeRefs(order.rawPayload).map((ref) => ref.externalId),
+      stockDocumentInvoiceIds: [...(stockInvoiceIdsByOrderExternalId.get(order.externalId) ?? [])],
+    });
+    for (const link of resolved) {
+      claims.push({
+        nomusPurchaseOrderId: order.id,
+        payableExternalId: link.payableExternalId,
+        source: "AUTOMATIC",
+        method: link.method,
+      });
+    }
+  }
+  return claims;
+}
+
+/**
+ * Autoridade única de dono financeiro para um conjunto de títulos: vínculos
+ * confirmados de QUALQUER pedido (1 consulta) + evidências automáticas de
+ * QUALQUER pedido (busca reversa em lote) + evidências já conhecidas pelo
+ * chamador → `resolvePayableFinancialOwnership`. Usada pela aba Financeiro,
+ * pela listagem de Pedidos Nomus e pela ficha 360 — nunca uma regra em cada.
+ */
+export async function resolvePayableOwnershipAcrossOrders(
+  db: Db,
+  input: { payables: readonly OwnershipPayableRef[]; knownClaims?: readonly PayableOwnershipClaim[] }
+): Promise<PayableOwnershipResolution> {
+  const orderNumbersById = new Map<string, string | null>();
+  const payableIds = [...new Set(input.payables.map((row) => row.externalId))];
+  if (payableIds.length === 0) {
+    return { ownership: new Map(), orderNumbersById, confirmedLinks: [] };
+  }
+
+  const [confirmedRows, automaticClaims] = await Promise.all([
+    db.nomusPurchaseOrderPayableLink.findMany({
+      where: { payableExternalId: { in: payableIds } },
+      select: {
+        payableExternalId: true,
+        nomusPurchaseOrderId: true,
+        nomusPurchaseOrder: { select: { orderNumber: true } },
+      },
+    }),
+    loadAutomaticPayableClaimsAcrossOrders(db, input.payables, { orderNumbersById }),
+  ]);
+
+  const confirmedLinks = confirmedRows.map((row) => ({
+    nomusPurchaseOrderId: row.nomusPurchaseOrderId,
+    payableExternalId: row.payableExternalId,
+  }));
+  for (const row of confirmedRows) {
+    if (!orderNumbersById.has(row.nomusPurchaseOrderId)) {
+      orderNumbersById.set(row.nomusPurchaseOrderId, row.nomusPurchaseOrder?.orderNumber ?? null);
+    }
+  }
+
+  const claims: PayableOwnershipClaim[] = [
+    ...confirmedLinks.map((row) => ({ ...row, source: "CONFIRMED" as const })),
+    ...automaticClaims,
+    ...(input.knownClaims ?? []),
+  ];
+  return { ownership: resolvePayableFinancialOwnership(claims), orderNumbersById, confirmedLinks };
+}
+
+/* ------------------------------------------------------------------ *
+ * Contexto do pedido (aba Financeiro)
+ * ------------------------------------------------------------------ */
+
 export type PurchaseOrderPayableContext = {
   order: OrderRow;
   identity: PurchaseOrderLinkIdentity;
@@ -214,7 +450,10 @@ export type PurchaseOrderPayableContext = {
   payables: PayableCandidateRow[];
   persisted: PersistedPayableLinkRow[];
   automatic: ReturnType<typeof resolveAutomaticPayableLinks>;
+  /** Títulos com vínculo CONFIRMADO em outro pedido (compatibilidade de payload). */
   linkedElsewherePayableIds: number[];
+  ownership: Map<number, PayableFinancialOwnership>;
+  orderNumbersById: Map<string, string | null>;
 };
 
 export async function loadPurchaseOrderPayableContext(
@@ -261,20 +500,38 @@ export async function loadPurchaseOrderPayableContext(
     : [];
   const payables = payableRows.map(toPayableCandidateRow);
 
-  const payableIds = payables.map((row) => row.externalId);
-  const elsewhere = payableIds.length
-    ? await db.nomusPurchaseOrderPayableLink.findMany({
-        where: { payableExternalId: { in: payableIds }, nomusPurchaseOrderId: { not: order.id } },
-        select: { payableExternalId: true },
-      })
-    : [];
-
   const automatic = resolveAutomaticPayableLinks({
     order: identity,
     payables,
     directInvoiceIds,
     stockDocumentInvoiceIds,
   });
+
+  // Dono financeiro de cada candidato — mesma autoridade da listagem e do 360.
+  const knownClaims: PayableOwnershipClaim[] = [
+    ...persistedRows.map((row) => ({
+      nomusPurchaseOrderId: order.id,
+      payableExternalId: row.payableExternalId,
+      source: "CONFIRMED" as const,
+      method: row.method,
+    })),
+    ...automatic.map((row) => ({
+      nomusPurchaseOrderId: order.id,
+      payableExternalId: row.payableExternalId,
+      source: "AUTOMATIC" as const,
+      method: row.method,
+    })),
+  ];
+  const resolution = await resolvePayableOwnershipAcrossOrders(db, { payables, knownClaims });
+  resolution.orderNumbersById.set(order.id, order.orderNumber);
+
+  const linkedElsewherePayableIds = [
+    ...new Set(
+      resolution.confirmedLinks
+        .filter((row) => row.nomusPurchaseOrderId !== order.id)
+        .map((row) => row.payableExternalId)
+    ),
+  ];
 
   return {
     order,
@@ -284,7 +541,9 @@ export async function loadPurchaseOrderPayableContext(
     payables,
     persisted: persistedRows,
     automatic,
-    linkedElsewherePayableIds: [...new Set(elsewhere.map((row) => row.payableExternalId))],
+    linkedElsewherePayableIds,
+    ownership: resolution.ownership,
+    orderNumbersById: resolution.orderNumbersById,
   };
 }
 
@@ -300,13 +559,10 @@ async function findOrderOrThrow(db: Db, orderId: string): Promise<OrderRow> {
   return order;
 }
 
-export async function buildPurchaseOrderPayableReconciliationForOrder(
-  orderId: string,
-  options: { db?: Db; now?: Date } = {}
-): Promise<PurchaseOrderPayableReconciliation> {
-  const db = options.db ?? defaultPrisma;
-  const order = await findOrderOrThrow(db, orderId);
-  const context = await loadPurchaseOrderPayableContext(db, order);
+function reconciliationFromContext(
+  context: PurchaseOrderPayableContext,
+  now: Date | undefined
+): PurchaseOrderPayableReconciliation {
   return buildPurchaseOrderPayableReconciliation({
     order: context.identity,
     installments: context.installments,
@@ -315,8 +571,81 @@ export async function buildPurchaseOrderPayableReconciliationForOrder(
     automatic: context.automatic,
     persisted: context.persisted,
     linkedElsewherePayableIds: context.linkedElsewherePayableIds,
-    now: options.now,
+    ownership: context.ownership,
+    orderNumbersById: context.orderNumbersById,
+    now,
   });
+}
+
+export async function buildPurchaseOrderPayableReconciliationForOrder(
+  orderId: string,
+  options: { db?: Db; now?: Date } = {}
+): Promise<PurchaseOrderPayableReconciliation> {
+  const db = options.db ?? defaultPrisma;
+  const order = await findOrderOrThrow(db, orderId);
+  const context = await loadPurchaseOrderPayableContext(db, order);
+  return reconciliationFromContext(context, options.now);
+}
+
+/* ------------------------------------------------------------------ *
+ * Confirmação — todas as formas (sugestão, INSTALLMENT_MATCH, manual, POST direto)
+ * ------------------------------------------------------------------ */
+
+function isPrismaUniqueViolation(error: unknown): error is { code: "P2002"; meta?: { target?: unknown } } {
+  return !!error && typeof error === "object" && (error as { code?: string }).code === "P2002";
+}
+
+/** Colunas do índice violado, quando o Prisma informa `meta.target` (array ou texto). */
+function uniqueViolationTarget(error: { meta?: { target?: unknown } }): string[] | null {
+  const target = error.meta?.target;
+  if (Array.isArray(target)) return target.map((value) => String(value));
+  if (typeof target === "string") return [target];
+  return null;
+}
+
+/**
+ * Traduz a violação de unicidade do banco (autoridade final na corrida) em
+ * conflito de domínio. Prefere reconsultar o dono atual — resposta exata mesmo
+ * quando dois pedidos disputam o título no mesmo instante; usa `meta.target`
+ * do Prisma só quando o dono já não existe (desvinculado entre a falha e a
+ * reconsulta). Nunca depende do texto da mensagem.
+ */
+async function mapUniqueViolationToDomainError(
+  db: Db,
+  error: { code: "P2002"; meta?: { target?: unknown } },
+  input: { orderId: string; payableExternalId: number }
+): Promise<PurchaseOrderPayableLinkError> {
+  const owner = await db.nomusPurchaseOrderPayableLink.findFirst({
+    where: { payableExternalId: input.payableExternalId },
+    select: { nomusPurchaseOrderId: true, nomusPurchaseOrder: { select: { orderNumber: true } } },
+  });
+  const orderNumbersById = new Map<string, string | null>();
+  if (owner) orderNumbersById.set(owner.nomusPurchaseOrderId, owner.nomusPurchaseOrder?.orderNumber ?? null);
+  try {
+    assertPayableFinancialOwnerAvailable({
+      payableExternalId: input.payableExternalId,
+      orderId: input.orderId,
+      confirmedOrderIds: owner ? [owner.nomusPurchaseOrderId] : [],
+      orderNumbersById,
+    });
+  } catch (domainError) {
+    if (domainError instanceof PurchaseOrderPayableLinkError) return domainError;
+    throw domainError;
+  }
+  // Sem dono na reconsulta: decide pelo índice violado informado pelo Prisma.
+  const target = uniqueViolationTarget(error);
+  const samePair = target?.includes("nomusPurchaseOrderId") === true;
+  return new PurchaseOrderPayableLinkError(
+    samePair
+      ? PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES.alreadyLinkedHere
+      : PURCHASE_ORDER_PAYABLE_OWNER_ERROR_CODES.linkedToAnotherOrder,
+    samePair
+      ? "Este título já está vinculado a este pedido."
+      : "Este título já está vinculado financeiramente a outro pedido.",
+    409,
+    "payableExternalId",
+    { payableExternalId: input.payableExternalId, uniqueTarget: target }
+  );
 }
 
 export async function confirmPurchaseOrderPayableLink(
@@ -369,18 +698,17 @@ export async function confirmPurchaseOrderPayableLink(
     );
   }
 
+  // Cardinalidade V1 — pré-checagem pela autoridade única (o banco confirma na corrida).
+  assertPayableFinancialOwnerAvailable({
+    payableExternalId: payload.payableExternalId,
+    orderId: order.id,
+    confirmedOrderIds: context.ownership.get(payload.payableExternalId)?.confirmedOrderIds ?? [],
+    orderNumbersById: context.orderNumbersById,
+  });
+
   if (payload.method === "INSTALLMENT_MATCH") {
     // A confirmação por parcela só vale para uma sugestão que o motor realmente produziu.
-    const reconciliation = buildPurchaseOrderPayableReconciliation({
-      order: context.identity,
-      installments: context.installments,
-      plannedInstallmentsTotal: context.plannedInstallmentsTotal,
-      payables: context.payables,
-      automatic: context.automatic,
-      persisted: context.persisted,
-      linkedElsewherePayableIds: context.linkedElsewherePayableIds,
-      now: options.now,
-    });
+    const reconciliation = reconciliationFromContext(context, options.now);
     const suggestion = reconciliation.suggestions.find(
       (row) =>
         row.payableExternalId === payload.payableExternalId &&
@@ -439,17 +767,11 @@ export async function confirmPurchaseOrderPayableLink(
       });
     });
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      (error as { code?: string }).code === "P2002"
-    ) {
-      throw new PurchaseOrderPayableLinkError(
-        "PAYABLE_ALREADY_LINKED",
-        "Este título já está vinculado a este pedido.",
-        409,
-        "payableExternalId"
-      );
+    if (isPrismaUniqueViolation(error)) {
+      throw await mapUniqueViolationToDomainError(db, error, {
+        orderId: order.id,
+        payableExternalId: payload.payableExternalId,
+      });
     }
     throw error;
   }
@@ -479,6 +801,8 @@ export async function removePurchaseOrderPayableLink(
     );
   }
 
+  // Hard delete da linha ativa (libera o dono financeiro); o histórico sobrevive
+  // (sem FK history → link): quem vinculou, quando, por quê, e o desvínculo.
   await db.$transaction(async (tx) => {
     await tx.nomusPurchaseOrderPayableLink.delete({ where: { id: link.id } });
     await tx.nomusPurchaseOrderPayableLinkHistory.create({
@@ -503,6 +827,10 @@ export async function removePurchaseOrderPayableLink(
 
   return buildPurchaseOrderPayableReconciliationForOrder(order.id, { db, now: options.now });
 }
+
+/* ------------------------------------------------------------------ *
+ * Lote para listagem / 360
+ * ------------------------------------------------------------------ */
 
 /**
  * Lote para a listagem: títulos vinculados por CONFIRMAÇÃO humana (os automáticos
@@ -536,11 +864,59 @@ export async function loadConfirmedPayableSnapshotsByOrder(
   return result;
 }
 
-export function mapPayableLinkError(error: unknown): { status: number; body: { error: string; code: string; field?: string } } {
+/**
+ * Dono financeiro dos títulos que a listagem/360 apresenta por pedido (NF-e +
+ * confirmados). `claims` = evidências que o chamador já tem (NF-e do pedido =
+ * automática; vínculo persistido = confirmada); o resto (vínculos e evidências
+ * de pedidos fora da página) vem da mesma autoridade em lote.
+ */
+export async function resolvePayableOwnershipForOrderPayables(
+  input: {
+    payablesByOrder: ReadonlyMap<string, readonly ConfirmedPayableSnapshot[]>;
+    confirmedByOrder: ReadonlyMap<string, readonly ConfirmedPayableSnapshot[]>;
+  },
+  options: { db?: Db } = {}
+): Promise<PayableOwnershipResolution> {
+  const db = options.db ?? defaultPrisma;
+  const refs = new Map<number, OwnershipPayableRef>();
+  const knownClaims: PayableOwnershipClaim[] = [];
+  const collect = (rows: ReadonlyMap<string, readonly ConfirmedPayableSnapshot[]>, source: PayableOwnershipClaim["source"]) => {
+    for (const [orderId, list] of rows) {
+      for (const row of list) {
+        refs.set(row.externalId, {
+          externalId: row.externalId,
+          sourceInvoiceId: row.sourceInvoiceId,
+          documentNumber: row.documentNumber ?? null,
+          personId: row.personId,
+          personCnpj: row.personCnpj,
+        });
+        knownClaims.push({
+          nomusPurchaseOrderId: orderId,
+          payableExternalId: row.externalId,
+          source,
+          method: source === "AUTOMATIC" ? "DIRECT_NOMUS_NFE" : null,
+        });
+      }
+    }
+  };
+  collect(input.payablesByOrder, "AUTOMATIC");
+  collect(input.confirmedByOrder, "CONFIRMED");
+  return resolvePayableOwnershipAcrossOrders(db, { payables: [...refs.values()], knownClaims });
+}
+
+export function mapPayableLinkError(error: unknown): {
+  status: number;
+  body: { error: string; code: string; field?: string; details?: Record<string, unknown> };
+} {
   if (error instanceof PurchaseOrderPayableLinkError) {
     return {
       status: error.httpStatus,
-      body: { error: error.message, code: error.code, ...(error.field ? { field: error.field } : {}) },
+      body: {
+        error: error.message,
+        code: error.code,
+        ...(error.field ? { field: error.field } : {}),
+        ...(error.details ? { details: error.details } : {}),
+      },
     };
   }
   console.error("purchase-order-payable-link error:", error);

@@ -20,6 +20,11 @@ import {
   toInt,
 } from "./nomusPurchaseOrderParser.js";
 import type { JsonObject } from "./nomusPurchaseOrderTypes.js";
+import {
+  payableCountsForOrder,
+  type PayableFinancialOwnership,
+  type PayableFinancialOwnershipMap,
+} from "./nomusPurchaseOrderPayableOwnership.js";
 
 export type PurchaseOrderRelationMethod =
   | "DIRECT_NOMUS_NFE"
@@ -352,6 +357,8 @@ export type ConfirmedPayableSnapshot = {
   externalId: number;
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
+  /** Número do documento no título (camada 3 do vínculo automático / busca reversa de dono). */
+  documentNumber?: string | null;
   personId: number | null;
   personName: string | null;
   personCnpj: string | null;
@@ -423,6 +430,45 @@ export function summarizeConfirmedPayables(rows: ConfirmedPayableSnapshot[]): {
     anyOpen,
     hasBoletoDocument: false,
   };
+}
+
+export type ExcludedPayableByOwnership = {
+  externalId: number;
+  kind: PayableFinancialOwnership["kind"];
+  ownerOrderId: string | null;
+};
+
+/**
+ * Cardinalidade financeira V1 para listagem/360: dos títulos que o pedido
+ * apresenta (NF-e + confirmados, já deduplicados por externalId), só os que têm
+ * este pedido como dono financeiro entram em `summarizeConfirmedPayables`.
+ * Os demais (dono confirmado em outro pedido ou conflito automático) ficam em
+ * `excluded` — visíveis para auditoria, fora de vinculado/pago/aberto/quitado.
+ * Sem mapa de ownership, o comportamento é o anterior (todos contam).
+ */
+export function partitionPayablesByFinancialOwner(input: {
+  orderId: string;
+  rows: readonly ConfirmedPayableSnapshot[];
+  ownership: PayableFinancialOwnershipMap | null | undefined;
+}): { owned: ConfirmedPayableSnapshot[]; excluded: ExcludedPayableByOwnership[] } {
+  const seen = new Set<number>();
+  const owned: ConfirmedPayableSnapshot[] = [];
+  const excluded: ExcludedPayableByOwnership[] = [];
+  for (const row of input.rows) {
+    if (seen.has(row.externalId)) continue;
+    seen.add(row.externalId);
+    if (payableCountsForOrder(input.ownership, row.externalId, input.orderId)) {
+      owned.push(row);
+      continue;
+    }
+    const entry = input.ownership?.get(row.externalId);
+    excluded.push({
+      externalId: row.externalId,
+      kind: entry?.kind ?? "UNOWNED",
+      ownerOrderId: entry?.ownerOrderId ?? null,
+    });
+  }
+  return { owned, excluded };
 }
 
 export function classifyPurchaseOrderFinancialStatus(input: {
@@ -615,6 +661,8 @@ export type NomusPurchaseOrderListRowDto = {
   confirmedAmount: number;
   paidAmount: number;
   openAmount: number;
+  /** Títulos apresentados pelo pedido que NÃO contam (dono financeiro é outro pedido / conflito). */
+  excludedPayableCount?: number;
   overdue: boolean;
   open: boolean;
   syncedAt: string;
