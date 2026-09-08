@@ -223,7 +223,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(sumApOpenDueInPeriod(rows, forward.fromDate, forward.toDate), 800);
   });
 
-  it("Estimativa AP ano = pago YTD + a pagar até fim do ano", () => {
+  it("Estimativa AP ano = pago YTD + total ainda a pagar (sem vencidos = pago + a vencer)", () => {
     const payload = buildFinanceCashFlowDashboard(
       [],
       [
@@ -243,10 +243,52 @@ describe("financeCashFlowExecutiveSummary", () => {
       REF
     );
     const { payable } = payload.executiveSummary;
+    assert.equal(payable.overdueOpenBeforeBase, 0);
+    assert.equal(payable.openRemainingObligation, payable.openFromTodayToYearEnd);
+    assert.equal(
+      payable.estimatedYearTotal,
+      payable.paidYtd + payable.openRemainingObligation
+    );
     assert.equal(
       payable.estimatedYearTotal,
       payable.paidYtd + payable.openFromTodayToYearEnd
     );
+  });
+
+  it("AP vencido em aberto entra no total ainda a pagar e na estimativa do ano, sem sair da dueDate original", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      [
+        apRow({
+          externalId: 1,
+          amountPaid: 100,
+          dueDate: new Date(2026, 1, 1),
+          paymentDate: new Date(2026, 1, 1),
+          settlementDate: new Date(2026, 1, 1),
+          balancePayable: 0,
+          amountPayable: 100,
+        }),
+        apRow({ externalId: 2, balancePayable: 20, amountPayable: 20, dueDate: new Date(2026, 3, 15) }),
+        apRow({ externalId: 3, balancePayable: 30, amountPayable: 30, dueDate: new Date(2026, 8, 1) }),
+      ],
+      filters,
+      REF
+    );
+    const { payable, net } = payload.executiveSummary;
+    assert.equal(payable.paidYtd, 100);
+    assert.equal(payable.overdueOpenBeforeBase, 20);
+    assert.equal(payable.openFromTodayToYearEnd, 30);
+    assert.equal(payable.openRemainingObligation, 50);
+    assert.equal(payable.estimatedYearTotal, 150);
+    // composição mensal futura não recebe o vencido; ele aparece em linha própria
+    const breakdownTotal = payable.openForwardByMonth
+      .filter((row) => row.includedInForwardRange)
+      .reduce((sum, row) => sum + row.openAmount, 0);
+    assert.equal(breakdownTotal, payable.openFromTodayToYearEnd);
+    assert.equal(payable.openForwardByMonth.find((row) => row.month === 6)?.openAmount, 0);
+    assert.equal(payable.openForwardByMonth.find((row) => row.month === 4)?.includedInForwardRange, false);
+    // identidade líquida preservada: estimativa líquida = realizado + projetado
+    assert.equal(net.estimatedYearNet, net.realizedYtd + net.projectedRemaining);
   });
 
   it("Saldo realizado YTD = recebido YTD - pago YTD", () => {
@@ -273,7 +315,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(net.realizedYtd, receivable.receivedYtd - payable.paidYtd);
   });
 
-  it("Saldo projetado restante = AR restante - AP restante", () => {
+  it("Saldo projetado restante = AR restante - AP total ainda a pagar (inclui vencido em aberto)", () => {
     const payload = buildFinanceCashFlowDashboard(
       [arRow({ balanceReceivable: 5000, dueDate: new Date(2026, 10, 1) })],
       [apRow({ balancePayable: 1200, dueDate: new Date(2026, 11, 1) })],
@@ -283,8 +325,9 @@ describe("financeCashFlowExecutiveSummary", () => {
     const { net, receivable, payable } = payload.executiveSummary;
     assert.equal(
       net.projectedRemaining,
-      receivable.openFromTodayToYearEnd - payable.openFromTodayToYearEnd
+      receivable.openFromTodayToYearEnd - payable.openRemainingObligation
     );
+    assert.equal(payable.openRemainingObligation, payable.openFromTodayToYearEnd);
   });
 
   it("Estimativa líquida anual = estimativa AR - estimativa AP", () => {
@@ -1032,7 +1075,14 @@ describe("FinanceCashFlowExecutiveSummary UI", () => {
       "utf8"
     );
     assert.match(panel, /Recebido YTD/);
-    assert.match(panel, /A pagar restante no ano/);
+    assert.match(panel, /A vencer até 31\/12/);
+    assert.doesNotMatch(panel, /A pagar restante no ano/);
+    assert.match(panel, /Vencido em aberto/);
+    assert.match(panel, /Total ainda a pagar/);
+    assert.match(panel, /exec-kpi-ap-overdue-open/);
+    assert.match(panel, /exec-kpi-ap-open-remaining/);
+    assert.match(panel, /exec-kpi-ap-breakdown-overdue/);
+    assert.match(panel, /exec-kpi-ap-breakdown-total/);
     assert.match(panel, /exec-kpi-ap-forward-breakdown/);
     assert.match(panel, /Estimativa líquida anual/);
     assert.match(panel, /Período filtrado/);

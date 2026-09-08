@@ -135,10 +135,12 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 | **A receber até 31/12** | `receivable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balanceReceivable)` | AR | `dueDate` hoje → 31/12 |
 | **Estimativa AR do ano** | `receivable.estimatedYearTotal` | Entrada total estimada | Recebido YTD + A receber até 31/12 | AR | Misto |
 | **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano (gerencial) | `SUM(realizedAmount)` | `NomusAccountsPayable` | `dueDate` (via `effectivePaymentDate`) 01/01 → corte |
-| **A pagar restante no ano** | `payable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano (ignora filtro de mês) | `SUM(balancePayable)` | AP | `dueDate` hoje → 31/12 |
-| **Estimativa AP do ano** | `payable.estimatedYearTotal` | Saída total estimada | Pago YTD + A pagar até 31/12 | AP | Misto |
+| **Vencido em aberto** | `payable.overdueOpenBeforeBase` | AP_OVERDUE_OPEN — aberto, vencido antes da data-base, dentro do ano (ignora filtro de mês) | `SUM(openAmount)` | AP | `dueDate` 01/01 → data-base − 1 |
+| **A vencer até 31/12** | `payable.openFromTodayToYearEnd` | AP_DUE_REMAINING_TO_YEAR_END — aberto, da data-base (inclusive) até 31/12 (ignora filtro de mês) | `SUM(openAmount)` | AP | `dueDate` data-base → 31/12 |
+| **Total ainda a pagar** | `payable.openRemainingObligation` | AP_OPEN_REMAINING_OBLIGATION — obrigação ainda existente no ano | Vencido em aberto + A vencer até 31/12 | AP | `dueDate` no ano |
+| **Estimativa AP do ano** | `payable.estimatedYearTotal` | AP_ESTIMATED_YEAR_TOTAL — saída total estimada | Pago YTD + Total ainda a pagar | AP | Misto |
 | **Saldo realizado YTD** | `net.realizedYtd` | Caixa líquido realizado | Recebido YTD − Pago YTD | AR + AP | Liquidação |
-| **Saldo projetado restante** | `net.projectedRemaining` | Fluxo futuro no ano | A receber até 31/12 − A pagar até 31/12 | AR + AP | Vencimento |
+| **Saldo projetado restante** | `net.projectedRemaining` | Fluxo futuro no ano | A receber até 31/12 − Total ainda a pagar (inclui AP vencido em aberto) | AR + AP | Vencimento |
 | **Estimativa líquida anual** | `net.estimatedYearNet` | Resultado anual previsto | Estimativa AR − Estimativa AP | AR + AP | Misto |
 
 **Período filtrado** (`executiveSummary.period`): espelha `cards` — entradas/saídas/saldo/acumulado do recorte mês/ano conforme `viewMode`.
@@ -147,7 +149,9 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 
 Eixo da coluna **Recebido**: `dateAxis === "movement"` (baixa / `settlementDate`), com overlay **HISTORICAL SETTLEMENT NORMALIZATION V1** — ver `docs/finance/FINANCE_AR_HISTORICAL_SETTLEMENT_NORMALIZATION_V1.md`. O eixo planejado (`plannedMonthlyTimeline`) permanece `dueDate` e **não** recebe esse overlay.
 
-**Ano passado:** quando `hoje > 31/12` do ano selecionado, `openFromTodayToYearEnd` = 0 (sem projeção futura).
+**Ano passado:** quando `hoje > 31/12` do ano selecionado, `openFromTodayToYearEnd` = 0 (sem projeção futura); `openRemainingObligation` passa a ser só o vencido ainda em aberto daquele ano.
+
+**Obrigação remanescente de AP (AP_OPEN_REMAINING_OBLIGATION):** eixo corporativo AP = `dueDate`. Um título vencido e ainda aberto continua alocado na sua dueDate original (não é deslocado para o mês atual), mas **não desaparece** da obrigação do ano nem da Estimativa AP do ano. Identidades garantidas pelo motor oficial (`auditAccountsPayableRules`) e pela auditoria de paridade (`auditCashFlowApOpenRemainingObligationParityWithAp`): `openRemainingObligation = overdueOpenBeforeBase + openFromTodayToYearEnd`; `estimatedYearTotal = paidYtd + openRemainingObligation`; `openFromTodayToYearEnd ≤ openRemainingObligation`; Total ainda a pagar = **Em aberto** de Contas a Pagar no mesmo ano/data-base sem filtro de mês. Ver `docs/finance/FINANCE_AP_OPEN_REMAINING_OBLIGATION.md`.
 
 **Origem Com NF / Sem NF:** afeta apenas AR (`invoiceIssued`).
 

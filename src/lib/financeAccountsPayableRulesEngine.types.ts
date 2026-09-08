@@ -27,7 +27,10 @@ export type FinanceApRulesMetricKey =
   | "dueNext60DaysAmount"
   | "dueNext90DaysAmount"
   | "scheduledOpenAmount"
+  | "overdueOpenBeforeBase"
+  | "dueTodayOpenInYear"
   | "openUntilYearEnd"
+  | "openRemainingObligation"
   | "estimatedYearTotal"
   | "periodPaidAmount"
   | "periodExpectedOutflowAmount"
@@ -76,7 +79,27 @@ export type FinanceAccountsPayableMetrics = {
   dueNext60DaysAmount: number;
   dueNext90DaysAmount: number;
   scheduledOpenAmount: number;
+  /**
+   * AP_OVERDUE_OPEN — saldo aberto (motor oficial) com vencimento operacional
+   * ANTERIOR à data-base, dentro do ano selecionado. Continua alocado na
+   * dueDate original (eixo corporativo AP); nunca é deslocado para hoje.
+   */
+  overdueOpenBeforeBase: number;
+  /** AP_DUE_TODAY_OPEN — saldo aberto com vencimento operacional na data-base (dentro do ano). */
+  dueTodayOpenInYear: number;
+  /**
+   * AP_DUE_REMAINING_TO_YEAR_END — "A vencer até 31/12": saldo aberto com
+   * vencimento operacional da data-base (inclusive) até 31/12. NÃO inclui
+   * vencidos antes da data-base.
+   */
   openUntilYearEnd: number;
+  /**
+   * AP_OPEN_REMAINING_OBLIGATION — "Total ainda a pagar":
+   * overdueOpenBeforeBase + openUntilYearEnd (vencido + hoje + a vencer).
+   * Obrigação de caixa ainda existente no ano.
+   */
+  openRemainingObligation: number;
+  /** AP_ESTIMATED_YEAR_TOTAL — paidYtd + openRemainingObligation. */
   estimatedYearTotal: number;
   periodPaidAmount: number;
   periodExpectedOutflowAmount: number;

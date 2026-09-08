@@ -131,7 +131,14 @@ export function sumOfficialApPaidInPaymentPeriod(
 
 export type OfficialApCashFlowExecutiveMetrics = Pick<
   FinanceAccountsPayableMetrics,
-  "paidYtd" | "openUntilYearEnd" | "estimatedYearTotal" | "paidThisMonth" | "openAmount"
+  | "paidYtd"
+  | "overdueOpenBeforeBase"
+  | "dueTodayOpenInYear"
+  | "openUntilYearEnd"
+  | "openRemainingObligation"
+  | "estimatedYearTotal"
+  | "paidThisMonth"
+  | "openAmount"
 >;
 
 /** Métricas AP do resumo executivo do Fluxo de Caixa — motor oficial. */
@@ -151,7 +158,10 @@ export function resolveOfficialApCashFlowExecutiveMetrics(
   });
   return {
     paidYtd: result.metrics.paidYtd,
+    overdueOpenBeforeBase: result.metrics.overdueOpenBeforeBase,
+    dueTodayOpenInYear: result.metrics.dueTodayOpenInYear,
     openUntilYearEnd: result.metrics.openUntilYearEnd,
+    openRemainingObligation: result.metrics.openRemainingObligation,
     estimatedYearTotal: result.metrics.estimatedYearTotal,
     paidThisMonth: result.metrics.paidThisMonth,
     openAmount: result.metrics.openAmount,

@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CircleDollarSign,
@@ -13,6 +14,8 @@ import type { CashHealthScore } from "@/src/lib/financeCashFlowCfoDiagnostics";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { resolveCashFlowMetricTone } from "@/src/lib/financeCashFlowDisplay";
 import {
+  FINANCE_KPI_CF_AP_OPEN_REMAINING,
+  FINANCE_KPI_CF_AP_OVERDUE_OPEN,
   FINANCE_KPI_CF_ESTIMATED_AP_YEAR,
   FINANCE_KPI_CF_ESTIMATED_AR_YEAR,
   FINANCE_KPI_CF_ESTIMATED_YEAR_NET,
@@ -142,12 +145,31 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               tone="negative"
             />
             <FinanceCashFlowExecutiveMetricCard
+              testId="exec-kpi-ap-overdue-open"
+              label="Vencido em aberto"
+              hint={FINANCE_KPI_CF_AP_OVERDUE_OPEN}
+              amount={payable.overdueOpenBeforeBase}
+              subtitle="Antes da data-base"
+              icon={AlertTriangle}
+              tone="warning"
+            />
+            <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-open-ap-year-end"
-              label="A pagar restante no ano"
+              label="A vencer até 31/12"
               hint={`${FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END} Intervalo: ${forwardHint}.`}
               amount={payable.openFromTodayToYearEnd}
+              subtitle="Da data-base até o fim do ano"
               icon={ArrowUpRight}
               tone="negative"
+            />
+            <FinanceCashFlowExecutiveMetricCard
+              testId="exec-kpi-ap-open-remaining"
+              label="Total ainda a pagar"
+              hint={FINANCE_KPI_CF_AP_OPEN_REMAINING}
+              amount={payable.openRemainingObligation}
+              subtitle="Vencido + a vencer até 31/12"
+              icon={CircleDollarSign}
+              tone="neutral"
             />
             <FinanceCashFlowExecutiveMetricCard
               testId="exec-kpi-estimated-ap-year"
@@ -159,23 +181,34 @@ export function FinanceCashFlowExecutiveSummaryPanel({
               featured
             />
           </SummaryKpiGrid>
-          {forwardApMonths.length > 0 ? (
+          {forwardApMonths.length > 0 || payable.overdueOpenBeforeBase > 0 ? (
             <div
               data-testid="exec-kpi-ap-forward-breakdown"
               className="finance-cash-flow-executive-summary__forward-breakdown"
               title={FINANCE_KPI_CF_OPEN_AP_FORWARD_BREAKDOWN}
             >
               <p className="finance-cash-flow-executive-summary__forward-breakdown-title">
-                Composição do saldo a pagar restante ({forwardHint})
+                Composição do total ainda a pagar ({forwardHint})
               </p>
               <div className="finance-cash-flow-executive-summary__forward-breakdown-body">
+                {payable.overdueOpenBeforeBase > 0 ? (
+                  <span
+                    data-testid="exec-kpi-ap-breakdown-overdue"
+                    className="font-medium tabular-nums"
+                  >
+                    Vencido antes da data-base: {formatFinanceCurrency(payable.overdueOpenBeforeBase)}
+                  </span>
+                ) : null}
                 {forwardApMonths.map((row) => (
                   <span key={row.month} className="tabular-nums">
                     {row.monthLabel}: {formatFinanceCurrency(row.openAmount)}
                   </span>
                 ))}
-                <span className="font-medium tabular-nums">
-                  Total: {formatFinanceCurrency(payable.openFromTodayToYearEnd)}
+                <span data-testid="exec-kpi-ap-breakdown-future" className="font-medium tabular-nums">
+                  A vencer até 31/12: {formatFinanceCurrency(payable.openFromTodayToYearEnd)}
+                </span>
+                <span data-testid="exec-kpi-ap-breakdown-total" className="font-semibold tabular-nums">
+                  Total ainda a pagar: {formatFinanceCurrency(payable.openRemainingObligation)}
                 </span>
               </div>
               {periodVsForward && periodVsForward.gapVsPeriodOutflow > 0 ? (

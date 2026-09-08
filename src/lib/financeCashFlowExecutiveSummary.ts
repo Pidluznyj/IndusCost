@@ -126,8 +126,21 @@ export type FinanceCashFlowExecutiveSummary = {
     estimatedYearTotal: number;
   };
   payable: {
+    /** AP_PAID_YTD — pago no ano pelo motor oficial AP. */
     paidYtd: number;
+    /**
+     * AP_OVERDUE_OPEN — vencido antes da data-base e ainda em aberto (ano
+     * selecionado). Alocado na dueDate original; não entra na composição
+     * mensal futura e não é deslocado para o mês atual.
+     */
+    overdueOpenBeforeBase: number;
+    /** AP_DUE_TODAY_OPEN — vence na data-base e ainda em aberto. Já contido em openFromTodayToYearEnd. */
+    dueTodayOpen: number;
+    /** AP_DUE_REMAINING_TO_YEAR_END — "A vencer até 31/12" (data-base inclusive → 31/12). */
     openFromTodayToYearEnd: number;
+    /** AP_OPEN_REMAINING_OBLIGATION — "Total ainda a pagar" = overdueOpenBeforeBase + openFromTodayToYearEnd. */
+    openRemainingObligation: number;
+    /** AP_ESTIMATED_YEAR_TOTAL — paidYtd + openRemainingObligation (inclui vencidos em aberto). */
     estimatedYearTotal: number;
     openForwardByMonth: FinanceCashFlowPayableForwardMonthBreakdown[];
     periodVsForward: FinanceCashFlowPeriodVsForwardPayable | null;
@@ -577,11 +590,16 @@ export function buildFinanceCashFlowExecutiveSummary(
   const paidYtd = apOfficial.paidYtd;
   const openArForward = arOfficial.openForwardToYearEnd;
   const openApForward = apOfficial.openUntilYearEnd;
+  const apOverdueOpen = apOfficial.overdueOpenBeforeBase;
+  const apDueTodayOpen = apOfficial.dueTodayOpenInYear;
+  const apOpenRemaining = apOfficial.openRemainingObligation;
 
   const estimatedArYear = arOfficial.estimatedYearTotal;
   const estimatedApYear = apOfficial.estimatedYearTotal;
   const realizedYtd = roundMoney(receivedYtd - paidYtd);
-  const projectedRemaining = roundMoney(openArForward - openApForward);
+  // Saldo projetado restante subtrai a obrigação AP ainda existente (com
+  // vencidos em aberto), mantendo estimatedYearNet = realizedYtd + projectedRemaining.
+  const projectedRemaining = roundMoney(openArForward - apOpenRemaining);
   const estimatedYearNet = roundMoney(estimatedArYear - estimatedApYear);
 
   const monthlyTimeline = buildExecutiveMonthlyTimeline(arYtd, apYtd, year, referenceDate, {
@@ -621,7 +639,10 @@ export function buildFinanceCashFlowExecutiveSummary(
     },
     payable: {
       paidYtd,
+      overdueOpenBeforeBase: apOverdueOpen,
+      dueTodayOpen: apDueTodayOpen,
       openFromTodayToYearEnd: openApForward,
+      openRemainingObligation: apOpenRemaining,
       estimatedYearTotal: estimatedApYear,
       openForwardByMonth,
       periodVsForward,
@@ -666,7 +687,10 @@ export function executiveSummaryMetricsAreFinite(
     summary.receivable.openFromTodayToYearEnd,
     summary.receivable.estimatedYearTotal,
     summary.payable.paidYtd,
+    summary.payable.overdueOpenBeforeBase,
+    summary.payable.dueTodayOpen,
     summary.payable.openFromTodayToYearEnd,
+    summary.payable.openRemainingObligation,
     summary.payable.estimatedYearTotal,
     ...summary.payable.openForwardByMonth.map((row) => row.openAmount),
     summary.net.realizedYtd,
