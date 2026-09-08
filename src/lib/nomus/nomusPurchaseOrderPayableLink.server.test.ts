@@ -1,9 +1,14 @@
 /**
  * Pedido Nomus ↔ Contas a Pagar — camada de I/O com Prisma falso.
  * Garante número constante de consultas, transação vínculo + histórico,
- * códigos de erro, que nada é escrito fora das tabelas locais de vínculo e a
- * CARDINALIDADE FINANCEIRA V1: um título AP = no máximo um dono financeiro
- * (pré-checagem no serviço + unique global do banco na corrida → 409, não 500).
+ * códigos de erro, que nada é escrito fora das tabelas locais de vínculo, a
+ * CARDINALIDADE FINANCEIRA V1 (um título AP = no máximo um dono financeiro;
+ * pré-checagem + unique global do banco → 409, não 500) e a SIMETRIA entre o
+ * auto-link direto e a descoberta global de ownership.
+ *
+ * Os pré-filtros SQL (`$queryRaw`) são superconjunto por construção; o fake
+ * devolve o superconjunto trivial (todas as linhas do seed) para provar que a
+ * decisão é sempre do extrator canônico em memória.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -11,16 +16,21 @@ import type { PrismaClient } from "@prisma/client";
 import { parsePurchaseOrderPlannedInstallments } from "./nomusPurchaseOrder360.js";
 import { PurchaseOrderPayableLinkError } from "./nomusPurchaseOrderPayableLink.js";
 import {
+  PAYABLE_LINK_SQL_MARKERS,
   buildPurchaseOrderPayableReconciliationForOrder,
   confirmPurchaseOrderPayableLink,
+  loadAutomaticPayableCandidatesForOrders,
+  loadAutomaticPayableClaimsAcrossOrders,
   loadConfirmedPayableSnapshotsByOrder,
+  loadOrderFinancialPayablesWithOwnership,
   mapPayableLinkError,
   removePurchaseOrderPayableLink,
-  resolvePayableOwnershipForOrderPayables,
+  toPayableCandidateRow,
 } from "./nomusPurchaseOrderPayableLink.server.js";
 
 const ORDER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ORDER_ID = "22222222-2222-4222-8222-222222222222";
+const THIRD_ORDER_ID = "33333333-3333-4333-8333-333333333333";
 const NOW = new Date("2026-10-20T12:00:00.000Z");
 const ACTOR = { userId: "u1", userName: "Paulo" };
 
@@ -56,6 +66,17 @@ const OTHER_ORDER = {
   supplierTaxId: "12345678000190",
   rawPayload: { ...RAW, id: 614, codigoPedido: "PC00613", nfes: [] } as Record<string, unknown>,
 };
+
+type OrderSeed = typeof ORDER;
+
+function orderWith(base: OrderSeed, overrides: Partial<OrderSeed> & { nfes?: unknown }): OrderSeed {
+  const { nfes, ...rest } = overrides;
+  return {
+    ...base,
+    ...rest,
+    rawPayload: { ...(base.rawPayload as Record<string, unknown>), ...(nfes !== undefined ? { nfes } : {}) },
+  };
+}
 
 class Dec {
   constructor(private readonly v: number) {}
@@ -109,29 +130,20 @@ type LinkRow = {
   updatedAt: Date;
 };
 
-type OrderSeed = typeof ORDER;
+type StockDocumentSeed = { idNfe: number | null; isCancelled: boolean; rawJson: Record<string, unknown> };
 
 type Seed = {
   orders?: OrderSeed[];
   payables?: PayableSeed[];
-  stockDocuments?: Array<{ idNfe: number | null; isCancelled: boolean; rawJson: Record<string, unknown> }>;
+  stockDocuments?: StockDocumentSeed[];
   links?: Array<Partial<LinkRow> & { payableExternalId: number; nomusPurchaseOrderId?: string }>;
-  /**
-   * Simula a CORRIDA: a consulta de dono (pré-checagem) devolve vazio N vezes,
-   * mas o banco (unique global) continua enxergando os vínculos existentes.
-   */
+  /** Simula a CORRIDA: a consulta de dono (pré-checagem) devolve vazio N vezes. */
   staleOwnerReads?: number;
   /** Depois da violação de unicidade, o dono some antes da reconsulta (desvinculado no meio). */
   ownerVanishesAfterConflict?: boolean;
   /** `meta.target` devolvido pelo Prisma na violação (default: colunas do índice violado). */
   uniqueMetaTarget?: unknown;
 };
-
-function inList(cond: unknown, value: unknown): boolean {
-  return !!cond && typeof cond === "object" && Array.isArray((cond as { in?: unknown[] }).in)
-    ? ((cond as { in: unknown[] }).in as unknown[]).includes(value)
-    : false;
-}
 
 function matchesClause(row: Record<string, unknown>, clause: Record<string, unknown>): boolean {
   return Object.entries(clause).every(([key, cond]) => {
@@ -151,33 +163,6 @@ function matchesClause(row: Record<string, unknown>, clause: Record<string, unkn
     }
     return value === cond;
   });
-}
-
-/** Avalia o `where` da busca reversa de pedidos (AND/OR, fornecedor, JSON nfes, número, externalId). */
-function matchesOrderWhere(order: OrderSeed, where: Record<string, unknown>): boolean {
-  if (Array.isArray(where.AND)) return (where.AND as Record<string, unknown>[]).every((w) => matchesOrderWhere(order, w));
-  if (Array.isArray(where.OR)) return (where.OR as Record<string, unknown>[]).some((w) => matchesOrderWhere(order, w));
-  if ("supplierExternalId" in where) {
-    const cond = where.supplierExternalId;
-    if (cond === null) return order.supplierExternalId == null;
-    return inList(cond, order.supplierExternalId);
-  }
-  if ("rawPayload" in where) {
-    const cond = where.rawPayload as { path: string[]; array_contains: Array<Record<string, unknown>> };
-    assert.deepEqual(cond.path, ["nfes"]);
-    const nfes = (order.rawPayload as { nfes?: unknown[] }).nfes ?? [];
-    return cond.array_contains.every((needle) =>
-      nfes.some(
-        (entry) =>
-          !!entry &&
-          typeof entry === "object" &&
-          Object.entries(needle).every(([k, v]) => (entry as Record<string, unknown>)[k] === v)
-      )
-    );
-  }
-  if ("orderNumber" in where) return inList(where.orderNumber, order.orderNumber);
-  if ("externalId" in where) return inList(where.externalId, order.externalId);
-  throw new Error(`where de pedido não suportado no fake: ${JSON.stringify(where)}`);
 }
 
 function createDb(seed: Seed) {
@@ -210,6 +195,14 @@ function createDb(seed: Seed) {
     const order = orders.find((o) => o.id === row.nomusPurchaseOrderId);
     return { ...row, nomusPurchaseOrder: order ? { orderNumber: order.orderNumber } : null };
   };
+  const projection = (order: OrderSeed) => ({
+    id: order.id,
+    externalId: order.externalId,
+    orderNumber: order.orderNumber,
+    supplierExternalId: order.supplierExternalId,
+    supplierTaxId: order.supplierTaxId,
+    nfes: (order.rawPayload as { nfes?: unknown }).nfes ?? null,
+  });
 
   const db = {
     nomusPurchaseOrder: {
@@ -217,30 +210,43 @@ function createDb(seed: Seed) {
         queries.push("order.findUnique");
         return orders.find((row) => row.id === args.where.id) ?? null;
       },
-      findMany: async (args: { where: Record<string, unknown>; take?: number }) => {
-        queries.push("order.findMany");
-        return orders.filter((row) => matchesOrderWhere(row, args.where));
-      },
+    },
+    /**
+     * Pré-filtros SQL: devolvem o SUPERCONJUNTO trivial (tudo do seed). Se a
+     * regra em memória não for canônica, os testes de paridade quebram.
+     */
+    $queryRaw: async (query: { sql: string; values: unknown[] }) => {
+      const marker = Object.entries(PAYABLE_LINK_SQL_MARKERS).find(([, value]) => query.sql.includes(value))?.[0];
+      queries.push(`raw:${marker ?? "?"}`);
+      switch (marker) {
+        case "ordersDeclaringInvoices":
+          return orders.filter((o) => Array.isArray((o.rawPayload as { nfes?: unknown }).nfes)).map(projection);
+        case "ordersBySupplierScope":
+          return orders.map(projection);
+        case "ordersByExternalId":
+          return orders.filter((o) => query.values.includes(o.externalId)).map(projection);
+        case "stockDocumentsPointingToOrders":
+          return stockDocuments.filter((d) => !d.isCancelled && d.idNfe != null).map((d) => ({ idNfe: d.idNfe, rawJson: d.rawJson }));
+        case "payablesByDocumentNumber":
+          return payables.filter((p) => typeof p.documentNumber === "string" && p.documentNumber.length > 0);
+        default:
+          throw new Error(`consulta raw sem marcador conhecido: ${query.sql.slice(0, 80)}`);
+      }
     },
     nomusStockDocument: {
-      findMany: async (args: {
-        where: { OR?: Array<{ rawJson: { path: string[]; equals: unknown } }>; idNfe?: { in?: number[]; not?: null } };
-      }) => {
+      findMany: async (args: { where: { idNfe?: { in?: number[] } } }) => {
         queries.push("stockDocument.findMany");
-        const active = stockDocuments.filter((row) => !row.isCancelled && row.idNfe != null);
-        if (args.where.OR) {
-          return active
-            .filter((row) => args.where.OR!.some((clause) => row.rawJson[clause.rawJson.path[0]] === clause.rawJson.equals))
-            .map((row) => ({ idNfe: row.idNfe }));
-        }
         const ids = args.where.idNfe?.in ?? [];
-        return active.filter((row) => ids.includes(row.idNfe!)).map((row) => ({ idNfe: row.idNfe, rawJson: row.rawJson }));
+        return stockDocuments
+          .filter((row) => !row.isCancelled && row.idNfe != null && ids.includes(row.idNfe))
+          .map((row) => ({ idNfe: row.idNfe, rawJson: row.rawJson }));
       },
     },
     nomusAccountsPayable: {
-      findMany: async (args: { where: { OR?: Array<Record<string, unknown>>; externalId?: { in: number[] } } }) => {
+      findMany: async (args: { where: { OR?: Array<Record<string, unknown>>; externalId?: { in: number[] }; sourceInvoiceId?: { in: number[] } } }) => {
         queries.push("accountsPayable.findMany");
         if (args.where.externalId) return payables.filter((row) => args.where.externalId!.in.includes(row.externalId));
+        if (args.where.sourceInvoiceId) return payables.filter((row) => args.where.sourceInvoiceId!.in.includes(row.sourceInvoiceId as number));
         const or = args.where.OR ?? [];
         return payables.filter((row) => or.some((clause) => matchesClause(row, clause)));
       },
@@ -322,6 +328,7 @@ function createDb(seed: Seed) {
 
   return {
     db: db as unknown as PrismaClient,
+    orders,
     links,
     history,
     queries,
@@ -345,6 +352,23 @@ const codeOf = async (fn: () => Promise<unknown>) => {
   }
 };
 
+/** Conjunto {pedido|título|método} — comparação de candidatos direto × global. */
+const claimKey = (row: { nomusPurchaseOrderId: string; payableExternalId: number; method?: string | null }) =>
+  `${row.nomusPurchaseOrderId}|${row.payableExternalId}|${row.method ?? ""}`;
+
+async function directClaims(fake: ReturnType<typeof createDb>) {
+  const byOrder = await loadAutomaticPayableCandidatesForOrders(fake.db, fake.orders);
+  return [...byOrder.entries()]
+    .flatMap(([orderId, c]) => c.automatic.map((link) => ({ nomusPurchaseOrderId: orderId, payableExternalId: link.payableExternalId, method: link.method })))
+    .map(claimKey)
+    .sort();
+}
+
+async function globalClaims(fake: ReturnType<typeof createDb>, payables: PayableSeed[]) {
+  const refs = payables.map((row) => toPayableCandidateRow(row as never));
+  return (await loadAutomaticPayableClaimsAcrossOrders(fake.db, refs)).map(claimKey).sort();
+}
+
 describe("buildPurchaseOrderPayableReconciliationForOrder", () => {
   it("resolve NF-e direta, documento de entrada e número do pedido com número constante de consultas", async () => {
     const fake = createDb({
@@ -352,7 +376,7 @@ describe("buildPurchaseOrderPayableReconciliationForOrder", () => {
         apRow(9001, { sourceInvoiceId: 501, amountPaid: new Dec(1136.68), balancePayable: new Dec(0), paymentDate: NOW, settlementDate: NOW }),
         apRow(9002, { sourceInvoiceId: 777, dueDate: INSTALLMENTS[1].dueDate }),
         apRow(9003, { documentNumber: "PC00612", dueDate: INSTALLMENTS[2].dueDate, amountPayable: new Dec(1171.14), balancePayable: new Dec(1171.14) }),
-        apRow(9004, { personId: 999, documentNumber: "PC00612" }),
+        apRow(9004, { personId: 999, personCnpj: "99999999000199", documentNumber: "PC00612" }),
         apRow(9005, { dueDate: new Date(2030, 0, 1) }),
       ],
       stockDocuments: [
@@ -374,16 +398,18 @@ describe("buildPurchaseOrderPayableReconciliationForOrder", () => {
     assert.equal(view.totals.excludedByOwnershipCount, 0);
     assert.equal(view.financialStatus, "PARTIALLY_PAID");
     assert.equal(view.suggestions.length, 0);
-    // Constante: contexto (4) + dono financeiro em lote (vínculos por título, pedidos por NF-e,
-    // pedidos por número do título, documentos de entrada por NF-e). Nada por título.
+    // Constante e sem consulta por título: candidatos (documentos de entrada, títulos por NF-e, títulos
+    // por número), persistidos, sugestões (janela do fornecedor), dono financeiro em lote.
     assert.deepEqual(fake.queries, [
       "order.findUnique",
+      "raw:stockDocumentsPointingToOrders",
       "link.findMany",
-      "stockDocument.findMany",
+      "accountsPayable.findMany",
+      "raw:payablesByDocumentNumber",
       "accountsPayable.findMany",
       "link.findMany",
-      "order.findMany",
-      "order.findMany",
+      "raw:ordersDeclaringInvoices",
+      "raw:ordersBySupplierScope",
       "stockDocument.findMany",
     ]);
   });
@@ -426,8 +452,151 @@ describe("buildPurchaseOrderPayableReconciliationForOrder", () => {
   });
 });
 
+describe("simetria auto-link direto × descoberta global de ownership", () => {
+  const X = 501;
+  const title = () => apRow(9001, { sourceInvoiceId: X, amountPayable: new Dec(10000), amountPaid: new Dec(10000), balancePayable: new Dec(0), paymentDate: NOW, settlementDate: NOW });
+
+  /** TODAS as formas aceitas pelo extrator canônico (`extractDirectNomusNfeRefs` → `toInt`). */
+  const NFE_SHAPES: Array<[string, unknown]> = [
+    ["nfes[].id numérico (canônico)", [{ id: X, numero: "501" }]],
+    ["nfes[].id texto", [{ id: "501" }]],
+    ["nfes[].id texto com zeros à esquerda", [{ id: "0501" }]],
+    ["nfes[].id texto com sufixo (toInt ignora não dígitos)", [{ id: "501/A" }]],
+    ["nfes[].idNfe", [{ idNfe: X }]],
+    ["nfes[].externalId", [{ externalId: "501" }]],
+    ["nfes[] escalar numérico", [X]],
+    ["nfes[] escalar texto", ["501"]],
+    ["nfes[].id nulo cai para idNfe (primeira chave não nula)", [{ id: null, idNfe: X }]],
+  ];
+
+  for (const [label, nfes] of NFE_SHAPES) {
+    it(`forma "${label}": pedido é reconhecido pelo direto E descoberto pelo global`, async () => {
+      const fake = createDb({ orders: [orderWith(ORDER, { nfes })], payables: [title()] });
+      const direct = await directClaims(fake);
+      const global = await globalClaims(fake, [title()]);
+      assert.deepEqual(direct, [`${ORDER_ID}|9001|DIRECT_NOMUS_NFE`]);
+      assert.deepEqual(global, direct);
+      const view = await buildPurchaseOrderPayableReconciliationForOrder(ORDER_ID, { db: fake.db, now: NOW });
+      assert.equal(view.unassignedPayables[0]?.ownership.kind, "AUTO_SINGLE_OWNER");
+      assert.equal(view.totals.paidAmount, 10000);
+    });
+  }
+
+  it("forma NÃO aceita pelo extrator (id sem dígitos) não gera candidato em nenhum dos dois lados", async () => {
+    const fake = createDb({ orders: [orderWith(ORDER, { nfes: [{ id: "abc", idNfe: X }] })], payables: [title()] });
+    // `id` presente e não nulo vence, mesmo sem dígitos: não cai para idNfe (regra do extrator).
+    assert.deepEqual(await directClaims(fake), []);
+    assert.deepEqual(await globalClaims(fake, [title()]), []);
+  });
+
+  it("MISTO: PO A com nfes[].id canônico + PO B com forma alternativa da MESMA NF-e → AUTO_CONFLICT; ninguém conta", async () => {
+    const alternatives: unknown[] = [[{ idNfe: "0501" }], [{ externalId: X }], ["501"], [X]];
+    for (const nfes of alternatives) {
+      const fake = createDb({ orders: [ORDER, orderWith(OTHER_ORDER, { nfes })], payables: [title()] });
+      const direct = await directClaims(fake);
+      assert.deepEqual(direct, [`${ORDER_ID}|9001|DIRECT_NOMUS_NFE`, `${OTHER_ORDER_ID}|9001|DIRECT_NOMUS_NFE`]);
+      assert.deepEqual(await globalClaims(fake, [title()]), direct);
+      const viewA = await buildPurchaseOrderPayableReconciliationForOrder(ORDER_ID, { db: fake.db, now: NOW });
+      const viewB = await buildPurchaseOrderPayableReconciliationForOrder(OTHER_ORDER_ID, { db: fake.db, now: NOW });
+      for (const view of [viewA, viewB]) {
+        assert.equal(view.unassignedPayables[0].ownership.kind, "AUTO_CONFLICT", JSON.stringify(nfes));
+        assert.equal(view.unassignedPayables[0].countsForThisOrder, false);
+        assert.equal(view.totals.paidAmount, 0);
+        assert.equal(view.fullySettled, false);
+      }
+      const financial = await loadOrderFinancialPayablesWithOwnership(fake.orders, { db: fake.db });
+      assert.equal(financial.ownership.get(9001)!.kind, "AUTO_CONFLICT", "listagem/360 veem o mesmo conflito");
+    }
+  });
+
+  it("camada 2 (documento de entrada): idPedidoCompra/idPedido/pedidoCompraId, número ou texto, primeira chave vence — direto == global", async () => {
+    const docs: Array<[string, Record<string, unknown>, boolean]> = [
+      ["idPedidoCompra numérico", { idPedidoCompra: 613 }, true],
+      ["idPedidoCompra texto", { idPedidoCompra: "613" }, true],
+      ["idPedidoCompra texto com zeros", { idPedidoCompra: "000613" }, true],
+      ["idPedido numérico", { idPedido: 613 }, true],
+      ["pedidoCompraId texto", { pedidoCompraId: "613" }, true],
+      ["idPedidoCompra de OUTRO pedido + idPedido deste: primeira chave vence → não é deste", { idPedidoCompra: 999, idPedido: 613 }, false],
+    ];
+    for (const [label, rawJson, expected] of docs) {
+      const fake = createDb({
+        orders: [orderWith(ORDER, { nfes: [] })],
+        payables: [apRow(9002, { sourceInvoiceId: 777 })],
+        stockDocuments: [{ idNfe: 777, isCancelled: false, rawJson }],
+      });
+      const direct = await directClaims(fake);
+      const global = await globalClaims(fake, [apRow(9002, { sourceInvoiceId: 777 })]);
+      assert.deepEqual(direct, expected ? [`${ORDER_ID}|9002|STOCK_DOCUMENT_PURCHASE_ORDER`] : [], label);
+      assert.deepEqual(global, direct, label);
+    }
+    // Cancelado não liga em nenhum lado.
+    const cancelled = createDb({
+      orders: [orderWith(ORDER, { nfes: [] })],
+      payables: [apRow(9002, { sourceInvoiceId: 777 })],
+      stockDocuments: [{ idNfe: 777, isCancelled: true, rawJson: { idPedidoCompra: 613 } }],
+    });
+    assert.deepEqual(await directClaims(cancelled), []);
+    assert.deepEqual(await globalClaims(cancelled, [apRow(9002, { sourceInvoiceId: 777 })]), []);
+  });
+
+  it("camada 3 (número do pedido no título): normalização e fornecedor iguais nos dois lados", async () => {
+    const cases: Array<[string, Record<string, unknown>, boolean]> = [
+      ["número exato", { documentNumber: "PC00612" }, true],
+      ["minúsculas e separador", { documentNumber: "pc-00612" }, true],
+      ["ID do pedido com zeros à esquerda", { documentNumber: "000613" }, true],
+      ["outro fornecedor", { documentNumber: "PC00612", personId: 999, personCnpj: "99999999000199" }, false],
+      ["fornecedor sem ID Nomus, CNPJ igual", { documentNumber: "PC00612", personId: null }, true],
+      ["número parecido, não idêntico", { documentNumber: "PC006120" }, false],
+    ];
+    for (const [label, extra, expected] of cases) {
+      const row = apRow(9003, { dueDate: new Date(2031, 0, 1), ...extra });
+      const fake = createDb({ orders: [orderWith(ORDER, { nfes: [] })], payables: [row] });
+      const direct = await directClaims(fake);
+      assert.deepEqual(direct, expected ? [`${ORDER_ID}|9003|AP_DOCUMENT_NUMBER`] : [], label);
+      assert.deepEqual(await globalClaims(fake, [row]), direct, label);
+    }
+  });
+
+  it("PARIDADE estrutural: para um universo misto de pedidos/documentos/títulos, direto == global (por título, pedido e método)", async () => {
+    const payables = [
+      apRow(9001, { sourceInvoiceId: 501 }),
+      apRow(9002, { sourceInvoiceId: 777 }),
+      apRow(9003, { documentNumber: "pc00613" }),
+      apRow(9004, { sourceInvoiceId: 888, documentNumber: "PC00612" }),
+      apRow(9005, { personId: 300, personCnpj: "30000000000100", sourceInvoiceId: 502 }),
+      apRow(9006, { documentNumber: "615" }),
+    ];
+    const fake = createDb({
+      orders: [
+        ORDER,
+        orderWith(OTHER_ORDER, { nfes: ["0501", { externalId: 888 }] }),
+        orderWith(OTHER_ORDER, { id: THIRD_ORDER_ID, externalId: 615, orderNumber: "PC00614", supplierExternalId: 300, supplierTaxId: "30000000000100", nfes: [{ id: null, idNfe: 502 }] }),
+      ],
+      stockDocuments: [
+        { idNfe: 777, isCancelled: false, rawJson: { idPedidoCompra: "614" } },
+        { idNfe: 777, isCancelled: false, rawJson: { pedidoCompraId: 613 } },
+        { idNfe: 502, isCancelled: false, rawJson: { idPedidoCompra: 613 } },
+      ],
+      payables,
+    });
+    const direct = await directClaims(fake);
+    const global = await globalClaims(fake, payables);
+    assert.deepEqual(global, direct);
+    assert.ok(direct.length >= 6, `universo cobre todas as camadas: ${direct.join(", ")}`);
+    // E o dono financeiro resolve conflitos onde há mais de um pedido por título.
+    const financial = await loadOrderFinancialPayablesWithOwnership(fake.orders, { db: fake.db });
+    assert.equal(financial.ownership.get(9001)!.kind, "AUTO_CONFLICT", "NF-e 501 em A (id) e B ('0501')");
+    assert.equal(financial.ownership.get(9002)!.kind, "AUTO_CONFLICT", "NF-e 777 aponta A (pedidoCompraId) e B (idPedidoCompra)");
+    assert.equal(financial.ownership.get(9003)!.ownerOrderId, OTHER_ORDER_ID);
+    assert.equal(financial.ownership.get(9004)!.kind, "AUTO_CONFLICT", "A por número do pedido, B por externalId da NF-e");
+    assert.equal(financial.ownership.get(9005)!.kind, "AUTO_CONFLICT", "C por idNfe (fornecedor 300) e A por documento de entrada da NF-e 502");
+    assert.equal(financial.ownership.get(9006), undefined, "ID 615 é do pedido C, mas o título é do fornecedor 215 ≠ 300: nenhum candidato, sem dono");
+    assert.ok(!direct.some((key) => key.includes("|9006|")), "camada 3 exige o mesmo fornecedor nos dois lados");
+  });
+});
+
 describe("cardinalidade V1 — dono financeiro na aba Financeiro (evidências de outros pedidos)", () => {
-  const BOTH_DECLARE_501 = [ORDER, { ...OTHER_ORDER, rawPayload: { ...OTHER_ORDER.rawPayload, nfes: [{ id: 501, numero: "501" }] } }];
+  const BOTH_DECLARE_501 = [ORDER, orderWith(OTHER_ORDER, { nfes: [{ id: 501, numero: "501" }] })];
 
   it("I. confirmado em A + NF-e do mesmo título em B → só A conta; em B fica visível como 'vinculado a outro pedido'", async () => {
     const paid = apRow(9001, { sourceInvoiceId: 501, amountPayable: new Dec(10000), amountPaid: new Dec(10000), balancePayable: new Dec(0), paymentDate: NOW, settlementDate: NOW });
@@ -564,7 +733,7 @@ describe("confirmPurchaseOrderPayableLink", () => {
 
   it("título de outro fornecedor: 409 PAYABLE_SUPPLIER_MISMATCH; inexistente: 404; fora da janela: 409", async () => {
     const fake = createDb({
-      payables: [apRow(9301, { personId: 999 }), apRow(9302, { dueDate: new Date(2031, 0, 1) })],
+      payables: [apRow(9301, { personId: 999, personCnpj: "99999999000199" }), apRow(9302, { dueDate: new Date(2031, 0, 1) })],
     });
     const run = (body: Record<string, unknown>) => codeOf(() => confirmPurchaseOrderPayableLink(ORDER_ID, ACTOR, body, { db: fake.db, now: NOW }));
     assert.equal(await run({ payableExternalId: 9301, reason: "x" }), "PAYABLE_SUPPLIER_MISMATCH:409");
@@ -661,7 +830,7 @@ describe("cardinalidade V1 — segundo dono financeiro é recusado (409, nunca 5
 
   it("evidência automática de outro pedido NÃO bloqueia a confirmação: o vínculo confirmado passa a ter precedência", async () => {
     const fake = createDb({
-      orders: [ORDER, { ...OTHER_ORDER, rawPayload: { ...OTHER_ORDER.rawPayload, nfes: [{ id: 501 }] } }],
+      orders: [ORDER, orderWith(OTHER_ORDER, { nfes: [{ id: 501 }] })],
       payables: [apRow(9450, { sourceInvoiceId: 501 })],
     });
     const view = await confirmPurchaseOrderPayableLink(ORDER_ID, ACTOR, { payableExternalId: 9450, reason: "conferido: NF é deste pedido" }, { db: fake.db, now: NOW });
@@ -736,7 +905,7 @@ describe("loadConfirmedPayableSnapshotsByOrder", () => {
         { payableExternalId: 9702, nomusPurchaseOrderId: OTHER_ORDER_ID },
       ],
     });
-    const map = await loadConfirmedPayableSnapshotsByOrder([ORDER_ID, OTHER_ORDER_ID, "33333333-3333-4333-8333-333333333333"], { db: fake.db });
+    const map = await loadConfirmedPayableSnapshotsByOrder([ORDER_ID, OTHER_ORDER_ID, THIRD_ORDER_ID], { db: fake.db });
     assert.deepEqual(fake.queries, ["link.findMany", "accountsPayable.findMany"]);
     assert.equal(map.get(ORDER_ID)?.[0].externalId, 9701);
     assert.equal(map.get(OTHER_ORDER_ID)?.[0].externalId, 9702);
@@ -748,57 +917,74 @@ describe("loadConfirmedPayableSnapshotsByOrder", () => {
   });
 });
 
-describe("resolvePayableOwnershipForOrderPayables — listagem/360 usam a mesma autoridade, em lote", () => {
-  const snapshot = (externalId: number, extra: Record<string, unknown> = {}) => ({
-    externalId,
-    sourceInvoiceId: 501,
-    sourceInvoiceNumber: "501",
-    documentNumber: null,
-    personId: 215,
-    personName: "ACME",
-    personCnpj: "12345678000190",
-    dueDate: NOW,
-    paymentDate: null,
-    settlementDate: null,
-    amountPayable: 100,
-    amountPaid: 0,
-    balancePayable: 100,
-    paymentMethodName: null,
-    description: null,
-    comments: null,
-    classification: null,
-    nomusStatus: true,
-    suspendPayment: false,
-    ...extra,
-  });
-
-  it("página com N pedidos: consultas constantes; NF-e em dois pedidos vira conflito; confirmado fora da página vence", async () => {
-    const third = { ...OTHER_ORDER, id: "33333333-3333-4333-8333-333333333333", externalId: 615, orderNumber: "PC00614", rawPayload: { ...OTHER_ORDER.rawPayload, id: 615, nfes: [{ id: 502 }] } };
+describe("loadOrderFinancialPayablesWithOwnership — listagem/360 com a MESMA entrada financeira da aba", () => {
+  it("página com N pedidos: consultas constantes; camadas 1–3 + confirmados; conflito e dono fora da página resolvidos", async () => {
+    const third = orderWith(OTHER_ORDER, { id: THIRD_ORDER_ID, externalId: 615, orderNumber: "PC00614", nfes: [{ id: 502 }] });
     const fake = createDb({
-      orders: [ORDER, { ...OTHER_ORDER, rawPayload: { ...OTHER_ORDER.rawPayload, nfes: [{ id: 501 }] } }, third],
-      links: [{ payableExternalId: 9802, nomusPurchaseOrderId: third.id }],
+      orders: [ORDER, orderWith(OTHER_ORDER, { nfes: [{ id: 501 }] }), third],
+      payables: [
+        apRow(9801, { sourceInvoiceId: 501 }),
+        apRow(9802, { sourceInvoiceId: 502 }),
+        apRow(9803, { documentNumber: "PC00613", dueDate: new Date(2031, 0, 1) }),
+        apRow(9804, { sourceInvoiceId: 777 }),
+      ],
+      stockDocuments: [{ idNfe: 777, isCancelled: false, rawJson: { idPedidoCompra: 613 } }],
+      links: [{ payableExternalId: 9802, nomusPurchaseOrderId: THIRD_ORDER_ID }],
     });
-    const resolution = await resolvePayableOwnershipForOrderPayables(
-      {
-        payablesByOrder: new Map([
-          [ORDER_ID, [snapshot(9801), snapshot(9802, { sourceInvoiceId: 502 })]],
-          [OTHER_ORDER_ID, [snapshot(9801)]],
-        ]),
-        confirmedByOrder: new Map(),
-      },
-      { db: fake.db }
+    const page = [ORDER, fake.orders[1]];
+    const { payablesByOrder, ownership } = await loadOrderFinancialPayablesWithOwnership(page, { db: fake.db });
+    assert.deepEqual(payablesByOrder.get(ORDER_ID)!.map((r) => r.externalId).sort(), [9801, 9804], "NF-e (1) + documento de entrada (2)");
+    assert.deepEqual(payablesByOrder.get(OTHER_ORDER_ID)!.map((r) => r.externalId).sort(), [9801, 9803], "NF-e (1) + número do pedido (3)");
+    assert.equal(ownership.get(9801)!.kind, "AUTO_CONFLICT");
+    assert.equal(ownership.get(9804)!.ownerOrderId, ORDER_ID);
+    assert.equal(ownership.get(9803)!.ownerOrderId, OTHER_ORDER_ID);
+    assert.deepEqual(
+      fake.queries,
+      [
+        "raw:stockDocumentsPointingToOrders",
+        "link.findMany",
+        "accountsPayable.findMany",
+        "raw:payablesByDocumentNumber",
+        "link.findMany",
+        "raw:ordersDeclaringInvoices",
+        "raw:ordersBySupplierScope",
+        "stockDocument.findMany",
+      ],
+      "sem consulta por pedido nem por título"
     );
-    assert.equal(resolution.ownership.get(9801)!.kind, "AUTO_CONFLICT");
-    assert.equal(resolution.ownership.get(9802)!.kind, "CONFIRMED_OWNER");
-    assert.equal(resolution.ownership.get(9802)!.ownerOrderId, third.id, "vínculo confirmado fora da página vence a NF-e da página");
-    assert.equal(resolution.orderNumbersById.get(third.id), "PC00614");
-    assert.deepEqual(fake.queries, ["link.findMany", "order.findMany", "stockDocument.findMany"], "sem consulta por pedido nem por título");
   });
 
-  it("sem títulos: nenhuma consulta", async () => {
+  it("aba e listagem produzem os mesmos títulos que contam para o pedido", async () => {
+    const fake = createDb({
+      orders: [ORDER, OTHER_ORDER],
+      payables: [
+        apRow(9811, { sourceInvoiceId: 501, amountPaid: new Dec(1136.68), balancePayable: new Dec(0), settlementDate: NOW }),
+        apRow(9812, { documentNumber: "000613", dueDate: new Date(2031, 0, 1) }),
+        apRow(9813, { sourceInvoiceId: 777 }),
+        apRow(9814),
+      ],
+      stockDocuments: [{ idNfe: 777, isCancelled: false, rawJson: { idPedido: "613" } }],
+      links: [{ payableExternalId: 9814 }],
+    });
+    const tab = await buildPurchaseOrderPayableReconciliationForOrder(ORDER_ID, { db: fake.db, now: NOW });
+    const listing = await loadOrderFinancialPayablesWithOwnership([ORDER], { db: fake.db });
+    const tabIds = [...tab.installments.flatMap((i) => i.payables), ...tab.unassignedPayables]
+      .filter((row) => row.countsForThisOrder)
+      .map((row) => row.payableExternalId)
+      .sort();
+    const listingIds = listing.payablesByOrder
+      .get(ORDER_ID)!
+      .filter((row) => listing.ownership.get(row.externalId)?.ownerOrderId === ORDER_ID)
+      .map((row) => row.externalId)
+      .sort();
+    assert.deepEqual(tabIds, [9811, 9812, 9813, 9814]);
+    assert.deepEqual(listingIds, tabIds);
+  });
+
+  it("sem pedidos: nenhuma consulta", async () => {
     const fake = createDb({});
-    const resolution = await resolvePayableOwnershipForOrderPayables({ payablesByOrder: new Map(), confirmedByOrder: new Map() }, { db: fake.db });
-    assert.equal(resolution.ownership.size, 0);
+    const result = await loadOrderFinancialPayablesWithOwnership([], { db: fake.db });
+    assert.equal(result.ownership.size, 0);
     assert.deepEqual(fake.queries, []);
   });
 });

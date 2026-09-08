@@ -150,6 +150,19 @@ export function sumPlannedInstallmentsTotal(installments: PlannedInstallment[]):
   return seen ? Math.round(total * 100) / 100 : null;
 }
 
+/**
+ * AUTORIDADE ÚNICA das formas aceitas de NF-e em `rawPayload.nfes[]`:
+ *  - elemento escalar (número ou texto) → `toInt`;
+ *  - objeto: PRIMEIRA chave presente e não nula entre `id`, `idNfe`, `externalId` → `toInt`.
+ * `toInt` remove tudo que não é dígito/sinal e faz `parseInt` (ex.: "0501", "501/A" → 501).
+ * Consumida por: auto-link direto (camada 1), busca reversa/global de ownership
+ * (`nomusPurchaseOrderPayableLink.server.ts`), listagem/360 e testes. Nunca duplicar.
+ */
+export const NOMUS_PURCHASE_ORDER_NFE_ID_KEYS = ["id", "idNfe", "externalId"] as const;
+
+/** Chaves aceitas em `NomusStockDocument.rawJson` para o pedido apontado (primeira presente e não nula vence). */
+export const NOMUS_DOCUMENT_ENTRY_PURCHASE_ORDER_KEYS = ["idPedidoCompra", "idPedido", "pedidoCompraId"] as const;
+
 export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
   if (!raw || typeof raw !== "object") return [];
   const nfes = (raw as JsonObject).nfes;
@@ -163,7 +176,7 @@ export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
     }
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const obj = entry as JsonObject;
-    const id = pickFirstInt(obj, ["id", "idNfe", "externalId"]);
+    const id = pickFirstInt(obj, NOMUS_PURCHASE_ORDER_NFE_ID_KEYS);
     if (id == null) continue;
     out.push({
       externalId: id,
@@ -180,9 +193,23 @@ export function extractDirectNomusNfeRefs(raw: unknown): DirectNfeRef[] {
   });
 }
 
+/**
+ * IDs de NF-e declaradas no pedido — extrator canônico (camada 1 direta, busca
+ * reversa global e listagem usam ESTA função). Aceita o `rawPayload` inteiro ou
+ * só `{ nfes }` (projeção `rawPayload->'nfes'` da busca reversa).
+ */
+export function extractNomusPurchaseOrderNfeIds(raw: unknown): number[] {
+  return extractDirectNomusNfeRefs(raw).map((ref) => ref.externalId);
+}
+
+/**
+ * Pedido apontado por um documento de entrada — extrator canônico (camada 2 direta
+ * e reversa usam ESTA função): primeira chave presente e não nula entre
+ * `idPedidoCompra`, `idPedido`, `pedidoCompraId`, via `toInt`.
+ */
 export function extractDocumentEntryPurchaseOrderId(raw: unknown): number | null {
   if (!raw || typeof raw !== "object") return null;
-  return pickFirstInt(raw as JsonObject, ["idPedidoCompra", "idPedido", "pedidoCompraId"]);
+  return pickFirstInt(raw as JsonObject, NOMUS_DOCUMENT_ENTRY_PURCHASE_ORDER_KEYS);
 }
 
 export function extractPurchaseOrderHeaderFields(raw: unknown): Record<string, unknown> {

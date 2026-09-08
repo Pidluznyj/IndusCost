@@ -99,16 +99,37 @@ Regras derivadas:
   pedido vem com `confirmable = false` e a UI não oferece "Confirmar vínculo".
 - **Cancelado** continua fora dos totais mesmo sendo o dono; **título sumido
   do espelho** continua só aviso (sem inventar valor, status ou dono).
-- **Busca reversa em lote** (sem N+1): vínculos confirmados por título (1
-  consulta) + pedidos do mesmo fornecedor que declaram as NF-e dos títulos
-  (`rawPayload.nfes[].id`, filtro JSON, lotes de 100 NF-e) ou cujo número/ID
-  é o `documentNumber` do título, + documentos de entrada por `idNfe` →
-  `idPedidoCompra`. Cada pedido encontrado passa pelo mesmo
-  `resolveAutomaticPayableLinks` do caminho direto (paridade de regra). Escopo
-  deliberado: pedidos do mesmo fornecedor (ou sem fornecedor informado) — uma
-  NF-e/número de pedido pertence ao fornecedor. A listagem continua
-  apresentando NF-e + confirmados (camadas 2–3 só na aba), mas o **dono** é
-  decidido com todas as camadas: nunca conta em dois lugares.
+- **Simetria auto-link direto × descoberta global** (invariante:
+  `DIRECT_MATCH_CANDIDATES(título) == GLOBAL_OWNERSHIP_CANDIDATES(título)`):
+  ver seção abaixo. Aba, listagem/360 e busca reversa usam os mesmos
+  extratores canônicos; as consultas SQL são só pré-filtros superconjunto.
+
+### Simetria: uma autoridade de extração por camada
+
+| Camada | Extrator canônico (decide, em memória) | Pré-filtro SQL (superconjunto, nunca decide) |
+|--------|----------------------------------------|----------------------------------------------|
+| 1 `DIRECT_NOMUS_NFE` | `extractNomusPurchaseOrderNfeIds(rawPayload)` = `extractDirectNomusNfeRefs`: elemento escalar (número/texto) ou **primeira** chave não nula entre `id`, `idNfe`, `externalId`, via `toInt` (remove tudo que não é dígito e faz `parseInt`: "0501", "501/A" → 501) | reverso: `jsonb_array_elements(rawPayload->'nfes')` com `coalesce(e->>'id', e->>'idNfe', e->>'externalId', e #>> '{}')` → dígitos sem zeros à esquerda `LIKE 'N%'` (qualquer fornecedor, como o direto) |
+| 2 `STOCK_DOCUMENT_PURCHASE_ORDER` | `extractDocumentEntryPurchaseOrderId(rawJson)`: primeira chave não nula entre `idPedidoCompra`, `idPedido`, `pedidoCompraId`, via `toInt`; documento não cancelado com `idNfe` | direto: mesmo `coalesce` das três chaves → dígitos `LIKE 'externalId%'`; reverso: documentos por `idNfe` dos títulos |
+| 3 `AP_DOCUMENT_NUMBER` | `resolveAutomaticPayableLinks`: `normalizeDocumentNumber(documentNumber)` = número/ID do pedido normalizado **e** `isSameSupplier` (ID Nomus; sem ID, CNPJ) | direto: títulos do escopo de fornecedor com `documentNumber` normalizado em SQL (`upper`, só `[A-Z0-9]`, sem zeros à esquerda) igual às chaves; reverso: pedidos do escopo de fornecedor (ID ou CNPJ) |
+
+Por que "dígitos sem zeros à esquerda por prefixo" é superconjunto de `toInt`:
+`parseInt` lê a sequência inicial de dígitos (após sinal) da grafia sem
+não-dígitos; os dígitos completos, sem zeros à esquerda, começam por esse
+valor. Falsos positivos do pré-filtro caem no extrator; falsos negativos são
+impossíveis para IDs positivos. Não há fuzzy, nome, "mais forte" nem "primeiro
+encontrado": formas novas só entram alterando o extrator canônico — e o teste
+de paridade (`nomusPurchaseOrderPayableLink.server.test.ts`, "simetria")
+compara o conjunto direto com o global para todas as formas aceitas, inclusive
+o caso misto (PO A com `nfes[].id`, PO B com forma alternativa da mesma NF-e →
+`AUTO_CONFLICT`, ninguém conta).
+
+Entrada financeira da **listagem e do 360** =
+`loadOrderFinancialPayablesWithOwnership` = candidatos automáticos das
+camadas 1–3 (`loadAutomaticPayableCandidatesForOrders`, o MESMO lote usado
+pela aba) + vínculos confirmados, com o dono global. A listagem não soma nem
+classifica com regra própria: total/status/quitado são iguais aos da aba. A
+janela ±400 dias do fornecedor alimenta apenas sugestões (camada 4) e não é
+entrada de vínculo automático em nenhum caminho.
 
 ### RATEIO FUTURO
 
@@ -162,19 +183,23 @@ financeiro; `details.ownerOrderId`/`ownerOrderNumber`) (409).
 ## Consultas (por pedido, número constante)
 
 1. pedido (`findUnique`)
-2. vínculos persistidos do pedido
-3. documentos de entrada que apontam o pedido (`rawJson.idPedidoCompra`)
-4. títulos candidatos — **uma** consulta com `OR`: NF-e do pedido, títulos já
-   vinculados, fornecedor dentro da janela de vencimento (±400 dias das
-   parcelas), fornecedor + `documentNumber` = número do pedido (limite 500)
+2. candidatos automáticos (mesmo lote da listagem): documentos de entrada que
+   apontam o pedido (pré-filtro SQL superconjunto), títulos por NF-e (direta +
+   documento de entrada), títulos por `documentNumber` normalizado no escopo
+   do fornecedor (pré-filtro SQL)
+3. vínculos persistidos do pedido
+4. títulos para sugestão: já vinculados + fornecedor dentro da janela de
+   vencimento (±400 dias das parcelas, limite 500)
 5. dono financeiro dos candidatos, em lote: vínculos confirmados por título
-   (qualquer pedido), pedidos do fornecedor que declaram as NF-e dos títulos
-   (por lote de 100 NF-e), pedidos do fornecedor com número = `documentNumber`,
-   documentos de entrada por `idNfe` (+ pedidos apontados, se ainda não
-   carregados)
+   (qualquer pedido), pedidos que declaram as NF-e dos títulos (qualquer
+   fornecedor, pré-filtro SQL superconjunto), pedidos do escopo de fornecedor
+   (camada 3), documentos de entrada por `idNfe` (+ pedidos apontados, se ainda
+   não carregados)
 
-Listagem/360: as mesmas consultas de dono em lote para a página inteira
-(nenhuma consulta por pedido nem por título).
+Listagem/360: as mesmas consultas (2 e 5) em lote para a página inteira —
+nenhuma consulta por pedido nem por título. Os pré-filtros SQL são varreduras
+indexáveis/limitadas (`LIMIT`) sobre pedidos, documentos de entrada e títulos;
+nunca `for título → varrer pedidos`.
 
 ## Migração
 

@@ -134,8 +134,9 @@ function createDb(options: { orderExists?: boolean; payableOwnedElsewhere?: numb
   const db = {
     nomusPurchaseOrder: {
       findUnique: async () => (options.orderExists === false ? null : ORDER),
-      findMany: async () => [],
     },
+    /** Pré-filtros SQL (superconjunto) devolvem vazio: a decisão é do extrator canônico em memória. */
+    $queryRaw: async () => [],
     nomusStockDocument: { findMany: async () => [] },
     nomusAccountsPayable: {
       findMany: async () => (payable ? [payable] : []),
