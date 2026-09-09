@@ -37,7 +37,9 @@ import {
   fetchPurchaseOrderSupplierEvaluation,
   fetchSupplierPerformanceDetail,
 } from "@/src/lib/purchasing/supplierPerformanceClient";
+import { SUPPLIER_ORDERS_NO_CONSOLIDATED_SCORE_NOTE } from "@/src/lib/purchasing/supplierNomusOrders";
 import { PurchaseOrderSupplierEvaluationForm } from "./PurchaseOrderSupplierEvaluationForm";
+import { SupplierNomusOrdersSection, SupplierOrderOriginBadge } from "./SupplierNomusOrdersSection";
 
 const PO_STATUS_LABEL: Record<string, string> = {
   RASCUNHO: "Rascunho",
@@ -186,8 +188,12 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
           Desempenho do fornecedor
         </h4>
         <p className="mt-1 text-xs text-muted-foreground">
-          Consolidado das avaliações dos Pedidos de Compra recebidos ou encerrados.
-          A nota não é editável aqui — ela é derivada dos pedidos.
+          Duas origens lado a lado: <strong>Pedidos IndusCost</strong> (Pedidos de Compra recebidos ou
+          encerrados) e <strong>Pedidos Nomus</strong> (espelho Nomus atribuído pela identidade oficial).
+          A nota não é editável aqui — ela é derivada dos pedidos de cada origem.
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground" data-testid="supplier-performance-no-consolidated-note">
+          {SUPPLIER_ORDERS_NO_CONSOLIDATED_SCORE_NOTE}
         </p>
       </div>
 
@@ -257,7 +263,14 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
         </div>
       ) : !data ? null : (
         <>
-          {/* Cards consolidados */}
+          <div className="flex flex-wrap items-center gap-2" data-testid="supplier-performance-internal-section">
+            <h5 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              Pedidos IndusCost
+            </h5>
+            <SupplierOrderOriginBadge origin="INTERNAL" />
+          </div>
+
+          {/* Cards consolidados — SÓ da origem IndusCost (PurchaseOrder) */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <div className="rounded-xl border border-border bg-accent/20 p-4">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -366,6 +379,7 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
               <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3">Pedido</th>
+                  <th className="p-3">Origem</th>
                   <th className="p-3">Data</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Valor</th>
@@ -376,8 +390,8 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
               <tbody data-testid="supplier-performance-orders">
                 {data.orders.items.length === 0 ? (
                   <tr>
-                    <td className="p-4 text-sm text-muted-foreground" colSpan={6}>
-                      Nenhum pedido no período com este filtro.
+                    <td className="p-4 text-sm text-muted-foreground" colSpan={7}>
+                      Nenhum Pedido IndusCost no período com este filtro.
                     </td>
                   </tr>
                 ) : (
@@ -390,6 +404,9 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
                         >
                           {order.code}
                         </Link>
+                      </td>
+                      <td className="p-3">
+                        <SupplierOrderOriginBadge origin="INTERNAL" />
                       </td>
                       <td className="p-3 tabular-nums">{formatDate(order.referenceDate)}</td>
                       <td className="p-3">{PO_STATUS_LABEL[order.status] ?? order.status}</td>
@@ -458,6 +475,14 @@ export function SupplierPerformanceTab({ supplierId, supplierName, canEvaluate }
           </div>
         </>
       )}
+
+      {/* Pedidos Nomus — origem distinta, KPIs próprios, mesma régua; nunca se soma à origem IndusCost. */}
+      <SupplierNomusOrdersSection
+        supplierId={supplierId}
+        period={appliedPeriod}
+        evaluationStatus={evaluationStatus}
+        canEvaluate={canEvaluate}
+      />
     </div>
   );
 }

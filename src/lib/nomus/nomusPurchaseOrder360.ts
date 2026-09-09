@@ -284,10 +284,22 @@ export function resolvePurchaseOrderSupplier(
     source: "pedido",
   });
 
-  const exactAliases = input.aliases.filter(
+  // Aliases são contados por FORNECEDOR distinto, não por linha: o rebuild AP
+  // grava um alias por grafia de nome do mesmo externalSupplierId, e várias
+  // linhas do mesmo fornecedor não são ambiguidade. Ambíguo = 2+ fornecedores.
+  const exactAliasRows = input.aliases.filter(
     (row) =>
       input.supplierExternalId != null && row.externalSupplierId === input.supplierExternalId
   );
+  const exactAliasesBySupplier = new Map<string, (typeof exactAliasRows)[number]>();
+  for (const row of exactAliasRows) {
+    const current = exactAliasesBySupplier.get(row.financialSupplierId);
+    // Determinístico: prefere a linha com documento; empate mantém a primeira.
+    if (!current || (!current.document && row.document)) {
+      exactAliasesBySupplier.set(row.financialSupplierId, row);
+    }
+  }
+  const exactAliases = [...exactAliasesBySupplier.values()];
   if (exactAliases.length === 1) {
     const alias = exactAliases[0];
     return {

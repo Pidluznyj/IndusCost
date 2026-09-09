@@ -16,6 +16,7 @@ import type {
   SupplierEvaluationListSummaryDto,
 } from "./supplierPerformance";
 import type { SupplierPerformanceDetailCsvRow } from "./supplierPerformanceCsv";
+import type { SupplierNomusOrdersDetailResponse } from "./supplierNomusOrders";
 
 export type SupplierPerformanceReportPayload = SupplierPerformanceReportResponse & {
   methodology: { version: number; text: readonly string[] };
@@ -110,6 +111,28 @@ export function fetchSupplierPerformanceDetail(
   params.set("pageSize", String(input.pageSize));
   return fetchJsonOk<SupplierPerformanceDetailResponse>(
     `/api/supplier-performance/suppliers/${encodeURIComponent(supplierId)}?${params.toString()}`,
+    signal ? { signal } : undefined
+  );
+}
+
+/** Pedidos Nomus do fornecedor (aba Desempenho) — origem distinta do PurchaseOrder interno. */
+export function fetchSupplierNomusOrders(
+  supplierId: string,
+  input: {
+    period: SupplierPerformancePeriod;
+    evaluationStatus: SupplierPerformanceEvaluationStatusFilter;
+    page: number;
+    pageSize: number;
+  },
+  signal?: AbortSignal
+): Promise<SupplierNomusOrdersDetailResponse> {
+  const params = new URLSearchParams();
+  appendPeriod(params, input.period);
+  params.set("evaluationStatus", input.evaluationStatus);
+  params.set("page", String(input.page));
+  params.set("pageSize", String(input.pageSize));
+  return fetchJsonOk<SupplierNomusOrdersDetailResponse>(
+    `/api/supplier-performance/suppliers/${encodeURIComponent(supplierId)}/nomus-orders?${params.toString()}`,
     signal ? { signal } : undefined
   );
 }
