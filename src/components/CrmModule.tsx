@@ -1,5 +1,5 @@
 // src/components/CrmModule.tsx — CRM Comercial: cockpit comercial, carteira, perfil e timeline.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -1705,6 +1705,22 @@ export const CrmModule = () => {
     ]
   );
 
+  /**
+   * `buildSellerDashboardParams`/`loadSellerDashboard` trocam de identidade
+   * a cada resposta do dashboard (`sellerOptions`/`orderSellerOptions` são
+   * substituídos por um array novo em toda chamada, mesmo com o mesmo
+   * conteúdo). O efeito de ativação da aba abaixo usava essas funções
+   * diretamente no array de dependências: toda troca de identidade
+   * reexecutava o efeito, que buscava de novo, trocava a identidade nas
+   * options de novo, e assim por diante — loop infinito de fetch (a tela
+   * "piscando"). As refs sempre apontam para a versão mais recente das
+   * funções sem entrar na lista de dependências do efeito.
+   */
+  const buildSellerDashboardParamsRef = useRef(buildSellerDashboardParams);
+  buildSellerDashboardParamsRef.current = buildSellerDashboardParams;
+  const loadSellerDashboardRef = useRef(loadSellerDashboard);
+  loadSellerDashboardRef.current = loadSellerDashboard;
+
   const reloadSellerDashboard = useCallback(() => {
     const params = buildSellerDashboardParams();
     if (params === null) return;
@@ -1879,17 +1895,18 @@ export const CrmModule = () => {
       canCrmSeller &&
       !sellerNotLinked
     ) {
-      const params = buildSellerDashboardParams();
-      void loadSellerDashboard(params ?? undefined);
+      const params = buildSellerDashboardParamsRef.current();
+      void loadSellerDashboardRef.current(params ?? undefined);
     }
+    // buildSellerDashboardParams/loadSellerDashboard ficam de fora de propósito
+    // (chamadas via ref acima) — ver comentário na declaração das refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeCrmManagementTab,
     canCrmAny,
     canCrmGeneral,
     canCrmSeller,
-    buildSellerDashboardParams,
     loadManagementDashboard,
-    loadSellerDashboard,
     sellerNotLinked,
   ]);
 
