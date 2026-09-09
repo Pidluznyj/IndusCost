@@ -12,6 +12,7 @@ import {
 import { createSupplierCostCenterRulesBatchDefault } from "@/src/lib/financeSupplierCostCenterRules.js";
 import {
   createDefaultFinanceSupplierRebuildDeps,
+  buildSupplierMatchIndex,
   upsertFinancialSupplierAliases,
   upsertFinancialSupplierFromGroup,
 } from "@/src/lib/financeSupplierRebuild.js";
@@ -757,11 +758,15 @@ export function createDefaultUnclassifiedImportApplyDeps(user: {
       const existingRow = existing
         ? { ...existing, aliases: existing.aliases.map((a) => ({ ...a })) }
         : null;
+      // `existing` foi buscado por documento (ou por nome só quando o grupo não
+      // tem documento): não há outro dono possível do documento além dele, então
+      // o índice local basta para o plano de preenchimento seguro.
       const { supplier } = await upsertFinancialSupplierFromGroup(
         rebuildDeps,
         group,
         existingRow,
-        user
+        user,
+        { index: buildSupplierMatchIndex(existingRow ? [existingRow] : []) }
       );
       await upsertFinancialSupplierAliases(rebuildDeps, supplier, group, user);
       return { id: supplier.id, displayName: supplier.displayName };

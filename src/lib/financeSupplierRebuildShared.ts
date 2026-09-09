@@ -11,5 +11,7 @@ export const FINANCE_SUPPLIER_REBUILD_AUDIT_ACTION = {
   CREATE: "CREATE",
   UPDATE: "UPDATE",
   STATS_UPDATE: "STATS_UPDATE",
+  /** Preenchimento ADITIVO do documento (CNPJ/CPF) a partir de evidência oficial — nunca sobrescreve. */
+  DOCUMENT_ENRICH: "DOCUMENT_ENRICH",
   BATCH_APPLY: "BATCH_APPLY",
 } as const;

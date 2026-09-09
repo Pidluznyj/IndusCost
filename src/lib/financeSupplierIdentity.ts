@@ -42,8 +42,30 @@ export type FinanceSupplierApGroup = {
   aliasKey: string;
   confidence: FinanceSupplierConfidenceLevel;
   records: AccountsPayableSupplierRecord[];
+  /**
+   * Identidade CONSOLIDADA de todos os títulos do grupo (ver
+   * reconcileSupplierGroupIdentity). Independe da ordem de leitura do AP:
+   * o primeiro título lido não decide o documento do fornecedor.
+   */
   extracted: ExtractedFinanceSupplier;
   recordCount: number;
+  /** Documentos normalizados distintos observados nos títulos do grupo (ordenados). */
+  documentCandidates: string[];
+  /** true quando o grupo observa mais de um documento distinto — nenhum é adotado. */
+  documentConflict: boolean;
+};
+
+export const FINANCE_SUPPLIER_IDENTITY_WARNINGS = {
+  CONFLICTING_DOCUMENTS: "CONFLICTING_DOCUMENTS",
+  CONFLICTING_EXTERNAL_IDS: "CONFLICTING_EXTERNAL_IDS",
+} as const;
+
+export type ReconciledSupplierGroupIdentity = {
+  extracted: ExtractedFinanceSupplier;
+  documentCandidates: string[];
+  documentConflict: boolean;
+  externalIdCandidates: number[];
+  externalIdConflict: boolean;
 };
 
 export type FinanceSupplierDuplicateKind =
@@ -266,10 +288,148 @@ export function resolveSupplierConfidence(
   return "LOW";
 }
 
+/** Grafia canônica entre as observadas de um mesmo documento: a mais curta (dígitos puros vencem a máscara), depois lexicográfica. */
+function pickCanonicalDocumentSpelling(spellings: Iterable<string>): string | null {
+  let best: string | null = null;
+  for (const spelling of spellings) {
+    const trimmed = spelling.trim();
+    if (!trimmed) continue;
+    if (
+      best == null ||
+      trimmed.length < best.length ||
+      (trimmed.length === best.length && trimmed < best)
+    ) {
+      best = trimmed;
+    }
+  }
+  return best;
+}
+
+/** Nome de exibição determinístico: o mais longo, depois lexicográfico. */
+function pickCanonicalName(names: Iterable<string>): string | null {
+  let best: string | null = null;
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    if (
+      best == null ||
+      trimmed.length > best.length ||
+      (trimmed.length === best.length && trimmed < best)
+    ) {
+      best = trimmed;
+    }
+  }
+  return best;
+}
+
+/**
+ * Reconcilia a identidade de UM grupo de títulos AP a partir de TODOS os
+ * títulos — nunca só do primeiro lido. Regras (determinísticas, independentes
+ * da ordem de entrada):
+ *
+ * - externalSupplierId: o único valor não nulo observado; mais de um distinto →
+ *   null + CONFLICTING_EXTERNAL_IDS (não acontece em grupos `nomus-id:*`, mas o
+ *   contrato é defensivo).
+ * - documento: exatamente UM documento normalizado distinto → adotado (grafia
+ *   canônica entre as observadas); mais de um → null + CONFLICTING_DOCUMENTS e
+ *   `documentCandidates` para diagnóstico. Nunca se inventa documento.
+ * - nome: o mais longo observado (empate: lexicográfico).
+ * - source: melhor origem observada (AP_FIELDS > RAW_PAYLOAD > FALLBACK).
+ * - warnings: união (sem duplicatas) + conflitos.
+ * - confidence: recalculada sobre a identidade consolidada.
+ */
+export function reconcileSupplierGroupIdentity(
+  records: AccountsPayableSupplierRecord[]
+): ReconciledSupplierGroupIdentity {
+  const ordered = [...records].sort((a, b) => {
+    const left = Number.isFinite(a.externalId) ? a.externalId : Number.MAX_SAFE_INTEGER;
+    const right = Number.isFinite(b.externalId) ? b.externalId : Number.MAX_SAFE_INTEGER;
+    return left - right;
+  });
+  const extractions = ordered.map(extractSupplierFromAccountsPayable);
+
+  const externalIds = new Set<number>();
+  const spellingsByDocument = new Map<string, Set<string>>();
+  const names = new Set<string>();
+  const warnings: string[] = [];
+  const sources = new Set<FinanceSupplierIdentitySource>();
+
+  for (const extracted of extractions) {
+    if (extracted.externalSupplierId != null) externalIds.add(extracted.externalSupplierId);
+    if (extracted.normalizedDocument) {
+      const spellings = spellingsByDocument.get(extracted.normalizedDocument) ?? new Set<string>();
+      if (extracted.originalDocument) spellings.add(extracted.originalDocument.trim());
+      spellingsByDocument.set(extracted.normalizedDocument, spellings);
+    }
+    if (extracted.originalName) names.add(extracted.originalName.trim());
+    for (const warning of extracted.warnings) {
+      if (!warnings.includes(warning)) warnings.push(warning);
+    }
+    sources.add(extracted.source);
+  }
+
+  const externalIdCandidates = [...externalIds].sort((a, b) => a - b);
+  const externalIdConflict = externalIdCandidates.length > 1;
+  const externalSupplierId = externalIdConflict ? null : externalIdCandidates[0] ?? null;
+
+  const documentCandidates = [...spellingsByDocument.keys()].sort();
+  const documentConflict = documentCandidates.length > 1;
+  const normalizedDocument = documentConflict ? null : documentCandidates[0] ?? null;
+  const originalDocument = normalizedDocument
+    ? pickCanonicalDocumentSpelling(spellingsByDocument.get(normalizedDocument) ?? []) ??
+      normalizedDocument
+    : null;
+
+  const originalName = pickCanonicalName(names);
+  const normalizedName = normalizeSupplierName(originalName);
+
+  let source: FinanceSupplierIdentitySource = sources.has("AP_FIELDS")
+    ? "AP_FIELDS"
+    : sources.has("RAW_PAYLOAD")
+      ? "RAW_PAYLOAD"
+      : "FALLBACK";
+
+  if (externalIdConflict) {
+    warnings.push(FINANCE_SUPPLIER_IDENTITY_WARNINGS.CONFLICTING_EXTERNAL_IDS);
+  }
+  if (documentConflict) {
+    warnings.push(FINANCE_SUPPLIER_IDENTITY_WARNINGS.CONFLICTING_DOCUMENTS);
+  }
+  if (externalSupplierId == null && !normalizedDocument && !normalizedName) {
+    source = "FALLBACK";
+    if (!warnings.includes("MISSING_SUPPLIER_IDENTITY")) warnings.push("MISSING_SUPPLIER_IDENTITY");
+  }
+
+  const extracted: ExtractedFinanceSupplier = {
+    originalName,
+    originalDocument,
+    normalizedName,
+    normalizedDocument,
+    externalSupplierId,
+    source,
+    confidence: "LOW",
+    warnings,
+  };
+  extracted.confidence = resolveSupplierConfidence(extracted);
+
+  return {
+    extracted,
+    documentCandidates,
+    documentConflict,
+    externalIdCandidates,
+    externalIdConflict,
+  };
+}
+
+/**
+ * Agrupa títulos AP por identidade (Nomus ID → documento → nome → fallback) e
+ * consolida a identidade de cada grupo com reconcileSupplierGroupIdentity.
+ * Resultado idêntico para qualquer permutação da entrada.
+ */
 export function groupAccountsPayableSuppliers(
   apRecords: AccountsPayableSupplierRecord[]
 ): FinanceSupplierApGroup[] {
-  const map = new Map<string, FinanceSupplierApGroup>();
+  const buckets = new Map<string, { aliasKey: string; records: AccountsPayableSupplierRecord[] }>();
 
   for (const record of apRecords) {
     if (!Number.isFinite(record.externalId)) continue;
@@ -278,24 +438,30 @@ export function groupAccountsPayableSuppliers(
     const identityKey = buildSupplierIdentityKey(extracted, record.externalId);
     const aliasKey = buildSupplierAliasKey(extracted, record.externalId);
 
-    const existing = map.get(identityKey);
-    if (existing) {
-      existing.records.push(record);
-      existing.recordCount += 1;
+    const bucket = buckets.get(identityKey);
+    if (bucket) {
+      bucket.records.push(record);
       continue;
     }
+    buckets.set(identityKey, { aliasKey, records: [record] });
+  }
 
-    map.set(identityKey, {
+  const groups: FinanceSupplierApGroup[] = [];
+  for (const [identityKey, bucket] of buckets) {
+    const reconciled = reconcileSupplierGroupIdentity(bucket.records);
+    groups.push({
       identityKey,
-      aliasKey,
-      confidence: extracted.confidence,
-      records: [record],
-      extracted,
-      recordCount: 1,
+      aliasKey: bucket.aliasKey,
+      confidence: reconciled.extracted.confidence,
+      records: bucket.records,
+      extracted: reconciled.extracted,
+      recordCount: bucket.records.length,
+      documentCandidates: reconciled.documentCandidates,
+      documentConflict: reconciled.documentConflict,
     });
   }
 
-  return [...map.values()].sort((a, b) => a.identityKey.localeCompare(b.identityKey));
+  return groups.sort((a, b) => a.identityKey.localeCompare(b.identityKey));
 }
 
 export function detectPotentialSupplierDuplicates(

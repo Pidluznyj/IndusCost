@@ -405,7 +405,9 @@ export async function ensureFinancialSupplierFromApIdentity(
   const index = buildSupplierMatchIndex(existingSuppliers);
   const existing = findExistingSupplierForGroup(group, index);
 
-  const { supplier, action } = await upsertFinancialSupplierFromGroup(deps, group, existing, user);
+  const { supplier, action } = await upsertFinancialSupplierFromGroup(deps, group, existing, user, {
+    index,
+  });
   await upsertFinancialSupplierAliases(deps, supplier, group, user);
 
   return {
