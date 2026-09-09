@@ -16,6 +16,12 @@ import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolid
 import { resolveSalesOrderHasInvoicing } from "@/src/lib/crmCommercialOrderRules.js";
 import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
 import {
+  CRM_HAS_ACTIVE_OWNER_WHERE,
+  EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS,
+  fetchCrmCustomersListQualityTotals,
+  fetchCrmOrderSellerPairs,
+} from "@/src/lib/crmCustomersListQualityTotals.js";
+import {
   buildCrmCustomersListSourceInfo,
   resolveCrmCustomersListPeriod,
   resolveCrmPortfolioStatus,
@@ -603,7 +609,7 @@ export function enrichLeadingProductsFromOrderItems(
   return leading;
 }
 
-function ownerDiffersFromOrderSellers(
+export function ownerDiffersFromOrderSellers(
   owner: ResolvedCustomerCommercialOwner | undefined,
   enrichment: SalesOrderEnrichment | undefined
 ): boolean {
@@ -626,6 +632,80 @@ function ownerDiffersFromOrderSellers(
     if (enrichment.orderSellerIdentityKeys.some((k) => k !== ownerKey)) return true;
   }
   return false;
+}
+
+/** Teto de clientes COM responsável ativo avaliados por chamada na contagem de divergência. */
+export const CRM_OWNER_SELLER_DIVERGENCE_MAX = 20000;
+
+export type CrmOwnerSellerDivergenceResult = {
+  count: number;
+  /** True quando havia mais clientes com responsável do que o teto avaliado. */
+  truncated: boolean;
+};
+
+/**
+ * Conta, no universo do filtro, os clientes cujo Responsável Comercial difere
+ * do vendedor Nomus dos pedidos.
+ *
+ * Reusa `ownerDiffersFromOrderSellers` — a MESMA função que decide a flag
+ * `hasOwnerSellerDivergence` de cada linha. A paridade card × linha é, portanto,
+ * por construção: não há normalização nem resolução de identidade duplicada em
+ * SQL. Uma tentativa anterior de expressar isso em SQL contava divergência para
+ * todo owner `__ID_ONLY__:N`, porque `loadManualCommercialOwnersForCustomers`
+ * sobrescreve `sellerIdentityKey` com o nome resolvido — o SQL via a coluna crua.
+ *
+ * Só clientes COM responsável ativo podem divergir, então o universo avaliado é
+ * esse subconjunto, ordenado de forma determinística.
+ */
+export async function fetchCrmOwnerSellerDivergenceCount(
+  prismaClient: PrismaClient,
+  where: Prisma.CustomerWhereInput
+): Promise<CrmOwnerSellerDivergenceResult> {
+  const ownerRows = await prismaClient.customer.findMany({
+    where: { AND: [where, CRM_HAS_ACTIVE_OWNER_WHERE] },
+    select: { id: true },
+    orderBy: { id: "asc" },
+    take: CRM_OWNER_SELLER_DIVERGENCE_MAX + 1,
+  });
+  const truncated = ownerRows.length > CRM_OWNER_SELLER_DIVERGENCE_MAX;
+  const ids = ownerRows.slice(0, CRM_OWNER_SELLER_DIVERGENCE_MAX).map((r) => r.id);
+  if (ids.length === 0) return { count: 0, truncated: false };
+
+  const [pairs, owners] = await Promise.all([
+    fetchCrmOrderSellerPairs(prismaClient, ids),
+    loadManualCommercialOwnersForCustomers(ids),
+  ]);
+
+  // Monta orderSeller* com a mesma regra de `enrichCustomersFromSalesOrders`:
+  // só pedidos com vendedor Nomus informado alimentam as listas de identidade.
+  const byCustomer = new Map<string, { keys: string[]; ids: number[] }>();
+  for (const p of pairs) {
+    const entry = byCustomer.get(p.customer_id) ?? { keys: [], ids: [] };
+    const name = p.nomus_seller_name?.trim() || p.responsible?.trim() || null;
+    if (name) {
+      const key = normalizeSellerIdentityName(name);
+      if (!entry.keys.includes(key)) entry.keys.push(key);
+    }
+    if (p.external_seller_id != null && !entry.ids.includes(p.external_seller_id)) {
+      entry.ids.push(p.external_seller_id);
+    }
+    byCustomer.set(p.customer_id, entry);
+  }
+
+  let count = 0;
+  for (const id of ids) {
+    const entry = byCustomer.get(id);
+    if (!entry) continue;
+    const enrichment = {
+      hasPurchaseHistory: true,
+      orderSellerIdentityKeys: entry.keys,
+      orderSellerExternalIds: entry.ids,
+      hasOrderWithoutNomusSeller: false,
+      ordersCount: entry.ids.length,
+    } as unknown as SalesOrderEnrichment;
+    if (ownerDiffersFromOrderSellers(owners.get(id), enrichment)) count += 1;
+  }
+  return { count, truncated };
 }
 
 export function mapCustomerRowsToListItems(
@@ -799,10 +879,10 @@ function emptyListResponse(args: {
     },
     period: args.period,
     totals: {
-      customersWithoutCommercialOwner: 0,
-      customersWithoutPurchase: 0,
-      customersWithOrderWithoutNomusSeller: 0,
+      totalCustomersInScope: 0,
+      ...EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS,
       customersWithOwnerSellerDivergence: 0,
+      qualityTotalsTruncated: false,
     },
     sourceInfo: buildCrmCustomersListSourceInfo(args.period),
   };
@@ -856,23 +936,37 @@ export async function fetchCrmCustomersList(
   }
 
   const take = limit + 1;
-  const rows = await prisma.customer.findMany({
+  // Página e universo saem do MESMO `where`. Os totais nunca podem ser
+  // derivados de `rows`/`customers` — isso os prenderia ao tamanho da página
+  // (bug corrigido na auditoria 09/2026). `$transaction` na forma array dá um
+  // snapshot único, para que total e página não discordem sob concorrência.
+  const [rows, totalCustomersInScope] = await prisma.$transaction([
+    prisma.customer.findMany({
+      where,
+      orderBy: { companyName: "asc" },
+      skip: offset,
+      take,
+      select: {
+        id: true,
+        companyName: true,
+        tradeName: true,
+        taxId: true,
+        email: true,
+        phone: true,
+        city: true,
+        state: true,
+        address: true,
+      },
+    }),
+    prisma.customer.count({ where }),
+  ]);
+
+  const qualityTotals = await fetchCrmCustomersListQualityTotals(
+    prisma,
     where,
-    orderBy: { companyName: "asc" },
-    skip: offset,
-    take,
-    select: {
-      id: true,
-      companyName: true,
-      tradeName: true,
-      taxId: true,
-      email: true,
-      phone: true,
-      city: true,
-      state: true,
-      address: true,
-    },
-  });
+    totalCustomersInScope
+  );
+  const divergence = await fetchCrmOwnerSellerDivergenceCount(prisma, where);
 
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
@@ -1010,12 +1104,10 @@ export async function fetchCrmCustomersList(
     },
     period,
     totals: {
-      customersWithoutCommercialOwner: customers.filter((c) => !c.hasCommercialOwner).length,
-      customersWithoutPurchase: customers.filter((c) => !c.hasPurchaseHistory).length,
-      customersWithOrderWithoutNomusSeller: customers.filter((c) => c.hasOrderWithoutNomusSeller)
-        .length,
-      customersWithOwnerSellerDivergence: customers.filter((c) => c.hasOwnerSellerDivergence)
-        .length,
+      totalCustomersInScope,
+      ...qualityTotals,
+      customersWithOwnerSellerDivergence: divergence.count,
+      qualityTotalsTruncated: divergence.truncated,
     },
     sourceInfo: buildCrmCustomersListSourceInfo(period),
   };

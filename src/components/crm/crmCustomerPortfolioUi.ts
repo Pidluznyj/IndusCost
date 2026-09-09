@@ -106,6 +106,18 @@ export function buildActivePortfolioFilterChips(input: {
   return chips;
 }
 
+/**
+ * Resumo da LISTA EXIBIDA (página atual), não do universo do filtro.
+ *
+ * Os quatro números são deliberadamente page-scoped: servem de orientação no
+ * empty state, antes de o usuário escolher um cliente. Quem apresenta o
+ * universo do filtro é `totals` de `/api/crm/customers`
+ * (`totalCustomersInScope` e os sub-totais de qualidade), contados no banco
+ * com o mesmo `where` da página.
+ *
+ * Os rótulos na UI dizem "Na lista" justamente para não repetir o bug de
+ * apresentar contagem de página como total absoluto.
+ */
 export type PortfolioEmptySummary = {
   totalListed: number;
   withOpenPortfolio: number;

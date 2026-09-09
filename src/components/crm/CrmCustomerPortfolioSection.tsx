@@ -151,16 +151,35 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   });
   const listEmptyCopy = listEmptyKind ? crmPortfolioListEmptyCopy(listEmptyKind) : null;
 
+  // A lista é paginada: só é possível afirmar "nenhum pedido no período" quando
+  // a página exibida É o universo inteiro do filtro. Caso contrário o cliente
+  // com pedido pode estar na página seguinte.
+  const listIsWholeScope =
+    totals != null && totals.totalCustomersInScope <= customers.length;
   const customersWithoutPeriodOrders =
-    customers.length > 0 && customers.every((c) => (c.periodOrdersCount ?? 0) === 0);
+    customers.length > 0 &&
+    listIsWholeScope &&
+    customers.every((c) => (c.periodOrdersCount ?? 0) === 0);
 
   const auditMetrics = totals
     ? [
+        {
+          key: "scope-total",
+          label: "Total de clientes no filtro",
+          value: fmt(totals.totalCustomersInScope),
+          hint: "Universo completo do filtro aplicado — não é a contagem da página exibida.",
+        },
         {
           key: "no-owner",
           label: "Clientes sem responsável comercial",
           value: fmt(totals.customersWithoutCommercialOwner),
           hint: CRM_UI_TOOLTIPS.commercialOwner,
+        },
+        {
+          key: "no-purchase",
+          label: "Clientes sem compra",
+          value: fmt(totals.customersWithoutPurchase),
+          hint: "Clientes do filtro sem nenhum pedido válido no histórico (independe do período).",
         },
         {
           key: "no-nomus",
@@ -205,6 +224,17 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
       </div>
 
       <CrmCommercialSourceInfoNote sourceInfo={sourceInfo} />
+      {totals?.qualityTotalsTruncated ? (
+        <p
+          data-testid="crm-portfolio-truncated-warning"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
+        >
+          O filtro tem mais clientes com responsável do que o teto de avaliação:
+          apenas o indicador "responsável ≠ vendedor do pedido" cobre parte do
+          universo e está subestimado. Os demais números desta faixa são exatos.
+          Refine o filtro para fechar também esse indicador.
+        </p>
+      ) : null}
       {totals ? <CrmCommercialAuditStrip metrics={auditMetrics} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
