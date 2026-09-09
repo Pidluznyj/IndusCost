@@ -464,3 +464,46 @@ describe("nomusPurchaseOrder360 fiscal", () => {
     assert.equal(extractDocumentEntryPurchaseOrderId({ idPedidoCompra: 613 }), 613);
   });
 });
+
+describe("resolvePurchaseOrderSupplier — aliases por fornecedor distinto", () => {
+  const alias = (financialSupplierId: string, document: string | null = null) => ({
+    externalSupplierId: 10,
+    financialSupplierId,
+    displayName: `Fornecedor ${financialSupplierId}`,
+    document,
+    normalizedDocument: document,
+    normalizedName: null,
+  });
+
+  it("várias linhas de alias do MESMO fornecedor (uma por grafia de nome) não são ambiguidade", () => {
+    const resolved = resolvePurchaseOrderSupplier({
+      supplierExternalId: 10,
+      supplierName: "Alpha",
+      supplierTaxId: null,
+      aliases: [alias("a"), alias("a", "12345678000190"), alias("a")],
+      documents: [],
+      apIdentities: [],
+      nameCandidates: [],
+    });
+    assert.equal(resolved.matchMethod, "SUPPLIER_ALIAS");
+    assert.equal(resolved.matchConfidence, "EXACT");
+    assert.equal(resolved.financialSupplierId, "a");
+    assert.equal(resolved.ambiguous, false);
+    assert.equal(resolved.resolvedDocument, "12345678000190", "prefere a linha com documento");
+  });
+
+  it("o mesmo externalSupplierId em DOIS fornecedores continua ambíguo → UNRESOLVED (nunca cai para documento/nome)", () => {
+    const resolved = resolvePurchaseOrderSupplier({
+      supplierExternalId: 10,
+      supplierName: "Alpha",
+      supplierTaxId: "12345678000190",
+      aliases: [alias("a"), alias("b")],
+      documents: [{ financialSupplierId: "a", displayName: "A", document: "12345678000190", normalizedDocument: "12345678000190" }],
+      apIdentities: [],
+      nameCandidates: [],
+    });
+    assert.equal(resolved.matchMethod, "UNRESOLVED");
+    assert.equal(resolved.ambiguous, true);
+    assert.equal(resolved.financialSupplierId, null);
+  });
+});
