@@ -102,23 +102,31 @@ export const CrmCustomerPortfolioEmptyState: React.FC<CrmCustomerPortfolioEmptyS
       <p className="text-xs text-muted-foreground italic">{scopeLabel}</p>
     </div>
     {summary.totalListed > 0 ? (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-w-3xl mx-auto text-left">
-        <SummaryMetric label="Na lista" value={String(summary.totalListed)} icon={Target} />
-        <SummaryMetric
-          label="Carteira aberta"
-          value={String(summary.withOpenPortfolio)}
-          icon={Wallet}
-        />
-        <SummaryMetric
-          label="Follow-up atrasado"
-          value={String(summary.withOverdueFollowUp)}
-          icon={CalendarClock}
-        />
-        <SummaryMetric
-          label="Sem contato"
-          value={String(summary.withoutContact)}
-          icon={MessageSquare}
-        />
+      <div className="max-w-3xl mx-auto space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-left">
+          <SummaryMetric label="Na lista" value={String(summary.totalListed)} icon={Target} />
+          <SummaryMetric
+            label="Na lista: carteira aberta"
+            value={String(summary.withOpenPortfolio)}
+            icon={Wallet}
+          />
+          <SummaryMetric
+            label="Na lista: follow-up atrasado"
+            value={String(summary.withOverdueFollowUp)}
+            icon={CalendarClock}
+          />
+          <SummaryMetric
+            label="Na lista: sem contato"
+            value={String(summary.withoutContact)}
+            icon={MessageSquare}
+          />
+        </div>
+        {/* Estes quatro contam a lista exibida, não o universo do filtro. O
+            total do filtro fica na faixa de auditoria acima (totals do backend). */}
+        <p className="text-[11px] text-muted-foreground text-center">
+          Indicadores da lista exibida. O total do filtro aparece na faixa de auditoria
+          acima.
+        </p>
       </div>
     ) : null}
   </div>
