@@ -1,5 +1,6 @@
 import React from "react";
-import { Info } from "lucide-react";
+import { Info, type LucideIcon } from "lucide-react";
+import { cn } from "@/src/lib/utils";
 import {
   CRM_OFFICIAL_SOURCE_NOTE,
   collectCrmSourceWarnings,
@@ -57,11 +58,20 @@ export const CrmCommercialSourceInfoNote: React.FC<CrmCommercialSourceInfoNotePr
   );
 };
 
+/**
+ * Tom semântico do card — vocabulário único do CRM Comercial (mesmo em
+ * todas as telas): azul/neutro = contagem informativa; âmbar = precisa de
+ * atenção/ação; verde = saudável; vermelho = crítico.
+ */
+export type CrmAuditMetricTone = "neutral" | "info" | "warning" | "danger" | "success";
+
 export type CrmAuditMetric = {
   key: string;
   label: string;
   value: number | string;
   hint?: string;
+  tone?: CrmAuditMetricTone;
+  icon?: LucideIcon;
 };
 
 export type CrmCommercialAuditStripProps = {
@@ -69,7 +79,43 @@ export type CrmCommercialAuditStripProps = {
   metrics: CrmAuditMetric[];
 };
 
-/** Faixa compacta de auditoria (sem inventar números). */
+const AUDIT_TONE_STYLES: Record<
+  CrmAuditMetricTone,
+  { card: string; iconWrap: string; value: string }
+> = {
+  neutral: {
+    card: "border-slate-200 bg-slate-50/70",
+    iconWrap: "bg-slate-200/80 text-slate-700",
+    value: "text-slate-900",
+  },
+  info: {
+    card: "border-sky-200 bg-sky-50/70",
+    iconWrap: "bg-sky-100 text-sky-700",
+    value: "text-sky-950",
+  },
+  warning: {
+    card: "border-amber-200 bg-amber-50/80",
+    iconWrap: "bg-amber-100 text-amber-800",
+    value: "text-amber-950",
+  },
+  danger: {
+    card: "border-red-200 bg-red-50/80",
+    iconWrap: "bg-red-100 text-red-700",
+    value: "text-red-950",
+  },
+  success: {
+    card: "border-emerald-200 bg-emerald-50/80",
+    iconWrap: "bg-emerald-100 text-emerald-700",
+    value: "text-emerald-950",
+  },
+};
+
+/**
+ * Faixa de indicadores de auditoria — números do universo do filtro (nunca
+ * calculados no frontend, nunca inventados). Cor por card é só apresentação
+ * (`tone`); o significado semântico já vem decidido por quem monta cada
+ * métrica em cada tela.
+ */
 export const CrmCommercialAuditStrip: React.FC<CrmCommercialAuditStripProps> = ({
   title = "Auditoria da carteira",
   metrics,
@@ -77,23 +123,44 @@ export const CrmCommercialAuditStrip: React.FC<CrmCommercialAuditStripProps> = (
   if (metrics.length === 0) return null;
   return (
     <div
-      className="rounded-xl border border-border/70 bg-card/80 px-4 py-3 space-y-2"
+      className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 space-y-3 shadow-sm"
       data-testid="crm-commercial-audit-strip"
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {metrics.map((m) => (
-          <div
-            key={m.key}
-            className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2"
-            title={m.hint}
-          >
-            <p className="text-[10px] text-muted-foreground leading-snug">{m.label}</p>
-            <p className="text-sm font-semibold text-foreground tabular-nums mt-0.5">{m.value}</p>
-          </div>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {metrics.map((m) => {
+          const tone = AUDIT_TONE_STYLES[m.tone ?? "neutral"];
+          const Icon = m.icon ?? Info;
+          return (
+            <div
+              key={m.key}
+              className={cn(
+                "flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-shadow hover:shadow-sm",
+                tone.card
+              )}
+              title={m.hint}
+            >
+              <span className={cn("mt-0.5 shrink-0 rounded-lg p-2", tone.iconWrap)}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[11px] font-medium leading-snug text-muted-foreground">
+                  {m.label}
+                </span>
+                <span
+                  className={cn(
+                    "block text-xl font-bold tabular-nums leading-tight mt-0.5",
+                    tone.value
+                  )}
+                >
+                  {m.value}
+                </span>
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

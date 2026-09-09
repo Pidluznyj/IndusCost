@@ -1,5 +1,5 @@
 import React from "react";
-import { LayoutDashboard, Loader2, RefreshCw } from "lucide-react";
+import { GitCompare, LayoutDashboard, Link2, Loader2, RefreshCw, UserX } from "lucide-react";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
@@ -116,18 +116,24 @@ export const CrmManagementDashboardSection: React.FC<CrmManagementDashboardSecti
           label: "Pedidos sem vendedor no Nomus",
           value: fmt(data.summary.ordersWithoutNomusSeller),
           hint: CRM_UI_TOOLTIPS.orderSeller,
+          tone: "neutral" as const,
+          icon: Link2,
         },
         {
           key: "no-owner",
           label: "Clientes sem responsável comercial",
           value: fmt(data.summary.customersWithoutCommercialResponsible),
           hint: CRM_UI_TOOLTIPS.commercialOwner,
+          tone: "warning" as const,
+          icon: UserX,
         },
         {
           key: "divergence",
           label: "Pedidos com responsável ≠ vendedor do pedido",
           value: fmt(data.summary.ordersWithResponsibleDifferentFromOrderSeller),
           hint: "Entram na carteira do responsável comercial; Nomus permanece só para auditoria/comissão.",
+          tone: "warning" as const,
+          icon: GitCompare,
         },
       ]
     : [];
