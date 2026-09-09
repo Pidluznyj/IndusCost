@@ -49,10 +49,22 @@ grupo, determinística para qualquer permutação da entrada:
 
 | Ação | Quando |
 |---|---|
-| `SAFE_FILL` | cadastro **sem** documento; exatamente **um** candidato válido (11/14 dígitos) na evidência AP ∪ Pedidos Nomus; grupo amarrado a **este** fornecedor pelo `externalSupplierId` (alias); nenhum outro fornecedor ativo dono do documento |
+| `SAFE_FILL` | cadastro **sem** documento; exatamente **um** candidato válido (11/14 dígitos) na evidência AP ∪ Pedidos Nomus; grupo amarrado a **este** fornecedor por um `externalSupplierId` **exclusivo** dele; nenhum outro cadastro dono do documento **em qualquer status** |
 | `NO_CHANGE` | cadastro já tem o mesmo documento, ou não há evidência nova |
-| `CONFLICT` | candidatos distintos; documento existente diferente da evidência; documento já pertencente a outro fornecedor (**nunca merge**) |
+| `CONFLICT` | candidatos distintos; documento existente diferente da evidência; documento já pertencente a outro fornecedor (**nunca merge**); `externalSupplierId` reivindicado por dois cadastros |
 | `UNRESOLVED` | sem evidência, documento inválido, sem vínculo oficial (nome sozinho **nunca** autoriza), ou sem índice de matching (fail closed) |
+
+**Posse é independente de status.** `buildSupplierMatchIndex` continua ignorando
+`MERGED`/`INACTIVE` para *escolher* fornecedor, mas passou a expor dois mapas
+apurados sobre **todos** os cadastros — `documentOwnerIds` (documento no cadastro
+ou em alias) e `externalIdOwnerIds`. Um CNPJ guardado por um cadastro inativo
+continua sendo dele: preencher o mesmo CNPJ em outro fornecedor criaria a
+duplicidade que a regra proíbe e desligaria a chave por documento dos Pedidos
+Nomus (que conta donos em qualquer status).
+
+**Alias é aditivo.** `upsertFinancialSupplierAliases` roda uma vez por título do
+grupo; um título sem CNPJ não pode mais apagar (`COALESCE`) o documento que
+outro título já gravou no alias — esse documento é evidência de posse.
 
 Evidência adicional: `loadNomusOrderSupplierDocuments` (uma consulta agregada
 `groupBy(supplierExternalId, supplierTaxId)` no espelho Nomus — leitura pura).
@@ -84,7 +96,9 @@ Chaves seguras (mesma ordem do resolvedor oficial):
 
 1. `FinancialSupplierAlias.externalSupplierId` **exclusivo** do fornecedor;
    ids aliasados também a outro fornecedor são conflito e ficam de fora;
-2. `normalizedDocument` quando **um só** `FinancialSupplier` o possui;
+2. a **coluna** `FinancialSupplier.normalizedDocument` do próprio cadastro,
+   quando **um só** cadastro a possui (a contagem só é comparável quando a
+   própria linha entra nela; coluna vazia → chave desligada);
    pedidos com `supplierExternalId` aliasado a outro fornecedor são excluídos
    (o resolvedor prioriza o alias);
 3. **nunca** por nome; `FALLBACK`/`UNRESOLVED` nunca atribuem.
@@ -123,3 +137,29 @@ escrita; não foi executado nesta entrega.
 - `src/lib/purchasing/supplierPerformanceAccess.test.ts` — nova rota nas guardas.
 
 Scripts: `npm run test:finance:supplier-identity`, `npm run test:supplier-performance`.
+
+## 8. Ajustes após a revisão adversarial (2026-09-09)
+
+Uma revisão em quatro frentes com verificação adversarial confirmou 12 achados;
+todos foram corrigidos nesta branch:
+
+1. **Posse de documento em qualquer status** (alta) — o guarda usava o índice de
+   matching, que ignora `MERGED`/`INACTIVE`, e deixava passar CNPJ duplicado.
+2. **Exclusividade do `externalSupplierId`** — id reivindicado por dois cadastros
+   agora é `CONFLICT` (`AMBIGUOUS_EXTERNAL_SUPPLIER_ID`), como no resolvedor.
+3. **Alias aditivo** — título sem CNPJ não apaga mais o documento do alias.
+4. **Importação de não classificados** — o índice de posse passou a vir de uma
+   consulta real (documento próprio, documento de alias e id Nomus), não de uma
+   linha só.
+5. **Representante de alias determinístico** — o CNPJ exibido não depende mais da
+   ordem em que o banco devolveu as linhas.
+6. **Chave por documento** — exige a coluna `normalizedDocument` preenchida; antes,
+   um cadastro com `document` e coluna vazia podia herdar a população de outro.
+7. **Rascunho × revisão** — a seção Nomus resemeia o rascunho quando a avaliação
+   gravada muda de revisão, eliminando o *lost update* silencioso.
+8. **SQL de auditoria** — seção G confere posse em qualquer status e em alias, e
+   as seções B/D descartam documento zerado (como `normalizeSupplierDocument`).
+9. **Guarda de teste vazia** — a asserção de "sem consulta externa automática"
+   passou a casar o símbolo real (`loadCnpj`).
+
+Cada item tem teste de regressão nas suítes citadas na seção 7.

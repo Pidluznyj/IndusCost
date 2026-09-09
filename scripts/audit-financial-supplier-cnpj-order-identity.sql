@@ -9,8 +9,9 @@
 --
 -- Regra espelhada do código (src/lib/financeSupplierRebuild.ts → planSupplierDocumentEnrichment):
 --   SAFE_FILL   cadastro sem documento + exatamente UM documento válido (11/14 dígitos) na
---               evidência (AP ∪ Pedidos Nomus) do externalSupplierId aliasado + nenhum outro
---               fornecedor dono do documento.
+--               evidência (AP ∪ Pedidos Nomus) de um externalSupplierId EXCLUSIVO do
+--               fornecedor + nenhum outro cadastro dono do documento em QUALQUER status
+--               (inclusive inativo/mesclado e documento guardado em alias).
 --   NO_CHANGE   cadastro já tem o mesmo documento (ou não há evidência nova).
 --   CONFLICT    evidência com documentos distintos, documento existente diferente, ou
 --               documento já pertencente a outro fornecedor.
@@ -55,7 +56,7 @@ SELECT
   "personId",
   COUNT(*)                                                         AS titles,
   COUNT(*) FILTER (WHERE doc_digits IS NULL)                       AS titles_without_document,
-  COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL) AS distinct_documents,
+  COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$') AS distinct_documents,
   STRING_AGG(DISTINCT doc_digits, '|') FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$') AS document_candidates,
   CASE
     WHEN COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$') > 1 THEN 'CONFLICTING_DOCUMENTS'
@@ -83,6 +84,8 @@ ORDER BY suppliers DESC, fs."normalizedDocument";
 -- ============================================================================
 -- D) Evidência de documento no espelho de Pedidos Nomus por supplierExternalId:
 --    supplierTaxId normalizado; >1 distinto = CONFLITO (fonte adicional do SAFE_FILL).
+--    Documento zerado ("00000000000000") NÃO é candidato: normalizeSupplierDocument
+--    o descarta, então nunca gera conflito no motor — os filtros espelham isso.
 -- ============================================================================
 WITH po_docs AS (
   SELECT
@@ -93,12 +96,12 @@ WITH po_docs AS (
 )
 SELECT
   "supplierExternalId",
-  COUNT(*)                                                         AS orders,
-  COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL) AS distinct_documents,
-  STRING_AGG(DISTINCT doc_digits, '|') FILTER (WHERE doc_digits IS NOT NULL) AS document_candidates
+  COUNT(*)                                                                                   AS orders,
+  COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$')  AS distinct_documents,
+  STRING_AGG(DISTINCT doc_digits, '|') FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$') AS document_candidates
 FROM po_docs
 GROUP BY "supplierExternalId"
-HAVING COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL) > 1
+HAVING COUNT(DISTINCT doc_digits) FILTER (WHERE doc_digits IS NOT NULL AND doc_digits !~ '^0+$') > 1
 ORDER BY distinct_documents DESC, orders DESC;
 
 -- ============================================================================
@@ -174,9 +177,12 @@ HAVING COUNT(DISTINCT a."supplierId") > 1
 ORDER BY suppliers DESC, a."externalSupplierId";
 
 -- ============================================================================
--- G) Prévia de remediação por fornecedor SEM documento (classificação SAFE_FILL /
---    NO_CHANGE / CONFLICT / UNRESOLVED). Somente leitura: a aplicação real é o
---    rebuild-from-ap-apply (auditado como DOCUMENT_ENRICH), nunca este script.
+-- G) Prévia de remediação por fornecedor (classificação SAFE_FILL / NO_CHANGE /
+--    CONFLICT / UNRESOLVED). Espelha planSupplierDocumentEnrichment, inclusive
+--    a posse de documento em QUALQUER status (cadastro inativo/mesclado e
+--    documento guardado em alias contam) e a exclusividade do alias Nomus.
+--    Somente leitura: a aplicação real é o rebuild-from-ap-apply (auditado como
+--    DOCUMENT_ENRICH), nunca este script.
 -- ============================================================================
 WITH alias_ids AS (
   SELECT a."supplierId", a."externalSupplierId"
@@ -184,20 +190,27 @@ WITH alias_ids AS (
   WHERE a."externalSupplierId" IS NOT NULL
   GROUP BY a."supplierId", a."externalSupplierId"
 ),
-exclusive_alias AS (
-  SELECT ai."supplierId", ai."externalSupplierId"
+alias_owners AS (
+  SELECT ai."externalSupplierId", COUNT(DISTINCT ai."supplierId") AS owners
   FROM alias_ids ai
-  WHERE (SELECT COUNT(DISTINCT x."supplierId") FROM alias_ids x WHERE x."externalSupplierId" = ai."externalSupplierId") = 1
+  GROUP BY ai."externalSupplierId"
+),
+supplier_alias AS (
+  SELECT ai."supplierId", ai."externalSupplierId", ao.owners
+  FROM alias_ids ai
+  JOIN alias_owners ao ON ao."externalSupplierId" = ai."externalSupplierId"
 ),
 evidence AS (
-  SELECT ea."supplierId", d.doc_digits, d.origin
-  FROM exclusive_alias ea
+  -- Evidência de documento dos ids Nomus do fornecedor (AP + espelho de pedidos),
+  -- ignorando documentos zerados como normalizeSupplierDocument faz.
+  SELECT sa."supplierId", d.doc_digits, d.origin
+  FROM supplier_alias sa
   JOIN LATERAL (
     SELECT NULLIF(regexp_replace(COALESCE(ap."personCnpj", ''), '[^0-9]', '', 'g'), '') AS doc_digits, 'AP' AS origin
-    FROM "NomusAccountsPayable" ap WHERE ap."personId" = ea."externalSupplierId"
+    FROM "NomusAccountsPayable" ap WHERE ap."personId" = sa."externalSupplierId"
     UNION ALL
     SELECT NULLIF(regexp_replace(COALESCE(po."supplierTaxId", ''), '[^0-9]', '', 'g'), ''), 'NOMUS_PO'
-    FROM "NomusPurchaseOrder" po WHERE po."supplierExternalId" = ea."externalSupplierId"
+    FROM "NomusPurchaseOrder" po WHERE po."supplierExternalId" = sa."externalSupplierId"
   ) d ON TRUE
   WHERE d.doc_digits IS NOT NULL AND d.doc_digits !~ '^0+$'
 ),
@@ -211,7 +224,8 @@ per_supplier AS (
     MIN(e.doc_digits)                            AS candidate,
     STRING_AGG(DISTINCT e.doc_digits, '|')       AS candidates,
     STRING_AGG(DISTINCT e.origin, '|')           AS evidence_origins,
-    (SELECT COUNT(*) FROM exclusive_alias ea WHERE ea."supplierId" = fs.id) AS exclusive_aliases
+    (SELECT COUNT(*) FROM supplier_alias sa WHERE sa."supplierId" = fs.id AND sa.owners = 1) AS exclusive_aliases,
+    (SELECT COUNT(*) FROM supplier_alias sa WHERE sa."supplierId" = fs.id AND sa.owners > 1) AS ambiguous_aliases
   FROM "FinancialSupplier" fs
   LEFT JOIN evidence e ON e."supplierId" = fs.id
   WHERE fs.status IN ('ACTIVE', 'NEEDS_REVIEW')
@@ -224,6 +238,8 @@ SELECT
   ps.current_document,
   ps.candidates,
   ps.evidence_origins,
+  ps.exclusive_aliases,
+  ps.ambiguous_aliases,
   CASE
     WHEN ps.distinct_candidates > 1 THEN 'CONFLICT'
     WHEN ps.distinct_candidates = 0 AND ps.current_document IS NOT NULL THEN 'NO_CHANGE'
@@ -231,10 +247,16 @@ SELECT
     WHEN ps.current_document = ps.candidate THEN 'NO_CHANGE'
     WHEN ps.current_document IS NOT NULL THEN 'CONFLICT'
     WHEN length(ps.candidate) NOT IN (11, 14) THEN 'UNRESOLVED'
+    -- Posse do documento em QUALQUER status, no cadastro OU em alias.
     WHEN EXISTS (
       SELECT 1 FROM "FinancialSupplier" o
-      WHERE o."normalizedDocument" = ps.candidate AND o.id <> ps.id AND o.status IN ('ACTIVE', 'NEEDS_REVIEW')
+      WHERE o."normalizedDocument" = ps.candidate AND o.id <> ps.id
+    ) OR EXISTS (
+      SELECT 1 FROM "FinancialSupplierAlias" oa
+      WHERE oa."normalizedDocument" = ps.candidate AND oa."supplierId" <> ps.id
     ) THEN 'CONFLICT'
+    -- Id Nomus reivindicado por dois cadastros: identidade ambígua.
+    WHEN ps.ambiguous_aliases > 0 THEN 'CONFLICT'
     WHEN ps.exclusive_aliases = 0 THEN 'UNRESOLVED'
     ELSE 'SAFE_FILL'
   END AS remediation,

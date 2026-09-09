@@ -258,10 +258,29 @@ export function assertFinanceSupplierRebuildConfirmation(confirmation: unknown):
 }
 
 export type SupplierMatchIndex = {
+  /** Matching de fornecedor: só ATIVOS/NEEDS_REVIEW (MERGED/INACTIVE não recebem títulos). */
   byExternalId: Map<number, ExistingFinancialSupplierRow>;
   byDocument: Map<string, ExistingFinancialSupplierRow>;
   byName: Map<string, ExistingFinancialSupplierRow>;
+  /**
+   * POSSE de documento em QUALQUER status (inclui MERGED/INACTIVE e documentos
+   * de alias): um CNPJ guardado por um cadastro inativo continua sendo dele.
+   * Usado só para provar exclusividade antes de preencher documento — nunca
+   * para escolher fornecedor.
+   */
+  documentOwnerIds: Map<string, string[]>;
+  /** Donos de cada externalSupplierId Nomus em qualquer status (1 = exclusivo). */
+  externalIdOwnerIds: Map<number, string[]>;
 };
+
+function addOwner<K>(map: Map<K, string[]>, key: K, supplierId: string): void {
+  const owners = map.get(key);
+  if (!owners) {
+    map.set(key, [supplierId]);
+    return;
+  }
+  if (!owners.includes(supplierId)) owners.push(supplierId);
+}
 
 export function buildSupplierMatchIndex(
   suppliers: ExistingFinancialSupplierRow[]
@@ -269,8 +288,24 @@ export function buildSupplierMatchIndex(
   const byExternalId = new Map<number, ExistingFinancialSupplierRow>();
   const byDocument = new Map<string, ExistingFinancialSupplierRow>();
   const byName = new Map<string, ExistingFinancialSupplierRow>();
+  const documentOwnerIds = new Map<string, string[]>();
+  const externalIdOwnerIds = new Map<number, string[]>();
 
   for (const supplier of suppliers) {
+    // Posse é apurada ANTES do filtro de status: cadastro inativo/mesclado
+    // continua dono do CNPJ e do id Nomus que carrega.
+    if (supplier.normalizedDocument) {
+      addOwner(documentOwnerIds, supplier.normalizedDocument, supplier.id);
+    }
+    for (const alias of supplier.aliases) {
+      if (alias.normalizedDocument) {
+        addOwner(documentOwnerIds, alias.normalizedDocument, supplier.id);
+      }
+      if (alias.externalSupplierId != null) {
+        addOwner(externalIdOwnerIds, alias.externalSupplierId, supplier.id);
+      }
+    }
+
     if (supplier.status === "MERGED" || supplier.status === "INACTIVE") continue;
 
     if (supplier.normalizedDocument && !byDocument.has(supplier.normalizedDocument)) {
@@ -292,7 +327,10 @@ export function buildSupplierMatchIndex(
     }
   }
 
-  return { byExternalId, byDocument, byName };
+  for (const owners of documentOwnerIds.values()) owners.sort();
+  for (const owners of externalIdOwnerIds.values()) owners.sort();
+
+  return { byExternalId, byDocument, byName, documentOwnerIds, externalIdOwnerIds };
 }
 
 export function findExistingSupplierForGroup(
@@ -477,9 +515,24 @@ export function planSupplierDocumentEnrichment(input: {
     return finish("UNRESOLVED", ["OWNERSHIP_INDEX_UNAVAILABLE"]);
   }
 
-  const owner = index.byDocument.get(candidate);
-  if (owner && (!existing || owner.id !== existing.id)) {
-    return finish("CONFLICT", [`DOCUMENT_OWNED_BY_OTHER_SUPPLIER:${owner.id}`]);
+  // Posse em QUALQUER status (inclusive cadastro inativo/mesclado e documento
+  // guardado em alias): CNPJ já pertencente a outro fornecedor é conflito.
+  const otherOwners = (index.documentOwnerIds.get(candidate) ?? []).filter(
+    (id) => id !== existing?.id
+  );
+  if (otherOwners.length > 0) {
+    return finish("CONFLICT", [`DOCUMENT_OWNED_BY_OTHER_SUPPLIER:${otherOwners.join("|")}`]);
+  }
+
+  if (externalSupplierId != null) {
+    // Mesma regra do resolvedor Nomus: id reivindicado por dois cadastros é
+    // identidade ambígua — diagnóstico, nunca preenchimento.
+    const idOwners = index.externalIdOwnerIds.get(externalSupplierId) ?? [];
+    if (idOwners.length > 1) {
+      return finish("CONFLICT", [
+        `AMBIGUOUS_EXTERNAL_SUPPLIER_ID:${externalSupplierId}:${idOwners.join("|")}`,
+      ]);
+    }
   }
 
   if (existing) {
@@ -488,8 +541,8 @@ export function planSupplierDocumentEnrichment(input: {
     if (externalSupplierId == null) {
       return finish("UNRESOLVED", ["NO_OFFICIAL_IDENTITY_LINK"]);
     }
-    const linked = index.byExternalId.get(externalSupplierId);
-    if (!linked || linked.id !== existing.id) {
+    const idOwners = index.externalIdOwnerIds.get(externalSupplierId) ?? [];
+    if (!idOwners.includes(existing.id)) {
       return finish("UNRESOLVED", [`EXTERNAL_ID_NOT_LINKED_TO_SUPPLIER:${externalSupplierId}`]);
     }
   }
@@ -837,12 +890,15 @@ export async function upsertFinancialSupplierAliases(
 
     if (existingAlias) {
       const before = serializeAlias(existingAlias);
+      // ADITIVO (COALESCE): o alias é atualizado uma vez por título do grupo e
+      // um título sem CNPJ não pode apagar o documento que outro título já
+      // gravou — esse documento é evidência de posse no índice de matching.
       const updated = await deps.updateAlias(existingAlias.id, {
-        originalName: extracted.originalName,
-        originalDocument: extracted.originalDocument,
-        normalizedName: extracted.normalizedName,
-        normalizedDocument: extracted.normalizedDocument,
-        externalSupplierId: extracted.externalSupplierId,
+        originalName: extracted.originalName ?? existingAlias.originalName,
+        originalDocument: extracted.originalDocument ?? existingAlias.originalDocument,
+        normalizedName: extracted.normalizedName ?? existingAlias.normalizedName,
+        normalizedDocument: extracted.normalizedDocument ?? existingAlias.normalizedDocument,
+        externalSupplierId: extracted.externalSupplierId ?? existingAlias.externalSupplierId,
         source: "AUTO_SYNC",
         titlesCount: 1,
         lastSeenAt: bounds.lastSeenAt,

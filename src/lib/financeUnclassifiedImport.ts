@@ -758,15 +758,39 @@ export function createDefaultUnclassifiedImportApplyDeps(user: {
       const existingRow = existing
         ? { ...existing, aliases: existing.aliases.map((a) => ({ ...a })) }
         : null;
-      // `existing` foi buscado por documento (ou por nome só quando o grupo não
-      // tem documento): não há outro dono possível do documento além dele, então
-      // o índice local basta para o plano de preenchimento seguro.
+      // Índice de posse REAL: todo cadastro (qualquer status) que já carregue
+      // este documento — no próprio cadastro ou em alias — ou este id Nomus.
+      // Um índice com uma linha só tornaria a prova de exclusividade vazia.
+      const ownershipCandidates = await prisma.financialSupplier.findMany({
+        where: {
+          OR: [
+            ...(existingRow ? [{ id: existingRow.id }] : []),
+            ...(group.extracted.normalizedDocument
+              ? [
+                  { normalizedDocument: group.extracted.normalizedDocument },
+                  { aliases: { some: { normalizedDocument: group.extracted.normalizedDocument } } },
+                ]
+              : []),
+            ...(group.extracted.externalSupplierId != null
+              ? [{ aliases: { some: { externalSupplierId: group.extracted.externalSupplierId } } }]
+              : []),
+          ],
+        },
+        include: { aliases: true },
+      });
       const { supplier } = await upsertFinancialSupplierFromGroup(
         rebuildDeps,
         group,
         existingRow,
         user,
-        { index: buildSupplierMatchIndex(existingRow ? [existingRow] : []) }
+        {
+          index: buildSupplierMatchIndex(
+            ownershipCandidates.map((row) => ({
+              ...row,
+              aliases: row.aliases.map((alias) => ({ ...alias })),
+            }))
+          ),
+        }
       );
       await upsertFinancialSupplierAliases(rebuildDeps, supplier, group, user);
       return { id: supplier.id, displayName: supplier.displayName };
