@@ -53,7 +53,7 @@ Filtro inválido enviado explicitamente → `400 INVALID_SUPPLIER_PERFORMANCE_FI
 |---|---|---|
 | Pedido | `NomusPurchaseOrder.id` / `externalId` | espelho read-only |
 | Linha | `NomusPurchaseOrderItem` (`purchaseOrderId` + `lineIndex`) | chave determinística |
-| Fornecedor | `NomusPurchaseOrder.supplierExternalId` (ID Nomus) | nome/documento só para exibição via `resolveNomusOrderSuppliersBatch`; **nunca agrupa por nome** |
+| Fornecedor | `NomusPurchaseOrder.supplierExternalId` (ID Nomus) | nome/documento só para exibição via `resolveNomusOrderSuppliersBatch`; **nunca agrupa por nome**; aliases contados por fornecedor distinto (várias linhas do mesmo fornecedor não são ambiguidade) |
 | Material | `NomusPurchaseOrderItem.productExternalId` (`nomus:<id>`), fallback `productCode` (`code:<código>`) | **nunca por descrição**; sem ID/código = `UNRESOLVED` (contado, excluído das análises por MP) |
 | Grupo de material | `NomusProductCatalog.groupName` via `externalProductId` | vínculo por ID |
 | Data operacional | `COALESCE(issuedAt, firstSeenAt)` | `periodWhere` reutilizado de `nomusPurchaseOrderEvaluation.server.ts` |

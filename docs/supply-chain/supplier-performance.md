@@ -252,6 +252,7 @@ Com a flag **OFF**:
 | `GET` | `/api/purchase-orders/:id/supplier-evaluation` | flag + `operations.purchases:view` |
 | `PUT` | `/api/purchase-orders/:id/supplier-evaluation` | flag + `operations.purchases:update` |
 | `GET` | `/api/supplier-performance/suppliers/:supplierId` | flag + `finance.suppliers:view` + `operations.purchases:view` |
+| `GET` | `/api/supplier-performance/suppliers/:supplierId/nomus-orders` | idem — Pedidos Nomus do fornecedor (ver §13 e docs/suppliers/supplier-identity-cnpj-parity.md) |
 | `GET` | `/api/supplier-performance/report` | idem |
 | `GET` | `/api/supplier-performance/report.csv` | idem |
 | `GET` | `/api/supplier-performance/orders.csv` | idem |
@@ -328,6 +329,21 @@ e **todos** os pedidos do período — não apenas os avaliados — com filtros
 “Avaliar” abre exatamente o **mesmo** componente de formulário do pedido; ao
 salvar, linha, cards, cobertura e nota são atualizados sem reload da aplicação.
 
+A aba mostra **duas origens lado a lado**, cada uma com selo **Origem**:
+
+- **Pedidos IndusCost** (`PurchaseOrder`, FK `supplierId`) — cards e tabela acima.
+- **Pedidos Nomus** (`NomusPurchaseOrder`, `SupplierNomusOrdersSection`) —
+  atribuídos pela identidade oficial (alias Nomus exclusivo → CNPJ único no
+  cadastro; **nunca** por nome; conflito não atribui), com KPIs próprios da
+  origem Nomus e avaliação inline na mesma régua da worklist (§17), gravada por
+  `PUT /api/supplier-performance/nomus-orders/:id`.
+
+Não há chave determinística entre `PurchaseOrder` e `NomusPurchaseOrder`, logo
+**não existe nota consolidada única**: as duas origens não se somam. A mesma
+aba, com o mesmo resultado, aparece no menu Fornecedores e na aba Fornecedores
+do Centro de Custos (ambos renderizam `SuppliersManagementView` + o mesmo
+drawer).
+
 **Relatório** (`/finance/suppliers/performance`, a partir de Financeiro >
 Fornecedores): filtros De/Até/Fornecedor/Status, tabela consolidada, totais,
 detalhe opcional de pedidos, bloco de metodologia, impressão print-friendly
@@ -372,6 +388,10 @@ fornecedor, valor ou data.
 - Consolidado do fornecedor: média simples das avaliações gravadas, por quesito e no geral. Pedidos têm o mesmo peso; valor financeiro não pondera.
 - Busca de fornecedor: autocomplete sobre nomes da própria base Nomus (`GET /api/supplier-performance/nomus-orders/suppliers`); a seleção filtra pelo `supplierExternalId` quando existir.
 - Fornecedor só é gravado com confiança EXACT/HIGH e `financialSupplierId` conhecido.
+- Alias Nomus é contado por **fornecedor distinto**, não por linha: várias linhas
+  de alias do mesmo fornecedor (uma por grafia de nome, como o rebuild AP grava)
+  não são ambiguidade; `externalSupplierId` em dois fornecedores continua
+  `UNRESOLVED`.
 - Sem writeback Nomus. Sem rascunho persistido (as quatro notas continuam obrigatórias).
 - Sem sugestão automática (MVP OP-26: desconhecido = null, nunca 0).
 - Lote: `POST /api/supplier-performance/nomus-orders/batch` chama o save unitário
@@ -389,7 +409,10 @@ src/lib/purchasing/supplierPerformance.test.ts        testes do motor
 src/lib/purchasing/supplierPerformanceSchema.test.ts  contrato schema/migration/rotas/UI
 src/components/supply-chain/supplier-performance/     UI (form, card, aba, relatório, print CSS)
 src/lib/purchasing/nomusPurchaseOrderEvaluation.ts            elegibilidade/identidade Nomus
-src/lib/purchasing/nomusPurchaseOrderEvaluation.server.ts     worklist + save/batch
+src/lib/purchasing/nomusPurchaseOrderEvaluation.server.ts     worklist + save/batch (núcleo buildNomusSupplierEvaluationWorklistFromWhere)
+src/lib/purchasing/supplierNomusOrders.ts                     contrato dos Pedidos Nomus do fornecedor (aba Desempenho)
+src/lib/purchasing/supplierNomusOrders.server.ts              população por chave segura + verificação pelo resolvedor
+src/components/supply-chain/supplier-performance/SupplierNomusOrdersSection.tsx
 src/components/supply-chain/supplier-performance/NomusSupplierEvaluationWorklistPage.tsx
 prisma/migrations/20260923120000_nomus_purchase_order_supplier_evaluation/
 ```

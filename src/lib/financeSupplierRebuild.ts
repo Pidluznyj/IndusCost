@@ -9,6 +9,7 @@ import {
   detectPotentialSupplierDuplicates,
   extractSupplierFromAccountsPayable,
   groupAccountsPayableSuppliers,
+  normalizeSupplierDocument,
   normalizeSupplierName,
   type AccountsPayableSupplierRecord,
   type FinanceSupplierApGroup,
@@ -63,6 +64,36 @@ export type ExistingFinancialSupplierAliasRow = {
   titlesCount: number;
 };
 
+/**
+ * Ação de remediação do documento (CNPJ/CPF) de um fornecedor a partir da
+ * evidência oficial (títulos AP + espelho de Pedidos Nomus), SEM inventar dado:
+ * - SAFE_FILL: documento ausente no cadastro, exatamente UM candidato válido,
+ *   amarrado a este fornecedor pelo externalSupplierId (alias) e sem outro
+ *   fornecedor dono do mesmo documento → preencher (aditivo, auditado).
+ * - NO_CHANGE: cadastro já tem o mesmo documento (ou nenhuma evidência nova).
+ * - CONFLICT: candidatos distintos, documento existente diferente da evidência
+ *   ou documento já pertencente a outro fornecedor → diagnóstico, nada muda.
+ * - UNRESOLVED: sem evidência, evidência inválida ou sem vínculo oficial
+ *   (nome sozinho NUNCA autoriza).
+ */
+export type FinanceSupplierDocumentEnrichmentAction =
+  | "SAFE_FILL"
+  | "NO_CHANGE"
+  | "CONFLICT"
+  | "UNRESOLVED";
+
+export type FinanceSupplierDocumentEnrichmentPlan = {
+  action: FinanceSupplierDocumentEnrichmentAction;
+  currentDocument: string | null;
+  currentNormalizedDocument: string | null;
+  proposedDocument: string | null;
+  proposedNormalizedDocument: string | null;
+  externalSupplierId: number | null;
+  documentCandidates: string[];
+  evidence: string[];
+  conflicts: string[];
+};
+
 export type FinanceSupplierRebuildPreviewItem = {
   identityKey: string;
   displayName: string;
@@ -75,6 +106,13 @@ export type FinanceSupplierRebuildPreviewItem = {
   existingSupplierId: string | null;
   action: "create" | "update" | "stats_only" | "skip";
   statsOnlyBecauseManual: boolean;
+  documentEnrichment: FinanceSupplierDocumentEnrichmentPlan;
+};
+
+/** Linha do espelho de Pedidos Nomus usada como evidência adicional de documento. */
+export type NomusOrderSupplierDocumentRow = {
+  supplierExternalId: number | null;
+  supplierTaxId: string | null;
 };
 
 export type FinanceSupplierRebuildTopSupplier = {
@@ -94,6 +132,12 @@ export type FinanceSupplierRebuildSummary = {
   newAliases: number;
   updatedAliases: number;
   unidentifiableRecords: number;
+  /** Documentos que podem ser preenchidos com segurança (SAFE_FILL). */
+  documentSafeFills: number;
+  /** Grupos com evidência de documento conflitante (CONFLICT) — nunca aplicados. */
+  documentConflicts: number;
+  /** Grupos sem evidência/vínculo oficial suficiente (UNRESOLVED). */
+  documentUnresolved: number;
   potentialDuplicates: FinanceSupplierDuplicateHint[];
   topSuppliersByAmount: FinanceSupplierRebuildTopSupplier[];
   topSuppliersByCount: FinanceSupplierRebuildTopSupplier[];
@@ -118,6 +162,12 @@ export type FinanceSupplierRebuildUserContext = {
 export type FinanceSupplierRebuildDeps = {
   loadApRows: () => Promise<FinanceSupplierRebuildApRow[]>;
   loadExistingSuppliers: () => Promise<ExistingFinancialSupplierRow[]>;
+  /**
+   * Evidência adicional de documento por supplierExternalId (espelho de Pedidos
+   * Nomus, agregado — uma consulta, sem varrer pedido a pedido). Opcional: sem
+   * ela, só os títulos AP contam.
+   */
+  loadNomusOrderSupplierDocuments?: () => Promise<NomusOrderSupplierDocumentRow[]>;
   createSupplier: (data: Prisma.FinancialSupplierCreateInput) => Promise<ExistingFinancialSupplierRow>;
   updateSupplier: (
     id: string,
@@ -208,10 +258,29 @@ export function assertFinanceSupplierRebuildConfirmation(confirmation: unknown):
 }
 
 export type SupplierMatchIndex = {
+  /** Matching de fornecedor: só ATIVOS/NEEDS_REVIEW (MERGED/INACTIVE não recebem títulos). */
   byExternalId: Map<number, ExistingFinancialSupplierRow>;
   byDocument: Map<string, ExistingFinancialSupplierRow>;
   byName: Map<string, ExistingFinancialSupplierRow>;
+  /**
+   * POSSE de documento em QUALQUER status (inclui MERGED/INACTIVE e documentos
+   * de alias): um CNPJ guardado por um cadastro inativo continua sendo dele.
+   * Usado só para provar exclusividade antes de preencher documento — nunca
+   * para escolher fornecedor.
+   */
+  documentOwnerIds: Map<string, string[]>;
+  /** Donos de cada externalSupplierId Nomus em qualquer status (1 = exclusivo). */
+  externalIdOwnerIds: Map<number, string[]>;
 };
+
+function addOwner<K>(map: Map<K, string[]>, key: K, supplierId: string): void {
+  const owners = map.get(key);
+  if (!owners) {
+    map.set(key, [supplierId]);
+    return;
+  }
+  if (!owners.includes(supplierId)) owners.push(supplierId);
+}
 
 export function buildSupplierMatchIndex(
   suppliers: ExistingFinancialSupplierRow[]
@@ -219,8 +288,24 @@ export function buildSupplierMatchIndex(
   const byExternalId = new Map<number, ExistingFinancialSupplierRow>();
   const byDocument = new Map<string, ExistingFinancialSupplierRow>();
   const byName = new Map<string, ExistingFinancialSupplierRow>();
+  const documentOwnerIds = new Map<string, string[]>();
+  const externalIdOwnerIds = new Map<number, string[]>();
 
   for (const supplier of suppliers) {
+    // Posse é apurada ANTES do filtro de status: cadastro inativo/mesclado
+    // continua dono do CNPJ e do id Nomus que carrega.
+    if (supplier.normalizedDocument) {
+      addOwner(documentOwnerIds, supplier.normalizedDocument, supplier.id);
+    }
+    for (const alias of supplier.aliases) {
+      if (alias.normalizedDocument) {
+        addOwner(documentOwnerIds, alias.normalizedDocument, supplier.id);
+      }
+      if (alias.externalSupplierId != null) {
+        addOwner(externalIdOwnerIds, alias.externalSupplierId, supplier.id);
+      }
+    }
+
     if (supplier.status === "MERGED" || supplier.status === "INACTIVE") continue;
 
     if (supplier.normalizedDocument && !byDocument.has(supplier.normalizedDocument)) {
@@ -242,7 +327,10 @@ export function buildSupplierMatchIndex(
     }
   }
 
-  return { byExternalId, byDocument, byName };
+  for (const owners of documentOwnerIds.values()) owners.sort();
+  for (const owners of externalIdOwnerIds.values()) owners.sort();
+
+  return { byExternalId, byDocument, byName, documentOwnerIds, externalIdOwnerIds };
 }
 
 export function findExistingSupplierForGroup(
@@ -308,6 +396,15 @@ export function buildSupplierRebuildSummary(input: {
     newAliases: input.newAliases,
     updatedAliases: input.updatedAliases,
     unidentifiableRecords,
+    documentSafeFills: input.previewItems.filter(
+      (i) => i.documentEnrichment.action === "SAFE_FILL"
+    ).length,
+    documentConflicts: input.previewItems.filter(
+      (i) => i.documentEnrichment.action === "CONFLICT"
+    ).length,
+    documentUnresolved: input.previewItems.filter(
+      (i) => i.documentEnrichment.action === "UNRESOLVED"
+    ).length,
     potentialDuplicates: input.duplicates,
     topSuppliersByAmount,
     topSuppliersByCount,
@@ -315,9 +412,148 @@ export function buildSupplierRebuildSummary(input: {
   };
 }
 
+const VALID_SUPPLIER_DOCUMENT_LENGTHS = new Set([11, 14]);
+
+/** Índice supplierExternalId → documentos normalizados distintos vistos nos Pedidos Nomus. */
+export function buildNomusOrderDocumentIndex(
+  rows: readonly NomusOrderSupplierDocumentRow[]
+): Map<number, string[]> {
+  const sets = new Map<number, Set<string>>();
+  for (const row of rows) {
+    if (row.supplierExternalId == null || !Number.isFinite(row.supplierExternalId)) continue;
+    const normalized = normalizeSupplierDocument(row.supplierTaxId);
+    if (!normalized) continue;
+    const set = sets.get(row.supplierExternalId) ?? new Set<string>();
+    set.add(normalized);
+    sets.set(row.supplierExternalId, set);
+  }
+  const index = new Map<number, string[]>();
+  for (const [id, set] of sets) index.set(id, [...set].sort());
+  return index;
+}
+
+function currentNormalizedDocumentOf(existing: ExistingFinancialSupplierRow | null): string | null {
+  if (!existing) return null;
+  return existing.normalizedDocument ?? normalizeSupplierDocument(existing.document);
+}
+
+/** Grafia proposta: a observada no AP quando corresponde ao candidato; senão os dígitos. */
+function proposedSpellingFor(group: FinanceSupplierApGroup, normalized: string): string {
+  const original = group.extracted.originalDocument?.trim();
+  if (original && normalizeSupplierDocument(original) === normalized) return original;
+  return normalized;
+}
+
+/**
+ * Plano puro de remediação do documento — ver FinanceSupplierDocumentEnrichmentAction.
+ * `index` é o índice de matching dos fornecedores ATIVOS (dono do documento /
+ * do externalSupplierId). Sem índice (null) não há como provar a ausência de
+ * outro dono: SAFE_FILL é rebaixado para UNRESOLVED (fail closed).
+ */
+export function planSupplierDocumentEnrichment(input: {
+  existing: ExistingFinancialSupplierRow | null;
+  group: FinanceSupplierApGroup;
+  index: SupplierMatchIndex | null;
+  nomusDocumentsByExternalId?: Map<number, string[]> | null;
+}): FinanceSupplierDocumentEnrichmentPlan {
+  const { existing, group, index } = input;
+  const externalSupplierId = group.extracted.externalSupplierId;
+  const apCandidates = group.documentCandidates;
+  const nomusCandidates =
+    externalSupplierId != null
+      ? input.nomusDocumentsByExternalId?.get(externalSupplierId) ?? []
+      : [];
+  const candidates = [...new Set([...apCandidates, ...nomusCandidates])].sort();
+
+  const evidence: string[] = [];
+  if (externalSupplierId != null) evidence.push(`EXTERNAL_SUPPLIER_ID:${externalSupplierId}`);
+  for (const doc of apCandidates) evidence.push(`AP_DOCUMENT:${doc}`);
+  for (const doc of nomusCandidates) evidence.push(`NOMUS_ORDER_DOCUMENT:${doc}`);
+
+  const currentDocument = existing?.document ?? null;
+  const currentNormalizedDocument = currentNormalizedDocumentOf(existing);
+  const base = {
+    currentDocument,
+    currentNormalizedDocument,
+    proposedDocument: null,
+    proposedNormalizedDocument: null,
+    externalSupplierId,
+    documentCandidates: candidates,
+    evidence,
+  };
+  const finish = (
+    action: FinanceSupplierDocumentEnrichmentAction,
+    conflicts: string[] = [],
+    proposed: string | null = null
+  ): FinanceSupplierDocumentEnrichmentPlan => ({
+    ...base,
+    action,
+    conflicts,
+    proposedDocument: proposed,
+    proposedNormalizedDocument: proposed ? normalizeSupplierDocument(proposed) : null,
+  });
+
+  if (candidates.length > 1) {
+    return finish("CONFLICT", [`CONFLICTING_DOCUMENTS:${candidates.join("|")}`]);
+  }
+  if (candidates.length === 0) {
+    if (currentNormalizedDocument) return finish("NO_CHANGE");
+    return finish("UNRESOLVED", ["NO_DOCUMENT_EVIDENCE"]);
+  }
+
+  const candidate = candidates[0]!;
+  if (currentNormalizedDocument === candidate) return finish("NO_CHANGE");
+  if (currentNormalizedDocument) {
+    return finish("CONFLICT", [
+      `EXISTING_DOCUMENT_DIFFERS:${currentNormalizedDocument}<>${candidate}`,
+    ]);
+  }
+  if (!VALID_SUPPLIER_DOCUMENT_LENGTHS.has(candidate.length)) {
+    return finish("UNRESOLVED", [`INVALID_DOCUMENT:${candidate}`]);
+  }
+  if (!index) {
+    return finish("UNRESOLVED", ["OWNERSHIP_INDEX_UNAVAILABLE"]);
+  }
+
+  // Posse em QUALQUER status (inclusive cadastro inativo/mesclado e documento
+  // guardado em alias): CNPJ já pertencente a outro fornecedor é conflito.
+  const otherOwners = (index.documentOwnerIds.get(candidate) ?? []).filter(
+    (id) => id !== existing?.id
+  );
+  if (otherOwners.length > 0) {
+    return finish("CONFLICT", [`DOCUMENT_OWNED_BY_OTHER_SUPPLIER:${otherOwners.join("|")}`]);
+  }
+
+  if (externalSupplierId != null) {
+    // Mesma regra do resolvedor Nomus: id reivindicado por dois cadastros é
+    // identidade ambígua — diagnóstico, nunca preenchimento.
+    const idOwners = index.externalIdOwnerIds.get(externalSupplierId) ?? [];
+    if (idOwners.length > 1) {
+      return finish("CONFLICT", [
+        `AMBIGUOUS_EXTERNAL_SUPPLIER_ID:${externalSupplierId}:${idOwners.join("|")}`,
+      ]);
+    }
+  }
+
+  if (existing) {
+    // Vínculo OFICIAL obrigatório: o grupo precisa estar amarrado a ESTE
+    // fornecedor pelo externalSupplierId (alias). Nome sozinho nunca autoriza.
+    if (externalSupplierId == null) {
+      return finish("UNRESOLVED", ["NO_OFFICIAL_IDENTITY_LINK"]);
+    }
+    const idOwners = index.externalIdOwnerIds.get(externalSupplierId) ?? [];
+    if (!idOwners.includes(existing.id)) {
+      return finish("UNRESOLVED", [`EXTERNAL_ID_NOT_LINKED_TO_SUPPLIER:${externalSupplierId}`]);
+    }
+  }
+
+  return finish("SAFE_FILL", [], proposedSpellingFor(group, candidate));
+}
+
 function buildPreviewItems(
   groups: FinanceSupplierApGroup[],
-  index: SupplierMatchIndex
+  index: SupplierMatchIndex,
+  nomusDocumentsByExternalId: Map<number, string[]>
 ): FinanceSupplierRebuildPreviewItem[] {
   const items: FinanceSupplierRebuildPreviewItem[] = [];
 
@@ -344,10 +580,23 @@ function buildPreviewItems(
       existingSupplierId: existing?.id ?? null,
       action,
       statsOnlyBecauseManual,
+      documentEnrichment: planSupplierDocumentEnrichment({
+        existing,
+        group,
+        index,
+        nomusDocumentsByExternalId,
+      }),
     });
   }
 
   return items;
+}
+
+async function loadNomusDocumentIndex(
+  deps: FinanceSupplierRebuildDeps
+): Promise<Map<number, string[]>> {
+  if (!deps.loadNomusOrderSupplierDocuments) return new Map();
+  return buildNomusOrderDocumentIndex(await deps.loadNomusOrderSupplierDocuments());
 }
 
 function countAliasChanges(
@@ -424,7 +673,8 @@ export async function buildFinancialSuppliersFromAccountsPayablePreview(
   const index = buildSupplierMatchIndex(existing);
   const groups = groupAccountsPayableSuppliers(apRows);
   const duplicates = detectPotentialSupplierDuplicates(groups);
-  const previewItems = buildPreviewItems(groups, index);
+  const nomusDocumentsByExternalId = await loadNomusDocumentIndex(deps);
+  const previewItems = buildPreviewItems(groups, index, nomusDocumentsByExternalId);
   const aliasCounts = countAliasChanges(groups, index);
 
   const warnings: string[] = [];
@@ -433,6 +683,12 @@ export async function buildFinancialSuppliersFromAccountsPayablePreview(
   }
   if (groups.some((g) => !isRebuildEligibleGroup(g))) {
     warnings.push("UNIDENTIFIABLE_AP_RECORDS_PRESENT");
+  }
+  const documentConflicts = previewItems.filter(
+    (item) => item.documentEnrichment.action === "CONFLICT"
+  ).length;
+  if (documentConflicts > 0) {
+    warnings.push(`DOCUMENT_CONFLICTS:${documentConflicts}`);
   }
 
   const summary = buildSupplierRebuildSummary({
@@ -452,20 +708,81 @@ export async function buildFinancialSuppliersFromAccountsPayablePreview(
   };
 }
 
+export type UpsertFinancialSupplierFromGroupOptions = {
+  /** Índice de matching dos fornecedores atuais — obrigatório para provar que nenhum outro fornecedor é dono do documento. */
+  index: SupplierMatchIndex;
+  /** Plano já calculado (apply/preview); ausente → calculado aqui com o índice. */
+  enrichment?: FinanceSupplierDocumentEnrichmentPlan;
+  nomusDocumentsByExternalId?: Map<number, string[]> | null;
+};
+
+export type UpsertFinancialSupplierFromGroupResult = {
+  supplier: ExistingFinancialSupplierRow;
+  action: "create" | "update" | "stats_only";
+  documentEnrichment: FinanceSupplierDocumentEnrichmentPlan;
+};
+
+async function auditDocumentEnrichment(
+  deps: FinanceSupplierRebuildDeps,
+  before: ExistingFinancialSupplierRow,
+  after: ExistingFinancialSupplierRow,
+  plan: FinanceSupplierDocumentEnrichmentPlan,
+  user: FinanceSupplierRebuildUserContext
+): Promise<void> {
+  await deps.createAuditLog({
+    entityType: FINANCE_SUPPLIER_REBUILD_AUDIT_ENTITY.SUPPLIER,
+    entityId: after.id,
+    action: FINANCE_SUPPLIER_REBUILD_AUDIT_ACTION.DOCUMENT_ENRICH,
+    beforeJson: {
+      document: before.document,
+      normalizedDocument: before.normalizedDocument,
+    },
+    afterJson: {
+      document: after.document,
+      normalizedDocument: after.normalizedDocument,
+      externalSupplierId: plan.externalSupplierId,
+      evidence: plan.evidence,
+    },
+    userId: user.userId,
+    userName: user.userName,
+  });
+}
+
+/**
+ * Cria/atualiza o FinancialSupplier de um grupo AP.
+ *
+ * Documento: NUNCA sobrescreve um documento existente diferente nem apaga o
+ * existente quando o AP não traz documento. Só escreve documento quando o
+ * plano de remediação é SAFE_FILL (aditivo, auditado como DOCUMENT_ENRICH).
+ * Fornecedor MANUAL continua stats_only para nome/status/origem — mas recebe o
+ * preenchimento aditivo do documento quando (e só quando) é SAFE_FILL.
+ */
 export async function upsertFinancialSupplierFromGroup(
   deps: FinanceSupplierRebuildDeps,
   group: FinanceSupplierApGroup,
   existing: ExistingFinancialSupplierRow | null,
-  user: FinanceSupplierRebuildUserContext
-): Promise<{ supplier: ExistingFinancialSupplierRow; action: "create" | "update" | "stats_only" }> {
+  user: FinanceSupplierRebuildUserContext,
+  options: UpsertFinancialSupplierFromGroupOptions
+): Promise<UpsertFinancialSupplierFromGroupResult> {
   const displayName = pickDisplayName(group);
   const { extracted } = group;
   const amount = computeGroupAmount(group);
   const bounds = computeSeenBounds(group);
-  const status =
-    extracted.confidence === "LOW" && !extracted.normalizedDocument
-      ? "NEEDS_REVIEW"
-      : "ACTIVE";
+  const plan =
+    options.enrichment ??
+    planSupplierDocumentEnrichment({
+      existing,
+      group,
+      index: options.index,
+      nomusDocumentsByExternalId: options.nomusDocumentsByExternalId ?? null,
+    });
+  const safeFill = plan.action === "SAFE_FILL" && plan.proposedDocument != null;
+  const documentPatch = safeFill
+    ? {
+        document: plan.proposedDocument,
+        normalizedDocument: plan.proposedNormalizedDocument,
+      }
+    : {};
 
   if (existing && isManualLockedSupplier(existing)) {
     const before = serializeSupplier(existing);
@@ -474,6 +791,7 @@ export async function upsertFinancialSupplierFromGroup(
       totalAmountSeen: new Prisma.Decimal(amount),
       firstSeenAt: existing.firstSeenAt ?? bounds.firstSeenAt,
       lastSeenAt: bounds.lastSeenAt,
+      ...documentPatch,
     });
     await deps.createAuditLog({
       entityType: FINANCE_SUPPLIER_REBUILD_AUDIT_ENTITY.SUPPLIER,
@@ -484,17 +802,23 @@ export async function upsertFinancialSupplierFromGroup(
       userId: user.userId,
       userName: user.userName,
     });
-    return { supplier: updated, action: "stats_only" };
+    if (safeFill) await auditDocumentEnrichment(deps, existing, updated, plan, user);
+    return { supplier: updated, action: "stats_only", documentEnrichment: plan };
   }
 
   if (existing) {
+    const effectiveNormalizedDocument = safeFill
+      ? plan.proposedNormalizedDocument
+      : currentNormalizedDocumentOf(existing);
+    const status =
+      (extracted.confidence === "LOW" || group.documentConflict) && !effectiveNormalizedDocument
+        ? "NEEDS_REVIEW"
+        : "ACTIVE";
     const before = serializeSupplier(existing);
     const updated = await deps.updateSupplier(existing.id, {
       displayName,
       legalName: displayName,
       tradeName: extracted.originalName,
-      document: extracted.originalDocument,
-      normalizedDocument: extracted.normalizedDocument,
       normalizedName: extracted.normalizedName,
       source: "NOMUS_BOOTSTRAP",
       status,
@@ -503,6 +827,7 @@ export async function upsertFinancialSupplierFromGroup(
       totalAmountSeen: new Prisma.Decimal(amount),
       firstSeenAt: existing.firstSeenAt ?? bounds.firstSeenAt,
       lastSeenAt: bounds.lastSeenAt,
+      ...documentPatch,
     });
     await deps.createAuditLog({
       entityType: FINANCE_SUPPLIER_REBUILD_AUDIT_ENTITY.SUPPLIER,
@@ -513,15 +838,20 @@ export async function upsertFinancialSupplierFromGroup(
       userId: user.userId,
       userName: user.userName,
     });
-    return { supplier: updated, action: "update" };
+    if (safeFill) await auditDocumentEnrichment(deps, existing, updated, plan, user);
+    return { supplier: updated, action: "update", documentEnrichment: plan };
   }
 
+  const status =
+    (extracted.confidence === "LOW" || group.documentConflict) && !safeFill
+      ? "NEEDS_REVIEW"
+      : "ACTIVE";
   const created = await deps.createSupplier({
     displayName,
     legalName: displayName,
     tradeName: extracted.originalName,
-    document: extracted.originalDocument,
-    normalizedDocument: extracted.normalizedDocument,
+    document: safeFill ? plan.proposedDocument : null,
+    normalizedDocument: safeFill ? plan.proposedNormalizedDocument : null,
     normalizedName: extracted.normalizedName,
     source: "NOMUS_BOOTSTRAP",
     status,
@@ -541,7 +871,7 @@ export async function upsertFinancialSupplierFromGroup(
     userName: user.userName,
   });
 
-  return { supplier: created, action: "create" };
+  return { supplier: created, action: "create", documentEnrichment: plan };
 }
 
 export async function upsertFinancialSupplierAliases(
@@ -560,12 +890,15 @@ export async function upsertFinancialSupplierAliases(
 
     if (existingAlias) {
       const before = serializeAlias(existingAlias);
+      // ADITIVO (COALESCE): o alias é atualizado uma vez por título do grupo e
+      // um título sem CNPJ não pode apagar o documento que outro título já
+      // gravou — esse documento é evidência de posse no índice de matching.
       const updated = await deps.updateAlias(existingAlias.id, {
-        originalName: extracted.originalName,
-        originalDocument: extracted.originalDocument,
-        normalizedName: extracted.normalizedName,
-        normalizedDocument: extracted.normalizedDocument,
-        externalSupplierId: extracted.externalSupplierId,
+        originalName: extracted.originalName ?? existingAlias.originalName,
+        originalDocument: extracted.originalDocument ?? existingAlias.originalDocument,
+        normalizedName: extracted.normalizedName ?? existingAlias.normalizedName,
+        normalizedDocument: extracted.normalizedDocument ?? existingAlias.normalizedDocument,
+        externalSupplierId: extracted.externalSupplierId ?? existingAlias.externalSupplierId,
         source: "AUTO_SYNC",
         titlesCount: 1,
         lastSeenAt: bounds.lastSeenAt,
@@ -649,25 +982,41 @@ export async function applyFinancialSuppliersFromAccountsPayable(
   let index = buildSupplierMatchIndex(existing);
   const apRows = await deps.loadApRows();
   const groups = groupAccountsPayableSuppliers(apRows).filter(isRebuildEligibleGroup);
+  const nomusDocumentsByExternalId = await loadNomusDocumentIndex(deps);
 
   let newSuppliers = 0;
   let updatedSuppliers = 0;
   let statsOnlyUpdates = 0;
   let newAliases = 0;
   let updatedAliases = 0;
+  let documentSafeFills = 0;
+  let documentConflicts = 0;
+  let documentUnresolved = 0;
 
   for (const group of groups) {
     const currentExisting = findExistingSupplierForGroup(group, index);
+    // Plano calculado sobre o índice ATUAL (fornecedores já criados nesta
+    // execução contam como donos de documento/externalSupplierId).
+    const enrichment = planSupplierDocumentEnrichment({
+      existing: currentExisting,
+      group,
+      index,
+      nomusDocumentsByExternalId,
+    });
     const { supplier, action } = await upsertFinancialSupplierFromGroup(
       deps,
       group,
       currentExisting,
-      input
+      input,
+      { index, enrichment, nomusDocumentsByExternalId }
     );
 
     if (action === "create") newSuppliers += 1;
     else if (action === "update") updatedSuppliers += 1;
     else statsOnlyUpdates += 1;
+    if (enrichment.action === "SAFE_FILL") documentSafeFills += 1;
+    else if (enrichment.action === "CONFLICT") documentConflicts += 1;
+    else if (enrichment.action === "UNRESOLVED") documentUnresolved += 1;
 
     const aliasResult = await upsertFinancialSupplierAliases(deps, supplier, group, input);
     newAliases += aliasResult.newAliases;
@@ -687,6 +1036,9 @@ export async function applyFinancialSuppliersFromAccountsPayable(
       statsOnlyUpdates,
       newAliases,
       updatedAliases,
+      documentSafeFills,
+      documentConflicts,
+      documentUnresolved,
     },
     userId: input.userId,
     userName: input.userName,
@@ -704,6 +1056,9 @@ export async function applyFinancialSuppliersFromAccountsPayable(
     newAliases,
     updatedAliases,
     unidentifiableRecords: preview.unidentifiableRecords,
+    documentSafeFills,
+    documentConflicts,
+    documentUnresolved,
     potentialDuplicates: preview.potentialDuplicates,
     topSuppliersByAmount: preview.topSuppliersByAmount,
     topSuppliersByCount: preview.topSuppliersByCount,
@@ -752,6 +1107,18 @@ export function createDefaultFinanceSupplierRebuildDeps(): FinanceSupplierRebuil
       return rows.map((row) => ({
         ...row,
         aliases: row.aliases.map((alias) => ({ ...alias })),
+      }));
+    },
+    // Evidência agregada do espelho de Pedidos Nomus: uma consulta, sem varrer
+    // pedido a pedido. Leitura pura — nenhum writeback Nomus.
+    loadNomusOrderSupplierDocuments: async () => {
+      const rows = await prisma.nomusPurchaseOrder.groupBy({
+        by: ["supplierExternalId", "supplierTaxId"],
+        where: { supplierExternalId: { not: null }, supplierTaxId: { not: null } },
+      });
+      return rows.map((row) => ({
+        supplierExternalId: row.supplierExternalId,
+        supplierTaxId: row.supplierTaxId,
       }));
     },
     createSupplier: async (data) => {

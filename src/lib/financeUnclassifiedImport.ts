@@ -12,6 +12,7 @@ import {
 import { createSupplierCostCenterRulesBatchDefault } from "@/src/lib/financeSupplierCostCenterRules.js";
 import {
   createDefaultFinanceSupplierRebuildDeps,
+  buildSupplierMatchIndex,
   upsertFinancialSupplierAliases,
   upsertFinancialSupplierFromGroup,
 } from "@/src/lib/financeSupplierRebuild.js";
@@ -757,11 +758,39 @@ export function createDefaultUnclassifiedImportApplyDeps(user: {
       const existingRow = existing
         ? { ...existing, aliases: existing.aliases.map((a) => ({ ...a })) }
         : null;
+      // Índice de posse REAL: todo cadastro (qualquer status) que já carregue
+      // este documento — no próprio cadastro ou em alias — ou este id Nomus.
+      // Um índice com uma linha só tornaria a prova de exclusividade vazia.
+      const ownershipCandidates = await prisma.financialSupplier.findMany({
+        where: {
+          OR: [
+            ...(existingRow ? [{ id: existingRow.id }] : []),
+            ...(group.extracted.normalizedDocument
+              ? [
+                  { normalizedDocument: group.extracted.normalizedDocument },
+                  { aliases: { some: { normalizedDocument: group.extracted.normalizedDocument } } },
+                ]
+              : []),
+            ...(group.extracted.externalSupplierId != null
+              ? [{ aliases: { some: { externalSupplierId: group.extracted.externalSupplierId } } }]
+              : []),
+          ],
+        },
+        include: { aliases: true },
+      });
       const { supplier } = await upsertFinancialSupplierFromGroup(
         rebuildDeps,
         group,
         existingRow,
-        user
+        user,
+        {
+          index: buildSupplierMatchIndex(
+            ownershipCandidates.map((row) => ({
+              ...row,
+              aliases: row.aliases.map((alias) => ({ ...alias })),
+            }))
+          ),
+        }
       );
       await upsertFinancialSupplierAliases(rebuildDeps, supplier, group, user);
       return { id: supplier.id, displayName: supplier.displayName };

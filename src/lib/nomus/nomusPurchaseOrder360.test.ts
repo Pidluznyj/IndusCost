@@ -464,3 +464,85 @@ describe("nomusPurchaseOrder360 fiscal", () => {
     assert.equal(extractDocumentEntryPurchaseOrderId({ idPedidoCompra: 613 }), 613);
   });
 });
+
+describe("resolvePurchaseOrderSupplier — aliases por fornecedor distinto", () => {
+  const alias = (financialSupplierId: string, document: string | null = null) => ({
+    externalSupplierId: 10,
+    financialSupplierId,
+    displayName: `Fornecedor ${financialSupplierId}`,
+    document,
+    normalizedDocument: document,
+    normalizedName: null,
+  });
+
+  it("várias linhas de alias do MESMO fornecedor (uma por grafia de nome) não são ambiguidade", () => {
+    const resolved = resolvePurchaseOrderSupplier({
+      supplierExternalId: 10,
+      supplierName: "Alpha",
+      supplierTaxId: null,
+      aliases: [alias("a"), alias("a", "12345678000190"), alias("a")],
+      documents: [],
+      apIdentities: [],
+      nameCandidates: [],
+    });
+    assert.equal(resolved.matchMethod, "SUPPLIER_ALIAS");
+    assert.equal(resolved.matchConfidence, "EXACT");
+    assert.equal(resolved.financialSupplierId, "a");
+    assert.equal(resolved.ambiguous, false);
+    assert.equal(resolved.resolvedDocument, "12345678000190", "prefere a linha com documento");
+  });
+
+  it("o mesmo externalSupplierId em DOIS fornecedores continua ambíguo → UNRESOLVED (nunca cai para documento/nome)", () => {
+    const resolved = resolvePurchaseOrderSupplier({
+      supplierExternalId: 10,
+      supplierName: "Alpha",
+      supplierTaxId: "12345678000190",
+      aliases: [alias("a"), alias("b")],
+      documents: [{ financialSupplierId: "a", displayName: "A", document: "12345678000190", normalizedDocument: "12345678000190" }],
+      apIdentities: [],
+      nameCandidates: [],
+    });
+    assert.equal(resolved.matchMethod, "UNRESOLVED");
+    assert.equal(resolved.ambiguous, true);
+    assert.equal(resolved.financialSupplierId, null);
+  });
+});
+
+describe("resolvePurchaseOrderSupplier — representante de alias determinístico", () => {
+  const row = (document: string | null, displayName: string) => ({
+    externalSupplierId: 10,
+    financialSupplierId: "s1",
+    displayName,
+    document,
+    normalizedDocument: document,
+    normalizedName: null,
+  });
+
+  it("qualquer ordem das linhas do mesmo fornecedor resolve o MESMO documento exibido", () => {
+    const rows = [row("98765432000110", "Alpha B"), row("12345678000190", "Alpha A"), row(null, "Alpha C")];
+    const permutations = <T,>(items: T[]): T[][] =>
+      items.length <= 1
+        ? [items]
+        : items.flatMap((item, index) =>
+            permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest])
+          );
+
+    const resolutions = permutations(rows).map((aliases) =>
+      resolvePurchaseOrderSupplier({
+        supplierExternalId: 10,
+        supplierName: null,
+        supplierTaxId: null,
+        aliases,
+        documents: [],
+        apIdentities: [],
+        nameCandidates: [],
+      })
+    );
+    for (const resolved of resolutions) {
+      assert.equal(resolved.matchMethod, "SUPPLIER_ALIAS");
+      assert.equal(resolved.financialSupplierId, "s1");
+      assert.deepEqual(resolved, resolutions[0]);
+    }
+    assert.equal(resolutions[0]!.resolvedDocument, "12345678000190");
+  });
+});

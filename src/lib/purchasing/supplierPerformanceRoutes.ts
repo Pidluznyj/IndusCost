@@ -55,6 +55,7 @@ import {
 import {
   NOMUS_SUPPLIER_EVALUATION_BATCH_MAX_ITEMS,
 } from "./nomusPurchaseOrderEvaluation.js";
+import { buildSupplierNomusOrdersDetail } from "./supplierNomusOrders.server.js";
 import {
   buildSupplierPerformanceCsvFilename,
   buildSupplierPerformanceDetailCsv,
@@ -224,6 +225,36 @@ export function registerSupplierPerformanceRoutes(
           return res.status(400).json({ error: "supplierId inválido." });
         }
         const payload = await buildSupplierPerformanceDetail(prisma, supplierId, {
+          period: readPeriod(req),
+          evaluationStatus: parseSupplierPerformanceApiEvaluationStatus(
+            req.query.evaluationStatus
+          ),
+          page: normalizeSupplierPerformancePage(req.query.page),
+          pageSize: normalizeSupplierPerformancePageSize(req.query.pageSize),
+        });
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(payload);
+      } catch (error) {
+        const mapped = mapSupplierEvaluationError(error);
+        return res.status(mapped.status).json(mapped.body);
+      }
+    }
+  );
+
+  /**
+   * Pedidos Nomus do fornecedor (aba Desempenho): mesma guarda AND do detalhe.
+   * Origem distinta do PurchaseOrder interno — KPIs próprios, sem consolidar.
+   */
+  app.get(
+    "/api/supplier-performance/suppliers/:supplierId/nomus-orders",
+    ...performanceView,
+    async (req, res) => {
+      try {
+        const { supplierId } = req.params;
+        if (!isUuid(supplierId)) {
+          return res.status(400).json({ error: "supplierId inválido." });
+        }
+        const payload = await buildSupplierNomusOrdersDetail(prisma, supplierId, {
           period: readPeriod(req),
           evaluationStatus: parseSupplierPerformanceApiEvaluationStatus(
             req.query.evaluationStatus

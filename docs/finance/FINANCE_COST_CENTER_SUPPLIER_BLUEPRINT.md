@@ -183,6 +183,20 @@ O model `CostCenter` existente (Compras) tem permissões `purchases.view` / `pur
 
 Função de normalização de documento: reutilizar `normalizeCnpjDigits` de `src/lib/groupCompanyCustomer.ts`.
 
+#### 3.2.1 Documento canônico do grupo AP e preenchimento seguro (2026-09-08)
+
+- A identidade do grupo AP é **reconciliada sobre todos os títulos**
+  (`reconcileSupplierGroupIdentity`), independente da ordem de leitura: um
+  único documento distinto é adotado; mais de um → conflito diagnosticado,
+  nenhum adotado.
+- O rebuild só escreve `document` pelo plano `SAFE_FILL` (documento ausente +
+  um candidato válido + vínculo por `externalSupplierId` + nenhum outro dono);
+  **nunca** sobrescreve ou apaga documento existente; fornecedor `MANUAL`
+  recebe só o preenchimento aditivo, auditado como `DOCUMENT_ENRICH`.
+- CNPJ duplicado entre fornecedores é `CONFLICT` — nunca merge automático.
+- Detalhes, endpoint de Pedidos Nomus e SQL de auditoria:
+  `docs/suppliers/supplier-identity-cnpj-parity.md`.
+
 ### 3.3 Regras de classificação automática
 
 1. Título deve ter `FinancialSupplier` resolvido (não `needsReview` pendente).

@@ -280,3 +280,7 @@ src/lib/rawMaterialPlanning.server.test.ts
 src/lib/landingPage.test.tsx
 src/lib/nomus/nomusPurchaseOrderPayableOwnership.test.ts
 src/components/inventory/collector/InventoryCollectorSectorQrSection.test.tsx
+src/lib/financeSupplierIdentityReconcile.test.ts
+src/lib/financeSupplierDocumentEnrichment.test.ts
+src/lib/purchasing/supplierNomusOrders.server.test.ts
+src/components/supply-chain/supplier-performance/SupplierNomusOrdersSection.test.tsx

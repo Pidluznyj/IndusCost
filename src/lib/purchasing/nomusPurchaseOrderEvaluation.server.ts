@@ -154,7 +154,8 @@ export function periodWhere(period: SupplierPerformancePeriod): Prisma.NomusPurc
   };
 }
 
-function andWhere(
+/** AND de partes opcionais do WHERE de NomusPurchaseOrder (ignora vazias). Reutilizado pela aba Desempenho. */
+export function andNomusPurchaseOrderWhere(
   parts: Array<Prisma.NomusPurchaseOrderWhereInput | null | undefined>
 ): Prisma.NomusPurchaseOrderWhereInput {
   const AND = parts.filter((p): p is Prisma.NomusPurchaseOrderWhereInput => !!p && Object.keys(p).length > 0);
@@ -167,11 +168,11 @@ function applyEvaluationStatusFilter(
 ): Prisma.NomusPurchaseOrderWhereInput {
   switch (filter) {
     case "pending":
-      return andWhere([base, { supplierEvaluation: { is: null } }]);
+      return andNomusPurchaseOrderWhere([base, { supplierEvaluation: { is: null } }]);
     case "evaluated":
       return { ...base, supplierEvaluation: { isNot: null } };
     case "ineligible":
-      return andWhere([base, { id: "__none__" }]);
+      return andNomusPurchaseOrderWhere([base, { id: "__none__" }]);
     default:
       return base;
   }
@@ -559,9 +560,38 @@ export async function buildNomusSupplierEvaluationWorklist(
   }
 
   const searchWhere = buildNomusPurchaseOrderWhere(listFilters);
-  const base = andWhere([searchWhere, periodWhere(period)]);
+  const base = andNomusPurchaseOrderWhere([searchWhere, periodWhere(period)]);
+  return buildNomusSupplierEvaluationWorklistFromWhere(prisma, base, {
+    evaluationStatus,
+    page,
+    pageSize,
+  });
+}
+
+export type NomusSupplierEvaluationWorklistDeps = {
+  /** Identidade batch do 360 — injetável em teste (sem banco). */
+  resolveSuppliers?: typeof resolveNomusOrderSuppliersBatch;
+};
+
+/**
+ * Núcleo da worklist a partir de um WHERE já montado: a busca da tela
+ * (Compras → Avaliação Fornecedor) ou a população de UM fornecedor (aba
+ * Desempenho do cadastro). Consultas fixas — contagem da lista, contagem
+ * elegível, avaliações do período e a página — sem N+1.
+ */
+export async function buildNomusSupplierEvaluationWorklistFromWhere(
+  prisma: PrismaClient,
+  base: Prisma.NomusPurchaseOrderWhereInput,
+  options: {
+    evaluationStatus: SupplierPerformanceEvaluationStatusFilter;
+    page: number;
+    pageSize: number;
+  },
+  deps: NomusSupplierEvaluationWorklistDeps = {}
+): Promise<NomusSupplierEvaluationWorklistResponse> {
+  const { evaluationStatus, page, pageSize } = options;
   const listWhere = applyEvaluationStatusFilter(base, evaluationStatus);
-  const kpiWhere = andWhere([base, eligibleWhere()]);
+  const kpiWhere = andNomusPurchaseOrderWhere([base, eligibleWhere()]);
 
   const [total, eligibleCount, evaluatedRows, pageRows] = await Promise.all([
     prisma.nomusPurchaseOrder.count({ where: listWhere }),
@@ -627,7 +657,8 @@ export async function buildNomusSupplierEvaluationWorklist(
     },
   });
 
-  const resolved = await resolveNomusOrderSuppliersBatch(pageRows);
+  const resolveSuppliers = deps.resolveSuppliers ?? resolveNomusOrderSuppliersBatch;
+  const resolved = await resolveSuppliers(pageRows);
   const suggestions = suggestNomusPurchaseOrderEvaluationScores();
   const items: NomusSupplierEvaluationWorklistRow[] = pageRows.map((row, index) => {
     const supplier = resolved[index]!;

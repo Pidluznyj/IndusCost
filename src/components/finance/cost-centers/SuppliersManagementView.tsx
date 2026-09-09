@@ -232,6 +232,12 @@ export function SuppliersManagementView({
         .filter((row) => row.id)
         .map((row) => [row.id!, row.status ?? "ACTIVE"] as const)
     );
+    // Documento canônico = FinancialSupplier.document (cadastro mestre). O
+    // documento visto no AP entra só como fallback quando o cadastro não tem.
+    const documentById = new Map<string, string>();
+    for (const master of masterSuppliers) {
+      if (master.id && master.document) documentById.set(master.id, master.document);
+    }
 
     const fromDashboard = bySupplier.map((row) => {
       const supplierRules = row.supplierId
@@ -243,7 +249,7 @@ export function SuppliersManagementView({
         supplierKey: row.supplierKey,
         supplierId: row.supplierId,
         name: row.name,
-        document: row.document,
+        document: (row.supplierId ? documentById.get(row.supplierId) : null) ?? row.document,
         titlesCount: row.titlesCount,
         amount: row.amount,
         costCenterName: row.costCenterName,
