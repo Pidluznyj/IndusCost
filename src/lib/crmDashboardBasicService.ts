@@ -23,13 +23,18 @@ import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
 export function buildCrmDashboardBasicCustomerScopeSql(
   dataScope: CrmCommercialAccessScope["dataScope"],
   ownerCustomerIds: readonly string[],
-  customerAlias = "c"
+  customerAlias: "c" | "cust" = "c"
 ): Prisma.Sql {
-  if (dataScope !== "own") return Prisma.sql`TRUE`;
+  // Polaridade fail-closed: só `global` libera. Qualquer outro escopo — inclusive
+  // `none`, que é a negação explícita — precisa de carteira para ver algo.
+  if (dataScope === "global") return Prisma.sql`TRUE`;
+  if (dataScope !== "own") return Prisma.sql`FALSE`;
   if (ownerCustomerIds.length === 0) return Prisma.sql`FALSE`;
-  return Prisma.sql`${Prisma.raw(`${customerAlias}."id"`)} IN (${Prisma.join(
-    ownerCustomerIds.map((id) => Prisma.sql`${id}::uuid`)
-  )})`;
+  // Um único parâmetro array, não N binds: a carteira não tem teto e uma lista
+  // literal estouraria o limite de parâmetros do Postgres em carteiras grandes.
+  return Prisma.sql`${Prisma.raw(`${customerAlias}."id"`)} = ANY(${[
+    ...ownerCustomerIds,
+  ]}::uuid[])`;
 }
 
 export async function buildCrmDashboardBasicResponse(

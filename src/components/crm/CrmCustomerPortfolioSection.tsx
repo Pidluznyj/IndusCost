@@ -155,7 +155,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   // a página exibida É o universo inteiro do filtro. Caso contrário o cliente
   // com pedido pode estar na página seguinte.
   const listIsWholeScope =
-    totals == null || totals.totalCustomersInScope <= customers.length;
+    totals != null && totals.totalCustomersInScope <= customers.length;
   const customersWithoutPeriodOrders =
     customers.length > 0 &&
     listIsWholeScope &&
@@ -174,6 +174,12 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           label: "Clientes sem responsável comercial",
           value: fmt(totals.customersWithoutCommercialOwner),
           hint: CRM_UI_TOOLTIPS.commercialOwner,
+        },
+        {
+          key: "no-purchase",
+          label: "Clientes sem compra",
+          value: fmt(totals.customersWithoutPurchase),
+          hint: "Clientes do filtro sem nenhum pedido válido no histórico (independe do período).",
         },
         {
           key: "no-nomus",
@@ -223,9 +229,10 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           data-testid="crm-portfolio-truncated-warning"
           className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
         >
-          O filtro tem mais clientes do que o teto de agregação: os indicadores de
-          qualidade abaixo cobrem parte do universo e estão subestimados. Refine o
-          filtro para obter números exatos.
+          O filtro tem mais clientes com responsável do que o teto de avaliação:
+          apenas o indicador "responsável ≠ vendedor do pedido" cobre parte do
+          universo e está subestimado. Os demais números desta faixa são exatos.
+          Refine o filtro para fechar também esse indicador.
         </p>
       ) : null}
       {totals ? <CrmCommercialAuditStrip metrics={auditMetrics} /> : null}

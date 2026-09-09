@@ -101,6 +101,7 @@ function staticContracts(): void {
     sellerOfficial: "src/lib/crmSellerDashboardOfficialOrders.ts",
     customers: "src/lib/crmCustomersList.ts",
     customersOfficial: "src/lib/crmCustomersListOfficialOrders.ts",
+    customersQualityTotals: "src/lib/crmCustomersListQualityTotals.ts",
     matchSql: "src/lib/crmSellerMatchSql.ts",
     concepts: "src/lib/crmCommercialOfficialConcepts.ts",
     salesOrdersDash: "src/lib/financeSalesOrdersDashboard.ts",
@@ -118,7 +119,10 @@ function staticContracts(): void {
   const managementOfficial = read(files.managementOfficial);
   const seller = read(files.seller);
   const sellerOfficial = read(files.sellerOfficial);
-  const customers = read(files.customers);
+  // Os totais de qualidade da carteira migraram para módulo próprio quando
+  // passaram a contar o universo do filtro em vez da página. As checagens que
+  // procuram essas chaves precisam olhar os dois arquivos.
+  const customers = `${read(files.customers)}\n${read(files.customersQualityTotals)}`;
   const customersOfficial = read(files.customersOfficial);
   const matchSql = read(files.matchSql);
   const concepts = read(files.concepts);

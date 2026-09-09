@@ -9,110 +9,96 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import {
-  CRM_CUSTOMERS_QUALITY_TOTALS_MAX,
+  CRM_HAS_ACTIVE_OWNER_WHERE,
+  CRM_HAS_ORDER_WITHOUT_NOMUS_SELLER_WHERE,
+  CRM_HAS_PURCHASE_WHERE,
   EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS,
   fetchCrmCustomersListQualityTotals,
 } from "@/src/lib/crmCustomersListQualityTotals.js";
 
-type QueryRunner = Parameters<typeof fetchCrmCustomersListQualityTotals>[0];
+type Counter = Parameters<typeof fetchCrmCustomersListQualityTotals>[0];
 
-function runnerReturning(
-  row: Record<string, bigint | number | null>,
-  calls: Prisma.Sql[] = []
-): QueryRunner {
+/** Fake que devolve uma contagem por chamada, na ordem, e registra os `where`. */
+function counter(results: number[], seen: Prisma.CustomerWhereInput[] = []): Counter {
+  let i = 0;
   return {
-    $queryRaw: async <T,>(query: Prisma.Sql): Promise<T> => {
-      calls.push(query);
-      return [row] as unknown as T;
+    customer: {
+      count: async ({ where }: { where: Prisma.CustomerWhereInput }) => {
+        seen.push(where);
+        return results[i++] ?? 0;
+      },
     },
   };
 }
 
-function uuidAt(n: number): string {
-  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-}
+const BASE_WHERE: Prisma.CustomerWhereInput = { city: "Curitiba" };
 
 describe("crmCustomersListQualityTotals", () => {
   it("conta o universo inteiro, não o tamanho da página", async () => {
-    // 50 clientes no universo; a página exibiria só 10.
-    const universe = Array.from({ length: 50 }, (_, i) => uuidAt(i));
-    const calls: Prisma.Sql[] = [];
-    const runner = runnerReturning(
-      {
-        without_owner: 37n,
-        without_purchase: 12n,
-        order_without_seller: 5n,
-        divergence: 3n,
-      },
-      calls
-    );
+    // Universo de 50 clientes; a página exibiria só 10.
+    // 13 têm responsável, 38 têm compra, 5 têm pedido sem vendedor.
+    const totals = await fetchCrmCustomersListQualityTotals(counter([13, 38, 5]), BASE_WHERE, 50);
 
-    const totals = await fetchCrmCustomersListQualityTotals(runner, universe);
-
-    // O número reportado é o do universo (37), nunca limitado pela página (10).
-    assert.equal(totals.customersWithoutCommercialOwner, 37);
-    assert.equal(totals.customersWithoutPurchase, 12);
+    assert.equal(totals.customersWithoutCommercialOwner, 37); // 50 - 13
+    assert.equal(totals.customersWithoutPurchase, 12); // 50 - 38
     assert.equal(totals.customersWithOrderWithoutNomusSeller, 5);
-    assert.equal(totals.customersWithOwnerSellerDivergence, 3);
     assert.ok(
       totals.customersWithoutCommercialOwner > 10,
       "o total precisa poder ultrapassar o tamanho da página"
     );
+  });
 
-    // Uma única consulta agregada — sem N+1 por cliente.
-    assert.equal(calls.length, 1);
-    // E ela recebeu os 50 ids do universo, não os 10 da página.
-    const params = calls[0]!.values;
-    const passedIds = params.filter((v) => typeof v === "string" && v.startsWith("00000000-"));
-    assert.equal(passedIds.length, 50);
+  it("usa o MESMO where da página em todas as contagens", async () => {
+    const seen: Prisma.CustomerWhereInput[] = [];
+    await fetchCrmCustomersListQualityTotals(counter([1, 1, 1], seen), BASE_WHERE, 10);
+
+    assert.equal(seen.length, 3, "uma contagem por indicador, sem N+1");
+    for (const where of seen) {
+      assert.deepEqual(
+        (where as { AND: unknown[] }).AND[0],
+        BASE_WHERE,
+        "o where da página tem que ancorar todo total"
+      );
+    }
+    assert.deepEqual((seen[0] as { AND: unknown[] }).AND[1], CRM_HAS_ACTIVE_OWNER_WHERE);
+    assert.deepEqual((seen[1] as { AND: unknown[] }).AND[1], CRM_HAS_PURCHASE_WHERE);
+    assert.deepEqual(
+      (seen[2] as { AND: unknown[] }).AND[1],
+      CRM_HAS_ORDER_WITHOUT_NOMUS_SELLER_WHERE
+    );
   });
 
   it("não consulta o banco quando o universo é vazio", async () => {
-    const calls: Prisma.Sql[] = [];
-    const runner = runnerReturning({}, calls);
-    const totals = await fetchCrmCustomersListQualityTotals(runner, []);
+    const seen: Prisma.CustomerWhereInput[] = [];
+    const totals = await fetchCrmCustomersListQualityTotals(counter([9, 9, 9], seen), BASE_WHERE, 0);
     assert.deepEqual(totals, EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS);
-    assert.equal(calls.length, 0);
+    assert.equal(seen.length, 0);
   });
 
-  it("converte bigint do Postgres e trata linha ausente", async () => {
-    const fromBigint = await fetchCrmCustomersListQualityTotals(
-      runnerReturning({
-        without_owner: 9n,
-        without_purchase: 0n,
-        order_without_seller: 2n,
-        divergence: 0n,
-      }),
-      [uuidAt(1)]
-    );
-    assert.equal(fromBigint.customersWithoutCommercialOwner, 9);
-    assert.equal(typeof fromBigint.customersWithoutCommercialOwner, "number");
-
-    const emptyRunner: QueryRunner = {
-      $queryRaw: async <T,>(): Promise<T> => [] as unknown as T,
-    };
-    const noRow = await fetchCrmCustomersListQualityTotals(emptyRunner, [uuidAt(1)]);
-    assert.deepEqual(noRow, EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS);
+  it("usa predicados positivos — nunca NOT/isNot sobre relação opcional", () => {
+    // `NOT` + `is` sobre relação opcional já zerou resultado neste projeto.
+    const json = JSON.stringify([
+      CRM_HAS_ACTIVE_OWNER_WHERE,
+      CRM_HAS_PURCHASE_WHERE,
+      CRM_HAS_ORDER_WITHOUT_NOMUS_SELLER_WHERE,
+    ]);
+    assert.doesNotMatch(json, /"NOT"/);
+    assert.doesNotMatch(json, /"isNot"/);
   });
 
-  it("exclui CANCELLED e ERROR da população de compra, como o resto da tela", async () => {
-    const calls: Prisma.Sql[] = [];
-    await fetchCrmCustomersListQualityTotals(runnerReturning({}, calls), [uuidAt(1)]);
-    const sql = calls[0]!.sql;
-    assert.match(sql, /NOT IN \('CANCELLED', 'ERROR'\)/);
+  it("nunca devolve complemento negativo", async () => {
+    // Contagem maior que o total (snapshot concorrente) não pode virar número negativo.
+    const totals = await fetchCrmCustomersListQualityTotals(counter([99, 99, 0]), BASE_WHERE, 10);
+    assert.equal(totals.customersWithoutCommercialOwner, 0);
+    assert.equal(totals.customersWithoutPurchase, 0);
   });
 
-  it("mede divergência só contra pedidos com vendedor Nomus informado", async () => {
-    const calls: Prisma.Sql[] = [];
-    await fetchCrmCustomersListQualityTotals(runnerReturning({}, calls), [uuidAt(1)]);
-    const sql = calls[0]!.sql;
-    // A divergência compara identidades; pedido sem vendedor tem contador próprio.
-    assert.match(sql, /"externalSellerId" IS NOT NULL/);
-    assert.match(sql, /"externalSellerId" IS NULL/);
-    // Só responsável ATIVO forma carteira.
-    assert.match(sql, /"isActive" = true/);
+  it("exclui CANCELLED e ERROR da população de compra", () => {
+    const json = JSON.stringify(CRM_HAS_PURCHASE_WHERE);
+    assert.match(json, /CANCELLED/);
+    assert.match(json, /ERROR/);
   });
 });
 
@@ -120,11 +106,9 @@ describe("crmCustomersList — contrato dos totais", () => {
   const source = readFileSync(join(process.cwd(), "src/lib/crmCustomersList.ts"), "utf8");
 
   it("não deriva nenhum total do array paginado", () => {
-    const totalsBlock = source.slice(
-      source.indexOf("    totals: {", source.indexOf("return {\n    customers,"))
-    );
+    const idx = source.indexOf("    totals: {", source.indexOf("return {\n    customers,"));
     assert.doesNotMatch(
-      totalsBlock.slice(0, 400),
+      source.slice(idx, idx + 400),
       /customers\.filter/,
       "totals não pode ser calculado sobre a página"
     );
@@ -132,12 +116,16 @@ describe("crmCustomersList — contrato dos totais", () => {
 
   it("conta o universo com o mesmo where da página", () => {
     assert.match(source, /prisma\.customer\.count\(\{ where \}\)/);
-    assert.match(source, /fetchCrmCustomersListQualityTotals/);
+    assert.match(source, /fetchCrmCustomersListQualityTotals\(\s*prisma,\s*where,/);
   });
 
-  it("aplica teto e sinaliza truncamento em vez de subestimar", () => {
-    assert.match(source, /CRM_CUSTOMERS_QUALITY_TOTALS_MAX/);
-    assert.match(source, /qualityTotalsTruncated/);
-    assert.ok(CRM_CUSTOMERS_QUALITY_TOTALS_MAX > 0);
+  it("página e total saem do mesmo snapshot", () => {
+    assert.match(source, /prisma\.\$transaction\(\[/);
+  });
+
+  it("a divergência reusa a função que decide a flag por linha", () => {
+    // Reimplementá-la em SQL contava divergência para todo owner __ID_ONLY__.
+    assert.match(source, /ownerDiffersFromOrderSellers\(owners\.get\(id\), enrichment\)/);
+    assert.match(source, /orderBy: \{ id: "asc" \}/, "amostra precisa ser determinística");
   });
 });

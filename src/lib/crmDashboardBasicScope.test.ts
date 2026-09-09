@@ -31,8 +31,8 @@ describe("crmDashboardBasic — escopo de clientes", () => {
 
   it("escopo own restringe à carteira do responsável", () => {
     const sql = buildCrmDashboardBasicCustomerScopeSql("own", [CUSTOMER_A, CUSTOMER_B]);
-    assert.match(sql.sql, /c\."id" IN \(/);
-    assert.deepEqual(sql.values, [CUSTOMER_A, CUSTOMER_B]);
+    assert.match(sql.sql, /c\."id" = ANY\(/);
+    assert.deepEqual(sql.values, [[CUSTOMER_A, CUSTOMER_B]]);
   });
 
   it("own SEM carteira é fail-closed: FALSE, nunca TRUE", () => {
@@ -45,9 +45,17 @@ describe("crmDashboardBasic — escopo de clientes", () => {
     );
   });
 
+  it("escopo none e fail-closed: FALSE", () => {
+    // none e a negacao explicita de acesso; jamais pode liberar o universo.
+    const sql = buildCrmDashboardBasicCustomerScopeSql("none", []);
+    assert.equal(sql.sql.trim(), "FALSE");
+    const comIds = buildCrmDashboardBasicCustomerScopeSql("none", [CUSTOMER_A]);
+    assert.equal(comIds.sql.trim(), "FALSE");
+  });
+
   it("respeita o alias da tabela", () => {
     const sql = buildCrmDashboardBasicCustomerScopeSql("own", [CUSTOMER_A], "cust");
-    assert.match(sql.sql, /cust\."id" IN \(/);
+    assert.match(sql.sql, /cust\."id" = ANY\(/);
   });
 });
 
@@ -83,7 +91,7 @@ describe("Responsável Comercial × Vendedor do Pedido — regressão de eixo", 
 
     // Usuário A (responsável pela carteira) enxerga o cliente.
     const scopeDeA = buildCrmDashboardBasicCustomerScopeSql("own", carteiraDeA);
-    assert.deepEqual(scopeDeA.values, [CUSTOMER_A]);
+    assert.deepEqual(scopeDeA.values, [[CUSTOMER_A]]);
 
     // Usuário B (apenas vendedor do pedido, sem carteira) NÃO enxerga nada por
     // esse eixo — antes do fix, o filtro degradava para TRUE e ele veria tudo.
