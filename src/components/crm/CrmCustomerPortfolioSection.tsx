@@ -1,5 +1,5 @@
-import React from "react";
-import { Loader2, Search, Users, X } from "lucide-react";
+import React, { useEffect, useRef } from "react";
+import { Search, Users, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type {
   CrmCustomerListFilter,
@@ -15,7 +15,6 @@ import {
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
   buildActivePortfolioFilterChips,
-  buildCustomerListStatusTags,
   computePortfolioEmptySummary,
 } from "@/src/components/crm/crmCustomerPortfolioUi";
 import {
@@ -24,6 +23,9 @@ import {
   type CrmAccountCockpitActivity,
   type CrmAccountCockpitProfile,
 } from "@/src/components/crm/CrmCustomerAccountCockpit";
+import { CrmCustomerPortfolioTable } from "@/src/components/crm/CrmCustomerPortfolioTable";
+import { CrmPeriodFilterBar } from "@/src/components/crm/CrmPeriodFilterBar";
+import type { CrmPeriodFilter } from "@/src/components/crm/crmPeriodFilter";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
 import {
   CRM_PORTFOLIO_NO_ORDERS_IN_PERIOD_NOTE,
@@ -58,6 +60,14 @@ export type CrmCustomerPortfolioSectionProps = {
   sourceInfo?: CrmCustomersListResponse["sourceInfo"] | null;
   totals?: CrmCustomersListResponse["totals"] | null;
   period?: CrmCustomersListResponse["period"] | null;
+  /** Filtro de período controlado (Ano/Mês) — distinto de `period`, que é o recorte já aplicado pela API. */
+  periodFilter: CrmPeriodFilter;
+  onPeriodFilterChange: (next: CrmPeriodFilter) => void;
+  periodYearOptions: number[];
+  /** Paginação real da tabela. */
+  offset: number;
+  onNextPage: () => void;
+  onPrevPage: () => void;
   formatNumberPt?: (v: number | null | undefined) => string;
   selectedId: string | null;
   onSelectCustomer: (id: string) => void;
@@ -107,6 +117,12 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   sourceInfo = null,
   totals = null,
   period = null,
+  periodFilter,
+  onPeriodFilterChange,
+  periodYearOptions,
+  offset,
+  onNextPage,
+  onPrevPage,
   formatNumberPt,
   selectedId,
   onSelectCustomer,
@@ -126,6 +142,15 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
 }) => {
   const emptySummary = computePortfolioEmptySummary(customers);
   const fmt = formatNumberPt ?? ((v: number | null | undefined) => String(v ?? 0));
+
+  // Ao abrir um cliente na tabela, o cockpit some visualmente logo abaixo —
+  // rola até ele para não parecer que "não aconteceu nada".
+  const cockpitRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (selectedId) {
+      cockpitRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedId]);
 
   const selectedSellerLabel =
     portfolioSellerKey !== SELLER_KEY_ALL
@@ -222,6 +247,14 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           ) : null}
         </div>
       </div>
+
+      <CrmPeriodFilterBar
+        period={periodFilter}
+        onChange={onPeriodFilterChange}
+        yearOptions={periodYearOptions}
+        testIdPrefix="crm-portfolio"
+        note="O período filtra as colunas “Pedidos”/“Venda no período” da tabela. Os totais de cadastro (universo, sem responsável, sem compra, divergência) são sempre do histórico completo do filtro, não deste período."
+      />
 
       <CrmCommercialSourceInfoNote sourceInfo={sourceInfo} />
       {totals?.qualityTotalsTruncated ? (
@@ -368,147 +401,36 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
               </div>
             ) : null}
 
-            {listEmptyKind === "loading" ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                {listEmptyCopy?.body}
-              </div>
-            ) : listEmptyKind === "error" ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 space-y-1">
-                <p className="font-semibold">{listEmptyCopy?.title}</p>
-                <p>{customersError}</p>
-              </div>
-            ) : listEmptyKind && listEmptyCopy ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
-                <p className="text-sm font-semibold text-foreground">{listEmptyCopy.title}</p>
-                <p className="text-sm text-muted-foreground mt-1">{listEmptyCopy.body}</p>
-                {activeChips.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={onClearAllFilters}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Limpar filtros
-                  </button>
-                ) : null}
-              </div>
-            ) : (
-              <ul className="space-y-2 max-h-[min(720px,75vh)] overflow-y-auto pr-1">
-                {customers.map((c) => {
-                  const active = c.id === selectedId;
-                  const tags = buildCustomerListStatusTags(c).slice(0, 3);
-                  const ownerLabel =
-                    c.commercialOwnerName?.trim() ||
-                    c.primarySellerResponsible?.trim() ||
-                    null;
-                  return (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => onSelectCustomer(c.id)}
-                        className={cn(
-                          "w-full text-left rounded-xl border px-4 py-3.5 transition-all space-y-1.5",
-                          active
-                            ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/20"
-                            : "border-border/80 bg-background hover:border-primary/30 hover:bg-accent/40"
-                        )}
-                      >
-                        <p className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
-                          {formatters.getCustomerDisplayName(c)}
-                        </p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                          {formatters.getCustomerTaxId(c) !== "—"
-                            ? formatters.getCustomerTaxId(c)
-                            : "Documento não informado"}
-                        </p>
-                        {formatters.formatCityState(c.city, c.state) !== "—" ? (
-                          <p className="text-xs text-muted-foreground">
-                            {formatters.formatCityState(c.city, c.state)}
-                          </p>
-                        ) : null}
-
-                        <div className="grid gap-1 pt-1 border-t border-border/50">
-                          <p
-                            className="text-[11px] text-muted-foreground line-clamp-1"
-                            title={CRM_UI_TOOLTIPS.commercialOwner}
-                          >
-                            Responsável comercial:{" "}
-                            <span className="font-medium text-foreground">
-                              {ownerLabel ?? "Não atribuído"}
-                            </span>
-                          </p>
-                          <p
-                            className="text-[11px] text-muted-foreground"
-                            title={CRM_UI_TOOLTIPS.orderValue}
-                          >
-                            Último pedido:{" "}
-                            <span className="font-medium text-foreground">
-                              {c.lastOrderAt
-                                ? formatters.formatDateShortPt(c.lastOrderAt)
-                                : "Sem pedido"}
-                              {c.lastOrderCode ? ` · ${c.lastOrderCode}` : ""}
-                            </span>
-                          </p>
-                          <p
-                            className="text-[11px] text-muted-foreground tabular-nums"
-                            title={CRM_UI_TOOLTIPS.orderValue}
-                          >
-                            Valor no período:{" "}
-                            <span className="font-medium text-foreground">
-                              {formatters.formatIntelCurrency(c.periodPurchaseValue)}
-                              {(c.periodOrdersCount ?? 0) > 0
-                                ? ` · ${c.periodOrdersCount} ped.`
-                                : ""}
-                            </span>
-                          </p>
-                          {c.lastOrderNomusSellerName?.trim() ? (
-                            <p
-                              className="text-[11px] text-muted-foreground line-clamp-1"
-                              title={CRM_UI_TOOLTIPS.orderSeller}
-                            >
-                              Vendedor do último pedido:{" "}
-                              <span className="font-medium text-foreground">
-                                {c.lastOrderNomusSellerName.trim()}
-                              </span>
-                            </p>
-                          ) : null}
-                        </div>
-
-                        {tags.length > 0 ? (
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {tags.map((tag) => (
-                              <span
-                                key={tag.key}
-                                className={cn(
-                                  "rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase",
-                                  tag.className
-                                )}
-                              >
-                                {tag.label}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {!customersLoading && !customersError && listHasMore ? (
-              <p className="text-[11px] text-muted-foreground text-center pt-1">
-                Há mais resultados. Refine a busca ou use filtros.
-              </p>
-            ) : null}
           </div>
         </aside>
 
         <main className="space-y-6 min-w-0">
+          <CrmCustomerPortfolioTable
+            customers={customers}
+            loading={listEmptyKind === "loading"}
+            error={listEmptyKind === "error" ? customersError : null}
+            emptyTitle={listEmptyCopy?.title ?? "Nenhum cliente encontrado"}
+            emptyBody={listEmptyCopy?.body ?? "Ajuste os filtros para ver clientes da carteira."}
+            hasActiveFilters={activeChips.length > 0}
+            onClearFilters={onClearAllFilters}
+            selectedId={selectedId}
+            onSelectCustomer={onSelectCustomer}
+            showSellerColumn={!isOwnSellerOnly}
+            listHasMore={listHasMore}
+            offset={offset}
+            onNextPage={onNextPage}
+            onPrevPage={onPrevPage}
+            formatDateShortPt={formatters.formatDateShortPt}
+            formatIntelCurrency={formatters.formatIntelCurrency}
+            formatNumberPt={fmt}
+            getCustomerDisplayName={formatters.getCustomerDisplayName}
+            getCustomerTaxId={formatters.getCustomerTaxId}
+          />
+
           {!selectedCustomer ? (
             <CrmCustomerPortfolioEmptyState summary={emptySummary} scopeLabel={scopeLabel} />
           ) : (
-            <>
+            <div ref={cockpitRef} className="scroll-mt-4 space-y-6">
               <CrmCustomerAccountCockpit
                 customer={selectedCustomer}
                 showSellerColumn={!isOwnSellerOnly}
@@ -525,7 +447,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
                 formatters={formatters}
               />
               {children}
-            </>
+            </div>
           )}
         </main>
       </div>

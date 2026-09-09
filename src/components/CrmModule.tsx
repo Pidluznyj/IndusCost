@@ -1,6 +1,6 @@
 // src/components/CrmModule.tsx — CRM Comercial: cockpit comercial, carteira, perfil e timeline.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
   Loader2,
@@ -85,11 +85,17 @@ import {
   buildSellerKpiCards,
   buildSellerOptionKey,
   formatSellerOptionLabel,
-  resolveSellerPeriodRange,
-  type SellerPeriodPreset,
 } from "@/src/components/crmSellerDashboardUi";
 import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSection";
 import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
+import {
+  buildCrmPeriodDateRange,
+  buildCrmPeriodYearOptions,
+  buildDefaultCrmPeriodFilter,
+  crmPeriodFilterFromSearchParams,
+  crmPeriodFilterToSearchParamsPatch,
+  type CrmPeriodFilter,
+} from "@/src/components/crm/crmPeriodFilter";
 import {
   CrmCommercialManagementTabs,
   type CrmManagementTabId,
@@ -1395,6 +1401,10 @@ const modalTextareaClass =
   "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
 
 export const CrmModule = () => {
+  // Deep-link do período (Ano/Mês) — lido uma vez na montagem para semear o
+  // estado inicial de cada aba; sincronizado de volta na URL logo abaixo.
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [customers, setCustomers] = useState<CrmCustomerListItem[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState<string | null>(null);
@@ -1456,10 +1466,9 @@ export const CrmModule = () => {
    * Antes a tela não mandava período nenhum e o backend caía em "últimos 30
    * dias": nenhum número batia com Pedidos por construção.
    */
-  const [managementPeriod, setManagementPeriod] = useState<CrmManagementPeriodFilter>(() => ({
-    year: String(new Date().getFullYear()),
-    month: "",
-  }));
+  const [managementPeriod, setManagementPeriod] = useState<CrmManagementPeriodFilter>(() =>
+    crmPeriodFilterFromSearchParams(searchParams, "general", "all")
+  );
 
   const auth = useAuth();
   const crmPersona = resolveCrmPersonaForChecker(auth);
@@ -1473,8 +1482,12 @@ export const CrmModule = () => {
   const sellerNotLinked =
     isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
-  const [activeCrmManagementTab, setActiveCrmManagementTab] =
-    useState<CrmManagementTabId>("general");
+  const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(() => {
+    const fromUrl = searchParams.get("tab");
+    return fromUrl === "general" || fromUrl === "seller" || fromUrl === "portfolio"
+      ? fromUrl
+      : "general";
+  });
   const crmAuthorizedTabs = useAuthorizedTabs({
     tabs: CRM_UI_TABS,
     requestedId: activeCrmManagementTab,
@@ -1503,9 +1516,26 @@ export const CrmModule = () => {
   const [portfolioSellerKey, setPortfolioSellerKey] = useState(SELLER_KEY_ALL);
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
   const [orderSellerOptions, setOrderSellerOptions] = useState<SellerOption[]>([]);
-  const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
-  const [sellerDateFrom, setSellerDateFrom] = useState("");
-  const [sellerDateTo, setSellerDateTo] = useState("");
+  /**
+   * Recorte da Gestão por Responsável — abre no MÊS VIGENTE (tela de
+   * movimento/performance). Antes o default era "Todos" (histórico
+   * inteiro sem filtro de período), o que não corresponde a nenhuma leitura
+   * operacional útil do dia a dia.
+   */
+  const [sellerPeriod, setSellerPeriod] = useState<CrmPeriodFilter>(() =>
+    crmPeriodFilterFromSearchParams(searchParams, "seller", "current")
+  );
+  /**
+   * Recorte da Carteira de Clientes — abre no ANO VIGENTE / "Ano inteiro"
+   * (tela de carteira/relacionamento). Antes o backend caía silenciosamente
+   * em "últimos 30 dias" quando nenhum dateFrom/dateTo era enviado.
+   */
+  const [portfolioPeriod, setPortfolioPeriod] = useState<CrmPeriodFilter>(() =>
+    crmPeriodFilterFromSearchParams(searchParams, "portfolio", "all")
+  );
+  /** Paginação real da Carteira — antes toda chamada usava offset=0 fixo, sem pager na UI. */
+  const [portfolioOffset, setPortfolioOffset] = useState(0);
+  const periodYearOptions = useMemo(() => buildCrmPeriodYearOptions(), []);
 
   useEffect(() => {
     if (!isOwnSellerOnly || sellerNotLinked || !auth.authUser) return;
@@ -1624,15 +1654,11 @@ export const CrmModule = () => {
     (overrides?: {
       sellerKey?: string;
       orderSellerKey?: string;
-      periodPreset?: SellerPeriodPreset;
-      dateFrom?: string;
-      dateTo?: string;
+      period?: CrmPeriodFilter;
     }): SellerDashboardLoadParams | null => {
       const sellerKey = overrides?.sellerKey ?? selectedSellerKey;
       const orderSellerKey = overrides?.orderSellerKey ?? selectedOrderSellerKey;
-      const preset = overrides?.periodPreset ?? sellerPeriodPreset;
-      const customFrom = overrides?.dateFrom ?? sellerDateFrom;
-      const customTo = overrides?.dateTo ?? sellerDateTo;
+      const period = overrides?.period ?? sellerPeriod;
 
       const params: SellerDashboardLoadParams = {};
 
@@ -1662,10 +1688,10 @@ export const CrmModule = () => {
         }
       }
 
-      const range = resolveSellerPeriodRange(preset, customFrom, customTo);
+      const range = buildCrmPeriodDateRange(period);
       if (range === null) return null;
-      if (range.dateFrom) params.dateFrom = range.dateFrom;
-      if (range.dateTo) params.dateTo = range.dateTo;
+      params.dateFrom = range.dateFrom;
+      params.dateTo = range.dateTo;
 
       return params;
     },
@@ -1675,9 +1701,7 @@ export const CrmModule = () => {
       selectedOrderSellerKey,
       sellerOptions,
       orderSellerOptions,
-      sellerPeriodPreset,
-      sellerDateFrom,
-      sellerDateTo,
+      sellerPeriod,
     ]
   );
 
@@ -1707,29 +1731,24 @@ export const CrmModule = () => {
     [buildSellerDashboardParams, loadSellerDashboard]
   );
 
-  const handleSellerPeriodPresetChange = useCallback(
-    (preset: SellerPeriodPreset) => {
-      setSellerPeriodPreset(preset);
-      if (preset === "custom") return;
-      const params = buildSellerDashboardParams({ periodPreset: preset });
+  const handleSellerPeriodChange = useCallback(
+    (next: CrmPeriodFilter) => {
+      setSellerPeriod(next);
+      const params = buildSellerDashboardParams({ period: next });
       if (params === null) return;
       void loadSellerDashboard(params);
     },
     [buildSellerDashboardParams, loadSellerDashboard]
   );
 
-  const handleApplySellerCustomPeriod = useCallback(() => {
-    const params = buildSellerDashboardParams({
-      periodPreset: "custom",
-      dateFrom: sellerDateFrom,
-      dateTo: sellerDateTo,
-    });
-    if (params === null) return;
-    void loadSellerDashboard(params);
-  }, [buildSellerDashboardParams, loadSellerDashboard, sellerDateFrom, sellerDateTo]);
-
   const loadCrmCustomers = useCallback(
-    async (search: string, filter: CrmCustomerListFilter, offset: number, sellerKey: string) => {
+    async (
+      search: string,
+      filter: CrmCustomerListFilter,
+      offset: number,
+      sellerKey: string,
+      period: CrmPeriodFilter
+    ) => {
       setCustomersLoading(true);
       setCustomersError(null);
       try {
@@ -1739,6 +1758,11 @@ export const CrmModule = () => {
         params.set("limit", String(CRM_LIST_LIMIT));
         params.set("offset", String(offset));
         params.set("filter", filter);
+        const range = buildCrmPeriodDateRange(period);
+        if (range) {
+          params.set("dateFrom", range.dateFrom);
+          params.set("dateTo", range.dateTo);
+        }
         if (canFilterAllSellers && sellerKey !== SELLER_KEY_ALL) {
           const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === sellerKey);
           if (opt?.sellerIdentityKey?.trim()) {
@@ -1855,13 +1879,15 @@ export const CrmModule = () => {
       canCrmSeller &&
       !sellerNotLinked
     ) {
-      void loadSellerDashboard();
+      const params = buildSellerDashboardParams();
+      void loadSellerDashboard(params ?? undefined);
     }
   }, [
     activeCrmManagementTab,
     canCrmAny,
     canCrmGeneral,
     canCrmSeller,
+    buildSellerDashboardParams,
     loadManagementDashboard,
     loadSellerDashboard,
     sellerNotLinked,
@@ -1870,17 +1896,45 @@ export const CrmModule = () => {
   useEffect(() => {
     if (!canCrmAny || !canCrmPortfolio || sellerNotLinked) return;
     if (activeCrmManagementTab !== "portfolio") return;
-    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
+    setPortfolioOffset(0);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey, portfolioPeriod);
   }, [
     activeCrmManagementTab,
     canCrmAny,
     canCrmPortfolio,
     crmCustomerFilter,
     loadCrmCustomers,
+    portfolioPeriod,
     portfolioSellerKey,
     searchApplied,
     sellerNotLinked,
   ]);
+
+  // Deep-link: reflete aba ativa + período da aba na URL (replace, sem
+  // empilhar histórico) — permite compartilhar/recarregar um link com o
+  // mesmo recorte (ex.: crm-commercial?tab=seller&sellerYear=2026&sellerMonth=9).
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", activeCrmManagementTab);
+        const patch =
+          activeCrmManagementTab === "general"
+            ? crmPeriodFilterToSearchParamsPatch(
+                { year: managementPeriod.year, month: managementPeriod.month },
+                "general"
+              )
+            : activeCrmManagementTab === "seller"
+              ? crmPeriodFilterToSearchParamsPatch(sellerPeriod, "seller")
+              : activeCrmManagementTab === "portfolio"
+                ? crmPeriodFilterToSearchParamsPatch(portfolioPeriod, "portfolio")
+                : {};
+        for (const [key, value] of Object.entries(patch)) next.set(key, value);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [activeCrmManagementTab, managementPeriod, sellerPeriod, portfolioPeriod, setSearchParams]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -2038,23 +2092,33 @@ export const CrmModule = () => {
     e.preventDefault();
     const q = searchInput.trim();
     setSearchApplied(q);
-    void loadCrmCustomers(q, crmCustomerFilter, 0, portfolioSellerKey);
+    setPortfolioOffset(0);
+    void loadCrmCustomers(q, crmCustomerFilter, 0, portfolioSellerKey, portfolioPeriod);
   };
 
   const applyCustomerFilter = (next: CrmCustomerListFilter) => {
     setCrmCustomerFilter(next);
-    void loadCrmCustomers(searchApplied, next, 0, portfolioSellerKey);
+    setPortfolioOffset(0);
+    void loadCrmCustomers(searchApplied, next, 0, portfolioSellerKey, portfolioPeriod);
   };
 
   const handlePortfolioSellerChange = (key: string) => {
     setPortfolioSellerKey(key);
-    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, key);
+    setPortfolioOffset(0);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, key, portfolioPeriod);
+  };
+
+  const handlePortfolioPeriodChange = (next: CrmPeriodFilter) => {
+    setPortfolioPeriod(next);
+    setPortfolioOffset(0);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey, next);
   };
 
   const handleClearPortfolioSearch = () => {
     setSearchInput("");
     setSearchApplied("");
-    void loadCrmCustomers("", crmCustomerFilter, 0, portfolioSellerKey);
+    setPortfolioOffset(0);
+    void loadCrmCustomers("", crmCustomerFilter, 0, portfolioSellerKey, portfolioPeriod);
   };
 
   const handleClearPortfolioFilters = () => {
@@ -2062,7 +2126,22 @@ export const CrmModule = () => {
     setSearchApplied("");
     setCrmCustomerFilter("all");
     setPortfolioSellerKey(SELLER_KEY_ALL);
-    void loadCrmCustomers("", "all", 0, SELLER_KEY_ALL);
+    const defaultPeriod = buildDefaultCrmPeriodFilter("all");
+    setPortfolioPeriod(defaultPeriod);
+    setPortfolioOffset(0);
+    void loadCrmCustomers("", "all", 0, SELLER_KEY_ALL, defaultPeriod);
+  };
+
+  const handlePortfolioNextPage = () => {
+    const nextOffset = portfolioOffset + CRM_LIST_LIMIT;
+    setPortfolioOffset(nextOffset);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, nextOffset, portfolioSellerKey, portfolioPeriod);
+  };
+
+  const handlePortfolioPrevPage = () => {
+    const prevOffset = Math.max(0, portfolioOffset - CRM_LIST_LIMIT);
+    setPortfolioOffset(prevOffset);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, prevOffset, portfolioSellerKey, portfolioPeriod);
   };
 
   const selectCustomerById = useCallback(
@@ -2168,7 +2247,7 @@ export const CrmModule = () => {
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
-      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
+      await loadCrmCustomers(searchApplied, crmCustomerFilter, portfolioOffset, portfolioSellerKey, portfolioPeriod);
     } catch (err) {
       setModalError(err instanceof Error ? err.message : "Falha ao salvar o contato.");
     } finally {
@@ -2189,7 +2268,7 @@ export const CrmModule = () => {
       if (selectedId) await loadActivities(selectedId);
       if (selectedId) await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
-      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
+      await loadCrmCustomers(searchApplied, crmCustomerFilter, portfolioOffset, portfolioSellerKey, portfolioPeriod);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Não foi possível atualizar o contato.");
     }
@@ -2207,8 +2286,24 @@ export const CrmModule = () => {
 
   const sellerKpiCards = useMemo(
     () =>
-      buildSellerKpiCards(sellerDashboard?.summary, formatNumberPt, formatIntelCurrency),
-    [sellerDashboard?.summary]
+      buildSellerKpiCards(
+        sellerDashboard?.summary,
+        formatNumberPt,
+        formatIntelCurrency,
+        // "Clientes sem compra" só é seguro quando NENHUM filtro auxiliar de
+        // vendedor Nomus está ativo — do contrário customerCount (carteira
+        // inteira do responsável) e uniqueCustomersCount (clientes com pedido
+        // filtrados TAMBÉM pelo vendedor Nomus) deixam de falar do mesmo
+        // universo, e o card superestimaria "sem compra".
+        selectedOrderSellerKey === SELLER_KEY_ALL
+          ? sellerDashboard?.selectedCommercialOwner?.customerCount
+          : undefined
+      ),
+    [
+      sellerDashboard?.summary,
+      sellerDashboard?.selectedCommercialOwner?.customerCount,
+      selectedOrderSellerKey,
+    ]
   );
 
   const sellerDisplayName = useMemo(() => {
@@ -2340,17 +2435,14 @@ export const CrmModule = () => {
             orderSellerOptions={orderSellerOptions}
             selectedOrderSellerKey={selectedOrderSellerKey}
             onOrderSellerChange={handleOrderSellerChange}
-            periodPreset={sellerPeriodPreset}
-            onPeriodPresetChange={handleSellerPeriodPresetChange}
-            dateFrom={sellerDateFrom}
-            dateTo={sellerDateTo}
-            onDateFromChange={setSellerDateFrom}
-            onDateToChange={setSellerDateTo}
-            onApplyCustomPeriod={handleApplySellerCustomPeriod}
+            period={sellerPeriod}
+            onPeriodChange={handleSellerPeriodChange}
+            periodYearOptions={periodYearOptions}
             onReload={reloadSellerDashboard}
             onOpenPortfolio={canCrmPortfolio ? () => setActiveCrmManagementTab("portfolio") : undefined}
             formatDateTimePt={formatDateTimePt}
             formatNumberPt={formatNumberPt}
+            formatIntelCurrency={formatIntelCurrency}
             sellerDisplayName={sellerDisplayName}
           >
             {sellerDashboard ? (
@@ -2405,6 +2497,12 @@ export const CrmModule = () => {
           sourceInfo={customersListMeta.sourceInfo}
           totals={customersListMeta.totals}
           period={customersListMeta.period}
+          periodFilter={portfolioPeriod}
+          onPeriodFilterChange={handlePortfolioPeriodChange}
+          periodYearOptions={periodYearOptions}
+          offset={portfolioOffset}
+          onNextPage={handlePortfolioNextPage}
+          onPrevPage={handlePortfolioPrevPage}
           formatNumberPt={formatNumberPt}
           selectedId={selectedId}
           onSelectCustomer={setSelectedId}

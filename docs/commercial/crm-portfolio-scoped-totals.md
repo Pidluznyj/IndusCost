@@ -130,14 +130,14 @@ Todos registrados em `npm run test:customers`.
    dos números com dados reais precisa acontecer em homologação.
 2. **Universos acima de 20.000 clientes** têm os quatro sub-totais de qualidade
    truncados (sinalizado na UI). `totalCustomersInScope` permanece exato.
-3. **A Carteira continua sem filtro de período na UI**: o backend aplica um
-   default oculto de últimos 30 dias (`crmCustomersListOfficialOrders.ts`) sobre
-   `periodPurchaseValue`/`periodOrdersCount`. Não faz parte desta correção; é a
-   próxima pendência natural desta tela.
-4. **A Carteira não tem paginação na UI**: todos os call sites pedem
-   `offset = 0`, então a lista mostra as primeiras 50 linhas. Com o total do
-   universo agora visível, a ausência de pager fica explícita para o usuário —
-   antes ela era invisível.
+3. ~~A Carteira continua sem filtro de período na UI~~ — **resolvido** na missão
+   de fechamento do redesenho operacional (branch
+   `feat/crm-commercial-operational-redesign-final`): barra Ano/Mês
+   compartilhada (`CrmPeriodFilterBar`), default "Ano inteiro". Ver
+   `docs/commercial/crm-commercial-operational-redesign-final.md`.
+4. ~~A Carteira não tem paginação na UI~~ — **resolvido** na mesma missão:
+   `CrmCustomerPortfolioTable` ganhou Anterior/Próxima reais sobre
+   `offset`/`hasMore`, que o backend já calculava corretamente.
 5. **`ERROR` vs `CANCELLED`**: esta tela exclui os dois, enquanto a população
    canônica de Pedidos de Venda mantém `ERROR`
    (`crm-cockpit-sales-order-mirror.md`). Divergência **pré-existente** e

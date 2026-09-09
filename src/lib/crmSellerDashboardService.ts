@@ -296,8 +296,9 @@ function emptyMetricsPayload(args: {
   customerCount: number;
   emptyStateReason: SellerDashboardResponse["emptyStateReason"];
 }): SellerDashboardResponse {
+  const emptyMetrics = buildCrmSalesOrderMetrics({ orders: [] });
   const summary = mergeOfficialMetricsIntoSellerSummary({
-    metrics: buildCrmSalesOrderMetrics({ orders: [] }),
+    metrics: emptyMetrics,
     ordersWithoutLinkedProposalCount: 0,
   });
   const sourceInfo = buildSellerDashboardSourceInfo({
@@ -341,6 +342,8 @@ function emptyMetricsPayload(args: {
     customersWithOrders: 0,
     leadingProduct: null,
     topCustomers: [],
+    commercialOwnerBreakdown: emptyMetrics.topCommercialOwners,
+    commercialOwnerRankingTotals: emptyMetrics.commercialOwnerRankingTotals,
     recentOrders: [],
     followUpCandidates: [],
     ordersWithoutNomusSeller: 0,
@@ -1083,6 +1086,8 @@ export async function buildCrmSellerDashboardResponse(
     customersWithOrders: metrics.customersWithOrders,
     leadingProduct: summary.topProduct,
     topCustomers: metrics.topCustomers,
+    commercialOwnerBreakdown: metrics.topCommercialOwners,
+    commercialOwnerRankingTotals: metrics.commercialOwnerRankingTotals,
     recentOrders: recentOrderRows.map(mapOrderRow),
     followUpCandidates: followUpRows.map((row) => ({
       salesOrderId: row.sales_order_id,
