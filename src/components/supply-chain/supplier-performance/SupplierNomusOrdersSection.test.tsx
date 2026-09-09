@@ -22,6 +22,7 @@ import {
   SupplierNomusOrdersTable,
   SupplierOrderOriginBadge,
   draftFromNomusOrderRow,
+  nomusOrderDraftNeedsReseed,
   previewNomusOrderDraft,
 } from "./SupplierNomusOrdersSection";
 
@@ -219,7 +220,11 @@ describe("paridade das telas (código-fonte)", () => {
     assert.match(drawer, /setDocument\(data\.document \?\? ""\)/);
     assert.match(drawer, /setCnpjInput\(data\.document \?\? ""\)/);
     assert.match(drawer, /cnpjInput\.replace\(\/\\D\/g, ""\)\.length !== 14/);
-    assert.doesNotMatch(drawer, /useEffect\([^)]*consultarCnpj|autoConsult/i, "sem consulta externa automática");
+    // A consulta externa é `loadCnpj`; ela só pode sair de um clique, nunca de
+    // um efeito de montagem/atualização (a asserção casa o nome real e atravessa
+    // o corpo do efeito, então um auto-disparo futuro quebra o teste).
+    assert.match(drawer, /const loadCnpj = async/);
+    assert.doesNotMatch(drawer, /useEffect\([\s\S]{0,400}?loadCnpj\s*\(/);
     const grid = read("src/components/finance/cost-centers/SuppliersManagementView.tsx");
     assert.match(grid, /documentById\.get\(row\.supplierId\)/);
     assert.match(grid, /\?\? row\.document/);
@@ -228,5 +233,43 @@ describe("paridade das telas (código-fonte)", () => {
     const tab = read("src/components/finance/cost-centers/FinanceSuppliersTab.tsx");
     assert.match(page, /<SuppliersManagementView/);
     assert.match(tab, /<SuppliersManagementView/);
+  });
+});
+
+describe("rascunho x revisão gravada (sem lost update)", () => {
+  it("31. rascunho é resemeado quando a revisão gravada muda; mantido enquanto ela não muda", () => {
+    // Linha nova: sempre semeia.
+    assert.equal(
+      nomusOrderDraftNeedsReseed({ hasDraft: false, seededRevision: undefined, currentRevision: null }),
+      true
+    );
+    // Nada mudou: preserva o que o usuário está digitando.
+    assert.equal(
+      nomusOrderDraftNeedsReseed({ hasDraft: true, seededRevision: null, currentRevision: null }),
+      false
+    );
+    assert.equal(
+      nomusOrderDraftNeedsReseed({ hasDraft: true, seededRevision: 2, currentRevision: 2 }),
+      false
+    );
+    // Outra pessoa salvou: o rascunho velho NÃO pode seguir com o expectedRevision novo.
+    assert.equal(
+      nomusOrderDraftNeedsReseed({ hasDraft: true, seededRevision: 2, currentRevision: 3 }),
+      true
+    );
+    assert.equal(
+      nomusOrderDraftNeedsReseed({ hasDraft: true, seededRevision: null, currentRevision: 1 }),
+      true
+    );
+  });
+
+  it("32. o container aplica esse contrato e devolve o rascunho ao gravado ao cancelar a revisão", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src/components/supply-chain/supplier-performance/SupplierNomusOrdersSection.tsx"),
+      "utf8"
+    );
+    assert.match(src, /nomusOrderDraftNeedsReseed\(\{/);
+    assert.match(src, /draftRevisionsRef/);
+    assert.match(src, /if \(reviewing\[id\]\) \{[\s\S]{0,200}?draftFromNomusOrderRow\(row\)/);
   });
 });

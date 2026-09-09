@@ -507,3 +507,42 @@ describe("resolvePurchaseOrderSupplier — aliases por fornecedor distinto", () 
     assert.equal(resolved.financialSupplierId, null);
   });
 });
+
+describe("resolvePurchaseOrderSupplier — representante de alias determinístico", () => {
+  const row = (document: string | null, displayName: string) => ({
+    externalSupplierId: 10,
+    financialSupplierId: "s1",
+    displayName,
+    document,
+    normalizedDocument: document,
+    normalizedName: null,
+  });
+
+  it("qualquer ordem das linhas do mesmo fornecedor resolve o MESMO documento exibido", () => {
+    const rows = [row("98765432000110", "Alpha B"), row("12345678000190", "Alpha A"), row(null, "Alpha C")];
+    const permutations = <T,>(items: T[]): T[][] =>
+      items.length <= 1
+        ? [items]
+        : items.flatMap((item, index) =>
+            permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest])
+          );
+
+    const resolutions = permutations(rows).map((aliases) =>
+      resolvePurchaseOrderSupplier({
+        supplierExternalId: 10,
+        supplierName: null,
+        supplierTaxId: null,
+        aliases,
+        documents: [],
+        apIdentities: [],
+        nameCandidates: [],
+      })
+    );
+    for (const resolved of resolutions) {
+      assert.equal(resolved.matchMethod, "SUPPLIER_ALIAS");
+      assert.equal(resolved.financialSupplierId, "s1");
+      assert.deepEqual(resolved, resolutions[0]);
+    }
+    assert.equal(resolutions[0]!.resolvedDocument, "12345678000190");
+  });
+});

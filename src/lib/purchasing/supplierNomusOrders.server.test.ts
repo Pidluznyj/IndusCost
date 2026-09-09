@@ -419,3 +419,33 @@ describe("buildNomusSupplierEvaluationWorklistFromWhere — núcleo compartilhad
     assert.ok(response.items.every((row) => row.supplier.identitySafe && row.supplier.financialSupplierId === SUPPLIER_ID));
   });
 });
+
+describe("chave por documento exige a coluna normalizedDocument preenchida", () => {
+  it("cadastro com document mas normalizedDocument NULL não usa a chave 2 (contagem não o inclui)", async () => {
+    const { prisma } = createFakePrisma({
+      suppliers: [
+        { id: SUPPLIER_ID, displayName: "Alpha", document: "12.345.678/0001-90", normalizedDocument: null, status: "ACTIVE" },
+        { id: OTHER_ID, displayName: "Outro dono", document: "12345678000190", normalizedDocument: "12345678000190", status: "ACTIVE" },
+      ],
+      aliases: [],
+      orders: [],
+    });
+    const { identity } = await resolveSupplierNomusOrdersIdentity(prisma, SUPPLIER_ID);
+    assert.equal(identity.normalizedDocument, "12345678000190", "exibido para diagnóstico");
+    assert.equal(identity.documentUnique, false, "a coluna do próprio cadastro está vazia — chave desligada");
+    assert.equal(identity.where, null);
+    assert.equal(identity.matchable, false);
+  });
+
+  it("sem outro dono e com a coluna vazia a chave continua desligada (nunca population de terceiro)", async () => {
+    const { prisma } = createFakePrisma({
+      suppliers: [{ id: SUPPLIER_ID, displayName: "Alpha", document: "12.345.678/0001-90", normalizedDocument: null, status: "ACTIVE" }],
+      aliases: [],
+      orders: [],
+    });
+    const { identity } = await resolveSupplierNomusOrdersIdentity(prisma, SUPPLIER_ID);
+    assert.equal(identity.documentOwners, 0);
+    assert.equal(identity.documentUnique, false);
+    assert.equal(identity.where, null);
+  });
+});

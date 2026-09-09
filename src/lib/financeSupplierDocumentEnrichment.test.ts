@@ -441,3 +441,138 @@ describe("preenchimento seguro do documento do fornecedor", () => {
     assert.doesNotMatch(src, /nomusPurchaseOrder\.(update|create|delete)/);
   });
 });
+
+/**
+ * Regressões apontadas na revisão adversarial do PR (2026-09-09).
+ */
+describe("posse do documento e exclusividade do id Nomus", () => {
+  it("18. CNPJ guardado por cadastro INATIVO ou MESCLADO é conflito (posse não depende de status)", async () => {
+    for (const status of ["INACTIVE", "MERGED"] as const) {
+      const state: MockState = {
+        apRows: [AP_B_CNPJ],
+        suppliers: [
+          supplier({ id: "owner", displayName: "Dono Inativo", status, document: "12345678000190", normalizedDocument: "12345678000190" }),
+          supplier({ id: "s2", displayName: "Alvo", source: "AUTO_SYNC" }),
+        ],
+        aliases: [alias("s2", 10)],
+        auditLogs: [],
+      };
+      const deps = createMockDeps(state);
+      const preview = await buildFinancialSuppliersFromAccountsPayablePreview(deps);
+      const plan = preview.items[0]!.documentEnrichment;
+      assert.equal(plan.action, "CONFLICT", status);
+      assert.ok(plan.conflicts.includes("DOCUMENT_OWNED_BY_OTHER_SUPPLIER:owner"), status);
+      await applyFinancialSuppliersFromAccountsPayable(deps, USER);
+      assert.equal(state.suppliers.find((s) => s.id === "s2")!.document, null, status);
+      assert.equal(enrichAudits(state).length, 0, status);
+    }
+  });
+
+  it("19. CNPJ guardado apenas em ALIAS de outro fornecedor também é conflito", async () => {
+    const state: MockState = {
+      apRows: [AP_B_CNPJ],
+      suppliers: [
+        supplier({ id: "owner", displayName: "Dono via alias" }),
+        supplier({ id: "s2", displayName: "Alvo", source: "AUTO_SYNC" }),
+      ],
+      aliases: [alias("owner", 99, { normalizedDocument: "12345678000190" }), alias("s2", 10)],
+      auditLogs: [],
+    };
+    const preview = await buildFinancialSuppliersFromAccountsPayablePreview(createMockDeps(state));
+    const plan = preview.items[0]!.documentEnrichment;
+    assert.equal(plan.action, "CONFLICT");
+    assert.ok(plan.conflicts.includes("DOCUMENT_OWNED_BY_OTHER_SUPPLIER:owner"));
+  });
+
+  it("20. id Nomus reivindicado por dois cadastros é ambíguo → CONFLICT, nunca preenchimento", async () => {
+    const state: MockState = {
+      apRows: [AP_B_CNPJ],
+      suppliers: [
+        supplier({ id: "aaa", displayName: "AAA Primeiro", source: "AUTO_SYNC" }),
+        supplier({ id: "zzz", displayName: "ZZZ Segundo", source: "AUTO_SYNC" }),
+      ],
+      aliases: [alias("aaa", 10), alias("zzz", 10)],
+      auditLogs: [],
+    };
+    const deps = createMockDeps(state);
+    const preview = await buildFinancialSuppliersFromAccountsPayablePreview(deps);
+    const plan = preview.items[0]!.documentEnrichment;
+    assert.equal(plan.action, "CONFLICT");
+    assert.ok(plan.conflicts.some((c) => c.startsWith("AMBIGUOUS_EXTERNAL_SUPPLIER_ID:10:")));
+    await applyFinancialSuppliersFromAccountsPayable(deps, USER);
+    for (const row of state.suppliers) assert.equal(row.document, null);
+  });
+
+  it("21. o índice expõe posse em qualquer status e donos por id Nomus", () => {
+    const index = buildSupplierMatchIndex([
+      supplier({ id: "inativo", status: "INACTIVE", normalizedDocument: "12345678000190", aliases: [alias("inativo", 10)] }),
+      supplier({ id: "ativo", aliases: [alias("ativo", 10, { normalizedDocument: "98765432000110" })] }),
+    ]);
+    assert.deepEqual(index.documentOwnerIds.get("12345678000190"), ["inativo"]);
+    assert.deepEqual(index.documentOwnerIds.get("98765432000110"), ["ativo"]);
+    assert.deepEqual(index.externalIdOwnerIds.get(10), ["ativo", "inativo"]);
+    // O índice de MATCHING continua ignorando inativo/mesclado.
+    assert.equal(index.byDocument.has("12345678000190"), false);
+  });
+});
+
+describe("alias do fornecedor é aditivo", () => {
+  it("22. título sem CNPJ não apaga o documento que outro título gravou no alias", async () => {
+    const withCnpj: FinanceSupplierRebuildApRow = { externalId: 2, personId: 10, personName: "Fornecedor Alpha", personCnpj: "12.345.678/0001-90" };
+    const withoutCnpj: FinanceSupplierRebuildApRow = { externalId: 3, personId: 10, personName: "Fornecedor Alpha" };
+    const state: MockState = {
+      apRows: [withCnpj, withoutCnpj],
+      suppliers: [supplier({ id: "s1", source: "AUTO_SYNC", document: "12.345.678/0001-90", normalizedDocument: "12345678000190" })],
+      aliases: [
+        alias("s1", 10, {
+          id: "alias-1",
+          originalName: "Fornecedor Alpha",
+          normalizedName: "fornecedor alpha",
+          originalDocument: "12.345.678/0001-90",
+          normalizedDocument: "12345678000190",
+        }),
+      ],
+      auditLogs: [],
+    };
+    await applyFinancialSuppliersFromAccountsPayable(createMockDeps(state), USER);
+    const aliasRow = state.aliases.find((a) => a.id === "alias-1")!;
+    assert.equal(aliasRow.normalizedDocument, "12345678000190");
+    assert.equal(aliasRow.originalDocument, "12.345.678/0001-90");
+    assert.equal(aliasRow.externalSupplierId, 10);
+  });
+});
+
+describe("consumidores e auditoria SQL espelham as mesmas regras", () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8");
+
+  it("23. a importação de não classificados monta o índice de posse por consulta, não com uma linha só", () => {
+    const src = read("src/lib/financeUnclassifiedImport.ts");
+    assert.match(src, /ownershipCandidates/);
+    assert.match(src, /aliases: \{ some: \{ normalizedDocument/);
+    assert.match(src, /aliases: \{ some: \{ externalSupplierId/);
+    assert.doesNotMatch(src, /buildSupplierMatchIndex\(existingRow \? \[existingRow\] : \[\]\)/);
+  });
+
+  it("24. o SQL de auditoria confere posse em qualquer status, inclui alias e descarta documento zerado", () => {
+    const sql = read("scripts/audit-financial-supplier-cnpj-order-identity.sql");
+    // Só o SQL executável conta: o cabeçalho cita UPDATE/INSERT/DELETE ao proibi-los.
+    const statements = sql
+      .split(/\r?\n/)
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n");
+    assert.doesNotMatch(statements, /\b(UPDATE|INSERT|DELETE|DROP|ALTER|TRUNCATE|CREATE)\b/i);
+    const sectionG = sql.slice(sql.indexOf("-- G)"));
+    assert.match(sectionG, /FROM "FinancialSupplierAlias" oa/, "posse via alias");
+    assert.doesNotMatch(
+      sectionG,
+      /o\.id <> ps\.id AND o\.status IN/,
+      "a posse não pode filtrar por status"
+    );
+    assert.match(sectionG, /ambiguous_aliases > 0 THEN 'CONFLICT'/);
+    // Documento zerado não é candidato em lugar nenhum do script.
+    for (const marker of ["-- B)", "-- D)"]) {
+      const section = sql.slice(sql.indexOf(marker), sql.indexOf(marker) + 1800);
+      assert.match(section, /doc_digits !~ '\^0\+\$'/, marker);
+    }
+  });
+});
