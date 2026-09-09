@@ -98,21 +98,27 @@ export async function resolveSupplierNomusOrdersIdentity(
   const ambiguous = new Set(ambiguousExternalIds);
   const aliasExternalIds = candidateIds.filter((id) => !ambiguous.has(id));
 
-  // Chave 2 — documento normalizado único no cadastro (mesma regra do resolvedor:
-  // `FinancialSupplier.normalizedDocument`, qualquer status).
+  // Chave 2 — documento normalizado único no cadastro. A comparação é sobre a
+  // COLUNA `FinancialSupplier.normalizedDocument` (qualquer status), exatamente
+  // como o resolvedor oficial: se a coluna deste fornecedor está vazia, ele
+  // nunca seria o casamento por documento, então a chave fica DESLIGADA — a
+  // contagem só é comparável quando a própria linha entra nela.
+  const storedNormalizedDocument = supplier.normalizedDocument;
   const normalizedDocument =
-    supplier.normalizedDocument ?? normalizeSupplierDocument(supplier.document);
-  const documentOwners = normalizedDocument
-    ? await prisma.financialSupplier.count({ where: { normalizedDocument } })
+    storedNormalizedDocument ?? normalizeSupplierDocument(supplier.document);
+  const documentOwners = storedNormalizedDocument
+    ? await prisma.financialSupplier.count({
+        where: { normalizedDocument: storedNormalizedDocument },
+      })
     : 0;
-  const documentUnique = normalizedDocument != null && documentOwners === 1;
+  const documentUnique = storedNormalizedDocument != null && documentOwners === 1;
 
   const branches: Prisma.NomusPurchaseOrderWhereInput[] = [];
   if (aliasExternalIds.length > 0) {
     branches.push({ supplierExternalId: { in: aliasExternalIds } });
   }
-  if (documentUnique && normalizedDocument) {
-    const variants = buildSupplierDocumentTaxIdVariants(normalizedDocument);
+  if (documentUnique && storedNormalizedDocument) {
+    const variants = buildSupplierDocumentTaxIdVariants(storedNormalizedDocument);
     // Ids Nomus vistos com este documento; os aliasados a OUTRO fornecedor saem
     // (o resolvedor prioriza o alias). Os aliasados só a nós já estão na chave 1.
     const seenRows = await prisma.nomusPurchaseOrder.findMany({

@@ -14,7 +14,7 @@
  * As partes de apresentação (selo, KPIs, tabela) são componentes puros para
  * teste estático com renderToStaticMarkup; a busca fica só no container.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { nomusPurchaseOrderStageLabel } from "@/src/lib/nomus/nomusPurchaseOrderUi";
 import type { NomusSupplierEvaluationWorklistRow } from "@/src/lib/purchasing/nomusPurchaseOrderEvaluation";
@@ -62,6 +62,21 @@ export function draftFromNomusOrderRow(row: NomusSupplierEvaluationWorklistRow):
     conformity: row.evaluation.scores.conformity,
     service: row.evaluation.scores.service,
   };
+}
+
+/**
+ * O rascunho precisa ser resemeado quando a linha é nova OU quando a avaliação
+ * gravada mudou de revisão. Sem isso, um rascunho antigo seguiria com o
+ * `expectedRevision` recém-lido e sobrescreveria em silêncio a avaliação que
+ * outra pessoa acabou de salvar (o CAS do backend passaria).
+ */
+export function nomusOrderDraftNeedsReseed(input: {
+  hasDraft: boolean;
+  seededRevision: number | null | undefined;
+  currentRevision: number | null | undefined;
+}): boolean {
+  if (!input.hasDraft) return true;
+  return (input.seededRevision ?? null) !== (input.currentRevision ?? null);
 }
 
 /** Prévia da nota do rascunho pelo motor oficial; null enquanto faltar critério. */
@@ -173,7 +188,9 @@ export function SupplierNomusOrdersIdentityNote({ identity }: { identity: Suppli
     parts.push(
       identity.documentUnique
         ? `CNPJ ${identity.normalizedDocument} (único no cadastro)`
-        : `CNPJ ${identity.normalizedDocument} ignorado: ${identity.documentOwners} cadastros com o mesmo documento`
+        : identity.documentOwners > 1
+          ? `CNPJ ${identity.normalizedDocument} ignorado: ${identity.documentOwners} cadastros com o mesmo documento`
+          : `CNPJ ${identity.normalizedDocument} ignorado: documento não normalizado no cadastro`
     );
   }
   return (
@@ -404,6 +421,8 @@ export function SupplierNomusOrdersSection({ supplierId, period, evaluationStatu
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  /** Revisão da avaliação que originou cada rascunho — base do reseed. */
+  const draftRevisionsRef = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     setPage(1);
@@ -421,13 +440,45 @@ export function SupplierNomusOrdersSection({ supplierId, period, evaluationStatu
       .then((payload) => {
         if (controller.signal.aborted) return;
         setData(payload);
+
+        // Rascunho é resemeado quando a linha é nova OU quando a avaliação
+        // gravada mudou de revisão (alguém salvou). Sem isso, um rascunho
+        // velho seguiria junto com o expectedRevision novo e sobrescreveria
+        // em silêncio a avaliação de outra pessoa.
+        const rows = payload.orders.items;
+        const reseeded = new Set<string>();
+        for (const row of rows) {
+          const id = row.nomusPurchaseOrderId;
+          const revision = row.evaluation?.revision ?? null;
+          if (
+            nomusOrderDraftNeedsReseed({
+              hasDraft: id in draftRevisionsRef.current,
+              seededRevision: draftRevisionsRef.current[id],
+              currentRevision: revision,
+            })
+          ) {
+            reseeded.add(id);
+          }
+          draftRevisionsRef.current[id] = revision;
+        }
+        if (reseeded.size === 0) return;
         setDrafts((prev) => {
           const next = { ...prev };
-          for (const row of payload.orders.items) {
-            if (!next[row.nomusPurchaseOrderId]) {
+          for (const row of rows) {
+            if (reseeded.has(row.nomusPurchaseOrderId)) {
               next[row.nomusPurchaseOrderId] = draftFromNomusOrderRow(row);
             }
           }
+          return next;
+        });
+        setReviewing((prev) => {
+          const next = { ...prev };
+          for (const id of reseeded) delete next[id];
+          return next;
+        });
+        setReasons((prev) => {
+          const next = { ...prev };
+          for (const id of reseeded) delete next[id];
           return next;
         });
       })
@@ -445,9 +496,18 @@ export function SupplierNomusOrdersSection({ supplierId, period, evaluationStatu
   const onScore = useCallback((id: string, key: SupplierEvaluationCriterionKey, value: number | null) => {
     setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_NOMUS_ORDER_DRAFT), [key]: value } }));
   }, []);
-  const onToggleReview = useCallback((id: string) => {
-    setReviewing((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
+  /** Cancelar a revisão devolve o rascunho ao que está gravado (sem resíduo). */
+  const onToggleReview = useCallback(
+    (id: string) => {
+      if (reviewing[id]) {
+        const row = data?.orders.items.find((item) => item.nomusPurchaseOrderId === id);
+        if (row) setDrafts((prev) => ({ ...prev, [id]: draftFromNomusOrderRow(row) }));
+        setReasons((prev) => ({ ...prev, [id]: "" }));
+      }
+      setReviewing((prev) => ({ ...prev, [id]: !prev[id] }));
+    },
+    [reviewing, data]
+  );
   const onReason = useCallback((id: string, value: string) => {
     setReasons((prev) => ({ ...prev, [id]: value }));
   }, []);

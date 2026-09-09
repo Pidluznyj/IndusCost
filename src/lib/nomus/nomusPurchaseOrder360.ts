@@ -267,6 +267,24 @@ export function extractPurchaseOrderItemFields(raw: unknown): Record<string, unk
   };
 }
 
+/**
+ * Linha de alias representativa do fornecedor, INDEPENDENTE da ordem em que o
+ * banco devolveu as linhas: prefere a que tem documento e desempata pelos
+ * valores (documento, nome exibido, nome original). Sem isso o CNPJ exibido
+ * podia alternar entre requisições para o mesmo pedido.
+ */
+function preferAliasRow(
+  candidate: SupplierResolutionInput["aliases"][number],
+  current: SupplierResolutionInput["aliases"][number]
+): boolean {
+  const rank = (row: SupplierResolutionInput["aliases"][number]) => (row.document ? 0 : 1);
+  const byDocumentPresence = rank(candidate) - rank(current);
+  if (byDocumentPresence !== 0) return byDocumentPresence < 0;
+  const keyOf = (row: SupplierResolutionInput["aliases"][number]) =>
+    [row.normalizedDocument ?? "", row.document ?? "", row.displayName ?? "", row.normalizedName ?? ""].join("\u0000");
+  return keyOf(candidate) < keyOf(current);
+}
+
 export function resolvePurchaseOrderSupplier(
   input: SupplierResolutionInput
 ): ResolvedPurchaseOrderSupplier {
@@ -294,8 +312,7 @@ export function resolvePurchaseOrderSupplier(
   const exactAliasesBySupplier = new Map<string, (typeof exactAliasRows)[number]>();
   for (const row of exactAliasRows) {
     const current = exactAliasesBySupplier.get(row.financialSupplierId);
-    // Determinístico: prefere a linha com documento; empate mantém a primeira.
-    if (!current || (!current.document && row.document)) {
+    if (!current || preferAliasRow(row, current)) {
       exactAliasesBySupplier.set(row.financialSupplierId, row);
     }
   }
