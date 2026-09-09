@@ -1,10 +1,36 @@
 /**
- * GET /api/crm/dashboard/basic — contagens com escopo por vendedor quando aplicável.
+ * GET /api/crm/dashboard/basic — contagens escopadas pela carteira do usuário.
+ *
+ * Eixo de escopo: Responsável Comercial do cliente (`CrmCustomerCommercialOwner`),
+ * o mesmo de `/api/crm/customers` e do seller dashboard. NÃO usa o vendedor Nomus
+ * do pedido — esse eixo é auditoria/comissão e nunca define acesso
+ * (docs/commercial/crm-commercial-owner-and-order-seller-rules.md).
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope";
-import { buildCrmSellerCustomerExistsSql } from "@/src/lib/crmCommercialAccessScope";
+import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
+
+/**
+ * Predicado SQL do universo de clientes visíveis (puro, testável sem banco).
+ *
+ * - `global`: sem restrição.
+ * - `own` com carteira: restringe aos clientes cujo Responsável Comercial ativo
+ *   é o usuário.
+ * - `own` sem carteira: `FALSE` — fail-closed. Nunca degradar para `TRUE`, que
+ *   entregaria o universo inteiro a um usuário de escopo próprio.
+ */
+export function buildCrmDashboardBasicCustomerScopeSql(
+  dataScope: CrmCommercialAccessScope["dataScope"],
+  ownerCustomerIds: readonly string[],
+  customerAlias = "c"
+): Prisma.Sql {
+  if (dataScope !== "own") return Prisma.sql`TRUE`;
+  if (ownerCustomerIds.length === 0) return Prisma.sql`FALSE`;
+  return Prisma.sql`${Prisma.raw(`${customerAlias}."id"`)} IN (${Prisma.join(
+    ownerCustomerIds.map((id) => Prisma.sql`${id}::uuid`)
+  )})`;
+}
 
 export async function buildCrmDashboardBasicResponse(
   scope: CrmCommercialAccessScope,
@@ -15,10 +41,14 @@ export async function buildCrmDashboardBasicResponse(
   const in7 = new Date(now);
   in7.setUTCDate(in7.getUTCDate() + 7);
 
-  const sellerFilterSql =
-    scope.dataScope === "own"
-      ? buildCrmSellerCustomerExistsSql("c", scope.externalSellerId, scope.responsible)
-      : Prisma.sql`TRUE`;
+  // A carteira é resolvida uma vez e reaproveitada por todas as contagens.
+  const ownerCustomerIds =
+    scope.dataScope === "own" ? await fetchCrmManualOwnerCustomerIds(prisma, scope) : [];
+
+  const sellerFilterSql = buildCrmDashboardBasicCustomerScopeSql(
+    scope.dataScope,
+    ownerCustomerIds
+  );
 
   const activityCustomerInScopeSql =
     scope.dataScope === "own"
@@ -26,7 +56,7 @@ export async function buildCrmDashboardBasicResponse(
           EXISTS (
             SELECT 1 FROM "Customer" c
             WHERE c."id" = a."customerId"
-              AND ${buildCrmSellerCustomerExistsSql("c", scope.externalSellerId, scope.responsible)}
+              AND ${buildCrmDashboardBasicCustomerScopeSql(scope.dataScope, ownerCustomerIds)}
           )
         `
       : Prisma.sql`TRUE`;
