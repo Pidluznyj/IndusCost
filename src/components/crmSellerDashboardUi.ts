@@ -25,78 +25,9 @@ export type SellerKpiCard = {
 
 export const SELLER_KEY_ALL = "all";
 
-export type SellerPeriodPreset =
-  | "all"
-  | "today"
-  | "thisWeek"
-  | "thisMonth"
-  | "last30"
-  | "last90"
-  | "custom";
-
-export const SELLER_PERIOD_PRESET_OPTIONS: { value: SellerPeriodPreset; label: string }[] = [
-  { value: "all", label: "Todos" },
-  { value: "today", label: "Hoje" },
-  { value: "thisWeek", label: "Esta semana" },
-  { value: "thisMonth", label: "Este mês" },
-  { value: "last30", label: "Últimos 30 dias" },
-  { value: "last90", label: "Últimos 90 dias" },
-  { value: "custom", label: "Personalizado" },
-];
-
-export function formatYmdLocal(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-/** null = período personalizado incompleto (não enviar). {} = sem filtro de datas. */
-export function resolveSellerPeriodRange(
-  preset: SellerPeriodPreset,
-  customDateFrom?: string,
-  customDateTo?: string
-): { dateFrom?: string; dateTo?: string } | null {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayYmd = formatYmdLocal(today);
-
-  switch (preset) {
-    case "all":
-      return {};
-    case "today":
-      return { dateFrom: todayYmd, dateTo: todayYmd };
-    case "thisWeek": {
-      const start = new Date(today);
-      const weekday = start.getDay();
-      const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
-      start.setDate(start.getDate() - daysFromMonday);
-      return { dateFrom: formatYmdLocal(start), dateTo: todayYmd };
-    }
-    case "thisMonth": {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1);
-      return { dateFrom: formatYmdLocal(start), dateTo: todayYmd };
-    }
-    case "last30": {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 30);
-      return { dateFrom: formatYmdLocal(start), dateTo: todayYmd };
-    }
-    case "last90": {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 90);
-      return { dateFrom: formatYmdLocal(start), dateTo: todayYmd };
-    }
-    case "custom": {
-      const from = (customDateFrom ?? "").trim();
-      const to = (customDateTo ?? "").trim();
-      if (!from || !to) return null;
-      return { dateFrom: from, dateTo: to };
-    }
-    default:
-      return {};
-  }
-}
+// Período: ver `src/components/crm/crmPeriodFilter.ts` (contrato único Ano/Mês
+// do CRM Comercial). O preset avulso "Hoje/Esta semana/Últimos 30 dias" foi
+// substituído pela barra Ano/Mês — ver docs/commercial/crm-commercial-cockpit-redesign.md.
 
 export function buildSellerOptionKey(option: SellerOption): string {
   if (option.sellerIdentityKey?.trim()) {
@@ -137,11 +68,35 @@ export function resolveSellerKpiMetricVariant(cardClass: string): MetricCardVari
 export function buildSellerKpiCards(
   summary: SellerDashboardSummary | undefined,
   formatNumberPt: (v: number | null | undefined) => string,
-  formatIntelCurrency: (v: unknown) => string
+  formatIntelCurrency: (v: unknown) => string,
+  /**
+   * Tamanho da carteira do responsável selecionado
+   * (`selectedCommercialOwner.customerCount`). Só vem preenchido quando um
+   * responsável específico está selecionado — em "Todos os responsáveis"
+   * (visão agregada) o backend não soma carteiras, então o card "Clientes
+   * sem compra" não é exibido (não dá pra derivar sem inventar).
+   */
+  walletCustomerCount?: number
 ): SellerKpiCard[] {
   const topProductLabel = summary?.topProduct?.productName?.trim()
     ? summary.topProduct.productName.trim()
     : "—";
+
+  const customersWithoutPurchaseCard: SellerKpiCard[] =
+    walletCustomerCount != null && walletCustomerCount > 0 && summary != null
+      ? [
+          {
+            label: "Clientes sem compra",
+            description: "Carteira do responsável menos clientes com pedido no período",
+            value: formatNumberPt(
+              Math.max(0, walletCustomerCount - (summary.uniqueCustomersCount ?? 0))
+            ),
+            icon: Users,
+            cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/50 to-card",
+            iconClass: "text-amber-800 bg-amber-100",
+          },
+        ]
+      : [];
 
   return [
     {
@@ -216,6 +171,7 @@ export function buildSellerKpiCards(
       cardClass: "border-indigo-200/80 bg-gradient-to-br from-indigo-50/50 to-card",
       iconClass: "text-indigo-800 bg-indigo-100",
     },
+    ...customersWithoutPurchaseCard,
     {
       label: "Produto líder",
       description: "Maior receita em SalesOrderItem",

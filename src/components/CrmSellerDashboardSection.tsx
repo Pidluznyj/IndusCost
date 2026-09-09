@@ -1,15 +1,14 @@
 import React from "react";
-import { Briefcase, CalendarRange, Loader2, RefreshCw, Users } from "lucide-react";
+import { Briefcase, Loader2, RefreshCw, Users } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import type { SellerDashboardResponse, SellerOption } from "@/src/components/crmSellerDashboardTypes";
-import type { SellerKpiCard, SellerPeriodPreset } from "@/src/components/crmSellerDashboardUi";
+import type { SellerKpiCard } from "@/src/components/crmSellerDashboardUi";
 import {
   SELLER_KEY_ALL,
-  SELLER_PERIOD_PRESET_OPTIONS,
   buildSellerOptionKey,
   formatSellerOptionDetail,
   formatSellerOptionLabel,
@@ -23,6 +22,9 @@ import {
   CrmCommercialAuditStrip,
   CrmCommercialSourceInfoNote,
 } from "@/src/components/crm/CrmCommercialSourceInfoNote";
+import { CrmPeriodFilterBar } from "@/src/components/crm/CrmPeriodFilterBar";
+import type { CrmPeriodFilter } from "@/src/components/crm/crmPeriodFilter";
+import { CrmCommercialOwnerComparisonTable } from "@/src/components/crm/CrmCommercialOwnerComparisonTable";
 
 export type CrmSellerDashboardSectionProps = {
   data: SellerDashboardResponse | null;
@@ -38,17 +40,14 @@ export type CrmSellerDashboardSectionProps = {
   orderSellerOptions?: SellerOption[];
   selectedOrderSellerKey?: string;
   onOrderSellerChange?: (key: string) => void;
-  periodPreset: SellerPeriodPreset;
-  onPeriodPresetChange: (preset: SellerPeriodPreset) => void;
-  dateFrom: string;
-  dateTo: string;
-  onDateFromChange: (value: string) => void;
-  onDateToChange: (value: string) => void;
-  onApplyCustomPeriod: () => void;
+  period: CrmPeriodFilter;
+  onPeriodChange: (next: CrmPeriodFilter) => void;
+  periodYearOptions: number[];
   onReload: () => void;
   onOpenPortfolio?: () => void;
   formatDateTimePt: (iso: string | null | undefined) => string;
   formatNumberPt?: (v: number | null | undefined) => string;
+  formatIntelCurrency: (v: unknown) => string;
   sellerDisplayName?: string | null;
   children: React.ReactNode;
 };
@@ -67,22 +66,20 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   orderSellerOptions = [],
   selectedOrderSellerKey = SELLER_KEY_ALL,
   onOrderSellerChange,
-  periodPreset,
-  onPeriodPresetChange,
-  dateFrom,
-  dateTo,
-  onDateFromChange,
-  onDateToChange,
-  onApplyCustomPeriod,
+  period,
+  onPeriodChange,
+  periodYearOptions,
   onReload,
   onOpenPortfolio,
   formatDateTimePt,
   formatNumberPt,
+  formatIntelCurrency,
   sellerDisplayName,
   children,
 }) => {
-  const isCustomPeriod = periodPreset === "custom";
   const headingTitle = ownScopeOnly ? "Minha Gestão Comercial" : "Gestão por Responsável";
+  const showOwnerComparison =
+    showSellerFilter && selectedSellerKey === SELLER_KEY_ALL && !ownScopeOnly;
   const dashboardSubtitle = sellerDisplayName
     ? `Carteira de: ${sellerDisplayName}`
     : ownScopeOnly
@@ -90,6 +87,19 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
       : "Visão consolidada por responsável comercial";
 
   const fmt = formatNumberPt ?? ((v: number | null | undefined) => String(v ?? 0));
+
+  // O ranking por responsável (`commercialOwnerBreakdown`) usa o nome de
+  // exibição como chave (bucketLabel), não o mesmo formato de `buildSellerOptionKey`
+  // do filtro. Resolve por nome exato — quando não há correspondência clara
+  // (ex.: bucket "Sem responsável comercial"), a linha fica só informativa.
+  const resolveOwnerRowSellerKey = (label: string): string | null => {
+    const normalized = label.trim().toLowerCase();
+    const match = sellerOptions.find(
+      (opt) => formatSellerOptionLabel(opt).trim().toLowerCase() === normalized
+    );
+    return match ? buildSellerOptionKey(match) : null;
+  };
+
   const emptyKind = resolveCrmSellerEmptyKind({
     sellerNotLinked,
     loading,
@@ -270,79 +280,20 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
               </div>
             ) : null}
 
-            <div className="sm:col-span-2 xl:col-span-2">
-              <label
-                htmlFor="crm-seller-period"
-                className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-              >
-                Período
-              </label>
-              <select
-                id="crm-seller-period"
-                value={periodPreset}
-                onChange={(e) => onPeriodPresetChange(e.target.value as SellerPeriodPreset)}
-                disabled={loading}
-                className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
-              >
-                {SELLER_PERIOD_PRESET_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {isCustomPeriod ? (
-              <>
-                <div>
-                  <label
-                    htmlFor="crm-seller-date-from"
-                    className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Data inicial
-                  </label>
-                  <input
-                    id="crm-seller-date-from"
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => onDateFromChange(e.target.value)}
-                    disabled={loading}
-                    className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="crm-seller-date-to"
-                    className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Data final
-                  </label>
-                  <input
-                    id="crm-seller-date-to"
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => onDateToChange(e.target.value)}
-                    disabled={loading}
-                    className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
-                  />
-                </div>
-              </>
-            ) : null}
           </div>
 
-          {isCustomPeriod ? (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={onApplyCustomPeriod}
-                disabled={loading || !dateFrom.trim() || !dateTo.trim()}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                <CalendarRange className="h-3.5 w-3.5" />
-                Aplicar período
-              </button>
-            </div>
-          ) : null}
+          <CrmPeriodFilterBar
+            period={period}
+            onChange={onPeriodChange}
+            yearOptions={periodYearOptions}
+            testIdPrefix="crm-seller"
+            disabled={loading}
+            note={
+              data?.sourceInfo?.period?.dateFrom
+                ? `Pedidos de ${data.sourceInfo.period.dateFrom} a ${data.sourceInfo.period.dateTo} — mesmo recorte (data de emissão) da tela Pedidos de Venda.`
+                : undefined
+            }
+          />
 
           {(data?.filters?.externalSellerId !== null &&
             data?.filters?.externalSellerId !== undefined) ||
@@ -430,6 +381,16 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             </SummaryKpiGrid>
           </ExecutiveSummarySection>
           <CrmCommercialAuditStrip metrics={auditMetrics} />
+          {showOwnerComparison ? (
+            <CrmCommercialOwnerComparisonTable
+              rows={data.commercialOwnerBreakdown}
+              totals={data.commercialOwnerRankingTotals}
+              formatIntelCurrency={formatIntelCurrency}
+              formatNumberPt={fmt}
+              resolveOwnerSellerKey={resolveOwnerRowSellerKey}
+              onSelectOwner={onSellerChange}
+            />
+          ) : null}
           {children}
         </div>
       ) : data ? (
@@ -466,6 +427,16 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             </SummaryKpiGrid>
           </ExecutiveSummarySection>
           <CrmCommercialAuditStrip metrics={auditMetrics} />
+          {showOwnerComparison ? (
+            <CrmCommercialOwnerComparisonTable
+              rows={data.commercialOwnerBreakdown}
+              totals={data.commercialOwnerRankingTotals}
+              formatIntelCurrency={formatIntelCurrency}
+              formatNumberPt={fmt}
+              resolveOwnerSellerKey={resolveOwnerRowSellerKey}
+              onSelectOwner={onSellerChange}
+            />
+          ) : null}
           {children}
         </div>
       ) : null}
