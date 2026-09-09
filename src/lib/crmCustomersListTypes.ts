@@ -64,10 +64,21 @@ export type CrmCustomerListItem = {
 };
 
 export type CrmCustomersListTotals = {
+  /**
+   * Universo completo de clientes no filtro — `customer.count` com o MESMO
+   * `where` da página. Nunca é a contagem do array paginado.
+   */
+  totalCustomersInScope: number;
   customersWithoutCommercialOwner: number;
   customersWithoutPurchase: number;
   customersWithOrderWithoutNomusSeller: number;
   customersWithOwnerSellerDivergence: number;
+  /**
+   * True quando o universo excedeu o teto de agregação e os quatro sub-totais
+   * de qualidade cobrem apenas parte dele. A UI precisa avisar, em vez de
+   * apresentar número subestimado como se fosse o total.
+   */
+  qualityTotalsTruncated: boolean;
 };
 
 export type CrmCustomersListResponse = {

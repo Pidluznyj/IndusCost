@@ -16,6 +16,11 @@ import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolid
 import { resolveSalesOrderHasInvoicing } from "@/src/lib/crmCommercialOrderRules.js";
 import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
 import {
+  CRM_CUSTOMERS_QUALITY_TOTALS_MAX,
+  EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS,
+  fetchCrmCustomersListQualityTotals,
+} from "@/src/lib/crmCustomersListQualityTotals.js";
+import {
   buildCrmCustomersListSourceInfo,
   resolveCrmCustomersListPeriod,
   resolveCrmPortfolioStatus,
@@ -799,10 +804,9 @@ function emptyListResponse(args: {
     },
     period: args.period,
     totals: {
-      customersWithoutCommercialOwner: 0,
-      customersWithoutPurchase: 0,
-      customersWithOrderWithoutNomusSeller: 0,
-      customersWithOwnerSellerDivergence: 0,
+      totalCustomersInScope: 0,
+      ...EMPTY_CRM_CUSTOMERS_QUALITY_TOTALS,
+      qualityTotalsTruncated: false,
     },
     sourceInfo: buildCrmCustomersListSourceInfo(args.period),
   };
@@ -856,23 +860,38 @@ export async function fetchCrmCustomersList(
   }
 
   const take = limit + 1;
-  const rows = await prisma.customer.findMany({
-    where,
-    orderBy: { companyName: "asc" },
-    skip: offset,
-    take,
-    select: {
-      id: true,
-      companyName: true,
-      tradeName: true,
-      taxId: true,
-      email: true,
-      phone: true,
-      city: true,
-      state: true,
-      address: true,
-    },
-  });
+  // Página, universo e IDs do universo saem do MESMO `where`. Os totais nunca
+  // podem ser derivados de `rows`/`customers` — isso os prenderia ao tamanho da
+  // página (bug corrigido na auditoria 09/2026).
+  const [rows, totalCustomersInScope, scopeIdRows] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      orderBy: { companyName: "asc" },
+      skip: offset,
+      take,
+      select: {
+        id: true,
+        companyName: true,
+        tradeName: true,
+        taxId: true,
+        email: true,
+        phone: true,
+        city: true,
+        state: true,
+        address: true,
+      },
+    }),
+    prisma.customer.count({ where }),
+    prisma.customer.findMany({
+      where,
+      select: { id: true },
+      take: CRM_CUSTOMERS_QUALITY_TOTALS_MAX,
+    }),
+  ]);
+
+  const scopeCustomerIds = scopeIdRows.map((r) => r.id);
+  const qualityTotalsTruncated = totalCustomersInScope > scopeCustomerIds.length;
+  const qualityTotals = await fetchCrmCustomersListQualityTotals(prisma, scopeCustomerIds);
 
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
@@ -1010,12 +1029,9 @@ export async function fetchCrmCustomersList(
     },
     period,
     totals: {
-      customersWithoutCommercialOwner: customers.filter((c) => !c.hasCommercialOwner).length,
-      customersWithoutPurchase: customers.filter((c) => !c.hasPurchaseHistory).length,
-      customersWithOrderWithoutNomusSeller: customers.filter((c) => c.hasOrderWithoutNomusSeller)
-        .length,
-      customersWithOwnerSellerDivergence: customers.filter((c) => c.hasOwnerSellerDivergence)
-        .length,
+      totalCustomersInScope,
+      ...qualityTotals,
+      qualityTotalsTruncated,
     },
     sourceInfo: buildCrmCustomersListSourceInfo(period),
   };
