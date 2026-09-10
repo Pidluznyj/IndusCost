@@ -13,6 +13,19 @@ import {
   getDefaultCrmManagementTab,
   type CrmManagementTabId,
 } from "@/src/components/CrmCommercialManagementTabs.js";
+import { PERMISSION_PERSONA_MATRIX } from "@/src/lib/security/permissionPersonaMatrix.js";
+
+/**
+ * Bag real de um vendedor provisionado (fonte única: a matriz oficial de
+ * personas — a mesma que permissionPersonaMatrix.test.ts usa para provar
+ * que "vendedor" enxerga crm-commercial). `crm.seller.own` sozinho nunca
+ * é a bag real de ninguém: todo vendedor também ganha `crm.seller.view`
+ * (libera a aba) e `customers.view` (libera a carteira via
+ * canViewCustomer360) juntos, no mesmo grant.
+ */
+const VENDEDOR_PERSONA_PERMISSIONS = PERMISSION_PERSONA_MATRIX.find(
+  (p) => p.id === "vendedor"
+)!.permissions;
 
 function mockAuth(overrides: {
   permissions?: string[];
@@ -64,7 +77,7 @@ describe("crmCommercialLayout", () => {
   });
 
   it("vendedor não vê Gestão Geral e entra em Meu Dashboard", () => {
-    const auth = checkerFromPermissions(["crm.seller.own"]);
+    const auth = checkerFromPermissions(VENDEDOR_PERSONA_PERMISSIONS);
     assert.equal(canAccessCrmGeneral(auth), false);
     assert.equal(canAccessCrmSeller(auth), true);
     assert.equal(isCrmOwnSellerOnly(auth), true);
@@ -78,7 +91,7 @@ describe("crmCommercialLayout", () => {
   });
 
   it("carteira de clientes é aba principal acessível", () => {
-    const seller = checkerFromPermissions(["crm.seller.own"]);
+    const seller = checkerFromPermissions(VENDEDOR_PERSONA_PERMISSIONS);
     const manager = checkerFromPermissions(["crm.general.view", "crm.seller.all"]);
     assert.equal(canAccessCrmPortfolio(seller), true);
     assert.equal(canAccessCrmPortfolio(manager), true);
