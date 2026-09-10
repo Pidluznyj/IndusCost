@@ -185,13 +185,20 @@ export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = (
           Trocar cliente
         </button>
       </div>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-4 min-w-0">
-          <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
-            <Building2 className="h-6 w-6" />
+      {/*
+        Empilhado sempre — SEM lg:flex-row. Esse breakpoint é do VIEWPORT, não
+        da largura do cartão: numa tela larga ele forçava nome+ações lado a
+        lado mesmo com o cartão ocupando só metade da tela (grid 50/50 dos
+        filtros), espremendo o nome numa coluna estreita e quebrando palavras
+        no meio (ex.: "Eletrodomesticos" virando "Eletrod/omestic/os").
+      */}
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
+            <Building2 className="h-5 w-5" />
           </div>
           <div className="min-w-0 space-y-2">
-            <h2 className="text-2xl sm:text-3xl font-bold leading-tight text-foreground break-words">
+            <h2 className="text-xl sm:text-2xl font-bold leading-snug text-foreground break-words">
               {getCustomerDisplayName(customer)}
             </h2>
             {customer.tradeName?.trim() ? (
@@ -210,21 +217,27 @@ export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = (
               <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-primary">
                 {portfolioStatus}
               </span>
-              {buildCustomerListStatusTags(customer).map((tag) => (
-                <span
-                  key={tag.key}
-                  className={cn(
-                    "rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                    tag.className
-                  )}
-                >
-                  {tag.label}
-                </span>
-              ))}
+              {buildCustomerListStatusTags(customer)
+                // "Carteira aberta" já é o pill primário acima (fonte mais
+                // atual: intel.summary.hasOpenOrders); repetir aqui via
+                // customer.hasOpenPortfolio (snapshot da lista) é a mesma
+                // informação duas vezes com fontes diferentes.
+                .filter((tag) => tag.key !== "open-portfolio")
+                .map((tag) => (
+                  <span
+                    key={tag.key}
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                      tag.className
+                    )}
+                  >
+                    {tag.label}
+                  </span>
+                ))}
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2">
           <Link
             to={intelligencePath}
             className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
