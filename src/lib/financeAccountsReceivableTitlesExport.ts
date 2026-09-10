@@ -57,7 +57,7 @@ export function buildFinanceArTitlesExportWorkbook(
         Descrição: row.description ?? "",
         "Data emissão": formatDateBr(row.competenceDate),
         Vencimento: formatDateBr(row.dueDate),
-        "Data recebimento": formatDateBr(row.settlementDate),
+        "Data da baixa": formatDateBr(row.settlementDate),
         Status: formatFinanceCalculatedStatus(row.calculatedStatus),
         "Dias em atraso": row.daysOverdue,
         "Valor original": row.amountReceivable,

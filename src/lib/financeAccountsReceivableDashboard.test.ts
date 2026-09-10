@@ -586,4 +586,26 @@ describe("financeAccountsReceivableDashboard", () => {
     const and = (where as { AND?: unknown[] }).AND;
     assert.ok(Array.isArray(and) && and.length >= 2);
   });
+
+  describe("cashReceivedInPeriodAmount — caixa canônico aditivo (nunca substitui receivedThisMonthAmount)", () => {
+    it("fica null quando o chamador não passa cashReceivedInPeriod (função pura, sem Prisma)", () => {
+      const rows = [row({ externalId: 1 })];
+      const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+      assert.equal(dash.cards.cashReceivedInPeriodAmount, null);
+      assert.equal(dash.cards.cashReceivedInPeriodCount, null);
+    });
+
+    it("reflete exatamente o valor pré-calculado pelo chamador, sem recalcular nem misturar com settlementDate", () => {
+      const rows = [
+        row({ externalId: 1, settlementDate: new Date(2026, 5, 3), amountReceived: 500 }),
+      ];
+      const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF, null, {
+        cashReceivedInPeriod: { totalReceivedAmount: 1234.56, count: 3 },
+      });
+      assert.equal(dash.cards.cashReceivedInPeriodAmount, 1234.56);
+      assert.equal(dash.cards.cashReceivedInPeriodCount, 3);
+      // receivedThisMonthAmount (baixa) continua seu próprio cálculo, intocado.
+      assert.equal(dash.cards.receivedThisMonthAmount, 500);
+    });
+  });
 });

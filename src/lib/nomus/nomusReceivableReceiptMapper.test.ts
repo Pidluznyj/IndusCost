@@ -134,6 +134,34 @@ describe("nomusReceivableReceiptMapper", () => {
     assert.equal(receiptNeedsWrite({ payloadHash: first.row.payloadHash }, modified.row), true);
   });
 
+  it("receiptDate nunca se desloca por createdAtNomus tardio (caso LIVE CR 19497 / RECEIPT 11522)", () => {
+    // Evidência LIVE 10/09/2026: dinheiro entrou 04/09 (dataRecebimento), mas o
+    // registro só foi criado no Nomus dias depois (dataHoraCriacao 10/09,
+    // 12:13:00). A competência é SEMPRE dataRecebimento — createdAtNomus é só
+    // metadado de quando o ERP passou a saber do evento, nunca quando o
+    // dinheiro entrou.
+    const result = mapNomusReceivableReceiptPayload(
+      livePayload({
+        id: 11522,
+        idContaReceber: 19497,
+        dataRecebimento: "04/09/2026",
+        dataHoraCriacao: "10/09/2026 12:13:00",
+        dataModificacao: "10/09/2026 12:13:00",
+        valorRecebido: "1.488,00",
+      })
+    );
+    assert.equal(isNomusReceiptMapSuccess(result), true);
+    if (!isNomusReceiptMapSuccess(result)) return;
+    assert.equal(result.row.receiptDate.toISOString().slice(0, 10), "2026-09-04");
+    assert.equal(result.row.createdAtNomus?.toISOString().slice(0, 10), "2026-09-10");
+    // O mês de competência (setembro, pelo dia 04) não muda mesmo com o
+    // registro tendo sido criado 6 dias depois no ERP.
+    assert.notEqual(
+      result.row.receiptDate.toISOString().slice(0, 10),
+      result.row.createdAtNomus?.toISOString().slice(0, 10)
+    );
+  });
+
   it("payload não expõe status/deleted/cancelled — exclusão na origem não é inferida", () => {
     const payload = livePayload();
     for (const key of ["status", "deleted", "cancelado", "cancelled", "excluido"]) {

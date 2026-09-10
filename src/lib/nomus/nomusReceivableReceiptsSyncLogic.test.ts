@@ -350,3 +350,80 @@ describe("contrato do runner automático", () => {
     assert.match(script, /data: \{ syncedAt \}/);
   });
 });
+
+/**
+ * Refresh recente (acelerador intraday) — teste 12, 14 e 15 da missão de
+ * canonicalização de recebimentos: um refresh parcial nunca pode se passar
+ * por varredura completa, precisa compartilhar persistência/idempotência com
+ * o full scan (MESMO script) e precisa compartilhar o MESMO lock exclusivo
+ * (nunca corre concorrente com o full scan diário).
+ */
+describe("contrato do runner de refresh recente (best-effort)", () => {
+  const RECENT_RUNNER = "scripts/runNomusReceivableReceiptsRecentSync.sh";
+
+  it("o runner de refresh recente existe, trava com flock e roda o MESMO script do full scan", () => {
+    const runner = read(RECENT_RUNNER);
+    assert.match(runner, /#!\/usr\/bin\/env bash/);
+    assert.match(runner, /set -Eeuo pipefail/);
+    assert.match(runner, /flock -n 9/);
+    // MESMO lock file do full scan — nunca um pathname paralelo (mútua exclusão real).
+    assert.match(runner, /induscost-nomus-receivable-receipts\.lock/);
+    assert.match(runner, /npm run/);
+    for (const forbidden of [/prisma\./i, /\.upsert\s*\(/, /payloadHash/]) {
+      assert.doesNotMatch(runner, forbidden);
+    }
+  });
+
+  it("usa o MESMO NOMUS_RECEIPTS_SYNC_LOCK_FILE do full scan — nunca um lock paralelo", () => {
+    const fullScanRunner = shellCodeOnly(read(RUNNER));
+    const recentRunner = shellCodeOnly(read(RECENT_RUNNER));
+    const lockLine = /LOCK_FILE="\$\{NOMUS_RECEIPTS_SYNC_LOCK_FILE:-[^}]+\}"/;
+    const fullScanLock = fullScanRunner.match(lockLine)?.[0];
+    const recentLock = recentRunner.match(lockLine)?.[0];
+    assert.ok(fullScanLock, "full scan runner não declara LOCK_FILE");
+    assert.ok(recentLock, "recent runner não declara LOCK_FILE");
+    assert.equal(recentLock, fullScanLock);
+  });
+
+  it("é best-effort: NUNCA usa --require-full-scan (uma varredura por maxPages é incompleta por definição)", () => {
+    assert.doesNotMatch(shellCodeOnly(read(RECENT_RUNNER)), /--require-full-scan/);
+
+    const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
+    for (const mode of ["preview", "apply"]) {
+      const cmd = pkg.scripts[`sync:nomus:receipts:recent:${mode}`];
+      assert.ok(cmd, `script npm ausente para sync:nomus:receipts:recent:${mode}`);
+      assert.doesNotMatch(cmd, /--require-full-scan/);
+      assert.match(cmd, /--maxPages/);
+    }
+  });
+
+  it("NOMUS_RECEIPTS_RECENT_MAX_PAGES é configurável, com default pequeno (não vira full scan por acidente)", () => {
+    const runner = read(RECENT_RUNNER);
+    assert.match(runner, /MAX_PAGES="\$\{NOMUS_RECEIPTS_RECENT_MAX_PAGES:-3\}"/);
+    assert.match(shellCodeOnly(runner), /--maxPages\s+"\$MAX_PAGES"/);
+  });
+
+  it("roda o MESMO nomusReceivableReceiptsSync.ts do full scan — não duplica motor/mapper", () => {
+    const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
+    for (const mode of ["preview", "apply"]) {
+      assert.match(pkg.scripts[`sync:nomus:receipts:recent:${mode}`], /nomusReceivableReceiptsSync\.ts/);
+      assert.match(pkg.scripts[`sync:nomus:receipts:fullscan:${mode}`], /nomusReceivableReceiptsSync\.ts/);
+    }
+  });
+
+  it("log do refresh recente é separado do log do full scan (não mistura evidência de cobertura)", () => {
+    assert.match(read(RECENT_RUNNER), /runner-receivable-receipts-recent_\$\{MODE\}_\$\{RUN_STAMP\}\.log/);
+    assert.doesNotMatch(
+      shellCodeOnly(read(RECENT_RUNNER)).replace(/receivable-receipts-recent/g, ""),
+      /receivable-receipts_\$\{MODE\}/
+    );
+  });
+
+  it("colisão de lock termina em SKIPPED com exit 0, igual ao full scan", () => {
+    const runner = read(RECENT_RUNNER);
+    assert.match(runner, /SKIPPED:/);
+    const skipBlock = runner.slice(runner.indexOf("if ! flock -n 9"));
+    assert.match(skipBlock.slice(0, 400), /EXIT_CODE=0/);
+    assert.match(skipBlock.slice(0, 400), /exit 0/);
+  });
+});

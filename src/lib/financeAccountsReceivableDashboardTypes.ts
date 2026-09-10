@@ -50,7 +50,19 @@ export type FinanceArDashboardCards = {
   upcomingAmount: number;
   dueNext7DaysAmount: number;
   dueNext30DaysAmount: number;
+  /** Baixa administrativa no mês (settlementDate) — NÃO é caixa. Ver `cashReceivedInPeriodAmount`. */
   receivedThisMonthAmount: number;
+  /**
+   * Caixa real recebido no período aplicado (mês/ano dos filtros, ou mês
+   * corrente quando não informado) — fonte única: `NomusReceivableReceipt.receiptDate`
+   * via a camada canônica `financeReceiptsCanonical`. `null` quando a rota que
+   * gerou este payload não computou o valor (ex.: chamadas internas do motor
+   * oficial fora de `financeAccountsReceivableRoutes.ts`) — nesse caso NUNCA
+   * exibir como zero, exibir "—". Nunca confundir com `receivedThisMonthAmount`.
+   */
+  cashReceivedInPeriodAmount: number | null;
+  /** Quantidade de eventos de recebimento (`NomusReceivableReceipt`) que compõem `cashReceivedInPeriodAmount`. */
+  cashReceivedInPeriodCount: number | null;
   delinquencyRate: number;
   overdueCustomersCount: number;
   lastSyncAt: string | null;
