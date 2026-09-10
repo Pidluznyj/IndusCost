@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Search, Users, X } from "lucide-react";
+import { Filter, GitCompare, Link2, Search, ShoppingCart, UserX, Users, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type {
   CrmCustomerListFilter,
@@ -193,30 +193,40 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           label: "Total de clientes no filtro",
           value: fmt(totals.totalCustomersInScope),
           hint: "Universo completo do filtro aplicado — não é a contagem da página exibida.",
+          tone: "info" as const,
+          icon: Users,
         },
         {
           key: "no-owner",
           label: "Clientes sem responsável comercial",
           value: fmt(totals.customersWithoutCommercialOwner),
           hint: CRM_UI_TOOLTIPS.commercialOwner,
+          tone: "warning" as const,
+          icon: UserX,
         },
         {
           key: "no-purchase",
           label: "Clientes sem compra",
           value: fmt(totals.customersWithoutPurchase),
           hint: "Clientes do filtro sem nenhum pedido válido no histórico (independe do período).",
+          tone: "warning" as const,
+          icon: ShoppingCart,
         },
         {
           key: "no-nomus",
           label: "Clientes com pedido sem vendedor Nomus",
           value: fmt(totals.customersWithOrderWithoutNomusSeller),
           hint: CRM_UI_TOOLTIPS.orderSeller,
+          tone: "neutral" as const,
+          icon: Link2,
         },
         {
           key: "divergence",
           label: "Clientes com responsável ≠ vendedor do pedido",
           value: fmt(totals.customersWithOwnerSellerDivergence),
           hint: "O pedido permanece na carteira do responsável comercial; o vendedor Nomus é auditoria/comissão.",
+          tone: "warning" as const,
+          icon: GitCompare,
         },
       ]
     : [];
@@ -228,33 +238,35 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   };
 
   return (
-    <section className="space-y-6" aria-label="Carteira de clientes">
-      <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
-          <Users className="h-5 w-5" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-            Gestão comercial por responsável da carteira: busque clientes, acompanhe relacionamento e
-            opere o cockpit do cliente selecionado. O vendedor do pedido (Nomus) é só auditoria.
-          </p>
-          <p className="text-xs text-muted-foreground mt-1 italic">{scopeLabel}</p>
-          {period?.dateFrom || period?.dateTo ? (
-            <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
-              Valor de pedidos no período: {period.dateFrom ?? "…"} → {period.dateTo ?? "…"}
+    <section className="space-y-5" aria-label="Carteira de clientes">
+      <div className="rounded-2xl border border-border bg-card shadow-sm p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+              Gestão comercial por responsável da carteira: busque clientes, acompanhe relacionamento e
+              opere o cockpit do cliente selecionado. O vendedor do pedido (Nomus) é só auditoria.
             </p>
-          ) : null}
+            <p className="text-xs text-muted-foreground mt-1 italic">{scopeLabel}</p>
+            {period?.dateFrom || period?.dateTo ? (
+              <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
+                Valor de pedidos no período: {period.dateFrom ?? "…"} → {period.dateTo ?? "…"}
+              </p>
+            ) : null}
+          </div>
         </div>
-      </div>
 
-      <CrmPeriodFilterBar
-        period={periodFilter}
-        onChange={onPeriodFilterChange}
-        yearOptions={periodYearOptions}
-        testIdPrefix="crm-portfolio"
-        note="O período filtra as colunas “Pedidos”/“Venda no período” da tabela. Os totais de cadastro (universo, sem responsável, sem compra, divergência) são sempre do histórico completo do filtro, não deste período."
-      />
+        <CrmPeriodFilterBar
+          period={periodFilter}
+          onChange={onPeriodFilterChange}
+          yearOptions={periodYearOptions}
+          testIdPrefix="crm-portfolio"
+          note="O período filtra as colunas “Pedidos”/“Venda no período” da tabela. Os totais de cadastro (universo, sem responsável, sem compra, divergência) são sempre do histórico completo do filtro, não deste período."
+        />
+      </div>
 
       <CrmCommercialSourceInfoNote sourceInfo={sourceInfo} />
       {totals?.qualityTotalsTruncated ? (
@@ -272,14 +284,19 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
 
       <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
         <aside className="min-w-0">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Lista da carteira</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isOwnSellerOnly
-                  ? "Somente clientes sob sua responsabilidade comercial."
-                  : "Clientes agrupados pelo responsável comercial da carteira."}
-              </p>
+          <div className="rounded-2xl border border-border bg-muted/25 p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
+            <div className="flex items-center gap-2.5">
+              <span className="rounded-lg border border-border/60 bg-background p-1.5 text-muted-foreground shrink-0">
+                <Filter className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Filtros da carteira</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {isOwnSellerOnly
+                    ? "Somente clientes sob sua responsabilidade comercial."
+                    : "Clientes agrupados pelo responsável comercial da carteira."}
+                </p>
+              </div>
             </div>
 
             {showSellerFilter ? (

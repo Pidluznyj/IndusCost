@@ -1,5 +1,5 @@
 import React from "react";
-import { Briefcase, Loader2, RefreshCw, Users } from "lucide-react";
+import { Briefcase, GitCompare, Link2, Loader2, RefreshCw, Users } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
@@ -118,6 +118,8 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             label: "Pedidos sem vendedor no Nomus",
             value: fmt(data.ordersWithoutNomusSeller ?? data.summary.ordersWithoutNomusSeller),
             hint: CRM_UI_TOOLTIPS.orderSeller,
+            tone: "neutral" as const,
+            icon: Link2,
           },
           {
             key: "divergence",
@@ -126,12 +128,16 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
               data.ordersWithDifferentNomusSeller ?? data.summary.ordersWithDifferentNomusSeller
             ),
             hint: "O pedido permanece na carteira do responsável comercial; o vendedor Nomus é só auditoria/comissão.",
+            tone: "warning" as const,
+            icon: GitCompare,
           },
           {
             key: "customers",
             label: "Clientes na carteira do responsável",
             value: fmt(data.selectedCommercialOwner?.customerCount ?? data.customersWithOrders),
             hint: CRM_UI_TOOLTIPS.commercialOwner,
+            tone: "info" as const,
+            icon: Users,
           },
         ]
       : [];
