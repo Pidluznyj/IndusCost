@@ -540,11 +540,12 @@ describe("arquitetura — um único escritor de saldo cadastral", () => {
     assert.match(count, /reconcileMaterialQuantitiesFromInventoryInTx/);
     const conference = read("src/lib/materialStockConference.server.ts");
     assert.doesNotMatch(conference, /quantity:\s*reported/);
+    assert.doesNotMatch(conference, /reconcileMaterialQuantityFromInventoryInTx/);
     const parameters = read("src/lib/materialStockParameters.server.ts");
     assert.doesNotMatch(parameters, /quantity:\s*command\.currentQuantity/);
     const server = read("server.ts");
-    assert.match(server, /resolveMaterialUpdateQuantity/);
-    assert.match(server, /resolveMaterialCreateQuantity/);
+    assert.match(server, /materialUpdateQuantityHttpResult/);
+    assert.match(server, /materialCreateQuantityHttpResult/);
     assert.doesNotMatch(server, /quantity: body\.quantity/);
     assert.match(count, /prisma\.\$transaction/);
   });

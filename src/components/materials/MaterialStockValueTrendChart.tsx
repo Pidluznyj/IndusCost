@@ -244,7 +244,7 @@ export function MaterialStockValueTrendChart() {
           </p>
           <p className="max-w-md text-xs text-muted-foreground">
             O valor em estoque passa a ser fotografado a cada conferência
-            registrada em <strong>Conferência de estoque</strong>. Após a
+            registrada em <strong>Conferência Física</strong>. Após a
             primeira semana de lançamentos, a flutuação aparece aqui.
           </p>
         </div>

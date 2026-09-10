@@ -1,12 +1,11 @@
 /**
- * Edição dos parâmetros de nível + saldo atual (obrigatório).
+ * Edição dos parâmetros de nível. O saldo físico é somente leitura.
  * Não altera custos.
  */
 import React, { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   buildParametersRequestBody,
-  parseCurrentQuantityParameterInput,
   parseStockLevelParameterInput,
   toCurrentQuantityInputValue,
   updateMaterialStockParameters,
@@ -69,18 +68,9 @@ export function MaterialStockParametersDialog({
 
   const handleSave = async () => {
     if (saving) return;
-    const q = parseCurrentQuantityParameterInput(currentQuantityRaw);
     const c = parseStockLevelParameterInput(contingencyRaw);
     const m = parseStockLevelParameterInput(minimumRaw);
     const r = parseStockLevelParameterInput(recommendedRaw);
-    if (!q.ok) {
-      setError(
-        q.reason === "EMPTY"
-          ? "Saldo atual é obrigatório. Informe 0 se estiver zerado."
-          : "Saldo atual inválido. Use número decimal ≥ 0."
-      );
-      return;
-    }
     if (!c.ok || !m.ok || !r.ok) {
       setError("Parâmetro inválido. Use número decimal ou deixe vazio (não configurado).");
       return;
@@ -98,7 +88,6 @@ export function MaterialStockParametersDialog({
     setSaving(true);
     setError(null);
     const body = buildParametersRequestBody({
-      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
@@ -111,7 +100,6 @@ export function MaterialStockParametersDialog({
 
     const result = await updateMaterialStockParameters({
       materialId: item.id,
-      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,

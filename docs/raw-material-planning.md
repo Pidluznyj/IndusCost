@@ -5,13 +5,13 @@ Tela: Suprimentos > Planejamento de Matéria-Prima (`/materials/planning`).
 ## Objetivo
 
 Responder, para cada matéria-prima: o que comprar, quanto, até quando e com
-que confiança — cruzando saldo de estoque contado, proteção mínima +
+que confiança — cruzando saldo físico oficial do Inventory, proteção mínima +
 contingência, demanda dos pedidos de venda ainda em aberto e entradas de
 compra já confirmadas. Antes desta tela, essas informações existiam
-separadas: o saldo contado (Suprimentos > Conferência de Estoque) e a
-demanda estimada (Comercial > Pedidos de Venda > Inteligência de
-Matéria-Prima) — ninguém juntava as duas com proteção de estoque e prazo de
-compra.
+separadas: o saldo físico oficial (Estoque / Almoxarifado, projetado em
+`Material.quantity`) e a demanda estimada (Comercial > Pedidos de Venda >
+Inteligência de Matéria-Prima) — ninguém juntava as duas com proteção de
+estoque e prazo de compra.
 
 ## O que NÃO é
 
@@ -170,10 +170,9 @@ fatia localmente.
 
 ## Limitações conhecidas
 
-- O saldo contado é tão atual quanto a última conferência de estoque — não
-  reflete movimentações de fábrica em tempo real. A situação
-  `STOCK_COUNT_STALE` e o indicador de confiança existem justamente para
-  deixar isso explícito, nunca escondido atrás de um número calculado.
+- O saldo físico é tão atual quanto o ledger de Estoque (`InventoryBalance`) —
+  não um segundo cadastro em Suprimentos. A situação `STOCK_COUNT_STALE` e o
+  indicador de confiança existem para deixar defasagem operacional explícita.
 - A data de necessidade usa `expectedDeliveryDate` do pedido — não existe
   hoje no sistema uma data planejada de início de produção; se um dia
   existir, deve ganhar prioridade sobre `expectedDeliveryDate` nesta mesma

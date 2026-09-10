@@ -158,19 +158,14 @@ describe("materialStockParametersRules", () => {
     assert.equal(cmd.recommendedQuantity, null);
   });
 
-  it("exige saldo atual", () => {
-    assert.throws(
-      () =>
-        parseMaterialStockParametersCommand({
-          contingencyQuantity: 1,
-          minimumQuantity: 2,
-          recommendedQuantity: 3,
-        }),
-      (err: unknown) =>
-        err instanceof MaterialStockConferenceError &&
-        err.code === "REQUIRED_FIELD" &&
-        err.field === "currentQuantity"
-    );
+  it("permite omitir saldo atual", () => {
+    const cmd = parseMaterialStockParametersCommand({
+      contingencyQuantity: 1,
+      minimumQuantity: 2,
+      recommendedQuantity: 3,
+    });
+    assert.equal(cmd.currentQuantity, null);
+    assert.equal(cmd.contingencyQuantity, 1);
   });
 
   it("rejeita hierarquia inválida", () => {
@@ -213,7 +208,6 @@ describe("updateMaterialStockParameters", () => {
     const result = await updateMaterialStockParameters(db as any, {
       materialId: MATERIAL_ID,
       body: {
-        currentQuantity: 500,
         contingencyQuantity: 10,
         minimumQuantity: 20,
         recommendedQuantity: 50,

@@ -12,6 +12,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import type { MaterialStockTabletSearchQuery } from "./materialStockTabletQuery.js";
+import type { MaterialStockTabletSearchResponse } from "./materialStockTabletTypes.js";
 import {
   computeStockStatusForTabletRow,
   serializeMaterialStockTabletListItem,

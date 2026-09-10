@@ -309,6 +309,31 @@ describe("inventoryCountService", () => {
     assert.equal(state.sessions[0].status, "ADJUSTED");
   });
 
+  it("ajuste de sessão é atômico: falha na 4ª linha faz rollback", async () => {
+    const { prisma, state } = createCountMockPrisma({
+      failOnNthMovement: 4,
+      balances: [balanceRow("item-1", "wh-1", 10)],
+      sessions: [{ ...countingSession("sess-1", "wh-1")[0], status: "APPROVED" }],
+      lines: [1, 2, 3, 4].map((n) => ({
+        ...countLine(`line-${n}`, "sess-1", "item-1", "wh-1", 10),
+        countedQuantity: new Prisma.Decimal(11),
+        differenceQuantity: new Prisma.Decimal(1),
+        justification: "Ajuste",
+      })),
+    });
+    await assert.rejects(
+      () =>
+        generateInventoryCountAdjustments(prisma as never, "sess-1", {
+          userId: "user-1",
+          permissions: ["inventory.manage"],
+        }),
+      /simulated adjustment failure/
+    );
+    assert.equal(state.movements.length, 0);
+    assert.equal(state.sessions[0].status, "APPROVED");
+    assert.ok(state.lines.every((line) => !line.generatedMovementId));
+  });
+
   it("12. não gera ajuste duplicado", async () => {
     const { prisma } = createCountMockPrisma({
       balances: [balanceRow("item-1", "wh-1", 5)],
@@ -550,6 +575,7 @@ function createCountMockPrisma(options?: {
   lines?: MockLine[];
   materialId?: string | null;
   materialQuantity?: number;
+  failOnNthMovement?: number;
 }) {
   const state = {
     balances: [...(options?.balances ?? [])],
@@ -658,6 +684,12 @@ function createCountMockPrisma(options?: {
         }) ?? null,
       findMany: async () => [...state.movements],
       create: async ({ data }: { data: Record<string, unknown> }) => {
+        if (
+          options?.failOnNthMovement != null &&
+          state.movements.length + 1 >= options.failOnNthMovement
+        ) {
+          throw new Error("simulated adjustment failure");
+        }
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);
         return row;
@@ -797,7 +829,38 @@ function createCountMockPrisma(options?: {
   };
 
   const prisma = {
-    $transaction: async (fn: (inner: typeof movementTx) => Promise<unknown>) => fn(movementTx),
+    $transaction: async (fn: (inner: typeof movementTx) => Promise<unknown>) => {
+      const snapshot = {
+        balances: state.balances.map((row) => ({ ...row })),
+        sessions: state.sessions.map((row) => ({ ...row })),
+        lines: state.lines.map((row) => ({ ...row })),
+        movements: state.movements.map((row) => ({ ...row })),
+        observations: state.observations.map((row) => ({ ...row })),
+        operations: state.operations.map((row) => ({ ...row })),
+        auditLogs: state.auditLogs.map((row) => ({ ...row })),
+        materialQuantity: new Prisma.Decimal(state.materialQuantity.toString()),
+      };
+      try {
+        return await fn(movementTx);
+      } catch (error) {
+        state.balances.length = 0;
+        state.balances.push(...snapshot.balances);
+        state.sessions.length = 0;
+        state.sessions.push(...snapshot.sessions);
+        state.lines.length = 0;
+        state.lines.push(...snapshot.lines);
+        state.movements.length = 0;
+        state.movements.push(...snapshot.movements);
+        state.observations.length = 0;
+        state.observations.push(...snapshot.observations);
+        state.operations.length = 0;
+        state.operations.push(...snapshot.operations);
+        state.auditLogs.length = 0;
+        state.auditLogs.push(...snapshot.auditLogs);
+        state.materialQuantity = snapshot.materialQuantity;
+        throw error;
+      }
+    },
     inventoryAuditLog: movementTx.inventoryAuditLog,
     inventoryCountSession: movementTx.inventoryCountSession,
     inventoryCountLine: movementTx.inventoryCountLine,

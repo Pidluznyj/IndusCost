@@ -159,7 +159,7 @@ export function MaterialStockConferencePage() {
         setError(
           e instanceof Error
             ? e.message
-            : "Não foi possível carregar matérias-primas para conferência."
+            : "Não foi possível carregar matérias-primas."
         );
         if (mode === "replace") setRows([]);
       } finally {
@@ -267,8 +267,12 @@ export function MaterialStockConferencePage() {
           {MATERIAL_STOCK_CONFERENCE_PAGE_TITLE}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Consulte o estoque atual e prepare a conferência física — sem informações de
-          custo.
+          Ajuste contingência, mínimo e recomendado. O saldo físico é somente leitura —
+          quantidade absoluta entra pela{" "}
+          <a href="/inventory/counts" className="underline underline-offset-2">
+            Conferência Física
+          </a>
+          .
         </p>
       </div>
 

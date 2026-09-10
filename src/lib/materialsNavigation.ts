@@ -353,10 +353,10 @@ export const MATERIALS_SECTIONS: MaterialsSectionDef[] = [
   },
   {
     id: "stockConference",
-    label: "Conferência de estoque",
+    label: "Parâmetros de estoque",
     path: MATERIALS_SECTION_PATHS.stockConference,
     description:
-      "Operação de conferência física do estoque atual de matérias-primas (sem custos).",
+      "Parâmetros de nível (contingência, mínimo, recomendado). O saldo físico é somente leitura e pertence ao Estoque.",
   },
   {
     id: "marketIntelligence",

@@ -114,7 +114,7 @@ export function registerMaterialStockTabletRoutes(
           error:
             error instanceof Error
               ? error.message
-              : "Não foi possível registrar a conferência de estoque.",
+              : "Não foi possível registrar os parâmetros de estoque.",
         });
       }
     }

@@ -5,7 +5,7 @@
  *   npm run audit:material-inventory-balance
  *   npx tsx scripts/auditMaterialInventoryBalance.ts --code=115.01--
  *
- * Não escreve. Não aplica repair.
+ * Não escreve. Não aplica repair. Imprime TODAS as linhas não-MATCH.
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
@@ -34,23 +34,39 @@ async function main(): Promise<void> {
 
   console.log("Resumo Material × Inventory (read-only)");
   console.log(JSON.stringify(summary, null, 2));
-  const divergentes = rows.filter((r) => r.status !== "MATCH" && r.status !== "NO_BALANCE");
-  console.log(`Linhas divergentes/anômalas: ${divergentes.length}`);
-  for (const row of divergentes.slice(0, 50)) {
-    console.log(
-      [
-        row.status,
-        row.materialCode,
-        `qty=${row.materialQuantity}`,
-        `canonical=${row.canonicalPhysical}`,
-        `diff=${row.absoluteDifference}`,
-        row.inventoryItemCode ?? "-",
-        row.linkIssue ?? "",
-      ].join(" | ")
-    );
+
+  const highlight = rows.filter(
+    (r) => r.materialCode === "115.01--" || r.materialCode === arg("code")
+  );
+  if (highlight.length) {
+    console.log("Destaque:");
+    console.log(JSON.stringify(highlight, null, 2));
   }
-  if (divergentes.length > 50) {
-    console.log(`... +${divergentes.length - 50} linha(s)`);
+
+  const anomalias = rows.filter((r) => r.status !== "MATCH");
+  console.log(`Linhas não-MATCH: ${anomalias.length}`);
+  for (const row of anomalias) {
+    console.log(
+      JSON.stringify({
+        classification: row.status,
+        materialId: row.materialId,
+        materialCode: row.materialCode,
+        description: row.materialDescription,
+        unit: row.materialUnit,
+        materialQuantity: row.materialQuantity,
+        inventoryItemId: row.inventoryItemId,
+        inventoryItemCode: row.inventoryItemCode,
+        controlsLocation: row.controlsLocation,
+        physicalCanonicalQuantity: row.canonicalPhysical,
+        difference: row.signedDifference,
+        absoluteDifference: row.absoluteDifference,
+        warehouseCount: row.warehouseCount,
+        locationCount: row.locationCount,
+        lastMovementAt: row.lastMovementAt,
+        lastMovementId: row.lastMovementId,
+        linkIssue: row.linkIssue,
+      })
+    );
   }
 }
 

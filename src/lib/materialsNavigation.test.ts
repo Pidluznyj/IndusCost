@@ -24,7 +24,7 @@ describe("materialsNavigation", () => {
       MATERIALS_SECTIONS.map((s) => s.label),
       [
         "Matérias-primas",
-        "Conferência de estoque",
+        "Parâmetros de estoque",
         "Inteligência de Mercado",
         "Planejamento de Matéria-Prima",
       ]

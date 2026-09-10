@@ -32,10 +32,7 @@ export function resolveMaterialCreateQuantity(
     return { ok: true, quantity: 0 };
   }
   const parsed = roundMaterialStockQuantity(bodyQuantity);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return { ok: true, quantity: 0 };
-  }
-  if (parsed !== 0) {
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed !== 0) {
     return {
       ok: false,
       error: MATERIAL_QUANTITY_NOT_EDITABLE,

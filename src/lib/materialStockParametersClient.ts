@@ -125,7 +125,7 @@ export type UpdateMaterialStockParametersResult =
 
 export async function updateMaterialStockParameters(input: {
   materialId: string;
-  currentQuantity: number;
+  currentQuantity?: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
@@ -223,19 +223,22 @@ export function assertParametersPayloadHasNoCostOrQuantityFields(
   return assertParametersPayloadHasNoCostFields(body);
 }
 
-/** Body de edição inclui saldo atual; nunca inclui custos. */
+/** Body de edição nunca inclui custos. Saldo físico só entra se o caller insistir (API rejeita se divergir). */
 export function buildParametersRequestBody(input: {
-  currentQuantity: number;
+  currentQuantity?: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
   reason?: string | null;
 }): Record<string, unknown> {
-  return {
-    currentQuantity: input.currentQuantity,
+  const body: Record<string, unknown> = {
     contingencyQuantity: input.contingencyQuantity,
     minimumQuantity: input.minimumQuantity,
     recommendedQuantity: input.recommendedQuantity,
     reason: input.reason?.trim() || null,
   };
+  if (input.currentQuantity !== undefined) {
+    body.currentQuantity = input.currentQuantity;
+  }
+  return body;
 }

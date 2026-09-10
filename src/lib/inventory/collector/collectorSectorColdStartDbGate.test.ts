@@ -265,9 +265,9 @@ describe("Collector cold-start DB gate", { skip: gate }, () => {
     assert.ok(bal, "ajuste cria balance via motor canônico");
     assert.equal(Number(bal!.physicalQuantity), 100);
 
-    // Material.quantity legado NÃO foi escrito pelo collector
+    // Após apply, Material.quantity é a projeção do saldo físico oficial.
     const mat = await prisma.material.findUnique({ where: { id: materialIds[0] } });
-    assert.equal(Number(mat!.quantity), 50);
+    assert.equal(Number(mat!.quantity), 100);
 
     const diag = await diagnoseRawMaterialCollectorColdStart(prisma);
     assert.ok(diag.materialsEligibleForInventory >= 2);

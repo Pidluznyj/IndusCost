@@ -103,6 +103,7 @@ describe("materialQuantityWriteGuard", () => {
   it("create rejeita quantidade não zero e aceita bootstrap 0", () => {
     assert.equal(resolveMaterialCreateQuantity(undefined).ok, true);
     assert.equal(resolveMaterialCreateQuantity(0).ok, true);
+    assert.equal(resolveMaterialCreateQuantity(-1).ok, false);
     const rejected = resolveMaterialCreateQuantity(1100);
     assert.equal(rejected.ok, false);
     if (rejected.ok === false) {

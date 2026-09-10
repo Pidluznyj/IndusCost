@@ -121,9 +121,9 @@ import {
   normalizeMaterialQuantity,
 } from "./src/lib/materialQuantityTotal.js";
 import {
-  resolveMaterialCreateQuantity,
-  resolveMaterialUpdateQuantity,
-} from "./src/lib/materialQuantityWriteGuard.js";
+  materialCreateQuantityHttpResult,
+  materialUpdateQuantityHttpResult,
+} from "./src/lib/materialCadastralQuantityHttp.js";
 import {
   buildMonitoredMaterialListResponse,
   parseMonitoredMaterialCriticalityFilter,
@@ -4117,6 +4117,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             freight: d.freight || 0,
             standardLoss: d.standardLoss || 0,
             conversionFactor: d.conversionFactor || 1,
+            quantity: 0,
             status: d.status || "ACTIVE"
           }))
         });
@@ -5782,13 +5783,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
-      const quantityPolicy = resolveMaterialCreateQuantity(parsedNumeric.quantity);
+      const quantityPolicy = materialCreateQuantityHttpResult(parsedNumeric.quantity);
       if (quantityPolicy.ok === false) {
-        return res.status(400).json({
-          error: quantityPolicy.error,
-          field: quantityPolicy.field,
-          message: quantityPolicy.message,
-        });
+        return res.status(quantityPolicy.status).json(quantityPolicy.body);
       }
 
       const material = await prisma.material.create({
@@ -5899,13 +5896,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
-      const quantityPolicy = resolveMaterialUpdateQuantity(body.quantity, oldMaterial.quantity);
+      const quantityPolicy = materialUpdateQuantityHttpResult(body.quantity, oldMaterial.quantity);
       if (quantityPolicy.ok === false) {
-        return res.status(400).json({
-          error: quantityPolicy.error,
-          field: quantityPolicy.field,
-          message: quantityPolicy.message,
-        });
+        return res.status(quantityPolicy.status).json(quantityPolicy.body);
       }
 
       const material = await prisma.material.update({

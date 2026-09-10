@@ -49,7 +49,8 @@ export class MaterialStockConferenceError extends Error {
 
 export type ParsedMaterialStockConferenceCommand = {
   materialId: string;
-  reportedQuantity: number;
+  /** Snapshot opcional. Se informado e diferente do saldo oficial, a API rejeita. */
+  reportedQuantity: number | null;
   /** Obrigatório na conferência. */
   contingencyQuantity: number;
   /** Opcional — null = não configurado / limpar. */
@@ -122,27 +123,24 @@ export function parseMaterialStockConferenceCommand(
   }
 
   const reportedRaw = body.reportedQuantity ?? body.countedQuantity ?? body.newQuantity;
-  if (reportedRaw === undefined || reportedRaw === null || reportedRaw === "") {
-    throw new MaterialStockConferenceError(
-      "REQUIRED_FIELD",
-      "Saldo contado é obrigatório.",
-      "reportedQuantity"
-    );
-  }
-  const reportedQuantity = roundMaterialStockQuantity(reportedRaw);
-  if (!Number.isFinite(reportedQuantity)) {
-    throw new MaterialStockConferenceError(
-      "INVALID_FIELD",
-      "Saldo contado inválido.",
-      "reportedQuantity"
-    );
-  }
-  if (reportedQuantity < 0) {
-    throw new MaterialStockConferenceError(
-      "INVALID_FIELD",
-      "Saldo contado não pode ser negativo.",
-      "reportedQuantity"
-    );
+  let reportedQuantity: number | null = null;
+  if (reportedRaw !== undefined && reportedRaw !== null && reportedRaw !== "") {
+    const parsedReported = roundMaterialStockQuantity(reportedRaw);
+    if (!Number.isFinite(parsedReported)) {
+      throw new MaterialStockConferenceError(
+        "INVALID_FIELD",
+        "Saldo informado inválido.",
+        "reportedQuantity"
+      );
+    }
+    if (parsedReported < 0) {
+      throw new MaterialStockConferenceError(
+        "INVALID_FIELD",
+        "Saldo informado não pode ser negativo.",
+        "reportedQuantity"
+      );
+    }
+    reportedQuantity = parsedReported;
   }
 
   const contingencyRaw =

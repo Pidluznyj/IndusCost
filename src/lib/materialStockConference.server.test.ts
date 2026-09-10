@@ -205,19 +205,26 @@ function baseMaterial(overrides: Partial<MaterialRow> = {}): MaterialRow {
 }
 
 describe("materialStockConferenceRules — parse", () => {
-  it("exige estoque atual, contingência e motivo válido", () => {
+  it("exige contingência e motivo; saldo informado é opcional", () => {
     const cmd = parseMaterialStockConferenceCommand({
       materialId: MATERIAL_ID,
-      reportedQuantity: 450,
       contingencyQuantity: 40,
       recommendedQuantity: 200,
       reason: "CONFERÊNCIA_FÍSICA",
       expectedVersion: 3,
     });
-    assert.equal(cmd.reportedQuantity, 450);
+    assert.equal(cmd.reportedQuantity, null);
     assert.equal(cmd.contingencyQuantity, 40);
     assert.equal(cmd.recommendedQuantity, 200);
     assert.equal(cmd.reason, "CONFERENCIA_FISICA");
+    const withSnapshot = parseMaterialStockConferenceCommand({
+      materialId: MATERIAL_ID,
+      reportedQuantity: 500,
+      contingencyQuantity: 40,
+      reason: "CONFERENCIA_FISICA",
+      expectedVersion: 3,
+    });
+    assert.equal(withSnapshot.reportedQuantity, 500);
   });
 
   it("exige estoque contingência e permite recomendado vazio", () => {
@@ -225,7 +232,6 @@ describe("materialStockConferenceRules — parse", () => {
       () =>
         parseMaterialStockConferenceCommand({
           materialId: MATERIAL_ID,
-          reportedQuantity: 450,
           reason: "CONFERENCIA_FISICA",
           expectedVersion: 3,
         }),
@@ -236,7 +242,7 @@ describe("materialStockConferenceRules — parse", () => {
     );
     const cmd = parseMaterialStockConferenceCommand({
       materialId: MATERIAL_ID,
-      reportedQuantity: 450,
+      reportedQuantity: 500,
       contingencyQuantity: 40,
       reason: "CONFERENCIA_FISICA",
       expectedVersion: 3,
@@ -253,7 +259,7 @@ describe("recordMaterialStockConference", () => {
     const result = await recordMaterialStockConference(db as any, {
       body: {
         materialId: MATERIAL_ID,
-        reportedQuantity: 450,
+        reportedQuantity: 500,
         contingencyQuantity: 50,
         recommendedQuantity: 400,
         reason: "CONFERENCIA_FISICA",
@@ -266,8 +272,8 @@ describe("recordMaterialStockConference", () => {
     });
     assert.equal(result.created, true);
     assert.equal(result.conference.previousQuantity, 500);
-    assert.equal(result.conference.reportedQuantity, 450);
-    assert.equal(result.conference.difference, -50);
+    assert.equal(result.conference.reportedQuantity, 500);
+    assert.equal(result.conference.difference, 0);
     assert.equal(result.material.quantity, 500);
     assert.equal(result.material.contingencyQuantity, 50);
     assert.equal(result.material.recommendedQuantity, 400);
@@ -283,21 +289,29 @@ describe("recordMaterialStockConference", () => {
     }
   });
 
-  it("diferença positiva, saldo igual e Decimal", async () => {
-    const dbPos = createTxDb(baseMaterial({ quantity: 10.5, stockConferenceVersion: 1 }));
-    const pos = await recordMaterialStockConference(dbPos as any, {
-      body: {
-        materialId: MATERIAL_ID,
-        reportedQuantity: "12.750000",
-        contingencyQuantity: 50,
-        recommendedQuantity: 400,
-        reason: "ENTRADA_MANUAL",
-        expectedVersion: 1,
-      },
-      idempotencyKeyHeader: "key-pos",
-      actor,
-    });
-    assert.equal(pos.conference.difference, 2.25);
+  it("recusa reportedQuantity diferente do saldo oficial e snapshot igual fica diferença 0", async () => {
+    const dbForbidden = createTxDb(baseMaterial());
+    await assert.rejects(
+      () =>
+        recordMaterialStockConference(dbForbidden as any, {
+          body: {
+            materialId: MATERIAL_ID,
+            reportedQuantity: 450,
+            contingencyQuantity: 50,
+            recommendedQuantity: 400,
+            reason: "CONFERENCIA_FISICA",
+            expectedVersion: 3,
+          },
+          idempotencyKeyHeader: "key-qty-forbidden",
+          actor,
+        }),
+      (err: unknown) =>
+        err instanceof MaterialStockConferenceError &&
+        err.code === "FORBIDDEN" &&
+        err.field === "reportedQuantity"
+    );
+    assert.equal(dbForbidden.getConferences().length, 0);
+    assert.equal(dbForbidden.getMaterial().quantity, 500);
 
     const dbEq = createTxDb(baseMaterial({ quantity: 100, stockConferenceVersion: 1 }));
     const eq = await recordMaterialStockConference(dbEq as any, {
@@ -313,6 +327,24 @@ describe("recordMaterialStockConference", () => {
       actor,
     });
     assert.equal(eq.conference.difference, 0);
+    assert.equal(eq.conference.reportedQuantity, 100);
+    assert.equal(eq.material.quantity, 100);
+
+    const dbOmit = createTxDb(baseMaterial({ quantity: 10.5, stockConferenceVersion: 1 }));
+    const omitted = await recordMaterialStockConference(dbOmit as any, {
+      body: {
+        materialId: MATERIAL_ID,
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
+        reason: "ENTRADA_MANUAL",
+        expectedVersion: 1,
+      },
+      idempotencyKeyHeader: "key-omit",
+      actor,
+    });
+    assert.equal(omitted.conference.previousQuantity, 10.5);
+    assert.equal(omitted.conference.reportedQuantity, 10.5);
+    assert.equal(omitted.conference.difference, 0);
   });
 
   it("conflito 409 quando versão diverge", async () => {
@@ -351,7 +383,7 @@ describe("recordMaterialStockConference", () => {
       recordMaterialStockConference(db as any, {
         body: {
           materialId: MATERIAL_ID,
-          reportedQuantity: 450,
+          reportedQuantity: 500,
           contingencyQuantity: 50,
           recommendedQuantity: 400,
           reason: "CONFERENCIA_FISICA",
@@ -370,7 +402,7 @@ describe("recordMaterialStockConference", () => {
     const first = await recordMaterialStockConference(db as any, {
       body: {
         materialId: MATERIAL_ID,
-        reportedQuantity: 450,
+        reportedQuantity: 500,
         contingencyQuantity: 50,
         recommendedQuantity: 400,
         reason: "CONFERENCIA_FISICA",
@@ -421,7 +453,7 @@ describe("recordMaterialStockConference", () => {
     await recordMaterialStockConference(db as any, {
       body: {
         materialId: MATERIAL_ID,
-        reportedQuantity: 450,
+        reportedQuantity: 500,
         contingencyQuantity: 50,
         recommendedQuantity: 400,
         reason: "SAIDA_MANUAL",
@@ -472,7 +504,7 @@ describe("recordMaterialStockConference", () => {
         recordMaterialStockConference(db as any, {
           body: {
             materialId: MATERIAL_ID,
-            reportedQuantity: 450,
+            reportedQuantity: 500,
             contingencyQuantity: 50,
             recommendedQuantity: 400,
             reason: "OUTRO",

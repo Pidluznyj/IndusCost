@@ -129,4 +129,90 @@ describe("projeção Material.quantity — concorrência em PostgreSQL real", { 
     });
     assert.equal(new Prisma.Decimal(material.quantity.toString()).toString(), "65");
   });
+
+  it("mesma MP, dois warehouses: A-10 e B+20 concorrentes projetam 160", async () => {
+    const ctx = {
+      userId: "proj-user-160",
+      permissions: ["inventory.movements.create"],
+    } as const;
+
+    async function physicalAt(warehouseId: string): Promise<number> {
+      const row = await prisma.inventoryBalance.findFirst({
+        where: { itemId, warehouseId, locationId: null },
+        select: { physicalQuantity: true },
+      });
+      return row ? Number(row.physicalQuantity.toString()) : 0;
+    }
+
+    async function ensurePhysical(warehouseId: string, target: number, reason: string) {
+      const have = await physicalAt(warehouseId);
+      const delta = target - have;
+      if (delta > 0) {
+        await createInventoryMovement(
+          prisma,
+          {
+            itemId,
+            destinationWarehouseId: warehouseId,
+            movementType: "MANUAL_ENTRY",
+            quantity: delta,
+            unit: "KG",
+            reason,
+          },
+          ctx
+        );
+      }
+    }
+
+    await ensurePhysical(warehouseA, 100, "Seed A=100");
+    await ensurePhysical(warehouseB, 50, "Seed B=50");
+    const seeded = await prisma.material.findUniqueOrThrow({
+      where: { id: materialId },
+      select: { quantity: true },
+    });
+    assert.equal(new Prisma.Decimal(seeded.quantity.toString()).toString(), "150");
+
+    const tx1 = createInventoryMovement(
+      prisma,
+      {
+        itemId,
+        sourceWarehouseId: warehouseA,
+        movementType: "MANUAL_EXIT",
+        quantity: 10,
+        unit: "KG",
+        reason: "Saída A",
+      },
+      ctx
+    );
+    const tx2 = createInventoryMovement(
+      prisma,
+      {
+        itemId,
+        destinationWarehouseId: warehouseB,
+        movementType: "MANUAL_ENTRY",
+        quantity: 20,
+        unit: "KG",
+        reason: "Entrada B",
+      },
+      ctx
+    );
+    await Promise.all([tx1, tx2]);
+
+    const [balA, balB, material] = await Promise.all([
+      prisma.inventoryBalance.findFirstOrThrow({
+        where: { itemId, warehouseId: warehouseA, locationId: null },
+        select: { physicalQuantity: true },
+      }),
+      prisma.inventoryBalance.findFirstOrThrow({
+        where: { itemId, warehouseId: warehouseB, locationId: null },
+        select: { physicalQuantity: true },
+      }),
+      prisma.material.findUniqueOrThrow({
+        where: { id: materialId },
+        select: { quantity: true },
+      }),
+    ]);
+    assert.equal(new Prisma.Decimal(balA.physicalQuantity.toString()).toString(), "90");
+    assert.equal(new Prisma.Decimal(balB.physicalQuantity.toString()).toString(), "70");
+    assert.equal(new Prisma.Decimal(material.quantity.toString()).toString(), "160");
+  });
 });

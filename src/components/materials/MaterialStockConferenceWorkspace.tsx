@@ -285,7 +285,7 @@ function DetailPanel({
       </div>
 
       <div className="rounded-lg border border-border px-3 py-3 text-sm">
-        <p className="text-muted-foreground">Última conferência</p>
+        <p className="text-muted-foreground">Última atualização de parâmetros</p>
         <p className="mt-1 font-medium text-foreground">
           {formatStockConferenceDateTime(item.lastStockConferenceAt)}
         </p>
@@ -304,7 +304,7 @@ function DetailPanel({
             data-testid="stock-conference-action"
           >
             <ClipboardList className="h-4 w-4" />
-            Conferir e atualizar estoque
+            Atualizar parâmetros
           </button>
         ) : null}
         {canViewHistory ? (
@@ -338,7 +338,7 @@ export function MaterialStockConferenceWorkspace(
       >
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <p className="mt-2 text-sm text-muted-foreground">
-          Carregando matérias-primas para conferência…
+          Carregando matérias-primas…
         </p>
       </div>
     );
@@ -348,7 +348,7 @@ export function MaterialStockConferenceWorkspace(
     return (
       <div className="space-y-3" data-testid="stock-conference-error">
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-          {props.error ?? "Não foi possível carregar a conferência de estoque."}
+          {props.error ?? "Não foi possível carregar os parâmetros de estoque."}
         </div>
         <button
           type="button"

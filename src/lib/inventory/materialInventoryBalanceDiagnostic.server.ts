@@ -21,11 +21,16 @@ export type MaterialInventoryBalanceRow = {
   inventoryItemId: string | null;
   inventoryItemCode: string | null;
   inventoryItemStatus: string | null;
+  controlsLocation: boolean | null;
   canonicalPhysical: string;
   absoluteDifference: string;
+  signedDifference: string;
   percentDifference: string | null;
+  warehouseCount: number;
+  locationCount: number;
   warehouseOrLocationCount: number;
   lastMovementAt: string | null;
+  lastMovementId: string | null;
   lastCountSessionId: string | null;
   unitMismatch: boolean;
   linkIssue: string | null;
@@ -92,6 +97,7 @@ export async function diagnoseMaterialInventoryBalances(
           locationId: true,
           physicalQuantity: true,
           lastMovementAt: true,
+          lastMovementId: true,
         },
       })
     : [];
@@ -133,7 +139,10 @@ export async function diagnoseMaterialInventoryBalances(
     const materialQty = toInventoryDecimal(material.quantity);
     let canonical = new Prisma.Decimal(0);
     let warehouseOrLocationCount = 0;
+    let warehouseCount = 0;
+    let locationCount = 0;
     let lastMovementAt: string | null = null;
+    let lastMovementId: string | null = null;
     let lastCountSessionId: string | null = null;
     let unitMismatch = false;
     let linkIssue: string | null = null;
@@ -143,10 +152,14 @@ export async function diagnoseMaterialInventoryBalances(
       const itemBalances = balancesByItem.get(primary.id) ?? [];
       canonical = sumCanonicalPhysicalQuantity(itemBalances, primary.controlsLocation === true);
       warehouseOrLocationCount = itemBalances.length;
+      warehouseCount = itemBalances.filter((b) => !b.locationId).length;
+      locationCount = itemBalances.filter((b) => Boolean(b.locationId)).length;
       for (const b of itemBalances) {
-        if (b.lastMovementAt) {
-          const iso = b.lastMovementAt.toISOString();
-          if (!lastMovementAt || iso > lastMovementAt) lastMovementAt = iso;
+        if (!b.lastMovementAt) continue;
+        const iso = b.lastMovementAt.toISOString();
+        if (!lastMovementAt || iso > lastMovementAt) {
+          lastMovementAt = iso;
+          lastMovementId = b.lastMovementId ?? null;
         }
       }
       lastCountSessionId = lastCountByItem.get(primary.id) ?? null;
@@ -183,11 +196,16 @@ export async function diagnoseMaterialInventoryBalances(
       inventoryItemId: primary?.id ?? null,
       inventoryItemCode: primary?.code ?? null,
       inventoryItemStatus: primary?.status ?? (linked[0]?.status ?? null),
+      controlsLocation: primary ? primary.controlsLocation === true : null,
       canonicalPhysical: formatQuantityForReport(canonical),
       absoluteDifference: formatQuantityForReport(abs),
+      signedDifference: formatQuantityForReport(materialQty.sub(canonical)),
       percentDifference: percent,
+      warehouseCount,
+      locationCount,
       warehouseOrLocationCount,
       lastMovementAt,
+      lastMovementId,
       lastCountSessionId,
       unitMismatch,
       linkIssue,

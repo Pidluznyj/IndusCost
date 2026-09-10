@@ -11,8 +11,8 @@ import { MaterialStockConferenceError } from "./materialStockConferenceRules.js"
 import { validateStockLevelHierarchy } from "./materialStockLevelRules.js";
 
 export type ParsedMaterialStockParameters = {
-  /** Saldo oficial (`Material.quantity`) — obrigatório; 0 é válido. */
-  currentQuantity: number;
+  /** Se enviado e diferente do oficial, a API rejeita. Omitir é o caminho cadastral. */
+  currentQuantity: number | null;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
@@ -52,13 +52,9 @@ function parseNullableLevel(
   return n;
 }
 
-function parseRequiredCurrentQuantity(value: unknown): number {
+function parseOptionalCurrentQuantity(value: unknown): number | null {
   if (value === undefined || value === null || value === "") {
-    throw new MaterialStockConferenceError(
-      "REQUIRED_FIELD",
-      "Saldo atual é obrigatório.",
-      "currentQuantity"
-    );
+    return null;
   }
   const n = roundMaterialStockQuantity(value);
   if (!Number.isFinite(n)) {
@@ -80,14 +76,14 @@ function parseRequiredCurrentQuantity(value: unknown): number {
 
 /**
  * Valida payload de edição.
- * - saldo atual obrigatório (0 permitido)
+ * - saldo atual opcional (se informado e diferente do oficial, 403)
  * - níveis: null permitido (não configurado); 0 permitido (configurado)
  * - com os três níveis configurados: contingência <= mínimo <= recomendado
  */
 export function parseMaterialStockParametersCommand(
   body: Record<string, unknown>
 ): ParsedMaterialStockParameters {
-  const currentQuantity = parseRequiredCurrentQuantity(
+  const currentQuantity = parseOptionalCurrentQuantity(
     body.currentQuantity ?? body.quantity ?? body.reportedQuantity
   );
   const contingencyQuantity = parseNullableLevel(

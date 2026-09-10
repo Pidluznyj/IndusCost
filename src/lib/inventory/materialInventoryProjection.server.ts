@@ -8,7 +8,10 @@
  * Nunca inverter (Material → Balance) — deadlock com createInventoryMovement.
  */
 import { Prisma } from "@prisma/client";
-import { writeInventoryAuditLogInTx } from "./inventoryAudit.server.js";
+import {
+  writeInventoryAuditLogInTx,
+  type InventoryAuditWriter,
+} from "./inventoryAudit.server.js";
 import { selectCanonicalPhysicalBalanceRows } from "./materialInventoryProjection.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "../materialStockSpreadsheetMirror/enqueue.server.js";
 
@@ -210,7 +213,7 @@ export async function reconcileMaterialQuantityFromInventoryInTx(
   });
 
   if (typeof tx.inventoryAuditLog?.create === "function") {
-    await writeInventoryAuditLogInTx(tx, {
+    await writeInventoryAuditLogInTx(tx as InventoryAuditWriter, {
       entityType: "Material",
       entityId: materialId,
       action: MATERIAL_QUANTITY_PROJECTED,
@@ -232,10 +235,13 @@ export async function reconcileMaterialQuantityFromInventoryInTx(
     typeof tx === "object" &&
     "materialStockSpreadsheetOutbox" in tx
   ) {
-    await enqueueMaterialStockSpreadsheetMirrorBestEffort(tx, {
-      materialId,
-      eventType: "MATERIAL_MASTER",
-    });
+    await enqueueMaterialStockSpreadsheetMirrorBestEffort(
+      tx as unknown as Prisma.TransactionClient,
+      {
+        materialId,
+        eventType: "MATERIAL_MASTER",
+      }
+    );
   }
 
   return {

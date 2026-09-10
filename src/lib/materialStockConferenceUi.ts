@@ -11,12 +11,12 @@ import {
 import type { MaterialStockTabletListItem } from "./materialStockTabletTypes.js";
 
 export const MATERIAL_STOCK_CONFERENCE_EMPTY_MESSAGE =
-  "Nenhuma matéria-prima encontrada para conferência.";
+  "Nenhuma matéria-prima encontrada.";
 
 export const MATERIAL_STOCK_CONFERENCE_SELECT_HINT =
   "Selecione uma matéria-prima na lista para ver os detalhes.";
 
-export const MATERIAL_STOCK_CONFERENCE_PAGE_TITLE = "Conferência de estoque";
+export const MATERIAL_STOCK_CONFERENCE_PAGE_TITLE = "Parâmetros de estoque";
 
 export type MaterialStockConferenceLayoutMode = "split" | "stacked";
 

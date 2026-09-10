@@ -8,7 +8,6 @@ import {
   assertConferenceLevelsAgainstMinimum,
   assertMaterialStockIdempotencyKey,
   assertStockConferenceConcurrency,
-  buildConferenceDifference,
   MaterialStockConferenceError,
   parseMaterialStockConferenceCommand,
   type ParsedMaterialStockConferenceCommand,
@@ -17,7 +16,10 @@ import { resolveMaterialStockStatus } from "./materialStockLevelRules.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
 import { roundMaterialStockQuantity } from "./materialStockConferenceMath.js";
 import { snapshotStockLevels } from "./materialStockParametersRules.js";
-import { reconcileMaterialQuantityFromInventoryInTx } from "./inventory/materialInventoryProjection.server.js";
+import {
+  MATERIAL_QUANTITY_NOT_EDITABLE_MESSAGE,
+  materialQuantityPayloadDiffers,
+} from "./materialQuantityWriteGuard.js";
 
 export type MaterialStockConferenceActor = {
   id: string;
@@ -276,10 +278,18 @@ export async function recordMaterialStockConference(
         minimumQuantity: material.minimumQuantity,
       });
 
-      const { previous, reported, difference } = buildConferenceDifference(
-        material.quantity,
-        command.reportedQuantity
-      );
+      if (materialQuantityPayloadDiffers(command.reportedQuantity, material.quantity)) {
+        throw new MaterialStockConferenceError(
+          "FORBIDDEN",
+          MATERIAL_QUANTITY_NOT_EDITABLE_MESSAGE,
+          "reportedQuantity"
+        );
+      }
+
+      const official = toNumber(material.quantity);
+      const previous = official;
+      const reported = official;
+      const difference = 0;
       const previousVersion = material.stockConferenceVersion;
       const previousUpdatedAt = material.updatedAt;
       const levelsBefore = snapshotStockLevels(material);
@@ -328,12 +338,6 @@ export async function recordMaterialStockConference(
           }
         );
       }
-
-      await reconcileMaterialQuantityFromInventoryInTx(tx, material.id, {
-        source: "RECONCILE",
-        userId: input.actor.id,
-        reason: "Conferência tablet — projeção do Inventory (saldo não editável aqui)",
-      });
 
       const materialAfter = await tx.material.findUniqueOrThrow({
         where: { id: material.id },

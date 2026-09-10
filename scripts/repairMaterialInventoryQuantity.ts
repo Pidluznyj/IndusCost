@@ -45,25 +45,65 @@ async function main(): Promise<void> {
     materialId: arg("materialId"),
   });
 
-  const eligible = rows.filter((r) => r.status === "QUANTITY_DIVERGENCE");
+  const eligible = rows.filter((r) => r.status === "QUANTITY_DIVERGENCE" && Boolean(r.materialId));
   console.log("Preview reconciliação Material.quantity ← Inventory");
   console.log(JSON.stringify(summary, null, 2));
   console.log(`Elegíveis (QUANTITY_DIVERGENCE, unidade compatível): ${eligible.length}`);
-  for (const row of eligible.slice(0, 30)) {
+  for (const row of eligible) {
     console.log(
-      `${row.materialCode}: ${row.materialQuantity} → ${row.canonicalPhysical} (item ${row.inventoryItemCode})`
+      JSON.stringify({
+        materialId: row.materialId,
+        materialCode: row.materialCode,
+        before: row.materialQuantity,
+        after: row.canonicalPhysical,
+        difference: row.signedDifference,
+        inventoryItemId: row.inventoryItemId,
+        inventoryItemCode: row.inventoryItemCode,
+        controlsLocation: row.controlsLocation,
+        warehouseCount: row.warehouseCount,
+        locationCount: row.locationCount,
+      })
     );
+  }
+
+  if (summary.MULTIPLE_ACTIVE_LINKS > 0) {
+    console.error(
+      `STOP: MULTIPLE_ACTIVE_LINKS=${summary.MULTIPLE_ACTIVE_LINKS}. Apply recusado até corrigir o vínculo.`
+    );
+    if (apply) process.exit(2);
+  }
+  if (summary.UNIT_MISMATCH > 0) {
+    console.error(
+      `STOP: UNIT_MISMATCH=${summary.UNIT_MISMATCH}. Apply recusado até explicar/corrigir a unidade.`
+    );
+    if (apply) process.exit(2);
+  }
+
+  const blockers = rows.filter(
+    (r) => r.status === "MULTIPLE_ACTIVE_LINKS" || r.status === "UNIT_MISMATCH"
+  );
+  if (blockers.length) {
+    console.log("Bloqueadores (não serão alterados pelo repair):");
+    for (const row of blockers) {
+      console.log(
+        `${row.status} | ${row.materialCode} | qty=${row.materialQuantity} | canonical=${row.canonicalPhysical} | ${row.linkIssue ?? ""}`
+      );
+    }
   }
 
   if (!apply) {
     console.log("Modo preview — nenhuma escrita. Use --apply --confirm=" + CONFIRM);
     return;
   }
+  if (summary.MULTIPLE_ACTIVE_LINKS > 0 || summary.UNIT_MISMATCH > 0) {
+    process.exit(2);
+  }
   if (confirm !== CONFIRM) {
     console.error(`Apply recusado. Confirme com --confirm=${CONFIRM}`);
     process.exit(1);
   }
 
+  const started = Date.now();
   const report: Array<{ materialId: string; before: string; after: string; changed: boolean }> = [];
   await prisma.$transaction(async (tx) => {
     const ids = eligible.map((r) => r.materialId).sort();
@@ -82,8 +122,11 @@ async function main(): Promise<void> {
       }
     }
   });
-  console.log(`Aplicado: ${report.filter((r) => r.changed).length} material(is).`);
-  console.log(JSON.stringify(report.filter((r) => r.changed), null, 2));
+  const changed = report.filter((r) => r.changed);
+  console.log(`Aplicado: ${changed.length} material(is). durationMs=${Date.now() - started}`);
+  console.log(JSON.stringify(changed, null, 2));
+  console.log("InventoryMovement criado pelo repair: 0");
+  console.log("InventoryBalance alterado diretamente: 0");
 }
 
 main()
