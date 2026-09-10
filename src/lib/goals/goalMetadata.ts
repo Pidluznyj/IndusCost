@@ -415,7 +415,13 @@ export const GOAL_METADATA_ENTITIES: readonly GoalMetadataEntity[] = [
     metrics: [
       {
         key: "AR_RECEIVED_TOTAL",
-        label: "Valor efetivamente recebido",
+        // amountReceived acumulado por settlementDate = BAIXA administrativa,
+        // não caixa real. Rótulo antigo ("Valor efetivamente recebido") fazia
+        // essa afirmação falsa — nunca usar este metric como proxy de "dinheiro
+        // que entrou": a fonte de caixa real é NomusReceivableReceipt.receiptDate
+        // (camada canônica financeReceiptsCanonical), que este motor genérico de
+        // metas (uma tabela/coluna por metric) ainda não modela como entidade.
+        label: "Valor baixado (settlementDate) — não é caixa",
         operation: "SUM",
         dbColumn: "amountReceived",
         suggestedUnit: "R$",

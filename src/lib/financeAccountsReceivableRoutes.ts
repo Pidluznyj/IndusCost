@@ -44,6 +44,10 @@ import {
   resolveFinanceArNfeOrderLinksFromRows,
 } from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  resolveCivilMonthUtcBounds,
+  sumReceivedAmountInPeriod,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
 import {
   FINANCE_MODULE_ACTIONS,
@@ -150,6 +154,25 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         syncCutoff,
         horizonSourceRows,
       });
+
+      // Caixa real recebido no mês corrente (receiptDate, camada canônica) —
+      // adicionado por fora do motor oficial (que é puro/sem Prisma). Mesma
+      // janela do mês corrente usada por `receivedThisMonthAmount` (baixa);
+      // população = títulos da carteira gerencial carregada para este payload
+      // (`rows`). Nunca usar settlementDate/amountReceived aqui — proibido
+      // pela arquitetura canônica de recebimentos.
+      const cashPeriodBounds = resolveCivilMonthUtcBounds(
+        referenceDate.getFullYear(),
+        referenceDate.getMonth() + 1
+      );
+      const cashReceivedInPeriod = await sumReceivedAmountInPeriod(prisma, {
+        from: cashPeriodBounds.from,
+        to: cashPeriodBounds.to,
+        receivableExternalIds: rows.map((row) => row.externalId),
+      });
+      payload.cards.cashReceivedInPeriodAmount = cashReceivedInPeriod.totalReceivedAmount;
+      payload.cards.cashReceivedInPeriodCount = cashReceivedInPeriod.count;
+
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/dashboard", error);

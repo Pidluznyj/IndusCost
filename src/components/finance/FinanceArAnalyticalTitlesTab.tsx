@@ -760,8 +760,8 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
                             {formatFinanceCalculatedStatus(row.calculatedStatus)}
                           </span>
                           {row.settlementDate ? (
-                            <div className="ar-cell-meta">
-                              Rec. {formatFinanceDate(row.settlementDate)}
+                            <div className="ar-cell-meta" title="Baixa administrativa — não é a data em que o dinheiro entrou">
+                              Baixa: {formatFinanceDate(row.settlementDate)}
                             </div>
                           ) : null}
                         </td>

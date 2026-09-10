@@ -75,7 +75,8 @@ export function FinanceArKpiGrid({
       <Kpi label="Valor em aberto" value={formatFinanceCurrencyCompact(cards?.totalOpenAmount)} hint="Soma balanceReceivable > 0" loading={loading} />
       <Kpi label="Valor vencido" value={formatFinanceCurrencyCompact(cards?.overdueAmount)} hint="Vencimento anterior a hoje" loading={loading} />
       <Kpi label="Valor a vencer" value={formatFinanceCurrencyCompact(cards?.upcomingAmount)} hint="Vencimento futuro" loading={loading} />
-      <Kpi label="Recebido no mês" value={formatFinanceCurrencyCompact(cards?.receivedThisMonthAmount)} hint="Baixas no mês corrente" loading={loading} />
+      <Kpi label="Baixado no mês" value={formatFinanceCurrencyCompact(cards?.receivedThisMonthAmount)} hint="Baixa administrativa (settlementDate) — não é caixa" loading={loading} />
+      <Kpi label="Caixa recebido no mês" value={cards?.cashReceivedInPeriodAmount == null ? "—" : formatFinanceCurrencyCompact(cards.cashReceivedInPeriodAmount)} hint="Dinheiro que entrou (receiptDate) — fonte canônica" loading={loading} />
       <Kpi label="% inadimplência" value={formatFinancePercent(cards?.delinquencyRate)} hint="Vencido ÷ em aberto" loading={loading} />
       <Kpi label="Títulos em aberto" value={formatFinanceInteger(cards?.openTitlesCount)} hint="Saldo positivo" loading={loading} />
       <Kpi label="Clientes em atraso" value={formatFinanceInteger(cards?.overdueCustomersCount)} hint="Clientes com título vencido" loading={loading} />
@@ -258,7 +259,7 @@ export const FinanceArCompaniesTab = memo(function FinanceArCompaniesTab({
         "Em aberto",
         "Vencido",
         "A vencer",
-        "Recebido mês",
+        "Baixado mês",
         "Títulos",
         "Clientes",
         "% inadimplência",

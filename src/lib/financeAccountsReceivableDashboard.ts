@@ -762,6 +762,14 @@ export function buildFinanceAccountsReceivableDashboard(
   options?: {
     horizonSourceRows?: FinanceArDashboardRow[];
     projection?: FinanceOfficialDashboardProjection;
+    /**
+     * Caixa real recebido no período aplicado, pré-calculado pelo chamador via
+     * a camada canônica `financeReceiptsCanonical` (`NomusReceivableReceipt.receiptDate`).
+     * Esta função é pura (sem Prisma) — quem tem acesso a dados (rota/`.server.ts`)
+     * deve somar o período correspondente e passar aqui. Omitido/`undefined` ⇒
+     * `cards.cashReceivedInPeriodAmount` fica `null` (não computado), nunca 0.
+     */
+    cashReceivedInPeriod?: { totalReceivedAmount: number; count: number } | null;
   }
   // Retorno anotado de propósito: com as projeções full|cards a função ganhou
   // dois returns e o ReturnType virava UNION — quebrando reduce/consumidores.
@@ -1099,6 +1107,11 @@ export function buildFinanceAccountsReceivableDashboard(
     dueNext7DaysAmount: roundMoney(dueNext7DaysAmount),
     dueNext30DaysAmount: roundMoney(dueNext30DaysAmount),
     receivedThisMonthAmount: roundMoney(receivedThisMonthAmount),
+    cashReceivedInPeriodAmount:
+      options?.cashReceivedInPeriod != null
+        ? roundMoney(options.cashReceivedInPeriod.totalReceivedAmount)
+        : null,
+    cashReceivedInPeriodCount: options?.cashReceivedInPeriod?.count ?? null,
     delinquencyRate: roundMoney(delinquencyRate * 100),
     overdueCustomersCount: overdueCustomers.size,
     lastSyncAt: lastSyncAt?.toISOString() ?? null,

@@ -41,6 +41,7 @@
 | Propostas | SCHEDULED_DAILY | `0 2 * * *` | `runNomusDailySync.sh` (via orquestrador, `--only=proposals`) | full scan (sem checkpoint — arquitetura atual não é incremental) | sim | propostas (entity) | `nomusProposalsSyncV1.ts` (`sync:nomus:proposals:apply`) |
 | Propostas | SCHEDULED_HOURLY | `37 * * * *` | `runNomusProposalsHourlySync.sh` (SYNC-07) | full scan (idem) | sim | propostas (entity) + probe do lock global | idem |
 | Recebimentos | SCHEDULED_DAILY | `50 3 * * *` | `runNomusReceivableReceiptsSync.sh` | full scan página 1→fim (endpoint sem parâmetro de janela comprovado) | sim | recebimentos (entity) | `nomusReceivableReceiptsSync.ts` (`sync:nomus:receipts:fullscan:apply`) |
+| Recebimentos | SCHEDULED_HOURLY | `15 7-20 * * *` | `runNomusReceivableReceiptsRecentSync.sh` | best-effort, primeiras `NOMUS_RECEIPTS_RECENT_MAX_PAGES` páginas (não prova cobertura) | sim | recebimentos (entity) — **mesmo lock** do full scan | idem (`sync:nomus:receipts:recent:apply`) |
 
 \* Label legado `full_refresh_upsert` **não** prova completude.
 
@@ -260,6 +261,22 @@ npm run sync:nomus:proposals:hourly:apply   # roda o runner horário localmente 
 **oficial da competência** da comissão. O `settlementDate` do Contas a Receber
 permanece apenas como baixa administrativa/auditoria e não foi alterado.
 
+**Quatro datas, nunca confundir:**
+
+| Campo | Significado | Nunca usar para |
+|---|---|---|
+| `NomusReceivableReceipt.receiptDate` | dia em que o dinheiro **efetivamente entrou** (`dataRecebimento`) | — é a única fonte de caixa real |
+| `NomusReceivableReceipt.createdAtNomus` | quando o registro de recebimento foi **criado no Nomus** (pode ser dias depois do `receiptDate`, com `receiptDate` retroativo) | competência de caixa |
+| `NomusReceivableReceipt.modifiedAtNomus` | quando o registro foi **alterado no Nomus** pela última vez | competência de caixa |
+| `NomusAccountsReceivable.settlementDate` | **baixa administrativa** do título no ERP | competência de caixa — nunca é substituto de `receiptDate` |
+
+**Fonte única para "quanto dinheiro entrou":** qualquer consumidor de
+Financeiro, Tesouraria, Metas ou Comissões que precise responder essa
+pergunta usa a camada canônica neutra `src/lib/financeReceiptsCanonical.ts` /
+`.server.ts` — nunca lê `NomusReceivableReceipt` direto nem soma
+`NomusAccountsReceivable.amountReceived` como se fosse caixa de um período.
+Ver o cabeçalho desse módulo para os oito primitivos disponíveis.
+
 ### Por que full scan, e por que só uma vez ao dia
 
 `GET /rest/recebimentos` aceita **apenas** `pagina` — 50 registros por página.
@@ -325,6 +342,49 @@ o full scan diário, é justamente essa marca que dá evidência de frescor da
 carga inteira — inclusive das linhas que não mudaram. Não trocar por
 micro-otimização sem substituir essa evidência por outra.
 
+### Refresh recente (acelerador intraday, best-effort)
+
+O full scan diário prova cobertura completa, mas só roda uma vez (03:50) — uma
+janela de até ~24h entre o dinheiro entrar (Nomus `dataRecebimento`) e o
+IndusCost enxergar. Evidência LIVE de 10/09/2026: o full scan das 03:50
+encontrou 4.802 recebimentos; um full scan posterior no mesmo dia encontrou
+4.829 — 27 novos, todos criados no Nomus (`createdAtNomus`) **entre 10:47:54Z e
+12:13:00Z do mesmo dia**, alguns com `receiptDate` retroativo (26/08 a 10/09).
+Isso prova duas coisas: `receiptDate` não é cursor confiável de sincronização
+(um recebimento "de agosto" pode só existir no Nomus a partir de setembro), e
+o full scan diário continua **obrigatório** — o refresh recente nunca o
+substitui.
+
+`runNomusReceivableReceiptsRecentSync.sh` reaproveita **integralmente** o
+mesmo motor do full scan (`nomusReceivableReceiptsSync.ts`): mesmo mapper,
+mesmo `runApply`/upsert, mesma tabela (`NomusReceivableReceipt`), mesma
+identidade (`externalId`), mesmo cliente HTTP com retry/backoff 429, e o
+**mesmo lock exclusivo** (`NOMUS_RECEIPTS_SYNC_LOCK_FILE`) do full scan — nunca
+roda concorrente com ele. A única diferença é `--maxPages` menor (primeiras
+páginas, configurável via `NOMUS_RECEIPTS_RECENT_MAX_PAGES`, default `3`) e a
+ausência deliberada de `--require-full-scan`: uma varredura limitada por
+`maxPages` é incompleta por definição
+(`assessReceiptsFullScan`/`STOPPED_BY_MAX_PAGES`) e isso é esperado — o
+refresh recente termina em `SUCCESS` mesmo parcial, porque nunca alega
+cobertura total.
+
+**"A página 1 sempre traz tudo que é novo" não é contrato documentado do
+endpoint** — é evidência observada nesta instalação num único dia. Se o full
+scan diário algum dia encontrar um evento modificado que não voltou nas
+páginas recentes, é o full scan que corrige o estado local, nunca o refresh
+recente.
+
+| | Full scan diário | Refresh recente |
+|---|---|---|
+| Script | `runNomusReceivableReceiptsSync.sh` | `runNomusReceivableReceiptsRecentSync.sh` |
+| npm script | `sync:nomus:receipts:fullscan:{preview\|apply}` | `sync:nomus:receipts:recent:{preview\|apply}` |
+| `--maxPages` | 200 (fim real da paginação) | `NOMUS_RECEIPTS_RECENT_MAX_PAGES` (default 3) |
+| `--require-full-scan` | sim | não (best-effort, não prova cobertura) |
+| Lock | `NOMUS_RECEIPTS_SYNC_LOCK_FILE` | **mesmo** lock — mútua exclusão garantida |
+| Log runner | `runner-receivable-receipts_*.log` | `runner-receivable-receipts-recent_*.log` |
+| Prova cobertura completa | sim | **não** |
+| Garante freshness < ~1h | não | sim (best-effort) |
+
 ### Cron a instalar (após deploy e validação)
 
 > **Ainda NÃO instalado.** Instalar apenas após deploy e uma execução
@@ -332,7 +392,14 @@ micro-otimização sem substituir essa evidência por outra.
 
 ```bash
 50 3 * * * root INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusReceivableReceiptsSync.sh apply >> /var/log/induscost-nomus-receipts-cron.log 2>&1
+15 7-20 * * * root INDUSCOST_APP_DIR=/opt/induscost /opt/induscost/scripts/runNomusReceivableReceiptsRecentSync.sh apply >> /var/log/induscost-nomus-receipts-recent-cron.log 2>&1
 ```
+
+A segunda linha é o refresh recente: hourly, minuto :15, das 7h às 20h
+(horário local do servidor — validar timezone real do host antes de instalar;
+mesma convenção de minuto livre já usada pelas demais rotinas horárias deste
+arquivo). Fora dessa janela o full scan das 03:50 é a única fonte — não há
+necessidade de freshness intraday fora do expediente.
 
 Não existe fonte versionada do cron neste repositório — o agendamento vive em
 `/etc/cron.d/induscost-production` no host, e esta seção é a referência

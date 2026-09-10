@@ -17,6 +17,7 @@ import {
   type CommissionReceiptCompetence,
   type CommissionReceiptEventInput,
 } from "./commissionReceiptCompetence.js";
+import { loadReceivableIdsWithAnyReceipt as loadReceivableIdsWithAnyReceiptCanonical } from "../financeReceiptsCanonical.server.js";
 
 export type CompetenceDb = Pick<PrismaClient, "nomusReceivableReceipt">;
 export type CompetenceWithArDb = Pick<
@@ -96,19 +97,19 @@ export async function loadCommissionCompetenceReceivableIdsForPeriod(
   return rows.map((row) => row.receivableExternalId);
 }
 
-/** Títulos com QUALQUER recebimento registrado (sem recorte de período). */
+/**
+ * Títulos com QUALQUER recebimento registrado (sem recorte de período).
+ *
+ * Delega para a camada canônica neutra (`financeReceiptsCanonical.server.ts`,
+ * primitiva 5) — a query é idêntica byte a byte à que existia aqui antes;
+ * mantida como re-export local para não mudar a superfície pública deste
+ * módulo (import path e assinatura preservados para os chamadores atuais).
+ */
 export async function loadReceivableIdsWithAnyReceipt(
   db: CompetenceDb,
   receivableIds: number[]
 ): Promise<Set<number>> {
-  const unique = [...new Set(receivableIds.filter((id) => Number.isFinite(id)))];
-  if (unique.length === 0) return new Set();
-  const rows = await db.nomusReceivableReceipt.findMany({
-    where: { receivableExternalId: { in: unique } },
-    select: { receivableExternalId: true },
-    distinct: ["receivableExternalId"],
-  });
-  return new Set(rows.map((row) => row.receivableExternalId));
+  return loadReceivableIdsWithAnyReceiptCanonical(db, receivableIds);
 }
 
 /**
