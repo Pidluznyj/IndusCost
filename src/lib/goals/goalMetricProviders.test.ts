@@ -32,6 +32,12 @@ const SALES_OFFICIAL_RULE = {
   metricKey: "SALES_OFFICIAL_NET_TOTAL",
   filters: [],
 };
+const AR_CASH_RECEIVED_RULE = {
+  entityKey: "RECEIVABLES",
+  metricKey: "AR_CASH_RECEIVED_TOTAL",
+  filters: [],
+};
+const AR_SETTLED_RULE = { entityKey: "RECEIVABLES", metricKey: "AR_RECEIVED_TOTAL", filters: [] };
 const WINDOW = { startCivilDate: "2026-01-01", endCivilDate: "2026-12-31" };
 
 /**
@@ -142,6 +148,91 @@ describe("caso clássico — Pedido R$100.000, NF-e parcial R$20.000", () => {
       providerRegistry: registry,
     });
     assert.equal(value, "0");
+  });
+});
+
+/** Linha crua que `db.nomusReceivableReceipt.findMany` devolveria (camada canônica). */
+function receiptRow(overrides: Record<string, unknown> = {}) {
+  return {
+    externalId: 1,
+    receivableExternalId: 100,
+    receiptDate: new Date("2026-08-15T00:00:00.000Z"),
+    receivedAmount: 1000,
+    bankFeeAmount: 0,
+    lateFeeInterestAmount: 0,
+    discountAmount: 0,
+    closesReceivable: true,
+    ...overrides,
+  };
+}
+
+describe("AR_CASH_RECEIVED — caixa real nunca se confunde com baixa administrativa", () => {
+  it("AR_CASH_RECEIVED_TOTAL soma os receipts reais do período (receiptDate), não amountReceived/settlementDate", async () => {
+    const findManyCalls: Array<Record<string, unknown>> = [];
+    const fakePrisma = {
+      nomusReceivableReceipt: {
+        findMany: async (args: Record<string, unknown>) => {
+          findManyCalls.push(args);
+          return [receiptRow({ receivedAmount: 4000 }), receiptRow({ externalId: 2, receivedAmount: 6000 })];
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const value = await executeGoalRule(fakePrisma, AR_CASH_RECEIVED_RULE, WINDOW);
+    assert.equal(value, "10000");
+    assert.equal(findManyCalls.length, 1);
+    const where = findManyCalls[0]!.where as { receiptDate?: { gte?: Date; lte?: Date } };
+    assert.ok(where.receiptDate, "filtra por receiptDate, não settlementDate");
+  });
+
+  it("zero recebimentos no período → 0, nunca null/NaN", async () => {
+    const fakePrisma = {
+      nomusReceivableReceipt: { findMany: async () => [] },
+    } as unknown as PrismaClient;
+    const value = await executeGoalRule(fakePrisma, AR_CASH_RECEIVED_RULE, WINDOW);
+    assert.equal(value, "0");
+  });
+
+  it("AR_CASH_RECEIVED_TOTAL (provider, receiptDate) e AR_RECEIVED_TOTAL (SQL curado, settlementDate) nunca produzem o mesmo valor por acidente", async () => {
+    const fakePrisma = {
+      nomusReceivableReceipt: {
+        findMany: async () => [receiptRow({ receivedAmount: 4000 })],
+      },
+      $queryRaw: async () => [{ value: "9999.99" }],
+    } as unknown as PrismaClient;
+
+    const cash = await executeGoalRule(fakePrisma, AR_CASH_RECEIVED_RULE, WINDOW);
+    const settled = await executeGoalRule(fakePrisma, AR_SETTLED_RULE, WINDOW);
+    assert.equal(cash, "4000");
+    assert.equal(settled, "9999.99");
+    assert.notEqual(cash, settled);
+  });
+
+  it("série mensal: cada mês soma só os receipts cujo receiptDate cai naquele mês (limites UTC)", async () => {
+    const findManyCalls: Array<{ gte: Date; lte: Date }> = [];
+    const fakePrisma = {
+      nomusReceivableReceipt: {
+        findMany: async (args: Record<string, unknown>) => {
+          const where = args.where as { receiptDate: { gte: Date; lte: Date } };
+          findManyCalls.push(where.receiptDate);
+          // Agosto: 4000 (31/08); Setembro: 6000 (05/09) — nunca tudo em um mês só.
+          if (where.receiptDate.gte.getUTCMonth() === 7) {
+            return [receiptRow({ receiptDate: new Date("2026-08-31T00:00:00.000Z"), receivedAmount: 4000 })];
+          }
+          return [receiptRow({ receiptDate: new Date("2026-09-05T00:00:00.000Z"), receivedAmount: 6000 })];
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const buckets = await executeGoalRuleMonthly(fakePrisma, AR_CASH_RECEIVED_RULE, {
+      startCivilDate: "2026-08-01",
+      endCivilDate: "2026-09-30",
+    });
+    assert.deepEqual(buckets.map((b) => b.month), ["2026-08", "2026-09"]);
+    assert.equal(buckets[0]!.sum, "4000");
+    assert.equal(buckets[1]!.sum, "6000");
+    assert.notEqual(buckets[0]!.sum, "0");
+    assert.notEqual(buckets[1]!.sum, "10000");
   });
 });
 

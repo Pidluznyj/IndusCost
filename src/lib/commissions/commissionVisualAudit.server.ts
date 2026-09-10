@@ -1,5 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  listReceiptEventsByReceivables,
+  listReceiptEventsInPeriod,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber, roundMoney } from "./commission-money.js";
 import {
@@ -90,7 +94,7 @@ function documentKey(row: {
 async function loadArMeta(ids: number[]): Promise<Map<number, ArMeta>> {
   const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))];
   if (unique.length === 0) return new Map();
-  const [rows, receipts] = await Promise.all([
+  const [rows, receiptEventsByReceivable] = await Promise.all([
     prisma.nomusAccountsReceivable.findMany({
       where: { externalId: { in: unique } },
       select: {
@@ -101,24 +105,16 @@ async function loadArMeta(ids: number[]): Promise<Map<number, ArMeta>> {
         balanceReceivable: true,
       },
     }),
-    prisma.nomusReceivableReceipt.findMany({
-      where: { receivableExternalId: { in: unique } },
-      select: { receivableExternalId: true, receiptDate: true },
-      orderBy: { receiptDate: "asc" },
-    }),
+    listReceiptEventsByReceivables(prisma, unique),
   ]);
-  const receiptDatesByReceivable = new Map<number, Date[]>();
-  for (const receipt of receipts) {
-    const list = receiptDatesByReceivable.get(receipt.receivableExternalId) ?? [];
-    list.push(receipt.receiptDate);
-    receiptDatesByReceivable.set(receipt.receivableExternalId, list);
-  }
   return new Map(
     rows.map((r) => [
       r.externalId,
       {
         settlementDate: r.settlementDate,
-        receiptDates: receiptDatesByReceivable.get(r.externalId) ?? [],
+        receiptDates: (receiptEventsByReceivable.get(r.externalId) ?? []).map(
+          (event) => new Date(event.receiptDate)
+        ),
         amountReceivable: decimalToNumber(r.amountReceivable),
         amountReceived: decimalToNumber(r.amountReceived),
         balanceReceivable: decimalToNumber(r.balanceReceivable),
@@ -137,12 +133,8 @@ async function loadReceiptCompetenceReceivableIds(
 ): Promise<number[]> {
   const range = resolvePeriodDateRange(query);
   if (!range) return [];
-  const rows = await prisma.nomusReceivableReceipt.findMany({
-    where: { receiptDate: { gte: range.from, lte: range.to } },
-    select: { receivableExternalId: true },
-    distinct: ["receivableExternalId"],
-  });
-  return rows.map((row) => row.receivableExternalId);
+  const events = await listReceiptEventsInPeriod(prisma, { from: range.from, to: range.to });
+  return [...new Set(events.map((event) => event.receivableExternalId))];
 }
 
 async function loadCustomerExceptionIds(): Promise<Set<number>> {

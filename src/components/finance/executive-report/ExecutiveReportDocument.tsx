@@ -495,28 +495,44 @@ export function ExecutiveReportDocument({
         >
           <ExecutiveKpiGrid columns={4} className="executive-kpi-grid--compact">
             <ExecutiveKpiCard
-              label="Recebido mês"
-              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthCurrent)}
-              sub={`${String(month).padStart(2, "0")}/${report.year}`}
-              hint={kpiHint("Recebido")}
+              label="Caixa recebido mês"
+              value={formatExecutiveReportPresentationCurrency(
+                report.accountsReceivable.cashReceivedMonthCurrent ?? null
+              )}
+              sub={`${String(month).padStart(2, "0")}/${report.year} — receiptDate`}
+              hint="Dinheiro que efetivamente entrou (camada canônica de recebimentos), nunca baixa administrativa."
               highlight
             />
-            <VariationKpiCard label="Variação mês" variation={arKpis.receivedMonthVariation} />
             <ExecutiveKpiCard
-              label="Recebido YTD"
+              label="Baixado mês"
+              value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthCurrent)}
+              sub={`${String(month).padStart(2, "0")}/${report.year} — settlementDate`}
+              hint={kpiHint("Recebido")}
+            />
+            <VariationKpiCard label="Variação mês (baixado)" variation={arKpis.receivedMonthVariation} />
+            <ExecutiveKpiCard
+              label="Caixa recebido YTD"
+              value={formatExecutiveReportPresentationCurrency(
+                report.accountsReceivable.cashReceivedYtdCurrent ?? null
+              )}
+              sub={`Até mês ${month} — receiptDate`}
+              hint="Dinheiro que efetivamente entrou no ano (camada canônica de recebimentos), nunca baixa administrativa."
+            />
+            <ExecutiveKpiCard
+              label="Baixado YTD"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdCurrent)}
-              sub={`Até mês ${month}`}
+              sub={`Até mês ${month} — settlementDate`}
               hint={kpiHint("YTD")}
             />
-            <VariationKpiCard label="Variação YTD" variation={arKpis.receivedYtdVariation} />
+            <VariationKpiCard label="Variação YTD (baixado)" variation={arKpis.receivedYtdVariation} />
             <ExecutiveKpiCard
-              label="Recebido mês — ano anterior"
+              label="Baixado mês — ano anterior"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedMonthPrevious)}
               sub={`${String(month).padStart(2, "0")}/${previousYear}`}
               hint={kpiHint("Recebido")}
             />
             <ExecutiveKpiCard
-              label="Recebido YTD — ano anterior"
+              label="Baixado YTD — ano anterior"
               value={formatExecutiveReportPresentationCurrency(arKpis.receivedYtdPrevious)}
               sub={`Até mês ${month}`}
               hint={kpiHint("YTD")}

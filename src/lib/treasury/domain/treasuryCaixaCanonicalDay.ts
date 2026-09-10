@@ -8,7 +8,11 @@
  * disjuntas do dia, com data e regra explícitas:
  *
  *   receivableDue      = títulos CR em aberto vencendo neste dia
- *   receivableReceived = títulos CR baixados neste dia (settlementDate)
+ *   receivableReceived = caixa real recebido neste dia — evento de
+ *                        `NomusReceivableReceipt.receiptDate` quando existe
+ *                        (camada canônica `financeReceiptsCanonical`);
+ *                        fallback para baixa administrativa (settlementDate)
+ *                        + tolerância só quando NÃO há receipt local ainda
  *   payableDue         = títulos CP em aberto vencendo neste dia
  *   payablePaid        = títulos CP baixados ancorados no vencimento (dueDate);
  *                        settlement/paymentDate não deslocam o dia do caixa CP
@@ -31,6 +35,7 @@ import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPay
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { resolveFinanceArEffectiveSettlementDate } from "@/src/lib/financeAccountsReceivableRules.js";
 import type { FinanceSettlementReconciliationPolicy } from "@/src/lib/finance/financeSettlementReconciliation.js";
+import { financeReceiptCivilDateKey, type FinanceReceiptEvent } from "@/src/lib/financeReceiptsCanonical.js";
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -48,7 +53,57 @@ export type TreasuryCaixaCanonicalDayReceivableTitle = {
   balanceReceivable: number;
   calculatedStatus: string;
   documentNumber?: string | null;
+  /**
+   * Presentes SOMENTE quando esta entrada representa um evento REAL de
+   * recebimento (camada canônica `financeReceiptsCanonical`), não o
+   * fallback por baixa administrativa. `receiptAllocatedAmount` é o valor
+   * que ESTE evento contribui para `receivableReceived` NESTE dia — nunca
+   * confundir com `amountReceived` acima, que continua sendo o ESTADO
+   * ACUMULADO do título (pode divergir da soma dos receipts; ver
+   * `financeArReceivedDecomposition.ts` para a auditoria dessa diferença).
+   */
+  receiptExternalId?: number;
+  receiptAllocatedAmount?: number;
 };
+
+/**
+ * Evento real de recebimento (camada canônica `financeReceiptsCanonical`),
+ * já reduzido ao que este motor precisa: dia civil (string, sem fuso — quem
+ * chama já converteu) e valor. O motor não consulta Prisma nem `Date`.
+ */
+export type TreasuryCaixaCanonicalDayReceiptEvent = {
+  receiptExternalId: number;
+  /** Dia civil YYYY-MM-DD (já convertido pelo chamador via `toCivilDateKey`). */
+  receiptDate: string;
+  receivedAmount: number;
+};
+
+/**
+ * Ponte pura entre a camada canônica `financeReceiptsCanonical` (eventos com
+ * `receiptDate: Date | string`, agrupados por título) e o formato que este
+ * motor consome (dia civil em string, sem `Date`/fuso). Quem chama
+ * (`treasuryCaixaService.server.ts`) só busca os dados em lote e remodela
+ * com esta função — nenhuma regra nova, só conversão de tipo.
+ */
+export function mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(
+  eventsByReceivable: ReadonlyMap<number, readonly FinanceReceiptEvent[]>
+): Map<number, TreasuryCaixaCanonicalDayReceiptEvent[]> {
+  const out = new Map<number, TreasuryCaixaCanonicalDayReceiptEvent[]>();
+  for (const [receivableExternalId, events] of eventsByReceivable) {
+    const mapped: TreasuryCaixaCanonicalDayReceiptEvent[] = [];
+    for (const event of events) {
+      const civilDate = financeReceiptCivilDateKey(event.receiptDate);
+      if (!civilDate) continue;
+      mapped.push({
+        receiptExternalId: event.receiptExternalId,
+        receiptDate: civilDate,
+        receivedAmount: event.receivedAmount,
+      });
+    }
+    out.set(receivableExternalId, mapped);
+  }
+  return out;
+}
 
 export type TreasuryCaixaCanonicalDayPayableTitle = {
   externalId: number;
@@ -223,7 +278,8 @@ function isApOpenDueTitle(row: FinanceAccountsPayableGridRow): boolean {
 }
 
 function toReceivableTitleDto(
-  row: FinanceAccountsReceivableGridRow
+  row: FinanceAccountsReceivableGridRow,
+  receiptEvent?: TreasuryCaixaCanonicalDayReceiptEvent
 ): TreasuryCaixaCanonicalDayReceivableTitle {
   return {
     externalId: row.externalId,
@@ -236,6 +292,12 @@ function toReceivableTitleDto(
     balanceReceivable: row.balanceReceivable,
     calculatedStatus: row.calculatedStatus,
     documentNumber: row.sourceInvoiceNumber ?? null,
+    ...(receiptEvent
+      ? {
+          receiptExternalId: receiptEvent.receiptExternalId,
+          receiptAllocatedAmount: receiptEvent.receivedAmount,
+        }
+      : {}),
   };
 }
 
@@ -269,6 +331,27 @@ export type TreasuryCaixaCanonicalDayInput = {
   /** Grid CP oficial (mesma fonte do `data.payables`). */
   payables: readonly FinanceAccountsPayableGridRow[];
   /**
+   * Eventos reais de recebimento (camada canônica `financeReceiptsCanonical`),
+   * por título CR (`externalId`). Quando um título tem entrada aqui, CADA
+   * evento deposita seu PRÓPRIO valor no seu PRÓPRIO dia civil (`receiptDate`)
+   * em `receivableReceived` — nunca o `amountReceived` acumulado do título de
+   * uma vez (é assim que um título de R$10.000 com receipt de R$4.000 em
+   * 31/08 e R$6.000 em 05/09 aparece como +4.000 em 31/08 e +6.000 em 05/09,
+   * nunca +10.000 num dia só).
+   *
+   * Título AUSENTE deste mapa (ou com lista vazia) cai no fallback histórico
+   * (`resolveArRealizedCivilDate`: baixa administrativa + tolerância de N
+   * dias úteis) — o comportamento de sempre, inalterado. Isso é best-effort
+   * por natureza: ausência de receipt local ainda não é erro, é o estado
+   * `SETTLED_WITHOUT_RECEIPT` (ver `financeReceiptsCanonical.ts`) — auditável,
+   * nunca um bloqueio para o motor funcionar. `undefined` (parâmetro
+   * omitido) preserva 100% o comportamento anterior a este campo existir.
+   */
+  receiptsByReceivableExternalId?: ReadonlyMap<
+    number,
+    readonly TreasuryCaixaCanonicalDayReceiptEvent[]
+  >;
+  /**
    * Movimentos "outros" (ledger/transferência) por dia civil — o motor não
    * consulta banco, quem carrega passa. Vazio = nenhum movimento fora de
    * título; nunca vira zero silencioso: as três dimensões CR/CP ainda contam.
@@ -298,9 +381,12 @@ export type TreasuryCaixaCanonicalDayInput = {
    */
   openingBalanceOfFirstDay?: number | null;
   /**
-   * Política de conciliação (regra dos N dias) — aplica-se somente ao CR.
-   * CP na Tesouraria sempre usa o vencimento (baixa Nomus retroativa não
-   * desloca o mês do caixa). Sem política ou desligada no CR: settlementDate cru.
+   * Política de conciliação (regra dos N dias) — aplica-se somente ao
+   * FALLBACK do CR (títulos sem receipt local em
+   * `receiptsByReceivableExternalId`). Quando há receipt real, a data é
+   * sempre `receiptDate` do evento — esta política nunca a sobrescreve. CP na
+   * Tesouraria sempre usa o vencimento (baixa Nomus retroativa não desloca o
+   * mês do caixa). Sem política ou desligada no fallback CR: settlementDate cru.
    */
   reconciliationPolicy?: FinanceSettlementReconciliationPolicy | null;
   /**
@@ -333,7 +419,10 @@ export type TreasuryCaixaCanonicalDayInput = {
  *
  * Invariantes garantidos por construção (cobertos por teste):
  *   Σ receivableDueTitles[amount = balanceReceivable] == receivableDue
- *   Σ receivableReceivedTitles[amount = amountReceived] == receivableReceived
+ *   Σ receivableReceivedTitles[amount = receiptAllocatedAmount ?? amountReceived]
+ *     == receivableReceived (com receipt: soma o valor DO EVENTO daquele
+ *     dia, não o acumulado do título; sem receipt: fallback, título inteiro
+ *     de uma vez, como sempre — ver `receiptsByReceivableExternalId`)
  *   Σ payableDueTitles[amount = balancePayable] == payableDue
  *   Σ payablePaidTitles[amount = amountPaid] == payablePaid
  *   Σ otherMovements.filter(IN)[amount] == otherInflows
@@ -389,12 +478,29 @@ export function buildTreasuryCaixaCanonicalDays(
   // no mesmo dia: se baixou hoje, entra em Received; se está aberto vencendo
   // hoje, entra em Due. Nunca as duas — o motor oficial só marca uma delas.
   for (const row of input.receivables) {
-    const settledOn = resolveArRealizedCivilDate(row, reconciliation);
-    if (settledOn) {
-      const day = bucket(settledOn);
-      if (day) {
-        day.receivableReceived += row.amountReceived;
-        day.receivableReceivedTitles.push(toReceivableTitleDto(row));
+    const receiptEvents = input.receiptsByReceivableExternalId?.get(row.externalId);
+    if (receiptEvents && receiptEvents.length > 0) {
+      // Caixa real: cada evento no seu PRÓPRIO dia, com seu PRÓPRIO valor —
+      // nunca o amountReceived acumulado do título de uma vez (é isso que
+      // faz um recebimento parcial cross-month aparecer corretamente em dois
+      // dias diferentes, com dois valores diferentes).
+      for (const receiptEvent of receiptEvents) {
+        const day = bucket(receiptEvent.receiptDate);
+        if (day) {
+          day.receivableReceived += receiptEvent.receivedAmount;
+          day.receivableReceivedTitles.push(toReceivableTitleDto(row, receiptEvent));
+        }
+      }
+    } else {
+      // Fallback histórico: nenhum receipt local ainda para este título —
+      // baixa administrativa + tolerância de N dias úteis, como sempre.
+      const settledOn = resolveArRealizedCivilDate(row, reconciliation);
+      if (settledOn) {
+        const day = bucket(settledOn);
+        if (day) {
+          day.receivableReceived += row.amountReceived;
+          day.receivableReceivedTitles.push(toReceivableTitleDto(row));
+        }
       }
     }
     if (isArOpenDueTitle(row)) {

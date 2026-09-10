@@ -405,6 +405,17 @@ Não existe fonte versionada do cron neste repositório — o agendamento vive e
 `/etc/cron.d/induscost-production` no host, e esta seção é a referência
 versionada dele.
 
+**Isso é convenção deliberada do projeto, não uma lacuna.** Não existe, em
+lugar nenhum do repositório, nenhum mecanismo automatizado (CI/CD, Ansible,
+Terraform, Docker, unit systemd gerado por deploy) que escreva em
+`/etc/cron.d/`. Pedidos (`~2h`), CR/CP (`17 */2 * * *`) e Propostas horário
+(SYNC-07) — todos já ativos em produção hoje — passaram pelo EXATO mesmo
+ciclo: bloco de referência versionado aqui → validação manual com `preview`
+no servidor → instalação manual por um humano com acesso ao host → status
+atualizado de "Ainda NÃO instalado" para "registrada". Recebimentos (full
+scan + refresh recente) está no mesmo estágio inicial desse ciclo já
+comprovado — não é um processo quebrado nem uma tarefa esquecida.
+
 **Correção operacional pendente no host:** `/etc/cron.d/induscost-production`
 contém um comentário afirmando que o arquivo "não é lido automaticamente".
 Isso é **falso** — foi comprovado que o cron processa esse arquivo. O

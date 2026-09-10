@@ -271,6 +271,13 @@ export type FinanceExecutiveReportAccountsReceivable = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsReceivable;
   metricsSource: "official-accounts-receivable-engine";
   kpis: ExecutiveReportArSectionKpis;
+  /**
+   * Caixa REAL do mês/YTD (camada canônica `financeReceiptsCanonical`) —
+   * aditivo aos KPIs de `kpis` (settlementDate/baixa), nunca os substitui.
+   * `null` apenas nos payloads vazios/erro deste relatório (nunca calculado).
+   */
+  cashReceivedMonthCurrent: number | null;
+  cashReceivedYtdCurrent: number | null;
   payload: Pick<
     FinanceArDashboardPayload,
     | "cards"

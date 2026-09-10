@@ -1,4 +1,8 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import {
+  listReceiptEventsByReceivables,
+  type FinanceReceiptsDb,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import { buildAuditIssueKey, shouldBlockAutoChangePaidRecord } from "./commission-calculation-hash.js";
 import { upsertCommissionAuditIssues } from "./commission-audit-service.js";
 import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
@@ -116,17 +120,20 @@ async function loadReceivableSettlementMap(
  * liberação. Sem recebimento fica `null`: a baixa nunca vira fallback.
  */
 async function loadReceivableReceiptMap(
-  db: Pick<PrismaClient, "nomusReceivableReceipt">,
+  db: FinanceReceiptsDb,
   receivableIds: number[]
 ): Promise<Map<number, Date | null>> {
   if (receivableIds.length === 0) return new Map();
-  const rows = await db.nomusReceivableReceipt.findMany({
-    where: { receivableExternalId: { in: receivableIds } },
-    select: { receivableExternalId: true, receiptDate: true },
-    orderBy: { receiptDate: "asc" },
-  });
+  const eventsByReceivable = await listReceiptEventsByReceivables(db, receivableIds);
   const map = new Map<number, Date | null>();
-  for (const row of rows) map.set(row.receivableExternalId, row.receiptDate);
+  for (const [receivableExternalId, events] of eventsByReceivable) {
+    let latest: Date | null = null;
+    for (const event of events) {
+      const eventDate = new Date(event.receiptDate);
+      if (!latest || eventDate.getTime() > latest.getTime()) latest = eventDate;
+    }
+    map.set(receivableExternalId, latest);
+  }
   return map;
 }
 

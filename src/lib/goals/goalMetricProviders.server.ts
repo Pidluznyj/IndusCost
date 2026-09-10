@@ -12,6 +12,13 @@
  *    POPULAÇÃO oficial `buildSalesOrderListWhere` (exclui cancelados e
  *    MISSING_CONFIRMED operacional) + exclusão do grupo econômico, como nos
  *    domínios oficiais (executivo/DRE). Valor de PEDIDO, nunca de NF-e.
+ *  - AR_CASH_RECEIVED → Financeiro > Recebimentos: soma real de
+ *    `NomusReceivableReceipt.receivedAmount` no período, competência
+ *    `receiptDate` — via a camada canônica `financeReceiptsCanonical`. Único
+ *    número deste módulo que representa CAIXA de fato; `AR_RECEIVED_TOTAL`
+ *    (motor curado genérico, entidade RECEIVABLES) soma `amountReceived` por
+ *    `settlementDate` — baixa administrativa, nunca caixa. As duas nunca se
+ *    confundem: rótulo e descrição de cada uma dizem isso explicitamente.
  *
  * O generic rule engine curado continua existindo como "medição
  * personalizada" — providers cobrem apenas conceitos com dono oficial.
@@ -22,10 +29,17 @@
 import type { PrismaClient } from "@prisma/client";
 import { queryFiscalNfeInPeriod } from "@/src/lib/financeBillingNfeDashboard.js";
 import { buildSalesOrderListWhere } from "@/src/lib/salesOrdersListSummary.js";
+import {
+  civilDateStringToUtcMidnight,
+  sumReceivedAmountInPeriod,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import type { GoalTrackingTypeValue, GoalDomainValue } from "./goalContracts.js";
 import { listGoalSeriesMonths } from "./goalSeries.js";
 
-export type GoalMetricProviderKey = "NFE_FISCAL_BILLING" | "SALES_ORDERS_OFFICIAL";
+export type GoalMetricProviderKey =
+  | "NFE_FISCAL_BILLING"
+  | "SALES_ORDERS_OFFICIAL"
+  | "AR_CASH_RECEIVED";
 
 export type GoalMetricProviderWindow = {
   /** YYYY-MM-DD inclusivo. */
@@ -202,9 +216,45 @@ export function createGoalMetricProviderRegistry(
     },
   };
 
+  const arCashReceived: GoalMetricProvider = {
+    key: "AR_CASH_RECEIVED",
+    label: "Recebimentos (caixa real)",
+    domain: "FINANCEIRO",
+    unit: "R$",
+    suggestedTrackingType: "INCREASE",
+    sourceLabel: "Financeiro > Recebimentos",
+    sourceDescription:
+      "Soma dos eventos reais de recebimento (dinheiro que efetivamente entrou), pela data do recebimento — a mesma fonte canônica usada pela tela de Contas a Receber e por Comissões. Nunca a data de baixa administrativa.",
+    capabilities: { monthlySeries: true, employeeSlice: false, customFilters: false },
+    async execute(prisma, window) {
+      const { totalReceivedAmount } = await sumReceivedAmountInPeriod(prisma, {
+        from: civilDateStringToUtcMidnight(window.startCivilDate),
+        to: civilDateStringToUtcMidnight(window.endCivilDate),
+      });
+      return decimalString(totalReceivedAmount);
+    },
+    async executeMonthly(prisma, window) {
+      const out: GoalMetricProviderMonthlyBucket[] = [];
+      for (const slice of monthWindowsWithin(window)) {
+        const { totalReceivedAmount, count } = await sumReceivedAmountInPeriod(prisma, {
+          from: civilDateStringToUtcMidnight(slice.startCivilDate),
+          to: civilDateStringToUtcMidnight(slice.endCivilDate),
+        });
+        out.push({
+          month: slice.month,
+          sum: decimalString(totalReceivedAmount),
+          rowCount: count,
+          valueCount: count,
+        });
+      }
+      return out;
+    },
+  };
+
   return new Map<GoalMetricProviderKey, GoalMetricProvider>([
     [nfeFiscalBilling.key, nfeFiscalBilling],
     [salesOrdersOfficial.key, salesOrdersOfficial],
+    [arCashReceived.key, arCashReceived],
   ]);
 }
 

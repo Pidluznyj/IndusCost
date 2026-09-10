@@ -83,7 +83,11 @@ import {
   type TreasuryAccountLatestPosition,
   type TreasuryDailyBalanceEvidence,
 } from "./treasuryDailyBalanceEvidence.server.js";
-import { buildTreasuryCaixaCanonicalDays } from "../domain/treasuryCaixaCanonicalDay.js";
+import {
+  buildTreasuryCaixaCanonicalDays,
+  mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable,
+} from "../domain/treasuryCaixaCanonicalDay.js";
+import { listReceiptEventsByReceivables } from "@/src/lib/financeReceiptsCanonical.server.js";
 import type { TreasuryOfficialTodayBalance } from "./treasuryOfficialTodayBalance.server.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import { createTreasuryScenarioPolicyService } from "./treasuryScenarioPolicyService.server.js";
@@ -969,6 +973,19 @@ export function createTreasuryCaixaService(input: {
         (row) => (row.amountReceived > 0 ? row.settlementDate : null)
       );
 
+      // Caixa REAL (camada canônica financeReceiptsCanonical) — carregado em
+      // lote (nunca por título) para os mesmos títulos já selecionados acima.
+      // O motor único-de-dia usa isto para preferir o evento real de
+      // recebimento sobre a heurística de baixa+tolerância; título sem
+      // nenhum receipt aqui cai no fallback de sempre (ver
+      // `buildTreasuryCaixaCanonicalDays`/`receiptsByReceivableExternalId`).
+      const receiptEventsByReceivable = await listReceiptEventsByReceivables(
+        prisma,
+        canonicalReceivables.map((row) => row.externalId)
+      );
+      const receiptsByReceivableExternalId =
+        mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(receiptEventsByReceivable);
+
       // AP: duas consultas escopadas pela MESMA janela — vencimento na janela
       // (a carga oficial já usada por `apResult`/etc., sem recorte extra) UNIDA
       // com liquidação na janela sem exigir vencimento na janela
@@ -1023,6 +1040,7 @@ export function createTreasuryCaixaService(input: {
         openingBalanceOfFirstDay: null,
         officialTodayBalance: null,
         reconciliationPolicy,
+        receiptsByReceivableExternalId,
       });
       const todayCanonicalUnanchored =
         canonicalDaysUnanchored.find((d) => d.civilDate === todayCivilDate) ?? null;
@@ -1097,6 +1115,7 @@ export function createTreasuryCaixaService(input: {
         openingBalanceOfFirstDay,
         officialTodayBalance: anchor,
         reconciliationPolicy,
+        receiptsByReceivableExternalId,
       });
 
       return {
