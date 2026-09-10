@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Building2,
@@ -26,6 +26,12 @@ import {
   buildCustomerListStatusTags,
 } from "@/src/components/crm/crmCustomerPortfolioUi";
 import type { PortfolioEmptySummary } from "@/src/components/crm/crmCustomerPortfolioUi";
+
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
 
 export type CrmAccountCockpitActivity = {
   id: string;
@@ -321,6 +327,26 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
     formatCityState,
   } = formatters;
 
+  /**
+   * Detalhe do Pedido — mesmo modal (quase fullscreen, portalizado no
+   * document.body) usado em Comercial > Pedidos de venda. Abre por cima do
+   * cockpit sem navegar: a Carteira e o cliente selecionado permanecem os
+   * mesmos por trás ao fechar.
+   */
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [detailOrderCode, setDetailOrderCode] = useState<string | null>(null);
+  const openOrderDetail = useCallback((salesOrderId: string, code: string | null) => {
+    setDetailOrderId(salesOrderId);
+    setDetailOrderCode(code);
+  }, []);
+  const closeOrderDetail = useCallback(() => {
+    setDetailOrderId(null);
+    setDetailOrderCode(null);
+  }, []);
+  useEffect(() => {
+    closeOrderDetail();
+  }, [customer.id, closeOrderDetail]);
+
   const ticketAvg =
     intel && intel.orders.ordersLast12MonthsCount > 0
       ? intel.orders.totalPurchasedLast12Months / intel.orders.ordersLast12MonthsCount
@@ -538,13 +564,19 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
             ) : (
               <ul className="space-y-2 text-sm">
                 {intel.openOrders.latestOrders.slice(0, 5).map((o) => (
-                  <li key={o.id} className="rounded-lg border border-border/60 px-3 py-2">
-                    <span className="font-semibold">{displayLine(o.orderCode)}</span>
-                    <span className="text-muted-foreground block text-xs mt-0.5">
-                      {formatDateShortPt(o.issueDate)} · {formatIntelCurrency(o.totalNetValue)} ·{" "}
-                      {formatCommercialStatusLabel(o.status)}
-                      {o.hasInvoicing ? " · Faturado" : ""}
-                    </span>
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => openOrderDetail(o.id, o.orderCode)}
+                      className="w-full rounded-lg border border-border/60 px-3 py-2 text-left hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <span className="font-semibold text-primary">{displayLine(o.orderCode)}</span>
+                      <span className="text-muted-foreground block text-xs mt-0.5">
+                        {formatDateShortPt(o.issueDate)} · {formatIntelCurrency(o.totalNetValue)} ·{" "}
+                        {formatCommercialStatusLabel(o.status)}
+                        {o.hasInvoicing ? " · Faturado" : ""}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -583,6 +615,17 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
           ) : null}
         </div>
       </section>
+
+      {detailOrderId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={detailOrderId}
+            orderCode={detailOrderCode}
+            onClose={closeOrderDetail}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 };
