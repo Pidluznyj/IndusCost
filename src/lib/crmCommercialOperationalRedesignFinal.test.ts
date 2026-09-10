@@ -172,3 +172,24 @@ describe("Cliente 360 — não duplicado", () => {
     assert.doesNotMatch(cockpit, /CustomerIntelligencePage/);
   });
 });
+
+describe("Detalhe do Pedido no cockpit — mesmo modal de Pedidos de venda", () => {
+  const cockpit = read("src/components/crm/CrmCustomerAccountCockpit.tsx");
+
+  it("carrega o SalesOrderDetailDialog sob demanda (React.lazy), não estático", () => {
+    assert.doesNotMatch(
+      cockpit,
+      /import\s*\{[^}]*SalesOrderDetailDialog[^}]*\}\s*from\s*["'][^"']*SalesOrderDetailDialog["']/
+    );
+    assert.match(
+      cockpit,
+      /React\.lazy\(\(\) =>\s*\n\s*import\("@\/src\/components\/sales\/SalesOrderDetailDialog"\)/
+    );
+  });
+
+  it("clicar num pedido de 'Últimos pedidos' abre o modal sem navegar — mesma tela por trás", () => {
+    assert.match(cockpit, /onClick=\{\(\) => openOrderDetail\(o\.id, o\.orderCode\)\}/);
+    assert.match(cockpit, /<SalesOrderDetailDialog\s*\n\s*open\s*\n\s*salesOrderId=\{detailOrderId\}/);
+    assert.match(cockpit, /onClose=\{closeOrderDetail\}/);
+  });
+});

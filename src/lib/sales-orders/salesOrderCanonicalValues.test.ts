@@ -347,6 +347,7 @@ describe("gates estruturais do Pedido de Venda", () => {
       "src/components/commissions/pages/CommissionsOrderProvisionPage.tsx",
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx",
       "src/components/operations/ProductionOrdersModule.tsx",
+      "src/components/crm/CrmCustomerAccountCockpit.tsx",
     ]) {
       const src = readSource(consumer);
       const staticImport =
