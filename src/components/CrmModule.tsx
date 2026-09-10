@@ -1907,6 +1907,31 @@ export const CrmModule = () => {
     sellerNotLinked,
   ]);
 
+  /**
+   * sellerOptions/orderSellerOptions (lista de responsáveis) só eram
+   * preenchidas pelo fetch da aba "Gestão por Responsável" acima. Quem
+   * abria direto em Gestão Geral ou Carteira (o padrão para gestor/admin —
+   * ver getDefaultCrmManagementTab) nunca disparava esse fetch, e o
+   * seletor "Responsável da carteira" ficava sempre em branco. Pré-carrega
+   * uma vez, best-effort, independente da aba ativa.
+   */
+  const hasPrefetchedSellerOptionsRef = useRef(false);
+  useEffect(() => {
+    if (!canCrmAny || !canFilterAllSellers) return;
+    if (hasPrefetchedSellerOptionsRef.current) return;
+    hasPrefetchedSellerOptionsRef.current = true;
+    (async () => {
+      try {
+        const data = await fetchJsonOk<SellerDashboardResponse>("/api/crm/seller-dashboard");
+        if (Array.isArray(data.sellerOptions)) setSellerOptions(data.sellerOptions);
+        if (Array.isArray(data.orderSellerOptions)) setOrderSellerOptions(data.orderSellerOptions);
+      } catch {
+        // Silencioso: pré-carregamento best-effort. Se a aba Gestão por
+        // Responsável for visitada, ela refaz o fetch e mostra erro real lá.
+      }
+    })();
+  }, [canCrmAny, canFilterAllSellers]);
+
   useEffect(() => {
     if (!canCrmAny || !canCrmPortfolio || sellerNotLinked) return;
     if (activeCrmManagementTab !== "portfolio") return;
