@@ -23,7 +23,7 @@ import {
   type CrmAccountCockpitActivity,
   type CrmAccountCockpitProfile,
 } from "@/src/components/crm/CrmCustomerAccountCockpit";
-import { CrmCustomerPortfolioTable } from "@/src/components/crm/CrmCustomerPortfolioTable";
+import { CrmCustomerPortfolioFinder } from "@/src/components/crm/CrmCustomerPortfolioFinder";
 import { CrmPeriodFilterBar } from "@/src/components/crm/CrmPeriodFilterBar";
 import type { CrmPeriodFilter } from "@/src/components/crm/crmPeriodFilter";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
@@ -56,7 +56,6 @@ export type CrmCustomerPortfolioSectionProps = {
   customers: CrmCustomerListItem[];
   customersLoading: boolean;
   customersError: string | null;
-  listHasMore: boolean;
   sourceInfo?: CrmCustomersListResponse["sourceInfo"] | null;
   totals?: CrmCustomersListResponse["totals"] | null;
   period?: CrmCustomersListResponse["period"] | null;
@@ -64,13 +63,11 @@ export type CrmCustomerPortfolioSectionProps = {
   periodFilter: CrmPeriodFilter;
   onPeriodFilterChange: (next: CrmPeriodFilter) => void;
   periodYearOptions: number[];
-  /** Paginação real da tabela. */
-  offset: number;
-  onNextPage: () => void;
-  onPrevPage: () => void;
   formatNumberPt?: (v: number | null | undefined) => string;
   selectedId: string | null;
   onSelectCustomer: (id: string) => void;
+  /** "Trocar cliente" no cartão de resumo — limpa a seleção e os filtros para buscar outro. */
+  onChangeCustomer: () => void;
   selectedCustomer: CrmCustomerListItem | null;
   intel: CrmCommercialIntelResponse | null;
   intelLoading: boolean;
@@ -113,19 +110,16 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   customers,
   customersLoading,
   customersError,
-  listHasMore,
   sourceInfo = null,
   totals = null,
   period = null,
   periodFilter,
   onPeriodFilterChange,
   periodYearOptions,
-  offset,
-  onNextPage,
-  onPrevPage,
   formatNumberPt,
   selectedId,
   onSelectCustomer,
+  onChangeCustomer,
   selectedCustomer,
   intel,
   intelLoading,
@@ -247,8 +241,8 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           <div>
             <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
             <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              Gestão comercial por responsável da carteira: busque clientes, acompanhe relacionamento e
-              opere o cockpit do cliente selecionado. O vendedor do pedido (Nomus) é só auditoria.
+              Gestão comercial por responsável da carteira: busque um cliente para abrir o resumo e o
+              cockpit comercial dele. O vendedor do pedido (Nomus) é só auditoria.
             </p>
             <p className="text-xs text-muted-foreground mt-1 italic">{scopeLabel}</p>
             {period?.dateFrom || period?.dateTo ? (
@@ -264,7 +258,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           onChange={onPeriodFilterChange}
           yearOptions={periodYearOptions}
           testIdPrefix="crm-portfolio"
-          note="O período filtra as colunas “Pedidos”/“Venda no período” da tabela. Os totais de cadastro (universo, sem responsável, sem compra, divergência) são sempre do histórico completo do filtro, não deste período."
+          note="O período filtra os pedidos/venda do resumo comercial exibido abaixo. Os totais de cadastro (universo, sem responsável, sem compra, divergência) são sempre do histórico completo do filtro, não deste período."
         />
       </div>
 
@@ -282,7 +276,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
       ) : null}
       {totals ? <CrmCommercialAuditStrip metrics={auditMetrics} /> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-2">
         <aside className="min-w-0">
           <div className="rounded-2xl border border-border bg-muted/25 p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
             <div className="flex items-center gap-2.5">
@@ -421,53 +415,53 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           </div>
         </aside>
 
-        <main className="space-y-6 min-w-0">
-          <CrmCustomerPortfolioTable
+        <div className="min-w-0">
+          <CrmCustomerPortfolioFinder
             customers={customers}
             loading={listEmptyKind === "loading"}
             error={listEmptyKind === "error" ? customersError : null}
+            hasActiveFilters={activeChips.length > 0}
             emptyTitle={listEmptyCopy?.title ?? "Nenhum cliente encontrado"}
             emptyBody={listEmptyCopy?.body ?? "Ajuste os filtros para ver clientes da carteira."}
-            hasActiveFilters={activeChips.length > 0}
             onClearFilters={onClearAllFilters}
             selectedId={selectedId}
+            selectedCustomer={selectedCustomer}
             onSelectCustomer={onSelectCustomer}
+            onChangeCustomer={onChangeCustomer}
             showSellerColumn={!isOwnSellerOnly}
-            listHasMore={listHasMore}
-            offset={offset}
-            onNextPage={onNextPage}
-            onPrevPage={onPrevPage}
-            formatDateShortPt={formatters.formatDateShortPt}
-            formatIntelCurrency={formatters.formatIntelCurrency}
+            intel={intel}
+            intelligencePath={intelligencePath}
+            onRegisterContact={onRegisterContact}
+            onEditProfile={onEditProfile}
+            totals={totals}
             formatNumberPt={fmt}
-            getCustomerDisplayName={formatters.getCustomerDisplayName}
-            getCustomerTaxId={formatters.getCustomerTaxId}
+            formatters={formatters}
           />
-
-          {!selectedCustomer ? (
-            <CrmCustomerPortfolioEmptyState summary={emptySummary} scopeLabel={scopeLabel} />
-          ) : (
-            <div ref={cockpitRef} className="scroll-mt-4 space-y-6">
-              <CrmCustomerAccountCockpit
-                customer={selectedCustomer}
-                showSellerColumn={!isOwnSellerOnly}
-                intel={intel}
-                intelLoading={intelLoading}
-                intelError={intelError}
-                onIntelRetry={onIntelRetry}
-                profile={profile}
-                activities={activities}
-                activitiesLoading={activitiesLoading}
-                intelligencePath={intelligencePath}
-                onRegisterContact={onRegisterContact}
-                onEditProfile={onEditProfile}
-                formatters={formatters}
-              />
-              {children}
-            </div>
-          )}
-        </main>
+        </div>
       </div>
+
+      {/* Daqui para baixo: ponta a ponta horizontal, não preso à coluna do resumo acima. */}
+      {!selectedCustomer ? (
+        <CrmCustomerPortfolioEmptyState summary={emptySummary} scopeLabel={scopeLabel} />
+      ) : (
+        <div ref={cockpitRef} className="scroll-mt-4 space-y-6">
+          <CrmCustomerAccountCockpit
+            customer={selectedCustomer}
+            intel={intel}
+            intelLoading={intelLoading}
+            intelError={intelError}
+            onIntelRetry={onIntelRetry}
+            profile={profile}
+            activities={activities}
+            activitiesLoading={activitiesLoading}
+            intelligencePath={intelligencePath}
+            onRegisterContact={onRegisterContact}
+            onEditProfile={onEditProfile}
+            formatters={formatters}
+          />
+          {children}
+        </div>
+      )}
     </section>
   );
 };

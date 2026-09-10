@@ -1416,7 +1416,6 @@ export const CrmModule = () => {
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [crmCustomerFilter, setCrmCustomerFilter] = useState<CrmCustomerListFilter>("all");
-  const [listHasMore, setListHasMore] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activities, setActivities] = useState<CrmActivity[]>([]);
@@ -1803,7 +1802,6 @@ export const CrmModule = () => {
           totals: data?.totals ?? null,
           period: data?.period ?? null,
         });
-        setListHasMore(Boolean(data?.pagination?.hasMore));
         setSelectedId((prev) => {
           if (!prev) return null;
           return list.some((c) => c.id === prev) ? prev : null;
@@ -1811,7 +1809,6 @@ export const CrmModule = () => {
       } catch (e) {
         setCustomers([]);
         setCustomersListMeta({ sourceInfo: null, totals: null, period: null });
-        setListHasMore(false);
         const raw = e instanceof Error ? e.message : "Não foi possível carregar a lista de clientes.";
         setCustomersError(clampMessage(raw));
       } finally {
@@ -2149,16 +2146,10 @@ export const CrmModule = () => {
     void loadCrmCustomers("", "all", 0, SELLER_KEY_ALL, defaultPeriod);
   };
 
-  const handlePortfolioNextPage = () => {
-    const nextOffset = portfolioOffset + CRM_LIST_LIMIT;
-    setPortfolioOffset(nextOffset);
-    void loadCrmCustomers(searchApplied, crmCustomerFilter, nextOffset, portfolioSellerKey, portfolioPeriod);
-  };
-
-  const handlePortfolioPrevPage = () => {
-    const prevOffset = Math.max(0, portfolioOffset - CRM_LIST_LIMIT);
-    setPortfolioOffset(prevOffset);
-    void loadCrmCustomers(searchApplied, crmCustomerFilter, prevOffset, portfolioSellerKey, portfolioPeriod);
+  /** "Trocar cliente" no cartão de resumo da Carteira: sai da seleção atual e limpa os filtros para uma nova busca. */
+  const handleChangeCrmPortfolioCustomer = () => {
+    setSelectedId(null);
+    handleClearPortfolioFilters();
   };
 
   const selectCustomerById = useCallback(
@@ -2510,19 +2501,16 @@ export const CrmModule = () => {
           customers={customers}
           customersLoading={customersLoading}
           customersError={customersError}
-          listHasMore={listHasMore}
           sourceInfo={customersListMeta.sourceInfo}
           totals={customersListMeta.totals}
           period={customersListMeta.period}
           periodFilter={portfolioPeriod}
           onPeriodFilterChange={handlePortfolioPeriodChange}
           periodYearOptions={periodYearOptions}
-          offset={portfolioOffset}
-          onNextPage={handlePortfolioNextPage}
-          onPrevPage={handlePortfolioPrevPage}
           formatNumberPt={formatNumberPt}
           selectedId={selectedId}
           onSelectCustomer={setSelectedId}
+          onChangeCustomer={handleChangeCrmPortfolioCustomer}
           selectedCustomer={selectedCustomer}
           intel={commercialIntel}
           intelLoading={commercialIntelLoading}

@@ -2,11 +2,19 @@
  * Contrato desta missão (fechamento do redesenho operacional do CRM):
  * Gestão por Responsável e Carteira de Clientes ganham o contrato único de
  * período Ano/Mês, comparação entre responsáveis, listas de dados já
- * computados-mas-não-exibidos, e a Carteira ganha tabela operacional +
- * paginação real. Testes no estilo já usado pelo projeto
- * (`crmCommercialLayout.test.ts`, `crmPortfolioScopeLabels.test.ts`) —
- * leitura estática do código-fonte — porque `CrmModule.tsx` concentra o
- * estado das 3 abas num único componente sem cobertura de integração.
+ * computados-mas-não-exibidos.
+ *
+ * 10/09/2026: a Carteira de Clientes trocou a tabela operacional paginada
+ * por um cartão-resumo do cliente resolvido pelos filtros (grid 50/50 com
+ * os filtros), com desambiguação leve em chips quando a busca ainda é
+ * ambígua. Da faixa "Resumo comercial" para baixo o cockpit passou a
+ * ocupar a tela de ponta a ponta, fora da coluna do resumo. Os testes de
+ * tabela/paginação foram substituídos pelos do novo contrato abaixo.
+ *
+ * Testes no estilo já usado pelo projeto (`crmCommercialLayout.test.ts`,
+ * `crmPortfolioScopeLabels.test.ts`) — leitura estática do código-fonte —
+ * porque `CrmModule.tsx` concentra o estado das 3 abas num único
+ * componente sem cobertura de integração.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -46,9 +54,10 @@ describe("Gestão por Responsável — contrato de período e comparação", () 
   });
 });
 
-describe("Carteira de Clientes — contrato de período, tabela e paginação", () => {
+describe("Carteira de Clientes — contrato de período e resumo do cliente", () => {
   const section = read("src/components/crm/CrmCustomerPortfolioSection.tsx");
-  const table = read("src/components/crm/CrmCustomerPortfolioTable.tsx");
+  const finder = read("src/components/crm/CrmCustomerPortfolioFinder.tsx");
+  const cockpit = read("src/components/crm/CrmCustomerAccountCockpit.tsx");
   const module_ = read("src/components/CrmModule.tsx");
 
   it("ganha a barra Ano/Mês (não existia nenhum seletor de período antes)", () => {
@@ -60,44 +69,38 @@ describe("Carteira de Clientes — contrato de período, tabela e paginação", 
     assert.match(module_, /crmPeriodFilterFromSearchParams\(searchParams, "portfolio", "all"\)/);
   });
 
-  it("avisa que o período filtra só as colunas de movimento da tabela, não os totais de cadastro", () => {
-    assert.match(section, /O período filtra as colunas/);
+  it("avisa que o período filtra o resumo comercial, não os totais de cadastro", () => {
+    assert.match(section, /O período filtra os pedidos\/venda do resumo comercial/);
   });
 
-  it("a lista de cards estreita virou uma tabela operacional de largura cheia", () => {
-    assert.match(section, /CrmCustomerPortfolioTable/);
-    assert.doesNotMatch(section, /max-h-\[min\(720px,75vh\)\]/);
+  it("o grid da carteira não lista clientes — vira o resumo do cliente resolvido pelos filtros", () => {
+    // Missão de redesign (10/09/2026): a tabela operacional de linhas foi
+    // substituída por um cartão-resumo único, com desambiguação leve (chips)
+    // só quando a busca ainda é ambígua. Nunca mais uma tabela de dados aqui.
+    assert.match(section, /CrmCustomerPortfolioFinder/);
+    assert.doesNotMatch(section, /CrmCustomerPortfolioTable/);
+    assert.match(section, /xl:grid-cols-2/);
   });
 
-  it("a tabela tem as colunas mínimas exigidas pela missão", () => {
-    for (const column of [
-      "Cliente",
-      "Responsável",
-      "Status",
-      "Última compra",
-      "Dias sem compra",
-      "Pedidos no período",
-      "Venda no período",
-      "Ticket médio",
-      "Atenção",
-      "Ações",
-    ]) {
-      assert.ok(table.includes(column), `coluna ausente: ${column}`);
-    }
+  it("resolve para 1 cliente automaticamente e mostra o cartão de identidade", () => {
+    assert.match(finder, /customers\.length === 1/);
+    assert.match(finder, /CrmCustomerIdentityCard/);
   });
 
-  it("cada linha tem ação explícita para abrir o cliente e para o Cliente 360", () => {
-    assert.match(table, />\s*Abrir\s*</);
-    assert.match(table, /Ver 360/);
-    assert.match(table, /buildCustomerIntelligencePath/);
+  it("2+ resultados viram chips clicáveis, nunca uma tabela", () => {
+    assert.doesNotMatch(finder, /<table/);
+    assert.match(finder, /onSelectCustomer\(c\.id\)/);
   });
 
-  it("ganha paginação real (antes toda chamada usava offset=0 fixo, sem pager na UI)", () => {
-    assert.match(table, /data-testid="crm-portfolio-pagination"/);
-    assert.match(table, /onNextPage/);
-    assert.match(table, /onPrevPage/);
-    assert.match(module_, /handlePortfolioNextPage/);
-    assert.match(module_, /handlePortfolioPrevPage/);
+  it("'Trocar cliente' limpa a seleção e os filtros para uma nova busca", () => {
+    assert.match(cockpit, /onChangeCustomer/);
+    assert.match(module_, /handleChangeCrmPortfolioCustomer/);
+    assert.match(module_, /setSelectedId\(null\)/);
+  });
+
+  it("cada linha tem ação explícita para o Cliente 360", () => {
+    assert.match(cockpit, /Inteligência/);
+    assert.match(module_, /buildCustomerIntelligencePath/);
   });
 
   it("toda mudança de filtro (busca, chip, responsável, período, limpar) zera a paginação", () => {
@@ -162,9 +165,10 @@ describe("Invariantes da V2 preservados (não regredir)", () => {
 });
 
 describe("Cliente 360 — não duplicado", () => {
-  it("a tabela da Carteira aponta para o Cliente 360 canônico existente, não cria um novo", () => {
-    const table = read("src/components/crm/CrmCustomerPortfolioTable.tsx");
-    assert.match(table, /from "@\/src\/lib\/customerIntelligenceNavigation"/);
-    assert.doesNotMatch(table, /CustomerIntelligencePage/);
+  it("o cartão de resumo da Carteira aponta para o Cliente 360 canônico existente, não cria um novo", () => {
+    const module_ = read("src/components/CrmModule.tsx");
+    const cockpit = read("src/components/crm/CrmCustomerAccountCockpit.tsx");
+    assert.match(module_, /from "@\/src\/lib\/customerIntelligenceNavigation"/);
+    assert.doesNotMatch(cockpit, /CustomerIntelligencePage/);
   });
 });

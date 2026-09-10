@@ -108,7 +108,9 @@ describe("crmCommercialLayout", () => {
     assert.match(crm, /CrmCustomerPortfolioSection/);
     assert.match(crm, /CockpitTabs/);
     assert.match(portfolio, /CRM_PORTFOLIO_FILTER_CHIPS/);
-    assert.match(portfolio, /xl:grid-cols-\[minmax\(320px,420px\)_minmax\(0,1fr\)\]/);
+    // 10/09/2026: filtros e resumo do cliente dividem a tela meio a meio
+    // (era uma coluna estreita de filtros + tabela larga).
+    assert.match(portfolio, /xl:grid-cols-2/);
     assert.match(cockpit, /Resumo comercial/);
     assert.match(cockpit, /Agenda comercial/);
   });
