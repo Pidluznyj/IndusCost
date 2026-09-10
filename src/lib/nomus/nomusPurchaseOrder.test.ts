@@ -466,10 +466,11 @@ describe("nomusPurchaseOrder integration wiring", () => {
   it("UI e rotas permanecem separadas de PurchaseRequest", () => {
     const ui = readFileSync("src/components/NomusPurchaseOrderModule.tsx", "utf8");
     const routes = readFileSync("src/lib/nomusPurchaseOrderRoutes.ts", "utf8");
+    const access = readFileSync("src/lib/purchasing/nomusPurchaseOrderAccess.ts", "utf8");
     assert.match(ui, /Pedidos Nomus|espelho somente leitura/i);
     assert.match(ui, /NomusPurchaseOrderDetailDialog/);
     assert.doesNotMatch(ui, /PurchaseRequest/);
     assert.match(routes, /\/api\/nomus\/purchase-orders/);
-    assert.match(routes, /purchases\.nomusPurchaseOrders\.view/);
+    assert.match(access, /purchases\.nomusPurchaseOrders\.view/);
   });
 });

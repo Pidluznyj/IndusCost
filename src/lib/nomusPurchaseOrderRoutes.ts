@@ -17,6 +17,7 @@ import {
   buildNomusPurchaseOrderWhere,
   parseNomusPurchaseOrderListFilters,
 } from "@/src/lib/nomus/nomusPurchaseOrderQuery.js";
+import { NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS } from "@/src/lib/purchasing/nomusPurchaseOrderAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -24,11 +25,7 @@ type AuthGuards = {
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
-const VIEW_PERMISSIONS = [
-  "purchases.nomusPurchaseOrders.view",
-  "purchases.view",
-  "settings.nomus.view",
-];
+const VIEW_PERMISSIONS = [...NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS];
 
 const RAW_PERMISSIONS = ["settings.nomus.view", "settings.view"];
 

@@ -4,6 +4,10 @@
  * Sidebar e rotas: DTO efetivo (contrato) — sem canAccessModule / mega-key / role matrix.
  * Loading / sessão inválida → sem menu e sem acesso.
  * Path sem módulo mapeado → DENY (salvo allowlist autenticada explícita).
+ *
+ * Exceção Pedidos Nomus: a API da listagem ainda autoriza pela bag
+ * (`purchases.view` / `purchases.nomusPurchaseOrders.view`). Sem esse recorte,
+ * o DTO `operations.purchases` deixava o menu e o casco visíveis com 403.
  */
 
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
@@ -13,7 +17,10 @@ import {
   type AppModuleId,
   type PermissionChecker,
 } from "@/src/lib/modulePermissions.js";
-import { getModulePath } from "@/src/lib/navigationGroups.js";
+import {
+  getModulePath,
+  type NavigationGroupedItem,
+} from "@/src/lib/navigationGroups.js";
 import {
   canAccessResourceClient,
   createSidebarCanViewResource,
@@ -39,6 +46,10 @@ import {
   type UiPermissionAction,
 } from "@/src/lib/actionPermissionAccess.js";
 import { canAccessFromEffectiveAccessDto } from "@/src/lib/canAccessFromEffectiveAccess.js";
+import {
+  isNomusPurchaseOrdersPath,
+  userBagAllowsNomusPurchaseOrders,
+} from "@/src/lib/purchasing/nomusPurchaseOrderAccess.js";
 
 export type ResourceViewOptions = {
   /** MENU: não elevar só por filhos; SUBMENU/TAB: elevação legada. Default: regras do sidebar. */
@@ -204,7 +215,10 @@ export function evaluatePathViewAccess(
   }
 
   const resourceKey = resolveSidebarModuleResourceKey(moduleId);
-  const allowed = canViewModule(moduleId, ctx);
+  const moduleAllowed = canViewModule(moduleId, ctx);
+  const nomusDenied =
+    isNomusPurchaseOrdersPath(pathname) && !userBagAllowsNomusPurchaseOrders(ctx.user);
+  const allowed = moduleAllowed && !nomusDenied;
   return {
     allowed,
     moduleId,
@@ -220,6 +234,36 @@ export function canAccessPath(
   ctx: NavigationAccessContext
 ): boolean {
   return evaluatePathViewAccess(pathname, ctx).allowed;
+}
+
+function hidePurchasesWithoutNomusBag(
+  nav: SidebarAccessibleNavigation,
+  ctx: NavigationAccessContext
+): SidebarAccessibleNavigation {
+  if (userBagAllowsNomusPurchaseOrders(ctx.user)) return nav;
+  const drop = (items: NavigationGroupedItem[]) =>
+    items.filter((item) => item.itemId !== "purchases");
+  const groups = nav.groups
+    .map((group) => {
+      const items = drop(group.items);
+      if (items.length === 0) return null;
+      return { ...group, items, itemIds: items.map((item) => item.itemId) };
+    })
+    .filter((group): group is NonNullable<typeof group> => group != null);
+  const fallbackItems = nav.fallbackGroup ? drop(nav.fallbackGroup.items) : [];
+  return {
+    directItems: drop(nav.directItems),
+    groups,
+    fallbackGroup:
+      nav.fallbackGroup && fallbackItems.length > 0
+        ? {
+            ...nav.fallbackGroup,
+            items: fallbackItems,
+            itemIds: fallbackItems.map((item) => item.itemId),
+          }
+        : null,
+    flatAccessibleItems: nav.flatAccessibleItems.filter((item) => item.id !== "purchases"),
+  };
 }
 
 /** Sidebar filtrada exclusivamente pelo DTO efetivo (P10). */
@@ -238,7 +282,10 @@ export function buildResourceAwareSidebarNavigation(
   }
 
   const dto = resolveDto(ctx);
-  return buildSidebarNavigationFromEffectiveAccess(dto);
+  return hidePurchasesWithoutNomusBag(
+    buildSidebarNavigationFromEffectiveAccess(dto),
+    ctx
+  );
 }
 
 /**
