@@ -288,3 +288,8 @@ export function useAuth(): AuthContextValue {
   }
   return ctx;
 }
+
+/** Presente só dentro de AuthProvider; testes de nav isolados recebem null. */
+export function useAuthOptional(): AuthContextValue | null {
+  return useContext(AuthContext);
+}

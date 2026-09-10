@@ -86,6 +86,7 @@ describe("navegação Compras — contexto Nomus", () => {
     );
     assert.match(nav, /label: "Pedidos Nomus"/);
     assert.match(nav, /label: "Avaliação Fornecedor"/);
+    assert.match(nav, /userBagAllowsNomusPurchaseOrders/);
     assert.match(nav, /variant === "nomus"/);
     assert.match(moduleSrc, /variant="nomus"/);
     assert.match(page, /variant="nomus"/);

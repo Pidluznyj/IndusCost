@@ -12,6 +12,8 @@
  */
 import React from "react";
 import { Link } from "react-router-dom";
+import { useAuthOptional } from "@/src/contexts/AuthContext";
+import { userBagAllowsNomusPurchaseOrders } from "@/src/lib/purchasing/nomusPurchaseOrderAccess";
 import { cn } from "@/src/lib/utils";
 
 export type PurchaseChainViewId =
@@ -61,18 +63,26 @@ export function PurchaseChainViewNav({
   className,
   variant = "full",
   showSupplierEvaluation = true,
+  showNomusOrders,
 }: {
   current: PurchaseChainViewId;
   className?: string;
   variant?: "full" | "nomus";
   showSupplierEvaluation?: boolean;
+  /** Default: bag da API (não o DTO). Sem AuthProvider, a aba permanece. */
+  showNomusOrders?: boolean;
 }) {
-  const views =
+  const auth = useAuthOptional();
+  const nomusAllowed =
+    showNomusOrders ??
+    (auth ? userBagAllowsNomusPurchaseOrders(auth.authUser) : true);
+  const views = (
     variant === "nomus"
       ? NOMUS_CONTEXT_VIEWS.filter(
           (view) => view.id !== "supplier-evaluation" || showSupplierEvaluation
         )
-      : VIEWS;
+      : VIEWS
+  ).filter((view) => view.id !== "nomus-orders" || nomusAllowed);
 
   return (
     <nav

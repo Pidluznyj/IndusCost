@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseNomusPurchaseOrderListFilters } from "./nomusPurchaseOrderQuery.js";
 
-const VIEW_PERMISSIONS = [
-  "purchases.nomusPurchaseOrders.view",
-  "purchases.view",
-  "settings.nomus.view",
-];
+import { NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS } from "../purchasing/nomusPurchaseOrderAccess.ts";
 
 describe("nomusPurchaseOrder API contract", () => {
   it("listagem pagina e filtra no backend", () => {
@@ -32,7 +28,7 @@ describe("nomusPurchaseOrder API contract", () => {
   });
 
   it("permissões de leitura não incluem escrita", () => {
-    assert.ok(VIEW_PERMISSIONS.includes("purchases.nomusPurchaseOrders.view"));
-    assert.ok(!VIEW_PERMISSIONS.some((key) => /create|edit|delete|approve|sync/i.test(key)));
+    assert.ok(NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS.includes("purchases.nomusPurchaseOrders.view"));
+    assert.ok(!NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS.some((key) => /create|edit|delete|approve|sync/i.test(key)));
   });
 });

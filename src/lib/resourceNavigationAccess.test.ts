@@ -14,6 +14,7 @@ import {
   pickAllowedTabId,
   resolveSafeNavigateTarget,
 } from "./resourceNavigationAccess.ts";
+import { effectiveAccessDtoFromAllowedResources } from "./sidebarEffectiveAccess.ts";
 
 function checker(perms: string[]): PermissionChecker {
   const set = new Set(perms);
@@ -317,6 +318,35 @@ describe("resourceNavigationAccess — abas", () => {
     assert.deepEqual(
       filterTabsByView(tabs, canView, { parentResourceKey: ResourceKeys.COMERCIAL_CRM }),
       []
+    );
+  });
+});
+
+describe("resourceNavigationAccess — Pedidos Nomus vs DTO Compras", () => {
+  it("perfil/DTO de Compras sem bag da API não mostra a tela nem o item no menu", () => {
+    const u = user({ role: "VIEWER", permissions: [] });
+    const split = {
+      user: u,
+      checker: checker([]),
+      effectiveAccess: effectiveAccessDtoFromAllowedResources(["operations.purchases"]),
+    };
+    assert.equal(canViewModule("purchases", split), true, "módulo Compras segue no DTO");
+    assert.equal(evaluatePathViewAccess("/purchases/nomus-orders", split).allowed, false);
+    assert.equal(evaluatePathViewAccess("/purchases/nomus-orders", split).reason, "denied");
+    assert.equal(
+      evaluatePathViewAccess("/purchases", split).allowed,
+      true,
+      "solicitação interna continua no DTO"
+    );
+    const ids = buildResourceAwareSidebarNavigation(split).flatAccessibleItems.map((i) => i.id);
+    assert.equal(ids.includes("purchases"), false);
+  });
+
+  it("bag purchases.view libera landing Nomus e o item Compras", () => {
+    const allowed = ctx("VIEWER", ["purchases.view"]);
+    assert.equal(canAccessPath("/purchases/nomus-orders", allowed), true);
+    assert.ok(
+      buildResourceAwareSidebarNavigation(allowed).flatAccessibleItems.some((i) => i.id === "purchases")
     );
   });
 });

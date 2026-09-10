@@ -11,6 +11,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess.js";
+import { NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS } from "@/src/lib/purchasing/nomusPurchaseOrderAccess.js";
 import {
   buildPurchaseOrderPayableReconciliationForOrder,
   confirmPurchaseOrderPayableLink,
@@ -27,11 +28,8 @@ type AuthGuards = {
 };
 
 /** Mesmas permissões de leitura da listagem de Pedidos Nomus. */
-const VIEW_PERMISSIONS = [
-  "purchases.nomusPurchaseOrders.view",
-  "purchases.view",
-  "settings.nomus.view",
-];
+const VIEW_PERMISSIONS = [...NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS];
+
 /**
  * Pedido Nomus ↔ Contas a Pagar — reconciliação, confirmação e desvínculo.
  * Leitura: mesmas permissões da listagem. Escrita: operations.purchases:update.
