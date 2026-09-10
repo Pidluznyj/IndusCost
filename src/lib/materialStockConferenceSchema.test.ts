@@ -31,9 +31,10 @@ function materialModelBlock(): string {
 }
 
 describe("materialStockConferenceSchema — campos aditivos no Material", () => {
-  it("preserva quantity oficial Decimal(20,6) e campos de custo", () => {
+  it("preserva quantity Decimal(20,6) como projeção de compatibilidade e campos de custo", () => {
     const block = materialModelBlock();
     assert.match(block, /quantity\s+Decimal\s+@default\(0\)\s+@db\.Decimal\(20, 6\)/);
+    assert.match(block, /Projeção de compatibilidade do saldo físico oficial do Inventory/);
     assert.match(block, /currentCost\s+Decimal\s+@db\.Decimal\(20, 6\)/);
     assert.match(block, /averageCost\s+Decimal\s+@db\.Decimal\(20, 6\)/);
     assert.match(block, /standardCost\s+Decimal\s+@db\.Decimal\(20, 6\)/);
@@ -146,7 +147,7 @@ describe("materialStockConferenceSchema — migration aditiva", () => {
   });
 });
 
-describe("materialStockConferenceSchema — custos e quantity oficiais intactos", () => {
+describe("materialStockConferenceSchema — custos intactos e quantity como projeção", () => {
   const base = {
     id: "mat-stock-schema-1",
     code: "MP-1",
@@ -196,13 +197,11 @@ describe("materialStockConferenceSchema — custos e quantity oficiais intactos"
     assert.equal(line.lineTotal, line.matEffectiveCost * 2);
   });
 
-  it("quantidade atual permanece no campo oficial quantity", () => {
+  it("quantidade atual é projeção do Inventory, não fonte cadastral", () => {
     assert.equal(computeMaterialTotalValue(base.quantity, base.currentCost), 500);
     const schema = materialModelBlock();
-    assert.match(
-      schema,
-      /Fonte oficial do estoque atual|Quantidade de referência no cadastro/
-    );
+    assert.match(schema, /projeção de compatibilidade do saldo físico oficial/i);
+    assert.doesNotMatch(schema, /Fonte oficial do estoque atual/);
   });
 });
 

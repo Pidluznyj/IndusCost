@@ -149,7 +149,10 @@ describe("inventory Prisma schema", () => {
     const match = SCHEMA.match(/model Material \{[\s\S]*?\n\}/m);
     assert.ok(match);
     assert.match(match[0], /InventoryItem\s+InventoryItem\[\]/);
-    assert.doesNotMatch(match[0], /warehouseId|physicalQuantity|InventoryBalance/);
+    const fieldsOnly = match[0].replace(/^\s*\/\/\/.*$/gm, "");
+    assert.doesNotMatch(fieldsOnly, /^\s+warehouseId\s/m);
+    assert.doesNotMatch(fieldsOnly, /^\s+physicalQuantity\s/m);
+    assert.doesNotMatch(fieldsOnly, /^\s+InventoryBalance\s/m);
   });
 
   it("decisão InventoryLocation documentada no schema", () => {

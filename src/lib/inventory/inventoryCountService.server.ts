@@ -3,7 +3,7 @@
  * Ajustes sempre via createInventoryMovement — nunca altera saldo diretamente.
  */
 import type { PrismaClient } from "@prisma/client";
-import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
+import { writeInventoryAuditLog, writeInventoryAuditLogInTx } from "./inventoryAudit.server.js";
 import { hasCountDivergence } from "./inventoryCountMath.js";
 import {
   COUNT_ADJUSTMENT_BASIS,
@@ -13,8 +13,10 @@ import {
 } from "./inventoryCountObservation.js";
 import { logLegacyCountBasis } from "./inventoryCountTelemetry.js";
 import { canApproveInventoryCount } from "./inventoryPermissionChecks.js";
-import { createInventoryMovement } from "./inventoryService.server.js";
+import { createInventoryMovementInTx } from "./inventoryService.server.js";
+import { reconcileMaterialQuantitiesFromInventoryInTx } from "./materialInventoryProjection.server.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
+import { captureMaterialStockValueSnapshotBestEffort } from "../materialStockValueSnapshot.server.js";
 
 export type CountSessionContext = {
   userId?: string | null;
@@ -264,112 +266,137 @@ export async function generateInventoryCountAdjustments(
   sessionId: string,
   context: CountSessionContext
 ) {
-  const session = await prisma.inventoryCountSession.findUnique({ where: { id: sessionId } });
-  if (!session) {
-    throw new InventoryValidationError("Conferência não encontrada.", "SESSION_NOT_FOUND");
-  }
-  if (session.status === "ADJUSTED") {
-    throw new InventoryValidationError("Ajustes já foram gerados.", "ALREADY_ADJUSTED");
-  }
-  if (session.status !== "APPROVED") {
-    throw new InventoryValidationError(
-      "Conferência deve estar aprovada para gerar ajustes.",
-      "INVALID_STATUS"
-    );
-  }
-
-  const lines = await prisma.inventoryCountLine.findMany({
-    where: { sessionId },
-    include: { item: { select: { unit: true } }, currentObservation: true },
-  });
-
-  for (const line of lines) {
-    if (line.generatedMovementId) {
+  const result = await prisma.$transaction(async (tx) => {
+    const session = await tx.inventoryCountSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new InventoryValidationError("Conferência não encontrada.", "SESSION_NOT_FOUND");
+    }
+    if (session.status === "ADJUSTED") {
+      throw new InventoryValidationError("Ajustes já foram gerados.", "ALREADY_ADJUSTED");
+    }
+    if (session.status !== "APPROVED") {
       throw new InventoryValidationError(
-        "Ajuste duplicado detectado — operação abortada.",
-        "DUPLICATE_ADJUSTMENT"
+        "Conferência deve estar aprovada para gerar ajustes.",
+        "INVALID_STATUS"
       );
     }
-  }
 
-  const movementsCreated: string[] = [];
-
-  for (const line of lines) {
-    // OP-10: a autoridade do ajuste é o delta da Observation vigente. Sessões
-    // anteriores continuam pela regra antiga — sem Observation sintética, sem
-    // reescrita de histórico.
-    const basis = resolveCountAdjustmentBasis(line);
-    if (basis.basis === COUNT_ADJUSTMENT_BASIS.legacy) {
-      logLegacyCountBasis({
-        sessionId,
-        sessionCode: session.code,
-        lineId: line.id,
-        itemId: line.itemId,
-        warehouseId: line.warehouseId,
-      });
-    }
-
-    const diff = basis.delta;
-    if (!hasCountDivergence(diff)) continue;
-
-    const movementType = diff > 0 ? "POSITIVE_ADJUSTMENT" : "NEGATIVE_ADJUSTMENT";
-    const quantity = Math.abs(diff);
-    const reason = line.justification?.trim() || `Ajuste conferência ${session.code}`;
-
-    const result = await createInventoryMovement(
-      prisma,
-      {
-        itemId: line.itemId,
-        movementType,
-        quantity,
-        unit: line.item.unit,
-        reason,
-        notes: `Conferência física ${session.code}`,
-        originType: "COUNT_SESSION",
-        originId: line.id,
-        ...(diff > 0
-          ? {
-              destinationWarehouseId: line.warehouseId,
-              destinationLocationId: line.locationId,
-            }
-          : {
-              sourceWarehouseId: line.warehouseId,
-              sourceLocationId: line.locationId,
-            }),
+    const lines = await tx.inventoryCountLine.findMany({
+      where: { sessionId },
+      include: {
+        item: { select: { unit: true, materialId: true } },
+        currentObservation: true,
       },
-      {
-        userId: context.userId ?? null,
-        deviceId: context.deviceId ?? null,
-        permissions: context.permissions,
-      }
-    );
-
-    await prisma.inventoryCountLine.update({
-      where: { id: line.id },
-      data: { generatedMovementId: result.movement.id },
     });
 
-    movementsCreated.push(result.movement.id);
-  }
+    for (const line of lines) {
+      if (line.generatedMovementId) {
+        throw new InventoryValidationError(
+          "Ajuste duplicado detectado — operação abortada.",
+          "DUPLICATE_ADJUSTMENT"
+        );
+      }
+    }
 
-  const updated = await prisma.inventoryCountSession.update({
-    where: { id: sessionId },
-    data: { status: "ADJUSTED" },
+    const movementsCreated: string[] = [];
+
+    for (const line of lines) {
+      // OP-10: a autoridade do ajuste é o delta da Observation vigente. Sessões
+      // anteriores continuam pela regra antiga — sem Observation sintética, sem
+      // reescrita de histórico.
+      const basis = resolveCountAdjustmentBasis(line);
+      if (basis.basis === COUNT_ADJUSTMENT_BASIS.legacy) {
+        logLegacyCountBasis({
+          sessionId,
+          sessionCode: session.code,
+          lineId: line.id,
+          itemId: line.itemId,
+          warehouseId: line.warehouseId,
+        });
+      }
+
+      const diff = basis.delta;
+      if (!hasCountDivergence(diff)) continue;
+
+      const movementType = diff > 0 ? "POSITIVE_ADJUSTMENT" : "NEGATIVE_ADJUSTMENT";
+      const quantity = Math.abs(diff);
+      const reason = line.justification?.trim() || `Ajuste conferência ${session.code}`;
+
+      const posted = await createInventoryMovementInTx(
+        tx,
+        prisma,
+        {
+          itemId: line.itemId,
+          movementType,
+          quantity,
+          unit: line.item.unit,
+          reason,
+          notes: `Conferência física ${session.code}`,
+          originType: "COUNT_SESSION",
+          originId: line.id,
+          ...(diff > 0
+            ? {
+                destinationWarehouseId: line.warehouseId,
+                destinationLocationId: line.locationId,
+              }
+            : {
+                sourceWarehouseId: line.warehouseId,
+                sourceLocationId: line.locationId,
+              }),
+        },
+        {
+          userId: context.userId ?? null,
+          deviceId: context.deviceId ?? null,
+          permissions: context.permissions,
+        }
+      );
+
+      await tx.inventoryCountLine.update({
+        where: { id: line.id },
+        data: { generatedMovementId: posted.movement.id },
+      });
+
+      movementsCreated.push(posted.movement.id);
+    }
+
+    const materialIds = lines
+      .map((line) => line.item?.materialId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+    await reconcileMaterialQuantitiesFromInventoryInTx(tx, materialIds, {
+      source: "COUNT_SESSION",
+      countSessionId: sessionId,
+      userId: context.userId ?? null,
+      reason: `Conferência física ${session.code}`,
+    });
+
+    const updated = await tx.inventoryCountSession.update({
+      where: { id: sessionId },
+      data: { status: "ADJUSTED" },
+    });
+
+    await writeInventoryAuditLogInTx(tx, {
+      entityType: "InventoryCountSession",
+      entityId: sessionId,
+      action: "GENERATE_ADJUSTMENTS",
+      afterJson: {
+        movementsCreated: movementsCreated.length,
+        deviceId: context.deviceId ?? null,
+        actorType: context.actorType ?? "USER",
+      },
+      userId: context.userId ?? null,
+    });
+
+    return { session: updated, movementsCreated: movementsCreated.length };
   });
 
-  await writeInventoryAuditLog(prisma, {
-    entityType: "InventoryCountSession",
-    entityId: sessionId,
-    action: "GENERATE_ADJUSTMENTS",
-    afterJson: {
-      movementsCreated: movementsCreated.length,
-      deviceId: context.deviceId ?? null,
-      actorType: context.actorType ?? "USER",
-    },
+  await captureMaterialStockValueSnapshotBestEffort(prisma, {
+    source: "CONFERENCE",
+    conferenceId: sessionId,
     userId: context.userId ?? null,
   });
 
-  return { session: updated, movementsCreated: movementsCreated.length };
+  return result;
 }
 
 export async function cancelInventoryCountSession(

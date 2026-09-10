@@ -1,6 +1,6 @@
 /**
- * Edição dos parâmetros de nível + saldo atual.
- * Não altera custos. Grava auditoria append-only na mesma transação.
+ * Edição dos parâmetros de nível. Não altera saldo físico nem custos.
+ * Grava auditoria append-only na mesma transação.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { MaterialStockConferenceError } from "./materialStockConferenceRules.js";
@@ -12,6 +12,10 @@ import {
   snapshotStockLevels,
 } from "./materialStockParametersRules.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
+import {
+  MATERIAL_QUANTITY_NOT_EDITABLE_MESSAGE,
+  materialQuantityPayloadDiffers,
+} from "./materialQuantityWriteGuard.js";
 
 export type MaterialStockParametersActor = {
   id: string;
@@ -89,6 +93,14 @@ export async function updateMaterialStockParameters(
       );
     }
 
+    if (materialQuantityPayloadDiffers(command.currentQuantity, material.quantity)) {
+      throw new MaterialStockConferenceError(
+        "FORBIDDEN",
+        MATERIAL_QUANTITY_NOT_EDITABLE_MESSAGE,
+        "currentQuantity"
+      );
+    }
+
     const before = snapshotStockLevels(material);
     const costsBefore = {
       currentCost: toNumber(material.currentCost),
@@ -101,7 +113,6 @@ export async function updateMaterialStockParameters(
     const updated = await tx.material.update({
       where: { id: materialId },
       data: {
-        quantity: command.currentQuantity,
         contingencyQuantity: command.contingencyQuantity,
         minimumQuantity: command.minimumQuantity,
         recommendedQuantity: command.recommendedQuantity,

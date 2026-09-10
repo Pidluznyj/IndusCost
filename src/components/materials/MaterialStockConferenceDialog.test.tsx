@@ -45,7 +45,8 @@ describe("MaterialStockConferenceDialog", () => {
     assert.match(html, /stock-conference-reported-input/);
     assert.match(html, /Estoque contingência\*/);
     assert.match(html, /Estoque recomendado/);
-    assert.match(html, /Saldo contado\*/);
+    assert.match(html, /Saldo físico oficial/);
+    assert.match(html, /stock-conference-unit/);
     assert.match(html, /stock-conference-system-balance/);
     assert.match(html, /Saldo atual/);
     assert.match(html, /stock-conference-unit/);
@@ -53,8 +54,7 @@ describe("MaterialStockConferenceDialog", () => {
     assert.match(html, /Salvar conferência/);
     assert.match(html, /Cancelar/);
     assert.match(html, /Saldo atual \(sistema\)/);
-    assert.match(html, /Conferência física/);
-    assert.match(html, /só muda após a confirmação do servidor/);
+    assert.match(html, /Conferência Física/);
     assert.doesNotMatch(html, /currentCost|freight|standardLoss|conversionFactor|landedCost/i);
   });
 

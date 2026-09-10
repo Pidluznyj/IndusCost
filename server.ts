@@ -121,6 +121,10 @@ import {
   normalizeMaterialQuantity,
 } from "./src/lib/materialQuantityTotal.js";
 import {
+  resolveMaterialCreateQuantity,
+  resolveMaterialUpdateQuantity,
+} from "./src/lib/materialQuantityWriteGuard.js";
+import {
   buildMonitoredMaterialListResponse,
   parseMonitoredMaterialCriticalityFilter,
 } from "./src/lib/materialMarketIntelligenceMonitored.js";
@@ -5778,6 +5782,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
+      const quantityPolicy = resolveMaterialCreateQuantity(parsedNumeric.quantity);
+      if (quantityPolicy.ok === false) {
+        return res.status(400).json({
+          error: quantityPolicy.error,
+          field: quantityPolicy.field,
+          message: quantityPolicy.message,
+        });
+      }
+
       const material = await prisma.material.create({
         data: {
           code,
@@ -5788,7 +5801,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           currentCost: parsedNumeric.currentCost,
           averageCost: parsedNumeric.averageCost,
           standardCost: parsedNumeric.standardCost,
-          quantity: parsedNumeric.quantity,
+          quantity: quantityPolicy.quantity,
           freight: parsedNumeric.freight,
           standardLoss: parsedNumeric.standardLoss,
           conversionFactor: conversion.value,
@@ -5886,10 +5899,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
-      const quantity =
-        body.quantity === undefined || body.quantity === null
-          ? oldMaterial.quantity
-          : normalizeMaterialQuantity(body.quantity);
+      const quantityPolicy = resolveMaterialUpdateQuantity(body.quantity, oldMaterial.quantity);
+      if (quantityPolicy.ok === false) {
+        return res.status(400).json({
+          error: quantityPolicy.error,
+          field: quantityPolicy.field,
+          message: quantityPolicy.message,
+        });
+      }
 
       const material = await prisma.material.update({
         where: { id },
@@ -5910,7 +5927,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           standardCost: body.standardCost ?? oldMaterial.standardCost,
           standardLoss: body.standardLoss ?? oldMaterial.standardLoss,
           conversionFactor: body.conversionFactor ?? oldMaterial.conversionFactor,
-          quantity,
           currentCost,
           freight,
           isPlanningMonitored:

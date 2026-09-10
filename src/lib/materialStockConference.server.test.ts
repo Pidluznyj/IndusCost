@@ -101,7 +101,9 @@ function createTxDb(seed: MaterialRow) {
           return { count: 0 };
         }
         updatePayloads.push(data);
-        row.quantity = Number(data.quantity);
+        if (data.quantity !== undefined) {
+          row.quantity = Number(data.quantity);
+        }
         if ("contingencyQuantity" in data) {
           row.contingencyQuantity =
             data.contingencyQuantity == null
@@ -246,7 +248,7 @@ describe("materialStockConferenceRules — parse", () => {
 describe("recordMaterialStockConference", () => {
   const actor = { id: USER_ID, name: "Operador Tablet", email: "op@test.local" };
 
-  it("atualiza saldo oficial, registra diferença negativa e histórico", async () => {
+  it("registra histórico sem alterar o saldo físico (projeção do Inventory)", async () => {
     const db = createTxDb(baseMaterial());
     const result = await recordMaterialStockConference(db as any, {
       body: {
@@ -266,15 +268,19 @@ describe("recordMaterialStockConference", () => {
     assert.equal(result.conference.previousQuantity, 500);
     assert.equal(result.conference.reportedQuantity, 450);
     assert.equal(result.conference.difference, -50);
-    assert.equal(result.material.quantity, 450);
+    assert.equal(result.material.quantity, 500);
     assert.equal(result.material.contingencyQuantity, 50);
     assert.equal(result.material.recommendedQuantity, 400);
     assert.equal(result.material.stockConferenceVersion, 4);
     assert.equal(result.conference.userId, USER_ID);
     assert.equal(db.getConferences().length, 1);
     assert.equal(db.getMaterial().currentCost, 5.17);
+    assert.equal(db.getMaterial().quantity, 500);
     assert.equal(db.getMaterial().contingencyQuantity, 50);
     assert.equal(db.getMaterial().recommendedQuantity, 400);
+    for (const payload of db.getUpdatePayloads()) {
+      assert.equal("quantity" in (payload as object), false);
+    }
   });
 
   it("diferença positiva, saldo igual e Decimal", async () => {
@@ -389,7 +395,7 @@ describe("recordMaterialStockConference", () => {
     assert.equal(second.idempotent, true);
     assert.equal(second.created, false);
     assert.equal(db.getConferences().length, 1);
-    assert.equal(db.getMaterial().quantity, 450);
+    assert.equal(db.getMaterial().quantity, 500);
   });
 
   it("custo da MP e custo unitário do produto permanecem inalterados", async () => {

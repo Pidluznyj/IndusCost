@@ -191,7 +191,7 @@ describe("materialStockParametersRules", () => {
 describe("updateMaterialStockParameters", () => {
   const actor = { id: USER_ID, name: "Gestor", email: "g@test.local" };
 
-  it("atualiza saldo e parâmetros sem mexer em custos e grava auditoria", async () => {
+  it("atualiza parâmetros de nível sem mexer em custos, saldo físico e grava auditoria", async () => {
     const db = createDb(baseMaterial({ quantity: 500 }));
     const costBefore = resolveMaterialLineCostForEngine({
       id: MATERIAL_ID,
@@ -213,7 +213,7 @@ describe("updateMaterialStockParameters", () => {
     const result = await updateMaterialStockParameters(db as any, {
       materialId: MATERIAL_ID,
       body: {
-        currentQuantity: 480,
+        currentQuantity: 500,
         contingencyQuantity: 10,
         minimumQuantity: 20,
         recommendedQuantity: 50,
@@ -222,24 +222,24 @@ describe("updateMaterialStockParameters", () => {
       actor,
     });
 
-    assert.equal(result.material.quantity, 480);
+    assert.equal(result.material.quantity, 500);
     assert.equal(result.material.contingencyQuantity, 10);
     assert.equal(result.material.minimumQuantity, 20);
     assert.equal(result.material.recommendedQuantity, 50);
-    assert.equal(db.getMaterial().quantity, 480);
+    assert.equal(db.getMaterial().quantity, 500);
     assert.equal(db.getMaterial().currentCost, 5.17);
     assert.equal(db.getAudits().length, 1);
     assert.equal(db.getAudits()[0]?.action, "UPDATE_LEVELS");
     assert.equal(db.getAudits()[0]?.userId, USER_ID);
     assert.deepEqual(db.getAudits()[0]?.afterJson, {
-      currentQuantity: 480,
+      currentQuantity: 500,
       contingencyQuantity: 10,
       minimumQuantity: 20,
       recommendedQuantity: 50,
     });
     for (const payload of db.getUpdatePayloads()) {
       const keys = Object.keys(payload as object);
-      assert.ok(keys.includes("quantity"));
+      assert.ok(!keys.includes("quantity"));
       assert.ok(!keys.includes("currentCost"));
       assert.ok(!keys.includes("freight"));
       assert.ok(!keys.includes("standardLoss"));
@@ -265,7 +265,7 @@ describe("updateMaterialStockParameters", () => {
     assert.deepEqual(lineAfter, lineBefore);
   });
 
-  it("permite zerar saldo e parâmetros", async () => {
+  it("permite zerar parâmetros sem alterar saldo físico", async () => {
     const db = createDb(
       baseMaterial({
         contingencyQuantity: 5,
@@ -276,7 +276,7 @@ describe("updateMaterialStockParameters", () => {
     const result = await updateMaterialStockParameters(db as any, {
       materialId: MATERIAL_ID,
       body: {
-        currentQuantity: 0,
+        currentQuantity: 500,
         contingencyQuantity: null,
         minimumQuantity: null,
         recommendedQuantity: null,
@@ -286,8 +286,30 @@ describe("updateMaterialStockParameters", () => {
     assert.equal(result.material.contingencyQuantity, null);
     assert.equal(result.material.minimumQuantity, null);
     assert.equal(result.material.recommendedQuantity, null);
-    assert.equal(result.material.quantity, 0);
+    assert.equal(result.material.quantity, 500);
     assert.equal(db.getAudits().length, 1);
+  });
+
+  it("rejeita tentativa de editar saldo físico pelos parâmetros", async () => {
+    const db = createDb(baseMaterial());
+    await assert.rejects(
+      () =>
+        updateMaterialStockParameters(db as any, {
+          materialId: MATERIAL_ID,
+          body: {
+            currentQuantity: 480,
+            contingencyQuantity: 10,
+            minimumQuantity: 20,
+            recommendedQuantity: 50,
+          },
+          actor,
+        }),
+      (err: unknown) =>
+        err instanceof MaterialStockConferenceError &&
+        err.code === "FORBIDDEN" &&
+        err.field === "currentQuantity"
+    );
+    assert.equal(db.getMaterial().quantity, 500);
   });
 
   it("material inexistente retorna 404", async () => {

@@ -445,8 +445,11 @@ model Material {
   currentCost                    Decimal                          @db.Decimal(20, 6)
   averageCost                    Decimal                          @db.Decimal(20, 6)
   standardCost                   Decimal                          @db.Decimal(20, 6)
-  /// Quantidade de referência no cadastro (Suprimentos). Total = quantity × currentCost.
-  /// Fonte oficial do estoque atual — Conferência de Estoque atualiza este campo (não substitui).
+  /// Projeção de compatibilidade do saldo físico oficial do Inventory
+  /// (soma canônica de InventoryBalance.physicalQuantity do InventoryItem
+  /// ACTIVE vinculado). Não é fonte de verdade nem campo cadastral editável.
+  /// Conferência Física e movimentações oficiais alteram o ledger; este campo
+  /// é reconciliado a partir do Inventory. Total gerencial = quantity × currentCost.
   quantity                       Decimal                          @default(0) @db.Decimal(20, 6)
   /// Parâmetros de nível (Conferência tablet). null = não configurado. Não entram em custos.
   contingencyQuantity            Decimal?                         @db.Decimal(20, 6)
@@ -526,8 +529,8 @@ enum MaterialStockConferenceSource {
   SYSTEM
 }
 
-/// Histórico append-only de conferências de estoque de matéria-prima.
-/// Não substitui Material.quantity; a atualização do saldo + insert devem ser transacionais.
+/// Histórico append-only de conferências tablet de matéria-prima (legado).
+/// Não altera o saldo físico oficial. Material.quantity é projeção do Inventory.
 model MaterialStockConference {
   id                String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   materialId        String                        @db.Uuid
@@ -571,11 +574,9 @@ enum MaterialStockValueSnapshotSource {
 /// Foto append-only do VALOR TOTAL de matéria-prima em estoque.
 ///
 /// Motivo: o card "Valor em estoque (MP)" é calculado ao vivo
-/// (Σ quantity × currentCost) e nunca foi persistido — sem histórico não há
-/// como plotar a flutuação ao longo das semanas. Cada conferência de estoque
-/// muda a quantidade de uma MP e, portanto, o total; a captura acontece logo
-/// após o commit da conferência (best-effort, jamais reverte o estoque
-/// oficial).
+/// (Σ quantity × currentCost). quantity é projeção do saldo físico do Inventory.
+/// A captura acontece após a aplicação oficial da Conferência Física
+/// (generateInventoryCountAdjustments), best-effort, jamais revertendo o estoque.
 ///
 /// Append-only: nunca atualizar nem apagar linha. O gráfico agrega (último
 /// snapshot de cada semana), então vários pontos por semana são esperados e

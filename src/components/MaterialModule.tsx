@@ -18,7 +18,8 @@ import {
   DollarSign,
   LineChart,
   QrCode,
-  Radar
+  Radar,
+  Lock
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -206,7 +207,10 @@ export const MaterialModule = () => {
     setFormError(null);
     setSubmitting(true);
     try {
-      const payload = { ...formData, code: formData.code.trim() };
+      const { quantity: _quantity, ...catalog } = formData;
+      const payload = editingMaterial
+        ? { ...catalog, code: formData.code.trim() }
+        : { ...catalog, code: formData.code.trim() };
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -786,26 +790,31 @@ export const MaterialModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">
-                          Quantidade ({formData.unit || "UN"})
+                          Saldo físico oficial ({formData.unit || "UN"})
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.00001"
-                          data-testid="material-quantity-input"
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                          value={formData.quantity}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              quantity: Number.isFinite(parseFloat(e.target.value))
-                                ? parseFloat(e.target.value)
-                                : 0,
-                            })
-                          }
-                        />
+                        <div
+                          data-testid="material-quantity-readonly"
+                          className="w-full p-2 rounded-lg border border-border bg-muted/40 font-bold text-sm tabular-nums flex items-center justify-between gap-2"
+                          title="O saldo não pode ser editado no cadastro. Quantidades físicas são informadas pela Conferência Física e alteradas por movimentações oficiais de estoque."
+                        >
+                          <span>{formatNumber(formData.quantity, 2)}</span>
+                          <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden />
+                        </div>
                         <p className="text-[10px] text-muted-foreground">
-                          Na unidade de medida adotada do material.
+                          Controlado pelo Estoque / Almoxarifado.{" "}
+                          <Link
+                            to="/inventory/counts"
+                            className="underline underline-offset-2 hover:text-foreground"
+                          >
+                            Conferência Física
+                          </Link>
+                          {" · "}
+                          <Link
+                            to="/inventory/balances"
+                            className="underline underline-offset-2 hover:text-foreground"
+                          >
+                            Saldos
+                          </Link>
                         </p>
                       </div>
                       <div className="space-y-1.5">

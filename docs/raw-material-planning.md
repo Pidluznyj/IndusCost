@@ -28,7 +28,7 @@ compra.
 
 | Dado | Fonte |
 |---|---|
-| Saldo contado de MP | `Material.quantity` |
+| Saldo físico oficial de MP | `Material.quantity` (projeção de compatibilidade do saldo físico canônico do Inventory; não é editável no cadastro) |
 | Estoque mínimo / contingência | `Material.minimumQuantity` / `Material.contingencyQuantity` |
 | Última contagem | `Material.lastStockConferenceAt` |
 | Demanda (explosão de BOM) | mesmo motor Open Book de "Inteligência de Matéria-Prima" (`buildOpenBookRawMaterialExplosionPerUnit`) |

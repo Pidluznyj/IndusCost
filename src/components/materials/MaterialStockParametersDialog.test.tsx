@@ -38,13 +38,13 @@ describe("MaterialStockParametersDialog", () => {
     assert.match(html, /não são somados/);
     assert.match(html, /não altera os custos/);
     assert.match(html, /stock-parameters-current-quantity/);
-    assert.match(html, /Saldo atual/);
-    assert.match(html, /value="500"/);
+    assert.match(html, /Saldo físico oficial/);
+    assert.match(html, />500</);
     assert.match(html, /stock-parameters-contingency/);
     assert.match(html, /inputMode="decimal"/);
     assert.match(html, />kg</);
     assert.doesNotMatch(html, /currentCost|freight|standardLoss/i);
-    assert.doesNotMatch(html, /somente leitura/);
+    assert.match(html, /somente leitura/);
   });
 
   it("preenche saldo zerado com 0", () => {
@@ -56,7 +56,7 @@ describe("MaterialStockParametersDialog", () => {
         onSuccess={() => {}}
       />
     );
-    assert.match(html, /stock-parameters-current-quantity[^>]*value="0"/);
+    assert.match(html, /stock-parameters-current-quantity[\s\S]*?>0</);
   });
 
   it("não renderiza fechado", () => {

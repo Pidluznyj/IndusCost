@@ -18,7 +18,7 @@ export interface Material {
   currentCost: number;
   averageCost: number;
   standardCost: number;
-  /** Quantidade na unidade de medida adotada. */
+  /** Projeção do saldo físico oficial do Inventory (somente leitura no cadastro). */
   quantity: number;
   freight: number;
   standardLoss: number;
@@ -33,7 +33,7 @@ export interface Material {
   calculations?: {
     landedCost: number;
     effectiveCost: number;
-    /** quantity × currentCost */
+    /** quantity projetada × currentCost */
     totalMaterialValue: number;
   };
   marketSituation?: MaterialMarketSituationResult | null;

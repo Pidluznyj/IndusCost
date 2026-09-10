@@ -54,13 +54,16 @@ describe("materialQuantityTotal", () => {
 
   it("UI e API expõem quantidade e valor total sem alterar custo efetivo", () => {
     const ui = read("src/components/MaterialModule.tsx");
-    assert.match(ui, /material-quantity-input/);
+    assert.match(ui, /material-quantity-readonly/);
     assert.match(ui, /material-total-value/);
     assert.match(ui, /computeMaterialTotalValue/);
     assert.match(ui, /Valor MP total/);
     assert.match(ui, /materials-catalog-stock-value-card/);
     assert.match(ui, /sumMaterialCatalogStockValue/);
     assert.match(ui, /Valor em estoque \(MP\)/);
+    assert.match(ui, /Saldo físico oficial/);
+    assert.match(ui, /Controlado pelo Estoque/);
+    assert.doesNotMatch(ui, /material-quantity-input/);
 
     const server = read("server.ts");
     assert.match(server, /totalMaterialValue/);

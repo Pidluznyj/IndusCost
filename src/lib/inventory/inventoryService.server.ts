@@ -32,9 +32,11 @@ import {
 import {
   buildInventoryBalanceKey,
   InventoryValidationError,
+  roundInventoryQuantity,
   type InventoryBalanceSnapshot,
   type InventoryItemType,
 } from "./inventoryTypes.js";
+import { reconcileMaterialQuantityFromInventoryInTx } from "./materialInventoryProjection.server.js";
 import {
   assertInitialBalanceScopeEligible,
   buildInitialBalanceIdempotencyKey,
@@ -163,6 +165,28 @@ type ItemRow = {
 
 function hasPermission(context: CreateInventoryMovementContext, key: string): boolean {
   return context.permissions?.includes(key) ?? false;
+}
+
+function physicalQuantityChanged(
+  before: InventoryBalanceSnapshot,
+  after: InventoryBalanceSnapshot
+): boolean {
+  return roundInventoryQuantity(before.physicalQuantity) !== roundInventoryQuantity(after.physicalQuantity);
+}
+
+async function projectLinkedMaterialQuantity(
+  tx: InventoryTx,
+  item: ItemRow,
+  context: CreateInventoryMovementContext,
+  source: "INVENTORY_MOVEMENT" | "REVERSAL",
+  movementId: string
+): Promise<void> {
+  if (!item.materialId) return;
+  await reconcileMaterialQuantityFromInventoryInTx(tx, item.materialId, {
+    source,
+    movementId,
+    userId: context.userId ?? null,
+  });
 }
 
 function assertMovementAuthorized(
@@ -489,6 +513,16 @@ async function executeSimpleMovement(
 
   await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
 
+  if (physicalQuantityChanged(before, after)) {
+    await projectLinkedMaterialQuantity(
+      tx,
+      item,
+      context,
+      "INVENTORY_MOVEMENT",
+      movement.id
+    );
+  }
+
   await writeInventoryAuditLog(prisma, {
     entityType: "InventoryMovement",
     entityId: movement.id,
@@ -615,6 +649,19 @@ async function executeTransfer(
 
   await persistInventoryBalanceSnapshot(tx, sourceRow.id, afterSource, movementDate, movement.id);
   await persistInventoryBalanceSnapshot(tx, destRow.id, afterDest, movementDate, movement.id);
+
+  if (
+    physicalQuantityChanged(beforeSource, afterSource) ||
+    physicalQuantityChanged(beforeDest, afterDest)
+  ) {
+    await projectLinkedMaterialQuantity(
+      tx,
+      item,
+      context,
+      "INVENTORY_MOVEMENT",
+      movement.id
+    );
+  }
 
   await writeInventoryAuditLog(prisma, {
     entityType: "InventoryMovement",
@@ -1052,6 +1099,13 @@ export async function reverseInventoryMovementInTx(
     );
     await persistInventoryBalanceSnapshot(tx, destRow.id, afterDest, movementDate, movement.id);
 
+    if (
+      physicalQuantityChanged(beforeSource, afterSource) ||
+      physicalQuantityChanged(beforeDest, afterDest)
+    ) {
+      await projectLinkedMaterialQuantity(tx, item, context, "REVERSAL", movement.id);
+    }
+
     await writeInventoryAuditLog(prisma, {
       entityType: "InventoryMovement",
       entityId: movement.id,
@@ -1131,6 +1185,10 @@ export async function reverseInventoryMovementInTx(
   );
 
   await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
+
+  if (physicalQuantityChanged(before, after)) {
+    await projectLinkedMaterialQuantity(tx, item, context, "REVERSAL", movement.id);
+  }
 
   if (original.movementType === "BLOCK" && original.blockId) {
     await tx.inventoryBlock.updateMany({

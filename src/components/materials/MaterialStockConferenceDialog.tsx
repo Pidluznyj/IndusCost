@@ -66,7 +66,7 @@ export function MaterialStockConferenceDialog({
     if (!open) return;
     setContingencyRaw(quantityToInput(item.contingencyQuantity));
     setRecommendedRaw(quantityToInput(item.recommendedQuantity));
-    setReportedRaw("");
+    setReportedRaw(quantityToInput(item.currentQuantity));
     setReason(MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON);
     setNotes("");
     setSaving(false);
@@ -227,7 +227,7 @@ export function MaterialStockConferenceDialog({
           id="stock-conference-dialog-title"
           className="text-lg font-semibold text-foreground"
         >
-          Conferir e atualizar estoque
+          Conferir parâmetros de estoque
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {item.code} — {item.description}
@@ -243,7 +243,8 @@ export function MaterialStockConferenceDialog({
           </span>
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Saldo oficial no sistema. Informe abaixo o saldo contado na conferência física.
+          Saldo físico oficial do Estoque / Almoxarifado. Esta tela atualiza apenas
+          parâmetros de nível; quantidade absoluta só na Conferência Física.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -300,27 +301,25 @@ export function MaterialStockConferenceDialog({
 
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
-              Saldo contado* ({item.unit})
+              Saldo físico oficial ({item.unit})
             </span>
             <div className="flex items-stretch gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                enterKeyHint="done"
-                autoComplete="off"
-                value={reportedRaw}
-                disabled={saving}
-                onChange={(e) => {
-                  setReportedRaw(e.target.value);
-                  setError(null);
-                  setConflict(null);
-                }}
-                placeholder="Informe o saldo físico contado"
-                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+              <div
                 data-testid="stock-conference-reported-input"
-              />
+                className="min-h-12 flex-1 rounded-lg border border-border bg-muted/40 px-3 py-3 text-base tabular-nums font-semibold"
+                title="O saldo não pode ser informado aqui. Use a Conferência Física de Estoque."
+              >
+                {reportedRaw || "—"}
+              </div>
               {unitSuffix}
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              Controlado pelo Estoque / Almoxarifado. Informe quantidade absoluta em{" "}
+              <a href="/inventory/counts" className="underline underline-offset-2">
+                Conferência Física
+              </a>
+              .
+            </p>
           </label>
 
           <label className="block space-y-1.5">
@@ -383,8 +382,8 @@ export function MaterialStockConferenceDialog({
               </span>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Contingência e recomendado não somam ao estoque. O estoque oficial só muda após a
-              confirmação do servidor.
+              Contingência e recomendado não somam ao estoque. O saldo físico oficial só muda
+              pela Conferência Física de Estoque e por movimentações oficiais.
             </p>
           </div>
 

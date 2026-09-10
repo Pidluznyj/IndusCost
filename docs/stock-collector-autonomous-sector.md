@@ -142,6 +142,7 @@ DEVICE não inventa `AppUser`.
 
 ## Suprimentos (tablet)
 
-`searchMaterialStockTablet`: se a MP tem InventoryItem vinculado, a quantidade
-exibida é a soma de `InventoryBalance.physicalQuantity`. `Material.quantity`
-fica só para legado não vinculado. Sem writes.
+`searchMaterialStockTablet`: se a MP tem InventoryItem ACTIVE vinculado por
+`materialId`, a quantidade exibida é a soma canônica de
+`InventoryBalance.physicalQuantity` (mesma agregação da projeção).
+`Material.quantity` fica só para legado não vinculado. Sem writes.
