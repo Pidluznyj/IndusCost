@@ -48,7 +48,7 @@ export type CrmAccountCockpitProfile = {
   assignedTo?: string | null;
 };
 
-type Formatters = {
+export type Formatters = {
   formatDateShortPt: (iso: string | null | undefined) => string;
   formatDateTimePt: (iso: string | null | undefined) => string;
   formatIntelCurrency: (v: unknown) => string;
@@ -132,9 +132,139 @@ export const CrmCustomerPortfolioEmptyState: React.FC<CrmCustomerPortfolioEmptyS
   </div>
 );
 
-export type CrmCustomerAccountCockpitProps = {
+export type CrmCustomerIdentityCardProps = {
   customer: CrmCustomerListItem;
   showSellerColumn: boolean;
+  intel: CrmCommercialIntelResponse | null;
+  intelligencePath: string;
+  onRegisterContact: () => void;
+  onEditProfile: () => void;
+  onChangeCustomer: () => void;
+  formatters: Formatters;
+};
+
+/**
+ * Cartão de identidade do cliente — resumo do cliente resolvido pelos
+ * filtros da carteira. Substitui a antiga listagem em tabela: em vez de
+ * navegar várias linhas, a busca resolve para este cartão único.
+ */
+export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = ({
+  customer,
+  showSellerColumn,
+  intel,
+  intelligencePath,
+  onRegisterContact,
+  onEditProfile,
+  onChangeCustomer,
+  formatters,
+}) => {
+  const { getCustomerDisplayName, getCustomerTaxId, formatCityState, displayLine } = formatters;
+
+  const sellerName =
+    customer.primarySellerResponsible?.trim() ||
+    intel?.openOrders.latestOrders.find((o) => o.responsible?.trim())?.responsible?.trim() ||
+    null;
+
+  const portfolioStatus = intel?.summary.hasOpenOrders
+    ? "Carteira aberta"
+    : intel?.summary.hasPurchaseHistory
+      ? "Cliente ativo"
+      : "Sem histórico de compra";
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Cliente selecionado pelos filtros
+        </p>
+        <button
+          type="button"
+          onClick={onChangeCustomer}
+          className="text-xs font-bold text-primary hover:underline"
+        >
+          Trocar cliente
+        </button>
+      </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-4 min-w-0">
+          <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <h2 className="text-2xl sm:text-3xl font-bold leading-tight text-foreground break-words">
+              {getCustomerDisplayName(customer)}
+            </h2>
+            {customer.tradeName?.trim() ? (
+              <p className="text-sm text-muted-foreground">Fantasia: {displayLine(customer.tradeName)}</p>
+            ) : null}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span className="tabular-nums">CNPJ/CPF: {getCustomerTaxId(customer)}</span>
+              {formatCityState(customer.city, customer.state) !== "—" ? (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {formatCityState(customer.city, customer.state)}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-primary">
+                {portfolioStatus}
+              </span>
+              {buildCustomerListStatusTags(customer).map((tag) => (
+                <span
+                  key={tag.key}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                    tag.className
+                  )}
+                >
+                  {tag.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Link
+            to={intelligencePath}
+            className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
+          >
+            <Sparkles className="h-4 w-4" />
+            Inteligência
+          </Link>
+          <button
+            type="button"
+            onClick={onRegisterContact}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            Registrar contato
+          </button>
+          <button
+            type="button"
+            onClick={onEditProfile}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold hover:bg-accent"
+          >
+            Perfil
+          </button>
+        </div>
+      </div>
+
+      {showSellerColumn && sellerName ? (
+        <p className="text-sm text-muted-foreground border-t border-border/60 pt-4">
+          Vendedor responsável:{" "}
+          <span className="font-semibold text-foreground">{sellerName}</span>
+          {customer.primaryExternalSellerId != null
+            ? ` · ID Nomus ${customer.primaryExternalSellerId}`
+            : ""}
+        </p>
+      ) : null}
+    </section>
+  );
+};
+
+export type CrmCustomerAccountCockpitProps = {
+  customer: CrmCustomerListItem;
   intel: CrmCommercialIntelResponse | null;
   intelLoading: boolean;
   intelError: string | null;
@@ -148,9 +278,13 @@ export type CrmCustomerAccountCockpitProps = {
   formatters: Formatters;
 };
 
+/**
+ * Corpo do cockpit comercial — de "Resumo comercial" em diante. A
+ * identidade do cliente já foi mostrada no cartão de resumo acima
+ * (`CrmCustomerIdentityCard`), então este bloco não a repete.
+ */
 export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps> = ({
   customer,
-  showSellerColumn,
   intel,
   intelLoading,
   intelError,
@@ -173,11 +307,6 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
     getCustomerTaxId,
     formatCityState,
   } = formatters;
-
-  const sellerName =
-    customer.primarySellerResponsible?.trim() ||
-    intel?.openOrders.latestOrders.find((o) => o.responsible?.trim())?.responsible?.trim() ||
-    null;
 
   const ticketAvg =
     intel && intel.orders.ordersLast12MonthsCount > 0
@@ -205,91 +334,8 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
     .sort((a, b) => Date.parse(b.contactDate ?? b.createdAt) - Date.parse(a.contactDate ?? a.createdAt))
     .slice(0, 5);
 
-  const portfolioStatus = intel?.summary.hasOpenOrders
-    ? "Carteira aberta"
-    : intel?.summary.hasPurchaseHistory
-      ? "Cliente ativo"
-      : "Sem histórico de compra";
-
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-4 min-w-0">
-            <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
-              <Building2 className="h-6 w-6" />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <h2 className="text-2xl sm:text-3xl font-bold leading-tight text-foreground break-words">
-                {getCustomerDisplayName(customer)}
-              </h2>
-              {customer.tradeName?.trim() ? (
-                <p className="text-sm text-muted-foreground">Fantasia: {displayLine(customer.tradeName)}</p>
-              ) : null}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span className="tabular-nums">CNPJ/CPF: {getCustomerTaxId(customer)}</span>
-                {formatCityState(customer.city, customer.state) !== "—" ? (
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {formatCityState(customer.city, customer.state)}
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-primary">
-                  {portfolioStatus}
-                </span>
-                {buildCustomerListStatusTags(customer).map((tag) => (
-                  <span
-                    key={tag.key}
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                      tag.className
-                    )}
-                  >
-                    {tag.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
-            <Link
-              to={intelligencePath}
-              className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
-            >
-              <Sparkles className="h-4 w-4" />
-              Inteligência
-            </Link>
-            <button
-              type="button"
-              onClick={onRegisterContact}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" />
-              Registrar contato
-            </button>
-            <button
-              type="button"
-              onClick={onEditProfile}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold hover:bg-accent"
-            >
-              Perfil
-            </button>
-          </div>
-        </div>
-
-        {showSellerColumn && sellerName ? (
-          <p className="text-sm text-muted-foreground border-t border-border/60 pt-4">
-            Vendedor responsável:{" "}
-            <span className="font-semibold text-foreground">{sellerName}</span>
-            {customer.primaryExternalSellerId != null
-              ? ` · ID Nomus ${customer.primaryExternalSellerId}`
-              : ""}
-          </p>
-        ) : null}
-      </section>
-
       <section className="space-y-3">
         <h3 className="text-sm font-bold text-foreground">Resumo comercial</h3>
         {intelLoading ? (
