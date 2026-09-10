@@ -13,10 +13,12 @@ import { describe, it } from "node:test";
 import type { FinanceAccountsPayableGridRow } from "@/src/lib/financeAccountsPayableRulesEngine.js";
 import type { FinanceAccountsReceivableGridRow } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS } from "@/src/lib/finance/financeSettlementReconciliation.js";
+import type { FinanceReceiptEvent } from "@/src/lib/financeReceiptsCanonical.js";
 import {
   aggregateTreasuryCaixaCanonicalDaysByMonth,
   buildTreasuryCaixaCanonicalDays,
   findTreasuryCaixaCanonicalDay,
+  mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable,
 } from "./treasuryCaixaCanonicalDay.js";
 
 function ar(
@@ -596,5 +598,273 @@ describe("buildTreasuryCaixaCanonicalDays — CP ancora no vencimento (não na b
     const day07 = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
     assert.equal(day05.payablePaid, 100);
     assert.equal(day07.payablePaid, 0);
+  });
+});
+
+/**
+ * Caixa REAL via receipts (camada canônica `financeReceiptsCanonical`) —
+ * fecha a missão de canonicalização de recebimentos para a Tesouraria:
+ * quando um título tem receipt real, ele governa a data/valor de
+ * `receivableReceived`; sem receipt, cai no fallback de sempre (baixa +
+ * tolerância — provado pelos testes POP-07/CASE-01/02 acima, que continuam
+ * passando inalterados porque nenhum deles usa `receiptsByReceivableExternalId`).
+ */
+describe("buildTreasuryCaixaCanonicalDays — caixa real via receipts (prioridade sobre a baixa)", () => {
+  it("MISSÃO — parcial cross-month: R$4.000 em 31/08 e R$6.000 em 05/09, nunca R$10.000 num dia só", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-31", "2026-09-05"],
+      receivables: [
+        ar({
+          externalId: 500,
+          dueDate: "2026-08-20",
+          settlementDate: "2026-09-05",
+          amountReceivable: 10000,
+          amountReceived: 10000,
+          balanceReceivable: 0,
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map([
+        [
+          500,
+          [
+            { receiptExternalId: 9001, receiptDate: "2026-08-31", receivedAmount: 4000 },
+            { receiptExternalId: 9002, receiptDate: "2026-09-05", receivedAmount: 6000 },
+          ],
+        ],
+      ]),
+    });
+    const day31 = findTreasuryCaixaCanonicalDay(days, "2026-08-31")!;
+    const day05 = findTreasuryCaixaCanonicalDay(days, "2026-09-05")!;
+    assert.equal(day31.receivableReceived, 4000);
+    assert.equal(day05.receivableReceived, 6000);
+    assert.notEqual(day31.receivableReceived, 0);
+    assert.notEqual(day05.receivableReceived, 10000);
+    // Cada entrada carrega o valor DO EVENTO, não o acumulado do título.
+    assert.equal(day31.receivableReceivedTitles[0]!.receiptAllocatedAmount, 4000);
+    assert.equal(day05.receivableReceivedTitles[0]!.receiptAllocatedAmount, 6000);
+    // amountReceived no DTO continua sendo o estado ACUMULADO do título (10000),
+    // nunca confundido com o valor do dia.
+    assert.equal(day31.receivableReceivedTitles[0]!.amountReceived, 10000);
+  });
+
+  it("MISSÃO — caso LIVE CR 19497/RECEIPT 11522: realizado em 04/09 (receiptDate), NUNCA em 10/09 (settlementDate)", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-09-04", "2026-09-10"],
+      receivables: [
+        ar({
+          externalId: 19497,
+          dueDate: "2026-08-19",
+          settlementDate: "2026-09-10",
+          amountReceivable: 1488,
+          amountReceived: 1488,
+          balanceReceivable: 0,
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map([
+        [19497, [{ receiptExternalId: 11522, receiptDate: "2026-09-04", receivedAmount: 1488 }]],
+      ]),
+    });
+    const day04 = findTreasuryCaixaCanonicalDay(days, "2026-09-04")!;
+    const day10 = findTreasuryCaixaCanonicalDay(days, "2026-09-10")!;
+    assert.equal(day04.receivableReceived, 1488);
+    assert.equal(day10.receivableReceived, 0);
+  });
+
+  it("sem receipt local ainda (título ausente do mapa): cai no fallback de baixa + tolerância, comportamento de sempre", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-07"],
+      receivables: [
+        ar({
+          externalId: 300,
+          dueDate: "2026-07-10",
+          settlementDate: "2026-08-07",
+          amountReceivable: 100,
+          amountReceived: 100,
+          balanceReceivable: 0,
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map(), // mapa presente mas vazio para este título
+    });
+    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-07")!;
+    assert.equal(day.receivableReceived, 100);
+    assert.equal(day.receivableReceivedTitles[0]!.receiptAllocatedAmount, undefined);
+  });
+
+  it("receipt presente tem PRIORIDADE sobre o fallback de baixa mesmo quando ambos apontam datas diferentes", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-15", "2026-09-05"],
+      receivables: [
+        ar({
+          externalId: 600,
+          dueDate: "2026-08-10",
+          settlementDate: "2026-09-05", // baixa aconteceria aqui pelo fallback
+          amountReceivable: 500,
+          amountReceived: 500,
+          balanceReceivable: 0,
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map([
+        [600, [{ receiptExternalId: 7001, receiptDate: "2026-08-15", receivedAmount: 500 }]],
+      ]),
+    });
+    const dayReceipt = findTreasuryCaixaCanonicalDay(days, "2026-08-15")!;
+    const daySettlement = findTreasuryCaixaCanonicalDay(days, "2026-09-05")!;
+    assert.equal(dayReceipt.receivableReceived, 500);
+    assert.equal(daySettlement.receivableReceived, 0);
+  });
+
+  it("forecast (receivableDue) continua ancorado em dueDate — receipts não afetam a dimensão de vencimento", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-20", "2026-09-05"],
+      receivables: [
+        ar({
+          externalId: 700,
+          dueDate: "2026-08-20",
+          settlementDate: null,
+          amountReceivable: 1000,
+          amountReceived: 400,
+          balanceReceivable: 600, // parcial: ainda em aberto
+        }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map([
+        [700, [{ receiptExternalId: 8001, receiptDate: "2026-09-05", receivedAmount: 400 }]],
+      ]),
+    });
+    const dueDay = findTreasuryCaixaCanonicalDay(days, "2026-08-20")!;
+    const receiptDay = findTreasuryCaixaCanonicalDay(days, "2026-09-05")!;
+    // Due continua no vencimento, pelo SALDO em aberto — nunca no dia do receipt.
+    assert.equal(dueDay.receivableDue, 600);
+    assert.equal(receiptDay.receivableDue, 0);
+    // Received soma o receipt real, na data real — as duas dimensões convivem.
+    assert.equal(receiptDay.receivableReceived, 400);
+  });
+
+  it("AP nunca é afetado por receiptsByReceivableExternalId — âncora continua sendo dueDate, sem exceção", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-05", "2026-08-20"],
+      receivables: [],
+      payables: [
+        ap({
+          externalId: 800,
+          dueDate: "2026-08-05",
+          paymentDate: "2026-08-20",
+          settlementDate: "2026-08-20",
+          amountPayable: 900,
+          amountPaid: 900,
+          balancePayable: 0,
+        }),
+      ],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      // Campo AR-only, sem nenhuma chave relacionada a AP — não deveria existir
+      // mecanismo simétrico para CP, e não existe: este teste prova que o
+      // motor nem tenta consultar o mapa para payables.
+      receiptsByReceivableExternalId: new Map([
+        [800, [{ receiptExternalId: 1, receiptDate: "2026-08-05", receivedAmount: 900 }]],
+      ]),
+    });
+    const dueDay = findTreasuryCaixaCanonicalDay(days, "2026-08-05")!;
+    const paidDay = findTreasuryCaixaCanonicalDay(days, "2026-08-20")!;
+    // CP continua 100% ancorado no vencimento (dueDate) — nunca em
+    // paymentDate/settlementDate, e o mapa de receipts (mesmo reaproveitando
+    // o externalId 800 por coincidência) não vaza para CP.
+    assert.equal(dueDay.payablePaid, 900);
+    assert.equal(paidDay.payablePaid, 0);
+  });
+
+  it("Σ receivableReceivedTitles[receiptAllocatedAmount] == receivableReceived quando há múltiplos receipts no mesmo dia", () => {
+    const days = buildTreasuryCaixaCanonicalDays({
+      civilDatesInWindow: ["2026-08-31"],
+      receivables: [
+        ar({ externalId: 901, amountReceived: 4000, balanceReceivable: 0 }),
+        ar({ externalId: 902, amountReceived: 1000, balanceReceivable: 0 }),
+      ],
+      payables: [],
+      reconciliationPolicy: FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
+      receiptsByReceivableExternalId: new Map([
+        [901, [{ receiptExternalId: 1, receiptDate: "2026-08-31", receivedAmount: 4000 }]],
+        [902, [{ receiptExternalId: 2, receiptDate: "2026-08-31", receivedAmount: 1000 }]],
+      ]),
+    });
+    const day = findTreasuryCaixaCanonicalDay(days, "2026-08-31")!;
+    const sumTitles = day.receivableReceivedTitles.reduce(
+      (sum, t) => sum + (t.receiptAllocatedAmount ?? t.amountReceived),
+      0
+    );
+    assert.equal(day.receivableReceived, 5000);
+    assert.equal(sumTitles, day.receivableReceived);
+  });
+});
+
+function receiptEvent(overrides: Partial<FinanceReceiptEvent> = {}): FinanceReceiptEvent {
+  return {
+    receiptExternalId: 1,
+    receivableExternalId: 100,
+    receiptDate: "2026-08-31",
+    receivedAmount: 1000,
+    bankFeeAmount: 0,
+    lateFeeInterestAmount: 0,
+    discountAmount: 0,
+    closesReceivable: true,
+    ...overrides,
+  };
+}
+
+describe("mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable — ponte pura canônico→motor", () => {
+  it("converte Date para dia civil string sem deslocar por fuso (mesma regra do resto do canônico)", () => {
+    const input = new Map([
+      [100, [receiptEvent({ receiptDate: new Date(Date.UTC(2026, 7, 31)), receivedAmount: 4000 })]],
+    ]);
+    const out = mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(input);
+    assert.equal(out.get(100)?.[0]?.receiptDate, "2026-08-31");
+    assert.equal(out.get(100)?.[0]?.receivedAmount, 4000);
+  });
+
+  it("aceita receiptDate já em string civil (contrato do FinanceReceiptEvent aceita Date | string)", () => {
+    const input = new Map([[100, [receiptEvent({ receiptDate: "2026-09-05", receivedAmount: 6000 })]]]);
+    const out = mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(input);
+    assert.equal(out.get(100)?.[0]?.receiptDate, "2026-09-05");
+  });
+
+  it("preserva múltiplos eventos do mesmo título, cada um com seu próprio dia/valor", () => {
+    const input = new Map([
+      [
+        500,
+        [
+          receiptEvent({ receiptExternalId: 9001, receiptDate: "2026-08-31", receivedAmount: 4000 }),
+          receiptEvent({ receiptExternalId: 9002, receiptDate: "2026-09-05", receivedAmount: 6000 }),
+        ],
+      ],
+    ]);
+    const out = mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(input);
+    const events = out.get(500)!;
+    assert.equal(events.length, 2);
+    assert.deepEqual(
+      events.map((e) => [e.receiptDate, e.receivedAmount]),
+      [
+        ["2026-08-31", 4000],
+        ["2026-09-05", 6000],
+      ]
+    );
+  });
+
+  it("mapa vazio devolve mapa vazio — nunca lança", () => {
+    const out = mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(new Map());
+    assert.equal(out.size, 0);
+  });
+
+  it("preserva a chave de título mesmo quando a lista de eventos é vazia (SETTLED_WITHOUT_RECEIPT continua distinguível de 'não consultado')", () => {
+    const out = mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(new Map([[777, []]]));
+    assert.equal(out.has(777), true);
+    assert.equal(out.get(777)?.length, 0);
   });
 });

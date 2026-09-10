@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  civilDateStringToUtcMidnight,
   classifyReceivableSettlement,
   detectSettledWithoutReceipt,
   financeReceiptCivilDateKey,
@@ -10,6 +11,7 @@ import {
   groupReceiptEventsByReceivable,
   isReceiptInCivilPeriod,
   resolveCivilMonthUtcBounds,
+  resolveCivilRangeUtcBounds,
   resolveCivilYearUtcBounds,
   sumReceivedAmountByReceivable,
   sumReceivedAmountForEvents,
@@ -45,6 +47,31 @@ describe("financeReceiptsCanonical — chaves civis", () => {
     const { from, to } = resolveCivilMonthUtcBounds(2026, 8);
     assert.equal(financeReceiptCivilDateKey(from), "2026-08-01");
     assert.equal(financeReceiptCivilDateKey(to), "2026-08-31");
+  });
+
+  it("civilDateStringToUtcMidnight nunca desloca por fuso local", () => {
+    assert.equal(
+      civilDateStringToUtcMidnight("2026-08-31").toISOString(),
+      "2026-08-31T00:00:00.000Z"
+    );
+    assert.equal(
+      civilDateStringToUtcMidnight("2026-09-01").toISOString(),
+      "2026-09-01T00:00:00.000Z"
+    );
+  });
+
+  it("civilDateStringToUtcMidnight rejeita formato inválido sem lançar", () => {
+    assert.equal(Number.isNaN(civilDateStringToUtcMidnight("31/08/2026").getTime()), true);
+  });
+
+  it("resolveCivilRangeUtcBounds cobre um intervalo civil arbitrário (não mês/ano cheio)", () => {
+    const { from, to } = resolveCivilRangeUtcBounds("2026-08-20", "2026-09-05");
+    assert.equal(financeReceiptCivilDateKey(from), "2026-08-20");
+    assert.equal(financeReceiptCivilDateKey(to), "2026-09-05");
+    assert.equal(isReceiptInCivilPeriod("2026-08-19", { from, to }), false);
+    assert.equal(isReceiptInCivilPeriod("2026-08-20", { from, to }), true);
+    assert.equal(isReceiptInCivilPeriod("2026-09-05", { from, to }), true);
+    assert.equal(isReceiptInCivilPeriod("2026-09-06", { from, to }), false);
   });
 
   it("resolveCivilYearUtcBounds cobre o ano inteiro", () => {

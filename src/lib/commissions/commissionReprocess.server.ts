@@ -5,6 +5,7 @@
  * Nunca muta comissão já paga/fechada (lifecycle "paid").
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { loadReceivableIdsWithAnyReceipt } from "@/src/lib/financeReceiptsCanonical.server.js";
 import { decimalToNumber } from "./commission-money.js";
 import {
   aggregateCommissionReprocessSummary,
@@ -127,6 +128,12 @@ async function resolveReceiptNfeExternalIds(
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusReceivableReceipt">,
   dateRange: { gte?: Date; lte?: Date } | undefined
 ): Promise<number[]> {
+  // Acesso direto justificado: `dateRange` pode ser parcial (só `gte` ou só
+  // `lte`) ou ausente (universo inteiro) — a camada canônica
+  // (`listReceiptEventsInPeriod`) exige `from`/`to` completos, então não é
+  // um swap seguro aqui. A semântica (receiptDate, nunca settlementDate) já
+  // é a correta — não é uma segunda interpretação do fato financeiro, só uma
+  // forma de consulta que a camada canônica ainda não cobre (filtro aberto).
   const receipts = await db.nomusReceivableReceipt.findMany({
     where: dateRange ? { receiptDate: dateRange } : {},
     select: { receivableExternalId: true },
@@ -316,12 +323,10 @@ async function loadReceivablesWithFinancialMovement(
   });
   if (receivables.length === 0) return [];
 
-  const receiptRows = await db.nomusReceivableReceipt.findMany({
-    where: { receivableExternalId: { in: receivables.map((row) => row.externalId) } },
-    select: { receivableExternalId: true },
-    distinct: ["receivableExternalId"],
-  });
-  const withReceipt = new Set(receiptRows.map((row) => row.receivableExternalId));
+  const withReceipt = await loadReceivableIdsWithAnyReceipt(
+    db,
+    receivables.map((row) => row.externalId)
+  );
 
   return receivables
     .filter((row) => row.settlementDate != null || withReceipt.has(row.externalId))

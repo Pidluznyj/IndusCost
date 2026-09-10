@@ -38,6 +38,16 @@ export type ExecutiveReportReceivablesSection = {
   kpis: ExecutiveReportArSectionKpis;
   cards: ReturnType<typeof buildOfficialAccountsReceivableRulesResult>["cards"];
   dataSanitization: ReturnType<typeof buildOfficialAccountsReceivableRulesResult>["dataSanitization"];
+  /**
+   * Caixa REAL do mês/YTD (camada canônica `financeReceiptsCanonical`,
+   * `NomusReceivableReceipt.receiptDate`) — aditivo aos KPIs oficiais em
+   * `kpis` (settlementDate), nunca os substitui. Preenchido pelo orquestrador
+   * (`financeExecutiveReport.ts`, que tem acesso a Prisma); esta função pura
+   * não os computa — por isso são opcionais aqui e sempre presentes na saída
+   * real do relatório.
+   */
+  cashReceivedMonthCurrent?: number;
+  cashReceivedYtdCurrent?: number;
 };
 
 export type ExecutiveReportPayablesSection = {

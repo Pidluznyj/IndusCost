@@ -221,6 +221,7 @@ export async function resolveFinanceReceiptsFreshness(
 }
 
 export {
+  civilDateStringToUtcMidnight,
   classifyReceivableSettlement,
   detectSettledWithoutReceipt,
   financeReceiptCivilDateKey,
@@ -228,6 +229,7 @@ export {
   groupReceiptEventsByReceivable,
   isReceiptInCivilPeriod,
   resolveCivilMonthUtcBounds,
+  resolveCivilRangeUtcBounds,
   resolveCivilYearUtcBounds,
   sumReceivedAmountByReceivable,
   sumReceivedAmountForEvents,

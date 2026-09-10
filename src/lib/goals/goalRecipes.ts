@@ -114,6 +114,16 @@ export const GOAL_RECIPES: readonly GoalRecipe[] = [
   {
     key: "RECEIVED_TOTAL",
     emoji: "📈",
+    title: "Valor recebido no período",
+    description: "Quanto efetivamente entrou no caixa (recebimentos reais, camada canônica).",
+    entityKey: "RECEIVABLES",
+    metricKey: "AR_CASH_RECEIVED_TOTAL",
+    filters: [],
+    suggestedTrackingType: "INCREASE",
+  },
+  {
+    key: "SETTLED_TOTAL",
+    emoji: "🗂️",
     title: "Valor baixado no período",
     description: "Baixas administrativas do contas a receber (settlementDate) — não é caixa recebido.",
     entityKey: "RECEIVABLES",

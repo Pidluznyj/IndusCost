@@ -1,5 +1,6 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { startOfCivilDate } from "@/src/lib/financeCivilDate.js";
+import { listReceiptEventsInPeriod } from "@/src/lib/financeReceiptsCanonical.server.js";
 import { decimalToNumber } from "./commission-money.js";
 import { resolveCompetencePeriodUtcBounds } from "./commissionReceiptCompetence.js";
 import { listCommissionVisualAuditPage } from "./commissionVisualAudit.server.js";
@@ -115,17 +116,17 @@ export async function runArVsCommissionReconcile(query: ReconcileArVsCommissionQ
   // renormalizado para meia-noite LOCAL, para comparar com os demais eixos
   // deste módulo sem deslocar o dia civil na virada do mês.
   const receiptBounds = resolveCompetencePeriodUtcBounds(query.year, query.month);
-  const receiptRows = await prisma.nomusReceivableReceipt.findMany({
-    where: { receiptDate: { gte: receiptBounds.from, lte: receiptBounds.to } },
-    select: { receivableExternalId: true, receiptDate: true },
-    orderBy: { receiptDate: "asc" },
+  const receiptEvents = await listReceiptEventsInPeriod(prisma, {
+    from: receiptBounds.from,
+    to: receiptBounds.to,
   });
   const receiptDateByReceivable = new Map<number, Date>();
-  for (const receipt of receiptRows) {
-    receiptDateByReceivable.set(
-      receipt.receivableExternalId,
-      startOfCivilDate(receipt.receiptDate)
-    );
+  for (const event of receiptEvents) {
+    const eventDate = startOfCivilDate(event.receiptDate);
+    const current = receiptDateByReceivable.get(event.receivableExternalId);
+    if (!current || eventDate.getTime() > current.getTime()) {
+      receiptDateByReceivable.set(event.receivableExternalId, eventDate);
+    }
   }
 
   const arRows = arPrismaRows.map((row) =>

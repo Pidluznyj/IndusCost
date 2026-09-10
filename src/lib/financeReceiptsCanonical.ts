@@ -83,6 +83,33 @@ export function resolveCivilYearUtcBounds(year: number): { from: Date; to: Date 
   return { from: new Date(Date.UTC(year, 0, 1)), to: new Date(Date.UTC(year, 11, 31)) };
 }
 
+/**
+ * Meia-noite UTC de uma data civil `YYYY-MM-DD` — mesma convenção de
+ * `resolveCivilMonthUtcBounds`. Base para recortar `receiptDate` (`@db.Date`)
+ * por qualquer intervalo civil, não só mês/ano inteiros.
+ */
+export function civilDateStringToUtcMidnight(civilDate: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(civilDate.trim());
+  if (!match) return new Date(NaN);
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+}
+
+/**
+ * Limites UTC de um intervalo civil arbitrário `[startCivilDate, endCivilDate]`
+ * (ambos inclusivos, formato `YYYY-MM-DD`) — para janelas que não são mês/ano
+ * cheio (ex.: período próprio de um indicador de Metas).
+ */
+export function resolveCivilRangeUtcBounds(
+  startCivilDate: string,
+  endCivilDate: string
+): { from: Date; to: Date } {
+  return {
+    from: civilDateStringToUtcMidnight(startCivilDate),
+    to: civilDateStringToUtcMidnight(endCivilDate),
+  };
+}
+
 export function isReceiptInCivilPeriod(
   receiptDate: Date | string | null | undefined,
   bounds: { from: Date; to: Date }
@@ -199,3 +226,37 @@ export type FinanceReceiptsFreshness = {
   maxReceiptDate: Date | null;
   totalCount: number;
 };
+
+export type FinanceReceiptsFreshnessStatus = "FRESH" | "STALE" | "UNKNOWN";
+
+/**
+ * Janela padrão de frescor: um pouco mais que o ciclo do full scan diário
+ * (a única garantia de cobertura completa — o refresh recente é só
+ * acelerador best-effort). Folga de 2h sobre as 24h para não acusar STALE
+ * nos minutos antes do próximo full scan das 03:50.
+ */
+export const FINANCE_RECEIPTS_FRESHNESS_DEFAULT_MAX_AGE_MS = 26 * 60 * 60 * 1000;
+
+/**
+ * Classifica o frescor do ledger LOCAL de receipts pela idade de `syncedAt`
+ * — nunca por `receiptDate` (um recebimento pode ter `receiptDate` antigo e
+ * ainda assim ter acabado de ser sincronizado, ou vice-versa: `receiptDate`
+ * não é horário de sincronização).
+ *
+ *   - `UNKNOWN` — nenhum receipt local ainda (nunca sincronizado, ou tabela
+ *     vazia nesta instalação).
+ *   - `FRESH`   — última varredura dentro da janela (`maxAgeMs`).
+ *   - `STALE`   — última varredura mais antiga que a janela (ou `syncedAt`
+ *     no futuro — relógio de servidor inconsistente, tratado como STALE por
+ *     segurança, nunca como FRESH).
+ */
+export function classifyFinanceReceiptsFreshness(
+  freshness: Pick<FinanceReceiptsFreshness, "maxSyncedAt">,
+  referenceDate: Date = new Date(),
+  maxAgeMs: number = FINANCE_RECEIPTS_FRESHNESS_DEFAULT_MAX_AGE_MS
+): FinanceReceiptsFreshnessStatus {
+  if (freshness.maxSyncedAt == null) return "UNKNOWN";
+  const ageMs = referenceDate.getTime() - freshness.maxSyncedAt.getTime();
+  if (ageMs < 0) return "STALE";
+  return ageMs <= maxAgeMs ? "FRESH" : "STALE";
+}

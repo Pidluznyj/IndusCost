@@ -56,6 +56,12 @@ import { getNomusAccountsReceivableSyncStatus } from "./nomusAccountsReceivableS
 import { getNomusAccountsPayableSyncStatus } from "./nomusAccountsPayableSyncRunner.js";
 import { getNomusNfesSyncStatus } from "./nomusNfesSyncRunner.js";
 import { prisma as defaultPrisma } from "./prisma.js";
+import { toCivilDateKey } from "./financeCivilDate.js";
+import {
+  resolveCivilMonthUtcBounds,
+  resolveCivilRangeUtcBounds,
+  sumReceivedAmountInPeriod,
+} from "./financeReceiptsCanonical.server.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
 import { buildFinanceCostCenterDashboardDefault } from "./financeCostCenterDashboard.js";
 import {
@@ -584,7 +590,7 @@ export async function buildFinanceExecutiveReport(
 
   const { yearScoped, allYears } = portfolios;
 
-  const receivablesSection = buildExecutiveReportReceivablesSection({
+  const receivablesSectionOfficial = buildExecutiveReportReceivablesSection({
     rows: yearScoped.arDashboardRows,
     filters: arPortfolioFilters,
     referenceDate,
@@ -592,6 +598,40 @@ export async function buildFinanceExecutiveReport(
     year: filters.year,
     month: highlightMonth,
   });
+
+  // Caixa REAL (camada canônica financeReceiptsCanonical) — aditivo ao KPI
+  // oficial (settlementDate) acima, nunca o substitui. `receivablesSection`
+  // continua sendo o mesmo objeto testado; só ganha dois campos novos.
+  const arReceiptsMonthBounds = resolveCivilMonthUtcBounds(filters.year, highlightMonth);
+  const ytdEndCivilDate =
+    filters.year === referenceDate.getFullYear() &&
+    highlightMonth === referenceDate.getMonth() + 1
+      ? toCivilDateKey(referenceDate)!
+      : `${filters.year}-${String(highlightMonth).padStart(2, "0")}-${String(
+          new Date(filters.year, highlightMonth, 0).getDate()
+        ).padStart(2, "0")}`;
+  const arReceiptsYtdBounds = resolveCivilRangeUtcBounds(
+    `${filters.year}-01-01`,
+    ytdEndCivilDate
+  );
+  const arReceivableExternalIds = yearScoped.arDashboardRows.map((row) => row.externalId);
+  const [cashReceivedMonth, cashReceivedYtd] = await Promise.all([
+    sumReceivedAmountInPeriod(db, {
+      from: arReceiptsMonthBounds.from,
+      to: arReceiptsMonthBounds.to,
+      receivableExternalIds: arReceivableExternalIds,
+    }),
+    sumReceivedAmountInPeriod(db, {
+      from: arReceiptsYtdBounds.from,
+      to: arReceiptsYtdBounds.to,
+      receivableExternalIds: arReceivableExternalIds,
+    }),
+  ]);
+  const receivablesSection: typeof receivablesSectionOfficial = {
+    ...receivablesSectionOfficial,
+    cashReceivedMonthCurrent: cashReceivedMonth.totalReceivedAmount,
+    cashReceivedYtdCurrent: cashReceivedYtd.totalReceivedAmount,
+  };
   const payablesSection = buildExecutiveReportPayablesSection({
     rows: yearScoped.apDashboardRows,
     filters: apPortfolioFilters,
@@ -930,6 +970,8 @@ export async function buildFinanceExecutiveReport(
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsReceivable,
       metricsSource: receivablesSection.metricsSource,
       kpis: receivablesSection.kpis,
+      cashReceivedMonthCurrent: receivablesSection.cashReceivedMonthCurrent ?? null,
+      cashReceivedYtdCurrent: receivablesSection.cashReceivedYtdCurrent ?? null,
       payload: {
         cards: receivablesSection.cards,
         agingBuckets: [],
