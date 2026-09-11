@@ -277,13 +277,14 @@ export function canViewSidebarModuleFromDto(
     const general = dtoAllowsView(dto, "commercial.crm.general");
     const seller = dtoAllowsView(dto, "commercial.crm.seller");
     const portfolio = dtoAllowsView(dto, "commercial.crm.portfolio");
+    const reports = dtoAllowsView(dto, "commercial.crm.reports");
     const customer360 = dtoAllowsView(dto, "commercial.crm.customer_360");
     const scoped =
       general ||
       dtoAllowsView(dto, "commercial.crm.scope.own") ||
       dtoAllowsView(dto, "commercial.crm.scope.all");
     // Gestão Geral sozinha já é visão útil; demais abas exigem escopo de dados.
-    return general || (scoped && (seller || portfolio || customer360));
+    return general || (scoped && (seller || portfolio || reports || customer360));
   }
   const keys = SIDEBAR_MODULE_CONTRACT_KEYS[moduleId];
   if (!keys?.length) return false;

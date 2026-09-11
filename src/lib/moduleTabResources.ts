@@ -7,6 +7,7 @@ export const TabResourceKeys = {
   CRM_GESTAO_VENDEDOR: "comercial.crm.tab.gestao_vendedor",
   CRM_CARTEIRA: "comercial.crm.tab.carteira_clientes",
   CRM_CLIENTE_360: "comercial.crm.tab.cliente_360",
+  CRM_RELATORIOS: "comercial.crm.tab.relatorios",
   COMISSOES_FECHAMENTO: "comissoes.tab.fechamento_mes",
   COMISSOES_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_EXCECOES: "comissoes.tab.excecoes_cliente",
@@ -31,7 +32,13 @@ export const TabResourceKeys = {
   MI_CONFIG: "suprimentos.inteligencia_mercado.tab.configuracoes",
 } as const;
 
-export type CrmUiTabId = "general" | "seller" | "portfolio";
+export type CrmUiTabId = "general" | "seller" | "portfolio" | "reports";
+
+export const CRM_UI_TAB_IDS: readonly CrmUiTabId[] = ["general", "seller", "portfolio", "reports"];
+
+export function isCrmUiTabId(value: unknown): value is CrmUiTabId {
+  return typeof value === "string" && (CRM_UI_TAB_IDS as readonly string[]).includes(value);
+}
 
 export const CRM_UI_TABS: ReadonlyArray<{
   id: CrmUiTabId;
@@ -54,6 +61,11 @@ export const CRM_UI_TABS: ReadonlyArray<{
     id: "portfolio",
     resourceKey: TabResourceKeys.CRM_CARTEIRA,
     label: "Carteira de Clientes",
+  },
+  {
+    id: "reports",
+    resourceKey: TabResourceKeys.CRM_RELATORIOS,
+    label: "Relatórios",
   },
 ];
 

@@ -36,6 +36,7 @@ export const PermissionResourceKeys = {
   COMERCIAL_CRM_TAB_GESTAO_VENDEDOR: "comercial.crm.tab.gestao_vendedor",
   COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES: "comercial.crm.tab.carteira_clientes",
   COMERCIAL_CRM_TAB_CLIENTE_360: "comercial.crm.tab.cliente_360",
+  COMERCIAL_CRM_TAB_RELATORIOS: "comercial.crm.tab.relatorios",
   COMISSOES: "comissoes",
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
   COMISSOES_TAB_FECHAMENTOS: "comissoes.tab.fechamentos",

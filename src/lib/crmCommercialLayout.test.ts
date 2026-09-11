@@ -154,8 +154,19 @@ describe("crmCommercialLayout", () => {
 });
 
 describe("crmCommercialLayout tab ids", () => {
-  it("tipos de aba incluem portfolio", () => {
-    const expected: CrmManagementTabId[] = ["general", "seller", "portfolio"];
-    assert.deepEqual(expected, ["general", "seller", "portfolio"]);
+  it("tipos de aba incluem portfolio e reports", () => {
+    const expected: CrmManagementTabId[] = ["general", "seller", "portfolio", "reports"];
+    assert.deepEqual(expected, ["general", "seller", "portfolio", "reports"]);
+  });
+
+  it("fallback bag-aware: Relatórios depende de crm.reports.view e nunca vira aba padrão", () => {
+    const manager = checkerFromPermissions(["crm.general.view", "crm.seller.all", "crm.reports.view"]);
+    assert.equal(getDefaultCrmManagementTab(manager), "general");
+    const onlyReports = checkerFromPermissions(["crm.reports.view"]);
+    assert.equal(getDefaultCrmManagementTab(onlyReports), "reports");
+    const noReports = checkerFromPermissions(["crm.general.view"]);
+    const tabs = readFileSync(join(process.cwd(), "src/components/CrmCommercialManagementTabs.tsx"), "utf8");
+    assert.match(tabs, /tab\.id === "reports"\) return auth\.hasPermission\("crm\.reports\.view"\)/);
+    assert.equal(getDefaultCrmManagementTab(noReports), "general");
   });
 });

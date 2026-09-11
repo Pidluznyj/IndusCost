@@ -890,6 +890,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["crm.view"],
   }),
   perm({
+    key: "crm.reports.view",
+    label: "CRM — Relatórios",
+    group: CRM,
+    module: "crm-commercial",
+    description:
+      "Aba Relatórios: listas de recompra, relatório personalizado e exportação (mesmo escopo da carteira).",
+    type: "tab",
+    parentKey: "crm.view",
+    requires: ["crm.view"],
+  }),
+  perm({
     key: "crm.activities.create",
     label: "CRM — Criar atividade/contato",
     group: CRM,

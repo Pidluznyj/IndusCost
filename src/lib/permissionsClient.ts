@@ -7,6 +7,7 @@ import {
   COMMISSIONS_LIVE_UI_TABS,
   CRM_UI_TABS,
   MATERIALS_UI_SECTIONS,
+  type CrmUiTabId,
 } from "@/src/lib/moduleTabResources.js";
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
 
@@ -50,6 +51,7 @@ export const ResourceKeys = {
   COMERCIAL_CRM_TAB_GESTAO_VENDEDOR: "comercial.crm.tab.gestao_vendedor",
   COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES: "comercial.crm.tab.carteira_clientes",
   COMERCIAL_CRM_TAB_CLIENTE_360: "comercial.crm.tab.cliente_360",
+  COMERCIAL_CRM_TAB_RELATORIOS: "comercial.crm.tab.relatorios",
   COMISSOES: "comissoes",
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
   COMISSOES_TAB_FECHAMENTOS: "comissoes.tab.fechamentos",
@@ -353,6 +355,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
       "customers.commercial360.view",
       "customers.view",
     ],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_CRM_TAB_RELATORIOS,
+    label: "Relatórios",
+    type: "TAB",
+    parentKey: ResourceKeys.COMERCIAL_CRM,
+    legacyAliasKeys: ["crm.reports.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_SATISFACAO,
@@ -1197,7 +1206,7 @@ export type PermissionsApi = {
    * por permissão do usuário. Preserva a ordem de `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS`.
    */
   listVisiblePortfolioReconciliationTabs: () => PortfolioReconciliationVisibleTabId[];
-  listAllowedCrmTabs: () => Array<"general" | "seller" | "portfolio">;
+  listAllowedCrmTabs: () => CrmUiTabId[];
   listAllowedCommissionsLiveTabs: () => Array<
     | "monthlyClosing"
     | "closings"
