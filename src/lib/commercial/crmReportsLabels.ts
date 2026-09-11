@@ -77,6 +77,17 @@ export function formatCrmRepurchaseDeviation(deltaDays: number | null): string {
   return "0 d";
 }
 
+/**
+ * Célula "Dias de atraso" do relatório personalizado (= desvio do motor):
+ * "12 dias de atraso" / "Recompra hoje" / "Recompra em 8 dias".
+ */
+export function formatCrmOverdueDaysMetric(deltaDays: number | null): string {
+  if (deltaDays == null) return "—";
+  if (deltaDays > 0) return `${days(deltaDays)} de atraso`;
+  if (deltaDays === 0) return "Recompra hoje";
+  return `Recompra em ${days(-deltaDays)}`;
+}
+
 export const CRM_REPORTS_OVERDUE_SORT_LABELS: Record<CrmReportsOverdueSort, string> = {
   DELAY_DESC: "Maior atraso primeiro",
   VALUE_12M_DESC: "Maior venda 12m primeiro",

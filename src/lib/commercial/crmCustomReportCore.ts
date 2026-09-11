@@ -21,10 +21,8 @@ import {
   CRM_CUSTOM_REPORT_DIMENSIONS,
   CRM_CUSTOM_REPORT_MAX_DIMENSIONS,
   CRM_CUSTOM_REPORT_MAX_ROWS,
-  CRM_CUSTOM_REPORT_METRIC_AVAILABILITY,
   CRM_CUSTOM_REPORT_METRIC_LABELS,
   CRM_CUSTOM_REPORT_METRICS,
-  CRM_CUSTOM_REPORT_ORDER_DIMENSIONS,
   CRM_CUSTOM_REPORT_PAGE_DEFAULT_LIMIT,
   CRM_CUSTOM_REPORT_PAGE_MAX_LIMIT,
   type CrmCustomReportCell,
@@ -55,6 +53,11 @@ import {
   moneyToMicros,
   toBusinessDate,
 } from "@/src/lib/commercial/crmRepurchaseEngine.js";
+import {
+  CRM_CUSTOM_REPORT_WITHOUT_PURCHASE_ORDER_DIM_REASON,
+  describeCrmCustomReportMetricAvailability,
+  isCrmCustomReportOrderDimension,
+} from "@/src/lib/commercial/crmCustomReportContract.js";
 
 // ---------------------------------------------------------------------------
 // Spec
@@ -69,36 +72,8 @@ export class CrmCustomReportTooLargeError extends Error {
   }
 }
 
-export function isCrmCustomReportOrderDimension(dimension: CrmCustomReportDimension): boolean {
-  return CRM_CUSTOM_REPORT_ORDER_DIMENSIONS.includes(dimension);
-}
-
-/** Métrica disponível para as dimensões escolhidas? (e o motivo, se não). */
-export function describeCrmCustomReportMetricAvailability(
-  metric: CrmCustomReportMetric,
-  dimensions: readonly CrmCustomReportDimension[]
-): { available: boolean; reason: string | null } {
-  const availability = CRM_CUSTOM_REPORT_METRIC_AVAILABILITY[metric];
-  const hasOrderDimension = dimensions.some(isCrmCustomReportOrderDimension);
-  if (availability === "ALWAYS") return { available: true, reason: null };
-  if (availability === "NO_ORDER_DIM") {
-    return hasOrderDimension
-      ? {
-          available: false,
-          reason:
-            "Recência do cliente não combina com Vendedor do pedido, Mês ou Ano (a linha deixa de ser o cliente).",
-        }
-      : { available: true, reason: null };
-  }
-  const customerGrain = dimensions.includes("customer") && !hasOrderDimension;
-  return customerGrain
-    ? { available: true, reason: null }
-    : {
-        available: false,
-        reason:
-          "Cadência é do cliente: exige a dimensão Cliente e nenhuma de Vendedor do pedido, Mês ou Ano.",
-      };
-}
+// Disponibilidade por granularidade: contrato único com a UI.
+export { describeCrmCustomReportMetricAvailability, isCrmCustomReportOrderDimension };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -189,7 +164,7 @@ export function parseCrmCustomReportRequest(body: unknown): CrmCustomReportParse
     }
   }
   if (customerStatus === "WITHOUT_PURCHASE" && dimensions.some(isCrmCustomReportOrderDimension)) {
-    errors.push("\"Sem compra no período\" não combina com Vendedor do pedido, Mês ou Ano (não há pedido para agrupar).");
+    errors.push(CRM_CUSTOM_REPORT_WITHOUT_PURCHASE_ORDER_DIM_REASON);
   }
 
   let groupBy: CrmCustomReportDimension | null = null;
