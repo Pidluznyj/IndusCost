@@ -82,8 +82,11 @@ export function buildFinanceCashFlowExportCsv(
 
   const rec = payload.reconciliation;
   const exec = payload.executiveSummary;
-  const summaryRows: Array<[string, number]> = [
+  const summaryRows: Array<[string, number | null | undefined]> = [
     ["resumo_recebido_ytd", exec.receivable.receivedYtd],
+    // Caixa real (camada canônica, receiptDate/receivedAmount) — aditivo à
+    // linha acima (settlementDate); "" quando não injetado pela rota.
+    ["resumo_caixa_recebido_ytd", exec.receivable.cashReceivedYtd],
     ["resumo_a_receber_ate_fim_ano", exec.receivable.openFromTodayToYearEnd],
     ["resumo_estimativa_ar_ano", exec.receivable.estimatedYearTotal],
     ["resumo_pago_ytd", exec.payable.paidYtd],

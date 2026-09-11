@@ -17,7 +17,10 @@ import {
   buildFinanceCashFlowDashboard,
   type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
-import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
+import {
+  injectCashReceivedIntoMonthlyRows,
+  type FinanceCashFlowExecutiveMonthlyRow,
+} from "./financeCashFlowExecutiveSummary.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
@@ -33,7 +36,10 @@ import {
 } from "./financeExecutiveReportUtils.js";
 import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNarrative.js";
 import { buildExecutiveCashFlowAnnualChart } from "./financeExecutiveReportPresentation.js";
-import { buildCashFlowAnnualComparison } from "./financeCashFlowAnnualComparison.js";
+import {
+  buildCashFlowAnnualComparison,
+  injectCashReceivedIntoAnnualComparisonMonths,
+} from "./financeCashFlowAnnualComparison.js";
 import {
   buildExecutiveReportPayablesSection,
   buildExecutiveReportReceivablesSection,
@@ -58,8 +64,10 @@ import { getNomusNfesSyncStatus } from "./nomusNfesSyncRunner.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
 import {
+  listReceiptEventsByReceivables,
   resolveCivilMonthUtcBounds,
   resolveCivilRangeUtcBounds,
+  sumReceivedAmountByCivilMonth,
   sumReceivedAmountInPeriod,
 } from "./financeReceiptsCanonical.server.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
@@ -615,7 +623,7 @@ export async function buildFinanceExecutiveReport(
     ytdEndCivilDate
   );
   const arReceivableExternalIds = yearScoped.arDashboardRows.map((row) => row.externalId);
-  const [cashReceivedMonth, cashReceivedYtd] = await Promise.all([
+  const [cashReceivedMonth, cashReceivedYtd, yearScopedReceiptsByReceivable] = await Promise.all([
     sumReceivedAmountInPeriod(db, {
       from: arReceiptsMonthBounds.from,
       to: arReceiptsMonthBounds.to,
@@ -626,7 +634,14 @@ export async function buildFinanceExecutiveReport(
       to: arReceiptsYtdBounds.to,
       receivableExternalIds: arReceivableExternalIds,
     }),
+    listReceiptEventsByReceivables(db, arReceivableExternalIds),
   ]);
+  // Mesmo mapa mensal (camada canônica) reutilizado para injetar `receivedCash`
+  // no Fluxo de Caixa e no comparativo anual deste relatório — aditivo, nunca
+  // substitui `received`/`receivedAmount` (settlementDate/dueDate).
+  const yearScopedCashByCivilMonth = sumReceivedAmountByCivilMonth(
+    [...yearScopedReceiptsByReceivable.values()].flat()
+  );
   const receivablesSection: typeof receivablesSectionOfficial = {
     ...receivablesSectionOfficial,
     cashReceivedMonthCurrent: cashReceivedMonth.totalReceivedAmount,
@@ -653,15 +668,27 @@ export async function buildFinanceExecutiveReport(
       nfeOrderLinks: yearScoped.nfeOrderLinks,
     }
   );
+  cashFlowAnnualPayload.executiveSummary.monthlyTimeline = injectCashReceivedIntoMonthlyRows(
+    cashFlowAnnualPayload.executiveSummary.monthlyTimeline,
+    filters.year,
+    yearScopedCashByCivilMonth
+  );
+  cashFlowAnnualPayload.executiveSummary.plannedMonthlyTimeline = injectCashReceivedIntoMonthlyRows(
+    cashFlowAnnualPayload.executiveSummary.plannedMonthlyTimeline,
+    filters.year,
+    yearScopedCashByCivilMonth
+  );
+  cashFlowAnnualPayload.executiveSummary.receivable.cashReceivedYtd =
+    cashReceivedYtd.totalReceivedAmount;
   const cashFlowPayload = periodEqualsAnnual
     ? cashFlowAnnualPayload
-    : (() => {
+    : await (async () => {
         const periodRows = sliceCashFlowRowsToDuePeriod(
           yearScoped.arRows,
           yearScoped.apRows,
           cashFlowFilters
         );
-        return buildFinanceCashFlowDashboard(
+        const built = buildFinanceCashFlowDashboard(
           periodRows.arRows,
           periodRows.apRows,
           cashFlowFilters,
@@ -673,6 +700,30 @@ export async function buildFinanceExecutiveReport(
             nfeOrderLinks: yearScoped.nfeOrderLinks,
           }
         );
+        // População do período (pode ser subconjunto do ano) — mapa mensal
+        // próprio, nunca reaproveita o do ano inteiro (misturaria receipts de
+        // títulos fora do recorte do período com `received`/`paid` do recorte).
+        const periodReceivableExternalIds = [
+          ...new Set(periodRows.arRows.map((row) => row.externalId)),
+        ];
+        const periodReceiptsByReceivable = await listReceiptEventsByReceivables(
+          db,
+          periodReceivableExternalIds
+        );
+        const periodCashByCivilMonth = sumReceivedAmountByCivilMonth(
+          [...periodReceiptsByReceivable.values()].flat()
+        );
+        built.executiveSummary.monthlyTimeline = injectCashReceivedIntoMonthlyRows(
+          built.executiveSummary.monthlyTimeline,
+          filters.year,
+          periodCashByCivilMonth
+        );
+        built.executiveSummary.plannedMonthlyTimeline = injectCashReceivedIntoMonthlyRows(
+          built.executiveSummary.plannedMonthlyTimeline,
+          filters.year,
+          periodCashByCivilMonth
+        );
+        return built;
       })();
 
   const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
@@ -681,6 +732,16 @@ export async function buildFinanceExecutiveReport(
     highlightMonth
   );
 
+  const allYearsReceivableExternalIds = [
+    ...new Set(allYears.arRows.map((row) => row.externalId)),
+  ];
+  const allYearsReceiptsByReceivable = await listReceiptEventsByReceivables(
+    db,
+    allYearsReceivableExternalIds
+  );
+  const allYearsCashByCivilMonth = sumReceivedAmountByCivilMonth(
+    [...allYearsReceiptsByReceivable.values()].flat()
+  );
   const annualComparisonCurrent = buildCashFlowAnnualComparison(
     allYears.arRows,
     allYears.apRows,
@@ -693,6 +754,11 @@ export async function buildFinanceExecutiveReport(
       nfeOrderLinks: allYears.nfeOrderLinks,
     }
   );
+  annualComparisonCurrent.months = injectCashReceivedIntoAnnualComparisonMonths(
+    annualComparisonCurrent.months,
+    filters.year,
+    allYearsCashByCivilMonth
+  );
   const annualComparisonPrevious = buildCashFlowAnnualComparison(
     allYears.arRows,
     allYears.apRows,
@@ -704,6 +770,11 @@ export async function buildFinanceExecutiveReport(
       orderContexts: allYears.orderContexts,
       nfeOrderLinks: allYears.nfeOrderLinks,
     }
+  );
+  annualComparisonPrevious.months = injectCashReceivedIntoAnnualComparisonMonths(
+    annualComparisonPrevious.months,
+    filters.year - 1,
+    allYearsCashByCivilMonth
   );
 
   let costCenterSpending: FinanceExecutiveReport["costCenterSpending"];

@@ -55,8 +55,17 @@ import {
 } from "@/src/lib/financeCashFlowDailyRadarExportXlsx.js";
 import {
   FinanceCashFlowAnnualComparisonParseError,
+  injectCashReceivedIntoAnnualComparisonMonths,
   parseAnnualComparisonYear,
 } from "@/src/lib/financeCashFlowAnnualComparison.js";
+import { injectCashReceivedIntoMonthlyRows } from "@/src/lib/financeCashFlowExecutiveSummary.js";
+import { resolveYtdDateRange } from "@/src/lib/financeCashFlowExecutiveYtd.js";
+import {
+  listReceiptEventsByReceivables,
+  resolveFinanceReceiptsFreshness,
+  sumReceivedAmountByCivilMonth,
+  sumReceivedAmountInPeriod,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
 import {
   resolveCashFlowArSettlementLoadWindow,
@@ -232,6 +241,35 @@ function cashFlowArFilterOptions(bundle: Pick<FinanceArTitlesSourceBundle, "orde
   return { orderContexts: bundle.orderContexts, nfeOrderLinks: bundle.nfeOrderLinks };
 }
 
+/**
+ * Caixa real (camada canônica) para os títulos AR em escopo — evento por
+ * evento (`receiptDate`/`receivedAmount`), nunca `settlementDate`. Usado para
+ * injetar `receivedCash`/`receivedCashAmount` nos payloads de Fluxo de Caixa
+ * DEPOIS que os builders puros (`buildFinanceCashFlowDashboard`,
+ * `buildCashFlowAnnualComparison`) já rodaram — mesmo padrão aditivo usado no
+ * Relatório Executivo e na Tesouraria histórica. `year` define a janela YTD
+ * (`resolveYtdDateRange`); o mapa mensal cobre todo o histórico dos títulos
+ * em escopo, mas a injeção por mês só lê as chaves do ano pedido.
+ */
+async function loadCashFlowArCanonicalCash(
+  arRows: readonly { externalId: number }[],
+  year: number,
+  referenceDate: Date
+): Promise<{ cashByCivilMonth: Map<string, number>; cashReceivedYtd: number }> {
+  const externalIds = [...new Set(arRows.map((row) => row.externalId))];
+  const receiptsByReceivable = await listReceiptEventsByReceivables(prisma, externalIds);
+  const cashByCivilMonth = sumReceivedAmountByCivilMonth(
+    [...receiptsByReceivable.values()].flat()
+  );
+  const ytdRange = resolveYtdDateRange(year, referenceDate);
+  const { totalReceivedAmount: cashReceivedYtd } = await sumReceivedAmountInPeriod(prisma, {
+    from: ytdRange.startDate,
+    to: ytdRange.endDate,
+    receivableExternalIds: externalIds,
+  });
+  return { cashByCivilMonth, cashReceivedYtd };
+}
+
 export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const view = [
@@ -308,12 +346,35 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         apSyncCutoff,
         arOptions
       );
-      const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
-        ytdYear: referenceDate.getFullYear(),
-        companyName: filters.companyName,
-        referenceDate,
+      const cashFlowYear = filters.year ?? referenceDate.getFullYear();
+      const { cashByCivilMonth, cashReceivedYtd } = await loadCashFlowArCanonicalCash(
+        arRows,
+        cashFlowYear,
+        referenceDate
+      );
+      payload.executiveSummary.monthlyTimeline = injectCashReceivedIntoMonthlyRows(
+        payload.executiveSummary.monthlyTimeline,
+        cashFlowYear,
+        cashByCivilMonth
+      );
+      payload.executiveSummary.plannedMonthlyTimeline = injectCashReceivedIntoMonthlyRows(
+        payload.executiveSummary.plannedMonthlyTimeline,
+        cashFlowYear,
+        cashByCivilMonth
+      );
+      payload.executiveSummary.receivable.cashReceivedYtd = cashReceivedYtd;
+      const [rawMaterialCostCenterSpotlight, receiptsFreshness] = await Promise.all([
+        loadRawMaterialCostCenterSpotlight({
+          ytdYear: referenceDate.getFullYear(),
+          companyName: filters.companyName,
+          referenceDate,
+        }),
+        resolveFinanceReceiptsFreshness(prisma),
+      ]);
+      res.json({
+        ...timedAssembleDashboardPayload(payload, rawMaterialCostCenterSpotlight),
+        receiptsFreshness,
       });
-      res.json(timedAssembleDashboardPayload(payload, rawMaterialCostCenterSpotlight));
     }
   );
 
@@ -330,15 +391,23 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         ...cashFlowArFilterOptions(load),
         arRealizedOnlyRows,
       };
+      const exportReferenceDate = new Date();
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,
         filters,
-        new Date(),
+        exportReferenceDate,
         arSyncCutoff,
         apSyncCutoff,
         arOptions
       );
+      const exportYear = filters.year ?? exportReferenceDate.getFullYear();
+      const { cashReceivedYtd: exportCashReceivedYtd } = await loadCashFlowArCanonicalCash(
+        arRows,
+        exportYear,
+        exportReferenceDate
+      );
+      payload.executiveSummary.receivable.cashReceivedYtd = exportCashReceivedYtd;
       const csv = buildFinanceCashFlowExportCsv(payload);
       const filename = financeCashFlowExportFilename(filters.year);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -369,6 +438,12 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff,
           { orderContexts, nfeOrderLinks }
+        );
+        const { cashByCivilMonth } = await loadCashFlowArCanonicalCash(arRows, year, referenceDate);
+        payload.months = injectCashReceivedIntoAnnualComparisonMonths(
+          payload.months,
+          year,
+          cashByCivilMonth
         );
         res.json(payload);
       } catch (error) {

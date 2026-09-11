@@ -33,6 +33,13 @@ export const FINANCE_CASH_FLOW_AR_METRIC = {
   OPEN_DUE_IN_YEAR: "AR_OPEN_DUE_IN_YEAR",
   OPEN_FORWARD_TO_YEAR_END: "AR_OPEN_FORWARD_TO_YEAR_END",
   RECEIVED_YTD: "AR_RECEIVED_YTD",
+  /**
+   * Caixa real YTD (camada canônica `financeReceiptsCanonical`,
+   * `NomusReceivableReceipt.receiptDate`+`receivedAmount`) — aditivo a
+   * `AR_RECEIVED_YTD` (settlementDate), nunca o substitui. Ver
+   * `executiveSummary.receivable.cashReceivedYtd`.
+   */
+  CASH_RECEIVED_YTD: "AR_CASH_RECEIVED_YTD",
   ESTIMATED_YEAR_TOTAL: "AR_ESTIMATED_YEAR_TOTAL",
   PLANNED_BY_DUE_MONTH: "AR_PLANNED_BY_DUE_MONTH",
   MOVEMENT_TIMELINE_MONTHLY: "AR_MOVEMENT_TIMELINE_MONTHLY",
@@ -64,8 +71,20 @@ export type FinanceCashFlowArMetricFilterName =
 
 export type FinanceCashFlowArMetricFilterPolicy = {
   metric: FinanceCashFlowArCanonicalMetricId;
-  moneyField: "balanceReceivable" | "amountReceived" | "mixed";
-  dateAxis: "none" | "dueDate" | "settlementDate" | "dueDate+settlementDate" | "movement+dueDate";
+  /**
+   * `amountReceived` = estado acumulado do título (`NomusAccountsReceivable`,
+   * baixa). `receivedAmount` = evento de recebimento real (camada canônica
+   * `NomusReceivableReceipt`, caixa). Nomes distintos de propósito — nunca
+   * confundir os dois eixos.
+   */
+  moneyField: "balanceReceivable" | "amountReceived" | "receivedAmount" | "mixed";
+  dateAxis:
+    | "none"
+    | "dueDate"
+    | "settlementDate"
+    | "receiptDate"
+    | "dueDate+settlementDate"
+    | "movement+dueDate";
   respects: readonly FinanceCashFlowArMetricFilterName[];
   ignores: readonly FinanceCashFlowArMetricFilterName[];
   reason: string;
@@ -124,6 +143,15 @@ export const FINANCE_CASH_FLOW_AR_METRIC_FILTER_MATRIX: readonly FinanceCashFlow
       respects: ["year", ...PAGE_IDENTITY_FILTERS],
       ignores: ["month", "viewMode", "dateBase"],
       reason: "Recebido oficial YTD pela regra de baixa vigente (settlementDate).",
+    },
+    {
+      metric: FINANCE_CASH_FLOW_AR_METRIC.CASH_RECEIVED_YTD,
+      moneyField: "receivedAmount",
+      dateAxis: "receiptDate",
+      respects: ["year", ...PAGE_IDENTITY_FILTERS],
+      ignores: ["month", "viewMode", "dateBase"],
+      reason:
+        "Caixa real YTD (camada canônica NomusReceivableReceipt.receiptDate/receivedAmount) — aditivo a AR_RECEIVED_YTD, nunca o substitui.",
     },
     {
       metric: FINANCE_CASH_FLOW_AR_METRIC.ESTIMATED_YEAR_TOTAL,
