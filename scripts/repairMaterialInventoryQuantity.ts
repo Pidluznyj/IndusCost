@@ -14,6 +14,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { diagnoseMaterialInventoryBalances } from "../src/lib/inventory/materialInventoryBalanceDiagnostic.server.ts";
+import { isCanonicalQuantityRepairEligible } from "../src/lib/inventory/materialInventoryBalanceDiagnostic.ts";
 import { reconcileMaterialQuantityFromInventoryInTx } from "../src/lib/inventory/materialInventoryProjection.server.ts";
 
 const CONFIRM = "RECONCILE_MATERIAL_QUANTITY_FROM_INVENTORY";
@@ -45,10 +46,16 @@ async function main(): Promise<void> {
     materialId: arg("materialId"),
   });
 
-  const eligible = rows.filter((r) => r.status === "QUANTITY_DIVERGENCE" && Boolean(r.materialId));
+  const eligible = rows.filter((r) => isCanonicalQuantityRepairEligible(r));
+  const legacy = rows.filter((r) => r.status === "LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE");
   console.log("Preview reconciliação Material.quantity ← Inventory");
   console.log(JSON.stringify(summary, null, 2));
-  console.log(`Elegíveis (QUANTITY_DIVERGENCE, unidade compatível): ${eligible.length}`);
+  console.log(
+    `Elegíveis (QUANTITY_DIVERGENCE + hasCanonicalLedger): ${eligible.length}`
+  );
+  console.log(
+    `Legado sem ledger canônico (NÃO será zerado): ${legacy.length}`
+  );
   for (const row of eligible) {
     console.log(
       JSON.stringify({
@@ -62,8 +69,29 @@ async function main(): Promise<void> {
         controlsLocation: row.controlsLocation,
         warehouseCount: row.warehouseCount,
         locationCount: row.locationCount,
+        hasInventoryBalance: row.hasInventoryBalance,
+        hasCanonicalLedger: row.hasCanonicalLedger,
+        repairEligible: row.repairEligible,
       })
     );
+  }
+  if (legacy.length) {
+    console.log("Legado (Material.quantity preservado — sem InventoryBalance):");
+    for (const row of legacy) {
+      console.log(
+        JSON.stringify({
+          classification: row.status,
+          materialId: row.materialId,
+          materialCode: row.materialCode,
+          materialQuantity: row.materialQuantity,
+          canonicalPhysical: row.canonicalPhysical,
+          inventoryItemId: row.inventoryItemId,
+          hasInventoryBalance: row.hasInventoryBalance,
+          hasCanonicalLedger: row.hasCanonicalLedger,
+          repairEligible: false,
+        })
+      );
+    }
   }
 
   if (summary.MULTIPLE_ACTIVE_LINKS > 0) {

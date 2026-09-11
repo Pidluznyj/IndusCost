@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { selectCanonicalPhysicalBalanceRows } from "./materialInventoryProjection.js";
-import { classifyMaterialInventoryBalance, unitsCompatible } from "./materialInventoryBalanceDiagnostic.js";
+import { classifyMaterialInventoryBalance, isCanonicalQuantityRepairEligible, unitsCompatible } from "./materialInventoryBalanceDiagnostic.js";
 import {
   resolveMaterialCreateQuantity,
   resolveMaterialUpdateQuantity,
@@ -90,6 +90,55 @@ describe("classifyMaterialInventoryBalance", () => {
         quantityEqualsCanonical: true,
       }),
       "NO_BALANCE"
+    );
+    assert.equal(
+      classifyMaterialInventoryBalance({
+        materialId: "m1",
+        activeLinkCount: 1,
+        hasBalanceRow: false,
+        hasCanonicalLedger: false,
+        quantityEqualsCanonical: false,
+      }),
+      "LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE"
+    );
+    assert.equal(
+      classifyMaterialInventoryBalance({
+        materialId: "m1",
+        activeLinkCount: 1,
+        hasBalanceRow: true,
+        hasCanonicalLedger: true,
+        quantityEqualsCanonical: false,
+      }),
+      "QUANTITY_DIVERGENCE"
+    );
+  });
+
+  it("saldo canônico zero com balance é divergência, não legado", () => {
+    assert.equal(
+      classifyMaterialInventoryBalance({
+        materialId: "m1",
+        activeLinkCount: 1,
+        hasBalanceRow: true,
+        hasCanonicalLedger: true,
+        quantityEqualsCanonical: false,
+      }),
+      "QUANTITY_DIVERGENCE"
+    );
+    assert.equal(
+      isCanonicalQuantityRepairEligible({
+        status: "QUANTITY_DIVERGENCE",
+        hasCanonicalLedger: true,
+        hasInventoryBalance: true,
+      }),
+      true
+    );
+    assert.equal(
+      isCanonicalQuantityRepairEligible({
+        status: "LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE",
+        hasCanonicalLedger: false,
+        hasInventoryBalance: false,
+      }),
+      false
     );
   });
 

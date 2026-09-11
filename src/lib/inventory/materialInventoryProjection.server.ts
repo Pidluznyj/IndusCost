@@ -21,7 +21,8 @@ export type MaterialQuantityProjectionSource =
   | "INVENTORY_MOVEMENT"
   | "COUNT_SESSION"
   | "REVERSAL"
-  | "RECONCILE";
+  | "RECONCILE"
+  | "BALANCE_REBUILD";
 
 export type MaterialQuantityProjectionContext = {
   source: MaterialQuantityProjectionSource;
@@ -41,6 +42,7 @@ export type MaterialQuantityProjectionResult = {
     | "PROJECTED"
     | "UNCHANGED"
     | "NO_INVENTORY_LINK"
+    | "NO_CANONICAL_LEDGER"
     | "MULTIPLE_ACTIVE_LINKS"
     | "MATERIAL_NOT_FOUND";
 };
@@ -192,6 +194,17 @@ export async function reconcileMaterialQuantityFromInventoryInTx(
     where: { itemId: item.id },
     select: { locationId: true, physicalQuantity: true },
   });
+
+  if (balances.length === 0) {
+    return {
+      materialId,
+      inventoryItemId: item.id,
+      before,
+      after: before,
+      changed: false,
+      status: "NO_CANONICAL_LEDGER",
+    };
+  }
 
   const canonical = sumCanonicalPhysicalQuantity(balances, item.controlsLocation === true);
 

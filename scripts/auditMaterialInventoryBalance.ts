@@ -64,6 +64,11 @@ async function main(): Promise<void> {
         locationCount: row.locationCount,
         lastMovementAt: row.lastMovementAt,
         lastMovementId: row.lastMovementId,
+        hasInventoryBalance: row.hasInventoryBalance,
+        balanceCount: row.balanceCount,
+        hasCanonicalLedger: row.hasCanonicalLedger,
+        hasInventoryMovement: row.hasInventoryMovement,
+        repairEligible: row.repairEligible,
         linkIssue: row.linkIssue,
       })
     );

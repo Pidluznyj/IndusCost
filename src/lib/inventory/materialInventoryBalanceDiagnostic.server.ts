@@ -6,6 +6,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   classifyMaterialInventoryBalance,
   formatQuantityForReport,
+  isCanonicalQuantityRepairEligible,
   unitsCompatible,
   type MaterialInventoryBalanceStatus,
 } from "./materialInventoryBalanceDiagnostic.js";
@@ -34,6 +35,12 @@ export type MaterialInventoryBalanceRow = {
   lastCountSessionId: string | null;
   unitMismatch: boolean;
   linkIssue: string | null;
+  hasInventoryBalance: boolean;
+  balanceCount: number;
+  hasInventoryMovement: boolean;
+  hasOfficialCount: boolean;
+  hasCanonicalLedger: boolean;
+  repairEligible: boolean;
 };
 
 function decimalAbsDiff(a: Prisma.Decimal, b: Prisma.Decimal): Prisma.Decimal {
@@ -110,6 +117,7 @@ export async function diagnoseMaterialInventoryBalances(
   }
 
   const lastCountByItem = new Map<string, string>();
+  const movementCountByItem = new Map<string, number>();
   if (activeItemIds.length) {
     const countLines = await db.inventoryCountLine.findMany({
       where: { itemId: { in: activeItemIds }, session: { status: { in: ["ADJUSTED", "APPROVED"] } } },
@@ -118,6 +126,14 @@ export async function diagnoseMaterialInventoryBalances(
     });
     for (const line of countLines) {
       if (!lastCountByItem.has(line.itemId)) lastCountByItem.set(line.itemId, line.sessionId);
+    }
+    const movementGroups = await db.inventoryMovement.groupBy({
+      by: ["itemId"],
+      where: { itemId: { in: activeItemIds } },
+      _count: { _all: true },
+    });
+    for (const row of movementGroups) {
+      movementCountByItem.set(row.itemId, row._count._all);
     }
   }
 
@@ -129,6 +145,7 @@ export async function diagnoseMaterialInventoryBalances(
     UNIT_MISMATCH: 0,
     MULTIPLE_ACTIVE_LINKS: 0,
     NO_BALANCE: 0,
+    LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE: 0,
     OTHER_INCONSISTENCY: 0,
     totalMaterials: materials.length,
   };
@@ -170,12 +187,18 @@ export async function diagnoseMaterialInventoryBalances(
       linkIssue = "Somente vínculos inativos";
     }
 
+    const hasInventoryBalance = warehouseOrLocationCount > 0;
+    const hasInventoryMovement = primary ? (movementCountByItem.get(primary.id) ?? 0) > 0 : false;
+    const hasOfficialCount = Boolean(lastCountSessionId);
+    const hasCanonicalLedger = hasInventoryBalance;
+
     const status = classifyMaterialInventoryBalance({
       materialId: material.id,
       activeLinkCount: active.length,
       materialUnit: material.unit,
       itemUnit: primary?.unit ?? null,
-      hasBalanceRow: warehouseOrLocationCount > 0,
+      hasBalanceRow: hasInventoryBalance,
+      hasCanonicalLedger,
       quantityEqualsCanonical: materialQty.eq(canonical),
     });
     summary[status] += 1;
@@ -209,6 +232,16 @@ export async function diagnoseMaterialInventoryBalances(
       lastCountSessionId,
       unitMismatch,
       linkIssue,
+      hasInventoryBalance,
+      balanceCount: warehouseOrLocationCount,
+      hasInventoryMovement,
+      hasOfficialCount,
+      hasCanonicalLedger,
+      repairEligible: isCanonicalQuantityRepairEligible({
+        status,
+        hasCanonicalLedger,
+        hasInventoryBalance,
+      }),
     };
   });
 
