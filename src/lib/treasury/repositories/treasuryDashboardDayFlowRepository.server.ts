@@ -87,6 +87,21 @@ function rowToAggregate(row: AggRow | undefined): {
   };
 }
 
+/** `accountIds: []` = nenhuma conta (anti-IDOR); `null`/`undefined` = sem filtro. */
+function isEmptyAccountScope(accountIds: string[] | null | undefined): boolean {
+  return Array.isArray(accountIds) && accountIds.length === 0;
+}
+
+function emptyDayFlowResult(): TreasuryDashboardDayFlowResult {
+  const empty = emptyTreasuryDashboardDayFlow();
+  return {
+    receivables: empty.receivables,
+    payables: empty.payables,
+    highPriorityReceivableCount: 0,
+    highPriorityPayableCount: 0,
+  };
+}
+
 /**
  * Repositório Prisma — agrega no PostgreSQL (SUM/COUNT) com JOIN de complemento.
  */
@@ -95,6 +110,9 @@ export function createTreasuryDashboardDayFlowRepository(
 ): TreasuryDashboardDayFlowRepository {
   return {
     async aggregateDayFlow(query) {
+      if (isEmptyAccountScope(query.accountIds)) {
+        return emptyDayFlowResult();
+      }
       const { gte, lt } = civilDayUtcRange(query.civilDate);
       const accountIds = query.accountIds?.length ? query.accountIds : null;
       const scenario = query.scenario;
@@ -241,6 +259,9 @@ export function createMemoryTreasuryDashboardDayFlowRepository(
 ): TreasuryDashboardDayFlowRepository {
   return {
     async aggregateDayFlow(query) {
+      if (isEmptyAccountScope(query.accountIds)) {
+        return emptyDayFlowResult();
+      }
       const filtered = rows.filter((r) => {
         if (!query.accountIds?.length) return true;
         return (

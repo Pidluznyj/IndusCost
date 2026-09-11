@@ -99,6 +99,8 @@ export type TreasuryTransferListFilter = {
   status?: TreasuryTransferStatus | null;
   fromAccountId?: string | null;
   toAccountId?: string | null;
+  /** Anti-IDOR: transferência visível se origem OU destino ∈ lista. */
+  eitherAccountIds?: string[] | null;
   from?: string | null;
   to?: string | null;
   page: number;
@@ -155,6 +157,15 @@ export function createTreasuryTransferRepository(
       if (filter.status) where.status = filter.status;
       if (filter.fromAccountId) where.fromAccountId = filter.fromAccountId;
       if (filter.toAccountId) where.toAccountId = filter.toAccountId;
+      if (filter.eitherAccountIds) {
+        if (!filter.eitherAccountIds.length) {
+          return { total: 0, rows: [] };
+        }
+        where.OR = [
+          { fromAccountId: { in: filter.eitherAccountIds } },
+          { toAccountId: { in: filter.eitherAccountIds } },
+        ];
+      }
       if (filter.from || filter.to) {
         where.civilDate = {};
         if (filter.from) {

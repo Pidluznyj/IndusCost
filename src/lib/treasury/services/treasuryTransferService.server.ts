@@ -16,9 +16,13 @@ import type {
 import {
   canTreasuryActorAccessAccount,
   canTreasuryActorManageAccount,
+  canTreasuryActorViewAllAccounts,
   type TreasuryAccountAccessSnapshot,
   type TreasuryAccountActor,
 } from "../domain/treasuryAccountRules.js";
+import {
+  listTreasuryAuthorizedAccountIds,
+} from "./treasuryAuthorizedAccounts.server.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import {
   assertTreasuryTransferCreateable,
@@ -404,11 +408,40 @@ export function createTreasuryTransferService(deps: {
   return {
     async list(actor, query) {
       assertCanView(actor);
+      const accountActor = asAccountActor(actor);
+      const authorized = await listTreasuryAuthorizedAccountIds(
+        accountActor,
+        accountRepo,
+        "access"
+      );
+      if (query.fromAccountId?.trim()) {
+        const fromId = query.fromAccountId.trim();
+        if (!authorized.includes(fromId)) {
+          throw new TreasuryDomainError(
+            "FORBIDDEN",
+            "Sem acesso à conta de origem solicitada.",
+            "fromAccountId"
+          );
+        }
+      }
+      if (query.toAccountId?.trim()) {
+        const toId = query.toAccountId.trim();
+        if (!authorized.includes(toId)) {
+          throw new TreasuryDomainError(
+            "FORBIDDEN",
+            "Sem acesso à conta de destino solicitada.",
+            "toAccountId"
+          );
+        }
+      }
       const listed = await transferRepo.list({
         companyCode: query.companyCode,
         status: query.status,
         fromAccountId: query.fromAccountId,
         toAccountId: query.toAccountId,
+        eitherAccountIds: canTreasuryActorViewAllAccounts(accountActor)
+          ? null
+          : authorized,
         from: query.from,
         to: query.to,
         page: query.page,

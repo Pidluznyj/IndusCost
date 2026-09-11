@@ -14,11 +14,7 @@ import type {
   TreasuryBankImportBatchDto,
   TreasuryBankMovementDto,
 } from "../contracts/treasuryDto.js";
-import {
-  canTreasuryActorViewAccountBalance,
-  canTreasuryActorViewAllAccounts,
-  type TreasuryAccountActor,
-} from "../domain/treasuryAccountRules.js";
+import { type TreasuryAccountActor } from "../domain/treasuryAccountRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import {
   toTreasuryBankImportBatchDto,
@@ -35,6 +31,7 @@ import {
   type TreasuryBankMovementRepository,
 } from "../repositories/treasuryBankMovementRepository.server.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
+import { resolveTreasuryAuthorizedAccountIds } from "./treasuryAuthorizedAccounts.server.js";
 
 export type TreasuryBankMovementQueryActor = TreasuryAccountActor & {
   canViewReconciliation: boolean;
@@ -129,49 +126,13 @@ async function resolveAuthorizedAccountIds(
   accountRepo: TreasuryAccountRepository,
   requestedAccountId: string | null | undefined
 ): Promise<string[]> {
-  const listed = await accountRepo.list({
-    companyCode: null,
-    isActive: true,
-    sortBy: "sortOrder",
-    sortDirection: "asc",
-    page: 1,
-    pageSize: 200,
-    accessibleByUserId: canTreasuryActorViewAllAccounts(actor)
-      ? null
-      : actor.userId,
+  return resolveTreasuryAuthorizedAccountIds({
+    actor,
+    accountRepo,
+    mode: "viewBalance",
+    requestedAccountId,
+    fieldName: "accountId",
   });
-
-  const authorized: string[] = [];
-  for (const acc of listed.rows) {
-    const accessRow = await accountRepo.findAccess(acc.id, actor.userId);
-    const access = accessRow
-      ? {
-          userId: accessRow.userId,
-          accessLevel: accessRow.accessLevel as "VIEW" | "OPERATE" | "MANAGE",
-          isActive: accessRow.isActive,
-          revokedAt: accessRow.revokedAt,
-          canViewBalance: accessRow.canViewBalance,
-          canMutateBalance: accessRow.canMutateBalance,
-        }
-      : null;
-    if (canTreasuryActorViewAccountBalance(actor, access)) {
-      authorized.push(acc.id);
-    }
-  }
-
-  if (requestedAccountId?.trim()) {
-    const id = requestedAccountId.trim();
-    if (!authorized.includes(id)) {
-      throw new TreasuryDomainError(
-        "FORBIDDEN",
-        "Sem acesso à conta financeira solicitada.",
-        "accountId"
-      );
-    }
-    return [id];
-  }
-
-  return authorized;
 }
 
 export function createTreasuryBankMovementQueryService(deps: {

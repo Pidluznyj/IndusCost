@@ -15,6 +15,10 @@ export const TREASURY_CRITICAL_RATE_LIMITS = {
   dailyClose: 10,
   dailyReopen: 10,
   reportExport: 30,
+  transferMutate: 30,
+  payableProgram: 30,
+  balanceSnapshot: 30,
+  exceptionMutate: 30,
 } as const;
 
 export type TreasuryCriticalRateAction =
@@ -182,3 +186,76 @@ export function resolveTreasuryOfxPreviewSecret(env: {
  */
 export const TREASURY_CSRF_ARCHITECTURE_NOTE =
   "Session cookie SameSite=Lax; mutações exigem sessão autenticada (requireAppAuth)." as const;
+
+/**
+ * Identificadores bancários devem chegar mascarados (nunca dígitos completos).
+ * Exige ao menos um `*` e rejeita strings só numéricas longas.
+ */
+export function assertTreasuryMaskedBankIdentifier(
+  value: string,
+  fieldName: string
+): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new TreasuryDomainError(
+      "REQUIRED_FIELD",
+      `${fieldName} é obrigatório.`,
+      fieldName
+    );
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (!trimmed.includes("*")) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `${fieldName} deve estar mascarado (use *).`,
+      fieldName
+    );
+  }
+  if (digits.length > 6 && !/\*{2,}/.test(trimmed)) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `${fieldName} parece expor dígitos demais sem máscara adequada.`,
+      fieldName
+    );
+  }
+  if (/^[\d.\-\s/]+$/.test(trimmed) && digits.length > 4) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `${fieldName} não pode armazenar número completo.`,
+      fieldName
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * attachmentUrl: apenas http(s); bloqueia javascript:/data:/file: etc.
+ */
+export function assertTreasurySafeAttachmentUrl(
+  value: string | null | undefined,
+  fieldName = "attachmentUrl"
+): string | null {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `${fieldName} deve ser uma URL http(s) absoluta.`,
+      fieldName
+    );
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `${fieldName} só aceita http ou https.`,
+      fieldName
+    );
+  }
+  return trimmed;
+}
+

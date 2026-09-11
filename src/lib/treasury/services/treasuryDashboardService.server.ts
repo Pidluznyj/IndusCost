@@ -124,15 +124,20 @@ export function createTreasuryDashboardService(deps: {
       asOf.setHours(23, 59, 59, 999);
       const nowEpochMs = asOf.getTime();
 
-      const [position, dayFlow, freshnessSources] = await Promise.all([
-        positionService.getCurrentPosition(actor.positionActor, {
+      // Posição já aplica ACL; day-flow usa somente contas autorizadas retornadas.
+      const position = await positionService.getCurrentPosition(
+        actor.positionActor,
+        {
           asOf,
           accountIds: query.accountIds,
-        }),
+        }
+      );
+      const authorizedAccountIds = position.accounts.map((a) => a.accountId);
+      const [dayFlow, freshnessSources] = await Promise.all([
         dayFlowRepository.aggregateDayFlow({
           civilDate: query.date,
           scenario: query.scenario,
-          accountIds: query.accountIds,
+          accountIds: authorizedAccountIds,
         }),
         freshnessRepository.loadSources(asOf),
       ]);
@@ -209,7 +214,7 @@ export function createTreasuryDashboardService(deps: {
       const dto = buildTreasuryDashboardDto({
         civilDate: query.date,
         scenario: query.scenario,
-        accountIds: query.accountIds,
+        accountIds: authorizedAccountIds,
         position,
         dayFlow: {
           receivables: dayFlow.receivables,
