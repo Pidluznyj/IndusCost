@@ -243,6 +243,7 @@ import {
   parseCrmCustomerListSellerQuery,
 } from "./src/lib/crmCustomersList.js";
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
+import { registerCrmReportsRoutes } from "./src/lib/commercial/crmReportsRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
@@ -15147,6 +15148,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  /** CRM > Relatórios — listas operacionais de recompra (SalesOrder canônico). */
+  registerCrmReportsRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+    prisma,
   });
 
   registerEmployeeLookupRoutes(app, {
