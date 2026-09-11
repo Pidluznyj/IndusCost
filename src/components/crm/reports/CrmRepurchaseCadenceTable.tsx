@@ -15,6 +15,8 @@ import type {
   CrmRepurchaseStatus,
 } from "@/src/lib/commercial/crmReportsTypes";
 import {
+  CRM_REPORTS_HEAD_ROW,
+  CRM_REPORTS_STICKY_ACTIONS,
   CRM_REPORTS_TD,
   CRM_REPORTS_TD_NUM,
   CRM_REPORTS_TH,
@@ -30,6 +32,7 @@ import {
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
   CrmRepurchaseStatusBadge,
+  crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
 } from "./CrmReportsShared";
 
@@ -134,9 +137,9 @@ export function CrmRepurchaseCadenceTable({
       controls={<StatusChips statuses={statuses} onChange={onStatusesChange} disabled={refreshing} />}
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1320px] text-sm">
+        <table className="w-full min-w-[1100px] text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20">
+            <tr className={CRM_REPORTS_HEAD_ROW}>
               <th className={cn(CRM_REPORTS_TH, "w-10")}>
                 <CrmReportsPageCheckbox
                   page={page}
@@ -155,7 +158,7 @@ export function CrmRepurchaseCadenceTable({
               <th className={CRM_REPORTS_TH}>Confiança</th>
               <th className={CRM_REPORTS_TH}>Situação</th>
               <th className={CRM_REPORTS_TH_RIGHT}>Venda 12m</th>
-              <th className={CRM_REPORTS_TH}>Ações</th>
+              <th className={cn(CRM_REPORTS_TH, CRM_REPORTS_STICKY_ACTIONS)}>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -168,7 +171,7 @@ export function CrmRepurchaseCadenceTable({
                 return (
                   <tr
                     key={row.customerId}
-                    className={cn("border-b border-border/40 last:border-0", isChecked && "bg-primary/5")}
+                    className={crmReportsBodyRowClass(isChecked)}
                   >
                     <td className={CRM_REPORTS_TD}>
                       <CrmReportsRowCheckbox
@@ -206,7 +209,7 @@ export function CrmRepurchaseCadenceTable({
                     <td className={cn(CRM_REPORTS_TD_NUM, "font-semibold text-foreground")}>
                       {formatCrmReportsMoney(row.purchaseValue12m)}
                     </td>
-                    <td className={CRM_REPORTS_TD}>
+                    <td className={cn(CRM_REPORTS_TD, CRM_REPORTS_STICKY_ACTIONS)}>
                       <CrmReportsRowActions row={row} actions={actions} />
                     </td>
                   </tr>

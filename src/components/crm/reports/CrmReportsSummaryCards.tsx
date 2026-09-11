@@ -59,7 +59,8 @@ export function CrmReportsSummaryCards({ indicators, refreshing, active, onSelec
             aria-pressed={isActive}
             data-card={card.key}
             className={cn(
-              "group relative overflow-hidden rounded-2xl border bg-card p-4 pl-5 text-left shadow-sm transition-all",
+              // flex-col: conteúdo começa no topo (botão centraliza por padrão quando esticado pelo grid).
+              "group relative flex flex-col overflow-hidden rounded-2xl border bg-card p-4 pl-5 text-left shadow-sm transition-all",
               "before:absolute before:inset-y-0 before:left-0 before:w-1",
               tone.accent,
               isActive
@@ -77,7 +78,7 @@ export function CrmReportsSummaryCards({ indicators, refreshing, active, onSelec
               {formatCrmReportsInteger(indicators[card.indicator])}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
-            <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary">
+            <span className="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-semibold text-primary">
               Ver na lista
               <ArrowDownRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden />
             </span>

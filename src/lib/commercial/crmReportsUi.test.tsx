@@ -411,7 +411,9 @@ describe("listas — rótulos, ações canônicas e paginação", () => {
     );
     assert.ok(table.includes(`href="/crm/customers/${uuid(9)}/intelligence"`));
     assert.ok(table.includes("Cliente 360"));
-    assert.ok(table.includes("Último pedido") && table.includes("Registrar contato"));
+    // Rótulo visível curto (coluna fixa), nome acessível completo.
+    assert.ok(table.includes('aria-label="Abrir último pedido PD 9"'));
+    assert.ok(table.includes('aria-label="Registrar contato com Cliente 9"'));
     assert.ok(table.includes("Sim · atrasado"));
     const section = read("src/components/crm/reports/CrmReportsSection.tsx");
     assert.match(section, /React\.lazy\(\(\) =>\s*\n\s*import\("@\/src\/components\/sales\/SalesOrderDetailDialog"\)/);
@@ -445,7 +447,8 @@ describe("listas — rótulos, ações canônicas e paginação", () => {
       />
     );
     assert.ok(!table.includes("/intelligence"));
-    assert.ok(!table.includes("Último pedido") && !table.includes("Registrar contato"));
+    assert.ok(!table.includes("Abrir último pedido") && !table.includes("Registrar contato"));
+    assert.ok(!table.includes(">Pedido<") && !table.includes(">Contato<"));
   });
 
   it("uma compra só → 'Sem cadência suficiente', sem previsão", () => {

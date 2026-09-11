@@ -59,12 +59,12 @@ export function CrmRepurchaseStatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        "inline-flex min-w-[8.25rem] max-w-[11rem] items-start gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-semibold leading-snug",
         style.className
       )}
       data-status={status}
     >
-      <Icon className="h-3 w-3 shrink-0" aria-hidden />
+      <Icon className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
       {formatCrmRepurchaseSituation(status, deltaDays)}
     </span>
   );
@@ -102,7 +102,7 @@ export function CrmReportsCustomerCell({
   const trade = row.tradeName?.trim();
   const showTrade = Boolean(trade) && trade!.toLowerCase() !== row.displayName.trim().toLowerCase();
   return (
-    <div className="min-w-[220px] max-w-[320px]">
+    <div className="min-w-[165px] max-w-[260px]">
       {canOpenCustomer360 ? (
         <Link
           to={buildCustomerIntelligencePath(row.customerId)}
@@ -134,7 +134,7 @@ export function CrmReportsOwnerCell({ name }: { name: string | null }) {
 /** Vendedor Nomus do último pedido — auditoria, nunca carteira. */
 export function CrmReportsLastOrderSellerCell({ row }: { row: CrmReportsLastOrderSellerFields }) {
   return (
-    <div className="min-w-[150px]">
+    <div className="min-w-[115px]">
       <span className="text-foreground">{row.lastOrderSellerLabel}</span>
       {row.lastOrderCode ? (
         <p className="text-[11px] text-muted-foreground tabular-nums">Pedido {row.lastOrderCode}</p>
@@ -156,7 +156,7 @@ export type CrmReportsRowActionHandlers = {
 };
 
 const ACTION_CLASS =
-  "inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors";
+  "inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 py-1 text-[11px] font-semibold transition-colors";
 
 export function CrmReportsRowActions({
   row,
@@ -166,8 +166,10 @@ export function CrmReportsRowActions({
   actions: CrmReportsRowActionHandlers;
 }) {
   const lastOrderId = row.lastOrderId ?? null;
+  const orderTitle = row.lastOrderCode ? `Abrir último pedido ${row.lastOrderCode}` : "Abrir último pedido";
+  // Rótulo visível curto (a coluna fica fixa à direita); nome acessível completo.
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       {actions.canOpenCustomer360 ? (
         <Link
           to={buildCustomerIntelligencePath(row.customerId)}
@@ -183,10 +185,11 @@ export function CrmReportsRowActions({
           type="button"
           onClick={() => actions.onOpenOrder(lastOrderId, row.lastOrderCode ?? null)}
           className={cn(ACTION_CLASS, "border-border bg-background text-foreground hover:bg-accent")}
-          title={row.lastOrderCode ? `Abrir pedido ${row.lastOrderCode}` : "Abrir último pedido"}
+          title={orderTitle}
+          aria-label={orderTitle}
         >
           <FileText className="h-3 w-3" aria-hidden />
-          Último pedido
+          Pedido
         </button>
       ) : null}
       {actions.canRegisterContact ? (
@@ -197,9 +200,10 @@ export function CrmReportsRowActions({
           }
           className={cn(ACTION_CLASS, "border-border bg-background text-foreground hover:bg-accent")}
           title="Registrar contato comercial"
+          aria-label={`Registrar contato com ${row.displayName}`}
         >
           <MessageSquarePlus className="h-3 w-3" aria-hidden />
-          Registrar contato
+          Contato
         </button>
       ) : null}
     </div>
@@ -397,8 +401,17 @@ export function CrmReportsEmptyRows({ colSpan, filtered }: { colSpan: number; fi
   );
 }
 
+// Cabeçalho quebra em 2 linhas (não é ele que define a largura da coluna).
 export const CRM_REPORTS_TH =
-  "whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+  "px-2.5 py-2.5 text-left align-bottom text-[11px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground";
 export const CRM_REPORTS_TH_RIGHT = `${CRM_REPORTS_TH} text-right`;
-export const CRM_REPORTS_TD = "px-3 py-2.5 align-top";
-export const CRM_REPORTS_TD_NUM = "px-3 py-2.5 align-top whitespace-nowrap text-right tabular-nums";
+export const CRM_REPORTS_TD = "px-2.5 py-2.5 align-top";
+export const CRM_REPORTS_TD_NUM = "px-2.5 py-2.5 align-top whitespace-nowrap text-right tabular-nums";
+/** Linha de cabeçalho / corpo com fundo opaco (a coluna Ações fixa herda o fundo). */
+export const CRM_REPORTS_HEAD_ROW = "border-b border-border/60 bg-slate-50";
+export function crmReportsBodyRowClass(checked: boolean): string {
+  return cn("border-b border-border/40 last:border-0", checked ? "bg-sky-50" : "bg-card");
+}
+/** Coluna Ações fixa à direita a partir de telas médias — visível mesmo com rolagem horizontal. */
+export const CRM_REPORTS_STICKY_ACTIONS =
+  "bg-inherit md:sticky md:right-0 md:z-10 md:shadow-[inset_1px_0_0_0_var(--color-border)]";

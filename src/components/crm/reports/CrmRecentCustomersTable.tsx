@@ -11,6 +11,8 @@ import { crmReportsChipFromRow, type CrmReportsCustomerChip } from "@/src/lib/co
 import type { CrmReportsExportFormatChoice } from "@/src/lib/commercial/crmReportsClient";
 import type { CrmReportsPage, CrmReportsRecent60dRow } from "@/src/lib/commercial/crmReportsTypes";
 import {
+  CRM_REPORTS_HEAD_ROW,
+  CRM_REPORTS_STICKY_ACTIONS,
   CRM_REPORTS_TD,
   CRM_REPORTS_TD_NUM,
   CRM_REPORTS_TH,
@@ -26,6 +28,7 @@ import {
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
   CrmRepurchaseStatusBadge,
+  crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
 } from "./CrmReportsShared";
 
@@ -67,9 +70,9 @@ export function CrmRecentCustomersTable({
       toolbar={<CrmReportsExportButtons busy={exporting} disabled={page.total === 0} onExport={onExport} />}
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1480px] text-sm">
+        <table className="w-full min-w-[1200px] text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20">
+            <tr className={CRM_REPORTS_HEAD_ROW}>
               <th className={cn(CRM_REPORTS_TH, "w-10")}>
                 <CrmReportsPageCheckbox
                   page={page}
@@ -89,7 +92,7 @@ export function CrmRecentCustomersTable({
               <th className={CRM_REPORTS_TH_RIGHT}>Tempo médio de recompra</th>
               <th className={CRM_REPORTS_TH}>Próxima compra esperada</th>
               <th className={CRM_REPORTS_TH}>Situação</th>
-              <th className={CRM_REPORTS_TH}>Ações</th>
+              <th className={cn(CRM_REPORTS_TH, CRM_REPORTS_STICKY_ACTIONS)}>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -102,7 +105,7 @@ export function CrmRecentCustomersTable({
                 return (
                   <tr
                     key={row.customerId}
-                    className={cn("border-b border-border/40 last:border-0", isChecked && "bg-primary/5")}
+                    className={crmReportsBodyRowClass(isChecked)}
                   >
                     <td className={CRM_REPORTS_TD}>
                       <CrmReportsRowCheckbox
@@ -136,7 +139,7 @@ export function CrmRecentCustomersTable({
                     <td className={CRM_REPORTS_TD}>
                       <CrmRepurchaseStatusBadge status={row.repurchaseStatus} deltaDays={row.deltaDays} />
                     </td>
-                    <td className={CRM_REPORTS_TD}>
+                    <td className={cn(CRM_REPORTS_TD, CRM_REPORTS_STICKY_ACTIONS)}>
                       <CrmReportsRowActions row={row} actions={actions} />
                     </td>
                   </tr>

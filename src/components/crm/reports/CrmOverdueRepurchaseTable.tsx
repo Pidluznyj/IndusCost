@@ -22,6 +22,8 @@ import {
   type CrmReportsPage,
 } from "@/src/lib/commercial/crmReportsTypes";
 import {
+  CRM_REPORTS_HEAD_ROW,
+  CRM_REPORTS_STICKY_ACTIONS,
   CRM_REPORTS_TD,
   CRM_REPORTS_TD_NUM,
   CRM_REPORTS_TH,
@@ -38,6 +40,7 @@ import {
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
   CrmRepurchaseStatusBadge,
+  crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
 } from "./CrmReportsShared";
 
@@ -146,9 +149,9 @@ export function CrmOverdueRepurchaseTable({
       }
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1760px] text-sm">
+        <table className="w-full min-w-[1400px] text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20">
+            <tr className={CRM_REPORTS_HEAD_ROW}>
               <th className={cn(CRM_REPORTS_TH, "w-10")}>
                 <CrmReportsPageCheckbox
                   page={page}
@@ -171,7 +174,7 @@ export function CrmOverdueRepurchaseTable({
               <th className={CRM_REPORTS_TH}>Último contato</th>
               <th className={CRM_REPORTS_TH}>Próximo follow-up</th>
               <th className={CRM_REPORTS_TH}>Follow-up atrasado</th>
-              <th className={CRM_REPORTS_TH}>Ações</th>
+              <th className={cn(CRM_REPORTS_TH, CRM_REPORTS_STICKY_ACTIONS)}>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -184,7 +187,7 @@ export function CrmOverdueRepurchaseTable({
                 return (
                   <tr
                     key={row.customerId}
-                    className={cn("border-b border-border/40 last:border-0", isChecked && "bg-primary/5")}
+                    className={crmReportsBodyRowClass(isChecked)}
                   >
                     <td className={CRM_REPORTS_TD}>
                       <CrmReportsRowCheckbox
@@ -239,7 +242,7 @@ export function CrmOverdueRepurchaseTable({
                         <span className="text-xs text-muted-foreground">Não</span>
                       )}
                     </td>
-                    <td className={CRM_REPORTS_TD}>
+                    <td className={cn(CRM_REPORTS_TD, CRM_REPORTS_STICKY_ACTIONS)}>
                       <CrmReportsRowActions row={row} actions={actions} />
                     </td>
                   </tr>
