@@ -135,7 +135,7 @@ export type FixtureDb = {
  */
 export function createFixturePrisma(db: FixtureDb) {
   const customerById = new Map(db.customers.map((c) => [c.id as string, c]));
-  const ordersWithCustomer = () =>
+  const ordersWithCustomer = (): FixtureRow[] =>
     db.salesOrders.map((o) => ({ ...o, Customer: customerById.get(o.customerId as string) ?? null }));
   const calls: string[] = [];
   return {

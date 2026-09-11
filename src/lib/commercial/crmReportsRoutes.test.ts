@@ -59,6 +59,7 @@ function mockAuth(role: AppAuthContext["role"], permissions: string[] = []): App
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-1",
+    sessionPermissionsVersionAtIssue: 1,
   };
 }
 

@@ -100,6 +100,12 @@ export type CrmReportsLastOrderSellerFilter = {
 };
 
 export type CrmReportsFilters = {
+  /**
+   * Filtro de INCLUSÃO por cliente(s): recorta o universo antes das
+   * exclusões (conta em `matchedBeforeExclusions`). Ausente/vazio = sem
+   * filtro. ID fora do escopo é ignorado — nunca amplia acesso.
+   */
+  customerIds?: string[] | null;
   commercialOwner?: CrmReportsCommercialOwnerFilter | null;
   lastOrderSeller?: CrmReportsLastOrderSellerFilter | null;
   /** Cidade(s) do cadastro do cliente — igualdade sem caixa/acento. */
@@ -121,6 +127,8 @@ export type CrmReportsOperationalRequest = {
 
 /** Request já validado/normalizado pelo parser do backend. */
 export type CrmReportsNormalizedFilters = {
+  /** Vazio = sem filtro de cliente. */
+  customerIds: string[];
   commercialOwner: {
     sellerIdentityKey: string | null;
     externalSellerId: number | null;
@@ -149,7 +157,7 @@ export type CrmReportsNormalizedRequest = {
 export type CrmReportsUniverse = {
   /** Clientes que o usuário pode ver: escopo CRM ∧ ativo ∧ fora do grupo econômico. */
   authorizedCustomers: number;
-  /** Após filtros de inclusão (responsável, cidade, UF, vendedor do último pedido). */
+  /** Após filtros de inclusão (cliente(s), responsável, cidade, UF, vendedor do último pedido). */
   matchedBeforeExclusions: number;
   /** Removidos pela seleção analítica (EXCLUDE, ou fora da lista em ONLY). */
   manuallyExcluded: number;

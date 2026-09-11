@@ -118,6 +118,7 @@ describe("parseCrmReportsOperationalRequest", () => {
     assert.equal(parsed.ok, true);
     if (parsed.ok !== true) return;
     assert.deepEqual(parsed.request.filters, {
+      customerIds: [],
       commercialOwner: null,
       lastOrderSeller: null,
       cities: [],
@@ -152,6 +153,20 @@ describe("parseCrmReportsOperationalRequest", () => {
       mode: "EXCLUDE",
       customerIds: [uuid(1), uuid(2)],
     });
+  });
+
+  it("filtro de inclusão customerIds: UUID minúsculo, sem duplicata; inválido = 400", () => {
+    const parsed = parseCrmReportsOperationalRequest({
+      filters: { customerIds: [uuid(3).toUpperCase(), uuid(3), uuid(4)] },
+    });
+    assert.equal(parsed.ok, true);
+    if (parsed.ok !== true) return;
+    assert.deepEqual(parsed.request.filters.customerIds, [uuid(3), uuid(4)]);
+    assert.equal(parseCrmReportsOperationalRequest({ filters: { customerIds: uuid(3) } }).ok, false);
+    assert.equal(parseCrmReportsOperationalRequest({ filters: { customerIds: ["x"] } }).ok, false);
+    const empty = parseCrmReportsOperationalRequest({ filters: { customerIds: [] } });
+    assert.equal(empty.ok, true);
+    if (empty.ok === true) assert.deepEqual(empty.request.filters.customerIds, []);
   });
 
   it("modo ALL ignora customerIds enviados", () => {
@@ -487,6 +502,28 @@ describe("filtros de inclusão do cadastro", () => {
       }).map((c) => c.companyName),
       ["Três"],
       "filtro de responsável só recorta — ID fora da lista autorizada não entra"
+    );
+    assert.deepEqual(
+      selectCrmReportsInclusionCandidates({
+        authorizedCustomers: list,
+        customerIds: [list[0]!.id, list[3]!.id, uuid(54321)],
+        ownerFilterCustomerIds: null,
+        cities: [],
+        states: [],
+      }).map((c) => c.companyName),
+      ["Um", "Quatro"],
+      "filtro de cliente só recorta — ID não autorizado não entra"
+    );
+    assert.equal(
+      selectCrmReportsInclusionCandidates({
+        authorizedCustomers: list,
+        customerIds: [],
+        ownerFilterCustomerIds: null,
+        cities: [],
+        states: [],
+      }).length,
+      4,
+      "lista vazia = sem filtro"
     );
   });
 });

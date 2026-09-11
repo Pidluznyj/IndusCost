@@ -271,6 +271,7 @@ function mockAuth(overrides: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-1",
+    sessionPermissionsVersionAtIssue: 1,
   };
 }
 
@@ -485,6 +486,27 @@ describe("ESCOPO — carteira = Responsável Comercial; nunca amplia acesso", ()
       () => runCrmReportsAnalysis(ds, NONE_SCOPE, request().filters, { now: NOW }),
       CrmReportsForbiddenError
     );
+  });
+
+  it("filtro de inclusão customerIds: recorta antes das exclusões e nunca amplia", async () => {
+    const global = await runCrmReportsAnalysis(
+      createFakeDataSource(baseDb()).ds,
+      GLOBAL_SCOPE,
+      request({ filters: { customerIds: [A.id, B.id, K.id] } }).filters,
+      { now: NOW }
+    );
+    assert.deepEqual(analyzedIds(global), [A.id, B.id].sort(), "K (grupo econômico) não entra por ID");
+    assert.equal(global.analysis.universe.authorizedCustomers, 5);
+    assert.equal(global.analysis.universe.matchedBeforeExclusions, 2);
+    assert.equal(global.analysis.universe.manuallyExcluded, 0);
+
+    const own = await runCrmReportsAnalysis(
+      createFakeDataSource(baseDb()).ds,
+      OWN_GISLENE_SCOPE,
+      request({ filters: { customerIds: [B.id] } }).filters,
+      { now: NOW }
+    );
+    assert.equal(own.analysis.universe.analyzedCustomers, 0, "cliente fora da carteira não entra por ID");
   });
 
   it("global + responsável: filtra pela carteira (CrmCustomerCommercialOwner)", async () => {

@@ -152,6 +152,29 @@ function parsePage(raw: unknown): CrmReportsNormalizedPage {
   return { limit, offset };
 }
 
+/** Lista de UUIDs de cliente: minúsculo, sem duplicata, teto explícito. `null` = inválida. */
+function parseCustomerIdList(raw: unknown[], label: string, errors: string[]): string[] | null {
+  if (raw.length > CRM_REPORTS_MAX_SELECTION_IDS) {
+    errors.push(`${label} aceita no máximo ${CRM_REPORTS_MAX_SELECTION_IDS} IDs (recebido ${raw.length}).`);
+    return null;
+  }
+  const ids = new Set<string>();
+  let invalid = 0;
+  for (const value of raw) {
+    const id = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!UUID_RE.test(id)) {
+      invalid += 1;
+      continue;
+    }
+    ids.add(id);
+  }
+  if (invalid > 0) {
+    errors.push(`${label} contém ${invalid} ID(s) inválido(s) (esperado UUID).`);
+    return null;
+  }
+  return [...ids];
+}
+
 function parseCustomerSelection(raw: unknown, errors: string[]): CrmReportsCustomerSelection {
   if (raw == null) return { mode: "ALL", customerIds: [] };
   if (!isPlainObject(raw)) {
@@ -172,27 +195,8 @@ function parseCustomerSelection(raw: unknown, errors: string[]): CrmReportsCusto
     errors.push(`customerSelection.customerIds é obrigatório (lista) no modo ${mode}.`);
     return { mode: "ALL", customerIds: [] };
   }
-  if (raw.customerIds.length > CRM_REPORTS_MAX_SELECTION_IDS) {
-    errors.push(
-      `customerSelection.customerIds aceita no máximo ${CRM_REPORTS_MAX_SELECTION_IDS} IDs (recebido ${raw.customerIds.length}).`
-    );
-    return { mode: "ALL", customerIds: [] };
-  }
-  const ids = new Set<string>();
-  let invalid = 0;
-  for (const value of raw.customerIds) {
-    const id = typeof value === "string" ? value.trim().toLowerCase() : "";
-    if (!UUID_RE.test(id)) {
-      invalid += 1;
-      continue;
-    }
-    ids.add(id);
-  }
-  if (invalid > 0) {
-    errors.push(`customerSelection.customerIds contém ${invalid} ID(s) inválido(s) (esperado UUID).`);
-    return { mode: "ALL", customerIds: [] };
-  }
-  return { mode, customerIds: [...ids] };
+  const ids = parseCustomerIdList(raw.customerIds, "customerSelection.customerIds", errors);
+  return ids ? { mode, customerIds: ids } : { mode: "ALL", customerIds: [] };
 }
 
 /**
@@ -210,6 +214,15 @@ export function parseCrmReportsOperationalRequest(body: unknown): CrmReportsRequ
     errors.push("filters precisa ser um objeto.");
   }
   const filtersRaw = isPlainObject(root.filters) ? root.filters : {};
+
+  let customerIds: string[] = [];
+  if (filtersRaw.customerIds != null) {
+    if (!Array.isArray(filtersRaw.customerIds)) {
+      errors.push("filters.customerIds precisa ser lista de UUIDs.");
+    } else {
+      customerIds = parseCustomerIdList(filtersRaw.customerIds, "filters.customerIds", errors) ?? [];
+    }
+  }
 
   let commercialOwner: CrmReportsNormalizedFilters["commercialOwner"] = null;
   if (filtersRaw.commercialOwner != null) {
@@ -278,7 +291,7 @@ export function parseCrmReportsOperationalRequest(body: unknown): CrmReportsRequ
   return {
     ok: true,
     request: {
-      filters: { commercialOwner, lastOrderSeller, cities, states, customerSelection },
+      filters: { customerIds, commercialOwner, lastOrderSeller, cities, states, customerSelection },
       pagination,
     },
   };
@@ -306,19 +319,23 @@ export function resolveCrmReportsWindows(now: Date): CrmReportsWindows {
 // ---------------------------------------------------------------------------
 
 /**
- * Aplica responsável (IDs já resolvidos pela carteira canônica), cidade e UF.
- * Nunca amplia: só recorta a lista de clientes autorizados.
+ * Aplica cliente(s), responsável (IDs já resolvidos pela carteira canônica),
+ * cidade e UF. Nunca amplia: só recorta a lista de clientes autorizados.
  */
 export function selectCrmReportsInclusionCandidates(args: {
   authorizedCustomers: readonly CrmReportsCustomerRecord[];
+  /** Vazio/ausente = sem filtro de cliente. */
+  customerIds?: readonly string[];
   /** `null` = sem filtro de responsável. */
   ownerFilterCustomerIds: ReadonlySet<string> | null;
   cities: readonly string[];
   states: readonly string[];
 }): CrmReportsCustomerRecord[] {
+  const onlyCustomers = args.customerIds && args.customerIds.length > 0 ? new Set(args.customerIds) : null;
   const cityTokens = new Set(args.cities.map(normalizeCrmReportsLocationToken).filter(Boolean));
   const stateTokens = new Set(args.states.map(normalizeCrmReportsLocationToken).filter(Boolean));
   return args.authorizedCustomers.filter((customer) => {
+    if (onlyCustomers && !onlyCustomers.has(customer.id)) return false;
     if (args.ownerFilterCustomerIds && !args.ownerFilterCustomerIds.has(customer.id)) return false;
     if (cityTokens.size > 0 && !cityTokens.has(normalizeCrmReportsLocationToken(customer.city))) {
       return false;

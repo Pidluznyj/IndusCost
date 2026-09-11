@@ -332,6 +332,7 @@ export async function runCrmReportsAnalysis(
   const owner = await resolveOwnerFilter(ds, scope, filters);
   const candidates = selectCrmReportsInclusionCandidates({
     authorizedCustomers: authorized,
+    customerIds: filters.customerIds,
     ownerFilterCustomerIds: owner.ids,
     cities: filters.cities,
     states: filters.states,

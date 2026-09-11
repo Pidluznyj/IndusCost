@@ -227,6 +227,7 @@ export async function verifyCrmReportsAgainstSalesOrders(
 ): Promise<CrmReportsVerificationResult> {
   const customerIds = [...new Set(options.customerIds ?? [])];
   const filters: CrmReportsNormalizedFilters = {
+    customerIds: [],
     commercialOwner: null,
     lastOrderSeller: null,
     cities: [],
