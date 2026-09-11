@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertDefaultLocationBelongsToWarehouse,
+  assertExistingInventoryItemCanLinkOfficialMaterial,
   assertNoActiveMaterialDuplicate,
   assertOfficialMaterialEligibleForStock,
   buildMaterialSnapshots,
 } from "./inventoryMaterialLinkRules.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
 import {
+  parseAttachOfficialMaterialToExistingItemBody,
   parseLinkOfficialMaterialBody,
   parseUpdateMaterialStockLinkBody,
 } from "./inventoryValidation.js";
@@ -71,6 +73,69 @@ describe("inventoryMaterialLinkRules", () => {
     );
   });
 
+  it("vínculo de item existente recusa tipo, unidade e troca silenciosa", () => {
+    const material = {
+      id: "m1",
+      code: "PP-HS03",
+      description: "Polipropileno H503",
+      unit: "KG",
+      category: "POL",
+      status: "ACTIVE",
+    };
+    const ok = assertExistingInventoryItemCanLinkOfficialMaterial(
+      { id: "item-1", itemType: "RAW_MATERIAL", unit: "KG", materialId: null },
+      material,
+      null
+    );
+    assert.equal(ok.idempotent, false);
+
+    const same = assertExistingInventoryItemCanLinkOfficialMaterial(
+      { id: "item-1", itemType: "RAW_MATERIAL", unit: "kg", materialId: "m1" },
+      material,
+      null
+    );
+    assert.equal(same.idempotent, true);
+
+    assert.throws(
+      () =>
+        assertExistingInventoryItemCanLinkOfficialMaterial(
+          { id: "item-1", itemType: "FINISHED_PRODUCT", unit: "KG", materialId: null },
+          material,
+          null
+        ),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "ITEM_NOT_RAW_MATERIAL"
+    );
+    assert.throws(
+      () =>
+        assertExistingInventoryItemCanLinkOfficialMaterial(
+          { id: "item-1", itemType: "RAW_MATERIAL", unit: "UN", materialId: null },
+          material,
+          null
+        ),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "UNIT_MISMATCH"
+    );
+    assert.throws(
+      () =>
+        assertExistingInventoryItemCanLinkOfficialMaterial(
+          { id: "item-1", itemType: "RAW_MATERIAL", unit: "KG", materialId: "other" },
+          material,
+          null
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === "ITEM_ALREADY_LINKED_TO_DIFFERENT_MATERIAL"
+    );
+    assert.throws(
+      () =>
+        assertExistingInventoryItemCanLinkOfficialMaterial(
+          { id: "item-1", itemType: "RAW_MATERIAL", unit: "KG", materialId: null },
+          material,
+          "item-2"
+        ),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === "MATERIAL_ALREADY_LINKED_ACTIVE"
+    );
+  });
+
   it("parse do vínculo e bloqueio de campos oficiais no update", () => {
     const body = parseLinkOfficialMaterialBody({
       materialId: "m1",
@@ -86,6 +151,15 @@ describe("inventoryMaterialLinkRules", () => {
       () => parseUpdateMaterialStockLinkBody({ code: "HACK", description: "x" }),
       (e: unknown) =>
         e instanceof InventoryValidationError && e.code === "OFFICIAL_MATERIAL_FIELDS_READONLY"
+    );
+
+    const attach = parseAttachOfficialMaterialToExistingItemBody({
+      materialId: "11111111-1111-4111-8111-111111111111",
+    });
+    assert.equal(attach.materialId, "11111111-1111-4111-8111-111111111111");
+    assert.throws(
+      () => parseAttachOfficialMaterialToExistingItemBody({ materialId: "nao-uuid" }),
+      (e: unknown) => e instanceof InventoryValidationError && e.code === "INVALID_MATERIAL_ID"
     );
   });
 });

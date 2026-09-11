@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
+import { InventoryAttachOfficialMaterialPanel } from "@/src/components/inventory/InventoryAttachOfficialMaterialPanel";
 import {
   formatInventoryItemStatus,
   formatInventoryItemType,
@@ -112,11 +113,13 @@ function InventoryItemFormFields({
   setForm,
   errors,
   readOnly,
+  hideRawMaterialType,
 }: {
   form: InventoryItemFormState;
   setForm: React.Dispatch<React.SetStateAction<InventoryItemFormState>>;
   errors: ReturnType<typeof validateInventoryItemForm>;
   readOnly?: boolean;
+  hideRawMaterialType?: boolean;
 }) {
   const inputClass = cn(
     "w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300/60",
@@ -165,7 +168,9 @@ function InventoryItemFormFields({
           }
         >
           <option value="">Selecione…</option>
-          {INVENTORY_ITEM_TYPE_OPTIONS.map((opt) => (
+          {INVENTORY_ITEM_TYPE_OPTIONS.filter(
+            (opt) => !hideRawMaterialType || opt.value !== "RAW_MATERIAL"
+          ).map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
@@ -316,7 +321,7 @@ export function InventoryItemDetailSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<InventoryItemFormState>(() =>
-    createEmptyInventoryItemForm(isCreate ? { itemType: "RAW_MATERIAL" } : undefined)
+    createEmptyInventoryItemForm()
   );
   const [errors, setErrors] = useState<ReturnType<typeof validateInventoryItemForm>>({});
   const [item, setItem] = useState<InventoryItemRow | null>(null);
@@ -443,6 +448,14 @@ export function InventoryItemDetailSheet({
             </div>
           ) : (
             <div className="space-y-4">
+              {!isCreate && item ? (
+                <InventoryAttachOfficialMaterialPanel
+                  item={item}
+                  physicalQuantity={balanceSummary?.physicalQuantity ?? 0}
+                  canManage={canManage}
+                  onLinked={() => void load()}
+                />
+              ) : null}
               {!isCreate && balanceSummary ? <BalanceSummaryPanel summary={balanceSummary} /> : null}
               {!isCreate && !balanceSummary && !loading ? (
                 <BalanceSummaryPanel
@@ -450,11 +463,18 @@ export function InventoryItemDetailSheet({
                 />
               ) : null}
 
+              {isCreate ? (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  Matéria-prima deve ser vinculada ao cadastro oficial de Suprimentos. Use a ação
+                  “Vincular MP oficial”. Não crie item RAW_MATERIAL órfão nesta ficha.
+                </p>
+              ) : null}
               <InventoryItemFormFields
                 form={form}
                 setForm={setForm}
                 errors={errors}
                 readOnly={!editing || !canManage}
+                hideRawMaterialType={isCreate}
               />
             </div>
           )}

@@ -78,6 +78,10 @@ import {
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
 import {
+  linkExistingInventoryItemToOfficialMaterial,
+  previewExistingInventoryItemOfficialMaterialLink,
+} from "@/src/lib/inventory/inventoryExistingItemMaterialLinkService.server.js";
+import {
   linkOfficialMaterialToStockControl,
   searchOfficialMaterialsForInventory,
   updateOfficialMaterialStockLink,
@@ -112,6 +116,7 @@ import {
   parseCreateInventoryMovementBody,
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
+  parseAttachOfficialMaterialToExistingItemBody,
   parseLinkOfficialMaterialBody,
   parseQuarantineTransferBody,
   parseReleaseBlockBody,
@@ -161,6 +166,7 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
             error.code === COLLECTOR_DEVICE_DUPLICATE ||
             error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
+            error.code === "ITEM_ALREADY_LINKED_TO_DIFFERENT_MATERIAL" ||
             error.code === "INVENTORY_CODE_CONFLICT" ||
             error.code === "ALREADY_REVERSED" ||
             error.code === "INITIAL_BALANCE_DUPLICATE" ||
@@ -513,6 +519,55 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  app.get("/api/inventory/items/:id/link-existing-material-preview", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+      const materialId = String(req.query.materialId ?? "").trim();
+      if (!isUuid(materialId)) return res.status(400).json(inventoryApiError("materialId inválido."));
+      const preview = await previewExistingInventoryItemOfficialMaterialLink(prisma, id, materialId);
+      res.json(preview);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/items/:id/link-existing-material-preview", e);
+      res.status(500).json(inventoryApiError("Erro ao pré-visualizar vínculo de matéria-prima."));
+    }
+  });
+
+  app.post("/api/inventory/items/:id/link-existing-material", ...itemManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const { materialId } = parseAttachOfficialMaterialToExistingItemBody(req.body);
+      const result = await linkExistingInventoryItemToOfficialMaterial(prisma, id, materialId, {
+        id: user.id,
+        name: user.name,
+      });
+      res.status(200).json({
+        item: serializeInventoryItem(result.item),
+        status: result.status,
+        idempotent: result.idempotent,
+        codesDiffer: result.codesDiffer,
+        movementsCreated: result.movementsCreated,
+        inventoryBalanceDirectWrites: result.inventoryBalanceDirectWrites,
+        projection: result.projection,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res
+          .status(409)
+          .json(inventoryApiError("Matéria-prima já vinculada ativamente ao estoque."));
+      }
+      console.error("POST /api/inventory/items/:id/link-existing-material", e);
+      res.status(500).json(inventoryApiError("Erro ao vincular item existente à matéria-prima oficial."));
+    }
+  });
+
   app.put("/api/inventory/items/:id/material-link", ...itemManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
@@ -566,6 +621,12 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Item não encontrado."));
 
       const patch = parseUpdateInventoryItemBody(req.body);
+      if (existing.itemType !== "RAW_MATERIAL" && patch.itemType === "RAW_MATERIAL") {
+        throw new InventoryValidationError(
+          "Matéria-prima deve ser vinculada ao cadastro oficial de Suprimentos. Use a ação “Vincular MP oficial”.",
+          "RAW_MATERIAL_REQUIRES_OFFICIAL_LINK"
+        );
+      }
       if (existing.materialId) {
         if (
           patch.code !== undefined ||

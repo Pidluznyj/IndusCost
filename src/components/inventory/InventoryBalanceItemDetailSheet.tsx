@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { InventoryAttachOfficialMaterialPanel } from "@/src/components/inventory/InventoryAttachOfficialMaterialPanel";
 import {
   normalizeInventoryBalanceListRow,
   type InventoryBalanceListRow,
@@ -25,6 +26,7 @@ import {
   InventoryOperationalStatusBadge,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
+import { useInventoryPermissions } from "@/src/components/inventory/inventoryPermissions";
 import type { InventoryItemRow, InventoryMovementRow } from "@/src/types/inventory";
 
 type Props = {
@@ -49,6 +51,7 @@ export function InventoryBalanceItemDetailSheet({
   onNewMovement,
   canCreateMovement,
 }: Props) {
+  const { canManageItems } = useInventoryPermissions();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [item, setItem] = useState<InventoryItemRow | null>(null);
@@ -161,6 +164,13 @@ export function InventoryBalanceItemDetailSheet({
                   Saldos são alterados somente via movimentações — não editáveis nesta tela.
                 </p>
               </section>
+
+              <InventoryAttachOfficialMaterialPanel
+                item={item}
+                physicalQuantity={summary?.physicalQuantity ?? 0}
+                canManage={canManageItems}
+                onLinked={() => void load()}
+              />
 
               <section data-testid="inventory-balance-item-summary">
                 <h3 className="text-sm font-semibold text-slate-900">Valor em estoque</h3>
