@@ -15,6 +15,7 @@ import {
   type InventoryTx,
 } from "./inventoryRepository.server.js";
 import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
+import { reconcileMaterialQuantitiesFromInventoryInTx } from "./materialInventoryProjection.server.js";
 import {
   buildInventoryBalanceKey,
   InventoryValidationError,
@@ -147,6 +148,7 @@ export async function rebuildInventoryBalancesFromLedger(
     const mismatches: RebuildInventoryBalancesMismatch[] = [];
     let scopesChecked = 0;
     let balancesUpdated = 0;
+    const materialIdsToProject = new Set<string>();
     const projectedRows: Array<{
       itemId: string;
       warehouseId: string;
@@ -224,6 +226,7 @@ export async function rebuildInventoryBalancesFromLedger(
                 projectedBalance.lastMovementId
               );
               balancesUpdated += 1;
+              if (item.materialId) materialIdsToProject.add(item.materialId);
             }
           }
         } else if (!dryRun) {
@@ -244,6 +247,7 @@ export async function rebuildInventoryBalancesFromLedger(
           });
           balancesUpdated += 1;
           existingByKey.set(balanceKey, created);
+          if (item.materialId) materialIdsToProject.add(item.materialId);
         } else {
           mismatches.push({
             itemId,
@@ -296,9 +300,18 @@ export async function rebuildInventoryBalancesFromLedger(
           if (!dryRun) {
             await persistInventoryBalanceSnapshot(tx, bal.id, empty, bal.lastMovementAt ?? new Date(), bal.lastMovementId);
             balancesUpdated += 1;
+            if (item.materialId) materialIdsToProject.add(item.materialId);
           }
         }
       }
+    }
+
+    if (!dryRun && materialIdsToProject.size > 0) {
+      await reconcileMaterialQuantitiesFromInventoryInTx(tx, [...materialIdsToProject], {
+        source: "BALANCE_REBUILD",
+        userId: context.userId,
+        reason: input.reason?.trim() || "Projeção após reconstrução de saldo do ledger",
+      });
     }
 
     let snapshotId: string | null = null;

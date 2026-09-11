@@ -173,6 +173,47 @@ describe("reconcileMaterialQuantityFromInventoryInTx", () => {
     assert.equal(material.quantity.toString(), "1100");
   });
 
+  it("PP-H503: InventoryBalance 5355 e Material.quantity 0 projeta 5355", async () => {
+    const { tx, material } = createProjectionTx({
+      quantity: new Prisma.Decimal(0),
+      balances: [
+        { itemId: ITEM_ID, locationId: null, physicalQuantity: new Prisma.Decimal("5355") },
+      ],
+    });
+    const result = await reconcileMaterialQuantityFromInventoryInTx(tx, MATERIAL_ID, {
+      source: "RECONCILE",
+    });
+    assert.equal(result?.changed, true);
+    assert.equal(result?.after.toString(), "5355");
+    assert.equal(material.quantity.toString(), "5355");
+  });
+
+  it("saldo canônico zero com InventoryBalance zera Material.quantity", async () => {
+    const { tx, material } = createProjectionTx({
+      quantity: new Prisma.Decimal(50),
+      balances: [{ itemId: ITEM_ID, locationId: null, physicalQuantity: new Prisma.Decimal(0) }],
+    });
+    const result = await reconcileMaterialQuantityFromInventoryInTx(tx, MATERIAL_ID, {
+      source: "RECONCILE",
+    });
+    assert.equal(result?.changed, true);
+    assert.equal(result?.after.toString(), "0");
+    assert.equal(material.quantity.toString(), "0");
+  });
+
+  it("legado sem InventoryBalance não zera Material.quantity", async () => {
+    const { tx, material } = createProjectionTx({
+      quantity: new Prisma.Decimal(1100),
+      balances: [],
+    });
+    const result = await reconcileMaterialQuantityFromInventoryInTx(tx, MATERIAL_ID, {
+      source: "RECONCILE",
+    });
+    assert.equal(result?.status, "NO_CANONICAL_LEDGER");
+    assert.equal(result?.changed, false);
+    assert.equal(material.quantity.toString(), "1100");
+  });
+
   it("batch ordena ids e reconcilia distintos", async () => {
     const { tx } = createProjectionTx();
     const results = await reconcileMaterialQuantitiesFromInventoryInTx(
@@ -509,6 +550,102 @@ describe("createInventoryMovement projeta só quando physical muda", () => {
     assert.equal(state.materialQuantity.toString(), "100");
   });
 
+  it("conferência física: 100 → 80 projeta Material.quantity", async () => {
+    const { prisma, state } = createMovementMock({
+      physical: 100,
+      materialId: MATERIAL_ID,
+      materialQuantity: 100,
+    });
+    await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        sourceWarehouseId: "wh-1",
+        movementType: "NEGATIVE_ADJUSTMENT",
+        quantity: 20,
+        unit: "KG",
+        reason: "Ajuste conferência",
+        originType: "COUNT_SESSION",
+      },
+      ctx
+    );
+    assert.equal(Number(state.balances[0].physicalQuantity), 80);
+    assert.equal(state.materialQuantity.toString(), "80");
+  });
+
+  it("entrada: 80 + 20 projeta Material.quantity = 100", async () => {
+    const { prisma, state } = createMovementMock({
+      physical: 80,
+      materialId: MATERIAL_ID,
+      materialQuantity: 80,
+    });
+    await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        destinationWarehouseId: "wh-1",
+        movementType: "MANUAL_ENTRY",
+        quantity: 20,
+        unit: "KG",
+        reason: "Entrada",
+      },
+      ctx
+    );
+    assert.equal(Number(state.balances[0].physicalQuantity), 100);
+    assert.equal(state.materialQuantity.toString(), "100");
+  });
+
+  it("requisição: 100 - 30 projeta Material.quantity = 70", async () => {
+    const { prisma, state } = createMovementMock({
+      physical: 100,
+      materialId: MATERIAL_ID,
+      materialQuantity: 100,
+    });
+    await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        sourceWarehouseId: "wh-1",
+        movementType: "REQUISITION_EXIT",
+        quantity: 30,
+        unit: "KG",
+        reason: "Requisição",
+      },
+      ctx
+    );
+    assert.equal(Number(state.balances[0].physicalQuantity), 70);
+    assert.equal(state.materialQuantity.toString(), "70");
+  });
+
+  it("reversão da saída: 70 + 30 restaura físico e Material.quantity = 100", async () => {
+    const { prisma, state } = createMovementMock({
+      physical: 100,
+      materialId: MATERIAL_ID,
+      materialQuantity: 100,
+    });
+    const exit = await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        sourceWarehouseId: "wh-1",
+        movementType: "REQUISITION_EXIT",
+        quantity: 30,
+        unit: "KG",
+        reason: "Requisição",
+      },
+      ctx
+    );
+    assert.equal(state.materialQuantity.toString(), "70");
+    await reverseInventoryMovement(
+      prisma as never,
+      exit.movement.id as string,
+      ctx,
+      "Estorno da requisição"
+    );
+    assert.equal(Number(state.balances[0].physicalQuantity), 100);
+    assert.equal(state.materialQuantity.toString(), "100");
+  });
+
   it("cenário 16: item sem materialId não projeta", async () => {
     const { prisma, state } = createMovementMock({
       physical: 100,
@@ -538,6 +675,11 @@ describe("arquitetura — um único escritor de saldo cadastral", () => {
     const count = read("src/lib/inventory/inventoryCountService.server.ts");
     assert.match(count, /createInventoryMovementInTx/);
     assert.match(count, /reconcileMaterialQuantitiesFromInventoryInTx/);
+    const rebuild = read("src/lib/inventory/inventoryBalanceRebuild.server.ts");
+    assert.match(rebuild, /reconcileMaterialQuantitiesFromInventoryInTx/);
+    const repair = read("scripts/repairMaterialInventoryQuantity.ts");
+    assert.match(repair, /isCanonicalQuantityRepairEligible/);
+    assert.match(repair, /LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE/);
     const conference = read("src/lib/materialStockConference.server.ts");
     assert.doesNotMatch(conference, /quantity:\s*reported/);
     assert.doesNotMatch(conference, /reconcileMaterialQuantityFromInventoryInTx/);

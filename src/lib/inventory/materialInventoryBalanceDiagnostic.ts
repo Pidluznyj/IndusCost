@@ -9,6 +9,7 @@ export const MATERIAL_INVENTORY_BALANCE_STATUSES = [
   "UNIT_MISMATCH",
   "MULTIPLE_ACTIVE_LINKS",
   "NO_BALANCE",
+  "LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE",
   "OTHER_INCONSISTENCY",
 ] as const;
 
@@ -51,6 +52,8 @@ export function classifyMaterialInventoryBalance(input: {
   materialUnit?: string | null;
   itemUnit?: string | null;
   hasBalanceRow: boolean;
+  /** Ledger canônico materializado (InventoryBalance existente). Default = hasBalanceRow. */
+  hasCanonicalLedger?: boolean;
   quantityEqualsCanonical: boolean;
 }): MaterialInventoryBalanceStatus {
   if (!input.materialId) return "NO_MATERIAL";
@@ -63,9 +66,23 @@ export function classifyMaterialInventoryBalance(input: {
   ) {
     return "UNIT_MISMATCH";
   }
-  if (!input.hasBalanceRow && input.quantityEqualsCanonical) return "NO_BALANCE";
+  const hasCanonicalLedger = input.hasCanonicalLedger ?? input.hasBalanceRow;
+  if (!hasCanonicalLedger && input.quantityEqualsCanonical) return "NO_BALANCE";
+  if (!hasCanonicalLedger && !input.quantityEqualsCanonical) {
+    return "LEGACY_QUANTITY_WITHOUT_CANONICAL_BALANCE";
+  }
   if (!input.quantityEqualsCanonical) return "QUANTITY_DIVERGENCE";
   return "MATCH";
+}
+
+/** Repair global só quando a divergência está no domínio canônico (há InventoryBalance). */
+export function isCanonicalQuantityRepairEligible(input: {
+  status: MaterialInventoryBalanceStatus;
+  hasCanonicalLedger?: boolean;
+  hasInventoryBalance?: boolean;
+}): boolean {
+  if (input.status !== "QUANTITY_DIVERGENCE") return false;
+  return (input.hasCanonicalLedger ?? input.hasInventoryBalance) === true;
 }
 
 export function formatQuantityForReport(value: unknown): string {
