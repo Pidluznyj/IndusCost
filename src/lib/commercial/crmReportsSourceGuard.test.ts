@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -49,8 +49,17 @@ describe("guard CRM > Relatórios — módulos reais", () => {
       "routes",
       "verifier",
       "verifier-cli",
+      "ui",
     ] as const) {
       assert.ok(roles.has(role), `papel sem arquivo protegido: ${role}`);
+    }
+  });
+
+  it("todos os componentes da aba (src/components/crm/reports) estão protegidos como UI", () => {
+    const guarded = new Set(CRM_REPORTS_GUARDED_FILES.filter((f) => f.role === "ui").map((f) => f.path));
+    const dir = join(process.cwd(), "src/components/crm/reports");
+    for (const name of readdirSync(dir).filter((n) => n.endsWith(".tsx") && !n.includes(".test."))) {
+      assert.ok(guarded.has(`src/components/crm/reports/${name}`), `componente fora do guard: ${name}`);
     }
   });
 
@@ -174,6 +183,40 @@ describe("guard CRM > Relatórios — autoteste (pega o que deve pegar)", () => 
     assert.ok(rulesHit("aggregation", `import { x } from "./crmReportsOperationalService.server.js";`).includes("PURE_MODULE_IMPORT"));
     assert.ok(rulesHit("aggregation", `if (a.contactDate) {}`).includes("ACTIVITY_IN_CALCULATION"));
     assert.deepEqual(rulesHit("aggregation", `import * as XLSX from "xlsx";`), []);
+  });
+
+  it("UI: sem motor/núcleo/exportação/.server, sem rows.length, sem conta de data, sem papel fixo", () => {
+    assert.ok(
+      rulesHit("ui", `import { computeRepurchaseCadence } from "@/src/lib/commercial/crmRepurchaseEngine";`).includes(
+        "UI_REPORT_LOGIC_IMPORT"
+      )
+    );
+    assert.ok(
+      rulesHit("ui", `import { applyCrmReportsViews } from "@/src/lib/commercial/crmReportsOperationalCore.js";`).includes(
+        "UI_REPORT_LOGIC_IMPORT"
+      )
+    );
+    assert.ok(rulesHit("ui", `import { x } from "./crmReportsOperationalService.server";`).includes("UI_REPORT_LOGIC_IMPORT"));
+    assert.ok(rulesHit("ui", `const total = page.rows.length;`).includes("UI_TOTAL_FROM_ROWS_LENGTH"));
+    assert.ok(rulesHit("ui", `const days = (today.getTime() - last.getTime()) / 864e5;`).includes("UI_REPURCHASE_DATE_MATH"));
+    assert.ok(rulesHit("ui", `d.setDate(d.getDate() + avg);`).includes("UI_REPURCHASE_DATE_MATH"));
+    assert.ok(rulesHit("ui", `row.deltaDays = diff(today, expected);`).includes("UI_REPURCHASE_DATE_MATH"));
+    assert.ok(rulesHit("ui", `if (auth.role === "ADMIN") show();`).includes("UI_ROLE_HARDCODE"));
+    assert.ok(rulesHit("ui", `const s = "CANCELLED";`).includes("OWN_SALES_ORDER_STATUS_RULE"));
+    // O que a UI legitimamente faz passa.
+    assert.deepEqual(
+      rulesHit(
+        "ui",
+        [
+          `import { formatCrmRepurchaseSituation } from "@/src/lib/commercial/crmReportsLabels";`,
+          `const next = new Map(checked); next.delete(id);`,
+          `<span role="radio" aria-checked={on}>{page.total}</span>`,
+          `<CrmRepurchaseStatusBadge status={row.repurchaseStatus} deltaDays={row.deltaDays} />`,
+          `{page.rows.map((row) => <Row key={row.customerId} />)}`,
+        ].join("\n")
+      ),
+      []
+    );
   });
 
   it("cada regra tem descrição e ao menos um papel", () => {

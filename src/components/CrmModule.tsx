@@ -102,7 +102,10 @@ import {
 } from "@/src/components/CrmCommercialManagementTabs";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
-import { CRM_UI_TABS, TabResourceKeys } from "@/src/lib/moduleTabResources";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { CRM_UI_TABS, TabResourceKeys, isCrmUiTabId } from "@/src/lib/moduleTabResources";
+import { COMMERCIAL_RESOURCE_KEYS } from "@/src/lib/commercialAccess";
+import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "@/src/lib/customerIntelligencePermissions";
 import { ProtectedTab } from "@/src/components/security/ProtectedTab";
 import {
   canAccessCrmAny,
@@ -123,6 +126,13 @@ import type {
   CrmCustomerListItem,
   CrmCustomersListResponse,
 } from "@/src/lib/crmCustomersListTypes";
+
+// Aba Relatórios: chunk próprio, carregado só quando a aba abre.
+const CrmReportsSection = React.lazy(() =>
+  import("@/src/components/crm/reports/CrmReportsSection").then((mod) => ({
+    default: mod.CrmReportsSection,
+  }))
+);
 
 type SellerDashboardLoadParams = {
   externalSellerId?: number;
@@ -1426,6 +1436,17 @@ export const CrmModule = () => {
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /**
+   * Contato aberto a partir de Relatórios: cliente-alvo explícito, sem trocar
+   * de aba nem carregar o cockpit da Carteira. `null` = cliente selecionado.
+   */
+  const [contactTarget, setContactTarget] = useState<{
+    id: string;
+    displayName: string;
+    taxId: string;
+  } | null>(null);
+  /** Recarga dos Relatórios depois de registrar contato por lá. */
+  const [reportsRefreshToken, setReportsRefreshToken] = useState(0);
 
   const [formContactDate, setFormContactDate] = useState(datetimeLocalNow);
   const [formChannel, setFormChannel] = useState<string>("WHATSAPP");
@@ -1470,27 +1491,51 @@ export const CrmModule = () => {
   );
 
   const auth = useAuth();
+  const permissions = usePermissions();
   const crmPersona = resolveCrmPersonaForChecker(auth);
   const canCrmGeneral = canAccessCrmGeneral(auth);
   const canCrmSeller = canAccessCrmSeller(auth);
   const canCrmPortfolio = canAccessCrmPortfolio(auth);
   const canCrmCliente360 = crmPersona.canViewCustomer360;
-  const canCrmAny = canAccessCrmAny(auth) || canCrmGeneral || canCrmSeller || canCrmPortfolio;
+  // Aba Relatórios pelo recurso oficial (comercial.crm.tab.relatorios → commercial.crm.reports).
+  const canCrmReports = permissions.canViewTabResource(TabResourceKeys.CRM_RELATORIOS);
+  const canCrmAny =
+    canAccessCrmAny(auth) || canCrmGeneral || canCrmSeller || canCrmPortfolio || canCrmReports;
+  // Ações das linhas de Relatórios — mesmas permissões das telas canônicas de destino.
+  const canOpenCustomer360 = auth.hasAnyPermission([...CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS]);
+  const canOpenSalesOrderDetail = permissions.canPerformAction(
+    COMMERCIAL_RESOURCE_KEYS.salesOrdersDetail,
+    "view"
+  );
+  const canRegisterCrmContact = permissions.canPerformAction(
+    COMMERCIAL_RESOURCE_KEYS.crmActivities,
+    "create"
+  );
   const canFilterAllSellers = canFilterAllCrmSellers(auth);
   const isOwnSellerOnly = isCrmOwnSellerOnly(auth);
   const sellerNotLinked =
     isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
   const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(() => {
+    // Deep-link ?tab=general|seller|portfolio|reports (aba negada → modal, ver abaixo).
     const fromUrl = searchParams.get("tab");
-    return fromUrl === "general" || fromUrl === "seller" || fromUrl === "portfolio"
-      ? fromUrl
-      : "general";
+    return isCrmUiTabId(fromUrl) ? fromUrl : "general";
   });
   const crmAuthorizedTabs = useAuthorizedTabs({
     tabs: CRM_UI_TABS,
     requestedId: activeCrmManagementTab,
   });
+  /**
+   * Sem ?tab na URL o "general" inicial não é pedido do usuário: se ele não
+   * tiver Gestão Geral (ex.: perfil só com Relatórios), abre na 1ª aba
+   * permitida. Deep-link explícito para aba negada continua no modal (PERM-39).
+   */
+  const [crmTabFromUrl] = useState(() => isCrmUiTabId(searchParams.get("tab")));
+  const implicitCrmTabDenied =
+    !crmTabFromUrl && crmAuthorizedTabs.requestedDenied && crmAuthorizedTabs.allowedIds.length > 0;
+  useEffect(() => {
+    if (implicitCrmTabDenied) setActiveCrmManagementTab(crmAuthorizedTabs.allowedIds[0]!);
+  }, [implicitCrmTabDenied, crmAuthorizedTabs.allowedIds]);
 
   useEffect(() => {
     // PERM-39: aba negada → modal; não trocar aba silenciosamente
@@ -1918,6 +1963,9 @@ export const CrmModule = () => {
   const hasPrefetchedSellerOptionsRef = useRef(false);
   useEffect(() => {
     if (!canCrmAny || !canFilterAllSellers) return;
+    // Relatórios tem opções de filtro próprias e leves — abrir direto nela não
+    // dispara o dashboard de vendedores (pré-carrega ao visitar outra aba).
+    if (activeCrmManagementTab === "reports") return;
     if (hasPrefetchedSellerOptionsRef.current) return;
     hasPrefetchedSellerOptionsRef.current = true;
     (async () => {
@@ -1930,7 +1978,7 @@ export const CrmModule = () => {
         // Responsável for visitada, ela refaz o fetch e mostra erro real lá.
       }
     })();
-  }, [canCrmAny, canFilterAllSellers]);
+  }, [canCrmAny, canFilterAllSellers, activeCrmManagementTab]);
 
   useEffect(() => {
     if (!canCrmAny || !canCrmPortfolio || sellerNotLinked) return;
@@ -2109,7 +2157,7 @@ export const CrmModule = () => {
     }
   };
 
-  const openModal = () => {
+  const resetContactForm = useCallback(() => {
     setModalError(null);
     setFormContactDate(datetimeLocalNow());
     setFormChannel("WHATSAPP");
@@ -2124,7 +2172,28 @@ export const CrmModule = () => {
     setFormCreatedByEmail("");
     setFormNextActionAt("");
     setFormNextActionDescription("");
+  }, []);
+
+  const openModal = () => {
+    setContactTarget(null);
+    resetContactForm();
     setModalOpen(true);
+  };
+
+  /** "Registrar contato" nas listas de Relatórios — mesmo modal e mesmo endpoint canônico. */
+  const openContactFromReports = useCallback(
+    (customer: { customerId: string; displayName: string; taxId: string }) => {
+      resetContactForm();
+      setContactTarget({ id: customer.customerId, displayName: customer.displayName, taxId: customer.taxId });
+      setModalOpen(true);
+    },
+    [resetContactForm]
+  );
+
+  const closeContactModal = () => {
+    if (modalSaving) return;
+    setModalOpen(false);
+    setContactTarget(null);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -2230,7 +2299,8 @@ export const CrmModule = () => {
 
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedId) {
+    const targetCustomerId = contactTarget?.id ?? selectedId;
+    if (!targetCustomerId) {
       setModalError("Selecione um cliente na lista.");
       return;
     }
@@ -2269,7 +2339,7 @@ export const CrmModule = () => {
         nextActionAt: nextIso,
         nextActionDescription: formNextActionDescription.trim() || undefined,
       };
-      await fetchJsonOk(`/api/customers/${selectedId}/commercial-activities`, {
+      await fetchJsonOk(`/api/customers/${targetCustomerId}/commercial-activities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -2277,6 +2347,13 @@ export const CrmModule = () => {
       setModalOpen(false);
       setToast("Contato registrado com sucesso.");
       window.setTimeout(() => setToast(null), 4000);
+      if (contactTarget) {
+        // Aberto em Relatórios: só os relatórios recarregam (último contato/follow-up).
+        setContactTarget(null);
+        setReportsRefreshToken((n) => n + 1);
+        return;
+      }
+      if (!selectedId) return;
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
@@ -2394,7 +2471,7 @@ export const CrmModule = () => {
     <div
       className={cn(
         "mx-auto w-full space-y-10 pb-4",
-        showCustomerPortfolioGrid ? "max-w-[1800px]" : "max-w-[1500px]"
+        showCustomerPortfolioGrid || activeCrmManagementTab === "reports" ? "max-w-[1800px]" : "max-w-[1500px]"
       )}
       data-tour="crm-root"
     >
@@ -2415,9 +2492,9 @@ export const CrmModule = () => {
           onTabChange={setActiveCrmManagementTab}
         />
 
-        {crmAuthorizedTabs.isEmpty || crmAuthorizedTabs.requestedDenied ? (
+        {crmAuthorizedTabs.isEmpty || (crmAuthorizedTabs.requestedDenied && !implicitCrmTabDenied) ? (
           <UnauthorizedAccessGate forceDenied />
-        ) : (
+        ) : implicitCrmTabDenied ? null : (
           <>
         <ProtectedTab
           resourceKey={TabResourceKeys.CRM_GESTAO_GERAL}
@@ -2500,6 +2577,29 @@ export const CrmModule = () => {
             Você não possui carteira comercial vinculada ou permissão para acessar esta visão.
             Solicite ao administrador o vínculo como responsável comercial do cliente.
           </div>
+        </ProtectedTab>
+
+        <ProtectedTab
+          resourceKey={TabResourceKeys.CRM_RELATORIOS}
+          active={activeCrmManagementTab === "reports"}
+        >
+          <React.Suspense
+            fallback={
+              <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                Carregando Relatórios…
+              </div>
+            }
+          >
+            <CrmReportsSection
+              canOpenCustomer360={canOpenCustomer360}
+              canOpenOrderDetail={canOpenSalesOrderDetail}
+              canRegisterContact={canRegisterCrmContact}
+              onRegisterContact={openContactFromReports}
+              refreshToken={reportsRefreshToken}
+              storageScope={auth.authUser?.id ?? null}
+            />
+          </React.Suspense>
         </ProtectedTab>
           </>
         )}
@@ -2995,10 +3095,18 @@ export const CrmModule = () => {
             className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
-              <h4 className="text-lg font-bold">Novo contato</h4>
+              <div className="min-w-0">
+                <h4 className="text-lg font-bold">Novo contato</h4>
+                {contactTarget ? (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {contactTarget.displayName}
+                    {contactTarget.taxId ? ` · ${contactTarget.taxId}` : ""}
+                  </p>
+                ) : null}
+              </div>
               <button
                 type="button"
-                onClick={() => !modalSaving && setModalOpen(false)}
+                onClick={closeContactModal}
                 className="rounded-lg p-2 hover:bg-accent text-muted-foreground"
                 aria-label="Fechar"
               >
@@ -3152,7 +3260,7 @@ export const CrmModule = () => {
                 <button
                   type="button"
                   disabled={modalSaving}
-                  onClick={() => setModalOpen(false)}
+                  onClick={closeContactModal}
                   className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-50"
                 >
                   Cancelar

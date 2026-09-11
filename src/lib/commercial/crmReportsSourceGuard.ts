@@ -15,7 +15,9 @@
  *   - Prisma/Express/React dentro do motor e do núcleo puros;
  *   - CommercialActivity dentro do cálculo (só enriquecimento);
  *   - relatório personalizado/exportação consultando pedido por conta
- *     própria em vez de consumir o pipeline das listas.
+ *     própria em vez de consumir o pipeline das listas;
+ *   - UI com lógica de recompra (motor/núcleo importados, conta de data),
+ *     total calculado com `rows.length` ou visibilidade decidida por papel.
  *
  * Módulo puro: recebe o texto dos arquivos e devolve violações.
  */
@@ -31,7 +33,9 @@ export type CrmReportsGuardRole =
   | "consumer"
   | "routes"
   | "verifier"
-  | "verifier-cli";
+  | "verifier-cli"
+  /** Frontend da aba (componentes + cliente/estado): só exibe o que o backend calculou. */
+  | "ui";
 
 export type CrmReportsGuardFile = { path: string; role: CrmReportsGuardRole; source: string };
 
@@ -50,7 +54,7 @@ type Rule = {
   roles: readonly CrmReportsGuardRole[];
 };
 
-const ALL: readonly CrmReportsGuardRole[] = [
+const BACKEND: readonly CrmReportsGuardRole[] = [
   "types",
   "engine",
   "core",
@@ -61,6 +65,7 @@ const ALL: readonly CrmReportsGuardRole[] = [
   "verifier",
   "verifier-cli",
 ];
+const ALL: readonly CrmReportsGuardRole[] = [...BACKEND, "ui"];
 const PURE: readonly CrmReportsGuardRole[] = ["types", "engine", "core", "aggregation"];
 const REPORT_RUNTIME: readonly CrmReportsGuardRole[] = [
   "types",
@@ -123,7 +128,7 @@ export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
       "Carteira = CrmCustomerCommercialOwner. Vendedor Nomus / SalesOrder.responsible não definem escopo.",
     pattern:
       /buildCrmSellerFilterSql|buildCrmSalesOrderSellerMatchSql|buildCrmSellerCustomerExistsSql|fetchCrmSellerScopeCustomerIds|buildSellerFilterSqlForOrders|salesOrderMatchesCrmSellerScope|crmCustomerSellerScope|\bresponsible\s*:\s*true|\.responsible\b/,
-    roles: REPORT_RUNTIME,
+    roles: [...REPORT_RUNTIME, "ui"],
   },
   {
     id: "MS_PER_DAY",
@@ -142,7 +147,7 @@ export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
     description: "Relatório é somente leitura — sem escrita, transação ou cache persistente.",
     pattern:
       /\.(?:create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(|\$transaction|writeFile|appendFile|INSERT\s+INTO|UPDATE\s+"|TRUNCATE/,
-    roles: ALL,
+    roles: BACKEND,
   },
   {
     id: "PURE_MODULE_IMPORT",
@@ -163,6 +168,33 @@ export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
     pattern:
       /\.findSalesOrders\s*\(|crmCanonicalSalesOrderWhere\s*\(|buildSalesOrderListWhere\s*\(|\.salesOrder\.(?:findMany|findFirst|groupBy|aggregate|count)\b|\.groupOrderSellers\s*\(/,
     roles: ["consumer"],
+  },
+  {
+    id: "UI_REPORT_LOGIC_IMPORT",
+    description:
+      "A UI não importa motor, núcleo, exportação nem módulo .server — só tipos, rótulos, cliente HTTP e estado da tela.",
+    pattern:
+      /from\s+["'][^"']*(?:crmRepurchaseEngine|crmReportsOperationalCore|crmCustomReportCore|crmReportsExport|crmReportsVerification|\.server)(?:\.js)?["']/,
+    roles: ["ui"],
+  },
+  {
+    id: "UI_TOTAL_FROM_ROWS_LENGTH",
+    description: "Totais vêm do backend (total/returned/universe) — nunca rows.length.",
+    pattern: /\brows\.length\b/,
+    roles: ["ui"],
+  },
+  {
+    id: "UI_REPURCHASE_DATE_MATH",
+    description: "Sem cálculo de recompra/data no frontend: previsão, desvio e janelas vêm do backend.",
+    pattern:
+      /\bcomputeRepurchaseCadence\b|\bbusinessDaysBetween\b|\btoBusinessDate\b|getTime\(\)\s*[-+]|Date\.now\(\)\s*[-+]|\.setDate\(|\.setMonth\(|\bexpectedRepurchaseDate\s*=(?![={])|\bdeltaDays\s*=(?![={])/,
+    roles: ["ui"],
+  },
+  {
+    id: "UI_ROLE_HARDCODE",
+    description: "Visibilidade pela infraestrutura de autorização (recurso/ação), nunca por papel de usuário.",
+    pattern: /\brole\s*[!=]==|["'](?:SUPER_ADMIN|ADMIN|COMMERCIAL_MANAGER|SELLER|VIEWER)["']/,
+    roles: ["ui"],
   },
 ];
 
@@ -327,4 +359,18 @@ export const CRM_REPORTS_GUARDED_FILES: ReadonlyArray<{ path: string; role: CrmR
   { path: "src/lib/commercial/crmReportsRoutes.ts", role: "routes" },
   { path: "src/lib/commercial/crmReportsVerification.server.ts", role: "verifier" },
   { path: "scripts/verify-crm-reports-vs-sales-orders.ts", role: "verifier-cli" },
+  { path: "src/lib/commercial/crmCustomReportContract.ts", role: "aggregation" },
+  { path: "src/lib/commercial/crmReportsClient.ts", role: "ui" },
+  { path: "src/lib/commercial/crmReportsUiState.ts", role: "ui" },
+  { path: "src/lib/commercial/crmReportsTemplates.ts", role: "ui" },
+  { path: "src/lib/commercial/crmReportsFormat.ts", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportsSection.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportsSummaryCards.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportsGlobalFilters.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmCustomerSelectionFilter.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmRecentCustomersTable.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmRepurchaseCadenceTable.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmOverdueRepurchaseTable.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportBuilder.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportsShared.tsx", role: "ui" },
 ];
