@@ -134,7 +134,7 @@ export const MATERIALS_UI_SECTIONS: ReadonlyArray<{
     id: "stockConference",
     /** Mesma permissão view do catálogo de MP — item só aparece com view. */
     resourceKey: TabResourceKeys.SUPRIMENTOS_CATALOGO,
-    label: "Conferência de estoque",
+    label: "Parâmetros de estoque",
   },
   {
     id: "marketIntelligence",

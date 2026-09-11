@@ -121,6 +121,10 @@ import {
   normalizeMaterialQuantity,
 } from "./src/lib/materialQuantityTotal.js";
 import {
+  materialCreateQuantityHttpResult,
+  materialUpdateQuantityHttpResult,
+} from "./src/lib/materialCadastralQuantityHttp.js";
+import {
   buildMonitoredMaterialListResponse,
   parseMonitoredMaterialCriticalityFilter,
 } from "./src/lib/materialMarketIntelligenceMonitored.js";
@@ -4113,6 +4117,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             freight: d.freight || 0,
             standardLoss: d.standardLoss || 0,
             conversionFactor: d.conversionFactor || 1,
+            quantity: 0,
             status: d.status || "ACTIVE"
           }))
         });
@@ -5778,6 +5783,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
+      const quantityPolicy = materialCreateQuantityHttpResult(parsedNumeric.quantity);
+      if (quantityPolicy.ok === false) {
+        return res.status(quantityPolicy.status).json(quantityPolicy.body);
+      }
+
       const material = await prisma.material.create({
         data: {
           code,
@@ -5788,7 +5798,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           currentCost: parsedNumeric.currentCost,
           averageCost: parsedNumeric.averageCost,
           standardCost: parsedNumeric.standardCost,
-          quantity: parsedNumeric.quantity,
+          quantity: quantityPolicy.quantity,
           freight: parsedNumeric.freight,
           standardLoss: parsedNumeric.standardLoss,
           conversionFactor: conversion.value,
@@ -5886,10 +5896,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
-      const quantity =
-        body.quantity === undefined || body.quantity === null
-          ? oldMaterial.quantity
-          : normalizeMaterialQuantity(body.quantity);
+      const quantityPolicy = materialUpdateQuantityHttpResult(body.quantity, oldMaterial.quantity);
+      if (quantityPolicy.ok === false) {
+        return res.status(quantityPolicy.status).json(quantityPolicy.body);
+      }
 
       const material = await prisma.material.update({
         where: { id },
@@ -5910,7 +5920,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           standardCost: body.standardCost ?? oldMaterial.standardCost,
           standardLoss: body.standardLoss ?? oldMaterial.standardLoss,
           conversionFactor: body.conversionFactor ?? oldMaterial.conversionFactor,
-          quantity,
           currentCost,
           freight,
           isPlanningMonitored:

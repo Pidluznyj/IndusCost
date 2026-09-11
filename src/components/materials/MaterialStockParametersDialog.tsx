@@ -1,12 +1,11 @@
 /**
- * Edição dos parâmetros de nível + saldo atual (obrigatório).
+ * Edição dos parâmetros de nível. O saldo físico é somente leitura.
  * Não altera custos.
  */
 import React, { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   buildParametersRequestBody,
-  parseCurrentQuantityParameterInput,
   parseStockLevelParameterInput,
   toCurrentQuantityInputValue,
   updateMaterialStockParameters,
@@ -69,18 +68,9 @@ export function MaterialStockParametersDialog({
 
   const handleSave = async () => {
     if (saving) return;
-    const q = parseCurrentQuantityParameterInput(currentQuantityRaw);
     const c = parseStockLevelParameterInput(contingencyRaw);
     const m = parseStockLevelParameterInput(minimumRaw);
     const r = parseStockLevelParameterInput(recommendedRaw);
-    if (!q.ok) {
-      setError(
-        q.reason === "EMPTY"
-          ? "Saldo atual é obrigatório. Informe 0 se estiver zerado."
-          : "Saldo atual inválido. Use número decimal ≥ 0."
-      );
-      return;
-    }
     if (!c.ok || !m.ok || !r.ok) {
       setError("Parâmetro inválido. Use número decimal ou deixe vazio (não configurado).");
       return;
@@ -98,7 +88,6 @@ export function MaterialStockParametersDialog({
     setSaving(true);
     setError(null);
     const body = buildParametersRequestBody({
-      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
@@ -111,7 +100,6 @@ export function MaterialStockParametersDialog({
 
     const result = await updateMaterialStockParameters({
       materialId: item.id,
-      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
@@ -155,29 +143,21 @@ export function MaterialStockParametersDialog({
           data-testid="stock-parameters-hint"
         >
           Contingência, mínimo e recomendado <strong>não são somados</strong> ao estoque
-          atual. Deixe o campo de nível vazio para “não configurado”. O saldo atual é
-          obrigatório (informe 0 se estiver zerado). Esta edição não altera os custos.
+          atual. Deixe o campo de nível vazio para “não configurado”. O saldo físico é
+          somente leitura — controlado pelo Estoque / Almoxarifado. Esta edição não altera os custos.
         </p>
 
         <div className="mt-4 space-y-3">
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium">
-              Saldo atual<span className="text-red-600">*</span>
-            </span>
+            <span className="text-sm font-medium">Saldo físico oficial</span>
             <div className="flex gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={currentQuantityRaw}
-                disabled={saving}
-                required
-                onChange={(e) => {
-                  setCurrentQuantityRaw(e.target.value);
-                  setError(null);
-                }}
-                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+              <div
                 data-testid="stock-parameters-current-quantity"
-              />
+                className="min-h-12 flex-1 rounded-lg border border-border bg-muted/40 px-3 py-3 text-base tabular-nums font-semibold"
+                title="O saldo não pode ser editado aqui. Use a Conferência Física de Estoque."
+              >
+                {currentQuantityRaw}
+              </div>
               <span className="inline-flex min-h-12 items-center rounded-lg border border-border bg-muted px-3 text-sm font-semibold">
                 {item.unit}
               </span>

@@ -140,7 +140,7 @@ export function createConferenceIdempotencyKey(): string {
 
 export async function submitMaterialStockConference(input: {
   materialId: string;
-  reportedQuantity: number;
+  reportedQuantity?: number;
   contingencyQuantity: number;
   recommendedQuantity: number | null;
   reason: MaterialStockConferenceReason;
@@ -161,7 +161,9 @@ export async function submitMaterialStockConference(input: {
       },
       body: JSON.stringify({
         materialId: input.materialId,
-        reportedQuantity: input.reportedQuantity,
+        ...(input.reportedQuantity != null
+          ? { reportedQuantity: input.reportedQuantity }
+          : {}),
         contingencyQuantity: input.contingencyQuantity,
         recommendedQuantity: input.recommendedQuantity,
         reason: input.reason,
@@ -185,7 +187,11 @@ export async function submitMaterialStockConference(input: {
         ok: false,
         kind: "conflict",
         conflict: {
-          reportedQuantity: input.reportedQuantity,
+          reportedQuantity:
+            input.reportedQuantity ??
+            (Number.isFinite(Number(details.currentQuantity))
+              ? Number(details.currentQuantity)
+              : NaN),
           serverQuantity: Number.isFinite(serverQuantity) ? serverQuantity : NaN,
           stockConferenceVersion:
             details.stockConferenceVersion != null
@@ -209,7 +215,7 @@ export async function submitMaterialStockConference(input: {
         message:
           (typeof payload.message === "string" && payload.message) ||
           (typeof payload.error === "string" && payload.error) ||
-          "Não foi possível salvar a conferência.",
+          "Não foi possível salvar os parâmetros.",
       };
     }
 

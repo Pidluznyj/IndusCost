@@ -15,7 +15,7 @@ export type InventoryAuditInput = {
 };
 
 /** Cliente mínimo capaz de gravar auditoria — PrismaClient ou transação. */
-type InventoryAuditWriter = {
+export type InventoryAuditWriter = {
   inventoryAuditLog: { create: (args: { data: Record<string, unknown> }) => Promise<unknown> };
 };
 

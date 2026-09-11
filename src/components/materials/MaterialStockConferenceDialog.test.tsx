@@ -42,19 +42,19 @@ describe("MaterialStockConferenceDialog", () => {
     assert.match(html, /inputMode="decimal"/);
     assert.match(html, /stock-conference-contingency-input/);
     assert.match(html, /stock-conference-recommended-input/);
-    assert.match(html, /stock-conference-reported-input/);
+    assert.doesNotMatch(html, /stock-conference-reported-input/);
     assert.match(html, /Estoque contingência\*/);
     assert.match(html, /Estoque recomendado/);
-    assert.match(html, /Saldo contado\*/);
+    assert.match(html, /Saldo físico oficial|Saldo atual/);
+    assert.match(html, /stock-conference-unit/);
     assert.match(html, /stock-conference-system-balance/);
     assert.match(html, /Saldo atual/);
     assert.match(html, /stock-conference-unit/);
     assert.match(html, />kg</);
-    assert.match(html, /Salvar conferência/);
+    assert.match(html, /Salvar parâmetros/);
     assert.match(html, /Cancelar/);
-    assert.match(html, /Saldo atual \(sistema\)/);
-    assert.match(html, /Conferência física/);
-    assert.match(html, /só muda após a confirmação do servidor/);
+    assert.doesNotMatch(html, /Novo saldo \(contado\)/);
+    assert.match(html, /Conferência Física/);
     assert.doesNotMatch(html, /currentCost|freight|standardLoss|conversionFactor|landedCost/i);
   });
 

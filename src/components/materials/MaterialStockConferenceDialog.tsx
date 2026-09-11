@@ -1,15 +1,15 @@
 /**
- * Diálogo de conferência manual — poucos toques, teclado numérico, sem custos.
- * Campos: saldo atual (sistema), contingência*, recomendado, saldo contado*.
+ * Diálogo de parâmetros de nível — poucos toques, teclado numérico, sem custos.
+ * Campos: saldo oficial (somente leitura), contingência*, recomendado, motivo/notas.
+ * Não declara quantidade física absoluta.
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   createConferenceIdempotencyKey,
   listMaterialStockConferenceReasons,
   MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON,
   parseStockConferenceQuantityInput,
-  previewStockConferenceDifference,
   submitMaterialStockConference,
   type MaterialStockConferenceConflictDetails,
   type MaterialStockConferenceApiResult,
@@ -46,7 +46,6 @@ export function MaterialStockConferenceDialog({
 }: MaterialStockConferenceDialogProps) {
   const [contingencyRaw, setContingencyRaw] = useState("");
   const [recommendedRaw, setRecommendedRaw] = useState("");
-  const [reportedRaw, setReportedRaw] = useState("");
   const [reason, setReason] = useState<MaterialStockConferenceReason>(
     MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON
   );
@@ -66,7 +65,6 @@ export function MaterialStockConferenceDialog({
     if (!open) return;
     setContingencyRaw(quantityToInput(item.contingencyQuantity));
     setRecommendedRaw(quantityToInput(item.recommendedQuantity));
-    setReportedRaw("");
     setReason(MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON);
     setNotes("");
     setSaving(false);
@@ -89,19 +87,13 @@ export function MaterialStockConferenceDialog({
     item.updatedAt,
   ]);
 
-  const preview = useMemo(
-    () => previewStockConferenceDifference(baselineQuantity, reportedRaw),
-    [baselineQuantity, reportedRaw]
-  );
   const parsedContingency = parseStockConferenceQuantityInput(contingencyRaw);
   const parsedRecommended = recommendedRaw.trim()
     ? parseStockConferenceQuantityInput(recommendedRaw)
     : ({ ok: true as const, value: null });
-  const parsedReported = parseStockConferenceQuantityInput(reportedRaw);
   const canSave =
     parsedContingency.ok &&
     parsedRecommended.ok &&
-    parsedReported.ok &&
     !saving;
   const reasons = listMaterialStockConferenceReasons();
 
@@ -134,16 +126,6 @@ export function MaterialStockConferenceDialog({
       recommended = r.value;
     }
 
-    const qty = parseStockConferenceQuantityInput(reportedRaw);
-    if (qty.ok === false) {
-      setError(
-        qty.reason === "EMPTY"
-          ? "Informe o estoque atual."
-          : "Saldo contado inválido. Use apenas números decimais."
-      );
-      return;
-    }
-
     if (recommended != null && contingency.value > recommended) {
       setError("Hierarquia inválida: contingência ≤ recomendado.");
       return;
@@ -163,7 +145,6 @@ export function MaterialStockConferenceDialog({
 
     const result = await submitMaterialStockConference({
       materialId: item.id,
-      reportedQuantity: qty.value,
       contingencyQuantity: contingency.value,
       recommendedQuantity: recommended,
       reason,
@@ -185,7 +166,7 @@ export function MaterialStockConferenceDialog({
       setConflict({
         ...result.conflict,
         openedQuantity: openedForConflict,
-        reportedQuantity: qty.value,
+        reportedQuantity: baselineQuantity,
       });
       setError(null);
     } else {
@@ -227,7 +208,7 @@ export function MaterialStockConferenceDialog({
           id="stock-conference-dialog-title"
           className="text-lg font-semibold text-foreground"
         >
-          Conferir e atualizar estoque
+          Atualizar parâmetros de estoque
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {item.code} — {item.description}
@@ -243,7 +224,8 @@ export function MaterialStockConferenceDialog({
           </span>
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Saldo oficial no sistema. Informe abaixo o saldo contado na conferência física.
+          Saldo físico oficial do Estoque / Almoxarifado. Esta tela atualiza apenas
+          parâmetros de nível; quantidade absoluta só na Conferência Física.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -299,31 +281,6 @@ export function MaterialStockConferenceDialog({
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-foreground">
-              Saldo contado* ({item.unit})
-            </span>
-            <div className="flex items-stretch gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                enterKeyHint="done"
-                autoComplete="off"
-                value={reportedRaw}
-                disabled={saving}
-                onChange={(e) => {
-                  setReportedRaw(e.target.value);
-                  setError(null);
-                  setConflict(null);
-                }}
-                placeholder="Informe o saldo físico contado"
-                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-                data-testid="stock-conference-reported-input"
-              />
-              {unitSuffix}
-            </div>
-          </label>
-
-          <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">Motivo</span>
             <select
               value={reason}
@@ -360,31 +317,13 @@ export function MaterialStockConferenceDialog({
             className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm"
             data-testid="stock-conference-preview"
           >
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Saldo atual (sistema)</span>
-              <span className="font-semibold tabular-nums">
-                {formatStockConferenceQuantity(baselineQuantity)} {item.unit}
-              </span>
-            </div>
-            <div className="mt-2 flex justify-between gap-3">
-              <span className="text-muted-foreground">Novo saldo (contado)</span>
-              <span className="font-semibold tabular-nums">
-                {preview.reported == null
-                  ? "—"
-                  : `${formatStockConferenceQuantity(preview.reported)} ${item.unit}`}
-              </span>
-            </div>
-            <div className="mt-2 flex justify-between gap-3">
-              <span className="text-muted-foreground">Diferença</span>
-              <span className="font-semibold tabular-nums">
-                {preview.difference == null
-                  ? "—"
-                  : `${formatStockConferenceQuantity(preview.difference)} ${item.unit}`}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Contingência e recomendado não somam ao estoque. O estoque oficial só muda após a
-              confirmação do servidor.
+            <p className="text-xs text-muted-foreground">
+              Esta tela não altera o saldo físico. Contingência e recomendado não somam ao
+              estoque. Quantidade absoluta só na{" "}
+              <a href="/inventory/counts" className="underline underline-offset-2">
+                Conferência Física
+              </a>
+              .
             </p>
           </div>
 
@@ -409,12 +348,6 @@ export function MaterialStockConferenceDialog({
                   <dt>Saldo que você abriu</dt>
                   <dd className="font-semibold tabular-nums">
                     {formatStockConferenceQuantity(conflict.openedQuantity)} {item.unit}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt>Saldo informado</dt>
-                  <dd className="font-semibold tabular-nums">
-                    {formatStockConferenceQuantity(conflict.reportedQuantity)} {item.unit}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
@@ -520,7 +453,7 @@ export function MaterialStockConferenceDialog({
                 Salvando…
               </>
             ) : (
-              "Salvar conferência"
+              "Salvar parâmetros"
             )}
           </button>
         </div>

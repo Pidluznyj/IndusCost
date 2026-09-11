@@ -76,15 +76,14 @@ describe("materialStockParametersClient — null e validação", () => {
     );
   });
 
-  it("body de parâmetros inclui saldo e não inclui custos", () => {
+  it("body de parâmetros não inclui saldo físico por padrão", () => {
     const body = buildParametersRequestBody({
-      currentQuantity: 0,
       contingencyQuantity: 1,
       minimumQuantity: 2,
       recommendedQuantity: 3,
     });
     assert.deepEqual(assertParametersPayloadHasNoCostFields(body), []);
-    assert.equal(body.currentQuantity, 0);
+    assert.equal("currentQuantity" in body, false);
     assert.equal(body.contingencyQuantity, 1);
   });
 });

@@ -12,6 +12,8 @@ Controlar, auditar e projetar **disponibilidade física** de itens da empresa �
 
 **Regra-mãe:** o saldo de estoque **nunca** é editado diretamente. Toda alteração ocorre por **movimentação rastreável**. Saldo é consequência; movimentação é o fato gerador.
 
+**Matéria-prima (Suprimentos):** o saldo físico oficial continua neste ledger (`InventoryMovement` → `InventoryBalance`). `Material.quantity` é apenas projeção agregada de `physicalQuantity` do `InventoryItem` vinculado por `materialId`. O cadastro de Suprimentos é somente leitura para saldo. Quantidade física absoluta só é informada pela Conferência Física (`InventoryCountObservation` → ajuste POSITIVE/NEGATIVE_ADJUSTMENT). Reserva, bloqueio e quarentena não alteram `Material.quantity` enquanto o físico não mudar.
+
 O módulo nasce **independente** na Fase 1, com campos e contratos preparados para integrações futuras (compras, PV, produção, BOM, financeiro, qualidade, inteligência de MP).
 
 ---

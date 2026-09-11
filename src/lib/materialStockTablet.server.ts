@@ -3,20 +3,22 @@
  * Select mínimo, sem relações pesadas, sem custos.
  *
  * SoT de quantidade para MPs vinculadas ao Inventory:
- * - Se existir InventoryItem ACTIVE (materialId + RAW_MATERIAL), o saldo
- *   exibido vem da soma de InventoryBalance.physicalQuantity (batch).
+ * - Se existir InventoryItem ACTIVE com materialId, o saldo exibido é a
+ *   soma canônica de InventoryBalance.physicalQuantity (sem misturar
+ *   warehouse-level e location-level).
  * - Material.quantity permanece para MPs sem vínculo / legado.
  * - Este serviço NÃO escreve Material.quantity nem InventoryBalance.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import type { MaterialStockTabletSearchQuery } from "./materialStockTabletQuery.js";
+import type { MaterialStockTabletSearchResponse } from "./materialStockTabletTypes.js";
 import {
   computeStockStatusForTabletRow,
   serializeMaterialStockTabletListItem,
   type MaterialStockTabletDbRow,
 } from "./materialStockTabletSerialization.js";
-import type { MaterialStockTabletSearchResponse } from "./materialStockTabletTypes.js";
+import { sumCanonicalPhysicalQuantity } from "./inventory/materialInventoryProjection.server.js";
 
 const TABLET_SELECT = {
   id: true,
@@ -112,7 +114,9 @@ function paginateRows<T>(rows: T[], page: number, pageSize: number): T[] {
 
 /**
  * Para MPs com InventoryItem vinculado, sobrescreve `quantity` com a soma
- * batch de InventoryBalance.physicalQuantity. Sem writes.
+ * canônica de InventoryBalance.physicalQuantity. Sem writes.
+ * Material.quantity persistido é reconcilado pelo ledger; esta leitura cobre
+ * o intervalo até a próxima projeção.
  */
 async function applyLinkedInventoryBalanceQuantities(
   db: PrismaClient,
@@ -124,30 +128,33 @@ async function applyLinkedInventoryBalanceQuantities(
     where: {
       materialId: { in: materialIds },
       status: "ACTIVE",
-      itemType: "RAW_MATERIAL",
     },
-    select: { id: true, materialId: true },
+    select: { id: true, materialId: true, controlsLocation: true },
   });
   if (items.length === 0) return rows;
 
   const itemIds = items.map((i) => i.id);
   const balances = await db.inventoryBalance.findMany({
     where: { itemId: { in: itemIds } },
-    select: { itemId: true, physicalQuantity: true },
+    select: { itemId: true, physicalQuantity: true, locationId: true },
   });
 
-  const qtyByItem = new Map<string, number>();
+  const balancesByItem = new Map<string, Array<{ locationId: string | null; physicalQuantity: unknown }>>();
   for (const b of balances) {
-    const prev = qtyByItem.get(b.itemId) ?? 0;
-    const n = Number(b.physicalQuantity);
-    qtyByItem.set(b.itemId, prev + (Number.isFinite(n) ? n : 0));
+    const list = balancesByItem.get(b.itemId) ?? [];
+    list.push({ locationId: b.locationId, physicalQuantity: b.physicalQuantity });
+    balancesByItem.set(b.itemId, list);
   }
 
   const qtyByMaterial = new Map<string, number>();
   for (const item of items) {
     if (!item.materialId) continue;
-    const itemQty = qtyByItem.get(item.id) ?? 0;
-    qtyByMaterial.set(item.materialId, (qtyByMaterial.get(item.materialId) ?? 0) + itemQty);
+    if (qtyByMaterial.has(item.materialId)) continue;
+    const itemQty = sumCanonicalPhysicalQuantity(
+      balancesByItem.get(item.id) ?? [],
+      item.controlsLocation === true
+    );
+    qtyByMaterial.set(item.materialId, Number(itemQty.toString()));
   }
 
   return rows.map((row) => {

@@ -339,7 +339,7 @@ IndusCost/
 **Exports**: `evaluateMaterialMarketAlerts`, `buildMaterialMarketSimulationResponse`, `buildRawMaterialPlanningPayload`, `resolveMaterialStockStatus`.
 **Dependencies**: `salesOrderRawMaterialEstimation.js`, `productCostAnalysisEngine.server.js`, `nomus/nomusSourcePresencePolicy.js`.
 **Dependents**: `src/components/materials/*`, `src/components/contextual/ProductMaterialDemandDashboard.tsx`.
-**Gotchas**: Quote reliability still accepts legacy `LOW/MEDIUM/HIGH` alongside canonical PT levels; stock quantity has two sources of truth (`InventoryBalance` vs legacy `Material.quantity`) depending on Inventory linkage.
+**Gotchas**: Quote reliability still accepts legacy `LOW/MEDIUM/HIGH` alongside canonical PT levels. `Material.quantity` is a compatibility projection of Inventory physical stock (read-only in Suprimentos); the official ledger is `InventoryMovement` → `InventoryBalance`. Absolute physical counts are entered only via Conferência Física.
 
 ---
 
@@ -351,7 +351,7 @@ IndusCost/
 **Exports**: `createInventoryMovement`, `recordInventoryCount`, `registerInventoryCollectorRoutes`, `requireInventoryCollectorDevice`.
 **Dependencies**: `@prisma/client`, Node `http`/`crypto` (Tailscale LocalAPI).
 **Dependents**: `src/components/inventory/*`, Collector sub-app (`/collector` standalone routes).
-**Gotchas**: Ledger corrections are always a new `REVERSAL` movement, never update/delete; Collector trusts only `socket.remoteAddress`, never `X-Forwarded-For`, unless an opt-in single-hop local-proxy header rule applies.
+**Gotchas**: Ledger corrections are always a new `REVERSAL` movement, never update/delete; Collector trusts only `socket.remoteAddress`, never `X-Forwarded-For`, unless an opt-in single-hop local-proxy header rule applies. After a physical-quantity change, `reconcileMaterialQuantityFromInventoryInTx` projects the canonical aggregated `physicalQuantity` onto linked `Material.quantity` (never `availableQuantity`).
 
 ---
 

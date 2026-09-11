@@ -193,6 +193,20 @@ describe("domínio SC real — sem writes/imports indevidos", () => {
     );
   });
 
+  it("projeção Material.quantity é a única escrita de MP permitida no Inventory", () => {
+    const projection = readFileSync(
+      join(REPO_ROOT, "src/lib/inventory/materialInventoryProjection.server.ts"),
+      "utf8"
+    );
+    assert.match(projection, /tx\.material\.update/);
+    assert.doesNotMatch(projection, /material\.create/);
+    const rawHits = scanSourceForProtectedModelWrites(
+      "src/lib/inventory/materialInventoryProjection.server.ts",
+      projection
+    );
+    assert.ok(rawHits.some((h) => h.ruleId.includes("material.update")));
+  });
+
   it("adaptador/provedor read-only não contém métodos de escrita no source", () => {
     const src = readFileSync(
       join(REPO_ROOT, "src/lib/supply-chain/officialDataProviders.server.ts"),

@@ -247,8 +247,31 @@ export function scanSupplyChainDomainForOfficialEngineBoundary(
 
     const source = readFileSync(file, "utf8");
     for (const v of scanSourceForOfficialEngineBoundary(rel, source)) {
-      violations.push(v);
+      if (!isAllowedInventoryMaterialMirrorWrite(v)) {
+        violations.push(v);
+      }
     }
   }
   return violations;
+}
+
+/**
+ * Exceções estreitas — não são cadastro paralelo de MP:
+ * - projeção canônica Material.quantity ← InventoryBalance.physicalQuantity
+ * - gates PostgreSQL descartáveis que criam/apagam fixtures de Material
+ */
+function isAllowedInventoryMaterialMirrorWrite(v: OfficialEngineBoundaryViolation): boolean {
+  const file = v.file.replace(/\\/g, "/");
+  const rule = v.ruleId;
+  if (file.endsWith("src/lib/inventory/materialInventoryProjection.server.ts")) {
+    return rule.includes("material.update") || rule.includes("material.updateMany");
+  }
+  if (/\.test\.(ts|tsx)$/.test(file) && file.includes("DbGate")) {
+    return (
+      rule.includes("material.create") ||
+      rule.includes("material.delete") ||
+      rule.includes("material.deleteMany")
+    );
+  }
+  return false;
 }
