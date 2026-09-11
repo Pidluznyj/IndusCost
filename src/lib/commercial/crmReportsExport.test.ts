@@ -81,6 +81,21 @@ describe("crmReportsExport — CSV", () => {
     assert.equal(sheet["!autofilter"]?.ref, "A1:F3");
   });
 
+  it("neutraliza formula injection em texto; número negativo continua número", () => {
+    assert.equal(formatCrmReportsCsvCell("=HYPERLINK(\"http://x\")", "text"), "'=HYPERLINK(\"http://x\")");
+    assert.equal(formatCrmReportsCsvCell("+55 41", "text"), "'+55 41");
+    assert.equal(formatCrmReportsCsvCell("-Metal", "text"), "'-Metal");
+    assert.equal(formatCrmReportsCsvCell("@SUM(A1)", "text"), "'@SUM(A1)");
+    assert.equal(formatCrmReportsCsvCell("Alfa Ltda", "text"), "Alfa Ltda");
+    assert.equal(formatCrmReportsCsvCell(-8, "days"), "-8");
+    assert.equal(formatCrmReportsCsvCell(-100.5, "money"), "-100,50");
+    const csv = buildCrmReportsExportCsv(META, {
+      columns: [{ key: "name", label: "Cliente", format: "text" }],
+      rows: [{ name: "=cmd|' /C calc'!A0" }],
+    });
+    assert.ok(csv.split("\r\n").includes(`'=cmd|' /C calc'!A0`));
+  });
+
   it("formatação por tipo de coluna", () => {
     assert.equal(formatCrmReportsCsvCell(1234.5, "money"), "1234,50");
     assert.equal(formatCrmReportsCsvCell(7.9, "integer"), "7");

@@ -120,6 +120,13 @@ function csvEscape(value: string): string {
   return /[";\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
+/** Proteção contra CSV formula injection — mesmo padrão da Tesouraria/Fornecedores. */
+const CSV_FORMULA_RE = /^[=+\-@\t\r]/;
+
+function neutralizeFormula(value: string): string {
+  return CSV_FORMULA_RE.test(value) ? `'${value}` : value;
+}
+
 function decimalComma(value: number, digits: number): string {
   return value.toFixed(digits).replace(".", ",");
 }
@@ -141,7 +148,8 @@ export function formatCrmReportsCsvCell(value: CrmReportsExportValue, format: Cr
     case "boolean":
       return value === true ? "Sim" : value === false ? "Não" : String(value);
     default:
-      return String(value);
+      // Texto livre (nome, fantasia, cidade…) vem do ERP: nunca vira fórmula no Excel.
+      return neutralizeFormula(String(value));
   }
 }
 
