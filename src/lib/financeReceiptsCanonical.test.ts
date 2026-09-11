@@ -13,6 +13,7 @@ import {
   resolveCivilMonthUtcBounds,
   resolveCivilRangeUtcBounds,
   resolveCivilYearUtcBounds,
+  sumReceivedAmountByCivilMonth,
   sumReceivedAmountByReceivable,
   sumReceivedAmountForEvents,
   type FinanceReceiptEvent,
@@ -118,6 +119,24 @@ describe("financeReceiptsCanonical — soma de recebimento real", () => {
     const sums = sumReceivedAmountByReceivable(events);
     assert.equal(sums.get(100), 1000);
     assert.equal(sums.get(200), 250);
+  });
+
+  it("sumReceivedAmountByCivilMonth agrupa por mês civil — base da timeline de Fluxo de Caixa/Executive Report", () => {
+    const events = [
+      event({ receiptDate: "2026-08-31", receivedAmount: 4000 }),
+      event({ receiptDate: "2026-09-05", receivedAmount: 6000 }),
+      event({ receiptDate: "2026-09-20", receivedAmount: 1000 }),
+    ];
+    const byMonth = sumReceivedAmountByCivilMonth(events);
+    assert.equal(byMonth.get("2026-08"), 4000);
+    assert.equal(byMonth.get("2026-09"), 7000);
+    assert.equal(byMonth.has("2026-07"), false);
+  });
+
+  it("sumReceivedAmountByCivilMonth: mês sem evento fica AUSENTE do mapa, nunca 0 fictício", () => {
+    const byMonth = sumReceivedAmountByCivilMonth([event({ receiptDate: "2026-08-15" })]);
+    assert.equal(byMonth.has("2026-09"), false);
+    assert.equal(byMonth.get("2026-09"), undefined);
   });
 });
 

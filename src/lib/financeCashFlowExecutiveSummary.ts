@@ -109,6 +109,15 @@ export type FinanceCashFlowExecutiveMonthlyRow = {
   month: number;
   monthLabel: string;
   received: number;
+  /**
+   * Caixa REAL do mês (camada canônica `financeReceiptsCanonical`,
+   * `NomusReceivableReceipt.receiptDate`+`receivedAmount`) — aditivo a
+   * `received` (settlementDate ou dueDate, conforme o eixo desta timeline),
+   * nunca o substitui. `undefined`/`null` = não computado por quem construiu
+   * este payload (esta função é pura — a injeção acontece na rota, que tem
+   * acesso a Prisma); NUNCA confundir ausência com "zero recebido".
+   */
+  receivedCash?: number | null;
   receivableOpenDue: number;
   estimatedInflow: number;
   /** AP pago: realizado com caixa dos títulos com dueDate no mês (AP_CASH_REALIZED por dueMonth). */
@@ -130,6 +139,12 @@ export type FinanceCashFlowExecutiveMonthlyRow = {
 export type FinanceCashFlowExecutiveSummary = {
   receivable: {
     receivedYtd: number;
+    /**
+     * Caixa REAL YTD (camada canônica) — aditivo a `receivedYtd`
+     * (settlementDate), nunca o substitui. `null`/ausente = não injetado por
+     * quem montou este payload (esta função é pura, sem Prisma).
+     */
+    cashReceivedYtd?: number | null;
     openFromTodayToYearEnd: number;
     estimatedYearTotal: number;
   };
@@ -745,6 +760,25 @@ export function buildFinanceCashFlowExecutiveSummary(
       periodScopeLabel: resolvePeriodLabel(filters, referenceDate),
     },
   };
+}
+
+/**
+ * Injeta caixa REAL (camada canônica `financeReceiptsCanonical`) em linhas
+ * mensais já construídas — pós-processamento puramente aditivo, NUNCA
+ * recalcula `received`/`estimatedInflow`/qualquer campo existente. Quem
+ * chama (rota com acesso a Prisma) soma os receipts por mês civil
+ * (`sumReceivedAmountByCivilMonth`) e passa o mapa aqui; esta função só
+ * mescla. Mês sem entrada no mapa vira `null` — nunca `0` fictício.
+ */
+export function injectCashReceivedIntoMonthlyRows<T extends { month: number }>(
+  rows: readonly T[],
+  year: number,
+  cashByCivilMonth: ReadonlyMap<string, number>
+): (T & { receivedCash: number | null })[] {
+  return rows.map((row) => {
+    const key = `${year}-${String(row.month).padStart(2, "0")}`;
+    return { ...row, receivedCash: cashByCivilMonth.get(key) ?? null };
+  });
 }
 
 export function executiveSummaryMetricsAreFinite(

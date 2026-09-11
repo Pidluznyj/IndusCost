@@ -75,7 +75,14 @@ const MONTH_LABELS = [
 export type FinanceCashFlowAnnualComparisonMonth = {
   month: number;
   monthLabel: string;
+  /** Alocado por vencimento (dueDate) — coorte/previsão, NÃO é caixa. Ver `receivedCashAmount`. */
   receivedAmount: number;
+  /**
+   * Caixa REAL do mês (camada canônica `financeReceiptsCanonical`) —
+   * aditivo a `receivedAmount`, nunca o substitui. `null` = não injetado
+   * (esta função é pura; a injeção acontece na rota, com acesso a Prisma).
+   */
+  receivedCashAmount?: number | null;
   receivableOpenAmount: number;
   cashInTotalAmount: number;
   paidAmount: number;
@@ -114,6 +121,8 @@ export type FinanceCashFlowAnnualComparisonChartRow = {
   name: string;
   month: number;
   receivedAmount: number;
+  /** Caixa real do mês (camada canônica) — `null` quando não injetado. */
+  receivedCashAmount?: number | null;
   receivableOpenAmount: number;
   cashInTotalAmount: number;
   paidAmount: number;
@@ -564,6 +573,7 @@ export function mapAnnualComparisonChartRows(
     name: m.monthLabel,
     month: m.month,
     receivedAmount: m.receivedAmount,
+    receivedCashAmount: m.receivedCashAmount ?? null,
     receivableOpenAmount: m.receivableOpenAmount,
     cashInTotalAmount: m.cashInTotalAmount,
     paidAmount: m.paidAmount,
@@ -575,8 +585,27 @@ export function mapAnnualComparisonChartRows(
   }));
 }
 
+/**
+ * Injeta caixa REAL (camada canônica) nos meses de um comparativo anual já
+ * montado — pós-processamento aditivo, nunca recalcula `receivedAmount`
+ * (que continua alocado por vencimento) nem qualquer outro campo. Quem
+ * chama (rota com Prisma) soma os receipts por mês civil e passa aqui.
+ */
+export function injectCashReceivedIntoAnnualComparisonMonths(
+  months: readonly FinanceCashFlowAnnualComparisonMonth[],
+  year: number,
+  cashByCivilMonth: ReadonlyMap<string, number>
+): FinanceCashFlowAnnualComparisonMonth[] {
+  return months.map((m) => {
+    const key = `${year}-${String(m.month).padStart(2, "0")}`;
+    return { ...m, receivedCashAmount: cashByCivilMonth.get(key) ?? null };
+  });
+}
+
 export function buildAnnualComparisonSeriesLabels(year: number): {
   receivedAmount: string;
+  /** Rótulo do novo campo aditivo `receivedCashAmount` (camada canônica, receiptDate). */
+  receivedCashAmount: string;
   receivableOpenAmount: string;
   paidAmount: string;
   payableOpenAmount: string;
@@ -584,7 +613,11 @@ export function buildAnnualComparisonSeriesLabels(year: number): {
   receivableGoal: string;
 } {
   return {
+    // Mantido por compatibilidade com o contrato/teste existente — este
+    // campo é alocado por VENCIMENTO (dueDate), não caixa. Para caixa real,
+    // ver `receivedCashAmount` abaixo.
     receivedAmount: "Recebido",
+    receivedCashAmount: "Caixa recebido",
     receivableOpenAmount: "A Receber",
     paidAmount: "Pago",
     payableOpenAmount: "A Pagar",

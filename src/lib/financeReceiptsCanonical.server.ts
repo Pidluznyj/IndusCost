@@ -231,6 +231,7 @@ export {
   resolveCivilMonthUtcBounds,
   resolveCivilRangeUtcBounds,
   resolveCivilYearUtcBounds,
+  sumReceivedAmountByCivilMonth,
   sumReceivedAmountByReceivable,
   sumReceivedAmountForEvents,
   FINANCE_SETTLED_WITHOUT_RECEIPT_REASON,

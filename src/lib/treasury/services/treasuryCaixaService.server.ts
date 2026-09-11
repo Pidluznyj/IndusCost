@@ -86,6 +86,7 @@ import {
 import {
   buildTreasuryCaixaCanonicalDays,
   mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable,
+  type TreasuryCaixaCanonicalDayReceiptEvent,
 } from "../domain/treasuryCaixaCanonicalDay.js";
 import { listReceiptEventsByReceivables } from "@/src/lib/financeReceiptsCanonical.server.js";
 import type { TreasuryOfficialTodayBalance } from "./treasuryOfficialTodayBalance.server.js";
@@ -182,6 +183,23 @@ export function resolveTreasuryCaixaChainYears(
  */
 export type TreasuryCaixaCanonicalRealizedOptions = {
   historicalMonthlyAttribution?: boolean;
+  /**
+   * Eventos reais de recebimento (camada canônica `financeReceiptsCanonical`),
+   * por título CR (`externalId`). Quando um título tem entrada aqui, CADA
+   * evento vira sua PRÓPRIA linha em `receivables` — próprio dia
+   * (`receiptDate`), próprio valor (`receivedAmount`) — nunca o
+   * `amountReceived` acumulado do título de uma vez. O overlay histórico
+   * (`historicalMonthlyAttribution`) NUNCA se aplica a eventos de receipt —
+   * é uma correção exclusiva do eixo de baixa administrativa.
+   *
+   * Título AUSENTE deste mapa (ou lista vazia) cai no fallback de sempre
+   * (baixa + tolerância, com ou sem overlay conforme o flag acima) — mesmo
+   * comportamento anterior a este campo existir.
+   */
+  receiptsByReceivableExternalId?: ReadonlyMap<
+    number,
+    readonly TreasuryCaixaCanonicalDayReceiptEvent[]
+  >;
 };
 
 export function buildTreasuryCaixaCanonicalRealizedInputs(
@@ -204,14 +222,35 @@ export function buildTreasuryCaixaCanonicalRealizedInputs(
     amountPaid: number;
   }[] = [];
   const historicalMonthlyAttribution = options?.historicalMonthlyAttribution === true;
+  const receiptsByReceivableExternalId = options?.receiptsByReceivableExternalId;
 
   for (const ctx of contexts) {
     const yearPrefix = `${ctx.year}-`;
 
-    for (const row of ctx.arReceivedRows as readonly Pick<
+    for (const row of ctx.arReceivedRows as readonly (Pick<
       FinanceCashFlowArRow,
       "dueDate" | "settlementDate" | "amountReceived" | "balanceReceivable"
-    >[]) {
+    > & { externalId?: number })[]) {
+      const receiptEvents =
+        row.externalId != null
+          ? receiptsByReceivableExternalId?.get(row.externalId)
+          : undefined;
+      if (receiptEvents && receiptEvents.length > 0) {
+        // Caixa real: cada evento na sua própria data civil, seu próprio
+        // valor — nunca o acumulado do título de uma vez.
+        for (const event of receiptEvents) {
+          if (!event.receiptDate || !event.receiptDate.startsWith(yearPrefix)) continue;
+          if (!Number.isFinite(event.receivedAmount) || event.receivedAmount === 0) continue;
+          receivables.push({
+            settlementDate: event.receiptDate,
+            amountReceived: event.receivedAmount,
+          });
+        }
+        continue;
+      }
+
+      // Fallback histórico: nenhum receipt local ainda — baixa + tolerância
+      // (ou overlay), como sempre.
       const effective = resolveFinanceArEffectiveSettlementDate(
         {
           dueDate: row.dueDate,
@@ -277,17 +316,23 @@ function arReceivedByMonth(
  */
 export function computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
   contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
-  reconciliation: FinanceSettlementReconciliationPolicy
+  reconciliation: FinanceSettlementReconciliationPolicy,
+  receiptsByReceivableExternalId?: ReadonlyMap<
+    number,
+    readonly TreasuryCaixaCanonicalDayReceiptEvent[]
+  >
 ): Record<string, number> {
-  const baseline = buildTreasuryCaixaCanonicalRealizedInputs(
-    contexts,
-    reconciliation
-  );
-  const overlay = buildTreasuryCaixaCanonicalRealizedInputs(
-    contexts,
-    reconciliation,
-    { historicalMonthlyAttribution: true }
-  );
+  // Títulos com receipt real produzem a MESMA entrada nas duas chamadas (o
+  // overlay histórico nunca se aplica a receipts — ver
+  // `buildTreasuryCaixaCanonicalRealizedInputs`), então seu delta é 0 por
+  // construção: corretamente excluídos, sem caso especial aqui.
+  const baseline = buildTreasuryCaixaCanonicalRealizedInputs(contexts, reconciliation, {
+    receiptsByReceivableExternalId,
+  });
+  const overlay = buildTreasuryCaixaCanonicalRealizedInputs(contexts, reconciliation, {
+    historicalMonthlyAttribution: true,
+    receiptsByReceivableExternalId,
+  });
   const before = arReceivedByMonth(baseline.receivables);
   const after = arReceivedByMonth(overlay.receivables);
   const keys = new Set([...before.keys(), ...after.keys()]);
@@ -338,11 +383,21 @@ function presentationTitleDedupKey(
  *
  * Não altera realizado diário, overlay mensal, motor de cenários nem saldo
  * oficial. Consumidor exclusivo: prefixo histórico de "Projeção do caixa".
+ *
+ * Títulos com receipt real (`receiptsByReceivableExternalId`) são
+ * EXCLUÍDOS desta ponte: seu caixa já está corretamente datado por
+ * `buildTreasuryCaixaCanonicalRealizedInputs` (receiptDate do evento), então
+ * não existe ajuste de apresentação a fazer — só o fallback de baixa
+ * (settlementDate + tolerância/overlay) precisa desta correção.
  */
 export function computeTreasuryCaixaHistoricalArGraphPresentationBridge(
   contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
   reconciliation: FinanceSettlementReconciliationPolicy,
-  graphYear: number
+  graphYear: number,
+  receiptsByReceivableExternalId?: ReadonlyMap<
+    number,
+    readonly TreasuryCaixaCanonicalDayReceiptEvent[]
+  >
 ): TreasuryCaixaHistoricalArPresentationBridge {
   const yearStart = `${graphYear}-01-01`;
   const yearPrefix = `${graphYear}-`;
@@ -358,6 +413,12 @@ export function computeTreasuryCaixaHistoricalArGraphPresentationBridge(
       const dedupKey = presentationTitleDedupKey(row);
       if (seen.has(dedupKey)) continue;
       seen.add(dedupKey);
+
+      const receiptEvents =
+        row.externalId != null
+          ? receiptsByReceivableExternalId?.get(row.externalId)
+          : undefined;
+      if (receiptEvents && receiptEvents.length > 0) continue;
 
       const effective = resolveFinanceArEffectiveSettlementDate(
         {
@@ -766,24 +827,49 @@ export function createTreasuryCaixaService(input: {
           )
         );
       }
+      // Caixa REAL (camada canônica financeReceiptsCanonical) para a cadeia
+      // histórica multianual — população PRÓPRIA desta cadeia (diferente da
+      // do motor único-de-dia mais abaixo: cada uma carrega seu próprio
+      // recorte de anos), carregada em lote, nunca por título. Reaproveitada
+      // pelas três funções que consomem `canonicalContexts` — full scan
+      // diário + refresh recente já garantem que o ledger local está
+      // atualizado; título sem receipt ainda cai no fallback de baixa.
+      const historicalArExternalIds = [
+        ...new Set(
+          canonicalContexts.flatMap((c) =>
+            c.arReceivedRows
+              .map((row) => (row as { externalId?: number }).externalId)
+              .filter((id): id is number => id != null)
+          )
+        ),
+      ];
+      const historicalReceiptEventsByReceivable = await listReceiptEventsByReceivables(
+        prisma,
+        historicalArExternalIds
+      );
+      const historicalReceiptsByReceivableExternalId =
+        mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(
+          historicalReceiptEventsByReceivable
+        );
       const periodFrom = toIsoDate(dueDateFrom);
       const periodTo = toIsoDate(dueDateTo);
       const realizedDaysAll = buildTreasuryCaixaRealizedDays(
-        buildTreasuryCaixaCanonicalRealizedInputs(
-          canonicalContexts,
-          reconciliationPolicy
-        )
+        buildTreasuryCaixaCanonicalRealizedInputs(canonicalContexts, reconciliationPolicy, {
+          receiptsByReceivableExternalId: historicalReceiptsByReceivableExternalId,
+        })
       );
       const historicalArMonthlyInflowDeltaByMonth =
         computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
           canonicalContexts,
-          reconciliationPolicy
+          reconciliationPolicy,
+          historicalReceiptsByReceivableExternalId
         );
       const historicalArGraphPresentationBridge =
         computeTreasuryCaixaHistoricalArGraphPresentationBridge(
           canonicalContexts,
           reconciliationPolicy,
-          period.year
+          period.year,
+          historicalReceiptsByReceivableExternalId
         );
       // Janela dos saldos informados (fechamentos/snapshots): da gênese (ou do
       // ano filtrado, se anterior a ela) até o fim do período — independe do

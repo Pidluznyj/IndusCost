@@ -15,8 +15,11 @@ import {
   FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS,
   FINANCE_SETTLEMENT_RECONCILIATION_LEGACY,
 } from "@/src/lib/finance/financeSettlementReconciliation.js";
+import type { TreasuryCaixaCanonicalDayReceiptEvent } from "../domain/treasuryCaixaCanonicalDay.js";
+import { buildTreasuryCaixaRealizedDays } from "../domain/treasuryCaixaRules.js";
 import {
   buildTreasuryCaixaCanonicalRealizedInputs,
+  computeTreasuryCaixaHistoricalArGraphPresentationBridge,
   computeTreasuryCaixaHistoricalArMonthlyInflowDeltas,
   resolveTreasuryCaixaChainYears,
 } from "./treasuryCaixaService.server.js";
@@ -476,5 +479,261 @@ describe("overlay histórico mensal AR — Tesouraria", () => {
     assert.equal(deltas["2026-02"], -100);
     assert.equal(deltas["2026-01"], undefined);
     assert.equal(Object.keys(deltas).includes("2026-02"), true);
+  });
+});
+
+function receiptEvent(
+  overrides: Partial<TreasuryCaixaCanonicalDayReceiptEvent> = {}
+): TreasuryCaixaCanonicalDayReceiptEvent {
+  return {
+    receiptExternalId: 1,
+    receiptDate: "2026-08-31",
+    receivedAmount: 1000,
+    ...overrides,
+  };
+}
+
+/**
+ * Fecha a missão de canonicalização de recebimentos para a Tesouraria
+ * HISTÓRICA (Linha do tempo multianual + gráfico "Projeção do caixa") — o
+ * mesmo gap corrigido no motor único-de-dia (`buildTreasuryCaixaCanonicalDays`),
+ * agora em `buildTreasuryCaixaCanonicalRealizedInputs`. Todos os testes R01-R07
+ * acima continuam passando inalterados (nenhum passa `receiptsByReceivableExternalId`),
+ * comportamento 100% preservado no fallback.
+ */
+describe("buildTreasuryCaixaCanonicalRealizedInputs — caixa real via receipts (histórico)", () => {
+  it("MISSÃO — caso LIVE CR 19497/RECEIPT 11522: realizado em 04/09 (receiptDate), NUNCA em 10/09 (settlementDate)", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(
+          2026,
+          [
+            arRow({
+              externalId: 19497,
+              dueDate: new Date(2026, 7, 19),
+              settlementDate: new Date(2026, 8, 10),
+              amountReceived: 1488,
+            } as Partial<FinanceCashFlowArRow>),
+          ],
+          []
+        ),
+      ],
+      POLICY,
+      {
+        receiptsByReceivableExternalId: new Map([
+          [
+            19497,
+            [receiptEvent({ receiptExternalId: 11522, receiptDate: "2026-09-04", receivedAmount: 1488 })],
+          ],
+        ]),
+      }
+    );
+    assert.deepEqual(inputs.receivables, [
+      { settlementDate: "2026-09-04", amountReceived: 1488 },
+    ]);
+  });
+
+  it("MISSÃO — parcial cross-month: R$4.000 em 31/08 e R$6.000 em 05/09, nunca R$10.000 num dia só", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(
+          2026,
+          [
+            arRow({
+              externalId: 500,
+              dueDate: new Date(2026, 7, 20),
+              settlementDate: new Date(2026, 8, 5),
+              amountReceived: 10000,
+            } as Partial<FinanceCashFlowArRow>),
+          ],
+          []
+        ),
+      ],
+      POLICY,
+      {
+        receiptsByReceivableExternalId: new Map([
+          [
+            500,
+            [
+              receiptEvent({ receiptExternalId: 9001, receiptDate: "2026-08-31", receivedAmount: 4000 }),
+              receiptEvent({ receiptExternalId: 9002, receiptDate: "2026-09-05", receivedAmount: 6000 }),
+            ],
+          ],
+        ]),
+      }
+    );
+    assert.deepEqual(inputs.receivables, [
+      { settlementDate: "2026-08-31", amountReceived: 4000 },
+      { settlementDate: "2026-09-05", amountReceived: 6000 },
+    ]);
+    const days = buildTreasuryCaixaRealizedDays(inputs);
+    const day31 = days.find((d) => d.civilDate === "2026-08-31");
+    const day05 = days.find((d) => d.civilDate === "2026-09-05");
+    assert.equal(day31?.inflows, 4000);
+    assert.equal(day05?.inflows, 6000);
+    assert.notEqual(day31?.inflows, 0);
+    assert.notEqual(day05?.inflows, 10000);
+  });
+
+  it("dois receipts no mesmo dia do mesmo título viram duas entradas, somadas corretamente no bucket do dia", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [arRow({ externalId: 600, amountReceived: 1500 } as Partial<FinanceCashFlowArRow>)], []),
+      ],
+      POLICY,
+      {
+        receiptsByReceivableExternalId: new Map([
+          [
+            600,
+            [
+              receiptEvent({ receiptExternalId: 1, receiptDate: "2026-08-31", receivedAmount: 1000 }),
+              receiptEvent({ receiptExternalId: 2, receiptDate: "2026-08-31", receivedAmount: 500 }),
+            ],
+          ],
+        ]),
+      }
+    );
+    assert.equal(inputs.receivables.length, 2);
+    const days = buildTreasuryCaixaRealizedDays(inputs);
+    assert.equal(days.find((d) => d.civilDate === "2026-08-31")?.inflows, 1500);
+  });
+
+  it("vários receipts do mesmo CR em meses diferentes do ano do contexto — todos entram, cada um no seu mês", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [arRow({ externalId: 700, amountReceived: 300 } as Partial<FinanceCashFlowArRow>)], []),
+      ],
+      POLICY,
+      {
+        receiptsByReceivableExternalId: new Map([
+          [
+            700,
+            [
+              receiptEvent({ receiptExternalId: 1, receiptDate: "2026-03-10", receivedAmount: 100 }),
+              receiptEvent({ receiptExternalId: 2, receiptDate: "2026-06-15", receivedAmount: 100 }),
+              receiptEvent({ receiptExternalId: 3, receiptDate: "2026-09-01", receivedAmount: 100 }),
+            ],
+          ],
+        ]),
+      }
+    );
+    assert.deepEqual(
+      inputs.receivables.map((r) => r.settlementDate),
+      ["2026-03-10", "2026-06-15", "2026-09-01"]
+    );
+  });
+
+  it("título ausente do mapa de receipts cai no fallback de baixa+tolerância — comportamento de sempre (R01 preservado)", () => {
+    const DUE = new Date(2026, 7, 5);
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(
+          2026,
+          [arRow({ externalId: 800, dueDate: DUE, settlementDate: new Date(2026, 7, 5), amountReceived: 100 } as Partial<FinanceCashFlowArRow>)],
+          []
+        ),
+      ],
+      POLICY,
+      { receiptsByReceivableExternalId: new Map() }
+    );
+    assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-05", amountReceived: 100 }]);
+  });
+
+  it("receipt tem PRIORIDADE sobre a tolerância mesmo quando a baixa ficaria DENTRO da janela de 3 dias úteis", () => {
+    const DUE = new Date(2026, 7, 5);
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(
+          2026,
+          [
+            arRow({
+              externalId: 900,
+              dueDate: DUE,
+              settlementDate: new Date(2026, 7, 6), // D+1, dentro da tolerância → fallback iria para 05/08
+              amountReceived: 100,
+            } as Partial<FinanceCashFlowArRow>),
+          ],
+          []
+        ),
+      ],
+      POLICY,
+      {
+        receiptsByReceivableExternalId: new Map([
+          [900, [receiptEvent({ receiptExternalId: 1, receiptDate: "2026-08-20", receivedAmount: 100 })]],
+        ]),
+      }
+    );
+    // Nunca 05/08 (o que o fallback settlement+tolerância daria) — o receipt manda.
+    assert.deepEqual(inputs.receivables, [{ settlementDate: "2026-08-20", amountReceived: 100 }]);
+  });
+
+  it("AP nunca é afetado por receiptsByReceivableExternalId — ancora sempre no vencimento", () => {
+    const inputs = buildTreasuryCaixaCanonicalRealizedInputs(
+      [
+        ctx(2026, [], [
+          apRow({
+            dueDate: new Date(2026, 7, 5),
+            paymentDate: new Date(2026, 7, 20),
+            amountPayable: 900,
+            amountPaid: 900,
+            balancePayable: 0,
+          }),
+        ]),
+      ],
+      POLICY,
+      { receiptsByReceivableExternalId: new Map([[1, [receiptEvent()]]]) }
+    );
+    assert.deepEqual(inputs.payables, [{ dueDate: null, paymentDate: "2026-08-05", amountPaid: 900 }]);
+  });
+});
+
+describe("computeTreasuryCaixaHistoricalArGraphPresentationBridge — receipts excluídos do ajuste de apresentação", () => {
+  it("título com receipt real não entra no ajuste — seu caixa já está correto, nada a compensar", () => {
+    const bridge = computeTreasuryCaixaHistoricalArGraphPresentationBridge(
+      [
+        ctx(
+          2026,
+          [
+            arRow({
+              externalId: 111,
+              dueDate: new Date(2025, 11, 1),
+              settlementDate: new Date(2026, 1, 5),
+              amountReceived: 100,
+            } as Partial<FinanceCashFlowArRow>),
+          ],
+          []
+        ),
+      ],
+      POLICY,
+      2026,
+      new Map([[111, [receiptEvent({ receiptDate: "2026-02-05", receivedAmount: 100 })]]])
+    );
+    assert.equal(bridge.openingAdjustment, 0);
+    assert.deepEqual(bridge.adjustmentByCivilDate, {});
+  });
+});
+
+describe("computeTreasuryCaixaHistoricalArMonthlyInflowDeltas — receipts não geram delta fictício", () => {
+  it("título com receipt real produz a MESMA entrada em baseline e overlay — delta 0, excluído do mapa", () => {
+    const contexts = [
+      ctx(
+        2026,
+        [
+          arRow({
+            externalId: 222,
+            dueDate: new Date(2025, 11, 6),
+            settlementDate: new Date(2026, 1, 5),
+            amountReceived: 100,
+          } as Partial<FinanceCashFlowArRow>),
+        ],
+        []
+      ),
+    ];
+    const deltas = computeTreasuryCaixaHistoricalArMonthlyInflowDeltas(
+      contexts,
+      POLICY,
+      new Map([[222, [receiptEvent({ receiptDate: "2026-02-05", receivedAmount: 100 })]]])
+    );
+    assert.deepEqual(deltas, {});
   });
 });

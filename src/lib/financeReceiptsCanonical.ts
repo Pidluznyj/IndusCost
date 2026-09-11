@@ -122,6 +122,25 @@ export function isReceiptInCivilPeriod(
   return key >= fromKey && key <= toKey;
 }
 
+/**
+ * Σ `receivedAmount` agrupado por mês civil (`YYYY-MM`) — base para qualquer
+ * timeline mensal de caixa real (Fluxo de Caixa, Comparativo Anual,
+ * Relatório Executivo). Mês sem evento simplesmente não aparece no mapa
+ * (nunca 0 fictício vs ausente — quem consome decide o default).
+ */
+export function sumReceivedAmountByCivilMonth(
+  events: readonly FinanceReceiptEvent[]
+): Map<string, number> {
+  const byMonth = new Map<string, number>();
+  for (const event of events) {
+    const monthKey = financeReceiptCivilMonthKey(event.receiptDate);
+    if (!monthKey) continue;
+    if (!Number.isFinite(event.receivedAmount)) continue;
+    byMonth.set(monthKey, roundMoney((byMonth.get(monthKey) ?? 0) + event.receivedAmount));
+  }
+  return byMonth;
+}
+
 /** Σ `receivedAmount` de uma lista de eventos — nunca some `amountReceived` do título no lugar disso. */
 export function sumReceivedAmountForEvents(events: readonly FinanceReceiptEvent[]): number {
   return roundMoney(events.reduce((acc, e) => acc + (Number.isFinite(e.receivedAmount) ? e.receivedAmount : 0), 0));
