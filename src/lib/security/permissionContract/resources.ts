@@ -482,6 +482,25 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: ["comercial.crm.tab.carteira_clientes"],
   },
   {
+    // Aba CRM > Relatórios. Alias legado próprio e 1:1 (`crm.reports.view`):
+    // reaproveitar `crm.customer_cockpit.view` tornaria a chave da Carteira
+    // multi-dono e a projeção legada deixaria de concedê-la.
+    resourceKey: "commercial.crm.reports",
+    label: "CRM — Relatórios",
+    parentKey: "commercial.crm",
+    groupId: "commercial",
+    route: "/crm-commercial",
+    sortOrder: 318,
+    actions: [V(["crm.reports.view"])],
+    relatedEndpoints: ["/api/crm/reports"],
+    sensitivity: "high",
+    appearsInSidebar: false,
+    isTab: true,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: ["comercial.crm.tab.relatorios"],
+  },
+  {
     resourceKey: "commercial.crm.scope.own",
     label: "CRM — Escopo próprio",
     parentKey: "commercial.crm",

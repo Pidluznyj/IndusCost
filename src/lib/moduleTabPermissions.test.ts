@@ -53,6 +53,7 @@ describe("module tab permissions", () => {
           "crm.general.view",
           "crm.seller.view",
           "crm.customer_cockpit.view",
+          "crm.reports.view",
           "commissions.view",
           "materials.view",
         ],
@@ -101,9 +102,22 @@ describe("module tab permissions", () => {
     assert.ok(api.listAllowedMaterialsSections().includes("marketIntelligence"));
   });
 
+  it("Relatórios do CRM exige o próprio alias — Carteira não concede por tabela (sem multi-dono)", () => {
+    const onlyPortfolio = createPermissionsApi(
+      user({ role: "VIEWER", permissions: ["crm.view", "crm.customer_cockpit.view"] })
+    );
+    assert.equal(onlyPortfolio.canView(ResourceKeys.COMERCIAL_CRM_TAB_RELATORIOS), false);
+    const withReports = createPermissionsApi(
+      user({ role: "VIEWER", permissions: ["crm.view", "crm.reports.view"] })
+    );
+    assert.ok(withReports.canView(ResourceKeys.COMERCIAL_CRM_TAB_RELATORIOS));
+    assert.ok(withReports.listAllowedCrmTabs().includes("reports"));
+  });
+
   it("SUPER_ADMIN vê tudo", () => {
     const api = createPermissionsApi(user({ role: "SUPER_ADMIN" }));
-    assert.equal(api.listAllowedCrmTabs().length, 3);
+    assert.equal(api.listAllowedCrmTabs().length, CRM_UI_TABS.length);
+    assert.ok(api.listAllowedCrmTabs().includes("reports"));
     assert.equal(api.listAllowedCommissionsLiveTabs().length, COMMISSIONS_LIVE_UI_TABS.length);
     assert.equal(api.listAllowedPortfolioReconciliationTabs().length, 4);
   });

@@ -89,6 +89,7 @@ export function getDefaultCrmManagementTab(auth: {
           auth.hasPermission("crm.seller.all") || auth.hasPermission("crm.seller.own")
         );
       }
+      if (tab.id === "reports") return auth.hasPermission("crm.reports.view");
       return (
         auth.hasPermission("crm.general.view") ||
         auth.hasPermission("crm.seller.all") ||

@@ -45,7 +45,7 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
   app.post(
     CRM_REPORTS_OPERATIONAL_PATH,
     requireAppAuth,
-    requireResource(COMMERCIAL_RESOURCE_KEYS.crmPortfolio, COMMERCIAL_ACTIONS.view),
+    requireResource(COMMERCIAL_RESOURCE_KEYS.crmReports, COMMERCIAL_ACTIONS.view),
     async (req, res) => {
       try {
         const authUser = await getCurrentAppUser(req);

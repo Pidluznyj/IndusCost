@@ -32,6 +32,7 @@ describe("permissionResourceSeedData", () => {
       "comercial.crm.tab.gestao_vendedor",
       "comercial.crm.tab.carteira_clientes",
       "comercial.crm.tab.cliente_360",
+      "comercial.crm.tab.relatorios",
       "comissoes",
       "comissoes.tab.fechamento_mes",
       "comissoes.tab.dashboard",

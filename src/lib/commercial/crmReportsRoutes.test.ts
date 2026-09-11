@@ -124,18 +124,18 @@ async function call(ctx: ReturnType<typeof setup>, body: unknown): Promise<FakeR
 }
 
 describe("POST /api/crm/reports/operational — registro e guardas", () => {
-  it("registra só o POST, com sessão + recurso da Carteira (view)", () => {
+  it("registra o POST operacional com sessão + recurso oficial da aba Relatórios (view)", () => {
     const ctx = setup();
-    assert.equal(ctx.routes.length, 1);
-    assert.equal(ctx.routes[0]!.method, "POST");
-    assert.equal(ctx.routes[0]!.path, CRM_REPORTS_OPERATIONAL_PATH);
+    const route = ctx.routes.find((r) => r.path === CRM_REPORTS_OPERATIONAL_PATH)!;
+    assert.ok(route);
+    assert.equal(route.method, "POST");
     assert.equal(CRM_REPORTS_OPERATIONAL_PATH, "/api/crm/reports/operational");
-    assert.equal(ctx.routes[0]!.handlers[0], ctx.requireAppAuth);
+    assert.equal(route.handlers[0], ctx.requireAppAuth);
+    const guard = ctx.resourceGuards.find((g) => g.guard === route.handlers[1]);
     assert.deepEqual(
-      ctx.resourceGuards.map(({ key, action }) => ({ key, action })),
-      [{ key: "commercial.crm.portfolio", action: "view" }]
+      guard && { key: guard.key, action: guard.action },
+      { key: "commercial.crm.reports", action: "view" }
     );
-    assert.equal(ctx.routes[0]!.handlers[1], ctx.resourceGuards[0]!.guard);
   });
 
   it("consta na matriz de acesso comercial", () => {
@@ -144,7 +144,7 @@ describe("POST /api/crm/reports/operational — registro e guardas", () => {
         (e) =>
           e.method === "POST" &&
           e.path === "/api/crm/reports/operational" &&
-          e.resourceKey === "commercial.crm.portfolio" &&
+          e.resourceKey === "commercial.crm.reports" &&
           e.action === "view"
       )
     );
