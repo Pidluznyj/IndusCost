@@ -4,6 +4,10 @@
 pedido. Compra = **Pedido de Venda canônico** (mesma população da tela
 Comercial > Pedidos de Venda), data da compra = **`SalesOrder.issueDate`**.
 
+> Visão consolidada, fontes, lineage, permissões, auditoria e limitações:
+> [crm-reports-repurchase.md](./crm-reports-repurchase.md). Este documento
+> detalha o contrato e a norma do motor.
+
 Entregas: (1) motor + listas operacionais + endpoint + verificador
 (`feat/crm-reports-repurchase-engine`, base `main@f3369eeb`); (2) aba completa
 na UI, relatório personalizado e exportação CSV/XLSX (`feat/crm-reports-ui`,
@@ -344,7 +348,7 @@ aviso (regra). Sai com código 1 se divergir.
 
 1. Garantir o recurso: usuário ADMIN / COMMERCIAL_MANAGER / SELLER sem Perfil de Acesso já vê a aba; para Perfil de Acesso, marcar "CRM — Relatórios" no perfil.
 2. Abrir `CRM Comercial` → aba **Relatórios** (ou `/crm-commercial?tab=reports`). Conferir no DevTools (Rede) que só saem `GET filter-options` e `POST operational` — nenhum `custom`.
-3. Rodar `npx tsx scripts/verify-crm-reports-vs-sales-orders.ts` (read-only) e anotar que sai sem divergência; comparar um cliente com `--customer=<uuid>` contra a tela Pedidos de Venda (Emissão nos últimos 60 dias / 12 meses).
+3. Rodar `npm run verify:crm-reports` (read-only) e anotar que sai sem divergência; comparar um cliente com `--customer=<uuid>` contra a tela Pedidos de Venda (Emissão nos últimos 60 dias / 12 meses). Em seguida `npm run evidence:crm-reports` gera o relatório completo (reconciliação por perfil, recompra à mão, EXCLUDE/ONLY, escopo, desempenho, construtor) em `tmp/` e `npm run explain:crm-reports` os planos — ver [crm-reports-repurchase.md](./crm-reports-repurchase.md#como-auditar-homologação--somente-leitura).
 4. Clicar cada card e conferir: número do card = contador da lista ("N clientes"); "Atrasados > 30 dias" ⊂ "Recompra atrasada".
 5. Marcar 2 linhas → "Ocultar selecionados": "Ocultados" sobe 2, "Clientes analisados" cai 2 e os cards mudam. "Somente selecionados" → analisados = marcados. Voltar a "Todos os clientes".
 6. Filtrar **Responsável Comercial** e depois **Vendedor do último pedido** (outra pessoa): a lista mostra as duas colunas diferentes (carteira × quem lançou o pedido).
