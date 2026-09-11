@@ -140,6 +140,22 @@ describe("MaterialStockConferenceWorkspace", () => {
     );
     assert.match(html, /data-layout="stacked"/);
     assert.match(html, /stock-conference-back/);
+    assert.match(html, /stock-conference-detail-panel/);
+    assert.doesNotMatch(html, /stock-conference-list-panel/);
+  });
+
+  it("layout vertical sem seleção mostra lista (não detalhe)", () => {
+    const html = renderToStaticMarkup(
+      <MaterialStockConferenceWorkspace
+        {...base}
+        viewKind="ready"
+        layoutMode="stacked"
+        rows={[sampleRow()]}
+        selectedId={null}
+      />
+    );
+    assert.match(html, /stock-conference-list-panel/);
+    assert.doesNotMatch(html, /stock-conference-detail-panel/);
   });
 
   it("sem seleção no split mostra dica; histórico oculto sem permissão", () => {
@@ -157,6 +173,21 @@ describe("MaterialStockConferenceWorkspace", () => {
     assert.doesNotMatch(html, /stock-conference-history/);
   });
 
+  it("usa animações Emil (motion) e respeita tokens do Kanban", () => {
+    const src = readFileSync(
+      join(root, "src/components/materials/MaterialStockConferenceWorkspace.tsx"),
+      "utf8"
+    );
+    assert.match(src, /from ["']motion\/react["']/);
+    assert.match(src, /AnimatePresence/);
+    assert.match(src, /useReducedMotion/);
+    assert.match(src, /emilCardListStagger/);
+    assert.match(src, /emilCardVariants/);
+    assert.match(src, /EMIL_EASE_DRAWER/);
+    assert.match(src, /EMIL_EASE_OUT/);
+    assert.doesNotMatch(src, /currentCost|landedCost/);
+  });
+
   it("página conecta busca com AbortController, debounce e filtros", () => {
     const page = readFileSync(
       join(root, "src/components/materials/MaterialStockConferencePage.tsx"),
@@ -169,6 +200,8 @@ describe("MaterialStockConferenceWorkspace", () => {
     assert.match(page, /requestGenRef/);
     assert.match(page, /shouldAutoSelectFirstStockItem/);
     assert.match(page, /appendStockTabletSearchPages/);
+    assert.match(page, /shellMode/);
+    assert.match(page, /getMaterialStockConferenceListPath/);
     assert.doesNotMatch(page, /currentCost|landedCost/);
   });
 });

@@ -327,17 +327,56 @@ export const MATERIALS_SECTIONS: MaterialsSectionDef[] = [
   },
 ];
 
-export function getMaterialStockConferenceDetailPath(materialId: string): string {
-  return `${MATERIALS_SECTION_PATHS.stockConference}/${materialId}`;
+/** Shell de campo (QR-ready) — autenticado, sem Layout/abas. */
+export const MATERIALS_STOCK_CONFERENCE_FIELD_PATH =
+  `${MATERIALS_SECTION_PATHS.stockConference}/field` as const;
+
+export function getMaterialStockConferenceFieldPath(materialId?: string): string {
+  if (materialId) {
+    return `${MATERIALS_STOCK_CONFERENCE_FIELD_PATH}/${encodeURIComponent(materialId)}`;
+  }
+  return MATERIALS_STOCK_CONFERENCE_FIELD_PATH;
 }
 
+export function isMaterialStockConferenceFieldPath(pathname: string): boolean {
+  return (
+    pathname === MATERIALS_STOCK_CONFERENCE_FIELD_PATH ||
+    pathname.startsWith(`${MATERIALS_STOCK_CONFERENCE_FIELD_PATH}/`)
+  );
+}
+
+export function getMaterialStockConferenceDetailPath(
+  materialId: string,
+  options?: { shellMode?: "default" | "locked" }
+): string {
+  if (options?.shellMode === "locked") {
+    return getMaterialStockConferenceFieldPath(materialId);
+  }
+  return `${MATERIALS_SECTION_PATHS.stockConference}/${encodeURIComponent(materialId)}`;
+}
+
+export function getMaterialStockConferenceListPath(
+  options?: { shellMode?: "default" | "locked" }
+): string {
+  if (options?.shellMode === "locked") {
+    return MATERIALS_STOCK_CONFERENCE_FIELD_PATH;
+  }
+  return MATERIALS_SECTION_PATHS.stockConference;
+}
+
+/** Detalhe no escritório — não inclui `/field`. */
 export function isMaterialStockConferenceDetailPath(pathname: string): boolean {
-  return /^\/materials\/stock-conference\/[^/]+$/.test(pathname);
+  return /^\/materials\/stock-conference\/(?!field(?:\/|$))[^/]+$/.test(pathname);
 }
 
 export function parseMaterialIdFromStockConferencePath(pathname: string): string | null {
+  const fieldMatch = pathname.match(
+    /^\/materials\/stock-conference\/field\/([^/]+)$/
+  );
+  if (fieldMatch?.[1]) return decodeURIComponent(fieldMatch[1]);
   const match = pathname.match(/^\/materials\/stock-conference\/([^/]+)$/);
-  return match?.[1] ?? null;
+  if (!match?.[1] || match[1] === "field") return null;
+  return decodeURIComponent(match[1]);
 }
 
 export function getMaterialsDefaultPath(): string {

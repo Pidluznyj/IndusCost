@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import {
   getMaterialStockConferenceDetailPath,
-  MATERIALS_SECTION_PATHS,
+  getMaterialStockConferenceListPath,
 } from "@/src/lib/materialsNavigation";
 import {
   canEditMaterialStockParameters,
@@ -66,11 +66,18 @@ function useStockConferenceLayoutMode(): MaterialStockConferenceLayoutMode {
   return mode;
 }
 
-export function MaterialStockConferencePage() {
+export type MaterialStockConferenceShellMode = "default" | "locked";
+
+export function MaterialStockConferencePage({
+  shellMode = "default",
+}: {
+  shellMode?: MaterialStockConferenceShellMode;
+} = {}) {
   const permissions = usePermissions();
   const navigate = useNavigate();
   const { materialId: routeMaterialId } = useParams<{ materialId?: string }>();
   const layoutMode = useStockConferenceLayoutMode();
+  const pathOpts = { shellMode };
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -190,8 +197,10 @@ export function MaterialStockConferencePage() {
     if (!firstId) return;
     didAutoSelectRef.current = true;
     setSelectedId(firstId);
-    navigate(getMaterialStockConferenceDetailPath(firstId), { replace: true });
-  }, [loading, error, rows, layoutMode, routeMaterialId, navigate]);
+    navigate(getMaterialStockConferenceDetailPath(firstId, pathOpts), {
+      replace: true,
+    });
+  }, [loading, error, rows, layoutMode, routeMaterialId, navigate, shellMode]);
 
   useEffect(() => {
     if (!selectedId || loading) return;
@@ -223,7 +232,9 @@ export function MaterialStockConferencePage() {
     setSelectedId(id);
     setHistoryOpen(false);
     setParametersOpen(false);
-    navigate(getMaterialStockConferenceDetailPath(id), { replace: false });
+    navigate(getMaterialStockConferenceDetailPath(id, pathOpts), {
+      replace: false,
+    });
   };
 
   const onClearSelection = () => {
@@ -232,7 +243,7 @@ export function MaterialStockConferencePage() {
     setConferenceOpen(false);
     setParametersOpen(false);
     setHistoryOpen(false);
-    navigate(MATERIALS_SECTION_PATHS.stockConference, { replace: false });
+    navigate(getMaterialStockConferenceListPath(pathOpts), { replace: false });
   };
 
   const onFilterChange = (next: MaterialStockListFilterId) => {
@@ -261,9 +272,17 @@ export function MaterialStockConferencePage() {
   };
 
   return (
-    <div className="space-y-4" data-testid="stock-conference-page">
+    <div
+      className={
+        shellMode === "locked"
+          ? "flex min-h-[calc(100dvh-2rem)] flex-col gap-4"
+          : "space-y-4"
+      }
+      data-testid="stock-conference-page"
+      data-shell={shellMode}
+    >
       <div>
-        <h1 className="text-lg font-semibold text-foreground">
+        <h1 className="text-lg font-semibold text-foreground sm:text-xl">
           {MATERIAL_STOCK_CONFERENCE_PAGE_TITLE}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -275,6 +294,7 @@ export function MaterialStockConferencePage() {
       <MaterialStockConferenceWorkspace
         viewKind={viewKind}
         layoutMode={layoutMode}
+        shellMode={shellMode}
         search={search}
         onSearchChange={setSearch}
         filter={filter}

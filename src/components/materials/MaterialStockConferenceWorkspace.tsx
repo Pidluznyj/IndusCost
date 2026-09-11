@@ -1,6 +1,7 @@
 /**
  * Workspace visual — Conferência de estoque (lista + detalhes).
  * Presentacional: estados injetados para testes e o page container.
+ * Animações: tokens Emil Kowalski (mesmo espírito do Kanban de Pedidos).
  */
 import React from "react";
 import {
@@ -17,8 +18,17 @@ import {
   Search,
   Settings2,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { cn } from "@/src/lib/utils";
+import {
+  EMIL_DURATION,
+  EMIL_EASE_DRAWER,
+  EMIL_EASE_OUT,
+  emilCardListStagger,
+  emilCardVariants,
+  emilColumnVariants,
+} from "@/src/lib/motion/emilUiMotion";
 import {
   deriveStockConferenceMetrics,
   formatStockConferenceDateTime,
@@ -45,6 +55,8 @@ export type MaterialStockConferenceViewKind =
 export type MaterialStockConferenceWorkspaceProps = {
   viewKind: MaterialStockConferenceViewKind;
   layoutMode: MaterialStockConferenceLayoutMode;
+  /** locked = shell de campo (QR-ready); default = escritório com abas. */
+  shellMode?: "default" | "locked";
   search: string;
   onSearchChange: (value: string) => void;
   filter: MaterialStockListFilterId;
@@ -326,9 +338,16 @@ function DetailPanel({
 export function MaterialStockConferenceWorkspace(
   props: MaterialStockConferenceWorkspaceProps
 ) {
+  const reduceMotion = useReducedMotion();
   const selected = props.rows.find((r) => r.id === props.selectedId) ?? null;
-  const stackedDetailOpen =
-    props.layoutMode === "stacked" && selected != null;
+  const stacked = props.layoutMode === "stacked";
+  const stackedDetailOpen = stacked && selected != null;
+  const shellLocked = props.shellMode === "locked";
+  const motionDuration = reduceMotion ? 0 : EMIL_DURATION.overlay;
+  const panelTransition = {
+    duration: motionDuration,
+    ease: stacked ? EMIL_EASE_DRAWER : EMIL_EASE_OUT,
+  } as const;
 
   if (props.viewKind === "loading") {
     return (
@@ -361,12 +380,8 @@ export function MaterialStockConferenceWorkspace(
     );
   }
 
-  const listPanel = (
-    <div
-      className="flex min-h-0 flex-col gap-3"
-      data-testid="stock-conference-list-panel"
-      hidden={stackedDetailOpen ? true : undefined}
-    >
+  const listBody = (
+    <>
       <div className="sticky top-0 z-10 space-y-2 bg-background pb-1">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -424,15 +439,25 @@ export function MaterialStockConferenceWorkspace(
         </div>
       ) : (
         <>
-          <ul
+          <motion.ul
             className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
             data-testid="stock-conference-list"
+            variants={reduceMotion ? undefined : emilCardListStagger}
+            initial={reduceMotion ? false : "hidden"}
+            animate="show"
           >
             {props.rows.map((row) => {
               const selectedRow = row.id === props.selectedId;
               const qtyLabel = `${formatStockConferenceQuantity(row.currentQuantity)} ${row.unit}`;
               return (
-                <li key={row.id}>
+                <motion.li
+                  key={row.id}
+                  variants={reduceMotion ? undefined : emilCardVariants}
+                  transition={{
+                    duration: reduceMotion ? 0 : EMIL_DURATION.popover,
+                    ease: EMIL_EASE_OUT,
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => props.onSelect(row.id)}
@@ -469,10 +494,10 @@ export function MaterialStockConferenceWorkspace(
                       </span>
                     </div>
                   </button>
-                </li>
+                </motion.li>
               );
             })}
-          </ul>
+          </motion.ul>
           {props.hasMore ? (
             <div className="space-y-2" data-testid="stock-conference-more">
               <p className="text-xs text-muted-foreground">
@@ -500,51 +525,114 @@ export function MaterialStockConferenceWorkspace(
           ) : null}
         </>
       )}
+    </>
+  );
+
+  const detailContent = selected ? (
+    <DetailPanel
+      item={selected}
+      canViewHistory={props.canViewHistory}
+      canConference={props.canConference}
+      canEditParameters={props.canEditParameters}
+      onConference={props.onConference}
+      onHistory={props.onHistory}
+      onEditParameters={props.onEditParameters}
+      showBack={stacked}
+      onBack={props.onClearSelection}
+    />
+  ) : (
+    <div
+      className="flex h-full min-h-[240px] items-center justify-center p-6 text-center text-sm text-muted-foreground"
+      data-testid="stock-conference-detail-empty"
+    >
+      {MATERIAL_STOCK_CONFERENCE_SELECT_HINT}
     </div>
   );
 
-  const detailPanel = (
-    <div
-      className="min-h-0 rounded-xl border border-border bg-card p-4"
-      data-testid="stock-conference-detail-panel"
-      hidden={props.layoutMode === "stacked" && !stackedDetailOpen ? true : undefined}
-    >
-      {selected ? (
-        <DetailPanel
-          item={selected}
-          canViewHistory={props.canViewHistory}
-          canConference={props.canConference}
-          canEditParameters={props.canEditParameters}
-          onConference={props.onConference}
-          onHistory={props.onHistory}
-          onEditParameters={props.onEditParameters}
-          showBack={props.layoutMode === "stacked"}
-          onBack={props.onClearSelection}
-        />
-      ) : (
-        <div
-          className="flex h-full min-h-[240px] items-center justify-center p-6 text-center text-sm text-muted-foreground"
-          data-testid="stock-conference-detail-empty"
-        >
-          {MATERIAL_STOCK_CONFERENCE_SELECT_HINT}
-        </div>
-      )}
-    </div>
-  );
+  if (stacked) {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col",
+          shellLocked ? "min-h-[60dvh]" : "min-h-[70vh]"
+        )}
+        data-testid="stock-conference-workspace"
+        data-layout="stacked"
+        data-shell={props.shellMode ?? "default"}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {stackedDetailOpen ? (
+            <motion.div
+              key="stock-conference-detail"
+              className="min-h-0 flex-1 rounded-xl border border-border bg-card p-4"
+              data-testid="stock-conference-detail-panel"
+              initial={
+                reduceMotion ? false : { opacity: 0, x: 28, scale: 0.98 }
+              }
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={
+                reduceMotion ? undefined : { opacity: 0, x: 16, scale: 0.98 }
+              }
+              transition={panelTransition}
+            >
+              {detailContent}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="stock-conference-list"
+              className="flex min-h-0 flex-1 flex-col gap-3"
+              data-testid="stock-conference-list-panel"
+              initial={
+                reduceMotion ? false : { opacity: 0, x: -20, scale: 0.98 }
+              }
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={
+                reduceMotion ? undefined : { opacity: 0, x: -12, scale: 0.98 }
+              }
+              transition={panelTransition}
+            >
+              {listBody}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
 
   return (
-    <div
+    <motion.div
       className={cn(
-        "gap-4",
-        props.layoutMode === "split"
-          ? "grid min-h-[70vh] grid-cols-1 lg:grid-cols-[minmax(280px,38%)_1fr]"
-          : "flex min-h-[70vh] flex-col"
+        "grid gap-4 grid-cols-1 lg:grid-cols-[minmax(280px,38%)_1fr]",
+        shellLocked ? "min-h-[60dvh]" : "min-h-[70vh]"
       )}
       data-testid="stock-conference-workspace"
-      data-layout={props.layoutMode}
+      data-layout="split"
+      data-shell={props.shellMode ?? "default"}
+      variants={reduceMotion ? undefined : emilColumnVariants}
+      initial={reduceMotion ? false : "hidden"}
+      animate="show"
+      transition={panelTransition}
     >
-      {listPanel}
-      {detailPanel}
-    </div>
+      <div
+        className="flex min-h-0 flex-col gap-3"
+        data-testid="stock-conference-list-panel"
+      >
+        {listBody}
+      </div>
+      <motion.div
+        className="min-h-0 rounded-xl border border-border bg-card p-4"
+        data-testid="stock-conference-detail-panel"
+        variants={reduceMotion ? undefined : emilColumnVariants}
+        initial={reduceMotion ? false : "hidden"}
+        animate="show"
+        transition={{
+          duration: reduceMotion ? 0 : EMIL_DURATION.board,
+          ease: EMIL_EASE_OUT,
+          delay: reduceMotion ? 0 : 0.04,
+        }}
+      >
+        {detailContent}
+      </motion.div>
+    </motion.div>
   );
 }

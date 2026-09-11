@@ -4,13 +4,21 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   getMaterialMarketQuoteReliabilityApiPath,
+  getMaterialStockConferenceDetailPath,
+  getMaterialStockConferenceFieldPath,
+  getMaterialStockConferenceListPath,
   getMaterialsDefaultPath,
+  isMaterialStockConferenceDetailPath,
+  isMaterialStockConferenceFieldPath,
   isMaterialsCanonicalPath,
   MATERIALS_SECTION_PATHS,
   MATERIALS_SECTIONS,
+  MATERIALS_STOCK_CONFERENCE_FIELD_PATH,
+  parseMaterialIdFromStockConferencePath,
   parseMaterialsSectionFromPath,
   resolveMaterialsCanonicalPath,
 } from "./materialsNavigation.js";
+import { resolveModuleIdFromPath } from "./modulePermissions.js";
 
 const ROOT = process.cwd();
 
@@ -42,6 +50,54 @@ describe("materialsNavigation", () => {
       resolveMaterialsCanonicalPath("/materials/stock-conference/abc"),
       "/materials/stock-conference/abc"
     );
+  });
+
+  it("shell de campo /field é QR-ready e não colide com materialId", () => {
+    assert.equal(
+      MATERIALS_STOCK_CONFERENCE_FIELD_PATH,
+      "/materials/stock-conference/field"
+    );
+    assert.equal(isMaterialStockConferenceFieldPath("/materials/stock-conference/field"), true);
+    assert.equal(
+      isMaterialStockConferenceFieldPath("/materials/stock-conference/field/mat-1"),
+      true
+    );
+    assert.equal(isMaterialStockConferenceDetailPath("/materials/stock-conference/field"), false);
+    assert.equal(isMaterialStockConferenceDetailPath("/materials/stock-conference/abc"), true);
+    assert.equal(parseMaterialIdFromStockConferencePath("/materials/stock-conference/field"), null);
+    assert.equal(
+      parseMaterialIdFromStockConferencePath("/materials/stock-conference/field/mat-1"),
+      "mat-1"
+    );
+    assert.equal(
+      getMaterialStockConferenceDetailPath("mat-1", { shellMode: "locked" }),
+      "/materials/stock-conference/field/mat-1"
+    );
+    assert.equal(
+      getMaterialStockConferenceListPath({ shellMode: "locked" }),
+      "/materials/stock-conference/field"
+    );
+    assert.equal(getMaterialStockConferenceFieldPath(), "/materials/stock-conference/field");
+    assert.equal(resolveModuleIdFromPath("/materials/stock-conference/field"), "materials");
+    assert.equal(
+      resolveModuleIdFromPath("/materials/stock-conference/field/mat-1"),
+      "materials"
+    );
+    // Fora do MaterialsModule (não canônico do módulo com abas).
+    assert.equal(isMaterialsCanonicalPath("/materials/stock-conference/field"), false);
+  });
+
+  it("App.tsx registra shell de campo fora do Layout", () => {
+    const app = read("src/App.tsx");
+    assert.match(app, /MaterialStockConferenceFieldPage/);
+    assert.match(app, /\/materials\/stock-conference\/field/);
+    assert.match(app, /stock-conference\/field\/:materialId/);
+    const fieldPage = read(
+      "src/components/materials/MaterialStockConferenceFieldPage.tsx"
+    );
+    assert.match(fieldPage, /shellMode=["']locked["']/);
+    assert.match(fieldPage, /stock-conference-field-shell/);
+    assert.doesNotMatch(fieldPage, /materials-module-tabs/);
   });
 
   it("rota canônica de inteligência de mercado", () => {

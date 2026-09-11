@@ -7,6 +7,7 @@ import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
 import { EmployeesDashboardPage } from "./components/employee/EmployeesDashboardPage";
 import { MachineModule } from "./components/MachineModule";
 import { MaterialsModule } from "./components/MaterialsModule";
+import { MaterialStockConferenceFieldPage } from "./components/materials/MaterialStockConferenceFieldPage";
 import { ProductModule } from "./components/ProductModule";
 import { IndirectCostModule } from "./components/IndirectCostModule";
 import { TaxModule } from "./components/TaxModule";
@@ -390,6 +391,14 @@ export default function App() {
       <Route element={<RequireAuth />}>
       {/* P11: telas autenticadas fora do Layout — mesmo view da sidebar */}
       <Route element={<RequirePathViewAccess />}>
+      <Route
+        path="/materials/stock-conference/field"
+        element={<MaterialStockConferenceFieldPage />}
+      />
+      <Route
+        path="/materials/stock-conference/field/:materialId"
+        element={<MaterialStockConferenceFieldPage />}
+      />
       <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/intake-form/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/intake-form/blank" element={<ProjectIntakeFormPage />} />
