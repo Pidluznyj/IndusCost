@@ -54,10 +54,12 @@ describe("guard CRM > Relatórios — módulos reais", () => {
     }
   });
 
-  it("relatório personalizado está protegido como consumidor do pipeline", () => {
+  it("personalizado e exportação estão protegidos como consumidores do pipeline", () => {
     const byPath = new Map(CRM_REPORTS_GUARDED_FILES.map((f) => [f.path, f.role]));
     assert.equal(byPath.get("src/lib/commercial/crmCustomReportService.server.ts"), "consumer");
+    assert.equal(byPath.get("src/lib/commercial/crmReportsExportService.server.ts"), "consumer");
     assert.equal(byPath.get("src/lib/commercial/crmCustomReportCore.ts"), "aggregation");
+    assert.equal(byPath.get("src/lib/commercial/crmReportsExport.ts"), "aggregation");
   });
 });
 

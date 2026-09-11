@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { COMMERCIAL_PILOT_ENDPOINTS } from "@/src/lib/commercialAccess.js";
-import { CRM_REPORTS_CUSTOM_PATH, CRM_REPORTS_OPERATIONAL_PATH, registerCrmReportsRoutes } from "./crmReportsRoutes.js";
+import {
+  CRM_REPORTS_CUSTOM_EXPORT_PATH,
+  CRM_REPORTS_CUSTOM_PATH,
+  CRM_REPORTS_OPERATIONAL_EXPORT_PATH,
+  CRM_REPORTS_OPERATIONAL_PATH,
+  registerCrmReportsRoutes,
+} from "./crmReportsRoutes.js";
 import {
   CrmReportsCapacityError,
   type CrmReportsDataSource,
@@ -189,7 +195,9 @@ describe("POST /api/crm/reports/operational — registro e guardas", () => {
         "GET /api/crm/reports/customer-options",
         "GET /api/crm/reports/filter-options",
         "POST /api/crm/reports/custom",
+        "POST /api/crm/reports/custom/export",
         "POST /api/crm/reports/operational",
+        "POST /api/crm/reports/operational/export",
       ]
     );
     for (const route of ctx.routes) {
@@ -324,6 +332,41 @@ describe("POST /api/crm/reports/operational — respostas", () => {
     });
     assert.equal(res.statusCode, 422);
     assert.equal((res.body as { error: string }).error, "REPORT_TOO_LARGE");
+  });
+
+  it("POST operational/export: 400 para lista/formato inválidos; 200 com anexo XLSX", async () => {
+    const badList = await callRoute(setup(), "POST", CRM_REPORTS_OPERATIONAL_EXPORT_PATH, {
+      body: { list: "todas", format: "csv" },
+    });
+    assert.equal(badList.statusCode, 400);
+    const badFormat = await callRoute(setup(), "POST", CRM_REPORTS_OPERATIONAL_EXPORT_PATH, {
+      body: { list: "recent", format: "pdf" },
+    });
+    assert.equal(badFormat.statusCode, 400);
+
+    const ok = await callRoute(setup(), "POST", CRM_REPORTS_OPERATIONAL_EXPORT_PATH, {
+      body: { list: "recent", format: "xlsx" },
+    });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.headers["content-type"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    assert.equal(ok.headers["content-disposition"], 'attachment; filename="crm-relatorio-compraram-60d-20260911-1000.xlsx"');
+    assert.equal(ok.headers["cache-control"], "no-store");
+    assert.equal(ok.headers["x-export-row-count"], "1");
+    assert.ok(Buffer.isBuffer(ok.body));
+  });
+
+  it("POST custom/export: 400 formato inválido; 200 CSV com metadados", async () => {
+    const bad = await callRoute(setup(), "POST", CRM_REPORTS_CUSTOM_EXPORT_PATH, {
+      body: { format: "json", dimensions: ["customer"], metrics: ["soldValue"] },
+    });
+    assert.equal(bad.statusCode, 400);
+    const ok = await callRoute(setup(), "POST", CRM_REPORTS_CUSTOM_EXPORT_PATH, {
+      body: { format: "csv", dimensions: ["customer"], metrics: ["soldValue"] },
+    });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.headers["content-type"], "text/csv; charset=utf-8");
+    assert.match(ok.headers["content-disposition"]!, /crm-relatorio-personalizado-20260911-1000\.csv/);
+    assert.match(String(ok.body), /# Usuário: Test User <test@example\.com>/);
   });
 
   it("500 em erro inesperado, sem vazar detalhe interno", async () => {

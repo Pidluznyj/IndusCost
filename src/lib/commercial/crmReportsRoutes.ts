@@ -2,9 +2,11 @@
  * CRM > Relatórios — rotas HTTP. Nenhuma escreve nada.
  *
  *   POST /api/crm/reports/operational         universo, cards e 3 listas paginadas
+ *   POST /api/crm/reports/operational/export  lista inteira (CSV/XLSX), mesmo spec
  *   GET  /api/crm/reports/filter-options      metadados leves dos filtros
  *   GET  /api/crm/reports/customer-options    busca/rotulagem de clientes do escopo
  *   POST /api/crm/reports/custom              relatório personalizado (só ao "Gerar")
+ *   POST /api/crm/reports/custom/export       relatório personalizado inteiro (CSV/XLSX)
  *
  * Leitura via POST onde `customerIds` pode ser grande.
  *
@@ -42,11 +44,32 @@ import {
   parseCrmCustomReportRequest,
 } from "@/src/lib/commercial/crmCustomReportCore.js";
 import { loadCrmCustomReport } from "@/src/lib/commercial/crmCustomReportService.server.js";
+import {
+  exportCrmCustomReport,
+  exportCrmReportsOperationalList,
+  type CrmReportsExportFile,
+} from "@/src/lib/commercial/crmReportsExportService.server.js";
+import { isCrmReportsExportFormat } from "@/src/lib/commercial/crmReportsExport.js";
+import { CRM_REPORTS_LIST_KEYS, type CrmReportsListKey } from "@/src/lib/commercial/crmReportsTypes.js";
 
 export const CRM_REPORTS_OPERATIONAL_PATH = "/api/crm/reports/operational";
+export const CRM_REPORTS_OPERATIONAL_EXPORT_PATH = "/api/crm/reports/operational/export";
 export const CRM_REPORTS_FILTER_OPTIONS_PATH = "/api/crm/reports/filter-options";
 export const CRM_REPORTS_CUSTOMER_OPTIONS_PATH = "/api/crm/reports/customer-options";
 export const CRM_REPORTS_CUSTOM_PATH = "/api/crm/reports/custom";
+export const CRM_REPORTS_CUSTOM_EXPORT_PATH = "/api/crm/reports/custom/export";
+
+function sendExportFile(res: express.Response, file: CrmReportsExportFile): void {
+  res.setHeader("Content-Type", file.contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Export-Row-Count", String(file.rowCount));
+  res.send(typeof file.body === "string" ? file.body : Buffer.from(file.body));
+}
+
+function readBodyField(body: unknown, field: string): unknown {
+  return body != null && typeof body === "object" ? (body as Record<string, unknown>)[field] : undefined;
+}
 
 export type CrmReportsRoutesDeps = {
   requireAppAuth: RequestHandler;
@@ -62,6 +85,7 @@ export type CrmReportsRoutesDeps = {
 type ScopedContext = {
   req: express.Request;
   res: express.Response;
+  auth: AppAuthContext;
   scope: CrmCommercialAccessScope;
   dataSource: CrmReportsDataSource;
   now: Date | undefined;
@@ -90,6 +114,7 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
         await handler({
           req,
           res,
+          auth: authUser,
           scope: scopeResult.scope,
           dataSource: (deps.createDataSource ?? createPrismaCrmReportsDataSource)(deps.prisma),
           now: deps.now?.(),
@@ -135,6 +160,39 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
   );
 
   app.post(
+    CRM_REPORTS_OPERATIONAL_EXPORT_PATH,
+    requireAppAuth,
+    reportsGuard(),
+    scoped(`POST ${CRM_REPORTS_OPERATIONAL_EXPORT_PATH}`, async ({ req, res, auth, scope, dataSource, now }) => {
+      const list = readBodyField(req.body, "list");
+      const format = readBodyField(req.body, "format");
+      if (typeof list !== "string" || !(CRM_REPORTS_LIST_KEYS as readonly string[]).includes(list)) {
+        res.status(400).json({ error: "VALIDATION", message: "list inválida: use recent, cadence ou overdue." });
+        return;
+      }
+      if (!isCrmReportsExportFormat(format)) {
+        res.status(400).json({ error: "VALIDATION", message: "format inválido: use csv ou xlsx." });
+        return;
+      }
+      const parsed = parseCrmReportsOperationalRequest(req.body);
+      if (parsed.ok === false) {
+        res.status(400).json({ error: "VALIDATION", message: parsed.errors.join(" "), details: parsed.errors });
+        return;
+      }
+      const file = await exportCrmReportsOperationalList({
+        ds: dataSource,
+        scope,
+        auth,
+        request: parsed.request,
+        list: list as CrmReportsListKey,
+        format,
+        options: { now },
+      });
+      sendExportFile(res, file);
+    })
+  );
+
+  app.post(
     CRM_REPORTS_CUSTOM_PATH,
     requireAppAuth,
     reportsGuard(),
@@ -145,6 +203,26 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
         return;
       }
       res.json(await loadCrmCustomReport(dataSource, scope, parsed.spec, { now }));
+    })
+  );
+
+  app.post(
+    CRM_REPORTS_CUSTOM_EXPORT_PATH,
+    requireAppAuth,
+    reportsGuard(),
+    scoped(`POST ${CRM_REPORTS_CUSTOM_EXPORT_PATH}`, async ({ req, res, auth, scope, dataSource, now }) => {
+      const format = readBodyField(req.body, "format");
+      if (!isCrmReportsExportFormat(format)) {
+        res.status(400).json({ error: "VALIDATION", message: "format inválido: use csv ou xlsx." });
+        return;
+      }
+      const parsed = parseCrmCustomReportRequest(req.body);
+      if (parsed.ok === false) {
+        res.status(400).json({ error: "VALIDATION", message: parsed.errors.join(" "), details: parsed.errors });
+        return;
+      }
+      const file = await exportCrmCustomReport({ ds: dataSource, scope, auth, spec: parsed.spec, format, options: { now } });
+      sendExportFile(res, file);
     })
   );
 
