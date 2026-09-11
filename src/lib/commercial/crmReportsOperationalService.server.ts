@@ -441,7 +441,55 @@ function resolveServerTimeZone(): string {
   }
 }
 
-function toSellerDisplay(
+/** Declaração de proveniência — a MESMA para listas, relatório personalizado e exportações. */
+export function buildCrmReportsSourceInfo(run: CrmReportsRun): CrmReportsSourceInfo {
+  return {
+    orderSource: "SalesOrder",
+    dateAxis: "SalesOrder.issueDate",
+    businessDateAxis: "LOCAL_CALENDAR_DAY",
+    businessTimeZone: resolveServerTimeZone(),
+    validitySource: CRM_REPORTS_VALIDITY_SOURCE,
+    portfolioAxis: "RESPONSAVEL_COMERCIAL_CLIENTE",
+    orderSellerAxis: "AUDIT_ONLY",
+    relationshipSource: "CommercialActivity (enriquecimento; não cria compra)",
+    repurchaseVersion: CRM_REPURCHASE_ENGINE_VERSION,
+    historyWindow: "FULL_HISTORY",
+    proposalsUsedAsPurchase: false,
+    invoicesUsedAsPurchase: false,
+    commissionsUsedAsPurchase: false,
+    truncated: false,
+    ordersLoaded: run.ordersLoaded,
+    futureDatedOrdersIgnored: run.analysis.futureDatedOrdersIgnored,
+  };
+}
+
+/** Responsáveis em lotes de IDs (exportação e relatório personalizado — nunca 1 por cliente). */
+export async function resolveCrmReportsOwnersInBatches(
+  ds: CrmReportsDataSource,
+  customerIds: readonly string[]
+): Promise<CommercialResponsibleMap> {
+  const merged: CommercialResponsibleMap = new Map();
+  for (const ids of chunkIds([...new Set(customerIds)], CRM_REPORTS_ID_CHUNK_SIZE)) {
+    const map = await ds.resolveCommercialOwners(ids);
+    for (const [id, owner] of map) merged.set(id, owner);
+  }
+  return merged;
+}
+
+/** Atividades (follow-up) em lotes de IDs — mesma semântica da Carteira. */
+export async function loadCrmReportsFollowUpsInBatches(
+  ds: CrmReportsDataSource,
+  customerIds: readonly string[],
+  now: Date
+): Promise<Map<string, CrmReportsFollowUpDisplay>> {
+  const activities: CrmReportsActivityRecord[] = [];
+  for (const ids of chunkIds([...new Set(customerIds)], CRM_REPORTS_ID_CHUNK_SIZE)) {
+    activities.push(...(await ds.findActivities(ids)));
+  }
+  return aggregateCustomerActivities(activities, now);
+}
+
+export function toSellerDisplay(
   lastOrder: CrmReportsLastOrder | null,
   ctx: CommissionSellerIdentityContext | null
 ): CrmReportsSellerDisplay | null {
@@ -458,7 +506,7 @@ function toSellerDisplay(
   };
 }
 
-function toOwnerDisplay(map: CommercialResponsibleMap, customerId: string): CrmReportsOwnerDisplay {
+export function toOwnerDisplay(map: CommercialResponsibleMap, customerId: string): CrmReportsOwnerDisplay {
   const owner = map.get(customerId);
   if (!owner) return null;
   return { name: owner.sellerCanonicalName, externalSellerId: owner.sellerExternalId };
@@ -493,24 +541,7 @@ export async function loadCrmReportsOperational(
       ? aggregateCustomerActivities(await ds.findActivities(overdueIds), run.now)
       : new Map<string, CrmReportsFollowUpDisplay>();
 
-  const sourceInfo: CrmReportsSourceInfo = {
-    orderSource: "SalesOrder",
-    dateAxis: "SalesOrder.issueDate",
-    businessDateAxis: "LOCAL_CALENDAR_DAY",
-    businessTimeZone: resolveServerTimeZone(),
-    validitySource: CRM_REPORTS_VALIDITY_SOURCE,
-    portfolioAxis: "RESPONSAVEL_COMERCIAL_CLIENTE",
-    orderSellerAxis: "AUDIT_ONLY",
-    relationshipSource: "CommercialActivity (enriquecimento; não cria compra)",
-    repurchaseVersion: CRM_REPURCHASE_ENGINE_VERSION,
-    historyWindow: "FULL_HISTORY",
-    proposalsUsedAsPurchase: false,
-    invoicesUsedAsPurchase: false,
-    commissionsUsedAsPurchase: false,
-    truncated: false,
-    ordersLoaded: run.ordersLoaded,
-    futureDatedOrdersIgnored: analysis.futureDatedOrdersIgnored,
-  };
+  const sourceInfo = buildCrmReportsSourceInfo(run);
 
   return {
     asOf: run.now.toISOString(),
@@ -558,7 +589,7 @@ const optionLabelCollator = new Intl.Collator("pt-BR", { sensitivity: "base", nu
  * `where` do universo autorizado (ativo ∧ fora do grupo ∧ carteira do
  * escopo). `null` = nada autorizado (own sem vínculo) — não consulta nada.
  */
-async function resolveAuthorizedCustomerWhere(
+export async function resolveAuthorizedCustomerWhere(
   ds: CrmReportsDataSource,
   scope: CrmCommercialAccessScope
 ): Promise<Prisma.CustomerWhereInput | null> {

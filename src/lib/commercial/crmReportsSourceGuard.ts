@@ -13,7 +13,9 @@
  *   - teto de horizonte de 24 meses no histórico de recompra;
  *   - escrita/cache persistente;
  *   - Prisma/Express/React dentro do motor e do núcleo puros;
- *   - CommercialActivity dentro do cálculo (só enriquecimento).
+ *   - CommercialActivity dentro do cálculo (só enriquecimento);
+ *   - relatório personalizado/exportação consultando pedido por conta
+ *     própria em vez de consumir o pipeline das listas.
  *
  * Módulo puro: recebe o texto dos arquivos e devolve violações.
  */
@@ -22,7 +24,11 @@ export type CrmReportsGuardRole =
   | "types"
   | "engine"
   | "core"
+  /** Agregação/formatação pura sobre fatos já calculados (personalizado, rótulos, CSV/XLSX). */
+  | "aggregation"
   | "service"
+  /** Shell que só CONSOME o pipeline das listas (personalizado, exportação). */
+  | "consumer"
   | "routes"
   | "verifier"
   | "verifier-cli";
@@ -48,13 +54,23 @@ const ALL: readonly CrmReportsGuardRole[] = [
   "types",
   "engine",
   "core",
+  "aggregation",
   "service",
+  "consumer",
   "routes",
   "verifier",
   "verifier-cli",
 ];
-const PURE: readonly CrmReportsGuardRole[] = ["types", "engine", "core"];
-const REPORT_RUNTIME: readonly CrmReportsGuardRole[] = ["types", "engine", "core", "service", "routes"];
+const PURE: readonly CrmReportsGuardRole[] = ["types", "engine", "core", "aggregation"];
+const REPORT_RUNTIME: readonly CrmReportsGuardRole[] = [
+  "types",
+  "engine",
+  "core",
+  "aggregation",
+  "service",
+  "consumer",
+  "routes",
+];
 
 export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
   {
@@ -138,7 +154,15 @@ export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
     id: "ACTIVITY_IN_CALCULATION",
     description: "CommercialActivity é só enriquecimento — não entra no motor nem no núcleo.",
     pattern: /commercialActivity|CommercialActivity|nextActionAt|contactDate/,
-    roles: ["engine", "core"],
+    roles: ["engine", "core", "aggregation"],
+  },
+  {
+    id: "PARALLEL_ORDER_QUERY",
+    description:
+      "Personalizado/exportação não consultam pedido por conta própria: consomem runCrmReportsAnalysis (mesmo escopo, filtros e população canônica).",
+    pattern:
+      /\.findSalesOrders\s*\(|crmCanonicalSalesOrderWhere\s*\(|buildSalesOrderListWhere\s*\(|\.salesOrder\.(?:findMany|findFirst|groupBy|aggregate|count)\b|\.groupOrderSellers\s*\(/,
+    roles: ["consumer"],
   },
 ];
 
@@ -172,6 +196,12 @@ export const CRM_REPORTS_GUARD_REQUIRED: ReadonlyArray<{
     role: "core",
     pattern: /computeRepurchaseCadence\(/,
     description: "Cadência sai do motor canônico.",
+  },
+  {
+    id: "CONSUMER_USES_REPORT_PIPELINE",
+    role: "consumer",
+    pattern: /runCrmReportsAnalysis\(|runCrmCustomReport\(/,
+    description: "Personalizado/exportação saem do MESMO pipeline das listas (runCrmReportsAnalysis).",
   },
   {
     id: "ROUTE_USES_CRM_SCOPE",
@@ -288,7 +318,9 @@ export const CRM_REPORTS_GUARDED_FILES: ReadonlyArray<{ path: string; role: CrmR
   { path: "src/lib/commercial/crmReportsTypes.ts", role: "types" },
   { path: "src/lib/commercial/crmRepurchaseEngine.ts", role: "engine" },
   { path: "src/lib/commercial/crmReportsOperationalCore.ts", role: "core" },
+  { path: "src/lib/commercial/crmCustomReportCore.ts", role: "aggregation" },
   { path: "src/lib/commercial/crmReportsOperationalService.server.ts", role: "service" },
+  { path: "src/lib/commercial/crmCustomReportService.server.ts", role: "consumer" },
   { path: "src/lib/commercial/crmReportsRoutes.ts", role: "routes" },
   { path: "src/lib/commercial/crmReportsVerification.server.ts", role: "verifier" },
   { path: "scripts/verify-crm-reports-vs-sales-orders.ts", role: "verifier-cli" },

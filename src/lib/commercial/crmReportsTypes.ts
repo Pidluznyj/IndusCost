@@ -424,6 +424,186 @@ export type CrmReportsFilterOptionsResponse = {
   states: CrmReportsLocationOption[];
 };
 
+// ---------------------------------------------------------------------------
+// Relatório personalizado (construtor) — executa SÓ ao clicar "Gerar"
+// ---------------------------------------------------------------------------
+
+export const CRM_CUSTOM_REPORT_DIMENSIONS = [
+  "customer",
+  "commercialOwner",
+  "orderSeller",
+  "month",
+  "year",
+  "city",
+  "state",
+] as const;
+export type CrmCustomReportDimension = (typeof CRM_CUSTOM_REPORT_DIMENSIONS)[number];
+
+/** Dimensões do PEDIDO (a linha passa a ser um recorte de pedidos, não de clientes). */
+export const CRM_CUSTOM_REPORT_ORDER_DIMENSIONS: readonly CrmCustomReportDimension[] = [
+  "orderSeller",
+  "month",
+  "year",
+];
+
+export const CRM_CUSTOM_REPORT_METRICS = [
+  "soldValue",
+  "orders",
+  "customers",
+  "averageTicket",
+  "lastPurchaseDate",
+  "daysSinceLastPurchase",
+  "averageRepurchaseDays",
+  "overdueDays",
+] as const;
+export type CrmCustomReportMetric = (typeof CRM_CUSTOM_REPORT_METRICS)[number];
+
+/**
+ * Onde cada métrica é segura:
+ *   ALWAYS         → venda do período (valor, pedidos, clientes, ticket)
+ *   NO_ORDER_DIM   → recência do cliente (histórico inteiro) — sem dimensão de pedido
+ *   CUSTOMER_GRAIN → cadência do motor — 1 linha por cliente, sem dimensão de pedido
+ */
+export type CrmCustomReportMetricAvailability = "ALWAYS" | "NO_ORDER_DIM" | "CUSTOMER_GRAIN";
+
+export const CRM_CUSTOM_REPORT_METRIC_AVAILABILITY: Record<
+  CrmCustomReportMetric,
+  CrmCustomReportMetricAvailability
+> = {
+  soldValue: "ALWAYS",
+  orders: "ALWAYS",
+  customers: "ALWAYS",
+  averageTicket: "ALWAYS",
+  lastPurchaseDate: "NO_ORDER_DIM",
+  daysSinceLastPurchase: "NO_ORDER_DIM",
+  averageRepurchaseDays: "CUSTOMER_GRAIN",
+  overdueDays: "CUSTOMER_GRAIN",
+};
+
+export const CRM_CUSTOM_REPORT_DIMENSION_LABELS: Record<CrmCustomReportDimension, string> = {
+  customer: "Cliente",
+  commercialOwner: "Responsável Comercial",
+  orderSeller: "Vendedor do pedido",
+  month: "Mês",
+  year: "Ano",
+  city: "Cidade",
+  state: "UF",
+};
+
+export const CRM_CUSTOM_REPORT_METRIC_LABELS: Record<CrmCustomReportMetric, string> = {
+  soldValue: "Valor vendido",
+  orders: "Pedidos",
+  customers: "Clientes",
+  averageTicket: "Ticket médio",
+  lastPurchaseDate: "Última compra",
+  daysSinceLastPurchase: "Dias sem compra",
+  averageRepurchaseDays: "Tempo médio de recompra",
+  overdueDays: "Dias de atraso",
+};
+
+export const CRM_CUSTOM_REPORT_CUSTOMER_STATUSES = [
+  "ALL",
+  "WITH_PURCHASE",
+  "WITHOUT_PURCHASE",
+  "REPURCHASE_OVERDUE",
+  "REPURCHASE_DUE_SOON",
+] as const;
+export type CrmCustomReportCustomerStatus = (typeof CRM_CUSTOM_REPORT_CUSTOMER_STATUSES)[number];
+
+export const CRM_CUSTOM_REPORT_CUSTOMER_STATUS_LABELS: Record<CrmCustomReportCustomerStatus, string> = {
+  ALL: "Clientes com compra no período",
+  WITH_PURCHASE: "Com compra no período",
+  WITHOUT_PURCHASE: "Sem compra no período",
+  REPURCHASE_OVERDUE: "Recompra atrasada",
+  REPURCHASE_DUE_SOON: "Recompra nos próximos 15 dias",
+};
+
+export const CRM_CUSTOM_REPORT_MAX_DIMENSIONS = 3;
+export const CRM_CUSTOM_REPORT_PAGE_DEFAULT_LIMIT = 100;
+export const CRM_CUSTOM_REPORT_PAGE_MAX_LIMIT = 500;
+/** Acima disso a request FALHA (422) — nunca devolve relatório truncado. */
+export const CRM_CUSTOM_REPORT_MAX_ROWS = 50_000;
+
+export type CrmCustomReportSortKey = CrmCustomReportDimension | CrmCustomReportMetric;
+export type CrmCustomReportSortDirection = "asc" | "desc";
+
+export type CrmCustomReportRequest = {
+  /** Os MESMOS filtros globais da aba (universo, carteira, exclusões). */
+  filters?: CrmReportsFilters | null;
+  /** Recorte de emissão (dia civil) das métricas de venda. `null` = histórico inteiro. */
+  period?: { from?: string | null; to?: string | null } | null;
+  customerStatus?: CrmCustomReportCustomerStatus | null;
+  dimensions: CrmCustomReportDimension[];
+  metrics: CrmCustomReportMetric[];
+  /** Subtotal por uma das dimensões escolhidas. */
+  groupBy?: CrmCustomReportDimension | null;
+  sort?: { by: CrmCustomReportSortKey; direction?: CrmCustomReportSortDirection | null } | null;
+  pagination?: { limit?: number | null; offset?: number | null } | null;
+};
+
+export type CrmCustomReportSpec = {
+  filters: CrmReportsNormalizedFilters;
+  period: { from: string; to: string } | null;
+  customerStatus: CrmCustomReportCustomerStatus;
+  dimensions: CrmCustomReportDimension[];
+  metrics: CrmCustomReportMetric[];
+  groupBy: CrmCustomReportDimension | null;
+  sort: { by: CrmCustomReportSortKey; direction: CrmCustomReportSortDirection };
+  pagination: { limit: number; offset: number };
+};
+
+export type CrmCustomReportCell = { key: string; label: string; sublabel: string | null };
+export type CrmCustomReportMetricValues = Partial<Record<CrmCustomReportMetric, number | string | null>>;
+
+export type CrmCustomReportRow = {
+  key: string;
+  /** Presente quando a dimensão Cliente está no relatório (ação Cliente 360). */
+  customerId: string | null;
+  dimensions: Partial<Record<CrmCustomReportDimension, CrmCustomReportCell>>;
+  metrics: CrmCustomReportMetricValues;
+};
+
+export type CrmCustomReportColumnFormat = "text" | "money" | "integer" | "date" | "days" | "decimal-days";
+
+export type CrmCustomReportColumn = {
+  key: CrmCustomReportSortKey;
+  label: string;
+  kind: "dimension" | "metric";
+  format: CrmCustomReportColumnFormat;
+};
+
+export type CrmCustomReportGroup = {
+  key: string;
+  label: string;
+  rowCount: number;
+  metrics: CrmCustomReportMetricValues;
+};
+
+export type CrmCustomReportResponse = {
+  asOf: string;
+  today: string;
+  spec: CrmCustomReportSpec;
+  scope: CrmReportsScopeInfo;
+  selection: CrmReportsSelectionInfo;
+  universe: CrmReportsUniverse;
+  sourceInfo: CrmReportsSourceInfo & {
+    periodAxis: "SalesOrder.issueDate (dia civil local)";
+    recencyAxis: "Histórico inteiro até hoje (motor de recompra)";
+  };
+  columns: CrmCustomReportColumn[];
+  rows: CrmCustomReportRow[];
+  /** Linhas do relatório inteiro — nunca o tamanho da página. */
+  total: number;
+  limit: number;
+  offset: number;
+  returned: number;
+  hasMore: boolean;
+  /** Total geral (clientes = distintos, ticket = valor ÷ pedidos). */
+  totals: CrmCustomReportMetricValues;
+  /** Subtotais dos grupos presentes na página (quando `groupBy`). */
+  groups: CrmCustomReportGroup[] | null;
+};
+
 export const CRM_REPORTS_LIST_SORT: Record<CrmReportsListKey, readonly string[]> = {
   recent: ["lastPurchaseDate:desc", "displayName:asc"],
   cadence: ["displayName:asc"],

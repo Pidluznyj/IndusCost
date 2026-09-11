@@ -1,9 +1,10 @@
 /**
  * CRM > Relatórios — rotas HTTP. Nenhuma escreve nada.
  *
- *   POST /api/crm/reports/operational      universo, cards e 3 listas paginadas
- *   GET  /api/crm/reports/filter-options   metadados leves dos filtros
- *   GET  /api/crm/reports/customer-options busca/rotulagem de clientes do escopo
+ *   POST /api/crm/reports/operational         universo, cards e 3 listas paginadas
+ *   GET  /api/crm/reports/filter-options      metadados leves dos filtros
+ *   GET  /api/crm/reports/customer-options    busca/rotulagem de clientes do escopo
+ *   POST /api/crm/reports/custom              relatório personalizado (só ao "Gerar")
  *
  * Leitura via POST onde `customerIds` pode ser grande.
  *
@@ -36,10 +37,16 @@ import {
   searchCrmReportsCustomerOptions,
   type CrmReportsDataSource,
 } from "@/src/lib/commercial/crmReportsOperationalService.server.js";
+import {
+  CrmCustomReportTooLargeError,
+  parseCrmCustomReportRequest,
+} from "@/src/lib/commercial/crmCustomReportCore.js";
+import { loadCrmCustomReport } from "@/src/lib/commercial/crmCustomReportService.server.js";
 
 export const CRM_REPORTS_OPERATIONAL_PATH = "/api/crm/reports/operational";
 export const CRM_REPORTS_FILTER_OPTIONS_PATH = "/api/crm/reports/filter-options";
 export const CRM_REPORTS_CUSTOMER_OPTIONS_PATH = "/api/crm/reports/customer-options";
+export const CRM_REPORTS_CUSTOM_PATH = "/api/crm/reports/custom";
 
 export type CrmReportsRoutesDeps = {
   requireAppAuth: RequestHandler;
@@ -55,7 +62,6 @@ export type CrmReportsRoutesDeps = {
 type ScopedContext = {
   req: express.Request;
   res: express.Response;
-  auth: AppAuthContext;
   scope: CrmCommercialAccessScope;
   dataSource: CrmReportsDataSource;
   now: Date | undefined;
@@ -84,7 +90,6 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
         await handler({
           req,
           res,
-          auth: authUser,
           scope: scopeResult.scope,
           dataSource: (deps.createDataSource ?? createPrismaCrmReportsDataSource)(deps.prisma),
           now: deps.now?.(),
@@ -101,6 +106,10 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
             ordersLoaded: error.ordersLoaded,
             limit: error.limit,
           });
+          return;
+        }
+        if (error instanceof CrmCustomReportTooLargeError) {
+          res.status(422).json({ error: "REPORT_TOO_LARGE", message: error.message, limit: error.limit });
           return;
         }
         console.error(label, error);
@@ -122,6 +131,20 @@ export function registerCrmReportsRoutes(app: express.Application, deps: CrmRepo
         return;
       }
       res.json(await loadCrmReportsOperational(dataSource, scope, parsed.request, { now }));
+    })
+  );
+
+  app.post(
+    CRM_REPORTS_CUSTOM_PATH,
+    requireAppAuth,
+    reportsGuard(),
+    scoped(`POST ${CRM_REPORTS_CUSTOM_PATH}`, async ({ req, res, scope, dataSource, now }) => {
+      const parsed = parseCrmCustomReportRequest(req.body);
+      if (parsed.ok === false) {
+        res.status(400).json({ error: "VALIDATION", message: parsed.errors.join(" "), details: parsed.errors });
+        return;
+      }
+      res.json(await loadCrmCustomReport(dataSource, scope, parsed.spec, { now }));
     })
   );
 

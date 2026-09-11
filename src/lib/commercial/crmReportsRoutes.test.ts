@@ -4,30 +4,43 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { COMMERCIAL_PILOT_ENDPOINTS } from "@/src/lib/commercialAccess.js";
-import { CRM_REPORTS_OPERATIONAL_PATH, registerCrmReportsRoutes } from "./crmReportsRoutes.js";
+import { CRM_REPORTS_CUSTOM_PATH, CRM_REPORTS_OPERATIONAL_PATH, registerCrmReportsRoutes } from "./crmReportsRoutes.js";
 import {
   CrmReportsCapacityError,
   type CrmReportsDataSource,
 } from "./crmReportsOperationalService.server.js";
-import type { CrmReportsOperationalResponse } from "./crmReportsTypes.js";
+import { CrmCustomReportTooLargeError } from "./crmCustomReportCore.js";
+import type { CrmCustomReportResponse, CrmReportsOperationalResponse } from "./crmReportsTypes.js";
 
 type Handler = (req: unknown, res: FakeRes, next?: () => void) => unknown;
 type FakeRes = {
   statusCode: number;
   body: unknown;
+  headers: Record<string, string>;
   status(code: number): FakeRes;
   json(payload: unknown): FakeRes;
+  setHeader(name: string, value: string): FakeRes;
+  send(payload: unknown): FakeRes;
 };
 
 function createRes(): FakeRes {
   return {
     statusCode: 200,
     body: undefined,
+    headers: {},
     status(code) {
       this.statusCode = code;
       return this;
     },
     json(payload) {
+      this.body = payload;
+      return this;
+    },
+    setHeader(name, value) {
+      this.headers[name.toLowerCase()] = value;
+      return this;
+    },
+    send(payload) {
       this.body = payload;
       return this;
     },
@@ -168,16 +181,29 @@ describe("POST /api/crm/reports/operational — registro e guardas", () => {
     }
   });
 
-  it("consta na matriz de acesso comercial", () => {
-    assert.ok(
-      COMMERCIAL_PILOT_ENDPOINTS.some(
-        (e) =>
-          e.method === "POST" &&
-          e.path === "/api/crm/reports/operational" &&
-          e.resourceKey === "commercial.crm.reports" &&
-          e.action === "view"
-      )
+  it("consta na matriz de acesso comercial (todas as rotas da aba)", () => {
+    const ctx = setup();
+    assert.deepEqual(
+      ctx.routes.map((r) => `${r.method} ${r.path}`).sort(),
+      [
+        "GET /api/crm/reports/customer-options",
+        "GET /api/crm/reports/filter-options",
+        "POST /api/crm/reports/custom",
+        "POST /api/crm/reports/operational",
+      ]
     );
+    for (const route of ctx.routes) {
+      assert.ok(
+        COMMERCIAL_PILOT_ENDPOINTS.some(
+          (e) =>
+            e.method === route.method &&
+            e.path === route.path &&
+            e.resourceKey === "commercial.crm.reports" &&
+            e.action === "view"
+        ),
+        `${route.method} ${route.path}`
+      );
+    }
   });
 
   it("server.ts registra a rota com os guardas do app", () => {
@@ -263,6 +289,41 @@ describe("POST /api/crm/reports/operational — respostas", () => {
       { query: { q: "Alfa" } }
     );
     assert.equal(denied.statusCode, 403);
+  });
+
+  it("POST custom: 400 sem dimensão/métrica ou com combinação insegura; 200 com o contrato", async () => {
+    const empty = await callRoute(setup(), "POST", CRM_REPORTS_CUSTOM_PATH, { body: {} });
+    assert.equal(empty.statusCode, 400);
+    assert.equal((empty.body as { error: string }).error, "VALIDATION");
+    const unsafe = await callRoute(setup(), "POST", CRM_REPORTS_CUSTOM_PATH, {
+      body: { dimensions: ["month"], metrics: ["lastPurchaseDate"] },
+    });
+    assert.equal(unsafe.statusCode, 400);
+    assert.match((unsafe.body as { message: string }).message, /Última compra/);
+
+    const ok = await callRoute(setup(), "POST", CRM_REPORTS_CUSTOM_PATH, {
+      body: { dimensions: ["customer"], metrics: ["soldValue", "orders"] },
+    });
+    assert.equal(ok.statusCode, 200);
+    const body = ok.body as CrmCustomReportResponse;
+    assert.deepEqual(body.columns.map((c) => c.key), ["customer", "soldValue", "orders"]);
+    assert.equal(body.total, 1);
+    assert.deepEqual(body.totals, { soldValue: 100, orders: 1 });
+    assert.equal(body.universe.analyzedCustomers, 1);
+    assert.equal(body.sourceInfo.orderSource, "SalesOrder");
+  });
+
+  it("POST custom: 422 explícito quando o relatório passa do teto de linhas", async () => {
+    const ds = tinyDataSource({
+      findSalesOrders: async () => {
+        throw new CrmCustomReportTooLargeError(50_000);
+      },
+    });
+    const res = await callRoute(setup({ dataSource: ds }), "POST", CRM_REPORTS_CUSTOM_PATH, {
+      body: { dimensions: ["customer"], metrics: ["soldValue"] },
+    });
+    assert.equal(res.statusCode, 422);
+    assert.equal((res.body as { error: string }).error, "REPORT_TOO_LARGE");
   });
 
   it("500 em erro inesperado, sem vazar detalhe interno", async () => {

@@ -72,6 +72,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "POST", path: "/api/crm/reports/operational", resourceKey: "commercial.crm.reports", action: "view" },
   { method: "GET", path: "/api/crm/reports/filter-options", resourceKey: "commercial.crm.reports", action: "view" },
   { method: "GET", path: "/api/crm/reports/customer-options", resourceKey: "commercial.crm.reports", action: "view" },
+  { method: "POST", path: "/api/crm/reports/custom", resourceKey: "commercial.crm.reports", action: "view" },
   { method: "GET", path: "/api/crm/customers/:id/profile", resourceKey: "commercial.crm.customer_360", action: "view" },
   { method: "PUT", path: "/api/crm/customers/:id/profile", resourceKey: "commercial.crm.activities", action: "update" },
   { method: "GET", path: "/api/customers/:id/commercial-360", resourceKey: "commercial.crm.customer_360", action: "view" },

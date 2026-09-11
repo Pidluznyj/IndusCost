@@ -37,11 +37,27 @@ describe("guard CRM > Relatórios — módulos reais", () => {
     );
   });
 
-  it("todos os papéis estão cobertos (motor, núcleo, serviço, rota, verificador)", () => {
+  it("todos os papéis estão cobertos (motor, núcleo, agregação, serviço, consumidores, rota, verificador)", () => {
     const roles = new Set(CRM_REPORTS_GUARDED_FILES.map((f) => f.role));
-    for (const role of ["types", "engine", "core", "service", "routes", "verifier", "verifier-cli"] as const) {
+    for (const role of [
+      "types",
+      "engine",
+      "core",
+      "aggregation",
+      "service",
+      "consumer",
+      "routes",
+      "verifier",
+      "verifier-cli",
+    ] as const) {
       assert.ok(roles.has(role), `papel sem arquivo protegido: ${role}`);
     }
+  });
+
+  it("relatório personalizado está protegido como consumidor do pipeline", () => {
+    const byPath = new Map(CRM_REPORTS_GUARDED_FILES.map((f) => [f.path, f.role]));
+    assert.equal(byPath.get("src/lib/commercial/crmCustomReportService.server.ts"), "consumer");
+    assert.equal(byPath.get("src/lib/commercial/crmCustomReportCore.ts"), "aggregation");
   });
 });
 
@@ -137,6 +153,25 @@ describe("guard CRM > Relatórios — autoteste (pega o que deve pegar)", () => 
     assert.ok(required.includes("USES_PORTFOLIO_OWNER_SCOPE"));
     assert.ok(required.includes("USES_MANUAL_OWNER_IDS"));
     assert.ok(required.includes("VERIFIER_USES_OFFICIAL_BUILDER"));
+  });
+
+  it("consumidor (personalizado/exportação) não consulta pedido por conta própria", () => {
+    assert.ok(rulesHit("consumer", `const orders = await ds.findSalesOrders(where);`).includes("PARALLEL_ORDER_QUERY"));
+    assert.ok(rulesHit("consumer", `const w = crmCanonicalSalesOrderWhere({ allYears: true });`).includes("PARALLEL_ORDER_QUERY"));
+    assert.ok(rulesHit("consumer", `await prisma.salesOrder.groupBy({ by: ["customerId"] })`).includes("PARALLEL_ORDER_QUERY"));
+    const missing = scanCrmReportsSources([{ path: "export.ts", role: "consumer", source: "export const z = 3;" }]);
+    assert.ok(missing.some((v) => v.rule === "CONSUMER_USES_REPORT_PIPELINE"));
+    const ok = scanCrmReportsSources([
+      { path: "export.ts", role: "consumer", source: "const run = await runCrmReportsAnalysis(ds, scope, filters);" },
+    ]);
+    assert.deepEqual(ok, []);
+  });
+
+  it("agregação pura: sem Prisma/serviço e sem atividade no cálculo", () => {
+    assert.ok(rulesHit("aggregation", `import { prisma } from "@/src/lib/prisma.js";`).includes("PURE_MODULE_IMPORT"));
+    assert.ok(rulesHit("aggregation", `import { x } from "./crmReportsOperationalService.server.js";`).includes("PURE_MODULE_IMPORT"));
+    assert.ok(rulesHit("aggregation", `if (a.contactDate) {}`).includes("ACTIVITY_IN_CALCULATION"));
+    assert.deepEqual(rulesHit("aggregation", `import * as XLSX from "xlsx";`), []);
   });
 
   it("cada regra tem descrição e ao menos um papel", () => {
