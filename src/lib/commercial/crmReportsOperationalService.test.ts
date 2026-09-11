@@ -19,106 +19,11 @@ import {
   type CrmReportsDataSource,
 } from "./crmReportsOperationalService.server.js";
 import type { CrmReportsNormalizedRequest } from "./crmReportsTypes.js";
+import { matchesPrismaWhere, type FixtureRow } from "./crmReportsPrisma.fixtures.js";
 
-// ---------------------------------------------------------------------------
-// Avaliador mínimo de `where` Prisma (só para teste). Executa em memória os
-// operadores que os construtores canônicos emitem — assim os testes provam o
-// comportamento do where REAL, não de uma cópia.
-// ---------------------------------------------------------------------------
-
-type Row = Record<string, unknown>;
-
-function norm(value: unknown, insensitive: boolean): unknown {
-  return insensitive && typeof value === "string" ? value.toLowerCase() : value;
-}
-
-function same(a: unknown, b: unknown, insensitive = false): boolean {
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
-  return norm(a, insensitive) === norm(b, insensitive);
-}
-
-function compare(a: unknown, b: unknown): number {
-  const x = a instanceof Date ? a.getTime() : (a as number);
-  const y = b instanceof Date ? b.getTime() : (b as number);
-  return x - y;
-}
-
-function matchesField(value: unknown, cond: unknown): boolean {
-  if (cond === null) return value == null;
-  if (cond instanceof Date || typeof cond !== "object" || Array.isArray(cond)) return same(value, cond);
-  const ops = cond as Row;
-  if ("is" in ops || "isNot" in ops) {
-    const related = value as Row | null | undefined;
-    if ("is" in ops) return ops.is === null ? related == null : related != null && matchesWhere(related, ops.is);
-    return ops.isNot === null ? related != null : related == null || !matchesWhere(related, ops.isNot);
-  }
-  const insensitive = ops.mode === "insensitive";
-  for (const [op, arg] of Object.entries(ops)) {
-    switch (op) {
-      case "mode":
-        break;
-      case "equals":
-        if (!same(value, arg, insensitive)) return false;
-        break;
-      case "not":
-        if (arg === null) {
-          if (value == null) return false;
-        } else if (typeof arg === "object" && !(arg instanceof Date)) {
-          if (matchesField(value, arg)) return false;
-        } else if (value == null || same(value, arg, insensitive)) {
-          return false;
-        }
-        break;
-      case "in":
-        if (!(arg as unknown[]).some((item) => same(value, item, insensitive))) return false;
-        break;
-      case "notIn":
-        if ((arg as unknown[]).some((item) => same(value, item, insensitive))) return false;
-        break;
-      case "contains":
-        if (typeof value !== "string" || !(norm(value, insensitive) as string).includes(norm(arg, insensitive) as string)) {
-          return false;
-        }
-        break;
-      case "gt":
-        if (value == null || compare(value, arg) <= 0) return false;
-        break;
-      case "gte":
-        if (value == null || compare(value, arg) < 0) return false;
-        break;
-      case "lt":
-        if (value == null || compare(value, arg) >= 0) return false;
-        break;
-      case "lte":
-        if (value == null || compare(value, arg) > 0) return false;
-        break;
-      case "array_contains":
-        if (!Array.isArray(value) || !value.includes(arg)) return false;
-        break;
-      default:
-        throw new Error(`operador não suportado pelo avaliador de teste: ${op}`);
-    }
-  }
-  return true;
-}
-
-function matchesWhere(row: Row, where: unknown): boolean {
-  if (where == null) return true;
-  for (const [key, cond] of Object.entries(where as Row)) {
-    if (key === "AND") {
-      const list = Array.isArray(cond) ? cond : [cond];
-      if (!list.every((c) => matchesWhere(row, c))) return false;
-    } else if (key === "OR") {
-      if (!(cond as unknown[]).some((c) => matchesWhere(row, c))) return false;
-    } else if (key === "NOT") {
-      const list = Array.isArray(cond) ? cond : [cond];
-      if (list.some((c) => matchesWhere(row, c))) return false;
-    } else if (!matchesField(row[key], cond)) {
-      return false;
-    }
-  }
-  return true;
-}
+// O avaliador executa em memória o where CANÔNICO real (fixtures compartilhadas).
+const matchesWhere = matchesPrismaWhere;
+type Row = FixtureRow;
 
 // ---------------------------------------------------------------------------
 // Fixtures (hoje = 11/09/2026)
