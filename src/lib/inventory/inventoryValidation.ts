@@ -102,10 +102,18 @@ export function parseCreateInventoryItemBody(body: unknown): CreateInventoryItem
     ? (statusRaw as "ACTIVE" | "INACTIVE")
     : "ACTIVE";
 
+  const itemType = parseItemType(data.itemType);
+  if (itemType === "RAW_MATERIAL") {
+    throw new InventoryValidationError(
+      "Matéria-prima deve ser vinculada ao cadastro oficial de Suprimentos. Use a ação “Vincular MP oficial”.",
+      "RAW_MATERIAL_REQUIRES_OFFICIAL_LINK"
+    );
+  }
+
   return {
     code: requireNonEmpty(data.code, "code"),
     description: requireNonEmpty(data.description, "description"),
-    itemType: parseItemType(data.itemType),
+    itemType,
     unit: requireNonEmpty(data.unit, "unit"),
     status,
     family: safeTrim(data.family) || null,
@@ -548,6 +556,18 @@ export function parseLinkOfficialMaterialBody(body: unknown): LinkOfficialMateri
     status,
     notes: safeTrim(data.notes) || null,
   };
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function parseAttachOfficialMaterialToExistingItemBody(body: unknown): { materialId: string } {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const materialId = requireNonEmpty(data.materialId, "materialId");
+  if (!UUID_RE.test(materialId)) {
+    throw new InventoryValidationError("materialId inválido.", "INVALID_MATERIAL_ID");
+  }
+  return { materialId };
 }
 
 export function parseUpdateMaterialStockLinkBody(

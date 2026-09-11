@@ -129,14 +129,25 @@ describe("inventoryRoutes", () => {
     assert.ok(INVENTORY_ITEM_MANAGE_PERMISSIONS.includes("inventory.item.manage"));
     assert.ok(INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS.includes("inventory.warehouse.manage"));
   });
+
+  it("vínculo de item existente usa capability de items, não role", () => {
+    const src = routes();
+    const preview = src.indexOf('app.get("/api/inventory/items/:id/link-existing-material-preview"');
+    const post = src.indexOf('app.post("/api/inventory/items/:id/link-existing-material"');
+    assert.ok(preview >= 0);
+    assert.ok(post >= 0);
+    assert.match(src.slice(preview, preview + 120), /\.\.\.view/);
+    assert.match(src.slice(post, post + 120), /\.\.\.itemManage/);
+    assert.doesNotMatch(src.slice(post, post + 400), /SUPER_ADMIN|role ===/);
+  });
 });
 
 describe("inventoryValidation", () => {
-  it("2. cria item válido", () => {
+  it("2. cria item válido que não é RAW_MATERIAL", () => {
     const item = parseCreateInventoryItemBody({
       code: "MP-001",
       description: "Parafuso M6",
-      itemType: "RAW_MATERIAL",
+      itemType: "COMPONENT",
       unit: "UN",
     });
     assert.equal(item.code, "MP-001");
@@ -144,12 +155,26 @@ describe("inventoryValidation", () => {
     assert.equal(item.minimumStock, null);
   });
 
+  it("recusa novo RAW_MATERIAL órfão no POST de item", () => {
+    assert.throws(
+      () =>
+        parseCreateInventoryItemBody({
+          code: "PP-HS03",
+          description: "Polipropileno",
+          itemType: "RAW_MATERIAL",
+          unit: "KG",
+        }),
+      (e: unknown) =>
+        e instanceof InventoryValidationError && e.code === "RAW_MATERIAL_REQUIRES_OFFICIAL_LINK"
+    );
+  });
+
   it("3. rejeita item sem código", () => {
     assert.throws(
       () =>
         parseCreateInventoryItemBody({
           description: "Sem código",
-          itemType: "RAW_MATERIAL",
+          itemType: "COMPONENT",
           unit: "UN",
         }),
       (e: unknown) => e instanceof InventoryValidationError && e.code === "FIELD_REQUIRED"
@@ -230,7 +255,7 @@ describe("inventoryValidation", () => {
         parseCreateInventoryItemBody({
           code: "X",
           description: "Y",
-          itemType: "RAW_MATERIAL",
+          itemType: "COMPONENT",
           unit: "UN",
           averageCost: -1,
         }),

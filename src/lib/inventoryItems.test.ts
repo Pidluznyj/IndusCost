@@ -30,7 +30,7 @@ describe("inventoryItemForm", () => {
     assert.ok(errors.unit);
   });
 
-  it("4. cria matéria-prima", () => {
+  it("4. cria matéria-prima no formulário (payload); POST recusa órfão", () => {
     const payload = inventoryItemFormToPayload(
       createEmptyInventoryItemForm({
         code: "MP-001",
@@ -41,6 +41,9 @@ describe("inventoryItemForm", () => {
     );
     assert.equal(payload.itemType, "RAW_MATERIAL");
     assertNoBalanceFieldsInPayload(payload as Record<string, unknown>);
+    const sheet = read("src/components/inventory/InventoryItemDetailSheet.tsx");
+    assert.match(sheet, /hideRawMaterialType=\{isCreate\}/);
+    assert.match(sheet, /InventoryAttachOfficialMaterialPanel/);
   });
 
   it("5. cria produto acabado", () => {

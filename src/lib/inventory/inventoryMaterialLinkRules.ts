@@ -1,6 +1,7 @@
 /**
  * Regras puras do vínculo MP oficial → item de estoque (OP-08).
  */
+import { unitsCompatible } from "./materialInventoryBalanceDiagnostic.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
 import { assertOfficialUnitMatchesMaterial } from "./inventoryLedgerProjection.js";
 
@@ -97,4 +98,51 @@ export function assertDefaultLocationBelongsToWarehouse(
 /** Garante unidade logística alinhada ao snapshot oficial. */
 export function assertLinkedItemUnit(itemUnit: string, materialUnit: string): void {
   assertOfficialUnitMatchesMaterial(itemUnit, materialUnit);
+}
+
+export type ExistingInventoryItemLinkTarget = {
+  id: string;
+  itemType: string;
+  unit: string;
+  materialId: string | null;
+};
+
+/**
+ * Vínculo de InventoryItem histórico existente → Material oficial.
+ * Não cria item. Não troca Material em silêncio. Não adivinha por código/descrição.
+ */
+export function assertExistingInventoryItemCanLinkOfficialMaterial(
+  item: ExistingInventoryItemLinkTarget | null | undefined,
+  material: OfficialMaterialSnapshotInput | null | undefined,
+  otherActiveItemId: string | null | undefined
+): { idempotent: boolean; official: OfficialMaterialSnapshotInput } {
+  if (!item) {
+    throw new InventoryValidationError("Item de estoque não encontrado.", "ITEM_NOT_FOUND");
+  }
+  if (item.itemType !== "RAW_MATERIAL") {
+    throw new InventoryValidationError(
+      "Somente item do tipo matéria-prima pode receber vínculo à MP oficial.",
+      "ITEM_NOT_RAW_MATERIAL"
+    );
+  }
+  const official = assertOfficialMaterialEligibleForStock(material);
+  if (item.materialId && item.materialId !== official.id) {
+    throw new InventoryValidationError(
+      "Este item já está vinculado a outra matéria-prima oficial. Troca silenciosa é recusada.",
+      "ITEM_ALREADY_LINKED_TO_DIFFERENT_MATERIAL"
+    );
+  }
+  if (!unitsCompatible(item.unit, official.unit)) {
+    throw new InventoryValidationError(
+      "Unidade do item logístico incompatível com a matéria-prima oficial.",
+      "UNIT_MISMATCH"
+    );
+  }
+  if (item.materialId === official.id) {
+    return { idempotent: true, official };
+  }
+  const conflicting =
+    otherActiveItemId && otherActiveItemId !== item.id ? otherActiveItemId : null;
+  assertNoActiveMaterialDuplicate(conflicting);
+  return { idempotent: false, official };
 }
