@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   aggregateCrmReportsCustomerFacts,
+  applyCrmReportsViews,
   buildCrmReportsAnalysis,
   buildCrmReportsPage,
   lastOrderMatchesSellerWhere,
@@ -557,7 +558,90 @@ describe("paginação", () => {
   });
 });
 
+describe("visões das listas (cards clicáveis sem cálculo novo)", () => {
+  it("parser: padrão, status válidos em ordem canônica e erro para desconhecido", () => {
+    const empty = parseCrmReportsOperationalRequest({});
+    assert.equal(empty.ok, true);
+    if (empty.ok === true) {
+      assert.deepEqual(empty.request.views, {
+        cadence: { statuses: [] },
+        overdue: { severity: "ALL", sort: "DELAY_DESC" },
+      });
+    }
+    const parsed = parseCrmReportsOperationalRequest({
+      views: {
+        cadence: { statuses: ["insufficient_history", "DUE_SOON", "DUE_SOON"] },
+        overdue: { severity: "severe", sort: "value_12m_desc" },
+      },
+    });
+    assert.equal(parsed.ok, true);
+    if (parsed.ok === true) {
+      assert.deepEqual(parsed.request.views, {
+        cadence: { statuses: ["INSUFFICIENT_HISTORY", "DUE_SOON"] },
+        overdue: { severity: "SEVERE", sort: "VALUE_12M_DESC" },
+      });
+    }
+    for (const body of [
+      { views: { cadence: { statuses: ["ATRASADO"] } } },
+      { views: { cadence: { statuses: "DUE_SOON" } } },
+      { views: { overdue: { severity: "MEIO" } } },
+      { views: { overdue: { sort: "NAME" } } },
+      { views: "cadence" },
+    ]) {
+      assert.equal(parseCrmReportsOperationalRequest(body).ok, false, JSON.stringify(body));
+    }
+  });
+
+  it("card → visão: a lista filtrada tem exatamente o número do card", () => {
+    const a = analyze();
+    const dueSoon = applyCrmReportsViews(a, {
+      cadence: { statuses: ["DUE_SOON"] },
+      overdue: { severity: "ALL", sort: "DELAY_DESC" },
+    });
+    assert.equal(dueSoon.cadence.length, a.indicators.repurchaseDueNext15d);
+    const insufficient = applyCrmReportsViews(a, {
+      cadence: { statuses: ["INSUFFICIENT_HISTORY"] },
+      overdue: { severity: "SEVERE", sort: "DELAY_DESC" },
+    });
+    assert.equal(insufficient.cadence.length, a.indicators.insufficientCadence);
+    assert.equal(insufficient.overdue.length, a.indicators.severelyOverdueRepurchase);
+    const all = applyCrmReportsViews(a, {
+      cadence: { statuses: [] },
+      overdue: { severity: "ALL", sort: "DELAY_DESC" },
+    });
+    assert.equal(all.cadence.length, a.cadence.length);
+    assert.equal(all.overdue.length, a.indicators.overdueRepurchase);
+  });
+
+  it("ordenação 'maior venda 12m' reordena sem recalcular; padrão continua 'maior atraso'", () => {
+    const a = analyze();
+    const byValue = applyCrmReportsViews(a, {
+      cadence: { statuses: [] },
+      overdue: { severity: "ALL", sort: "VALUE_12M_DESC" },
+    });
+    // Beta (R$ 50.000) > Alfa (R$ 3.000,10) > Eta (R$ 10 no 12m).
+    assert.deepEqual(names(byValue.overdue), ["Beta SA", "Alfa Ltda", "Eta Ferragens"]);
+    const byDelay = applyCrmReportsViews(a, {
+      cadence: { statuses: [] },
+      overdue: { severity: "ALL", sort: "DELAY_DESC" },
+    });
+    assert.deepEqual(names(byDelay.overdue), ["Eta Ferragens", "Beta SA", "Alfa Ltda"]);
+    // Os fatos são os mesmos objetos do motor (nada recalculado).
+    assert.ok(byValue.overdue.every((f) => a.overdue.includes(f)));
+  });
+});
+
 describe("DTOs", () => {
+  it("linhas trazem o id do último pedido para o modal canônico", () => {
+    const a = analyze();
+    const alfa = a.overdue.find((f) => f.customer.id === A.id)!;
+    const row = toCrmReportsOverdueRow(alfa, null, null, null);
+    assert.equal(row.lastOrderId, alfa.lastOrder!.id);
+    assert.equal(row.lastOrderCode, alfa.lastOrder!.orderCode);
+    const delta = a.analyzed.find((f) => f.customer.id === D.id)!;
+    assert.equal(delta.lastOrder, null);
+  });
+
   it("dinheiro em centavos; média em 2 casas; atraso = deltaDays; follow-up em ISO", () => {
     const a = analyze();
     const alfa = a.overdue.find((f) => f.customer.id === A.id)!;

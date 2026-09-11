@@ -45,6 +45,7 @@ import {
 } from "@/src/lib/salesOrderNomusSellerDisplay.js";
 import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import {
+  CRM_REPORTS_OVERDUE_SORT_FIELDS,
   CRM_REPURCHASE_ENGINE_VERSION,
   type CrmReportsNormalizedFilters,
   type CrmReportsNormalizedRequest,
@@ -53,6 +54,7 @@ import {
   type CrmReportsSourceInfo,
 } from "@/src/lib/commercial/crmReportsTypes.js";
 import {
+  applyCrmReportsViews,
   buildCrmReportsAnalysis,
   buildCrmReportsPage,
   paginateCrmReportsRows,
@@ -310,6 +312,8 @@ export type CrmReportsRun = {
   analysis: CrmReportsAnalysis;
   scope: CrmReportsScopeInfo;
   ordersLoaded: number;
+  /** Pedidos canônicos já carregados (reuso pelo relatório personalizado — sem 2ª consulta). */
+  ordersByCustomer: ReadonlyMap<string, readonly CrmReportsOrderRecord[]>;
   loadSellerContext: () => Promise<CommissionSellerIdentityContext>;
 };
 
@@ -373,6 +377,7 @@ export async function runCrmReportsAnalysis(
       commercialOwnerFilterIgnored: owner.ignored,
     },
     ordersLoaded: orders.loaded,
+    ordersByCustomer: orders.byCustomer,
     loadSellerContext,
   };
 }
@@ -417,10 +422,12 @@ export async function loadCrmReportsOperational(
 ): Promise<CrmReportsOperationalResponse> {
   const run = await runCrmReportsAnalysis(ds, scope, request.filters, options);
   const { analysis } = run;
+  // Visões só filtram/ordenam o resultado do motor; cards seguem do universo.
+  const viewed = applyCrmReportsViews(analysis, request.views);
 
   const recent = paginateCrmReportsRows(analysis.recent60d, request.pagination.recent);
-  const cadence = paginateCrmReportsRows(analysis.cadence, request.pagination.cadence);
-  const overdue = paginateCrmReportsRows(analysis.overdue, request.pagination.overdue);
+  const cadence = paginateCrmReportsRows(viewed.cadence, request.pagination.cadence);
+  const overdue = paginateCrmReportsRows(viewed.overdue, request.pagination.overdue);
 
   // Enriquecimento só do que vai para a tela (≤ 3 páginas), em lote.
   const pageFacts: CrmReportsCustomerFacts[] = [...recent.slice, ...cadence.slice, ...overdue.slice];
@@ -460,6 +467,7 @@ export async function loadCrmReportsOperational(
     scope: run.scope,
     selection: analysis.selection,
     appliedFilters: request.filters,
+    appliedViews: request.views,
     sourceInfo,
     universe: analysis.universe,
     indicators: analysis.indicators,
@@ -473,13 +481,17 @@ export async function loadCrmReportsOperational(
     repurchaseCadence: buildCrmReportsPage(cadence, "cadence", (facts) =>
       toCrmReportsCadenceRow(facts, toOwnerDisplay(owners, facts.customer.id))
     ),
-    overdueRepurchase: buildCrmReportsPage(overdue, "overdue", (facts) =>
-      toCrmReportsOverdueRow(
-        facts,
-        toOwnerDisplay(owners, facts.customer.id),
-        toSellerDisplay(facts.lastOrder, sellerCtx),
-        followUps.get(facts.customer.id) ?? null
-      )
+    overdueRepurchase: buildCrmReportsPage(
+      overdue,
+      "overdue",
+      (facts) =>
+        toCrmReportsOverdueRow(
+          facts,
+          toOwnerDisplay(owners, facts.customer.id),
+          toSellerDisplay(facts.lastOrder, sellerCtx),
+          followUps.get(facts.customer.id) ?? null
+        ),
+      CRM_REPORTS_OVERDUE_SORT_FIELDS[request.views.overdue.sort]
     ),
   };
 }

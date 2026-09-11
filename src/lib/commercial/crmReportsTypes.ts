@@ -59,6 +59,14 @@ export const CRM_REPORTS_MAX_SELECTION_IDS = 20000;
 export const CRM_REPORTS_LIST_KEYS = ["recent", "cadence", "overdue"] as const;
 export type CrmReportsListKey = (typeof CRM_REPORTS_LIST_KEYS)[number];
 
+/** Ordenação da lista de atrasados: maior atraso (padrão) ou maior venda 12m. */
+export const CRM_REPORTS_OVERDUE_SORTS = ["DELAY_DESC", "VALUE_12M_DESC"] as const;
+export type CrmReportsOverdueSort = (typeof CRM_REPORTS_OVERDUE_SORTS)[number];
+
+/** Recorte da lista de atrasados: todos (> 0 dia) ou só os graves (> 30 dias). */
+export const CRM_REPORTS_OVERDUE_SEVERITIES = ["ALL", "SEVERE"] as const;
+export type CrmReportsOverdueSeverity = (typeof CRM_REPORTS_OVERDUE_SEVERITIES)[number];
+
 // ---------------------------------------------------------------------------
 // Request
 // ---------------------------------------------------------------------------
@@ -120,8 +128,27 @@ export type CrmReportsPageRequest = {
   offset?: number | null;
 };
 
+/**
+ * Visões das listas: SÓ selecionam/ordenam o resultado do motor — nunca
+ * recalculam. Não mudam o universo nem os indicadores (cards).
+ */
+export type CrmReportsViewsRequest = {
+  /** Status da cadência a mostrar na lista CADENCE (vazio = todos). */
+  cadence?: { statuses?: CrmRepurchaseStatus[] | null } | null;
+  overdue?: {
+    severity?: CrmReportsOverdueSeverity | null;
+    sort?: CrmReportsOverdueSort | null;
+  } | null;
+};
+
+export type CrmReportsNormalizedViews = {
+  cadence: { statuses: CrmRepurchaseStatus[] };
+  overdue: { severity: CrmReportsOverdueSeverity; sort: CrmReportsOverdueSort };
+};
+
 export type CrmReportsOperationalRequest = {
   filters?: CrmReportsFilters | null;
+  views?: CrmReportsViewsRequest | null;
   pagination?: Partial<Record<CrmReportsListKey, CrmReportsPageRequest | null>> | null;
 };
 
@@ -147,6 +174,7 @@ export type CrmReportsNormalizedPage = { limit: number; offset: number };
 
 export type CrmReportsNormalizedRequest = {
   filters: CrmReportsNormalizedFilters;
+  views: CrmReportsNormalizedViews;
   pagination: Record<CrmReportsListKey, CrmReportsNormalizedPage>;
 };
 
@@ -248,6 +276,8 @@ export type CrmReportsCustomerIdentity = {
 
 /** Vendedor Nomus do último pedido canônico — auditoria/filtro, nunca carteira. */
 export type CrmReportsLastOrderSellerFields = {
+  /** Abre o modal canônico de Pedido de Venda (SalesOrderDetailDialog). */
+  lastOrderId: string | null;
   lastOrderCode: string | null;
   lastOrderSellerExternalId: number | null;
   lastOrderSellerName: string | null;
@@ -327,6 +357,7 @@ export type CrmReportsOperationalResponse = {
   scope: CrmReportsScopeInfo;
   selection: CrmReportsSelectionInfo;
   appliedFilters: CrmReportsNormalizedFilters;
+  appliedViews: CrmReportsNormalizedViews;
   sourceInfo: CrmReportsSourceInfo;
   universe: CrmReportsUniverse;
   indicators: CrmReportsIndicators;
@@ -339,4 +370,14 @@ export const CRM_REPORTS_LIST_SORT: Record<CrmReportsListKey, readonly string[]>
   recent: ["lastPurchaseDate:desc", "displayName:asc"],
   cadence: ["displayName:asc"],
   overdue: ["deltaDays:desc", "purchaseValue12m:desc", "displayName:asc"],
+};
+
+export const CRM_REPORTS_OVERDUE_SORT_FIELDS: Record<CrmReportsOverdueSort, readonly string[]> = {
+  DELAY_DESC: CRM_REPORTS_LIST_SORT.overdue,
+  VALUE_12M_DESC: ["purchaseValue12m:desc", "deltaDays:desc", "displayName:asc"],
+};
+
+export const CRM_REPORTS_DEFAULT_VIEWS: CrmReportsNormalizedViews = {
+  cadence: { statuses: [] },
+  overdue: { severity: "ALL", sort: "DELAY_DESC" },
 };

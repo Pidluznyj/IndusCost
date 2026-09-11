@@ -606,6 +606,30 @@ describe("endpoint — contrato, reconciliação e ausência de N+1", () => {
     assert.equal(overdueRow.lastContactAt, new Date(2026, 8, 8, 9).toISOString());
   });
 
+  it("visões: card 'Recompra nos próximos 15 dias' filtra a cadência sem mudar cards", async () => {
+    const { ds } = createFakeDataSource(baseDb());
+    const res = await loadCrmReportsOperational(
+      ds,
+      GLOBAL_SCOPE,
+      request({ views: { cadence: { statuses: ["DUE_SOON"] }, overdue: { sort: "VALUE_12M_DESC" } } }),
+      { now: NOW }
+    );
+    assert.deepEqual(res.appliedViews, {
+      cadence: { statuses: ["DUE_SOON"] },
+      overdue: { severity: "ALL", sort: "VALUE_12M_DESC" },
+    });
+    assert.equal(res.repurchaseCadence.total, res.indicators.repurchaseDueNext15d);
+    assert.deepEqual(idsOf(res.repurchaseCadence.rows), [B.id]);
+    assert.deepEqual(res.overdueRepurchase.sort, ["purchaseValue12m:desc", "deltaDays:desc", "displayName:asc"]);
+    // Cards continuam do universo inteiro.
+    assert.equal(res.indicators.customersPurchased60d, 4);
+    assert.equal(res.indicators.insufficientCadence, 1);
+    // Último pedido canônico para o modal (ERROR entra; CANCELLED não).
+    const alfaOverdue = res.overdueRepurchase.rows.find((r) => r.customerId === A.id)!;
+    assert.ok(alfaOverdue.lastOrderId);
+    assert.equal(alfaOverdue.lastOrderSellerExternalId, 501);
+  });
+
   it("EXCLUDE no endpoint: cards e listas reconciliam no mesmo universo", async () => {
     const { ds } = createFakeDataSource(baseDb());
     const res = await loadCrmReportsOperational(

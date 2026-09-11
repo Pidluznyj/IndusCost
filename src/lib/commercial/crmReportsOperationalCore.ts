@@ -19,13 +19,21 @@ import { computeTicketAverage } from "@/src/lib/salesOrderDashboardRules.js";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import {
   CRM_REPORTS_CUSTOMER_SELECTION_MODES,
+  CRM_REPORTS_DEFAULT_VIEWS,
   CRM_REPORTS_LIST_KEYS,
   CRM_REPORTS_LIST_SORT,
   CRM_REPORTS_MAX_SELECTION_IDS,
+  CRM_REPORTS_OVERDUE_SEVERITIES,
+  CRM_REPORTS_OVERDUE_SORTS,
   CRM_REPORTS_PAGE_DEFAULT_LIMIT,
   CRM_REPORTS_PAGE_MAX_LIMIT,
   CRM_REPORTS_RECENT_WINDOW_DAYS,
   CRM_REPORTS_ROLLING_MONTHS,
+  CRM_REPURCHASE_STATUSES,
+  type CrmReportsNormalizedViews,
+  type CrmReportsOverdueSeverity,
+  type CrmReportsOverdueSort,
+  type CrmRepurchaseStatus,
   type CrmReportsCadenceFields,
   type CrmReportsCadenceRow,
   type CrmReportsCustomerIdentity,
@@ -199,6 +207,62 @@ function parseCustomerSelection(raw: unknown, errors: string[]): CrmReportsCusto
   return ids ? { mode, customerIds: ids } : { mode: "ALL", customerIds: [] };
 }
 
+/** Visões das listas (status da cadência, severidade e ordenação dos atrasados). */
+export function parseCrmReportsViews(raw: unknown, errors: string[]): CrmReportsNormalizedViews {
+  if (raw == null) return structuredCloneViews(CRM_REPORTS_DEFAULT_VIEWS);
+  if (!isPlainObject(raw)) {
+    errors.push("views precisa ser um objeto.");
+    return structuredCloneViews(CRM_REPORTS_DEFAULT_VIEWS);
+  }
+  const views = structuredCloneViews(CRM_REPORTS_DEFAULT_VIEWS);
+
+  if (raw.cadence != null) {
+    const cadence = isPlainObject(raw.cadence) ? raw.cadence : null;
+    const statuses = cadence?.statuses;
+    if (!cadence || (statuses != null && !Array.isArray(statuses))) {
+      errors.push("views.cadence.statuses precisa ser uma lista de status.");
+    } else if (Array.isArray(statuses)) {
+      const valid = new Set<CrmRepurchaseStatus>();
+      for (const value of statuses) {
+        const status = typeof value === "string" ? value.trim().toUpperCase() : "";
+        if (!(CRM_REPURCHASE_STATUSES as readonly string[]).includes(status)) {
+          errors.push(`views.cadence.statuses: status desconhecido "${String(value)}".`);
+          continue;
+        }
+        valid.add(status as CrmRepurchaseStatus);
+      }
+      views.cadence.statuses = CRM_REPURCHASE_STATUSES.filter((s) => valid.has(s));
+    }
+  }
+
+  if (raw.overdue != null) {
+    if (!isPlainObject(raw.overdue)) {
+      errors.push("views.overdue precisa ser um objeto.");
+    } else {
+      const severity = raw.overdue.severity == null ? "ALL" : String(raw.overdue.severity).trim().toUpperCase();
+      if (!(CRM_REPORTS_OVERDUE_SEVERITIES as readonly string[]).includes(severity)) {
+        errors.push(`views.overdue.severity inválido: use ${CRM_REPORTS_OVERDUE_SEVERITIES.join(", ")}.`);
+      } else {
+        views.overdue.severity = severity as CrmReportsOverdueSeverity;
+      }
+      const sort = raw.overdue.sort == null ? "DELAY_DESC" : String(raw.overdue.sort).trim().toUpperCase();
+      if (!(CRM_REPORTS_OVERDUE_SORTS as readonly string[]).includes(sort)) {
+        errors.push(`views.overdue.sort inválido: use ${CRM_REPORTS_OVERDUE_SORTS.join(", ")}.`);
+      } else {
+        views.overdue.sort = sort as CrmReportsOverdueSort;
+      }
+    }
+  }
+  return views;
+}
+
+function structuredCloneViews(views: CrmReportsNormalizedViews): CrmReportsNormalizedViews {
+  return {
+    cadence: { statuses: [...views.cadence.statuses] },
+    overdue: { ...views.overdue },
+  };
+}
+
 /**
  * Valida e normaliza o corpo do POST /api/crm/reports/operational.
  * Erro de filtro vira 400 — nunca é ignorado em silêncio (um filtro ignorado
@@ -210,10 +274,30 @@ export function parseCrmReportsOperationalRequest(body: unknown): CrmReportsRequ
     return { ok: false, errors: ["Corpo da requisição precisa ser um objeto JSON."] };
   }
   const root = isPlainObject(body) ? body : {};
-  if (root.filters != null && !isPlainObject(root.filters)) {
+  const filters = parseCrmReportsFilters(root.filters, errors);
+  const views = parseCrmReportsViews(root.views, errors);
+
+  if (root.pagination != null && !isPlainObject(root.pagination)) {
+    errors.push("pagination precisa ser um objeto.");
+  }
+  const paginationRaw = isPlainObject(root.pagination) ? root.pagination : {};
+  const pagination = Object.fromEntries(
+    CRM_REPORTS_LIST_KEYS.map((key) => [key, parsePage(paginationRaw[key])])
+  ) as Record<CrmReportsListKey, CrmReportsNormalizedPage>;
+
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, request: { filters, views, pagination } };
+}
+
+/**
+ * Filtros globais — os MESMOS para cards, listas, relatório personalizado e
+ * exportações. Erros vão para `errors` (a request inteira vira 400).
+ */
+export function parseCrmReportsFilters(raw: unknown, errors: string[]): CrmReportsNormalizedFilters {
+  if (raw != null && !isPlainObject(raw)) {
     errors.push("filters precisa ser um objeto.");
   }
-  const filtersRaw = isPlainObject(root.filters) ? root.filters : {};
+  const filtersRaw = isPlainObject(raw) ? raw : {};
 
   let customerIds: string[] = [];
   if (filtersRaw.customerIds != null) {
@@ -279,22 +363,7 @@ export function parseCrmReportsOperationalRequest(body: unknown): CrmReportsRequ
   const states = parseLocationList(filtersRaw.state, "filters.state", errors);
   const customerSelection = parseCustomerSelection(filtersRaw.customerSelection, errors);
 
-  if (root.pagination != null && !isPlainObject(root.pagination)) {
-    errors.push("pagination precisa ser um objeto.");
-  }
-  const paginationRaw = isPlainObject(root.pagination) ? root.pagination : {};
-  const pagination = Object.fromEntries(
-    CRM_REPORTS_LIST_KEYS.map((key) => [key, parsePage(paginationRaw[key])])
-  ) as Record<CrmReportsListKey, CrmReportsNormalizedPage>;
-
-  if (errors.length > 0) return { ok: false, errors };
-  return {
-    ok: true,
-    request: {
-      filters: { customerIds, commercialOwner, lastOrderSeller, cities, states, customerSelection },
-      pagination,
-    },
-  };
+  return { customerIds, commercialOwner, lastOrderSeller, cities, states, customerSelection };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +600,18 @@ export function compareCrmReportsOverdue(a: CrmReportsCustomerFacts, b: CrmRepor
   return compareCrmReportsDisplayName(a, b);
 }
 
+/** OVERDUE (opção "maior venda 12m"): valor 12m DESC, atraso DESC, nome ASC. */
+export function compareCrmReportsOverdueByValue(
+  a: CrmReportsCustomerFacts,
+  b: CrmReportsCustomerFacts
+): number {
+  const value = moneyToMicros(b.purchaseValue12m) - moneyToMicros(a.purchaseValue12m);
+  if (value !== 0) return value;
+  const delta = (b.cadence.deltaDays ?? 0) - (a.cadence.deltaDays ?? 0);
+  if (delta !== 0) return delta;
+  return compareCrmReportsDisplayName(a, b);
+}
+
 export function isCrmReportsOverdue(facts: CrmReportsCustomerFacts): boolean {
   return facts.cadence.status === "OVERDUE" || facts.cadence.status === "SEVERELY_OVERDUE";
 }
@@ -629,6 +710,30 @@ export function buildCrmReportsAnalysis(args: {
   };
 }
 
+/**
+ * Visões das listas sobre o resultado JÁ calculado pelo motor: filtram por
+ * status e reordenam. Não recalculam nada e não mexem nos indicadores — por
+ * isso "card clicado" = "lista filtrada pelo mesmo status" reconcilia.
+ */
+export function applyCrmReportsViews(
+  analysis: Pick<CrmReportsAnalysis, "cadence" | "overdue">,
+  views: CrmReportsNormalizedViews
+): { cadence: CrmReportsCustomerFacts[]; overdue: CrmReportsCustomerFacts[] } {
+  const statuses = new Set(views.cadence.statuses);
+  const cadence =
+    statuses.size === 0
+      ? [...analysis.cadence]
+      : analysis.cadence.filter((facts) => statuses.has(facts.cadence.status));
+  const severe = views.overdue.severity === "SEVERE";
+  const overdue = analysis.overdue.filter(
+    (facts) => !severe || facts.cadence.status === "SEVERELY_OVERDUE"
+  );
+  overdue.sort(
+    views.overdue.sort === "VALUE_12M_DESC" ? compareCrmReportsOverdueByValue : compareCrmReportsOverdue
+  );
+  return { cadence, overdue };
+}
+
 // ---------------------------------------------------------------------------
 // Paginação e DTOs
 // ---------------------------------------------------------------------------
@@ -661,7 +766,8 @@ export function paginateCrmReportsRows<T>(
 export function buildCrmReportsPage<Facts, Row>(
   paginated: CrmReportsPaginated<Facts>,
   listKey: CrmReportsListKey,
-  toRow: (facts: Facts) => Row
+  toRow: (facts: Facts) => Row,
+  sort: readonly string[] = CRM_REPORTS_LIST_SORT[listKey]
 ): CrmReportsPage<Row> {
   return {
     rows: paginated.slice.map(toRow),
@@ -670,7 +776,7 @@ export function buildCrmReportsPage<Facts, Row>(
     offset: paginated.offset,
     returned: paginated.returned,
     hasMore: paginated.hasMore,
-    sort: CRM_REPORTS_LIST_SORT[listKey],
+    sort,
   };
 }
 
@@ -736,6 +842,7 @@ function sellerFields(
   seller: CrmReportsSellerDisplay | null
 ): CrmReportsLastOrderSellerFields {
   return {
+    lastOrderId: facts.lastOrder?.id ?? null,
     lastOrderCode: facts.lastOrder?.orderCode ?? null,
     lastOrderSellerExternalId: seller?.externalSellerId ?? facts.lastOrder?.externalSellerId ?? null,
     lastOrderSellerName: seller?.name ?? null,
