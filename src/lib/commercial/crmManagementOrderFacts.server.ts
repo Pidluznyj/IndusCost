@@ -13,7 +13,7 @@
  *   - RELACIONAMENTO     → CommercialActivity, é métrica própria do CRM.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { buildEconomicGroupCustomerMatchOr } from "@/src/lib/financeInternalGroupExclusions.js";
 import {
   crmCanonicalSalesOrderWhere,
@@ -81,6 +81,18 @@ export function crmRelationshipHorizonStart(now: Date): Date {
   return start;
 }
 
+/**
+ * Cliente elegível ao CRM: ativo e fora do grupo econômico, usando a MESMA
+ * lista de predicados do canônico (extraída, não reescrita). Compartilhado
+ * pelo cockpit e por CRM > Relatórios.
+ */
+export function crmEligibleCustomerWhere(): Prisma.CustomerWhereInput {
+  return {
+    status: { not: "INACTIVE" },
+    NOT: { OR: buildEconomicGroupCustomerMatchOr() },
+  };
+}
+
 export async function loadCrmManagementOrderFacts(
   prisma: PrismaClient,
   period: CrmCanonicalPeriod,
@@ -99,10 +111,7 @@ export async function loadCrmManagementOrderFacts(
 
   // Escopo de cliente: ativo e fora do grupo, usando a MESMA lista de
   // predicados do canônico (extraída, não reescrita).
-  const customerScopeWhere = {
-    status: { not: "INACTIVE" },
-    NOT: { OR: buildEconomicGroupCustomerMatchOr() },
-  } as const;
+  const customerScopeWhere = crmEligibleCustomerWhere();
 
   const [customers, openAgg, openOrders, lastPurchaseAgg, purchase12mAgg, inPeriodAgg] =
     await Promise.all([
