@@ -21,16 +21,18 @@
  * pedidos 12m e valor 12m. Sai com código 1 se divergir.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { isValidBusinessDate } from "../src/lib/commercial/crmRepurchaseEngine.ts";
 import {
   verifyCrmReportsAgainstSalesOrders,
   type CrmReportsVerificationRow,
 } from "../src/lib/commercial/crmReportsVerification.server.ts";
+import { openReadOnlyAuditPrisma } from "../src/lib/commercial/crmReportsReadOnlyPrisma.server.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const prisma = new PrismaClient();
+// Sessão somente leitura garantida pelo banco (aberta em main()).
+let prisma: PrismaClient;
 
 function parseArgs(argv: string[]): {
   json: boolean;
@@ -84,6 +86,7 @@ function printTable(header: string[], body: string[][]): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  ({ prisma } = await openReadOnlyAuditPrisma());
   const result = await verifyCrmReportsAgainstSalesOrders(prisma, {
     now: referenceNow(args.today),
     customerIds: args.customerIds,
@@ -158,5 +161,5 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
-    void prisma.$disconnect();
+    void prisma?.$disconnect();
   });

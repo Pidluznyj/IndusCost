@@ -219,6 +219,22 @@ describe("guard CRM > Relatórios — autoteste (pega o que deve pegar)", () => 
     );
   });
 
+  it("ferramenta de auditoria nunca entra no relatório nem na UI", () => {
+    assert.ok(
+      rulesHit("service", `import { auditRepurchaseManually } from "./crmRepurchaseManualAudit.js";`).includes("AUDIT_TOOLING_IN_RUNTIME")
+    );
+    assert.ok(
+      rulesHit("ui", `import { collectCrmReportsHomologEvidence } from "@/src/lib/commercial/crmReportsHomologEvidence.server";`).includes(
+        "AUDIT_TOOLING_IN_RUNTIME"
+      )
+    );
+    // O verificador pode (e deve) usar a conta manual.
+    assert.deepEqual(
+      rulesHit("verifier", `import { auditRepurchaseManually } from "./crmRepurchaseManualAudit.js";`),
+      []
+    );
+  });
+
   it("cada regra tem descrição e ao menos um papel", () => {
     for (const rule of CRM_REPORTS_GUARD_RULES) {
       assert.ok(rule.description.length > 10, rule.id);

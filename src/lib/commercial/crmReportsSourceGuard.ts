@@ -170,6 +170,13 @@ export const CRM_REPORTS_GUARD_RULES: readonly Rule[] = [
     roles: ["consumer"],
   },
   {
+    id: "AUDIT_TOOLING_IN_RUNTIME",
+    description:
+      "Ferramentas de auditoria (conta manual, evidências, conexão read-only) nunca entram no relatório nem na UI — um motor só.",
+    pattern: /crmRepurchaseManualAudit|crmReportsHomologEvidence|crmReportsReadOnlyPrisma/,
+    roles: [...REPORT_RUNTIME, "ui"],
+  },
+  {
     id: "UI_REPORT_LOGIC_IMPORT",
     description:
       "A UI não importa motor, núcleo, exportação nem módulo .server — só tipos, rótulos, cliente HTTP e estado da tela.",
@@ -358,6 +365,8 @@ export const CRM_REPORTS_GUARDED_FILES: ReadonlyArray<{ path: string; role: CrmR
   { path: "src/lib/commercial/crmReportsExportService.server.ts", role: "consumer" },
   { path: "src/lib/commercial/crmReportsRoutes.ts", role: "routes" },
   { path: "src/lib/commercial/crmReportsVerification.server.ts", role: "verifier" },
+  { path: "src/lib/commercial/crmReportsHomologEvidence.server.ts", role: "verifier" },
+  { path: "src/lib/commercial/crmRepurchaseManualAudit.ts", role: "aggregation" },
   { path: "scripts/verify-crm-reports-vs-sales-orders.ts", role: "verifier-cli" },
   { path: "src/lib/commercial/crmCustomReportContract.ts", role: "aggregation" },
   { path: "src/lib/commercial/crmReportsClient.ts", role: "ui" },
