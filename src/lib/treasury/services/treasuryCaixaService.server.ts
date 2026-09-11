@@ -88,7 +88,10 @@ import {
   mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable,
   type TreasuryCaixaCanonicalDayReceiptEvent,
 } from "../domain/treasuryCaixaCanonicalDay.js";
-import { listReceiptEventsByReceivables } from "@/src/lib/financeReceiptsCanonical.server.js";
+import {
+  listReceiptEventsByReceivables,
+  resolveFinanceReceiptsFreshness,
+} from "@/src/lib/financeReceiptsCanonical.server.js";
 import type { TreasuryOfficialTodayBalance } from "./treasuryOfficialTodayBalance.server.js";
 import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import { createTreasuryScenarioPolicyService } from "./treasuryScenarioPolicyService.server.js";
@@ -201,6 +204,29 @@ export type TreasuryCaixaCanonicalRealizedOptions = {
     readonly TreasuryCaixaCanonicalDayReceiptEvent[]
   >;
 };
+
+/**
+ * Diagnóstico SETTLED_WITHOUT_RECEIPT da cadeia histórica: quantos títulos
+ * únicos estão baixados (settlementDate + amountReceived > 0) sem nenhum
+ * receipt local ainda no mapa informado. Nunca fabrica caixa para eles — só
+ * torna o estado auditável; continuam no fallback de baixa+tolerância até o
+ * receipt chegar (ver `buildTreasuryCaixaCanonicalRealizedInputs`).
+ */
+export function countTreasuryCaixaSettledWithoutReceipt(
+  contexts: readonly Pick<FinanceCashFlowCanonicalRealizedYearSets, "arReceivedRows">[],
+  receiptEventsByReceivable: ReadonlyMap<number, readonly unknown[]>
+): number {
+  return new Set(
+    contexts
+      .flatMap((c) => c.arReceivedRows)
+      .filter((row) => row.settlementDate != null && row.amountReceived > 0)
+      .filter((row) => {
+        const events = receiptEventsByReceivable.get(row.externalId);
+        return !events || events.length === 0;
+      })
+      .map((row) => row.externalId)
+  ).size;
+}
 
 export function buildTreasuryCaixaCanonicalRealizedInputs(
   contexts: readonly FinanceCashFlowCanonicalRealizedYearSets[],
@@ -843,14 +869,25 @@ export function createTreasuryCaixaService(input: {
           )
         ),
       ];
-      const historicalReceiptEventsByReceivable = await listReceiptEventsByReceivables(
-        prisma,
-        historicalArExternalIds
-      );
+      const [historicalReceiptEventsByReceivable, receiptsFreshnessRaw] = await Promise.all([
+        listReceiptEventsByReceivables(prisma, historicalArExternalIds),
+        resolveFinanceReceiptsFreshness(prisma),
+      ]);
+      const receiptsFreshness = {
+        maxSyncedAt: receiptsFreshnessRaw.maxSyncedAt?.toISOString() ?? null,
+        maxReceiptDate: receiptsFreshnessRaw.maxReceiptDate?.toISOString() ?? null,
+        totalCount: receiptsFreshnessRaw.totalCount,
+      };
       const historicalReceiptsByReceivableExternalId =
         mapFinanceReceiptEventsToTreasuryCaixaReceiptsByReceivable(
           historicalReceiptEventsByReceivable
         );
+      // Diagnóstico SETTLED_WITHOUT_RECEIPT — reaproveita a mesma população e
+      // os mesmos receipts já carregados acima, sem consulta extra.
+      const settledWithoutReceiptCount = countTreasuryCaixaSettledWithoutReceipt(
+        canonicalContexts,
+        historicalReceiptEventsByReceivable
+      );
       const periodFrom = toIsoDate(dueDateFrom);
       const periodTo = toIsoDate(dueDateTo);
       const realizedDaysAll = buildTreasuryCaixaRealizedDays(
@@ -1221,6 +1258,8 @@ export function createTreasuryCaixaService(input: {
         accountPositions: balanceAuthority.accountPositions,
         historicalArMonthlyInflowDeltaByMonth,
         historicalArGraphPresentationBridge,
+        receiptsFreshness,
+        settledWithoutReceiptCount,
       };
     },
   };

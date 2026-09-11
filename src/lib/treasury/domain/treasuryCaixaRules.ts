@@ -1692,6 +1692,25 @@ export type TreasuryCaixaBoardDto = {
    * Consumida somente pelo prefixo histórico de "Projeção do caixa".
    */
   historicalArGraphPresentationBridge?: TreasuryCaixaHistoricalArPresentationBridge;
+  /**
+   * Freshness do ledger local de receipts (camada canônica
+   * `financeReceiptsCanonical`) — para a UI mostrar honestamente
+   * "recebimentos atualizados até HH:MM" em vez de assumir dado sempre
+   * fresco. Datas em ISO (string) — mesma convenção do resto do DTO.
+   */
+  receiptsFreshness?: {
+    maxSyncedAt: string | null;
+    maxReceiptDate: string | null;
+    totalCount: number;
+  };
+  /**
+   * Diagnóstico: quantos títulos da cadeia histórica estão baixados
+   * (settlementDate + amountReceived > 0) sem NENHUM receipt local ainda.
+   * Não inventa caixa para eles — só torna o estado auditável; continuam no
+   * fallback de baixa+tolerância até o receipt chegar (ver
+   * `buildTreasuryCaixaCanonicalRealizedInputs`).
+   */
+  settledWithoutReceiptCount?: number;
 };
 
 /**

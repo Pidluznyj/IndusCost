@@ -21,6 +21,7 @@ import {
   buildTreasuryCaixaCanonicalRealizedInputs,
   computeTreasuryCaixaHistoricalArGraphPresentationBridge,
   computeTreasuryCaixaHistoricalArMonthlyInflowDeltas,
+  countTreasuryCaixaSettledWithoutReceipt,
   resolveTreasuryCaixaChainYears,
 } from "./treasuryCaixaService.server.js";
 
@@ -735,5 +736,71 @@ describe("computeTreasuryCaixaHistoricalArMonthlyInflowDeltas — receipts não 
       new Map([[222, [receiptEvent({ receiptDate: "2026-02-05", receivedAmount: 100 })]]])
     );
     assert.deepEqual(deltas, {});
+  });
+});
+
+describe("countTreasuryCaixaSettledWithoutReceipt — diagnóstico, nunca fabrica caixa", () => {
+  it("título baixado sem nenhum receipt conta 1; título com receipt não conta", () => {
+    const contexts = [
+      ctx(
+        2026,
+        [
+          arRow({
+            externalId: 301,
+            settlementDate: new Date(2026, 8, 10),
+            amountReceived: 500,
+          } as Partial<FinanceCashFlowArRow>),
+          arRow({
+            externalId: 302,
+            settlementDate: new Date(2026, 8, 10),
+            amountReceived: 700,
+          } as Partial<FinanceCashFlowArRow>),
+        ],
+        []
+      ),
+    ];
+    const receiptsByReceivable = new Map([[302, [receiptEvent({ receiptExternalId: 302 })]]]);
+    assert.equal(countTreasuryCaixaSettledWithoutReceipt(contexts, receiptsByReceivable), 1);
+  });
+
+  it("título em aberto (sem baixa) nunca conta — só baixados entram no diagnóstico", () => {
+    const contexts = [
+      ctx(
+        2026,
+        [arRow({ externalId: 401, settlementDate: null, amountReceived: 0 } as Partial<FinanceCashFlowArRow>)],
+        []
+      ),
+    ];
+    assert.equal(countTreasuryCaixaSettledWithoutReceipt(contexts, new Map()), 0);
+  });
+
+  it("mesmo título repetido em anos diferentes da cadeia não duplica a contagem", () => {
+    const row = arRow({
+      externalId: 501,
+      settlementDate: new Date(2026, 8, 10),
+      amountReceived: 200,
+    } as Partial<FinanceCashFlowArRow>);
+    const contexts = [ctx(2025, [row], []), ctx(2026, [row], [])];
+    assert.equal(countTreasuryCaixaSettledWithoutReceipt(contexts, new Map()), 1);
+  });
+
+  it("receipt presente mas com array vazio ainda conta como sem receipt", () => {
+    const contexts = [
+      ctx(
+        2026,
+        [
+          arRow({
+            externalId: 601,
+            settlementDate: new Date(2026, 8, 10),
+            amountReceived: 300,
+          } as Partial<FinanceCashFlowArRow>),
+        ],
+        []
+      ),
+    ];
+    assert.equal(
+      countTreasuryCaixaSettledWithoutReceipt(contexts, new Map([[601, []]])),
+      1
+    );
   });
 });
