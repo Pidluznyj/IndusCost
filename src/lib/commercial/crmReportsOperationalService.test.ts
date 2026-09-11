@@ -13,9 +13,12 @@ import {
   CRM_REPORTS_ID_CHUNK_SIZE,
   CRM_REPORTS_ORDER_SELECT,
   CrmReportsForbiddenError,
+  buildCrmReportsCommercialOwnerOptions,
   createPrismaCrmReportsDataSource,
+  loadCrmReportsFilterOptions,
   loadCrmReportsOperational,
   runCrmReportsAnalysis,
+  searchCrmReportsCustomerOptions,
   type CrmReportsDataSource,
 } from "./crmReportsOperationalService.server.js";
 import type { CrmReportsNormalizedRequest } from "./crmReportsTypes.js";
@@ -174,6 +177,9 @@ function createFakeDataSource(db: FakeDb) {
     resolveCommercialOwners: [] as string[][],
     findActivities: [] as string[][],
     loadSellerIdentityContext: 0,
+    searchCustomers: [] as Array<{ where: unknown; take: number }>,
+    findActiveCommercialOwners: 0,
+    groupOrderSellers: [] as unknown[],
   };
   const customerById = new Map(db.customers.map((c) => [c.id, c]));
   const ownerPrisma = {
@@ -234,6 +240,35 @@ function createFakeDataSource(db: FakeDb) {
     async loadSellerIdentityContext() {
       calls.loadSellerIdentityContext += 1;
       return db.sellerCtx;
+    },
+    async searchCustomers(where, take) {
+      calls.searchCustomers.push({ where, take });
+      return db.customers
+        .filter((c) => matchesWhere(c as unknown as Row, where))
+        .sort((a, b) => a.companyName.localeCompare(b.companyName, "pt-BR"))
+        .slice(0, take)
+        .map(({ id, companyName, tradeName, taxId, city, state }) => ({ id, companyName, tradeName, taxId, city, state }));
+    },
+    async findActiveCommercialOwners() {
+      calls.findActiveCommercialOwners += 1;
+      return db.owners
+        .filter((o) => o.isActive)
+        .map((o) => ({
+          customerId: o.customerId,
+          sellerIdentityKey: o.sellerIdentityKey,
+          sellerCanonicalName: o.sellerCanonicalName,
+          sellerResponsibleName: null,
+          sellerExternalId: o.sellerExternalId,
+        }));
+    },
+    async groupOrderSellers(where) {
+      calls.groupOrderSellers.push(where);
+      const counts = new Map<number | null, number>();
+      for (const o of db.orders) {
+        if (!matchesWhere({ ...o, Customer: customerById.get(o.customerId) } as Row, where)) continue;
+        counts.set(o.externalSellerId, (counts.get(o.externalSellerId) ?? 0) + 1);
+      }
+      return [...counts.entries()].map(([externalSellerId, orderCount]) => ({ externalSellerId, orderCount }));
     },
   };
   return { ds, calls };
@@ -706,6 +741,108 @@ describe("endpoint — contrato, reconciliação e ausência de N+1", () => {
     assert.equal(onlyRes.universe.analyzedCustomers, 1);
     const fullAlfa = fullRes.overdueRepurchase.rows.find((r) => r.customerId === A.id);
     assert.deepEqual(onlyRes.overdueRepurchase.rows[0], fullAlfa);
+  });
+});
+
+describe("opções leves e escopadas (filtros)", () => {
+  it("busca de cliente: nome, fantasia e CNPJ só com dígitos — dentro do escopo", async () => {
+    const db = baseDb();
+    db.customers = db.customers.map((c) =>
+      c.id === B.id ? { ...c, tradeName: "Britânia Eletro", taxId: "07.019.308/0001-28" } : c
+    );
+    const { ds, calls } = createFakeDataSource(db);
+    const byTrade = await searchCrmReportsCustomerOptions(ds, GLOBAL_SCOPE, { ok: true, mode: "search", q: "britânia", limit: 20 });
+    assert.deepEqual(byTrade.options.map((o) => o.id), [B.id]);
+    const byDigits = await searchCrmReportsCustomerOptions(ds, GLOBAL_SCOPE, { ok: true, mode: "search", q: "07019308", limit: 20 });
+    assert.deepEqual(byDigits.options.map((o) => o.id), [B.id], "dígitos casam com CNPJ formatado");
+    const groupHidden = await searchCrmReportsCustomerOptions(ds, GLOBAL_SCOPE, { ok: true, mode: "search", q: "Koppetel", limit: 20 });
+    assert.deepEqual(groupHidden.options, [], "grupo econômico nunca aparece");
+    assert.ok(calls.searchCustomers.every((c) => c.take <= 21), "busca limitada — nunca baixa a carteira");
+  });
+
+  it("busca respeita a carteira own e não vaza cliente de outro responsável (nem por ID)", async () => {
+    const { ds } = createFakeDataSource(baseDb());
+    const search = await searchCrmReportsCustomerOptions(ds, OWN_GISLENE_SCOPE, { ok: true, mode: "search", q: "Beta", limit: 20 });
+    assert.deepEqual(search.options, []);
+    const byIds = await searchCrmReportsCustomerOptions(ds, OWN_GISLENE_SCOPE, { ok: true, mode: "ids", ids: [A.id, B.id, K.id] });
+    assert.deepEqual(byIds.options.map((o) => o.id), [A.id], "B é de outra carteira; K é grupo");
+    const unlinked = await searchCrmReportsCustomerOptions(ds, OWN_UNLINKED_SCOPE, { ok: true, mode: "search", q: "Alfa", limit: 20 });
+    assert.deepEqual(unlinked.options, []);
+    await assert.rejects(
+      () => searchCrmReportsCustomerOptions(ds, NONE_SCOPE, { ok: true, mode: "search", q: "Alfa", limit: 20 }),
+      CrmReportsForbiddenError
+    );
+  });
+
+  it("hasMore quando passa do limite (paginação da busca, sem baixar tudo)", async () => {
+    const db = baseDb();
+    db.customers = [...db.customers, ...Array.from({ length: 30 }, (_, i) => customer(500 + i, `Cliente Busca ${i}`))];
+    const { ds } = createFakeDataSource(db);
+    const res = await searchCrmReportsCustomerOptions(ds, GLOBAL_SCOPE, { ok: true, mode: "search", q: "Busca", limit: 10 });
+    assert.equal(res.options.length, 10);
+    assert.equal(res.hasMore, true);
+  });
+
+  it("filter-options global: responsáveis ativos, vendedores dos pedidos canônicos, cidades/UF do universo", async () => {
+    const db = baseDb();
+    db.customers = db.customers.map((c) => (c.id === C.id ? { ...c, city: "São Paulo", state: "sp" } : c));
+    const { ds } = createFakeDataSource(db);
+    const res = await loadCrmReportsFilterOptions(ds, GLOBAL_SCOPE);
+    assert.equal(res.commercialOwnerFilterEnabled, true);
+    assert.deepEqual(
+      res.commercialOwners.map((o) => ({ label: o.label, count: o.customerCount, filter: o.filter })),
+      [
+        // A e M (Gislene ativa; K é grupo e X inativo — fora do universo). C tem vínculo INATIVO.
+        { label: "Gislene Lima", count: 2, filter: { sellerIdentityKey: "gislene lima" } },
+        { label: "Joseane Souza", count: 1, filter: { sellerIdentityKey: "joseane souza" } },
+      ]
+    );
+    assert.deepEqual(
+      res.lastOrderSellers.map((s) => s.sellerKey).sort(),
+      ["464", "501"],
+      "só vendedores de pedidos canônicos do universo (CANCELLED/grupo/inativo fora)"
+    );
+    const joseane = res.lastOrderSellers.find((s) => s.sellerKey === "501")!;
+    assert.equal(joseane.label, "JOSEANE SOUZA");
+    assert.equal(joseane.orderCount, 3, "ERROR entra; CANCELLED não");
+    assert.deepEqual(res.cities, [
+      { value: "Curitiba", customerCount: 4 },
+      { value: "São Paulo", customerCount: 1 },
+    ]);
+    assert.deepEqual(res.states, [
+      { value: "PR", customerCount: 4 },
+      { value: "SP", customerCount: 1 },
+    ]);
+  });
+
+  it("filter-options own: sem filtro de responsável e opções só da própria carteira", async () => {
+    const { ds, calls } = createFakeDataSource(baseDb());
+    const res = await loadCrmReportsFilterOptions(ds, OWN_GISLENE_SCOPE);
+    assert.equal(res.commercialOwnerFilterEnabled, false);
+    assert.deepEqual(res.commercialOwners, []);
+    assert.equal(calls.findActiveCommercialOwners, 0);
+    // Só pedidos dos clientes da carteira (A: Joseane ×3; M: Gislene ×2) — B e C
+    // também têm pedidos da Gislene, mas não são da carteira e não contam.
+    assert.deepEqual(
+      res.lastOrderSellers.map((s) => [s.sellerKey, s.orderCount]),
+      [["464", 2], ["501", 3]]
+    );
+    assert.equal(res.cities.reduce((acc, c) => acc + c.customerCount, 0), 2);
+  });
+
+  it("opções de responsável: vínculo só por ID vira filtro por externalSellerId", () => {
+    const options = buildCrmReportsCommercialOwnerOptions(
+      [
+        { customerId: "c1", sellerIdentityKey: "__ID_ONLY__:777", sellerCanonicalName: "Vendedor ID 777", sellerResponsibleName: null, sellerExternalId: 777 },
+        { customerId: "c2", sellerIdentityKey: "__ID_ONLY__:777", sellerCanonicalName: "Vendedor ID 777", sellerResponsibleName: null, sellerExternalId: 777 },
+        { customerId: "fora", sellerIdentityKey: "ana", sellerCanonicalName: "Ana", sellerResponsibleName: null, sellerExternalId: 1 },
+      ],
+      new Set(["c1", "c2"])
+    );
+    assert.equal(options.length, 1);
+    assert.deepEqual(options[0]!.filter, { externalSellerId: 777 });
+    assert.equal(options[0]!.customerCount, 2);
+    assert.match(options[0]!.label, /ID Nomus 777/);
   });
 });
 

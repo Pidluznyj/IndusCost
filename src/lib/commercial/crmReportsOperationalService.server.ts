@@ -41,12 +41,19 @@ import {
   buildSalesOrderNomusSellerDto,
   buildSalesOrderNomusSellerWhereFilter,
   buildSalesOrderNomusSellerWhereFromSellerKey,
+  buildSalesOrderSellerFilterOptionLabel,
+  buildSalesOrderSellerKey,
   formatSalesOrderNomusSellerListLabel,
 } from "@/src/lib/salesOrderNomusSellerDisplay.js";
+import { resolveCommercialOwnerDisplay } from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import {
   CRM_REPORTS_OVERDUE_SORT_FIELDS,
   CRM_REPURCHASE_ENGINE_VERSION,
+  type CrmReportsCommercialOwnerOption,
+  type CrmReportsCustomerOption,
+  type CrmReportsCustomerOptionsResponse,
+  type CrmReportsFilterOptionsResponse,
   type CrmReportsNormalizedFilters,
   type CrmReportsNormalizedRequest,
   type CrmReportsOperationalResponse,
@@ -57,6 +64,9 @@ import {
   applyCrmReportsViews,
   buildCrmReportsAnalysis,
   buildCrmReportsPage,
+  buildCrmReportsTaxIdPatterns,
+  groupCrmReportsLocationOptions,
+  type CrmReportsCustomerOptionsQuery,
   paginateCrmReportsRows,
   resolveCrmReportsWindows,
   selectCrmReportsInclusionCandidates,
@@ -111,6 +121,15 @@ export type CrmReportsActivityRecord = {
   status: string | null;
 };
 
+/** Vínculo ativo de Responsável Comercial (só o necessário para opções de filtro). */
+export type CrmReportsOwnerRow = {
+  customerId: string;
+  sellerIdentityKey: string;
+  sellerCanonicalName: string;
+  sellerResponsibleName: string | null;
+  sellerExternalId: number | null;
+};
+
 /**
  * Fonte de dados do relatório. Cada método é UMA consulta em lote; o serviço
  * compõe os `where` (sempre a partir dos construtores canônicos).
@@ -123,6 +142,14 @@ export type CrmReportsDataSource = {
   resolveCommercialOwners(customerIds: readonly string[]): Promise<CommercialResponsibleMap>;
   findActivities(customerIds: readonly string[]): Promise<CrmReportsActivityRecord[]>;
   loadSellerIdentityContext(): Promise<CommissionSellerIdentityContext>;
+  /** Busca paginada de clientes (opções do filtro) — `where` já escopado pelo serviço. */
+  searchCustomers(where: Prisma.CustomerWhereInput, take: number): Promise<CrmReportsCustomerRecord[]>;
+  /** Vínculos ATIVOS de Responsável Comercial (opções do filtro de responsável). */
+  findActiveCommercialOwners(): Promise<CrmReportsOwnerRow[]>;
+  /** Contagem de pedidos canônicos por vendedor Nomus (opções do filtro de vendedor). */
+  groupOrderSellers(
+    where: Prisma.SalesOrderWhereInput
+  ): Promise<Array<{ externalSellerId: number | null; orderCount: number }>>;
 };
 
 export const CRM_REPORTS_CUSTOMER_SELECT = {
@@ -185,6 +212,37 @@ export function createPrismaCrmReportsDataSource(prisma: PrismaClient): CrmRepor
     },
     loadSellerIdentityContext() {
       return loadCommissionSellerIdentityContext(prisma);
+    },
+    async searchCustomers(where, take) {
+      return prisma.customer.findMany({
+        where,
+        select: CRM_REPORTS_CUSTOMER_SELECT,
+        orderBy: [{ companyName: "asc" }, { id: "asc" }],
+        take,
+      });
+    },
+    async findActiveCommercialOwners() {
+      return prisma.crmCustomerCommercialOwner.findMany({
+        where: { isActive: true },
+        select: {
+          customerId: true,
+          sellerIdentityKey: true,
+          sellerCanonicalName: true,
+          sellerResponsibleName: true,
+          sellerExternalId: true,
+        },
+      });
+    },
+    async groupOrderSellers(where) {
+      // `groupBy` tem inferência recursiva pesada; handle tipado (padrão do cockpit).
+      const groupSalesOrders = prisma.salesOrder.groupBy as unknown as (
+        args: Record<string, unknown>
+      ) => Promise<Array<Record<string, any>>>;
+      const rows = await groupSalesOrders({ by: ["externalSellerId"], where, _count: { _all: true } });
+      return rows.map((row) => ({
+        externalSellerId: typeof row.externalSellerId === "number" ? row.externalSellerId : null,
+        orderCount: Number(row._count?._all ?? 0),
+      }));
     },
   };
 }
@@ -368,14 +426,7 @@ export async function runCrmReportsAnalysis(
   return {
     now,
     analysis,
-    scope: {
-      dataScope,
-      sellerLinked: scope.sellerLinked,
-      blockedReason: scope.blockedReason,
-      blockedMessage: scope.blockedMessage,
-      commercialOwnerFilterApplied: owner.applied,
-      commercialOwnerFilterIgnored: owner.ignored,
-    },
+    scope: buildScopeInfo(scope, dataScope, owner),
     ordersLoaded: orders.loaded,
     ordersByCustomer: orders.byCustomer,
     loadSellerContext,
@@ -493,5 +544,192 @@ export async function loadCrmReportsOperational(
         ),
       CRM_REPORTS_OVERDUE_SORT_FIELDS[request.views.overdue.sort]
     ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Opções leves e escopadas (filtros da aba)
+// ---------------------------------------------------------------------------
+
+const ID_ONLY_OWNER_PREFIX = "__ID_ONLY__:";
+const optionLabelCollator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+
+/**
+ * `where` do universo autorizado (ativo ∧ fora do grupo ∧ carteira do
+ * escopo). `null` = nada autorizado (own sem vínculo) — não consulta nada.
+ */
+async function resolveAuthorizedCustomerWhere(
+  ds: CrmReportsDataSource,
+  scope: CrmCommercialAccessScope
+): Promise<Prisma.CustomerWhereInput | null> {
+  const decision = resolveCrmCustomerListSellerScopeFilter(scope, NO_OWNER_QUERY);
+  if (decision === "none") return null;
+  if (decision === "all") return crmEligibleCustomerWhere();
+  const ids = await ds.findManualOwnerCustomerIds(decision);
+  if (ids.length === 0) return null;
+  return { AND: [crmEligibleCustomerWhere(), { id: { in: [...new Set(ids)] } }] };
+}
+
+function toCustomerOption(row: CrmReportsCustomerRecord): CrmReportsCustomerOption {
+  return {
+    id: row.id,
+    displayName: row.companyName,
+    tradeName: row.tradeName ?? null,
+    taxId: row.taxId,
+    city: row.city ?? null,
+    state: row.state ?? null,
+  };
+}
+
+/**
+ * GET /api/crm/reports/customer-options — busca por nome, fantasia ou
+ * CNPJ/CPF (com ou sem pontuação) DENTRO do escopo; ou resolve rótulos de
+ * IDs selecionados. ID fora do escopo simplesmente não volta.
+ */
+export async function searchCrmReportsCustomerOptions(
+  ds: CrmReportsDataSource,
+  scope: CrmCommercialAccessScope,
+  query: Exclude<CrmReportsCustomerOptionsQuery, { ok: false }>
+): Promise<CrmReportsCustomerOptionsResponse> {
+  assertReportableScope(scope);
+  const scopeWhere = await resolveAuthorizedCustomerWhere(ds, scope);
+  if (!scopeWhere) return { options: [], hasMore: false, mode: query.mode };
+
+  if (query.mode === "ids") {
+    const rows = await ds.searchCustomers({ AND: [scopeWhere, { id: { in: query.ids } }] }, query.ids.length);
+    return { options: rows.map(toCustomerOption), hasMore: false, mode: "ids" };
+  }
+
+  const term = query.q;
+  const or: Prisma.CustomerWhereInput[] = [
+    { companyName: { contains: term, mode: "insensitive" } },
+    { AND: [{ tradeName: { not: null } }, { tradeName: { contains: term, mode: "insensitive" } }] },
+    ...buildCrmReportsTaxIdPatterns(term).map((pattern) => ({ taxId: { contains: pattern } })),
+  ];
+  const rows = await ds.searchCustomers({ AND: [scopeWhere, { OR: or }] }, query.limit + 1);
+  return {
+    options: rows.slice(0, query.limit).map(toCustomerOption),
+    hasMore: rows.length > query.limit,
+    mode: "search",
+  };
+}
+
+/**
+ * Opções do filtro de Responsável Comercial: vínculos ATIVOS de clientes do
+ * universo autorizado, agrupados pela identidade da carteira. O `filter`
+ * devolvido é o mesmo vocabulário do GET /api/crm/customers.
+ */
+export function buildCrmReportsCommercialOwnerOptions(
+  rows: readonly CrmReportsOwnerRow[],
+  authorizedIds: ReadonlySet<string>
+): CrmReportsCommercialOwnerOption[] {
+  const byKey = new Map<string, CrmReportsCommercialOwnerOption>();
+  for (const row of rows) {
+    if (!authorizedIds.has(row.customerId)) continue;
+    const identityKey = row.sellerIdentityKey?.trim() ?? "";
+    const idOnly = !identityKey || identityKey.startsWith(ID_ONLY_OWNER_PREFIX);
+    if (idOnly && row.sellerExternalId == null) continue;
+    const key = idOnly ? `id:${row.sellerExternalId}` : `k:${identityKey}`;
+    const current = byKey.get(key);
+    if (current) {
+      current.customerCount += 1;
+      continue;
+    }
+    const display = resolveCommercialOwnerDisplay({
+      rawId: row.sellerExternalId,
+      rawName: row.sellerResponsibleName,
+      canonicalName: row.sellerCanonicalName,
+      source: "CRM",
+    });
+    byKey.set(key, {
+      key,
+      label: idOnly ? `${display.displayName} (ID Nomus ${row.sellerExternalId})` : display.displayName,
+      customerCount: 1,
+      filter: idOnly ? { externalSellerId: row.sellerExternalId! } : { sellerIdentityKey: identityKey },
+    });
+  }
+  return [...byKey.values()].sort((a, b) => optionLabelCollator.compare(a.label, b.label));
+}
+
+/** Vendedores Nomus nos pedidos canônicos do escopo (vocabulário do select de Pedidos de Venda). */
+async function loadOrderSellerGroups(
+  ds: CrmReportsDataSource,
+  scope: CrmCommercialAccessScope,
+  authorized: readonly CrmReportsCustomerRecord[]
+): Promise<Array<{ externalSellerId: number | null; orderCount: number }>> {
+  if (authorized.length === 0) return [];
+  const canonicalWhere = crmCanonicalSalesOrderWhere({ allYears: true }, { ignorePeriod: true });
+  const batches: Array<Array<{ externalSellerId: number | null; orderCount: number }>> = [];
+  if (resolveCrmCustomerListSellerScopeFilter(scope, NO_OWNER_QUERY) === "all") {
+    // Global: universo autorizado = todos os elegíveis → uma consulta só.
+    batches.push(
+      await ds.groupOrderSellers({ AND: [canonicalWhere, { Customer: { is: crmEligibleCustomerWhere() } }] })
+    );
+  } else {
+    for (const ids of chunkIds(authorized.map((c) => c.id), CRM_REPORTS_ID_CHUNK_SIZE)) {
+      batches.push(await ds.groupOrderSellers({ AND: [canonicalWhere, { customerId: { in: ids } }] }));
+    }
+  }
+  const merged = new Map<number | null, number>();
+  for (const batch of batches) {
+    for (const row of batch) {
+      const id = row.externalSellerId != null && row.externalSellerId > 0 ? row.externalSellerId : null;
+      merged.set(id, (merged.get(id) ?? 0) + row.orderCount);
+    }
+  }
+  return [...merged.entries()].map(([externalSellerId, orderCount]) => ({ externalSellerId, orderCount }));
+}
+
+function buildScopeInfo(
+  scope: CrmCommercialAccessScope,
+  dataScope: "global" | "own",
+  owner: { applied: boolean; ignored: boolean } = { applied: false, ignored: false }
+): CrmReportsScopeInfo {
+  return {
+    dataScope,
+    sellerLinked: scope.sellerLinked,
+    blockedReason: scope.blockedReason,
+    blockedMessage: scope.blockedMessage,
+    commercialOwnerFilterApplied: owner.applied,
+    commercialOwnerFilterIgnored: owner.ignored,
+  };
+}
+
+/**
+ * GET /api/crm/reports/filter-options — metadados leves da abertura da aba.
+ * O browser recebe só as opções agregadas, nunca a lista de clientes.
+ */
+export async function loadCrmReportsFilterOptions(
+  ds: CrmReportsDataSource,
+  scope: CrmCommercialAccessScope
+): Promise<CrmReportsFilterOptionsResponse> {
+  const dataScope = assertReportableScope(scope);
+  const authorized = await loadAuthorizedCustomers(ds, scope);
+  const authorizedIds = new Set(authorized.map((customer) => customer.id));
+  const ownersEnabled = dataScope === "global";
+  const [ownerRows, sellerGroups] = await Promise.all([
+    ownersEnabled && authorized.length > 0
+      ? ds.findActiveCommercialOwners()
+      : Promise.resolve([] as CrmReportsOwnerRow[]),
+    loadOrderSellerGroups(ds, scope, authorized),
+  ]);
+  const sellerCtx = sellerGroups.length > 0 ? await ds.loadSellerIdentityContext() : null;
+  const lastOrderSellers = sellerCtx
+    ? sellerGroups
+        .map((group) => ({
+          sellerKey: buildSalesOrderSellerKey(group.externalSellerId),
+          label: buildSalesOrderSellerFilterOptionLabel(group.externalSellerId, sellerCtx),
+          orderCount: group.orderCount,
+        }))
+        .sort((a, b) => optionLabelCollator.compare(a.label, b.label))
+    : [];
+
+  return {
+    scope: buildScopeInfo(scope, dataScope),
+    commercialOwnerFilterEnabled: ownersEnabled,
+    commercialOwners: buildCrmReportsCommercialOwnerOptions(ownerRows, authorizedIds),
+    lastOrderSellers,
+    cities: groupCrmReportsLocationOptions(authorized, "city"),
+    states: groupCrmReportsLocationOptions(authorized, "state"),
   };
 }

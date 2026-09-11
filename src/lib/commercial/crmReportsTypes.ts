@@ -366,6 +366,64 @@ export type CrmReportsOperationalResponse = {
   overdueRepurchase: CrmReportsPage<CrmReportsOverdueRow>;
 };
 
+// ---------------------------------------------------------------------------
+// Opções leves e escopadas (filtros)
+// ---------------------------------------------------------------------------
+
+/** Busca de clientes para os filtros — só devolve clientes do escopo do usuário. */
+export const CRM_REPORTS_CUSTOMER_OPTIONS_DEFAULT_LIMIT = 20;
+export const CRM_REPORTS_CUSTOMER_OPTIONS_MAX_LIMIT = 50;
+/** Resolução de rótulos por ID (chips selecionados). */
+export const CRM_REPORTS_CUSTOMER_OPTIONS_MAX_IDS = 200;
+/** Termo mínimo para buscar (evita varrer a carteira a cada tecla). */
+export const CRM_REPORTS_CUSTOMER_SEARCH_MIN_CHARS = 2;
+
+export type CrmReportsCustomerOption = {
+  id: string;
+  displayName: string;
+  tradeName: string | null;
+  taxId: string;
+  city: string | null;
+  state: string | null;
+};
+
+export type CrmReportsCustomerOptionsResponse = {
+  options: CrmReportsCustomerOption[];
+  /** Há mais resultados além do limite — refinar a busca. */
+  hasMore: boolean;
+  /** Modo da consulta: busca textual ou resolução de IDs. */
+  mode: "search" | "ids";
+};
+
+export type CrmReportsCommercialOwnerOption = {
+  key: string;
+  label: string;
+  /** Clientes autorizados com este Responsável Comercial ativo. */
+  customerCount: number;
+  /** Payload pronto para `filters.commercialOwner`. */
+  filter: { sellerIdentityKey?: string; externalSellerId?: number };
+};
+
+export type CrmReportsLastOrderSellerOption = {
+  /** Vocabulário da tela Pedidos de Venda (`__NO_SELLER__` ou ID Nomus). */
+  sellerKey: string;
+  label: string;
+  /** Pedidos canônicos do escopo com este vendedor Nomus. */
+  orderCount: number;
+};
+
+export type CrmReportsLocationOption = { value: string; customerCount: number };
+
+export type CrmReportsFilterOptionsResponse = {
+  scope: CrmReportsScopeInfo;
+  /** Só escopo global filtra por responsável; no `own` a carteira é forçada. */
+  commercialOwnerFilterEnabled: boolean;
+  commercialOwners: CrmReportsCommercialOwnerOption[];
+  lastOrderSellers: CrmReportsLastOrderSellerOption[];
+  cities: CrmReportsLocationOption[];
+  states: CrmReportsLocationOption[];
+};
+
 export const CRM_REPORTS_LIST_SORT: Record<CrmReportsListKey, readonly string[]> = {
   recent: ["lastPurchaseDate:desc", "displayName:asc"],
   cadence: ["displayName:asc"],

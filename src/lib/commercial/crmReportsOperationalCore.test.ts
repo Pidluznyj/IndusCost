@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import {
   aggregateCrmReportsCustomerFacts,
   applyCrmReportsViews,
+  buildCrmReportsTaxIdPatterns,
+  groupCrmReportsLocationOptions,
+  parseCrmReportsCustomerOptionsQuery,
   buildCrmReportsAnalysis,
   buildCrmReportsPage,
   lastOrderMatchesSellerWhere,
@@ -555,6 +558,67 @@ describe("paginação", () => {
     assert.equal(page.total, 6);
     assert.notEqual(page.total, page.rows.length);
     assert.deepEqual(page.sort, ["displayName:asc"]);
+  });
+});
+
+describe("opções leves (busca de clientes, cidades/UF)", () => {
+  it("parser da busca: termo mínimo, limite máximo e resolução por IDs", () => {
+    assert.equal(parseCrmReportsCustomerOptionsQuery({ q: "a" }).ok, false);
+    assert.deepEqual(parseCrmReportsCustomerOptionsQuery({ q: "  Britânia   Eletro " }), {
+      ok: true,
+      mode: "search",
+      q: "Britânia Eletro",
+      limit: 20,
+    });
+    assert.deepEqual(parseCrmReportsCustomerOptionsQuery({ q: "esm", limit: "999" }), {
+      ok: true,
+      mode: "search",
+      q: "esm",
+      limit: 50,
+    });
+    assert.deepEqual(parseCrmReportsCustomerOptionsQuery({ ids: `${uuid(1).toUpperCase()},${uuid(1)},${uuid(2)}` }), {
+      ok: true,
+      mode: "ids",
+      ids: [uuid(1), uuid(2)],
+    });
+    assert.equal(parseCrmReportsCustomerOptionsQuery({ ids: "x,y" }).ok, false);
+    assert.equal(
+      parseCrmReportsCustomerOptionsQuery({ ids: Array.from({ length: 201 }, (_, i) => uuid(i)).join(",") }).ok,
+      false
+    );
+  });
+
+  it("CNPJ/CPF digitado só com números casa com cadastro formatado ou não", () => {
+    const patterns = buildCrmReportsTaxIdPatterns("07019308");
+    assert.ok(patterns.includes("07019308"), "cadastro só com dígitos");
+    assert.ok(patterns.includes("07.019.308"), "CNPJ formatado desde o início");
+    assert.ok(patterns.includes("070.193.08"), "CPF formatado");
+    // Trecho do meio do CNPJ 07.019.308/0001-28 digitado só com números.
+    const middle = buildCrmReportsTaxIdPatterns("193080");
+    assert.ok(middle.includes("19.308/0"));
+    assert.ok("07.019.308/0001-28".includes("19.308/0"));
+    assert.ok(patterns.some((p) => "07.019.308/0001-28".includes(p)));
+    assert.deepEqual(buildCrmReportsTaxIdPatterns("Britânia"), [], "texto não gera padrão de documento");
+    assert.deepEqual(buildCrmReportsTaxIdPatterns("07"), [], "menos de 3 dígitos não busca documento");
+    assert.ok(buildCrmReportsTaxIdPatterns("0001-28").includes("0001-28"));
+  });
+
+  it("cidades/UF: sem caixa/acento, grafia mais frequente, contagem de clientes", () => {
+    const rows = [
+      { city: "São Paulo", state: "SP" },
+      { city: "SAO PAULO", state: "sp" },
+      { city: "São Paulo", state: "SP" },
+      { city: " Curitiba ", state: "PR" },
+      { city: null, state: null },
+    ];
+    assert.deepEqual(groupCrmReportsLocationOptions(rows, "city"), [
+      { value: "Curitiba", customerCount: 1 },
+      { value: "São Paulo", customerCount: 3 },
+    ]);
+    assert.deepEqual(groupCrmReportsLocationOptions(rows, "state"), [
+      { value: "PR", customerCount: 1 },
+      { value: "SP", customerCount: 3 },
+    ]);
   });
 });
 

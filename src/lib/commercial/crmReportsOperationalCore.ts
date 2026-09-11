@@ -18,6 +18,10 @@
 import { computeTicketAverage } from "@/src/lib/salesOrderDashboardRules.js";
 import { normalizeSearchString } from "@/src/lib/utils.js";
 import {
+  CRM_REPORTS_CUSTOMER_OPTIONS_DEFAULT_LIMIT,
+  CRM_REPORTS_CUSTOMER_OPTIONS_MAX_IDS,
+  CRM_REPORTS_CUSTOMER_OPTIONS_MAX_LIMIT,
+  CRM_REPORTS_CUSTOMER_SEARCH_MIN_CHARS,
   CRM_REPORTS_CUSTOMER_SELECTION_MODES,
   CRM_REPORTS_DEFAULT_VIEWS,
   CRM_REPORTS_LIST_KEYS,
@@ -364,6 +368,114 @@ export function parseCrmReportsFilters(raw: unknown, errors: string[]): CrmRepor
   const customerSelection = parseCustomerSelection(filtersRaw.customerSelection, errors);
 
   return { customerIds, commercialOwner, lastOrderSeller, cities, states, customerSelection };
+}
+
+// ---------------------------------------------------------------------------
+// Opções leves (busca de clientes, cidades/UF)
+// ---------------------------------------------------------------------------
+
+export type CrmReportsCustomerOptionsQuery =
+  | { ok: true; mode: "search"; q: string; limit: number }
+  | { ok: true; mode: "ids"; ids: string[] }
+  | { ok: false; error: string };
+
+function firstQueryValue(value: unknown): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" ? raw : "";
+}
+
+/**
+ * GET /api/crm/reports/customer-options: `q` (busca) ou `ids` (rótulos de
+ * chips já selecionados). Termo curto demais não consulta nada.
+ */
+export function parseCrmReportsCustomerOptionsQuery(
+  query: Record<string, unknown>
+): CrmReportsCustomerOptionsQuery {
+  const idsRaw = firstQueryValue(query.ids).trim();
+  if (idsRaw) {
+    const ids = [...new Set(idsRaw.split(",").map((id) => id.trim().toLowerCase()).filter(Boolean))];
+    if (ids.length > CRM_REPORTS_CUSTOMER_OPTIONS_MAX_IDS) {
+      return { ok: false, error: `ids aceita no máximo ${CRM_REPORTS_CUSTOMER_OPTIONS_MAX_IDS} clientes.` };
+    }
+    if (ids.some((id) => !UUID_RE.test(id))) {
+      return { ok: false, error: "ids contém cliente inválido (esperado UUID)." };
+    }
+    return { ok: true, mode: "ids", ids };
+  }
+  const q = firstQueryValue(query.q).trim().replace(/\s+/g, " ");
+  if (q.length < CRM_REPORTS_CUSTOMER_SEARCH_MIN_CHARS) {
+    return {
+      ok: false,
+      error: `Digite ao menos ${CRM_REPORTS_CUSTOMER_SEARCH_MIN_CHARS} caracteres para buscar clientes.`,
+    };
+  }
+  if (q.length > 120) return { ok: false, error: "Busca muito longa." };
+  const limitRaw = Number(firstQueryValue(query.limit));
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0
+    ? Math.min(limitRaw, CRM_REPORTS_CUSTOMER_OPTIONS_MAX_LIMIT)
+    : CRM_REPORTS_CUSTOMER_OPTIONS_DEFAULT_LIMIT;
+  return { ok: true, mode: "search", q, limit };
+}
+
+const CNPJ_MASK = "##.###.###/####-##";
+const CPF_MASK = "###.###.###-##";
+
+function formatDigitsFragment(mask: string, digits: string, startDigit: number): string | null {
+  const positions: number[] = [];
+  for (let i = 0; i < mask.length; i += 1) if (mask[i] === "#") positions.push(i);
+  if (startDigit + digits.length > positions.length) return null;
+  const from = positions[startDigit]!;
+  const to = positions[startDigit + digits.length - 1]!;
+  let out = "";
+  let d = 0;
+  for (let i = from; i <= to; i += 1) out += mask[i] === "#" ? digits[d++] : mask[i];
+  return out;
+}
+
+/**
+ * Padrões `contains` para achar CNPJ/CPF digitado só com números, quer o
+ * cadastro guarde o documento formatado ou só dígitos — sem SQL próprio.
+ * Um trecho de dígitos pode começar em qualquer posição da máscara, então
+ * geramos a versão formatada para cada alinhamento possível.
+ */
+export function buildCrmReportsTaxIdPatterns(query: string): string[] {
+  const digits = query.replace(/\D/g, "");
+  if (digits.length < 3) return [];
+  const patterns = new Set<string>([digits]);
+  for (const mask of [CNPJ_MASK, CPF_MASK]) {
+    const slots = [...mask].filter((c) => c === "#").length;
+    for (let start = 0; start + digits.length <= slots; start += 1) {
+      const formatted = formatDigitsFragment(mask, digits, start);
+      if (formatted) patterns.add(formatted);
+    }
+  }
+  return [...patterns];
+}
+
+/** Cidades/UF distintas do universo autorizado (sem caixa/acento), grafia mais frequente. */
+export function groupCrmReportsLocationOptions(
+  customers: readonly Pick<CrmReportsCustomerRecord, "city" | "state">[],
+  field: "city" | "state"
+): Array<{ value: string; customerCount: number }> {
+  const groups = new Map<string, { count: number; spellings: Map<string, number> }>();
+  for (const customer of customers) {
+    const raw = (customer[field] ?? "").trim().replace(/\s+/g, " ");
+    const token = normalizeCrmReportsLocationToken(raw);
+    if (!token) continue;
+    const display = field === "state" ? raw.toUpperCase() : raw;
+    const group = groups.get(token) ?? { count: 0, spellings: new Map<string, number>() };
+    group.count += 1;
+    group.spellings.set(display, (group.spellings.get(display) ?? 0) + 1);
+    groups.set(token, group);
+  }
+  return [...groups.values()]
+    .map((group) => {
+      const [value] = [...group.spellings.entries()].sort(
+        (a, b) => b[1] - a[1] || displayNameCollator.compare(a[0], b[0])
+      )[0]!;
+      return { value, customerCount: group.count };
+    })
+    .sort((a, b) => displayNameCollator.compare(a.value, b.value));
 }
 
 // ---------------------------------------------------------------------------

@@ -85,6 +85,11 @@ function tinyDataSource(overrides: Partial<CrmReportsDataSource> = {}): CrmRepor
     resolveCommercialOwners: async () => new Map(),
     findActivities: async () => [],
     loadSellerIdentityContext: async () => ({ persons: [], aliases: [] }),
+    searchCustomers: async () => [
+      { id: CUSTOMER_ID, companyName: "Alfa Ltda", tradeName: null, taxId: "1", city: null, state: null },
+    ],
+    findActiveCommercialOwners: async () => [],
+    groupOrderSellers: async () => [{ externalSellerId: null, orderCount: 1 }],
     ...overrides,
   };
 }
@@ -117,9 +122,19 @@ function setup(options: {
 }
 
 async function call(ctx: ReturnType<typeof setup>, body: unknown): Promise<FakeRes> {
-  const route = ctx.routes[0]!;
+  return callRoute(ctx, "POST", CRM_REPORTS_OPERATIONAL_PATH, { body });
+}
+
+async function callRoute(
+  ctx: ReturnType<typeof setup>,
+  method: string,
+  path: string,
+  req: Record<string, unknown>
+): Promise<FakeRes> {
+  const route = ctx.routes.find((r) => r.method === method && r.path === path);
+  assert.ok(route, `rota não registrada: ${method} ${path}`);
   const res = createRes();
-  await route.handlers[route.handlers.length - 1]!({ body }, res);
+  await route!.handlers[route!.handlers.length - 1]!({ query: {}, body: {}, ...req }, res);
   return res;
 }
 
@@ -136,6 +151,21 @@ describe("POST /api/crm/reports/operational — registro e guardas", () => {
       guard && { key: guard.key, action: guard.action },
       { key: "commercial.crm.reports", action: "view" }
     );
+  });
+
+  it("todas as rotas da aba exigem sessão + commercial.crm.reports:view", () => {
+    const ctx = setup();
+    assert.ok(ctx.routes.length >= 3);
+    for (const route of ctx.routes) {
+      assert.equal(route.handlers[0], ctx.requireAppAuth, route.path);
+      const guard = ctx.resourceGuards.find((g) => g.guard === route.handlers[1]);
+      assert.deepEqual(guard && { key: guard.key, action: guard.action }, {
+        key: "commercial.crm.reports",
+        action: "view",
+      }, route.path);
+      assert.match(route.path, /^\/api\/crm\/reports\//);
+      assert.ok(route.method === "GET" || route.method === "POST", "nenhuma rota de escrita");
+    }
   });
 
   it("consta na matriz de acesso comercial", () => {
@@ -204,6 +234,35 @@ describe("POST /api/crm/reports/operational — respostas", () => {
     const res = await call(setup({ dataSource: ds }), {});
     assert.equal(res.statusCode, 422);
     assert.equal((res.body as { error: string }).error, "REPORT_UNIVERSE_TOO_LARGE");
+  });
+
+  it("GET filter-options devolve metadados agregados (sem lista de clientes)", async () => {
+    const res = await callRoute(setup(), "GET", "/api/crm/reports/filter-options", {});
+    assert.equal(res.statusCode, 200);
+    const body = res.body as Record<string, unknown>;
+    assert.deepEqual(Object.keys(body).sort(), [
+      "cities",
+      "commercialOwnerFilterEnabled",
+      "commercialOwners",
+      "lastOrderSellers",
+      "scope",
+      "states",
+    ]);
+  });
+
+  it("GET customer-options: 400 para termo curto; 200 com busca válida; 403 sem escopo", async () => {
+    const short = await callRoute(setup(), "GET", "/api/crm/reports/customer-options", { query: { q: "a" } });
+    assert.equal(short.statusCode, 400);
+    const ok = await callRoute(setup(), "GET", "/api/crm/reports/customer-options", { query: { q: "Alfa" } });
+    assert.equal(ok.statusCode, 200);
+    assert.equal((ok.body as { options: unknown[] }).options.length, 1);
+    const denied = await callRoute(
+      setup({ user: mockAuth("VIEWER", ["crm.view"]) }),
+      "GET",
+      "/api/crm/reports/customer-options",
+      { query: { q: "Alfa" } }
+    );
+    assert.equal(denied.statusCode, 403);
   });
 
   it("500 em erro inesperado, sem vazar detalhe interno", async () => {
