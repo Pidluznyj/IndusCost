@@ -3,6 +3,13 @@
  * Client-safe — sem Prisma.
  */
 
+/** O que o modal de saldo do dia gravou: dia + saldo inicial e/ou final (valores como enviados à API, ex. "131000.00"). */
+export type TreasuryBalanceSaved = {
+  civilDate: string;
+  openingBalance: string | null;
+  closingBalance: string | null;
+};
+
 export function canEditTreasuryCivilDateBalances(input: {
   civilDate: string;
   todayCivilDate: string;

@@ -4,6 +4,8 @@
  * sem agrupar por banco, via motor oficial (financeAccountsReceivable/PayableRulesEngine).
  * Contas + lançamento de saldo reutilizam o painel/modal canônicos do Fluxo Gerencial
  * (APIs /today/opening e /today/closing, com log de usuário, data/hora e motivo).
+ * Lançar saldo NÃO recalcula a tela: fica o aviso "Dados desatualizados" até o
+ * usuário clicar em "Atualizar tela".
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +36,11 @@ import {
 import { buildTreasuryCaixaTimelineFromBoardSources } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
+import { TreasuryCaixaStaleBanner } from "@/src/components/finance/treasury/TreasuryCaixaStaleBanner";
+import {
+  addTreasuryCaixaPendingBalance,
+  type TreasuryCaixaPendingBalance,
+} from "@/src/lib/treasury/treasuryCaixaPendingBalances.js";
 import { TreasuryCaixaTodayFlow } from "@/src/components/finance/treasury/TreasuryCaixaTodayFlow";
 import { TreasuryCaixaOverdueStrip } from "@/src/components/finance/treasury/TreasuryCaixaOverdueStrip";
 import {
@@ -193,6 +200,9 @@ export function TreasuryCaixaPage() {
   const [auditKind, setAuditKind] =
     useState<TreasuryCaixaTotalizerAuditKind | null>(null);
   const accountsAbortRef = useRef<AbortController | null>(null);
+  // Saldos gravados depois do último cálculo: a tela NÃO recalcula sozinha a
+  // cada saldo (é pesado); fica o aviso até o usuário clicar em "Atualizar tela".
+  const [pendingBalances, setPendingBalances] = useState<TreasuryCaixaPendingBalance[]>([]);
 
   // Cenários (Otimista/Realista/Pessimista) — endpoint único.
   const [scenarios, setScenarios] =
@@ -402,6 +412,18 @@ export function TreasuryCaixaPage() {
     void search();
   }, [accountsLoading, search]);
 
+  /**
+   * "Atualizar tela": recalcula tudo o que depende dos saldos — contas e
+   * movimento de hoje, caixa do período (linha do tempo/gráfico) e projeção —
+   * e limpa o aviso. É o único caminho que recalcula depois de lançar saldo.
+   */
+  const refreshScreen = useCallback(() => {
+    setPendingBalances([]);
+    void loadAccounts();
+    void search();
+    void loadScenarios();
+  }, [loadAccounts, search, loadScenarios]);
+
   // Dia canônico de hoje (motor único-de-dia) — mesma fonte que o drill-down
   // e o card "Movimento de hoje" já usam para A receber/Recebido/A pagar/Pago.
   const canonicalToday = useMemo(
@@ -563,14 +585,15 @@ export function TreasuryCaixaPage() {
           </div>
         </section>
 
+        <TreasuryCaixaStaleBanner pendingBalances={pendingBalances} onRefresh={refreshScreen} />
+
         <TreasuryCaixaAccountsSummary
           accounts={accounts}
           loading={accountsLoading}
           isSuperAdmin={auth.isSuperAdmin()}
-          onChanged={() => {
-            void loadAccounts();
-            if (data) void search();
-          }}
+          pendingBalances={pendingBalances}
+          // Só guarda o lançamento: nada é recalculado até "Atualizar tela".
+          onBalanceSaved={(entry) => setPendingBalances((list) => addTreasuryCaixaPendingBalance(list, entry))}
         />
 
         <TreasuryCaixaTodayFlow

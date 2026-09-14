@@ -9,16 +9,25 @@
  * (`PredictiveCashFlowBalanceCorrectDialog`), que grava via /today/opening e
  * /today/closing com usuário, data/hora e motivo. Modal reaproveitado, não
  * reescrito — a regra de quem pode editar qual dia continua sendo dele.
+ *
+ * Gravar NÃO recalcula a tela: o lançamento volta para a página como pendente
+ * (aviso de dados desatualizados) e aparece na linha da conta até o usuário
+ * clicar em "Atualizar tela".
  */
 
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Landmark, Pencil } from "lucide-react";
+import { Clock3, Landmark, Pencil } from "lucide-react";
 import type { PredictiveCashFlowAccount } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import {
   formatPredictiveCashFlowMoney,
   sumPredictiveAccountBalances,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
+import {
+  formatTreasuryCaixaPendingBalance,
+  treasuryCaixaPendingBalancesForAccount,
+  type TreasuryCaixaPendingBalance,
+} from "@/src/lib/treasury/treasuryCaixaPendingBalances.js";
 import { PredictiveCashFlowBalanceCorrectDialog } from "@/src/components/finance/treasury/predictive-cash-flow/PredictiveCashFlowBalanceCorrectDialog";
 
 export type TreasuryCaixaAccountsSummaryProps = {
@@ -26,15 +35,18 @@ export type TreasuryCaixaAccountsSummaryProps = {
   loading?: boolean;
   /** Dias passados só podem ser corrigidos por SUPER_ADMIN (regra do modal). */
   isSuperAdmin?: boolean;
-  /** Chamado após gravar um saldo — a página recarrega as contas. */
-  onChanged?: () => void;
+  /** Saldos já gravados que a tela ainda não recalculou — marcados na linha da conta. */
+  pendingBalances?: readonly TreasuryCaixaPendingBalance[];
+  /** Chamado após gravar um saldo. A página NÃO recalcula sozinha: guarda como pendente. */
+  onBalanceSaved?: (pending: TreasuryCaixaPendingBalance) => void;
 };
 
 export function TreasuryCaixaAccountsSummary({
   accounts,
   loading = false,
   isSuperAdmin = false,
-  onChanged,
+  pendingBalances = [],
+  onBalanceSaved,
 }: TreasuryCaixaAccountsSummaryProps) {
   const [editing, setEditing] = useState<PredictiveCashFlowAccount | null>(null);
   const consolidated = sumPredictiveAccountBalances(accounts);
@@ -91,42 +103,57 @@ export function TreasuryCaixaAccountsSummary({
             </Link>
           </li>
         ) : (
-          accounts.map((a) => (
-            <li key={a.id}>
-              <button
-                type="button"
-                onClick={() => setEditing(a)}
-                className="flex w-full items-center justify-between gap-2 rounded-md border border-transparent bg-white px-2.5 py-2 text-left transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
-                data-testid={`caixa-account-${a.id}`}
-                title="Informar o saldo do dia desta conta"
-                aria-label={`Informar o saldo do dia — ${a.name}`}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <Landmark className="h-4 w-4 shrink-0 text-[#6B7280]" aria-hidden />
-                  <p className="truncate text-sm font-semibold text-[#111827]">
-                    {a.name}
-                    {a.institutionName ? (
-                      <span className="font-normal text-[#6B7280]">
-                        {" · "}
-                        {a.institutionName}
-                      </span>
-                    ) : null}
-                  </p>
-                  {!a.includeInConsolidated ? (
-                    <span className="shrink-0 rounded border border-[#E5E7EB] bg-[#F9FAFB] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#6B7280]">
-                      fora da soma
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <p className="text-sm font-semibold tabular-nums text-[#111827]">
-                    {formatPredictiveCashFlowMoney(a.initialBalance)}
-                  </p>
-                  <Pencil className="h-3.5 w-3.5 text-[#2563EB]" aria-hidden />
-                </div>
-              </button>
-            </li>
-          ))
+          accounts.map((a) => {
+            const pending = treasuryCaixaPendingBalancesForAccount(pendingBalances, a.id);
+            return (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onClick={() => setEditing(a)}
+                  className="w-full rounded-md border border-transparent bg-white px-2.5 py-2 text-left transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
+                  data-testid={`caixa-account-${a.id}`}
+                  title="Informar o saldo do dia desta conta"
+                  aria-label={`Informar o saldo do dia — ${a.name}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Landmark className="h-4 w-4 shrink-0 text-[#6B7280]" aria-hidden />
+                      <p className="truncate text-sm font-semibold text-[#111827]">
+                        {a.name}
+                        {a.institutionName ? (
+                          <span className="font-normal text-[#6B7280]">
+                            {" · "}
+                            {a.institutionName}
+                          </span>
+                        ) : null}
+                      </p>
+                      {!a.includeInConsolidated ? (
+                        <span className="shrink-0 rounded border border-[#E5E7EB] bg-[#F9FAFB] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#6B7280]">
+                          fora da soma
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <p className="text-sm font-semibold tabular-nums text-[#111827]">
+                        {formatPredictiveCashFlowMoney(a.initialBalance)}
+                      </p>
+                      <Pencil className="h-3.5 w-3.5 text-[#2563EB]" aria-hidden />
+                    </div>
+                  </div>
+                  {pending.map((entry) => (
+                    <p
+                      key={`${entry.accountId}:${entry.civilDate}`}
+                      className="mt-1 flex items-center gap-1 pl-6 text-[11px] font-semibold text-[#92400E]"
+                      data-testid={`caixa-account-pending-${a.id}`}
+                    >
+                      <Clock3 className="h-3 w-3 shrink-0" aria-hidden />
+                      {formatTreasuryCaixaPendingBalance(entry)} — entra no cálculo ao atualizar a tela
+                    </p>
+                  ))}
+                </button>
+              </li>
+            );
+          })
         )}
       </ul>
 
@@ -143,7 +170,14 @@ export function TreasuryCaixaAccountsSummary({
           open
           isSuperAdmin={isSuperAdmin}
           onClose={() => setEditing(null)}
-          onSaved={() => onChanged?.()}
+          onSaved={(saved) =>
+            onBalanceSaved?.({
+              ...saved,
+              accountId: editing.id,
+              accountName: editing.name,
+              savedAt: new Date().toISOString(),
+            })
+          }
         />
       ) : null}
     </section>

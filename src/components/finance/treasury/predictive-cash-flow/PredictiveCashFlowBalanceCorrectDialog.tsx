@@ -28,6 +28,7 @@ import {
   resolveTreasuryOpeningInputValue,
   shouldApplyTreasuryBalanceHydration,
   treasuryBalanceHydrationKey,
+  type TreasuryBalanceSaved,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlowBalanceEdit.js";
 import {
   financeModuleFilterFieldClass,
@@ -45,7 +46,8 @@ export type PredictiveCashFlowBalanceCorrectDialogProps = {
   disabled?: boolean;
   isSuperAdmin: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  /** Depois de gravar: recebe o dia e os saldos gravados (quem chama decide se recalcula). */
+  onSaved: (saved: TreasuryBalanceSaved) => void;
 };
 
 export function PredictiveCashFlowBalanceCorrectDialog({
@@ -274,7 +276,7 @@ export function PredictiveCashFlowBalanceCorrectDialog({
           ],
         });
       }
-      onSaved();
+      onSaved({ civilDate, openingBalance, closingBalance });
       onClose();
     } catch (err) {
       setError(
