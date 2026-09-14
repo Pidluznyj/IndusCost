@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as XLSX from "xlsx";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { parseCrmCustomReportRequest } from "./crmCustomReportCore.js";
 import { exportCrmCustomReport, exportCrmReportsOperationalList } from "./crmReportsExportService.server.js";
 import { loadCrmReportsOperational } from "./crmReportsOperationalService.server.js";
@@ -10,6 +14,7 @@ import {
   B,
   C,
   GLOBAL_SCOPE,
+  M,
   NOW,
   OWN_GISLENE_SCOPE,
   baseDb,
@@ -20,6 +25,9 @@ import {
 
 // Fixtures compartilhadas (hoje = 11/09/2026 10:00). A exportação precisa
 // sair do MESMO pipeline da tela: os testes comparam com o endpoint das listas.
+// Flag de presença DESLIGADA declarada para o arquivo (Mu = 2 pedidos / R$ 200);
+// a flag LIGADA tem cenário próprio no fim.
+useSalesOrderPresenceFlag("OFF");
 
 const AUTH = mockAuth({ role: "COMMERCIAL_MANAGER" });
 const GISLENE_AUTH = mockAuth({ permissions: ["crm.view", "crm.seller.own"], externalSellerId: 464 });
@@ -223,5 +231,41 @@ describe("exportação do relatório personalizado", () => {
     const total = rows.find((r) => r["Vendedor do pedido"] === "Total geral")!;
     assert.equal(total["Valor vendido"], 5550.1);
     assert.equal(total["Clientes"], 4);
+  });
+});
+
+describe("exportação — flag de presença Nomus LIGADA (configuração da homologação)", () => {
+  it("personalizado e listas exportados seguem a mesma exclusão MISSING_CONFIRMED da tela", async () => {
+    await withSalesOrderPresenceFlag("ON", async () => {
+      const custom = await exportCrmCustomReport({
+        ds: createFakeDataSource(baseDb()).ds,
+        scope: GLOBAL_SCOPE,
+        auth: AUTH,
+        spec: customSpec({}),
+        format: "csv",
+        options: { now: NOW },
+      });
+      assert.equal(custom.rowCount, 4);
+      assert.deepEqual(csvDataRows(csvText(custom.body), "Cliente;CNPJ/CPF;Valor vendido;Pedidos").slice(-2), [
+        ["Mu Presença", M.taxId, "100,00", "1"],
+        ["Total geral", "", "5450,10", "7"],
+      ]);
+
+      // Sem o pedido ausente, Mu fica com uma ocasião: entra em "Sem cadência suficiente" com Gama.
+      const body = { views: { cadence: { statuses: ["INSUFFICIENT_HISTORY"] } } };
+      const screen = await loadCrmReportsOperational(createFakeDataSource(baseDb()).ds, GLOBAL_SCOPE, request(body), { now: NOW });
+      const cadence = await exportCrmReportsOperationalList({
+        ds: createFakeDataSource(baseDb()).ds,
+        scope: GLOBAL_SCOPE,
+        auth: AUTH,
+        request: request(body),
+        list: "cadence",
+        format: "csv",
+        options: { now: NOW },
+      });
+      const names = csvDataRows(csvText(cadence.body), "Cliente;CNPJ/CPF;Responsável Comercial;Ocasiões analisadas").map((r) => r[0]);
+      assert.deepEqual(names, screen.repurchaseCadence.rows.map((r) => r.displayName));
+      assert.deepEqual([...names].sort(), [C.companyName, M.companyName].sort());
+    });
   });
 });

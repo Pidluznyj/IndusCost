@@ -4,8 +4,15 @@ import {
   buildEconomicGroupCustomerMatchOr,
   buildEconomicGroupCustomerPrismaExclusion,
 } from "@/src/lib/financeInternalGroupExclusions.js";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { buildSalesOrderListWhere } from "@/src/lib/salesOrdersListSummary.js";
 import { crmCanonicalIssueRange, crmCanonicalSalesOrderWhere } from "./crmCanonicalSalesOrderScope.server.js";
+
+// Flag de presença declarada (DESLIGADA); a igualdade com a flag LIGADA tem teste próprio.
+useSalesOrderPresenceFlag("OFF");
 
 /**
  * A extração de `buildEconomicGroupCustomerMatchOr` é refatoração pura: o
@@ -62,6 +69,19 @@ describe("crmCanonicalSalesOrderWhere — consome o construtor oficial", () => {
       crmCanonicalSalesOrderWhere({ allYears: true }),
       buildSalesOrderListWhere({}, { excludeEconomicGroupCustomers: true })
     );
+  });
+
+  it("presença Nomus: igual ao oficial nos dois estados da flag (ligada = MISSING_CONFIRMED fora no AND raiz)", async () => {
+    await withSalesOrderPresenceFlag("OFF", () => {
+      const crm = crmCanonicalSalesOrderWhere({ allYears: true });
+      assert.deepEqual(crm, buildSalesOrderListWhere({}, { excludeEconomicGroupCustomers: true }));
+      assert.doesNotMatch(JSON.stringify(crm), /MISSING_CONFIRMED/);
+    });
+    await withSalesOrderPresenceFlag("ON", () => {
+      const crm = crmCanonicalSalesOrderWhere({ allYears: true });
+      assert.deepEqual(crm, buildSalesOrderListWhere({}, { excludeEconomicGroupCustomers: true }));
+      assert.deepEqual((crm as { AND: unknown[] }).AND[1], { sourcePresenceStatus: { not: "MISSING_CONFIRMED" } });
+    });
   });
 
   it("carteira aberta e faturado saem do filtro canônico hasInvoice", () => {

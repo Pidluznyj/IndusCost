@@ -13,6 +13,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { resolveCrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList.js";
 import type { CommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.js";
+import { assertSalesOrderPresenceFlagDeclared } from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { parseCrmReportsOperationalRequest } from "./crmReportsOperationalCore.js";
 import type { CrmReportsDataSource, CrmReportsRun } from "./crmReportsOperationalService.server.js";
 import type { CrmReportsNormalizedRequest } from "./crmReportsTypes.js";
@@ -114,7 +115,17 @@ export const K = customer(5, "Koppetel Indústria", { taxId: "72.569.510/0001-95
 export const X = customer(6, "Xis Inativo", { status: "INACTIVE" });
 export const M = customer(7, "Mu Presença");
 
+/**
+ * Mu Presença tem, de propósito, um pedido MISSING_CONFIRMED (20/08, R$ 100)
+ * além do PRESENT (20/06, R$ 100). Flag de presença de Pedidos de Venda
+ * DESLIGADA: Mu = 2 pedidos / R$ 200, última compra 20/08. LIGADA (como na
+ * homologação): Mu = 1 pedido / R$ 100, última compra 20/06, sem cadência.
+ * Listas, personalizado, exportação e evidências mudam junto — por isso a base
+ * exige que o teste declare o estado (useSalesOrderPresenceFlag /
+ * withSalesOrderPresenceFlag) em vez de herdar o .env de quem chamou npm.
+ */
 export function baseDb() {
+  assertSalesOrderPresenceFlagDeclared("crmReportsService.fixtures baseDb()");
   return {
     customers: [A, B, C, D, K, X, M],
     orders: [

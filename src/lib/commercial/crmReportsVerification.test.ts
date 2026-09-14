@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { createFixturePrisma, type FixtureRow } from "./crmReportsPrisma.fixtures.js";
 import { createPrismaCrmReportsDataSource, type CrmReportsDataSource } from "./crmReportsOperationalService.server.js";
 import {
   CRM_REPORTS_VERIFICATION_INDICATORS,
   verifyCrmReportsAgainstSalesOrders,
 } from "./crmReportsVerification.server.js";
+
+// Flag de presença declarada (DESLIGADA); o verificador nos dois estados tem teste próprio.
+useSalesOrderPresenceFlag("OFF");
 
 const NOW = new Date(2026, 8, 11, 10, 0, 0);
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -142,6 +149,25 @@ describe("verificador CRM > Relatórios × Pedidos de Venda (fixtures)", () => {
     )!;
     assert.equal(dateRow.status, "DIVERGENTE");
     assert.equal(result.summary.approved, false);
+  });
+
+  it("reconcilia nos dois estados da flag de presença (os dois lados leem a mesma regra canônica)", async () => {
+    const db = fixtureDb();
+    // Pedido que a origem Nomus confirmou ausente: entra ou sai dos DOIS lados juntos.
+    db.salesOrders.push(order(B.id as string, "2026-09-05", 400, { sourcePresenceStatus: "MISSING_CONFIRMED" }));
+    for (const state of ["OFF", "ON"] as const) {
+      await withSalesOrderPresenceFlag(state, async () => {
+        const result = await verifyCrmReportsAgainstSalesOrders(createFixturePrisma(db) as never, { now: NOW });
+        assert.equal(result.summary.approved, true, `${state}: ${JSON.stringify(result.divergences, null, 2)}`);
+        const beta = (indicator: string) => result.rows.find((r) => r.customerId === B.id && r.indicator === indicator)!;
+        const orders60d = beta(CRM_REPORTS_VERIFICATION_INDICATORS.orders60d);
+        const lastPurchase = beta(CRM_REPORTS_VERIFICATION_INDICATORS.lastPurchaseDate);
+        assert.equal(orders60d.pv, state === "ON" ? 2 : 3, state);
+        assert.equal(orders60d.crm, orders60d.pv, state);
+        assert.equal(lastPurchase.pv, state === "ON" ? "2026-08-01" : "2026-09-05", state);
+        assert.equal(lastPurchase.crm, lastPurchase.pv, state);
+      });
+    }
   });
 
   it("--customer: compara só os clientes pedidos", async () => {

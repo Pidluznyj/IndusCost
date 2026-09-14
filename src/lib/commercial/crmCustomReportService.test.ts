@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { parseCrmCustomReportRequest } from "./crmCustomReportCore.js";
 import { loadCrmCustomReport } from "./crmCustomReportService.server.js";
 import { CrmReportsForbiddenError, loadCrmReportsOperational } from "./crmReportsOperationalService.server.js";
@@ -22,6 +26,9 @@ import {
 
 // Fixtures compartilhadas com as listas (hoje = 11/09/2026): o personalizado
 // tem de sair do MESMO pipeline — os testes reconciliam com as listas.
+// Flag de presença DESLIGADA declarada para o arquivo (Mu = 2 pedidos / R$ 200);
+// a flag LIGADA tem cenário próprio no fim.
+useSalesOrderPresenceFlag("OFF");
 
 function spec(body: Partial<CrmCustomReportRequest>): CrmCustomReportSpec {
   const parsed = parseCrmCustomReportRequest({ dimensions: ["customer"], metrics: ["soldValue", "orders"], ...body });
@@ -262,5 +269,42 @@ describe("relatório personalizado — situação do cliente vem do motor", () =
     );
     assert.deepEqual(rowIds(res), [D.id]);
     assert.deepEqual(res.rows[0]!.metrics, { lastPurchaseDate: null, daysSinceLastPurchase: null, soldValue: 0 });
+  });
+});
+
+describe("relatório personalizado — flag de presença Nomus LIGADA (configuração da homologação)", () => {
+  it("pedido MISSING_CONFIRMED sai do personalizado exatamente como sai das listas", async () => {
+    await withSalesOrderPresenceFlag("ON", async () => {
+      const res = await loadCrmCustomReport(
+        createFakeDataSource(baseDb()).ds,
+        GLOBAL_SCOPE,
+        spec({ metrics: ["soldValue", "orders", "customers"] }),
+        { now: NOW }
+      );
+      assert.deepEqual(
+        res.rows.map((r) => [r.dimensions.customer!.label, r.metrics.soldValue, r.metrics.orders]),
+        [
+          ["Alfa Ltda", 3000.1, 3],
+          ["Beta SA", 1600, 2],
+          ["Gama Comércio", 750, 1],
+          ["Mu Presença", 100, 1], // só o pedido PRESENT de 20/06
+        ]
+      );
+      assert.deepEqual(res.totals, { soldValue: 5450.1, orders: 7, customers: 4 });
+
+      const operational = await loadCrmReportsOperational(createFakeDataSource(baseDb()).ds, GLOBAL_SCOPE, request(), { now: NOW });
+      const w = operational.windows;
+      const r12 = await loadCrmCustomReport(
+        createFakeDataSource(baseDb()).ds,
+        GLOBAL_SCOPE,
+        spec({ period: { from: w.rolling12m.from, to: w.rolling12m.to } }),
+        { now: NOW }
+      );
+      const muList = operational.repurchaseCadence.rows.find((r) => r.customerId === M.id)!;
+      const muCustom = r12.rows.find((r) => r.customerId === M.id)!;
+      assert.equal(muList.orders12m, 1);
+      assert.equal(muCustom.metrics.orders, muList.orders12m);
+      assert.equal(muCustom.metrics.soldValue, muList.purchaseValue12m);
+    });
   });
 });

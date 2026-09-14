@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { createFixturePrisma } from "./crmReportsPrisma.fixtures.js";
 import { collectCrmReportsHomologEvidence, countingDataSource } from "./crmReportsHomologEvidence.server.js";
 import type { CrmReportsDataSource } from "./crmReportsOperationalService.server.js";
@@ -7,6 +11,9 @@ import { A, NOW, OWN_PERMISSIONS, baseDb, createFakeDataSource, mockAuth } from 
 
 // Mesma base das listas (hoje = 11/09/2026): a evidência roda o pipeline real
 // sobre o avaliador do where canônico — o que roda na homologação é isto.
+// Flag de presença DESLIGADA declarada para o arquivo; a homologação roda com
+// ela LIGADA, provada em cenário próprio.
+useSalesOrderPresenceFlag("OFF");
 
 function setup(overrides: { dataSource?: (ds: CrmReportsDataSource) => CrmReportsDataSource } = {}) {
   const db = baseDb();
@@ -49,6 +56,21 @@ describe("evidências de homologação (pipeline real sobre fixtures)", () => {
     assert.match(scope, /vendedora \(carteira própria\) \| VIEWER \| own \| 2 \| 2 \| todos da própria carteira/);
     assert.match(scope, /sem escopo \| VIEWER \| none \| 403/);
     assert.match(report.markdown, /resultado: \*\*APROVADO\*\*/);
+  });
+
+  it("aprova as seis seções também com a flag de presença LIGADA (configuração da homologação)", async () => {
+    await withSalesOrderPresenceFlag("ON", async () => {
+      const report = await collectCrmReportsHomologEvidence(setup());
+      const byId = Object.fromEntries(report.sections.map((s) => [s.id, s]));
+      for (const id of ["reconciliation", "repurchase", "exclusion", "scope", "performance", "builder"]) {
+        assert.equal(byId[id]?.status, "PASS", `${id}:\n${byId[id]?.lines.join("\n")}`);
+      }
+      assert.equal(report.approved, true);
+      // Sem o pedido MISSING_CONFIRMED, Mu fica com uma ocasião e sai da cadência:
+      // o cliente mais espaçado da amostra passa a ser a Alfa.
+      assert.match(byId.repurchase!.lines.join("\n"), /esporádico — Alfa Ltda .* ✓ conta manual = endpoint/);
+      assert.match(byId.scope!.lines.join("\n"), /vendedora \(carteira própria\) \| VIEWER \| own \| 2 \| 2 \| todos da própria carteira/);
+    });
   });
 
   it("REPROVA quando o lado relatório perde um pedido (a evidência pega)", async () => {

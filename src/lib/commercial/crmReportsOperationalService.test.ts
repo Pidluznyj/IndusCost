@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { buildSalesOrderListWhere } from "@/src/lib/salesOrdersListSummary.js";
-import { NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import {
+  useSalesOrderPresenceFlag,
+  withSalesOrderPresenceFlag,
+} from "@/src/lib/nomus/nomusSourcePresenceTestEnv.js";
 import { crmCanonicalSalesOrderWhere } from "./crmCanonicalSalesOrderScope.server.js";
 import { crmEligibleCustomerWhere } from "./crmManagementOrderFacts.server.js";
 import {
@@ -40,10 +43,9 @@ import {
 } from "./crmReportsService.fixtures.js";
 
 // Fixtures compartilhadas (hoje = 11/09/2026): crmReportsService.fixtures.ts.
-
-afterEach(() => {
-  delete process.env[NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV];
-});
+// Flag de presença DESLIGADA declarada para o arquivo (Mu = 2 pedidos); o
+// efeito da flag LIGADA é provado explicitamente no teste de presença.
+useSalesOrderPresenceFlag("OFF");
 
 // ---------------------------------------------------------------------------
 
@@ -145,19 +147,23 @@ describe("CANÔNICO — população de compra = Pedido de Venda oficial", () => 
     ]);
   });
 
-  it("presença operacional Nomus segue a flag canônica (MISSING_CONFIRMED)", async () => {
-    const off = await runCrmReportsAnalysis(createFakeDataSource(baseDb()).ds, GLOBAL_SCOPE, request().filters, {
-      now: NOW,
-    });
-    assert.equal(off.analysis.analyzed.find((f) => f.customer.id === M.id)!.lastPurchaseDate, "2026-08-20");
+  it("presença operacional Nomus segue a flag canônica (MISSING_CONFIRMED) — OFF e ON declarados", async () => {
+    const muWith = (state: "OFF" | "ON") =>
+      withSalesOrderPresenceFlag(state, async () => {
+        const run = await runCrmReportsAnalysis(createFakeDataSource(baseDb()).ds, GLOBAL_SCOPE, request().filters, {
+          now: NOW,
+        });
+        return run.analysis.analyzed.find((f) => f.customer.id === M.id)!;
+      });
 
-    process.env[NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV] = "1";
-    const on = await runCrmReportsAnalysis(createFakeDataSource(baseDb()).ds, GLOBAL_SCOPE, request().filters, {
-      now: NOW,
-    });
-    const mu = on.analysis.analyzed.find((f) => f.customer.id === M.id)!;
-    assert.equal(mu.lastPurchaseDate, "2026-06-20");
-    assert.equal(mu.cadence.status, "INSUFFICIENT_HISTORY");
+    const off = await muWith("OFF");
+    assert.equal(off.totalOrders, 2);
+    assert.equal(off.lastPurchaseDate, "2026-08-20");
+
+    const on = await muWith("ON");
+    assert.equal(on.totalOrders, 1, "MISSING_CONFIRMED fora do universo operacional");
+    assert.equal(on.lastPurchaseDate, "2026-06-20");
+    assert.equal(on.cadence.status, "INSUFFICIENT_HISTORY");
   });
 });
 

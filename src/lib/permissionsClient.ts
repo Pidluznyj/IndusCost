@@ -8,6 +8,7 @@ import {
   CRM_UI_TABS,
   MATERIALS_UI_SECTIONS,
   type CrmUiTabId,
+  type MaterialsUiSectionId,
 } from "@/src/lib/moduleTabResources.js";
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
 
@@ -70,6 +71,7 @@ export const ResourceKeys = {
   COMISSOES_TAB_CONFIGURACOES: "comissoes.tab.configuracoes",
   SUPRIMENTOS: "suprimentos",
   SUPRIMENTOS_TAB_CATALOGO: "suprimentos.tab.catalogo",
+  SUPRIMENTOS_TAB_PLANEJAMENTO: "suprimentos.tab.planejamento_materia_prima",
   SUPRIMENTOS_INTELIGENCIA_MERCADO: "suprimentos.inteligencia_mercado",
   SUPRIMENTOS_MI_TAB_HOME: "suprimentos.inteligencia_mercado.tab.home",
   SUPRIMENTOS_MI_TAB_MATERIA_PRIMA_360: "suprimentos.inteligencia_mercado.tab.materia_prima_360",
@@ -515,6 +517,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   {
     key: ResourceKeys.SUPRIMENTOS_TAB_CATALOGO,
     label: "Matérias-primas",
+    type: "TAB",
+    parentKey: ResourceKeys.SUPRIMENTOS,
+    legacyAliasKeys: ["materials.view"],
+  },
+  {
+    key: ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO,
+    label: "Planejamento de Matéria-Prima",
     type: "TAB",
     parentKey: ResourceKeys.SUPRIMENTOS,
     legacyAliasKeys: ["materials.view"],
@@ -1215,7 +1224,7 @@ export type PermissionsApi = {
     | "reports"
     | "reprocess"
   >;
-  listAllowedMaterialsSections: () => Array<"catalog" | "marketIntelligence">;
+  listAllowedMaterialsSections: () => MaterialsUiSectionId[];
   canViewPortfolioModule: () => boolean;
 };
 

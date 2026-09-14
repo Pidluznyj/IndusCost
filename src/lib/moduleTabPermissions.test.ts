@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
 import {
+  FRONTEND_PERMISSION_RESOURCES,
+  PORTFOLIO_RECONCILIATION_UI_TABS,
   ResourceKeys,
   createPermissionsApi,
 } from "./permissionsClient.ts";
@@ -10,7 +12,10 @@ import {
   CRM_UI_TABS,
   MATERIALS_UI_SECTIONS,
 } from "./moduleTabResources.ts";
-import { validatePermissionResourceCatalog } from "./permissionResourceSeedData.ts";
+import {
+  PERMISSION_RESOURCE_SEEDS,
+  validatePermissionResourceCatalog,
+} from "./permissionResourceSeedData.ts";
 
 function user(partial: {
   role: AuthUser["role"];
@@ -100,6 +105,56 @@ describe("module tab permissions", () => {
     assert.ok(api.canView(ResourceKeys.SUPRIMENTOS_MI_TAB_HOME));
     assert.ok(api.canView(ResourceKeys.SUPRIMENTOS_TAB_CATALOGO));
     assert.ok(api.listAllowedMaterialsSections().includes("marketIntelligence"));
+  });
+
+  it("Planejamento de Matéria-Prima: materials.view libera (seed/contrato); sem ele não; só view", () => {
+    const materials = createPermissionsApi(user({ role: "VIEWER", permissions: ["materials.view"] }));
+    assert.deepEqual(materials.listAllowedMaterialsSections(), [
+      "catalog",
+      "stockConference",
+      "marketIntelligence",
+      "planning",
+    ]);
+    assert.ok(materials.canView(ResourceKeys.SUPRIMENTOS));
+    assert.ok(materials.canView(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO));
+    // Alias de view: não vira execute/manage nem abre Administração.
+    assert.equal(materials.canExecute(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO), false);
+    assert.equal(materials.canManage(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO), false);
+    assert.equal(materials.canView(ResourceKeys.ADMIN), false);
+    assert.equal(materials.canView(ResourceKeys.ADMIN_PERMISSOES), false);
+
+    const crmOnly = createPermissionsApi(user({ role: "VIEWER", permissions: ["crm.view", "crm.reports.view"] }));
+    assert.equal(crmOnly.canView(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO), false);
+    assert.deepEqual(crmOnly.listAllowedMaterialsSections(), []);
+
+    // Alias de outra área de Suprimentos (cotação de mercado) não abre o Planejamento.
+    const quoteApprover = createPermissionsApi(
+      user({ role: "VIEWER", permissions: ["materials.market_quote.approve"] })
+    );
+    assert.equal(quoteApprover.canView(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO), false);
+    assert.ok(!quoteApprover.listAllowedMaterialsSections().includes("planning"));
+
+    // Bag vazia não herda nada do papel (P07).
+    assert.deepEqual(createPermissionsApi(user({ role: "ADMIN" })).listAllowedMaterialsSections(), []);
+  });
+
+  it("toda aba filtrada pela bag existe no catálogo browser-safe e no seed (chave ausente = negada em silêncio)", () => {
+    const catalog = new Map(FRONTEND_PERMISSION_RESOURCES.map((r) => [r.key, r]));
+    const seed = new Map(PERMISSION_RESOURCE_SEEDS.map((r) => [r.key, r]));
+    const lists = { CRM_UI_TABS, COMMISSIONS_LIVE_UI_TABS, MATERIALS_UI_SECTIONS, PORTFOLIO_RECONCILIATION_UI_TABS };
+    for (const [list, tabs] of Object.entries(lists)) {
+      for (const tab of tabs) {
+        assert.ok(catalog.has(tab.resourceKey), `${list}.${tab.id} → ${tab.resourceKey} ausente de FRONTEND_PERMISSION_RESOURCES`);
+        assert.ok(seed.has(tab.resourceKey), `${list}.${tab.id} → ${tab.resourceKey} ausente do seed relacional`);
+      }
+    }
+    // O catálogo browser-safe espelha o seed relacional do Planejamento.
+    const fe = catalog.get(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO)!;
+    const rel = seed.get(ResourceKeys.SUPRIMENTOS_TAB_PLANEJAMENTO)!;
+    assert.deepEqual(
+      { label: fe.label, type: fe.type, parentKey: fe.parentKey, legacyAliasKeys: [...fe.legacyAliasKeys] },
+      { label: rel.label, type: rel.type, parentKey: rel.parentKey, legacyAliasKeys: [...rel.legacyAliasKeys] }
+    );
   });
 
   it("Relatórios do CRM exige o próprio alias — Carteira não concede por tabela (sem multi-dono)", () => {

@@ -173,6 +173,7 @@ aleatórios.
 | `npm run test:crm-reports` | motor, núcleo, serviço (where canônico real sobre fixtures), personalizado, exportação, rotas, guard, UI, verificador, conta manual (propriedade 2.000 casos) e evidências |
 | `npm run test:customers` | suíte CRM inteira (outras abas não quebram) |
 | guard `crmReportsSourceGuard.test.ts` | nenhuma regra própria: status/SQL/NF/proposta/comissão/datas erradas, vendedor Nomus como carteira, `rows.length` como total, conta de data na UI, papel fixo, consulta paralela de pedido, auditoria dentro do runtime |
+| flag de presença (`nomusSourcePresenceTestEnv`) | cada suíte declara `NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENABLED` (geral = desligada; cenários próprios com ela ligada, como na homologação) — o resultado não depende do `.env` de quem roda; a base de fixtures falha alto sem declaração |
 
 ## Como auditar (homologação — somente leitura)
 
