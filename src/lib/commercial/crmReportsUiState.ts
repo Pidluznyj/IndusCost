@@ -45,6 +45,32 @@ import {
 import { formatCrmReportsCustomerSublabel } from "@/src/lib/commercial/crmReportsFormat";
 
 // ---------------------------------------------------------------------------
+// Sub-abas: Relatórios padrão × Relatório personalizado
+// ---------------------------------------------------------------------------
+
+export type CrmReportsSubtabId = "standard" | "custom";
+
+export const CRM_REPORTS_SUBTABS: ReadonlyArray<{ id: CrmReportsSubtabId; label: string; hint: string }> = [
+  { id: "standard", label: "Relatórios padrão", hint: "Cards e listas de recompra (carregam ao abrir a aba)" },
+  { id: "custom", label: "Relatório personalizado", hint: "Construtor de relatórios — só roda ao clicar em Gerar relatório" },
+];
+
+/** Sub-aba na URL, junto de `?tab=reports` (ausente ou desconhecida = Relatórios padrão). */
+export const CRM_REPORTS_SUBTAB_PARAM = "reportsTab";
+
+export function crmReportsSubtabFromSearchParams(params: URLSearchParams): CrmReportsSubtabId {
+  return params.get(CRM_REPORTS_SUBTAB_PARAM) === "custom" ? "custom" : "standard";
+}
+
+/** Query com a sub-aba escolhida, preservando `tab` e os demais parâmetros do CRM. */
+export function withCrmReportsSubtabParam(params: URLSearchParams, subtab: CrmReportsSubtabId): URLSearchParams {
+  const next = new URLSearchParams(params);
+  if (subtab === "standard") next.delete(CRM_REPORTS_SUBTAB_PARAM);
+  else next.set(CRM_REPORTS_SUBTAB_PARAM, subtab);
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Estado das listas
 // ---------------------------------------------------------------------------
 

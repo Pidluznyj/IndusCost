@@ -160,7 +160,7 @@ aleatórios.
 
 ## Performance
 
-- Abertura da aba: 2 requests (`filter-options` + `operational`); o construtor não consulta nada até "Gerar".
+- Abertura da aba: 2 requests (`filter-options` + `operational`), também quando o link abre direto na sub-aba Relatório personalizado (`?reportsTab=custom`); trocar de sub-aba não consulta nada e o construtor não consulta nada até "Gerar".
 - Pedidos em lotes de 1.000 clientes (nº de consultas = ⌈clientes/1.000⌉, nunca uma por cliente); responsável, vendedor e follow-up em lote só das linhas das páginas.
 - Mudança de filtro/visão/página = 1 request; o anterior é cancelado. Sem cache persistente: cada request refaz a análise (teto explícito 422).
 - Aba em chunk próprio carregado sob demanda (~80 KB); SheetJS só no servidor.

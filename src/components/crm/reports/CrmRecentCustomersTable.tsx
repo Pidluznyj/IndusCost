@@ -27,6 +27,7 @@ import {
   CrmReportsPagination,
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
+  CrmReportsTableScroll,
   CrmRepurchaseStatusBadge,
   crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
@@ -69,7 +70,7 @@ export function CrmRecentCustomersTable({
       refreshing={refreshing}
       toolbar={<CrmReportsExportButtons busy={exporting} disabled={page.total === 0} onExport={onExport} />}
     >
-      <div className="overflow-x-auto">
+      <CrmReportsTableScroll>
         <table className="w-full min-w-[1200px] text-sm">
           <thead>
             <tr className={CRM_REPORTS_HEAD_ROW}>
@@ -148,7 +149,7 @@ export function CrmRecentCustomersTable({
             )}
           </tbody>
         </table>
-      </div>
+      </CrmReportsTableScroll>
       <CrmReportsPagination page={page} disabled={refreshing} onChange={onPageChange} />
     </CrmReportsListShell>
   );

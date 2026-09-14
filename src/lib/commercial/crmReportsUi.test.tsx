@@ -14,18 +14,25 @@ import { CrmRecentCustomersTable } from "@/src/components/crm/reports/CrmRecentC
 import { CrmOverdueRepurchaseTable } from "@/src/components/crm/reports/CrmOverdueRepurchaseTable";
 import { CrmRepurchaseCadenceTable } from "@/src/components/crm/reports/CrmRepurchaseCadenceTable";
 import { CrmReportBuilder, CRM_REPORT_BUILDER_EMPTY_MESSAGE } from "@/src/components/crm/reports/CrmReportBuilder";
-import { CrmReportsPagination, type CrmReportsRowActionHandlers } from "@/src/components/crm/reports/CrmReportsShared";
+import {
+  CrmReportsPagination,
+  createCrmReportsScrollSync,
+  measureCrmReportsHorizontalOverflow,
+  type CrmReportsRowActionHandlers,
+} from "@/src/components/crm/reports/CrmReportsShared";
 import { parseCrmCustomReportRequest } from "./crmCustomReportCore.js";
 import { CRM_REPORTS_API } from "./crmReportsClient.js";
 import { CRM_REPORT_TEMPLATES, applyCrmReportTemplate } from "./crmReportsTemplates.js";
 import {
   CRM_REPORTS_CARDS,
+  CRM_REPORTS_SUBTABS,
   addCrmReportsSelectionCustomer,
   applyCrmReportsCard,
   buildCrmCustomReportRequestBody,
   buildCrmReportsOperationalRequest,
   createDefaultCrmReportsUiState,
   createEmptyCrmReportBuilderState,
+  crmReportsSubtabFromSearchParams,
   describeCrmReportBuilderIssues,
   hideCheckedCrmReportsCustomers,
   parseCrmReportsUiState,
@@ -37,6 +44,7 @@ import {
   withCrmReportsFilters,
   withCrmReportsOffset,
   withCrmReportsSelection,
+  withCrmReportsSubtabParam,
   type CrmReportsCustomerChip,
 } from "./crmReportsUiState.js";
 import type {
@@ -159,8 +167,8 @@ describe("aba Relatórios — navegação e autorização", () => {
   });
 });
 
-describe("abertura da aba — só o operacional; construtor vazio", () => {
-  it("render inicial: carregando listas, construtor com a mensagem vazia e nenhum resultado", () => {
+describe("abertura da aba — só o operacional; construtor na sub-aba própria", () => {
+  it("render inicial = Relatórios padrão: carregando listas; o construtor nem é montado", () => {
     const html = render(
       <CrmReportsSection
         canOpenCustomer360
@@ -169,10 +177,48 @@ describe("abertura da aba — só o operacional; construtor vazio", () => {
         onRegisterContact={() => undefined}
       />
     );
+    assert.match(html, /data-testid="crm-reports-subtabs"/);
+    assert.match(html, /role="tab" aria-selected="true" title="[^"]*" data-subtab="standard"/);
+    assert.match(html, /role="tab" aria-selected="false" title="[^"]*" data-subtab="custom"/);
     assert.match(html, /data-testid="crm-reports-loading"/);
-    assert.ok(html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
+    assert.ok(html.includes("Linhas por lista"));
+    assert.ok(!html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
+    assert.doesNotMatch(html, /data-testid="crm-report-builder"/);
     assert.equal(CRM_REPORT_BUILDER_EMPTY_MESSAGE, "Selecione os filtros e clique em Gerar relatório.");
+  });
+
+  it("?reportsTab=custom abre o Relatório personalizado vazio, com os mesmos filtros globais e sem as listas", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={["/crm-commercial?tab=reports&reportsTab=custom"]}>
+        <CrmReportsSection canOpenCustomer360 canOpenOrderDetail canRegisterContact onRegisterContact={() => undefined} />
+      </MemoryRouter>
+    );
+    assert.match(html, /role="tab" aria-selected="true" title="[^"]*" data-subtab="custom"/);
+    assert.ok(html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
     assert.doesNotMatch(html, /crm-report-builder-result/);
+    assert.match(html, /data-testid="crm-reports-filters"/);
+    assert.match(html, /data-testid="crm-reports-customer-selection"/);
+    assert.doesNotMatch(html, /data-testid="crm-reports-loading"/);
+    assert.ok(!html.includes("Linhas por lista"), "controles das listas só em Relatórios padrão");
+  });
+
+  it("sub-aba na URL: ausente/desconhecida = padrão; a troca preserva tab e período do CRM", () => {
+    assert.deepEqual(
+      CRM_REPORTS_SUBTABS.map((t) => t.label),
+      ["Relatórios padrão", "Relatório personalizado"]
+    );
+    assert.equal(crmReportsSubtabFromSearchParams(new URLSearchParams("tab=reports")), "standard");
+    assert.equal(crmReportsSubtabFromSearchParams(new URLSearchParams("tab=reports&reportsTab=xyz")), "standard");
+    assert.equal(crmReportsSubtabFromSearchParams(new URLSearchParams("tab=reports&reportsTab=custom")), "custom");
+    const current = new URLSearchParams("tab=reports&sellerYear=2026&sellerMonth=9");
+    const custom = withCrmReportsSubtabParam(current, "custom");
+    assert.equal(custom.toString(), "tab=reports&sellerYear=2026&sellerMonth=9&reportsTab=custom");
+    assert.equal(withCrmReportsSubtabParam(custom, "standard").toString(), "tab=reports&sellerYear=2026&sellerMonth=9");
+    assert.equal(current.toString(), "tab=reports&sellerYear=2026&sellerMonth=9", "não muta a query atual");
+    // Troca sem empilhar histórico; construtor montado na 1ª visita e só escondido depois (não perde o que foi montado).
+    const section = read("src/components/crm/reports/CrmReportsSection.tsx");
+    assert.match(section, /setSearchParams\(\(prev\) => withCrmReportsSubtabParam\(prev, next\), \{ replace: true \}\)/);
+    assert.match(section, /<div hidden=\{subtab !== "custom"\}[^>]*>\s*\{builderVisited \|\| subtab === "custom" \? \(\s*<CrmReportBuilder/);
   });
 
   it("na montagem a seção busca operacional + opções; o personalizado só no clique", () => {
@@ -517,6 +563,95 @@ describe("listas — rótulos, ações canônicas e paginação", () => {
     assert.match(shell, /Mostrando 1–2 de <strong[^>]*>312<\/strong>/);
     const next = buildCrmReportsOperationalRequest(withCrmReportsOffset(createDefaultCrmReportsUiState(), "recent", 25));
     assert.deepEqual(next.pagination?.recent, { limit: 25, offset: 25 });
+  });
+});
+
+describe("grids — barra de rolagem horizontal também no topo", () => {
+  it("as 3 listas e o construtor rolam dentro da mesma moldura; barra de cima só com transbordo medido", () => {
+    const html = render(
+      <CrmRecentCustomersTable
+        page={page([recentRow(1)], 1)}
+        refreshing={false}
+        filtered={false}
+        checked={new Map()}
+        onToggleChecked={() => undefined}
+        onToggleManyChecked={() => undefined}
+        onPageChange={() => undefined}
+        actions={ACTIONS}
+        exporting={null}
+        onExport={() => undefined}
+      />
+    );
+    assert.match(html, /data-testid="crm-reports-table-scroll"><table class="w-full min-w-\[1200px\]/);
+    // Sem medir o layout não há barra de cima: ela nunca aparece vazia, sem transbordo.
+    assert.ok(!html.includes("crm-reports-table-scroll-top"));
+    for (const file of [
+      "CrmRecentCustomersTable.tsx",
+      "CrmRepurchaseCadenceTable.tsx",
+      "CrmOverdueRepurchaseTable.tsx",
+      "CrmReportBuilder.tsx",
+    ]) {
+      const src = read(`src/components/crm/reports/${file}`);
+      assert.match(src, /<CrmReportsTableScroll[^>]*>\s*<table /, file);
+      assert.doesNotMatch(src, /overflow-x-auto/, `${file}: rolagem horizontal fora da moldura com barra no topo`);
+    }
+  });
+
+  it("transbordo = tabela mais larga que a área visível (arredondamento subpixel não cria barra)", () => {
+    assert.deepEqual(measureCrmReportsHorizontalOverflow({ scrollWidth: 1400, clientWidth: 1180 }), {
+      overflowing: true,
+      contentWidth: 1400,
+    });
+    assert.equal(measureCrmReportsHorizontalOverflow({ scrollWidth: 1180, clientWidth: 1180 }).overflowing, false);
+    assert.equal(measureCrmReportsHorizontalOverflow({ scrollWidth: 1181, clientWidth: 1180 }).overflowing, false);
+  });
+
+  it("barras sincronizadas nos dois sentidos, sem eco e sem 'puxar de volta' durante o arraste", () => {
+    const sync = createCrmReportsScrollSync();
+    const top = { scrollLeft: 0 };
+    const body = { scrollLeft: 0 };
+    // Arrasta a barra de cima: o grid acompanha.
+    top.scrollLeft = 100;
+    assert.equal(sync.follow("top", top, body), true);
+    assert.equal(body.scrollLeft, 100);
+    // O arraste continua antes de o scroll do grid chegar...
+    top.scrollLeft = 140;
+    assert.equal(sync.follow("top", top, body), true);
+    assert.equal(body.scrollLeft, 140);
+    // ...e esse scroll do grid é reconhecido como eco: não devolve a barra de cima.
+    assert.equal(sync.follow("body", body, top), false);
+    assert.equal(top.scrollLeft, 140);
+    // Rolagem no próprio grid (shift+roda, teclado, barra de baixo) leva a de cima junto.
+    body.scrollLeft = 300;
+    assert.equal(sync.follow("body", body, top), true);
+    assert.equal(top.scrollLeft, 300);
+    assert.equal(sync.follow("top", top, body), false);
+    // Barra que acabou de aparecer começa onde o grid está, também sem eco.
+    const fresh = { scrollLeft: 0 };
+    assert.equal(sync.align("top", body, fresh), true);
+    assert.equal(fresh.scrollLeft, 300);
+    assert.equal(sync.follow("top", fresh, body), false);
+    // Sem barra de cima montada, o grid rola normalmente.
+    assert.equal(sync.follow("body", body, null), false);
+  });
+
+  it("no fim do trilho a cópia que não muda nada não trava a próxima rolagem", () => {
+    const sync = createCrmReportsScrollSync();
+    let bodyLeft = 480;
+    const body = {
+      get scrollLeft() {
+        return bodyLeft;
+      },
+      set scrollLeft(value: number) {
+        bodyLeft = Math.max(0, Math.min(480, value)); // limite do trilho do grid
+      },
+    };
+    const top = { scrollLeft: 481 }; // 1px a mais por arredondamento
+    assert.equal(sync.follow("top", top, body), false);
+    assert.equal(body.scrollLeft, 480);
+    body.scrollLeft = 400;
+    assert.equal(sync.follow("body", body, top), true);
+    assert.equal(top.scrollLeft, 400);
   });
 });
 

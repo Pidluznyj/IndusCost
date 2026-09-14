@@ -415,3 +415,136 @@ export function crmReportsBodyRowClass(checked: boolean): string {
 /** Coluna Ações fixa à direita a partir de telas médias — visível mesmo com rolagem horizontal. */
 export const CRM_REPORTS_STICKY_ACTIONS =
   "bg-inherit md:sticky md:right-0 md:z-10 md:shadow-[inset_1px_0_0_0_var(--color-border)]";
+
+// ---------------------------------------------------------------------------
+// Rolagem horizontal — a mesma barra também no topo do grid
+// ---------------------------------------------------------------------------
+
+export type CrmReportsScrollSide = "top" | "body";
+type CrmReportsHorizontalScroller = { scrollLeft: number };
+
+/** Transborda quando o conteúdo passa da largura visível (1px de folga para arredondamento). */
+export function measureCrmReportsHorizontalOverflow(box: { scrollWidth: number; clientWidth: number }): {
+  overflowing: boolean;
+  contentWidth: number;
+} {
+  return { overflowing: box.scrollWidth - box.clientWidth > 1, contentWidth: box.scrollWidth };
+}
+
+/**
+ * Espelha a posição horizontal entre a barra de cima e o grid. Só propaga a
+ * rolagem feita pelo usuário: o scroll que a própria cópia dispara do outro lado
+ * é reconhecido pelo valor gravado e ignorado — arrastar uma barra nunca "puxa
+ * de volta" a outra.
+ */
+export function createCrmReportsScrollSync() {
+  const written: Record<CrmReportsScrollSide, number | null> = { top: null, body: null };
+  const copy = (
+    targetSide: CrmReportsScrollSide,
+    source: CrmReportsHorizontalScroller,
+    target: CrmReportsHorizontalScroller
+  ): boolean => {
+    const before = target.scrollLeft;
+    if (Math.abs(before - source.scrollLeft) < 1) return false;
+    target.scrollLeft = source.scrollLeft;
+    // No limite do trilho o valor não muda e o navegador não dispara scroll: nada a esperar.
+    if (Math.abs(target.scrollLeft - before) < 1) return false;
+    written[targetSide] = target.scrollLeft;
+    return true;
+  };
+  return {
+    /** Scroll em `side`: copia para o outro lado, salvo quando é o eco da cópia anterior. */
+    follow(
+      side: CrmReportsScrollSide,
+      source: CrmReportsHorizontalScroller | null,
+      target: CrmReportsHorizontalScroller | null
+    ): boolean {
+      if (!source) return false;
+      const echo = written[side];
+      written[side] = null;
+      if (echo !== null && Math.abs(source.scrollLeft - echo) < 1) return false;
+      if (!target) return false;
+      return copy(side === "top" ? "body" : "top", source, target);
+    },
+    /** Alinha o lado `targetSide` à posição de `source` (ex.: barra que acabou de aparecer). */
+    align(targetSide: CrmReportsScrollSide, source: CrmReportsHorizontalScroller, target: CrmReportsHorizontalScroller): boolean {
+      return copy(targetSide, source, target);
+    },
+  };
+}
+
+/**
+ * Moldura dos grids da aba: quando a tabela transborda, a barra de rolagem
+ * horizontal aparece também em cima, sincronizada com a de baixo — sem precisar
+ * descer até o fim da lista para rolar para o lado. Sem transbordo, nenhuma
+ * barra extra. A de cima é só atalho de mouse (a de baixo segue sendo a acessível).
+ */
+export function CrmReportsTableScroll({ className, children }: { className?: string; children: React.ReactNode }) {
+  const topRef = React.useRef<HTMLDivElement>(null);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const [sync] = React.useState(createCrmReportsScrollSync);
+  const [overflow, setOverflow] = React.useState({ overflowing: false, contentWidth: 0 });
+
+  React.useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const measure = () => {
+      const next = measureCrmReportsHorizontalOverflow(body);
+      setOverflow((prev) =>
+        prev.overflowing === next.overflowing && prev.contentWidth === next.contentWidth ? prev : next
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    // Largura visível (janela, menu lateral) e largura da tabela (dados, colunas).
+    const resize = new ResizeObserver(measure);
+    const observe = () => {
+      resize.disconnect();
+      resize.observe(body);
+      for (const child of Array.from<Element>(body.children)) resize.observe(child);
+    };
+    observe();
+    const mutation = new MutationObserver(() => {
+      observe();
+      measure();
+    });
+    mutation.observe(body, { childList: true });
+    return () => {
+      mutation.disconnect();
+      resize.disconnect();
+    };
+  }, []);
+
+  // Barra recém-aparecida (ou trilho redimensionado) começa onde o grid está.
+  React.useLayoutEffect(() => {
+    if (topRef.current && bodyRef.current) sync.align("top", bodyRef.current, topRef.current);
+  }, [overflow, sync]);
+
+  return (
+    <div className={className}>
+      {overflow.overflowing ? (
+        <div
+          ref={topRef}
+          onScroll={() => sync.follow("top", topRef.current, bodyRef.current)}
+          className="overflow-x-auto overflow-y-hidden"
+          aria-hidden="true"
+          tabIndex={-1}
+          data-testid="crm-reports-table-scroll-top"
+        >
+          <div style={{ width: overflow.contentWidth, height: 1 }} />
+        </div>
+      ) : null}
+      <div
+        ref={bodyRef}
+        onScroll={() => sync.follow("body", bodyRef.current, topRef.current)}
+        className="overflow-x-auto"
+        data-testid="crm-reports-table-scroll"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

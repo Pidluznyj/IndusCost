@@ -53,7 +53,7 @@ import {
   type CrmCustomReportSortKey,
   type CrmReportsWindows,
 } from "@/src/lib/commercial/crmReportsTypes";
-import { CrmReportsExportButtons } from "./CrmReportsShared";
+import { CrmReportsExportButtons, CrmReportsTableScroll } from "./CrmReportsShared";
 
 export const CRM_REPORT_BUILDER_EMPTY_MESSAGE = "Selecione os filtros e clique em Gerar relatório.";
 
@@ -563,7 +563,7 @@ function CrmCustomReportResult({
         </p>
       ) : null}
 
-      <div className={cn("overflow-x-auto rounded-xl border border-border", loading && "opacity-60")}>
+      <CrmReportsTableScroll className={cn("overflow-hidden rounded-xl border border-border", loading && "opacity-60")}>
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-border/60 bg-muted/20">
@@ -665,7 +665,7 @@ function CrmCustomReportResult({
             </tfoot>
           ) : null}
         </table>
-      </div>
+      </CrmReportsTableScroll>
 
       {response.total > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">

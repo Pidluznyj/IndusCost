@@ -39,6 +39,7 @@ import {
   CrmReportsPagination,
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
+  CrmReportsTableScroll,
   CrmRepurchaseStatusBadge,
   crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
@@ -148,7 +149,7 @@ export function CrmOverdueRepurchaseTable({
         />
       }
     >
-      <div className="overflow-x-auto">
+      <CrmReportsTableScroll>
         <table className="w-full min-w-[1400px] text-sm">
           <thead>
             <tr className={CRM_REPORTS_HEAD_ROW}>
@@ -251,7 +252,7 @@ export function CrmOverdueRepurchaseTable({
             )}
           </tbody>
         </table>
-      </div>
+      </CrmReportsTableScroll>
       <CrmReportsPagination page={page} disabled={refreshing} onChange={onPageChange} />
     </CrmReportsListShell>
   );

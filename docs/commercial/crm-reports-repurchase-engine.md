@@ -251,17 +251,27 @@ clientes ocultados, população canônica) + agregação pura em
 `CrmModule` só faz aba/autorização/lazy/integração; a seção
 (`CrmReportsSection`) é um chunk próprio carregado sob demanda.
 
-Ordem na tela: cabeçalho (escopo, atualizado em, linhas por lista) → Filtros
-(Cliente, **Responsável Comercial** — dono da carteira, **Vendedor do último
-pedido** — auditoria Nomus, Cidade, UF) → Ocultar clientes (Todos / Excluir
-selecionados / Somente selecionados, busca escopada, chips) → fonte + resumo
-do universo (permitido, após filtros, ocultados, analisados — do backend) →
-5 cards → Lista 1 "Compraram nos últimos 60 dias" → Lista 2 "Ciclo de
-recompra" (chips de situação) → Lista 3 "Atrasados para recompra" (recorte
-todos/> 30 dias, ordenação maior atraso/maior venda 12m) → Relatório
-personalizado.
+Duas sub-abas, com o mesmo recurso de permissão:
 
-- **Abertura:** só `filter-options` + `operational` (1ª página das 3 listas). Nenhum personalizado, produto, margem, financeiro ou proposta; o dashboard de vendedores do CRM não é pré-carregado quando a aba abre direto em Relatórios.
+| Sub-aba | URL | Conteúdo |
+|---|---|---|
+| **Relatórios padrão** (entrada) | `?tab=reports` | fonte + resumo do universo → 5 cards → 3 listas |
+| **Relatório personalizado** | `?tab=reports&reportsTab=custom` | construtor de relatórios |
+
+Ordem na tela: cabeçalho (escopo; em Relatórios padrão também atualizado em,
+linhas por lista e Atualizar) → sub-abas → Filtros (Cliente, **Responsável
+Comercial** — dono da carteira, **Vendedor do último pedido** — auditoria Nomus,
+Cidade, UF) → Ocultar clientes (Todos / Excluir selecionados / Somente
+selecionados, busca escopada, chips) → conteúdo da sub-aba. Filtros e clientes
+ocultados são os mesmos nas duas sub-abas. Em Relatórios padrão: fonte + resumo
+do universo (permitido, após filtros, ocultados, analisados — do backend) → 5
+cards → Lista 1 "Compraram nos últimos 60 dias" → Lista 2 "Ciclo de recompra"
+(chips de situação) → Lista 3 "Atrasados para recompra" (recorte todos/> 30 dias,
+ordenação maior atraso/maior venda 12m).
+
+- **Abertura:** só `filter-options` + `operational` (1ª página das 3 listas e janelas de data), inclusive quando o link abre direto em Relatório personalizado — as janelas dão os períodos do construtor. Nenhum personalizado, produto, margem, financeiro ou proposta; o dashboard de vendedores do CRM não é pré-carregado quando a aba abre direto em Relatórios.
+- **Sub-abas:** trocar não consulta nada (a URL muda com `replace`, sem empilhar histórico). O construtor monta na 1ª visita a Relatório personalizado e depois só fica escondido: modelo, dimensões, métricas e o resultado gerado continuam lá ao voltar.
+- **Grids com rolagem horizontal** (3 listas e resultado do construtor): quando a tabela transborda, a mesma barra de rolagem aparece também no topo, sincronizada com a de baixo; sem transbordo, nenhuma barra extra.
 - **Cards** são botões: selecionam a visão da lista (sem cálculo) e levam até ela; o backend garante card = total da lista filtrada.
 - **Marcação por linha** (checkbox) → "Ocultar selecionados" (EXCLUDE) / "Mostrar somente selecionados" (ONLY): vai no request; cards, listas, personalizado e exportação mudam juntos.
 - **Situação com texto** ("Atrasado · 17 dias", "Recompra em 8 dias", "Sem cadência suficiente"); confiança Sem histórico/Baixa/Média/Alta. Compra única nunca mostra previsão.
@@ -355,7 +365,7 @@ aviso (regra). Sai com código 1 se divergir.
 7. Paginar a lista 1 (Próxima/Anterior) e trocar "Linhas por lista": o contador da lista não muda com a página.
 8. Lista 3: alternar "Maior venda 12m primeiro"; abrir "Último pedido" (modal canônico do pedido) e "Cliente 360" (página Inteligência do Cliente); voltar e conferir que os filtros permanecem.
 9. "Registrar contato" num atrasado → salvar → a lista recarrega com "Último contato".
-10. Construtor: escolher "Responsável × Vendedor do Pedido" (não executa), clicar **Gerar relatório** (1 `POST custom`), mudar um filtro global (aviso "resultado desatualizado", sem nova consulta) e gerar de novo.
+10. Sub-aba **Relatório personalizado** (ou `/crm-commercial?tab=reports&reportsTab=custom`): trocar de sub-aba não gera request. Escolher "Responsável × Vendedor do Pedido" (não executa), clicar **Gerar relatório** (1 `POST custom`), mudar um filtro global (aviso "resultado desatualizado", sem nova consulta) e gerar de novo. Voltar a Relatórios padrão e retornar: o resultado continua lá.
 11. Exportar CSV e XLSX da lista 3 e do personalizado: conferir metadados (data/hora, usuário, filtros, clientes excluídos, fonte, eixo de data) e que o nº de linhas = contador da tela.
 12. Usuário com escopo de carteira própria (Perfil de Acesso com "CRM — Relatórios" + `crm.seller.own`, sem Gestão Geral; o papel SELLER sem perfil é global por regra da persona): só clientes da carteira; o filtro de responsável aparece como "Sua carteira"; a busca de "Ocultar clientes" não encontra clientes de outra carteira. Usuário sem vínculo de Responsável Comercial: aviso "sem carteira vinculada".
 

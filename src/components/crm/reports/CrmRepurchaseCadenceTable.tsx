@@ -31,6 +31,7 @@ import {
   CrmReportsPagination,
   CrmReportsRowActions,
   CrmReportsRowCheckbox,
+  CrmReportsTableScroll,
   CrmRepurchaseStatusBadge,
   crmReportsBodyRowClass,
   type CrmReportsRowActionHandlers,
@@ -136,7 +137,7 @@ export function CrmRepurchaseCadenceTable({
       toolbar={<CrmReportsExportButtons busy={exporting} disabled={page.total === 0} onExport={onExport} />}
       controls={<StatusChips statuses={statuses} onChange={onStatusesChange} disabled={refreshing} />}
     >
-      <div className="overflow-x-auto">
+      <CrmReportsTableScroll>
         <table className="w-full min-w-[1100px] text-sm">
           <thead>
             <tr className={CRM_REPORTS_HEAD_ROW}>
@@ -218,7 +219,7 @@ export function CrmRepurchaseCadenceTable({
             )}
           </tbody>
         </table>
-      </div>
+      </CrmReportsTableScroll>
       <CrmReportsPagination page={page} disabled={refreshing} onChange={onPageChange} />
     </CrmReportsListShell>
   );

@@ -1,5 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, EyeOff, Info, Loader2, RefreshCw, ShieldAlert, Users, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  BarChart3,
+  EyeOff,
+  Info,
+  LayoutList,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
   classifyCrmReportsError,
@@ -16,6 +29,7 @@ import {
   formatCrmReportsInteger,
 } from "@/src/lib/commercial/crmReportsFormat";
 import {
+  CRM_REPORTS_SUBTABS,
   CRM_REPORTS_UI_PAGE_SIZES,
   CRM_REPORTS_UI_STORAGE_KEY,
   activeCrmReportsCards,
@@ -23,6 +37,7 @@ import {
   buildCrmReportsOperationalRequest,
   clearCrmReportsFilters,
   createDefaultCrmReportsUiState,
+  crmReportsSubtabFromSearchParams,
   hasActiveCrmReportsFilters,
   hideCheckedCrmReportsCustomers,
   parseCrmReportsUiState,
@@ -36,8 +51,10 @@ import {
   withCrmReportsOverdueView,
   withCrmReportsPageSize,
   withCrmReportsSelection,
+  withCrmReportsSubtabParam,
   type CrmReportsCardKey,
   type CrmReportsCustomerChip,
+  type CrmReportsSubtabId,
   type CrmReportsUiFilters,
   type CrmReportsUiSelection,
   type CrmReportsUiState,
@@ -97,9 +114,12 @@ function readStoredUiState(key: string | null): CrmReportsUiState {
 }
 
 /**
- * Aba CRM > Relatórios. Na abertura carrega SÓ os metadados leves dos filtros
- * e o payload operacional (universo, cards, 1ª página das 3 listas). O
- * relatório personalizado não consulta nada até o clique em "Gerar".
+ * Aba CRM > Relatórios, em duas sub-abas (`?reportsTab=`): "Relatórios padrão"
+ * (cards + 3 listas, a de entrada) e "Relatório personalizado" (construtor).
+ * Filtros globais e clientes ocultados valem para as duas. Na abertura carrega
+ * SÓ os metadados leves dos filtros e o payload operacional (universo, cards,
+ * 1ª página das 3 listas, janelas de data). O relatório personalizado não
+ * consulta nada até o clique em "Gerar".
  */
 export function CrmReportsSection({
   canOpenCustomer360,
@@ -124,6 +144,17 @@ export function CrmReportsSection({
   );
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [detailOrder, setDetailOrder] = useState<{ id: string; code: string | null } | null>(null);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const subtab = crmReportsSubtabFromSearchParams(searchParams);
+  // O construtor guarda a própria configuração e o resultado gerado: monta na
+  // 1ª visita à sub-aba e depois só fica escondido, sem perder nada.
+  const [builderVisited, setBuilderVisited] = useState(subtab === "custom");
+  useEffect(() => {
+    if (subtab === "custom") setBuilderVisited(true);
+  }, [subtab]);
+  const selectSubtab = (next: CrmReportsSubtabId) =>
+    setSearchParams((prev) => withCrmReportsSubtabParam(prev, next), { replace: true });
 
   const request = useMemo(() => buildCrmReportsOperationalRequest(ui), [ui]);
   // A chave (JSON) evita recarga quando o estado muda sem mudar o request.
@@ -277,34 +308,37 @@ export function CrmReportsSection({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {data ? (
-            <span className="text-xs text-muted-foreground">Atualizado em {formatCrmReportsDateTime(data.asOf)}</span>
-          ) : null}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            Linhas por lista
-            <select
-              value={ui.pageSize}
-              onChange={(e) => setUi((s) => withCrmReportsPageSize(s, Number(e.target.value)))}
-              className="rounded-lg border border-border bg-background px-2 py-1 text-xs font-semibold text-foreground"
+        {/* Atualização e tamanho de página são das listas: só em Relatórios padrão. */}
+        {subtab === "standard" ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {data ? (
+              <span className="text-xs text-muted-foreground">Atualizado em {formatCrmReportsDateTime(data.asOf)}</span>
+            ) : null}
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Linhas por lista
+              <select
+                value={ui.pageSize}
+                onChange={(e) => setUi((s) => withCrmReportsPageSize(s, Number(e.target.value)))}
+                className="rounded-lg border border-border bg-background px-2 py-1 text-xs font-semibold text-foreground"
+              >
+                {CRM_REPORTS_UI_PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
             >
-              {CRM_REPORTS_UI_PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => setReloadNonce((n) => n + 1)}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
-            Atualizar
-          </button>
-        </div>
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
+              Atualizar
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {notice ? (
@@ -342,6 +376,9 @@ export function CrmReportsSection({
         </div>
       ) : (
         <>
+          <CrmReportsSubtabs active={subtab} onSelect={selectSubtab} />
+
+          {/* Filtros globais e clientes ocultados valem para as duas sub-abas. */}
           <CrmReportsGlobalFilters
             filters={ui.filters}
             options={options}
@@ -357,9 +394,10 @@ export function CrmReportsSection({
             onChange={handleSelection}
           />
 
-          {firstLoad ? <CrmReportsLoadingPanel /> : null}
+          {subtab === "standard" && firstLoad ? <CrmReportsLoadingPanel /> : null}
 
-          {loadError ? (
+          {/* No personalizado o erro só aparece sem nenhuma carga (sem data de referência para os períodos). */}
+          {loadError && (subtab === "standard" || data == null) ? (
             <CrmReportsErrorPanel
               error={loadError}
               filtersActive={filtersActive}
@@ -368,7 +406,7 @@ export function CrmReportsSection({
             />
           ) : null}
 
-          {data && !loadError ? (
+          {subtab === "standard" && data && !loadError ? (
             <>
               <CrmReportsSourceNote data={data} />
               <CrmReportsUniverseSummary universe={data.universe} selection={data.selection} />
@@ -444,14 +482,18 @@ export function CrmReportsSection({
             </>
           ) : null}
 
-          <CrmReportBuilder
-            ui={ui}
-            windows={data?.windows ?? null}
-            filtersActive={filtersActive}
-            canOpenCustomer360={canOpenCustomer360}
-          />
+          <div hidden={subtab !== "custom"} data-testid="crm-reports-custom-panel">
+            {builderVisited || subtab === "custom" ? (
+              <CrmReportBuilder
+                ui={ui}
+                windows={data?.windows ?? null}
+                filtersActive={filtersActive}
+                canOpenCustomer360={canOpenCustomer360}
+              />
+            ) : null}
+          </div>
 
-          {checked.size > 0 ? (
+          {subtab === "standard" && checked.size > 0 ? (
             <div
               className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-card px-4 py-3 shadow-lg"
               role="region"
@@ -506,6 +548,50 @@ export function CrmReportsSection({
 }
 
 export default CrmReportsSection;
+
+const SUBTAB_ICONS: Record<CrmReportsSubtabId, LucideIcon> = { standard: LayoutList, custom: BarChart3 };
+
+function CrmReportsSubtabs({
+  active,
+  onSelect,
+}: {
+  active: CrmReportsSubtabId;
+  onSelect: (subtab: CrmReportsSubtabId) => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap gap-1 rounded-2xl border border-border bg-muted/40 p-1 sm:w-fit"
+      role="tablist"
+      aria-label="Tipo de relatório"
+      data-testid="crm-reports-subtabs"
+    >
+      {CRM_REPORTS_SUBTABS.map((tab) => {
+        const selected = tab.id === active;
+        const Icon = SUBTAB_ICONS[tab.id];
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            title={tab.hint}
+            onClick={() => onSelect(tab.id)}
+            data-subtab={tab.id}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
+              selected
+                ? "bg-card text-foreground shadow-sm ring-1 ring-border"
+                : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
+            )}
+          >
+            <Icon className={cn("h-4 w-4", selected && "text-primary")} aria-hidden />
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function CrmReportsLoadingPanel() {
   return (
