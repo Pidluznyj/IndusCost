@@ -9,6 +9,7 @@
 
 import {
   CRM_CUSTOM_REPORT_CUSTOMER_STATUSES,
+  CRM_CUSTOM_REPORT_CUSTOMER_STATUS_LABELS,
   CRM_CUSTOM_REPORT_DIMENSIONS,
   CRM_CUSTOM_REPORT_MAX_DIMENSIONS,
   CRM_CUSTOM_REPORT_METRICS,
@@ -42,7 +43,11 @@ import {
   describeCrmCustomReportMetricAvailability,
   isCrmCustomReportOrderDimension,
 } from "@/src/lib/commercial/crmCustomReportContract";
-import { formatCrmReportsCustomerSublabel } from "@/src/lib/commercial/crmReportsFormat";
+import {
+  formatCrmReportsCustomerSublabel,
+  formatCrmReportsDate,
+  formatCrmReportsInteger,
+} from "@/src/lib/commercial/crmReportsFormat";
 
 // ---------------------------------------------------------------------------
 // Sub-abas: Relatórios padrão × Relatório personalizado
@@ -407,6 +412,94 @@ export function addCrmReportsSelectionCustomer(
 
 export function removeCrmReportsSelectionCustomer(selection: CrmReportsUiSelection, id: string): CrmReportsUiSelection {
   return { ...selection, customers: selection.customers.filter((c) => c.id !== id) };
+}
+
+// ---------------------------------------------------------------------------
+// Relatório personalizado — clientes numa escolha só + resumo do recorte
+// ---------------------------------------------------------------------------
+
+/**
+ * "Cliente" (inclusão) + "Ocultar clientes" (Excluir/Somente) lidos como UMA
+ * escolha: Todos / Somente os escolhidos / Todos, exceto os escolhidos. A
+ * inclusão sozinha aparece como "Somente" — o backend analisa exatamente o
+ * mesmo conjunto de clientes.
+ */
+export type CrmReportsCustomerScope = {
+  mode: CrmReportsCustomerSelectionMode;
+  customers: CrmReportsCustomerChip[];
+  /** Filtro "Cliente" das listas que continua valendo junto de Excluir/Somente. */
+  alsoLimitedTo: CrmReportsCustomerChip[];
+};
+
+export function crmReportsCustomerScopeFromUi(
+  state: Pick<CrmReportsUiState, "filters" | "selection">
+): CrmReportsCustomerScope {
+  const inclusion = state.filters.customers;
+  if (state.selection.mode !== "ALL") {
+    return { mode: state.selection.mode, customers: state.selection.customers, alsoLimitedTo: inclusion };
+  }
+  if (inclusion.length > 0) return { mode: "ONLY", customers: inclusion, alsoLimitedTo: [] };
+  return { mode: "ALL", customers: state.selection.customers, alsoLimitedTo: [] };
+}
+
+/**
+ * Grava a escolha no estado compartilhado da aba. A inclusão sozinha (exibida
+ * como "Somente") passa a ser a própria seleção; numa combinação feita em
+ * Relatórios padrão, o filtro "Cliente" continua — o recorte nunca amplia sozinho.
+ */
+export function withCrmReportsCustomerScope(
+  state: CrmReportsUiState,
+  scope: { mode: CrmReportsCustomerSelectionMode; customers: readonly CrmReportsCustomerChip[] }
+): CrmReportsUiState {
+  const inclusionShownAsScope = state.selection.mode === "ALL" && state.filters.customers.length > 0;
+  const base = inclusionShownAsScope ? { ...state, filters: { ...state.filters, customers: [] } } : state;
+  return withCrmReportsSelection(base, { mode: scope.mode, customers: uniqueChips(scope.customers) });
+}
+
+function joinCustomerNames(chips: readonly CrmReportsCustomerChip[], max = 3): string {
+  const names = chips.slice(0, max).map((c) => c.label);
+  const rest = chips.length - names.length;
+  if (rest > 0) return `${names.join(", ")} e mais ${formatCrmReportsInteger(rest)}`;
+  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+/** "O relatório vai considerar: …" — o recorte que vai no request, em frases. */
+export function describeCrmCustomReportFilters(args: {
+  ui: Pick<CrmReportsUiState, "filters" | "selection">;
+  /** Escopo de carteira própria (filtro de responsável forçado pelo backend). */
+  ownScope: boolean;
+  period: { ok: true; period: { from: string; to: string } | null } | { ok: false; error: string };
+  customerStatus: CrmCustomReportCustomerStatus;
+}): string[] {
+  const scope = crmReportsCustomerScopeFromUi(args.ui);
+  const everyone = args.ownScope ? "Todos os clientes da sua carteira" : "Todos os clientes do seu escopo";
+  const phrases: string[] = [];
+  if (scope.mode === "ONLY" && scope.customers.length > 0) {
+    phrases.push(`Somente ${joinCustomerNames(scope.customers)}`);
+  } else if (scope.mode === "EXCLUDE" && scope.customers.length > 0) {
+    phrases.push(`${everyone}, exceto ${joinCustomerNames(scope.customers)}`);
+  } else {
+    phrases.push(everyone);
+  }
+  if (scope.alsoLimitedTo.length > 0) {
+    phrases.push(`limitado a ${joinCustomerNames(scope.alsoLimitedTo)} (filtro Cliente de Relatórios padrão)`);
+  }
+  const { filters } = args.ui;
+  if (filters.commercialOwner) phrases.push(`Responsável Comercial: ${filters.commercialOwner.label}`);
+  if (filters.lastOrderSeller) phrases.push(`Vendedor do último pedido: ${filters.lastOrderSeller.label}`);
+  if (filters.city) phrases.push(`Cidade: ${filters.city}`);
+  if (filters.state) phrases.push(`UF: ${filters.state}`);
+  if (args.period.ok === false) {
+    phrases.push(`Período: ${args.period.error}`);
+  } else if (args.period.period) {
+    phrases.push(
+      `Emissão de ${formatCrmReportsDate(args.period.period.from)} a ${formatCrmReportsDate(args.period.period.to)}`
+    );
+  } else {
+    phrases.push("Emissão: histórico inteiro");
+  }
+  phrases.push(CRM_CUSTOM_REPORT_CUSTOMER_STATUS_LABELS[args.customerStatus]);
+  return phrases;
 }
 
 // ---------------------------------------------------------------------------
