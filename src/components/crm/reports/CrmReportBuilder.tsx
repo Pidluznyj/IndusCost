@@ -20,10 +20,7 @@ import {
 } from "@/src/lib/commercial/crmReportsFormat";
 import { formatCrmOverdueDaysMetric } from "@/src/lib/commercial/crmReportsLabels";
 import {
-  CRM_REPORT_BUILDER_CUSTOMER_STATUS_OPTIONS,
   CRM_REPORT_BUILDER_DIMENSIONS,
-  CRM_REPORT_PERIOD_PRESETS,
-  CRM_REPORT_PERIOD_PRESET_LABELS,
   buildCrmCustomReportRequestBody,
   createEmptyCrmReportBuilderState,
   crmCustomReportSpecKey,
@@ -34,7 +31,8 @@ import {
   toggleCrmReportDimension,
   toggleCrmReportMetric,
   type CrmReportBuilderState,
-  type CrmReportPeriodPreset,
+  type CrmReportsCustomerChip,
+  type CrmReportsUiFilters,
   type CrmReportsUiState,
 } from "@/src/lib/commercial/crmReportsUiState";
 import { CRM_REPORT_TEMPLATES, applyCrmReportTemplate } from "@/src/lib/commercial/crmReportsTemplates";
@@ -45,28 +43,41 @@ import {
   CRM_CUSTOM_REPORT_METRIC_LABELS,
   CRM_CUSTOM_REPORT_METRICS,
   CRM_CUSTOM_REPORT_PAGE_DEFAULT_LIMIT,
-  type CrmCustomReportCustomerStatus,
   type CrmCustomReportMetric,
   type CrmCustomReportMetricValues,
   type CrmCustomReportRequest,
   type CrmCustomReportResponse,
   type CrmCustomReportSortKey,
+  type CrmReportsCustomerSelectionMode,
+  type CrmReportsFilterOptionsResponse,
+  type CrmReportsSelectionInfo,
   type CrmReportsWindows,
 } from "@/src/lib/commercial/crmReportsTypes";
+import type { searchCrmReportsCustomerOptions } from "@/src/lib/commercial/crmReportsClient";
+import { CrmReportFiltersPanel } from "./CrmReportFiltersPanel";
 import { CrmReportsExportButtons, CrmReportsTableScroll } from "./CrmReportsShared";
 
 export const CRM_REPORT_BUILDER_EMPTY_MESSAGE = "Selecione os filtros e clique em Gerar relatório.";
 
 export type CrmReportBuilderProps = {
-  /** Filtros globais da aba — os MESMOS do universo das listas. */
+  /** Filtros da aba — os MESMOS do universo das listas (estado compartilhado). */
   ui: Pick<CrmReportsUiState, "filters" | "selection">;
   /** Janelas do backend (dia de referência) — sem conta de data no navegador. */
   windows: CrmReportsWindows | null;
-  filtersActive: boolean;
   canOpenCustomer360: boolean;
+  /** Opções leves dos filtros (responsável, vendedor, cidade, UF). */
+  options: CrmReportsFilterOptionsResponse | null;
+  optionsLoading: boolean;
+  optionsError: string | null;
+  /** Eco do backend sobre os clientes escolhidos (fora dos demais filtros etc.). */
+  selectionInfo: CrmReportsSelectionInfo | null;
+  onCustomerScopeChange: (scope: { mode: CrmReportsCustomerSelectionMode; customers: CrmReportsCustomerChip[] }) => void;
+  onFiltersChange: (patch: Partial<CrmReportsUiFilters>) => void;
+  onClearFilters: () => void;
   /** Injeção para testes. */
   fetchReport?: typeof fetchCrmCustomReport;
   downloadReport?: typeof downloadCrmCustomReportExport;
+  search?: typeof searchCrmReportsCustomerOptions;
 };
 
 type Result = { request: CrmCustomReportRequest; response: CrmCustomReportResponse };
@@ -92,6 +103,9 @@ function formatMetric(metric: CrmCustomReportMetric, value: CrmCustomReportMetri
 }
 
 const FIELD_LABEL = "block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+const STEP_TITLE = "flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-foreground";
+const STEP_BADGE =
+  "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground";
 const SELECT_CLASS =
   "w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 
@@ -103,10 +117,17 @@ const SELECT_CLASS =
 export function CrmReportBuilder({
   ui,
   windows,
-  filtersActive,
   canOpenCustomer360,
+  options,
+  optionsLoading,
+  optionsError,
+  selectionInfo,
+  onCustomerScopeChange,
+  onFiltersChange,
+  onClearFilters,
   fetchReport = fetchCrmCustomReport,
   downloadReport = downloadCrmCustomReportExport,
+  search,
 }: CrmReportBuilderProps) {
   const [builder, setBuilder] = useState<CrmReportBuilderState>(createEmptyCrmReportBuilderState);
   const [result, setResult] = useState<Result | null>(null);
@@ -173,6 +194,26 @@ export function CrmReportBuilder({
     execute({ ...result.request, pagination: { ...result.request.pagination, offset } });
   };
 
+  // "Limpar filtros" do painel: recorte da aba + período e situação do construtor.
+  const clearFilters = () => {
+    onClearFilters();
+    const defaults = createEmptyCrmReportBuilderState();
+    const periodOrStatusChanged =
+      builder.periodPreset !== defaults.periodPreset ||
+      builder.customFrom !== defaults.customFrom ||
+      builder.customTo !== defaults.customTo ||
+      builder.customerStatus !== defaults.customerStatus;
+    if (!periodOrStatusChanged) return;
+    update({
+      ...builder,
+      templateId: null,
+      periodPreset: defaults.periodPreset,
+      customFrom: defaults.customFrom,
+      customTo: defaults.customTo,
+      customerStatus: defaults.customerStatus,
+    });
+  };
+
   const handleExport = (format: CrmReportsExportFormatChoice) => {
     if (!result) return;
     setExporting(format);
@@ -212,16 +253,17 @@ export function CrmReportBuilder({
           <h3 className="text-base font-bold text-foreground">Construtor de relatórios</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          Usa os mesmos filtros globais e clientes ocultados das listas. Só roda quando você clica em “Gerar relatório”.
-          Fonte: Pedidos de Venda (emissão, dia civil); situação de recompra vem do motor de recompra.
+          Em 3 passos: (1) um modelo, se quiser; (2) quem entra no relatório; (3) o que mostrar. Nada roda até você clicar
+          em “Gerar relatório”. Fonte: Pedidos de Venda (emissão, dia civil); situação de recompra vem do motor de recompra.
         </p>
       </div>
 
-      <div className="space-y-4 px-4 py-4">
+      <div className="space-y-5 px-4 py-4">
         <div>
-          <p className={cn(FIELD_LABEL, "mb-2 flex items-center gap-1")}>
-            <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            Relatórios prontos
+          <p className={cn(STEP_TITLE, "mb-2")}>
+            <span className={STEP_BADGE}>1</span>
+            <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+            Relatórios prontos (opcional)
           </p>
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Relatórios prontos">
             {CRM_REPORT_TEMPLATES.map((template) => (
@@ -247,202 +289,166 @@ export function CrmReportBuilder({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-[1.2fr_1fr_1.4fr_0.8fr_1fr]">
-          <fieldset className="space-y-2 rounded-xl border border-border/70 p-3">
-            <legend className={cn(FIELD_LABEL, "px-1")}>Filtros</legend>
-            <p className="text-xs text-muted-foreground">
-              {filtersActive ? "Filtros globais ativos (ver painel acima)." : "Sem filtros globais: universo inteiro permitido."}
-            </p>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold text-foreground">Período (emissão do pedido)</span>
+        <div className="space-y-2">
+          <p className={STEP_TITLE}>
+            <span className={STEP_BADGE}>2</span>
+            Quem entra no relatório
+          </p>
+          <CrmReportFiltersPanel
+            ui={ui}
+            options={options}
+            optionsLoading={optionsLoading}
+            optionsError={optionsError}
+            selectionInfo={selectionInfo}
+            builder={builder}
+            period={period}
+            onCustomerScopeChange={onCustomerScopeChange}
+            onFiltersChange={onFiltersChange}
+            onBuilderChange={(patch) => update({ ...builder, ...patch })}
+            onClearAll={clearFilters}
+            search={search}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <p className={STEP_TITLE}>
+            <span className={STEP_BADGE}>3</span>
+            O que mostrar
+          </p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-[1fr_1.4fr_0.8fr_1fr]">
+            <fieldset className="space-y-1.5 rounded-xl border border-border/70 p-3">
+              <legend className={cn(FIELD_LABEL, "px-1")}>Dimensões (até {CRM_CUSTOM_REPORT_MAX_DIMENSIONS})</legend>
+              {CRM_REPORT_BUILDER_DIMENSIONS.map((dimension) => {
+                const position = builder.dimensions.indexOf(dimension);
+                const checked = position >= 0;
+                const full = !checked && builder.dimensions.length >= CRM_CUSTOM_REPORT_MAX_DIMENSIONS;
+                return (
+                  <label
+                    key={dimension}
+                    className={cn("flex items-center gap-2 text-sm", full ? "text-muted-foreground" : "text-foreground")}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border accent-primary"
+                      checked={checked}
+                      disabled={full}
+                      onChange={() => update(toggleCrmReportDimension(builder, dimension))}
+                    />
+                    <span>{CRM_CUSTOM_REPORT_DIMENSION_LABELS[dimension]}</span>
+                    {checked ? (
+                      <span className="ml-auto rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
+                        {position + 1}ª
+                      </span>
+                    ) : null}
+                  </label>
+                );
+              })}
+            </fieldset>
+
+            <fieldset className="space-y-1.5 rounded-xl border border-border/70 p-3">
+              <legend className={cn(FIELD_LABEL, "px-1")}>Métricas</legend>
+              {CRM_CUSTOM_REPORT_METRICS.map((metric) => {
+                const availability = crmReportMetricAvailability(metric, builder.dimensions);
+                const checked = builder.metrics.includes(metric);
+                return (
+                  <label
+                    key={metric}
+                    className={cn(
+                      "flex items-start gap-2 text-sm",
+                      availability.available ? "text-foreground" : "text-muted-foreground"
+                    )}
+                    title={availability.reason ?? undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+                      checked={checked}
+                      disabled={!availability.available}
+                      onChange={() => update(toggleCrmReportMetric(builder, metric))}
+                    />
+                    <span>
+                      {CRM_CUSTOM_REPORT_METRIC_LABELS[metric]}
+                      {!availability.available ? (
+                        <span className="block text-[11px] leading-snug">{availability.reason}</span>
+                      ) : null}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+
+            <fieldset className="space-y-2 rounded-xl border border-border/70 p-3">
+              <legend className={cn(FIELD_LABEL, "px-1")}>Agrupar por</legend>
               <select
                 className={SELECT_CLASS}
-                value={builder.periodPreset}
-                onChange={(e) => update({ ...builder, templateId: null, periodPreset: e.target.value as CrmReportPeriodPreset })}
-              >
-                {CRM_REPORT_PERIOD_PRESETS.map((preset) => (
-                  <option key={preset} value={preset}>
-                    {CRM_REPORT_PERIOD_PRESET_LABELS[preset]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {builder.periodPreset === "CUSTOM" ? (
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-muted-foreground">De</span>
-                  <input
-                    type="date"
-                    className={SELECT_CLASS}
-                    value={builder.customFrom}
-                    onChange={(e) => update({ ...builder, customFrom: e.target.value })}
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-muted-foreground">Até</span>
-                  <input
-                    type="date"
-                    className={SELECT_CLASS}
-                    value={builder.customTo}
-                    onChange={(e) => update({ ...builder, customTo: e.target.value })}
-                  />
-                </label>
-              </div>
-            ) : period.ok && period.period ? (
-              <p className="text-[11px] tabular-nums text-muted-foreground">
-                {formatCrmReportsDate(period.period.from)} a {formatCrmReportsDate(period.period.to)}
-              </p>
-            ) : null}
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold text-foreground">Situação do cliente</span>
-              <select
-                className={SELECT_CLASS}
-                value={builder.customerStatus}
+                value={builder.groupBy ?? ""}
+                disabled={builder.dimensions.length < 2}
                 onChange={(e) =>
-                  update({ ...builder, templateId: null, customerStatus: e.target.value as CrmCustomReportCustomerStatus })
+                  update(
+                    normalizeCrmReportBuilder({
+                      ...builder,
+                      templateId: null,
+                      groupBy: (e.target.value || null) as CrmReportBuilderState["groupBy"],
+                    })
+                  )
                 }
               >
-                {CRM_REPORT_BUILDER_CUSTOMER_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {CRM_CUSTOM_REPORT_CUSTOMER_STATUS_LABELS[status]}
+                <option value="">Sem agrupamento</option>
+                {builder.dimensions.map((dimension) => (
+                  <option key={dimension} value={dimension}>
+                    {CRM_CUSTOM_REPORT_DIMENSION_LABELS[dimension]}
                   </option>
                 ))}
               </select>
-            </label>
-          </fieldset>
+              <p className="text-[11px] text-muted-foreground">Subtotal por grupo; exige 2 dimensões ou mais.</p>
+            </fieldset>
 
-          <fieldset className="space-y-1.5 rounded-xl border border-border/70 p-3">
-            <legend className={cn(FIELD_LABEL, "px-1")}>Dimensões (até {CRM_CUSTOM_REPORT_MAX_DIMENSIONS})</legend>
-            {CRM_REPORT_BUILDER_DIMENSIONS.map((dimension) => {
-              const position = builder.dimensions.indexOf(dimension);
-              const checked = position >= 0;
-              const full = !checked && builder.dimensions.length >= CRM_CUSTOM_REPORT_MAX_DIMENSIONS;
-              return (
-                <label
-                  key={dimension}
-                  className={cn("flex items-center gap-2 text-sm", full ? "text-muted-foreground" : "text-foreground")}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border accent-primary"
-                    checked={checked}
-                    disabled={full}
-                    onChange={() => update(toggleCrmReportDimension(builder, dimension))}
-                  />
-                  <span>{CRM_CUSTOM_REPORT_DIMENSION_LABELS[dimension]}</span>
-                  {checked ? (
-                    <span className="ml-auto rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
-                      {position + 1}ª
-                    </span>
-                  ) : null}
-                </label>
-              );
-            })}
-          </fieldset>
-
-          <fieldset className="space-y-1.5 rounded-xl border border-border/70 p-3">
-            <legend className={cn(FIELD_LABEL, "px-1")}>Métricas</legend>
-            {CRM_CUSTOM_REPORT_METRICS.map((metric) => {
-              const availability = crmReportMetricAvailability(metric, builder.dimensions);
-              const checked = builder.metrics.includes(metric);
-              return (
-                <label
-                  key={metric}
-                  className={cn(
-                    "flex items-start gap-2 text-sm",
-                    availability.available ? "text-foreground" : "text-muted-foreground"
-                  )}
-                  title={availability.reason ?? undefined}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
-                    checked={checked}
-                    disabled={!availability.available}
-                    onChange={() => update(toggleCrmReportMetric(builder, metric))}
-                  />
-                  <span>
-                    {CRM_CUSTOM_REPORT_METRIC_LABELS[metric]}
-                    {!availability.available ? (
-                      <span className="block text-[11px] leading-snug">{availability.reason}</span>
-                    ) : null}
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
-
-          <fieldset className="space-y-2 rounded-xl border border-border/70 p-3">
-            <legend className={cn(FIELD_LABEL, "px-1")}>Agrupar por</legend>
-            <select
-              className={SELECT_CLASS}
-              value={builder.groupBy ?? ""}
-              disabled={builder.dimensions.length < 2}
-              onChange={(e) =>
-                update(
-                  normalizeCrmReportBuilder({
+            <fieldset className="space-y-2 rounded-xl border border-border/70 p-3">
+              <legend className={cn(FIELD_LABEL, "px-1")}>Ordenação</legend>
+              <select
+                className={SELECT_CLASS}
+                value={builder.sortBy ?? ""}
+                onChange={(e) =>
+                  update({
                     ...builder,
                     templateId: null,
-                    groupBy: (e.target.value || null) as CrmReportBuilderState["groupBy"],
+                    sortBy: (e.target.value || null) as CrmCustomReportSortKey | null,
                   })
-                )
-              }
-            >
-              <option value="">Sem agrupamento</option>
-              {builder.dimensions.map((dimension) => (
-                <option key={dimension} value={dimension}>
-                  {CRM_CUSTOM_REPORT_DIMENSION_LABELS[dimension]}
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-foreground">Subtotal por grupo; exige 2 dimensões ou mais.</p>
-          </fieldset>
-
-          <fieldset className="space-y-2 rounded-xl border border-border/70 p-3">
-            <legend className={cn(FIELD_LABEL, "px-1")}>Ordenação</legend>
-            <select
-              className={SELECT_CLASS}
-              value={builder.sortBy ?? ""}
-              onChange={(e) =>
-                update({
-                  ...builder,
-                  templateId: null,
-                  sortBy: (e.target.value || null) as CrmCustomReportSortKey | null,
-                })
-              }
-            >
-              <option value="">Padrão (1ª métrica, maior primeiro)</option>
-              {sortOptions.map((key) => (
-                <option key={key} value={key}>
-                  {(CRM_CUSTOM_REPORT_METRIC_LABELS as Record<string, string>)[key] ??
-                    (CRM_CUSTOM_REPORT_DIMENSION_LABELS as Record<string, string>)[key]}
-                </option>
-              ))}
-            </select>
-            <div className="inline-flex rounded-xl border border-border bg-muted/40 p-1" role="radiogroup" aria-label="Direção">
-              {(["desc", "asc"] as const).map((direction) => (
-                <button
-                  key={direction}
-                  type="button"
-                  role="radio"
-                  aria-checked={builder.sortDirection === direction}
-                  disabled={builder.sortBy == null}
-                  onClick={() => update({ ...builder, templateId: null, sortDirection: direction })}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-40",
-                    builder.sortDirection === direction ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-                  )}
-                >
-                  {direction === "desc" ? (
-                    <ArrowDownWideNarrow className="h-3.5 w-3.5" aria-hidden />
-                  ) : (
-                    <ArrowUpNarrowWide className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  {direction === "desc" ? "Maior primeiro" : "Menor primeiro"}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+                }
+              >
+                <option value="">Padrão (1ª métrica, maior primeiro)</option>
+                {sortOptions.map((key) => (
+                  <option key={key} value={key}>
+                    {(CRM_CUSTOM_REPORT_METRIC_LABELS as Record<string, string>)[key] ??
+                      (CRM_CUSTOM_REPORT_DIMENSION_LABELS as Record<string, string>)[key]}
+                  </option>
+                ))}
+              </select>
+              <div className="inline-flex rounded-xl border border-border bg-muted/40 p-1" role="radiogroup" aria-label="Direção">
+                {(["desc", "asc"] as const).map((direction) => (
+                  <button
+                    key={direction}
+                    type="button"
+                    role="radio"
+                    aria-checked={builder.sortDirection === direction}
+                    disabled={builder.sortBy == null}
+                    onClick={() => update({ ...builder, templateId: null, sortDirection: direction })}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-40",
+                      builder.sortDirection === direction ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                    )}
+                  >
+                    {direction === "desc" ? (
+                      <ArrowDownWideNarrow className="h-3.5 w-3.5" aria-hidden />
+                    ) : (
+                      <ArrowUpNarrowWide className="h-3.5 w-3.5" aria-hidden />
+                    )}
+                    {direction === "desc" ? "Maior primeiro" : "Menor primeiro"}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

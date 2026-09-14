@@ -381,5 +381,6 @@ export const CRM_REPORTS_GUARDED_FILES: ReadonlyArray<{ path: string; role: CrmR
   { path: "src/components/crm/reports/CrmRepurchaseCadenceTable.tsx", role: "ui" },
   { path: "src/components/crm/reports/CrmOverdueRepurchaseTable.tsx", role: "ui" },
   { path: "src/components/crm/reports/CrmReportBuilder.tsx", role: "ui" },
+  { path: "src/components/crm/reports/CrmReportFiltersPanel.tsx", role: "ui" },
   { path: "src/components/crm/reports/CrmReportsShared.tsx", role: "ui" },
 ];

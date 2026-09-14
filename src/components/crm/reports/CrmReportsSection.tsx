@@ -46,6 +46,7 @@ import {
   showOnlyCheckedCrmReportsCustomers,
   toggleCrmReportsChecked,
   withCrmReportsCadenceStatuses,
+  withCrmReportsCustomerScope,
   withCrmReportsFilters,
   withCrmReportsOffset,
   withCrmReportsOverdueView,
@@ -116,7 +117,8 @@ function readStoredUiState(key: string | null): CrmReportsUiState {
 /**
  * Aba CRM > Relatórios, em duas sub-abas (`?reportsTab=`): "Relatórios padrão"
  * (cards + 3 listas, a de entrada) e "Relatório personalizado" (construtor).
- * Filtros globais e clientes ocultados valem para as duas. Na abertura carrega
+ * O estado de filtros e clientes ocultados é um só; no personalizado ele aparece
+ * inteiro no painel "Filtros do relatório". Na abertura carrega
  * SÓ os metadados leves dos filtros e o payload operacional (universo, cards,
  * 1ª página das 3 listas, janelas de data). O relatório personalizado não
  * consulta nada até o clique em "Gerar".
@@ -378,21 +380,25 @@ export function CrmReportsSection({
         <>
           <CrmReportsSubtabs active={subtab} onSelect={selectSubtab} />
 
-          {/* Filtros globais e clientes ocultados valem para as duas sub-abas. */}
-          <CrmReportsGlobalFilters
-            filters={ui.filters}
-            options={options}
-            optionsLoading={optionsLoading}
-            optionsError={optionsError}
-            filtersActive={filtersActive}
-            onChange={handleFilters}
-            onClearAll={handleClearAll}
-          />
-          <CrmCustomerSelectionFilter
-            selection={ui.selection}
-            selectionInfo={data?.selection ?? null}
-            onChange={handleSelection}
-          />
+          {/* O mesmo estado de filtros nas duas sub-abas; o personalizado mostra tudo no painel "Filtros do relatório". */}
+          {subtab === "standard" ? (
+            <>
+              <CrmReportsGlobalFilters
+                filters={ui.filters}
+                options={options}
+                optionsLoading={optionsLoading}
+                optionsError={optionsError}
+                filtersActive={filtersActive}
+                onChange={handleFilters}
+                onClearAll={handleClearAll}
+              />
+              <CrmCustomerSelectionFilter
+                selection={ui.selection}
+                selectionInfo={data?.selection ?? null}
+                onChange={handleSelection}
+              />
+            </>
+          ) : null}
 
           {subtab === "standard" && firstLoad ? <CrmReportsLoadingPanel /> : null}
 
@@ -487,8 +493,14 @@ export function CrmReportsSection({
               <CrmReportBuilder
                 ui={ui}
                 windows={data?.windows ?? null}
-                filtersActive={filtersActive}
                 canOpenCustomer360={canOpenCustomer360}
+                options={options}
+                optionsLoading={optionsLoading}
+                optionsError={optionsError}
+                selectionInfo={data?.selection ?? null}
+                onCustomerScopeChange={(scope) => setUi((s) => withCrmReportsCustomerScope(s, scope))}
+                onFiltersChange={handleFilters}
+                onClearFilters={handleClearAll}
               />
             ) : null}
           </div>

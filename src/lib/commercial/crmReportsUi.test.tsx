@@ -14,6 +14,7 @@ import { CrmRecentCustomersTable } from "@/src/components/crm/reports/CrmRecentC
 import { CrmOverdueRepurchaseTable } from "@/src/components/crm/reports/CrmOverdueRepurchaseTable";
 import { CrmRepurchaseCadenceTable } from "@/src/components/crm/reports/CrmRepurchaseCadenceTable";
 import { CrmReportBuilder, CRM_REPORT_BUILDER_EMPTY_MESSAGE } from "@/src/components/crm/reports/CrmReportBuilder";
+import { CrmReportFiltersPanel } from "@/src/components/crm/reports/CrmReportFiltersPanel";
 import {
   CrmReportsPagination,
   createCrmReportsScrollSync,
@@ -29,10 +30,13 @@ import {
   addCrmReportsSelectionCustomer,
   applyCrmReportsCard,
   buildCrmCustomReportRequestBody,
+  buildCrmReportsFiltersPayload,
   buildCrmReportsOperationalRequest,
   createDefaultCrmReportsUiState,
   createEmptyCrmReportBuilderState,
+  crmReportsCustomerScopeFromUi,
   crmReportsSubtabFromSearchParams,
+  describeCrmCustomReportFilters,
   describeCrmReportBuilderIssues,
   hideCheckedCrmReportsCustomers,
   parseCrmReportsUiState,
@@ -41,6 +45,7 @@ import {
   showOnlyCheckedCrmReportsCustomers,
   toggleCrmReportDimension,
   toggleCrmReportMetric,
+  withCrmReportsCustomerScope,
   withCrmReportsFilters,
   withCrmReportsOffset,
   withCrmReportsSelection,
@@ -182,12 +187,14 @@ describe("abertura da aba — só o operacional; construtor na sub-aba própria"
     assert.match(html, /role="tab" aria-selected="false" title="[^"]*" data-subtab="custom"/);
     assert.match(html, /data-testid="crm-reports-loading"/);
     assert.ok(html.includes("Linhas por lista"));
+    assert.match(html, /data-testid="crm-reports-filters"/);
+    assert.match(html, /data-testid="crm-reports-customer-selection"/);
     assert.ok(!html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
     assert.doesNotMatch(html, /data-testid="crm-report-builder"/);
     assert.equal(CRM_REPORT_BUILDER_EMPTY_MESSAGE, "Selecione os filtros e clique em Gerar relatório.");
   });
 
-  it("?reportsTab=custom abre o Relatório personalizado vazio, com os mesmos filtros globais e sem as listas", () => {
+  it("?reportsTab=custom abre o Relatório personalizado vazio, com todos os filtros num painel só e sem as listas", () => {
     const html = renderToStaticMarkup(
       <MemoryRouter initialEntries={["/crm-commercial?tab=reports&reportsTab=custom"]}>
         <CrmReportsSection canOpenCustomer360 canOpenOrderDetail canRegisterContact onRegisterContact={() => undefined} />
@@ -196,8 +203,10 @@ describe("abertura da aba — só o operacional; construtor na sub-aba própria"
     assert.match(html, /role="tab" aria-selected="true" title="[^"]*" data-subtab="custom"/);
     assert.ok(html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
     assert.doesNotMatch(html, /crm-report-builder-result/);
-    assert.match(html, /data-testid="crm-reports-filters"/);
-    assert.match(html, /data-testid="crm-reports-customer-selection"/);
+    // Um painel só no personalizado: sem "Filtros" + "Ocultar clientes" separados.
+    assert.match(html, /data-testid="crm-report-filters"/);
+    assert.doesNotMatch(html, /data-testid="crm-reports-filters"/);
+    assert.doesNotMatch(html, /data-testid="crm-reports-customer-selection"/);
     assert.doesNotMatch(html, /data-testid="crm-reports-loading"/);
     assert.ok(!html.includes("Linhas por lista"), "controles das listas só em Relatórios padrão");
   });
@@ -656,11 +665,41 @@ describe("grids — barra de rolagem horizontal também no topo", () => {
 });
 
 describe("construtor — só spec, execução no clique, modelos válidos no backend", () => {
-  it("render inicial: formulário e mensagem, sem tabela", () => {
+  it("render inicial: 3 passos, filtros num painel só e mensagem, sem tabela", () => {
     const html = render(
-      <CrmReportBuilder ui={createDefaultCrmReportsUiState()} windows={WINDOWS} filtersActive={false} canOpenCustomer360 />
+      <CrmReportBuilder
+        ui={createDefaultCrmReportsUiState()}
+        windows={WINDOWS}
+        canOpenCustomer360
+        options={null}
+        optionsLoading={false}
+        optionsError={null}
+        selectionInfo={null}
+        onCustomerScopeChange={() => undefined}
+        onFiltersChange={() => undefined}
+        onClearFilters={() => undefined}
+      />
     );
-    for (const text of ["Relatório personalizado", "Filtros", "Dimensões", "Métricas", "Agrupar por", "Ordenação", "Gerar relatório"]) {
+    for (const text of [
+      "Relatório personalizado",
+      "Relatórios prontos (opcional)",
+      "Quem entra no relatório",
+      "Filtros do relatório",
+      "Todos os clientes",
+      "Somente os escolhidos",
+      "Todos, exceto os escolhidos",
+      "Responsável Comercial",
+      "Vendedor do último pedido",
+      "Período (emissão do pedido)",
+      "Situação do cliente",
+      "O relatório vai considerar",
+      "O que mostrar",
+      "Dimensões",
+      "Métricas",
+      "Agrupar por",
+      "Ordenação",
+      "Gerar relatório",
+    ]) {
       assert.ok(html.includes(text), text);
     }
     assert.ok(html.includes(CRM_REPORT_BUILDER_EMPTY_MESSAGE));
@@ -735,5 +774,144 @@ describe("construtor — só spec, execução no clique, modelos válidos no bac
     const ui = withCrmReportsSelection(createDefaultCrmReportsUiState(), { mode: "EXCLUDE", customers: [chip(1)] });
     const body = buildCrmCustomReportRequestBody({ builder, ui, period: null });
     assert.deepEqual(body.filters?.customerSelection, { mode: "EXCLUDE", customerIds: [uuid(1)] });
+  });
+});
+
+describe("relatório personalizado — filtros num painel só", () => {
+  it("Clientes = uma escolha só (Todos / Somente / Todos, exceto), gravada no mesmo estado das listas", () => {
+    const base = createDefaultCrmReportsUiState();
+    assert.deepEqual(crmReportsCustomerScopeFromUi(base), { mode: "ALL", customers: [], alsoLimitedTo: [] });
+
+    const excluding = withCrmReportsCustomerScope(base, {
+      mode: "EXCLUDE",
+      customers: [chip(1, "Britânia"), chip(2, "Esmaltec")],
+    });
+    assert.deepEqual(buildCrmReportsFiltersPayload(excluding).customerSelection, {
+      mode: "EXCLUDE",
+      customerIds: [uuid(1), uuid(2)],
+    });
+    assert.equal(crmReportsCustomerScopeFromUi(excluding).mode, "EXCLUDE");
+
+    // "Todos" guarda os escolhidos sem aplicar; voltar para "Somente" usa os mesmos clientes.
+    const all = withCrmReportsCustomerScope(excluding, { mode: "ALL", customers: crmReportsCustomerScopeFromUi(excluding).customers });
+    assert.deepEqual(buildCrmReportsFiltersPayload(all).customerSelection, { mode: "ALL", customerIds: [] });
+    const only = withCrmReportsCustomerScope(all, { mode: "ONLY", customers: crmReportsCustomerScopeFromUi(all).customers });
+    assert.deepEqual(buildCrmReportsFiltersPayload(only).customerSelection, { mode: "ONLY", customerIds: [uuid(1), uuid(2)] });
+  });
+
+  it("filtro 'Cliente' das listas aparece como 'Somente'; numa combinação continua valendo (nunca amplia sozinho)", () => {
+    const inclusion = withCrmReportsFilters(createDefaultCrmReportsUiState(), { customers: [chip(1, "Britânia")] });
+    assert.deepEqual(crmReportsCustomerScopeFromUi(inclusion), {
+      mode: "ONLY",
+      customers: [chip(1, "Britânia")],
+      alsoLimitedTo: [],
+    });
+    // Editar no painel converte a inclusão na própria seleção (mesmo conjunto analisado).
+    const edited = withCrmReportsCustomerScope(inclusion, { mode: "ONLY", customers: [chip(1, "Britânia"), chip(2, "Esmaltec")] });
+    assert.deepEqual(buildCrmReportsFiltersPayload(edited).customerIds, []);
+    assert.deepEqual(buildCrmReportsFiltersPayload(edited).customerSelection, { mode: "ONLY", customerIds: [uuid(1), uuid(2)] });
+
+    // Combinação feita em Relatórios padrão (Cliente = Britânia + Excluir Esmaltec): o limite aparece e é mantido.
+    const combo = withCrmReportsSelection(inclusion, { mode: "EXCLUDE", customers: [chip(2, "Esmaltec")] });
+    assert.deepEqual(crmReportsCustomerScopeFromUi(combo), {
+      mode: "EXCLUDE",
+      customers: [chip(2, "Esmaltec")],
+      alsoLimitedTo: [chip(1, "Britânia")],
+    });
+    const comboEdited = withCrmReportsCustomerScope(combo, { mode: "EXCLUDE", customers: [chip(2, "Esmaltec"), chip(3, "Cedro")] });
+    assert.deepEqual(buildCrmReportsFiltersPayload(comboEdited).customerIds, [uuid(1)], "limite do filtro Cliente mantido");
+  });
+
+  it("resumo em português do recorte que vai no request", () => {
+    const ui = withCrmReportsFilters(
+      withCrmReportsCustomerScope(createDefaultCrmReportsUiState(), {
+        mode: "EXCLUDE",
+        customers: [chip(1, "Britânia"), chip(2, "Esmaltec")],
+      }),
+      { city: "Curitiba", lastOrderSeller: { sellerKey: "501", label: "JOSEANE SOUZA" } }
+    );
+    assert.deepEqual(
+      describeCrmCustomReportFilters({
+        ui,
+        ownScope: false,
+        period: { ok: true, period: { from: "2025-09-15", to: "2026-09-14" } },
+        customerStatus: "ALL",
+      }),
+      [
+        "Todos os clientes do seu escopo, exceto Britânia e Esmaltec",
+        "Vendedor do último pedido: JOSEANE SOUZA",
+        "Cidade: Curitiba",
+        "Emissão de 15/09/2025 a 14/09/2026",
+        "Clientes com compra no período",
+      ]
+    );
+    const only = withCrmReportsCustomerScope(createDefaultCrmReportsUiState(), {
+      mode: "ONLY",
+      customers: [1, 2, 3, 4, 5].map((n) => chip(n, `C${n}`)),
+    });
+    assert.deepEqual(
+      describeCrmCustomReportFilters({ ui: only, ownScope: true, period: { ok: true, period: null }, customerStatus: "WITHOUT_PURCHASE" }),
+      ["Somente C1, C2, C3 e mais 2", "Emissão: histórico inteiro", "Sem compra no período"]
+    );
+    assert.deepEqual(
+      describeCrmCustomReportFilters({
+        ui: createDefaultCrmReportsUiState(),
+        ownScope: true,
+        period: { ok: false, error: "Aguardando a data de referência do servidor." },
+        customerStatus: "REPURCHASE_OVERDUE",
+      }),
+      ["Todos os clientes da sua carteira", "Período: Aguardando a data de referência do servidor.", "Recompra atrasada"]
+    );
+  });
+
+  it("painel: opção marcada, busca com o rótulo do efeito, dica, ignorados e limite herdado das listas", () => {
+    const ui = withCrmReportsSelection(withCrmReportsFilters(createDefaultCrmReportsUiState(), { customers: [chip(9, "Cedro")] }), {
+      mode: "EXCLUDE",
+      customers: [chip(1, "Britânia"), chip(2, "Esmaltec")],
+    });
+    const html = render(
+      <CrmReportFiltersPanel
+        ui={ui}
+        options={null}
+        optionsLoading={false}
+        optionsError={null}
+        selectionInfo={{ mode: "EXCLUDE", requestedIds: 2, idsOutsideUniverse: 1 }}
+        builder={createEmptyCrmReportBuilderState()}
+        period={{ ok: true, period: { from: "2025-09-15", to: "2026-09-14" } }}
+        onCustomerScopeChange={() => undefined}
+        onFiltersChange={() => undefined}
+        onBuilderChange={() => undefined}
+        onClearAll={() => undefined}
+      />
+    );
+    assert.match(html, /role="radio" aria-checked="true" data-customer-mode="EXCLUDE"/);
+    assert.match(html, /role="radio" aria-checked="false" data-customer-mode="ONLY"/);
+    assert.ok(html.includes("Clientes que ficam de fora"));
+    assert.ok(html.includes("Entram todos, menos estes 2 cliente(s). 1 escolhido(s) fora dos demais filtros (ignorado)."));
+    assert.ok(html.includes("Também limitado pelo filtro “Cliente” de Relatórios padrão: Cedro."));
+    assert.ok(html.includes("Remover esse limite"));
+    assert.match(
+      html,
+      /O relatório vai considerar: <\/span>Todos os clientes do seu escopo, exceto Britânia e Esmaltec · limitado a Cedro \(filtro Cliente de Relatórios padrão\) · Emissão de 15\/09\/2025 a 14\/09\/2026/
+    );
+    // Em "Todos os clientes" não há busca: nada a escolher.
+    const everyone = render(
+      <CrmReportFiltersPanel
+        ui={createDefaultCrmReportsUiState()}
+        options={null}
+        optionsLoading={false}
+        optionsError={null}
+        selectionInfo={null}
+        builder={createEmptyCrmReportBuilderState()}
+        period={{ ok: true, period: null }}
+        onCustomerScopeChange={() => undefined}
+        onFiltersChange={() => undefined}
+        onBuilderChange={() => undefined}
+        onClearAll={() => undefined}
+      />
+    );
+    assert.match(everyone, /role="radio" aria-checked="true" data-customer-mode="ALL"/);
+    assert.doesNotMatch(everyone, /role="combobox"/);
+    assert.ok(everyone.includes("Entram todos os clientes permitidos no seu escopo."));
   });
 });
