@@ -168,6 +168,6 @@ describe("Caixa — abrir a tela carrega só os saldos (gates do fonte)", () => 
       page,
       /<TreasuryCaixaStaleBanner\s+pendingBalances=\{pendingBalances\}\s+movementLoaded=\{movementRequested\}\s+onRefresh=\{refreshScreen\}\s*\/>/
     );
-    assert.match(page, /<TreasuryCaixaTodayFlow\n[\s\S]{0,200}?loading=\{todayFlowLoading\}/);
+    assert.match(page, /<TreasuryCaixaTodayFlow\n[\s\S]{0,600}?loading=\{todayFlowLoading \|\| \(loading && data == null\)\}/);
   });
 });

@@ -96,10 +96,28 @@ describe("resolveTreasuryExpectedAccountsOn — membership temporal", () => {
     assert.equal(resolveTreasuryExpectedAccountsOn([acc], "2026-09-01").length, 0);
   });
 
-  it("(2) validUntil é INCLUSIVO: conta esperada no último dia de vigência, NÃO esperada no dia seguinte", () => {
+  it("(2) validUntil é o DIA DA SAÍDA (exclusivo): conta esperada até a véspera, NÃO esperada no dia da saída nem depois", () => {
     const acc = withMemberships(VK_REF, [{ validFrom: "2026-01-01", validUntil: "2026-08-31" }]);
-    assert.equal(resolveTreasuryExpectedAccountsOn([acc], "2026-08-31").length, 1);
+    assert.equal(resolveTreasuryExpectedAccountsOn([acc], "2026-08-30").length, 1);
+    assert.equal(resolveTreasuryExpectedAccountsOn([acc], "2026-08-31").length, 0, "dia em que saiu do consolidado");
     assert.equal(resolveTreasuryExpectedAccountsOn([acc], "2026-09-01").length, 0);
+  });
+
+  it("(12) entra e sai no mesmo dia (validFrom = validUntil) nunca é esperada", () => {
+    const acc = withMemberships(VK_REF, [{ validFrom: "2026-09-15", validUntil: "2026-09-15" }]);
+    for (const civilDate of ["2026-09-14", "2026-09-15", "2026-09-16"]) {
+      assert.equal(resolveTreasuryExpectedAccountsOn([acc], civilDate).length, 0, civilDate);
+    }
+  });
+
+  it("(13) sai e volta no mesmo dia (INCLUDE_OFF + INCLUDE_ON): segue esperada, sem hiato", () => {
+    const acc = withMemberships(VL_REF, [
+      { validFrom: "2026-01-01", validUntil: "2026-09-15" },
+      { validFrom: "2026-09-15", validUntil: null },
+    ]);
+    for (const civilDate of ["2026-09-14", "2026-09-15", "2026-09-16"]) {
+      assert.equal(resolveTreasuryExpectedAccountsOn([acc], civilDate).length, 1, civilDate);
+    }
   });
 
   it("(3) conta com múltiplos intervalos é esperada em cada janela e ausente entre elas", () => {
@@ -190,6 +208,54 @@ describe("autoridade de saldos — universo consolidado cresce no meio da série
     assert.deepEqual(d2.closingCoverage.pendingAccounts.map((a) => a.accountId), ["acc-sk"]);
     assert.equal(d2.closingInformed, null, "subtotal 127.543,33 não pode virar closingInformed quando SK também é esperada");
     assert.ok(d2.warnings.some((w) => w.code === "PARTIAL_CLOSING_COVERAGE"));
+  });
+
+  it("(11) conta desativada HOJE já não trava o saldo inicial de hoje: as contas que seguem ativas completam a abertura (caso real 15/09/2026)", () => {
+    const SL_REF: TreasuryConsolidatedAccountRef = {
+      accountId: "acc-sl",
+      accountName: "Sisprime - Lazarios",
+      companyCode: "LAZARIOS",
+    };
+    const opening = (accountId: string, amount: number): TreasuryManualBalanceEvidenceInput => ({
+      accountId,
+      civilDate: "2026-09-15",
+      amount,
+      informedAt: "2026-09-15T13:00:00.000Z",
+      version: 1,
+    });
+    const res = resolveTreasuryDailyBalanceAuthority(
+      growingUniverseInput({
+        civilDates: ["2026-09-14", "2026-09-15"],
+        genesisCivilDate: "2026-09-14",
+        todayCivilDate: "2026-09-15",
+        accounts: [
+          withMemberships(VK_REF, [{ validFrom: "2026-01-01", validUntil: null }]),
+          withMemberships(VL_REF, [{ validFrom: "2026-01-01", validUntil: null }]),
+          withMemberships(SK_REF, [{ validFrom: "2026-01-01", validUntil: null }]),
+          // Desativada em 15/09: closeInterval grava validUntil = hoje.
+          withMemberships(SL_REF, [{ validFrom: "2026-01-01", validUntil: "2026-09-15" }]),
+        ],
+        manualClosings: [
+          closing("acc-vk", "2026-09-14", 14555555),
+          closing("acc-vl", "2026-09-14", 121200),
+          closing("acc-sk", "2026-09-14", 0),
+          closing("acc-sl", "2026-09-14", 0),
+        ],
+        manualOpenings: [opening("acc-vk", 2222222), opening("acc-vl", 121200), opening("acc-sk", 120000)],
+        flows: [],
+      })
+    );
+    const yesterday = res.byCivilDate.get("2026-09-14")!;
+    assert.equal(yesterday.closingCoverage.accountsExpected, 4, "na véspera ela ainda fazia parte");
+    assert.equal(yesterday.closingEffective, 14676755);
+
+    const today = res.byCivilDate.get("2026-09-15")!;
+    assert.deepEqual(today.expectedAccounts.map((a) => a.accountId).sort(), ["acc-sk", "acc-vk", "acc-vl"]);
+    assert.equal(today.openingCoverage.complete, true);
+    assert.equal(today.openingSource, "MANUAL_OPENING");
+    assert.equal(today.opening, 2463422, "Começou de hoje = saldo inicial informado das 3 contas");
+    assert.equal(today.openingAdjustment, 2463422 - 14676755);
+    assert.ok(!today.warnings.some((w) => w.code === "PARTIAL_OPENING_COVERAGE"));
   });
 
   it("(10) closingCoverage.accountsExpected é 0 quando TODAS as contas têm validFrom no futuro em relação ao dia resolvido", () => {

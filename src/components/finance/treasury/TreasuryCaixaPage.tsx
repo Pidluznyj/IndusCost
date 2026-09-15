@@ -27,6 +27,7 @@ import { todayTreasuryCivilDateInSaoPaulo } from "@/src/lib/treasury/contracts/i
 import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import type { TreasuryAgendaDayDto } from "@/src/lib/treasury/contracts/index.js";
 import {
+  alignTreasuryCaixaTodayFlowWithBalanceAuthority,
   appendTreasuryCaixaDailyDueEstimates,
   applyTreasuryCaixaCanonicalTodayFlow,
   buildTreasuryCaixaDayFlow,
@@ -509,11 +510,16 @@ export function TreasuryCaixaPage() {
   const correctedTodayFlow = useMemo(
     () =>
       todayFlow
-        ? applyTreasuryCaixaCanonicalTodayFlow(todayFlow, canonicalToday, {
-            fallbackOpening: chainedOpeningForToday,
-          })
+        ? // Começou/Terminou da autoridade única de saldos — os MESMOS da linha
+          // HOJE (sem o board ainda, fica o fluxo corrigido pelo dia canônico).
+          alignTreasuryCaixaTodayFlowWithBalanceAuthority(
+            applyTreasuryCaixaCanonicalTodayFlow(todayFlow, canonicalToday, {
+              fallbackOpening: chainedOpeningForToday,
+            }),
+            data?.todayBalance
+          )
         : null,
-    [todayFlow, canonicalToday, chainedOpeningForToday]
+    [todayFlow, canonicalToday, chainedOpeningForToday, data]
   );
 
   // A linha do tempo é DERIVADA das três fontes. Montá-la aqui (e não dentro de
@@ -662,7 +668,10 @@ export function TreasuryCaixaPage() {
             <TreasuryCaixaTodayFlow
               flow={correctedTodayFlow}
               canonicalToday={canonicalToday}
-              loading={todayFlowLoading}
+              openingCoverage={data?.todayBalance?.openingCoverage ?? null}
+              // Espera também o caixa do período: antes dele o card mostraria o
+              // subtotal do /today/closing no lugar dos saldos da autoridade.
+              loading={todayFlowLoading || (loading && data == null)}
               onOpenAudit={(kind) => {
                 // Mapa "dimensão do dia" → kind da modal de auditoria.
                 const map = {

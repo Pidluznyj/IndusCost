@@ -379,6 +379,47 @@ function ClosingManualMark({
   );
 }
 
+/**
+ * Cobertura de ABERTURA parcial: parte das contas informou o saldo inicial do
+ * dia, mas não todas as esperadas — o "Começou" segue o fechamento do dia
+ * anterior e o subtotal não é usado (missão 03/09/2026). Só aparece quando
+ * alguém informou: sem nenhum saldo inicial, seguir a cadeia é o normal.
+ */
+function OpeningCoveragePartialMark({
+  coverage,
+}: {
+  coverage: NonNullable<TreasuryCaixaTimelineRow["openingCoverage"]>;
+}) {
+  const pendingNames = coverage.pendingAccounts
+    .map((a) => a.accountName)
+    .join(", ");
+  return (
+    <TimelineNote
+      testId="caixa-timeline-opening-coverage-partial"
+      tone="warning"
+      label={`Abertura incompleta: ${coverage.accountsCovered}/${coverage.accountsExpected} contas`}
+      heading="Abertura incompleta"
+    >
+      <span className="block">
+        Abertura incompleta: {coverageLabel(coverage)} contas informaram saldo
+        inicial.
+      </span>
+      <span className="block">
+        &quot;Começou&quot; segue o fechamento do dia anterior — o subtotal não
+        foi usado.
+      </span>
+      {pendingNames ? (
+        <span className="block">Pendente: {pendingNames}.</span>
+      ) : null}
+      {coverage.partialSum != null ? (
+        <span className="block">
+          Subtotal informado (não usado): {money(coverage.partialSum)}.
+        </span>
+      ) : null}
+    </TimelineNote>
+  );
+}
+
 /** Abertura MANUAL (proveniência declarada — distingue de "segue o fechamento anterior"). */
 function OpeningManualMark({
   coverage,
@@ -500,16 +541,25 @@ function BalanceCell({
 
 /**
  * Marcadores de proveniência da ABERTURA de uma linha de dia — abertura
- * manual e/ou ajuste em relação ao fechamento efetivo anterior. `null` quando
- * a linha não tem nada a sinalizar (comportamento padrão, sem regressão).
+ * manual, saldo inicial informado por só parte das contas (não usado) e/ou
+ * ajuste em relação ao fechamento efetivo anterior. `null` quando a linha não
+ * tem nada a sinalizar (comportamento padrão, sem regressão).
  */
 function RowOpeningMarks({ row }: { row: TreasuryCaixaTimelineRow }) {
   const showManual = row.openingSource === "MANUAL_OPENING";
+  const coverage = row.openingCoverage;
+  const showPartial =
+    !showManual &&
+    coverage != null &&
+    coverage.accountsExpected > 0 &&
+    !coverage.complete &&
+    coverage.accountsCovered > 0;
   const showAdjustment = row.openingAdjustment != null && row.openingAdjustment !== 0;
-  if (!showManual && !showAdjustment) return null;
+  if (!showManual && !showPartial && !showAdjustment) return null;
   return (
     <>
       {showManual ? <OpeningManualMark coverage={row.openingCoverage} /> : null}
+      {showPartial ? <OpeningCoveragePartialMark coverage={coverage!} /> : null}
       {showAdjustment ? <OpeningAdjustmentMark amount={row.openingAdjustment as number} /> : null}
     </>
   );
