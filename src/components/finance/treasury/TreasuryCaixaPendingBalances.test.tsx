@@ -170,14 +170,19 @@ describe("Caixa — quem recalcula e quando (wiring)", () => {
     assert.match(dialogSource, /onSaved\(\{ civilDate, openingBalance, closingBalance \}\);/);
   });
 
-  it("Atualizar tela recalcula contas, caixa do período e projeção — e limpa o aviso", () => {
+  it("Atualizar tela recalcula contas, movimento de hoje, caixa do período e projeção — e limpa o aviso", () => {
     const start = pageSource.indexOf("const refreshScreen = useCallback(");
     assert.ok(start >= 0, "refreshScreen definido");
     const refresh = pageSource.slice(start, pageSource.indexOf("}, [", start));
-    for (const step of ["setPendingBalances([])", "loadAccounts()", "search()", "loadScenarios()"]) {
+    // Movimento de hoje, caixa e projeção só quando a movimentação já foi
+    // carregada (ver TreasuryCaixaMovementOnDemand.test.tsx).
+    for (const step of ["setPendingBalances([])", "loadAccounts()", "loadTodayFlow()", "search()", "loadScenarios()"]) {
       assert.ok(refresh.includes(step), `Atualizar tela precisa chamar ${step}`);
     }
-    assert.match(pageSource, /<TreasuryCaixaStaleBanner pendingBalances=\{pendingBalances\} onRefresh=\{refreshScreen\} \/>/);
+    assert.match(
+      pageSource,
+      /<TreasuryCaixaStaleBanner\s+pendingBalances=\{pendingBalances\}\s+movementLoaded=\{movementRequested\}\s+onRefresh=\{refreshScreen\}\s*\/>/
+    );
     assert.ok(
       pageSource.indexOf("<TreasuryCaixaStaleBanner") < pageSource.indexOf("<TreasuryCaixaAccountsSummary"),
       "aviso acima do card Caixa hoje"
