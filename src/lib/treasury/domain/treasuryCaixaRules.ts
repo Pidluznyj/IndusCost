@@ -431,6 +431,37 @@ export function applyTreasuryCaixaCanonicalTodayFlow(
 }
 
 /**
+ * "Movimento de hoje" com os MESMOS saldos da linha HOJE da linha do tempo.
+ *
+ * O `/today/closing` soma só as contas que informaram: com saldo inicial de
+ * parte das contas (ex.: 1 de 4), o card mostrava esse subtotal como
+ * "Começou com" enquanto a linha HOJE — autoridade única de saldos — seguia o
+ * fechamento do dia anterior. Aqui abertura, fechamentos, divergência e a
+ * contagem de contas sem saldo final passam a vir de `todayBalance` (a mesma
+ * autoridade da linha HOJE); entradas, saídas e previsão seguem do motor
+ * único-de-dia. Sem autoridade (board não carregado) ou de outro dia civil,
+ * devolve o fluxo como veio.
+ */
+export function alignTreasuryCaixaTodayFlowWithBalanceAuthority(
+  flow: TreasuryCaixaDayFlow,
+  todayBalance: TreasuryDailyBalanceAuthorityDay | null | undefined
+): TreasuryCaixaDayFlow {
+  if (!todayBalance || todayBalance.civilDate !== flow.civilDate) return flow;
+  const closingCoverage = todayBalance.closingCoverage;
+  return {
+    ...flow,
+    opening: todayBalance.opening,
+    closingCalculated: todayBalance.closingCalculated,
+    closingInformed: todayBalance.closingInformed,
+    divergence: todayBalance.divergence,
+    pendingClosingCount: Math.max(
+      0,
+      closingCoverage.accountsExpected - closingCoverage.accountsCovered
+    ),
+  };
+}
+
+/**
  * Abertura automática do dia corrente: fechamento do ÚLTIMO dia realizado
  * antes de hoje. É a mesma premissa que a linha do tempo já usa entre dois
  * dias quaisquer (o dia N+1 abre onde o dia N fechou) — aqui só a aplicamos ao

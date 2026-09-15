@@ -1,7 +1,8 @@
 /**
  * Repositório — `TreasuryConsolidatedAccountMembership` (membership temporal
- * do consolidado). Intervalos [validFrom, validUntil] em dia civil
- * America/Sao_Paulo; `validUntil = null` = vigente.
+ * do consolidado). Intervalos [validFrom, validUntil) em dia civil
+ * America/Sao_Paulo — `validUntil` é o dia da saída (a conta já não é esperada
+ * nesse dia); `validUntil = null` = vigente.
  *
  * Invariantes:
  *  - no máximo UM intervalo aberto por conta;
@@ -19,7 +20,7 @@ export type TreasuryConsolidatedMembershipRow = {
   accountId: string;
   /** YYYY-MM-DD (inclusivo). */
   validFrom: string;
-  /** YYYY-MM-DD (inclusivo) ou null = vigente. */
+  /** YYYY-MM-DD do dia da saída (exclusivo) ou null = vigente. */
   validUntil: string | null;
   reason: string;
   createdByUserId: string | null;

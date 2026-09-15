@@ -9,8 +9,11 @@
  *   SALDO:            Começou / Entradas / Saídas / Terminou
  *
  * Todos os quatro números do CR/CP vêm do motor único-de-dia
- * (`buildTreasuryCaixaCanonicalDays`), mesma fonte que o drill-down. Os quatro
- * números do bloco SALDO vêm do fechamento diário canônico (`/today/closing`).
+ * (`buildTreasuryCaixaCanonicalDays`), mesma fonte que o drill-down. No bloco
+ * SALDO, "Começou"/"Terminou" são os MESMOS da linha HOJE da linha do tempo
+ * (autoridade única de saldos: a página alinha o fluxo do `/today/closing`
+ * com `board.todayBalance`). Com saldo inicial de só parte das contas, o
+ * "Começou" segue o fechamento anterior e o card avisa quais contas faltam.
  * Saldo indisponível vira "—", nunca R$ 0,00 falso.
  *
  * "Terminou com" segue a mesma regra D+1 da linha do tempo: sem saldo
@@ -23,6 +26,7 @@ import React from "react";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import type { TreasuryCaixaDayFlow } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import type { TreasuryCaixaCanonicalDay } from "@/src/lib/treasury/domain/treasuryCaixaCanonicalDay.js";
+import type { TreasuryBalanceCoverage } from "@/src/lib/treasury/domain/treasuryDailyBalanceAuthority.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { formatCivilDate } from "@/src/lib/financeCivilDate.js";
 
@@ -41,6 +45,12 @@ export type TreasuryCaixaTodayFlowProps = {
    * mostra "—" para os quatro números do bloco CR/CP.
    */
   canonicalToday?: TreasuryCaixaCanonicalDay | null;
+  /**
+   * Cobertura do saldo inicial de HOJE pela autoridade única de saldos. Se só
+   * parte das contas esperadas informou, o card avisa que o "Começou" segue o
+   * fechamento anterior e quais contas faltam. Ausente = sem aviso.
+   */
+  openingCoverage?: TreasuryBalanceCoverage | null;
   loading?: boolean;
   /**
    * Quando informado, os 4 cards CR/CP viram clicáveis e abrem a modal de
@@ -130,6 +140,34 @@ function SubCell({
   );
 }
 
+/**
+ * Aviso do saldo inicial de hoje informado por só parte das contas esperadas
+ * (autoridade única de saldos). `null` quando não há o que avisar: cobertura
+ * completa, ninguém informou (seguir o fechamento anterior é o normal) ou sem
+ * contas esperadas.
+ */
+function describeOpeningPartialCoverage(
+  coverage: TreasuryBalanceCoverage | null
+): string | null {
+  if (
+    !coverage ||
+    coverage.accountsExpected === 0 ||
+    coverage.complete ||
+    coverage.accountsCovered === 0
+  ) {
+    return null;
+  }
+  const pending = coverage.pendingAccounts.map((a) => a.accountName).join(", ");
+  return (
+    `Saldo inicial de hoje incompleto: ${coverage.accountsCovered} de ${coverage.accountsExpected} contas informaram` +
+    (pending ? ` (faltam: ${pending})` : "") +
+    '. Enquanto não completar, o "começou com" segue o fechamento do dia anterior' +
+    (coverage.partialSum != null
+      ? ` — o subtotal de ${money(coverage.partialSum)} não entra.`
+      : ".")
+  );
+}
+
 function Block({
   title,
   tone,
@@ -171,10 +209,12 @@ function Block({
 export function TreasuryCaixaTodayFlow({
   flow,
   canonicalToday = null,
+  openingCoverage = null,
   loading = false,
   onOpenAudit,
 }: TreasuryCaixaTodayFlowProps) {
   const hasCanonical = canonicalToday != null;
+  const openingPartialMessage = describeOpeningPartialCoverage(openingCoverage);
   /**
    * Ainda há título vencendo hoje sem baixa confirmada — como a confirmação é
    * feita em D+1, esse valor já entra no fechamento CALCULADO do dia (regra
@@ -304,6 +344,15 @@ export function TreasuryCaixaTodayFlow({
             >
               A receber/pago hoje aparecem como <strong>—</strong> porque hoje
               não caiu no período consultado.
+            </p>
+          ) : null}
+
+          {openingPartialMessage ? (
+            <p
+              className="mt-2 rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-1.5 text-[11px] text-[#92400E]"
+              data-testid="caixa-today-flow-opening-partial"
+            >
+              {openingPartialMessage}
             </p>
           ) : null}
 

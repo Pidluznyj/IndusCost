@@ -16,7 +16,10 @@
  *  - Abertura manual COMPLETA prevalece sobre o fechamento efetivo anterior;
  *    a diferença é registrada em `openingAdjustment` (nunca escondida).
  *  - O universo de contas esperadas é TEMPORAL: "esta conta fazia parte do
- *    consolidado NESTE dia?" — conta nova não contamina o passado.
+ *    consolidado NESTE dia?" — conta nova não contamina o passado. O dia em
+ *    que a conta SAI (desativada ou tirada do consolidado) já não a exige:
+ *    a tela deixa de listá-la na hora, então cobrar o saldo dela nesse dia
+ *    travaria a cobertura do dia inteiro (decisão de 15/09/2026).
  *  - Fechamento formal (`TreasuryDailyClosing` CLOSED) cobre só as contas do
  *    seu `companyCode`; nunca fecha o consolidado de outra empresa.
  *  - Nada é inventado: "abertura = fechamento do próprio dia" e "último saldo
@@ -164,7 +167,11 @@ export type TreasuryDailyBalanceAuthorityDay = {
 export type TreasuryConsolidatedMembershipInterval = {
   /** Primeiro dia civil (inclusivo). */
   validFrom: string;
-  /** Último dia civil (inclusivo); null = vigente. */
+  /**
+   * Dia civil em que a conta SAIU do consolidado — exclusivo: nesse dia ela
+   * já não é esperada. null = vigente. (É o dia gravado ao desativar/tirar do
+   * consolidado e no bootstrap a partir de `deactivatedAt`.)
+   */
   validUntil: string | null;
 };
 
@@ -233,7 +240,10 @@ export type TreasuryDailyBalanceAuthorityResult = {
 // API pública
 // ───────────────────────────────────────────────────────────────────────────
 
-/** Contas esperadas no consolidado NUM dia civil (membership temporal). */
+/**
+ * Contas esperadas no consolidado NUM dia civil (membership temporal):
+ * intervalo [validFrom, validUntil) — o dia da saída já não exige a conta.
+ */
 export function resolveTreasuryExpectedAccountsOn(
   accounts: readonly TreasuryConsolidatedAccountMembershipView[],
   civilDate: string
@@ -241,7 +251,7 @@ export function resolveTreasuryExpectedAccountsOn(
   const result: TreasuryConsolidatedAccountRef[] = [];
   for (const acc of accounts) {
     const isExpected = acc.memberships.some(
-      (m) => civilDate >= m.validFrom && (m.validUntil == null || civilDate <= m.validUntil)
+      (m) => civilDate >= m.validFrom && (m.validUntil == null || civilDate < m.validUntil)
     );
     if (isExpected) {
       result.push({

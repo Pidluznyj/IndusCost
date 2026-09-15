@@ -9078,7 +9078,7 @@ model TreasuryFinancialAccountAccess {
 }
 
 /// Membership TEMPORAL da conta no caixa consolidado — "esta conta fazia
-/// parte do consolidado NESTE dia civil?". Intervalos [validFrom, validUntil]
+/// parte do consolidado NESTE dia civil?". Intervalos [validFrom, validUntil)
 /// em dia civil America/Sao_Paulo; validUntil NULL = vigente. Autoridade
 /// única de saldos (ver src/lib/treasury/domain/treasuryDailyBalanceAuthority.ts)
 /// usa isto para nunca deixar uma conta nova contaminar dias anteriores à sua
@@ -9088,7 +9088,7 @@ model TreasuryConsolidatedAccountMembership {
   accountId       String    @db.Uuid
   /// Primeiro dia civil (America/Sao_Paulo) em que a conta integra o consolidado.
   validFrom       DateTime  @db.Date
-  /// Último dia civil INCLUSIVO em que a conta integrou o consolidado; NULL = vigente.
+  /// Dia civil em que a conta SAIU do consolidado (exclusivo: nesse dia ela já não é esperada); NULL = vigente.
   validUntil      DateTime? @db.Date
   /// BOOTSTRAP | ACCOUNT_CREATED | INCLUDE_ON | INCLUDE_OFF | DEACTIVATED | REACTIVATED | MANUAL
   reason          String
