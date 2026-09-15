@@ -6,6 +6,9 @@
  * (APIs /today/opening e /today/closing, com log de usuário, data/hora e motivo).
  * Lançar saldo NÃO recalcula a tela: fica o aviso "Dados desatualizados" até o
  * usuário clicar em "Atualizar tela".
+ * Abrir a tela carrega SÓ os saldos (Caixa hoje). O resto — movimento de hoje,
+ * atrasados, linha do tempo, evolução do saldo, projeção e títulos do período —
+ * só carrega quando o usuário pede ("Carregar movimentação" ou Pesquisar).
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +40,7 @@ import { buildTreasuryCaixaTimelineFromBoardSources } from "@/src/lib/treasury/t
 import { treasuryMoneyToNumber } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { TreasuryCaixaAccountsSummary } from "@/src/components/finance/treasury/TreasuryCaixaAccountsSummary";
 import { TreasuryCaixaStaleBanner } from "@/src/components/finance/treasury/TreasuryCaixaStaleBanner";
+import { TreasuryCaixaMovementPlaceholder } from "@/src/components/finance/treasury/TreasuryCaixaMovementPlaceholder";
 import {
   addTreasuryCaixaPendingBalance,
   type TreasuryCaixaPendingBalance,
@@ -187,6 +191,9 @@ export function TreasuryCaixaPage() {
   const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [todayFlow, setTodayFlow] = useState<TreasuryCaixaDayFlow | null>(null);
+  // Começa "carregando": o card só aparece com a movimentação carregada, e é aí
+  // que o movimento de hoje é buscado.
+  const [todayFlowLoading, setTodayFlowLoading] = useState(true);
   const [agendaDays, setAgendaDays] = useState<readonly TreasuryAgendaDayDto[]>(
     []
   );
@@ -200,6 +207,10 @@ export function TreasuryCaixaPage() {
   const [auditKind, setAuditKind] =
     useState<TreasuryCaixaTotalizerAuditKind | null>(null);
   const accountsAbortRef = useRef<AbortController | null>(null);
+  const todayFlowAbortRef = useRef<AbortController | null>(null);
+  // Movimentação sob demanda: abrir a tela carrega só os saldos (Caixa hoje);
+  // tudo abaixo espera "Carregar movimentação" — são as consultas pesadas.
+  const [movementRequested, setMovementRequested] = useState(false);
   // Saldos gravados depois do último cálculo: a tela NÃO recalcula sozinha a
   // cada saldo (é pesado); fica o aviso até o usuário clicar em "Atualizar tela".
   const [pendingBalances, setPendingBalances] = useState<TreasuryCaixaPendingBalance[]>([]);
@@ -207,7 +218,9 @@ export function TreasuryCaixaPage() {
   // Cenários (Otimista/Realista/Pessimista) — endpoint único.
   const [scenarios, setScenarios] =
     useState<TreasuryCaixaScenariosPayload | null>(null);
-  const [scenariosLoading, setScenariosLoading] = useState(false);
+  // Começa "carregando" pelo mesmo motivo do movimento de hoje: só é buscada
+  // com a movimentação carregada.
+  const [scenariosLoading, setScenariosLoading] = useState(true);
   const [scenariosHorizon, setScenariosHorizon] = useState<number>(30);
   const scenariosAbortRef = useRef<AbortController | null>(null);
 
@@ -229,27 +242,23 @@ export function TreasuryCaixaPage() {
     }
   }, [scenariosHorizon]);
 
+  // Projeção só com a movimentação carregada (e recarrega ao trocar o horizonte).
   useEffect(() => {
+    if (!movementRequested) return;
     void loadScenarios();
     return () => scenariosAbortRef.current?.abort();
-  }, [loadScenarios]);
+  }, [movementRequested, loadScenarios]);
 
-  /** Passo 1 — contas cadastradas + saldo mais recente de cada uma. */
+  /**
+   * Passo 1 — contas cadastradas + saldo mais recente de cada uma. É a ÚNICA
+   * carga ao abrir a tela (Caixa hoje).
+   */
   const loadAccounts = useCallback(async () => {
     accountsAbortRef.current?.abort();
     const controller = new AbortController();
     accountsAbortRef.current = controller;
     setAccountsLoading(true);
     try {
-      const civilDate = todayTreasuryCivilDateInSaoPaulo();
-      // Passo 3 (movimento de hoje) não depende das contas/saldos abaixo —
-      // só da data. Dispara já, em paralelo, em vez de esperar o passo 1
-      // terminar para só então começar (a tela inteira aguarda accountsLoading).
-      const closingPromise = fetchTreasuryTodayClosing({
-        date: civilDate,
-        signal: controller.signal,
-      }).catch(() => null);
-
       const page = await fetchTreasuryAccounts({
         page: 1,
         pageSize: 200,
@@ -278,12 +287,34 @@ export function TreasuryCaixaPage() {
       );
       if (controller.signal.aborted) return;
       setAccounts(withBalances);
+    } catch {
+      if (!controller.signal.aborted) setAccounts([]);
+    } finally {
+      if (!controller.signal.aborted) setAccountsLoading(false);
+    }
+  }, []);
 
-      // Passo 3 — movimento de hoje: os 4 números já vêm calculados por conta
-      // no workspace canônico de fechamento; aqui só consolidamos. A essa
-      // altura `closingPromise` já deve ter resolvido (disparou junto com o
-      // passo 1), então este await normalmente não adiciona espera nenhuma.
-      const closing = await closingPromise;
+  useEffect(() => {
+    void loadAccounts();
+    return () => accountsAbortRef.current?.abort();
+  }, [loadAccounts]);
+
+  /**
+   * Passo 3 — movimento de hoje (só com a movimentação carregada): os 4 números
+   * já vêm calculados por conta no workspace canônico de fechamento; aqui só
+   * consolidamos. Depende só da data — não das contas/saldos do passo 1.
+   */
+  const loadTodayFlow = useCallback(async () => {
+    todayFlowAbortRef.current?.abort();
+    const controller = new AbortController();
+    todayFlowAbortRef.current = controller;
+    setTodayFlowLoading(true);
+    try {
+      const civilDate = todayTreasuryCivilDateInSaoPaulo();
+      const closing = await fetchTreasuryTodayClosing({
+        date: civilDate,
+        signal: controller.signal,
+      }).catch(() => null);
       if (controller.signal.aborted) return;
       setTodayFlow(
         closing
@@ -318,19 +349,17 @@ export function TreasuryCaixaPage() {
           : null
       );
     } catch {
-      if (!controller.signal.aborted) {
-        setAccounts([]);
-        setTodayFlow(null);
-      }
+      if (!controller.signal.aborted) setTodayFlow(null);
     } finally {
-      if (!controller.signal.aborted) setAccountsLoading(false);
+      if (!controller.signal.aborted) setTodayFlowLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadAccounts();
-    return () => accountsAbortRef.current?.abort();
-  }, [loadAccounts]);
+    if (!movementRequested) return;
+    void loadTodayFlow();
+    return () => todayFlowAbortRef.current?.abort();
+  }, [movementRequested, loadTodayFlow]);
 
   const yearOptions = useMemo(() => {
     const base = today.getFullYear();
@@ -399,30 +428,53 @@ export function TreasuryCaixaPage() {
   }, [year, month, day, accounts]);
 
   /**
-   * A tela abre JÁ pesquisada: ano atual + todos os meses (estado inicial dos
-   * filtros) sem exigir clique em Pesquisar. Dispara uma única vez, depois que
-   * as contas terminam de carregar — assim a primeira busca automática se
+   * Primeira busca do período (caixa + agenda) ao carregar a movimentação, com
+   * os filtros do momento (de início, ano atual + todos os meses). Dispara uma
+   * única vez e só depois que as contas terminam de carregar — assim ela se
    * comporta exatamente como um clique manual (companyCode disponível para a
-   * agenda canônica). Buscas seguintes continuam manuais.
+   * agenda canônica). Buscas seguintes continuam manuais (Pesquisar).
    */
   const didAutoSearchRef = useRef(false);
   useEffect(() => {
-    if (accountsLoading || didAutoSearchRef.current) return;
+    if (!movementRequested || accountsLoading || didAutoSearchRef.current) return;
     didAutoSearchRef.current = true;
     void search();
-  }, [accountsLoading, search]);
+  }, [movementRequested, accountsLoading, search]);
 
   /**
-   * "Atualizar tela": recalcula tudo o que depende dos saldos — contas e
-   * movimento de hoje, caixa do período (linha do tempo/gráfico) e projeção —
-   * e limpa o aviso. É o único caminho que recalcula depois de lançar saldo.
+   * "Carregar movimentação" (ou Pesquisar antes de carregar): libera tudo abaixo
+   * do Caixa hoje — os efeitos acima buscam movimento de hoje, caixa do período
+   * e projeção. Saldos lançados antes disso entram junto: recarrega as contas e
+   * limpa o aviso, para a tela inteira sair do mesmo cálculo (sem carregar a
+   * movimentação uma segunda vez no "Atualizar tela").
+   */
+  const requestMovement = useCallback(() => {
+    if (movementRequested) return;
+    if (pendingBalances.length > 0) {
+      setPendingBalances([]);
+      void loadAccounts();
+    }
+    setMovementRequested(true);
+    // A busca do período espera as contas; até ela começar, a seção já aparece
+    // carregando (e não "Selecione o período").
+    setLoading(true);
+  }, [movementRequested, pendingBalances.length, loadAccounts]);
+
+  /**
+   * "Atualizar tela": recalcula o que está na tela e limpa o aviso — as contas
+   * sempre; com a movimentação carregada, também movimento de hoje, caixa do
+   * período (linha do tempo/gráfico) e projeção. É o único caminho que
+   * recalcula depois de lançar saldo.
    */
   const refreshScreen = useCallback(() => {
     setPendingBalances([]);
     void loadAccounts();
+    // Sem a movimentação carregada, só os saldos estão na tela.
+    if (!movementRequested) return;
+    void loadTodayFlow();
     void search();
     void loadScenarios();
-  }, [loadAccounts, search, loadScenarios]);
+  }, [movementRequested, loadAccounts, loadTodayFlow, search, loadScenarios]);
 
   // Dia canônico de hoje (motor único-de-dia) — mesma fonte que o drill-down
   // e o card "Movimento de hoje" já usam para A receber/Recebido/A pagar/Pago.
@@ -574,7 +626,9 @@ export function TreasuryCaixaPage() {
             </label>
             <button
               type="button"
-              onClick={() => void search()}
+              // Antes de carregar a movimentação, Pesquisar é o próprio "Carregar
+              // movimentação" (com o período escolhido); depois, recalcula só o período.
+              onClick={() => (movementRequested ? void search() : requestMovement())}
               disabled={loading}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-muted/40 disabled:opacity-50"
               data-testid="caixa-search-button"
@@ -585,7 +639,11 @@ export function TreasuryCaixaPage() {
           </div>
         </section>
 
-        <TreasuryCaixaStaleBanner pendingBalances={pendingBalances} onRefresh={refreshScreen} />
+        <TreasuryCaixaStaleBanner
+          pendingBalances={pendingBalances}
+          movementLoaded={movementRequested}
+          onRefresh={refreshScreen}
+        />
 
         <TreasuryCaixaAccountsSummary
           accounts={accounts}
@@ -596,304 +654,311 @@ export function TreasuryCaixaPage() {
           onBalanceSaved={(entry) => setPendingBalances((list) => addTreasuryCaixaPendingBalance(list, entry))}
         />
 
-        <TreasuryCaixaTodayFlow
-          flow={correctedTodayFlow}
-          canonicalToday={canonicalToday}
-          loading={accountsLoading}
-          onOpenAudit={(kind) => {
-            // Mapa "dimensão do dia" → kind da modal de auditoria.
-            const map = {
-              receivableDue: "todayReceivableDue",
-              receivableReceived: "todayReceivableReceived",
-              payableDue: "todayPayableDue",
-              payablePaid: "todayPayablePaid",
-            } as const;
-            setAuditKind(map[kind]);
-          }}
-        />
-
-        <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
-
-        {data ? (
-          <TreasuryCaixaTimeline
-            timeline={timeline}
-            loading={loading}
-            monthlyDueEstimates={data?.monthlyDueEstimates}
-            receivables={data?.receivables}
-            payables={data?.payables}
-            canonicalDays={data?.canonicalDays}
-            historicalArMonthlyInflowDeltaByMonth={
-              data?.historicalArMonthlyInflowDeltaByMonth
-            }
-          />
-        ) : null}
-
-        <TreasuryCaixaBalanceChart
-          points={balanceChartPoints}
-          headerAction={
-            <button
-              type="button"
-              onClick={() => setAnnualViewOpen(true)}
-              className="rounded-md border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground hover:bg-muted"
-              data-testid="caixa-annual-open"
-            >
-              Visão anual
-            </button>
-          }
-        />
-
-        {annualViewOpen ? (
-          <React.Suspense fallback={null}>
-            <TreasuryCaixaAnnualViewModal
-              defaultYear={year}
-              yearOptions={yearOptions}
-              todayFlowRaw={todayFlow}
-              companyCode={annualCompanyCode}
-              onClose={() => setAnnualViewOpen(false)}
-            />
-          </React.Suspense>
-        ) : null}
-
-        <TreasuryCaixaScenariosChart
-          data={scenarios}
-          loading={scenariosLoading}
-          horizonDays={scenariosHorizon}
-          onHorizonChange={setScenariosHorizon}
-          onRefresh={() => void loadScenarios()}
-          // FONTE ÚNICA: a MESMA série que alimenta a tabela "Linha do tempo"
-          // alimenta a linha Realista do gráfico. Não é uma segunda conta que
-          // "deveria" bater — é o mesmo array. Otimista/Pessimista preservam
-          // o delta que o motor canônico do backend calculou.
-          timelineRows={timeline?.rows}
-          headerAction={
-            <button
-              type="button"
-              onClick={() => setScenariosExpandedOpen(true)}
-              className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-[11px] font-semibold hover:bg-[#F9FAFB]"
-              data-testid="caixa-scenarios-expanded-open"
-            >
-              Visão ampliada
-            </button>
-          }
-        />
-
-        {scenariosExpandedOpen ? (
-          <React.Suspense fallback={null}>
-            <TreasuryCaixaScenariosExpandedModal
-              todayFlowRaw={todayFlow}
-              companyCode={annualCompanyCode}
-              onClose={() => setScenariosExpandedOpen(false)}
-            />
-          </React.Suspense>
-        ) : null}
-
-        {error ? (
-          <div
-            className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-            role="alert"
-          >
-            {error}
-          </div>
-        ) : null}
-
-        {data ? (
+        {/* Movimentação sob demanda: tudo abaixo do Caixa hoje só existe depois de "Carregar movimentação". */}
+        {!movementRequested ? (
+          <TreasuryCaixaMovementPlaceholder onLoad={requestMovement} />
+        ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <TotalizerCard
-                label="Já Recebido"
-                value={formatMoney(data.totals.totalReceived)}
-                tone="receivable"
-                onClick={() => setAuditKind("totalReceived")}
-              />
-              <TotalizerCard
-                label="Já Pago"
-                value={formatMoney(data.totals.totalPaid)}
-                tone="payable"
-                onClick={() => setAuditKind("totalPaid")}
-              />
-              <TotalizerCard
-                label="Saldo Realizado"
-                value={formatMoney(data.totals.netRealized)}
-                tone="net"
-                onClick={() => setAuditKind("netRealized")}
-              />
-              <TotalizerCard
-                label="A Receber (em aberto)"
-                value={formatMoney(data.totals.totalReceivable)}
-                tone="receivable"
-                onClick={() => setAuditKind("totalReceivable")}
-              />
-              <TotalizerCard
-                label="A Pagar (em aberto)"
-                value={formatMoney(data.totals.totalPayable)}
-                tone="payable"
-                onClick={() => setAuditKind("totalPayable")}
-              />
-              <TotalizerCard
-                label="Saldo em Aberto"
-                value={formatMoney(data.totals.netBalance)}
-                tone="net"
-                onClick={() => setAuditKind("netBalance")}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Qtd. títulos no período — CR: {data.totals.receivableCount} / CP:{" "}
-              {data.totals.payableCount}
-            </p>
+            <TreasuryCaixaTodayFlow
+              flow={correctedTodayFlow}
+              canonicalToday={canonicalToday}
+              loading={todayFlowLoading}
+              onOpenAudit={(kind) => {
+                // Mapa "dimensão do dia" → kind da modal de auditoria.
+                const map = {
+                  receivableDue: "todayReceivableDue",
+                  receivableReceived: "todayReceivableReceived",
+                  payableDue: "todayPayableDue",
+                  payablePaid: "todayPayablePaid",
+                } as const;
+                setAuditKind(map[kind]);
+              }}
+            />
 
-            <section
-              className="rounded-lg border border-border bg-card shadow-sm"
-              data-testid="caixa-receivables-section"
-              data-open={receivablesOpen}
-            >
-              <button
-                type="button"
-                onClick={() => setReceivablesOpen((v) => !v)}
-                aria-expanded={receivablesOpen}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-                data-testid="caixa-receivables-toggle"
-              >
-                {receivablesOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                )}
-                <h2 className="text-sm font-semibold text-foreground">
-                  Contas a Receber ({data.receivables.length})
-                </h2>
-                <span className="ml-auto text-xs font-medium tabular-nums text-emerald-600">
-                  {formatMoney(data.totals.totalReceivable)}
-                </span>
-              </button>
-              {receivablesOpen ? (
-                <div className="overflow-x-auto border-t border-border p-3 pt-2">
-                  <table className="w-full text-xs" data-testid="caixa-receivables-table">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="px-2 py-1.5">Vencimento</th>
-                        <th className="px-2 py-1.5">Cliente</th>
-                        <th className="px-2 py-1.5">Status</th>
-                        <th className="px-2 py-1.5 text-right">Valor</th>
-                        <th className="px-2 py-1.5 text-right">Recebido</th>
-                        <th className="px-2 py-1.5 text-right">Saldo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.receivables.map((r) => (
-                        <tr key={r.externalId} className="border-b border-border/50">
-                          <td className="px-2 py-1.5 tabular-nums">
-                            {formatCivilDate(r.dueDate)}
-                          </td>
-                          <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
-                          <td className="px-2 py-1.5">
-                            <TitleStatusBadge status={r.calculatedStatus} />
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {formatMoney(r.amountReceivable)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {formatMoney(r.amountReceived)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                            {formatMoney(r.balanceReceivable)}
-                          </td>
-                        </tr>
-                      ))}
-                      {data.receivables.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={6}
-                            className="px-2 py-4 text-center text-muted-foreground"
-                          >
-                            Sem títulos no período.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </section>
+            <TreasuryCaixaOverdueStrip overdue={data?.overdue ?? null} />
 
-            <section
-              className="rounded-lg border border-border bg-card shadow-sm"
-              data-testid="caixa-payables-section"
-              data-open={payablesOpen}
-            >
-              <button
-                type="button"
-                onClick={() => setPayablesOpen((v) => !v)}
-                aria-expanded={payablesOpen}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-                data-testid="caixa-payables-toggle"
+            {data ? (
+              <TreasuryCaixaTimeline
+                timeline={timeline}
+                loading={loading}
+                monthlyDueEstimates={data?.monthlyDueEstimates}
+                receivables={data?.receivables}
+                payables={data?.payables}
+                canonicalDays={data?.canonicalDays}
+                historicalArMonthlyInflowDeltaByMonth={
+                  data?.historicalArMonthlyInflowDeltaByMonth
+                }
+              />
+            ) : null}
+
+            <TreasuryCaixaBalanceChart
+              points={balanceChartPoints}
+              headerAction={
+                <button
+                  type="button"
+                  onClick={() => setAnnualViewOpen(true)}
+                  className="rounded-md border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground hover:bg-muted"
+                  data-testid="caixa-annual-open"
+                >
+                  Visão anual
+                </button>
+              }
+            />
+
+            {annualViewOpen ? (
+              <React.Suspense fallback={null}>
+                <TreasuryCaixaAnnualViewModal
+                  defaultYear={year}
+                  yearOptions={yearOptions}
+                  todayFlowRaw={todayFlow}
+                  companyCode={annualCompanyCode}
+                  onClose={() => setAnnualViewOpen(false)}
+                />
+              </React.Suspense>
+            ) : null}
+
+            <TreasuryCaixaScenariosChart
+              data={scenarios}
+              loading={scenariosLoading}
+              horizonDays={scenariosHorizon}
+              onHorizonChange={setScenariosHorizon}
+              onRefresh={() => void loadScenarios()}
+              // FONTE ÚNICA: a MESMA série que alimenta a tabela "Linha do tempo"
+              // alimenta a linha Realista do gráfico. Não é uma segunda conta que
+              // "deveria" bater — é o mesmo array. Otimista/Pessimista preservam
+              // o delta que o motor canônico do backend calculou.
+              timelineRows={timeline?.rows}
+              headerAction={
+                <button
+                  type="button"
+                  onClick={() => setScenariosExpandedOpen(true)}
+                  className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-[11px] font-semibold hover:bg-[#F9FAFB]"
+                  data-testid="caixa-scenarios-expanded-open"
+                >
+                  Visão ampliada
+                </button>
+              }
+            />
+
+            {scenariosExpandedOpen ? (
+              <React.Suspense fallback={null}>
+                <TreasuryCaixaScenariosExpandedModal
+                  todayFlowRaw={todayFlow}
+                  companyCode={annualCompanyCode}
+                  onClose={() => setScenariosExpandedOpen(false)}
+                />
+              </React.Suspense>
+            ) : null}
+
+            {error ? (
+              <div
+                className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                role="alert"
               >
-                {payablesOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                )}
-                <h2 className="text-sm font-semibold text-foreground">
-                  Contas a Pagar ({data.payables.length})
-                </h2>
-                <span className="ml-auto text-xs font-medium tabular-nums text-red-600">
-                  {formatMoney(data.totals.totalPayable)}
-                </span>
-              </button>
-              {payablesOpen ? (
-                <div className="overflow-x-auto border-t border-border p-3 pt-2">
-                  <table className="w-full text-xs" data-testid="caixa-payables-table">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="px-2 py-1.5">Vencimento</th>
-                        <th className="px-2 py-1.5">Fornecedor</th>
-                        <th className="px-2 py-1.5">Status</th>
-                        <th className="px-2 py-1.5 text-right">Valor</th>
-                        <th className="px-2 py-1.5 text-right">Pago</th>
-                        <th className="px-2 py-1.5 text-right">Saldo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.payables.map((p) => (
-                        <tr key={p.externalId} className="border-b border-border/50">
-                          <td className="px-2 py-1.5 tabular-nums">
-                            {formatCivilDate(p.dueDate)}
-                          </td>
-                          <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
-                          <td className="px-2 py-1.5">
-                            <TitleStatusBadge status={p.calculatedStatus} />
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {formatMoney(p.amountPayable)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {formatMoney(p.amountPaid)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                            {formatMoney(p.balancePayable)}
-                          </td>
-                        </tr>
-                      ))}
-                      {data.payables.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={6}
-                            className="px-2 py-4 text-center text-muted-foreground"
-                          >
-                            Sem títulos no período.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
+                {error}
+              </div>
+            ) : null}
+
+            {data ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <TotalizerCard
+                    label="Já Recebido"
+                    value={formatMoney(data.totals.totalReceived)}
+                    tone="receivable"
+                    onClick={() => setAuditKind("totalReceived")}
+                  />
+                  <TotalizerCard
+                    label="Já Pago"
+                    value={formatMoney(data.totals.totalPaid)}
+                    tone="payable"
+                    onClick={() => setAuditKind("totalPaid")}
+                  />
+                  <TotalizerCard
+                    label="Saldo Realizado"
+                    value={formatMoney(data.totals.netRealized)}
+                    tone="net"
+                    onClick={() => setAuditKind("netRealized")}
+                  />
+                  <TotalizerCard
+                    label="A Receber (em aberto)"
+                    value={formatMoney(data.totals.totalReceivable)}
+                    tone="receivable"
+                    onClick={() => setAuditKind("totalReceivable")}
+                  />
+                  <TotalizerCard
+                    label="A Pagar (em aberto)"
+                    value={formatMoney(data.totals.totalPayable)}
+                    tone="payable"
+                    onClick={() => setAuditKind("totalPayable")}
+                  />
+                  <TotalizerCard
+                    label="Saldo em Aberto"
+                    value={formatMoney(data.totals.netBalance)}
+                    tone="net"
+                    onClick={() => setAuditKind("netBalance")}
+                  />
                 </div>
-              ) : null}
-            </section>
+                <p className="text-xs text-muted-foreground">
+                  Qtd. títulos no período — CR: {data.totals.receivableCount} / CP:{" "}
+                  {data.totals.payableCount}
+                </p>
+
+                <section
+                  className="rounded-lg border border-border bg-card shadow-sm"
+                  data-testid="caixa-receivables-section"
+                  data-open={receivablesOpen}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setReceivablesOpen((v) => !v)}
+                    aria-expanded={receivablesOpen}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                    data-testid="caixa-receivables-toggle"
+                  >
+                    {receivablesOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    )}
+                    <h2 className="text-sm font-semibold text-foreground">
+                      Contas a Receber ({data.receivables.length})
+                    </h2>
+                    <span className="ml-auto text-xs font-medium tabular-nums text-emerald-600">
+                      {formatMoney(data.totals.totalReceivable)}
+                    </span>
+                  </button>
+                  {receivablesOpen ? (
+                    <div className="overflow-x-auto border-t border-border p-3 pt-2">
+                      <table className="w-full text-xs" data-testid="caixa-receivables-table">
+                        <thead>
+                          <tr className="border-b border-border text-left text-muted-foreground">
+                            <th className="px-2 py-1.5">Vencimento</th>
+                            <th className="px-2 py-1.5">Cliente</th>
+                            <th className="px-2 py-1.5">Status</th>
+                            <th className="px-2 py-1.5 text-right">Valor</th>
+                            <th className="px-2 py-1.5 text-right">Recebido</th>
+                            <th className="px-2 py-1.5 text-right">Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.receivables.map((r) => (
+                            <tr key={r.externalId} className="border-b border-border/50">
+                              <td className="px-2 py-1.5 tabular-nums">
+                                {formatCivilDate(r.dueDate)}
+                              </td>
+                              <td className="px-2 py-1.5">{r.personName ?? "—"}</td>
+                              <td className="px-2 py-1.5">
+                                <TitleStatusBadge status={r.calculatedStatus} />
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {formatMoney(r.amountReceivable)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {formatMoney(r.amountReceived)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                                {formatMoney(r.balanceReceivable)}
+                              </td>
+                            </tr>
+                          ))}
+                          {data.receivables.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={6}
+                                className="px-2 py-4 text-center text-muted-foreground"
+                              >
+                                Sem títulos no período.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </section>
+
+                <section
+                  className="rounded-lg border border-border bg-card shadow-sm"
+                  data-testid="caixa-payables-section"
+                  data-open={payablesOpen}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPayablesOpen((v) => !v)}
+                    aria-expanded={payablesOpen}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                    data-testid="caixa-payables-toggle"
+                  >
+                    {payablesOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    )}
+                    <h2 className="text-sm font-semibold text-foreground">
+                      Contas a Pagar ({data.payables.length})
+                    </h2>
+                    <span className="ml-auto text-xs font-medium tabular-nums text-red-600">
+                      {formatMoney(data.totals.totalPayable)}
+                    </span>
+                  </button>
+                  {payablesOpen ? (
+                    <div className="overflow-x-auto border-t border-border p-3 pt-2">
+                      <table className="w-full text-xs" data-testid="caixa-payables-table">
+                        <thead>
+                          <tr className="border-b border-border text-left text-muted-foreground">
+                            <th className="px-2 py-1.5">Vencimento</th>
+                            <th className="px-2 py-1.5">Fornecedor</th>
+                            <th className="px-2 py-1.5">Status</th>
+                            <th className="px-2 py-1.5 text-right">Valor</th>
+                            <th className="px-2 py-1.5 text-right">Pago</th>
+                            <th className="px-2 py-1.5 text-right">Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.payables.map((p) => (
+                            <tr key={p.externalId} className="border-b border-border/50">
+                              <td className="px-2 py-1.5 tabular-nums">
+                                {formatCivilDate(p.dueDate)}
+                              </td>
+                              <td className="px-2 py-1.5">{p.personName ?? "—"}</td>
+                              <td className="px-2 py-1.5">
+                                <TitleStatusBadge status={p.calculatedStatus} />
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {formatMoney(p.amountPayable)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {formatMoney(p.amountPaid)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                                {formatMoney(p.balancePayable)}
+                              </td>
+                            </tr>
+                          ))}
+                          {data.payables.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={6}
+                                className="px-2 py-4 text-center text-muted-foreground"
+                              >
+                                Sem títulos no período.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </section>
+              </>
+            ) : !loading ? (
+              <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground">
+                Selecione o período e clique em Pesquisar.
+              </div>
+            ) : null}
           </>
-        ) : !loading ? (
-          <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground">
-            Selecione o período e clique em Pesquisar.
-          </div>
-        ) : null}
+        )}
       </div>
 
       {data ? (

@@ -4,7 +4,8 @@
  * Aparece quando um saldo foi gravado depois do último cálculo da tela: o
  * lançamento já está salvo, mas Caixa hoje, Movimento de hoje, Linha do tempo
  * e Projeção só o consideram depois de "Atualizar tela" (recalcular tudo é
- * pesado e não roda sozinho a cada saldo).
+ * pesado e não roda sozinho a cada saldo). Sem a movimentação carregada, só o
+ * Caixa hoje está na tela — e ele entra também ao carregar a movimentação.
  */
 
 import React from "react";
@@ -16,10 +17,16 @@ import {
 
 export type TreasuryCaixaStaleBannerProps = {
   pendingBalances: readonly TreasuryCaixaPendingBalance[];
+  /** Movimentação (tudo abaixo do Caixa hoje) já carregada na tela. */
+  movementLoaded?: boolean;
   onRefresh: () => void;
 };
 
-export function TreasuryCaixaStaleBanner({ pendingBalances, onRefresh }: TreasuryCaixaStaleBannerProps) {
+export function TreasuryCaixaStaleBanner({
+  pendingBalances,
+  movementLoaded = true,
+  onRefresh,
+}: TreasuryCaixaStaleBannerProps) {
   const description = describeTreasuryCaixaPendingBalances(pendingBalances);
   if (!description) return null;
   return (
@@ -34,8 +41,10 @@ export function TreasuryCaixaStaleBanner({ pendingBalances, onRefresh }: Treasur
         <div className="min-w-0">
           <p className="text-sm font-bold">Dados desatualizados</p>
           <p className="text-xs leading-snug">
-            {description} O saldo já está salvo. Caixa hoje, Movimento de hoje, Linha do tempo e Projeção só
-            passam a considerá-lo depois de atualizar a tela.
+            {description} O saldo já está salvo.{" "}
+            {movementLoaded
+              ? "Caixa hoje, Movimento de hoje, Linha do tempo e Projeção só passam a considerá-lo depois de atualizar a tela."
+              : "Caixa hoje só passa a considerá-lo ao atualizar a tela ou carregar a movimentação."}
           </p>
         </div>
       </div>
