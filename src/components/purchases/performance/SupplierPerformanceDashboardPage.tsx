@@ -23,7 +23,6 @@ import {
 import {
   DASHBOARD_PERIOD_PRESET_OPTIONS,
   describeDashboardPeriodSelection,
-  formatDashboardDateTime,
   formatDashboardInteger,
   periodSelectionCustom,
   periodSelectionFromPreset,
@@ -36,6 +35,7 @@ import {
   ConcentrationSection,
   DashboardNotice,
   DashboardSection,
+  DataQualityBar,
   DataRulesPanel,
   EvaluationSection,
   ExecutiveKpisSection,
@@ -212,12 +212,6 @@ export function SupplierPerformanceFilters({
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground" title="Fonte oficial não identificada no espelho de Pedido Nomus: idEmpresa existe apenas no payload bruto, sem cadastro de empresas vinculado.">
-        Empresa
-        <select disabled className={`${CONTROL_CLASS} cursor-not-allowed opacity-60`} data-testid="performance-filter-company">
-          <option>Indisponível — fonte não identificada</option>
-        </select>
-      </label>
       {currencies.length > 1 ? (
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Moeda
@@ -279,9 +273,9 @@ export function SupplierPerformanceDashboardView({
     <div className="space-y-6" data-testid="supplier-performance-dashboard">
       <PurchaseChainViewNav current="performance" variant="nomus" />
       <header>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Performance de Fornecedores</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Performance de fornecedores</h1>
         <p className="text-sm text-muted-foreground">
-          Compras, concentração, mix, avaliação e competitividade da base de fornecedores. Espelho somente leitura do Nomus; toda métrica declara fórmula, fonte e escopo.
+          Compras, concentração, risco e desempenho da base de fornecedores.
         </p>
       </header>
 
@@ -303,14 +297,8 @@ export function SupplierPerformanceDashboardView({
 
       {data ? (
         <>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-testid="performance-meta">
-            <span>Última sincronização Nomus: {formatDashboardDateTime(data.metadata.lastSyncedAt)}</span>
-            <span>·</span>
-            <span>Gerado em {formatDashboardDateTime(data.metadata.generatedAt)}</span>
-            <span>·</span>
-            <span>{formatDashboardInteger(data.metadata.population.orderCount)} pedidos · {formatDashboardInteger(data.metadata.population.lineCount)} linhas · {formatDashboardInteger(data.metadata.population.supplierCount)} fornecedores</span>
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          </div>
+          <DataQualityBar data={data} />
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
 
           {data.metadata.currency.multiCurrency ? (
             <DashboardNotice tone="warning" title="Base multimoeda" testId="performance-notice-currency">
@@ -321,7 +309,7 @@ export function SupplierPerformanceDashboardView({
             <DashboardNotice tone="info" title="Avaliação de fornecedor indisponível" testId="performance-notice-evaluation">{data.evaluation.reason}</DashboardNotice>
           ) : null}
           {data.metadata.population.unresolvedSupplierOrders > 0 || data.metadata.population.unresolvedMaterialLines > 0 ? (
-            <DashboardNotice tone="info" title="Dados parciais" testId="performance-notice-partial">
+            <DashboardNotice tone="info" title="Identidade parcial" testId="performance-notice-partial">
               {data.metadata.population.unresolvedSupplierOrders > 0 ? `${formatDashboardInteger(data.metadata.population.unresolvedSupplierOrders)} pedidos sem ID de fornecedor entram no total, mas não em rankings por fornecedor. ` : ""}
               {data.metadata.population.unresolvedMaterialLines > 0 ? `${formatDashboardInteger(data.metadata.population.unresolvedMaterialLines)} linhas sem ID/código de produto ficam fora das análises por matéria-prima.` : ""}
             </DashboardNotice>
@@ -334,9 +322,13 @@ export function SupplierPerformanceDashboardView({
               <ExecutiveKpisSection data={data} onSelectSupplier={onSelectSupplier} />
               <ConcentrationSection data={data} onSelectSupplier={onSelectSupplier} onSelectMaterial={onSelectMaterial} />
               <SupplierRankingsSection data={data} onSelectSupplier={onSelectSupplier} />
-              <DashboardSection title="Compras ao longo do tempo" eyebrow="Seção 4" description="Agrupado por mês da data operacional do pedido (emissão; firstSeenAt quando ausente). Barras: valor comprado. Linhas: nº de pedidos e fornecedores ativos." testId="performance-trend-section">
+              <DashboardSection title="Compras ao longo do tempo" description="Agrupado por mês da data operacional do pedido (emissão; firstSeenAt quando ausente)." testId="performance-trend-section">
                 <OverlaySection title="Evolução das compras" testId="performance-trend">
-                  <PurchaseTrendChart points={data.charts.monthly} currency={data.metadata.currency.selected} />
+                  <PurchaseTrendChart
+                    points={data.charts.monthly}
+                    currency={data.metadata.currency.selected}
+                    hideSpend={data.metadata.population.financialDataStatus === "UNAVAILABLE"}
+                  />
                 </OverlaySection>
               </DashboardSection>
               {matrix}

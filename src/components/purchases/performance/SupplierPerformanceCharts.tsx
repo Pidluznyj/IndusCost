@@ -21,6 +21,7 @@ import {
 import { FINANCE_BI_COLORS } from "@/src/lib/financeBiDashboardTheme";
 import type {
   DashboardEvaluationBand,
+  DashboardFinancialDataStatus,
   DashboardMonthlyPoint,
   DashboardParetoRow,
   DashboardPriceSeries,
@@ -223,10 +224,12 @@ export function PurchaseTrendChart({
   points,
   currency,
   showSuppliers = true,
+  hideSpend = false,
 }: {
   points: Array<Pick<DashboardMonthlyPoint, "month" | "spend" | "orderCount"> & Partial<DashboardMonthlyPoint>>;
   currency: string;
   showSuppliers?: boolean;
+  hideSpend?: boolean;
 }) {
   const data = useMemo(() => points.map((point) => ({ ...point, label: formatDashboardMonth(point.month) })), [points]);
   if (data.length === 0 || data.every((point) => point.orderCount === 0)) {
@@ -238,14 +241,16 @@ export function PurchaseTrendChart({
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-          <YAxis yAxisId="spend" tickFormatter={(value: number) => formatDashboardMoneyCompact(value, currency)} tick={{ fontSize: 10 }} width={80} />
-          <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fontSize: 10 }} width={40} />
+          {hideSpend ? null : (
+            <YAxis yAxisId="spend" tickFormatter={(value: number) => formatDashboardMoneyCompact(value, currency)} tick={{ fontSize: 10 }} width={80} />
+          )}
+          <YAxis yAxisId="count" orientation={hideSpend ? "left" : "right"} allowDecimals={false} tick={{ fontSize: 10 }} width={40} />
           <Tooltip
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const row = payload[0]!.payload as (typeof data)[number];
               const rows = [
-                { label: "Valor comprado", value: formatDashboardMoney(row.spend, currency) },
+                ...(hideSpend ? [] : [{ label: "Valor comprado", value: formatDashboardMoney(row.spend, currency) }]),
                 { label: "Pedidos", value: formatDashboardInteger(row.orderCount) },
               ];
               if (row.activeSuppliers != null) rows.push({ label: "Fornecedores ativos", value: formatDashboardInteger(row.activeSuppliers) });
@@ -254,7 +259,9 @@ export function PurchaseTrendChart({
             }}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar yAxisId="spend" dataKey="spend" name="Valor comprado" fill={FINANCE_BI_COLORS.primary} radius={[3, 3, 0, 0]} />
+          {hideSpend ? null : (
+            <Bar yAxisId="spend" dataKey="spend" name="Valor comprado" fill={FINANCE_BI_COLORS.primary} radius={[3, 3, 0, 0]} />
+          )}
           <Line yAxisId="count" type="monotone" dataKey="orderCount" name="Pedidos" stroke={FINANCE_BI_COLORS.warning} strokeWidth={2} dot={{ r: 2 }} />
           {showSuppliers && data.some((point) => point.activeSuppliers != null) ? (
             <Line yAxisId="count" type="monotone" dataKey="activeSuppliers" name="Fornecedores ativos" stroke={FINANCE_BI_COLORS.success} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
@@ -415,6 +422,125 @@ export function PriceEvolutionChart({ series, currency }: { series: DashboardPri
           </LineChart>
         </ResponsiveContainer>
       </div>
+    </div>
+  );
+}
+
+const CONCENTRATION_MODES = [
+  { id: "spend", label: "Valor comprado" },
+  { id: "pareto", label: "Pareto" },
+  { id: "orders", label: "Número de pedidos" },
+] as const;
+
+type ConcentrationMode = (typeof CONCENTRATION_MODES)[number]["id"];
+
+export function SupplierConcentrationChart({
+  rows,
+  currency,
+  financialStatus,
+  onSelectSupplier,
+}: {
+  rows: DashboardParetoRow[];
+  currency: string;
+  financialStatus: DashboardFinancialDataStatus;
+  onSelectSupplier?: (supplierExternalId: number) => void;
+}) {
+  const [mode, setMode] = useState<ConcentrationMode>("spend");
+  const financialUnavailable = financialStatus === "UNAVAILABLE";
+  const visible = useMemo(() => {
+    const identified = rows.filter((row) => !row.unresolved);
+    if (mode === "orders") return identified.slice(0, 15);
+    return identified.filter((row) => row.hasFinancialValue).slice(0, 15);
+  }, [rows, mode]);
+  const max = Math.max(
+    1,
+    ...visible.map((row) => (mode === "orders" ? row.orderCount : row.spend))
+  );
+
+  if (financialUnavailable && mode !== "orders") {
+    return (
+      <div className="space-y-2" data-testid="supplier-concentration-chart">
+        <ConcentrationModeSwitch mode={mode} onChange={setMode} />
+        <ChartEmpty message="Valores financeiros indisponíveis para esta população. O gráfico de valor comprado não é exibido como zero." />
+      </div>
+    );
+  }
+  if (visible.length === 0) {
+    return (
+      <div className="space-y-2" data-testid="supplier-concentration-chart">
+        <ConcentrationModeSwitch mode={mode} onChange={setMode} />
+        <ChartEmpty message={mode === "orders" ? "Nenhum fornecedor na população filtrada." : "Sem fornecedores com valor comprado na população filtrada."} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2" data-testid="supplier-concentration-chart">
+      <ConcentrationModeSwitch mode={mode} onChange={setMode} />
+      <ul className="space-y-2" data-testid="supplier-spend-bars">
+        {visible.map((row) => {
+          const magnitude = mode === "orders" ? row.orderCount : row.spend;
+          const width = `${Math.max(2, (magnitude / max) * 100)}%`;
+          const valueLabel =
+            mode === "orders"
+              ? `${formatDashboardInteger(row.orderCount)} pedidos`
+              : formatDashboardMoney(row.hasFinancialValue ? row.spend : null, currency);
+          const shareLabel =
+            mode === "orders" ? null : formatDashboardPercent(mode === "pareto" ? row.cumulativeShare : row.share);
+          return (
+            <li key={`${row.supplierExternalId ?? "u"}-${row.position}`}>
+              <button
+                type="button"
+                className="grid w-full grid-cols-[minmax(10rem,1.4fr)_minmax(8rem,2fr)_auto] items-center gap-3 text-left"
+                onClick={() => {
+                  if (row.supplierExternalId != null) onSelectSupplier?.(row.supplierExternalId);
+                }}
+                title={row.name}
+                data-testid={row.supplierExternalId != null ? `supplier-bar-${row.supplierExternalId}` : undefined}
+              >
+                <span className="truncate text-sm font-medium text-foreground" title={row.name}>
+                  {row.name}
+                </span>
+                <span className="h-2.5 overflow-hidden rounded-full bg-muted">
+                  <span className="block h-full rounded-full bg-primary" style={{ width }} />
+                </span>
+                <span className="whitespace-nowrap text-right font-mono text-xs tabular-nums text-foreground">
+                  {valueLabel}
+                  {shareLabel ? <span className="ml-2 text-muted-foreground">{shareLabel}</span> : null}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ConcentrationModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: ConcentrationMode;
+  onChange: (next: ConcentrationMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      {CONCENTRATION_MODES.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          aria-pressed={mode === option.id}
+          className={
+            mode === option.id
+              ? "rounded-md bg-white px-2 py-1 text-xs font-semibold text-foreground shadow-sm ring-1 ring-border"
+              : "rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-white/70 hover:text-foreground"
+          }
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

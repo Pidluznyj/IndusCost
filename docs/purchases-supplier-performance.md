@@ -90,12 +90,27 @@ de negócio e está registrada como pendente — nada foi decidido em silêncio.
 
 ### Base de spend
 
-- Sem filtro de MP/grupo: **cabeçalho** (`totalAmount`). Pedido sem valor não
-  soma e é contado (`ordersWithoutValue`).
-- Com filtro de MP/grupo: **linhas** (`SUM(totalAmount)` das linhas filtradas).
+- Sem filtro de MP/grupo: **cabeçalho** (`NomusPurchaseOrder.totalAmount`).
+- Com filtro de MP/grupo: **linhas** (`SUM(NomusPurchaseOrderItem.totalAmount)`).
+- Pedido sem valor **não soma** e **não vira R$ 0,00**. Qualidade:
+  `AVAILABLE` / `PARTIAL` / `UNAVAILABLE` em `metadata.population.financialDataStatus`.
+- Ticket médio = total disponível ÷ nº de pedidos **com valor financeiro**.
 - Cabeçalho e linhas podem diferir (frete, desconto, linha sem valor). Ambos os
   totais são expostos em `metadata.population.headerSpendTotal / lineSpendTotal`.
   **Nenhum rateio** de frete/desconto entre linhas.
+
+O contrato live `GET /rest/pedidoscompra` **não envia `valorTotal`**. O mapper
+canônico preenche `totalAmount` assim:
+
+1. `valorTotal` oficial do cabeçalho/linha, se existir.
+2. Senão, na linha: `quantidade × valorUnitario` ± `valorDesconto`/`percentualDesconto`
+   ± acréscimo oficial.
+3. No cabeçalho: soma das linhas valoradas + frete + seguro + outras despesas − desconto
+   de cabeçalho.
+
+`parcelas[].valorParcela` **não** é autoridade de valor comprado (cronograma de
+pagamento). Históricos já persistidos com `totalAmount` null precisam do
+rematerialize a partir do `rawPayload` (`npm run nomus:purchase-orders:rematerialize-financials`).
 
 ## 4. Filtros
 
@@ -107,13 +122,12 @@ de negócio e está registrada como pendente — nada foi decidido em silêncio.
 | Grupo de material | `NomusProductCatalog.groupName` | disponível |
 | Moeda | só quando a base é multimoeda | disponível |
 | Incluir cancelados | predicado oficial | disponível |
-| Empresa | `idEmpresa` existe só no `rawPayload`, sem cadastro vinculado | **UNAVAILABLE_SOURCE** (controle desabilitado com motivo) |
-| Status de avaliação | — | não aplicável a métricas financeiras; rankings de avaliação já consideram só avaliados |
+| Empresa | `idEmpresa` existe só no `rawPayload`, sem cadastro de empresas | **não filtrável** — informado na barra de qualidade dos dados |
 
 Todos os KPIs, rankings, gráficos, matriz e scorecard respeitam os mesmos
 filtros. Exceção documentada: a nota do fornecedor é calculada sobre os pedidos
 do período (mesma autoridade da Avaliação Fornecedor), portanto **também
-respeita o período** — a UI rotula "Nota atual — pedidos do período selecionado".
+respeita o período**.
 
 ## 5. Catálogo de métricas
 

@@ -3,13 +3,14 @@
  * Só formatação e rótulos. Nenhum cálculo de métrica acontece aqui.
  */
 
-import { formatPurchaseOrderAmount, formatSupplierScoreWithScale } from "./supplierPerformance";
+import { formatPurchaseOrderAmount, formatSupplierScore } from "./supplierPerformance";
 import {
   SUPPLIER_PERFORMANCE_DASHBOARD_PERIOD_PRESETS,
   buildDashboardPeriodFromPreset,
   buildDashboardPeriodFromYear,
   type AdvancedMetricEntry,
   type AdvancedMetricStatus,
+  type DashboardFinancialDataStatus,
   type DashboardKpiDefinition,
   type SupplierPerformanceDashboardPeriodPresetId,
 } from "./supplierPerformanceDashboard";
@@ -108,10 +109,39 @@ export function formatDashboardMonth(monthKey: string): string {
   return `${label}/${match[1].slice(2)}`;
 }
 
-export function formatDashboardScore(value: number | null | undefined, scaleMax: number | null | undefined): string {
+export function formatDashboardScore(value: number | null | undefined, _scaleMax?: number | null): string {
   if (value == null || !Number.isFinite(value)) return DASHBOARD_EMPTY_VALUE;
-  return formatSupplierScoreWithScale(value, scaleMax ?? undefined);
+  return formatSupplierScore(value, 2);
 }
+
+export function formatDashboardScoreWithScale(
+  value: number | null | undefined,
+  scaleMax: number | null | undefined
+): string {
+  if (value == null || !Number.isFinite(value)) return DASHBOARD_EMPTY_VALUE;
+  const max = scaleMax ?? 5;
+  return `${formatSupplierScore(value, 2)} / ${max}`;
+}
+
+export function formatDashboardCoverageContext(
+  coverage: number | null | undefined,
+  evaluated: number | null | undefined,
+  total: number | null | undefined
+): { percent: string; context: string | null } {
+  return {
+    percent: formatDashboardPercent(coverage),
+    context:
+      evaluated == null || total == null || !Number.isFinite(evaluated) || !Number.isFinite(total)
+        ? null
+        : `${formatDashboardInteger(evaluated)} de ${formatDashboardInteger(total)} pedidos`,
+  };
+}
+
+export const FINANCIAL_DATA_STATUS_LABELS: Record<DashboardFinancialDataStatus, string> = {
+  AVAILABLE: "Valores financeiros disponíveis",
+  PARTIAL: "Valores financeiros parciais",
+  UNAVAILABLE: "Valores financeiros indisponíveis para esta população",
+};
 
 export function formatDashboardPeriodLabel(period: SupplierPerformancePeriod): string {
   const from = period.from ? formatDashboardCivil(period.from) : null;

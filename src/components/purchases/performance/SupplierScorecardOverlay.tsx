@@ -34,7 +34,7 @@ import {
   formatDashboardPeriodLabel,
   formatDashboardPrice,
   formatDashboardQuantity,
-  formatDashboardScore,
+  formatDashboardScoreWithScale,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { PurchaseTrendChart } from "./SupplierPerformanceCharts";
 import { AdvancedMetricsTable, DashboardNotice, EmptyRows, MaterialLinkButton } from "./SupplierPerformanceSections";
@@ -139,7 +139,7 @@ export function SupplierScorecardContent({
                 <OverlayKpiCard label="Mix de MPs" value={formatDashboardInteger(detail.purchases.mixCount)} hint={`${formatDashboardInteger(detail.purchases.exclusiveMaterialCount)} MPs exclusivas observadas`} />
                 <OverlayKpiCard label="Primeira compra" value={formatDashboardDate(detail.purchases.firstPurchaseDate)} size="sm" />
                 <OverlayKpiCard label="Última compra" value={formatDashboardDate(detail.purchases.lastPurchaseDate)} size="sm" />
-                <OverlayKpiCard label="Nota atual" value={ev ? formatDashboardScore(ev.summary.overallScore, scaleMax) : "—"} hint={ev ? `${ev.methodologyId} · ${formatDashboardInteger(ev.evaluationCount)} avaliações` : "Sem avaliação"} size="sm" />
+                <OverlayKpiCard label="Nota atual" value={ev ? formatDashboardScoreWithScale(ev.summary.overallScore, scaleMax) : "—"} hint={ev ? `${ev.methodologyId} · ${formatDashboardInteger(ev.evaluationCount)} avaliações` : "Sem avaliação"} size="sm" />
                 <OverlayKpiCard label="Cobertura de avaliação" value={ev ? formatDashboardPercent(ev.summary.coverage) : "—"} size="sm" />
               </OverlayKpiCardGrid>
               {detail.purchases.paymentTerms.length > 0 ? (
@@ -168,10 +168,10 @@ export function SupplierScorecardContent({
               <>
                 <OverlaySection title="Nota atual — pedidos do período" description={ev ? `Metodologia ${ev.methodologyId} (escala ${ev.scaleMin}–${ev.scaleMax}) · ${ev.v2Count} avaliações V2 · ${ev.v1Count} V1` : "Sem avaliações no período."}>
                   <OverlayKpiCardGrid columns={6}>
-                    <OverlayKpiCard label="Nota geral" value={formatDashboardScore(ev?.summary.overallScore, scaleMax)} tone="info" />
+                    <OverlayKpiCard label="Nota geral" value={formatDashboardScoreWithScale(ev?.summary.overallScore, scaleMax)} tone="info" />
                     {SUPPLIER_EVALUATION_CRITERIA.map((criterion) => (
                       <React.Fragment key={criterion.key}>
-                        <OverlayKpiCard label={`${criterion.shortLabel} (${criterion.weightPercent}%)`} value={formatDashboardScore(ev?.summary[criterion.field] ?? null, scaleMax)} size="sm" />
+                        <OverlayKpiCard label={`${criterion.shortLabel} (${criterion.weightPercent}%)`} value={formatDashboardScoreWithScale(ev?.summary[criterion.field] ?? null, scaleMax)} size="sm" />
                       </React.Fragment>
                     ))}
                     <OverlayKpiCard label="Cobertura" value={ev ? formatDashboardPercent(ev.summary.coverage) : "—"} hint={ev ? `${ev.summary.evaluatedOrders} de ${ev.summary.eligibleOrders} pedidos` : undefined} size="sm" />
@@ -186,7 +186,7 @@ export function SupplierScorecardContent({
                       {detail.evaluation.monthlyV2.map((point) => (
                         <div key={point.month} className="rounded-md border border-border px-2 py-1 text-xs">
                           <span className="block text-muted-foreground">{formatDashboardMonth(point.month)}</span>
-                          <span className="font-mono">{formatDashboardScore(point.averageOverall, 5)}</span>
+                          <span className="font-mono">{formatDashboardScoreWithScale(point.averageOverall, 5)}</span>
                           <span className="ml-1 text-muted-foreground">({point.count})</span>
                         </div>
                       ))}
@@ -199,7 +199,7 @@ export function SupplierScorecardContent({
                       {detail.evaluation.monthlyV1.map((point) => (
                         <div key={point.month} className="rounded-md border border-border px-2 py-1 text-xs">
                           <span className="block text-muted-foreground">{formatDashboardMonth(point.month)}</span>
-                          <span className="font-mono">{formatDashboardScore(point.averageOverall, 10)}</span>
+                          <span className="font-mono">{formatDashboardScoreWithScale(point.averageOverall, 10)}</span>
                           <span className="ml-1 text-muted-foreground">({point.count})</span>
                         </div>
                       ))}
@@ -278,11 +278,11 @@ export function SupplierScorecardContent({
                           <OverlayTable.Cell mono>{row.orderNumber ?? `Nomus #${row.externalId}`}</OverlayTable.Cell>
                           <OverlayTable.Cell mono>{formatDashboardDate(row.performanceDate)}</OverlayTable.Cell>
                           <OverlayTable.Cell><OverlayBadge tone={row.methodologyVersion === 2 ? "sky" : "slate"}>V{row.methodologyVersion} · 1–{row.scaleMax}</OverlayBadge></OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScore(row.scores.quality, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScore(row.scores.delivery, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScore(row.scores.conformity, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScore(row.scores.service, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScore(row.scores.overall, row.scaleMax)}</OverlayTable.Cell>
+                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.quality, row.scaleMax)}</OverlayTable.Cell>
+                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.delivery, row.scaleMax)}</OverlayTable.Cell>
+                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.conformity, row.scaleMax)}</OverlayTable.Cell>
+                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.service, row.scaleMax)}</OverlayTable.Cell>
+                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.overall, row.scaleMax)}</OverlayTable.Cell>
                           <OverlayTable.Cell className="text-xs text-muted-foreground">rev. {row.revision} · {formatDashboardDateTime(row.updatedAt)}{row.updatedByUserName ? ` · ${row.updatedByUserName}` : ""}</OverlayTable.Cell>
                         </OverlayTable.Row>
                       ))

@@ -76,7 +76,7 @@ Idempotência: `sha256(JSON.stringify(raw))`. Hash igual → só `syncedAt`/`las
 
 - Contrato live validado; `dataInicio`/`dataFim` ainda best-effort.
 - Listagem não trouxe `quantidadeAtendida`; recebimento/saldo só se a API enviar.
-- Nome/CNPJ do fornecedor e `valorTotal` de cabeçalho não vieram no live.
+- Nome/CNPJ do fornecedor e `valorTotal` de cabeçalho não vêm no live; o mapper deriva `totalAmount` canônico (quantidade × preço ± ajustes + acessórios) e o rematerialize preenche históricos a partir do `rawPayload`.
 - Sem vínculo com PurchaseRequest, estoque interno ou AP.
 - Preview de 12 meses **não** foi aplicado em banco (sem API local).
 

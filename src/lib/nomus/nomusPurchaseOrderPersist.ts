@@ -79,7 +79,7 @@ export async function applyNomusPurchaseOrderRows(
     try {
       const existing = await prisma.nomusPurchaseOrder.findUnique({
         where: { externalId: row.externalId },
-        select: { id: true, payloadHash: true },
+        select: { id: true, payloadHash: true, totalAmount: true },
       });
       const decision = decidePurchaseOrderApply(existing?.payloadHash, row.payloadHash);
 
@@ -117,6 +117,31 @@ export async function applyNomusPurchaseOrderRows(
       }
 
       if (decision === "unchanged") {
+        const storedTotal = existing.totalAmount == null ? null : Number(existing.totalAmount.toString());
+        const needsFinancialHeal =
+          (storedTotal == null || !Number.isFinite(storedTotal)) && row.totalAmount != null;
+        if (needsFinancialHeal) {
+          await prisma.$transaction(async (tx) => {
+            await tx.nomusPurchaseOrder.update({
+              where: { id: existing.id },
+              data: {
+                totalAmount: toDecimal(row.totalAmount),
+                discountAmount: toDecimal(row.discountAmount),
+                freightAmount: toDecimal(row.freightAmount),
+                syncedAt,
+                lastSeenAt: syncedAt,
+              },
+            });
+            for (const item of row.items) {
+              await tx.nomusPurchaseOrderItem.updateMany({
+                where: { purchaseOrderId: existing.id, lineIndex: item.lineIndex },
+                data: { totalAmount: toDecimal(item.totalAmount) },
+              });
+            }
+          });
+          counts.updated += 1;
+          continue;
+        }
         await prisma.nomusPurchaseOrder.update({
           where: { externalId: row.externalId },
           data: { syncedAt, lastSeenAt: syncedAt },

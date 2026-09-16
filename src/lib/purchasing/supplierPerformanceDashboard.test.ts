@@ -139,9 +139,11 @@ describe("população e elegibilidade", () => {
     assert.equal(usd.metadata.currency.selected, "USD");
   });
 
-  it("pedido sem valor de cabeçalho não soma e é contado", () => {
+  it("pedido sem valor de cabeçalho não soma e é contado como qualidade parcial", () => {
     const model = dashboard();
     assert.equal(model.metadata.population.ordersWithoutValue, 1);
+    assert.equal(model.metadata.population.ordersWithFinancialValue, 8);
+    assert.equal(model.metadata.population.financialDataStatus, "PARTIAL");
     assert.equal(model.metadata.population.linesWithoutValue, 1);
   });
 });
@@ -153,7 +155,7 @@ describe("KPIs executivos", () => {
     assert.equal(model.kpis.activeSuppliers, 3);
     assert.equal(model.kpis.purchaseOrderCount, 9);
     assert.equal(model.kpis.purchaseLineCount, 11);
-    assert.ok(approx(model.kpis.averageTicket, 4470 / 9, 0.01));
+    assert.ok(approx(model.kpis.averageTicket, 4470 / 8, 0.01));
   });
 
   it("mix total, mix por fornecedor e mix médio", () => {
@@ -192,6 +194,7 @@ describe("KPIs executivos", () => {
   it("dataset vazio: zeros reais e null onde não há denominador", () => {
     const model = buildSupplierPerformanceDashboard(buildFixtureInput({ orders: [], lines: [], evaluations: [] }), filters2026);
     assert.equal(model.kpis.totalSpend, 0);
+    assert.equal(model.metadata.population.financialDataStatus, "AVAILABLE");
     assert.equal(model.kpis.purchaseOrderCount, 0);
     assert.equal(model.kpis.averageTicket, null);
     assert.equal(model.kpis.top1Concentration, null);
@@ -202,7 +205,7 @@ describe("KPIs executivos", () => {
     assert.deepEqual(model.concentration.pareto, []);
   });
 
-  it("denominador zero: pedidos sem valor → shares null, ticket 0 real", () => {
+  it("denominador zero: pedidos sem valor → total e ticket indisponíveis, não R$ 0,00", () => {
     const input = buildFixtureInput({
       orders: [
         { id: "z1", externalId: 1, orderNumber: "Z1", supplierExternalId: S1, supplierName: "A", supplierTaxId: null, stage: "OPEN", canceled: false, issuedAt: new Date("2026-02-01T12:00:00"), firstSeenAt: new Date("2026-02-01T12:00:00"), expectedAt: null, currency: null, totalAmount: null, paymentTerms: null },
@@ -211,8 +214,10 @@ describe("KPIs executivos", () => {
       evaluations: [],
     });
     const model = buildSupplierPerformanceDashboard(input, filters2026);
-    assert.equal(model.kpis.totalSpend, 0);
-    assert.equal(model.kpis.averageTicket, 0);
+    assert.equal(model.metadata.population.financialDataStatus, "UNAVAILABLE");
+    assert.equal(model.kpis.totalSpend, null);
+    assert.equal(model.kpis.averageTicket, null);
+    assert.equal(model.suppliers[0]!.hasFinancialValue, false);
     assert.equal(model.suppliers[0]!.share, null);
     assert.equal(model.kpis.top1Concentration, null);
   });
@@ -430,7 +435,7 @@ describe("paridade (invariantes fortes)", () => {
   it("A/B: soma do spend dos fornecedores + não identificado = total; shares ≈ 100%", () => {
     const model = dashboard();
     const supplierSum = model.suppliers.reduce((sum, row) => sum + row.spend, 0);
-    assert.ok(approx(supplierSum + model.metadata.population.unresolvedSupplierSpend, model.kpis.totalSpend, 0.01));
+    assert.ok(approx(supplierSum + model.metadata.population.unresolvedSupplierSpend, model.kpis.totalSpend ?? Number.NaN, 0.01));
     const shareSum = model.concentration.pareto.reduce((sum, row) => sum + (row.share ?? 0), 0);
     assert.ok(approx(shareSum, 1, 1e-5));
   });
@@ -468,7 +473,7 @@ describe("paridade (invariantes fortes)", () => {
   it("série mensal reconcilia com o total e enumera os meses do período", () => {
     const model = dashboard();
     assert.equal(model.charts.monthly.length, 12);
-    assert.ok(approx(model.charts.monthly.reduce((sum, p) => sum + p.spend, 0), model.kpis.totalSpend, 0.01));
+    assert.ok(approx(model.charts.monthly.reduce((sum, p) => sum + p.spend, 0), model.kpis.totalSpend ?? Number.NaN, 0.01));
     assert.equal(model.charts.monthly.reduce((sum, p) => sum + p.orderCount, 0), model.kpis.purchaseOrderCount);
     const jan = model.charts.monthly.find((p) => p.month === "2026-01")!;
     assert.equal(jan.spend, 1100);

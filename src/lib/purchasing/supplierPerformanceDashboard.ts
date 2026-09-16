@@ -11,10 +11,11 @@
  *   fallback `productCode` (código oficial). Nunca descrição, nome ou fuzzy;
  * - data operacional: `COALESCE(issuedAt, firstSeenAt)` — mesma janela da aba
  *   Avaliação Fornecedor (`periodWhere` em nomusPurchaseOrderEvaluation.server.ts);
- * - valor do pedido: `NomusPurchaseOrder.totalAmount` (cabeçalho oficial, como o
- *   KPI "Valor aberto" de Pedidos Nomus);
- * - valor da linha: `NomusPurchaseOrderItem.totalAmount` (`valorTotal` oficial da
- *   linha Nomus) — usado nas análises por matéria-prima;
+ * - valor do pedido: `NomusPurchaseOrder.totalAmount` (cabeçalho canônico do
+ *   espelho; o mapper preenche `valorTotal` oficial ou deriva quantidade × preço
+ *   ± desconto/acréscimo + acessórios de cabeçalho — ver nomusPurchaseOrderMapper);
+ * - valor da linha: `NomusPurchaseOrderItem.totalAmount` (`valorTotal` oficial ou
+ *   quantidade × valorUnitario ± ajustes da linha);
  * - cancelamento: `canceled === true OU stage === "CANCELED"` (predicado
  *   `canceledOnly` de nomusPurchaseOrderQuery.ts);
  * - avaliação: motor OP-26 (`resolveSupplierEvaluationAggregation`,
@@ -51,7 +52,7 @@ import {
  * Constantes / identidade
  * ------------------------------------------------------------------ */
 
-export const SUPPLIER_PERFORMANCE_DASHBOARD_VERSION = "2026-09-07.1";
+export const SUPPLIER_PERFORMANCE_DASHBOARD_VERSION = "2026-09-16.1";
 
 /** Moeda assumida quando o espelho não informa `currency` — mesma convenção da aba Pedidos Nomus (formatCurrency = BRL). */
 export const NOMUS_PURCHASE_ORDER_DEFAULT_CURRENCY = "BRL";
@@ -428,6 +429,19 @@ export type PopulationOrder = {
 
 export type DashboardSpendBasis = "order_header" | "line";
 
+/** Qualidade da dimensão financeira da população — ausência nunca vira zero. */
+export type DashboardFinancialDataStatus = "AVAILABLE" | "PARTIAL" | "UNAVAILABLE";
+
+export function resolveDashboardFinancialDataStatus(input: {
+  orderCount: number;
+  ordersWithoutValue: number;
+}): DashboardFinancialDataStatus {
+  if (input.orderCount <= 0) return "AVAILABLE";
+  if (input.ordersWithoutValue <= 0) return "AVAILABLE";
+  if (input.ordersWithoutValue >= input.orderCount) return "UNAVAILABLE";
+  return "PARTIAL";
+}
+
 export type DashboardCurrencyOption = { currency: string; orderCount: number; spend: number };
 
 export type DashboardPopulation = {
@@ -451,6 +465,7 @@ export type DashboardPopulation = {
   unresolvedMaterialLineCount: number;
   linesWithoutValueCount: number;
   ordersWithoutValueCount: number;
+  ordersWithValueCount: number;
   evaluationEnabled: boolean;
   identities: Map<number, DashboardSupplierIdentityInput>;
   now: Date;
@@ -594,6 +609,7 @@ export function buildSupplierPerformanceDashboardPopulation(
   const orders: PopulationOrder[] = [];
   let linesWithoutValueCount = 0;
   let ordersWithoutValueCount = 0;
+  let ordersWithValueCount = 0;
   for (const base of baseOrders) {
     if (filters.supplierExternalId != null && base.supplierKey !== filters.supplierExternalId) {
       excluded.otherSupplier += 1;
@@ -626,6 +642,7 @@ export function buildSupplierPerformanceDashboardPopulation(
       hasSpendValue = sums.valued > 0;
     }
     if (!hasSpendValue) ordersWithoutValueCount += 1;
+    else ordersWithValueCount += 1;
     orders.push({ ...base, lines, spend, hasSpendValue });
   }
 
@@ -639,6 +656,7 @@ export function buildSupplierPerformanceDashboardPopulation(
     unresolvedMaterialLineCount,
     linesWithoutValueCount,
     ordersWithoutValueCount,
+    ordersWithValueCount,
     evaluationEnabled: input.evaluationFeatureEnabled,
     identities,
     now,
@@ -702,6 +720,7 @@ type SupplierAgg = {
   identity: DashboardSupplierIdentityInput | null;
   spend: number;
   orderCount: number;
+  valuedOrderCount: number;
   lineCount: number;
   lineSpend: number;
   materialKeys: Set<DashboardMaterialKey>;
@@ -763,6 +782,7 @@ function aggregate(population: DashboardPopulation): Aggregates {
           identity: identity ?? null,
           spend: 0,
           orderCount: 0,
+          valuedOrderCount: 0,
           lineCount: 0,
           lineSpend: 0,
           materialKeys: new Set(),
@@ -775,6 +795,7 @@ function aggregate(population: DashboardPopulation): Aggregates {
       }
       supplier.spend += order.spend;
       supplier.orderCount += 1;
+      if (order.hasSpendValue) supplier.valuedOrderCount += 1;
       supplier.lineCount += order.lines.length;
       supplier.orders.push(order);
       if (order.evaluation) supplier.evaluations.push(order.evaluation);
@@ -902,8 +923,10 @@ export type DashboardSupplierRow = {
   matchMethod: string;
   registryStatus: string | null;
   spend: number;
+  hasFinancialValue: boolean;
   share: number | null;
   orderCount: number;
+  valuedOrderCount: number;
   lineCount: number;
   averageTicket: number | null;
   mixCount: number;
@@ -920,6 +943,7 @@ export type DashboardParetoRow = {
   supplierExternalId: number | null;
   name: string;
   spend: number;
+  hasFinancialValue: boolean;
   share: number | null;
   cumulativeShare: number | null;
   orderCount: number;
@@ -1094,6 +1118,8 @@ export type SupplierPerformanceDashboardReadModel = {
       unresolvedMaterialLines: number;
       linesWithoutValue: number;
       ordersWithoutValue: number;
+      ordersWithFinancialValue: number;
+      financialDataStatus: DashboardFinancialDataStatus;
       headerSpendTotal: number;
       lineSpendTotal: number;
     };
@@ -1112,7 +1138,7 @@ export type SupplierPerformanceDashboardReadModel = {
     currencies: DashboardCurrencyOption[];
   };
   kpis: {
-    totalSpend: number;
+    totalSpend: number | null;
     activeSuppliers: number;
     purchaseOrderCount: number;
     purchaseLineCount: number;
@@ -1780,11 +1806,11 @@ export function buildDashboardKpiDefinitions(population: DashboardPopulation): D
       ? "NomusPurchaseOrder.totalAmount (valor oficial do cabeçalho, como em Pedidos Nomus)"
       : "SUM(NomusPurchaseOrderItem.totalAmount) das linhas filtradas (valor oficial da linha)";
   return [
-    { key: "PURCHASE_SPEND", label: "Total comprado", description: "Valor dos pedidos de compra emitidos no período (não é valor recebido nem pago).", formula: "SUM(spend canônico)", source: spendSource, scope, limitation: "Pedidos sem valor informado não somam (contados em metadata). Moedas diferentes nunca são somadas." },
+    { key: "PURCHASE_SPEND", label: "Total comprado", description: "Valor dos pedidos de compra emitidos no período (não é valor recebido nem pago).", formula: "SUM(spend canônico dos pedidos com valor financeiro)", source: spendSource, scope, limitation: "Pedidos sem valor informado não somam e não viram R$ 0,00. Se nenhum pedido tem valor, o indicador fica indisponível. Moedas diferentes nunca são somadas." },
     { key: "ACTIVE_SUPPLIERS", label: "Fornecedores ativos", description: "Fornecedores com ao menos uma compra elegível.", formula: "COUNT DISTINCT supplierExternalId", source: "NomusPurchaseOrder.supplierExternalId", scope, limitation: "Pedidos sem ID de fornecedor não contam como fornecedor." },
     { key: "PURCHASE_ORDER_COUNT", label: "Pedidos de compra", description: "Quantidade de pedidos elegíveis.", formula: "COUNT DISTINCT NomusPurchaseOrder.id", source: "NomusPurchaseOrder", scope },
     { key: "PURCHASE_LINE_COUNT", label: "Linhas de compra", description: "Quantidade de linhas (itens) dos pedidos elegíveis.", formula: "COUNT NomusPurchaseOrderItem", source: "NomusPurchaseOrderItem", scope },
-    { key: "AVERAGE_ORDER_TICKET", label: "Ticket médio por pedido", description: "Valor médio por pedido.", formula: "Total comprado ÷ nº pedidos", source: spendSource, scope, limitation: "null quando não há pedidos." },
+    { key: "AVERAGE_ORDER_TICKET", label: "Ticket médio por pedido", description: "Valor médio por pedido com valor financeiro conhecido.", formula: "Total comprado disponível ÷ nº de pedidos com valor financeiro", source: spendSource, scope, limitation: "null quando não há pedidos com valor financeiro. Pedidos sem valor não entram no denominador." },
     { key: "MATERIAL_MIX_COUNT", label: "Mix total de matérias-primas", description: "Materiais distintos comprados.", formula: "COUNT DISTINCT materialKey", source: "NomusPurchaseOrderItem.productExternalId (fallback productCode)", scope, limitation: "Linhas sem ID/código de produto não entram (contadas em metadata)." },
     { key: "AVERAGE_SUPPLIER_MIX", label: "Mix médio por fornecedor", description: "Média de materiais distintos por fornecedor ativo.", formula: "média(COUNT DISTINCT materialKey por fornecedor)", source: "NomusPurchaseOrderItem × NomusPurchaseOrder.supplierExternalId", scope },
     { key: "SUPPLIER_EVALUATION_SCORE", label: "Nota média de fornecedores", description: "Média das notas dos pedidos avaliados no período (cada pedido tem o mesmo peso).", formula: "AVG(overallScore) das avaliações na escala vigente — motor OP-26", source: "NomusPurchaseOrderSupplierEvaluation", scope, limitation: "V1 (0–10) e V2 (1–5) nunca se misturam. Sem ponderação por valor." },
@@ -1838,10 +1864,12 @@ function supplierRowFromAgg(
     matchMethod: agg.identity?.matchMethod ?? "UNRESOLVED",
     registryStatus: agg.identity?.registryStatus ?? null,
     spend: roundMoney(agg.spend),
+    hasFinancialValue: agg.valuedOrderCount > 0,
     share: totalSpend > 0 ? roundRatio(agg.spend / totalSpend) : null,
     orderCount: agg.orderCount,
+    valuedOrderCount: agg.valuedOrderCount,
     lineCount: agg.lineCount,
-    averageTicket: agg.orderCount > 0 ? roundMoney(agg.spend / agg.orderCount) : null,
+    averageTicket: agg.valuedOrderCount > 0 ? roundMoney(agg.spend / agg.valuedOrderCount) : null,
     mixCount: agg.materialKeys.size,
     exclusiveMaterialCount: exclusive,
     dominantMaterialCount: dominant,
@@ -1865,6 +1893,7 @@ function buildParetoRows(
       supplierExternalId: row.supplierExternalId,
       name: row.name,
       spend: row.spend,
+      hasFinancialValue: row.hasFinancialValue,
       share: row.share,
       cumulativeShare: totalSpend > 0 ? roundRatio(cumulative / totalSpend) : null,
       orderCount: row.orderCount,
@@ -1879,6 +1908,7 @@ function buildParetoRows(
       supplierExternalId: null,
       name: UNRESOLVED_SUPPLIER_LABEL,
       spend: roundMoney(unresolved.spend),
+      hasFinancialValue: unresolved.spend !== 0,
       share: totalSpend > 0 ? roundRatio(unresolved.spend / totalSpend) : null,
       cumulativeShare: totalSpend > 0 ? roundRatio(cumulative / totalSpend) : null,
       orderCount: unresolved.orderCount,
@@ -1999,7 +2029,8 @@ export const SUPPLIER_PERFORMANCE_DASHBOARD_AUTHORITIES: Record<string, string> 
   MATERIAL_ID_AUTHORITY: "NomusPurchaseOrderItem.productExternalId (fallback productCode oficial)",
   MATERIAL_GROUP_AUTHORITY: "NomusProductCatalog.groupName via externalProductId",
   PURCHASE_DATE_AUTHORITY: "COALESCE(NomusPurchaseOrder.issuedAt, firstSeenAt) — periodWhere da Avaliação Fornecedor",
-  PURCHASE_VALUE_AUTHORITY: "NomusPurchaseOrder.totalAmount (cabeçalho); NomusPurchaseOrderItem.totalAmount (linha)",
+  PURCHASE_VALUE_AUTHORITY:
+    "NomusPurchaseOrder.totalAmount (cabeçalho canônico: valorTotal oficial ou quantidade×preço ± ajustes + acessórios); NomusPurchaseOrderItem.totalAmount (linha)",
   CANCELED_AUTHORITY: "canceled === true OU stage === CANCELED (canceledOnly de Pedidos Nomus)",
   CURRENCY_AUTHORITY: "NomusPurchaseOrder.currency; ausente = BRL (convenção de Pedidos Nomus); sem câmbio",
   SUPPLIER_EVALUATION_AUTHORITY: "NomusPurchaseOrderSupplierEvaluation + motor OP-26 (supplierPerformance.ts)",
@@ -2030,12 +2061,20 @@ export function buildSupplierPerformanceDashboard(
   const dualSource = concentrationRows.filter((row) => row.supplierCountObserved >= 2).length;
   const withIdentified = concentrationRows.filter((row) => row.supplierCountObserved >= 1);
 
+  const financialDataStatus = resolveDashboardFinancialDataStatus({
+    orderCount: agg.orderCount,
+    ordersWithoutValue: population.ordersWithoutValueCount,
+  });
+  const valuedOrderCount = population.ordersWithValueCount;
+  const knownTotalSpend = financialDataStatus === "UNAVAILABLE" ? null : roundMoney(agg.totalSpend);
+
   const kpis: SupplierPerformanceDashboardReadModel["kpis"] = {
-    totalSpend: roundMoney(agg.totalSpend),
+    totalSpend: knownTotalSpend,
     activeSuppliers,
     purchaseOrderCount: agg.orderCount,
     purchaseLineCount: agg.lineCount,
-    averageTicket: agg.orderCount > 0 ? roundMoney(agg.totalSpend / agg.orderCount) : null,
+    averageTicket:
+      knownTotalSpend == null || valuedOrderCount <= 0 ? null : roundMoney(knownTotalSpend / valuedOrderCount),
     materialMixCount,
     averageSupplierMix:
       activeSuppliers > 0 ? roundRatio(supplierRows.reduce((sum, row) => sum + row.mixCount, 0) / activeSuppliers) : null,
@@ -2146,6 +2185,8 @@ export function buildSupplierPerformanceDashboard(
         unresolvedMaterialLines: population.unresolvedMaterialLineCount,
         linesWithoutValue: population.linesWithoutValueCount,
         ordersWithoutValue: population.ordersWithoutValueCount,
+        ordersWithFinancialValue: population.ordersWithValueCount,
+        financialDataStatus,
         headerSpendTotal: roundMoney(headerSpendTotal),
         lineSpendTotal: roundMoney(lineSpendTotal),
       },

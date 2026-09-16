@@ -63,11 +63,32 @@ Parada conservadora: página vazia, página menor que `tamanhoPagina`, ou fim de
 
 * nome do fornecedor / CNPJ
 * status textual de cabeçalho
-* `valorTotal` de cabeçalho
+* `valorTotal` de cabeçalho (o espelho **deriva** o canônico — ver abaixo)
 * `quantidadeAtendida` / saldo
 * `dataModificacao` confiável para incremental
 
-`totalAmount` do cabeçalho **não é calculado** a partir das linhas nesta versão.
+### Valor financeiro canônico (desde 2026-09-16)
+
+O live **não envia** `valorTotal` de cabeçalho nem de linha. Campos oficiais
+presentes: `quantidade`, `valorUnitario`, `valorDesconto`/`percentualDesconto`,
+`valorTotalFrete`, `valorTotalSeguro`, `valorTotalOutrasDespesasAcessorias`.
+
+O mapper (`resolveNomusPurchaseOrderItemTotalAmount` /
+`resolveNomusPurchaseOrderHeaderTotalAmount`) persiste em
+`NomusPurchaseOrder.totalAmount` / `NomusPurchaseOrderItem.totalAmount`:
+
+1. `valorTotal` oficial, quando existir;
+2. senão, linha = `quantidade × valorUnitario` ± desconto/acréscimo oficiais;
+3. cabeçalho = soma das linhas valoradas + frete + seguro + outras despesas − desconto de cabeçalho.
+
+Não usa `parcelas[].valorParcela` (cronograma ≠ valor comprado). Não calcula
+câmbio. Pedidos já gravados com `totalAmount` null são atualizados pelo
+rematerialize local (lê `rawPayload`, sem nova chamada Nomus):
+
+```bash
+npm run nomus:purchase-orders:rematerialize-financials:preview
+npm run nomus:purchase-orders:rematerialize-financials
+```
 
 ## Campos oficiais de item (validados)
 

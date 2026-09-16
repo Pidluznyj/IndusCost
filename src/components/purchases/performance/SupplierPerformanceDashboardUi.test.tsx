@@ -140,17 +140,13 @@ describe("estados da tela", () => {
       "kpi-total-spend",
       "kpi-active-suppliers",
       "kpi-order-count",
-      "kpi-average-ticket",
       "kpi-material-mix",
-      "kpi-evaluation-score",
       "kpi-evaluation-coverage",
       "kpi-top5",
+      "performance-data-quality",
       "performance-concentration-section",
-      "kpi-single-source",
-      "kpi-dual-source",
-      "performance-pareto",
-      "performance-most-concentrated",
-      "performance-dominant-supplier",
+      "performance-supplier-spend",
+      "performance-material-risk",
       "performance-rankings-section",
       "performance-ranking-bestEvaluated",
       "performance-trend-section",
@@ -166,9 +162,9 @@ describe("estados da tela", () => {
       assert.ok(html.includes(`data-testid="${id}"`), `falta ${id}`);
     }
     assert.ok(html.includes("R$&nbsp;4.470,00") || html.includes("4.470,00"));
-    assert.ok(html.includes("Performance de Fornecedores"));
+    assert.ok(html.includes("Performance de fornecedores"));
     assert.ok(html.includes(`data-testid="supplier-link-${S3}"`)); // clique abre o 360
-    assert.ok(html.includes("Fornecedor único observado"));
+    assert.ok(html.includes("100% das compras do período concentradas em 1 fornecedor"));
   });
 
   it("estado parcial: avisos de multimoeda e dados não identificados", () => {
@@ -176,6 +172,41 @@ describe("estados da tela", () => {
     assert.ok(html.includes('data-testid="performance-notice-currency"'));
     assert.ok(html.includes("USD: 1"));
     assert.ok(html.includes('data-testid="performance-notice-partial"'));
+  });
+
+  it("valor financeiro ausente não aparece como R$ 0,00", () => {
+    const unavailable = buildSupplierPerformanceDashboard(
+      buildFixtureInput({
+        orders: [
+          {
+            id: "z1",
+            externalId: 1,
+            orderNumber: "Z1",
+            supplierExternalId: S1,
+            supplierName: "A",
+            supplierTaxId: null,
+            stage: "OPEN",
+            canceled: false,
+            issuedAt: new Date("2026-02-01T12:00:00"),
+            firstSeenAt: new Date("2026-02-01T12:00:00"),
+            expectedAt: null,
+            currency: null,
+            totalAmount: null,
+            paymentTerms: null,
+          },
+        ],
+        lines: [],
+        evaluations: [],
+      }),
+      filters
+    );
+    const html = renderView({ status: "success", data: unavailable });
+    const card = /data-testid="kpi-total-spend"[\s\S]*?<\/article>/.exec(html)![0];
+    const value = /data-testid="metric-card-value"[^>]*>[^<]*/.exec(card)?.[0] ?? "";
+    assert.match(value, />Indisponível$/);
+    assert.doesNotMatch(value, /R\$/);
+    assert.ok(html.includes("Valores financeiros indisponíveis para esta população"));
+    assert.ok(html.includes("Valores financeiros indisponíveis"));
   });
 });
 
@@ -195,9 +226,8 @@ describe("integridade semântica", () => {
     const html = renderView({ status: "success", data: off });
     assert.ok(html.includes('data-testid="performance-notice-evaluation"'));
     assert.ok(html.includes('data-testid="performance-evaluation-unavailable"'));
-    const card = /data-testid="kpi-evaluation-score"[\s\S]*?<\/article>/.exec(html)![0];
+    const card = /data-testid="kpi-evaluation-coverage"[\s\S]*?<\/article>/.exec(html)![0];
     assert.match(card, /Indisponível/);
-    assert.doesNotMatch(card, /\d,\d\d \/ 5/);
   });
 
   it("V1 e V2 separados: ranking principal só V2, bloco legado à parte", () => {
@@ -207,7 +237,7 @@ describe("integridade semântica", () => {
     assert.ok(best.includes(`ranking-row-${S3}`));
     assert.equal(best.includes(`ranking-row-${S2}`), false);
     assert.ok(html.includes('data-testid="ranking-tab-legacyEvaluated"'));
-    assert.ok(html.includes("Avaliações legadas (V1)"));
+    assert.ok(html.includes("Avaliações legadas"));
   });
 
   it("tooltip dos KPIs declara fórmula, escopo e fonte", () => {
@@ -227,7 +257,7 @@ describe("scorecard 360 e detalhe de MP", () => {
     assert.ok(html.includes("22.222.222/0001-22"));
     assert.ok(html.includes(`#${S3}`));
     assert.ok(html.includes("2.150,00"));
-    assert.ok(html.includes("2,50 / 5"));
+    assert.ok(html.includes("2,50"));
     assert.ok(html.includes("1 MPs exclusivas observadas"));
   });
 

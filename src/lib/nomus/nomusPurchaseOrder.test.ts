@@ -9,6 +9,9 @@ import {
 } from "./nomusPurchaseOrderClassifier.js";
 import {
   mapNomusPurchaseOrderPayload,
+  resolveNomusPurchaseOrderHeaderTotalAmount,
+  resolveNomusPurchaseOrderItemTotalAmount,
+  roundNomusMoney,
   stableNomusPayloadHash,
 } from "./nomusPurchaseOrderMapper.js";
 import {
@@ -191,7 +194,9 @@ describe("nomusPurchaseOrderMapper", () => {
     assert.equal(mapped.row.supplierName, null);
     assert.equal(mapped.row.paymentTerms, ".");
     assert.equal(mapped.row.freightAmount, 0);
-    assert.equal(mapped.row.totalAmount, null);
+    // Contrato live não envia valorTotal: deriva 50 × 62,77 (desconto 0) = 3.138,50.
+    assert.equal(mapped.row.totalAmount, 3138.5);
+    assert.equal(mapped.row.items[0]?.totalAmount, 3138.5);
     assert.equal(mapped.row.itemCount, 1);
     assert.equal(mapped.row.orderedQuantity, 50);
     assert.equal(mapped.row.receivedQuantity, null);
@@ -210,6 +215,7 @@ describe("nomusPurchaseOrderMapper", () => {
     assert.equal(item.orderedQuantity, 50);
     assert.equal(item.receivedQuantity, null);
     assert.equal(item.unitPrice, 62.77);
+    assert.equal(item.totalAmount, 3138.5);
     assert.equal(item.lineCode, "000010");
     assert.equal(item.lineExternalId, null);
     assert.equal(item.itemStatusCode, 2);
@@ -223,6 +229,57 @@ describe("nomusPurchaseOrderMapper", () => {
     assert.equal(mapped.row.items[0].receivedQuantity, null);
     assert.equal(mapped.row.receivedQuantity, null);
     assert.equal(mapped.row.stage, "RECEIVED");
+  });
+});
+
+describe("valor financeiro canônico do pedido Nomus", () => {
+  it("prefers valorTotal oficial do cabeçalho e não recalcula a partir das linhas", () => {
+    const mapped = mapNomusPurchaseOrderPayload(SANITIZED_PAYLOAD);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.totalAmount, 1250.5);
+    assert.equal(mapped.row.items[0]?.totalAmount, 1000);
+    assert.equal(
+      resolveNomusPurchaseOrderHeaderTotalAmount(SANITIZED_PAYLOAD, mapped.row.items).source,
+      "header_valor_total"
+    );
+  });
+
+  it("deriva linha de quantidade × preço − desconto quando valorTotal está ausente", () => {
+    assert.equal(
+      resolveNomusPurchaseOrderItemTotalAmount(
+        { quantidade: "10", valorUnitario: "50,00", valorDesconto: "20,00" },
+        10,
+        50
+      ),
+      480
+    );
+    assert.equal(
+      resolveNomusPurchaseOrderItemTotalAmount(
+        { quantidade: "10", valorUnitario: "50,00", percentualDesconto: "10" },
+        10,
+        50
+      ),
+      450
+    );
+  });
+
+  it("preserva zero financeiro real e distingue ausência", () => {
+    assert.equal(resolveNomusPurchaseOrderItemTotalAmount({ valorTotal: "0" }, 10, 50), 0);
+    assert.equal(resolveNomusPurchaseOrderItemTotalAmount({}, null, null), null);
+    assert.equal(roundNomusMoney(50 * 62.77), 3138.5);
+  });
+
+  it("não usa parcelas como valor comprado", () => {
+    const mapped = mapNomusPurchaseOrderPayload(LIVE_PAYLOAD);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.totalAmount, 3138.5);
+    assert.notEqual(mapped.row.totalAmount, 1136.68);
+    assert.equal(
+      resolveNomusPurchaseOrderHeaderTotalAmount(LIVE_PAYLOAD, mapped.row.items).source,
+      "derived_lines_plus_accessories"
+    );
   });
 });
 

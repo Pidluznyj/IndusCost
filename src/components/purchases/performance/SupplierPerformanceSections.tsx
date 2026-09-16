@@ -12,7 +12,6 @@ import { SUPPLIER_EVALUATION_CRITERIA, type SupplierEvaluationCriterionKey } fro
 import {
   ADVANCED_METRIC_GROUP_LABELS,
   ADVANCED_METRIC_UNAVAILABLE_LABEL,
-  SINGLE_SOURCE_OBSERVED_LABEL,
   SINGLE_SOURCE_OBSERVED_TOOLTIP,
   type AdvancedMetricEntry,
   type AdvancedMetricGroup,
@@ -28,6 +27,7 @@ import {
   describeAdvancedMetricValue,
   describeDashboardKpi,
   findDashboardKpiDefinition,
+  formatDashboardCoverageContext,
   formatDashboardDateTime,
   formatDashboardDecimal,
   formatDashboardInteger,
@@ -37,13 +37,13 @@ import {
   formatDashboardPeriodLabel,
   formatDashboardPrice,
   formatDashboardScore,
+  FINANCIAL_DATA_STATUS_LABELS,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { SupplierPerformanceKpiCard } from "./SupplierPerformanceKpiCard";
 import {
   EvaluationDistributionChart,
   ScoreVsSpendChart,
-  SupplierParetoChart,
-  SupplierSpendChart,
+  SupplierConcentrationChart,
 } from "./SupplierPerformanceCharts";
 
 type ReadModel = SupplierPerformanceDashboardReadModel;
@@ -175,9 +175,46 @@ export function MaterialLinkButton({
  * Seção 1 — Visão executiva
  * ------------------------------------------------------------------ */
 
+export function DataQualityBar({ data }: { data: ReadModel }) {
+  const p = data.metadata.population;
+  const financial = p.financialDataStatus;
+  const evaluation = data.evaluation;
+  const evaluationHint = evaluation.available
+    ? `${formatDashboardInteger(data.kpis.evaluatedOrders)} de ${formatDashboardInteger(data.kpis.eligibleOrders)} pedidos avaliados · cobertura ${formatDashboardPercent(data.kpis.evaluationCoverage)}`
+    : evaluation.reason;
+  const financialHint =
+    financial === "PARTIAL"
+      ? `Atenção: ${formatDashboardInteger(p.ordersWithFinancialValue)} de ${formatDashboardInteger(p.orderCount)} pedidos possuem valor financeiro`
+      : FINANCIAL_DATA_STATUS_LABELS[financial];
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2 text-xs",
+        financial === "UNAVAILABLE"
+          ? "border-amber-200 bg-amber-50 text-amber-950"
+          : financial === "PARTIAL"
+            ? "border-amber-200 bg-amber-50 text-amber-950"
+            : "border-border bg-muted/30 text-muted-foreground"
+      )}
+      data-testid="performance-data-quality"
+    >
+      <p>
+        {formatDashboardInteger(p.orderCount)} pedidos · {formatDashboardInteger(p.lineCount)} linhas ·{" "}
+        {formatDashboardInteger(p.supplierCount)} fornecedores · {formatDashboardInteger(p.materialCount)} matérias-primas
+      </p>
+      <p className="mt-0.5">{evaluationHint}</p>
+      <p className="mt-0.5">{financialHint}</p>
+      <p className="mt-0.5">
+        Última sincronização Nomus: {formatDashboardDateTime(data.metadata.lastSyncedAt)}
+        <span className="mx-1">·</span>
+        Empresa: idEmpresa existe no payload Nomus, sem cadastro de empresas para filtro.
+      </p>
+    </div>
+  );
+}
+
 export function ExecutiveKpisSection({
   data,
-  onSelectSupplier: _onSelectSupplier,
 }: {
   data: ReadModel;
   onSelectSupplier?: (supplierExternalId: number) => void;
@@ -186,22 +223,27 @@ export function ExecutiveKpisSection({
   const defs = data.metadata.kpiDefinitions;
   const tip = (key: string) => describeDashboardKpi(findDashboardKpiDefinition(defs, key));
   const evaluationUnavailable = data.evaluation.available === false ? data.evaluation.reason : null;
+  const financialUnavailable =
+    data.metadata.population.financialDataStatus === "UNAVAILABLE"
+      ? "Valores financeiros indisponíveis para esta população"
+      : null;
+  const ticketHint =
+    financialUnavailable
+      ? undefined
+      : `Ticket médio: ${formatDashboardMoney(data.kpis.averageTicket, currency)}`;
   return (
     <DashboardSection
-      title="Visão executiva"
-      eyebrow="Seção 1"
-      description={`Compras de ${formatDashboardPeriodLabel(data.metadata.period)} · moeda ${currency} · ${data.metadata.eligibilityRule.applied}`}
+      title="Quanto estamos comprando?"
+      description={`Compras de ${formatDashboardPeriodLabel(data.metadata.period)} · moeda ${currency}`}
       testId="performance-executive-section"
     >
       <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-executive-kpis">
-        <SupplierPerformanceKpiCard testId="kpi-total-spend" label="Total comprado" value={formatDashboardMoney(data.kpis.totalSpend, currency)} tone="money" tooltip={tip("PURCHASE_SPEND")} hint={data.metadata.spendBasis === "line" ? "Base: valor das linhas filtradas" : "Base: valor oficial do pedido"} />
+        <SupplierPerformanceKpiCard testId="kpi-total-spend" label="Total comprado" value={formatDashboardMoney(data.kpis.totalSpend, currency)} tone="money" tooltip={tip("PURCHASE_SPEND")} hint={ticketHint} unavailableReason={financialUnavailable} />
+        <SupplierPerformanceKpiCard testId="kpi-order-count" label="Pedidos" value={formatDashboardInteger(data.kpis.purchaseOrderCount)} tooltip={tip("PURCHASE_ORDER_COUNT")} hint={`${formatDashboardInteger(data.kpis.purchaseLineCount)} linhas`} />
         <SupplierPerformanceKpiCard testId="kpi-active-suppliers" label="Fornecedores ativos" value={formatDashboardInteger(data.kpis.activeSuppliers)} tooltip={tip("ACTIVE_SUPPLIERS")} />
-        <SupplierPerformanceKpiCard testId="kpi-order-count" label="Pedidos de compra" value={formatDashboardInteger(data.kpis.purchaseOrderCount)} tooltip={tip("PURCHASE_ORDER_COUNT")} hint={`${formatDashboardInteger(data.kpis.purchaseLineCount)} linhas`} />
-        <SupplierPerformanceKpiCard testId="kpi-average-ticket" label="Ticket médio por pedido" value={formatDashboardMoney(data.kpis.averageTicket, currency)} tooltip={tip("AVERAGE_ORDER_TICKET")} />
-        <SupplierPerformanceKpiCard testId="kpi-material-mix" label="Mix total de MPs" value={formatDashboardInteger(data.kpis.materialMixCount)} tooltip={tip("MATERIAL_MIX_COUNT")} hint={`Mix médio por fornecedor: ${formatDashboardDecimal(data.kpis.averageSupplierMix, 1)}`} />
-        <SupplierPerformanceKpiCard testId="kpi-evaluation-score" label="Nota média de fornecedores" value={formatDashboardScore(data.kpis.evaluationScore, data.kpis.evaluationScaleMax)} tooltip={tip("SUPPLIER_EVALUATION_SCORE")} unavailableReason={evaluationUnavailable} hint={data.evaluation.available ? `${formatDashboardInteger(data.kpis.evaluatedOrders)} pedidos avaliados · escala 1–${data.kpis.evaluationScaleMax ?? 5}` : undefined} />
+        <SupplierPerformanceKpiCard testId="kpi-material-mix" label="Matérias-primas" value={formatDashboardInteger(data.kpis.materialMixCount)} tooltip={tip("MATERIAL_MIX_COUNT")} />
         <SupplierPerformanceKpiCard testId="kpi-evaluation-coverage" label="Cobertura de avaliação" value={data.kpis.evaluationCoverage == null && data.evaluation.available ? "Sem pedidos elegíveis no período" : formatDashboardPercent(data.kpis.evaluationCoverage)} tooltip={tip("SUPPLIER_EVALUATION_COVERAGE")} unavailableReason={evaluationUnavailable} hint={data.evaluation.available ? `${formatDashboardInteger(data.kpis.evaluatedOrders)} de ${formatDashboardInteger(data.kpis.eligibleOrders)} pedidos` : undefined} />
-        <SupplierPerformanceKpiCard testId="kpi-top5" label="Concentração Top 5" value={formatDashboardPercent(data.kpis.top5Concentration)} tooltip={tip("TOP5_CONCENTRATION")} hint={`Top 1: ${formatDashboardPercent(data.kpis.top1Concentration)} · Top 3: ${formatDashboardPercent(data.kpis.top3Concentration)}`} />
+        <SupplierPerformanceKpiCard testId="kpi-top5" label="Concentração Top 5" value={formatDashboardPercent(data.kpis.top5Concentration)} tooltip={tip("TOP5_CONCENTRATION")} unavailableReason={financialUnavailable} hint={financialUnavailable ? undefined : `Top 1: ${formatDashboardPercent(data.kpis.top1Concentration)}`} />
       </SummaryKpiGrid>
     </DashboardSection>
   );
@@ -211,75 +253,77 @@ export function ExecutiveKpisSection({
  * Seção 2 — Concentração e risco de abastecimento
  * ------------------------------------------------------------------ */
 
-function MaterialConcentrationTable({
+function supplyObservationLabel(row: DashboardMaterialConcentrationRow): string {
+  if (row.supplierCountObserved <= 0) return "Sem fornecedor identificado";
+  if (row.singleSourceObserved) return "100% das compras do período concentradas em 1 fornecedor";
+  return `${row.supplierCountObserved} fornecedores observados no período`;
+}
+
+function MaterialRiskTable({
   rows,
   currency,
-  mode,
+  financialStatus,
   onSelectSupplier,
   onSelectMaterial,
 }: {
   rows: DashboardMaterialConcentrationRow[];
   currency: string;
-  mode: "concentration" | "dominant";
+  financialStatus: SupplierPerformanceDashboardReadModel["metadata"]["population"]["financialDataStatus"];
   onSelectSupplier?: (id: number) => void;
   onSelectMaterial?: (key: string) => void;
 }) {
+  const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
     <OverlayTable stickyHeader>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell>{mode === "dominant" ? "Fornecedor principal" : "Fornecedor dominante"}</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Share</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Spend</OverlayTable.HeadCell>
-          {mode === "dominant" ? (
-            <>
-              <OverlayTable.HeadCell>Segundo fornecedor</OverlayTable.HeadCell>
-              <OverlayTable.HeadCell align="right">Share do 2º</OverlayTable.HeadCell>
-            </>
-          ) : null}
-          <OverlayTable.HeadCell align="right">Fornecedores observados</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Descrição</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Nº fornecedores observados</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Fornecedor principal</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Participação</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Pedidos</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Observação</OverlayTable.HeadCell>
         </OverlayTable.Row>
       </OverlayTable.Head>
       <OverlayTable.Body>
         {rows.length === 0 ? (
-          <EmptyRows colSpan={mode === "dominant" ? 7 : 5} message="Nenhuma matéria-prima com fornecedor identificado na população filtrada." />
+          <EmptyRows colSpan={8} message="Nenhuma matéria-prima com fornecedor identificado na população filtrada." />
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={row.materialKey}>
-              <OverlayTable.Cell>
-                <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} />
+              <OverlayTable.Cell className="max-w-[14rem]">
+                <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={null} onSelect={onSelectMaterial} />
               </OverlayTable.Cell>
-              <OverlayTable.Cell>
+              <OverlayTable.Cell className="max-w-[18rem] truncate text-muted-foreground" title={row.description ?? undefined}>
+                {row.description ?? "—"}
+              </OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>
+                {financialUnavailable ? "Indisponível" : formatDashboardMoney(row.dominantBasis === "financial" || row.spend > 0 ? row.spend : null, currency)}
+              </OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.supplierCountObserved)}</OverlayTable.Cell>
+              <OverlayTable.Cell className="max-w-[16rem]">
                 {row.dominant ? (
-                  <div className="flex flex-wrap items-center gap-1">
-                    <SupplierLinkButton supplierExternalId={row.dominant.supplierExternalId} name={row.dominant.name} onSelect={onSelectSupplier} />
+                  <div className="min-w-0">
+                    <SupplierLinkButton supplierExternalId={row.dominant.supplierExternalId} name={row.dominant.name} onSelect={onSelectSupplier} className="block truncate" />
                     {row.dominantBasis === "orders" ? (
-                      <OverlayBadge tone="slate" title="Sem valor de linha provado: fornecedor mais frequente por nº de pedidos, não principal financeiro.">
-                        Mais frequente
-                      </OverlayBadge>
-                    ) : null}
-                    {row.singleSourceObserved ? (
-                      <OverlayBadge tone="amber" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>
-                        {SINGLE_SOURCE_OBSERVED_LABEL}
-                      </OverlayBadge>
+                      <span className="block text-[11px] text-muted-foreground" title="Sem valor de linha provado: fornecedor mais frequente por nº de pedidos, não principal financeiro.">
+                        Mais frequente no período
+                      </span>
                     ) : null}
                   </div>
                 ) : (
                   "—"
                 )}
               </OverlayTable.Cell>
-              <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.dominant?.share)}</OverlayTable.Cell>
-              <OverlayTable.Cell align="right" mono>{formatDashboardMoney(mode === "dominant" ? row.dominant?.spend : row.spend, currency)}</OverlayTable.Cell>
-              {mode === "dominant" ? (
-                <>
-                  <OverlayTable.Cell>
-                    {row.second ? <SupplierLinkButton supplierExternalId={row.second.supplierExternalId} name={row.second.name} onSelect={onSelectSupplier} /> : "—"}
-                  </OverlayTable.Cell>
-                  <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.second?.share)}</OverlayTable.Cell>
-                </>
-              ) : null}
-              <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.supplierCountObserved)}</OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>
+                {financialUnavailable ? "Indisponível" : formatDashboardPercent(row.dominant?.share)}
+              </OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.orderCount)}</OverlayTable.Cell>
+              <OverlayTable.Cell className="max-w-[16rem] text-xs text-muted-foreground" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>
+                {supplyObservationLabel(row)}
+              </OverlayTable.Cell>
             </OverlayTable.Row>
           ))
         )}
@@ -298,39 +342,36 @@ export function ConcentrationSection({
   onSelectMaterial?: (key: string) => void;
 }) {
   const currency = data.metadata.currency.selected;
-  const defs = data.metadata.kpiDefinitions;
-  const tip = (key: string) => describeDashboardKpi(findDashboardKpiDefinition(defs, key));
+  const financialStatus = data.metadata.population.financialDataStatus;
+  const riskRows = data.concentration.dominantSupplierByMaterial;
   return (
     <DashboardSection
-      title="Concentração e risco de abastecimento"
-      eyebrow="Seção 2"
-      description="Concentração de compras por fornecedor e dependência observada por matéria-prima. 'Fornecedor único observado' considera somente compras do período — não prova homologação única."
+      title="Onde estamos concentrados?"
+      description="Compras por fornecedor e concentração observada por matéria-prima no período. Número de fornecedores observados não prova homologação única nem ausência de alternativas."
       testId="performance-concentration-section"
     >
-      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-concentration-kpis">
-        <SupplierPerformanceKpiCard testId="kpi-single-source" label="MPs com fornecedor único observado" value={formatDashboardInteger(data.kpis.singleSourceObservedCount)} tooltip={tip("SINGLE_SOURCE_OBSERVED_COUNT")} hint={`de ${formatDashboardInteger(data.kpis.materialMixCount)} MPs compradas`} />
-        <SupplierPerformanceKpiCard testId="kpi-single-source-rate" label="% MPs single-source observado" value={formatDashboardPercent(data.kpis.singleSourceObservedRate)} tooltip={tip("SINGLE_SOURCE_OBSERVED_RATE")} />
-        <SupplierPerformanceKpiCard testId="kpi-dual-source" label="Dual sourcing observado" value={`${formatDashboardInteger(data.kpis.dualSourceObservedCount)} · ${formatDashboardPercent(data.kpis.dualSourceObservedRate)}`} tooltip={tip("DUAL_SOURCE_OBSERVED_RATE")} hint="MPs com ≥ 2 fornecedores observados" />
-        <SupplierPerformanceKpiCard testId="kpi-avg-suppliers-material" label="Média de fornecedores por MP" value={formatDashboardDecimal(data.kpis.averageSuppliersPerMaterial, 2)} tooltip={tip("AVG_SUPPLIERS_PER_MATERIAL")} hint={data.kpis.materialsWithoutIdentifiedSupplier > 0 ? `${formatDashboardInteger(data.kpis.materialsWithoutIdentifiedSupplier)} MPs sem fornecedor identificado` : undefined} />
-      </SummaryKpiGrid>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <OverlaySection title="Concentração de compras por fornecedor (Pareto)" description="Barras: valor comprado. Linha: % acumulado do total. Clique na barra para abrir o fornecedor." testId="performance-pareto">
-          <SupplierParetoChart rows={data.concentration.pareto} currency={currency} onSelectSupplier={onSelectSupplier} />
-        </OverlaySection>
-        <OverlaySection title="Valor comprado por fornecedor (Top 10)" description="Spend e share por fornecedor." testId="performance-spend-chart">
-          <SupplierSpendChart rows={data.charts.spendBySupplier} currency={currency} onSelectSupplier={onSelectSupplier} />
-        </OverlaySection>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <OverlaySection title="MPs com maior concentração de fornecedor" description="Maior share de um fornecedor dentro do valor da MP. 100% = fornecedor único observado." padded={false} testId="performance-most-concentrated">
-          <MaterialConcentrationTable rows={data.concentration.mostConcentratedMaterials} currency={currency} mode="concentration" onSelectSupplier={onSelectSupplier} onSelectMaterial={onSelectMaterial} />
-        </OverlaySection>
-        <OverlaySection title="Fornecedor principal por matéria-prima" description="Maior share financeiro da MP (ou mais frequente, quando não há valor de linha)." padded={false} testId="performance-dominant-supplier">
-          <MaterialConcentrationTable rows={data.concentration.dominantSupplierByMaterial} currency={currency} mode="dominant" onSelectSupplier={onSelectSupplier} onSelectMaterial={onSelectMaterial} />
-        </OverlaySection>
-      </div>
+      <OverlaySection title="Compras por fornecedor" description="Barras em largura total. Alterne valor comprado, Pareto ou número de pedidos." testId="performance-supplier-spend">
+        <SupplierConcentrationChart
+          rows={data.concentration.pareto}
+          currency={currency}
+          financialStatus={financialStatus}
+          onSelectSupplier={onSelectSupplier}
+        />
+      </OverlaySection>
+      <OverlaySection
+        title="Risco de abastecimento por matéria-prima"
+        description="Uma linha por matéria-prima comprada no período. '1 fornecedor observado' descreve só as compras filtradas — não afirma que não existam outros fornecedores homologados."
+        padded={false}
+        testId="performance-material-risk"
+      >
+        <MaterialRiskTable
+          rows={riskRows}
+          currency={currency}
+          financialStatus={financialStatus}
+          onSelectSupplier={onSelectSupplier}
+          onSelectMaterial={onSelectMaterial}
+        />
+      </OverlaySection>
     </DashboardSection>
   );
 }
@@ -343,102 +384,97 @@ type RankingTabId = "bestEvaluated" | "topSpend" | "topOrderCount" | "topMix" | 
 
 const RANKING_TABS: Array<{ id: RankingTabId; label: string; description: string }> = [
   { id: "bestEvaluated", label: "Melhores avaliados", description: "Fornecedores com metodologia V2 (1–5), nota consolidada DESC. Empate: nome/ID." },
-  { id: "topSpend", label: "Maior spend", description: "Maiores fornecedores por valor comprado no período." },
+  { id: "topSpend", label: "Maior valor comprado", description: "Maiores fornecedores por valor comprado no período." },
   { id: "topOrderCount", label: "Mais pedidos", description: "Mais compras realizadas — COUNT DISTINCT de pedidos (não soma quantidade física)." },
   { id: "topMix", label: "Maior mix", description: "Maior número de matérias-primas distintas compradas." },
   { id: "lowestEvaluated", label: "Menores avaliações", description: "Fornecedores V2 com menor nota consolidada (bloco de atenção, sem score inventado)." },
-  { id: "legacyEvaluated", label: "Avaliações legadas (V1)", description: "Fornecedores apenas com avaliações V1 (escala 0–10). Nunca misturadas com V2." },
+  { id: "legacyEvaluated", label: "Avaliações legadas", description: "Fornecedores apenas com avaliações V1 (escala 0–10). Nunca misturadas com V2." },
 ];
 
 function RankingTable({
   rows,
   currency,
-  mode,
-  criterion,
+  financialStatus,
   onSelectSupplier,
 }: {
   rows: DashboardRankedSupplierRow[];
   currency: string;
-  mode: RankingTabId;
-  criterion: SupplierEvaluationCriterionKey | null;
+  financialStatus: SupplierPerformanceDashboardReadModel["metadata"]["population"]["financialDataStatus"];
   onSelectSupplier?: (id: number) => void;
 }) {
-  const evaluated = mode === "bestEvaluated" || mode === "lowestEvaluated" || mode === "legacyEvaluated";
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
     <OverlayTable stickyHeader>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell align="right">#</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Fornecedor</OverlayTable.HeadCell>
-          {evaluated ? (
-            <>
-              <OverlayTable.HeadCell align="right">Nota</OverlayTable.HeadCell>
-              <OverlayTable.HeadCell align="right">Avaliações</OverlayTable.HeadCell>
-              <OverlayTable.HeadCell align="right">Cobertura</OverlayTable.HeadCell>
-              {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
-                <OverlayTable.HeadCell key={c.key} align="right" className={criterion === c.key ? "text-primary" : undefined}>
-                  {c.shortLabel}
-                </OverlayTable.HeadCell>
-              ))}
-            </>
-          ) : null}
+          <OverlayTable.HeadCell align="right">Nota</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Avaliações</OverlayTable.HeadCell>
+          {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
+            <OverlayTable.HeadCell key={c.key} align="right">{c.shortLabel}</OverlayTable.HeadCell>
+          ))}
           <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">% do total</OverlayTable.HeadCell>
           <OverlayTable.HeadCell align="right">Pedidos</OverlayTable.HeadCell>
-          {mode === "topOrderCount" ? <OverlayTable.HeadCell align="right">Linhas</OverlayTable.HeadCell> : null}
-          <OverlayTable.HeadCell align="right">Ticket médio</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Mix</OverlayTable.HeadCell>
-          {mode === "topMix" ? <OverlayTable.HeadCell align="right">MPs exclusivas</OverlayTable.HeadCell> : null}
-          {!evaluated ? <OverlayTable.HeadCell align="right">Nota atual</OverlayTable.HeadCell> : null}
         </OverlayTable.Row>
       </OverlayTable.Head>
       <OverlayTable.Body>
         {rows.length === 0 ? (
-          <EmptyRows colSpan={14} message={evaluated ? "Nenhum fornecedor com avaliação comparável nesta metodologia no período." : "Nenhum fornecedor na população filtrada."} />
+          <EmptyRows colSpan={10} message="Nenhum fornecedor na população filtrada." />
         ) : (
           rows.map((row) => {
             const ev = row.evaluation;
-            const scaleMax = ev?.scaleMax ?? null;
+            const coverage = formatDashboardCoverageContext(ev?.summary.coverage, ev?.evaluationCount, row.orderCount);
+            const open = expanded === row.supplierExternalId;
             return (
-              <OverlayTable.Row key={row.supplierExternalId} data-testid={`ranking-row-${row.supplierExternalId}`}>
-                <OverlayTable.Cell align="right" mono>{row.position}</OverlayTable.Cell>
-                <OverlayTable.Cell>
-                  <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.name} onSelect={onSelectSupplier} />
-                  {row.document ? <span className="block text-[11px] text-muted-foreground">{row.document}</span> : null}
-                </OverlayTable.Cell>
-                {evaluated ? (
-                  <>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.overallScore, scaleMax)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardInteger(ev?.evaluationCount)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardPercent(ev?.summary.coverage)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.qualityScore, scaleMax)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.deliveryScore, scaleMax)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.conformityScore, scaleMax)}</OverlayTable.Cell>
-                    <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.serviceScore, scaleMax)}</OverlayTable.Cell>
-                  </>
-                ) : null}
-                <OverlayTable.Cell align="right" mono>{formatDashboardMoney(row.spend, currency)}</OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.share)}</OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.orderCount)}</OverlayTable.Cell>
-                {mode === "topOrderCount" ? <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.lineCount)}</OverlayTable.Cell> : null}
-                <OverlayTable.Cell align="right" mono>{formatDashboardMoney(row.averageTicket, currency)}</OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.mixCount)}</OverlayTable.Cell>
-                {mode === "topMix" ? (
-                  <OverlayTable.Cell align="right" mono title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{formatDashboardInteger(row.exclusiveMaterialCount)}</OverlayTable.Cell>
-                ) : null}
-                {!evaluated ? (
-                  <OverlayTable.Cell align="right" mono>
-                    {ev?.summary.overallScore != null ? (
-                      <span title={ev.methodologyVersion === 1 ? "Avaliação legada V1 (0–10)" : "Nota atual V2 (1–5) — pedidos do período"}>
-                        {formatDashboardScore(ev.summary.overallScore, ev.scaleMax)}
-                        {ev.methodologyVersion === 1 ? " (V1)" : ""}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground" title="Sem avaliação finalizada no período">—</span>
-                    )}
+              <React.Fragment key={row.supplierExternalId}>
+                <OverlayTable.Row data-testid={`ranking-row-${row.supplierExternalId}`}>
+                  <OverlayTable.Cell align="right" mono>{row.position}</OverlayTable.Cell>
+                  <OverlayTable.Cell className="min-w-[14rem] max-w-[22rem]">
+                    <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.name} onSelect={onSelectSupplier} className="block truncate" />
+                    <button
+                      type="button"
+                      className="mt-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                      onClick={() => setExpanded(open ? null : row.supplierExternalId)}
+                      data-testid={`ranking-expand-${row.supplierExternalId}`}
+                    >
+                      {open ? "Ocultar detalhes" : "Ver detalhes"}
+                    </button>
                   </OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono title={ev?.methodologyVersion === 1 ? "Escala 0–10 (V1)" : "Escala 1–5"}>
+                    {formatDashboardScore(ev?.summary.overallScore, ev?.scaleMax)}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" className="whitespace-nowrap">
+                    <span className="font-mono text-xs tabular-nums">{formatDashboardInteger(ev?.evaluationCount ?? 0)}</span>
+                    {coverage.context ? (
+                      <span className="block text-[11px] text-muted-foreground">{coverage.percent} · {coverage.context}</span>
+                    ) : null}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.qualityScore, ev?.scaleMax)}</OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.deliveryScore, ev?.scaleMax)}</OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.conformityScore, ev?.scaleMax)}</OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>{formatDashboardScore(ev?.summary.serviceScore, ev?.scaleMax)}</OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>
+                    {financialUnavailable || !row.hasFinancialValue
+                      ? "Indisponível"
+                      : formatDashboardMoney(row.spend, currency)}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.orderCount)}</OverlayTable.Cell>
+                </OverlayTable.Row>
+                {open ? (
+                  <OverlayTable.Row>
+                    <OverlayTable.Cell colSpan={10} className="bg-muted/30 text-xs text-muted-foreground">
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>CNPJ: <span className="text-foreground">{row.document ?? "—"}</span></div>
+                        <div>Participação: <span className="text-foreground">{financialUnavailable || !row.hasFinancialValue ? "Indisponível" : formatDashboardPercent(row.share)}</span></div>
+                        <div>Ticket médio: <span className="text-foreground">{financialUnavailable || !row.hasFinancialValue ? "Indisponível" : formatDashboardMoney(row.averageTicket, currency)}</span></div>
+                        <div>Mix: <span className="text-foreground">{formatDashboardInteger(row.mixCount)} matérias-primas</span></div>
+                      </div>
+                    </OverlayTable.Cell>
+                  </OverlayTable.Row>
                 ) : null}
-              </OverlayTable.Row>
+              </React.Fragment>
             );
           })
         )}
@@ -465,9 +501,8 @@ export function SupplierRankingsSection({
   const evaluationOff = !data.evaluation.available;
   return (
     <DashboardSection
-      title="Rankings de fornecedores"
-      eyebrow="Seção 3"
-      description={`Top ${data.rankings.limit}. Ordenação determinística: valor DESC, empate por nome/ID. Nenhum score composto.`}
+      title="Como os fornecedores estão performando?"
+      description={`Top ${data.rankings.limit}. Ordenação determinística. Notas na escala 1–5 (V2) ou 0–10 (V1), sem repetir a escala em cada célula.`}
       testId="performance-rankings-section"
     >
       <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-muted/40 p-1" role="tablist" aria-label="Rankings">
@@ -507,7 +542,7 @@ export function SupplierRankingsSection({
         {evaluationOff && (tab === "bestEvaluated" || tab === "lowestEvaluated" || tab === "legacyEvaluated") ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">{data.evaluation.available === false ? data.evaluation.reason : null}</div>
         ) : (
-          <RankingTable rows={rows} currency={currency} mode={tab} criterion={criterion} onSelectSupplier={onSelectSupplier} />
+          <RankingTable rows={rows} currency={currency} financialStatus={data.metadata.population.financialDataStatus} onSelectSupplier={onSelectSupplier} />
         )}
       </OverlaySection>
     </DashboardSection>
