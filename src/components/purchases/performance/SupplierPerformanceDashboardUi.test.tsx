@@ -342,6 +342,10 @@ describe("classificação de fornecedores", () => {
     assert.equal(/<th[^>]*>Conformidade</.test(table), false);
     assert.equal(/<th[^>]*>Atendimento</.test(table), false);
     assert.equal(html.includes("classification-pillars-"), false);
+    assert.match(html, /data-testid="classification-report-header"/);
+    assert.match(html, /<details[^>]*data-testid="classification-report-header"/);
+    assert.equal(/<details[^>]*\sopen[\s>]/.test(html), false);
+    assert.match(html, /Ver detalhes/);
   });
 });
 

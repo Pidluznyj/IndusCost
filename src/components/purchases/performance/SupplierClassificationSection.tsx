@@ -108,11 +108,22 @@ function HeaderField({ label, value }: { label: string; value: React.ReactNode }
 export function ClassificationReportHeader({ report }: { report: SupplierClassificationReport }) {
   const m = report.metadata;
   return (
-    <OverlaySection
-      title="Identificação do relatório"
-      description={m.purpose}
-      testId="classification-report-header"
+    <details
+      className="min-w-0 rounded-[var(--radius-overlay-inner)] border border-[color:var(--color-overlay-border)] bg-white"
+      data-testid="classification-report-header"
     >
+      <summary className="cursor-pointer list-none px-3 py-2 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Identificação do relatório
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">{m.purpose}</span>
+          </span>
+          <span className="shrink-0 text-[11px] font-medium text-primary">Ver detalhes</span>
+        </span>
+      </summary>
+      <div className="border-t border-[color:var(--color-overlay-border)] px-3 py-3">
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <HeaderField label="Relatório" value={m.title} />
         <HeaderField
@@ -154,7 +165,8 @@ export function ClassificationReportHeader({ report }: { report: SupplierClassif
           value={m.appliedFilters.map((filter) => `${filter.label}: ${filter.value}`).join(" · ")}
         />
       </dl>
-    </OverlaySection>
+      </div>
+    </details>
   );
 }
 
