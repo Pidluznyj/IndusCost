@@ -75,7 +75,7 @@ export function MaterialDetailContent({
               ) : (
                 detail.suppliers.map((row) => (
                   <OverlayTable.Row key={row.supplierExternalId ?? "unresolved"}>
-                    <OverlayTable.Cell nowrap={false}>
+                    <OverlayTable.Cell nowrap={false} className="text-left">
                       <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} />
                       {row.singleSourceObserved ? <OverlayBadge tone="amber" className="ml-1" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{SINGLE_SOURCE_OBSERVED_LABEL}</OverlayBadge> : null}
                     </OverlayTable.Cell>

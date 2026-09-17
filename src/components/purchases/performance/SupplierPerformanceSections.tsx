@@ -49,6 +49,7 @@ import {
   ADVANCED_METRIC_COL_WIDTHS,
   DISPERSION_COL_WIDTHS,
   MATERIAL_RISK_COL_WIDTHS,
+  OVERVIEW_TABLE_FIT,
   PRICE_INCREASE_COL_WIDTHS,
   RANKING_COL_WIDTHS,
   TABLE_CLAMPED_TEXT_CLASS,
@@ -152,7 +153,7 @@ export function SupplierLinkButton({
     <button
       type="button"
       onClick={() => onSelect(supplierExternalId)}
-      className={cn(clamped, "font-medium text-primary hover:underline")}
+      className={cn(clamped, "w-full text-left font-medium text-primary hover:underline")}
       title={name}
       data-testid={`supplier-link-${supplierExternalId}`}
     >
@@ -296,7 +297,13 @@ function MaterialRiskTable({
 }) {
   const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
-    <OverlayTable stickyHeader layout="fixed" colWidths={MATERIAL_RISK_COL_WIDTHS} data-testid="material-risk-table">
+    <OverlayTable
+      stickyHeader
+      layout="fixed"
+      {...OVERVIEW_TABLE_FIT}
+      colWidths={MATERIAL_RISK_COL_WIDTHS}
+      data-testid="material-risk-table"
+    >
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -315,10 +322,10 @@ function MaterialRiskTable({
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={row.materialKey}>
-              <OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false}>
                 <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={null} onSelect={onSelectMaterial} />
               </OverlayTable.Cell>
-              <OverlayTable.Cell nowrap={false} className="text-muted-foreground">
+              <OverlayTable.Cell nowrap={false} className="text-left text-muted-foreground">
                 <span className={TABLE_CLAMPED_TEXT_CLASS} title={row.description ?? undefined}>
                   {row.description ?? "—"}
                 </span>
@@ -327,9 +334,9 @@ function MaterialRiskTable({
                 {financialUnavailable ? "Indisponível" : formatDashboardMoney(row.dominantBasis === "financial" || row.spend > 0 ? row.spend : null, currency)}
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.supplierCountObserved)}</OverlayTable.Cell>
-              <OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="text-left">
                 {row.dominant ? (
-                  <div className="min-w-0 max-w-full overflow-hidden">
+                  <div className="min-w-0 max-w-full overflow-hidden text-left">
                     <SupplierLinkButton supplierExternalId={row.dominant.supplierExternalId} name={row.dominant.name} onSelect={onSelectSupplier} />
                     {row.dominantBasis === "orders" ? (
                       <span className="block text-[11px] text-muted-foreground" title="Sem valor de linha provado: fornecedor mais frequente por nº de pedidos, não principal financeiro.">
@@ -429,7 +436,7 @@ function RankingTable({
   const [expanded, setExpanded] = useState<number | null>(null);
   const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
-    <OverlayTable stickyHeader layout="fixed" colWidths={RANKING_COL_WIDTHS}>
+    <OverlayTable stickyHeader layout="fixed" {...OVERVIEW_TABLE_FIT} colWidths={RANKING_COL_WIDTHS} data-testid="ranking-table">
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell align="right" nowrap>#</OverlayTable.HeadCell>
@@ -455,11 +462,11 @@ function RankingTable({
               <React.Fragment key={row.supplierExternalId}>
                 <OverlayTable.Row data-testid={`ranking-row-${row.supplierExternalId}`}>
                   <OverlayTable.Cell align="right" mono>{row.position}</OverlayTable.Cell>
-                  <OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false} className="text-left">
                     <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.name} onSelect={onSelectSupplier} />
                     <button
                       type="button"
-                      className="mt-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                      className="mt-0.5 block text-left text-[11px] text-muted-foreground hover:text-foreground"
                       onClick={() => setExpanded(open ? null : row.supplierExternalId)}
                       data-testid={`ranking-expand-${row.supplierExternalId}`}
                     >
@@ -579,7 +586,7 @@ export function SupplierRankingsSection({
 
 function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: DashboardPriceDispersionRow[]; onSelectSupplier?: (id: number) => void; onSelectMaterial?: (key: string) => void }) {
   return (
-    <OverlayTable stickyHeader layout="fixed" colWidths={DISPERSION_COL_WIDTHS}>
+    <OverlayTable stickyHeader layout="fixed" {...OVERVIEW_TABLE_FIT} colWidths={DISPERSION_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -597,16 +604,16 @@ function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: D
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={`${row.materialKey}::${row.unit ?? ""}`}>
-              <OverlayTable.Cell><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="text-left"><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
               <OverlayTable.Cell mono>{row.unit ?? "—"}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{row.supplierCount}</OverlayTable.Cell>
-              <OverlayTable.Cell nowrap={false}>
+              <OverlayTable.Cell nowrap={false} className="text-left">
                 <span className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDashboardPrice(row.minAveragePrice, row.currency, row.unit)}</span>
-                <span className="block text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.minSupplier.supplierExternalId} name={row.minSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
+                <span className="block text-left text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.minSupplier.supplierExternalId} name={row.minSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
               </OverlayTable.Cell>
-              <OverlayTable.Cell nowrap={false}>
+              <OverlayTable.Cell nowrap={false} className="text-left">
                 <span className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDashboardPrice(row.maxAveragePrice, row.currency, row.unit)}</span>
-                <span className="block text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.maxSupplier.supplierExternalId} name={row.maxSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
+                <span className="block text-left text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.maxSupplier.supplierExternalId} name={row.maxSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardPrice(row.spread, row.currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.spreadPct)}</OverlayTable.Cell>
@@ -620,7 +627,7 @@ function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: D
 
 function PriceIncreaseTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: DashboardPriceChangeRow[]; onSelectSupplier?: (id: number) => void; onSelectMaterial?: (key: string) => void }) {
   return (
-    <OverlayTable stickyHeader layout="fixed" colWidths={PRICE_INCREASE_COL_WIDTHS}>
+    <OverlayTable stickyHeader layout="fixed" {...OVERVIEW_TABLE_FIT} colWidths={PRICE_INCREASE_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -638,8 +645,8 @@ function PriceIncreaseTable({ rows, onSelectSupplier, onSelectMaterial }: { rows
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={`${row.materialKey}::${row.supplierExternalId ?? ""}::${row.unit ?? ""}`}>
-              <OverlayTable.Cell><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
-              <OverlayTable.Cell><SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} /></OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="text-left"><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="text-left"><SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} /></OverlayTable.Cell>
               <OverlayTable.Cell mono>{row.unit ?? "—"}</OverlayTable.Cell>
               <OverlayTable.Cell nowrap={false} className="font-mono text-xs tabular-nums">{formatDashboardMonth(row.firstMonth)} · {formatDashboardPrice(row.firstAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell nowrap={false} className="font-mono text-xs tabular-nums">{formatDashboardMonth(row.lastMonth)} · {formatDashboardPrice(row.lastAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
@@ -763,7 +770,7 @@ export function AdvancedMetricsTable({ entries, testId }: { entries: AdvancedMet
       {grouped.map(({ group, entries: list }) => (
         <React.Fragment key={group}>
         <OverlaySection title={ADVANCED_METRIC_GROUP_LABELS[group]} padded={false} testId={`advanced-group-`}>
-          <OverlayTable layout="fixed" colWidths={ADVANCED_METRIC_COL_WIDTHS}>
+          <OverlayTable layout="fixed" {...OVERVIEW_TABLE_FIT} colWidths={ADVANCED_METRIC_COL_WIDTHS}>
             <OverlayTable.Head>
               <OverlayTable.Row>
                 <OverlayTable.HeadCell>Indicador</OverlayTable.HeadCell>
@@ -775,7 +782,7 @@ export function AdvancedMetricsTable({ entries, testId }: { entries: AdvancedMet
             <OverlayTable.Body>
               {list.map((entry) => (
                 <OverlayTable.Row key={entry.key} data-testid={`advanced-metric-${entry.key}`} data-status={entry.status}>
-                  <OverlayTable.Cell nowrap={false}>
+                  <OverlayTable.Cell nowrap={false} className="text-left">
                     <span className="font-medium">{entry.label}</span>
                     {entry.formula ? <span className="block text-[11px] text-muted-foreground">{entry.formula}</span> : null}
                   </OverlayTable.Cell>

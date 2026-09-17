@@ -90,7 +90,7 @@ function MaterialsTable({
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={row.materialKey}>
-              <OverlayTable.Cell nowrap={false}>
+              <OverlayTable.Cell nowrap={false} className="text-left">
                 <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} />
                 {row.singleSourceObserved ? <OverlayBadge tone="amber" className="mt-1" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{SINGLE_SOURCE_OBSERVED_LABEL}</OverlayBadge> : null}
               </OverlayTable.Cell>

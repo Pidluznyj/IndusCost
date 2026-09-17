@@ -62,15 +62,17 @@ function OverlayTableRoot({
   ...rest
 }: OverlayTableProps): JSX.Element {
   const resolvedLayout = layout ?? (colWidths && colWidths.length > 0 ? "fixed" : "auto");
+  const colTotal = colWidths && colWidths.length > 0 ? colWidths.reduce((sum, width) => sum + width, 0) : 0;
   const resolvedMinWidth =
-    minWidth ??
-    (colWidths && colWidths.length > 0 ? colWidths.reduce((sum, width) => sum + width, 0) : undefined);
+    minWidth ?? (scroll === false ? 0 : colTotal > 0 ? colTotal : undefined);
+  const fitToContainer = resolvedMinWidth === 0;
   const table = (
     <table
       {...rest}
       style={{ minWidth: resolvedMinWidth, ...style }}
       className={cn(
         "w-full border-collapse text-sm",
+        fitToContainer && "max-w-full",
         resolvedLayout === "fixed" &&
           "table-fixed [&_td]:overflow-hidden [&_th]:align-top [&_td]:align-top [&_th]:overflow-hidden [&_th]:whitespace-normal [&_th]:break-words",
         stickyHeader && "[&>thead]:sticky [&>thead]:top-0 [&>thead]:z-10",
@@ -80,7 +82,12 @@ function OverlayTableRoot({
       {colWidths && colWidths.length > 0 ? (
         <colgroup>
           {colWidths.map((width, index) => (
-            <col key={index} style={{ width }} />
+            <col
+              key={index}
+              style={{
+                width: fitToContainer && colTotal > 0 ? `${(width / colTotal) * 100}%` : width,
+              }}
+            />
           ))}
         </colgroup>
       ) : null}

@@ -4,7 +4,13 @@
  * coluna mais larga; números ficam estreitos e não comprimem.
  */
 export const TABLE_CLAMPED_TEXT_CLASS =
-  "block max-w-full overflow-hidden break-words leading-5 line-clamp-2";
+  "block max-w-full overflow-hidden break-words text-left leading-5 line-clamp-2";
+
+/** Visão geral: tabela cabe no container, sem barra horizontal. */
+export const OVERVIEW_TABLE_FIT = {
+  scroll: false as const,
+  minWidth: 0,
+};
 
 export const MATERIAL_RISK_COL_WIDTHS = [100, 270, 150, 125, 330, 110, 75, 190] as const;
 export const RANKING_COL_WIDTHS = [48, 330, 80, 120, 80, 80, 80, 80, 150, 80] as const;

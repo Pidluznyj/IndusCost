@@ -382,10 +382,14 @@ describe("layout das tabelas analíticas", () => {
     const table = /data-testid="material-risk-table"[\s\S]*?<\/table>/.exec(html)?.[0] ?? "";
     assert.ok(table.length > 0, "tabela de risco ausente");
     assert.match(table, /table-fixed/);
-    assert.match(table, /min-width:1350px/);
+    assert.match(table, /min-width:0/);
+    assert.match(table, /max-w-full/);
+    assert.match(html, /overflow-x-hidden[\s\S]*?data-testid="material-risk-table"/);
+    assert.equal(html.includes("overflow-x-auto"), false);
     assert.match(table, /<colgroup>/);
-    assert.match(table, /style="width:330px"/);
+    assert.match(table, /style="width:24\./);
     assert.match(table, /line-clamp-2/);
+    assert.match(table, /text-left/);
     assert.ok(table.includes(LONG_SUPPLIER_NAMES[0]));
     assert.ok(table.includes(LONG_DESCRIPTION));
     assert.match(table, /9\.999\.999,99/);
@@ -393,6 +397,25 @@ describe("layout das tabelas analíticas", () => {
     assert.match(table, /100,0%/);
     assert.equal(table.includes("truncate"), false);
     assert.ok(table.includes(`title="${LONG_SUPPLIER_NAMES[0]}"`));
+  });
+
+  it("visão geral alinha nomes à esquerda e não cria barra horizontal nos grids", () => {
+    const html = renderView({ status: "success", data: modelWithLongAnalyticalLabels() });
+    const ranking = /data-testid="ranking-table"[\s\S]*?<\/table>/.exec(html)?.[0] ?? "";
+    assert.ok(ranking.length > 0, "tabela de ranking ausente");
+    assert.match(html, /overflow-x-hidden[\s\S]*?data-testid="ranking-table"/);
+    assert.match(ranking, /text-left/);
+    assert.match(ranking, /min-width:0/);
+    assert.equal(html.includes("overflow-x-auto"), false);
+    const result = buildSupplierMaterialMatrix(buildFixtureInput(), filters, parseSupplierMaterialMatrixQuery({ pageSize: "3" }));
+    const matrix = renderToStaticMarkup(
+      <SupplierMaterialMatrixTable result={result} loading={false} error={null} sort="spend" direction="desc" onSort={noop} onPage={noop} onSelectSupplier={noop} onSelectMaterial={noop} />
+    );
+    assert.match(matrix, /overflow-x-hidden/);
+    assert.equal(matrix.includes("overflow-x-auto"), false);
+    assert.match(matrix, /text-left/);
+    assert.match(matrix, /min-width:0/);
+    assert.match(matrix, /width:[0-9.]+%/);
   });
 
   it("rankings, matriz, classificação e evidências também declaram layout fixo", async () => {
