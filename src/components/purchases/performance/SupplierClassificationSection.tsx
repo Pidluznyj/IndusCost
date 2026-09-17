@@ -10,7 +10,7 @@
  * monta arquivo no browser.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { ChevronRight, Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { OverlaySection, OverlayTable } from "@/src/components/ui/overlay";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
@@ -19,6 +19,7 @@ import {
   SUPPLIER_CLASSIFICATION_BANDS,
   type SupplierClassification,
 } from "@/src/lib/purchasing/supplierClassificationPolicy";
+import { SUPPLIER_EVALUATION_CRITERIA } from "@/src/lib/purchasing/supplierPerformance";
 import {
   SUPPLIER_CLASSIFICATION_REPORT_DEFAULT_QUERY,
   SUPPLIER_REGISTRY_STATUS_LABELS,
@@ -42,13 +43,12 @@ import {
   formatDashboardInteger,
   formatDashboardMoney,
   formatDashboardPercent,
-  formatDashboardScore,
   formatDashboardScoreWithScale,
   type DashboardPeriodSelection,
   type SupplierPerformanceViewId,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
-import { DashboardNotice, SupplierLinkButton } from "./SupplierPerformanceSections";
-import { CLASSIFICATION_COL_WIDTHS } from "./supplierPerformanceTableLayout";
+import { DashboardNotice } from "./SupplierPerformanceSections";
+import { CLASSIFICATION_COL_WIDTHS, TABLE_CLAMPED_TEXT_CLASS } from "./supplierPerformanceTableLayout";
 import { SupplierPerformanceKpiCard } from "./SupplierPerformanceKpiCard";
 import {
   EMPTY_PERFORMANCE_FILTER_OPTIONS,
@@ -359,6 +359,58 @@ export function ClassificationReadControls({
  * Tabela principal
  * ------------------------------------------------------------------ */
 
+const CLASSIFICATION_MACRO_COLUMNS = 7;
+
+function ClassificationPillarScores({
+  row,
+  onSelectSupplier,
+}: {
+  row: SupplierClassificationReportRow;
+  onSelectSupplier?: (supplierExternalId: number) => void;
+}) {
+  const scaleTitle =
+    row.scaleMax == null ? "Sem escala vigente" : `Escala ${row.scaleMax === 5 ? "1–5 (V2)" : "0–10 (V1)"}`;
+  return (
+    <div className="space-y-3 text-left" data-testid={`classification-pillars-${row.supplierExternalId}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Notas por pilar avaliado · {scaleTitle}
+      </p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {SUPPLIER_EVALUATION_CRITERIA.map((criterion) => (
+          <div
+            key={criterion.key}
+            className="min-w-0 rounded-md border border-border bg-white px-3 py-2"
+            data-testid={`classification-pillar-${row.supplierExternalId}-${criterion.key}`}
+          >
+            <p className="text-[11px] text-muted-foreground">{criterion.label}</p>
+            <p className="mt-0.5 font-mono text-sm tabular-nums text-foreground" title={scaleTitle}>
+              {formatDashboardScoreWithScale(row[criterion.field], row.scaleMax)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">{criterion.weightPercent}% da nota geral</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>Última avaliação: {formatDashboardDateTime(row.lastEvaluationAt)}</span>
+        <span>
+          Avaliados {formatDashboardInteger(row.evaluatedOrders)} de{" "}
+          {formatDashboardInteger(row.eligibleOrders)} pedidos elegíveis
+        </span>
+        {onSelectSupplier ? (
+          <button
+            type="button"
+            onClick={() => onSelectSupplier(row.supplierExternalId)}
+            className="font-medium text-primary hover:underline"
+            data-testid={`classification-evidence-${row.supplierExternalId}`}
+          >
+            Ver evidência por pedido
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function ClassificationTable({
   report,
   onSelectSupplier,
@@ -368,93 +420,119 @@ export function ClassificationTable({
 }) {
   const rows = report.rows;
   const financialUnavailable = report.metadata.population.financialDataStatus === "UNAVAILABLE";
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const toggleExpanded = useCallback((supplierExternalId: number) => {
+    setExpandedId((current) => (current === supplierExternalId ? null : supplierExternalId));
+  }, []);
+
   return (
-    <OverlayTable stickyHeader layout="fixed" colWidths={CLASSIFICATION_COL_WIDTHS} data-testid="classification-table">
+    <OverlayTable
+      stickyHeader
+      layout="fixed"
+      scroll={false}
+      minWidth={0}
+      colWidths={CLASSIFICATION_COL_WIDTHS}
+      data-testid="classification-table"
+    >
       <OverlayTable.Head>
         <OverlayTable.Row>
-          <OverlayTable.HeadCell>Fornecedor</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell>Documento</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell>Situação cadastral</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell>Classificação de desempenho</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Nota geral</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Qualidade</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Prazo</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Conformidade</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Atendimento</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Avaliados / elegíveis</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Cobertura</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell>Última avaliação</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Pedidos no período</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Fornecedor</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Documento</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Situação cadastral</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Classificação</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Nota geral</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Cobertura</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell className="normal-case tracking-normal">Compras no período</OverlayTable.HeadCell>
         </OverlayTable.Row>
       </OverlayTable.Head>
       <OverlayTable.Body>
         {rows.length === 0 ? (
           <OverlayTable.Row>
-            <OverlayTable.Cell colSpan={14} className="py-8 text-center text-muted-foreground">
+            <OverlayTable.Cell colSpan={CLASSIFICATION_MACRO_COLUMNS} className="py-8 text-muted-foreground">
               Nenhum fornecedor encontrado para o período e filtros aplicados.
             </OverlayTable.Cell>
           </OverlayTable.Row>
         ) : (
           rows.map((row) => {
+            const expanded = expandedId === row.supplierExternalId;
             const scaleTitle =
               row.scaleMax == null ? undefined : `Escala ${row.scaleMax === 5 ? "1–5 (V2)" : "0–10 (V1)"}`;
             return (
-              <OverlayTable.Row key={row.supplierExternalId} data-testid="classification-row">
-                <OverlayTable.Cell nowrap={false}>
-                  <SupplierLinkButton
-                    supplierExternalId={row.supplierExternalId}
-                    name={row.name}
-                    onSelect={onSelectSupplier}
-                  />
-                  <span className="block text-[11px] text-muted-foreground">
-                    ID Nomus #{row.supplierExternalId}
-                    {row.hasPendingEvaluations
-                      ? ` · ${formatDashboardInteger(row.pendingOrders)} pendente(s)`
-                      : ""}
-                  </span>
-                </OverlayTable.Cell>
-                <OverlayTable.Cell mono>{row.document ?? "—"}</OverlayTable.Cell>
-                <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
-                  {row.registryStatusLabel}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell nowrap={false}>
-                  <ClassificationBadge
-                    classification={row.classification}
-                    testId={`classification-badge-${row.supplierExternalId}`}
-                  />
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono title={scaleTitle}>
-                  {formatDashboardScoreWithScale(row.overallScore, row.scaleMax)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono title={scaleTitle}>
-                  {formatDashboardScore(row.qualityScore)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono title={scaleTitle}>
-                  {formatDashboardScore(row.deliveryScore)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono title={scaleTitle}>
-                  {formatDashboardScore(row.conformityScore)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono title={scaleTitle}>
-                  {formatDashboardScore(row.serviceScore)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>
-                  {formatDashboardInteger(row.evaluatedOrders)} / {formatDashboardInteger(row.eligibleOrders)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>
-                  {row.coverage == null ? "—" : formatDashboardPercent(row.coverage)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
-                  {formatDashboardDateTime(row.lastEvaluationAt)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>
-                  {formatDashboardInteger(row.orderCount)}
-                </OverlayTable.Cell>
-                <OverlayTable.Cell align="right" mono>
-                  {financialUnavailable ? "Indisponível" : formatDashboardMoney(row.spend, row.currency)}
-                </OverlayTable.Cell>
-              </OverlayTable.Row>
+              <React.Fragment key={row.supplierExternalId}>
+                <OverlayTable.Row data-testid="classification-row">
+                  <OverlayTable.Cell nowrap={false}>
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(row.supplierExternalId)}
+                      className="flex min-w-0 items-start gap-1.5 text-left"
+                      aria-expanded={expanded}
+                      data-testid={`supplier-link-${row.supplierExternalId}`}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                          expanded && "rotate-90"
+                        )}
+                        aria-hidden
+                      />
+                      <span className="min-w-0">
+                        <span className={cn(TABLE_CLAMPED_TEXT_CLASS, "font-medium text-primary")} title={row.name}>
+                          {row.name}
+                        </span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          ID Nomus #{row.supplierExternalId}
+                          {row.hasPendingEvaluations
+                            ? ` · ${formatDashboardInteger(row.pendingOrders)} pendente(s)`
+                            : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false} mono>
+                    {row.document ?? "—"}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
+                    {row.registryStatusLabel}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false}>
+                    <ClassificationBadge
+                      classification={row.classification}
+                      testId={`classification-badge-${row.supplierExternalId}`}
+                    />
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false} mono title={scaleTitle}>
+                    {formatDashboardScoreWithScale(row.overallScore, row.scaleMax)}
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false}>
+                    <span className="block font-mono text-xs tabular-nums">
+                      {formatDashboardInteger(row.evaluatedOrders)} / {formatDashboardInteger(row.eligibleOrders)}
+                    </span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {row.coverage == null ? "Sem pedidos elegíveis" : formatDashboardPercent(row.coverage)}
+                    </span>
+                  </OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false}>
+                    <span className="block font-mono text-xs tabular-nums">
+                      {financialUnavailable ? "Indisponível" : formatDashboardMoney(row.spend, row.currency)}
+                    </span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {formatDashboardInteger(row.orderCount)} pedidos
+                    </span>
+                  </OverlayTable.Cell>
+                </OverlayTable.Row>
+                {expanded ? (
+                  <OverlayTable.Row data-testid={`classification-detail-${row.supplierExternalId}`}>
+                    <OverlayTable.Cell
+                      colSpan={CLASSIFICATION_MACRO_COLUMNS}
+                      nowrap={false}
+                      className="bg-slate-50/80 px-4 py-3"
+                    >
+                      <ClassificationPillarScores row={row} onSelectSupplier={onSelectSupplier} />
+                    </OverlayTable.Cell>
+                  </OverlayTable.Row>
+                ) : null}
+              </React.Fragment>
             );
           })
         )}
@@ -583,7 +661,7 @@ export function SupplierClassificationContent({
 
       <OverlaySection
         title="Fornecedores classificados"
-        description="Situação cadastral e classificação de desempenho são informações distintas: o cadastro não aprova desempenho. Clique no fornecedor para ver a evidência por pedido."
+        description="Situação cadastral e classificação de desempenho são informações distintas: o cadastro não aprova desempenho. Clique no fornecedor para ver as notas por pilar. A evidência por pedido abre no detalhe."
         padded={false}
         testId="classification-table-section"
       >

@@ -8,9 +8,8 @@ export const TABLE_CLAMPED_TEXT_CLASS =
 
 export const MATERIAL_RISK_COL_WIDTHS = [100, 270, 150, 125, 330, 110, 75, 190] as const;
 export const RANKING_COL_WIDTHS = [48, 330, 80, 120, 80, 80, 80, 80, 150, 80] as const;
-export const CLASSIFICATION_COL_WIDTHS = [
-  280, 140, 150, 180, 90, 80, 80, 90, 90, 120, 90, 150, 90, 150,
-] as const;
+/** Proporções da tabela macro (sem scroll horizontal). Pilares ficam no detalhe da linha. */
+export const CLASSIFICATION_COL_WIDTHS = [280, 150, 120, 150, 90, 130, 160] as const;
 export const MATRIX_COL_WIDTHS = [220, 110, 280, 140, 90, 80, 80, 110, 130, 130, 110] as const;
 export const DISPERSION_COL_WIDTHS = [240, 70, 90, 240, 240, 140, 110] as const;
 export const PRICE_INCREASE_COL_WIDTHS = [240, 280, 70, 190, 190, 140, 110] as const;

@@ -327,6 +327,21 @@ describe("classificação de fornecedores", () => {
     assert.ok(html.includes('data-testid="classification-export-xlsx"'));
     assert.ok(html.includes('href="/api/purchases/performance/classification.xlsx"'));
     assert.ok(html.includes('href="/api/purchases/performance/classification.pdf"'));
+    assert.ok(html.includes("Clique no fornecedor para ver as notas por pilar"));
+    const table = /data-testid="classification-table"[\s\S]*?<\/table>/.exec(html)?.[0] ?? "";
+    assert.match(html, /overflow-x-hidden/);
+    assert.equal(html.includes("overflow-x-auto"), false);
+    assert.match(table, /text-left/);
+    assert.equal(table.includes("text-right"), false);
+    assert.equal(table.includes("text-center"), false);
+    assert.match(table, />Fornecedor</);
+    assert.match(table, />Cobertura</);
+    assert.match(table, />Compras no período</);
+    assert.equal(/<th[^>]*>Qualidade</.test(table), false);
+    assert.equal(/<th[^>]*>Prazo</.test(table), false);
+    assert.equal(/<th[^>]*>Conformidade</.test(table), false);
+    assert.equal(/<th[^>]*>Atendimento</.test(table), false);
+    assert.equal(html.includes("classification-pillars-"), false);
   });
 });
 

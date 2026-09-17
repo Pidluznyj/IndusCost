@@ -87,9 +87,13 @@ function OverlayTableRoot({
       {children}
     </table>
   );
-  if (!scroll) return table;
   return (
-    <div className="min-w-0 overflow-x-auto rounded-[var(--radius-overlay-inner)] border border-[color:var(--color-overlay-border)]">
+    <div
+      className={cn(
+        "min-w-0 rounded-[var(--radius-overlay-inner)] border border-[color:var(--color-overlay-border)]",
+        scroll ? "overflow-x-auto" : "overflow-x-hidden"
+      )}
+    >
       {table}
     </div>
   );
