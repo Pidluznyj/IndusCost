@@ -85,6 +85,11 @@ export type PdfLine =
 export type PdfDocumentChrome = {
   kicker: string;
   title: string;
+  companyName?: string;
+  slogan?: string;
+  taxId?: string;
+  addressLine?: string;
+  email?: string;
 };
 
 export type PdfPageOrientation = "portrait" | "landscape";
@@ -102,7 +107,9 @@ type Rgb = readonly [number, number, number];
 
 const NAVY: Rgb = [0.12, 0.22, 0.38];
 const NAVY_DEEP: Rgb = [0.09, 0.16, 0.28];
+const ACCENT: Rgb = [0.055, 0.647, 0.914];
 const WHITE: Rgb = [1, 1, 1];
+const CHROME_MUTED: Rgb = [0.78, 0.84, 0.92];
 const INK: Rgb = [0.12, 0.14, 0.18];
 const MUTED: Rgb = [0.4, 0.44, 0.5];
 const RULE: Rgb = [0.82, 0.85, 0.9];
@@ -215,7 +222,8 @@ function buildPageContent(
   const ops: string[] = [];
   let inText = false;
   const footerReserve = chrome ? 28 : 20;
-  let y = chrome ? pageH - 44 : pageH - margin;
+  const institutional = Boolean(chrome?.companyName);
+  let y = chrome ? (institutional ? pageH - 74 : pageH - 44) : pageH - margin;
 
   const beginText = () => {
     if (!inText) {
@@ -259,12 +267,47 @@ function buildPageContent(
   const ensureSpace = (need: number) => y - need >= margin + footerReserve;
 
   if (chrome) {
-    fillRect(0, pageH - 28, pageW, 28, NAVY_DEEP);
-    moveTo(margin, pageH - 18);
-    show(chrome.kicker, 8, { bold: true, color: WHITE });
-    const right = chrome.title;
-    moveTo(pageW - margin - Math.min(right.length * 4.4, 360), pageH - 18);
-    show(right, 8, { color: [0.85, 0.89, 0.94] });
+    if (institutional) {
+      const bandH = 56;
+      fillRect(0, pageH - bandH, pageW, bandH, NAVY_DEEP);
+      fillRect(0, pageH - bandH - 3, pageW, 3, ACCENT);
+      const splitX = margin + contentW * 0.62;
+      endText();
+      ops.push("0.5 w");
+      ops.push(`${CHROME_MUTED[0]} ${CHROME_MUTED[1]} ${CHROME_MUTED[2]} RG`);
+      ops.push(
+        `${splitX.toFixed(2)} ${(pageH - bandH + 10).toFixed(2)} m ${splitX.toFixed(2)} ${(pageH - 10).toFixed(2)} l S`
+      );
+      moveTo(margin, pageH - 16);
+      show(chrome.companyName ?? "", 13, { bold: true, color: WHITE });
+      if (chrome.slogan) {
+        moveTo(margin, pageH - 28);
+        show(chrome.slogan, 8, { color: CHROME_MUTED });
+      }
+      const companyMeta = [chrome.taxId ? `CNPJ ${chrome.taxId}` : "", chrome.addressLine ?? ""]
+        .filter(Boolean)
+        .join("   ·   ");
+      if (companyMeta) {
+        moveTo(margin, pageH - 42);
+        show(companyMeta, 7, { color: CHROME_MUTED });
+      }
+      if (chrome.email) {
+        moveTo(margin, pageH - 52);
+        show(`E-mail: ${chrome.email}`, 7, { color: CHROME_MUTED });
+      }
+      const rightX = splitX + 14;
+      moveTo(rightX, pageH - 18);
+      show(chrome.title, 11, { bold: true, color: WHITE });
+      moveTo(rightX, pageH - 32);
+      show(chrome.kicker, 8, { color: CHROME_MUTED });
+    } else {
+      fillRect(0, pageH - 28, pageW, 28, NAVY_DEEP);
+      moveTo(margin, pageH - 18);
+      show(chrome.kicker, 8, { bold: true, color: WHITE });
+      const right = chrome.title;
+      moveTo(pageW - margin - Math.min(right.length * 4.4, 360), pageH - 18);
+      show(right, 8, { color: [0.85, 0.89, 0.94] });
+    }
   }
 
   for (const line of lines) {

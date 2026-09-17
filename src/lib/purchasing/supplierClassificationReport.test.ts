@@ -545,7 +545,7 @@ describe("exportação PDF", () => {
     const many = buildSupplierClassificationReport(buildFixtureInput(), FILTERS);
     const inflated: SupplierClassificationReport = {
       ...many,
-      rows: Array.from({ length: 60 }, (_, index) => ({
+      rows: Array.from({ length: 90 }, (_, index) => ({
         ...many.rows[index % many.rows.length],
         supplierExternalId: 9000 + index,
       })),
@@ -554,7 +554,19 @@ describe("exportação PDF", () => {
       (line) => line.type === "table" && line.headers[0] === "Fornecedor" && line.headers.includes("Classificação")
     );
     assert.ok(blocks.length >= 3, "tabela longa precisa reemitir o cabeçalho em novas páginas");
-    assert.equal(pdfTableRows(inflated).length, 60);
+    assert.equal(pdfTableRows(inflated).length, 90);
+    const packed = buildSupplierClassificationPdfLines({
+      ...many,
+      rows: Array.from({ length: 48 }, (_, index) => ({
+        ...rowOf(REPORT, S1),
+        supplierExternalId: 8000 + index,
+        name: index % 2 === 0 ? rowOf(REPORT, S1).name : `POLIMEROS JR PLASTICOS DE ENG. E COMPOSTOS ${index}`,
+      })),
+    }).filter(
+      (line): line is Extract<typeof line, { type: "table" }> =>
+        line.type === "table" && line.headers[0] === "Fornecedor" && line.headers.includes("Classificação")
+    );
+    assert.ok((packed[0]?.rows.length ?? 0) >= 12, "o primeiro bloco precisa ocupar a folha, não ~10 linhas");
   });
 
   it("classificação textual, notas e cobertura idênticas ao read model", () => {
@@ -584,6 +596,8 @@ describe("exportação PDF", () => {
     const latin = buffer.toString("latin1");
     assert.ok(latin.includes("Página"));
     assert.ok(latin.includes("critério interno"));
+    assert.ok(latin.includes("Lazarios Koppetel"));
+    assert.ok(latin.includes("14.055.501/0001-80"));
     assert.ok(latin.includes("Não classificado") || latin.includes("Não aprovado") || latin.includes("Não avaliado"));
   });
 

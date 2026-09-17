@@ -9,15 +9,18 @@
  *   4. legenda, metodologia, política e qualidade dos dados
  */
 
+import { PRINT_COMPANY_DOC_FALLBACK } from "../printBranding.js";
 import {
   buildFormattedLandscapePdf,
   formatPdfMoneyBr,
   formatPdfNumberBr,
   formatPdfPercentBr,
   pdfTableRowLineCount,
+  type PdfDocumentChrome,
   type PdfLine,
   type PdfTone,
 } from "../proposalInternalManagementPdfLayout.js";
+import { DEFAULT_BRANDING } from "@/src/types/branding.js";
 import {
   SUPPLIER_EVALUATION_RATING_LABELS,
   SUPPLIER_EVALUATION_RATING_VALUES,
@@ -27,7 +30,28 @@ import type {
   SupplierClassificationReportRow,
 } from "./supplierClassificationReport.js";
 
-export const SUPPLIER_CLASSIFICATION_PDF_TABLE_LINE_BUDGET = 22;
+/** Primeiro bloco da seção (subtítulo + texto introdutório). */
+export const SUPPLIER_CLASSIFICATION_PDF_TABLE_FIRST_BLOCK_PT = 370;
+/** Continuação: preenche a área útil da paisagem, com cabeçalho repetido. */
+export const SUPPLIER_CLASSIFICATION_PDF_TABLE_BLOCK_PT = 400;
+/** Compatível com testes/documentação antiga — linhas visuais aproximadas. */
+export const SUPPLIER_CLASSIFICATION_PDF_TABLE_LINE_BUDGET = 30;
+
+function tableRowHeightPt(cells: readonly string[], widths: readonly number[]): number {
+  return 8 + pdfTableRowLineCount(cells, widths) * 10;
+}
+
+function institutionalPdfChrome(title: string): PdfDocumentChrome {
+  return {
+    kicker: "Compras  ·  Performance",
+    title,
+    companyName: DEFAULT_BRANDING.companyName,
+    slogan: DEFAULT_BRANDING.slogan,
+    taxId: PRINT_COMPANY_DOC_FALLBACK.taxId,
+    addressLine: PRINT_COMPANY_DOC_FALLBACK.addressLine,
+    email: PRINT_COMPANY_DOC_FALLBACK.email,
+  };
+}
 
 const MACRO_HEADERS = [
   "Fornecedor",
@@ -125,18 +149,22 @@ function chunkByVisualLines(
   rows: readonly SupplierClassificationReportRow[],
   headers: string[],
   widths: number[],
-  cellsOf: (row: SupplierClassificationReportRow) => string[]
+  cellsOf: (row: SupplierClassificationReportRow) => string[],
+  firstBudgetPt = SUPPLIER_CLASSIFICATION_PDF_TABLE_FIRST_BLOCK_PT,
+  nextBudgetPt = SUPPLIER_CLASSIFICATION_PDF_TABLE_BLOCK_PT
 ): SupplierClassificationReportRow[][] {
   if (rows.length === 0) return [];
   const blocks: SupplierClassificationReportRow[][] = [];
   let current: SupplierClassificationReportRow[] = [];
-  let used = pdfTableRowLineCount(headers, widths);
+  let budget = firstBudgetPt;
+  let used = tableRowHeightPt(headers, widths);
   for (const row of rows) {
-    const height = pdfTableRowLineCount(cellsOf(row), widths);
-    if (current.length > 0 && used + height > SUPPLIER_CLASSIFICATION_PDF_TABLE_LINE_BUDGET) {
+    const height = tableRowHeightPt(cellsOf(row), widths);
+    if (current.length > 0 && used + height > budget) {
       blocks.push(current);
       current = [];
-      used = pdfTableRowLineCount(headers, widths);
+      budget = nextBudgetPt;
+      used = tableRowHeightPt(headers, widths);
     }
     current.push(row);
     used += height;
@@ -172,7 +200,7 @@ export function buildSupplierClassificationPdfLines(
 
   lines.push({
     type: "masthead",
-    kicker: "IndusCost  ·  Compras  ·  Performance",
+    kicker: "Critério interno da empresa",
     title: metadata.title,
     subtitle: metadata.purpose,
   });
@@ -337,8 +365,7 @@ export function buildSupplierClassificationPdfLines(
       [620, 150]
     )
   );
-  lines.push({ type: "pagebreak" });
-
+  lines.push({ type: "spacer" });
   lines.push({ type: "subtitle", text: "Régua da nota por pedido" });
   lines.push(
     reportTable(
@@ -350,8 +377,7 @@ export function buildSupplierClassificationPdfLines(
   lines.push({ type: "spacer" });
   lines.push({ type: "subtitle", text: "Metodologia de avaliação" });
   for (const text of metadata.methodology.text) lines.push({ type: "text", text });
-  lines.push({ type: "pagebreak" });
-
+  lines.push({ type: "spacer" });
   lines.push({ type: "subtitle", text: "Política de classificação (critério interno)" });
   for (const text of metadata.policy.text) lines.push({ type: "text", text });
   lines.push({ type: "spacer" });
@@ -398,10 +424,7 @@ export function buildSupplierClassificationPdfBuffer(
   return buildFormattedLandscapePdf({
     title: report.metadata.title,
     lines: buildSupplierClassificationPdfLines(report),
-    chrome: {
-      kicker: "IndusCost  ·  Compras  ·  Performance",
-      title: "Classificação de fornecedores",
-    },
+    chrome: institutionalPdfChrome("Classificação de fornecedores"),
     footerNote: `Período ${periodLabel(report)}  ·  gerado em ${dateTimeBr(report.metadata.generatedAt)}  ·  critério interno`,
   });
 }
