@@ -15,6 +15,7 @@ import {
 } from "./../inventoryCountService.server.js";
 import {
   hasEffectiveCountDivergence,
+  isCountedInventoryCountLine,
   requiresCountJustification,
   resolveCountAdjustmentBasis,
 } from "./../inventoryCountObservation.js";
@@ -38,6 +39,7 @@ import {
 
 export const COLLECTOR_NO_WAREHOUSE_FOR_SECTOR = "COLLECTOR_NO_WAREHOUSE_FOR_SECTOR";
 export const COLLECTOR_PENDING_ITEMS = "PENDING_ITEMS";
+export const COLLECTOR_NO_COUNTED_ITEMS = "COLLECTOR_NO_COUNTED_ITEMS";
 export { COLLECTOR_DEVICE_JUSTIFICATION };
 
 export type { CollectorOperationalState, CollectorWarehouseSummary };
@@ -450,7 +452,14 @@ export async function finalizeCollectorSession(
     );
   }
 
-  const pending = lines.filter((l) => l.countedQuantity == null);
+  const pending = lines.filter((l) => !isCountedInventoryCountLine(l));
+  const counted = lines.filter((l) => isCountedInventoryCountLine(l));
+  if (counted.length === 0) {
+    throw new InventoryValidationError(
+      "Nenhum item foi contado nesta conferência.",
+      COLLECTOR_NO_COUNTED_ITEMS
+    );
+  }
   if (!allowUncounted && pending.length > 0) {
     throw new InventoryValidationError(
       "Existem itens pendentes de contagem.",
@@ -459,8 +468,7 @@ export async function finalizeCollectorSession(
   }
 
   // DEVICE: preenche justificativa automática nas divergências contadas.
-  for (const line of lines) {
-    if (line.countedQuantity == null) continue;
+  for (const line of counted) {
     const { delta } = resolveCountAdjustmentBasis(line);
     if (requiresCountJustification(delta, line.justification)) {
       await prisma.inventoryCountLine.update({
@@ -480,8 +488,8 @@ export async function finalizeCollectorSession(
       where: { sessionId: input.sessionId },
       include: { currentObservation: true },
     });
-    const counted = refreshed.filter((l) => l.countedQuantity != null);
-    for (const line of counted) {
+    const countedRefreshed = refreshed.filter((l) => isCountedInventoryCountLine(l));
+    for (const line of countedRefreshed) {
       const { delta } = resolveCountAdjustmentBasis(line);
       if (requiresCountJustification(delta, line.justification)) {
         throw new InventoryValidationError(
@@ -490,7 +498,7 @@ export async function finalizeCollectorSession(
         );
       }
     }
-    const hasDivergence = counted.some((line) => hasEffectiveCountDivergence(line));
+    const hasDivergence = countedRefreshed.some((line) => hasEffectiveCountDivergence(line));
     const nextStatus = hasDivergence ? "WAITING_APPROVAL" : "APPROVED";
     const updated = await prisma.inventoryCountSession.update({
       where: { id: input.sessionId },
@@ -584,7 +592,7 @@ export function summarizeActiveSession(
   session: Awaited<ReturnType<typeof findActiveCountingSession>>
 ): CollectorSessionProgress | null {
   if (!session) return null;
-  const countedLines = session.lines.filter((l) => l.countedQuantity != null).length;
+  const countedLines = session.lines.filter((l) => isCountedInventoryCountLine(l)).length;
   return {
     sessionId: session.id,
     code: session.code,

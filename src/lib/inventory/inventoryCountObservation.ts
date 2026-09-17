@@ -33,8 +33,27 @@ export type CountLineAdjustmentSource = {
   systemQuantity: unknown;
   countedQuantity?: unknown;
   differenceQuantity?: unknown;
-  currentObservation?: { adjustmentDelta: unknown } | null;
+  currentObservation?: { adjustmentDelta: unknown; countedQuantity?: unknown } | null;
 };
+
+/**
+ * Critério canônico de linha CONTADA.
+ *
+ * Autoridade: `countedQuantity != null` (zero é contagem explícita).
+ * Sessões OP-10 com Observation vigente permanecem coerentes: a Observation
+ * não substitui o critério — só confirma o mesmo countedQuantity.
+ * Linhas legadas sem Observation continuam válidas se countedQuantity existe.
+ */
+export function isCountedInventoryCountLine(
+  line: Pick<CountLineAdjustmentSource, "countedQuantity" | "currentObservation">
+): boolean {
+  if (line.countedQuantity == null) return false;
+  const observed = line.currentObservation?.countedQuantity;
+  if (observed == null) return true;
+  const lineQty = roundInventoryQuantity(safeInventoryNumber(line.countedQuantity) ?? 0);
+  const obsQty = roundInventoryQuantity(safeInventoryNumber(observed) ?? 0);
+  return lineQty === obsQty;
+}
 
 /**
  * Delta do ajuste no instante da contagem.

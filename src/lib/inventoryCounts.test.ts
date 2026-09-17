@@ -122,6 +122,12 @@ describe("inventoryCountValidation", () => {
     });
     assert.equal(ok.differenceQuantity, -2);
   });
+
+  it("ajuste canônico reconcilia somente linhas contadas", () => {
+    const service = read("src/lib/inventory/inventoryCountService.server.ts");
+    assert.match(service, /isCountedInventoryCountLine/);
+    assert.match(service, /countedLines/);
+  });
 });
 
 describe("inventoryCountService", () => {
@@ -306,6 +312,117 @@ describe("inventoryCountService", () => {
     assert.equal(result.movementsCreated, 0);
     assert.equal(state.movements.length, 0);
     assert.equal(state.materialQuantity.toString(), "6525");
+    assert.equal(state.sessions[0].status, "ADJUSTED");
+  });
+
+  it("contagem física sem saldo canônico projeta Material.quantity", async () => {
+    const materialId = "956268d5-a9a3-42be-92da-5f4440e1390a";
+    const { prisma, state } = createCountMockPrisma({
+      sessions: countingSession("sess-1", "wh-1"),
+      lines: [countLine("line-1", "sess-1", "item-1", "wh-1", 0)],
+      materialId,
+      materialQuantity: 1100,
+    });
+    const recorded = await recordInventoryCount(
+      prisma as never,
+      {
+        sessionId: "sess-1",
+        lineId: "line-1",
+        countedQuantity: 1375,
+        justification: "Contagem física Collector",
+      },
+      { userId: "user-1" }
+    );
+    assert.equal(recorded.snapshot.expectedQuantity, 0);
+    assert.equal(recorded.snapshot.countedQuantity, 1375);
+    assert.equal(recorded.snapshot.adjustmentDelta, 1375);
+    assert.equal(Number(state.balances[0]?.physicalQuantity ?? 0), 0);
+
+    await finalizeInventoryCountSession(prisma as never, "sess-1", { userId: "user-1" });
+    await approveInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.count.approve"],
+    });
+    const result = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
+    assert.equal(result.movementsCreated, 1);
+    assert.equal(state.movements[0].movementType, "POSITIVE_ADJUSTMENT");
+    assert.equal(Number(state.movements[0].quantity), 1375);
+    assert.equal(Number(state.balances[0].physicalQuantity), 1375);
+    assert.equal(state.materialQuantity.toString(), "1375");
+    assert.equal(state.lines[0].generatedMovementId, state.movements[0].id);
+    assert.equal(state.sessions[0].status, "ADJUSTED");
+  });
+
+  it("contagem física explícita de zero zera Material.quantity sem inventar movimento", async () => {
+    const materialId = "956268d5-a9a3-42be-92da-5f4440e1390a";
+    const { prisma, state } = createCountMockPrisma({
+      sessions: countingSession("sess-1", "wh-1"),
+      lines: [countLine("line-1", "sess-1", "item-1", "wh-1", 0)],
+      materialId,
+      materialQuantity: 1100,
+    });
+    const recorded = await recordInventoryCount(
+      prisma as never,
+      { sessionId: "sess-1", lineId: "line-1", countedQuantity: 0 },
+      { userId: "user-1" }
+    );
+    assert.equal(recorded.snapshot.expectedQuantity, 0);
+    assert.equal(recorded.snapshot.countedQuantity, 0);
+    assert.equal(recorded.snapshot.adjustmentDelta, 0);
+    assert.ok(state.lines[0].countedQuantity != null);
+    assert.equal(Number(state.balances[0]?.physicalQuantity ?? -1), 0);
+
+    const finalized = await finalizeInventoryCountSession(prisma as never, "sess-1", {
+      userId: "user-1",
+    });
+    assert.equal(finalized.status, "APPROVED");
+    const result = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
+    assert.equal(result.movementsCreated, 0);
+    assert.equal(state.movements.length, 0);
+    assert.equal(Number(state.balances[0].physicalQuantity), 0);
+    assert.equal(state.materialQuantity.toString(), "0");
+    assert.equal(state.sessions[0].status, "ADJUSTED");
+  });
+
+  it("sessão parcial não reconcilia material não contado", async () => {
+    const materialA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const materialB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { prisma, state } = createCountMockPrisma({
+      sessions: [{ ...countingSession("sess-1", "wh-1")[0], status: "APPROVED", code: "CF-PARTIAL" }],
+      lines: [
+        {
+          ...countLine("line-a", "sess-1", "item-a", "wh-1", 0),
+          countedQuantity: new Prisma.Decimal(1300),
+          differenceQuantity: new Prisma.Decimal(1300),
+          justification: "Contagem A",
+        },
+        countLine("line-b", "sess-1", "item-b", "wh-1", 0),
+      ],
+      materials: [
+        { id: materialA, itemId: "item-a", quantity: 1100, unit: "KG" },
+        { id: materialB, itemId: "item-b", quantity: 500, unit: "KG" },
+      ],
+    });
+    const result = await generateInventoryCountAdjustments(prisma as never, "sess-1", {
+      userId: "user-1",
+      permissions: ["inventory.manage"],
+    });
+    assert.equal(result.movementsCreated, 1);
+    assert.equal(state.movements[0].originId, "line-a");
+    assert.equal(state.lines.find((l) => l.id === "line-a")?.generatedMovementId, state.movements[0].id);
+    assert.equal(state.lines.find((l) => l.id === "line-b")?.generatedMovementId ?? null, null);
+    assert.equal(state.materialQuantities.get(materialA)?.toString(), "1300");
+    assert.equal(state.materialQuantities.get(materialB)?.toString(), "500");
+    assert.equal(
+      state.balances.some((b) => b.itemId === "item-b"),
+      false
+    );
     assert.equal(state.sessions[0].status, "ADJUSTED");
   });
 
@@ -576,7 +693,23 @@ function createCountMockPrisma(options?: {
   materialId?: string | null;
   materialQuantity?: number;
   failOnNthMovement?: number;
+  materials?: Array<{ id: string; itemId: string; quantity: number; unit?: string }>;
 }) {
+  const materialCatalog = (options?.materials ?? []).map((row) => ({
+    id: row.id,
+    itemId: row.itemId,
+    unit: row.unit ?? "UN",
+    quantity: new Prisma.Decimal(row.quantity),
+  }));
+  if (materialCatalog.length === 0 && options?.materialId) {
+    materialCatalog.push({
+      id: options.materialId,
+      itemId: "item-1",
+      unit: "UN",
+      quantity: new Prisma.Decimal(options.materialQuantity ?? 0),
+    });
+  }
+
   const state = {
     balances: [...(options?.balances ?? [])],
     sessions: [...(options?.sessions ?? [])] as MockSession[],
@@ -585,7 +718,10 @@ function createCountMockPrisma(options?: {
     observations: [] as Array<Record<string, unknown>>,
     operations: [] as Array<Record<string, unknown>>,
     auditLogs: [] as Array<Record<string, unknown>>,
-    materialQuantity: new Prisma.Decimal(options?.materialQuantity ?? 0),
+    materialQuantity: new Prisma.Decimal(
+      materialCatalog[0]?.quantity ?? options?.materialQuantity ?? 0
+    ),
+    materialQuantities: new Map(materialCatalog.map((row) => [row.id, row.quantity])),
   };
 
   const item = {
@@ -596,13 +732,27 @@ function createCountMockPrisma(options?: {
     controlsStock: true,
     allowsReservation: true,
     allowsBlock: true,
-    materialId: (options?.materialId ?? null) as string | null,
+    materialId: (materialCatalog[0]?.id ?? options?.materialId ?? null) as string | null,
     materialCodeSnapshot: null as string | null,
     materialDescriptionSnapshot: null as string | null,
     lastKnownCost: null as unknown,
     averageCost: null as unknown,
     controlsLocation: false,
   };
+
+  function materialForItem(itemId: string) {
+    return materialCatalog.find((row) => row.itemId === itemId) ?? null;
+  }
+
+  function itemRow(itemId: string) {
+    const linked = materialForItem(itemId);
+    return {
+      ...item,
+      id: itemId,
+      unit: linked?.unit ?? item.unit,
+      materialId: linked?.id ?? (itemId === "item-1" ? item.materialId : null),
+    };
+  }
 
   const warehouse = (id: string) => ({
     id,
@@ -613,9 +763,19 @@ function createCountMockPrisma(options?: {
   const movementTx = {
     $queryRaw: async () => [{ "?column?": 1 }],
     inventoryItem: {
-      findUnique: async ({ where }: { where: { id: string } }) => ({ ...item, id: where.id }),
-      findMany: async () =>
-        item.materialId
+      findUnique: async ({ where }: { where: { id: string } }) => itemRow(where.id),
+      findMany: async ({ where }: { where?: { materialId?: string; status?: string } } = {}) => {
+        const rows = materialCatalog
+          .filter((row) => !where?.materialId || row.id === where.materialId)
+          .map((row) => ({
+            id: row.itemId,
+            materialId: row.id,
+            unit: row.unit,
+            status: item.status,
+            controlsLocation: item.controlsLocation,
+          }));
+        if (rows.length > 0) return rows;
+        return item.materialId
           ? [
               {
                 id: item.id,
@@ -625,16 +785,32 @@ function createCountMockPrisma(options?: {
                 controlsLocation: item.controlsLocation,
               },
             ]
-          : [],
+          : [];
+      },
     },
     material: {
-      findUnique: async () =>
-        item.materialId
-          ? { id: item.materialId, quantity: state.materialQuantity, unit: "UN" }
-          : null,
-      update: async ({ data }: { data: { quantity: Prisma.Decimal } }) => {
-        state.materialQuantity = data.quantity;
-        return { id: item.materialId, quantity: data.quantity };
+      findUnique: async ({ where }: { where?: { id: string } } = {}) => {
+        const materialId = where?.id ?? item.materialId;
+        if (!materialId) return null;
+        const linked = materialCatalog.find((row) => row.id === materialId);
+        return {
+          id: materialId,
+          quantity: state.materialQuantities.get(materialId) ?? state.materialQuantity,
+          unit: linked?.unit ?? "UN",
+        };
+      },
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { quantity: Prisma.Decimal };
+      }) => {
+        state.materialQuantities.set(where.id, data.quantity);
+        if (where.id === item.materialId || !item.materialId) {
+          state.materialQuantity = data.quantity;
+        }
+        return { id: where.id, quantity: data.quantity };
       },
     },
     inventoryWarehouse: {
@@ -765,7 +941,14 @@ function createCountMockPrisma(options?: {
           .filter((l) => l.sessionId === where.sessionId)
           .map((l) => ({
             ...l,
-            ...(include?.item ? { item: { unit: "UN", materialId: item.materialId } } : {}),
+            ...(include?.item
+              ? {
+                  item: {
+                    unit: itemRow(l.itemId).unit,
+                    materialId: itemRow(l.itemId).materialId,
+                  },
+                }
+              : {}),
             ...(include?.currentObservation
               ? {
                   currentObservation:
@@ -839,6 +1022,7 @@ function createCountMockPrisma(options?: {
         operations: state.operations.map((row) => ({ ...row })),
         auditLogs: state.auditLogs.map((row) => ({ ...row })),
         materialQuantity: new Prisma.Decimal(state.materialQuantity.toString()),
+        materialQuantities: new Map(state.materialQuantities),
       };
       try {
         return await fn(movementTx);
@@ -858,6 +1042,10 @@ function createCountMockPrisma(options?: {
         state.auditLogs.length = 0;
         state.auditLogs.push(...snapshot.auditLogs);
         state.materialQuantity = snapshot.materialQuantity;
+        state.materialQuantities.clear();
+        for (const [id, qty] of snapshot.materialQuantities) {
+          state.materialQuantities.set(id, qty);
+        }
         throw error;
       }
     },

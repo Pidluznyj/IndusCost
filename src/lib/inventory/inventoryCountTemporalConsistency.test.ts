@@ -24,6 +24,7 @@ import {
   COUNT_ADJUSTMENT_BASIS,
   computeObservationDelta,
   hasEffectiveCountDivergence,
+  isCountedInventoryCountLine,
   requiresCountJustification,
   resolveCountAdjustmentBasis,
 } from "./inventoryCountObservation.js";
@@ -131,6 +132,21 @@ describe("OP-10 resolveCountAdjustmentBasis", () => {
     });
     assert.equal(resolved.basis, COUNT_ADJUSTMENT_BASIS.notCounted);
     assert.equal(resolved.delta, 0);
+  });
+
+  it("countedQuantity 0 é linha contada; null não é", () => {
+    assert.equal(isCountedInventoryCountLine({ countedQuantity: 0 }), true);
+    assert.equal(isCountedInventoryCountLine({ countedQuantity: new Prisma.Decimal(0) }), true);
+    assert.equal(isCountedInventoryCountLine({ countedQuantity: 1375 }), true);
+    assert.equal(isCountedInventoryCountLine({ countedQuantity: null }), false);
+    assert.equal(isCountedInventoryCountLine({}), false);
+    assert.equal(
+      isCountedInventoryCountLine({
+        countedQuantity: new Prisma.Decimal(1375),
+        currentObservation: { adjustmentDelta: 1375, countedQuantity: new Prisma.Decimal(1375) },
+      }),
+      true
+    );
   });
 
   it("delta zero da Observation não vira fallback legado", () => {

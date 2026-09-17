@@ -16,6 +16,10 @@ import {
   parseCollectorSector,
 } from "./collectorSectorContract.js";
 import { InventoryValidationError } from "./../inventoryTypes.js";
+import {
+  COLLECTOR_NO_COUNTED_ITEMS,
+  finalizeCollectorSession,
+} from "./collectorAutonomousSession.server.js";
 
 function read(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");
@@ -214,11 +218,43 @@ describe("blind DTO / population / finalize semantics (structural)", () => {
   it("finalize: PENDING_ITEMS, allowUncounted não zera, justificativa DEVICE", () => {
     const auto = read("src/lib/inventory/collector/collectorAutonomousSession.server.ts");
     assert.match(auto, /PENDING_ITEMS|COLLECTOR_PENDING_ITEMS/);
+    assert.match(auto, /COLLECTOR_NO_COUNTED_ITEMS/);
+    assert.match(auto, /Nenhum item foi contado nesta conferência/);
     assert.match(auto, /COLLECTOR_DEVICE_JUSTIFICATION/);
     assert.match(auto, /allowUncounted/);
     assert.doesNotMatch(auto, /countedQuantity:\s*0/);
     const helper = read("src/lib/inventory/inventoryCountDeviceJustification.ts");
     assert.match(helper, /Contagem física Collector/);
+  });
+
+  it("sessão sem nenhuma linha contada não finaliza mesmo com allowUncounted", async () => {
+    const prisma = {
+      inventoryCountSession: {
+        findUnique: async () => ({
+          id: "sess-1",
+          status: "COUNTING",
+          warehouseId: "wh-1",
+        }),
+      },
+      inventoryCountLine: {
+        findMany: async () => [
+          { id: "line-1", countedQuantity: null, currentObservation: null, justification: null },
+          { id: "line-2", countedQuantity: null, currentObservation: null, justification: null },
+        ],
+      },
+    };
+    await assert.rejects(
+      () =>
+        finalizeCollectorSession(prisma as never, {
+          sessionId: "sess-1",
+          deviceId: "dev-1",
+          allowUncounted: true,
+        }),
+      (e: unknown) =>
+        e instanceof InventoryValidationError &&
+        e.code === COLLECTOR_NO_COUNTED_ITEMS &&
+        e.message === "Nenhum item foi contado nesta conferência."
+    );
   });
 
   it("count zero é válido no contrato DEVICE", () => {

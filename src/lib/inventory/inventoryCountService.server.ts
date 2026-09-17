@@ -8,6 +8,7 @@ import { hasCountDivergence } from "./inventoryCountMath.js";
 import {
   COUNT_ADJUSTMENT_BASIS,
   hasEffectiveCountDivergence,
+  isCountedInventoryCountLine,
   requiresCountJustification,
   resolveCountAdjustmentBasis,
 } from "./inventoryCountObservation.js";
@@ -289,7 +290,11 @@ export async function generateInventoryCountAdjustments(
       },
     });
 
-    for (const line of lines) {
+    // allowUncounted: só linhas efetivamente contadas geram movimento,
+    // criam saldo ou reconciliam Material.quantity. Pendentes não participam.
+    const countedLines = lines.filter(isCountedInventoryCountLine);
+
+    for (const line of countedLines) {
       if (line.generatedMovementId) {
         throw new InventoryValidationError(
           "Ajuste duplicado detectado — operação abortada.",
@@ -300,7 +305,7 @@ export async function generateInventoryCountAdjustments(
 
     const movementsCreated: string[] = [];
 
-    for (const line of lines) {
+    for (const line of countedLines) {
       // OP-10: a autoridade do ajuste é o delta da Observation vigente. Sessões
       // anteriores continuam pela regra antiga — sem Observation sintética, sem
       // reescrita de histórico.
@@ -359,7 +364,7 @@ export async function generateInventoryCountAdjustments(
       movementsCreated.push(posted.movement.id);
     }
 
-    const materialIds = lines
+    const materialIds = countedLines
       .map((line) => line.item?.materialId)
       .filter((id): id is string => typeof id === "string" && id.length > 0);
 
