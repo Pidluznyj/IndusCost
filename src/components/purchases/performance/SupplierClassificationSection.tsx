@@ -48,6 +48,7 @@ import {
   type SupplierPerformanceViewId,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { DashboardNotice, SupplierLinkButton } from "./SupplierPerformanceSections";
+import { CLASSIFICATION_COL_WIDTHS } from "./supplierPerformanceTableLayout";
 import { SupplierPerformanceKpiCard } from "./SupplierPerformanceKpiCard";
 import {
   EMPTY_PERFORMANCE_FILTER_OPTIONS,
@@ -79,7 +80,7 @@ export function ClassificationBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
+        "inline-flex max-w-full items-center rounded-md border px-2 py-0.5 text-xs font-medium leading-4",
         CLASSIFICATION_BADGE_CLASSES[tone]
       )}
       data-testid={testId}
@@ -368,10 +369,10 @@ export function ClassificationTable({
   const rows = report.rows;
   const financialUnavailable = report.metadata.population.financialDataStatus === "UNAVAILABLE";
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={CLASSIFICATION_COL_WIDTHS} data-testid="classification-table">
       <OverlayTable.Head>
         <OverlayTable.Row>
-          <OverlayTable.HeadCell className="min-w-[16rem]">Fornecedor</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Fornecedor</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Documento</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Situação cadastral</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Classificação de desempenho</OverlayTable.HeadCell>
@@ -400,12 +401,11 @@ export function ClassificationTable({
               row.scaleMax == null ? undefined : `Escala ${row.scaleMax === 5 ? "1–5 (V2)" : "0–10 (V1)"}`;
             return (
               <OverlayTable.Row key={row.supplierExternalId} data-testid="classification-row">
-                <OverlayTable.Cell className="min-w-[16rem] max-w-[24rem]">
+                <OverlayTable.Cell nowrap={false}>
                   <SupplierLinkButton
                     supplierExternalId={row.supplierExternalId}
                     name={row.name}
                     onSelect={onSelectSupplier}
-                    className="block truncate"
                   />
                   <span className="block text-[11px] text-muted-foreground">
                     ID Nomus #{row.supplierExternalId}
@@ -415,10 +415,10 @@ export function ClassificationTable({
                   </span>
                 </OverlayTable.Cell>
                 <OverlayTable.Cell mono>{row.document ?? "—"}</OverlayTable.Cell>
-                <OverlayTable.Cell className="whitespace-nowrap text-xs text-muted-foreground">
+                <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
                   {row.registryStatusLabel}
                 </OverlayTable.Cell>
-                <OverlayTable.Cell>
+                <OverlayTable.Cell nowrap={false}>
                   <ClassificationBadge
                     classification={row.classification}
                     testId={`classification-badge-${row.supplierExternalId}`}
@@ -445,7 +445,7 @@ export function ClassificationTable({
                 <OverlayTable.Cell align="right" mono>
                   {row.coverage == null ? "—" : formatDashboardPercent(row.coverage)}
                 </OverlayTable.Cell>
-                <OverlayTable.Cell className="whitespace-nowrap text-xs text-muted-foreground">
+                <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
                   {formatDashboardDateTime(row.lastEvaluationAt)}
                 </OverlayTable.Cell>
                 <OverlayTable.Cell align="right" mono>

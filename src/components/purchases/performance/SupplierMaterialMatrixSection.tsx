@@ -23,6 +23,7 @@ import {
   formatDashboardQuantity,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { DashboardSection, EmptyRows, MaterialLinkButton, SupplierLinkButton } from "./SupplierPerformanceSections";
+import { MATRIX_COL_WIDTHS } from "./supplierPerformanceTableLayout";
 
 const SORT_LABELS: Record<SupplierMaterialMatrixSort, string> = {
   spend: "Valor comprado",
@@ -63,7 +64,7 @@ function SortHead({
   const active = sort === id;
   return (
     <OverlayTable.HeadCell align={align}>
-      <button type="button" onClick={() => onSort(id)} className={active ? "text-primary" : undefined} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : undefined} data-testid={`matrix-sort-${id}`}>
+      <button type="button" onClick={() => onSort(id)} className={active ? "max-w-full text-left text-primary" : "max-w-full text-left"} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : undefined} data-testid={`matrix-sort-${id}`}>
         {SORT_LABELS[id]}
         {active ? (direction === "asc" ? " ↑" : " ↓") : ""}
       </button>
@@ -92,7 +93,7 @@ export function SupplierMaterialMatrixTable({
           {formatDashboardInteger(result.totals.pairCount)} combinações · {formatDashboardInteger(result.totals.materialCount)} MPs · {formatDashboardInteger(result.totals.supplierCount)} fornecedores · {formatDashboardInteger(result.totals.orderCount)} pedidos · {formatDashboardInteger(result.totals.lineCount)} linhas · {formatDashboardMoney(result.totals.spend, currency)} (valor das linhas)
         </p>
       ) : null}
-      <OverlayTable stickyHeader className="min-w-[1180px]">
+      <OverlayTable stickyHeader layout="fixed" colWidths={MATRIX_COL_WIDTHS}>
         <OverlayTable.Head>
           <OverlayTable.Row>
             <SortHead id="material" sort={sort} direction={direction} onSort={onSort} />
@@ -121,14 +122,14 @@ export function SupplierMaterialMatrixTable({
           ) : (
             result.rows.map((row) => (
               <OverlayTable.Row key={`${row.materialKey}::${row.supplierExternalId ?? "u"}`} data-testid="matrix-row">
-                <OverlayTable.Cell>
+                <OverlayTable.Cell nowrap={false}>
                   <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} />
                   {row.singleSourceObserved ? (
                     <OverlayBadge tone="amber" className="mt-1" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{SINGLE_SOURCE_OBSERVED_LABEL}</OverlayBadge>
                   ) : null}
                 </OverlayTable.Cell>
-                <OverlayTable.Cell className="text-xs text-muted-foreground">{row.group ?? "—"}</OverlayTable.Cell>
-                <OverlayTable.Cell><SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} /></OverlayTable.Cell>
+                <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">{row.group ?? "—"}</OverlayTable.Cell>
+                <OverlayTable.Cell nowrap={false}><SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} /></OverlayTable.Cell>
                 <OverlayTable.Cell align="right" mono>{formatDashboardMoney(row.spend, currency)}</OverlayTable.Cell>
                 <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.shareOfMaterial)}</OverlayTable.Cell>
                 <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.orderCount)}</OverlayTable.Cell>

@@ -329,3 +329,96 @@ describe("classificação de fornecedores", () => {
     assert.ok(html.includes('href="/api/purchases/performance/classification.pdf"'));
   });
 });
+
+const LONG_SUPPLIER_NAMES = [
+  "POLIMEROS JR PLASTICOS DE ENGENHARIA E COMPOSTOS TERMOPLASTICOS LTDA",
+  "QUIMICOS E PLASTICOS INDUSTRIA E COMERCIO DE PRODUTOS LTDA",
+  "FBC FABRICA BRASILEIRA DE CATALIZADORES INDUSTRIA E COMERCIO LTDA",
+] as const;
+
+const LONG_DESCRIPTION =
+  "Resina termoplástica de engenharia para compostos industriais de alta performance com aditivos especiais e carga mineral destinada à injeção de peças técnicas de grande porte";
+
+function modelWithLongAnalyticalLabels() {
+  return {
+    ...model,
+    concentration: {
+      ...model.concentration,
+      dominantSupplierByMaterial: model.concentration.dominantSupplierByMaterial.map((row, index) => ({
+        ...row,
+        description: index === 0 ? LONG_DESCRIPTION : row.description,
+        spend: index === 0 ? 9_999_999.99 : row.spend,
+        orderCount: index === 0 ? 999 : row.orderCount,
+        dominant: row.dominant
+          ? {
+              ...row.dominant,
+              name: LONG_SUPPLIER_NAMES[index % LONG_SUPPLIER_NAMES.length]!,
+              share: index === 0 ? 1 : row.dominant.share,
+            }
+          : row.dominant,
+      })),
+    },
+  };
+}
+
+describe("layout das tabelas analíticas", () => {
+  it("risco de abastecimento usa table-fixed, colgroup e clamp de duas linhas no fornecedor", () => {
+    const html = renderView({ status: "success", data: modelWithLongAnalyticalLabels() });
+    const table = /data-testid="material-risk-table"[\s\S]*?<\/table>/.exec(html)?.[0] ?? "";
+    assert.ok(table.length > 0, "tabela de risco ausente");
+    assert.match(table, /table-fixed/);
+    assert.match(table, /min-width:1350px/);
+    assert.match(table, /<colgroup>/);
+    assert.match(table, /style="width:330px"/);
+    assert.match(table, /line-clamp-2/);
+    assert.ok(table.includes(LONG_SUPPLIER_NAMES[0]));
+    assert.ok(table.includes(LONG_DESCRIPTION));
+    assert.match(table, /9\.999\.999,99/);
+    assert.match(table, />999</);
+    assert.match(table, /100,0%/);
+    assert.equal(table.includes("truncate"), false);
+    assert.ok(table.includes(`title="${LONG_SUPPLIER_NAMES[0]}"`));
+  });
+
+  it("rankings, matriz, classificação e evidências também declaram layout fixo", async () => {
+    const html = renderView({ status: "success", data: model });
+    assert.match(html, /table-fixed/);
+    const { buildSupplierClassificationReport } = await import("@/src/lib/purchasing/supplierClassificationReport");
+    const report = buildSupplierClassificationReport(buildFixtureInput(), filters, { includeEvidence: true });
+    const classification = renderToStaticMarkup(
+      <SupplierClassificationContent
+        report={report}
+        query={{ search: null, classification: null, registryStatus: null, onlyPending: false, sort: "classification", direction: "asc" }}
+        onQueryChange={noop}
+        onSelectSupplier={noop}
+        xlsxUrl="/api/purchases/performance/classification.xlsx"
+        pdfUrl="/api/purchases/performance/classification.pdf"
+      />
+    );
+    assert.match(classification, /data-testid="classification-table"/);
+    assert.match(classification, /table-fixed/);
+    const result = buildSupplierMaterialMatrix(buildFixtureInput(), filters, parseSupplierMaterialMatrixQuery({ pageSize: "3" }));
+    const matrix = renderToStaticMarkup(
+      <SupplierMaterialMatrixTable result={result} loading={false} error={null} sort="spend" direction="desc" onSort={noop} onPage={noop} onSelectSupplier={noop} onSelectMaterial={noop} />
+    );
+    assert.match(matrix, /table-fixed/);
+  });
+
+  it("render estático não emite width(-1) do Recharts", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+    try {
+      renderView({ status: "success", data: model });
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(
+      warnings.some((line) => /width\(-1\)|chart should be greater than 0/i.test(line)),
+      false,
+      warnings.join("\n")
+    );
+  });
+});

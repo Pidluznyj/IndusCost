@@ -40,6 +40,11 @@ import {
 import { PurchaseTrendChart } from "./SupplierPerformanceCharts";
 import { AdvancedMetricsTable, DashboardNotice, EmptyRows, MaterialLinkButton } from "./SupplierPerformanceSections";
 import { ClassificationBadge } from "./SupplierClassificationSection";
+import {
+  EVIDENCE_COL_WIDTHS,
+  MONTHLY_HISTORY_COL_WIDTHS,
+  SCORECARD_MATERIALS_COL_WIDTHS,
+} from "./supplierPerformanceTableLayout";
 
 type TabId = "resumo" | "materiais" | "avaliacao" | "concentracao" | "historico" | "avancados";
 
@@ -64,7 +69,7 @@ function MaterialsTable({
   emptyMessage: string;
 }) {
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={SCORECARD_MATERIALS_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -85,7 +90,7 @@ function MaterialsTable({
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={row.materialKey}>
-              <OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false}>
                 <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} />
                 {row.singleSourceObserved ? <OverlayBadge tone="amber" className="mt-1" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{SINGLE_SOURCE_OBSERVED_LABEL}</OverlayBadge> : null}
               </OverlayTable.Cell>
@@ -119,7 +124,7 @@ function EvidenceTable({
   emptyMessage: string;
 }) {
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={EVIDENCE_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Pedido</OverlayTable.HeadCell>
@@ -145,7 +150,7 @@ function EvidenceTable({
             <OverlayTable.Row key={row.nomusPurchaseOrderId}>
               <OverlayTable.Cell mono>{row.orderNumber ?? `Nomus #${row.externalId}`}</OverlayTable.Cell>
               <OverlayTable.Cell mono>{formatDashboardDate(row.performanceDate)}</OverlayTable.Cell>
-              <OverlayTable.Cell className="text-xs">
+              <OverlayTable.Cell nowrap={false} className="text-xs">
                 {row.stage}
                 {row.canceled ? <OverlayBadge tone="amber" className="ml-1">cancelado</OverlayBadge> : null}
               </OverlayTable.Cell>
@@ -154,22 +159,22 @@ function EvidenceTable({
               <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.conformity, row.scaleMax)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.service, row.scaleMax)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.overall, row.scaleMax)}</OverlayTable.Cell>
-              <OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false}>
                 <OverlayBadge tone={row.methodologyVersion === 2 ? "sky" : "slate"}>
                   V{row.methodologyVersion} · escala {row.methodologyVersion === 1 ? 0 : 1}–{row.scaleMax}
                 </OverlayBadge>
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{row.revision}</OverlayTable.Cell>
-              <OverlayTable.Cell className="text-xs text-muted-foreground">
+              <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
                 {row.evaluatedByUserName ?? "—"}
                 <span className="block">{formatDashboardDateTime(row.evaluatedAt)}</span>
               </OverlayTable.Cell>
-              <OverlayTable.Cell className="text-xs text-muted-foreground">
+              <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
                 {row.updatedByUserName ?? "—"}
                 <span className="block">{formatDashboardDateTime(row.updatedAt)}</span>
               </OverlayTable.Cell>
-              <OverlayTable.Cell className="max-w-[18rem] text-xs text-muted-foreground">
-                <span className="block truncate" title={row.notes ?? undefined}>{row.notes ?? "—"}</span>
+              <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground" title={row.notes ?? undefined}>
+                {row.notes ?? "—"}
               </OverlayTable.Cell>
             </OverlayTable.Row>
           ))
@@ -333,7 +338,7 @@ export function SupplierScorecardContent({
         {tab === "historico" ? (
           <div className="space-y-4" data-testid="supplier-scorecard-history">
             <OverlaySection title="Compras mensais" padded={false}>
-              <OverlayTable>
+              <OverlayTable layout="fixed" colWidths={MONTHLY_HISTORY_COL_WIDTHS}>
                 <OverlayTable.Head>
                   <OverlayTable.Row>
                     <OverlayTable.HeadCell>Mês</OverlayTable.HeadCell>

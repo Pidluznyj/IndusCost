@@ -45,6 +45,14 @@ import {
   ScoreVsSpendChart,
   SupplierConcentrationChart,
 } from "./SupplierPerformanceCharts";
+import {
+  ADVANCED_METRIC_COL_WIDTHS,
+  DISPERSION_COL_WIDTHS,
+  MATERIAL_RISK_COL_WIDTHS,
+  PRICE_INCREASE_COL_WIDTHS,
+  RANKING_COL_WIDTHS,
+  TABLE_CLAMPED_TEXT_CLASS,
+} from "./supplierPerformanceTableLayout";
 
 type ReadModel = SupplierPerformanceDashboardReadModel;
 
@@ -132,12 +140,20 @@ export function SupplierLinkButton({
   onSelect?: (supplierExternalId: number) => void;
   className?: string;
 }) {
-  if (supplierExternalId == null || !onSelect) return <span className={className}>{name}</span>;
+  const clamped = cn(TABLE_CLAMPED_TEXT_CLASS, className);
+  if (supplierExternalId == null || !onSelect) {
+    return (
+      <span className={clamped} title={name}>
+        {name}
+      </span>
+    );
+  }
   return (
     <button
       type="button"
       onClick={() => onSelect(supplierExternalId)}
-      className={cn("text-left font-medium text-primary hover:underline", className)}
+      className={cn(clamped, "font-medium text-primary hover:underline")}
+      title={name}
       data-testid={`supplier-link-${supplierExternalId}`}
     >
       {name}
@@ -159,13 +175,19 @@ export function MaterialLinkButton({
   const label = code ?? description ?? materialKey;
   const inner = (
     <>
-      <span className="block font-medium">{label}</span>
-      {code && description ? <span className="block truncate text-[11px] text-muted-foreground" title={description}>{description}</span> : null}
+      <span className={cn(TABLE_CLAMPED_TEXT_CLASS, "font-medium")} title={label}>
+        {label}
+      </span>
+      {code && description ? (
+        <span className={cn(TABLE_CLAMPED_TEXT_CLASS, "text-[11px] leading-4 text-muted-foreground")} title={description}>
+          {description}
+        </span>
+      ) : null}
     </>
   );
-  if (!onSelect) return <div className="max-w-[18rem]">{inner}</div>;
+  if (!onSelect) return <div className="min-w-0 max-w-full overflow-hidden">{inner}</div>;
   return (
-    <button type="button" onClick={() => onSelect(materialKey)} className="max-w-[18rem] text-left text-primary hover:underline">
+    <button type="button" onClick={() => onSelect(materialKey)} className="block min-w-0 w-full max-w-full overflow-hidden text-left text-primary hover:underline">
       {inner}
     </button>
   );
@@ -274,7 +296,7 @@ function MaterialRiskTable({
 }) {
   const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={MATERIAL_RISK_COL_WIDTHS} data-testid="material-risk-table">
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -282,8 +304,8 @@ function MaterialRiskTable({
           <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
           <OverlayTable.HeadCell align="right">Nº fornecedores observados</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Fornecedor principal</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Participação</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Pedidos</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right" nowrap>Participação</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right" nowrap>Pedidos</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Observação</OverlayTable.HeadCell>
         </OverlayTable.Row>
       </OverlayTable.Head>
@@ -293,20 +315,22 @@ function MaterialRiskTable({
         ) : (
           rows.map((row) => (
             <OverlayTable.Row key={row.materialKey}>
-              <OverlayTable.Cell className="max-w-[14rem]">
+              <OverlayTable.Cell>
                 <MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={null} onSelect={onSelectMaterial} />
               </OverlayTable.Cell>
-              <OverlayTable.Cell className="max-w-[18rem] truncate text-muted-foreground" title={row.description ?? undefined}>
-                {row.description ?? "—"}
+              <OverlayTable.Cell nowrap={false} className="text-muted-foreground">
+                <span className={TABLE_CLAMPED_TEXT_CLASS} title={row.description ?? undefined}>
+                  {row.description ?? "—"}
+                </span>
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>
                 {financialUnavailable ? "Indisponível" : formatDashboardMoney(row.dominantBasis === "financial" || row.spend > 0 ? row.spend : null, currency)}
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.supplierCountObserved)}</OverlayTable.Cell>
-              <OverlayTable.Cell className="max-w-[16rem]">
+              <OverlayTable.Cell>
                 {row.dominant ? (
-                  <div className="min-w-0">
-                    <SupplierLinkButton supplierExternalId={row.dominant.supplierExternalId} name={row.dominant.name} onSelect={onSelectSupplier} className="block truncate" />
+                  <div className="min-w-0 max-w-full overflow-hidden">
+                    <SupplierLinkButton supplierExternalId={row.dominant.supplierExternalId} name={row.dominant.name} onSelect={onSelectSupplier} />
                     {row.dominantBasis === "orders" ? (
                       <span className="block text-[11px] text-muted-foreground" title="Sem valor de linha provado: fornecedor mais frequente por nº de pedidos, não principal financeiro.">
                         Mais frequente no período
@@ -321,7 +345,7 @@ function MaterialRiskTable({
                 {financialUnavailable ? "Indisponível" : formatDashboardPercent(row.dominant?.share)}
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardInteger(row.orderCount)}</OverlayTable.Cell>
-              <OverlayTable.Cell className="max-w-[16rem] text-xs text-muted-foreground" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>
+              <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>
                 {supplyObservationLabel(row)}
               </OverlayTable.Cell>
             </OverlayTable.Row>
@@ -405,18 +429,18 @@ function RankingTable({
   const [expanded, setExpanded] = useState<number | null>(null);
   const financialUnavailable = financialStatus === "UNAVAILABLE";
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={RANKING_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
-          <OverlayTable.HeadCell align="right">#</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right" nowrap>#</OverlayTable.HeadCell>
           <OverlayTable.HeadCell>Fornecedor</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Nota</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right" nowrap>Nota</OverlayTable.HeadCell>
           <OverlayTable.HeadCell align="right">Avaliações</OverlayTable.HeadCell>
           {SUPPLIER_EVALUATION_CRITERIA.map((c) => (
             <OverlayTable.HeadCell key={c.key} align="right">{c.shortLabel}</OverlayTable.HeadCell>
           ))}
           <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
-          <OverlayTable.HeadCell align="right">Pedidos</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right" nowrap>Pedidos</OverlayTable.HeadCell>
         </OverlayTable.Row>
       </OverlayTable.Head>
       <OverlayTable.Body>
@@ -431,8 +455,8 @@ function RankingTable({
               <React.Fragment key={row.supplierExternalId}>
                 <OverlayTable.Row data-testid={`ranking-row-${row.supplierExternalId}`}>
                   <OverlayTable.Cell align="right" mono>{row.position}</OverlayTable.Cell>
-                  <OverlayTable.Cell className="min-w-[14rem] max-w-[22rem]">
-                    <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.name} onSelect={onSelectSupplier} className="block truncate" />
+                  <OverlayTable.Cell>
+                    <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.name} onSelect={onSelectSupplier} />
                     <button
                       type="button"
                       className="mt-0.5 text-[11px] text-muted-foreground hover:text-foreground"
@@ -445,8 +469,8 @@ function RankingTable({
                   <OverlayTable.Cell align="right" mono title={ev?.methodologyVersion === 1 ? "Escala 0–10 (V1)" : "Escala 1–5"}>
                     {formatDashboardScore(ev?.summary.overallScore, ev?.scaleMax)}
                   </OverlayTable.Cell>
-                  <OverlayTable.Cell align="right" className="whitespace-nowrap">
-                    <span className="font-mono text-xs tabular-nums">{formatDashboardInteger(ev?.evaluationCount ?? 0)}</span>
+                  <OverlayTable.Cell align="right" nowrap={false}>
+                    <span className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDashboardInteger(ev?.evaluationCount ?? 0)}</span>
                     {coverage.context ? (
                       <span className="block text-[11px] text-muted-foreground">{coverage.percent} · {coverage.context}</span>
                     ) : null}
@@ -555,7 +579,7 @@ export function SupplierRankingsSection({
 
 function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: DashboardPriceDispersionRow[]; onSelectSupplier?: (id: number) => void; onSelectMaterial?: (key: string) => void }) {
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={DISPERSION_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -576,12 +600,12 @@ function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: D
               <OverlayTable.Cell><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
               <OverlayTable.Cell mono>{row.unit ?? "—"}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{row.supplierCount}</OverlayTable.Cell>
-              <OverlayTable.Cell>
-                <span className="font-mono text-xs tabular-nums">{formatDashboardPrice(row.minAveragePrice, row.currency, row.unit)}</span>
+              <OverlayTable.Cell nowrap={false}>
+                <span className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDashboardPrice(row.minAveragePrice, row.currency, row.unit)}</span>
                 <span className="block text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.minSupplier.supplierExternalId} name={row.minSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
               </OverlayTable.Cell>
-              <OverlayTable.Cell>
-                <span className="font-mono text-xs tabular-nums">{formatDashboardPrice(row.maxAveragePrice, row.currency, row.unit)}</span>
+              <OverlayTable.Cell nowrap={false}>
+                <span className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDashboardPrice(row.maxAveragePrice, row.currency, row.unit)}</span>
                 <span className="block text-[11px] text-muted-foreground"><SupplierLinkButton supplierExternalId={row.maxSupplier.supplierExternalId} name={row.maxSupplier.name} onSelect={onSelectSupplier} className="text-[11px]" /></span>
               </OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardPrice(row.spread, row.currency, row.unit)}</OverlayTable.Cell>
@@ -596,7 +620,7 @@ function DispersionTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: D
 
 function PriceIncreaseTable({ rows, onSelectSupplier, onSelectMaterial }: { rows: DashboardPriceChangeRow[]; onSelectSupplier?: (id: number) => void; onSelectMaterial?: (key: string) => void }) {
   return (
-    <OverlayTable stickyHeader>
+    <OverlayTable stickyHeader layout="fixed" colWidths={PRICE_INCREASE_COL_WIDTHS}>
       <OverlayTable.Head>
         <OverlayTable.Row>
           <OverlayTable.HeadCell>Matéria-prima</OverlayTable.HeadCell>
@@ -617,8 +641,8 @@ function PriceIncreaseTable({ rows, onSelectSupplier, onSelectMaterial }: { rows
               <OverlayTable.Cell><MaterialLinkButton materialKey={row.materialKey} code={row.productCode} description={row.description} onSelect={onSelectMaterial} /></OverlayTable.Cell>
               <OverlayTable.Cell><SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} /></OverlayTable.Cell>
               <OverlayTable.Cell mono>{row.unit ?? "—"}</OverlayTable.Cell>
-              <OverlayTable.Cell mono>{formatDashboardMonth(row.firstMonth)} · {formatDashboardPrice(row.firstAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
-              <OverlayTable.Cell mono>{formatDashboardMonth(row.lastMonth)} · {formatDashboardPrice(row.lastAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="font-mono text-xs tabular-nums">{formatDashboardMonth(row.firstMonth)} · {formatDashboardPrice(row.firstAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
+              <OverlayTable.Cell nowrap={false} className="font-mono text-xs tabular-nums">{formatDashboardMonth(row.lastMonth)} · {formatDashboardPrice(row.lastAveragePrice, row.currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardPrice(row.changeAbsolute, row.currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.changePct)}</OverlayTable.Cell>
             </OverlayTable.Row>
@@ -739,7 +763,7 @@ export function AdvancedMetricsTable({ entries, testId }: { entries: AdvancedMet
       {grouped.map(({ group, entries: list }) => (
         <React.Fragment key={group}>
         <OverlaySection title={ADVANCED_METRIC_GROUP_LABELS[group]} padded={false} testId={`advanced-group-`}>
-          <OverlayTable>
+          <OverlayTable layout="fixed" colWidths={ADVANCED_METRIC_COL_WIDTHS}>
             <OverlayTable.Head>
               <OverlayTable.Row>
                 <OverlayTable.HeadCell>Indicador</OverlayTable.HeadCell>
@@ -751,17 +775,17 @@ export function AdvancedMetricsTable({ entries, testId }: { entries: AdvancedMet
             <OverlayTable.Body>
               {list.map((entry) => (
                 <OverlayTable.Row key={entry.key} data-testid={`advanced-metric-${entry.key}`} data-status={entry.status}>
-                  <OverlayTable.Cell>
+                  <OverlayTable.Cell nowrap={false}>
                     <span className="font-medium">{entry.label}</span>
                     {entry.formula ? <span className="block text-[11px] text-muted-foreground">{entry.formula}</span> : null}
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
                     <OverlayBadge tone={ADVANCED_METRIC_STATUS_TONES[entry.status]}>{ADVANCED_METRIC_STATUS_LABELS[entry.status]}</OverlayBadge>
                   </OverlayTable.Cell>
-                  <OverlayTable.Cell className={entry.status === "unavailable" ? "text-muted-foreground" : undefined}>
+                  <OverlayTable.Cell nowrap={false} className={entry.status === "unavailable" ? "text-muted-foreground" : undefined}>
                     {entry.status === "unavailable" ? ADVANCED_METRIC_UNAVAILABLE_LABEL : describeAdvancedMetricValue(entry)}
                   </OverlayTable.Cell>
-                  <OverlayTable.Cell className="max-w-[28rem] text-xs text-muted-foreground">
+                  <OverlayTable.Cell nowrap={false} className="text-xs text-muted-foreground">
                     {entry.source ? <span className="block text-foreground">{entry.source}</span> : null}
                     {entry.reason ? <span className="block">{entry.reason}</span> : null}
                   </OverlayTable.Cell>

@@ -407,7 +407,7 @@ export function SupplierPerformanceShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-5" data-testid="supplier-performance-dashboard">
+    <div className="min-w-0 space-y-5" data-testid="supplier-performance-dashboard">
       <PurchaseChainViewNav current="performance" variant="nomus" />
       <header>
         <h1 className="text-xl font-bold tracking-tight text-foreground">{title}</h1>

@@ -2,7 +2,7 @@
  * Gráficos da aba Performance (recharts). Recebem séries prontas do read model;
  * não recalculam valores — apenas formatam eixos e tooltips.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -48,11 +48,37 @@ function ChartFrame({
   height?: number;
   testId?: string;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const update = () => {
+      const width = Math.floor(el.getBoundingClientRect().width);
+      if (width > 0) setSize({ width, height });
+    };
+
+    update();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [height]);
+
   return (
-    <div className="min-w-0 w-full" style={{ width: "100%", height, minHeight: height }} data-testid={testId}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-        {children}
-      </ResponsiveContainer>
+    <div
+      ref={ref}
+      className="min-w-0 w-full"
+      style={{ width: "100%", height, minHeight: height }}
+      data-testid={testId}
+    >
+      {size ? (
+        <ResponsiveContainer width={size.width} height={size.height} minWidth={1} minHeight={1}>
+          {children}
+        </ResponsiveContainer>
+      ) : null}
     </div>
   );
 }

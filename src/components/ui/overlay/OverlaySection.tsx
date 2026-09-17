@@ -73,7 +73,7 @@ export function OverlaySection({
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </header>
       ) : null}
-      <div className={cn(padded && variant !== "plain" && "px-3 py-3")}>
+      <div className={cn("min-w-0", padded && variant !== "plain" && "px-3 py-3")}>
         {children}
       </div>
     </section>

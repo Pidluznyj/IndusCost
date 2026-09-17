@@ -10,10 +10,14 @@ import { OVERLAY_TABLE_HEAD } from "@/src/lib/overlay/overlayTypography";
  * - Célula compacta (`px-4 py-3 text-sm`)
  * - `sticky` header opcional
  *
+ * Tabelas analíticas largas devem usar `layout="fixed"` + `colWidths` (ou
+ * `minWidth`) para o conteúdo nunca invadir a coluna vizinha: o wrapper já
+ * oferece `overflow-x-auto`.
+ *
  * Uso: substitui `<table>` bruto — mantém a API padrão de tabelas HTML.
  *
  * ```tsx
- * <OverlayTable stickyHeader>
+ * <OverlayTable stickyHeader layout="fixed" colWidths={[160, 220, 120]}>
  *   <OverlayTable.Head>
  *     <OverlayTable.Row>
  *       <OverlayTable.HeadCell>Código</OverlayTable.HeadCell>
@@ -35,24 +39,51 @@ export type OverlayTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
   stickyHeader?: boolean;
   /** Wrapper aplica overflow-x auto. Default: `true`. */
   scroll?: boolean;
+  /**
+   * Largura mínima da tabela em px. Em viewports menores o wrapper rola
+   * horizontalmente em vez de comprimir colunas até ficarem ilegíveis.
+   */
+  minWidth?: number;
+  /** `fixed` + colgroup impede que texto de uma célula pinte sobre a vizinha. */
+  layout?: "auto" | "fixed";
+  /** Larguras determinísticas das colunas (px). Implica `layout="fixed"`. */
+  colWidths?: ReadonlyArray<number>;
 };
 
 function OverlayTableRoot({
   stickyHeader = false,
   scroll = true,
+  minWidth,
+  layout,
+  colWidths,
   className,
   children,
+  style,
   ...rest
 }: OverlayTableProps): JSX.Element {
+  const resolvedLayout = layout ?? (colWidths && colWidths.length > 0 ? "fixed" : "auto");
+  const resolvedMinWidth =
+    minWidth ??
+    (colWidths && colWidths.length > 0 ? colWidths.reduce((sum, width) => sum + width, 0) : undefined);
   const table = (
     <table
       {...rest}
+      style={{ minWidth: resolvedMinWidth, ...style }}
       className={cn(
         "w-full border-collapse text-sm",
+        resolvedLayout === "fixed" &&
+          "table-fixed [&_td]:overflow-hidden [&_th]:align-top [&_td]:align-top [&_th]:overflow-hidden [&_th]:whitespace-normal [&_th]:break-words",
         stickyHeader && "[&>thead]:sticky [&>thead]:top-0 [&>thead]:z-10",
         className
       )}
     >
+      {colWidths && colWidths.length > 0 ? (
+        <colgroup>
+          {colWidths.map((width, index) => (
+            <col key={index} style={{ width }} />
+          ))}
+        </colgroup>
+      ) : null}
       {children}
     </table>
   );
@@ -118,8 +149,12 @@ const ALIGN: Record<CellAlign, string> = {
 function OverlayTableHeadCell({
   className,
   align = "left",
+  nowrap = false,
   ...rest
-}: React.ThHTMLAttributes<HTMLTableCellElement> & { align?: CellAlign }): JSX.Element {
+}: React.ThHTMLAttributes<HTMLTableCellElement> & {
+  align?: CellAlign;
+  nowrap?: boolean;
+}): JSX.Element {
   return (
     <th
       {...rest}
@@ -127,6 +162,7 @@ function OverlayTableHeadCell({
         "px-4 py-2.5",
         ALIGN[align],
         OVERLAY_TABLE_HEAD,
+        nowrap && "whitespace-nowrap",
         className
       )}
     />
@@ -137,12 +173,16 @@ function OverlayTableCell({
   className,
   align = "left",
   mono = false,
+  nowrap,
   ...rest
 }: React.TdHTMLAttributes<HTMLTableCellElement> & {
   align?: CellAlign;
   /** Aplica `font-mono text-xs tabular-nums` — para códigos/SKUs/valores. */
   mono?: boolean;
+  /** Impede quebra; default `true` quando `mono` (colunas numéricas alinhadas). */
+  nowrap?: boolean;
 }): JSX.Element {
+  const resolvedNowrap = nowrap ?? mono;
   return (
     <td
       {...rest}
@@ -150,6 +190,7 @@ function OverlayTableCell({
         "px-4 py-3 text-sm text-foreground",
         ALIGN[align],
         mono && "font-mono text-xs tabular-nums",
+        resolvedNowrap && "whitespace-nowrap",
         className
       )}
     />

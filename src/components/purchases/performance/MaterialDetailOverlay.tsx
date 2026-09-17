@@ -33,6 +33,7 @@ import {
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { PriceEvolutionChart, PurchaseTrendChart } from "./SupplierPerformanceCharts";
 import { EmptyRows, SupplierLinkButton } from "./SupplierPerformanceSections";
+import { MATERIAL_DISPERSION_COL_WIDTHS, MATERIAL_SUPPLIERS_COL_WIDTHS } from "./supplierPerformanceTableLayout";
 
 export function MaterialDetailContent({
   detail,
@@ -54,7 +55,7 @@ export function MaterialDetailContent({
         </OverlayKpiCardGrid>
 
         <OverlaySection title="Principais fornecedores desta matéria-prima" description="Share = spend do fornecedor na MP ÷ spend total da MP. Nota = consolidado do fornecedor nos pedidos do período." padded={false} testId="material-detail-suppliers">
-          <OverlayTable stickyHeader>
+          <OverlayTable stickyHeader layout="fixed" colWidths={MATERIAL_SUPPLIERS_COL_WIDTHS}>
             <OverlayTable.Head>
               <OverlayTable.Row>
                 <OverlayTable.HeadCell>Fornecedor</OverlayTable.HeadCell>
@@ -74,7 +75,7 @@ export function MaterialDetailContent({
               ) : (
                 detail.suppliers.map((row) => (
                   <OverlayTable.Row key={row.supplierExternalId ?? "unresolved"}>
-                    <OverlayTable.Cell>
+                    <OverlayTable.Cell nowrap={false}>
                       <SupplierLinkButton supplierExternalId={row.supplierExternalId} name={row.supplierName} onSelect={onSelectSupplier} />
                       {row.singleSourceObserved ? <OverlayBadge tone="amber" className="ml-1" title={SINGLE_SOURCE_OBSERVED_TOOLTIP}>{SINGLE_SOURCE_OBSERVED_LABEL}</OverlayBadge> : null}
                     </OverlayTable.Cell>
@@ -98,7 +99,7 @@ export function MaterialDetailContent({
             <PriceEvolutionChart series={detail.priceEvolution} currency={currency} />
           </OverlaySection>
           <OverlaySection title="Dispersão de preço observada" description="Entre fornecedores da mesma unidade e moeda. Não é 'saving potencial'." padded={false} testId="material-detail-dispersion">
-            <OverlayTable>
+            <OverlayTable layout="fixed" colWidths={MATERIAL_DISPERSION_COL_WIDTHS}>
               <OverlayTable.Head>
                 <OverlayTable.Row>
                   <OverlayTable.HeadCell>Un.</OverlayTable.HeadCell>
@@ -115,8 +116,8 @@ export function MaterialDetailContent({
                   detail.dispersion.map((row) => (
                     <OverlayTable.Row key={row.unit ?? "u"}>
                       <OverlayTable.Cell mono>{row.unit ?? "—"}</OverlayTable.Cell>
-                      <OverlayTable.Cell><span className="font-mono text-xs">{formatDashboardPrice(row.minAveragePrice, row.currency, row.unit)}</span><span className="block text-[11px] text-muted-foreground">{row.minSupplier.name}</span></OverlayTable.Cell>
-                      <OverlayTable.Cell><span className="font-mono text-xs">{formatDashboardPrice(row.maxAveragePrice, row.currency, row.unit)}</span><span className="block text-[11px] text-muted-foreground">{row.maxSupplier.name}</span></OverlayTable.Cell>
+                      <OverlayTable.Cell nowrap={false}><span className="whitespace-nowrap font-mono text-xs">{formatDashboardPrice(row.minAveragePrice, row.currency, row.unit)}</span><span className="block overflow-hidden break-words text-[11px] leading-4 text-muted-foreground" title={row.minSupplier.name}>{row.minSupplier.name}</span></OverlayTable.Cell>
+                      <OverlayTable.Cell nowrap={false}><span className="whitespace-nowrap font-mono text-xs">{formatDashboardPrice(row.maxAveragePrice, row.currency, row.unit)}</span><span className="block overflow-hidden break-words text-[11px] leading-4 text-muted-foreground" title={row.maxSupplier.name}>{row.maxSupplier.name}</span></OverlayTable.Cell>
                       <OverlayTable.Cell align="right" mono>{formatDashboardPrice(row.spread, row.currency, row.unit)}</OverlayTable.Cell>
                       <OverlayTable.Cell align="right" mono>{formatDashboardPercent(row.spreadPct)}</OverlayTable.Cell>
                     </OverlayTable.Row>
