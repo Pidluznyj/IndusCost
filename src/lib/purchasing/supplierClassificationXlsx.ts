@@ -1,15 +1,24 @@
 /**
  * XLSX real (SheetJS) da Classificação de fornecedores.
  *
- * Reutiliza a biblioteca `xlsx` já presente no projeto (mesmo padrão de
- * `financeCostCenterDetailExport`: `!cols`, `!freeze`, `!autofilter`). Fica no
+ * Reutiliza a biblioteca `xlsx` 0.18.5 já presente no projeto (mesmo padrão de
+ * `financeCostCenterDetailExport`: `!cols`, `!autofilter`, `cell.z`). Fica no
  * server: o browser só recebe o arquivo pela rota, nunca a biblioteca.
  *
  * NÃO calcula nada: consome `SupplierClassificationReport` e apenas formata.
  * Toda célula textual de origem externa (nome de fornecedor, código de pedido,
  * observação do avaliador) passa por neutralização de fórmula.
+ *
+ * Limite da community 0.18.5 (confirmado no XML gerado): serializa largura de
+ * coluna, altura de linha, merges, autofilter, margens, number formats (`z`)
+ * e Props do workbook. NÃO serializa fill/fonte/borda (`cell.s`) nem
+ * `pageSetup` nem freeze panes (`!freeze` / `!views` vira sheetView vazio).
+ * Fill/fonte/borda exigiriam SheetJS Pro ou nova dependência (exceljs /
+ * xlsx-js-style) — não adicionadas. Freeze e paisagem A4 são injetados no
+ * OOXML com `jszip`, que o projeto já usa.
  */
 
+import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import {
   SUPPLIER_EVALUATION_RATING_LABELS,
@@ -56,6 +65,70 @@ const NUMBER_FORMAT_SCORE = "0.00";
 const NUMBER_FORMAT_MONEY = "#,##0.00";
 const NUMBER_FORMAT_PERCENT = "0.00%";
 
+/** Capacidade real da community 0.18.5 — evidência para não puxar exceljs. */
+export const SUPPLIER_CLASSIFICATION_XLSX_COMMUNITY_LIMITS = {
+  writesNumberFormats: true,
+  writesColumnWidths: true,
+  writesRowHeights: true,
+  writesMerges: true,
+  writesAutoFilter: true,
+  writesMargins: true,
+  writesWorkbookProps: true,
+  writesCellFillFontBorder: false,
+  writesFreezePanes: false,
+  writesPageSetup: false,
+} as const;
+
+type FreezeSpec = {
+  xSplit: number;
+  ySplit: number;
+  topLeftCell: string;
+  activePane: "bottomRight";
+  state: "frozen";
+};
+
+type SheetChrome = {
+  lastCol: number;
+  headerRow?: number;
+  freeze?: FreezeSpec;
+  autofilterRef?: string;
+};
+
+function freezeBelowHeader(headerRow: number, xSplit = 1): FreezeSpec {
+  return {
+    xSplit,
+    ySplit: headerRow + 1,
+    topLeftCell: XLSX.utils.encode_cell({ r: headerRow + 1, c: xSplit }),
+    activePane: "bottomRight",
+    state: "frozen",
+  };
+}
+
+function applySheetChrome(ws: XLSX.WorkSheet, chrome: SheetChrome): void {
+  const merges = Array.isArray(ws["!merges"]) ? [...ws["!merges"]] : [];
+  merges.unshift({ s: { r: 0, c: 0 }, e: { r: 0, c: chrome.lastCol } });
+  const purpose = ws["A2"] as XLSX.CellObject | undefined;
+  if (purpose && purpose.v != null && String(purpose.v).length > 0) {
+    merges.unshift({ s: { r: 1, c: 0 }, e: { r: 1, c: chrome.lastCol } });
+  }
+  ws["!merges"] = merges;
+
+  const rows: XLSX.RowInfo[] = Array.isArray(ws["!rows"]) ? [...ws["!rows"]] : [];
+  rows[0] = { hpt: 24 };
+  rows[1] = { hpt: 18 };
+  if (chrome.headerRow != null) rows[chrome.headerRow] = { hpt: 22 };
+  ws["!rows"] = rows;
+
+  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
+
+  if (chrome.freeze) {
+    (ws as XLSX.WorkSheet & { "!freeze"?: FreezeSpec })["!freeze"] = chrome.freeze;
+  }
+  if (chrome.autofilterRef) {
+    ws["!autofilter"] = { ref: chrome.autofilterRef };
+  }
+}
+
 /** Acumula linhas mantendo o índice — necessário para freeze/autofilter corretos. */
 class SheetBuilder {
   readonly rows: Cell[][] = [];
@@ -70,12 +143,7 @@ class SheetBuilder {
   }
 }
 
-function applyFormat(
-  ws: XLSX.WorkSheet,
-  rowIndex: number,
-  colIndex: number,
-  z: string
-): void {
+function applyFormat(ws: XLSX.WorkSheet, rowIndex: number, colIndex: number, z: string): void {
   const address = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
   const cell = ws[address] as XLSX.CellObject | undefined;
   if (cell && cell.t === "n") cell.z = z;
@@ -108,7 +176,7 @@ const CLASSIFICATION_COLUMNS = [
 ] as const;
 
 const CLASSIFICATION_COL_WIDTHS = [
-  38, 20, 10, 18, 28, 10, 8, 11, 10, 13, 13, 16, 16, 16, 11, 18, 17, 24, 8,
+  48, 22, 12, 20, 36, 12, 10, 12, 10, 14, 14, 18, 18, 18, 12, 20, 18, 26, 10,
 ];
 
 function classificationRowCells(row: SupplierClassificationReportRow): Cell[] {
@@ -141,6 +209,7 @@ function buildClassificationSheet(report: SupplierClassificationReport): XLSX.Wo
 
   b.push([metadata.title]);
   b.push([metadata.purpose]);
+  b.push(["Natureza", "Critério interno da empresa. Não é prescrito por norma externa."]);
   b.push();
   b.push(["Período", `${metadata.period.from ?? "início"} a ${metadata.period.to ?? "hoje"}`]);
   b.push(["Emitido em", dateTimeBr(metadata.generatedAt)]);
@@ -205,33 +274,29 @@ function buildClassificationSheet(report: SupplierClassificationReport): XLSX.Wo
   for (const line of metadata.policy.text) b.push([line]);
 
   const ws = XLSX.utils.aoa_to_sheet(b.rows);
-
   ws["!cols"] = CLASSIFICATION_COL_WIDTHS.map((wch) => ({ wch }));
-  // Congela o cabeçalho da tabela e a primeira coluna (nome do fornecedor).
-  ws["!freeze"] = {
-    xSplit: 1,
-    ySplit: headerRow + 1,
-    topLeftCell: XLSX.utils.encode_cell({ r: headerRow + 1, c: 1 }),
-    activePane: "bottomRight",
-    state: "frozen",
-  };
-  if (rows.length > 0) {
-    ws["!autofilter"] = {
-      ref: `${XLSX.utils.encode_cell({ r: headerRow, c: 0 })}:${XLSX.utils.encode_cell({
-        r: lastDataRow,
-        c: CLASSIFICATION_COLUMNS.length - 1,
-      })}`,
-    };
-  }
-  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+
+  const lastCol = CLASSIFICATION_COLUMNS.length - 1;
+  applySheetChrome(ws, {
+    lastCol,
+    headerRow,
+    freeze: freezeBelowHeader(headerRow),
+    autofilterRef:
+      rows.length > 0
+        ? `${XLSX.utils.encode_cell({ r: headerRow, c: 0 })}:${XLSX.utils.encode_cell({
+            r: lastDataRow,
+            c: lastCol,
+          })}`
+        : undefined,
+  });
 
   for (const { row, z } of summaryFormats) applyFormat(ws, row, 1, z);
   rows.forEach((_, index) => {
     const r = headerRow + 1 + index;
-    applyFormat(ws, r, 5, NUMBER_FORMAT_SCORE); // nota geral
+    applyFormat(ws, r, 5, NUMBER_FORMAT_SCORE);
     for (let c = 7; c <= 10; c += 1) applyFormat(ws, r, c, NUMBER_FORMAT_SCORE);
-    applyFormat(ws, r, 14, NUMBER_FORMAT_PERCENT); // cobertura
-    applyFormat(ws, r, 17, NUMBER_FORMAT_MONEY); // valor comprado
+    applyFormat(ws, r, 14, NUMBER_FORMAT_PERCENT);
+    applyFormat(ws, r, 17, NUMBER_FORMAT_MONEY);
   });
 
   return ws;
@@ -292,8 +357,8 @@ function buildMethodologySheet(report: SupplierClassificationReport): XLSX.WorkS
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet(b.rows);
-  ws["!cols"] = [{ wch: 46 }, { wch: 86 }];
-  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+  ws["!cols"] = [{ wch: 48 }, { wch: 88 }];
+  applySheetChrome(ws, { lastCol: 1 });
   return ws;
 }
 
@@ -329,7 +394,7 @@ const EVIDENCE_COLUMNS = [
 ] as const;
 
 const EVIDENCE_COL_WIDTHS = [
-  38, 20, 10, 16, 16, 16, 20, 11, 14, 8, 11, 10, 13, 13, 11, 26, 20, 8, 9, 20, 18, 20, 20, 60,
+  48, 22, 12, 16, 18, 16, 20, 12, 14, 10, 12, 10, 14, 14, 12, 28, 22, 10, 10, 22, 20, 22, 20, 60,
 ];
 
 function evidenceRowCells(row: SupplierClassificationEvidenceRow): Cell[] {
@@ -376,22 +441,19 @@ function buildEvidenceSheet(report: SupplierClassificationReport): XLSX.WorkShee
 
   const ws = XLSX.utils.aoa_to_sheet(b.rows);
   ws["!cols"] = EVIDENCE_COL_WIDTHS.map((wch) => ({ wch }));
-  ws["!freeze"] = {
-    xSplit: 1,
-    ySplit: headerRow + 1,
-    topLeftCell: XLSX.utils.encode_cell({ r: headerRow + 1, c: 1 }),
-    activePane: "bottomRight",
-    state: "frozen",
-  };
-  if (evidence.length > 0) {
-    ws["!autofilter"] = {
-      ref: `${XLSX.utils.encode_cell({ r: headerRow, c: 0 })}:${XLSX.utils.encode_cell({
-        r: lastDataRow,
-        c: EVIDENCE_COLUMNS.length - 1,
-      })}`,
-    };
-  }
-  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+  const lastCol = EVIDENCE_COLUMNS.length - 1;
+  applySheetChrome(ws, {
+    lastCol,
+    headerRow,
+    freeze: freezeBelowHeader(headerRow),
+    autofilterRef:
+      evidence.length > 0
+        ? `${XLSX.utils.encode_cell({ r: headerRow, c: 0 })}:${XLSX.utils.encode_cell({
+            r: lastDataRow,
+            c: lastCol,
+          })}`
+        : undefined,
+  });
 
   evidence.forEach((_, index) => {
     const r = headerRow + 1 + index;
@@ -411,6 +473,7 @@ function buildParametersSheet(report: SupplierClassificationReport): XLSX.WorkSh
   const b = new SheetBuilder();
 
   b.push(["Parâmetros da emissão"]);
+  b.push(["Documento institucional de classificação de desempenho de fornecedores."]);
   b.push();
   b.push(["Parâmetro", "Valor"]);
   b.push(["Relatório", metadata.title]);
@@ -452,14 +515,14 @@ function buildParametersSheet(report: SupplierClassificationReport): XLSX.WorkSh
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet(b.rows);
-  ws["!cols"] = [{ wch: 40 }, { wch: 90 }];
-  ws["!margins"] = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+  ws["!cols"] = [{ wch: 44 }, { wch: 92 }];
+  applySheetChrome(ws, { lastCol: 1, headerRow: 3 });
   applyFormat(ws, coverageRow, 1, NUMBER_FORMAT_PERCENT);
   return ws;
 }
 
 /* ------------------------------------------------------------------ *
- * Workbook
+ * Workbook + pós-processamento OOXML
  * ------------------------------------------------------------------ */
 
 export const SUPPLIER_CLASSIFICATION_XLSX_SHEETS = [
@@ -469,10 +532,116 @@ export const SUPPLIER_CLASSIFICATION_XLSX_SHEETS = [
   "Parâmetros",
 ] as const;
 
+type SheetPresentation = {
+  freeze?: FreezeSpec;
+  landscape: boolean;
+};
+
+function sheetPresentation(ws: XLSX.WorkSheet): SheetPresentation {
+  const freeze = (ws as XLSX.WorkSheet & { "!freeze"?: FreezeSpec })["!freeze"];
+  return { freeze, landscape: true };
+}
+
+function injectSheetPresentation(xml: string, spec: SheetPresentation): string {
+  let next = xml;
+  if (spec.freeze && /<sheetViews><sheetView workbookViewId="0"\s*\/>\s*<\/sheetViews>/.test(next)) {
+    const pane = `<pane xSplit="${spec.freeze.xSplit}" ySplit="${spec.freeze.ySplit}" topLeftCell="${spec.freeze.topLeftCell}" activePane="bottomRight" state="frozen"/>`;
+    next = next.replace(
+      /<sheetViews><sheetView workbookViewId="0"\s*\/>\s*<\/sheetViews>/,
+      `<sheetViews><sheetView workbookViewId="0">${pane}<selection pane="bottomRight" activeCell="${spec.freeze.topLeftCell}" sqref="${spec.freeze.topLeftCell}"/></sheetView></sheetViews>`
+    );
+  }
+  if (spec.landscape) {
+    if (!/<sheetPr[\s>]/.test(next)) {
+      next = next.replace(
+        /<worksheet([^>]*)>/,
+        `<worksheet$1><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
+      );
+    }
+    if (!/<pageSetup[\s/>]/.test(next)) {
+      if (/<pageMargins\b/.test(next)) {
+        next = next.replace(
+          /<pageMargins([^/]*)\/>/,
+          `<pageMargins$1/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>`
+        );
+      } else {
+        next = next.replace(
+          /<\/worksheet>/,
+          `<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`
+        );
+      }
+    }
+  }
+  return next;
+}
+
+function parseWorkbookSheetTargets(
+  workbookXml: string,
+  relsXml: string
+): Array<{ name: string; path: string }> {
+  const idByName = new Map<string, string>();
+  const sheetRe = /<sheet\b[^>]*>/g;
+  let match: RegExpExecArray | null;
+  while ((match = sheetRe.exec(workbookXml))) {
+    const tag = match[0];
+    const name = /name="([^"]+)"/.exec(tag)?.[1];
+    const rid = /r:id="([^"]+)"/.exec(tag)?.[1];
+    if (name && rid) idByName.set(name, rid);
+  }
+  const targetById = new Map<string, string>();
+  const relRe = /<Relationship\b[^>]*>/g;
+  while ((match = relRe.exec(relsXml))) {
+    const tag = match[0];
+    const id = /Id="([^"]+)"/.exec(tag)?.[1];
+    const target = /Target="([^"]+)"/.exec(tag)?.[1];
+    if (id && target) targetById.set(id, target);
+  }
+  const sheets: Array<{ name: string; path: string }> = [];
+  for (const [name, rid] of idByName) {
+    const target = targetById.get(rid);
+    if (!target) continue;
+    const normalized = target.replace(/^\//, "").replace(/^xl\//, "");
+    sheets.push({ name, path: `xl/${normalized}` });
+  }
+  return sheets;
+}
+
+async function applyCommunityXlsxPresentation(
+  buffer: Buffer,
+  presentations: Record<string, SheetPresentation>
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  const workbookFile = zip.file("xl/workbook.xml");
+  const relsFile = zip.file("xl/_rels/workbook.xml.rels");
+  if (!workbookFile || !relsFile) return buffer;
+  const workbookXml = await workbookFile.async("string");
+  const relsXml = await relsFile.async("string");
+  for (const sheet of parseWorkbookSheetTargets(workbookXml, relsXml)) {
+    const spec = presentations[sheet.name];
+    if (!spec) continue;
+    const file = zip.file(sheet.path);
+    if (!file) continue;
+    const xml = await file.async("string");
+    zip.file(sheet.path, injectSheetPresentation(xml, spec));
+  }
+  const generated = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
+  return Buffer.from(generated);
+}
+
 export function buildSupplierClassificationWorkbook(
   report: SupplierClassificationReport
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
+  wb.Props = {
+    Title: report.metadata.title,
+    Subject: report.metadata.purpose,
+    Author: "IndusCost",
+    CreatedDate: new Date(report.metadata.generatedAt),
+  };
   XLSX.utils.book_append_sheet(wb, buildClassificationSheet(report), SUPPLIER_CLASSIFICATION_XLSX_SHEETS[0]);
   XLSX.utils.book_append_sheet(wb, buildMethodologySheet(report), SUPPLIER_CLASSIFICATION_XLSX_SHEETS[1]);
   XLSX.utils.book_append_sheet(wb, buildEvidenceSheet(report), SUPPLIER_CLASSIFICATION_XLSX_SHEETS[2]);
@@ -480,11 +649,20 @@ export function buildSupplierClassificationWorkbook(
   return wb;
 }
 
-export function buildSupplierClassificationXlsxBuffer(
+export async function buildSupplierClassificationXlsxBuffer(
   report: SupplierClassificationReport
-): Buffer {
-  return XLSX.write(buildSupplierClassificationWorkbook(report), {
+): Promise<Buffer> {
+  const workbook = buildSupplierClassificationWorkbook(report);
+  const presentations: Record<string, SheetPresentation> = {};
+  for (const name of SUPPLIER_CLASSIFICATION_XLSX_SHEETS) {
+    const ws = workbook.Sheets[name];
+    if (ws) presentations[name] = sheetPresentation(ws);
+  }
+  const raw = XLSX.write(workbook, {
     type: "buffer",
     bookType: "xlsx",
+    bookSST: true,
+    cellStyles: false,
   }) as Buffer;
+  return applyCommunityXlsxPresentation(raw, presentations);
 }

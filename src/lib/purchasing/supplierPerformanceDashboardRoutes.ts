@@ -103,7 +103,7 @@ export function registerSupplierPerformanceDashboardRoutes(
       );
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      return res.send(buildSupplierClassificationXlsxBuffer(report));
+      return res.send(await buildSupplierClassificationXlsxBuffer(report));
     } catch (error) {
       const mapped = mapSupplierEvaluationError(error);
       return res.status(mapped.status).json(mapped.body);

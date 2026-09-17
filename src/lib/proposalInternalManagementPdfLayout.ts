@@ -51,7 +51,14 @@ export type PdfLine =
   | { type: "spacer" }
   | { type: "rule" }
   | { type: "kv"; label: string; value: string }
-  | { type: "table"; headers: string[]; rows: string[][]; colWidths?: number[] }
+  | {
+      type: "table";
+      headers: string[];
+      rows: string[][];
+      colWidths?: number[];
+      /** Quebra o texto na largura da coluna e cresce a linha — não trunca em silêncio. */
+      wrapCells?: boolean;
+    }
   /** Quebra determinística: fecha a página atual. Ignorada na renderização. */
   | { type: "pagebreak" };
 
@@ -94,24 +101,49 @@ function geometryFor(orientation: PdfPageOrientation): PageGeometry {
   };
 }
 
-function wrapText(text: string, maxChars: number): string[] {
+/** Quebra de texto sem descartar caracteres — palavras longas seguem na linha seguinte. */
+export function wrapPdfPlainText(text: string, maxChars: number): string[] {
   const raw = text.replace(/\s+/g, " ").trim();
+  const limit = Math.max(1, maxChars);
   if (!raw) return [""];
-  if (raw.length <= maxChars) return [raw];
+  if (raw.length <= limit) return [raw];
   const words = raw.split(" ");
   const lines: string[] = [];
   let current = "";
+  const flushLongToken = (token: string) => {
+    let rest = token;
+    while (rest.length > limit) {
+      lines.push(rest.slice(0, limit));
+      rest = rest.slice(limit);
+    }
+    current = rest;
+  };
   for (const word of words) {
     const next = current ? `${current} ${word}` : word;
-    if (next.length <= maxChars) {
+    if (next.length <= limit) {
       current = next;
     } else {
       if (current) lines.push(current);
-      current = word.length > maxChars ? word.slice(0, maxChars) : word;
+      if (word.length > limit) flushLongToken(word);
+      else current = word;
     }
   }
   if (current) lines.push(current);
   return lines.length ? lines : [""];
+}
+
+const PDF_TABLE_CHAR_WIDTH_PT = 5.2;
+
+export function pdfTableCellMaxChars(widthPt: number): number {
+  return Math.max(4, Math.floor((widthPt - 6) / PDF_TABLE_CHAR_WIDTH_PT));
+}
+
+export function wrapPdfTableCells(cells: readonly string[], widths: readonly number[]): string[][] {
+  return cells.map((cell, index) => wrapPdfPlainText(String(cell ?? ""), pdfTableCellMaxChars(widths[index] ?? 80)));
+}
+
+export function pdfTableRowLineCount(cells: readonly string[], widths: readonly number[]): number {
+  return Math.max(1, ...wrapPdfTableCells(cells, widths).map((lines) => lines.length));
 }
 
 function buildPageContent(
@@ -183,7 +215,7 @@ function buildPageContent(
       continue;
     }
     if (line.type === "text") {
-      const wrapped = wrapText(line.text, textMaxChars);
+      const wrapped = wrapPdfPlainText(line.text, textMaxChars);
       for (const w of wrapped) {
         if (!ensureSpace(lineH)) break;
         moveTo(margin, y);
@@ -205,8 +237,16 @@ function buildPageContent(
         line.colWidths && line.colWidths.length === cols
           ? line.colWidths
           : Array.from({ length: cols }, () => contentW / cols);
-      const rowH = 14;
+      const wrap = line.wrapCells === true;
+      const lineH = wrap ? 9 : 14;
       const drawRow = (cells: string[], header: boolean) => {
+        const wrapped = wrap
+          ? wrapPdfTableCells(cells, widths)
+          : cells.map((cell, index) => [
+              String(cell ?? "").slice(0, pdfTableCellMaxChars(widths[index] ?? 80)),
+            ]);
+        const nLines = Math.max(1, ...wrapped.map((parts) => parts.length));
+        const rowH = wrap ? 6 + nLines * lineH : 14;
         if (!ensureSpace(rowH + 2)) return false;
         ops.push("ET");
         if (header) {
@@ -226,9 +266,11 @@ function buildPageContent(
         ops.push("BT");
         x = margin;
         for (let i = 0; i < cols; i += 1) {
-          const cell = String(cells[i] ?? "").slice(0, Math.max(4, Math.floor(widths[i]! / 5.2)));
-          moveTo(x + 3, y - 7);
-          show(cell, header ? 8 : 7);
+          const parts = wrapped[i] ?? [""];
+          parts.forEach((part, lineIndex) => {
+            moveTo(x + 3, y - 8 - lineIndex * lineH);
+            show(part, header ? 8 : 7);
+          });
           x += widths[i]!;
         }
         y -= rowH;
@@ -242,10 +284,16 @@ function buildPageContent(
     }
   }
 
-  const pageLabel = `Pagina ${pageIndex + 1} de ${pageCount}`;
-  const footer = footerNote ? `${footerNote} — ${pageLabel}` : pageLabel;
+  const pageLabel = `Página ${pageIndex + 1} de ${pageCount}`;
+  const prefixBudget = Math.max(0, textMaxChars - pageLabel.length - 3);
+  const prefix = footerNote
+    ? footerNote.length > prefixBudget
+      ? `${footerNote.slice(0, Math.max(0, prefixBudget - 1))}…`
+      : footerNote
+    : "";
+  const footer = prefix ? `${prefix} — ${pageLabel}` : pageLabel;
   moveTo(margin, margin - 8);
-  show(footer.length > textMaxChars ? `${footer.slice(0, textMaxChars - 1)}…` : footer, 8);
+  show(footer, 8);
   ops.push("ET");
   return ops.join("\n");
 }
@@ -268,7 +316,15 @@ function paginate(lines: PdfLine[], pageBudget: number): PdfLine[][] {
       continue;
     }
     let cost = 1;
-    if (line.type === "table") cost = 2 + line.rows.length;
+    if (line.type === "table") {
+      if (line.wrapCells && line.colWidths && line.colWidths.length === line.headers.length) {
+        const headerLines = pdfTableRowLineCount(line.headers, line.colWidths);
+        const bodyLines = line.rows.reduce((sum, row) => sum + pdfTableRowLineCount(row, line.colWidths!), 0);
+        cost = 2 + headerLines + bodyLines;
+      } else {
+        cost = 2 + line.rows.length;
+      }
+    }
     if (line.type === "title") cost = 2;
     if (line.type === "banner") cost = 2;
     if (budget - cost < 0 && current.length) flush();
@@ -283,7 +339,7 @@ function buildFormattedPdf(input: {
   title: string;
   lines: PdfLine[];
   orientation: PdfPageOrientation;
-  /** Identificação do documento no rodapé, antes de "Pagina X de Y". */
+  /** Identificação do documento no rodapé, antes de "Página X de Y". */
   footerNote?: string;
 }): Buffer {
   const geo = geometryFor(input.orientation);
@@ -360,5 +416,3 @@ export function buildFormattedPortraitPdf(input: {
 }): Buffer {
   return buildFormattedPdf({ ...input, orientation: "portrait" });
 }
-
-export type { PdfLine };

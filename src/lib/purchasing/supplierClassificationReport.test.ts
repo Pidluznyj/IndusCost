@@ -12,8 +12,9 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import type { RequestHandler } from "express";
 import type { ResolvedPurchaseOrderSupplier } from "@/src/lib/nomus/nomusPurchaseOrder360.js";
@@ -31,7 +32,9 @@ import {
   type SupplierClassificationReportQuery,
 } from "./supplierClassificationReport.js";
 import {
+  SUPPLIER_CLASSIFICATION_XLSX_COMMUNITY_LIMITS,
   SUPPLIER_CLASSIFICATION_XLSX_SHEETS,
+  buildSupplierClassificationWorkbook,
   buildSupplierClassificationXlsxBuffer,
   neutralizeSupplierClassificationCellText,
 } from "./supplierClassificationXlsx.js";
@@ -331,7 +334,11 @@ describe("read model da classificação", () => {
  * ------------------------------------------------------------------ */
 
 describe("exportação XLSX", () => {
-  const buffer = buildSupplierClassificationXlsxBuffer(REPORT);
+  let buffer: Buffer;
+
+  before(async () => {
+    buffer = await buildSupplierClassificationXlsxBuffer(REPORT);
+  });
 
   it("é XLSX válido (zip OOXML), não CSV renomeado", () => {
     assert.ok(Buffer.isBuffer(buffer));
@@ -393,7 +400,7 @@ describe("exportação XLSX", () => {
     assert.equal(dataRows.length, REPORT.evidence?.length);
   });
 
-  it("neutraliza fórmula em texto de origem externa", () => {
+  it("neutraliza fórmula em texto de origem externa", async () => {
     assert.equal(neutralizeSupplierClassificationCellText("=1+1"), "'=1+1");
     assert.equal(neutralizeSupplierClassificationCellText("+cmd"), "'+cmd");
     assert.equal(neutralizeSupplierClassificationCellText("-2"), "'-2");
@@ -416,7 +423,7 @@ describe("exportação XLSX", () => {
       FILTERS,
       { includeEvidence: true }
     );
-    const hostileBuffer = buildSupplierClassificationXlsxBuffer(hostile);
+    const hostileBuffer = await buildSupplierClassificationXlsxBuffer(hostile);
     const cells = classificationSheetRows(hostileBuffer).map((row) => String(row[0]));
     assert.ok(cells.some((value) => value === "'=HYPERLINK(\"http://x\")"));
     assert.equal(cells.some((value) => value.startsWith("=")), false);
@@ -424,9 +431,9 @@ describe("exportação XLSX", () => {
     assert.ok(evidence.includes("'=SUM(A1:A2)"));
   });
 
-  it("respeita o filtro de leitura aplicado à emissão", () => {
+  it("respeita o filtro de leitura aplicado à emissão", async () => {
     const filtered = buildReport({ query: { classification: "APPROVED" }, includeEvidence: true });
-    const rows = classificationSheetRows(buildSupplierClassificationXlsxBuffer(filtered));
+    const rows = classificationSheetRows(await buildSupplierClassificationXlsxBuffer(filtered));
     assert.equal(rows.length, 1);
     assert.equal(rows[0][0], rowOf(REPORT, S1).name);
   });
@@ -440,6 +447,62 @@ describe("exportação XLSX", () => {
       buildSupplierClassificationExportFilename("pdf", { from: null, to: null }),
       "classificacao-fornecedores-inicio-hoje.pdf"
     );
+  });
+
+  it("congela cabeçalho, filtra, formata números e imprime em paisagem A4", async () => {
+    assert.equal(SUPPLIER_CLASSIFICATION_XLSX_COMMUNITY_LIMITS.writesCellFillFontBorder, false);
+    assert.equal(SUPPLIER_CLASSIFICATION_XLSX_COMMUNITY_LIMITS.writesFreezePanes, false);
+    assert.equal(SUPPLIER_CLASSIFICATION_XLSX_COMMUNITY_LIMITS.writesPageSetup, false);
+
+    const workbook = buildSupplierClassificationWorkbook(REPORT);
+    const classification = workbook.Sheets[SUPPLIER_CLASSIFICATION_XLSX_SHEETS[0]] as XLSX.WorkSheet & {
+      "!freeze"?: { state?: string; ySplit?: number };
+    };
+    const evidence = workbook.Sheets[SUPPLIER_CLASSIFICATION_XLSX_SHEETS[2]] as XLSX.WorkSheet & {
+      "!freeze"?: { state?: string };
+    };
+    assert.equal(classification["!freeze"]?.state, "frozen");
+    assert.ok((classification["!freeze"]?.ySplit ?? 0) > 1);
+    assert.equal(evidence["!freeze"]?.state, "frozen");
+    assert.ok(classification["!autofilter"]?.ref);
+    assert.ok(evidence["!autofilter"]?.ref);
+    assert.ok((classification["!merges"] ?? []).length >= 2);
+    assert.equal(workbook.Props?.Title, REPORT.metadata.title);
+
+    const zip = await JSZip.loadAsync(buffer);
+    const sheet1 = await zip.file("xl/worksheets/sheet1.xml")?.async("string");
+    const sheet3 = await zip.file("xl/worksheets/sheet3.xml")?.async("string");
+    const core = await zip.file("docProps/core.xml")?.async("string");
+    const styles = await zip.file("xl/styles.xml")?.async("string");
+    assert.ok(sheet1);
+    assert.ok(sheet3);
+    assert.match(sheet1, /autoFilter ref="/);
+    assert.match(sheet1, /state="frozen"/);
+    assert.match(sheet1, /orientation="landscape"/);
+    assert.match(sheet1, /paperSize="9"/);
+    assert.match(sheet1, /mergeCell /);
+    assert.match(sheet3, /state="frozen"/);
+    assert.match(sheet3, /orientation="landscape"/);
+    assert.ok(core?.includes(REPORT.metadata.title));
+    assert.equal(/rgb="1F4E79"|patternType="solid"/.test(styles ?? ""), false);
+
+    const roundTrip = XLSX.read(buffer, { type: "buffer", cellNF: true });
+    const matrix = classificationSheetRows(buffer);
+    const coverageCell = matrix[0]?.[14];
+    assert.equal(typeof coverageCell, "number");
+    const scoreCell = matrix.find((row) => row[5] != null)?.[5];
+    assert.equal(typeof scoreCell, "number");
+    const headerIndex = XLSX.utils
+      .sheet_to_json<unknown[]>(roundTrip.Sheets[SUPPLIER_CLASSIFICATION_XLSX_SHEETS[0]]!, {
+        header: 1,
+        raw: true,
+      })
+      .findIndex((row) => row[0] === "Fornecedor" && row[1] === "Documento");
+    const coverageAddress = XLSX.utils.encode_cell({ r: headerIndex + 1, c: 14 });
+    const formatted = roundTrip.Sheets[SUPPLIER_CLASSIFICATION_XLSX_SHEETS[0]]![coverageAddress] as
+      | XLSX.CellObject
+      | undefined;
+    assert.equal(formatted?.z, "0.00%");
   });
 });
 
@@ -484,22 +547,49 @@ describe("exportação PDF", () => {
     const text = pdfText(REPORT);
     for (const row of REPORT.rows) {
       assert.ok(text.includes(row.name));
-      const expectedLabel =
-        row.classification.code === "LEGACY_METHODOLOGY" ? "Metodologia V1" : row.classification.label;
-      assert.ok(text.includes(expectedLabel), `faixa de ${row.name} ausente do PDF`);
+      assert.ok(text.includes(row.classification.label), `faixa de ${row.name} ausente do PDF`);
     }
     assert.ok(text.includes(`Aprovados: ${REPORT.summary.approved}`) || text.includes("Aprovados | 1"));
   });
 
-  it("declara metodologia, política, período e propósito neutro", () => {
+  it("declara metodologia, política, período e propósito neutro em português acentuado", () => {
     const text = pdfText(REPORT);
     assert.ok(text.includes("2026-01-01 a 2026-12-31"));
     assert.ok(text.includes(REPORT.metadata.methodology.id));
     assert.ok(text.includes(SUPPLIER_CLASSIFICATION_POLICY_ID));
-    assert.ok(text.includes("criterio interno da empresa"));
+    assert.ok(text.includes("critério interno da empresa"));
+    assert.ok(text.includes("Não aprovados"));
+    assert.ok(text.includes("Não classificados (metodologia anterior)"));
     assert.ok(
       text.includes("Evidência do processo interno de avaliação e monitoramento de fornecedores.")
     );
+    const latin = buffer.toString("latin1");
+    assert.ok(latin.includes("Página"));
+    assert.ok(latin.includes("critério interno"));
+    assert.ok(latin.includes("Não classificado") || latin.includes("Não aprovado") || latin.includes("Não avaliado"));
+  });
+
+  it("escreve o nome completo do fornecedor sem truncar em silêncio", () => {
+    const LONG_NAME =
+      "POLIMEROS JR INDUSTRIA E COMERCIO DE RESINAS TERMOPLASTICOS E COMPOSTOS ESPECIAIS LTDA";
+    const longReport: SupplierClassificationReport = {
+      ...REPORT,
+      rows: REPORT.rows.map((row, index) => (index === 0 ? { ...row, name: LONG_NAME } : row)),
+    };
+    const lines = buildSupplierClassificationPdfLines(longReport);
+    assert.ok(
+      lines
+        .filter((line): line is Extract<typeof line, { type: "table" }> => line.type === "table")
+        .every((line) => line.wrapCells === true)
+    );
+    const row = pdfTableRows(longReport).find((cells) => cells[0] === LONG_NAME);
+    assert.ok(row, "nome longo precisa permanecer integral nas células da tabela");
+    const latin = buildSupplierClassificationPdfBuffer(longReport).toString("latin1");
+    assert.ok(latin.includes("POLIMEROS"));
+    assert.ok(latin.includes("TERMOPLASTICOS"));
+    assert.ok(latin.includes("COMPOSTOS"));
+    assert.ok(latin.includes("ESPECIAIS"));
+    assert.ok(latin.includes("Página"));
   });
 
   it("respeita o filtro de leitura aplicado à emissão", () => {
