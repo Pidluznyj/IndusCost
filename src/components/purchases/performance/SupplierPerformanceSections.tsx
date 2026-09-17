@@ -97,7 +97,7 @@ export function DashboardSection({
   className?: string;
 }) {
   return (
-    <section data-testid={testId} className={cn("space-y-3", className)} aria-label={title}>
+    <section data-testid={testId} className={cn("space-y-4", className)} aria-label={title}>
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           {eyebrow ? <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{eyebrow}</p> : null}
@@ -178,10 +178,10 @@ export function MaterialLinkButton({
 export function DataQualityBar({ data }: { data: ReadModel }) {
   const p = data.metadata.population;
   const financial = p.financialDataStatus;
-  const evaluation = data.evaluation;
-  const evaluationHint = evaluation.available
-    ? `${formatDashboardInteger(data.kpis.evaluatedOrders)} de ${formatDashboardInteger(data.kpis.eligibleOrders)} pedidos avaliados · cobertura ${formatDashboardPercent(data.kpis.evaluationCoverage)}`
-    : evaluation.reason;
+  const evaluationHint =
+    data.evaluation.available === false
+      ? data.evaluation.reason
+      : `${formatDashboardInteger(data.kpis.evaluatedOrders)} de ${formatDashboardInteger(data.kpis.eligibleOrders)} pedidos avaliados · cobertura ${formatDashboardPercent(data.kpis.evaluationCoverage)}`;
   const financialHint =
     financial === "PARTIAL"
       ? `Atenção: ${formatDashboardInteger(p.ordersWithFinancialValue)} de ${formatDashboardInteger(p.orderCount)} pedidos possuem valor financeiro`
@@ -237,7 +237,7 @@ export function ExecutiveKpisSection({
       description={`Compras de ${formatDashboardPeriodLabel(data.metadata.period)} · moeda ${currency}`}
       testId="performance-executive-section"
     >
-      <SummaryKpiGrid minColumnWidth={180} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-executive-kpis">
+      <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-executive-kpis">
         <SupplierPerformanceKpiCard testId="kpi-total-spend" label="Total comprado" value={formatDashboardMoney(data.kpis.totalSpend, currency)} tone="money" tooltip={tip("PURCHASE_SPEND")} hint={ticketHint} unavailableReason={financialUnavailable} />
         <SupplierPerformanceKpiCard testId="kpi-order-count" label="Pedidos" value={formatDashboardInteger(data.kpis.purchaseOrderCount)} tooltip={tip("PURCHASE_ORDER_COUNT")} hint={`${formatDashboardInteger(data.kpis.purchaseLineCount)} linhas`} />
         <SupplierPerformanceKpiCard testId="kpi-active-suppliers" label="Fornecedores ativos" value={formatDashboardInteger(data.kpis.activeSuppliers)} tooltip={tip("ACTIVE_SUPPLIERS")} />
@@ -651,7 +651,7 @@ export function PricingSection({
         <SupplierPerformanceKpiCard testId="kpi-mixed-units" label="MPs com unidades mistas" value={formatDashboardInteger(data.pricing.materialsWithMixedUnits)} hint="Quantidade/preço não agregáveis sem conversão oficial" tooltip="Materiais comprados em mais de uma unidade de medida no período. Nunca somamos kg + unidade + litro; as análises de preço ficam por unidade." />
         <SupplierPerformanceKpiCard testId="kpi-price-increases" label="Aumentos observados" value={formatDashboardInteger(data.pricing.increases.length)} hint="Pares MP × fornecedor × unidade com preço médio maior no último mês vs. o primeiro" tooltip="Comparação entre o preço médio ponderado do primeiro e do último mês com compra valorada no período, por MP + fornecedor + unidade. Não é reajuste contratual." />
       </SummaryKpiGrid>
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-4">
         <OverlaySection title="Dispersão de preço observada" description="Menor vs. maior preço médio ponderado entre fornecedores da mesma MP, unidade e moeda." padded={false} testId="performance-price-dispersion">
           <DispersionTable rows={data.pricing.dispersion} onSelectSupplier={onSelectSupplier} onSelectMaterial={onSelectMaterial} />
         </OverlaySection>
@@ -684,7 +684,7 @@ export function EvaluationSection({ data, onSelectSupplier }: { data: ReadModel;
         </DashboardNotice>
       ) : (
         <>
-          <SummaryKpiGrid minColumnWidth={170} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-evaluation-kpis">
+      <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS} testId="performance-evaluation-kpis">
             <SupplierPerformanceKpiCard testId="kpi-eval-overall" label="Nota média (pedidos)" value={formatDashboardScore(evaluation.summary.overallScore, evaluation.scaleMax)} tooltip={describeDashboardKpi(findDashboardKpiDefinition(defs, "SUPPLIER_EVALUATION_SCORE"))} hint={`${formatDashboardInteger(evaluation.summary.evaluatedOrders)} avaliações · metodologia ${evaluation.methodologyId}`} />
             {evaluation.criteria.map((criterion) => (
               <React.Fragment key={criterion.key}>

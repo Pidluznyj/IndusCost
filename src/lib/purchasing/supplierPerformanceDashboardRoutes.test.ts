@@ -154,6 +154,10 @@ describe("rotas — registro e guards", () => {
       routes.map((route) => `${route.method} ${route.path}`),
       [
         "GET /api/purchases/performance",
+        // Classificação de fornecedores: leitura + exportações, mesmo guard.
+        "GET /api/purchases/performance/classification",
+        "GET /api/purchases/performance/classification.xlsx",
+        "GET /api/purchases/performance/classification.pdf",
         "GET /api/purchases/performance/supplier-materials",
         "GET /api/purchases/performance/materials",
         "GET /api/purchases/performance/materials/:materialKey",
@@ -241,6 +245,9 @@ describe("contrato estático — wiring e read-only", () => {
     assert.match(server, /registerSupplierPerformanceDashboardRoutes\(app, \{\s*requireAppAuth,\s*requireResource,\s*\}\)/);
     const resources = read("src/lib/security/permissionContract/resources.ts");
     assert.match(resources, /"\/api\/purchases\/performance",/);
+    assert.match(resources, /"\/api\/purchases\/performance\/classification",/);
+    assert.match(resources, /"\/api\/purchases\/performance\/classification.xlsx",/);
+    assert.match(resources, /"\/api\/purchases\/performance\/classification.pdf",/);
     assert.match(resources, /"\/api\/purchases\/performance\/suppliers\/:supplierExternalId",/);
   });
 

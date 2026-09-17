@@ -20,6 +20,7 @@ import {
   SINGLE_SOURCE_OBSERVED_LABEL,
   SINGLE_SOURCE_OBSERVED_TOOLTIP,
   type DashboardSupplierDetail,
+  type DashboardSupplierEvaluationHistoryRow,
   type DashboardSupplierMaterialRow,
   type SupplierPerformanceDashboardFilters,
 } from "@/src/lib/purchasing/supplierPerformanceDashboard";
@@ -38,6 +39,7 @@ import {
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { PurchaseTrendChart } from "./SupplierPerformanceCharts";
 import { AdvancedMetricsTable, DashboardNotice, EmptyRows, MaterialLinkButton } from "./SupplierPerformanceSections";
+import { ClassificationBadge } from "./SupplierClassificationSection";
 
 type TabId = "resumo" | "materiais" | "avaliacao" | "concentracao" | "historico" | "avancados";
 
@@ -96,6 +98,79 @@ function MaterialsTable({
               <OverlayTable.Cell align="right" mono>{formatDashboardPrice(row.weightedAveragePrice, currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono title={row.lastPriceDate ? `Preço da compra de ${formatDashboardDate(row.lastPriceDate)}` : undefined}>{formatDashboardPrice(row.lastPrice, currency, row.unit)}</OverlayTable.Cell>
               <OverlayTable.Cell align="right" mono>{formatDashboardDate(row.lastPurchaseDate)}</OverlayTable.Cell>
+            </OverlayTable.Row>
+          ))
+        )}
+      </OverlayTable.Body>
+    </OverlayTable>
+  );
+}
+
+/**
+ * Evidência documental da avaliação de um pedido. Só formata o que a avaliação
+ * oficial registrou — pedido sem campo preenchido aparece como "—", nunca como
+ * valor inventado.
+ */
+function EvidenceTable({
+  rows,
+  emptyMessage,
+}: {
+  rows: DashboardSupplierEvaluationHistoryRow[];
+  emptyMessage: string;
+}) {
+  return (
+    <OverlayTable stickyHeader>
+      <OverlayTable.Head>
+        <OverlayTable.Row>
+          <OverlayTable.HeadCell>Pedido</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Data operacional</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Status do pedido</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Qualidade</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Prazo</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Conformidade</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Atendimento</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Nota geral</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Metodologia</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell align="right">Revisão</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Avaliado por</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Atualizado por</OverlayTable.HeadCell>
+          <OverlayTable.HeadCell>Observações</OverlayTable.HeadCell>
+        </OverlayTable.Row>
+      </OverlayTable.Head>
+      <OverlayTable.Body>
+        {rows.length === 0 ? (
+          <EmptyRows colSpan={13} message={emptyMessage} />
+        ) : (
+          rows.map((row) => (
+            <OverlayTable.Row key={row.nomusPurchaseOrderId}>
+              <OverlayTable.Cell mono>{row.orderNumber ?? `Nomus #${row.externalId}`}</OverlayTable.Cell>
+              <OverlayTable.Cell mono>{formatDashboardDate(row.performanceDate)}</OverlayTable.Cell>
+              <OverlayTable.Cell className="text-xs">
+                {row.stage}
+                {row.canceled ? <OverlayBadge tone="amber" className="ml-1">cancelado</OverlayBadge> : null}
+              </OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.quality, row.scaleMax)}</OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.delivery, row.scaleMax)}</OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.conformity, row.scaleMax)}</OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.service, row.scaleMax)}</OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.overall, row.scaleMax)}</OverlayTable.Cell>
+              <OverlayTable.Cell>
+                <OverlayBadge tone={row.methodologyVersion === 2 ? "sky" : "slate"}>
+                  V{row.methodologyVersion} · escala {row.methodologyVersion === 1 ? 0 : 1}–{row.scaleMax}
+                </OverlayBadge>
+              </OverlayTable.Cell>
+              <OverlayTable.Cell align="right" mono>{row.revision}</OverlayTable.Cell>
+              <OverlayTable.Cell className="text-xs text-muted-foreground">
+                {row.evaluatedByUserName ?? "—"}
+                <span className="block">{formatDashboardDateTime(row.evaluatedAt)}</span>
+              </OverlayTable.Cell>
+              <OverlayTable.Cell className="text-xs text-muted-foreground">
+                {row.updatedByUserName ?? "—"}
+                <span className="block">{formatDashboardDateTime(row.updatedAt)}</span>
+              </OverlayTable.Cell>
+              <OverlayTable.Cell className="max-w-[18rem] text-xs text-muted-foreground">
+                <span className="block truncate" title={row.notes ?? undefined}>{row.notes ?? "—"}</span>
+              </OverlayTable.Cell>
             </OverlayTable.Row>
           ))
         )}
@@ -166,6 +241,34 @@ export function SupplierScorecardContent({
               <DashboardNotice tone="warning" title="Avaliação indisponível">{detail.evaluation.reason}</DashboardNotice>
             ) : (
               <>
+                <OverlaySection
+                  title="Classificação de desempenho"
+                  description="Faixa derivada da nota consolidada pela política interna versionada. Não é a situação cadastral do fornecedor e não é alterada pela cobertura."
+                  testId="supplier-scorecard-classification"
+                >
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                    <ClassificationBadge
+                      classification={supplier.classification}
+                      testId="supplier-scorecard-classification-badge"
+                    />
+                    <span className="text-muted-foreground">
+                      Política {supplier.classification.policyId} · versão {supplier.classification.policyVersion}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Situação cadastral: {supplier.registryStatus ?? "não identificada"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Última avaliação: {formatDashboardDateTime(ev?.lastEvaluationAt ?? null)}
+                    </span>
+                  </div>
+                  {ev && ev.summary.pendingOrders > 0 ? (
+                    <p className="mt-2 text-xs text-amber-800">
+                      Avaliações pendentes: {formatDashboardInteger(ev.summary.pendingOrders)} de{" "}
+                      {formatDashboardInteger(ev.summary.eligibleOrders)} pedidos elegíveis do período ainda não têm
+                      avaliação registrada. Pedido sem avaliação não recebe nota zero.
+                    </p>
+                  ) : null}
+                </OverlaySection>
                 <OverlaySection title="Nota atual — pedidos do período" description={ev ? `Metodologia ${ev.methodologyId} (escala ${ev.scaleMin}–${ev.scaleMax}) · ${ev.v2Count} avaliações V2 · ${ev.v1Count} V1` : "Sem avaliações no período."}>
                   <OverlayKpiCardGrid columns={6}>
                     <OverlayKpiCard label="Nota geral" value={formatDashboardScoreWithScale(ev?.summary.overallScore, scaleMax)} tone="info" />
@@ -234,7 +337,7 @@ export function SupplierScorecardContent({
                 <OverlayTable.Head>
                   <OverlayTable.Row>
                     <OverlayTable.HeadCell>Mês</OverlayTable.HeadCell>
-                    <OverlayTable.HeadCell align="right">Spend</OverlayTable.HeadCell>
+                    <OverlayTable.HeadCell align="right">Valor comprado</OverlayTable.HeadCell>
                     <OverlayTable.HeadCell align="right">Pedidos</OverlayTable.HeadCell>
                     <OverlayTable.HeadCell align="right">MPs distintas</OverlayTable.HeadCell>
                   </OverlayTable.Row>
@@ -251,46 +354,38 @@ export function SupplierScorecardContent({
                 </OverlayTable.Body>
               </OverlayTable>
             </OverlaySection>
-            <OverlaySection title="Avaliações anteriores" description="Uma por pedido Nomus; V1 e V2 identificadas pela escala." padded={false}>
-              {detail.evaluation.available === false ? (
-                <p className="px-3 py-4 text-sm text-muted-foreground">{detail.evaluation.reason}</p>
-              ) : (
-                <OverlayTable>
-                  <OverlayTable.Head>
-                    <OverlayTable.Row>
-                      <OverlayTable.HeadCell>Pedido</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell>Data do pedido</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell>Metodologia</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell align="right">Q</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell align="right">P</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell align="right">C</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell align="right">A</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell align="right">Nota</OverlayTable.HeadCell>
-                      <OverlayTable.HeadCell>Revisão · atualizado</OverlayTable.HeadCell>
-                    </OverlayTable.Row>
-                  </OverlayTable.Head>
-                  <OverlayTable.Body>
-                    {detail.evaluation.history.length === 0 ? (
-                      <EmptyRows colSpan={9} message="Nenhuma avaliação finalizada para os pedidos deste fornecedor no período." />
-                    ) : (
-                      detail.evaluation.history.map((row) => (
-                        <OverlayTable.Row key={row.nomusPurchaseOrderId}>
-                          <OverlayTable.Cell mono>{row.orderNumber ?? `Nomus #${row.externalId}`}</OverlayTable.Cell>
-                          <OverlayTable.Cell mono>{formatDashboardDate(row.performanceDate)}</OverlayTable.Cell>
-                          <OverlayTable.Cell><OverlayBadge tone={row.methodologyVersion === 2 ? "sky" : "slate"}>V{row.methodologyVersion} · 1–{row.scaleMax}</OverlayBadge></OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.quality, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.delivery, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.conformity, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.service, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell align="right" mono>{formatDashboardScoreWithScale(row.scores.overall, row.scaleMax)}</OverlayTable.Cell>
-                          <OverlayTable.Cell className="text-xs text-muted-foreground">rev. {row.revision} · {formatDashboardDateTime(row.updatedAt)}{row.updatedByUserName ? ` · ${row.updatedByUserName}` : ""}</OverlayTable.Cell>
-                        </OverlayTable.Row>
-                      ))
-                    )}
-                  </OverlayTable.Body>
-                </OverlayTable>
-              )}
-            </OverlaySection>
+            {detail.evaluation.available === false ? (
+              <OverlaySection title="Evidência das avaliações">
+                <p className="text-sm text-muted-foreground">{detail.evaluation.reason}</p>
+              </OverlaySection>
+            ) : (
+              <>
+                <OverlaySection
+                  title="Evidência por pedido — metodologia vigente (V2, escala 1–5)"
+                  description="Uma linha por pedido avaliado do período. Registro da avaliação oficial: nada é recalculado nesta tela."
+                  padded={false}
+                  testId="supplier-scorecard-evidence-v2"
+                >
+                  <EvidenceTable
+                    rows={detail.evaluation.history.filter((row) => row.methodologyVersion !== 1)}
+                    emptyMessage="Nenhuma avaliação da metodologia vigente para os pedidos deste fornecedor no período."
+                  />
+                </OverlaySection>
+                {detail.evaluation.history.some((row) => row.methodologyVersion === 1) ? (
+                  <OverlaySection
+                    title="Histórico — metodologia anterior (V1, escala 0–10)"
+                    description="Segmentado por escala: estas avaliações não entram no consolidado da metodologia vigente e não são convertidas."
+                    padded={false}
+                    testId="supplier-scorecard-evidence-v1"
+                  >
+                    <EvidenceTable
+                      rows={detail.evaluation.history.filter((row) => row.methodologyVersion === 1)}
+                      emptyMessage="Nenhuma avaliação da metodologia anterior no período."
+                    />
+                  </OverlaySection>
+                ) : null}
+              </>
+            )}
           </div>
         ) : null}
 

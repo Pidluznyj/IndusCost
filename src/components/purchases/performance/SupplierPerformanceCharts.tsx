@@ -38,6 +38,24 @@ import {
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 
 const CHART_HEIGHT = 280;
+
+function ChartFrame({
+  children,
+  height = CHART_HEIGHT,
+  testId,
+}: {
+  children: React.ReactElement;
+  height?: number;
+  testId?: string;
+}) {
+  return (
+    <div className="min-w-0 w-full" style={{ width: "100%", height, minHeight: height }} data-testid={testId}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+        {children}
+      </ResponsiveContainer>
+    </div>
+  );
+}
 const SERIES_COLORS = [
   FINANCE_BI_COLORS.primary,
   FINANCE_BI_COLORS.success,
@@ -122,8 +140,7 @@ export function SupplierParetoChart({
           </button>
         ))}
       </div>
-      <div style={{ width: "100%", height: CHART_HEIGHT }}>
-        <ResponsiveContainer>
+      <ChartFrame>
           <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 48, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
             <XAxis dataKey="label" interval={0} angle={-35} textAnchor="end" tick={{ fontSize: 10 }} height={60} />
@@ -162,8 +179,7 @@ export function SupplierParetoChart({
             />
             <Line yAxisId="pct" type="monotone" dataKey="cumulativePct" name="% acumulado" stroke={FINANCE_BI_COLORS.warning} strokeWidth={2} dot={{ r: 2 }} connectNulls />
           </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+      </ChartFrame>
     </div>
   );
 }
@@ -180,8 +196,7 @@ export function SupplierSpendChart({
   const data = useMemo(() => rows.slice(0, 10).map((row) => ({ ...row, label: truncate(row.name, 28) })), [rows]);
   if (data.length === 0) return <ChartEmpty message="Sem fornecedores com valor comprado na população filtrada." />;
   return (
-    <div style={{ width: "100%", height: Math.max(200, data.length * 30) }} data-testid="supplier-spend-chart">
-      <ResponsiveContainer>
+    <ChartFrame height={Math.max(200, data.length * 30)} testId="supplier-spend-chart">
         <ComposedChart data={data} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} horizontal={false} />
           <XAxis type="number" tickFormatter={(value: number) => formatDashboardMoneyCompact(value, currency)} tick={{ fontSize: 10 }} />
@@ -215,8 +230,7 @@ export function SupplierSpendChart({
             }}
           />
         </ComposedChart>
-      </ResponsiveContainer>
-    </div>
+      </ChartFrame>
   );
 }
 
@@ -236,8 +250,7 @@ export function PurchaseTrendChart({
     return <ChartEmpty message="Sem compras no período para montar a evolução mensal." />;
   }
   return (
-    <div style={{ width: "100%", height: CHART_HEIGHT }} data-testid="purchase-trend-chart">
-      <ResponsiveContainer>
+    <ChartFrame testId="purchase-trend-chart">
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -267,8 +280,7 @@ export function PurchaseTrendChart({
             <Line yAxisId="count" type="monotone" dataKey="activeSuppliers" name="Fornecedores ativos" stroke={FINANCE_BI_COLORS.success} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
           ) : null}
         </ComposedChart>
-      </ResponsiveContainer>
-    </div>
+      </ChartFrame>
   );
 }
 
@@ -278,8 +290,7 @@ export function EvaluationDistributionChart({ bands }: { bands: DashboardEvaluat
     return <ChartEmpty message="Sem avaliações V2 (escala 1–5) no período." />;
   }
   return (
-    <div style={{ width: "100%", height: 220 }} data-testid="evaluation-distribution-chart">
-      <ResponsiveContainer>
+    <ChartFrame height={220} testId="evaluation-distribution-chart">
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
           <XAxis dataKey="band" tick={{ fontSize: 10 }} />
@@ -303,8 +314,7 @@ export function EvaluationDistributionChart({ bands }: { bands: DashboardEvaluat
           <Bar dataKey="orders" name="Avaliações (pedidos)" fill={FINANCE_BI_COLORS.primary} radius={[3, 3, 0, 0]} />
           <Bar dataKey="suppliers" name="Fornecedores (nota média)" fill={FINANCE_BI_COLORS.success} radius={[3, 3, 0, 0]} />
         </ComposedChart>
-      </ResponsiveContainer>
-    </div>
+      </ChartFrame>
   );
 }
 
@@ -321,8 +331,7 @@ export function ScoreVsSpendChart({
 }) {
   if (points.length === 0) return <ChartEmpty message="Sem fornecedores com nota V2 e valor comprado no período." />;
   return (
-    <div style={{ width: "100%", height: CHART_HEIGHT }} data-testid="score-vs-spend-chart">
-      <ResponsiveContainer>
+    <ChartFrame testId="score-vs-spend-chart">
         <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
           <XAxis type="number" dataKey="spend" name="Valor comprado" tickFormatter={(value: number) => formatDashboardMoneyCompact(value, currency)} tick={{ fontSize: 10 }} />
@@ -357,8 +366,7 @@ export function ScoreVsSpendChart({
             }}
           />
         </ScatterChart>
-      </ResponsiveContainer>
-    </div>
+      </ChartFrame>
   );
 }
 
@@ -393,8 +401,7 @@ export function PriceEvolutionChart({ series, currency }: { series: DashboardPri
           Unidades diferentes observadas ({[...units].join(", ")}): cada série mantém a própria unidade; não são comparáveis entre si.
         </p>
       ) : null}
-      <div style={{ width: "100%", height: CHART_HEIGHT }}>
-        <ResponsiveContainer>
+      <ChartFrame>
           <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -420,8 +427,7 @@ export function PriceEvolutionChart({ series, currency }: { series: DashboardPri
               <Line key={meta.key} type="monotone" dataKey={meta.key} name={meta.label} stroke={meta.color} strokeWidth={2} dot={{ r: 2 }} connectNulls />
             ))}
           </LineChart>
-        </ResponsiveContainer>
-      </div>
+      </ChartFrame>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   type SupplierPerformanceDashboardPeriodPresetId,
 } from "./supplierPerformanceDashboard";
 import type { SupplierPerformancePeriod } from "./supplierPerformance";
+import type { SupplierClassificationCode } from "./supplierClassificationPolicy";
 
 export const DASHBOARD_EMPTY_VALUE = "—";
 
@@ -250,3 +251,50 @@ export function describeDashboardPeriodSelection(selection: DashboardPeriodSelec
   }
   return formatDashboardPeriodLabel(selection.period);
 }
+
+/* ------------------------------------------------------------------ *
+ * Sub-abas de Compras → Performance (estado na URL)
+ * ------------------------------------------------------------------ */
+
+export const SUPPLIER_PERFORMANCE_VIEW_PARAM = "view";
+
+export const SUPPLIER_PERFORMANCE_VIEWS = [
+  { id: "overview", label: "Visão geral" },
+  { id: "classification", label: "Classificação de fornecedores" },
+] as const;
+
+export type SupplierPerformanceViewId = (typeof SUPPLIER_PERFORMANCE_VIEWS)[number]["id"];
+
+export const SUPPLIER_PERFORMANCE_DEFAULT_VIEW: SupplierPerformanceViewId = "overview";
+
+/** Valor desconhecido/ausente cai na visão geral — deep link nunca quebra a tela. */
+export function parseSupplierPerformanceViewParam(
+  raw: string | null | undefined
+): SupplierPerformanceViewId {
+  const value = (raw ?? "").trim();
+  const found = SUPPLIER_PERFORMANCE_VIEWS.find((view) => view.id === value);
+  return found ? found.id : SUPPLIER_PERFORMANCE_DEFAULT_VIEW;
+}
+
+/* ------------------------------------------------------------------ *
+ * Classificação de desempenho — tom do badge
+ *
+ * A cor é SECUNDÁRIA: o rótulo textual vem do domínio e é sempre exibido.
+ * ------------------------------------------------------------------ */
+
+export type ClassificationBadgeTone = "positive" | "attention" | "critical" | "neutral";
+
+export const CLASSIFICATION_BADGE_TONES: Record<SupplierClassificationCode, ClassificationBadgeTone> = {
+  APPROVED: "positive",
+  CONDITIONAL: "attention",
+  NOT_APPROVED: "critical",
+  NOT_EVALUATED: "neutral",
+  LEGACY_METHODOLOGY: "neutral",
+};
+
+export const CLASSIFICATION_BADGE_CLASSES: Record<ClassificationBadgeTone, string> = {
+  positive: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  attention: "border-amber-200 bg-amber-50 text-amber-900",
+  critical: "border-rose-200 bg-rose-50 text-rose-900",
+  neutral: "border-slate-200 bg-slate-50 text-slate-700",
+};

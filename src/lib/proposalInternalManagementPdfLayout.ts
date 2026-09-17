@@ -43,7 +43,7 @@ export function formatPdfNumberBr(value: number | null | undefined, digits = 2):
   return value.toFixed(digits).replace(".", ",");
 }
 
-type PdfLine =
+export type PdfLine =
   | { type: "title"; text: string }
   | { type: "subtitle"; text: string }
   | { type: "banner"; text: string }
@@ -51,7 +51,9 @@ type PdfLine =
   | { type: "spacer" }
   | { type: "rule" }
   | { type: "kv"; label: string; value: string }
-  | { type: "table"; headers: string[]; rows: string[][]; colWidths?: number[] };
+  | { type: "table"; headers: string[]; rows: string[][]; colWidths?: number[] }
+  /** Quebra determinística: fecha a página atual. Ignorada na renderização. */
+  | { type: "pagebreak" };
 
 export type PdfPageOrientation = "portrait" | "landscape";
 
@@ -116,7 +118,8 @@ function buildPageContent(
   lines: PdfLine[],
   pageIndex: number,
   pageCount: number,
-  geo: PageGeometry
+  geo: PageGeometry,
+  footerNote?: string
 ): string {
   const { pageW, pageH, margin, contentW, textMaxChars } = geo;
   const ops: string[] = ["BT"];
@@ -140,6 +143,7 @@ function buildPageContent(
   };
 
   for (const line of lines) {
+    if (line.type === "pagebreak") continue;
     if (line.type === "spacer") {
       y -= 8;
       continue;
@@ -238,8 +242,10 @@ function buildPageContent(
     }
   }
 
+  const pageLabel = `Pagina ${pageIndex + 1} de ${pageCount}`;
+  const footer = footerNote ? `${footerNote} — ${pageLabel}` : pageLabel;
   moveTo(margin, margin - 8);
-  show(`Pagina ${pageIndex + 1} de ${pageCount}`, 8);
+  show(footer.length > textMaxChars ? `${footer.slice(0, textMaxChars - 1)}…` : footer, 8);
   ops.push("ET");
   return ops.join("\n");
 }
@@ -257,6 +263,10 @@ function paginate(lines: PdfLine[], pageBudget: number): PdfLine[][] {
   };
 
   for (const line of lines) {
+    if (line.type === "pagebreak") {
+      flush();
+      continue;
+    }
     let cost = 1;
     if (line.type === "table") cost = 2 + line.rows.length;
     if (line.type === "title") cost = 2;
@@ -273,11 +283,13 @@ function buildFormattedPdf(input: {
   title: string;
   lines: PdfLine[];
   orientation: PdfPageOrientation;
+  /** Identificação do documento no rodapé, antes de "Pagina X de Y". */
+  footerNote?: string;
 }): Buffer {
   const geo = geometryFor(input.orientation);
   const pages = paginate(input.lines, geo.pageBudget);
   const contentStreams = pages.map((pageLines, idx) =>
-    buildPageContent(pageLines, idx, pages.length, geo)
+    buildPageContent(pageLines, idx, pages.length, geo, input.footerNote)
   );
 
   const objects: string[] = [];
@@ -336,6 +348,7 @@ function buildFormattedPdf(input: {
 export function buildFormattedLandscapePdf(input: {
   title: string;
   lines: PdfLine[];
+  footerNote?: string;
 }): Buffer {
   return buildFormattedPdf({ ...input, orientation: "landscape" });
 }

@@ -19,7 +19,11 @@ import { prisma } from "@/src/lib/prisma.js";
 import { OPERATIONS_ACTIONS, OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess.js";
 import { mapSupplierEvaluationError } from "./supplierPerformance.server.js";
 import { parseDashboardMaterialKey } from "./supplierPerformanceDashboard.js";
+import { buildSupplierClassificationExportFilename } from "./supplierClassificationReport.js";
+import { buildSupplierClassificationXlsxBuffer } from "./supplierClassificationXlsx.js";
+import { buildSupplierClassificationPdfBuffer } from "./supplierClassificationPdf.js";
 import {
+  buildSupplierClassificationReportResponse,
   buildSupplierMaterialMatrixResponse,
   buildSupplierPerformanceDashboardResponse,
   buildSupplierPerformanceMaterialDetailResponse,
@@ -35,6 +39,14 @@ type AuthGuards = {
 };
 
 export const SUPPLIER_PERFORMANCE_DASHBOARD_API_PATH = "/api/purchases/performance";
+
+/**
+ * Classificação de fornecedores. Fica sob o caminho da própria aba porque a
+ * população canônica de Compras → Performance é o espelho Nomus
+ * (`NomusPurchaseOrder`), e não o `PurchaseOrder` interno servido por
+ * `/api/supplier-performance/report` — são identidades distintas, sem FK.
+ */
+export const SUPPLIER_CLASSIFICATION_API_PATH = `${SUPPLIER_PERFORMANCE_DASHBOARD_API_PATH}/classification`;
 
 export function registerSupplierPerformanceDashboardRoutes(
   app: express.Express,
@@ -55,6 +67,57 @@ export function registerSupplierPerformanceDashboardRoutes(
       const payload = await buildSupplierPerformanceDashboardResponse(db, query(req), deps);
       res.setHeader("Cache-Control", "no-store");
       return res.json(payload);
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  /**
+   * Classificação de fornecedores — JSON, XLSX e PDF.
+   *
+   * Os três reutilizam o MESMO guard, os MESMOS filtros e o MESMO motor: a
+   * exportação não amplia população nem contorna permissão, e não recalcula
+   * nota, faixa ou cobertura. 100% leitura — nenhum write.
+   */
+  app.get(SUPPLIER_CLASSIFICATION_API_PATH, ...view, async (req, res) => {
+    try {
+      const payload = await buildSupplierClassificationReportResponse(db, query(req), deps);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(payload);
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get(`${SUPPLIER_CLASSIFICATION_API_PATH}.xlsx`, ...view, async (req, res) => {
+    try {
+      const report = await buildSupplierClassificationReportResponse(db, query(req), deps, {
+        includeEvidence: true,
+      });
+      const filename = buildSupplierClassificationExportFilename("xlsx", report.metadata.period);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buildSupplierClassificationXlsxBuffer(report));
+    } catch (error) {
+      const mapped = mapSupplierEvaluationError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get(`${SUPPLIER_CLASSIFICATION_API_PATH}.pdf`, ...view, async (req, res) => {
+    try {
+      const report = await buildSupplierClassificationReportResponse(db, query(req), deps);
+      const filename = buildSupplierClassificationExportFilename("pdf", report.metadata.period);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buildSupplierClassificationPdfBuffer(report));
     } catch (error) {
       const mapped = mapSupplierEvaluationError(error);
       return res.status(mapped.status).json(mapped.body);

@@ -13,6 +13,10 @@ import type {
   SupplierPerformanceDashboardFilters,
   SupplierPerformanceDashboardReadModel,
 } from "./supplierPerformanceDashboard";
+import type {
+  SupplierClassificationReport,
+  SupplierClassificationReportQuery,
+} from "./supplierClassificationReport";
 
 export const SUPPLIER_PERFORMANCE_DASHBOARD_API = "/api/purchases/performance";
 
@@ -42,6 +46,46 @@ export function fetchSupplierPerformanceDashboard(
   return fetchJsonOk<SupplierPerformanceDashboardReadModel>(
     withQuery(SUPPLIER_PERFORMANCE_DASHBOARD_API, buildSupplierPerformanceDashboardParams(filters)),
     signal ? { signal } : undefined
+  );
+}
+
+export const SUPPLIER_CLASSIFICATION_API = `${SUPPLIER_PERFORMANCE_DASHBOARD_API}/classification`;
+
+/** Filtros da população + consulta de leitura, idênticos em tela, XLSX e PDF. */
+export function buildSupplierClassificationParams(
+  filters: SupplierPerformanceDashboardFilters,
+  query: SupplierClassificationReportQuery
+): URLSearchParams {
+  const params = buildSupplierPerformanceDashboardParams(filters);
+  if (query.search) params.set("search", query.search);
+  if (query.classification) params.set("classification", query.classification);
+  if (query.registryStatus) params.set("registryStatus", query.registryStatus);
+  if (query.onlyPending) params.set("onlyPending", "1");
+  params.set("sort", query.sort);
+  params.set("direction", query.direction);
+  return params;
+}
+
+export function fetchSupplierClassificationReport(
+  filters: SupplierPerformanceDashboardFilters,
+  query: SupplierClassificationReportQuery,
+  signal?: AbortSignal
+): Promise<SupplierClassificationReport> {
+  return fetchJsonOk<SupplierClassificationReport>(
+    withQuery(SUPPLIER_CLASSIFICATION_API, buildSupplierClassificationParams(filters, query)),
+    signal ? { signal } : undefined
+  );
+}
+
+/** URL de download — o arquivo é gerado no servidor, nunca montado no browser. */
+export function buildSupplierClassificationExportUrl(
+  extension: "xlsx" | "pdf",
+  filters: SupplierPerformanceDashboardFilters,
+  query: SupplierClassificationReportQuery
+): string {
+  return withQuery(
+    `${SUPPLIER_CLASSIFICATION_API}.${extension}`,
+    buildSupplierClassificationParams(filters, query)
   );
 }
 

@@ -17,6 +17,11 @@ import { isSupplyChainSupplierPerformanceEnabled } from "@/src/lib/supply-chain/
 import { isSupplierIdentitySafeForEvaluation } from "./nomusPurchaseOrderEvaluation.js";
 import { periodWhere } from "./nomusPurchaseOrderEvaluation.server.js";
 import {
+  buildSupplierClassificationReport,
+  parseSupplierClassificationReportQuery,
+  type SupplierClassificationReport,
+} from "./supplierClassificationReport.js";
+import {
   buildDashboardMaterialOptions,
   buildSupplierMaterialMatrix,
   buildSupplierPerformanceDashboard,
@@ -107,7 +112,9 @@ const EVALUATION_SELECT = {
   revision: true,
   createdAt: true,
   updatedAt: true,
+  createdByUserName: true,
   updatedByUserName: true,
+  notes: true,
 } as const;
 
 /** Predicado oficial de cancelamento (canceledOnly de Pedidos Nomus) negado — reduz a carga; o motor puro reaplica. */
@@ -239,7 +246,9 @@ export async function loadSupplierPerformanceDashboardInput(
     revision: row.revision,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    createdByUserName: row.createdByUserName,
     updatedByUserName: row.updatedByUserName,
+    notes: row.notes,
   }));
 
   const productIds = [
@@ -348,6 +357,25 @@ export async function buildSupplierPerformanceDashboardResponse(
   return buildSupplierPerformanceDashboard(input, filters, {
     rankingLimit: normalizeDashboardRankingLimit(query.limit),
     paretoLimit: normalizeDashboardRankingLimit(query.paretoLimit, 500),
+  });
+}
+
+/**
+ * Classificação de fornecedores — mesma carga, mesmos filtros e mesmo motor do
+ * dashboard. JSON, XLSX e PDF passam obrigatoriamente por aqui.
+ */
+export async function buildSupplierClassificationReportResponse(
+  prisma: SupplierPerformanceDashboardDb,
+  query: Record<string, unknown>,
+  deps: SupplierPerformanceDashboardDeps = {},
+  options: { includeEvidence?: boolean } = {}
+): Promise<SupplierClassificationReport> {
+  const filters = parseSupplierPerformanceDashboardFilters(query);
+  const reportQuery = parseSupplierClassificationReportQuery(query);
+  const input = await loadSupplierPerformanceDashboardInput(prisma, filters, deps);
+  return buildSupplierClassificationReport(input, filters, {
+    query: reportQuery,
+    includeEvidence: options.includeEvidence === true,
   });
 }
 

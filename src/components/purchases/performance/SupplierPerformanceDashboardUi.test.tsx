@@ -44,17 +44,20 @@ type PageModule = typeof import("./SupplierPerformanceDashboardPage");
 type ScorecardModule = typeof import("./SupplierScorecardOverlay");
 type MaterialModule = typeof import("./MaterialDetailOverlay");
 type MatrixModule = typeof import("./SupplierMaterialMatrixSection");
+type ClassificationModule = typeof import("./SupplierClassificationSection");
 
 let SupplierPerformanceDashboardView: PageModule["SupplierPerformanceDashboardView"];
 let SupplierScorecardContent: ScorecardModule["SupplierScorecardContent"];
 let MaterialDetailContent: MaterialModule["MaterialDetailContent"];
 let SupplierMaterialMatrixTable: MatrixModule["SupplierMaterialMatrixTable"];
+let SupplierClassificationContent: ClassificationModule["SupplierClassificationContent"];
 
 before(async () => {
   SupplierPerformanceDashboardView = (await import("./SupplierPerformanceDashboardPage")).SupplierPerformanceDashboardView;
   SupplierScorecardContent = (await import("./SupplierScorecardOverlay")).SupplierScorecardContent;
   MaterialDetailContent = (await import("./MaterialDetailOverlay")).MaterialDetailContent;
   SupplierMaterialMatrixTable = (await import("./SupplierMaterialMatrixSection")).SupplierMaterialMatrixTable;
+  SupplierClassificationContent = (await import("./SupplierClassificationSection")).SupplierClassificationContent;
 });
 
 const noop = () => undefined;
@@ -97,6 +100,15 @@ describe("navegação Compras", () => {
     assert.ok(html.includes('href="/purchases/supplier-evaluation"'));
     assert.ok(html.includes('aria-current="page"'));
     assert.equal(html.includes("Solicitações"), false);
+  });
+
+  it("sub-abas Visão geral e Classificação de fornecedores aparecem na Performance", () => {
+    const html = renderView({ status: "success", data: model });
+    assert.ok(html.includes('data-testid="performance-view-nav"'));
+    assert.ok(html.includes("Visão geral"));
+    assert.ok(html.includes("Classificação de fornecedores"));
+    assert.ok(html.includes('data-testid="performance-view-tab-overview"'));
+    assert.ok(html.includes('data-testid="performance-view-tab-classification"'));
   });
 
   it("nas abas antigas, Performance é um link e a aba atual continua a mesma", () => {
@@ -286,5 +298,34 @@ describe("scorecard 360 e detalhe de MP", () => {
     assert.ok(html.includes("Página 1 de 2"));
     assert.ok(html.includes("6 combinações"));
     assert.ok(html.includes("2 un. distintas"));
+  });
+});
+
+describe("classificação de fornecedores", () => {
+  it("relatório institucional mostra faixa, cobertura com contexto e exportações", async () => {
+    const { buildSupplierClassificationReport } = await import("@/src/lib/purchasing/supplierClassificationReport");
+    const report = buildSupplierClassificationReport(buildFixtureInput(), filters, { includeEvidence: true });
+    const html = renderToStaticMarkup(
+      <SupplierClassificationContent
+        report={report}
+        query={{ search: null, classification: null, registryStatus: null, onlyPending: false, sort: "classification", direction: "asc" }}
+        onQueryChange={noop}
+        onSelectSupplier={noop}
+        xlsxUrl="/api/purchases/performance/classification.xlsx"
+        pdfUrl="/api/purchases/performance/classification.pdf"
+      />
+    );
+    assert.ok(html.includes('data-testid="supplier-classification-report"'));
+    assert.ok(html.includes("Classificação de fornecedores"));
+    assert.ok(html.includes("Exportar XLSX"));
+    assert.ok(html.includes("Exportar PDF"));
+    assert.ok(html.includes("Aprovado"));
+    assert.ok(html.includes("Condicional"));
+    assert.ok(html.includes("Não avaliado"));
+    assert.ok(html.includes("Situação cadastral"));
+    assert.equal(/ISO\s*9|Inmetro|Certificado ISO/i.test(html), false);
+    assert.ok(html.includes('data-testid="classification-export-xlsx"'));
+    assert.ok(html.includes('href="/api/purchases/performance/classification.xlsx"'));
+    assert.ok(html.includes('href="/api/purchases/performance/classification.pdf"'));
   });
 });

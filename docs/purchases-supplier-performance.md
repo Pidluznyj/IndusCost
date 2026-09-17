@@ -234,18 +234,31 @@ de multimoeda, avaliação desligada, pedidos/linhas não identificados) · SUCC
 Painel "Dados e regras (auditoria)" expõe geração, última sincronização,
 população, exclusões, totais cabeçalho × linhas e autoridades.
 
-## 11. Testes
+## 11. Classificação de fornecedores (sub-aba)
+
+Navegação interna em `/purchases/performance?view=classification`.
+
+A classificação **não** é o relatório de `GET /api/supplier-performance/report`
+(`PurchaseOrder` interno). A aba Performance opera sobre `NomusPurchaseOrder`;
+são identidades distintas. Por isso o read model, o XLSX e o PDF da classificação
+ficam em:
+
+- `GET /api/purchases/performance/classification`
+- `GET /api/purchases/performance/classification.xlsx`
+- `GET /api/purchases/performance/classification.pdf`
+
+Única regra de faixa: `classifySupplierPerformance` em
+`supplierClassificationPolicy.ts` (`SUPPLIER_PERFORMANCE_CLASSIFICATION_V1`,
+versão 1). Política **interna**. Tela, JSON, XLSX e PDF leem o mesmo DTO
+(`buildSupplierClassificationReport`), sem recalcular nota.
+
+## 12. Testes
 
 ```bash
-npx tsx --test src/lib/purchasing/supplierPerformanceDashboard.test.ts \
-  src/lib/purchasing/supplierPerformanceDashboardEvaluation.test.ts \
-  src/lib/purchasing/supplierPerformanceDashboardService.test.ts \
-  src/lib/purchasing/supplierPerformanceDashboardRoutes.test.ts \
-  src/lib/purchasing/supplierPerformanceDashboardAccess.test.ts \
-  src/components/purchases/performance/SupplierPerformanceDashboardUi.test.tsx
+npm run test:purchases:performance
 ```
 
-## 12. Fora desta versão (propostas, sem schema criado)
+## 13. Fora desta versão (propostas, sem schema criado)
 
 - Recebimento físico oficial com data e quantidade por linha → habilitaria OTD,
   OTIF, lead time real, atraso médio, fill rate completo. Candidato: documento

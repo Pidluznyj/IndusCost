@@ -2,11 +2,15 @@
  * Compras → Performance — dashboard de performance de fornecedores.
  *
  * Container (fetch/estado) + View (apresentação). O frontend NÃO recalcula
- * métricas: consome o read model de /api/purchases/performance.
+ * métricas: consome o read model de /api/purchases/performance e, na sub-aba de
+ * classificação, o read model de /api/purchases/performance/classification.
+ *
+ * Sub-abas: [ Visão geral ] [ Classificação de fornecedores ], com o estado
+ * refletido em `?view=` para o deep link sobreviver a refresh/back/forward.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
-import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
+import { Loader2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { OverlaySection } from "@/src/components/ui/overlay";
 import {
@@ -16,18 +20,14 @@ import {
   type SupplierPerformanceDashboardFilters,
   type SupplierPerformanceDashboardReadModel,
 } from "@/src/lib/purchasing/supplierPerformanceDashboard";
+import { fetchSupplierPerformanceDashboard } from "@/src/lib/purchasing/supplierPerformanceDashboardClient";
 import {
-  fetchSupplierPerformanceDashboard,
-  searchSupplierPerformanceMaterialOptions,
-} from "@/src/lib/purchasing/supplierPerformanceDashboardClient";
-import {
-  DASHBOARD_PERIOD_PRESET_OPTIONS,
-  describeDashboardPeriodSelection,
+  SUPPLIER_PERFORMANCE_VIEW_PARAM,
   formatDashboardInteger,
-  periodSelectionCustom,
+  parseSupplierPerformanceViewParam,
   periodSelectionFromPreset,
-  periodSelectionFromYear,
   type DashboardPeriodSelection,
+  type SupplierPerformanceViewId,
 } from "@/src/lib/purchasing/supplierPerformanceDashboardUi";
 import { PurchaseTrendChart } from "./SupplierPerformanceCharts";
 import {
@@ -43,200 +43,32 @@ import {
   SupplierRankingsSection,
 } from "./SupplierPerformanceSections";
 import { SupplierMaterialMatrixSection } from "./SupplierMaterialMatrixSection";
+import { SupplierClassificationPage } from "./SupplierClassificationSection";
 import { SupplierScorecardOverlay } from "./SupplierScorecardOverlay";
 import { MaterialDetailOverlay } from "./MaterialDetailOverlay";
+import {
+  SupplierPerformanceFilters,
+  SupplierPerformanceShell,
+  filterOptionsFromDashboard,
+} from "./SupplierPerformanceShell";
+
+/** Reexportado para os consumidores/testes que já apontavam para este módulo. */
+export {
+  EMPTY_PERFORMANCE_FILTER_OPTIONS,
+  SupplierPerformanceFilters,
+  SupplierPerformanceShell,
+  SupplierPerformanceViewNav,
+  filterOptionsFromDashboard,
+  type PerformanceFilterOptions,
+} from "./SupplierPerformanceShell";
 
 export type SupplierPerformanceDashboardViewState =
   | { status: "loading"; data: SupplierPerformanceDashboardReadModel | null }
   | { status: "error"; message: string; data: SupplierPerformanceDashboardReadModel | null }
   | { status: "success"; data: SupplierPerformanceDashboardReadModel };
 
-const CONTROL_CLASS = "rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground";
-
 /* ------------------------------------------------------------------ *
- * Filtros
- * ------------------------------------------------------------------ */
-
-export function SupplierPerformanceFilters({
-  selection,
-  filters,
-  data,
-  materialOption,
-  onSelectionChange,
-  onFiltersChange,
-  onMaterialOptionChange,
-  onRefresh,
-  loading,
-}: {
-  selection: DashboardPeriodSelection;
-  filters: SupplierPerformanceDashboardFilters;
-  data: SupplierPerformanceDashboardReadModel | null;
-  materialOption: DashboardMaterialOption | null;
-  onSelectionChange: (next: DashboardPeriodSelection) => void;
-  onFiltersChange: (next: Partial<SupplierPerformanceDashboardFilters>) => void;
-  onMaterialOptionChange: (next: DashboardMaterialOption | null) => void;
-  onRefresh: () => void;
-  loading: boolean;
-}) {
-  const [materialTerm, setMaterialTerm] = useState("");
-  const [materialOptions, setMaterialOptions] = useState<DashboardMaterialOption[]>([]);
-  const [materialSearching, setMaterialSearching] = useState(false);
-  const years = data?.metadata.availableYears ?? [];
-  const suppliers = data?.filterOptions.suppliers ?? [];
-  const groups = data?.filterOptions.materialGroups ?? [];
-  const currencies = data?.filterOptions.currencies ?? [];
-
-  useEffect(() => {
-    const term = materialTerm.trim();
-    if (term.length < 2) {
-      setMaterialOptions([]);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setMaterialSearching(true);
-      searchSupplierPerformanceMaterialOptions(filters, term, controller.signal)
-        .then((payload) => {
-          if (!controller.signal.aborted) setMaterialOptions(payload.materials);
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) setMaterialOptions([]);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setMaterialSearching(false);
-        });
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [materialTerm, filters.period.from, filters.period.to, filters.includeCanceled]);
-
-  const periodValue = selection.mode === "preset" ? selection.preset : selection.mode === "year" ? `year:${selection.year}` : "custom";
-
-  return (
-    <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-muted/30 p-3" data-testid="performance-filters">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Período
-        <select
-          value={periodValue}
-          onChange={(event) => {
-            const value = event.target.value;
-            if (value === "custom") onSelectionChange(periodSelectionCustom(filters.period));
-            else if (value.startsWith("year:")) onSelectionChange(periodSelectionFromYear(Number(value.slice(5))));
-            else onSelectionChange(periodSelectionFromPreset(value as Exclude<typeof selection, { mode: "custom" | "year" }>["preset"]));
-          }}
-          className={CONTROL_CLASS}
-          data-testid="performance-filter-period"
-        >
-          {DASHBOARD_PERIOD_PRESET_OPTIONS.map((preset) => (
-            <option key={preset.id} value={preset.id}>{preset.label}</option>
-          ))}
-          {years.map((year) => (
-            <option key={year} value={`year:${year}`}>Ano {year}</option>
-          ))}
-          <option value="custom">Personalizado</option>
-        </select>
-      </label>
-      {selection.mode === "custom" ? (
-        <>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            De
-            <input type="date" value={filters.period.from ?? ""} onChange={(event) => onSelectionChange(periodSelectionCustom({ from: event.target.value || null, to: filters.period.to }))} className={CONTROL_CLASS} data-testid="performance-filter-from" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Até
-            <input type="date" value={filters.period.to ?? ""} onChange={(event) => onSelectionChange(periodSelectionCustom({ from: filters.period.from, to: event.target.value || null }))} className={CONTROL_CLASS} data-testid="performance-filter-to" />
-          </label>
-        </>
-      ) : null}
-      <label className="flex min-w-[14rem] flex-col gap-1 text-xs text-muted-foreground">
-        Fornecedor
-        <select
-          value={filters.supplierExternalId ?? ""}
-          onChange={(event) => onFiltersChange({ supplierExternalId: event.target.value ? Number(event.target.value) : null })}
-          className={CONTROL_CLASS}
-          data-testid="performance-filter-supplier"
-        >
-          <option value="">Todos os fornecedores</option>
-          {suppliers.map((supplier) => (
-            <option key={supplier.supplierExternalId} value={supplier.supplierExternalId}>
-              {supplier.name} ({supplier.orderCount})
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="flex min-w-[16rem] flex-col gap-1 text-xs text-muted-foreground">
-        Matéria-prima
-        {materialOption ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground">
-            <span className="truncate" title={materialOption.description ?? undefined}>{materialOption.productCode ?? materialOption.description ?? materialOption.materialKey}</span>
-            <button type="button" className="text-xs text-primary hover:underline" onClick={() => onMaterialOptionChange(null)} data-testid="performance-filter-material-clear">limpar</button>
-          </div>
-        ) : (
-          <div className="relative">
-            <input value={materialTerm} onChange={(event) => setMaterialTerm(event.target.value)} placeholder="Código ou descrição (mín. 2 letras)" className={`${CONTROL_CLASS} w-full`} data-testid="performance-filter-material" />
-            {materialSearching ? <Loader2 className="absolute right-2 top-2.5 h-4 w-4 animate-spin text-muted-foreground" /> : null}
-            {materialOptions.length > 0 ? (
-              <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-white text-sm shadow-lg" role="listbox">
-                {materialOptions.map((option) => (
-                  <li key={option.materialKey}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={false}
-                      className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-primary/5"
-                      onClick={() => {
-                        onMaterialOptionChange(option);
-                        setMaterialTerm("");
-                        setMaterialOptions([]);
-                      }}
-                    >
-                      <span className="font-medium">{option.productCode ?? option.materialKey}</span>
-                      <span className="text-xs text-muted-foreground">{option.description ?? "—"} · {option.lineCount} linhas</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        )}
-      </div>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Grupo de material
-        <select value={filters.materialGroup ?? ""} onChange={(event) => onFiltersChange({ materialGroup: event.target.value || null })} className={CONTROL_CLASS} data-testid="performance-filter-group">
-          <option value="">Todos os grupos</option>
-          {groups.map((group) => (
-            <option key={group.group} value={group.group}>{group.group} ({group.lineCount})</option>
-          ))}
-        </select>
-      </label>
-      {currencies.length > 1 ? (
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Moeda
-          <select value={filters.currency ?? data?.metadata.currency.selected ?? ""} onChange={(event) => onFiltersChange({ currency: event.target.value || null })} className={CONTROL_CLASS} data-testid="performance-filter-currency">
-            {currencies.map((currency) => (
-              <option key={currency.currency} value={currency.currency}>{currency.currency} ({currency.orderCount})</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      <label className="flex items-center gap-2 pb-2 text-sm">
-        <input type="checkbox" checked={filters.includeCanceled} onChange={(event) => onFiltersChange({ includeCanceled: event.target.checked })} data-testid="performance-filter-canceled" />
-        Incluir cancelados
-      </label>
-      <button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1 rounded-md border border-border bg-white px-3 py-2 text-sm disabled:opacity-60" data-testid="performance-refresh">
-        <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-        Atualizar
-      </button>
-      <span className="pb-2 text-[11px] text-muted-foreground">{describeDashboardPeriodSelection(selection)}</span>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * View
+ * View — Visão geral
  * ------------------------------------------------------------------ */
 
 export function SupplierPerformanceDashboardView({
@@ -251,6 +83,8 @@ export function SupplierPerformanceDashboardView({
   onSelectSupplier,
   onSelectMaterial,
   matrix,
+  view = "overview",
+  onViewChange,
 }: {
   state: SupplierPerformanceDashboardViewState;
   filters: SupplierPerformanceDashboardFilters;
@@ -264,54 +98,89 @@ export function SupplierPerformanceDashboardView({
   onSelectMaterial: (key: string) => void;
   /** Slot da matriz (container com fetch próprio) — opcional em testes. */
   matrix?: React.ReactNode;
+  view?: SupplierPerformanceViewId;
+  onViewChange?: (next: SupplierPerformanceViewId) => void;
 }) {
   const data = state.data;
   const loading = state.status === "loading";
   const empty = state.status === "success" && data.kpis.purchaseOrderCount === 0;
 
   return (
-    <div className="space-y-6" data-testid="supplier-performance-dashboard">
-      <PurchaseChainViewNav current="performance" variant="nomus" />
-      <header>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Performance de fornecedores</h1>
-        <p className="text-sm text-muted-foreground">
-          Compras, concentração, risco e desempenho da base de fornecedores.
-        </p>
-      </header>
-
-      <SupplierPerformanceFilters selection={selection} filters={filters} data={data} materialOption={materialOption} onSelectionChange={onSelectionChange} onFiltersChange={onFiltersChange} onMaterialOptionChange={onMaterialOptionChange} onRefresh={onRefresh} loading={loading} />
-
+    <SupplierPerformanceShell
+      view={view}
+      onViewChange={onViewChange ?? (() => undefined)}
+      title="Performance de fornecedores"
+      description="Compras, concentração, risco e desempenho da base de fornecedores."
+      filtersSlot={
+        <SupplierPerformanceFilters
+          selection={selection}
+          filters={filters}
+          options={filterOptionsFromDashboard(data)}
+          materialOption={materialOption}
+          onSelectionChange={onSelectionChange}
+          onFiltersChange={onFiltersChange}
+          onMaterialOptionChange={onMaterialOptionChange}
+          onRefresh={onRefresh}
+          loading={loading}
+        />
+      }
+    >
       {state.status === "error" ? (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700" role="alert" data-testid="performance-error">
+        <div
+          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700"
+          role="alert"
+          data-testid="performance-error"
+        >
           <p className="font-semibold">Não foi possível carregar a performance de fornecedores.</p>
           <p>{state.message}</p>
-          <button type="button" onClick={onRefresh} className="mt-2 rounded-md border border-rose-300 bg-white px-3 py-1 text-xs">Tentar novamente</button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="mt-2 rounded-md border border-rose-300 bg-white px-3 py-1 text-xs"
+          >
+            Tentar novamente
+          </button>
         </div>
       ) : null}
 
       {loading && !data ? (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-white px-4 py-10 text-sm text-muted-foreground" data-testid="performance-loading">
-          <Loader2 className="h-4 w-4 animate-spin" /> Carregando performance de fornecedores…
+        <div
+          className="flex items-center gap-2 rounded-md border border-border bg-white px-4 py-10 text-sm text-muted-foreground"
+          data-testid="performance-loading"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Carregando performance de fornecedores…
         </div>
       ) : null}
 
       {data ? (
-        <>
+        <div className="space-y-6">
           <DataQualityBar data={data} />
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden /> : null}
 
           {data.metadata.currency.multiCurrency ? (
             <DashboardNotice tone="warning" title="Base multimoeda" testId="performance-notice-currency">
-              Exibindo apenas {data.metadata.currency.selected}. Pedidos em outras moedas ({data.metadata.currency.available.filter((c) => c.currency !== data.metadata.currency.selected).map((c) => `${c.currency}: ${c.orderCount}`).join(", ")}) não são somados — não há câmbio oficial. Use o filtro de moeda para analisá-los.
+              Exibindo apenas {data.metadata.currency.selected}. Pedidos em outras moedas (
+              {data.metadata.currency.available
+                .filter((c) => c.currency !== data.metadata.currency.selected)
+                .map((c) => `${c.currency}: ${c.orderCount}`)
+                .join(", ")}
+              ) não são somados — não há câmbio oficial. Use o filtro de moeda para analisá-los.
             </DashboardNotice>
           ) : null}
           {data.evaluation.available === false ? (
-            <DashboardNotice tone="info" title="Avaliação de fornecedor indisponível" testId="performance-notice-evaluation">{data.evaluation.reason}</DashboardNotice>
+            <DashboardNotice tone="info" title="Avaliação de fornecedor indisponível" testId="performance-notice-evaluation">
+              {data.evaluation.reason}
+            </DashboardNotice>
           ) : null}
-          {data.metadata.population.unresolvedSupplierOrders > 0 || data.metadata.population.unresolvedMaterialLines > 0 ? (
+          {data.metadata.population.unresolvedSupplierOrders > 0 ||
+          data.metadata.population.unresolvedMaterialLines > 0 ? (
             <DashboardNotice tone="info" title="Identidade parcial" testId="performance-notice-partial">
-              {data.metadata.population.unresolvedSupplierOrders > 0 ? `${formatDashboardInteger(data.metadata.population.unresolvedSupplierOrders)} pedidos sem ID de fornecedor entram no total, mas não em rankings por fornecedor. ` : ""}
-              {data.metadata.population.unresolvedMaterialLines > 0 ? `${formatDashboardInteger(data.metadata.population.unresolvedMaterialLines)} linhas sem ID/código de produto ficam fora das análises por matéria-prima.` : ""}
+              {data.metadata.population.unresolvedSupplierOrders > 0
+                ? `${formatDashboardInteger(data.metadata.population.unresolvedSupplierOrders)} pedidos sem ID de fornecedor entram no total, mas não em rankings por fornecedor. `
+                : ""}
+              {data.metadata.population.unresolvedMaterialLines > 0
+                ? `${formatDashboardInteger(data.metadata.population.unresolvedMaterialLines)} linhas sem ID/código de produto ficam fora das análises por matéria-prima.`
+                : ""}
             </DashboardNotice>
           ) : null}
 
@@ -322,7 +191,11 @@ export function SupplierPerformanceDashboardView({
               <ExecutiveKpisSection data={data} onSelectSupplier={onSelectSupplier} />
               <ConcentrationSection data={data} onSelectSupplier={onSelectSupplier} onSelectMaterial={onSelectMaterial} />
               <SupplierRankingsSection data={data} onSelectSupplier={onSelectSupplier} />
-              <DashboardSection title="Compras ao longo do tempo" description="Agrupado por mês da data operacional do pedido (emissão; firstSeenAt quando ausente)." testId="performance-trend-section">
+              <DashboardSection
+                title="Compras ao longo do tempo"
+                description="Agrupado por mês da data operacional do pedido (emissão; firstSeenAt quando ausente)."
+                testId="performance-trend-section"
+              >
                 <OverlaySection title="Evolução das compras" testId="performance-trend">
                   <PurchaseTrendChart
                     points={data.charts.monthly}
@@ -338,9 +211,9 @@ export function SupplierPerformanceDashboardView({
           )}
           <AdvancedMetricsSection data={data} />
           <DataRulesPanel data={data} />
-        </>
+        </div>
       ) : null}
-    </div>
+    </SupplierPerformanceShell>
   );
 }
 
@@ -349,6 +222,9 @@ export function SupplierPerformanceDashboardView({
  * ------------------------------------------------------------------ */
 
 export function SupplierPerformanceDashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = parseSupplierPerformanceViewParam(searchParams.get(SUPPLIER_PERFORMANCE_VIEW_PARAM));
+
   const [selection, setSelection] = useState<DashboardPeriodSelection>(() =>
     periodSelectionFromPreset(SUPPLIER_PERFORMANCE_DASHBOARD_DEFAULT_PRESET)
   );
@@ -364,7 +240,10 @@ export function SupplierPerformanceDashboardPage() {
 
   const filterKey = useMemo(() => JSON.stringify(filters), [filters]);
 
+  // A visão geral é a única consumidora deste read model; a classificação tem o
+  // seu próprio (mesma população, mesmo motor) e não paga por esta consulta.
   useEffect(() => {
+    if (view !== "overview") return;
     const controller = new AbortController();
     setState((prev) => ({ status: "loading", data: prev.data }));
     fetchSupplierPerformanceDashboard(filters, controller.signal)
@@ -381,7 +260,22 @@ export function SupplierPerformanceDashboardPage() {
       });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, reloadToken]);
+  }, [filterKey, reloadToken, view]);
+
+  const handleViewChange = useCallback(
+    (next: SupplierPerformanceViewId) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (next === "overview") params.delete(SUPPLIER_PERFORMANCE_VIEW_PARAM);
+          else params.set(SUPPLIER_PERFORMANCE_VIEW_PARAM, next);
+          return params;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams]
+  );
 
   const handleSelectionChange = useCallback((next: DashboardPeriodSelection) => {
     setSelection(next);
@@ -401,21 +295,61 @@ export function SupplierPerformanceDashboardPage() {
 
   return (
     <>
-      <SupplierPerformanceDashboardView
-        state={state}
+      {view === "classification" ? (
+        <SupplierClassificationPage
+          view={view}
+          onViewChange={handleViewChange}
+          filters={filters}
+          selection={selection}
+          materialOption={materialOption}
+          onSelectionChange={handleSelectionChange}
+          onFiltersChange={handleFiltersChange}
+          onMaterialOptionChange={handleMaterialOptionChange}
+          onSelectSupplier={setSelectedSupplier}
+          reloadToken={reloadToken}
+          onRefresh={refresh}
+        />
+      ) : (
+        <SupplierPerformanceDashboardView
+          state={state}
+          filters={filters}
+          selection={selection}
+          materialOption={materialOption}
+          onSelectionChange={handleSelectionChange}
+          onFiltersChange={handleFiltersChange}
+          onMaterialOptionChange={handleMaterialOptionChange}
+          onRefresh={refresh}
+          onSelectSupplier={setSelectedSupplier}
+          onSelectMaterial={setSelectedMaterial}
+          view={view}
+          onViewChange={handleViewChange}
+          matrix={
+            <SupplierMaterialMatrixSection
+              filters={filters}
+              onSelectSupplier={setSelectedSupplier}
+              onSelectMaterial={setSelectedMaterial}
+            />
+          }
+        />
+      )}
+      <SupplierScorecardOverlay
+        supplierExternalId={selectedSupplier}
         filters={filters}
-        selection={selection}
-        materialOption={materialOption}
-        onSelectionChange={handleSelectionChange}
-        onFiltersChange={handleFiltersChange}
-        onMaterialOptionChange={handleMaterialOptionChange}
-        onRefresh={refresh}
-        onSelectSupplier={setSelectedSupplier}
-        onSelectMaterial={setSelectedMaterial}
-        matrix={<SupplierMaterialMatrixSection filters={filters} onSelectSupplier={setSelectedSupplier} onSelectMaterial={setSelectedMaterial} />}
+        onClose={() => setSelectedSupplier(null)}
+        onSelectMaterial={(key) => {
+          setSelectedSupplier(null);
+          setSelectedMaterial(key);
+        }}
       />
-      <SupplierScorecardOverlay supplierExternalId={selectedSupplier} filters={filters} onClose={() => setSelectedSupplier(null)} onSelectMaterial={(key) => { setSelectedSupplier(null); setSelectedMaterial(key); }} />
-      <MaterialDetailOverlay materialKey={selectedMaterial} filters={filters} onClose={() => setSelectedMaterial(null)} onSelectSupplier={(id) => { setSelectedMaterial(null); setSelectedSupplier(id); }} />
+      <MaterialDetailOverlay
+        materialKey={selectedMaterial}
+        filters={filters}
+        onClose={() => setSelectedMaterial(null)}
+        onSelectSupplier={(id) => {
+          setSelectedMaterial(null);
+          setSelectedSupplier(id);
+        }}
+      />
     </>
   );
 }

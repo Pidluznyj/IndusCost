@@ -100,7 +100,8 @@ function OverlayTableRow({
     <tr
       {...rest}
       className={cn(
-        interactive && "cursor-pointer hover:bg-primary/5",
+        "hover:bg-primary/5",
+        interactive && "cursor-pointer",
         className
       )}
     />

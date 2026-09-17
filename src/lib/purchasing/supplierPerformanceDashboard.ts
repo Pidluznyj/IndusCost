@@ -31,6 +31,10 @@ import {
 } from "@/src/lib/nomus/nomusPurchaseOrderClassifier.js";
 import type { NomusPurchaseOrderStage } from "@/src/lib/nomus/nomusPurchaseOrderTypes.js";
 import {
+  classifySupplierPerformance,
+  type SupplierClassification,
+} from "./supplierClassificationPolicy.js";
+import {
   SUPPLIER_EVALUATION_CRITERIA,
   SUPPLIER_EVALUATION_METHODOLOGY_V1,
   SUPPLIER_EVALUATION_METHODOLOGY_V2,
@@ -351,6 +355,9 @@ export type DashboardEvaluationInput = {
   createdAt: Date;
   updatedAt: Date;
   updatedByUserName: string | null;
+  /** Campos de evidência documental (opcionais: fixtures antigas não os informam). */
+  createdByUserName?: string | null;
+  notes?: string | null;
 };
 
 export type DashboardCatalogInput = {
@@ -912,6 +919,8 @@ export type DashboardSupplierEvaluationDto = {
   evaluationCount: number;
   v1Count: number;
   v2Count: number;
+  /** Última avaliação registrada no período, em qualquer metodologia. */
+  lastEvaluationAt: string | null;
 };
 
 export type DashboardSupplierRow = {
@@ -934,6 +943,12 @@ export type DashboardSupplierRow = {
   dominantMaterialCount: number;
   maxMaterialShare: number | null;
   evaluation: DashboardSupplierEvaluationDto | null;
+  /**
+   * Classificação de desempenho (política interna versionada). Derivada da nota
+   * consolidada — nunca da situação cadastral (`registryStatus`) nem do valor
+   * comprado. Autoridade única para tela, JSON, XLSX e PDF.
+   */
+  classification: SupplierClassification;
 };
 
 export type DashboardRankedSupplierRow = DashboardSupplierRow & { position: number };
@@ -1215,6 +1230,7 @@ export function buildDashboardSupplierEvaluation(
       evaluationCount: 0,
       v1Count: 0,
       v2Count: 0,
+      lastEvaluationAt: null,
     };
   }
   const aggregated = resolveSupplierEvaluationAggregation(
@@ -1240,9 +1256,13 @@ export function buildDashboardSupplierEvaluation(
   });
   let v1Count = 0;
   let v2Count = 0;
+  let lastEvaluationAt: Date | null = null;
   for (const row of evaluations) {
     if (row.methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V1) v1Count += 1;
     else if (row.methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V2) v2Count += 1;
+    if (!lastEvaluationAt || row.updatedAt.getTime() > lastEvaluationAt.getTime()) {
+      lastEvaluationAt = row.updatedAt;
+    }
   }
   return {
     summary,
@@ -1253,6 +1273,7 @@ export function buildDashboardSupplierEvaluation(
     evaluationCount: aggregated.overall.length,
     v1Count,
     v2Count,
+    lastEvaluationAt: lastEvaluationAt ? lastEvaluationAt.toISOString() : null,
   };
 }
 
@@ -1855,6 +1876,9 @@ function supplierRowFromAgg(
       if (maxShare == null || share > maxShare) maxShare = share;
     }
   }
+  const evaluation = evaluationEnabled
+    ? buildDashboardSupplierEvaluation(agg.orderCount, agg.evaluations)
+    : null;
   return {
     supplierExternalId: agg.key,
     name: agg.name,
@@ -1874,7 +1898,11 @@ function supplierRowFromAgg(
     exclusiveMaterialCount: exclusive,
     dominantMaterialCount: dominant,
     maxMaterialShare: maxShare == null ? null : roundRatio(maxShare),
-    evaluation: evaluationEnabled ? buildDashboardSupplierEvaluation(agg.orderCount, agg.evaluations) : null,
+    evaluation,
+    classification: classifySupplierPerformance({
+      overallScore: evaluation?.summary.overallScore ?? null,
+      methodologyVersion: evaluation?.methodologyVersion ?? null,
+    }),
   };
 }
 
@@ -2478,6 +2506,16 @@ export type DashboardSupplierEvaluationHistoryRow = {
   revision: number;
   updatedAt: string;
   updatedByUserName: string | null;
+  /**
+   * Evidência documental da avaliação (auditoria de fornecedores): estágio do
+   * pedido, quem avaliou, quando avaliou e observações registradas. Campos de
+   * leitura direta da avaliação oficial — nada é derivado aqui.
+   */
+  stage: string;
+  canceled: boolean;
+  evaluatedAt: string;
+  evaluatedByUserName: string | null;
+  notes: string | null;
 };
 
 export type DashboardSupplierDetail = {
@@ -2592,6 +2630,11 @@ export function buildSupplierPerformanceSupplierDetail(
         revision: order.evaluation.revision,
         updatedAt: order.evaluation.updatedAt.toISOString(),
         updatedByUserName: order.evaluation.updatedByUserName,
+        stage: order.stage,
+        canceled: order.canceled,
+        evaluatedAt: order.evaluation.createdAt.toISOString(),
+        evaluatedByUserName: order.evaluation.createdByUserName ?? null,
+        notes: order.evaluation.notes ?? null,
       });
       const bucket = order.evaluation.methodologyVersion === SUPPLIER_EVALUATION_METHODOLOGY_V1 ? monthlyV1 : monthlyV2;
       const list = bucket.get(order.monthKey) ?? [];
