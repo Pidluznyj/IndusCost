@@ -110,7 +110,7 @@ function pdfTableRows(report: SupplierClassificationReport): string[][] {
   return buildSupplierClassificationPdfLines(report)
     .filter(
       (line): line is Extract<typeof line, { type: "table" }> =>
-        line.type === "table" && line.headers[0] === "Fornecedor"
+        line.type === "table" && line.headers[0] === "Fornecedor" && line.headers.includes("Classificação")
     )
     .flatMap((line) => line.rows);
 }
@@ -122,6 +122,16 @@ function pdfText(report: SupplierClassificationReport): string {
         return [line.headers.join(" | "), ...line.rows.map((row) => row.join(" | "))].join("\n");
       }
       if (line.type === "kv") return `${line.label}: ${line.value}`;
+      if (line.type === "masthead") {
+        return [line.kicker, line.title, line.subtitle ?? ""].join("\n");
+      }
+      if (line.type === "kpis") {
+        return line.items.map((item) => `${item.label}: ${item.value}`).join("\n");
+      }
+      if (line.type === "meta") {
+        return line.columns.map((column) => `${column.label}: ${column.value}`).join("\n");
+      }
+      if (line.type === "callout") return line.text;
       return "text" in line && line.text != null ? String(line.text) : "";
     })
     .join("\n");
@@ -525,7 +535,11 @@ describe("exportação PDF", () => {
     REPORT.rows.forEach((expected, index) => {
       const cells = rows[index];
       assert.equal(cells[0], expected.name);
-      assert.equal(cells[9], `${expected.evaluatedOrders} / ${expected.eligibleOrders}`);
+      assert.ok(
+        String(cells[5]).startsWith(`${expected.evaluatedOrders} / ${expected.eligibleOrders}`),
+        "cobertura da tabela macro precisa repetir avaliados / elegíveis"
+      );
+      assert.equal(cells[3], expected.classification.label);
     });
 
     const many = buildSupplierClassificationReport(buildFixtureInput(), FILTERS);
@@ -537,7 +551,7 @@ describe("exportação PDF", () => {
       })),
     };
     const blocks = buildSupplierClassificationPdfLines(inflated).filter(
-      (line) => line.type === "table" && line.headers[0] === "Fornecedor"
+      (line) => line.type === "table" && line.headers[0] === "Fornecedor" && line.headers.includes("Classificação")
     );
     assert.ok(blocks.length >= 3, "tabela longa precisa reemitir o cabeçalho em novas páginas");
     assert.equal(pdfTableRows(inflated).length, 60);
@@ -550,6 +564,10 @@ describe("exportação PDF", () => {
       assert.ok(text.includes(row.classification.label), `faixa de ${row.name} ausente do PDF`);
     }
     assert.ok(text.includes(`Aprovados: ${REPORT.summary.approved}`) || text.includes("Aprovados | 1"));
+    assert.ok(text.includes("Qualidade"));
+    assert.ok(text.includes("Prazo"));
+    assert.ok(text.includes("Conformidade"));
+    assert.ok(text.includes("Atendimento"));
   });
 
   it("declara metodologia, política, período e propósito neutro em português acentuado", () => {
