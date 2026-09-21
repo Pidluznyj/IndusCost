@@ -13,6 +13,7 @@ import {
   resolveCanonicalEffectiveAccess,
   type EffectiveAccessBaselineMap,
   type EffectiveAccessOverrideMap,
+  type EffectiveAccessResult,
   type EffectiveAccessSource,
 } from "@/src/lib/security/effectiveAccess/index.js";
 import {
@@ -282,6 +283,35 @@ export function logRequireResourceDenied(args: {
   );
 }
 
+/**
+ * Fotografia canônica anexada a `auth.canonicalAccess` (única fonte — middleware
+ * e loadRequestContext passam por aqui).
+ *
+ * `overrideDenied` só lista denies individuais explícitos: OVERRIDE_DENY no
+ * próprio recurso ou ANCESTOR_VIEW_DENY (que só nasce de override deny no
+ * `view` de um ancestral). DENY_DEFAULT (ausência de grant) não entra.
+ */
+export function buildCanonicalAccessSnapshot(
+  result: Pick<EffectiveAccessResult, "allowed" | "denied">
+): NonNullable<AppAuthContext["canonicalAccess"]> {
+  const allowedFor = (action: PermissionContractAction) =>
+    result.allowed
+      .filter((entry) => entry.action === action)
+      .map((entry) => entry.resourceKey)
+      .sort();
+  return {
+    viewResources: allowedFor("view"),
+    updateResources: allowedFor("update"),
+    overrideDenied: result.denied
+      .filter(
+        (entry) =>
+          entry.source === "OVERRIDE_DENY" || entry.source === "ANCESTOR_VIEW_DENY"
+      )
+      .map((entry) => `${entry.resourceKey}:${entry.action}`)
+      .sort(),
+  };
+}
+
 function shouldBypassInTestEnv(): boolean {
   return (
     process.env.NODE_ENV === "test" &&
@@ -352,12 +382,7 @@ export function requireResource(
         const canonicalResult = resolveCanonicalEffectiveAccess(
           buildRequireResourceInput(auth, resolvedOptions)
         );
-        auth.canonicalAccess = {
-          viewResources: canonicalResult.allowed
-            .filter((entry) => entry.action === "view")
-            .map((entry) => entry.resourceKey)
-            .sort(),
-        };
+        auth.canonicalAccess = buildCanonicalAccessSnapshot(canonicalResult);
       }
 
       const decision = authorizeRequireResource(auth, resourceKey, action, resolvedOptions);
@@ -445,12 +470,7 @@ export function createRequireResourceGuards(
               options.permissionsVersion ?? auth.permissionsVersion ?? null,
           })
         );
-        auth.canonicalAccess = {
-          viewResources: canonicalResult.allowed
-            .filter((entry) => entry.action === "view")
-            .map((entry) => entry.resourceKey)
-            .sort(),
-        };
+        auth.canonicalAccess = buildCanonicalAccessSnapshot(canonicalResult);
       }
       return { auth, overrides, profileSnapshot };
     })();

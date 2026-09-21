@@ -1,7 +1,14 @@
 import React from "react";
 import { Gift, Lock, Percent, PiggyBank, type LucideIcon } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { ProfileCard, ProfileState, formatProfileDate } from "./profileUi";
+import { HR_EMPLOYEE_BENEFIT_STATUS_LABELS } from "@/src/lib/peopleProfileTypes";
+import {
+  ProfileCard,
+  ProfileRecordActions,
+  ProfileState,
+  formatProfileDate,
+  useProfileRecordActions,
+} from "./profileUi";
 import { BenefitsManageForm } from "./PeopleProfileManageForms";
 
 type BenefitItem = {
@@ -11,6 +18,7 @@ type BenefitItem = {
   startDate: string;
   endDate: string | null;
   planName: string | null;
+  notes?: string | null;
   amount?: number | null;
   isFinancial?: boolean;
   typeLabel?: string;
@@ -22,16 +30,24 @@ function benefitIcon(typeLabel: string | undefined): LucideIcon {
   return Gift;
 }
 
+/** O banco grava ACTIVE/ENDED; o teste por "ativ" cobre registros antigos em português. */
 function isActiveStatus(status: string): boolean {
+  if (String(status).toUpperCase() === "ACTIVE") return true;
   return /ativ/i.test(status) && !/inativ/i.test(status);
+}
+
+function benefitStatusLabel(status: string): string {
+  return (HR_EMPLOYEE_BENEFIT_STATUS_LABELS as Record<string, string>)[status] ?? status;
 }
 
 function BenefitCard({
   item,
   canViewValues,
+  actions,
 }: {
   item: BenefitItem;
   canViewValues: boolean;
+  actions?: React.ReactNode;
 }) {
   const active = isActiveStatus(item.status);
   const Icon = benefitIcon(item.typeLabel);
@@ -75,6 +91,9 @@ function BenefitCard({
           {item.planName ? `${item.planName} · ` : ""}
           {period}
         </span>
+        {item.notes ? (
+          <span className="text-xs text-muted-foreground whitespace-pre-wrap">{item.notes}</span>
+        ) : null}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         {item.isFinancial ? (
@@ -83,6 +102,8 @@ function BenefitCard({
               {item.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               <span className="text-[11px] font-medium text-muted-foreground">/mês</span>
             </span>
+          ) : canViewValues ? (
+            <span className="text-xs font-semibold text-muted-foreground">Valor não informado</span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
               <Lock className="h-3.5 w-3.5" aria-hidden />
@@ -102,8 +123,9 @@ function BenefitCard({
               active ? "bg-emerald-600" : "bg-muted-foreground"
             )}
           />
-          {item.status}
+          {benefitStatusLabel(item.status)}
         </span>
+        {actions}
       </div>
     </div>
   );
@@ -126,11 +148,13 @@ export function PeopleBenefitsTab({
   canManage?: boolean;
   onSaved?: () => void;
 }) {
+  const recordActions = useProfileRecordActions(onSaved);
   if (loading) return <ProfileState kind="loading" message="Carregando benefícios…" />;
   if (error) return <ProfileState kind="error" message={error} />;
   const list = items ?? [];
   const activeCount = list.filter((item) => isActiveStatus(item.status)).length;
   const endedCount = list.length - activeCount;
+  const manageable = Boolean(canManage && employeeId && onSaved);
 
   return (
     <div className="flex max-w-[880px] flex-col gap-5">
@@ -146,7 +170,39 @@ export function PeopleBenefitsTab({
       {list.length > 0 ? (
         <div className="flex flex-col gap-3">
           {list.map((item) => (
-            <BenefitCard key={item.id} item={item} canViewValues={canViewValues} />
+            <div key={item.id}>
+              {manageable && employeeId && recordActions.editingId === item.id ? (
+                <BenefitsManageForm
+                  employeeId={employeeId}
+                  canViewValues={canViewValues}
+                  record={item}
+                  onSaved={recordActions.finishEdit}
+                  onCancel={recordActions.cancelEdit}
+                />
+              ) : (
+                <BenefitCard
+                  item={item}
+                  canViewValues={canViewValues}
+                  actions={
+                    manageable && employeeId ? (
+                      <ProfileRecordActions
+                        itemLabel={`benefício ${item.name}`}
+                        onEdit={() => recordActions.startEdit(item.id)}
+                        onDelete={() =>
+                          void recordActions.remove(
+                            item.id,
+                            `/api/employees/${employeeId}/benefits/${item.id}`,
+                            `Excluir o benefício "${item.name}" deste colaborador? Para apenas encerrar, use Editar e informe a data de fim.`
+                          )
+                        }
+                        deleting={recordActions.deletingId === item.id}
+                        error={recordActions.errorFor(item.id)}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+            </div>
           ))}
         </div>
       ) : null}

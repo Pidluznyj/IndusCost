@@ -281,6 +281,7 @@ import {
 import {
   assertPayrollComponentIds,
   auditEpiAdminNotesSummary,
+  normalizeEmployeeWorkSchedule,
   prepareEmployeeAdminReferenceFields,
   prepareEmployeeEpiFields,
   prepareEmployeeNotesFields,
@@ -288,6 +289,7 @@ import {
 } from "./src/lib/employeeAdminHr.js";
 import {
   assertEmployeesDeleteSuperAdmin,
+  buildEmployeePermissionBag,
   canViewEmployeeAdministrativeData,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
@@ -2071,20 +2073,51 @@ async function startServer() {
     };
   }
 
+  /**
+   * Bag oficial do RH. Editor de RH (employees.edit legado OU admin.employees:update
+   * canônico) recebe todas as capabilities da ficha — regra em buildEmployeePermissionBag.
+   */
   function employeePermCheck(authUser: AppAuthContext | null) {
-    const viewResources = authUser?.canonicalAccess?.viewResources;
-    return {
-      hasPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
-      hasAnyPermission: (list: readonly string[]) =>
-        Boolean(authUser && list.some((p) => hasPermission(authUser, p))),
-      canonicalViewResources: viewResources,
-      isDenied: (p: string) => {
-        if (!viewResources) return false;
-        if (p === "employees.compensation.values.view") {
-          return !viewResources.includes("admin.employees.compensation_values");
+    return buildEmployeePermissionBag({
+      hasLegacyPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
+      canonicalAccess: authUser?.canonicalAccess ?? null,
+    });
+  }
+
+  /**
+   * Guard das rotas auxiliares do cadastro (lookups / vínculos): nas facetas
+   * `admin.employees.*` o editor de RH passa mesmo sem grant próprio da faceta,
+   * exceto com deny individual explícito (deny > allow). Qualquer outra negativa
+   * continua saindo do requireResource oficial (mesmo 403 + log).
+   */
+  function requireResourceOrHrEditor(
+    resourceKey: string,
+    action: string = "view"
+  ): express.RequestHandler {
+    const official = requireResource(resourceKey, action);
+    if (!resourceKey.startsWith(`${EMPLOYEES_RESOURCE_KEYS.module}.`)) return official;
+    return async (req, res, next) => {
+      try {
+        const decision = await authorizeResourceRequest(req, resourceKey, action);
+        // Só ausência de grant (DENY_DEFAULT) é suprida; deny explícito, recurso
+        // desconhecido, usuário inativo etc. seguem para a negativa oficial.
+        // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
+        if (decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT") {
+          const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+          const denyKey = `${decision.resourceKey ?? resourceKey}:${decision.action ?? action}`;
+          if (
+            authUser &&
+            authUser.isActive !== false &&
+            employeePermCheck(authUser).isHrEditor &&
+            !(authUser.canonicalAccess?.overrideDenied ?? []).includes(denyKey)
+          ) {
+            return next();
+          }
         }
-        return false;
-      },
+      } catch {
+        // Falha ao pré-avaliar: o guard oficial decide (e responde 500 se for o caso).
+      }
+      return official(req, res, next);
     };
   }
 
@@ -3346,6 +3379,8 @@ function buildEmployeeHrProfileData(
       phone?: string | null;
       emergencyContactPhone?: string | null;
       personalEmail?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
     } | null;
     allowLegacyPersonal?: boolean;
     previousEpi?: {
@@ -3356,6 +3391,8 @@ function buildEmployeeHrProfileData(
       shoeSize?: string | null;
     } | null;
     allowLegacyEpi?: boolean;
+    /** Jornada descritiva atual — valor intocado não é renormalizado (PUT). */
+    previousWorkSchedule?: string | null;
   }
 ) {
   const personal = prepareEmployeePersonalHrFields(body, {
@@ -3367,6 +3404,10 @@ function buildEmployeeHrProfileData(
     allowLegacy: opts?.allowLegacyEpi === true,
   });
   const notes = prepareEmployeeNotesFields(body);
+  // Colunas novas do cadastro (estado civil, cidade/UF/CEP, jornada descritiva):
+  // só gravam quando a chave veio no body — um cliente antigo (sem esses campos)
+  // não apaga o valor nem gera WORK_SCHEDULE_CHANGE espúrio no histórico.
+  const sent = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
   return {
     data: {
       socialName: normalizeOptionalText(body.socialName),
@@ -3379,6 +3420,19 @@ function buildEmployeeHrProfileData(
       emergencyContactPhone: personal.emergencyContactPhone,
       emergencyContactRelationship: personal.emergencyContactRelationship,
       address: personal.address,
+      ...(sent("maritalStatus") ? { maritalStatus: personal.maritalStatus } : {}),
+      ...(sent("city") ? { city: personal.city } : {}),
+      ...(sent("state") ? { state: personal.state } : {}),
+      ...(sent("zipCode") ? { zipCode: personal.zipCode } : {}),
+      // Jornada descritiva é dado profissional; o diff de snapshot do PUT gera
+      // WORK_SCHEDULE_CHANGE quando muda.
+      ...(sent("workSchedule")
+        ? {
+            workSchedule: normalizeEmployeeWorkSchedule(body.workSchedule, {
+              previous: opts?.previousWorkSchedule,
+            }),
+          }
+        : {}),
       // admissionDate / terminationDate / contractType / managerName vêm só de
       // prepareEmployeePersistedFields — não incluir aqui (spread apagaria os valores).
       professionalNotes: notes.professionalNotes,
@@ -3699,6 +3753,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
         phone: true,
         personalEmail: true,
         emergencyContactPhone: true,
+        state: true,
+        zipCode: true,
         shirtSize: true,
         pantsSize: true,
         jacketSize: true,
@@ -3823,7 +3879,10 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
           phone: existingEmployee.phone,
           personalEmail: existingEmployee.personalEmail,
           emergencyContactPhone: existingEmployee.emergencyContactPhone,
+          state: existingEmployee.state,
+          zipCode: existingEmployee.zipCode,
         },
+        previousWorkSchedule: existingEmployee.workSchedule,
         allowLegacyEpi: true,
         previousEpi: {
           shirtSize: existingEmployee.shirtSize,
@@ -15160,7 +15219,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerEmployeeLookupRoutes(app, {
     requireAppAuth,
-    requireResource,
+    requireResource: requireResourceOrHrEditor,
     getCurrentAppUser,
   });
 
@@ -15192,7 +15251,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerCanonicalPersonRoutes(app, {
     requireAppAuth,
-    requireResource,
+    requireResource: requireResourceOrHrEditor,
     requirePermission,
     requireAnyPermission,
     getCurrentAppUser,

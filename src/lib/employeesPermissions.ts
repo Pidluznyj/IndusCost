@@ -103,6 +103,64 @@ export type EmployeePermissionBag = {
   canonicalViewResources?: readonly string[];
 };
 
+/** Fotografia canônica do request (espelho de `AppAuthContext.canonicalAccess`). */
+export type EmployeeCanonicalAccessSnapshot = {
+  viewResources: readonly string[];
+  updateResources?: readonly string[];
+  /** Denies individuais explícitos no formato "resourceKey:action". */
+  overrideDenied?: readonly string[];
+};
+
+const COMPENSATION_VALUES_LEGACY_KEY = "employees.compensation.values.view";
+const COMPENSATION_VALUES_VIEW_DENY = `${EMPLOYEE_RESOURCE_KEYS.compensationValues}:view`;
+
+/**
+ * Bag oficial do servidor para Pessoas / RH.
+ *
+ * Editor de RH := `employees.edit` legado OU `admin.employees:update` canônico
+ * (SUPER_ADMIN sempre). O editor responde `employees.edit` = true (alias amplo →
+ * todas as capabilities da ficha) e enxerga VALORES de remuneração, salvo deny
+ * individual explícito em `admin.employees.compensation_values:view` (deny > allow).
+ * Quem não é editor mantém exatamente o comportamento anterior.
+ */
+export function buildEmployeePermissionBag(input: {
+  hasLegacyPermission: (permission: string) => boolean;
+  canonicalAccess?: EmployeeCanonicalAccessSnapshot | null;
+}): EmployeePermissionBag & { isHrEditor: boolean } {
+  const canonical = input.canonicalAccess ?? null;
+  const isHrEditor =
+    input.hasLegacyPermission("employees.edit") ||
+    Boolean(canonical?.updateResources?.includes(EMPLOYEE_RESOURCE_KEYS.module));
+
+  const has = (permission: string) =>
+    (isHrEditor && permission === "employees.edit") ||
+    input.hasLegacyPermission(permission);
+
+  let viewResources: readonly string[] | undefined = canonical?.viewResources;
+  if (
+    viewResources &&
+    isHrEditor &&
+    !viewResources.includes(EMPLOYEE_RESOURCE_KEYS.compensationValues) &&
+    !canonical?.overrideDenied?.includes(COMPENSATION_VALUES_VIEW_DENY)
+  ) {
+    viewResources = [...viewResources, EMPLOYEE_RESOURCE_KEYS.compensationValues].sort();
+  }
+
+  return {
+    isHrEditor,
+    hasPermission: has,
+    hasAnyPermission: (list) => list.some((p) => has(p)),
+    canonicalViewResources: viewResources,
+    isDenied: (permission) => {
+      if (!viewResources) return false;
+      if (permission === COMPENSATION_VALUES_LEGACY_KEY) {
+        return !viewResources.includes(EMPLOYEE_RESOURCE_KEYS.compensationValues);
+      }
+      return false;
+    },
+  };
+}
+
 function hasAny(check: EmployeePermissionBag, keys: readonly string[]): boolean {
   if (typeof check.hasAnyPermission === "function") {
     return check.hasAnyPermission(keys);

@@ -17,6 +17,7 @@ import {
 export const MAX_EPI_NOTES_LEN = 2000;
 export const MAX_PROFESSIONAL_NOTES_LEN = 4000;
 export const MAX_ADMIN_NOTES_LEN = 4000;
+export const MAX_WORK_SCHEDULE_LEN = 80;
 
 const TOP = new Set<string>(EPI_TOP_SIZE_OPTIONS);
 const PANTS = new Set<string>(EPI_PANTS_SIZE_OPTIONS);
@@ -106,6 +107,21 @@ export function prepareEmployeeNotesFields(body: Record<string, unknown>): Emplo
     professionalNotes: trimOrNull(body.professionalNotes, MAX_PROFESSIONAL_NOTES_LEN),
     adminNotes: trimOrNull(body.adminNotes, MAX_ADMIN_NOTES_LEN),
   };
+}
+
+/**
+ * Jornada descritiva (dado profissional, texto livre — ex.: "Seg–Sex 07:30–17:18").
+ * Vazio → null; a jornada numérica continua em monthlyHours.
+ */
+export function normalizeEmployeeWorkSchedule(
+  value: unknown,
+  opts?: { previous?: string | null }
+): string | null {
+  // Valor legado intocado (ex.: > 80 chars gravado por movimentação antiga) fica como está:
+  // cortá-lo aqui geraria um WORK_SCHEDULE_CHANGE que o usuário não fez.
+  const previous = opts?.previous ?? null;
+  if (previous && typeof value === "string" && value.trim() === previous.trim()) return previous;
+  return trimOrNull(value, MAX_WORK_SCHEDULE_LEN);
 }
 
 export function prepareEmployeeAdminReferenceFields(body: {

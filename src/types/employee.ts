@@ -33,6 +33,14 @@ export interface EmployeeHrProfileFields {
   departmentId?: string | null;
   professionalNotes?: string | null;
   address?: string | null;
+  maritalStatus?: string | null;
+  city?: string | null;
+  /** UF — 2 letras maiúsculas. */
+  state?: string | null;
+  /** CEP com máscara 00000-000. */
+  zipCode?: string | null;
+  /** Jornada descritiva (texto livre, ex.: "Seg–Sex 07:30–17:18"). */
+  workSchedule?: string | null;
   adminNotes?: string | null;
   shirtSize?: string | null;
   pantsSize?: string | null;

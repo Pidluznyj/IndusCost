@@ -418,3 +418,54 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
     assert.equal(ap?.resourceKey, "financeiro.contas_pagar");
   });
 });
+
+describe("permissionDualWrite — pin de employees.edit em Pessoas/RH", () => {
+  const none = { canView: false, canExecute: false, canManage: false };
+
+  it("canônico 1:1 de employees.edit é admin.employees no eixo execute", () => {
+    const index = buildDualWriteAliasIndex();
+    const edit = index.canonicalByLegacy.get("employees.edit");
+    assert.equal(edit?.resourceKey, "admin.employees");
+    assert.equal(edit?.axis, "execute");
+    const dashboardOneToOne = (index.oneToOneByResource.get("admin.employees.dashboard") ?? []).map(
+      (b) => b.legacyKey
+    );
+    assert.ok(!dashboardOneToOne.includes("employees.edit"));
+  });
+
+  it("marcar edição em Pessoas/RH grava employees.edit; só ver o Dashboard não grava", () => {
+    const editor = materializeStructuredToLegacy({
+      effectiveByResourceKey: {
+        "admin.employees": { canView: true, canExecute: true, canManage: false },
+      },
+      previousLegacyPermissions: [],
+    }).legacyPermissions;
+    assert.ok(editor.includes("employees.edit"));
+    assert.ok(editor.includes("employees.view"));
+
+    const dashboardOnly = materializeStructuredToLegacy({
+      effectiveByResourceKey: {
+        "admin.employees": { ...none, canView: true },
+        "admin.employees.dashboard": { ...none, canView: true },
+      },
+      previousLegacyPermissions: [],
+    }).legacyPermissions;
+    assert.ok(dashboardOnly.includes("employees.dashboard.view"));
+    assert.ok(!dashboardOnly.includes("employees.edit"));
+  });
+
+  it("bag legado com employees.edit projeta edição no módulo (não some ao regravar o perfil)", () => {
+    const projected = projectLegacyToStructured({
+      role: "VIEWER",
+      legacyPermissions: ["employees.view", "employees.edit"],
+      elevateAncestors: false,
+    });
+    assert.equal(projected.projectedFlags["admin.employees"]?.canExecute, true);
+    assert.notEqual(projected.projectedFlags["admin.employees.dashboard"]?.canView, true);
+    const again = materializeStructuredToLegacy({
+      effectiveByResourceKey: projected.projectedFlags,
+      previousLegacyPermissions: ["employees.view", "employees.edit"],
+    }).legacyPermissions;
+    assert.ok(again.includes("employees.edit"));
+  });
+});
