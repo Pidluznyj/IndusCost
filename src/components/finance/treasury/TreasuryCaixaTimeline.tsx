@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type {
   TreasuryCaixaMonthlyDueEstimate,
+  TreasuryCaixaRecentOverdueDay,
   TreasuryCaixaTimeline,
   TreasuryCaixaTimelineMonth,
   TreasuryCaixaTimelineRow,
@@ -33,6 +34,7 @@ import type { TreasuryDailyBalanceDivergenceBaseline } from "@/src/lib/treasury/
 import {
   appendTreasuryCaixaMonthlyDueEstimates,
   buildTreasuryCaixaMonthlyTimeline,
+  composeTreasuryCaixaTimelineDisplayRows,
   detectTreasuryCaixaOutliers,
 } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
 import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
@@ -71,6 +73,11 @@ export type TreasuryCaixaTimelineProps = {
    * visão dia a dia nem o drill-down canônico.
    */
   historicalArMonthlyInflowDeltaByMonth?: Readonly<Record<string, number>>;
+  /**
+   * CR aberto D+1..D+3 (dias corridos) — camada VISUAL paralela à Timeline
+   * financeira. Não entra em `timeline.rows`, gráfico, cenários nem saldo.
+   */
+  recentOverdueReceivables?: readonly TreasuryCaixaRecentOverdueDay[];
 };
 
 type ViewMode = "month" | "day";
@@ -634,6 +641,126 @@ function KindBadge({
   );
 }
 
+function RecentOverdueBadge({ daysOverdue }: { daysOverdue: number }) {
+  return (
+    <span
+      className="rounded border border-[#FECACA] bg-[#FEF2F2] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#991B1B]"
+      title="Título vencido e ainda não recebido. Evidência do vencimento original — não entra no caixa realizado nem na projeção."
+      data-testid="caixa-timeline-recent-overdue-badge"
+    >
+      Atraso D+{daysOverdue}
+    </span>
+  );
+}
+
+function RecentOverduePendingNote({
+  amount,
+  count,
+}: {
+  amount: number;
+  count: number;
+}) {
+  return (
+    <p
+      className="mt-0.5 text-[10px] font-medium leading-snug text-[#B45309]"
+      data-testid="caixa-timeline-recent-overdue-pending"
+    >
+      A receber pendente {money(amount)} · {count}{" "}
+      {count === 1 ? "título" : "títulos"} · não recebido
+    </p>
+  );
+}
+
+function RecentOverdueDrilldown({
+  day,
+  colSpan,
+}: {
+  day: TreasuryCaixaRecentOverdueDay;
+  colSpan: number;
+}) {
+  const rows: DayDrilldownRow[] = day.titles.map((t) => ({
+    id: t.externalId,
+    name: t.personName,
+    status: "overdue",
+    dueDate: t.dueDate,
+    amount: t.balanceReceivable,
+    grossAmount: t.balanceReceivable,
+    settledAmount: 0,
+    balanceAmount: t.balanceReceivable,
+  }));
+  return (
+    <tr
+      className="border-b border-border/30 bg-[#FFF7ED]"
+      data-testid={`caixa-timeline-recent-overdue-drilldown-${day.civilDate}`}
+    >
+      <td colSpan={colSpan} className="px-2 py-2.5 pl-7">
+        <DayDrilldownCard
+          title="A receber pendente — não recebido / não compõe caixa"
+          counterpartyLabel="Cliente"
+          settledLabel="Recebido"
+          tone="in"
+          rows={rows}
+        />
+      </td>
+    </tr>
+  );
+}
+
+function RecentOverdueTimelineRow({
+  day,
+  indent,
+  expanded,
+  onToggle,
+}: {
+  day: TreasuryCaixaRecentOverdueDay;
+  indent: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <React.Fragment>
+      <tr
+        className="border-b border-border/40 cursor-pointer bg-[#FFF7ED]/80 hover:bg-[#FFEDD5]"
+        onClick={onToggle}
+        data-testid={`caixa-timeline-row-${day.civilDate}`}
+        data-kind="RECENT_OVERDUE"
+        data-day-expanded={expanded}
+      >
+        <td
+          className={cn(
+            "whitespace-nowrap py-1.5 tabular-nums font-medium",
+            indent ? "pl-7 pr-2" : "px-2"
+          )}
+        >
+          <span className="inline-flex items-center gap-1">
+            {expanded ? (
+              <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+            ) : (
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+            )}
+            {formatCivilDate(day.civilDate)}
+          </span>
+        </td>
+        <td className="px-2 py-1.5">
+          <RecentOverdueBadge daysOverdue={day.daysOverdue} />
+          <RecentOverduePendingNote amount={day.amount} count={day.count} />
+        </td>
+        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">—</td>
+        <td
+          className="px-2 py-1.5 text-right tabular-nums text-muted-foreground"
+          data-testid={`caixa-timeline-recent-overdue-inflows-${day.civilDate}`}
+        >
+          —
+        </td>
+        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">—</td>
+        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">—</td>
+        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">—</td>
+      </tr>
+      {expanded ? <RecentOverdueDrilldown day={day} colSpan={7} /> : null}
+    </React.Fragment>
+  );
+}
+
 /**
  * @deprecated Só usado pelo fallback quando `canonicalDays` estiver ausente.
  * O caminho canônico (Fase B) não distingue realizado vs previsto no drill-down:
@@ -1041,6 +1168,7 @@ export function TreasuryCaixaTimeline({
   payables = [],
   canonicalDays = [],
   historicalArMonthlyInflowDeltaByMonth,
+  recentOverdueReceivables = [],
 }: TreasuryCaixaTimelineProps) {
   const canonicalByDay = useMemo(() => {
     const map = new Map<string, TreasuryCaixaCanonicalDay>();
@@ -1064,6 +1192,14 @@ export function TreasuryCaixaTimeline({
     }
     return map;
   }, [timeline]);
+  const displayRows = useMemo(
+    () =>
+      composeTreasuryCaixaTimelineDisplayRows(
+        timeline?.rows ?? [],
+        recentOverdueReceivables
+      ),
+    [timeline, recentOverdueReceivables]
+  );
   const outlierCount = outliers.size;
   const [mode, setMode] = useState<ViewMode>("day");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -1145,7 +1281,7 @@ export function TreasuryCaixaTimeline({
 
       {loading ? (
         <p className="py-3 text-xs text-muted-foreground">Carregando…</p>
-      ) : !timeline || timeline.rows.length === 0 ? (
+      ) : !timeline || displayRows.length === 0 ? (
         <p className="py-3 text-xs text-muted-foreground">
           Sem dias no período selecionado.
         </p>
@@ -1245,7 +1381,25 @@ export function TreasuryCaixaTimeline({
                             />
                           </tr>
                           {isOpen
-                            ? m.days.map((r) => {
+                            ? composeTreasuryCaixaTimelineDisplayRows(
+                                m.days,
+                                recentOverdueReceivables.filter((d) =>
+                                  d.civilDate.startsWith(m.monthKey)
+                                )
+                              ).map((item) => {
+                                if (item.type === "RECENT_OVERDUE") {
+                                  return (
+                                    <React.Fragment key={item.civilDate}>
+                                      <RecentOverdueTimelineRow
+                                        day={item.recentOverdue}
+                                        indent
+                                        expanded={expandedDays.has(item.civilDate)}
+                                        onToggle={() => toggleDay(item.civilDate)}
+                                      />
+                                    </React.Fragment>
+                                  );
+                                }
+                                const r = item.row;
                                 const dayOpen = expandedDays.has(r.civilDate);
                                 return (
                                   <React.Fragment key={r.civilDate}>
@@ -1271,6 +1425,17 @@ export function TreasuryCaixaTimeline({
                                       </td>
                                       <td className="px-2 py-1.5">
                                         <KindBadge kind={r.kind} estimated={r.estimated} />
+                                        {item.recentOverdue ? (
+                                          <div className="mt-0.5">
+                                            <RecentOverdueBadge
+                                              daysOverdue={item.recentOverdue.daysOverdue}
+                                            />
+                                            <RecentOverduePendingNote
+                                              amount={item.recentOverdue.amount}
+                                              count={item.recentOverdue.count}
+                                            />
+                                          </div>
+                                        ) : null}
                                       </td>
                                       <BalanceCell
                                         value={r.opening}
@@ -1322,16 +1487,24 @@ export function TreasuryCaixaTimeline({
                                       />
                                     </tr>
                                     {dayOpen ? (
-                                      <DayDrilldown
-                                        civilDate={r.civilDate}
-                                        colSpan={7}
-                                        canonicalDay={
-                                          canonicalByDay.get(r.civilDate) ?? null
-                                        }
-                                        receivables={receivables}
-                                        payables={payables}
-                                        realized={isRealizedDayKind(r.kind)}
-                                      />
+                                      <>
+                                        <DayDrilldown
+                                          civilDate={r.civilDate}
+                                          colSpan={7}
+                                          canonicalDay={
+                                            canonicalByDay.get(r.civilDate) ?? null
+                                          }
+                                          receivables={receivables}
+                                          payables={payables}
+                                          realized={isRealizedDayKind(r.kind)}
+                                        />
+                                        {item.recentOverdue ? (
+                                          <RecentOverdueDrilldown
+                                            day={item.recentOverdue}
+                                            colSpan={7}
+                                          />
+                                        ) : null}
+                                      </>
                                     ) : null}
                                   </React.Fragment>
                                 );
@@ -1340,7 +1513,20 @@ export function TreasuryCaixaTimeline({
                         </React.Fragment>
                       );
                     })
-                  : timeline.rows.map((r) => {
+                  : displayRows.map((item) => {
+                      if (item.type === "RECENT_OVERDUE") {
+                        return (
+                          <React.Fragment key={item.civilDate}>
+                            <RecentOverdueTimelineRow
+                              day={item.recentOverdue}
+                              indent={false}
+                              expanded={expandedDays.has(item.civilDate)}
+                              onToggle={() => toggleDay(item.civilDate)}
+                            />
+                          </React.Fragment>
+                        );
+                      }
+                      const r = item.row;
                       const dayOpen = expandedDays.has(r.civilDate);
                       return (
                         <React.Fragment key={r.civilDate}>
@@ -1367,6 +1553,17 @@ export function TreasuryCaixaTimeline({
                             </td>
                             <td className="px-2 py-1.5">
                               <KindBadge kind={r.kind} estimated={r.estimated} />
+                              {item.recentOverdue ? (
+                                <div className="mt-0.5">
+                                  <RecentOverdueBadge
+                                    daysOverdue={item.recentOverdue.daysOverdue}
+                                  />
+                                  <RecentOverduePendingNote
+                                    amount={item.recentOverdue.amount}
+                                    count={item.recentOverdue.count}
+                                  />
+                                </div>
+                              ) : null}
                             </td>
                             <BalanceCell
                               value={r.opening}
@@ -1414,16 +1611,24 @@ export function TreasuryCaixaTimeline({
                             />
                           </tr>
                           {dayOpen ? (
-                            <DayDrilldown
-                              civilDate={r.civilDate}
-                              colSpan={7}
-                              canonicalDay={
-                                canonicalByDay.get(r.civilDate) ?? null
-                              }
-                              receivables={receivables}
-                              payables={payables}
-                              realized={isRealizedDayKind(r.kind)}
-                            />
+                            <>
+                              <DayDrilldown
+                                civilDate={r.civilDate}
+                                colSpan={7}
+                                canonicalDay={
+                                  canonicalByDay.get(r.civilDate) ?? null
+                                }
+                                receivables={receivables}
+                                payables={payables}
+                                realized={isRealizedDayKind(r.kind)}
+                              />
+                              {item.recentOverdue ? (
+                                <RecentOverdueDrilldown
+                                  day={item.recentOverdue}
+                                  colSpan={7}
+                                />
+                              ) : null}
+                            </>
                           ) : null}
                         </React.Fragment>
                       );
@@ -1458,6 +1663,18 @@ export function TreasuryCaixaTimeline({
                 Clique num dia para ver os títulos de Contas a Receber/Pagar por
                 trás do Entrou/Saiu daquele dia.
               </p>
+              {recentOverdueReceivables.length > 0 ? (
+                <p data-testid="caixa-timeline-recent-overdue-legend">
+                  <strong>Atraso D+1 a D+3</strong> = CR ainda aberto cujo
+                  vencimento original caiu há 1, 2 ou 3 dias corridos. Reaparece
+                  na data de vencimento só como evidência operacional:{" "}
+                  <strong>não entrou no caixa</strong>, não altera saldo nem
+                  projeção. A partir de D+4 permanece somente em Atrasados.
+                  Durante os 3 dias o título pode aparecer nas duas camadas
+                  (Timeline = onde deveria ter acontecido; Atrasados = o que
+                  continua pendente).
+                </p>
+              ) : null}
               {months.some((m) => m.estimateOnly) ||
               timeline.rows.some((r) => r.estimated) ? (
                 <p data-testid="caixa-timeline-estimate-legend">

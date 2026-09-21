@@ -58,6 +58,7 @@ import {
   resolveTreasuryCaixaCanonicalWindow,
   resolveTreasuryCaixaDueDateRange,
   selectTreasuryCaixaCanonicalPopulation,
+  selectTreasuryCaixaRecentOverdueReceivables,
   TREASURY_CAIXA_GENESIS_CIVIL_DATE,
   type TreasuryCaixaAccountPositionDto,
   type TreasuryCaixaBoardDto,
@@ -954,18 +955,33 @@ export function createTreasuryCaixaService(input: {
           referenceDate
         ),
       ]);
-      const overdue = buildTreasuryCaixaOverdue({
-        receivables: buildFinanceAccountsReceivableRulesResult(arOverdue.rows, {
+      const arOverdueResult = buildFinanceAccountsReceivableRulesResult(
+        arOverdue.rows,
+        {
           referenceDate,
           syncCutoff: arOverdue.syncCutoff,
           filters: overdueFilters,
-        }).gridRows,
-        payables: buildFinanceAccountsPayableRulesResult(apOverdue.rows, {
+        }
+      );
+      const apOverdueResult = buildFinanceAccountsPayableRulesResult(
+        apOverdue.rows,
+        {
           referenceDate,
           syncCutoff: apOverdue.syncCutoff,
           filters: overdueFilters,
-        }).gridRows,
+        }
+      );
+      const overdue = buildTreasuryCaixaOverdue({
+        receivables: arOverdueResult.gridRows,
+        payables: apOverdueResult.gridRows,
       });
+      // Visibilidade operacional D+1..D+3: mesma população já carregada
+      // (`arOverdueResult.gridRows`). Sem query extra, sem segundo motor AR,
+      // sem misturar no fluxo financeiro. Só CR; AP permanece só em Atrasados.
+      const recentOverdueReceivables = selectTreasuryCaixaRecentOverdueReceivables(
+        arOverdueResult.gridRows,
+        { dueDateFrom: periodFrom, dueDateTo: periodTo }
+      );
 
       // Estimativa mensal por vencimento, para TODO o período pedido — mesma
       // regra e mesmas fontes (arEffectiveRows/apLoaded.rows, já em memória,
@@ -1248,6 +1264,7 @@ export function createTreasuryCaixaService(input: {
         totals,
         realizedDays,
         overdue,
+        recentOverdueReceivables,
         receivables: arResult.gridRows,
         payables: apResult.gridRows,
         monthlyDueEstimates,

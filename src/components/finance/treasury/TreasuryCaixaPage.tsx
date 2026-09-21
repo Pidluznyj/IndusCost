@@ -697,6 +697,7 @@ export function TreasuryCaixaPage() {
                 historicalArMonthlyInflowDeltaByMonth={
                   data?.historicalArMonthlyInflowDeltaByMonth
                 }
+                recentOverdueReceivables={data?.recentOverdueReceivables}
               />
             ) : null}
 

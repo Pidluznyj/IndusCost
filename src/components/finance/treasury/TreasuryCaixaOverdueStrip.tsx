@@ -5,8 +5,10 @@
  * atraso abre sob demanda — em tabela alinhada, não em selos soltos, porque
  * comparar seis valores lado a lado exige coluna, não sopa de etiquetas.
  *
- * Atrasado é ESTOQUE: não pertence a nenhum dia da linha do tempo, porque não
- * se sabe quando (nem se) vai entrar. Por isso fica fora da previsão.
+ * Atrasado é ESTOQUE: não entra em inflows/saldo/projeção de nenhum dia,
+ * porque não se sabe quando (nem se) vai entrar. Por isso permanece no bloco
+ * "Atrasados". CR aberto com 1 a 3 dias corridos de atraso pode reaparecer
+ * na Timeline só como evidência visual do vencimento original — sem compor caixa.
  *
  * Só renderiza quando há atraso.
  */

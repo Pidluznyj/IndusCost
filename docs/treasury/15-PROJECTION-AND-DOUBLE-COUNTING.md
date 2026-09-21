@@ -83,3 +83,28 @@ Default multi-cenário: CONTRACTUAL / PROBABLE / CONFIRMED (MANUAL excluído do 
 - `GET /projections/latest|compare|:id|/composition`
 - `GET /agenda`
 - UI: `/finance/treasury/projections`, `/finance/treasury/agenda`
+
+## 7. Timeline da Caixa — atraso recente (visibilidade, não caixa)
+
+A regra financeira permanece: título vencido e não liquidado **não** entra em
+fluxo, projeção, `inflows`, `outflows`, `opening`, `closing`, cenários nem
+gráfico. O motor **não** move automaticamente o vencido para “hoje”, e o valor
+**nunca** é tratado como recebido sem evidência de baixa.
+
+Exceção **visual** controlada na Linha do tempo da aba Caixa
+(`selectTreasuryCaixaRecentOverdueReceivables` / `recentOverdueReceivables`):
+
+- CR **aberto** com **1 a 3 dias corridos** de atraso (`daysOverdue` do motor
+  oficial de Contas a Receber) pode permanecer visível na Timeline, na **data
+  original de vencimento**, como evidência operacional (“onde deveria ter
+  acontecido”).
+- Essa representação **não** compõe entradas, saídas ou saldo. Não é
+  `TreasuryCaixaTimelineRow` financeiro — é uma camada paralela.
+- A partir de **D+4** o título some dessa camada e fica **somente** no estoque
+  de Atrasados.
+- Durante D+1..D+3 o mesmo título pode aparecer nas duas dimensões: Timeline
+  (vencimento recente) e Atrasados (pendência atual). Isso **não** é dupla
+  contagem financeira.
+- Dias corridos, inclusive fim de semana. **Não** confundir com a tolerância
+  de 3 **dias úteis** de `financeSettlementReconciliation.ts` (data efetiva de
+  baixa de título **já liquidado**).

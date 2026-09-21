@@ -170,4 +170,17 @@ describe("Caixa — abrir a tela carrega só os saldos (gates do fonte)", () => 
     );
     assert.match(page, /<TreasuryCaixaTodayFlow\n[\s\S]{0,600}?loading=\{todayFlowLoading \|\| \(loading && data == null\)\}/);
   });
+
+  it("atraso recente D+1..D+3 viaja no board já carregado — sem endpoint extra", () => {
+    const search = between(page, "const search = useCallback(async () => {", "}, [year, month, day, accounts]);");
+    assert.equal(
+      (search.match(/fetchTreasuryCaixa\(/g) ?? []).length,
+      1,
+      "Pesquisar/Carregar movimentação continua com uma única chamada do board"
+    );
+    assert.ok(page.includes("recentOverdueReceivables={data?.recentOverdueReceivables}"));
+    assert.equal(page.includes("fetchTreasuryCaixaRecentOverdue"), false);
+    const request = between(page, "const requestMovement = useCallback(", "}, [");
+    assert.equal(request.includes("fetchTreasuryCaixa("), false);
+  });
 });

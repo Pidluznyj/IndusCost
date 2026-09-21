@@ -1396,14 +1396,18 @@ export function buildTreasuryCaixaRealizedDays(input: {
 /**
  * Passo 6 — atrasados: ESTOQUE, não fluxo.
  *
- * Título vencido e não liquidado não pertence a nenhum dia da linha do tempo.
- * O motor canônico deliberadamente NÃO joga CR vencido sem promessa para "hoje"
+ * Título vencido e não liquidado NÃO entra em inflows/outflows/saldo/projeção
+ * de nenhum dia da linha do tempo. O motor canônico deliberadamente NÃO joga
+ * CR vencido sem promessa para "hoje"
  * (ver docs/treasury/15-PROJECTION-AND-DOUBLE-COUNTING.md) — se jogasse, o saldo
  * projetado subiria com dinheiro que não entrou e a data em que o caixa vira
  * negativo viria tarde demais.
  *
- * Por isso o atrasado aparece numa faixa própria, ancorada no presente, e não
- * espalhado nos dias. As faixas de aging são as canônicas do financeiro.
+ * Por isso o atrasado continua no bloco "Atrasados", ancorado no presente.
+ * Exceção VISUAL controlada ({@link selectTreasuryCaixaRecentOverdueReceivables}):
+ * CR aberto com 1 a 3 dias CORRIDOS de atraso pode reaparecer na Timeline na
+ * data original de vencimento, só como evidência operacional — nunca como caixa.
+ * A partir de D+4 fica somente no estoque de atrasados.
  */
 export type TreasuryCaixaOverdueBucket = {
   key: string;
@@ -1486,6 +1490,167 @@ export function buildTreasuryCaixaOverdue(input: {
       }))
     ),
   };
+}
+
+/**
+ * Janela operacional curta: CR aberto vencido há 1, 2 ou 3 DIAS CORRIDOS
+ * continua visível na Timeline na data ORIGINAL de vencimento.
+ *
+ * Dias corridos — mesma semântica de `daysOverdue` no motor oficial de Contas
+ * a Receber (`computeDaysOverdue`: diferença civil, inclusive fim de semana).
+ * Não confundir com a tolerância de 3 DIAS ÚTEIS de
+ * `financeSettlementReconciliation.ts` (baixa de título já liquidado).
+ */
+export const TREASURY_CAIXA_RECENT_OVERDUE_VISIBILITY_DAYS = 3;
+
+export type TreasuryCaixaRecentOverdueReceivable = {
+  externalId: number;
+  dueDate: string;
+  personName: string | null;
+  balanceReceivable: number;
+  daysOverdue: number;
+};
+
+export type TreasuryCaixaRecentOverdueDay = {
+  civilDate: string;
+  amount: number;
+  count: number;
+  daysOverdue: number;
+  titles: TreasuryCaixaRecentOverdueReceivable[];
+};
+
+export type TreasuryCaixaRecentOverdueReceivableInput = {
+  externalId: number;
+  dueDate: string | null;
+  personName?: string | null;
+  balanceReceivable: number;
+  daysOverdue: number;
+  calculatedStatus?: string | null;
+  suspendCollection?: boolean | null;
+};
+
+/**
+ * Seleciona CR aberto com atraso recente (D+1..D+3 corridos) e agrega por
+ * vencimento original. Uma passagem O(n). Nunca inventa valor; nunca inclui
+ * AP, liquidado, suspenso, saldo zerado ou D+4 em diante.
+ *
+ * `dueDateFrom`/`dueDateTo` (opcionais, YYYY-MM-DD inclusive) restringem ao
+ * período visível do board — o atraso recente de outro mês não vira linha
+ * operacional na janela filtrada.
+ */
+export function selectTreasuryCaixaRecentOverdueReceivables(
+  rows: readonly TreasuryCaixaRecentOverdueReceivableInput[],
+  options?: { dueDateFrom?: string; dueDateTo?: string }
+): TreasuryCaixaRecentOverdueDay[] {
+  const dueDateFrom = options?.dueDateFrom ?? null;
+  const dueDateTo = options?.dueDateTo ?? null;
+  const byDay = new Map<string, TreasuryCaixaRecentOverdueReceivable[]>();
+
+  for (const row of rows) {
+    const dueDate = row.dueDate?.slice(0, 10) ?? null;
+    if (!dueDate) continue;
+    if (dueDateFrom != null && dueDate < dueDateFrom) continue;
+    if (dueDateTo != null && dueDate > dueDateTo) continue;
+    if (row.suspendCollection === true) continue;
+    if (row.calculatedStatus === "suspended" || row.calculatedStatus === "settled") {
+      continue;
+    }
+    const daysOverdue = Number(row.daysOverdue);
+    if (
+      !Number.isFinite(daysOverdue) ||
+      daysOverdue < 1 ||
+      daysOverdue > TREASURY_CAIXA_RECENT_OVERDUE_VISIBILITY_DAYS
+    ) {
+      continue;
+    }
+    const amount = Number(row.balanceReceivable);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+
+    const title: TreasuryCaixaRecentOverdueReceivable = {
+      externalId: row.externalId,
+      dueDate,
+      personName: row.personName ?? null,
+      balanceReceivable: roundMoney(amount),
+      daysOverdue,
+    };
+    const bucket = byDay.get(dueDate);
+    if (bucket) bucket.push(title);
+    else byDay.set(dueDate, [title]);
+  }
+
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([civilDate, titles]) => {
+      const sorted = [...titles].sort(
+        (a, b) =>
+          b.balanceReceivable - a.balanceReceivable || a.externalId - b.externalId
+      );
+      return {
+        civilDate,
+        amount: roundMoney(
+          sorted.reduce((sum, t) => sum + t.balanceReceivable, 0)
+        ),
+        count: sorted.length,
+        daysOverdue: Math.max(...sorted.map((t) => t.daysOverdue)),
+        titles: sorted,
+      };
+    });
+}
+
+/**
+ * View-model de EXIBIÇÃO da Timeline. Paralelo a `TreasuryCaixaTimelineRow`:
+ * atraso recente NUNCA vira linha financeira (opening/inflows/closing).
+ *
+ * - `FINANCIAL_DAY`: dia que já existe em `timeline.rows` (caixa real).
+ *   Se houver CR D+1..D+3 no mesmo vencimento, o overlay vai em
+ *   `recentOverdue` — evidência visual, sem alterar os números do dia.
+ * - `RECENT_OVERDUE`: vencimento original sem dia financeiro (ex.: domingo
+ *   sem movimento). Linha operacional/virtual.
+ */
+export type TreasuryCaixaTimelineDisplayRow =
+  | {
+      type: "FINANCIAL_DAY";
+      civilDate: string;
+      row: TreasuryCaixaTimelineRow;
+      recentOverdue: TreasuryCaixaRecentOverdueDay | null;
+    }
+  | {
+      type: "RECENT_OVERDUE";
+      civilDate: string;
+      recentOverdue: TreasuryCaixaRecentOverdueDay;
+    };
+
+/**
+ * Compõe a lista de renderização. Não muta `financialRows`. Não cria
+ * `TreasuryCaixaTimelineRow` artificial (opening/inflows/closing zerados).
+ */
+export function composeTreasuryCaixaTimelineDisplayRows(
+  financialRows: readonly TreasuryCaixaTimelineRow[],
+  recentOverdueDays: readonly TreasuryCaixaRecentOverdueDay[]
+): TreasuryCaixaTimelineDisplayRow[] {
+  const overdueByDay = new Map<string, TreasuryCaixaRecentOverdueDay>();
+  for (const day of recentOverdueDays) overdueByDay.set(day.civilDate, day);
+
+  const used = new Set<string>();
+  const display: TreasuryCaixaTimelineDisplayRow[] = [];
+
+  for (const row of financialRows) {
+    used.add(row.civilDate);
+    display.push({
+      type: "FINANCIAL_DAY",
+      civilDate: row.civilDate,
+      row,
+      recentOverdue: overdueByDay.get(row.civilDate) ?? null,
+    });
+  }
+
+  for (const day of recentOverdueDays) {
+    if (used.has(day.civilDate)) continue;
+    display.push({ type: "RECENT_OVERDUE", civilDate: day.civilDate, recentOverdue: day });
+  }
+
+  display.sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+  return display;
 }
 
 /**
@@ -1647,6 +1812,13 @@ export type TreasuryCaixaBoardDto = {
   realizedDays: TreasuryCaixaRealizedDay[];
   /** Estoque de atrasados HOJE — independe do período filtrado. */
   overdue: TreasuryCaixaOverdue;
+  /**
+   * CR aberto com 1 a 3 dias CORRIDOS de atraso — evidência VISUAL do
+   * vencimento original na Timeline. NÃO é movimento de caixa: não entra
+   * em inflows, outflows, opening, closing, cenários, gráfico nem estimativas.
+   * Ausente/vazio = nenhum título na janela D+1..D+3 do período.
+   */
+  recentOverdueReceivables?: TreasuryCaixaRecentOverdueDay[];
   receivables: FinanceAccountsReceivableGridRow[];
   payables: FinanceAccountsPayableGridRow[];
   /**
