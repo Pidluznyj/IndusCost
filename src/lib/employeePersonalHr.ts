@@ -27,6 +27,43 @@ const MAX_ADDRESS_LEN = 500;
 const MAX_RG_LEN = 32;
 const MAX_NAME_LEN = 120;
 const MAX_RELATIONSHIP_LEN = 80;
+export const MAX_MARITAL_STATUS_LEN = 40;
+export const MAX_CITY_LEN = 80;
+export const MAX_STATE_LEN = 2;
+export const MAX_ZIP_CODE_LEN = 9;
+
+/** 27 UFs (26 estados + DF) — lista oficial para o campo UF do endereço. */
+export const BRAZIL_UF_CODES = [
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+] as const;
+
+const BRAZIL_UF_SET = new Set<string>(BRAZIL_UF_CODES);
 
 export type EmployeePersonalHrFields = {
   cpf: string | null;
@@ -35,6 +72,10 @@ export type EmployeePersonalHrFields = {
   phone: string | null;
   personalEmail: string | null;
   address: string | null;
+  maritalStatus: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   emergencyContactRelationship: string | null;
@@ -45,6 +86,8 @@ export type EmployeePersonalHrPrevious = {
   phone?: string | null;
   emergencyContactPhone?: string | null;
   personalEmail?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
 };
 
 function trimOrNull(value: unknown, maxLen?: number): string | null {
@@ -170,6 +213,54 @@ export function normalizeEmployeePhone(
   );
 }
 
+/** Máscara de CEP para input/exibição: 00000-000. */
+export function formatZipCodeMask(value: string): string {
+  const d = digitsOnly(value).slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+/**
+ * UF: 2 letras maiúsculas da lista oficial (BRAZIL_UF_CODES).
+ * Legado fora da lista pode permanecer se inalterado.
+ */
+export function normalizeEmployeeState(
+  value: unknown,
+  opts?: { previous?: string | null; allowLegacy?: boolean }
+): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  const uf = raw.toUpperCase();
+  if (uf.length === MAX_STATE_LEN && BRAZIL_UF_SET.has(uf)) return uf;
+  const prev = (opts?.previous ?? "").trim();
+  if (opts?.allowLegacy && prev && raw === prev) return raw;
+  throw new EmployeeRegistrationError(
+    "INVALID_STATE",
+    "UF inválida: selecione uma UF da lista (2 letras)."
+  );
+}
+
+/**
+ * CEP: 8 dígitos, persistido com máscara 00000-000 (sem consulta externa).
+ * Legado fora do padrão pode permanecer se inalterado.
+ */
+export function normalizeEmployeeZipCode(
+  value: unknown,
+  opts?: { previous?: string | null; allowLegacy?: boolean }
+): string | null {
+  const raw =
+    typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+  if (!raw) return null;
+  const digits = digitsOnly(raw);
+  if (digits.length === 8 && /^[\d.\-\s]+$/.test(raw)) return formatZipCodeMask(digits);
+  const prev = (opts?.previous ?? "").trim();
+  if (opts?.allowLegacy && prev && raw === prev) return raw;
+  throw new EmployeeRegistrationError(
+    "INVALID_ZIP_CODE",
+    "CEP deve ter 8 dígitos (00000-000)."
+  );
+}
+
 export function assertEmergencyContactConsistency(input: {
   name: string | null;
   phone: string | null;
@@ -221,6 +312,16 @@ export function prepareEmployeePersonalHrFields(
   });
   const rg = trimOrNull(body.rg, MAX_RG_LEN);
   const address = trimOrNull(body.address, MAX_ADDRESS_LEN);
+  const maritalStatus = trimOrNull(body.maritalStatus, MAX_MARITAL_STATUS_LEN);
+  const city = trimOrNull(body.city, MAX_CITY_LEN);
+  const state = normalizeEmployeeState(body.state, {
+    previous: prev?.state,
+    allowLegacy,
+  });
+  const zipCode = normalizeEmployeeZipCode(body.zipCode, {
+    previous: prev?.zipCode,
+    allowLegacy,
+  });
   const birthDate = normalizeOptionalBirthDate(body.birthDate);
   assertBirthDateReasonable(birthDate);
 
@@ -247,6 +348,10 @@ export function prepareEmployeePersonalHrFields(
     phone,
     personalEmail,
     address,
+    maritalStatus,
+    city,
+    state,
+    zipCode,
     emergencyContactName,
     emergencyContactPhone,
     emergencyContactRelationship,
@@ -265,6 +370,10 @@ export function validateEmployeePersonalHrForm(
     emergencyContactRelationship?: string | null;
     rg?: string | null;
     address?: string | null;
+    maritalStatus?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zipCode?: string | null;
   },
   opts?: {
     previous?: EmployeePersonalHrPrevious | null;
@@ -280,6 +389,10 @@ export function validateEmployeePersonalHrForm(
         birthDate: input.birthDate ?? "",
         rg: input.rg ?? "",
         address: input.address ?? "",
+        maritalStatus: input.maritalStatus ?? "",
+        city: input.city ?? "",
+        state: input.state ?? "",
+        zipCode: input.zipCode ?? "",
         emergencyContactName: input.emergencyContactName ?? "",
         emergencyContactPhone: input.emergencyContactPhone ?? "",
         emergencyContactRelationship: input.emergencyContactRelationship ?? "",
@@ -303,6 +416,10 @@ export const EMPLOYEE_PERSONAL_ONLY_REDACT_KEYS = [
   "phone",
   "personalEmail",
   "address",
+  "maritalStatus",
+  "city",
+  "state",
+  "zipCode",
 ] as const;
 
 export const EMPLOYEE_EMERGENCY_REDACT_KEYS = [
@@ -341,7 +458,11 @@ export function redactEmployeePersonalEmergencyForApi<T extends Record<string, u
       employee.birthDate ||
       employee.phone ||
       employee.personalEmail ||
-      employee.address
+      employee.address ||
+      employee.maritalStatus ||
+      employee.city ||
+      employee.state ||
+      employee.zipCode
   );
   const hasEmergencyContact = Boolean(
     employee.emergencyContactName ||
@@ -390,6 +511,9 @@ export function auditPersonalHrSummary(fields: EmployeePersonalHrFields): {
   hasPhone: boolean;
   hasPersonalEmail: boolean;
   hasAddress: boolean;
+  hasMaritalStatus: boolean;
+  hasCityState: boolean;
+  hasZipCode: boolean;
   hasEmergencyContact: boolean;
   cpfMasked: string | null;
   phoneMasked: string | null;
@@ -402,6 +526,9 @@ export function auditPersonalHrSummary(fields: EmployeePersonalHrFields): {
     hasPhone: Boolean(fields.phone),
     hasPersonalEmail: Boolean(fields.personalEmail),
     hasAddress: Boolean(fields.address),
+    hasMaritalStatus: Boolean(fields.maritalStatus),
+    hasCityState: Boolean(fields.city || fields.state),
+    hasZipCode: Boolean(fields.zipCode),
     hasEmergencyContact: Boolean(
       fields.emergencyContactName || fields.emergencyContactPhone
     ),

@@ -1,11 +1,21 @@
 import { CreateEmployeeInput, Employee } from "@/src/types/employee";
-import { formatCpfMask, formatPhoneBrMask } from "@/src/lib/employeePersonalHr";
+import {
+  BRAZIL_UF_CODES,
+  formatCpfMask,
+  formatPhoneBrMask,
+  formatZipCodeMask,
+} from "@/src/lib/employeePersonalHr";
 
 export type EmployeeFichaTabId =
   | "professional"
   | "personal"
   | "emergency"
+  | "career"
+  | "compensation"
+  | "benefits"
+  | "absences"
   | "epi"
+  | "documents"
   | "admin"
   | "notes"
   | "links";
@@ -14,11 +24,41 @@ export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = 
   { id: "professional", label: "Profissional" },
   { id: "personal", label: "Pessoal" },
   { id: "emergency", label: "Emergência" },
+  { id: "career", label: "Carreira" },
+  { id: "compensation", label: "Remuneração" },
+  { id: "benefits", label: "Benefícios" },
+  { id: "absences", label: "Férias & afastamentos" },
   { id: "epi", label: "EPI / Uniformes" },
+  { id: "documents", label: "Documentos" },
   { id: "admin", label: "Referência administrativa" },
   { id: "notes", label: "Observações" },
   { id: "links", label: "Vínculos no sistema" },
 ];
+
+/**
+ * Guias só de registros da ficha (sem campos do cadastro): salvam na hora,
+ * fora do "Salvar alterações", e só existem para colaborador já criado.
+ */
+export const EMPLOYEE_FICHA_RECORD_TABS: readonly EmployeeFichaTabId[] = [
+  "career",
+  "compensation",
+  "benefits",
+  "absences",
+  "documents",
+];
+
+/** Estado civil — texto persistido = rótulo (valor legado fora da lista é tolerado). */
+export const MARITAL_STATUS_OPTIONS = [
+  "Solteiro(a)",
+  "Casado(a)",
+  "União estável",
+  "Divorciado(a)",
+  "Separado(a)",
+  "Viúvo(a)",
+] as const;
+
+/** 27 UFs — mesma lista validada no servidor. */
+export const BRAZIL_UF_OPTIONS = BRAZIL_UF_CODES;
 
 export const EPI_TOP_SIZE_OPTIONS = [
   "PP",
@@ -111,6 +151,13 @@ export function formatContractType(value: string | null | undefined): string {
   return CONTRACT_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
+/** CEP com 8 dígitos ganha máscara; legado fora do padrão fica como está (servidor tolera se inalterado). */
+function zipCodeToFormValue(value: string | null | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+  return raw.replace(/\D/g, "").length === 8 ? formatZipCodeMask(raw) : raw;
+}
+
 export function employeeToFormData(employee: Employee): CreateEmployeeInput {
   return {
     name: employee.name,
@@ -139,6 +186,11 @@ export function employeeToFormData(employee: Employee): CreateEmployeeInput {
     phone: employee.phone ? formatPhoneBrMask(employee.phone) : "",
     personalEmail: employee.personalEmail ?? "",
     address: employee.address ?? "",
+    maritalStatus: employee.maritalStatus ?? "",
+    city: employee.city ?? "",
+    state: employee.state ?? "",
+    zipCode: zipCodeToFormValue(employee.zipCode),
+    workSchedule: employee.workSchedule ?? "",
     emergencyContactName: employee.emergencyContactName ?? "",
     emergencyContactPhone: employee.emergencyContactPhone
       ? formatPhoneBrMask(employee.emergencyContactPhone)
@@ -186,6 +238,11 @@ export function createEmptyEmployeeForm(roleId = ""): CreateEmployeeInput {
     phone: "",
     personalEmail: "",
     address: "",
+    maritalStatus: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    workSchedule: "",
     emergencyContactName: "",
     emergencyContactPhone: "",
     emergencyContactRelationship: "",

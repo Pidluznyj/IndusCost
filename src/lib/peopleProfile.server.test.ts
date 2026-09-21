@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { resolveProfileAccess } from "./peopleProfile.server.ts";
-import { loadPeopleCompensation, loadPeopleNotes } from "./peopleProfile.server.ts";
+import {
+  loadPeopleCareer,
+  loadPeopleCompensation,
+  loadPeopleNotes,
+  loadPeopleProfileSummary,
+} from "./peopleProfile.server.ts";
+import { buildPeopleProfileCapabilities } from "./peopleProfileCapabilities.ts";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.ts";
 import { toHistoryEventDto } from "./peopleProfileHistory.ts";
 import { assertNoCompensationValuesLeak } from "./peopleProfileSanitize.ts";
@@ -132,6 +138,138 @@ describe("loadPeopleCompensation — leak de valores", () => {
     assert.doesNotThrow(() => assertNoCompensationValuesLeak(payload));
     assert.equal(compensationSelect?.previousAmount, undefined);
     assert.equal(compensationSelect?.newAmount, undefined);
+  });
+});
+
+describe("loadPeopleProfileSummary — última promoção", () => {
+  it("encontra a promoção mesmo fora da janela das 8 movimentações recentes", async () => {
+    let promotionArgs: Record<string, unknown> | null = null;
+    let recentTake: number | undefined;
+    const recent = Array.from({ length: 8 }, (_, i) => ({
+      id: `h-${i}`,
+      eventType: i % 2 === 0 ? "EPI_DELIVERY" : "NOTE_ADDED",
+      effectiveDate: new Date(Date.UTC(2026, 5, 20 - i)),
+      createdAt: new Date(Date.UTC(2026, 5, 20 - i)),
+      previousRoleName: null,
+      newRoleName: null,
+      previousDepartment: null,
+      newDepartment: null,
+      previousManagerName: null,
+      newManagerName: null,
+    }));
+    const prisma = {
+      employee: {
+        findUnique: async () => ({
+          id: "emp-1",
+          name: "João da Silva",
+          socialName: null,
+          status: "ACTIVE",
+          department: "Produção",
+          departmentId: null,
+          costCenter: "Usinagem",
+          costCenterId: null,
+          managerId: null,
+          managerName: null,
+          contractType: null,
+          workSchedule: null,
+          corporateEmail: null,
+          classification: "MOD",
+          admissionDate: new Date("2015-02-01T00:00:00.000Z"),
+          terminationDate: null,
+          personId: null,
+          photoStorageKey: "hremployeephotos/emp-1/0a1b2c3d-foto.png",
+          monthlyHours: 220,
+          professionalNotes: null,
+          updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+          createdAt: new Date("2015-02-01T00:00:00.000Z"),
+          roleId: "r1",
+          Role: { id: "r1", name: "Operador II" },
+          financialCostCenter: null,
+          orgDepartment: null,
+          manager: null,
+          person: null,
+        }),
+      },
+      hrEmployeeHistory: {
+        findMany: async (args: { take?: number }) => {
+          recentTake = args.take;
+          return recent;
+        },
+        findFirst: async (args: Record<string, unknown>) => {
+          promotionArgs = args;
+          return {
+            eventType: "PROMOTION",
+            effectiveDate: new Date("2019-08-01T00:00:00.000Z"),
+            previousRoleName: "Operador I",
+            newRoleName: "Operador II",
+          };
+        },
+      },
+      hrCompensationAdjustment: { findMany: async () => [] },
+    };
+    const summary = await loadPeopleProfileSummary(
+      prisma as never,
+      "emp-1",
+      buildPeopleProfileCapabilities(check(["employees.view"]))
+    );
+    assert.equal(recentTake, 8);
+    assert.deepEqual(promotionArgs?.where, { employeeId: "emp-1", eventType: "PROMOTION" });
+    assert.deepEqual(promotionArgs?.orderBy, [
+      { effectiveDate: "desc" },
+      { createdAt: "desc" },
+      { id: "desc" },
+    ]);
+    assert.equal(summary.kpis.lastPromotionDate, "2019-08-01T00:00:00.000Z");
+    assert.equal(summary.kpis.lastPromotionLabel, "Operador I → Operador II");
+    assert.ok(summary.kpis.timeSinceLastPromotionLabel);
+    assert.equal(summary.overview.lastPromotionDate, "2019-08-01T00:00:00.000Z");
+    // A janela de movimentações recentes continua a mesma (5 itens, sem a promoção antiga).
+    assert.equal(summary.overview.recentMovements.length, 5);
+    assert.ok(summary.overview.recentMovements.every((m) => m.eventType !== "PROMOTION"));
+    assert.equal(summary.identity.photoUrl, "/api/employees/emp-1/photo?v=0a1b2c3d");
+  });
+});
+
+describe("loadPeopleCareer — flag editable", () => {
+  it("filtra os tipos de carreira no banco e marca o que aceita correção", async () => {
+    let capturedWhere: Record<string, unknown> | null = null;
+    const base = {
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+      source: "USER",
+      reason: null,
+      notes: null,
+      createdByUserId: null,
+    };
+    const prisma = {
+      hrEmployeeHistory: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          capturedWhere = args.where;
+          return [
+            { ...base, id: "h3", eventType: "PROMOTION", effectiveDate: new Date("2024-01-01") },
+            { ...base, id: "h2", eventType: "TERMINATION", effectiveDate: new Date("2023-01-01") },
+            { ...base, id: "h1", eventType: "INITIAL_STATE", effectiveDate: new Date("2022-01-01") },
+          ];
+        },
+      },
+      appUser: { findMany: async () => [] },
+    };
+    const out = await loadPeopleCareer(prisma as never, "emp-1");
+    const types = (capturedWhere?.eventType as { in: string[] }).in;
+    assert.ok(types.includes("PROMOTION"));
+    assert.ok(types.includes("INITIAL_STATE"));
+    assert.ok(!types.includes("COMPENSATION_ADJUSTMENT"));
+    assert.ok(!types.includes("EPI_DELIVERY"));
+    assert.deepEqual(
+      out.items.map((i) => [i.id, i.editable]),
+      [
+        ["h3", true],
+        ["h2", true],
+        ["h1", false],
+      ]
+    );
+    const json = JSON.stringify(out);
+    assert.ok(!json.includes("previousAmount"));
+    assert.ok(!json.includes("newAmount"));
   });
 });
 

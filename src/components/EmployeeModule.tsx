@@ -21,9 +21,11 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
 import {
+  BRAZIL_UF_OPTIONS,
   CONTRACT_TYPE_OPTIONS,
   createEmptyEmployeeForm,
   displayText,
+  EMPLOYEE_FICHA_RECORD_TABS,
   employeeToFormData,
   EPI_GLOVE_SIZE_OPTIONS,
   EPI_PANTS_SIZE_OPTIONS,
@@ -31,6 +33,7 @@ import {
   EPI_TOP_SIZE_OPTIONS,
   formatContractType,
   formatEmployeeDate,
+  MARITAL_STATUS_OPTIONS,
   type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
 import { resolveForcedManagerFromOrgDepartment } from "@/src/lib/hrOrgStructure";
@@ -44,6 +47,8 @@ import {
   formatCpfMask,
   formatPhoneBrMask,
   formatPhoneForDisplay,
+  formatZipCodeMask,
+  MAX_CITY_LEN,
   normalizePersonalEmail,
   validateEmployeePersonalHrForm,
 } from "@/src/lib/employeePersonalHr";
@@ -51,9 +56,18 @@ import {
   MAX_ADMIN_NOTES_LEN,
   MAX_EPI_NOTES_LEN,
   MAX_PROFESSIONAL_NOTES_LEN,
+  MAX_WORK_SCHEDULE_LEN,
   validateEmployeeEpiAdminNotesForm,
 } from "@/src/lib/employeeAdminHr";
-import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
+import {
+  EMPLOYEE_FICHA_TAB_GROUPS,
+  EmployeeFichaTabNav,
+} from "@/src/components/employee/EmployeeFichaTabNav";
+import {
+  EmployeeEditRecordsPanel,
+  type EmployeeEditRecordsTabId,
+} from "@/src/components/employee/EmployeeEditRecordsPanel";
+import { EmployeePhotoField } from "@/src/components/employee/EmployeePhotoField";
 import { PeopleEmployeeProfileDialog } from "@/src/components/employee/profile/PeopleEmployeeProfileDialog";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
@@ -111,6 +125,95 @@ const TEXTAREA_CLASS =
 
 const FICHA_MODAL_CLASS =
   "bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]";
+
+/** id do <form> do cadastro — o botão do rodapé fica fora dele e aponta para cá via atributo `form`. */
+const EMPLOYEE_CADASTRO_FORM_ID = "employee-cadastro-form";
+
+const FICHA_PLACEHOLDER_CLASS =
+  "text-sm text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2";
+
+/**
+ * Registros da ficha por guia do modal. Ficam FORA do <form> do cadastro (cada registro tem o
+ * próprio formulário e grava na hora). `title` só existe nas guias que também têm campos do cadastro.
+ */
+const FICHA_RECORDS_BY_TAB: Partial<
+  Record<
+    EmployeeFichaTabId,
+    { tab: EmployeeEditRecordsTabId; title: string | null; createHint: string }
+  >
+> = {
+  career: {
+    tab: "career",
+    title: null,
+    createHint: "Salve o colaborador para registrar promoções e movimentações de carreira.",
+  },
+  compensation: {
+    tab: "compensation",
+    title: null,
+    createHint: "Salve o colaborador para registrar reajustes de remuneração.",
+  },
+  benefits: {
+    tab: "benefits",
+    title: null,
+    createHint: "Salve o colaborador para registrar benefícios.",
+  },
+  absences: {
+    tab: "absences",
+    title: null,
+    createHint: "Salve o colaborador para registrar férias e afastamentos.",
+  },
+  documents: {
+    tab: "documents",
+    title: null,
+    createHint: "Salve o colaborador para anexar documentos.",
+  },
+  emergency: {
+    tab: "emergency",
+    title: "Contatos adicionais",
+    createHint: "Salve o colaborador para registrar contatos adicionais.",
+  },
+  epi: {
+    tab: "epi",
+    title: "Entregas de EPI",
+    createHint: "Salve o colaborador para registrar entregas de EPI.",
+  },
+  notes: {
+    tab: "notes",
+    title: "Registros de observações",
+    createHint: "Salve o colaborador para registrar observações.",
+  },
+};
+
+/**
+ * Chaves do cadastro que um registro gravado na hora pode mudar no servidor:
+ * reajuste → salário; movimentação de carreira → cargo/estrutura/contrato/jornada;
+ * desvínculo de pessoa → personId. Só elas são ressincronizadas no formulário aberto.
+ */
+const RECORD_SYNCED_FORM_KEYS: readonly (keyof CreateEmployeeInput)[] = [
+  "salary",
+  "roleId",
+  "department",
+  "departmentId",
+  "costCenter",
+  "costCenterId",
+  "managerName",
+  "managerId",
+  "contractType",
+  "workSchedule",
+  "personId",
+];
+
+const EMPLOYEE_ROW_REDACTED_MESSAGE =
+  "Seu perfil não tem acesso a todos os dados deste cadastro (pessoais, emergência, remuneração ou observações administrativas). Peça ao administrador a permissão de edição de Pessoas/RH.";
+
+function isEmployeeRowRedacted(employee: Employee): boolean {
+  return Boolean(
+    employee.personalPiiRedacted ||
+      employee.emergencyContactRedacted ||
+      employee.compensationRedacted ||
+      employee.adminNotesRedacted
+  );
+}
 
 function EpiSizeSelect({
   label,
@@ -227,6 +330,9 @@ export const EmployeeModule = () => {
     if (canViewAdminHr || canViewSensitiveHr || canEdit) tabs.push("admin");
     tabs.push("notes");
     if (canViewLinksTab) tabs.push("links");
+    // Guias só de registros (carreira, reajustes, benefícios, afastamentos, documentos): o painel
+    // decide pela capacidade do servidor o que o usuário vê/grava. A ordem na tela vem da navegação.
+    tabs.push(...EMPLOYEE_FICHA_RECORD_TABS);
     return tabs;
   }, [
     canEdit,
@@ -290,6 +396,11 @@ export const EmployeeModule = () => {
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formBaseline, setFormBaseline] = useState<string>("");
+  // Registros gravados na hora (reajuste, carreira, desvínculo) mudam o cadastro no servidor:
+  // enquanto o formulário aberto não for ressincronizado, "Salvar alterações" fica bloqueado.
+  const [recordSyncState, setRecordSyncState] = useState<"idle" | "pending" | "failed">("idle");
+  const recordSyncSeqRef = useRef(0);
+  const [linksPanelVersion, setLinksPanelVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
@@ -300,6 +411,8 @@ export const EmployeeModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const editingEmployeeRef = useRef<Employee | null>(null);
+  editingEmployeeRef.current = editingEmployee;
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [employeeFichaTab, setEmployeeFichaTab] = useState<EmployeeFichaTabId>("professional");
   const [viewFichaTab, setViewFichaTab] = useState<EmployeeFichaTabId>("professional");
@@ -588,14 +701,9 @@ export const EmployeeModule = () => {
     setCorporateEmailHint(null);
     setCorporateEmailError(null);
     if (employee) {
-      if (
-        employee.personalPiiRedacted ||
-        employee.emergencyContactRedacted ||
-        employee.compensationRedacted
-      ) {
-        alert(
-          "Sem permissão para editar dados pessoais/administrativos. É necessário employees.edit."
-        );
+      // Linha com dados ocultos: abrir o formulário gravaria vazio por cima do que o usuário não vê.
+      if (isEmployeeRowRedacted(employee)) {
+        alert(EMPLOYEE_ROW_REDACTED_MESSAGE);
         return;
       }
       setEditingEmployee(employee);
@@ -608,6 +716,8 @@ export const EmployeeModule = () => {
         selectedManagerId: employee.managerId ?? employee.manager?.id,
         selectedRoleId: employee.roleId,
       });
+      // A última ressincronização falhou: a linha da listagem pode estar defasada — tenta de novo.
+      if (recordSyncState === "failed") void syncFormAfterRecordChange(employee.id);
     } else {
       setEditingEmployee(null);
       const next = createEmptyEmployeeForm(roles[0]?.id || "");
@@ -627,6 +737,76 @@ export const EmployeeModule = () => {
     setIsModalOpen(false);
   };
 
+  /**
+   * Um registro gravado na hora (reajuste, movimentação de carreira, desvínculo de pessoa) muda o
+   * cadastro no servidor. Busca a linha atual e ressincroniza SÓ as chaves que mudaram lá — no
+   * formulário e na baseline — para o "Salvar alterações" não regravar o valor antigo por cima.
+   * As demais edições não salvas do usuário ficam como estão.
+   */
+  const syncFormAfterRecordChange = async (employeeId: string) => {
+    const seq = ++recordSyncSeqRef.current;
+    setRecordSyncState("pending");
+    try {
+      const list = await fetchJsonOk<Employee[]>("/api/employees");
+      if (seq !== recordSyncSeqRef.current) return;
+      if (!Array.isArray(list)) throw new Error("Resposta inválida da listagem de colaboradores.");
+      setEmployees(list);
+      const current = editingEmployeeRef.current;
+      const fresh = list.find((row) => row.id === employeeId);
+      if (!current || current.id !== employeeId) {
+        setRecordSyncState("idle");
+        return;
+      }
+      // Sem a linha completa não há como confirmar o valor atual: mantém o bloqueio do salvar.
+      if (!fresh || isEmployeeRowRedacted(fresh)) {
+        setRecordSyncState("failed");
+        return;
+      }
+      const before = employeeToFormData(current);
+      const after = employeeToFormData(fresh);
+      const patch: Partial<CreateEmployeeInput> = {};
+      for (const key of RECORD_SYNCED_FORM_KEYS) {
+        if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+          (patch as Record<string, unknown>)[key] = after[key];
+        }
+      }
+      setEditingEmployee(fresh);
+      if (Object.keys(patch).length > 0) {
+        setFormData((prev) => ({ ...prev, ...patch }));
+        setFormBaseline((prev) => {
+          try {
+            return JSON.stringify({ ...(JSON.parse(prev) as CreateEmployeeInput), ...patch });
+          } catch {
+            return prev;
+          }
+        });
+        if ("roleId" in patch || "costCenterId" in patch || "managerId" in patch) {
+          void loadProfessionalLookups({
+            excludeManagerId: fresh.id,
+            selectedCostCenterId: fresh.costCenterId ?? fresh.financialCostCenter?.id,
+            selectedManagerId: fresh.managerId ?? fresh.manager?.id,
+            selectedRoleId: fresh.roleId,
+          });
+        }
+      }
+      setRecordSyncState("idle");
+    } catch (error) {
+      if (seq !== recordSyncSeqRef.current) return;
+      console.error("Erro ao ressincronizar o cadastro após registro:", error);
+      setRecordSyncState("failed");
+    }
+  };
+
+  const fichaRecords = FICHA_RECORDS_BY_TAB[employeeFichaTab] ?? null;
+  const recordSyncBlocking = Boolean(editingEmployee) && recordSyncState !== "idle";
+
+  /** Só reajuste e carreira mexem no snapshot do Employee; os demais registros não tocam o cadastro. */
+  const handleFichaRecordChanged = (employeeId: string, tab: EmployeeEditRecordsTabId) => {
+    if (tab === "compensation" || tab === "career") {
+      void syncFormAfterRecordChange(employeeId);
+    }
+  };
+
   const openEmployeeView = (employee: Employee) => {
     setViewFichaTab("professional");
     setViewingEmployee(employee);
@@ -635,6 +815,8 @@ export const EmployeeModule = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (savingEmployee) return;
+    // Cadastro defasado por um registro gravado na hora: só salva depois de ressincronizar.
+    if (editingEmployee && recordSyncState !== "idle") return;
     setFormError(null);
     const emailOk = await validateCorporateEmailField(formData.corporateEmail ?? "");
     if (!emailOk) {
@@ -660,6 +842,10 @@ export const EmployeeModule = () => {
         birthDate: formData.birthDate,
         rg: formData.rg,
         address: formData.address,
+        maritalStatus: formData.maritalStatus,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
         emergencyContactName: formData.emergencyContactName,
         emergencyContactPhone: formData.emergencyContactPhone,
         emergencyContactRelationship: formData.emergencyContactRelationship,
@@ -672,6 +858,8 @@ export const EmployeeModule = () => {
               phone: editingEmployee.phone,
               personalEmail: editingEmployee.personalEmail,
               emergencyContactPhone: editingEmployee.emergencyContactPhone,
+              state: editingEmployee.state,
+              zipCode: editingEmployee.zipCode,
             },
           }
         : { allowLegacy: false }
@@ -1292,20 +1480,33 @@ export const EmployeeModule = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-                <EmployeeFichaTabNav
-                  activeTab={employeeFichaTab}
-                  onTabChange={setEmployeeFichaTab}
-                  layout="sidebar"
-                  visibleTabIds={visibleFichaTabs}
-                />
+            {/* Navegação, conteúdo e rodapé são irmãos: o <form> do cadastro fica só em volta das
+                guias de cadastro, e os registros da ficha (que têm formulário próprio) ficam fora dele. */}
+            <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+              <EmployeeFichaTabNav
+                activeTab={employeeFichaTab}
+                onTabChange={setEmployeeFichaTab}
+                layout="sidebar"
+                visibleTabIds={visibleFichaTabs}
+                groups={EMPLOYEE_FICHA_TAB_GROUPS}
+              />
 
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
-                  <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
-                    Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
-                  </p>
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
+                <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
+                  Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
+                </p>
 
+                {employeeFichaTab === "professional" && editingEmployee ? (
+                  <div key={editingEmployee.id} className="mb-6">
+                    <EmployeePhotoField
+                      employeeId={editingEmployee.id}
+                      employeeName={formData.socialName?.trim() || formData.name}
+                      canManage={canEdit}
+                    />
+                  </div>
+                ) : null}
+
+                <form id={EMPLOYEE_CADASTRO_FORM_ID} onSubmit={handleSubmit}>
                   {employeeFichaTab === "professional" && (
                     <div className="space-y-6">
                       <div>
@@ -1719,6 +1920,27 @@ export const EmployeeModule = () => {
                               <option value="INACTIVE">Inativo</option>
                             </select>
                           </div>
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Jornada (descrição)
+                            </label>
+                            <input
+                              type="text"
+                              autoComplete="off"
+                              className={INPUT_CLASS}
+                              maxLength={MAX_WORK_SCHEDULE_LEN}
+                              placeholder="Ex.: Seg–Sex 07:30–17:18"
+                              value={formData.workSchedule ?? ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, workSchedule: e.target.value })
+                              }
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Texto exibido na ficha em “Jornada”. As horas por mês continuam na guia
+                              Referência administrativa. A alteração entra no histórico como mudança de
+                              jornada.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1806,6 +2028,78 @@ export const EmployeeModule = () => {
                             }
                           }}
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Estado civil
+                        </label>
+                        <select
+                          className={INPUT_CLASS}
+                          value={formData.maritalStatus ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, maritalStatus: e.target.value })
+                          }
+                        >
+                          <option value="">Não informado</option>
+                          {/* Valor legado fora da lista continua selecionável para não se perder no save. */}
+                          {formData.maritalStatus &&
+                          !(MARITAL_STATUS_OPTIONS as readonly string[]).includes(
+                            formData.maritalStatus
+                          ) ? (
+                            <option value={formData.maritalStatus}>{formData.maritalStatus}</option>
+                          ) : null}
+                          {MARITAL_STATUS_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">CEP</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="postal-code"
+                          className={INPUT_CLASS}
+                          placeholder="00000-000"
+                          value={formData.zipCode ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, zipCode: formatZipCodeMask(e.target.value) })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Cidade
+                        </label>
+                        <input
+                          type="text"
+                          autoComplete="address-level2"
+                          className={INPUT_CLASS}
+                          maxLength={MAX_CITY_LEN}
+                          value={formData.city ?? ""}
+                          onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">UF</label>
+                        <select
+                          className={INPUT_CLASS}
+                          value={formData.state ?? ""}
+                          onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        >
+                          <option value="">Não informado</option>
+                          {formData.state &&
+                          !(BRAZIL_UF_OPTIONS as readonly string[]).includes(formData.state) ? (
+                            <option value={formData.state}>{formData.state}</option>
+                          ) : null}
+                          {BRAZIL_UF_OPTIONS.map((uf) => (
+                            <option key={uf} value={uf}>
+                              {uf}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
                         <label className="text-xs font-bold text-muted-foreground uppercase">
@@ -2074,46 +2368,127 @@ export const EmployeeModule = () => {
                     </div>
                   )}
 
-                  {employeeFichaTab === "links" && (
-                    <div className="space-y-3">
-                      {editingEmployee ? (
-                        <EmployeeSystemLinksPanel employeeId={editingEmployee.id} />
-                      ) : (
-                        <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                          Salve o colaborador para consultar os vínculos no sistema.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+                </form>
 
-              <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 space-y-3">
-                {formError ? (
-                  <p className="text-sm text-red-600" role="alert">
-                    {formError}
-                  </p>
+                {/* Fora do <form> do cadastro: registros gravados na hora e vínculos (ações imediatas). */}
+                {fichaRecords ? (
+                  <section
+                    className={cn("space-y-3", fichaRecords.title && "mt-8 border-t border-border pt-6")}
+                  >
+                    {fichaRecords.title ? (
+                      <h4 className="text-[11px] font-bold uppercase tracking-wide text-primary/80">
+                        {fichaRecords.title}
+                      </h4>
+                    ) : null}
+                    {editingEmployee ? (
+                      <EmployeeEditRecordsPanel
+                        employeeId={editingEmployee.id}
+                        tab={fichaRecords.tab}
+                        onChanged={() => handleFichaRecordChanged(editingEmployee.id, fichaRecords.tab)}
+                      />
+                    ) : (
+                      <p className={FICHA_PLACEHOLDER_CLASS}>{fichaRecords.createHint}</p>
+                    )}
+                  </section>
                 ) : null}
-                <div className="flex items-center justify-end gap-3">
+
+                {employeeFichaTab === "links" && (
+                  <div className="space-y-4 text-sm">
+                    {editingEmployee ? (
+                      <>
+                        <EmployeeSystemAccessCard
+                          employeeId={editingEmployee.id}
+                          canManageLink={canManageUserLink}
+                          canOpenUsersAdmin={auth.hasPermission("users.manage")}
+                          onLinked={(appUser) => {
+                            if (!appUser) return;
+                            const id = editingEmployee.id;
+                            setEditingEmployee((prev) =>
+                              prev && prev.id === id ? { ...prev, appUser } : prev
+                            );
+                            setEmployees((prev) =>
+                              prev.map((e) => (e.id === id ? { ...e, appUser } : e))
+                            );
+                          }}
+                          onUnlinked={() => {
+                            const id = editingEmployee.id;
+                            setEditingEmployee((prev) =>
+                              prev && prev.id === id ? { ...prev, appUser: null } : prev
+                            );
+                            setEmployees((prev) =>
+                              prev.map((e) => (e.id === id ? { ...e, appUser: null } : e))
+                            );
+                          }}
+                        />
+                        <div key={`${editingEmployee.id}:${linksPanelVersion}`}>
+                          <EmployeeSystemLinksPanel
+                            employeeId={editingEmployee.id}
+                            canUnlinkPerson={canManageLinks}
+                            onUnlinkedPerson={() => {
+                              // O desvínculo já foi gravado: tira a pessoa do formulário e da baseline
+                              // para o "Salvar alterações" não revincular, e recarrega o painel.
+                              void syncFormAfterRecordChange(editingEmployee.id);
+                              setLinksPanelVersion((version) => version + 1);
+                            }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <p className={FICHA_PLACEHOLDER_CLASS}>
+                        Salve o colaborador para consultar os vínculos no sistema.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 space-y-3">
+              {formError ? (
+                <p className="text-sm text-red-600" role="alert">
+                  {formError}
+                </p>
+              ) : null}
+              {editingEmployee && recordSyncState === "failed" ? (
+                <div
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-red-600"
+                  role="alert"
+                >
+                  <span>
+                    Não foi possível atualizar o cadastro depois do último registro. Atualize antes de
+                    salvar para não gravar salário, cargo ou vínculo antigos por cima.
+                  </span>
                   <button
                     type="button"
-                    onClick={closeEmployeeModal}
-                    className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-                    disabled={savingEmployee}
+                    className="font-semibold underline underline-offset-2 hover:opacity-80"
+                    onClick={() => void syncFormAfterRecordChange(editingEmployee.id)}
                   >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingEmployee}
-                    className="inline-flex items-center gap-2 px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
-                  >
-                    {savingEmployee ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
+                    Atualizar agora
                   </button>
                 </div>
+              ) : null}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeEmployeeModal}
+                  className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+                  disabled={savingEmployee}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form={EMPLOYEE_CADASTRO_FORM_ID}
+                  disabled={savingEmployee || recordSyncBlocking}
+                  className="inline-flex items-center gap-2 px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+                >
+                  {savingEmployee || (recordSyncBlocking && recordSyncState === "pending") ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
+                </button>
               </div>
-            </form>
+            </div>
           </motion.div>
         </div>
       )}

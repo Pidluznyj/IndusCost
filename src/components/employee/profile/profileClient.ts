@@ -41,6 +41,14 @@ export async function profilePostJson(url: string, payload: Record<string, unkno
   return profileFetchJson(url, { method: "POST", body: JSON.stringify(payload) });
 }
 
+export async function profilePatchJson(url: string, payload: Record<string, unknown>): Promise<unknown> {
+  return profileFetchJson(url, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function profileDelete(url: string): Promise<unknown> {
+  return profileFetchJson(url, { method: "DELETE" });
+}
+
 export async function downloadEmployeeDocument(url: string, fileName: string): Promise<void> {
   const res = await fetch(url, { credentials: "include", cache: "no-store" });
   if (!res.ok) {
