@@ -303,9 +303,11 @@ import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
 import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
 import {
+  deletePayrollComponentWithHistory,
   recordHistoryAfterEmployeeWrite,
   recordPayrollComponentHistory,
 } from "./src/lib/peopleProfileMutations.server.js";
+import { PeopleProfileAccessError } from "./src/lib/peopleProfileErrors.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -3219,8 +3221,15 @@ async function startServer() {
   app.get("/api/payroll-components", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
       orderBy: { name: "asc" },
+      include: { _count: { select: { employees: true } } },
     });
-    res.json(components);
+    // employeeCount: quantos colaboradores têm a verba marcada (aviso antes de excluir).
+    res.json(
+      components.map(({ _count, ...component }) => ({
+        ...component,
+        employeeCount: _count.employees,
+      }))
+    );
   });
 
   app.post("/api/payroll-components", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
@@ -3241,10 +3250,32 @@ async function startServer() {
     res.json(component);
   });
 
+  // Excluir verba tira ela de todos os colaboradores (cascata) e muda a referência de custo
+  // deles: só SUPER_ADMIN, como a exclusão definitiva de colaborador.
   app.delete("/api/payroll-components/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.payrollComponent.delete({ where: { id } });
-    res.json({ success: true });
+    const authUser = await getCurrentAppUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    if (authUser.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Somente super administrador pode excluir encargos e benefícios do cadastro oficial.",
+      });
+    }
+    try {
+      const result = await deletePayrollComponentWithHistory(prisma, {
+        payrollComponentId: String(req.params.id ?? ""),
+        actorUserId: authUser.id,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof PeopleProfileAccessError) {
+        return res.status(error.status).json({ error: error.code, message: error.message });
+      }
+      console.error("Erro ao excluir encargo/benefício:", error instanceof Error ? error.message : error);
+      return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao excluir encargo ou benefício." });
+    }
   });
 
   

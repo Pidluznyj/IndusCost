@@ -12,6 +12,7 @@ import {
   deleteEmployeeDocument,
   deleteEmployeeNote,
   deleteEpiDelivery,
+  deletePayrollComponentWithHistory,
   findLinkedHistoryEvent,
   recordPayrollComponentHistory,
   saveEmployeePhoto,
@@ -1306,5 +1307,104 @@ describe("recordPayrollComponentHistory — verbas marcadas no cadastro", () => 
       }),
       0
     );
+  });
+});
+describe("deletePayrollComponentWithHistory — excluir verba do cadastro oficial", () => {
+  const PC = "55555555-5555-4555-8555-555555555555";
+  const EMP_B = "66666666-6666-4666-8666-666666666666";
+
+  it("registra a remoção no histórico de cada colaborador e exclui a verba", async () => {
+    const history: AnyArgs[] = [];
+    let deleted: AnyArgs | null = null;
+    const prisma = fakePrisma({
+      payrollComponent: {
+        findUnique: async (args: AnyArgs) => {
+          assert.deepEqual(args.where, { id: PC });
+          return { id: PC, name: "Vale Refeição" };
+        },
+        delete: async (args: AnyArgs) => {
+          deleted = args.where;
+          return { id: PC };
+        },
+      },
+      employeePayrollComponent: {
+        findMany: async (args: AnyArgs) => {
+          assert.deepEqual(args.where, { payrollComponentId: PC });
+          return [{ employeeId: EMP }, { employeeId: EMP_B }];
+        },
+      },
+      hrEmployeeHistory: {
+        create: async (args: AnyArgs) => {
+          history.push(args.data);
+          return { id: `h${history.length}` };
+        },
+      },
+    });
+    const result = await deletePayrollComponentWithHistory(prisma, {
+      payrollComponentId: PC,
+      actorUserId: "root",
+    });
+    assert.deepEqual(result, { name: "Vale Refeição", affectedEmployees: 2 });
+    assert.deepEqual(deleted, { id: PC });
+    assert.deepEqual(
+      history.map((h) => [h.employeeId, h.eventType, h.notes, h.reason, h.createdByUserId]),
+      [
+        [EMP, "BENEFIT_CHANGE", "Vale Refeição removido", "Verba excluída do cadastro oficial", "root"],
+        [EMP_B, "BENEFIT_CHANGE", "Vale Refeição removido", "Verba excluída do cadastro oficial", "root"],
+      ]
+    );
+    assert.deepEqual(history[0].metadata, { recordType: "payrollComponent", recordId: PC });
+  });
+
+  it("sem colaboradores: só exclui", async () => {
+    let deleted = false;
+    const prisma = fakePrisma({
+      payrollComponent: {
+        findUnique: async () => ({ id: PC, name: "FGTS" }),
+        delete: async () => {
+          deleted = true;
+          return { id: PC };
+        },
+      },
+      employeePayrollComponent: { findMany: async () => [] },
+      hrEmployeeHistory: untouchable("hrEmployeeHistory"),
+    });
+    const result = await deletePayrollComponentWithHistory(prisma, { payrollComponentId: PC });
+    assert.equal(result.affectedEmployees, 0);
+    assert.equal(deleted, true);
+  });
+
+  it("verba inexistente → 404 sem excluir nada; id inválido → 400 antes do banco", async () => {
+    const prisma = fakePrisma({
+      payrollComponent: {
+        findUnique: async () => null,
+        delete: async () => {
+          throw new Error("não deveria excluir");
+        },
+      },
+      employeePayrollComponent: untouchable("employeePayrollComponent"),
+    });
+    await assert.rejects(
+      () => deletePayrollComponentWithHistory(prisma, { payrollComponentId: PC }),
+      expectAccessError("NOT_FOUND", 404)
+    );
+    await assert.rejects(
+      () =>
+        deletePayrollComponentWithHistory(untouchable("prisma") as never, {
+          payrollComponentId: "nao-e-uuid",
+        }),
+      expectAccessError("INVALID_ID", 400)
+    );
+  });
+
+  it("server.ts: exclusão da verba exige SUPER_ADMIN e passa pela função com histórico", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
+    const start = src.indexOf('app.delete("/api/payroll-components/:id"');
+    assert.ok(start > 0);
+    const route = src.slice(start, src.indexOf("});", src.indexOf("deletePayrollComponentWithHistory(prisma", start)) + 3);
+    assert.ok(route.includes('authUser.role !== "SUPER_ADMIN"'));
+    assert.ok(route.includes("deletePayrollComponentWithHistory(prisma"));
+    assert.ok(!route.includes("prisma.payrollComponent.delete("));
   });
 });
