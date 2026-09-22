@@ -467,6 +467,64 @@ export async function recordPayrollComponentHistory(
   return changes.length;
 }
 
+/**
+ * Exclui uma verba do cadastro oficial (Configurações → Estrutura Operacional → Encargos e
+ * Benefícios). O banco remove em cascata o vínculo com os colaboradores
+ * (EmployeePayrollComponent), o que muda a referência de custo deles; antes disso cada
+ * colaborador que tinha a verba ganha um BENEFIT_CHANGE "<verba> removido" no histórico.
+ * A regra de quem pode excluir (só SUPER_ADMIN) fica na rota.
+ */
+export async function deletePayrollComponentWithHistory(
+  prisma: PrismaClient,
+  input: { payrollComponentId: string; actorUserId?: string | null }
+): Promise<{ name: string; affectedEmployees: number }> {
+  if (!isEmployeeUuid(input.payrollComponentId)) {
+    throw new PeopleProfileAccessError("INVALID_ID", "Encargo ou benefício inválido.", 400);
+  }
+  return prisma.$transaction(
+    async (tx) => {
+      const component = await tx.payrollComponent.findUnique({
+        where: { id: input.payrollComponentId },
+        select: { id: true, name: true },
+      });
+      if (!component) {
+        throw new PeopleProfileAccessError(
+          "NOT_FOUND",
+          "Encargo ou benefício não encontrado (pode já ter sido excluído).",
+          404
+        );
+      }
+      const assigned = await tx.employeePayrollComponent.findMany({
+        where: { payrollComponentId: component.id },
+        select: { employeeId: true },
+      });
+      const effectiveDate = new Date();
+      for (const { employeeId } of assigned) {
+        await writeHistoryEvent(tx, {
+          employeeId,
+          eventType: "BENEFIT_CHANGE",
+          effectiveDate,
+          source: "USER",
+          reason: "Verba excluída do cadastro oficial",
+          notes: payrollComponentHistoryNote("removed", component.name),
+          createdByUserId: input.actorUserId,
+          metadata: { recordType: "payrollComponent", recordId: component.id },
+        });
+        logEmployeeHrAudit({
+          event: "employee.benefit.change",
+          actorUserId: input.actorUserId,
+          employeeId,
+          details: { payrollComponentId: component.id, action: "catalog_delete" },
+        });
+      }
+      await tx.payrollComponent.delete({ where: { id: component.id } });
+      return { name: component.name, affectedEmployees: assigned.length };
+    },
+    // Um evento de histórico por colaborador afetado: folga além dos 5 s padrão.
+    { timeout: 20_000 }
+  );
+}
+
 export async function loadEmployeeSnapshotForHistory(
   prisma: PrismaClient,
   employeeId: string
