@@ -395,7 +395,6 @@ describe("employeeHrUi — cadastro: guias e formulário", () => {
         ["emergency", "Emergência"],
         ["career", "Carreira"],
         ["compensation", "Remuneração"],
-        ["benefits", "Benefícios"],
         ["absences", "Férias & afastamentos"],
         ["epi", "EPI / Uniformes"],
         ["documents", "Documentos"],
@@ -406,7 +405,7 @@ describe("employeeHrUi — cadastro: guias e formulário", () => {
     );
     assert.deepEqual(
       [...EMPLOYEE_FICHA_RECORD_TABS],
-      ["career", "compensation", "benefits", "absences", "documents"]
+      ["career", "compensation", "absences", "documents"]
     );
     const ids = new Set(EMPLOYEE_FICHA_TABS.map((t) => t.id));
     assert.ok(EMPLOYEE_FICHA_RECORD_TABS.every((id) => ids.has(id)));

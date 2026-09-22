@@ -12,7 +12,6 @@ export type EmployeeFichaTabId =
   | "emergency"
   | "career"
   | "compensation"
-  | "benefits"
   | "absences"
   | "epi"
   | "documents"
@@ -26,7 +25,6 @@ export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = 
   { id: "emergency", label: "Emergência" },
   { id: "career", label: "Carreira" },
   { id: "compensation", label: "Remuneração" },
-  { id: "benefits", label: "Benefícios" },
   { id: "absences", label: "Férias & afastamentos" },
   { id: "epi", label: "EPI / Uniformes" },
   { id: "documents", label: "Documentos" },
@@ -42,7 +40,6 @@ export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = 
 export const EMPLOYEE_FICHA_RECORD_TABS: readonly EmployeeFichaTabId[] = [
   "career",
   "compensation",
-  "benefits",
   "absences",
   "documents",
 ];

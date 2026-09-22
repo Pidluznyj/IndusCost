@@ -12,7 +12,6 @@ import {
   parseCompensationAdjustmentPatch,
   parseEmergencyContactPatch,
   parseEmployeeAbsencePatch,
-  parseEmployeeBenefitPatch,
   parseEmployeeDocumentPatch,
   parseEmployeeNotePatch,
   parseEpiDeliveryPatch,
@@ -77,10 +76,6 @@ describe("peopleProfileRecordEdits — patches parciais", () => {
     assert.equal(normalizeUserCompensationType(undefined), "OTHER");
     assert.throws(() => parseEmployeeAbsencePatch({ status: "DONE" }), expect400("INVALID_STATUS"));
     assert.throws(() => parseEmployeeAbsencePatch({ type: "X" }), expect400("INVALID_TYPE"));
-    assert.throws(
-      () => parseEmployeeBenefitPatch({ status: "PAUSED" }, { allowAmount: true }),
-      expect400("INVALID_STATUS")
-    );
     assert.throws(() => parseEpiDeliveryPatch({ quantity: 0 }), expect400("INVALID_QUANTITY"));
     assert.throws(() => parseEpiDeliveryPatch({ quantity: "1.5" }), expect400("INVALID_QUANTITY"));
     assert.equal(parseEpiDeliveryPatch({ quantity: "4" }).quantity, 4);
@@ -102,13 +97,6 @@ describe("peopleProfileRecordEdits — patches parciais", () => {
       displayName: "ASO",
       notes: null,
     });
-  });
-
-  it("benefício: amount só entra com allowAmount", () => {
-    assert.deepEqual(parseEmployeeBenefitPatch({ amount: 100 }, { allowAmount: false }), {});
-    // Sem permissão o valor nem é validado (não vira oráculo).
-    assert.deepEqual(parseEmployeeBenefitPatch({ amount: -5 }, { allowAmount: false }), {});
-    assert.deepEqual(parseEmployeeBenefitPatch({ amount: null }, { allowAmount: true }), { amount: null });
   });
 
   it("corpo que não é objeto → 400 INVALID_BODY", () => {

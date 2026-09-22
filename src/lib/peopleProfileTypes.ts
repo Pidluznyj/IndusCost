@@ -190,6 +190,8 @@ export const PEOPLE_PRIMARY_EMERGENCY_CONTACT_ID = "primary";
 /** Tipos de registro satélite ligados a um evento do histórico via `metadata`. */
 export const PEOPLE_HISTORY_LINKED_RECORD_TYPES = [
   "benefit",
+  /** Verba oficial (PayrollComponent) marcada/desmarcada no cadastro. */
+  "payrollComponent",
   "absence",
   "epiDelivery",
   "document",

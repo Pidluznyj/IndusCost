@@ -10,14 +10,12 @@ import {
   HR_ABSENCE_STATUSES,
   HR_ABSENCE_TYPES,
   HR_COMPENSATION_ADJUSTMENT_TYPES,
-  HR_EMPLOYEE_BENEFIT_STATUSES,
   HR_NOTE_CATEGORIES,
   PEOPLE_CAREER_EDITABLE_EVENT_TYPES,
   PEOPLE_CAREER_RECLASSIFIABLE_EVENT_TYPES,
   type HrAbsenceStatus,
   type HrAbsenceType,
   type HrCompensationAdjustmentType,
-  type HrEmployeeBenefitStatus,
   type HrNoteCategory,
 } from "./peopleProfileTypes.js";
 
@@ -342,46 +340,6 @@ export function parseCareerEventPatch(input: unknown): CareerEventPatch {
       fail("INVALID_EVENT_TYPE", "Tipo de evento inválido.");
     }
     patch.eventType = body.eventType.trim();
-  }
-  return patch;
-}
-
-export type EmployeeBenefitPatch = {
-  startDate?: Date;
-  endDate?: Date | null;
-  planName?: string | null;
-  amount?: number | null;
-  status?: HrEmployeeBenefitStatus;
-  notes?: string | null;
-};
-
-/** `allowAmount: false` ignora a chave `amount` (nunca zera o valor de quem não pode vê-lo). */
-export function parseEmployeeBenefitPatch(
-  input: unknown,
-  opts: { allowAmount: boolean }
-): EmployeeBenefitPatch {
-  const body = asBody(input);
-  const patch: EmployeeBenefitPatch = {};
-  if (has(body, "startDate")) {
-    patch.startDate = normalizeRequiredDate(body.startDate, "Data de início");
-  }
-  if (has(body, "endDate")) patch.endDate = normalizeOptionalDate(body.endDate, "Data de término");
-  if (has(body, "planName")) {
-    patch.planName = normalizeOptionalText(body.planName, "Plano", PEOPLE_RECORD_TEXT_LIMITS.planName);
-  }
-  if (opts.allowAmount && has(body, "amount")) {
-    patch.amount = normalizeOptionalAmount(body.amount, "Valor");
-  }
-  if (has(body, "status")) {
-    patch.status = normalizeEnum(
-      body.status,
-      HR_EMPLOYEE_BENEFIT_STATUSES,
-      "INVALID_STATUS",
-      "Situação do benefício"
-    );
-  }
-  if (has(body, "notes")) {
-    patch.notes = normalizeOptionalText(body.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
   }
   return patch;
 }

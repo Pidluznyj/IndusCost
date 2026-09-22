@@ -7,7 +7,7 @@ export type EmployeeFichaTabGroup = { label: string; ids: readonly EmployeeFicha
 /** Mesma leitura da ficha funcional (ProfileTabs): Perfil → Trabalho → Rotina → Registro. */
 export const EMPLOYEE_FICHA_TAB_GROUPS: readonly EmployeeFichaTabGroup[] = [
   { label: "Perfil", ids: ["professional", "personal", "emergency"] },
-  { label: "Trabalho", ids: ["career", "compensation", "benefits", "admin"] },
+  { label: "Trabalho", ids: ["career", "compensation", "admin"] },
   { label: "Rotina", ids: ["absences", "epi", "documents"] },
   { label: "Registro", ids: ["notes", "links"] },
 ];
