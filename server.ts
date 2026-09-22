@@ -309,6 +309,10 @@ import {
 } from "./src/lib/peopleProfileMutations.server.js";
 import { PeopleProfileAccessError } from "./src/lib/peopleProfileErrors.js";
 import {
+  deleteRoleIfUnused,
+  OperationalCatalogError,
+} from "./src/lib/settingsOperationalCatalog.server.js";
+import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
 } from "./src/lib/operationsAccess.js";
@@ -3112,8 +3116,16 @@ async function startServer() {
   app.get("/api/roles", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const roles = await prisma.role.findMany({
       orderBy: { name: "asc" },
+      include: { _count: { select: { Employee: true, ProductRouting: true } } },
     });
-    res.json(roles);
+    // employeeCount / routingCount: onde o cargo está em uso (cargo em uso não pode ser excluído).
+    res.json(
+      roles.map(({ _count, ...role }) => ({
+        ...role,
+        employeeCount: _count.Employee,
+        routingCount: _count.ProductRouting,
+      }))
+    );
   });
 
   app.post("/api/roles", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
@@ -3134,10 +3146,33 @@ async function startServer() {
     res.json(role);
   });
 
+  // Cargo é obrigatório no colaborador e no roteiro (sem cascata): só SUPER_ADMIN exclui,
+  // e só cargo sem uso — em uso, responde 409 dizendo onde trocar.
   app.delete("/api/roles/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.role.delete({ where: { id } });
-    res.json({ success: true });
+    const authUser = await getCurrentAppUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    if (authUser.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Somente super administrador pode excluir cargos do cadastro operacional.",
+      });
+    }
+    try {
+      const result = await deleteRoleIfUnused(prisma, { roleId: String(req.params.id ?? "") });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof OperationalCatalogError) {
+        return res.status(error.status).json({
+          error: error.code,
+          message: error.message,
+          ...(error.usage ? { usage: error.usage } : {}),
+        });
+      }
+      console.error("Erro ao excluir cargo:", error instanceof Error ? error.message : error);
+      return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao excluir cargo." });
+    }
   });
 
   // --- API: Machines (Máquinas e Centros de Trabalho) ---
