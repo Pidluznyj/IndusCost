@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, Maximize2, Printer, RefreshCw, Settings2 } from "lucide-react";
+import { Download, Info, Maximize2, Printer, RefreshCw, Settings2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -70,16 +70,97 @@ function formatDreMarginPct(pct: number | null | undefined): string | undefined 
   return `Margem ${pct.toFixed(1).replace(".", ",")}%`;
 }
 
+function formatDrePct(pct: number | null | undefined): string | null {
+  if (pct == null || !Number.isFinite(pct)) return null;
+  return `${pct.toFixed(1).replace(".", ",")}%`;
+}
+
+function formatBrlCents(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Selo de % EBITDA com tooltip didático (hover/foco). */
+function EbitdaMarginBadge({
+  pct,
+  periodLabel,
+  kpis,
+  tone,
+}: {
+  pct: number | null | undefined;
+  periodLabel: string;
+  kpis: FinanceDreReport["kpis"]["ytd"];
+  tone: "positive" | "negative";
+}) {
+  const pctLabel = formatDrePct(pct);
+  if (!pctLabel) return null;
+  const per100 = pct != null ? formatBrlCents(pct) : "";
+  return (
+    <span className="group relative inline-flex" data-testid="finance-dre-ebitda-margin">
+      <button
+        type="button"
+        className={cn(
+          "inline-flex cursor-help items-center gap-1 rounded-full px-2.5 py-1 text-sm font-bold tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40",
+          tone === "positive" ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+        )}
+      >
+        {pctLabel}
+        <span className="text-[10px] font-semibold uppercase opacity-90">margem</span>
+        <Info className="h-3.5 w-3.5 opacity-90" aria-hidden />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-0 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-[#E5E7EB] bg-white p-4 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-[#374151] opacity-0 shadow-lg transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
+      >
+        <span className="block text-sm font-semibold text-[#111827]">
+          O que é a margem EBITDA?
+        </span>
+        <span className="mt-1.5 block">
+          Imagine que cada <strong>R$ 100</strong> que a empresa vende (já sem os impostos da nota) é
+          uma fornada de pão. Primeiro pagamos a farinha (CMV), depois o padeiro, a luz e o aluguel
+          (despesas). <strong>O que sobra no balcão é o EBITDA</strong> — o dinheiro que a própria
+          operação gera, antes de juros, impostos sobre o lucro (IRPJ/CSLL) e desgaste das máquinas.
+        </span>
+        <span
+          className={cn(
+            "mt-2 block rounded-lg px-2.5 py-2",
+            tone === "positive"
+              ? "bg-emerald-50 text-emerald-950"
+              : "bg-rose-50 text-rose-950"
+          )}
+        >
+          {periodLabel}: de cada <strong>R$ 100</strong> vendidos,{" "}
+          {pct != null && pct < 0 ? (
+            <>
+              a operação <strong>consumiu {formatBrlCents(Math.abs(pct))}</strong> a mais do que gerou.
+            </>
+          ) : (
+            <>
+              sobraram <strong>{per100}</strong> de EBITDA.
+            </>
+          )}
+        </span>
+        <span className="mt-2 block text-[11px] text-[#6B7280]">
+          <strong>Conta:</strong> (Resultado operacional {formatFinanceKpiCurrency(kpis.resultadoOperacional)}
+          {" + "}Investimento sócios {formatFinanceKpiCurrency(kpis.investimentoSocios)}) ÷ Receita líquida{" "}
+          {formatFinanceKpiCurrency(kpis.receitaLiquida)}. Quanto maior, mais eficiente a operação.
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function KpiCard({
   label,
   value,
   hint,
   tone = "default",
+  badge,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: "default" | "positive" | "negative";
+  badge?: React.ReactNode;
 }) {
   return (
     <div
@@ -100,14 +181,17 @@ function KpiCard({
       >
         {label}
       </div>
-      <div
-        className={cn(
-          "mt-2 text-xl font-semibold tabular-nums text-[#111827]",
-          tone === "positive" && "text-emerald-950",
-          tone === "negative" && "text-rose-950"
-        )}
-      >
-        {value}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div
+          className={cn(
+            "text-xl font-semibold tabular-nums text-[#111827]",
+            tone === "positive" && "text-emerald-950",
+            tone === "negative" && "text-rose-950"
+          )}
+        >
+          {value}
+        </div>
+        {badge}
       </div>
       {hint ? (
         <div
@@ -470,25 +554,35 @@ export function FinanceManagerialDrePage() {
                 <KpiCard
                   label="EBITDA (mês)"
                   value={formatFinanceKpiCurrency(report.kpis.ebitda)}
+                  badge={
+                    <EbitdaMarginBadge
+                      pct={report.kpis.ebitdaPct}
+                      periodLabel="No mês"
+                      kpis={report.kpis}
+                      tone={report.kpis.ebitda >= 0 ? "positive" : "negative"}
+                    />
+                  }
                   hint={[
-                    formatDreMarginPct(report.kpis.ebitdaPct),
                     `RO + Investimento sócios (${formatFinanceKpiCurrency(report.kpis.investimentoSocios)})`,
                     "Antes de IRPJ/CSLL",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  ].join(" · ")}
                   tone={report.kpis.ebitda >= 0 ? "positive" : "negative"}
                 />
                 <KpiCard
                   label="EBITDA (YTD)"
                   value={formatFinanceKpiCurrency(report.kpis.ytd.ebitda)}
+                  badge={
+                    <EbitdaMarginBadge
+                      pct={report.kpis.ytd.ebitdaPct}
+                      periodLabel="No acumulado do ano"
+                      kpis={report.kpis.ytd}
+                      tone={report.kpis.ytd.ebitda >= 0 ? "positive" : "negative"}
+                    />
+                  }
                   hint={[
-                    formatDreMarginPct(report.kpis.ytd.ebitdaPct),
                     `RO + Investimento sócios (${formatFinanceKpiCurrency(report.kpis.ytd.investimentoSocios)})`,
                     "Antes de IRPJ/CSLL",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  ].join(" · ")}
                   tone={report.kpis.ytd.ebitda >= 0 ? "positive" : "negative"}
                 />
               </div>
