@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildEmployeePermissionBag,
   buildEmployeeSystemLinksCapsFromPermissions,
+  resolveEmployeesEditorClientGate,
   canCreateEmployees,
   canDeleteEmployee,
   canListEmployees,
@@ -27,6 +28,10 @@ import {
   buildRequireResourceInput,
 } from "./security/requireResource.ts";
 import { resolveCanonicalEffectiveAccess } from "./security/effectiveAccess/index.ts";
+import { projectAccessProfilePermissionsToSnapshot } from "./security/effectiveAccess/canonicalEffectiveAccess.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function check(perms: string[]) {
   const set = new Set(perms);
@@ -401,5 +406,109 @@ describe("requireResource — fotografia canônica (buildCanonicalAccessSnapshot
     });
     assert.equal(bag.isHrEditor, true);
     assert.equal(canViewCompensationValues(bag), true);
+  });
+});
+describe("employeesPermissions — bags gravados antes do pin de employees.edit", () => {
+  const legacy = (perms: string[]) => {
+    const set = new Set(perms);
+    return (p: string) => set.has(p);
+  };
+
+  it("motor real: perfil com employees.create sem employees.edit não tem update canônico, mas é editor", () => {
+    // Bag típico de "editar" marcado em Pessoas/RH antes do pin (matriz mostrava editar ✓).
+    const profileBag = ["employees.view", "employees.profile.view", "employees.create"];
+    const snapshot = buildCanonicalAccessSnapshot(
+      resolveCanonicalEffectiveAccess(
+        buildRequireResourceInput(
+          { id: "u1", role: "USER" },
+          { profileSnapshot: projectAccessProfilePermissionsToSnapshot(profileBag) }
+        )
+      )
+    );
+    assert.ok(snapshot.createResources?.includes("admin.employees"));
+    assert.equal(snapshot.updateResources?.includes("admin.employees"), false);
+
+    const bag = buildEmployeePermissionBag({
+      hasLegacyPermission: legacy(profileBag),
+      canonicalAccess: snapshot,
+    });
+    assert.equal(bag.isHrEditor, true);
+    assert.equal(canUpdateEmployees(bag), true);
+    assert.equal(canViewEmployeePersonalData(bag), true);
+    assert.equal(buildPeopleProfileCapabilities(bag).canManageCompensation, true);
+  });
+
+  it("só 'ver' no Dashboard de Pessoas (ou view no módulo) não vira editor", () => {
+    const bag = buildEmployeePermissionBag({
+      hasLegacyPermission: legacy(["employees.dashboard.view", "employees.view"]),
+      canonicalAccess: {
+        viewResources: ["admin.employees", "admin.employees.dashboard"],
+        updateResources: [],
+        createResources: [],
+      },
+    });
+    assert.equal(bag.isHrEditor, false);
+    assert.equal(canUpdateEmployees(bag), false);
+    assert.equal(canViewEmployeePersonalData(bag), false);
+  });
+
+  it("gate do cliente (botão Editar/Novo) segue a mesma regra", () => {
+    const gate = (dto: Record<string, boolean>, hasCanonicalDto = true) =>
+      resolveEmployeesEditorClientGate({
+        isSuperAdmin: false,
+        hasCanonicalDto,
+        canPerformAction: (k, a) => dto[`${k}:${a}`] === true,
+        legacyCanEdit: () => dto.legacyEdit === true,
+        legacyCanCreate: () => dto.legacyCreate === true,
+      });
+    assert.deepEqual(gate({ "admin.employees:update": true }), { canEdit: true, canCreate: true });
+    assert.deepEqual(gate({ "admin.employees:create": true }), { canEdit: true, canCreate: true });
+    // DTO presente: "ver" no dashboard (que no legado responderia employees.edit) não basta.
+    assert.deepEqual(gate({ "admin.employees.dashboard:view": true, legacyEdit: true }), {
+      canEdit: false,
+      canCreate: false,
+    });
+    // Sem DTO: cai no bag legado.
+    assert.deepEqual(gate({ legacyEdit: true }, false), { canEdit: true, canCreate: true });
+    assert.deepEqual(gate({ legacyCreate: true }, false), { canEdit: false, canCreate: true });
+    assert.deepEqual(
+      resolveEmployeesEditorClientGate({
+        isSuperAdmin: true,
+        hasCanonicalDto: true,
+        canPerformAction: () => false,
+        legacyCanEdit: () => false,
+        legacyCanCreate: () => false,
+      }),
+      { canEdit: true, canCreate: true }
+    );
+  });
+
+  it("server.ts: escritas do cadastro passam pelo guard que reconhece o editor", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "..", "server.ts"),
+      "utf8"
+    );
+    assert.ok(
+      src.includes(
+        'app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create)'
+      )
+    );
+    assert.ok(
+      src.includes(
+        'app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update)'
+      )
+    );
+    assert.ok(
+      src.includes(
+        'app.patch("/api/employees/:id/status", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update)'
+      )
+    );
+    assert.ok(src.includes("action === EMPLOYEES_ACTIONS.create || action === EMPLOYEES_ACTIONS.update"));
+    // Listagem continua no guard canônico puro.
+    assert.ok(
+      src.includes(
+        'app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.view)'
+      )
+    );
   });
 });

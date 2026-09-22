@@ -2085,17 +2085,24 @@ async function startServer() {
   }
 
   /**
-   * Guard das rotas auxiliares do cadastro (lookups / vínculos): nas facetas
-   * `admin.employees.*` o editor de RH passa mesmo sem grant próprio da faceta,
+   * Guard de escrita do cadastro (POST / PUT / status) e das rotas auxiliares
+   * (lookups / vínculos): em `admin.employees:create|update` e nas facetas
+   * `admin.employees.*` o editor de RH passa mesmo sem grant próprio da ação,
    * exceto com deny individual explícito (deny > allow). Qualquer outra negativa
    * continua saindo do requireResource oficial (mesmo 403 + log).
+   * A listagem (view) fica no guard canônico puro.
    */
   function requireResourceOrHrEditor(
     resourceKey: string,
     action: string = "view"
   ): express.RequestHandler {
     const official = requireResource(resourceKey, action);
-    if (!resourceKey.startsWith(`${EMPLOYEES_RESOURCE_KEYS.module}.`)) return official;
+    const moduleWrite =
+      resourceKey === EMPLOYEES_RESOURCE_KEYS.module &&
+      (action === EMPLOYEES_ACTIONS.create || action === EMPLOYEES_ACTIONS.update);
+    if (!resourceKey.startsWith(`${EMPLOYEES_RESOURCE_KEYS.module}.`) && !moduleWrite) {
+      return official;
+    }
     return async (req, res, next) => {
       try {
         const decision = await authorizeResourceRequest(req, resourceKey, action);
@@ -3486,7 +3493,7 @@ const employeeApiInclude = {
   },
 } as const;
 
-app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create), async (req, res) => {
+app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const {
@@ -3704,7 +3711,7 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
   }
 });
 
-app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
+app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const { id } = req.params;
@@ -12160,7 +12167,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.patch("/api/employees/:id/status", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
+  app.patch("/api/employees/:id/status", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const authUser = await getCurrentAppUser(req);

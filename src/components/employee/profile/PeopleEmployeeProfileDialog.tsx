@@ -9,6 +9,7 @@ import { ProfileHeader } from "./ProfileHeader";
 import { ProfileTabs, visibleProfileTabs } from "./ProfileTabs";
 import { PeopleOverviewTab } from "./PeopleOverviewTab";
 import { ProfileState, formatProfileDateTime } from "./profileUi";
+import { PROFILE_NETWORK_ERROR_MESSAGE } from "./profileClient";
 
 const PeopleProfessionalTab = lazy(() =>
   import("./PeopleProfessionalTab").then((m) => ({ default: m.PeopleProfessionalTab }))
@@ -69,7 +70,16 @@ type HistoryPage = {
 };
 
 async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
-  const res = await fetch(url, { credentials: "include", signal, cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(url, { credentials: "include", signal, cache: "no-store" });
+  } catch (err) {
+    // Abort segue como veio; falha de rede ("Failed to fetch") vira mensagem legível.
+    if (signal.aborted) throw err;
+    const netErr = new Error(PROFILE_NETWORK_ERROR_MESSAGE);
+    (netErr as { status?: number }).status = 0;
+    throw netErr;
+  }
   const text = await res.text();
   let body: unknown = null;
   try {

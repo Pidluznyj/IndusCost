@@ -70,7 +70,7 @@ Leitura executiva agregada (sem regras paralelas de comissão/carteira):
 
 Nos guards de **Vínculos** (`admin.employees.links` view/manage, `canonicalPersonRoutes`) e **User link** / lookups (`admin.employees.user_link` manage, `employeeLookupRoutes`), o `server.ts` injeta `requireResourceOrHrEditor`: nas facetas `admin.employees.*` o editor passa mesmo sem grant próprio da faceta. Só a ausência de grant (`DENY_DEFAULT`) é suprida — deny individual explícito (`OVERRIDE_DENY` no recurso ou `ANCESTOR_VIEW_DENY`, listados em `canonicalAccess.overrideDenied`), recurso desconhecido, ação não suportada e usuário inativo seguem no 403 oficial. Chaves fora de `admin.employees.*` vão direto para o `requireResource` normal.
 
-Limite conhecido: a máscara de PII do agregador de vínculos (`canonicalPersonRoutes.ts`) ainda deriva de `AppUser.permissions` + role, não do bag. Um editor **só** por `admin.employees:update` canônico (sem `employees.edit` legado) passa nos guards, mas continua vendo PII mascarada no painel Vínculos. Detalhes da regra: [`docs/hr/employee-functional-record.md`](../hr/employee-functional-record.md#editor-de-rh).
+A máscara de PII e as caps do agregador de vínculos (`canonicalPersonRoutes.ts`, `viewerCapsInput`) reconhecem o Editor de RH desde 2026-09-22: um editor só pelo canônico (`admin.employees:update|create`, sem `employees.edit` legado) vê PII no painel Vínculos como quem tem a chave legada. Detalhes da regra: [`docs/hr/employee-functional-record.md`](../hr/employee-functional-record.md#editor-de-rh).
 
 ## Homologação
 

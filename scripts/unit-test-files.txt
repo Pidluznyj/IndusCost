@@ -1,6 +1,7 @@
 ﻿src/lib/canonicalPersonBackfill.test.ts
 src/lib/canonicalPersonHardening.integration.test.ts
 src/lib/employeesPermissions.test.ts
+src/lib/security/employeesEditAliasBackfill.test.ts
 src/lib/employeeHrAudit.test.ts
 src/lib/peopleProfile.test.ts
 src/lib/peopleProfileMutations.test.ts

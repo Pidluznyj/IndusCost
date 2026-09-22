@@ -92,7 +92,10 @@ import {
   canViewEmployeeLinks,
   canViewEmployeePersonalData,
 } from "@/src/lib/operationsAdminPermissions";
-import { canDeleteEmployee } from "@/src/lib/employeesPermissions";
+import {
+  canDeleteEmployee,
+  resolveEmployeesEditorClientGate,
+} from "@/src/lib/employeesPermissions";
 import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDeleteConfirmModal";
 import {
   EMPLOYEES_ACTIONS,
@@ -289,12 +292,15 @@ export const EmployeeModule = () => {
   const permissions = usePermissions();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const canEdit =
-    canEditEmployees(auth) ||
-    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update);
-  const canCreate =
-    canCreateEmployees(auth) ||
-    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create);
+  // Mesma regra do servidor (Editor de RH): canônico update|create em Pessoas/RH.
+  // "Ver" no Dashboard de Pessoas não mostra mais Editar (o salvar tomaria 403).
+  const { canEdit, canCreate } = resolveEmployeesEditorClientGate({
+    isSuperAdmin: auth.isSuperAdmin(),
+    hasCanonicalDto: Boolean(auth.effectiveAccess),
+    canPerformAction: (resourceKey, action) => permissions.canPerformAction(resourceKey, action),
+    legacyCanEdit: () => canEditEmployees(auth),
+    legacyCanCreate: () => canCreateEmployees(auth),
+  });
   const canWrite = canEdit || canCreate;
   const canDelete = canDeleteEmployee(auth);
   const canViewPersonalHr =

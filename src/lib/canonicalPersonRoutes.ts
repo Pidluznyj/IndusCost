@@ -27,6 +27,10 @@ import {
 import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
 import { buildSystemLinksViewerCaps } from "@/src/lib/employeeSystemLinks.js";
 import {
+  buildEmployeePermissionBag,
+  type EmployeeCanonicalAccessSnapshot,
+} from "@/src/lib/employeesPermissions.js";
+import {
   EMPLOYEES_ACTIONS,
   EMPLOYEES_RESOURCE_KEYS,
 } from "@/src/lib/employeesAccess.js";
@@ -39,7 +43,34 @@ type AuthGuards = {
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
 
-type AppUserBrief = { id?: string; permissions?: string[]; role?: string };
+type AppUserBrief = {
+  id?: string;
+  permissions?: string[];
+  effectivePermissions?: string[];
+  role?: string;
+  /** Anexado por requireResource / requireResourceOrHrEditor no request atual. */
+  canonicalAccess?: EmployeeCanonicalAccessSnapshot | null;
+};
+
+/**
+ * Editor de RH (regra única de buildEmployeePermissionBag) vale como `employees.edit`
+ * também na máscara de PII e nas caps do agregador de vínculos — antes só o bag legado
+ * contava, e um editor só pelo canônico via PII mascarada no painel Vínculos.
+ */
+function viewerCapsInput(user: AppUserBrief | null): {
+  role?: string | null;
+  permissions: string[];
+} {
+  const permissions = [...(user?.effectivePermissions ?? user?.permissions ?? [])];
+  const bag = buildEmployeePermissionBag({
+    hasLegacyPermission: (p) => permissions.includes(p),
+    canonicalAccess: user?.canonicalAccess ?? null,
+  });
+  if (bag.isHrEditor && !permissions.includes("employees.edit")) {
+    permissions.push("employees.edit");
+  }
+  return { role: user?.role, permissions };
+}
 
 async function resolveAppUserBrief(
   req: express.Request,
@@ -60,7 +91,7 @@ async function resolveCanViewPii(
   ) => Promise<AppUserBrief | null> | AppUserBrief | null
 ): Promise<boolean> {
   return buildSystemLinksViewerCaps(
-    (await resolveAppUserBrief(req, getCurrentAppUser)) ?? {}
+    viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser))
   ).canViewPii;
 }
 
@@ -71,7 +102,7 @@ async function resolveSystemLinksCaps(
   ) => Promise<AppUserBrief | null> | AppUserBrief | null
 ) {
   return buildSystemLinksViewerCaps(
-    (await resolveAppUserBrief(req, getCurrentAppUser)) ?? {}
+    viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser))
   );
 }
 

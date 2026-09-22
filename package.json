@@ -344,6 +344,8 @@
     "permissions:compare:legacy-vs-resource": "tsx scripts/compareLegacyVsResourceNavAccess.ts",
     "permissions:compare:legacy-vs-effective": "tsx scripts/compareLegacyVsEffectiveAccess.ts",
     "permissions:backfill:preview": "tsx scripts/backfillPermissionOverrides.ts --fixtures-only",
+    "permissions:employees-edit:dry": "tsx scripts/backfillEmployeesEditAlias.ts",
+    "permissions:employees-edit:apply": "tsx scripts/backfillEmployeesEditAlias.ts --apply --confirm=BACKFILL_EMPLOYEES_EDIT",
     "test:access-comparison": "tsx --test src/lib/security/accessComparison/legacyAuthCompare.test.ts",
     "test:auth-password": "tsx --test src/lib/auth/passwordPolicy.test.ts src/lib/auth/passwordHashCompat.test.ts src/lib/auth/passwordLifecycle.test.ts src/lib/auth/passwordLifecycleRoutes.test.ts src/lib/auth/passwordLifecycleE2E.test.ts src/lib/auth/passwordChangeRequiredGuard.test.ts src/lib/auth/passwordLifecycleWiring.test.ts src/lib/auth/authRateLimit.test.ts src/lib/auth/loginThrottle.test.ts src/lib/auth/securityAudit.test.ts",
     "test:permissions-version": "tsx --test src/lib/permissionsVersion.test.ts src/lib/authFlow.test.ts",
