@@ -20,6 +20,7 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
+import type { OfficialPayrollHrCatalogItem } from "@/src/lib/peopleOfficialPayrollCatalog";
 import {
   BRAZIL_UF_OPTIONS,
   CONTRACT_TYPE_OPTIONS,
@@ -154,11 +155,6 @@ const FICHA_RECORDS_BY_TAB: Partial<
     tab: "compensation",
     title: null,
     createHint: "Salve o colaborador para registrar reajustes de remuneração.",
-  },
-  benefits: {
-    tab: "benefits",
-    title: null,
-    createHint: "Salve o colaborador para registrar benefícios.",
   },
   absences: {
     tab: "absences",
@@ -356,7 +352,13 @@ export const EmployeeModule = () => {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
+  // Catálogo oficial (Encargos e Benefícios) pela rota de RH: R$ só com permissão de valores.
+  type VerbaOption = Pick<PayrollComponent, "id" | "name"> & {
+    type: string;
+    calculationType: string;
+    value: number | null;
+  };
+  const [payrollComponents, setPayrollComponents] = useState<VerbaOption[]>([]);
   const [costCenterOptions, setCostCenterOptions] = useState<
     { value: string; label: string; searchTerms?: string }[]
   >([]);
@@ -463,13 +465,24 @@ export const EmployeeModule = () => {
         }
       }
 
-      if (canAccessOperationalSettings || canEdit) {
-        try {
-          const compData = await fetchJsonOk<PayrollComponent[]>("/api/payroll-components");
-          setPayrollComponents(Array.isArray(compData) ? compData : []);
-        } catch {
-          setPayrollComponents([]);
-        }
+      // Fonte única de encargos e benefícios do colaborador: as verbas do cadastro oficial,
+      // marcadas na guia Referência administrativa. A rota de RH (gate canViewBenefits) não
+      // depende de settings.operational, então o editor de RH sempre enxerga o catálogo.
+      try {
+        const catalog = await fetchJsonOk<{ items?: OfficialPayrollHrCatalogItem[] }>(
+          "/api/hr/benefits"
+        );
+        setPayrollComponents(
+          (catalog.items ?? []).map((item) => ({
+            id: item.id,
+            name: item.name,
+            type: item.category,
+            calculationType: item.calculationType,
+            value: item.amount ?? item.percentage ?? null,
+          }))
+        );
+      } catch {
+        setPayrollComponents([]);
       }
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
@@ -2288,7 +2301,13 @@ export const EmployeeModule = () => {
                       </div>
                       <div className="space-y-2">
                         <p className="text-xs font-bold text-muted-foreground uppercase">
-                          Verbas / benefícios (cadastro oficial)
+                          Encargos e benefícios (cadastro oficial)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Marque as verbas deste colaborador. O valor é o do cadastro oficial
+                          (Administração → Configurações → Estrutura Operacional) e vale para todos
+                          que têm a verba — para mudar um valor, altere a verba lá. É o que a ficha
+                          mostra em “Encargos & benefícios”.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                           {payrollComponents.map((comp) => (
@@ -2305,9 +2324,11 @@ export const EmployeeModule = () => {
                               <div>
                                 <p className="text-xs font-bold">{comp.name}</p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  {comp.calculationType === "PERCENTAGE"
-                                    ? `${comp.value}%`
-                                    : formatCurrency(comp.value)}
+                                  {comp.value == null
+                                    ? "Valor restrito ao seu perfil"
+                                    : comp.calculationType === "PERCENTAGE"
+                                      ? `${comp.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% do salário`
+                                      : formatCurrency(comp.value)}
                                 </p>
                               </div>
                               <div
@@ -2326,8 +2347,8 @@ export const EmployeeModule = () => {
                           ))}
                           {payrollComponents.length === 0 && (
                             <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
-                              Nenhuma verba carregada. Cadastre em Configurações → Operacional (com
-                              permissão settings.operational.*).
+                              Nenhuma verba no cadastro oficial. Cadastre em Administração →
+                              Configurações → Estrutura Operacional (Encargos e Benefícios).
                             </p>
                           )}
                         </div>

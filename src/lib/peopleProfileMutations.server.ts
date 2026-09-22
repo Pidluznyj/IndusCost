@@ -10,6 +10,8 @@ import { MAX_WORK_SCHEDULE_LEN } from "./employeeAdminHr.js";
 import { computeAdjustmentPercentage } from "./peopleProfileKpis.js";
 import {
   diffEmployeeSnapshots,
+  diffPayrollComponentAssignments,
+  payrollComponentHistoryNote,
   type SnapshotForDiff,
 } from "./peopleProfileHistory.js";
 import { assertNoManagerCycleCte } from "./peopleProfileHierarchy.server.js";
@@ -21,7 +23,6 @@ import {
   type PeopleCareerPostEventType,
   type PeopleHistoryLinkedRecordType,
 } from "./peopleProfileTypes.js";
-import { officialPayrollBenefitCode } from "./peopleOfficialPayrollCatalog.js";
 import {
   PEOPLE_ADJUSTMENT_MAX_ABS_PERCENTAGE,
   PEOPLE_PROFILE_PHOTO_EXTENSIONS,
@@ -45,7 +46,6 @@ import {
   parseCompensationAdjustmentPatch,
   parseEmergencyContactPatch,
   parseEmployeeAbsencePatch,
-  parseEmployeeBenefitPatch,
   parseEmployeeDocumentPatch,
   parseEmployeeNotePatch,
   parseEpiDeliveryPatch,
@@ -425,6 +425,46 @@ export async function recordHistoryAfterEmployeeWrite(
     actorUserId: input.actorUserId,
     source: "USER",
   });
+}
+
+/**
+ * Verbas oficiais marcadas/desmarcadas no cadastro (Referência administrativa) entram no
+ * histórico como BENEFIT_CHANGE — é a fonte única de encargos e benefícios do colaborador.
+ * Registro só (não toca EmployeePayrollComponent, que o PUT já gravou).
+ */
+export async function recordPayrollComponentHistory(
+  db: Db,
+  input: {
+    employeeId: string;
+    previousIds: readonly string[];
+    nextIds: readonly string[];
+    actorUserId?: string | null;
+    effectiveDate?: Date;
+  }
+): Promise<number> {
+  const changes = diffPayrollComponentAssignments(input.previousIds, input.nextIds);
+  if (changes.length === 0) return 0;
+  const rows = await db.payrollComponent.findMany({
+    where: { id: { in: changes.map((c) => c.payrollComponentId) } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(rows.map((row) => [row.id, row.name]));
+  const effectiveDate = input.effectiveDate ?? new Date();
+  for (const change of changes) {
+    await writeHistoryEvent(db, {
+      employeeId: input.employeeId,
+      eventType: "BENEFIT_CHANGE",
+      effectiveDate,
+      source: "USER",
+      notes: payrollComponentHistoryNote(
+        change.action,
+        nameById.get(change.payrollComponentId) ?? change.payrollComponentId
+      ),
+      createdByUserId: input.actorUserId,
+      metadata: { recordType: "payrollComponent", recordId: change.payrollComponentId },
+    });
+  }
+  return changes.length;
 }
 
 export async function loadEmployeeSnapshotForHistory(
@@ -1147,168 +1187,6 @@ export async function deleteCareerEvent(
     });
 
     return { ok: true as const };
-  });
-}
-
-export async function createEmployeeBenefit(
-  prisma: PrismaClient,
-  input: {
-    employeeId: string;
-    benefitId: string;
-    startDate: Date;
-    endDate?: Date | null;
-    planName?: string | null;
-    amount?: number | null;
-    notes?: string | null;
-    actorUserId?: string | null;
-  }
-) {
-  const amount = normalizeOptionalAmount(input.amount, "Valor");
-  const planName = normalizeOptionalText(input.planName, "Plano", PEOPLE_RECORD_TEXT_LIMITS.planName);
-  const notes = normalizeOptionalText(input.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
-  assertDateRange(input.startDate, input.endDate);
-  return prisma.$transaction(async (tx) => {
-    const payroll = await tx.payrollComponent.findUnique({
-      where: { id: input.benefitId },
-      select: { id: true, name: true, type: true, calculationType: true },
-    });
-    let benefit: { id: string; name: string } | null = null;
-    if (payroll) {
-      const code = officialPayrollBenefitCode(payroll.id);
-      benefit = await tx.hrBenefit.upsert({
-        where: { code },
-        create: {
-          code,
-          name: payroll.name,
-          category: payroll.type,
-          isFinancial: payroll.calculationType === "FIXED",
-          status: "ACTIVE",
-        },
-        update: {
-          name: payroll.name,
-          category: payroll.type,
-          isFinancial: payroll.calculationType === "FIXED",
-          status: "ACTIVE",
-        },
-        select: { id: true, name: true },
-      });
-    } else {
-      benefit = await tx.hrBenefit.findUnique({
-        where: { id: input.benefitId },
-        select: { id: true, name: true },
-      });
-    }
-    if (!benefit) {
-      throw new PeopleProfileAccessError(
-        "INVALID_BENEFIT",
-        "Selecione um item do cadastro oficial de Encargos e Benefícios.",
-        400
-      );
-    }
-    const row = await tx.hrEmployeeBenefit.create({
-      data: {
-        employeeId: input.employeeId,
-        benefitId: benefit.id,
-        startDate: input.startDate,
-        endDate: input.endDate ?? null,
-        planName,
-        amount,
-        notes,
-        createdByUserId: input.actorUserId ?? null,
-        status: "ACTIVE",
-      },
-    });
-    await writeHistoryEvent(tx, {
-      employeeId: input.employeeId,
-      eventType: "BENEFIT_CHANGE",
-      effectiveDate: input.startDate,
-      source: "USER",
-      notes: benefit.name,
-      createdByUserId: input.actorUserId,
-      metadata: { recordType: "benefit", recordId: row.id },
-    });
-    logEmployeeHrAudit({
-      event: "employee.benefit.change",
-      actorUserId: input.actorUserId,
-      employeeId: input.employeeId,
-      details: { benefitId: input.benefitId, action: "create" },
-    });
-    return row;
-  });
-}
-
-export async function updateEmployeeBenefit(
-  prisma: PrismaClient,
-  input: {
-    employeeId: string;
-    recordId: string;
-    patch: unknown;
-    /** Sem permissão de valores a chave `amount` é ignorada (nunca zerada). */
-    allowAmount: boolean;
-    actorUserId?: string | null;
-  }
-) {
-  assertRecordIds(input.employeeId, input.recordId);
-  const patch = parseEmployeeBenefitPatch(input.patch, { allowAmount: input.allowAmount });
-  return prisma.$transaction(async (tx) => {
-    const row = await tx.hrEmployeeBenefit.findFirst({
-      where: { id: input.recordId, employeeId: input.employeeId },
-      select: {
-        id: true,
-        benefitId: true,
-        startDate: true,
-        endDate: true,
-        benefit: { select: { name: true } },
-      },
-    });
-    if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Benefício não encontrado.", 404);
-
-    const startDate = patch.startDate ?? row.startDate;
-    const endDate = patch.endDate !== undefined ? patch.endDate : row.endDate;
-    if (patch.startDate !== undefined || patch.endDate !== undefined) {
-      assertDateRange(startDate, endDate);
-    }
-
-    const data: Prisma.HrEmployeeBenefitUncheckedUpdateManyInput = {};
-    if (patch.startDate !== undefined) data.startDate = patch.startDate;
-    if (patch.endDate !== undefined) data.endDate = patch.endDate;
-    if (patch.planName !== undefined) data.planName = patch.planName;
-    if (patch.amount !== undefined) data.amount = patch.amount;
-    if (patch.status !== undefined) data.status = patch.status;
-    if (patch.notes !== undefined) data.notes = patch.notes;
-    if (Object.keys(data).length > 0) {
-      await tx.hrEmployeeBenefit.updateMany({
-        where: { id: row.id, employeeId: input.employeeId },
-        data,
-      });
-    }
-
-    // O histórico espelha só a data de início (o rótulo é o nome do benefício, que não muda aqui).
-    if (!sameInstant(startDate, row.startDate)) {
-      await syncLinkedHistoryEvent(tx, {
-        employeeId: input.employeeId,
-        link: { recordType: "benefit", recordId: row.id },
-        legacy: {
-          eventTypes: ["BENEFIT_CHANGE"],
-          effectiveDate: row.startDate,
-          notes: row.benefit.name,
-        },
-        data: { effectiveDate: startDate },
-      });
-    }
-
-    logEmployeeHrAudit({
-      event: "employee.benefit.change",
-      actorUserId: input.actorUserId,
-      employeeId: input.employeeId,
-      details: {
-        benefitId: row.benefitId,
-        employeeBenefitId: row.id,
-        action: "update",
-        fields: Object.keys(patch),
-      },
-    });
-    return { id: row.id };
   });
 }
 
@@ -2208,19 +2086,4 @@ export async function readEmployeePhotoFile(
     throw error;
   }
   return { buffer, contentType: sniffImageContentType(buffer) ?? "application/octet-stream" };
-}
-
-export async function createHrBenefitCatalogItem(
-  prisma: PrismaClient,
-  input: { code: string; name: string; category?: string; isFinancial?: boolean }
-) {
-  return prisma.hrBenefit.create({
-    data: {
-      code: input.code.trim().toUpperCase(),
-      name: input.name.trim(),
-      category: input.category ?? "OTHER",
-      isFinancial: input.isFinancial === true,
-      status: "ACTIVE",
-    },
-  });
 }

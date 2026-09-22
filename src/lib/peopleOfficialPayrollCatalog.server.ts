@@ -5,11 +5,14 @@ import {
 } from "./peopleOfficialPayrollCatalog.js";
 
 export async function listOfficialPayrollHrCatalogItems(
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  opts?: { includeValues?: boolean }
 ): Promise<OfficialPayrollHrCatalogItem[]> {
   const rows = await prisma.payrollComponent.findMany({
-    select: { id: true, name: true, type: true, calculationType: true },
+    select: { id: true, name: true, type: true, calculationType: true, value: true },
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
-  return rows.map(mapPayrollComponentToHrCatalogItem);
+  return rows.map((row) =>
+    mapPayrollComponentToHrCatalogItem({ ...row, value: Number(row.value) }, opts)
+  );
 }

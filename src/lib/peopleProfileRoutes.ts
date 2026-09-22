@@ -35,7 +35,6 @@ import {
   applyCompensationAdjustment,
   createEmergencyContact,
   createEmployeeAbsence,
-  createEmployeeBenefit,
   createEmployeeNote,
   createEpiDelivery,
   deleteCareerEvent,
@@ -56,7 +55,6 @@ import {
   updateCompensationAdjustment,
   updateEmergencyContact,
   updateEmployeeAbsence,
-  updateEmployeeBenefit,
   updateEmployeeDocument,
   updateEmployeeNote,
   updateEpiDelivery,
@@ -627,60 +625,8 @@ export function registerPeopleProfileRoutes(
     }
   });
 
-  app.post("/api/employees/:id/benefits", ...viewGuard, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const ctx = await context(req, id);
-      if (!ctx.capabilities.canManageBenefits) {
-        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
-      }
-      const body = req.body as Record<string, unknown>;
-      const startDate = parseDate(body.startDate);
-      if (!startDate || typeof body.benefitId !== "string") {
-        return res.status(400).json({ error: "Benefício e data de início são obrigatórios." });
-      }
-      const row = await createEmployeeBenefit(prisma, {
-        employeeId: id,
-        benefitId: body.benefitId,
-        startDate,
-        endDate: parseDate(body.endDate),
-        planName: typeof body.planName === "string" ? body.planName : null,
-        amount:
-          ctx.capabilities.canViewCompensationValues && body.amount != null
-            ? Number(body.amount)
-            : null,
-        notes: typeof body.notes === "string" ? body.notes : null,
-        actorUserId: ctx.user?.id,
-      });
-      noStore(res);
-      return res.status(201).json({ id: row.id });
-    } catch (error) {
-      return sendError(res, error, "Erro ao registrar benefício.");
-    }
-  });
-
-  app.patch("/api/employees/:id/benefits/:recordId", ...viewGuard, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const ctx = await context(req, id);
-      if (!ctx.capabilities.canManageBenefits) {
-        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
-      }
-      const result = await updateEmployeeBenefit(prisma, {
-        employeeId: id,
-        recordId: recordParam(req),
-        patch: patchBody(req),
-        // Sem permissão de valores o `amount` do corpo é ignorado — nunca zerado.
-        allowAmount: ctx.capabilities.canViewCompensationValues,
-        actorUserId: ctx.user?.id,
-      });
-      noStore(res);
-      return res.json(result);
-    } catch (error) {
-      return sendError(res, error, "Erro ao atualizar benefício.");
-    }
-  });
-
+  // Só registros do modelo anterior (HrEmployeeBenefit). As verbas oficiais são marcadas /
+  // desmarcadas no cadastro (PUT /api/employees/:id, componentIds).
   app.delete("/api/employees/:id/benefits/:recordId", ...viewGuard, async (req, res) => {
     try {
       const { id } = req.params;
@@ -1060,28 +1006,14 @@ export function registerPeopleProfileRoutes(
       if (!caps.canViewBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
       }
-      const items = await listOfficialPayrollHrCatalogItems(prisma);
+      // R$ das verbas fixas só com permissão de valores; percentuais sempre.
+      const items = await listOfficialPayrollHrCatalogItems(prisma, {
+        includeValues: caps.canViewCompensationValues,
+      });
       noStore(res);
       return res.json({ items });
     } catch (error) {
       return sendError(res, error, "Erro ao listar benefícios.");
-    }
-  });
-
-  app.post("/api/hr/benefits", ...viewGuard, async (req, res) => {
-    try {
-      const check = await getPermissionCheck(req);
-      const caps = buildPeopleProfileCapabilities(check);
-      if (!caps.canManageBenefits) {
-        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para catálogo de benefícios.");
-      }
-      noStore(res);
-      return res.status(409).json({
-        error:
-          "O catálogo oficial é Administração → Configurações → Estrutura Operacional (Encargos e Benefícios).",
-      });
-    } catch (error) {
-      return sendError(res, error, "Erro ao criar benefício.");
     }
   });
 }

@@ -302,7 +302,10 @@ import {
 import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
 import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
-import { recordHistoryAfterEmployeeWrite } from "./src/lib/peopleProfileMutations.server.js";
+import {
+  recordHistoryAfterEmployeeWrite,
+  recordPayrollComponentHistory,
+} from "./src/lib/peopleProfileMutations.server.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -3769,6 +3772,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         shoeSize: true,
         Role: { select: { name: true } },
         manager: { select: { name: true, socialName: true } },
+        EmployeePayrollComponent: { select: { payrollComponentId: true } },
       },
     });
     if (!existingEmployee) {
@@ -3989,6 +3993,13 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
               : undefined,
         },
         include: employeeApiInclude,
+      });
+      // Verbas marcadas/desmarcadas viram BENEFIT_CHANGE — fonte única de benefícios.
+      await recordPayrollComponentHistory(tx, {
+        employeeId: id,
+        previousIds: existingEmployee.EmployeePayrollComponent.map((c) => c.payrollComponentId),
+        nextIds: cleanComponentIds,
+        actorUserId,
       });
       await recordHistoryAfterEmployeeWrite(tx, {
         employeeId: id,

@@ -7,7 +7,6 @@ import { ProfileHttpError, profileFetchJson } from "./profile/profileClient";
 import { ProfileState, formatPercent, formatProfileDate } from "./profile/profileUi";
 import { PeopleCareerTab } from "./profile/PeopleCareerTab";
 import { PeopleCompensationTab } from "./profile/PeopleCompensationTab";
-import { PeopleBenefitsTab } from "./profile/PeopleBenefitsTab";
 import { PeopleAbsencesTab } from "./profile/PeopleAbsencesTab";
 import { PeopleDocumentsTab } from "./profile/PeopleDocumentsTab";
 import { PeopleEmergencyTab } from "./profile/PeopleEmergencyTab";
@@ -22,7 +21,6 @@ import { PeopleNotesTab } from "./profile/PeopleNotesTab";
 export type EmployeeEditRecordsTabId =
   | "career"
   | "compensation"
-  | "benefits"
   | "absences"
   | "documents"
   | "emergency"
@@ -41,7 +39,6 @@ const RECORDS_TAB_CONFIG: Record<
     view: "canViewCompensationEvents",
     manage: "canManageCompensation",
   },
-  benefits: { path: "benefits", view: "canViewBenefits", manage: "canManageBenefits" },
   absences: { path: "absences", view: "canViewAbsences", manage: "canManageAbsences" },
   documents: { path: "documents", view: "canViewDocuments", manage: "canManageDocuments" },
   emergency: { path: "emergency", view: "canViewEmergency", manage: "canManageEmergency" },
@@ -276,17 +273,6 @@ export function EmployeeEditRecordsPanel({
         {tab === "compensation" ? (
           <PeopleCompensationTab
             data={(body as { currentSalary?: number | null; items?: never[] }) ?? null}
-            loading={loading}
-            error={blockingError}
-            canViewValues={canViewValues}
-            employeeId={employeeId}
-            canManage={canManage}
-            onSaved={handleSaved}
-          />
-        ) : null}
-        {tab === "benefits" ? (
-          <PeopleBenefitsTab
-            items={itemsOf(body)}
             loading={loading}
             error={blockingError}
             canViewValues={canViewValues}

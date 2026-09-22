@@ -41,8 +41,11 @@ import { formatContractType } from "./employeeHrUi.js";
 import { formatCpfForDisplay, formatPhoneForDisplay, maskCpf, maskPhone } from "./employeePersonalHr.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
 import {
+  comparePayrollCatalogRows,
+  mapPayrollComponentToHrCatalogItem,
   overlayOfficialPayrollName,
   payrollIdFromHrBenefitCode,
+  toEmployeeOfficialBenefitItem,
 } from "./peopleOfficialPayrollCatalog.js";
 import { buildEmployeePhotoUrl, isCareerEventEditable } from "./peopleProfileRecordEdits.js";
 
@@ -222,6 +225,7 @@ export async function loadPeopleProfileSummary(
         newDepartment: true,
         previousManagerName: true,
         newManagerName: true,
+        notes: true,
       },
     }),
     // Consulta dedicada: a última promoção não pode depender da janela de movimentações recentes
@@ -280,6 +284,7 @@ export async function loadPeopleProfileSummary(
         newDepartment: h.newDepartment,
         previousManagerName: h.previousManagerName,
         newManagerName: h.newManagerName,
+        notes: h.notes,
       },
       { includeAmounts: false }
     );
@@ -587,6 +592,26 @@ export async function loadPeopleBenefits(
   employeeId: string,
   opts: { includeAmounts: boolean }
 ) {
+  // Fonte única: verbas oficiais marcadas no cadastro (Editar → Referência administrativa).
+  // O valor é o do PayrollComponent (muda para todos); R$ só com permissão de valores.
+  const assigned = await prisma.employeePayrollComponent.findMany({
+    where: { employeeId },
+    select: {
+      PayrollComponent: {
+        select: { id: true, name: true, type: true, calculationType: true, value: true },
+      },
+    },
+  });
+  const official = assigned
+    .map((row) => ({ ...row.PayrollComponent, value: Number(row.PayrollComponent.value) }))
+    .sort(comparePayrollCatalogRows)
+    .map((row) =>
+      toEmployeeOfficialBenefitItem(
+        mapPayrollComponentToHrCatalogItem(row, { includeValues: opts.includeAmounts })
+      )
+    );
+
+  // Registros do modelo anterior (HrEmployeeBenefit): só leitura + exclusão.
   const rows = await prisma.hrEmployeeBenefit.findMany({
     where: { employeeId },
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
@@ -609,7 +634,7 @@ export async function loadPeopleBenefits(
         })
       : [];
   const payrollById = new Map(payrollRows.map((row) => [row.id, row]));
-  return rows.map((row) => {
+  const legacy = rows.map((row) => {
     const official = overlayOfficialPayrollName({
       code: row.benefit.code,
       fallbackName: row.benefit.name,
@@ -617,6 +642,7 @@ export async function loadPeopleBenefits(
       payrollById,
     });
     const dto: Record<string, unknown> = {
+      kind: "legacy",
       id: row.id,
       benefitId: row.benefitId,
       code: row.benefit.code,
@@ -635,6 +661,7 @@ export async function loadPeopleBenefits(
     }
     return dto;
   });
+  return [...official, ...legacy];
 }
 
 export async function loadPeopleAbsences(prisma: PrismaClient, employeeId: string) {

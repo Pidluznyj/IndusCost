@@ -4,21 +4,21 @@ import {
   applyCareerMovement,
   applyCompensationAdjustment,
   createEmployeeAbsence,
-  createEmployeeBenefit,
   createEpiDelivery,
   deleteCareerEvent,
   deleteCompensationAdjustment,
   deleteEmergencyContact,
+  deleteEmployeeBenefit,
   deleteEmployeeDocument,
   deleteEmployeeNote,
   deleteEpiDelivery,
   findLinkedHistoryEvent,
+  recordPayrollComponentHistory,
   saveEmployeePhoto,
   updateCareerEvent,
   updateCompensationAdjustment,
   updateEmergencyContact,
   updateEmployeeAbsence,
-  updateEmployeeBenefit,
   updateEmployeeNote,
   updateEpiDelivery,
 } from "./peopleProfileMutations.server.ts";
@@ -671,7 +671,7 @@ describe("applyCareerMovement — recordOnly", () => {
 });
 
 describe("IDOR — registro de outro colaborador", () => {
-  it("PATCH de benefício alheio → 404 (where com id + employeeId)", async () => {
+  it("DELETE de registro antigo de benefício alheio → 404 (where com id + employeeId)", async () => {
     let capturedWhere: unknown;
     const prisma = fakePrisma({
       hrEmployeeBenefit: {
@@ -679,19 +679,13 @@ describe("IDOR — registro de outro colaborador", () => {
           capturedWhere = args.where;
           return null;
         },
-        updateMany: async () => {
-          throw new Error("não deveria atualizar");
+        deleteMany: async () => {
+          throw new Error("não deveria excluir");
         },
       },
     });
     await assert.rejects(
-      () =>
-        updateEmployeeBenefit(prisma, {
-          employeeId: EMP,
-          recordId: REC,
-          patch: { planName: "Plano B" },
-          allowAmount: true,
-        }),
+      () => deleteEmployeeBenefit(prisma, { employeeId: EMP, recordId: REC }),
       expectAccessError("NOT_FOUND", 404)
     );
     assert.deepEqual(capturedWhere, { id: REC, employeeId: EMP });
@@ -715,90 +709,6 @@ describe("IDOR — registro de outro colaborador", () => {
       expectAccessError("NOT_FOUND", 404)
     );
     assert.deepEqual(capturedWhere, { id: REC, employeeId: EMP });
-  });
-});
-
-describe("benefícios — valor e validação", () => {
-  function benefitPrisma(sink: { update?: AnyArgs }) {
-    return fakePrisma({
-      hrEmployeeBenefit: {
-        findFirst: async () => ({
-          id: REC,
-          benefitId: "hb-1",
-          startDate: new Date("2026-01-01T00:00:00.000Z"),
-          endDate: null,
-          benefit: { name: "Vale Refeição" },
-        }),
-        updateMany: async (args: AnyArgs) => {
-          sink.update = args;
-          return { count: 1 };
-        },
-      },
-      hrEmployeeHistory: untouchable("hrEmployeeHistory"),
-    });
-  }
-
-  it("sem permissão de valores o amount é ignorado, nunca zerado", async () => {
-    const sink: { update?: AnyArgs } = {};
-    await updateEmployeeBenefit(benefitPrisma(sink), {
-      employeeId: EMP,
-      recordId: REC,
-      patch: { amount: null, planName: "Plano B", status: "ENDED" },
-      allowAmount: false,
-    });
-    assert.deepEqual(sink.update?.data, { planName: "Plano B", status: "ENDED" });
-  });
-
-  it("com permissão aplica amount; negativo/status inválido/intervalo invertido → 400", async () => {
-    const sink: { update?: AnyArgs } = {};
-    await updateEmployeeBenefit(benefitPrisma(sink), {
-      employeeId: EMP,
-      recordId: REC,
-      patch: { amount: "350.5" },
-      allowAmount: true,
-    });
-    assert.deepEqual(sink.update?.data, { amount: 350.5 });
-
-    await assert.rejects(
-      () =>
-        updateEmployeeBenefit(benefitPrisma({}), {
-          employeeId: EMP,
-          recordId: REC,
-          patch: { amount: -1 },
-          allowAmount: true,
-        }),
-      expectAccessError("INVALID_AMOUNT", 400)
-    );
-    await assert.rejects(
-      () =>
-        updateEmployeeBenefit(benefitPrisma({}), {
-          employeeId: EMP,
-          recordId: REC,
-          patch: { status: "PAUSED" },
-          allowAmount: true,
-        }),
-      expectAccessError("INVALID_STATUS", 400)
-    );
-    await assert.rejects(
-      () =>
-        updateEmployeeBenefit(benefitPrisma({}), {
-          employeeId: EMP,
-          recordId: REC,
-          patch: { endDate: "2025-12-31" },
-          allowAmount: true,
-        }),
-      expectAccessError("INVALID_DATE_RANGE", 400)
-    );
-    await assert.rejects(
-      () =>
-        updateEmployeeBenefit(benefitPrisma({}), {
-          employeeId: EMP,
-          recordId: REC,
-          patch: { startDate: "31/12/2025" },
-          allowAmount: true,
-        }),
-      expectAccessError("INVALID_DATE", 400)
-    );
   });
 });
 
@@ -1342,80 +1252,59 @@ describe("documentos e foto", () => {
   });
 });
 
-describe("createEmployeeBenefit — catálogo oficial", () => {
-  it("grava a atribuição a partir do PayrollComponent oficial", async () => {
-    let upserted: { code?: string; name?: string } | null = null;
-    let createdBenefitId: string | null = null;
-    let historyData: AnyArgs | null = null;
+describe("recordPayrollComponentHistory — verbas marcadas no cadastro", () => {
+  it("grava BENEFIT_CHANGE por verba incluída/removida, com nome e vínculo por metadata", async () => {
+    const created: AnyArgs[] = [];
+    // Chamada dentro do PUT com o tx já aberto: recebe o cliente direto, sem $transaction.
     const prisma = {
-      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          payrollComponent: {
-            findUnique: async () => ({
-              id: "p-fgts",
-              name: "FGTS",
-              type: "CHARGE",
-              calculationType: "PERCENTAGE",
-            }),
-          },
-          hrBenefit: {
-            findUnique: async () => null,
-            upsert: async (args: { create: { code: string; name: string } }) => {
-              upserted = args.create;
-              return { id: "hb-mirror", name: args.create.name };
-            },
-          },
-          hrEmployeeBenefit: {
-            create: async (args: { data: { benefitId: string } }) => {
-              createdBenefitId = args.data.benefitId;
-              return { id: "row-1", ...args.data };
-            },
-          },
-          hrEmployeeHistory: {
-            create: async (args: AnyArgs) => {
-              historyData = args.data;
-              return { id: "hist-1" };
-            },
-          },
-        };
-        return fn(tx);
+      payrollComponent: {
+        findMany: async (args: AnyArgs) => {
+          assert.deepEqual(args.where, { id: { in: ["pc-vr", "pc-fgts"] } });
+          return [
+            { id: "pc-vr", name: "Vale Refeição" },
+            { id: "pc-fgts", name: "FGTS" },
+          ];
+        },
       },
-    };
-    const row = await createEmployeeBenefit(prisma as never, {
-      employeeId: "11111111-1111-4111-8111-111111111111",
-      benefitId: "p-fgts",
-      startDate: new Date("2026-08-27"),
+      hrEmployeeHistory: {
+        create: async (args: AnyArgs) => {
+          created.push(args.data);
+          return { id: `hist-${created.length}` };
+        },
+      },
+    } as never;
+    const effectiveDate = new Date("2026-09-22T12:00:00.000Z");
+    const count = await recordPayrollComponentHistory(prisma, {
+      employeeId: EMP,
+      previousIds: ["pc-fgts", "pc-inss"],
+      nextIds: ["pc-inss", "pc-vr"],
       actorUserId: "u1",
+      effectiveDate,
     });
-    assert.equal(upserted?.name, "FGTS");
-    assert.equal(upserted?.code, "PAYROLL:p-fgts");
-    assert.equal(createdBenefitId, "hb-mirror");
-    assert.equal((row as { id: string }).id, "row-1");
-    assert.deepEqual(historyData?.metadata, { recordType: "benefit", recordId: "row-1" });
+    assert.equal(count, 2);
+    assert.deepEqual(
+      created.map((d) => [d.eventType, d.notes, d.metadata]),
+      [
+        ["BENEFIT_CHANGE", "Vale Refeição incluído", { recordType: "payrollComponent", recordId: "pc-vr" }],
+        ["BENEFIT_CHANGE", "FGTS removido", { recordType: "payrollComponent", recordId: "pc-fgts" }],
+      ]
+    );
+    assert.equal(created[0].effectiveDate, effectiveDate);
+    assert.equal(created[0].createdByUserId, "u1");
   });
 
-  it("recusa id que não é verba oficial nem benefício legado", async () => {
+  it("sem mudança não consulta nem grava nada", async () => {
     const prisma = {
-      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          payrollComponent: { findUnique: async () => null },
-          hrBenefit: { findUnique: async () => null },
-        };
-        return fn(tx);
-      },
-    };
-    await assert.rejects(
-      () =>
-        createEmployeeBenefit(prisma as never, {
-          employeeId: "11111111-1111-4111-8111-111111111111",
-          benefitId: "missing",
-          startDate: new Date("2026-08-27"),
-        }),
-      (err: unknown) => {
-        assert.ok(err instanceof PeopleProfileAccessError);
-        assert.equal(err.code, "INVALID_BENEFIT");
-        return true;
-      }
+      payrollComponent: untouchable("payrollComponent"),
+      hrEmployeeHistory: untouchable("hrEmployeeHistory"),
+    } as never;
+    assert.equal(
+      await recordPayrollComponentHistory(prisma, {
+        employeeId: EMP,
+        previousIds: ["pc-vr"],
+        nextIds: ["pc-vr"],
+      }),
+      0
     );
   });
 });
