@@ -66,6 +66,18 @@ function itemsOf(body: unknown): never[] | null {
     : null;
 }
 
+function RetryButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex w-fit items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
+    >
+      Tentar novamente
+    </button>
+  );
+}
+
 function RecordsKpi({
   label,
   date,
@@ -162,6 +174,13 @@ export function EmployeeEditRecordsPanel({
     onChanged?.();
   }, [onChanged]);
 
+  // Falha de rede/servidor: limpa os erros e refaz as duas cargas (resumo + guia).
+  const retry = useCallback(() => {
+    setSummaryError(null);
+    setTabError(null);
+    setReloadToken((token) => token + 1);
+  }, []);
+
   const currentSummary = summary && summary.employeeId === employeeId ? summary.dto : null;
   const hasData = tabData != null && tabData.key === dataKey;
   const body = hasData ? tabData.body : null;
@@ -172,10 +191,13 @@ export function EmployeeEditRecordsPanel({
   if (!currentSummary) {
     if (currentSummaryError) {
       return (
-        <ProfileState
-          kind={currentSummaryError.status === 403 ? "forbidden" : "error"}
-          message={currentSummaryError.message}
-        />
+        <div className="flex flex-col gap-3">
+          <ProfileState
+            kind={currentSummaryError.status === 403 ? "forbidden" : "error"}
+            message={currentSummaryError.message}
+          />
+          {currentSummaryError.status !== 403 ? <RetryButton onClick={retry} /> : null}
+        </div>
       );
     }
     return <ProfileState kind="loading" message="Carregando registros…" />;
@@ -231,10 +253,14 @@ export function EmployeeEditRecordsPanel({
       ) : null}
 
       {reloadError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {reloadError}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm text-destructive">
+            {reloadError}
+          </p>
+          <RetryButton onClick={retry} />
+        </div>
       ) : null}
+      {blockingError ? <RetryButton onClick={retry} /> : null}
 
       <div key={dataKey}>
         {tab === "career" ? (

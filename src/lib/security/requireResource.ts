@@ -302,6 +302,8 @@ export function buildCanonicalAccessSnapshot(
   return {
     viewResources: allowedFor("view"),
     updateResources: allowedFor("update"),
+    // Só a regra Editor de RH usa: bags gravados antes do pin de employees.edit têm create sem update.
+    createResources: allowedFor("create"),
     overrideDenied: result.denied
       .filter(
         (entry) =>

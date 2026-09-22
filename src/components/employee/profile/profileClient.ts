@@ -10,16 +10,34 @@ export class ProfileHttpError extends Error {
   }
 }
 
+/** Falha de rede: o fetch rejeita antes de existir resposta HTTP (servidor fora, conexão caiu). */
+export const PROFILE_NETWORK_ERROR_MESSAGE =
+  "Não foi possível conectar ao servidor. Verifique a conexão e tente novamente.";
+
+function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === "object" && err !== null && (err as { name?: string }).name === "AbortError"
+  );
+}
+
 export async function profileFetchJson(url: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(url, {
-    credentials: "include",
-    cache: "no-store",
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      credentials: "include",
+      cache: "no-store",
+      ...init,
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    // Abort segue como veio (quem chamou checa signal.aborted). "Failed to fetch" não é
+    // 403: é ausência de resposta — vira mensagem legível com status 0.
+    if (isAbortError(err)) throw err;
+    throw new ProfileHttpError(PROFILE_NETWORK_ERROR_MESSAGE, 0);
+  }
   const text = await res.text();
   let body: unknown = null;
   try {

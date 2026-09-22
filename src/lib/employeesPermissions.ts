@@ -107,6 +107,8 @@ export type EmployeePermissionBag = {
 export type EmployeeCanonicalAccessSnapshot = {
   viewResources: readonly string[];
   updateResources?: readonly string[];
+  /** Ações create canônicas — compat: bags gravados antes do pin só têm employees.create. */
+  createResources?: readonly string[];
   /** Denies individuais explícitos no formato "resourceKey:action". */
   overrideDenied?: readonly string[];
 };
@@ -128,9 +130,15 @@ export function buildEmployeePermissionBag(input: {
   canonicalAccess?: EmployeeCanonicalAccessSnapshot | null;
 }): EmployeePermissionBag & { isHrEditor: boolean } {
   const canonical = input.canonicalAccess ?? null;
+  // Editor de RH := employees.edit legado OU admin.employees:update canônico OU
+  // admin.employees:create canônico. O create entra por compatibilidade: nas telas de
+  // permissão criar/editar são o mesmo eixo ("Executar") e os bags gravados antes do pin
+  // de employees.edit (permissionDualWrite/aliasIndex.ts) só carregam employees.create —
+  // a matriz mostrava "editar" marcado enquanto o motor negava o update.
   const isHrEditor =
     input.hasLegacyPermission("employees.edit") ||
-    Boolean(canonical?.updateResources?.includes(EMPLOYEE_RESOURCE_KEYS.module));
+    Boolean(canonical?.updateResources?.includes(EMPLOYEE_RESOURCE_KEYS.module)) ||
+    Boolean(canonical?.createResources?.includes(EMPLOYEE_RESOURCE_KEYS.module));
 
   const has = (permission: string) =>
     (isHrEditor && permission === "employees.edit") ||
@@ -273,4 +281,27 @@ export function buildEmployeeSystemLinksCapsFromPermissions(
     canOpenAudit: canManageEmployeeLinks(check) || has("employees.edit"),
     canManagePersonLink: canManageEmployeeLinks(check),
   };
+}
+/**
+ * Gate do botão Editar/Novo no cliente — mesma regra do servidor (Editor de RH):
+ * com DTO canônico, só `admin.employees:update|create`; sem DTO, cai no bag legado.
+ * Antes, "ver" no Dashboard de Pessoas bastava para o botão aparecer (o DTO legado
+ * lista `employees.edit` sob o dashboard) e o salvar tomava 403.
+ */
+export function resolveEmployeesEditorClientGate(input: {
+  isSuperAdmin: boolean;
+  hasCanonicalDto: boolean;
+  canPerformAction: (resourceKey: string, action: "create" | "update") => boolean;
+  legacyCanEdit: () => boolean;
+  legacyCanCreate: () => boolean;
+}): { canEdit: boolean; canCreate: boolean } {
+  if (input.isSuperAdmin) return { canEdit: true, canCreate: true };
+  if (input.hasCanonicalDto) {
+    const editor =
+      input.canPerformAction(EMPLOYEE_RESOURCE_KEYS.module, "update") ||
+      input.canPerformAction(EMPLOYEE_RESOURCE_KEYS.module, "create");
+    return { canEdit: editor, canCreate: editor };
+  }
+  const canEdit = input.legacyCanEdit();
+  return { canEdit, canCreate: canEdit || input.legacyCanCreate() };
 }
