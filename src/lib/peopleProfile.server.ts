@@ -37,7 +37,14 @@ import {
   type PeopleProfileCapabilities,
   type PeopleProfileSummaryDto,
 } from "./peopleProfileTypes.js";
-import { formatContractType } from "./employeeHrUi.js";
+import {
+  canonicalEpiSize,
+  EPI_GLOVE_SIZE_OPTIONS,
+  EPI_PANTS_SIZE_OPTIONS,
+  EPI_SHOE_SIZE_OPTIONS,
+  EPI_TOP_SIZE_OPTIONS,
+  formatContractType,
+} from "./employeeHrUi.js";
 import { formatCpfForDisplay, formatPhoneForDisplay, maskCpf, maskPhone } from "./employeePersonalHr.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
 import {
@@ -576,7 +583,17 @@ export async function loadPeopleEpi(prisma: PrismaClient, employeeId: string) {
     deliveries.map((d) => d.createdByUserId)
   );
   return {
-    sizes: row,
+    // Rótulos da escala anterior (XGG / EXGG) aparecem na escala atual.
+    sizes: row
+      ? {
+          ...row,
+          shirtSize: canonicalEpiSize(row.shirtSize, EPI_TOP_SIZE_OPTIONS) || null,
+          pantsSize: canonicalEpiSize(row.pantsSize, EPI_PANTS_SIZE_OPTIONS) || null,
+          jacketSize: canonicalEpiSize(row.jacketSize, EPI_TOP_SIZE_OPTIONS) || null,
+          gloveSize: canonicalEpiSize(row.gloveSize, EPI_GLOVE_SIZE_OPTIONS) || null,
+          shoeSize: canonicalEpiSize(row.shoeSize, EPI_SHOE_SIZE_OPTIONS) || null,
+        }
+      : row,
     deliveries: deliveries.map((d) => ({
       ...d,
       deliveredAt: d.deliveredAt.toISOString(),

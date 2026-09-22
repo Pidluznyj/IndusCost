@@ -33,6 +33,7 @@ import {
   EPI_SHOE_SIZE_OPTIONS,
   EPI_TOP_SIZE_OPTIONS,
   formatContractType,
+  groupEpiSizeOptions,
   formatEmployeeDate,
   MARITAL_STATUS_OPTIONS,
   type EmployeeFichaTabId,
@@ -238,11 +239,23 @@ function EpiSizeSelect({
       >
         <option value="">—</option>
         {isLegacy && <option value={normalized}>{normalized}</option>}
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
+        {groupEpiSizeOptions(options).map((group) =>
+          group.label ? (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            group.options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))
+          )
+        )}
       </select>
     </div>
   );
@@ -2208,6 +2221,8 @@ export const EmployeeModule = () => {
                       <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
                         Preferência de tamanho do colaborador — <strong>não</strong> registra entrega,
                         estoque, almoxarifado nem movimentação. Não há vínculo com Inventário/PPE.
+                        Roupas usam a escala PP a 5XG (a calça também aceita numeração); luva vai de
+                        6 / PP a 12 / 2XG; calçado é por numeração.
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                         <EpiSizeSelect label="Camiseta / camisa" value={formData.shirtSize ?? ""} options={EPI_TOP_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, shirtSize: v })} />

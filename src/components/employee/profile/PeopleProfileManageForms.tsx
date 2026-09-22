@@ -13,7 +13,7 @@ import {
   PEOPLE_CAREER_RECLASSIFIABLE_EVENT_TYPES,
   type PeopleCareerPostEventType,
 } from "@/src/lib/peopleProfileTypes";
-import { CONTRACT_TYPE_OPTIONS } from "@/src/lib/employeeHrUi";
+import { CONTRACT_TYPE_OPTIONS, EPI_DELIVERY_SIZE_SUGGESTIONS } from "@/src/lib/employeeHrUi";
 import {
   profileFetchJson,
   profilePatchJson,
@@ -1240,6 +1240,7 @@ export function EpiManageForm({
   );
   const [quantity, setQuantity] = useState(record?.quantity != null ? String(record.quantity) : "1");
   const [size, setSize] = useState(record?.size ?? "");
+  const sizeListId = `epi-size-suggestions-${record?.id ?? "new"}`;
   const [validUntil, setValidUntil] = useState(() => toProfileDateInput(record?.validUntil));
   const [responsibleName, setResponsibleName] = useState(record?.responsibleName ?? "");
   const [returnedAt, setReturnedAt] = useState(() => toProfileDateInput(record?.returnedAt));
@@ -1326,7 +1327,18 @@ export function EpiManageForm({
           />
         </Field>
         <Field label="Tamanho">
-          <input className={PROFILE_INPUT_CLASS} value={size} onChange={(e) => setSize(e.target.value)} />
+          <input
+            className={PROFILE_INPUT_CLASS}
+            list={sizeListId}
+            placeholder="PP a 5XG, numeração ou Único"
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+          />
+          <datalist id={sizeListId}>
+            {EPI_DELIVERY_SIZE_SUGGESTIONS.map((opt) => (
+              <option key={opt} value={opt} />
+            ))}
+          </datalist>
         </Field>
         <Field label="Validade">
           <input
