@@ -8,6 +8,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { EmployeeRegistrationError, isEmployeeUuid } from "@/src/lib/employeeRegistration.js";
 import {
+  canonicalEpiSize,
   EPI_GLOVE_SIZE_OPTIONS,
   EPI_PANTS_SIZE_OPTIONS,
   EPI_SHOE_SIZE_OPTIONS,
@@ -41,6 +42,9 @@ export function normalizeEpiSize(
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return null;
   if (allowed.has(raw)) return raw;
+  // Rótulo da escala anterior (XGG, EXGG, "11 / XGG") grava com o rótulo atual.
+  const canonical = canonicalEpiSize(raw);
+  if (canonical !== raw && allowed.has(canonical)) return canonical;
   const prev = (opts?.previous ?? "").trim();
   if (opts?.allowLegacy && prev && raw === prev) return raw;
   throw new EmployeeRegistrationError(
