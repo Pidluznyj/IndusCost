@@ -937,4 +937,20 @@
     text-align: left;
     font-variant-numeric: normal;
   }
+
+  body.sales-orders-icr-customer-print-route {
+    @page {
+      size: A4 landscape;
+      margin: 8mm 8mm 10mm 8mm;
+    }
+  }
+
+  body.sales-orders-icr-customer-print-route .sales-orders-icr-customer-print-table {
+    font-size: 8px;
+  }
+
+  body.sales-orders-icr-customer-print-route .sales-orders-icr-customer-print-table td:first-child {
+    white-space: normal;
+    text-align: left;
+  }
 }

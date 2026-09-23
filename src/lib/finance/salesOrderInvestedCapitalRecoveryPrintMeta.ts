@@ -15,3 +15,4 @@ export const INVESTED_CAPITAL_RECOVERY_PRINT_DISCLAIMER =
   "Relatório gerado a partir do motor oficial de Pedido de Venda (custo industrial + Contas a Receber reais). Somente consolida dados oficiais — não cria títulos, não dá baixa, não altera o Pedido. Operações com empresas do grupo econômico não são consideradas nesta análise.";
 export const INVESTED_CAPITAL_RECOVERY_PRINT_FOOTER_NOTE =
   "Documento gerado pelo IndusCost · Origem: Pedido de Venda + Contas a Receber";
+export const INVESTED_CAPITAL_RECOVERY_CUSTOMER_PRINT_SUBTITLE = "VISÃO CONSOLIDADA POR CLIENTE";

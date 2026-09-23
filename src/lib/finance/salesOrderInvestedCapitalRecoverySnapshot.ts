@@ -31,6 +31,8 @@ import {
   computeCapitalRecovered,
   computeInvestedCapitalRecoveryStatus,
   computeMoneyOnStreet,
+  computePotentialResult,
+  computeRealizedGain,
   computeRecoveryPercent,
   resolveCapitalRecoveryDate,
   resolveForecastCapitalRecoveryDate,
@@ -52,9 +54,17 @@ export type InvestedCapitalRecoveryRealReceivableInput = {
 export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   salesOrderId: string;
   orderCode: string;
+  /** `SalesOrder.customerId`. Null agrupa em "Cliente não identificado". */
+  customerId?: string | null;
+  issueDate?: string | null;
   customerName: string | null;
   sellerName: string | null;
   saleValue: number;
+  /**
+   * Valor fiscal comparável do pedido (`nfeTotalValue` do contexto oficial de
+   * NF-e). 0 = pedido sem faturamento resolvido. Não é recalculado aqui.
+   */
+  invoicedValue?: number | null;
   /**
    * null quando o custo industrial não pôde ser resolvido para este Pedido
    * (SEM_CUSTO/dados incompletos). JÁ INCLUI o imposto da margem comercial
@@ -88,9 +98,13 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
 export type SalesOrderInvestedCapitalRecoverySnapshot = {
   salesOrderId: string;
   orderCode: string;
+  customerId: string | null;
+  issueDate: string | null;
   customerName: string | null;
   sellerName: string | null;
   saleValue: number;
+  /** Faturado fiscal comparável do pedido. Não é join com CR nem com item. */
+  invoicedValue: number;
   investedCapital: number | null;
   investedCapitalSource: "INDUSTRIAL_RESULT";
   investedCapitalUnavailableReason: string | null;
@@ -98,6 +112,10 @@ export type SalesOrderInvestedCapitalRecoverySnapshot = {
   outstandingReceivable: number;
   capitalRecovered: number | null;
   moneyOnStreet: number | null;
+  /** MAX(recebido − capital, 0) deste pedido. Null sem capital válido. */
+  realizedGain: number | null;
+  /** Faturado − capital integral deste pedido. Null sem capital válido. */
+  potentialResult: number | null;
   recoveryPercent: number | null;
   status: InvestedCapitalRecoveryStatus;
   capitalRecoveryDate: string | null;
@@ -143,6 +161,11 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
 
   const capitalRecovered = computeCapitalRecovered(input.investedCapital, actualReceived);
   const moneyOnStreet = computeMoneyOnStreet(input.investedCapital, actualReceived);
+  const realizedGain = computeRealizedGain(input.investedCapital, actualReceived);
+  const invoicedValue = roundMoney(
+    input.invoicedValue != null && Number.isFinite(input.invoicedValue) ? input.invoicedValue : 0
+  );
+  const potentialResult = computePotentialResult(input.investedCapital, invoicedValue);
   const recoveryPercent = computeRecoveryPercent(input.investedCapital, actualReceived);
   const status = computeInvestedCapitalRecoveryStatus(input.investedCapital, capitalRecovered);
   const capitalRecoveryDate = resolveCapitalRecoveryDate(input.investedCapital, settledEvents);
@@ -161,9 +184,12 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
   return {
     salesOrderId: input.salesOrderId,
     orderCode: input.orderCode,
+    customerId: input.customerId?.trim() ? input.customerId.trim() : null,
+    issueDate: input.issueDate ?? null,
     customerName: input.customerName,
     sellerName: input.sellerName,
     saleValue: roundMoney(input.saleValue),
+    invoicedValue,
     investedCapital: input.investedCapital == null ? null : roundMoney(input.investedCapital),
     investedCapitalSource: "INDUSTRIAL_RESULT",
     investedCapitalUnavailableReason: input.investedCapital == null ? input.investedCapitalUnavailableReason : null,
@@ -171,6 +197,8 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
     outstandingReceivable,
     capitalRecovered,
     moneyOnStreet,
+    realizedGain,
+    potentialResult,
     recoveryPercent,
     status,
     capitalRecoveryDate,

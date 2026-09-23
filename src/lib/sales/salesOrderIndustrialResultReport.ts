@@ -35,6 +35,17 @@ export type SalesOrderIndustrialResultReportRow = {
   invoiceStatusLabel: string;
 
   orderCommercialValue: number;
+  /**
+   * Identificador oficial do cliente (`SalesOrder.customerId`). Só identificação
+   * — a consolidação do resultado industrial continua por pedido.
+   */
+  customerId?: string | null;
+  /**
+   * Valor fiscal comparável já somado pelo contexto oficial de NF-e do pedido
+   * (`nfeTotalValue`: NF-e não canceladas, uma vez por nota). Não entra na
+   * fórmula do resultado industrial.
+   */
+  invoicedComparableValue?: number;
 
   materialCost: number | null;
   laborHourCost: number | null;

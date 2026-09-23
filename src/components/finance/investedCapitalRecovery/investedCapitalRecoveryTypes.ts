@@ -13,9 +13,12 @@ export type InvestedCapitalRecoveryStatus =
 export type InvestedCapitalRecoveryRow = {
   salesOrderId: string;
   orderCode: string;
+  customerId?: string | null;
+  issueDate?: string | null;
   customerName: string | null;
   sellerName: string | null;
   saleValue: number;
+  invoicedValue?: number;
   investedCapital: number | null;
   investedCapitalSource: "INDUSTRIAL_RESULT";
   investedCapitalUnavailableReason: string | null;
@@ -23,6 +26,8 @@ export type InvestedCapitalRecoveryRow = {
   outstandingReceivable: number;
   capitalRecovered: number | null;
   moneyOnStreet: number | null;
+  realizedGain?: number | null;
+  potentialResult?: number | null;
   recoveryPercent: number | null;
   status: InvestedCapitalRecoveryStatus;
   capitalRecoveryDate: string | null;
@@ -34,6 +39,49 @@ export type InvestedCapitalRecoveryRow = {
   /** Imposto usado no cálculo da margem comercial do Pedido — já incluído em investedCapital. */
   totalTaxes: number | null;
   taxSourceLabel: string | null;
+};
+
+export type InvestedCapitalRecoveryCustomerChartPoint = {
+  customerKey: string;
+  customerName: string;
+  amount: number;
+};
+
+export type InvestedCapitalRecoveryCustomerMoney = {
+  orders: number;
+  insufficientDataOrders: number;
+  sold: number;
+  invoiced: number;
+  industrialCost: number | null;
+  taxes: number | null;
+  investedCapital: number | null;
+  received: number;
+  recoveredCapital: number | null;
+  capitalAtRisk: number | null;
+  realizedGain: number | null;
+  potentialResult: number | null;
+  recoveredPercent: number | null;
+  economicMarginPercent: number | null;
+};
+
+export type InvestedCapitalRecoveryCustomerRow = InvestedCapitalRecoveryCustomerMoney & {
+  customerId: string | null;
+  customerKey: string;
+  customerName: string;
+  unidentified: boolean;
+};
+
+export type InvestedCapitalRecoveryByCustomer = {
+  summary: InvestedCapitalRecoveryCustomerMoney & {
+    customers: number;
+    invoicedCustomers: number;
+  };
+  customers: InvestedCapitalRecoveryCustomerRow[];
+  charts: {
+    topInvoiced: InvestedCapitalRecoveryCustomerChartPoint[];
+    topRealizedGain: InvestedCapitalRecoveryCustomerChartPoint[];
+    topCapitalAtRisk: InvestedCapitalRecoveryCustomerChartPoint[];
+  };
 };
 
 export type InvestedCapitalRecoveryPayload = {
@@ -57,6 +105,7 @@ export type InvestedCapitalRecoveryPayload = {
   agingBuckets: Array<{ key: string; label: string; amount: number }>;
   topCustomers: Array<{ customerName: string; moneyOnStreet: number; percentOfTotal: number }>;
   rows: InvestedCapitalRecoveryRow[];
+  byCustomer?: InvestedCapitalRecoveryByCustomer;
   /** Diagnóstico temporário — investigação da tela vazia. Ver serviço backend. */
   populationDiagnostics: {
     rawTotalSalesOrders: number;

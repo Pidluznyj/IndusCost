@@ -28,6 +28,8 @@ import { financePersonFieldsFromSelection } from "@/src/lib/customerSearch";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { InvestedCapitalRecoveryPrintDocument } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPrintDocument";
+import { InvestedCapitalRecoveryCustomerPanel } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryCustomerPanel";
+import { InvestedCapitalRecoveryCustomerPrintDocument } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryCustomerPrintDocument";
 import type {
   InvestedCapitalRecoveryPayload,
   InvestedCapitalRecoveryRow,
@@ -209,6 +211,8 @@ export function InvestedCapitalRecoveryPage() {
   const [draftFilters, setDraftFilters] = useState<InvestedCapitalRecoveryUiFilters>(defaultFilters());
   const [appliedFilters, setAppliedFilters] = useState<InvestedCapitalRecoveryUiFilters>(defaultFilters());
   const [page, setPage] = useState(1);
+  const [view, setView] = useState<"summary" | "customer">("summary");
+  const [printView, setPrintView] = useState<"summary" | "customer">("summary");
   const [sortKey, setSortKey] = useState<keyof InvestedCapitalRecoveryRow>("moneyOnStreet");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -309,6 +313,7 @@ export function InvestedCapitalRecoveryPage() {
         throw new Error("message" in json ? (json.message ?? "Erro ao gerar PDF.") : "Erro ao gerar PDF.");
       }
       setPrintFilterLabels(buildFilterLabels(appliedFilters));
+      setPrintView(view);
       setPrintPayload(json);
       setPrintRequestId((id) => id + 1);
     } catch (err) {
@@ -316,17 +321,19 @@ export function InvestedCapitalRecoveryPage() {
       alert("Não foi possível gerar o PDF de Recuperação do Dinheiro Investido.");
       setExportingPdf(false);
     }
-  }, [appliedFilters, ensureBranding, exportingPdf, query]);
+  }, [appliedFilters, ensureBranding, exportingPdf, query, view]);
 
   useEffect(() => {
     if (printRequestId === 0 || !printPayload) return;
 
     document.body.classList.add("sales-orders-print-route");
     document.body.classList.add("sales-orders-icr-print-route");
+    if (printView === "customer") document.body.classList.add("sales-orders-icr-customer-print-route");
 
     const onAfterPrint = () => {
       document.body.classList.remove("sales-orders-print-route");
       document.body.classList.remove("sales-orders-icr-print-route");
+      document.body.classList.remove("sales-orders-icr-customer-print-route");
       setPrintPayload(null);
       setPrintRequestId(0);
       setExportingPdf(false);
@@ -342,7 +349,7 @@ export function InvestedCapitalRecoveryPage() {
       window.clearTimeout(timer);
       window.removeEventListener("afterprint", onAfterPrint);
     };
-  }, [printRequestId, printPayload]);
+  }, [printRequestId, printPayload, printView]);
 
   const sortedRows = useMemo(() => {
     if (!data) return [];
@@ -386,6 +393,39 @@ export function InvestedCapitalRecoveryPage() {
           Esta tela apenas consolida dados oficiais — não cria títulos, não dá baixa, não altera o Pedido.
           Operações com empresas do grupo não são consideradas nesta análise.
         </p>
+      </div>
+
+      <div className="flex gap-1" role="tablist" aria-label="Visões da recuperação do dinheiro investido">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "summary"}
+          data-testid="invested-capital-recovery-view-summary"
+          onClick={() => setView("summary")}
+          className={cn(
+            "h-8 rounded-md border px-3 text-xs font-semibold",
+            view === "summary"
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-background hover:bg-muted/40"
+          )}
+        >
+          Visão Geral
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "customer"}
+          data-testid="invested-capital-recovery-view-customer"
+          onClick={() => setView("customer")}
+          className={cn(
+            "h-8 rounded-md border px-3 text-xs font-semibold",
+            view === "customer"
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-background hover:bg-muted/40"
+          )}
+        >
+          Por Cliente
+        </button>
       </div>
 
       <section className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
@@ -524,6 +564,11 @@ export function InvestedCapitalRecoveryPage() {
       ) : error ? (
         <FinanceModuleErrorBanner message={error} onRetry={() => void load()} />
       ) : !data || data.rows.length === 0 ? (
+        view === "customer" ? (
+          <p className="rounded-lg border border-dashed border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
+            Nenhum dado encontrado para os filtros selecionados.
+          </p>
+        ) : (
         <>
           <FinanceModuleEmptyState />
           {data?.populationDiagnostics ? (
@@ -535,6 +580,13 @@ export function InvestedCapitalRecoveryPage() {
             </p>
           ) : null}
         </>
+        )
+      ) : view === "customer" && data.byCustomer ? (
+        <InvestedCapitalRecoveryCustomerPanel
+          byCustomer={data.byCustomer}
+          rows={data.rows}
+          onOpenOrder={openOrderDetail}
+        />
       ) : (
         <>
           {/*
@@ -839,7 +891,17 @@ export function InvestedCapitalRecoveryPage() {
         </>
       )}
 
-      {printPayload
+      {printPayload && printView === "customer" && printPayload.byCustomer
+        ? createPortal(
+            <InvestedCapitalRecoveryCustomerPrintDocument
+              byCustomer={printPayload.byCustomer}
+              generatedAt={printPayload.generatedAt}
+              branding={branding}
+              filterLabels={printFilterLabels}
+            />,
+            document.body
+          )
+        : printPayload
         ? createPortal(
             <InvestedCapitalRecoveryPrintDocument
               payload={printPayload}

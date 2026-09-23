@@ -638,6 +638,8 @@ export async function loadSalesOrderIndustrialResultReportPayload(
       invoiceStatus: billingStatus,
       invoiceStatusLabel: salesOrderBillingStatusLabel(billingStatus),
       orderCommercialValue: commercialValue,
+      customerId: order.Customer?.id ?? null,
+      invoicedComparableValue: roundMoney(invoicedComparable),
       materialCost: costBreakdown?.materialCost ?? null,
       laborHourCost: costBreakdown?.laborHourCost ?? null,
       machineHourCost: costBreakdown?.machineHourCost ?? null,

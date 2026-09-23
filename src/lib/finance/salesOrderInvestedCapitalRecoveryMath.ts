@@ -52,6 +52,38 @@ export function computeMoneyOnStreet(
   return roundMoney(Math.max(investedCapital - received, 0));
 }
 
+/**
+ * Ganho realizado do pedido = MAX(actualReceived - investedCapital, 0).
+ * Complemento de `computeCapitalRecovered` / `computeMoneyOnStreet`: só existe
+ * quando o capital é válido, e nunca é o saldo do cliente (recebido total −
+ * capital total). Pedido sem capital resolvido devolve null — não vira 0.
+ */
+export function computeRealizedGain(
+  investedCapital: number | null | undefined,
+  actualReceived: number
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  const received = Number.isFinite(actualReceived) ? actualReceived : 0;
+  return roundMoney(Math.max(received - investedCapital, 0));
+}
+
+/**
+ * Saldo econômico atual do pedido = faturado fiscal comparável − capital
+ * investido integral. O capital é o custo de todos os itens do PV mais o
+ * imposto da margem comercial do pedido inteiro; o faturado pode ser só a
+ * parte já emitida em NF-e. Em pedido parcialmente faturado o saldo fica
+ * negativo sem que isso seja o resultado potencial da venda
+ * (vendido − capital). Sem capital resolvido, null.
+ */
+export function computePotentialResult(
+  investedCapital: number | null | undefined,
+  invoicedValue: number | null | undefined
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  const invoiced = Number.isFinite(invoicedValue) ? (invoicedValue as number) : 0;
+  return roundMoney(invoiced - investedCapital);
+}
+
 /** recoveryPercent = MIN(actualReceived / investedCapital, 1) * 100; nunca > 100; null quando capital ausente/inválido. */
 export function computeRecoveryPercent(
   investedCapital: number | null | undefined,

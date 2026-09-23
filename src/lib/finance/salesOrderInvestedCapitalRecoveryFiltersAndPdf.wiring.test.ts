@@ -88,6 +88,6 @@ describe("Recuperação do Dinheiro Investido — filtros gated por Pesquisar + 
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
     );
-    assert.match(page, /handleExportPdf = useCallback\(async \(\) => \{[\s\S]*?query[\s\S]*?\}, \[appliedFilters, ensureBranding, exportingPdf, query\]\)/);
+    assert.match(page, /handleExportPdf = useCallback\(async \(\) => \{[\s\S]*?query[\s\S]*?\}, \[appliedFilters, ensureBranding, exportingPdf, query, view\]\)/);
   });
 });

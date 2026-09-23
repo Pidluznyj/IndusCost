@@ -54,6 +54,8 @@ import {
   buildSalesOrderInvestedCapitalRecoverySnapshot,
   type SalesOrderInvestedCapitalRecoverySnapshot,
 } from "./salesOrderInvestedCapitalRecoverySnapshot.js";
+import { aggregateInvestedCapitalRecoveryByCustomer } from "./salesOrderInvestedCapitalRecoveryByCustomer.js";
+import type { InvestedCapitalRecoveryByCustomerResult } from "./salesOrderInvestedCapitalRecoveryByCustomer.js";
 import {
   distributeMoneyOnStreetAcrossAging,
   INVESTED_CAPITAL_AGING_BUCKET_LABELS,
@@ -136,6 +138,11 @@ export type SalesOrderInvestedCapitalRecoveryPayload = {
   agingBuckets: Array<{ key: InvestedCapitalAgingBucketKey; label: string; amount: number }>;
   topCustomers: SalesOrderInvestedCapitalRecoveryTopCustomer[];
   rows: SalesOrderInvestedCapitalRecoverySnapshot[];
+  /**
+   * Mesmos `rows` agrupados pelo customerId oficial. Não relê banco e não
+   * recalcula o pedido — a visão geral e a visão por cliente partem daqui.
+   */
+  byCustomer: InvestedCapitalRecoveryByCustomerResult;
   /**
    * Diagnóstico temporário (investigação da tela vazia após o filtro de
    * grupo econômico). Camada em que a população zera:
@@ -260,9 +267,12 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
       {
         salesOrderId: orderRow.salesOrderId,
         orderCode: orderRow.orderCode,
+        customerId: orderRow.customerId ?? null,
+        issueDate: orderRow.issueDate,
         customerName: orderRow.customerName || null,
         sellerName: orderRow.sellerName || null,
         saleValue: orderRow.orderCommercialValue,
+        invoicedValue: orderRow.invoicedComparableValue ?? 0,
         investedCapital: investedCapitalValue,
         investedCapitalUnavailableReason: resolveCostUnavailableReason(orderRow),
         orderStatus: orderRow.orderStatus,
@@ -288,6 +298,8 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const rows = economicStatusFilter
     ? allRows.filter((r) => r.status === economicStatusFilter)
     : allRows;
+
+  const customersView = aggregateInvestedCapitalRecoveryByCustomer(rows);
 
   // 5) KPIs — SOMA sobre a MESMA população que a tabela mostra (nunca uma
   //    página, sempre `rows` inteiro).
@@ -379,6 +391,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     })),
     topCustomers,
     rows,
+    byCustomer: customersView,
     populationDiagnostics,
   };
 }
