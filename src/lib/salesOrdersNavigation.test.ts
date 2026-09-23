@@ -8,10 +8,10 @@ function read(relPath: string): string {
 }
 
 describe("salesOrdersNavigation", () => {
-  it("botão Gestão de Pedidos existe", () => {
+  it("botão Gestão de Pedidos não abre mais a tela", () => {
     const app = read("src/App.tsx");
-    assert.match(app, /Gestão de Pedidos/);
-    assert.match(app, /to="\/sales-orders\/management"/);
+    assert.doesNotMatch(app, /to="\/sales-orders\/management"/);
+    assert.doesNotMatch(app, /SalesOrderManagementPage/);
   });
 
   it("botão Inteligência de Matéria-Prima existe", () => {
@@ -26,10 +26,11 @@ describe("salesOrdersNavigation", () => {
     assert.doesNotMatch(salesOrdersBlock.slice(0, 800), />Estimativa de uso de MP</);
   });
 
-  it("rota /sales-orders/management existe", () => {
+  it("rota /sales-orders/management volta para a lista", () => {
     const app = read("src/App.tsx");
     assert.match(app, /path="sales-orders\/management"/);
-    assert.match(app, /SalesOrderManagementPage/);
+    assert.match(app, /Navigate to="\/sales-orders" replace/);
+    assert.doesNotMatch(app, /SalesOrderManagementPage/);
   });
 
   it("rota material-usage existe como alias", () => {
@@ -54,8 +55,8 @@ describe("salesOrdersNavigation", () => {
 
   it("navegação usa paths absolutos", () => {
     const app = read("src/App.tsx");
-    assert.match(app, /to="\/sales-orders\/management"/);
     assert.match(app, /to="\/sales-orders\/material-demand"/);
+    assert.doesNotMatch(app, /to="\/sales-orders\/management"/);
   });
 
   it("header de Pedidos não inclui mais Rastreabilidade nem Indicadores", () => {

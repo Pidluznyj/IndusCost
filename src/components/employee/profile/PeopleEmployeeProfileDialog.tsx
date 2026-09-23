@@ -5,6 +5,7 @@ import type {
   PeopleProfileSummaryDto,
   PeopleProfileTabId,
 } from "@/src/lib/peopleProfileTypes";
+import type { PeopleEvaluationsPayload } from "./PeopleEvaluationsTab";
 import { ProfileHeader } from "./ProfileHeader";
 import { ProfileTabs, visibleProfileTabs } from "./ProfileTabs";
 import { PeopleOverviewTab } from "./PeopleOverviewTab";
@@ -32,6 +33,9 @@ const PeopleEpiTab = lazy(() => import("./PeopleEpiTab").then((m) => ({ default:
 const PeopleDocumentsTab = lazy(() =>
   import("./PeopleDocumentsTab").then((m) => ({ default: m.PeopleDocumentsTab }))
 );
+const PeopleEvaluationsTab = lazy(() =>
+  import("./PeopleEvaluationsTab").then((m) => ({ default: m.PeopleEvaluationsTab }))
+);
 const PeopleAbsencesTab = lazy(() =>
   import("./PeopleAbsencesTab").then((m) => ({ default: m.PeopleAbsencesTab }))
 );
@@ -51,6 +55,7 @@ const LAZY_TABS = new Set<PeopleProfileTabId>([
   "emergency",
   "epi",
   "documents",
+  "evaluations",
   "absences",
   "history",
   "notes",
@@ -173,6 +178,7 @@ export function PeopleEmployeeProfileDialog({
       emergency: "emergency",
       epi: "epi",
       documents: "documents",
+      evaluations: "evaluations",
       absences: "absences",
       history: "history",
       notes: "notes",
@@ -242,6 +248,7 @@ export function PeopleEmployeeProfileDialog({
         const next = { ...prev };
         delete next[`${requestedId}:${tab}`];
         delete next[`${requestedId}:history`];
+        if (tab === "evaluations") delete next[`${requestedId}:documents`];
         if (tab === "compensation" || tab === "career") {
           delete next[`${requestedId}:career`];
           delete next[`${requestedId}:compensation`];
@@ -406,6 +413,23 @@ export function PeopleEmployeeProfileDialog({
                     employeeId={employeeId}
                     canManage={Boolean(caps?.canManageEpi)}
                     onSaved={() => onRecorded("epi")}
+                  />
+                )}
+                {activeTab === "evaluations" && (
+                  <PeopleEvaluationsTab
+                    data={
+                      cached && typeof cached === "object" && "items" in (cached as object)
+                        ? (cached as PeopleEvaluationsPayload)
+                        : null
+                    }
+                    loading={tabLoading && !cached}
+                    error={tabError}
+                    employeeId={employeeId}
+                    canManage={Boolean(caps?.canManageEvaluations)}
+                    canComplete={Boolean(caps?.canCompleteEvaluations)}
+                    canPrint={Boolean(caps?.canPrintEvaluations)}
+                    canAttach={Boolean(caps?.canAttachEvaluationDocuments)}
+                    onSaved={() => onRecorded("evaluations")}
                   />
                 )}
                 {activeTab === "documents" && (

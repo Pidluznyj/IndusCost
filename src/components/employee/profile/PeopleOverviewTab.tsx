@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronRight, Mail } from "lucide-react";
 import type { PeopleProfileSummaryDto } from "@/src/lib/peopleProfileTypes";
 import { cn } from "@/src/lib/utils";
@@ -16,6 +16,34 @@ function movementDotClass(eventType: string): string {
   return "bg-muted-foreground border-muted";
 }
 
+function EvaluationAlertsCard({ employeeId }: { employeeId: string }) {
+  const [messages, setMessages] = useState<string[]>([]);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(`/api/employees/${employeeId}/evaluations`, { credentials: "include", signal: ac.signal, cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { alerts?: Array<{ message: string }> };
+      })
+      .then((body) => {
+        if (!body?.alerts) return;
+        setMessages(body.alerts.map((alert) => alert.message));
+      })
+      .catch(() => undefined);
+    return () => ac.abort();
+  }, [employeeId]);
+  if (messages.length === 0) return null;
+  return (
+    <ProfileCard title="Avaliações">
+      <ul className="space-y-2 text-sm">
+        {messages.map((message) => (
+          <li key={message}>{message}</li>
+        ))}
+      </ul>
+    </ProfileCard>
+  );
+}
+
 export function PeopleOverviewTab({
   summary,
   onOpenHistory,
@@ -30,6 +58,9 @@ export function PeopleOverviewTab({
   return (
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="flex flex-col gap-5">
+        {summary.capabilities.canViewEvaluations ? (
+          <EvaluationAlertsCard employeeId={identity.employeeId} />
+        ) : null}
         <ProfileCard title="Dados profissionais">
           <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             <ProfileGridField label="Situação" value={o.situationLabel} />

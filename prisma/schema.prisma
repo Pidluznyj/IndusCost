@@ -160,6 +160,9 @@ model Employee {
   hrDocuments                  HrEmployeeDocument[]
   absences                     HrAbsence[]
   hrNotes                      HrEmployeeNote[]
+  hrEvaluations                HrEmployeeEvaluation[]              @relation("HrEvaluationSubject")
+  hrEvaluationsAsEvaluator     HrEmployeeEvaluation[]              @relation("HrEvaluationEvaluator")
+  hrEvaluationActionsResponsible HrEvaluationActionPlan[]          @relation("HrEvaluationActionResponsible")
 
   @@unique([personId])
   @@index([costCenterId])
@@ -391,10 +394,14 @@ model HrEmployeeDocument {
   expiresAt        DateTime? @db.Timestamptz(6)
   notes            String?
   uploadedByUserId String?   @db.Uuid
+  /// Avaliação de origem. O arquivo continua no dossiê; a fonte funcional é a avaliação.
+  evaluationId     String?   @db.Uuid
   createdAt        DateTime  @default(now()) @db.Timestamptz(6)
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  evaluation       HrEmployeeEvaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([employeeId, createdAt(sort: Desc)])
+  @@index([evaluationId])
 }
 
 /// Férias / afastamentos — histórico próprio (status atual do Employee não substitui).
@@ -433,6 +440,157 @@ model HrEmployeeNote {
 
   @@index([employeeId, createdAt(sort: Desc)])
   @@index([employeeId, category])
+}
+
+/// Modelo de avaliação de RH. Tipos novos não exigem tabela nova.
+model HrEvaluationTemplate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String   @unique
+  name           String
+  description    String?
+  evaluationType String
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  criteria       HrEvaluationCriterion[]
+  evaluations    HrEmployeeEvaluation[]
+
+  @@index([evaluationType, active])
+}
+
+model HrEvaluationCriterion {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId         String   @db.Uuid
+  code               String
+  name               String
+  description        String?
+  category           String   @default("GERAL")
+  sortOrder          Int      @default(0)
+  active             Boolean  @default(true)
+  allowNotApplicable Boolean  @default(true)
+  weight             Decimal  @default(1) @db.Decimal(10, 4)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  template           HrEvaluationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  answers            HrEmployeeEvaluationAnswer[]
+
+  @@unique([templateId, code])
+  @@index([templateId, sortOrder])
+}
+
+/// Avaliação de um colaborador. Critérios respondidos ficam em snapshot.
+model HrEmployeeEvaluation {
+  id                           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId                   String    @db.Uuid
+  templateId                   String    @db.Uuid
+  templateVersion              Int
+  templateNameSnapshot         String
+  evaluationType               String
+  referenceCode                String    @unique
+  /// Ciclo de admissão (data) ou NO_ADMISSION. Duplicata confirmada recebe sufixo.
+  cycleKey                     String
+  status                       String    @default("SCHEDULED")
+  admissionDateSnapshot        DateTime? @db.Timestamptz(6)
+  roleNameSnapshot             String?
+  departmentSnapshot           String?
+  registrationSnapshot         String?
+  periodStart                  DateTime? @db.Timestamptz(6)
+  periodEnd                    DateTime? @db.Timestamptz(6)
+  dueDate                      DateTime? @db.Timestamptz(6)
+  evaluationDate               DateTime? @db.Timestamptz(6)
+  evaluatorEmployeeId          String?   @db.Uuid
+  evaluatorNameSnapshot        String?
+  evaluatorRoleSnapshot        String?
+  managerIdSnapshot            String?   @db.Uuid
+  managerNameSnapshot          String?
+  transcriptionUserId          String?   @db.Uuid
+  transcriptionAt              DateTime? @db.Timestamptz(6)
+  completedAt                  DateTime? @db.Timestamptz(6)
+  printedAt                    DateTime? @db.Timestamptz(6)
+  printedByUserId              String?   @db.Uuid
+  generalScore                 Decimal?  @db.Decimal(10, 2)
+  recommendation               String?
+  recommendationNotes          String?
+  strengths                    String?
+  developmentPoints            String?
+  actionGuidance               String?
+  employeeAcknowledged         Boolean   @default(false)
+  employeeAcknowledgedAt       DateTime? @db.Timestamptz(6)
+  employeeAcknowledgementNotes String?
+  hrValidatedBy                String?   @db.Uuid
+  hrValidatedAt                DateTime? @db.Timestamptz(6)
+  createdByUserId              String?   @db.Uuid
+  updatedByUserId              String?   @db.Uuid
+  createdAt                    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee                     Employee  @relation("HrEvaluationSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  template                     HrEvaluationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  evaluator                    Employee? @relation("HrEvaluationEvaluator", fields: [evaluatorEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  answers                      HrEmployeeEvaluationAnswer[]
+  actionPlans                  HrEvaluationActionPlan[]
+  auditEvents                  HrEvaluationAuditEvent[]
+  documents                    HrEmployeeDocument[]
+
+  @@index([employeeId])
+  @@index([templateId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([evaluationType])
+  @@index([employeeId, evaluationType])
+}
+
+model HrEmployeeEvaluationAnswer {
+  id                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evaluationId               String   @db.Uuid
+  criterionId                String   @db.Uuid
+  criterionCodeSnapshot      String
+  criterionNameSnapshot      String
+  criterionCategorySnapshot  String?
+  sortOrderSnapshot          Int      @default(0)
+  allowNotApplicableSnapshot Boolean  @default(true)
+  score                      Int?
+  notApplicable              Boolean  @default(false)
+  comment                    String?
+  createdAt                  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  evaluation                 HrEmployeeEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  criterion                  HrEvaluationCriterion @relation(fields: [criterionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([evaluationId, criterionId])
+  @@index([evaluationId])
+}
+
+model HrEvaluationActionPlan {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evaluationId          String    @db.Uuid
+  title                 String
+  description           String?
+  responsibleEmployeeId String?   @db.Uuid
+  responsibleNameSnapshot String?
+  dueDate               DateTime? @db.Timestamptz(6)
+  status                String    @default("PENDING")
+  completedAt           DateTime? @db.Timestamptz(6)
+  notes                 String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  evaluation            HrEmployeeEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  responsible           Employee? @relation("HrEvaluationActionResponsible", fields: [responsibleEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([evaluationId])
+  @@index([status])
+}
+
+model HrEvaluationAuditEvent {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evaluationId String   @db.Uuid
+  action       String
+  actorUserId  String?  @db.Uuid
+  details      Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  evaluation   HrEmployeeEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([evaluationId, createdAt(sort: Desc)])
 }
 
 model Material {

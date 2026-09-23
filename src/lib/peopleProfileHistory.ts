@@ -83,6 +83,7 @@ export function buildHistorySummary(input: {
   includeAmounts?: boolean;
   previousAmount?: number | null;
   newAmount?: number | null;
+  notes?: string | null;
 }): { summary: string; fromLabel: string | null; toLabel: string | null } {
   const arrow = (from?: string | null, to?: string | null) => {
     const a = (from ?? "").trim();
@@ -152,6 +153,11 @@ export function buildHistorySummary(input: {
       if (pct) return { summary: pct, fromLabel: null, toLabel: pct };
       return { summary: historyEventLabel("COMPENSATION_ADJUSTMENT"), fromLabel: null, toLabel: null };
     }
+    case "EXPERIENCE_EVALUATION": {
+      const note = input.notes?.trim();
+      if (note) return { summary: note, fromLabel: null, toLabel: null };
+      return { summary: historyEventLabel(input.eventType), fromLabel: null, toLabel: null };
+    }
     default:
       break;
   }
@@ -210,6 +216,7 @@ export function toHistoryEventDto(
     includeAmounts: opts.includeAmounts,
     previousAmount: row.previousAmount,
     newAmount: row.newAmount,
+    notes: row.notes,
   });
 
   const dto: PeopleHistoryEventDto = {

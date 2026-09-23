@@ -74,6 +74,19 @@ export const PEOPLE_PROFILE_PERMISSIONS = {
   epiManage: ["employees.epi.manage", "employees.edit"] as const,
   documentsView: ["employees.documents.view", "employees.view", "employees.edit"] as const,
   documentsManage: ["employees.documents.manage", "employees.edit"] as const,
+  evaluationsView: ["employees.evaluations.view", "employees.view", "employees.edit"] as const,
+  evaluationsManage: ["employees.evaluations.manage", "employees.edit"] as const,
+  evaluationsComplete: [
+    "employees.evaluations.complete",
+    "employees.evaluations.manage",
+    "employees.edit",
+  ] as const,
+  evaluationsPrint: [
+    "employees.evaluations.print",
+    "employees.evaluations.view",
+    "employees.view",
+    "employees.edit",
+  ] as const,
   absencesView: ["employees.absences.view", "employees.view", "employees.edit"] as const,
   absencesManage: ["employees.absences.manage", "employees.edit"] as const,
   historyView: ["employees.history.view", "employees.view", "employees.edit"] as const,
@@ -163,6 +176,18 @@ export function buildPeopleProfileCapabilities(
     canManageEpi: canManageEmployeeEpi(check),
     canViewDocuments: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.documentsView) || canView,
     canManageDocuments: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.documentsManage),
+    canViewEvaluations: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsView),
+    canManageEvaluations: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsManage),
+    canCompleteEvaluations: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsComplete),
+    canPrintEvaluations:
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsPrint) ||
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsView),
+    canAttachEvaluationDocuments:
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsManage) ||
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.documentsManage),
+    canViewEvaluationDocuments:
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.evaluationsView) ||
+      hasAny(check, PEOPLE_PROFILE_PERMISSIONS.documentsView),
     canViewAbsences: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.absencesView) || canView,
     canManageAbsences: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.absencesManage),
     canViewHistory: hasAny(check, PEOPLE_PROFILE_PERMISSIONS.historyView) || canView,

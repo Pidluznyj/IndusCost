@@ -33,7 +33,6 @@ import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligenceP
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { SalesOrdersPageLastUpdateSubtitle } from "./components/sales-orders/SalesOrdersPageLastUpdateSubtitle";
-import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
 import { SalesOrderCommercialDiscountReportPage } from "./components/sales/SalesOrderCommercialDiscountReportPage";
@@ -95,6 +94,7 @@ import {
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
+import { ExperienceEvaluationPrintView } from "@/src/components/employee/ExperienceEvaluationPrintView";
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { PasswordChangePage } from "@/src/components/security/PasswordChangePage";
@@ -104,7 +104,7 @@ import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canOpenAdminSettingsHub } from "@/src/lib/adminSettingsAccess";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
-import { BarChart3, CalendarRange, ClipboardList, Factory, Layers, Package, Percent, TrendingUp } from "lucide-react";
+import { BarChart3, CalendarRange, Factory, Layers, Package, Percent, TrendingUp } from "lucide-react";
 
 function ModulePageShell({
   title,
@@ -188,6 +188,10 @@ export default function App() {
       <Route path="/inventory-labels" element={<InventoryCountLabelsPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
+      <Route
+        path="/employees/:employeeId/evaluations/:evaluationId/print"
+        element={<ExperienceEvaluationPrintView />}
+      />
       {/* Ciclo de senha do próprio usuário: fora do Layout e fora do
           RequirePathViewAccess — precisa abrir mesmo com a ACL bloqueada
           durante a troca obrigatória. */}
@@ -877,25 +881,7 @@ export default function App() {
             </ModulePageShell>
           }
         />
-        <Route
-          path="sales-orders/management"
-          element={
-            <ModulePageShell
-              title="Gestão de Pedidos de Venda"
-              description="Central operacional com status gerencial, prazo, NF, OP, riscos e inteligência por pedido."
-              headerActions={
-                <Link
-                  to="/sales-orders"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                >
-                  Lista de pedidos
-                </Link>
-              }
-            >
-              <SalesOrderManagementPage />
-            </ModulePageShell>
-          }
-        />
+        <Route path="sales-orders/management" element={<Navigate to="/sales-orders" replace />} />
         <Route
           path="sales-orders/result"
           element={
@@ -992,13 +978,6 @@ export default function App() {
                   >
                     <Percent className="h-4 w-4 text-primary" />
                     Descontos comerciais
-                  </Link>
-                  <Link
-                    to="/sales-orders/management"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <ClipboardList className="h-4 w-4 text-primary" />
-                    Gestão de Pedidos
                   </Link>
                   <Link
                     to="/sales-orders/sold-products"

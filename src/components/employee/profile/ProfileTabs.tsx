@@ -2,6 +2,7 @@ import React from "react";
 import {
   Briefcase,
   CalendarDays,
+  ClipboardCheck,
   FileText,
   Gift,
   Heart,
@@ -29,6 +30,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
   { id: "emergency", label: "Contatos de emergência" },
   { id: "epi", label: "EPI & uniformes" },
   { id: "documents", label: "Documentos" },
+  { id: "evaluations", label: "Avaliações" },
   { id: "absences", label: "Férias & afastamentos" },
   { id: "history", label: "Histórico" },
   { id: "notes", label: "Observações" },
@@ -40,7 +42,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
 export const PEOPLE_PROFILE_TAB_GROUPS: { label: string; ids: PeopleProfileTabId[] }[] = [
   { label: "Perfil", ids: ["overview", "personal", "emergency"] },
   { label: "Trabalho", ids: ["professional", "career", "compensation", "benefits"] },
-  { label: "Rotina", ids: ["absences", "epi", "documents"] },
+  { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations"] },
   { label: "Registro", ids: ["history", "notes", "links", "admin"] },
 ];
 
@@ -54,6 +56,7 @@ const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
   emergency: Heart,
   epi: Shield,
   documents: FileText,
+  evaluations: ClipboardCheck,
   absences: CalendarDays,
   history: History,
   notes: MessageSquare,
@@ -74,6 +77,7 @@ export function visibleProfileTabs(
   if (caps?.canViewEmergency) ids.push("emergency");
   if (!caps || caps.canViewEpi) ids.push("epi");
   if (!caps || caps.canViewDocuments) ids.push("documents");
+  if (caps?.canViewEvaluations) ids.push("evaluations");
   if (!caps || caps.canViewAbsences) ids.push("absences");
   if (!caps || caps.canViewHistory) ids.push("history");
   if (!caps || caps.canViewNotes) ids.push("notes");

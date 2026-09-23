@@ -1,0 +1,217 @@
+/**
+ * Formulário de avaliação de experiência — A4 retrato.
+ * Reutiliza .print-doc-header. Esta folha só vale na rota de impressão.
+ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html,
+  body.hr-eval-print-route {
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body.hr-eval-print-route .print-no-print,
+  body.hr-eval-print-route button,
+  body.hr-eval-print-route a.print-no-print {
+    display: none !important;
+  }
+
+  body.hr-eval-print-route .hr-eval-print-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+}
+
+.hr-eval-print-page {
+  max-width: 210mm;
+  margin: 0 auto;
+}
+
+.hr-eval-sheet {
+  background: #fff;
+  color: #0f172a;
+  font-size: 10pt;
+  line-height: 1.35;
+}
+
+.hr-eval-sheet .print-doc-logo {
+  height: 48px;
+}
+
+.hr-eval-identity {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 2mm 6mm;
+  margin: 3mm 0 2mm;
+}
+
+.hr-eval-identity dt {
+  font-size: 8pt;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.hr-eval-identity dd {
+  margin: 0;
+  font-size: 10pt;
+  word-break: break-word;
+}
+
+.hr-eval-code-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8mm;
+  margin-bottom: 2mm;
+}
+
+.hr-eval-qr {
+  width: 22mm;
+  height: 22mm;
+  flex: 0 0 auto;
+}
+
+.hr-eval-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.hr-eval-table th,
+.hr-eval-table td {
+  border: 1px solid #94a3b8;
+  padding: 1.2mm 1.4mm;
+  vertical-align: middle;
+  font-size: 9pt;
+}
+
+.hr-eval-table th {
+  background: #f8fafc;
+  font-size: 8pt;
+  text-align: center;
+}
+
+.hr-eval-table th:first-child,
+.hr-eval-table td:first-child {
+  text-align: left;
+  width: 42%;
+}
+
+.hr-eval-mark-cell {
+  text-align: center;
+  width: 9.6%;
+}
+
+.hr-eval-mark {
+  display: inline-block;
+  width: 4.6mm;
+  height: 4.6mm;
+  border: 1.4px solid #0f172a;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.hr-eval-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5mm 6mm;
+  margin: 2mm 0 0;
+  font-size: 8pt;
+  color: #334155;
+}
+
+.hr-eval-prompt {
+  margin: 0 0 1mm;
+  font-size: 8.5pt;
+  color: #475569;
+  font-style: italic;
+}
+
+.hr-eval-line {
+  height: 7.5mm;
+  border-bottom: 1px solid #64748b;
+}
+
+.hr-eval-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 2mm;
+  margin: 1.2mm 0;
+  font-size: 9.5pt;
+}
+
+.hr-eval-box {
+  display: inline-block;
+  width: 4.2mm;
+  height: 4.2mm;
+  border: 1.4px solid #0f172a;
+  margin-top: 0.4mm;
+  flex: 0 0 auto;
+  background: #fff;
+}
+
+.hr-eval-close {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-top: 4mm;
+}
+
+.hr-eval-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.hr-eval-sign-line {
+  margin-top: 10mm;
+  border-top: 1px solid #0f172a;
+  padding-top: 1mm;
+  font-size: 8pt;
+}
+
+.hr-eval-disclaimer {
+  margin-top: 3mm;
+  font-size: 8pt;
+  color: #334155;
+}
+
+.hr-eval-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-top: 3mm;
+}
+
+@media print {
+  .hr-eval-sheet {
+    overflow: visible !important;
+  }
+
+  .hr-eval-table {
+    page-break-inside: auto;
+  }
+
+  .hr-eval-table thead {
+    display: table-header-group;
+  }
+
+  .hr-eval-table tr,
+  .hr-eval-close,
+  .hr-eval-signatures,
+  .hr-eval-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

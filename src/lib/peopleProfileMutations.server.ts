@@ -690,6 +690,7 @@ export async function saveEmployeeDocument(input: {
   expiresAt?: Date | null;
   notes?: string | null;
   actorUserId?: string | null;
+  evaluationId?: string | null;
 }) {
   const saved = await saveAppLocalFile({
     namespace: "hremployeedocs",
@@ -712,6 +713,7 @@ export async function saveEmployeeDocument(input: {
         expiresAt: input.expiresAt ?? null,
         notes: input.notes ?? null,
         uploadedByUserId: input.actorUserId ?? null,
+        evaluationId: input.evaluationId ?? null,
       },
     });
     await writeHistoryEvent(tx, {

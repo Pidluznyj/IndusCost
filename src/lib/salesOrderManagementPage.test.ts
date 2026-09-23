@@ -171,10 +171,11 @@ describe("salesOrderManagementPage", () => {
     assert.doesNotMatch(page, /from ["'].*prisma/);
   });
 
-  it("rota App para gestão", () => {
+  it("rota App para gestão redireciona sem montar a página", () => {
     const app = read("src/App.tsx");
     assert.match(app, /sales-orders\/management/);
-    assert.match(app, /SalesOrderManagementPage/);
+    assert.match(app, /Navigate to="\/sales-orders" replace/);
+    assert.doesNotMatch(app, /SalesOrderManagementPage/);
   });
 
   it("renderiza Busca inteligente com debounce e q na API", () => {

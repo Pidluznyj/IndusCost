@@ -46,6 +46,7 @@ import {
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { cn } from "@/src/lib/utils";
+import { EmployeeEvaluationPendenciesCard } from "@/src/components/employee/EmployeeEvaluationPendenciesCard";
 import "./employees-dashboard.css";
 
 const CLASSIFICATION_OPTIONS = [
@@ -285,6 +286,8 @@ export function EmployeesDashboardPage() {
           </button>
         </div>
       </div>
+
+      <EmployeeEvaluationPendenciesCard />
 
       <div className="employees-dashboard__panel">
         <div className="employees-dashboard__filters">

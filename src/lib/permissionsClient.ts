@@ -139,6 +139,7 @@ export const ResourceKeys = {
   ADMIN_PESSOAS_COMPENSATION_VALUES: "admin.employees.compensation_values",
   ADMIN_PESSOAS_BENEFITS: "admin.employees.benefits",
   ADMIN_PESSOAS_DOCUMENTS: "admin.employees.documents",
+  ADMIN_PESSOAS_EVALUATIONS: "admin.employees.evaluations",
   ADMIN_PESSOAS_ABSENCES: "admin.employees.absences",
   ADMIN_PESSOAS_HISTORY: "admin.employees.history",
   ADMIN_PESSOAS_NOTES: "admin.employees.notes",
@@ -1007,6 +1008,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.ADMIN_PESSOAS,
     legacyAliasKeys: ["employees.documents.view", "employees.view", "employees.edit"],
+  },
+  {
+    key: ResourceKeys.ADMIN_PESSOAS_EVALUATIONS,
+    label: "RH — Avaliações",
+    type: "TAB",
+    parentKey: ResourceKeys.ADMIN_PESSOAS,
+    legacyAliasKeys: ["employees.evaluations.view", "employees.view", "employees.edit"],
   },
   {
     key: ResourceKeys.ADMIN_PESSOAS_ABSENCES,

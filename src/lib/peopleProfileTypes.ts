@@ -27,6 +27,7 @@ export const HR_EMPLOYEE_HISTORY_EVENT_TYPES = [
   "NOTE_ADDED",
   "TERMINATION",
   "REHIRE",
+  "EXPERIENCE_EVALUATION",
 ] as const;
 
 export type HrEmployeeHistoryEventType = (typeof HR_EMPLOYEE_HISTORY_EVENT_TYPES)[number];
@@ -53,6 +54,7 @@ export const HR_HISTORY_EVENT_LABELS: Record<HrEmployeeHistoryEventType, string>
   NOTE_ADDED: "Observação registrada",
   TERMINATION: "Desligamento",
   REHIRE: "Reativação",
+  EXPERIENCE_EVALUATION: "Avaliação de experiência concluída",
 };
 
 export const PEOPLE_CAREER_POST_EVENT_TYPES = [
@@ -181,6 +183,12 @@ export type PeopleProfileCapabilities = {
   canManageNotes: boolean;
   canViewRestrictedNotes: boolean;
   canViewAudit: boolean;
+  canViewEvaluations: boolean;
+  canManageEvaluations: boolean;
+  canCompleteEvaluations: boolean;
+  canPrintEvaluations: boolean;
+  canAttachEvaluationDocuments: boolean;
+  canViewEvaluationDocuments: boolean;
   accessScope: PeopleAccessScope;
 };
 
@@ -284,6 +292,7 @@ export const PEOPLE_PROFILE_TAB_IDS = [
   "emergency",
   "epi",
   "documents",
+  "evaluations",
   "absences",
   "history",
   "notes",

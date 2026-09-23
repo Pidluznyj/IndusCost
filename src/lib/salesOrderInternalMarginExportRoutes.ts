@@ -62,19 +62,19 @@ export function registerSalesOrderInternalMarginExportRoutes(
 
   app.get("/api/sales-orders/export-internal.xlsx", ...guard, async (req, res) => {
     try {
-      await handleInternalMarginExport(req, res, resolveScope(req.query.scope));
+      const scope = resolveScope(req.query.scope);
+      if (scope === "management") {
+        res.status(410).json({ error: "Gestão de Pedidos de Venda foi desativada." });
+        return;
+      }
+      await handleInternalMarginExport(req, res, scope);
     } catch (error) {
       console.error("GET /api/sales-orders/export-internal.xlsx", error);
       res.status(500).json({ error: "Erro ao exportar relatório interno de margem." });
     }
   });
 
-  app.get("/api/sales-orders/management/export-internal.xlsx", ...guard, async (req, res) => {
-    try {
-      await handleInternalMarginExport(req, res, "management");
-    } catch (error) {
-      console.error("GET /api/sales-orders/management/export-internal.xlsx", error);
-      res.status(500).json({ error: "Erro ao exportar relatório interno de margem." });
-    }
+  app.get("/api/sales-orders/management/export-internal.xlsx", ...guard, async (_req, res) => {
+    res.status(410).json({ error: "Gestão de Pedidos de Venda foi desativada." });
   });
 }

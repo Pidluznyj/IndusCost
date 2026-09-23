@@ -84,6 +84,7 @@ export const EMPLOYEE_RESOURCE_KEYS = {
   compensationValues: "admin.employees.compensation_values",
   benefits: "admin.employees.benefits",
   documents: "admin.employees.documents",
+  evaluations: "admin.employees.evaluations",
   absences: "admin.employees.absences",
   history: "admin.employees.history",
   notes: "admin.employees.notes",

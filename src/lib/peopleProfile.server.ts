@@ -716,6 +716,7 @@ export async function loadPeopleDocuments(prisma: PrismaClient, employeeId: stri
       notes: true,
       uploadedByUserId: true,
       createdAt: true,
+      evaluationId: true,
     },
   });
   const names = await resolveActorNames(

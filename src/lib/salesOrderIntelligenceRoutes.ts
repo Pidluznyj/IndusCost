@@ -182,16 +182,8 @@ export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth:
     "/api/sales-orders/management",
     auth.requireAppAuth,
     auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
-    async (req, res) => {
-      try {
-        const payload = await loadSalesOrderManagementPage(
-          req.query as Record<string, unknown>
-        );
-        res.json(payload);
-      } catch (error) {
-        console.error("GET /api/sales-orders/management", error);
-        res.status(500).json({ error: "Erro ao carregar gestão de pedidos." });
-      }
+    async (_req, res) => {
+      res.status(410).json({ error: "Gestão de Pedidos de Venda foi desativada." });
     }
   );
 

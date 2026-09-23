@@ -17,6 +17,7 @@ export function PeopleDocumentsTab({
     documentType: string;
     createdAt: string;
     downloadUrl: string;
+    evaluationId?: string | null;
   }> | null;
   loading: boolean;
   error: string | null;
@@ -40,6 +41,7 @@ export function PeopleDocumentsTab({
                   <p className="font-medium">{doc.displayName}</p>
                   <p className="text-muted-foreground">
                     {doc.documentType} · {formatProfileDate(doc.createdAt)}
+                    {doc.evaluationId ? " · vinculado à avaliação" : ""}
                   </p>
                 </div>
                 <button

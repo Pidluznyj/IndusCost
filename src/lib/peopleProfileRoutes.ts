@@ -46,6 +46,7 @@ import { buildPeopleProfileCapabilities } from "@/src/lib/peopleProfileCapabilit
 import { listOfficialPayrollHrCatalogItems } from "@/src/lib/peopleOfficialPayrollCatalog.server.js";
 import { readAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { EmployeeRegistrationError } from "@/src/lib/employeeRegistration.js";
+import { registerHrEvaluationRoutes } from "@/src/lib/hrEvaluationRoutes.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -252,7 +253,7 @@ export function registerPeopleProfileRoutes(
     try {
       const { id, documentId } = req.params;
       const ctx = await context(req, id);
-      if (!ctx.capabilities.canViewDocuments) {
+      if (!ctx.capabilities.canViewDocuments && !ctx.capabilities.canViewEvaluationDocuments) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
       }
       if (!isEmployeeUuid(documentId)) {
@@ -262,6 +263,9 @@ export function registerPeopleProfileRoutes(
         employeeId: id,
         documentId,
       });
+      if (!ctx.capabilities.canViewDocuments && !row.evaluationId) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
       logEmployeeHrAudit({
         event: "employee.document.download",
         actorUserId: ctx.user?.id,
@@ -271,9 +275,10 @@ export function registerPeopleProfileRoutes(
       noStore(res);
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", row.mimeType || "application/octet-stream");
+      const inline = req.query.inline === "1" || req.query.disposition === "inline";
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${encodeURIComponent(row.originalFileName)}"`
+        `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(row.originalFileName)}"`
       );
       return res.send(buffer);
     } catch (error) {
@@ -638,4 +643,6 @@ export function registerPeopleProfileRoutes(
       return sendError(res, error, "Erro ao criar benefício.");
     }
   });
+
+  registerHrEvaluationRoutes(app, guards);
 }
