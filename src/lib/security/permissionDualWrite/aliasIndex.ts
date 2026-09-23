@@ -29,6 +29,36 @@ export function aliasAxis(key: string): "view" | "execute" | "manage" {
   return "view";
 }
 
+/**
+ * Pins explícitos do canônico 1:1 — só para chaves em que a heurística erra.
+ *
+ * `employees.edit` é a chave de `admin.employees:update`, mas não termina em
+ * sufixo de ação (cai no eixo "view") e o desempate por "SUBMENU com menos
+ * aliases" a prendia em `admin.employees.dashboard`. Efeito: marcar edição em
+ * Pessoas/RH num perfil não gravava `employees.edit` (só `employees.create`),
+ * e marcar "ver" no Dashboard de Pessoas concedia edição total do RH.
+ * O recurso pinado precisa existir entre os bindings do seed da chave.
+ */
+const CANONICAL_ALIAS_PINS: Readonly<
+  Record<string, { resourceKey: string; axis: DualWriteAliasBinding["axis"] }>
+> = {
+  "employees.edit": { resourceKey: "admin.employees", axis: "execute" },
+};
+
+function bindingAxis(resourceKey: string, legacyKey: string): DualWriteAliasBinding["axis"] {
+  const pin = CANONICAL_ALIAS_PINS[legacyKey];
+  return pin && pin.resourceKey === resourceKey ? pin.axis : aliasAxis(legacyKey);
+}
+
+function pinnedCanonicalBinding(
+  legacyKey: string,
+  bindings: readonly DualWriteAliasBinding[]
+): DualWriteAliasBinding | null {
+  const pin = CANONICAL_ALIAS_PINS[legacyKey];
+  if (!pin) return null;
+  return bindings.find((b) => b.resourceKey === pin.resourceKey) ?? null;
+}
+
 export type DualWriteAliasIndex = {
   byLegacy: Map<string, DualWriteAliasBinding[]>;
   byResource: Map<string, DualWriteAliasBinding[]>;
@@ -100,7 +130,7 @@ export function buildDualWriteAliasIndex(
       const binding: DualWriteAliasBinding = {
         resourceKey: seed.key,
         legacyKey,
-        axis: aliasAxis(legacyKey),
+        axis: bindingAxis(seed.key, legacyKey),
       };
       mappedLegacyKeys.add(legacyKey);
       const lg = byLegacy.get(legacyKey) ?? [];
@@ -115,7 +145,9 @@ export function buildDualWriteAliasIndex(
   const canonicalByLegacy = new Map<string, DualWriteAliasBinding>();
   const oneToOneByResource = new Map<string, DualWriteAliasBinding[]>();
   for (const [legacyKey, bindings] of byLegacy) {
-    const canonical = pickCanonicalAliasBinding(bindings, metaByResource);
+    const canonical =
+      pinnedCanonicalBinding(legacyKey, bindings) ??
+      pickCanonicalAliasBinding(bindings, metaByResource);
     canonicalByLegacy.set(legacyKey, canonical);
     const list = oneToOneByResource.get(canonical.resourceKey) ?? [];
     list.push(canonical);

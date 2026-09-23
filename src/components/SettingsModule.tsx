@@ -3,6 +3,7 @@ import {
   Settings,
   Plus,
   Edit2,
+  Trash2,
   X,
   Loader2,
   Briefcase,
@@ -37,6 +38,11 @@ import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarg
 import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
 import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
+import {
+  describeRoleUsage,
+  isRoleInUse,
+  roleDeleteBlockedMessage,
+} from "@/src/lib/settingsOperationalCatalog";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
 import { usePermissions } from "@/src/hooks/usePermissions";
@@ -64,6 +70,10 @@ interface Role {
   name: string;
   baseSalary: number;
   monthlyHours: number;
+  /** Colaboradores com este cargo (ativos ou inativos). */
+  employeeCount?: number;
+  /** Roteiros de produção que usam este cargo. */
+  routingCount?: number;
 }
 
 interface PayrollComponent {
@@ -72,6 +82,8 @@ interface PayrollComponent {
   type: "BENEFIT" | "CHARGE" | "PROVISION";
   calculationType: "PERCENTAGE" | "FIXED";
   value: number;
+  /** Colaboradores com a verba marcada (Pessoas / RH → Referência administrativa). */
+  employeeCount?: number;
 }
 
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
@@ -357,6 +369,9 @@ export const SettingsModule = () => {
   const auth = useAuth();
   const stepUp = useAdminStepUp();
   const canManageUsersPerm = canManageUsers(auth);
+  // Excluir verba tira ela de todos os colaboradores; excluir cargo exige que ninguém o use.
+  // Nos dois casos só super admin (o servidor também exige).
+  const canDeletePayrollComponents = auth.isSuperAdmin();
   const canViewAccessProfilesPerm = canViewAccessProfiles(auth);
   const allowGenerateCommercialTables = canGenerateCommercialPriceTables(auth);
   const canViewSettings = auth.hasPermission("settings.view");
@@ -1294,6 +1309,48 @@ export const SettingsModule = () => {
     }
   };
 
+  // Cargo em uso não sai (é obrigatório no colaborador e no roteiro); o servidor também confere.
+  const handleDeleteRole = async (role: Role) => {
+    const usage = { employees: role.employeeCount ?? 0, routings: role.routingCount ?? 0 };
+    if (isRoleInUse(usage)) {
+      alert(roleDeleteBlockedMessage(role.name, usage));
+      return;
+    }
+    if (!window.confirm(`Excluir o cargo "${role.name}" do cadastro?\n\nEsta ação não pode ser desfeita.`)) {
+      return;
+    }
+    try {
+      await fetchJsonOk(`/api/roles/${role.id}`, { method: "DELETE" });
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao excluir cargo:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir o cargo.");
+      fetchData();
+    }
+  };
+
+  const handleDeleteComponent = async (comp: PayrollComponent) => {
+    const count = comp.employeeCount ?? 0;
+    const impact =
+      count > 0
+        ? `\n\nEla está marcada em ${count} colaborador(es) e será removida de todos — isso muda a referência de custo deles. A remoção fica registrada no histórico de cada um.`
+        : "";
+    if (
+      !window.confirm(
+        `Excluir "${comp.name}" do cadastro de Encargos e Benefícios?${impact}\n\nEsta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await fetchJsonOk(`/api/payroll-components/${comp.id}`, { method: "DELETE" });
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao excluir encargo/benefício:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const endpoint = activeOperationalTab === "roles" ? "/api/roles" : "/api/payroll-components";
@@ -1467,14 +1524,27 @@ export const SettingsModule = () => {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={() => handleOpenModal(role)}
+                              aria-label={`Editar ${role.name}`}
+                              title="Editar"
                               className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                             </button>
+                            {canDeletePayrollComponents ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteRole(role)}
+                                aria-label={`Excluir ${role.name}`}
+                                title="Excluir (super administrador)"
+                                className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                         <div className="p-5">
@@ -1486,6 +1556,19 @@ export const SettingsModule = () => {
                             <span>Custo p/ Hora (Base)</span>
                             <span>{formatNumber(Number(role.baseSalary) / role.monthlyHours, 5)}</span>
                           </div>
+                          {typeof role.employeeCount === "number" ? (
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              {isRoleInUse({
+                                employees: role.employeeCount,
+                                routings: role.routingCount ?? 0,
+                              })
+                                ? `Em uso por ${describeRoleUsage({
+                                    employees: role.employeeCount,
+                                    routings: role.routingCount ?? 0,
+                                  })}`
+                                : "Sem uso — pode ser excluído"}
+                            </div>
+                          ) : null}
                         </div>
                       </motion.div>
                     ))
@@ -1517,14 +1600,27 @@ export const SettingsModule = () => {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={() => handleOpenModal(comp)}
+                              aria-label={`Editar ${comp.name}`}
+                              title="Editar"
                               className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                             </button>
+                            {canDeletePayrollComponents ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteComponent(comp)}
+                                aria-label={`Excluir ${comp.name}`}
+                                title="Excluir (super administrador)"
+                                className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                         <div className="p-5">
@@ -1541,6 +1637,13 @@ export const SettingsModule = () => {
                               ? "Calculado sobre o salário base"
                               : "Valor fixo mensal"}
                           </div>
+                          {typeof comp.employeeCount === "number" ? (
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              {comp.employeeCount === 0
+                                ? "Nenhum colaborador com esta verba"
+                                : `Marcada em ${comp.employeeCount} colaborador(es)`}
+                            </div>
+                          ) : null}
                         </div>
                       </motion.div>
                     ))}

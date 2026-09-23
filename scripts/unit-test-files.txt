@@ -1,9 +1,14 @@
 ﻿src/lib/canonicalPersonBackfill.test.ts
 src/lib/canonicalPersonHardening.integration.test.ts
 src/lib/employeesPermissions.test.ts
+src/lib/security/employeesEditAliasBackfill.test.ts
 src/lib/employeeHrAudit.test.ts
 src/lib/peopleProfile.test.ts
 src/lib/peopleProfileMutations.test.ts
+src/lib/peopleProfileRecordEdits.test.ts
+src/lib/employeeWorkSchedule.test.ts
+src/lib/employeeAdminHr.test.ts
+src/lib/settingsOperationalCatalog.test.ts
 src/lib/peopleProfile.server.test.ts
 src/lib/employeeSystemLinks.test.ts
 src/lib/canonicalPersonRoutes.auth.test.ts

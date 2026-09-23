@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { profileDelete } from "./profileClient";
 
 /** Cartão padrão da ficha redesenhada (fundo branco, borda, cantos 12px). */
 export function ProfileCard({
@@ -195,18 +196,150 @@ export const PROFILE_LABEL_CLASS = "text-[11px] uppercase tracking-wide text-mut
 
 export function ProfileManageSection({
   title,
+  inline,
   children,
 }: {
   title: string;
+  /** Edição de um registro dentro da própria lista (sem a divisória do formulário de inclusão). */
+  inline?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-8 pt-4 border-t border-border">
+    <section
+      className={
+        inline
+          ? "rounded-md border border-border bg-muted/30 p-4"
+          : "mt-8 pt-4 border-t border-border"
+      }
+    >
       <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-3">
         {title}
       </h4>
       {children}
     </section>
+  );
+}
+
+/** Data ISO do DTO → valor de <input type="date"> (UTC, como formatProfileDate). */
+export function toProfileDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+export type ProfileRecordActionsState = {
+  editingId: string | null;
+  deletingId: string | null;
+  startEdit: (id: string) => void;
+  cancelEdit: () => void;
+  finishEdit: () => void;
+  remove: (id: string, url: string, confirmMessage: string) => Promise<void>;
+  errorFor: (id: string) => string | null;
+};
+
+/**
+ * Estado de Editar/Excluir por registro das guias da ficha.
+ * A exclusão pede confirmação, chama a API e só então avisa a guia (onSaved) para recarregar.
+ */
+export function useProfileRecordActions(onSaved?: () => void): ProfileRecordActionsState {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
+
+  const startEdit = useCallback((id: string) => {
+    setActionError(null);
+    setEditingId(id);
+  }, []);
+
+  const cancelEdit = useCallback(() => setEditingId(null), []);
+
+  const finishEdit = useCallback(() => {
+    setEditingId(null);
+    onSaved?.();
+  }, [onSaved]);
+
+  const remove = useCallback(
+    async (id: string, url: string, confirmMessage: string) => {
+      if (!window.confirm(confirmMessage)) return;
+      setDeletingId(id);
+      setActionError(null);
+      try {
+        await profileDelete(url);
+        setEditingId((current) => (current === id ? null : current));
+        onSaved?.();
+      } catch (err) {
+        setActionError({
+          id,
+          message: err instanceof Error ? err.message : "Não foi possível excluir o registro.",
+        });
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [onSaved]
+  );
+
+  const errorFor = useCallback(
+    (id: string) => (actionError && actionError.id === id ? actionError.message : null),
+    [actionError]
+  );
+
+  return { editingId, deletingId, startEdit, cancelEdit, finishEdit, remove, errorFor };
+}
+
+const PROFILE_RECORD_ACTION_CLASS =
+  "inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-60";
+
+/** Botões "Editar" / "Excluir" de um registro, com o erro da API logo abaixo. */
+export function ProfileRecordActions({
+  itemLabel,
+  onEdit,
+  onDelete,
+  deleting,
+  error,
+  className,
+}: {
+  /** Nome do registro para leitores de tela (ex.: "reajuste de 01/05/2026"). */
+  itemLabel: string;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  deleting?: boolean;
+  error?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex shrink-0 flex-col items-end gap-1", className)}>
+      <div className="flex items-center gap-2">
+        {onEdit ? (
+          <button
+            type="button"
+            className={PROFILE_RECORD_ACTION_CLASS}
+            aria-label={`Editar ${itemLabel}`}
+            disabled={deleting}
+            onClick={onEdit}
+          >
+            Editar
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            className={cn(PROFILE_RECORD_ACTION_CLASS, "text-destructive")}
+            aria-label={`Excluir ${itemLabel}`}
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            {deleting ? "Excluindo…" : "Excluir"}
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive text-right">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

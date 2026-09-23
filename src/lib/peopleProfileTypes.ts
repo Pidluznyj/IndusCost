@@ -69,6 +69,23 @@ export const PEOPLE_CAREER_POST_EVENT_TYPES = [
 
 export type PeopleCareerPostEventType = (typeof PEOPLE_CAREER_POST_EVENT_TYPES)[number];
 
+/**
+ * Eventos de carreira que aceitam correção administrativa (data, motivo, observação)
+ * ou exclusão do registro. INITIAL_STATE fica de fora (chave de idempotência do backfill)
+ * e COMPENSATION_ADJUSTMENT é corrigido pelo próprio reajuste.
+ */
+export const PEOPLE_CAREER_EDITABLE_EVENT_TYPES = [
+  ...PEOPLE_CAREER_POST_EVENT_TYPES,
+  "ADMISSION",
+  "TERMINATION",
+  "REHIRE",
+] as const;
+
+export type PeopleCareerEditableEventType = (typeof PEOPLE_CAREER_EDITABLE_EVENT_TYPES)[number];
+
+/** Únicos tipos intercambiáveis numa correção: mesma forma de dado (cargo anterior → novo). */
+export const PEOPLE_CAREER_RECLASSIFIABLE_EVENT_TYPES = ["PROMOTION", "ROLE_CHANGE"] as const;
+
 export const HR_COMPENSATION_ADJUSTMENT_TYPES = [
   "MERIT",
   "COLLECTIVE",
@@ -153,6 +170,36 @@ export const HR_ABSENCE_TYPE_LABELS: Record<HrAbsenceType, string> = {
 
 export const HR_ABSENCE_STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as const;
 export type HrAbsenceStatus = (typeof HR_ABSENCE_STATUSES)[number];
+
+export const HR_ABSENCE_STATUS_LABELS: Record<HrAbsenceStatus, string> = {
+  SCHEDULED: "Programado",
+  IN_PROGRESS: "Em andamento",
+  COMPLETED: "Concluído",
+  CANCELLED: "Cancelado",
+};
+
+export const HR_EMPLOYEE_BENEFIT_STATUSES = ["ACTIVE", "ENDED"] as const;
+export type HrEmployeeBenefitStatus = (typeof HR_EMPLOYEE_BENEFIT_STATUSES)[number];
+
+export const HR_EMPLOYEE_BENEFIT_STATUS_LABELS: Record<HrEmployeeBenefitStatus, string> = {
+  ACTIVE: "Ativo",
+  ENDED: "Encerrado",
+};
+
+/** Id sintético do contato principal (colunas do Employee) na guia de emergência. */
+export const PEOPLE_PRIMARY_EMERGENCY_CONTACT_ID = "primary";
+
+/** Tipos de registro satélite ligados a um evento do histórico via `metadata`. */
+export const PEOPLE_HISTORY_LINKED_RECORD_TYPES = [
+  "benefit",
+  /** Verba oficial (PayrollComponent) marcada/desmarcada no cadastro. */
+  "payrollComponent",
+  "absence",
+  "epiDelivery",
+  "document",
+  "note",
+] as const;
+export type PeopleHistoryLinkedRecordType = (typeof PEOPLE_HISTORY_LINKED_RECORD_TYPES)[number];
 
 export type PeopleAccessScope = "NONE" | "SELF" | "DIRECT_REPORTS" | "DESCENDANTS" | "ALL";
 
@@ -301,3 +348,6 @@ export const PEOPLE_PROFILE_TAB_IDS = [
 ] as const;
 
 export type PeopleProfileTabId = (typeof PEOPLE_PROFILE_TAB_IDS)[number];
+
+/** Item da guia Carreira: `editable` segue PEOPLE_CAREER_EDITABLE_EVENT_TYPES (corrigir/excluir). */
+export type PeopleCareerItemDto = PeopleHistoryEventDto & { editable: boolean };

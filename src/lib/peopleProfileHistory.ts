@@ -9,6 +9,34 @@ import {
 } from "./peopleProfileTypes.js";
 import { historyEventLabel, parseIsoDate } from "./peopleProfileKpis.js";
 
+export type PayrollComponentAssignmentChange = {
+  payrollComponentId: string;
+  action: "added" | "removed";
+};
+
+/**
+ * Verbas oficiais marcadas/desmarcadas no cadastro: incluídas primeiro (na ordem nova),
+ * depois removidas (na ordem antiga). Ids repetidos contam uma vez.
+ */
+export function diffPayrollComponentAssignments(
+  previousIds: readonly string[],
+  nextIds: readonly string[]
+): PayrollComponentAssignmentChange[] {
+  const previous = new Set(previousIds);
+  const next = new Set(nextIds);
+  const out: PayrollComponentAssignmentChange[] = [];
+  for (const id of next) if (!previous.has(id)) out.push({ payrollComponentId: id, action: "added" });
+  for (const id of previous) if (!next.has(id)) out.push({ payrollComponentId: id, action: "removed" });
+  return out;
+}
+
+export function payrollComponentHistoryNote(
+  action: PayrollComponentAssignmentChange["action"],
+  name: string
+): string {
+  return action === "added" ? `${name} incluído` : `${name} removido`;
+}
+
 export type HistorySortable = {
   id: string;
   effectiveDate: Date | string;
@@ -83,6 +111,7 @@ export function buildHistorySummary(input: {
   includeAmounts?: boolean;
   previousAmount?: number | null;
   newAmount?: number | null;
+  /** Eventos de registros satélite guardam o nome do item em `notes`. */
   notes?: string | null;
 }): { summary: string; fromLabel: string | null; toLabel: string | null } {
   const arrow = (from?: string | null, to?: string | null) => {
@@ -157,6 +186,13 @@ export function buildHistorySummary(input: {
       const note = input.notes?.trim();
       if (note) return { summary: note, fromLabel: null, toLabel: null };
       return { summary: historyEventLabel(input.eventType), fromLabel: null, toLabel: null };
+    }
+    case "BENEFIT_CHANGE":
+    case "EPI_DELIVERY":
+    case "DOCUMENT_ADDED": {
+      const note = (input.notes ?? "").trim();
+      if (note) return { summary: note, fromLabel: null, toLabel: note };
+      break;
     }
     default:
       break;

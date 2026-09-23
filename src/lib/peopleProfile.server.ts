@@ -32,17 +32,29 @@ import {
   HR_EMPLOYEE_STATUS_LABELS,
   PEOPLE_PROFILE_HISTORY_PAGE_SIZE,
   type HrEmployeeStatus,
+  type PeopleCareerItemDto,
   type PeopleHistoryEventDto,
   type PeopleProfileCapabilities,
   type PeopleProfileSummaryDto,
 } from "./peopleProfileTypes.js";
-import { formatContractType } from "./employeeHrUi.js";
+import {
+  canonicalEpiSize,
+  EPI_GLOVE_SIZE_OPTIONS,
+  EPI_PANTS_SIZE_OPTIONS,
+  EPI_SHOE_SIZE_OPTIONS,
+  EPI_TOP_SIZE_OPTIONS,
+  formatContractType,
+} from "./employeeHrUi.js";
 import { formatCpfForDisplay, formatPhoneForDisplay, maskCpf, maskPhone } from "./employeePersonalHr.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
 import {
+  comparePayrollCatalogRows,
+  mapPayrollComponentToHrCatalogItem,
   overlayOfficialPayrollName,
   payrollIdFromHrBenefitCode,
+  toEmployeeOfficialBenefitItem,
 } from "./peopleOfficialPayrollCatalog.js";
+import { buildEmployeePhotoUrl, isCareerEventEditable } from "./peopleProfileRecordEdits.js";
 
 export { PeopleProfileAccessError };
 
@@ -204,7 +216,7 @@ export async function loadPeopleProfileSummary(
   }
 
   const now = new Date();
-  const [historyRows, adjustmentRows] = await Promise.all([
+  const [historyRows, lastPromotionRow, adjustmentRows] = await Promise.all([
     prisma.hrEmployeeHistory.findMany({
       where: { employeeId },
       orderBy: [{ effectiveDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
@@ -220,6 +232,19 @@ export async function loadPeopleProfileSummary(
         newDepartment: true,
         previousManagerName: true,
         newManagerName: true,
+        notes: true,
+      },
+    }),
+    // Consulta dedicada: a última promoção não pode depender da janela de movimentações recentes
+    // (promoção retroativa ou soterrada por eventos de EPI/documento/observação).
+    prisma.hrEmployeeHistory.findFirst({
+      where: { employeeId, eventType: "PROMOTION" },
+      orderBy: [{ effectiveDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      select: {
+        eventType: true,
+        effectiveDate: true,
+        previousRoleName: true,
+        newRoleName: true,
       },
     }),
     prisma.hrCompensationAdjustment.findMany({
@@ -234,14 +259,7 @@ export async function loadPeopleProfileSummary(
     }),
   ]);
 
-  const lastPromo = pickLastPromotion(
-    historyRows.map((h) => ({
-      eventType: h.eventType,
-      effectiveDate: h.effectiveDate,
-      newRoleName: h.newRoleName,
-      previousRoleName: h.previousRoleName,
-    }))
-  );
+  const lastPromo = pickLastPromotion(lastPromotionRow ? [lastPromotionRow] : []);
   const lastAdj = pickLastAdjustment(
     adjustmentRows.map((a) => ({
       effectiveDate: a.effectiveDate,
@@ -273,6 +291,7 @@ export async function loadPeopleProfileSummary(
         newDepartment: h.newDepartment,
         previousManagerName: h.previousManagerName,
         newManagerName: h.newManagerName,
+        notes: h.notes,
       },
       { includeAmounts: false }
     );
@@ -294,7 +313,7 @@ export async function loadPeopleProfileSummary(
       registrationId: row.id,
       fullName: identityName,
       socialName: row.socialName ?? row.person?.socialName ?? null,
-      photoUrl: row.photoStorageKey ? `/api/employees/${row.id}/photo` : null,
+      photoUrl: row.photoStorageKey ? buildEmployeePhotoUrl(row.id, row.photoStorageKey) : null,
       status: situation.status,
       statusLabel: situation.label,
       roleName: row.Role?.name ?? null,
@@ -564,7 +583,17 @@ export async function loadPeopleEpi(prisma: PrismaClient, employeeId: string) {
     deliveries.map((d) => d.createdByUserId)
   );
   return {
-    sizes: row,
+    // Rótulos da escala anterior (XGG / EXGG) aparecem na escala atual.
+    sizes: row
+      ? {
+          ...row,
+          shirtSize: canonicalEpiSize(row.shirtSize, EPI_TOP_SIZE_OPTIONS) || null,
+          pantsSize: canonicalEpiSize(row.pantsSize, EPI_PANTS_SIZE_OPTIONS) || null,
+          jacketSize: canonicalEpiSize(row.jacketSize, EPI_TOP_SIZE_OPTIONS) || null,
+          gloveSize: canonicalEpiSize(row.gloveSize, EPI_GLOVE_SIZE_OPTIONS) || null,
+          shoeSize: canonicalEpiSize(row.shoeSize, EPI_SHOE_SIZE_OPTIONS) || null,
+        }
+      : row,
     deliveries: deliveries.map((d) => ({
       ...d,
       deliveredAt: d.deliveredAt.toISOString(),
@@ -580,6 +609,26 @@ export async function loadPeopleBenefits(
   employeeId: string,
   opts: { includeAmounts: boolean }
 ) {
+  // Fonte única: verbas oficiais marcadas no cadastro (Editar → Referência administrativa).
+  // O valor é o do PayrollComponent (muda para todos); R$ só com permissão de valores.
+  const assigned = await prisma.employeePayrollComponent.findMany({
+    where: { employeeId },
+    select: {
+      PayrollComponent: {
+        select: { id: true, name: true, type: true, calculationType: true, value: true },
+      },
+    },
+  });
+  const official = assigned
+    .map((row) => ({ ...row.PayrollComponent, value: Number(row.PayrollComponent.value) }))
+    .sort(comparePayrollCatalogRows)
+    .map((row) =>
+      toEmployeeOfficialBenefitItem(
+        mapPayrollComponentToHrCatalogItem(row, { includeValues: opts.includeAmounts })
+      )
+    );
+
+  // Registros do modelo anterior (HrEmployeeBenefit): só leitura + exclusão.
   const rows = await prisma.hrEmployeeBenefit.findMany({
     where: { employeeId },
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
@@ -602,7 +651,7 @@ export async function loadPeopleBenefits(
         })
       : [];
   const payrollById = new Map(payrollRows.map((row) => [row.id, row]));
-  return rows.map((row) => {
+  const legacy = rows.map((row) => {
     const official = overlayOfficialPayrollName({
       code: row.benefit.code,
       fallbackName: row.benefit.name,
@@ -610,6 +659,7 @@ export async function loadPeopleBenefits(
       payrollById,
     });
     const dto: Record<string, unknown> = {
+      kind: "legacy",
       id: row.id,
       benefitId: row.benefitId,
       code: row.benefit.code,
@@ -628,6 +678,7 @@ export async function loadPeopleBenefits(
     }
     return dto;
   });
+  return [...official, ...legacy];
 }
 
 export async function loadPeopleAbsences(prisma: PrismaClient, employeeId: string) {
@@ -824,7 +875,13 @@ export async function loadPeopleCompensation(
 export async function loadPeopleHistoryPage(
   prisma: PrismaClient,
   employeeId: string,
-  opts: { includeAmounts: boolean; cursor?: string | null; limit?: number }
+  opts: {
+    includeAmounts: boolean;
+    cursor?: string | null;
+    limit?: number;
+    /** Restringe a página a estes tipos de evento (guia Carreira). */
+    eventTypes?: readonly string[];
+  }
 ): Promise<{ items: PeopleHistoryEventDto[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(opts.limit ?? PEOPLE_PROFILE_HISTORY_PAGE_SIZE, 1), 200);
   const cursor = decodeHistoryCursor(opts.cursor);
@@ -833,6 +890,7 @@ export async function loadPeopleHistoryPage(
   const rows = await prisma.hrEmployeeHistory.findMany({
     where: {
       employeeId,
+      ...(opts.eventTypes ? { eventType: { in: [...opts.eventTypes] } } : {}),
       ...(keyset ?? {}),
     },
     orderBy: [{ effectiveDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
@@ -935,25 +993,34 @@ export async function loadPeopleHistoryPage(
   };
 }
 
-export async function loadPeopleCareer(prisma: PrismaClient, employeeId: string) {
+const PEOPLE_CAREER_TAB_EVENT_TYPES = [
+  "INITIAL_STATE",
+  "ADMISSION",
+  "PROMOTION",
+  "ROLE_CHANGE",
+  "DEPARTMENT_CHANGE",
+  "COST_CENTER_CHANGE",
+  "MANAGER_CHANGE",
+  "CONTRACT_CHANGE",
+  "WORK_SCHEDULE_CHANGE",
+  "TERMINATION",
+  "REHIRE",
+] as const;
+
+export async function loadPeopleCareer(
+  prisma: PrismaClient,
+  employeeId: string
+): Promise<{ items: PeopleCareerItemDto[] }> {
+  // Filtra no banco: evento de carreira retroativo não some atrás de 100 eventos de EPI/documento.
   const page = await loadPeopleHistoryPage(prisma, employeeId, {
     includeAmounts: false,
     limit: 100,
+    eventTypes: PEOPLE_CAREER_TAB_EVENT_TYPES,
   });
-  const careerTypes = new Set([
-    "INITIAL_STATE",
-    "ADMISSION",
-    "PROMOTION",
-    "ROLE_CHANGE",
-    "DEPARTMENT_CHANGE",
-    "COST_CENTER_CHANGE",
-    "MANAGER_CHANGE",
-    "CONTRACT_CHANGE",
-    "WORK_SCHEDULE_CHANGE",
-    "TERMINATION",
-    "REHIRE",
-  ]);
+  const careerTypes = new Set<string>(PEOPLE_CAREER_TAB_EVENT_TYPES);
   return {
-    items: page.items.filter((item) => careerTypes.has(item.eventType)),
+    items: page.items
+      .filter((item) => careerTypes.has(item.eventType))
+      .map((item) => ({ ...item, editable: isCareerEventEditable(item.eventType) })),
   };
 }

@@ -20,7 +20,9 @@ import {
   buildHistoryKeysetWhere,
   compareHistoryDesc,
   diffEmployeeSnapshots,
+  diffPayrollComponentAssignments,
   paginateHistory,
+  payrollComponentHistoryNote,
   toHistoryEventDto,
 } from "./peopleProfileHistory.ts";
 import {
@@ -29,6 +31,7 @@ import {
   overlayOfficialPayrollName,
   payrollIdFromHrBenefitCode,
   payrollTypeLabel,
+  toEmployeeOfficialBenefitItem,
 } from "./peopleOfficialPayrollCatalog.ts";
 
 function check(perms: string[]) {
@@ -364,10 +367,21 @@ describe("peopleProfile — wiring de segurança da ficha", () => {
     assert.ok(src.includes("function noStore"));
     assert.ok(src.includes("canViewBenefits"));
     assert.ok(!src.includes("max-age=300"));
-    assert.ok(src.includes("canViewCompensationValues && body.amount"));
     assert.ok(src.includes("listOfficialPayrollHrCatalogItems"));
+    assert.ok(src.includes("includeValues: caps.canViewCompensationValues"));
     assert.ok(!src.includes("hrBenefit.findMany"));
-    assert.ok(form.includes("/api/hr/benefits"));
+    // Benefício por colaborador não é mais gravado pela ficha: a fonte única é o cadastro
+    // oficial marcado em Editar → Referência administrativa (PUT /api/employees/:id).
+    assert.ok(!src.includes('app.post("/api/employees/:id/benefits"'));
+    assert.ok(!src.includes('app.patch("/api/employees/:id/benefits/'));
+    assert.ok(!src.includes('app.post("/api/hr/benefits"'));
+    const modal = readFileSync(
+      new URL("../components/EmployeeModule.tsx", import.meta.url),
+      "utf8"
+    );
+    assert.ok(modal.includes("/api/hr/benefits"));
+    assert.ok(!modal.includes('"/api/payroll-components")'));
+    assert.ok(!form.includes("BenefitsManageForm"));
     assert.ok(form.includes("/api/employees/lookups/roles"));
     assert.ok(form.includes("Estrutura Operacional"));
   });
@@ -404,6 +418,40 @@ describe("peopleOfficialPayrollCatalog", () => {
     assert.equal(payrollIdFromHrBenefitCode(item.code), "comp-fgts");
     assert.equal(payrollTypeLabel("BENEFIT"), "Benefício");
     assert.equal(payrollTypeLabel("PROVISION"), "Provisão");
+    assert.equal(item.calculationType, "PERCENTAGE");
+    assert.equal(item.percentage, null);
+    assert.ok(!("amount" in item));
+  });
+
+  it("valor da verba: % sempre; R$ só com includeValues (chave omitida sem permissão)", () => {
+    const fgts = mapPayrollComponentToHrCatalogItem(
+      { id: "c-fgts", name: "FGTS", type: "CHARGE", calculationType: "PERCENTAGE", value: 8 },
+      { includeValues: false }
+    );
+    assert.equal(fgts.percentage, 8);
+    assert.ok(!("amount" in fgts));
+
+    const vrHidden = mapPayrollComponentToHrCatalogItem(
+      { id: "c-vr", name: "Vale Refeição", type: "BENEFIT", calculationType: "FIXED", value: 500 },
+      { includeValues: false }
+    );
+    assert.equal(vrHidden.isFinancial, true);
+    assert.equal(vrHidden.percentage, null);
+    assert.ok(!("amount" in vrHidden));
+    assert.ok(!JSON.stringify(vrHidden).includes("500"));
+
+    const vr = mapPayrollComponentToHrCatalogItem(
+      { id: "c-vr", name: "Vale Refeição", type: "BENEFIT", calculationType: "FIXED", value: 500 },
+      { includeValues: true }
+    );
+    assert.equal(vr.amount, 500);
+
+    const item = toEmployeeOfficialBenefitItem(vr);
+    assert.equal(item.kind, "official");
+    assert.equal(item.id, "pc:c-vr");
+    assert.equal(item.payrollComponentId, "c-vr");
+    assert.equal(item.status, "ACTIVE");
+    assert.equal(item.amount, 500);
   });
 
   it("leitura da ficha usa o nome vigente do cadastro oficial", () => {
@@ -427,5 +475,44 @@ describe("peopleOfficialPayrollCatalog", () => {
     assert.equal(overlaid.name, "Vale Refeição");
     assert.equal(overlaid.category, "BENEFIT");
     assert.equal(overlaid.typeLabel, "Benefício");
+  });
+});
+describe("verbas oficiais marcadas no cadastro → histórico", () => {
+  it("diff: incluídas na ordem nova, removidas na ordem antiga, sem repetição", () => {
+    assert.deepEqual(diffPayrollComponentAssignments(["a", "b"], ["b", "c", "c"]), [
+      { payrollComponentId: "c", action: "added" },
+      { payrollComponentId: "a", action: "removed" },
+    ]);
+    assert.deepEqual(diffPayrollComponentAssignments(["a"], ["a"]), []);
+    assert.deepEqual(diffPayrollComponentAssignments([], []), []);
+  });
+
+  it("nota e resumo do evento BENEFIT_CHANGE mostram a verba", () => {
+    assert.equal(payrollComponentHistoryNote("added", "Vale Refeição"), "Vale Refeição incluído");
+    assert.equal(payrollComponentHistoryNote("removed", "FGTS"), "FGTS removido");
+    const dto = toHistoryEventDto(
+      {
+        id: "h1",
+        eventType: "BENEFIT_CHANGE",
+        effectiveDate: "2026-09-22T00:00:00.000Z",
+        createdAt: "2026-09-22T00:00:00.000Z",
+        source: "USER",
+        notes: "Vale Refeição incluído",
+      },
+      { includeAmounts: false }
+    );
+    assert.equal(dto.summary, "Vale Refeição incluído");
+    // Sem nota, cai no rótulo do evento (registros antigos).
+    const plain = toHistoryEventDto(
+      {
+        id: "h2",
+        eventType: "BENEFIT_CHANGE",
+        effectiveDate: "2026-09-22T00:00:00.000Z",
+        createdAt: "2026-09-22T00:00:00.000Z",
+        source: "USER",
+      },
+      { includeAmounts: false }
+    );
+    assert.equal(plain.summary, "Alteração de benefício");
   });
 });

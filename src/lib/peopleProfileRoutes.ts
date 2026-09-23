@@ -35,18 +35,35 @@ import {
   applyCompensationAdjustment,
   createEmergencyContact,
   createEmployeeAbsence,
-  createEmployeeBenefit,
   createEmployeeNote,
   createEpiDelivery,
+  deleteCareerEvent,
+  deleteCompensationAdjustment,
+  deleteEmergencyContact,
+  deleteEmployeeAbsence,
+  deleteEmployeeBenefit,
+  deleteEmployeeDocument,
+  deleteEmployeeNote,
+  deleteEpiDelivery,
   PEOPLE_CAREER_POST_EVENT_TYPES,
   readEmployeeDocumentFile,
+  readEmployeePhotoFile,
+  removeEmployeePhoto,
   saveEmployeeDocument,
+  saveEmployeePhoto,
+  updateCareerEvent,
+  updateCompensationAdjustment,
+  updateEmergencyContact,
+  updateEmployeeAbsence,
+  updateEmployeeDocument,
+  updateEmployeeNote,
+  updateEpiDelivery,
 } from "@/src/lib/peopleProfileMutations.server.js";
 import { buildPeopleProfileCapabilities } from "@/src/lib/peopleProfileCapabilities.js";
 import { listOfficialPayrollHrCatalogItems } from "@/src/lib/peopleOfficialPayrollCatalog.server.js";
-import { readAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { EmployeeRegistrationError } from "@/src/lib/employeeRegistration.js";
 import { registerHrEvaluationRoutes } from "@/src/lib/hrEvaluationRoutes.js";
+import { PEOPLE_PROFILE_PHOTO_MAX_BYTES } from "@/src/lib/peopleProfileRecordEdits.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -63,9 +80,31 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PEOPLE_PROFILE_PHOTO_MAX_BYTES, files: 1 },
+});
+
 function noStore(res: express.Response) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Pragma", "no-cache");
+}
+
+/** Erro do multer (arquivo acima do limite etc.) vira 400 em JSON, não o handler genérico do Express. */
+const photoUploadSingle: RequestHandler = (req, res, next) => {
+  photoUpload.single("file")(req, res, (error: unknown) => {
+    if (!error) return next();
+    noStore(res);
+    const tooLarge = error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE";
+    return res.status(400).json({
+      error: tooLarge ? "A foto deve ter no máximo 5 MB." : "Não foi possível ler a foto enviada.",
+      code: tooLarge ? "PHOTO_TOO_LARGE" : "INVALID_PHOTO",
+    });
+  });
+};
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function parseDate(value: unknown, fallback?: Date): Date | null {
@@ -110,6 +149,23 @@ export function registerPeopleProfileRoutes(
       targetEmployeeId: employeeId,
     });
     return { check, user, actorEmployeeId, ...access };
+  }
+
+  /** `:recordId` dos PATCH/DELETE. O vínculo com `:id` é conferido dentro da transação (IDOR → 404). */
+  function recordParam(req: express.Request): string {
+    const recordId = String(req.params.recordId ?? "");
+    if (!isEmployeeUuid(recordId)) {
+      throw new PeopleProfileAccessError("INVALID_ID", "Registro inválido.", 400);
+    }
+    return recordId;
+  }
+
+  function patchBody(req: express.Request): Record<string, unknown> {
+    const body: unknown = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new PeopleProfileAccessError("INVALID_BODY", "Dados inválidos.", 400);
+    }
+    return body as Record<string, unknown>;
   }
 
   app.get("/api/employees/:id/profile", ...viewGuard, async (req, res) => {
@@ -344,20 +400,58 @@ export function registerPeopleProfileRoutes(
     try {
       const { id } = req.params;
       await context(req, id);
-      const row = await prisma.employee.findUnique({
-        where: { id },
-        select: { photoStorageKey: true },
-      });
-      if (!row?.photoStorageKey) {
+      const photo = await readEmployeePhotoFile(prisma, { employeeId: id });
+      if (!photo) {
+        noStore(res);
         return res.status(404).json({ error: "Foto não cadastrada." });
       }
-      const buffer = await readAppLocalFile(row.photoStorageKey);
       noStore(res);
       res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Content-Type", "image/jpeg");
-      return res.send(buffer);
+      // Tipo real pelos magic bytes (JPEG/PNG/WebP) — nada de image/jpeg fixo.
+      res.setHeader("Content-Type", photo.contentType);
+      return res.send(photo.buffer);
     } catch (error) {
       return sendError(res, error, "Erro ao carregar foto.");
+    }
+  });
+
+  app.post("/api/employees/:id/photo", ...viewGuard, photoUploadSingle, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageProfessional) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para alterar a foto.");
+      }
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "Arquivo não enviado." });
+      const result = await saveEmployeePhoto({
+        prisma,
+        employeeId: id,
+        buffer: file.buffer,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.status(201).json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao salvar foto.");
+    }
+  });
+
+  app.delete("/api/employees/:id/photo", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageProfessional) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para alterar a foto.");
+      }
+      const result = await removeEmployeePhoto(prisma, {
+        employeeId: id,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao remover foto.");
     }
   });
 
@@ -369,13 +463,21 @@ export function registerPeopleProfileRoutes(
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para registrar reajuste.");
       }
       const body = req.body as Record<string, unknown>;
-      const effectiveDate = parseDate(body.effectiveDate, new Date());
+      // historicalOnly: reajuste retroativo — só o registro, sem comparar/alterar o salário vigente.
+      // Nesse modo a vigência é obrigatória (não faz sentido assumir "hoje").
+      const historicalOnly = body.historicalOnly === true;
+      const effectiveDate = parseDate(body.effectiveDate, historicalOnly ? undefined : new Date());
       if (!effectiveDate) {
         return res.status(400).json({ error: "Data de vigência inválida." });
       }
       const result = await applyCompensationAdjustment(prisma, {
         employeeId: id,
-        expectedPreviousAmount: Number(body.expectedPreviousAmount),
+        historicalOnly,
+        expectedPreviousAmount: historicalOnly ? undefined : Number(body.expectedPreviousAmount),
+        previousAmount:
+          historicalOnly && body.previousAmount != null && body.previousAmount !== ""
+            ? Number(body.previousAmount)
+            : null,
         newAmount: Number(body.newAmount),
         type: String(body.type ?? "OTHER"),
         effectiveDate,
@@ -390,6 +492,53 @@ export function registerPeopleProfileRoutes(
     }
   });
 
+  app.patch(
+    "/api/employees/:id/compensation-adjustments/:recordId",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const ctx = await context(req, id);
+        if (!ctx.capabilities.canManageCompensation) {
+          throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para corrigir reajuste.");
+        }
+        const result = await updateCompensationAdjustment(prisma, {
+          employeeId: id,
+          recordId: recordParam(req),
+          patch: patchBody(req),
+          actorUserId: ctx.user?.id,
+        });
+        noStore(res);
+        return res.json(result);
+      } catch (error) {
+        return sendError(res, error, "Erro ao corrigir reajuste.");
+      }
+    }
+  );
+
+  app.delete(
+    "/api/employees/:id/compensation-adjustments/:recordId",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const ctx = await context(req, id);
+        if (!ctx.capabilities.canManageCompensation) {
+          throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para excluir reajuste.");
+        }
+        const result = await deleteCompensationAdjustment(prisma, {
+          employeeId: id,
+          recordId: recordParam(req),
+          actorUserId: ctx.user?.id,
+        });
+        noStore(res);
+        return res.json(result);
+      } catch (error) {
+        return sendError(res, error, "Erro ao excluir reajuste.");
+      }
+    }
+  );
+
   app.post("/api/employees/:id/career-events", ...viewGuard, async (req, res) => {
     try {
       const { id } = req.params;
@@ -402,7 +551,9 @@ export function registerPeopleProfileRoutes(
       if (!(PEOPLE_CAREER_POST_EVENT_TYPES as readonly string[]).includes(eventType)) {
         return res.status(400).json({ error: "Tipo de evento inválido." });
       }
-      const effectiveDate = parseDate(body.effectiveDate, new Date());
+      // recordOnly: evento retroativo — só o histórico, sem alterar o cadastro do colaborador.
+      const recordOnly = body.recordOnly === true;
+      const effectiveDate = parseDate(body.effectiveDate, recordOnly ? undefined : new Date());
       if (!effectiveDate) return res.status(400).json({ error: "Data de vigência inválida." });
       const result = await applyCareerMovement(prisma, {
         employeeId: id,
@@ -419,6 +570,19 @@ export function registerPeopleProfileRoutes(
         newCostCenterId: typeof body.newCostCenterId === "string" ? body.newCostCenterId : null,
         newCostCenter: typeof body.newCostCenter === "string" ? body.newCostCenter : null,
         newWorkSchedule: typeof body.newWorkSchedule === "string" ? body.newWorkSchedule : null,
+        recordOnly,
+        ...(recordOnly
+          ? {
+              previousRoleId: optionalString(body.previousRoleId),
+              previousDepartmentId: optionalString(body.previousDepartmentId),
+              previousDepartment: optionalString(body.previousDepartment),
+              previousManagerId: optionalString(body.previousManagerId),
+              previousContractType: optionalString(body.previousContractType),
+              previousCostCenterId: optionalString(body.previousCostCenterId),
+              previousCostCenter: optionalString(body.previousCostCenter),
+              previousWorkSchedule: optionalString(body.previousWorkSchedule),
+            }
+          : {}),
       });
       noStore(res);
       return res.status(201).json(result);
@@ -427,35 +591,63 @@ export function registerPeopleProfileRoutes(
     }
   });
 
-  app.post("/api/employees/:id/benefits", ...viewGuard, async (req, res) => {
+  app.patch("/api/employees/:id/career-events/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageCareer) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para corrigir movimentação.");
+      }
+      const result = await updateCareerEvent(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        patch: patchBody(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao corrigir movimentação.");
+    }
+  });
+
+  app.delete("/api/employees/:id/career-events/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageCareer) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para excluir movimentação.");
+      }
+      const result = await deleteCareerEvent(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir movimentação.");
+    }
+  });
+
+  // Só registros do modelo anterior (HrEmployeeBenefit). As verbas oficiais são marcadas /
+  // desmarcadas no cadastro (PUT /api/employees/:id, componentIds).
+  app.delete("/api/employees/:id/benefits/:recordId", ...viewGuard, async (req, res) => {
     try {
       const { id } = req.params;
       const ctx = await context(req, id);
       if (!ctx.capabilities.canManageBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
       }
-      const body = req.body as Record<string, unknown>;
-      const startDate = parseDate(body.startDate);
-      if (!startDate || typeof body.benefitId !== "string") {
-        return res.status(400).json({ error: "Benefício e data de início são obrigatórios." });
-      }
-      const row = await createEmployeeBenefit(prisma, {
+      const result = await deleteEmployeeBenefit(prisma, {
         employeeId: id,
-        benefitId: body.benefitId,
-        startDate,
-        endDate: parseDate(body.endDate),
-        planName: typeof body.planName === "string" ? body.planName : null,
-        amount:
-          ctx.capabilities.canViewCompensationValues && body.amount != null
-            ? Number(body.amount)
-            : null,
-        notes: typeof body.notes === "string" ? body.notes : null,
+        recordId: recordParam(req),
         actorUserId: ctx.user?.id,
       });
       noStore(res);
-      return res.status(201).json({ id: row.id });
+      return res.json(result);
     } catch (error) {
-      return sendError(res, error, "Erro ao registrar benefício.");
+      return sendError(res, error, "Erro ao excluir benefício.");
     }
   });
 
@@ -489,6 +681,45 @@ export function registerPeopleProfileRoutes(
     }
   });
 
+  app.patch("/api/employees/:id/absences/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageAbsences) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para afastamentos.");
+      }
+      const result = await updateEmployeeAbsence(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        patch: patchBody(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar afastamento.");
+    }
+  });
+
+  app.delete("/api/employees/:id/absences/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageAbsences) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para afastamentos.");
+      }
+      const result = await deleteEmployeeAbsence(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir afastamento.");
+    }
+  });
+
   app.post("/api/employees/:id/notes", ...viewGuard, async (req, res) => {
     try {
       const { id } = req.params;
@@ -511,6 +742,48 @@ export function registerPeopleProfileRoutes(
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar observação.");
+    }
+  });
+
+  app.patch("/api/employees/:id/notes/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageNotes) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para observações.");
+      }
+      // Linha RESTRITA sem permissão → 404; nova categoria RESTRITA sem permissão → 403 (na mutação).
+      const result = await updateEmployeeNote(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        patch: patchBody(req),
+        canViewRestrictedNotes: ctx.capabilities.canViewRestrictedNotes,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar observação.");
+    }
+  });
+
+  app.delete("/api/employees/:id/notes/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageNotes) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para observações.");
+      }
+      const result = await deleteEmployeeNote(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        canViewRestrictedNotes: ctx.capabilities.canViewRestrictedNotes,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir observação.");
     }
   });
 
@@ -542,6 +815,46 @@ export function registerPeopleProfileRoutes(
     }
   });
 
+  // `:recordId` vai cru para a mutação: "primary" → 400 PRIMARY_CONTACT antes da checagem de UUID.
+  app.patch("/api/employees/:id/emergency-contacts/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id, recordId } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageEmergency) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para emergência.");
+      }
+      const result = await updateEmergencyContact(prisma, {
+        employeeId: id,
+        recordId,
+        patch: patchBody(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar contato.");
+    }
+  });
+
+  app.delete("/api/employees/:id/emergency-contacts/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id, recordId } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageEmergency) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para emergência.");
+      }
+      const result = await deleteEmergencyContact(prisma, {
+        employeeId: id,
+        recordId,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir contato.");
+    }
+  });
+
   app.post("/api/employees/:id/epi-deliveries", ...viewGuard, async (req, res) => {
     try {
       const { id } = req.params;
@@ -569,6 +882,45 @@ export function registerPeopleProfileRoutes(
       return res.status(201).json({ id: row.id });
     } catch (error) {
       return sendError(res, error, "Erro ao registrar entrega de EPI.");
+    }
+  });
+
+  app.patch("/api/employees/:id/epi-deliveries/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageEpi) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para EPI.");
+      }
+      const result = await updateEpiDelivery(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        patch: patchBody(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar entrega de EPI.");
+    }
+  });
+
+  app.delete("/api/employees/:id/epi-deliveries/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageEpi) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para EPI.");
+      }
+      const result = await deleteEpiDelivery(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir entrega de EPI.");
     }
   });
 
@@ -612,6 +964,46 @@ export function registerPeopleProfileRoutes(
     }
   );
 
+  // Só metadados (JSON): o arquivo anexado não é substituído.
+  app.patch("/api/employees/:id/documents/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const result = await updateEmployeeDocument(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        patch: patchBody(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar documento.");
+    }
+  });
+
+  app.delete("/api/employees/:id/documents/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const result = await deleteEmployeeDocument(prisma, {
+        employeeId: id,
+        recordId: recordParam(req),
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir documento.");
+    }
+  });
+
   app.get("/api/hr/benefits", ...viewGuard, async (req, res) => {
     try {
       const check = await getPermissionCheck(req);
@@ -619,30 +1011,15 @@ export function registerPeopleProfileRoutes(
       if (!caps.canViewBenefits) {
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para benefícios.");
       }
-      const items = await listOfficialPayrollHrCatalogItems(prisma);
+      // R$ das verbas fixas só com permissão de valores; percentuais sempre.
+      const items = await listOfficialPayrollHrCatalogItems(prisma, {
+        includeValues: caps.canViewCompensationValues,
+      });
       noStore(res);
       return res.json({ items });
     } catch (error) {
       return sendError(res, error, "Erro ao listar benefícios.");
     }
   });
-
-  app.post("/api/hr/benefits", ...viewGuard, async (req, res) => {
-    try {
-      const check = await getPermissionCheck(req);
-      const caps = buildPeopleProfileCapabilities(check);
-      if (!caps.canManageBenefits) {
-        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para catálogo de benefícios.");
-      }
-      noStore(res);
-      return res.status(409).json({
-        error:
-          "O catálogo oficial é Administração → Configurações → Estrutura Operacional (Encargos e Benefícios).",
-      });
-    } catch (error) {
-      return sendError(res, error, "Erro ao criar benefício.");
-    }
-  });
-
   registerHrEvaluationRoutes(app, guards);
 }

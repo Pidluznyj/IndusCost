@@ -281,6 +281,7 @@ import {
 import {
   assertPayrollComponentIds,
   auditEpiAdminNotesSummary,
+  normalizeEmployeeWorkSchedule,
   prepareEmployeeAdminReferenceFields,
   prepareEmployeeEpiFields,
   prepareEmployeeNotesFields,
@@ -288,6 +289,7 @@ import {
 } from "./src/lib/employeeAdminHr.js";
 import {
   assertEmployeesDeleteSuperAdmin,
+  buildEmployeePermissionBag,
   canViewEmployeeAdministrativeData,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
@@ -300,7 +302,16 @@ import {
 import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
 import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
-import { recordHistoryAfterEmployeeWrite } from "./src/lib/peopleProfileMutations.server.js";
+import {
+  deletePayrollComponentWithHistory,
+  recordHistoryAfterEmployeeWrite,
+  recordPayrollComponentHistory,
+} from "./src/lib/peopleProfileMutations.server.js";
+import { PeopleProfileAccessError } from "./src/lib/peopleProfileErrors.js";
+import {
+  deleteRoleIfUnused,
+  OperationalCatalogError,
+} from "./src/lib/settingsOperationalCatalog.server.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -2071,20 +2082,58 @@ async function startServer() {
     };
   }
 
+  /**
+   * Bag oficial do RH. Editor de RH (employees.edit legado OU admin.employees:update
+   * canônico) recebe todas as capabilities da ficha — regra em buildEmployeePermissionBag.
+   */
   function employeePermCheck(authUser: AppAuthContext | null) {
-    const viewResources = authUser?.canonicalAccess?.viewResources;
-    return {
-      hasPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
-      hasAnyPermission: (list: readonly string[]) =>
-        Boolean(authUser && list.some((p) => hasPermission(authUser, p))),
-      canonicalViewResources: viewResources,
-      isDenied: (p: string) => {
-        if (!viewResources) return false;
-        if (p === "employees.compensation.values.view") {
-          return !viewResources.includes("admin.employees.compensation_values");
+    return buildEmployeePermissionBag({
+      hasLegacyPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
+      canonicalAccess: authUser?.canonicalAccess ?? null,
+    });
+  }
+
+  /**
+   * Guard de escrita do cadastro (POST / PUT / status) e das rotas auxiliares
+   * (lookups / vínculos): em `admin.employees:create|update` e nas facetas
+   * `admin.employees.*` o editor de RH passa mesmo sem grant próprio da ação,
+   * exceto com deny individual explícito (deny > allow). Qualquer outra negativa
+   * continua saindo do requireResource oficial (mesmo 403 + log).
+   * A listagem (view) fica no guard canônico puro.
+   */
+  function requireResourceOrHrEditor(
+    resourceKey: string,
+    action: string = "view"
+  ): express.RequestHandler {
+    const official = requireResource(resourceKey, action);
+    const moduleWrite =
+      resourceKey === EMPLOYEES_RESOURCE_KEYS.module &&
+      (action === EMPLOYEES_ACTIONS.create || action === EMPLOYEES_ACTIONS.update);
+    if (!resourceKey.startsWith(`${EMPLOYEES_RESOURCE_KEYS.module}.`) && !moduleWrite) {
+      return official;
+    }
+    return async (req, res, next) => {
+      try {
+        const decision = await authorizeResourceRequest(req, resourceKey, action);
+        // Só ausência de grant (DENY_DEFAULT) é suprida; deny explícito, recurso
+        // desconhecido, usuário inativo etc. seguem para a negativa oficial.
+        // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
+        if (decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT") {
+          const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+          const denyKey = `${decision.resourceKey ?? resourceKey}:${decision.action ?? action}`;
+          if (
+            authUser &&
+            authUser.isActive !== false &&
+            employeePermCheck(authUser).isHrEditor &&
+            !(authUser.canonicalAccess?.overrideDenied ?? []).includes(denyKey)
+          ) {
+            return next();
+          }
         }
-        return false;
-      },
+      } catch {
+        // Falha ao pré-avaliar: o guard oficial decide (e responde 500 se for o caso).
+      }
+      return official(req, res, next);
     };
   }
 
@@ -3067,8 +3116,16 @@ async function startServer() {
   app.get("/api/roles", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const roles = await prisma.role.findMany({
       orderBy: { name: "asc" },
+      include: { _count: { select: { Employee: true, ProductRouting: true } } },
     });
-    res.json(roles);
+    // employeeCount / routingCount: onde o cargo está em uso (cargo em uso não pode ser excluído).
+    res.json(
+      roles.map(({ _count, ...role }) => ({
+        ...role,
+        employeeCount: _count.Employee,
+        routingCount: _count.ProductRouting,
+      }))
+    );
   });
 
   app.post("/api/roles", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
@@ -3089,10 +3146,33 @@ async function startServer() {
     res.json(role);
   });
 
+  // Cargo é obrigatório no colaborador e no roteiro (sem cascata): só SUPER_ADMIN exclui,
+  // e só cargo sem uso — em uso, responde 409 dizendo onde trocar.
   app.delete("/api/roles/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.role.delete({ where: { id } });
-    res.json({ success: true });
+    const authUser = await getCurrentAppUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    if (authUser.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Somente super administrador pode excluir cargos do cadastro operacional.",
+      });
+    }
+    try {
+      const result = await deleteRoleIfUnused(prisma, { roleId: String(req.params.id ?? "") });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof OperationalCatalogError) {
+        return res.status(error.status).json({
+          error: error.code,
+          message: error.message,
+          ...(error.usage ? { usage: error.usage } : {}),
+        });
+      }
+      console.error("Erro ao excluir cargo:", error instanceof Error ? error.message : error);
+      return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao excluir cargo." });
+    }
   });
 
   // --- API: Machines (Máquinas e Centros de Trabalho) ---
@@ -3176,8 +3256,15 @@ async function startServer() {
   app.get("/api/payroll-components", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
       orderBy: { name: "asc" },
+      include: { _count: { select: { employees: true } } },
     });
-    res.json(components);
+    // employeeCount: quantos colaboradores têm a verba marcada (aviso antes de excluir).
+    res.json(
+      components.map(({ _count, ...component }) => ({
+        ...component,
+        employeeCount: _count.employees,
+      }))
+    );
   });
 
   app.post("/api/payroll-components", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
@@ -3198,10 +3285,32 @@ async function startServer() {
     res.json(component);
   });
 
+  // Excluir verba tira ela de todos os colaboradores (cascata) e muda a referência de custo
+  // deles: só SUPER_ADMIN, como a exclusão definitiva de colaborador.
   app.delete("/api/payroll-components/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.payrollComponent.delete({ where: { id } });
-    res.json({ success: true });
+    const authUser = await getCurrentAppUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    if (authUser.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Somente super administrador pode excluir encargos e benefícios do cadastro oficial.",
+      });
+    }
+    try {
+      const result = await deletePayrollComponentWithHistory(prisma, {
+        payrollComponentId: String(req.params.id ?? ""),
+        actorUserId: authUser.id,
+      });
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof PeopleProfileAccessError) {
+        return res.status(error.status).json({ error: error.code, message: error.message });
+      }
+      console.error("Erro ao excluir encargo/benefício:", error instanceof Error ? error.message : error);
+      return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao excluir encargo ou benefício." });
+    }
   });
 
   
@@ -3346,6 +3455,8 @@ function buildEmployeeHrProfileData(
       phone?: string | null;
       emergencyContactPhone?: string | null;
       personalEmail?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
     } | null;
     allowLegacyPersonal?: boolean;
     previousEpi?: {
@@ -3356,6 +3467,8 @@ function buildEmployeeHrProfileData(
       shoeSize?: string | null;
     } | null;
     allowLegacyEpi?: boolean;
+    /** Jornada descritiva atual — valor intocado não é renormalizado (PUT). */
+    previousWorkSchedule?: string | null;
   }
 ) {
   const personal = prepareEmployeePersonalHrFields(body, {
@@ -3367,6 +3480,10 @@ function buildEmployeeHrProfileData(
     allowLegacy: opts?.allowLegacyEpi === true,
   });
   const notes = prepareEmployeeNotesFields(body);
+  // Colunas novas do cadastro (estado civil, cidade/UF/CEP, jornada descritiva):
+  // só gravam quando a chave veio no body — um cliente antigo (sem esses campos)
+  // não apaga o valor nem gera WORK_SCHEDULE_CHANGE espúrio no histórico.
+  const sent = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
   return {
     data: {
       socialName: normalizeOptionalText(body.socialName),
@@ -3379,6 +3496,19 @@ function buildEmployeeHrProfileData(
       emergencyContactPhone: personal.emergencyContactPhone,
       emergencyContactRelationship: personal.emergencyContactRelationship,
       address: personal.address,
+      ...(sent("maritalStatus") ? { maritalStatus: personal.maritalStatus } : {}),
+      ...(sent("city") ? { city: personal.city } : {}),
+      ...(sent("state") ? { state: personal.state } : {}),
+      ...(sent("zipCode") ? { zipCode: personal.zipCode } : {}),
+      // Jornada descritiva é dado profissional; o diff de snapshot do PUT gera
+      // WORK_SCHEDULE_CHANGE quando muda.
+      ...(sent("workSchedule")
+        ? {
+            workSchedule: normalizeEmployeeWorkSchedule(body.workSchedule, {
+              previous: opts?.previousWorkSchedule,
+            }),
+          }
+        : {}),
       // admissionDate / terminationDate / contractType / managerName vêm só de
       // prepareEmployeePersistedFields — não incluir aqui (spread apagaria os valores).
       professionalNotes: notes.professionalNotes,
@@ -3432,7 +3562,7 @@ const employeeApiInclude = {
   },
 } as const;
 
-app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create), async (req, res) => {
+app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const {
@@ -3650,7 +3780,7 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
   }
 });
 
-app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
+app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const { id } = req.params;
@@ -3699,6 +3829,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
         phone: true,
         personalEmail: true,
         emergencyContactPhone: true,
+        state: true,
+        zipCode: true,
         shirtSize: true,
         pantsSize: true,
         jacketSize: true,
@@ -3706,6 +3838,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
         shoeSize: true,
         Role: { select: { name: true } },
         manager: { select: { name: true, socialName: true } },
+        EmployeePayrollComponent: { select: { payrollComponentId: true } },
       },
     });
     if (!existingEmployee) {
@@ -3823,7 +3956,10 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
           phone: existingEmployee.phone,
           personalEmail: existingEmployee.personalEmail,
           emergencyContactPhone: existingEmployee.emergencyContactPhone,
+          state: existingEmployee.state,
+          zipCode: existingEmployee.zipCode,
         },
+        previousWorkSchedule: existingEmployee.workSchedule,
         allowLegacyEpi: true,
         previousEpi: {
           shirtSize: existingEmployee.shirtSize,
@@ -3923,6 +4059,13 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
               : undefined,
         },
         include: employeeApiInclude,
+      });
+      // Verbas marcadas/desmarcadas viram BENEFIT_CHANGE — fonte única de benefícios.
+      await recordPayrollComponentHistory(tx, {
+        employeeId: id,
+        previousIds: existingEmployee.EmployeePayrollComponent.map((c) => c.payrollComponentId),
+        nextIds: cleanComponentIds,
+        actorUserId,
       });
       await recordHistoryAfterEmployeeWrite(tx, {
         employeeId: id,
@@ -12101,7 +12244,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.patch("/api/employees/:id/status", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
+  app.patch("/api/employees/:id/status", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const authUser = await getCurrentAppUser(req);
@@ -15160,7 +15303,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerEmployeeLookupRoutes(app, {
     requireAppAuth,
-    requireResource,
+    requireResource: requireResourceOrHrEditor,
     getCurrentAppUser,
   });
 
@@ -15192,7 +15335,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerCanonicalPersonRoutes(app, {
     requireAppAuth,
-    requireResource,
+    requireResource: requireResourceOrHrEditor,
     requirePermission,
     requireAnyPermission,
     getCurrentAppUser,

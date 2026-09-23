@@ -84,6 +84,14 @@ export type AppAuthContext = SafeAppUser & {
    */
   canonicalAccess?: {
     viewResources: string[];
+    /** Recursos com `update` permitido (ex.: editor de RH = admin.employees). */
+    updateResources?: string[];
+    createResources?: string[];
+    /**
+     * Denies individuais explícitos ("resourceKey:action") — override do usuário
+     * no próprio recurso ou `view` negado num ancestral. Deny vence allow.
+     */
+    overrideDenied?: string[];
   };
 };
 

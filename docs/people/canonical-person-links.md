@@ -66,6 +66,12 @@ Leitura executiva agregada (sem regras paralelas de comissão/carteira):
 | User link | `admin.employees.user_link` | manage | `employees.user_link.manage`, `employees.edit`, `users.manage` |
 | EPI | `admin.employees.epi` | manage | `employees.epi.manage`, `employees.edit` |
 
+**Editor de RH (2026-09-21).** Editor := legado `employees.edit` **OU** canônico `admin.employees:update` (SUPER_ADMIN sempre) — regra única em `buildEmployeePermissionBag` (`src/lib/employeesPermissions.ts`). Onde a coluna "Legado (OR)" lista `employees.edit`, leia "Editor de RH": para o editor o bag responde `employees.edit = true`, então ele recebe todas as facetas acima e todas as capabilities da ficha, inclusive valores em R$ (`admin.employees.compensation_values`), salvo deny individual **explícito** em `admin.employees.compensation_values:view` (`deny > allow`).
+
+Nos guards de **Vínculos** (`admin.employees.links` view/manage, `canonicalPersonRoutes`) e **User link** / lookups (`admin.employees.user_link` manage, `employeeLookupRoutes`), o `server.ts` injeta `requireResourceOrHrEditor`: nas facetas `admin.employees.*` o editor passa mesmo sem grant próprio da faceta. Só a ausência de grant (`DENY_DEFAULT`) é suprida — deny individual explícito (`OVERRIDE_DENY` no recurso ou `ANCESTOR_VIEW_DENY`, listados em `canonicalAccess.overrideDenied`), recurso desconhecido, ação não suportada e usuário inativo seguem no 403 oficial. Chaves fora de `admin.employees.*` vão direto para o `requireResource` normal.
+
+A máscara de PII e as caps do agregador de vínculos (`canonicalPersonRoutes.ts`, `viewerCapsInput`) reconhecem o Editor de RH desde 2026-09-22: um editor só pelo canônico (`admin.employees:update|create`, sem `employees.edit` legado) vê PII no painel Vínculos como quem tem a chave legada. Detalhes da regra: [`docs/hr/employee-functional-record.md`](../hr/employee-functional-record.md#editor-de-rh).
+
 ## Homologação
 
 Roteiro por persona + deploy/rollback: [`canonical-person-homologation-checklist.md`](./canonical-person-homologation-checklist.md).

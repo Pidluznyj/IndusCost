@@ -25,7 +25,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
   { id: "professional", label: "Cargo & contrato" },
   { id: "career", label: "Carreira" },
   { id: "compensation", label: "Remuneração" },
-  { id: "benefits", label: "Benefícios" },
+  { id: "benefits", label: "Encargos & benefícios" },
   { id: "personal", label: "Dados pessoais" },
   { id: "emergency", label: "Contatos de emergência" },
   { id: "epi", label: "EPI & uniformes" },
