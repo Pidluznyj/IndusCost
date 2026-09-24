@@ -397,9 +397,12 @@ export type SalesOrderDetailPayload = {
   fiscalTaxesAccess: "allowed" | "denied";
   /**
    * Abas Custos / Resultado — mesmo motor do relatório industrial + explosão MP.
-   * Sempre presente quando ok; `available: false` se não apurou.
+   * `null` somente quando `industrialResultAccess === "denied"` (persona SELLER).
+   * Autorizado: sempre objeto; `available: false` se não apurou.
    */
-  industrialResult: SalesOrderDetailIndustrialResultBlock;
+  industrialResult: SalesOrderDetailIndustrialResultBlock | null;
+  /** Gate da persona no detalhe. Deny do SELLER não carrega o bloco. */
+  industrialResultAccess: "allowed" | "denied";
   technicalInfo: {
     sources: string[];
     sourceTables: string[];

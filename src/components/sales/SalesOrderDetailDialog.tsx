@@ -13,6 +13,7 @@ import {
   type SalesOrderDetailResponse,
 } from "@/src/lib/sales-orders/salesOrderDetailClient";
 import { canViewSalesOrderFiscalTaxes } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions";
+import { resolveSalesOrderDetailAccess } from "@/src/lib/sales-orders/salesOrderDetailAccess";
 import { SalesOrderDetailView } from "./SalesOrderDetailView";
 import { SalesOrderTributosTab } from "./SalesOrderTributosTab";
 import { SalesOrderDetailCustosTab } from "./SalesOrderDetailCustosTab";
@@ -49,6 +50,9 @@ export function SalesOrderDetailDialog({
 }: Props): JSX.Element | null {
   const auth = useAuth();
   const canTributos = canViewSalesOrderFiscalTaxes(auth);
+  const detailAccess = resolveSalesOrderDetailAccess({
+    role: auth.authUser?.role ?? null,
+  });
   const [payload, setPayload] = useState<SalesOrderDetailPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +99,15 @@ export function SalesOrderDetailDialog({
       });
     return () => ac.abort();
   }, [open, salesOrderId]);
+
+  useEffect(() => {
+    if (
+      (activeTab === "custos" && !detailAccess.canViewCosts) ||
+      (activeTab === "resultado" && !detailAccess.canViewDetailedResult)
+    ) {
+      setActiveTab("geral");
+    }
+  }, [activeTab, detailAccess.canViewCosts, detailAccess.canViewDetailedResult]);
 
   useEffect(() => {
     if (!open) return;
@@ -191,7 +204,7 @@ export function SalesOrderDetailDialog({
               <Printer className="h-3 w-3" />
               Imprimir / PDF
             </button>
-            {AUDIT_360_ENABLED && onOpenFullAudit ? (
+            {AUDIT_360_ENABLED && onOpenFullAudit && detailAccess.canOpenAudit360 ? (
               <button
                 type="button"
                 onClick={handleOpenAudit}
@@ -245,16 +258,24 @@ export function SalesOrderDetailDialog({
                 label: "Tributos",
                 testId: "sales-order-detail-tab-tributos",
               },
-              {
-                id: "custos" as const,
-                label: "Custos",
-                testId: "sales-order-detail-tab-custos",
-              },
-              {
-                id: "resultado" as const,
-                label: "Resultado detalhado",
-                testId: "sales-order-detail-tab-resultado",
-              },
+              ...(detailAccess.canViewCosts
+                ? [
+                    {
+                      id: "custos" as const,
+                      label: "Custos",
+                      testId: "sales-order-detail-tab-custos",
+                    },
+                  ]
+                : []),
+              ...(detailAccess.canViewDetailedResult
+                ? [
+                    {
+                      id: "resultado" as const,
+                      label: "Resultado detalhado",
+                      testId: "sales-order-detail-tab-resultado",
+                    },
+                  ]
+                : []),
             ] as const
           ).map((tab) => (
             <button
@@ -304,38 +325,20 @@ export function SalesOrderDetailDialog({
                 denied={!canTributos || payload.fiscalTaxesAccess === "denied"}
                 fiscalTaxesAccess={payload.fiscalTaxesAccess}
               />
-            ) : activeTab === "custos" ? (
-              <SalesOrderDetailCustosTab
-                industrialResult={
-                  payload.industrialResult ?? {
-                    available: false,
-                    row: null,
-                    materials: [],
-                    materialsTotalCost: 0,
-                    verdict: "INCOMPLETE",
-                    verdictLabel: "Apuração incompleta",
-                    resultNarrative:
-                      "Custos industriais não disponíveis neste payload.",
-                    warnings: [],
-                  }
-                }
-              />
+            ) : activeTab === "custos" &&
+              detailAccess.canViewCosts &&
+              payload.industrialResultAccess !== "denied" &&
+              payload.industrialResult ? (
+              <SalesOrderDetailCustosTab industrialResult={payload.industrialResult} />
+            ) : activeTab === "resultado" &&
+              detailAccess.canViewDetailedResult &&
+              payload.industrialResultAccess !== "denied" &&
+              payload.industrialResult ? (
+              <SalesOrderDetailResultadoTab industrialResult={payload.industrialResult} />
             ) : (
-              <SalesOrderDetailResultadoTab
-                industrialResult={
-                  payload.industrialResult ?? {
-                    available: false,
-                    row: null,
-                    materials: [],
-                    materialsTotalCost: 0,
-                    verdict: "INCOMPLETE",
-                    verdictLabel: "Apuração incompleta",
-                    resultNarrative:
-                      "Resultado industrial não disponível neste payload.",
-                    warnings: [],
-                  }
-                }
-              />
+              <div id="sales-order-detail-print-root">
+                <SalesOrderDetailView payload={payload} />
+              </div>
             )
           ) : (
             <div className="so-detail-no-print text-[12px] text-[#6b7280]">

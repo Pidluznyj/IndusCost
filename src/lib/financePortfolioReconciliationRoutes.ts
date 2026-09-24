@@ -29,6 +29,7 @@ import {
   PortfolioOrderStatusApiParseError,
 } from "./financePortfolioOrderStatusApi.server.js";
 import { getOrderFullAudit } from "./finance/orderFullAuditService.js";
+import { resolveSalesOrderDetailAccess } from "./sales-orders/salesOrderDetailAccess.js";
 import { isSalesOrderVisibleInPortfolioReconciliation } from "./finance/financePortfolioOperationalOrderGate.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
@@ -503,10 +504,22 @@ export function registerFinancePortfolioReconciliationRoutes(
         const orderCode = typeof req.query.orderCode === "string"
           ? req.query.orderCode.trim() || null
           : null;
+        const sessionUser = await getCurrentAppUser(req);
+        const auditAccess = resolveSalesOrderDetailAccess({
+          role: sessionUser?.role ?? null,
+        });
+        if (!auditAccess.canOpenAudit360) {
+          res.status(403).json({
+            error: "Auditoria 360º indisponível para o perfil de vendedor.",
+            message: "Auditoria 360º indisponível para o perfil de vendedor.",
+            code: "SALES_ORDER_AUDIT_360_DENIED",
+          });
+          return;
+        }
         const includeRawRequested = parseIncludeRawFlag(req.query.includeRaw);
         let includeRaw = false;
         if (includeRawRequested) {
-          const user = await getCurrentAppUser(req);
+          const user = sessionUser;
           if (!user) {
             res.status(401).json({
               error: "Não autenticado.",

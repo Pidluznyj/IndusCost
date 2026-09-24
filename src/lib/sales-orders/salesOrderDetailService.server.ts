@@ -61,6 +61,10 @@ import { canViewSalesOrderFiscalTaxesFromAuth } from "./salesOrderFiscalTaxesPer
 import { buildSalesOrderDetailFinancialFromAudit } from "./salesOrderDetailEffectiveFinancial.js";
 import { loadSalesOrderDetailIndustrialResult } from "./salesOrderDetailIndustrialResult.server.js";
 import { buildSalesOrderDetailIndustrialResultBlock } from "./salesOrderDetailIndustrialResult.js";
+import {
+  resolveSalesOrderDetailAccess,
+  shouldLoadSalesOrderIndustrialResult,
+} from "./salesOrderDetailAccess.js";
 import type {
   SalesOrderDetailAlert,
   SalesOrderDetailFinancial,
@@ -583,25 +587,34 @@ export async function getSalesOrderDetail(
     }
   }
 
-  let industrialResult = buildSalesOrderDetailIndustrialResultBlock({
-    row: null,
-    materials: [],
-    extraWarnings: ["Custo/resultado industrial não carregado."],
+  const detailAccess = resolveSalesOrderDetailAccess({
+    role: input.userContext?.role ?? null,
   });
-  try {
-    industrialResult = await loadSalesOrderDetailIndustrialResult(
-      prismaClient,
-      salesOrderId
-    );
-  } catch (err) {
-    console.error("getSalesOrderDetail industrialResult", err);
+  let industrialResult: SalesOrderDetailPayload["industrialResult"] = null;
+  const industrialResultAccess = shouldLoadSalesOrderIndustrialResult(detailAccess)
+    ? "allowed"
+    : "denied";
+  if (industrialResultAccess === "allowed") {
     industrialResult = buildSalesOrderDetailIndustrialResultBlock({
       row: null,
       materials: [],
-      extraWarnings: [
-        "Falha técnica ao montar custos industriais e resultado do pedido.",
-      ],
+      extraWarnings: ["Custo/resultado industrial não carregado."],
     });
+    try {
+      industrialResult = await loadSalesOrderDetailIndustrialResult(
+        prismaClient,
+        salesOrderId
+      );
+    } catch (err) {
+      console.error("getSalesOrderDetail industrialResult", err);
+      industrialResult = buildSalesOrderDetailIndustrialResultBlock({
+        row: null,
+        materials: [],
+        extraWarnings: [
+          "Falha técnica ao montar custos industriais e resultado do pedido.",
+        ],
+      });
+    }
   }
 
   const now = new Date().toISOString();
@@ -621,6 +634,7 @@ export async function getSalesOrderDetail(
     fiscalTaxes,
     fiscalTaxesAccess: allowFiscal ? "allowed" : "denied",
     industrialResult,
+    industrialResultAccess,
     technicalInfo: {
       sources: [
         "SalesOrder + SalesOrderItem (Prisma)",

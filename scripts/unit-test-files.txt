@@ -280,6 +280,7 @@ src/lib/satisfaction/satisfactionService.test.ts
 src/lib/satisfaction/satisfactionCampaignDelete.test.ts
 src/public-satisfaction/publicTurnstileContract.test.ts
 src/lib/sales-orders/salesOrderCanonicalValues.test.ts
+src/lib/sales-orders/salesOrderDetailAccess.test.ts
 src/lib/sales/salesOrderResultChartsCache.test.ts
 src/lib/rawMaterialPlanning.shared.test.ts
 src/lib/rawMaterialPlanning.server.test.ts
