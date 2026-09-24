@@ -40,9 +40,21 @@ function formatConfidence(confidence: "HIGH" | "MEDIUM" | null): string | null {
 
 type Props = {
   customerId: string;
+  /** Abre o select já focado quando a aba entra pelo atalho da grid. */
+  focusSelect?: boolean;
+  onSaved?: (displayName: string | null) => void;
 };
 
-export function CustomerCommercialOwnerTab({ customerId }: Props) {
+function ownerPayloadDisplayName(payload: CustomerCommercialOwnerPayload): string | null {
+  if (payload.owner.source === "NONE") return null;
+  const name =
+    payload.owner.sellerCanonicalName?.trim() ||
+    payload.owner.sellerResponsibleName?.trim() ||
+    "";
+  return name || null;
+}
+
+export function CustomerCommercialOwnerTab({ customerId, focusSelect = false, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +143,7 @@ export function CustomerCommercialOwnerTab({ customerId }: Props) {
       );
       setPayload(updated);
       setDirty(false);
+      onSaved?.(ownerPayloadDisplayName(updated));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar responsável comercial.");
     } finally {
@@ -214,6 +227,7 @@ export function CustomerCommercialOwnerTab({ customerId }: Props) {
           </div>
         ) : null}
         <SearchableSelect
+          key={focusSelect && !sellersLoading ? "commercial-owner-focus" : "commercial-owner"}
           value={selectedKey}
           onChange={(v) => {
             setSelectedKey(v);
@@ -222,7 +236,8 @@ export function CustomerCommercialOwnerTab({ customerId }: Props) {
           options={sellerOptions}
           placeholder={sellersLoading ? "Carregando vendedores…" : "Buscar por nome ou ID Nomus…"}
           disabled={!payload.canEdit || sellersLoading}
-          emptyLabel="Nenhum vendedor consolidado encontrado"
+          emptyMessage="Nenhum vendedor consolidado encontrado"
+          openOnMount={focusSelect && payload.canEdit && !sellersLoading}
         />
         {payload.canEdit ? (
           <div className="flex items-center gap-2 pt-1">

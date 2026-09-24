@@ -556,3 +556,42 @@ export async function loadManualCommercialOwnersForCustomers(
   await enrichResolvedCommercialOwnerNames(map);
   return map;
 }
+
+/** Nome de exibição da atribuição persistida. Sem IDs. Null quando não há responsável. */
+export function commercialOwnerListDisplayName(
+  owner: ResolvedCustomerCommercialOwner | null | undefined
+): string | null {
+  if (!owner || owner.source === "NONE") return null;
+  const display = resolveCommercialOwnerDisplay({
+    rawId: owner.sellerExternalId,
+    rawName: owner.sellerResponsibleName,
+    canonicalName: owner.sellerCanonicalName,
+    source: owner.source,
+  });
+  if (display.source === "NONE") return null;
+  const name = display.displayName.trim();
+  return name || null;
+}
+
+export const COMMERCIAL_OWNER_GRID_EMPTY_LABEL = "Sem responsável";
+
+/**
+ * Anexa o responsável comercial persistido (CrmCustomerCommercialOwner ativo)
+ * em lote. Uma consulta da página, sem inferência por pedidos e sem N+1.
+ */
+export async function attachCustomerCommercialOwnerListFields<T extends { id: string }>(
+  customers: T[]
+): Promise<
+  Array<T & { commercialOwnerName: string | null; commercialOwnerExternalId: number | null }>
+> {
+  if (customers.length === 0) return [];
+  const owners = await loadManualCommercialOwnersForCustomers(customers.map((c) => c.id));
+  return customers.map((customer) => {
+    const owner = owners.get(customer.id) ?? null;
+    return {
+      ...customer,
+      commercialOwnerName: commercialOwnerListDisplayName(owner),
+      commercialOwnerExternalId: owner?.sellerExternalId ?? null,
+    };
+  });
+}

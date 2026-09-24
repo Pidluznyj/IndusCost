@@ -37,6 +37,8 @@ interface SearchableSelectProps {
   remoteSearch?: boolean;
   onSearchTermChange?: (term: string) => void;
   searching?: boolean;
+  /** Abre o dropdown e foca a busca ao montar (atalho de edição). */
+  openOnMount?: boolean;
 }
 
 function optionSearchHaystack(opt: SelectOption): string {
@@ -59,8 +61,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   remoteSearch = false,
   onSearchTermChange,
   searching = false,
+  openOnMount = false,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(openOnMount && !disabled);
   const [searchTerm, setSearchTerm] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);

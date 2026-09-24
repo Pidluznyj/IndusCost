@@ -18,6 +18,7 @@ import {
   BarChart3,
   SearchCheck,
   Sparkles,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
@@ -57,6 +58,8 @@ type CustomerListMeta = {
 };
 
 const CUSTOMER_PAGE_SIZE = 20;
+const CUSTOMER_COMMERCIAL_OWNER_ASSIGN = "crm.customers.assign_seller";
+const COMMERCIAL_OWNER_EMPTY_LABEL = "Sem responsável";
 
 type CustomerFormTab = "cadastro" | "commercial-owner" | "people-links";
 
@@ -75,6 +78,10 @@ export const CustomerModule = () => {
   const allowCreate = canCreateCustomers(resourceCheck);
   const allowEdit = canEditCustomers(resourceCheck);
   const allowImport = canImportCustomers(resourceCheck);
+  const allowAssignOwner =
+    auth.authUser?.role === "ADMIN" ||
+    auth.authUser?.role === "SUPER_ADMIN" ||
+    auth.hasPermission(CUSTOMER_COMMERCIAL_OWNER_ASSIGN);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -92,6 +99,7 @@ export const CustomerModule = () => {
   const [intelligenceCnpj, setIntelligenceCnpj] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
   const [formTab, setFormTab] = useState<CustomerFormTab>("cadastro");
+  const [ownerSelectFocus, setOwnerSelectFocus] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -160,8 +168,10 @@ export const CustomerModule = () => {
     void fetchData();
   }, [fetchData]);
 
-  const handleOpenModal = (customer?: Customer) => {
-    setFormTab("cadastro");
+  const handleOpenModal = (customer?: Customer, options?: { focus?: CustomerFormTab }) => {
+    const focus = options?.focus ?? "cadastro";
+    setFormTab(focus);
+    setOwnerSelectFocus(focus === "commercial-owner");
     if (customer) {
       setEditingCustomer(customer);
       setFormData(customer);
@@ -359,7 +369,7 @@ export const CustomerModule = () => {
               <tr className="bg-accent/80 backdrop-blur-sm border-b border-border">
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Cliente</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Score CNPJ</th>
-                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Contato</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Responsável Comercial</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Status</th>
                 <th className={cn("px-3 py-2 font-semibold text-xs text-right whitespace-nowrap", STICKY_ACTIONS_HEAD)}>
@@ -403,19 +413,30 @@ export const CustomerModule = () => {
                       <CustomerCnpjRiskTag risk={c.cnpjRisk} onConsult={() => openCnpjLookup({ customer: c })} />
                     </td>
                     <td className="px-3 py-1.5">
-                      <div className="space-y-0.5 min-w-0">
-                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
-                          <Mail className="h-3 w-3 shrink-0" />
-                          <span className="truncate" title={c.email ?? undefined}>
-                            {c.email || "—"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
-                          <Phone className="h-3 w-3 shrink-0" />
-                          <span className="truncate" title={c.phone ?? undefined}>
-                            {c.phone || "—"}
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span
+                          className={cn(
+                            "truncate text-xs",
+                            c.commercialOwnerName ? "text-foreground" : "text-muted-foreground"
+                          )}
+                          title={c.commercialOwnerName || COMMERCIAL_OWNER_EMPTY_LABEL}
+                        >
+                          {c.commercialOwnerName || COMMERCIAL_OWNER_EMPTY_LABEL}
+                        </span>
+                        {allowAssignOwner ? (
+                          <button
+                            type="button"
+                            title="Editar responsável comercial"
+                            aria-label="Editar responsável comercial"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenModal(c, { focus: "commercial-owner" });
+                            }}
+                            className="shrink-0 p-0.5 rounded text-muted-foreground/80 hover:text-primary hover:bg-accent cursor-pointer transition-colors"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-3 py-1.5">
@@ -590,7 +611,10 @@ export const CustomerModule = () => {
               <div className="px-6 pt-4 border-b border-border flex gap-1">
                 <button
                   type="button"
-                  onClick={() => setFormTab("cadastro")}
+                  onClick={() => {
+                    setOwnerSelectFocus(false);
+                    setFormTab("cadastro");
+                  }}
                   className={cn(
                     "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
                     formTab === "cadastro"
@@ -602,7 +626,10 @@ export const CustomerModule = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormTab("commercial-owner")}
+                  onClick={() => {
+                    setOwnerSelectFocus(false);
+                    setFormTab("commercial-owner");
+                  }}
                   className={cn(
                     "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
                     formTab === "commercial-owner"
@@ -614,7 +641,10 @@ export const CustomerModule = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormTab("people-links")}
+                  onClick={() => {
+                    setOwnerSelectFocus(false);
+                    setFormTab("people-links");
+                  }}
                   className={cn(
                     "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
                     formTab === "people-links"
@@ -629,7 +659,19 @@ export const CustomerModule = () => {
             
             {formTab === "commercial-owner" && editingCustomer ? (
               <div className="flex-1 overflow-y-auto p-6">
-                <CustomerCommercialOwnerTab customerId={editingCustomer.id} />
+                <CustomerCommercialOwnerTab
+                  customerId={editingCustomer.id}
+                  focusSelect={ownerSelectFocus}
+                  onSaved={(displayName) => {
+                    setCustomers((prev) =>
+                      prev.map((row) =>
+                        row.id === editingCustomer.id
+                          ? { ...row, commercialOwnerName: displayName }
+                          : row
+                      )
+                    );
+                  }}
+                />
               </div>
             ) : formTab === "people-links" && editingCustomer ? (
               <div className="flex-1 overflow-y-auto p-6">

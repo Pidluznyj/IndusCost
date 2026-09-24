@@ -243,6 +243,7 @@ import {
   parseCrmCustomerListSellerQuery,
 } from "./src/lib/crmCustomersList.js";
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
+import { attachCustomerCommercialOwnerListFields } from "./src/lib/crmCustomerCommercialOwner.js";
 import { registerCrmReportsRoutes } from "./src/lib/commercial/crmReportsRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
@@ -13978,7 +13979,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           orderBy: { companyName: "asc" },
         });
         const withRisk = await attachCustomerCnpjRisk(prisma, customers);
-        return res.json(await attachCustomerSalesBlocks(prisma, withRisk, { includeFinancialDetails }));
+        const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
+        return res.json(await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails }));
       }
 
       const list = parseCustomerListQuery(query);
@@ -13995,9 +13997,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
       const meta = customerListMeta(total, list.page, list.limit);
       const withRisk = await attachCustomerCnpjRisk(prisma, items);
+      const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
       res.json(
         buildCustomerListResponse(
-          await attachCustomerSalesBlocks(prisma, withRisk, { includeFinancialDetails }),
+          await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails }),
           meta
         )
       );

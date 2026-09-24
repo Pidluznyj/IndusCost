@@ -33,6 +33,9 @@ export interface Customer {
   updatedAt: string;
   /** Última consulta CNPJ persistida (score + veredito). Ausente/null = sem consulta. */
   cnpjRisk?: CustomerCnpjRiskSummary | null;
+  /** Nome de exibição do Responsável Comercial persistido. Null = sem atribuição ativa. */
+  commercialOwnerName?: string | null;
+  commercialOwnerExternalId?: number | null;
   salesBlock?: import("../lib/commercial/customerSalesBlockView").CustomerSalesBlockPublic | null;
 }
 
