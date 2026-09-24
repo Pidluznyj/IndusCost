@@ -52,6 +52,7 @@ src/lib/productEngineeringExport.test.ts
 src/lib/customerIndicators.test.ts
 src/lib/customerCnpjRiskSummary.test.ts
 src/lib/customerCommercialOwnerGrid.test.ts
+src/lib/customerListQuery.test.ts
 src/lib/commercial/customerSalesBlock.test.ts
 src/lib/commercial/customerSalesBlock.server.test.ts
 src/lib/commercial/customerSalesBlockUi.test.tsx

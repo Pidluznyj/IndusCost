@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import {
   CUSTOMER_LIST_DEFAULT_LIMIT,
   CUSTOMER_LIST_MAX_LIMIT,
+  CUSTOMER_LIST_OWNER_NONE,
   buildCustomerListResponse,
+  buildCustomerListWhere,
+  buildCustomerOwnerWhere,
   customerListMeta,
   formatCustomerListRange,
   parseCustomerListQuery,
@@ -51,5 +54,21 @@ describe("customerListQuery", () => {
     assert.equal(shouldUseCustomerPagination({}), false);
     assert.equal(shouldUseCustomerPagination({ page: "1" }), true);
     assert.equal(shouldUseCustomerPagination({ search: "x" }), true);
+    assert.equal(shouldUseCustomerPagination({ commercialOwner: "none" }), true);
+  });
+
+  it("filtra pelo responsável comercial ativo ou pela ausência dele", () => {
+    assert.equal(parseCustomerListQuery({}).commercialOwner, "");
+    assert.equal(parseCustomerListQuery({ commercialOwner: " none " }).commercialOwner, "none");
+    assert.equal(buildCustomerOwnerWhere(""), undefined);
+    assert.deepEqual(buildCustomerOwnerWhere(CUSTOMER_LIST_OWNER_NONE), {
+      NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } },
+    });
+    assert.deepEqual(buildCustomerOwnerWhere("gislene lima"), {
+      CrmCustomerCommercialOwner: { is: { isActive: true, sellerIdentityKey: "gislene lima" } },
+    });
+    const combined = buildCustomerListWhere("acme", "gislene lima");
+    assert.ok(combined && Array.isArray(combined.AND) && combined.AND.length === 2);
+    assert.equal(buildCustomerListWhere("", ""), undefined);
   });
 });

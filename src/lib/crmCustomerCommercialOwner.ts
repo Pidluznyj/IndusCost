@@ -575,6 +575,45 @@ export function commercialOwnerListDisplayName(
 
 export const COMMERCIAL_OWNER_GRID_EMPTY_LABEL = "Sem responsável";
 
+export type CommercialOwnerFilterOption = {
+  key: string;
+  name: string;
+};
+
+/** Opções do filtro da grade: uma linha por identidade ativa, sem N+1. */
+export async function listCommercialOwnerFilterOptions(): Promise<CommercialOwnerFilterOption[]> {
+  const rows = await prisma.crmCustomerCommercialOwner.findMany({
+    where: { isActive: true },
+    distinct: ["sellerIdentityKey"],
+    select: {
+      sellerIdentityKey: true,
+      sellerCanonicalName: true,
+      sellerResponsibleName: true,
+      sellerExternalId: true,
+    },
+  });
+  const options: CommercialOwnerFilterOption[] = [];
+  for (const row of rows) {
+    const key = row.sellerIdentityKey?.trim();
+    if (!key) continue;
+    const name = commercialOwnerListDisplayName({
+      source: "MANUAL",
+      sellerCanonicalName: row.sellerCanonicalName,
+      sellerResponsibleName: row.sellerResponsibleName,
+      sellerExternalId: row.sellerExternalId,
+      sellerIdentityKey: key,
+      sellerAliasExternalIds: [],
+      confidence: null,
+      updatedAt: null,
+      updatedByName: null,
+    });
+    if (!name) continue;
+    options.push({ key, name });
+  }
+  options.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return options;
+}
+
 /**
  * Anexa o responsável comercial persistido (CrmCustomerCommercialOwner ativo)
  * em lote. Uma consulta da página, sem inferência por pedidos e sem N+1.

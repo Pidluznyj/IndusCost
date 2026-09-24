@@ -243,7 +243,10 @@ import {
   parseCrmCustomerListSellerQuery,
 } from "./src/lib/crmCustomersList.js";
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
-import { attachCustomerCommercialOwnerListFields } from "./src/lib/crmCustomerCommercialOwner.js";
+import {
+  attachCustomerCommercialOwnerListFields,
+  listCommercialOwnerFilterOptions,
+} from "./src/lib/crmCustomerCommercialOwner.js";
 import { registerCrmReportsRoutes } from "./src/lib/commercial/crmReportsRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
@@ -566,7 +569,7 @@ import {
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
 import {
   buildCustomerListResponse,
-  buildCustomerSearchWhere,
+  buildCustomerListWhere,
   customerListMeta,
   parseCustomerListQuery,
   shouldUseCustomerPagination,
@@ -13984,8 +13987,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
 
       const list = parseCustomerListQuery(query);
-      const where = buildCustomerSearchWhere(list.search);
-      const [total, items] = await Promise.all([
+      const where = buildCustomerListWhere(list.search, list.commercialOwner);
+      const [total, items, commercialOwnerOptions] = await Promise.all([
         prisma.customer.count({ where }),
         prisma.customer.findMany({
           where,
@@ -13993,17 +13996,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           skip: list.skip,
           take: list.limit,
         }),
+        listCommercialOwnerFilterOptions(),
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);
       const withRisk = await attachCustomerCnpjRisk(prisma, items);
       const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
-      res.json(
-        buildCustomerListResponse(
+      res.json({
+        ...buildCustomerListResponse(
           await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails }),
           meta
-        )
-      );
+        ),
+        commercialOwnerOptions,
+      });
     } catch (error) {
       console.error("GET /api/customers", error);
       res.status(500).json({ error: "Erro ao listar clientes." });

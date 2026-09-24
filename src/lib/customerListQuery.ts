@@ -2,12 +2,16 @@ import type { Prisma } from "@prisma/client";
 
 export const CUSTOMER_LIST_DEFAULT_LIMIT = 20;
 export const CUSTOMER_LIST_MAX_LIMIT = 100;
+/** Filtro da grade: clientes sem Responsável Comercial ativo. */
+export const CUSTOMER_LIST_OWNER_NONE = "none";
 
 export type CustomerListQuery = {
   page: number;
   limit: number;
   skip: number;
   search: string;
+  /** Chave de identidade do responsável, `none`, ou vazio (todos). */
+  commercialOwner: string;
 };
 
 export type CustomerListMeta = {
@@ -40,6 +44,7 @@ export function parseCustomerListQuery(query: Record<string, unknown>): Customer
     limit,
     skip: (page - 1) * limit,
     search: String(query.search ?? "").trim(),
+    commercialOwner: String(query.commercialOwner ?? "").trim(),
   };
 }
 
@@ -65,6 +70,7 @@ export function shouldUseCustomerPagination(query: Record<string, unknown>): boo
     query.page != null ||
     query.limit != null ||
     query.search != null ||
+    query.commercialOwner != null ||
     String(query.paginated ?? "").trim() === "true"
   );
 }
@@ -92,4 +98,28 @@ export function buildCustomerSearchWhere(search: string): Prisma.CustomerWhereIn
   }
 
   return { OR: ors };
+}
+
+/** Filtro do responsável comercial persistido. Vazio = sem restrição. */
+export function buildCustomerOwnerWhere(ownerKey: string): Prisma.CustomerWhereInput | undefined {
+  const key = ownerKey.trim();
+  if (!key) return undefined;
+  if (key === CUSTOMER_LIST_OWNER_NONE) {
+    return { NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } } };
+  }
+  return {
+    CrmCustomerCommercialOwner: {
+      is: { isActive: true, sellerIdentityKey: key },
+    },
+  };
+}
+
+export function buildCustomerListWhere(
+  search: string,
+  ownerKey: string
+): Prisma.CustomerWhereInput | undefined {
+  const searchWhere = buildCustomerSearchWhere(search);
+  const ownerWhere = buildCustomerOwnerWhere(ownerKey);
+  if (searchWhere && ownerWhere) return { AND: [searchWhere, ownerWhere] };
+  return searchWhere ?? ownerWhere;
 }

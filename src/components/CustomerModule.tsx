@@ -60,6 +60,9 @@ type CustomerListMeta = {
 const CUSTOMER_PAGE_SIZE = 20;
 const CUSTOMER_COMMERCIAL_OWNER_ASSIGN = "crm.customers.assign_seller";
 const COMMERCIAL_OWNER_EMPTY_LABEL = "Sem responsável";
+const CUSTOMER_LIST_OWNER_NONE = "none";
+
+type CommercialOwnerFilterOption = { key: string; name: string };
 
 type CustomerFormTab = "cadastro" | "commercial-owner" | "people-links";
 
@@ -88,6 +91,8 @@ export const CustomerModule = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [ownerOptions, setOwnerOptions] = useState<CommercialOwnerFilterOption[]>([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<CustomerListMeta | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -127,6 +132,7 @@ export const CustomerModule = () => {
       q.set("page", String(page));
       q.set("limit", String(CUSTOMER_PAGE_SIZE));
       if (debouncedSearch) q.set("search", debouncedSearch);
+      if (ownerFilter) q.set("commercialOwner", ownerFilter);
       const data = await fetchJsonOk<{
         items?: Customer[];
         customers?: Customer[];
@@ -134,6 +140,7 @@ export const CustomerModule = () => {
         limit?: number;
         total?: number;
         totalPages?: number;
+        commercialOwnerOptions?: CommercialOwnerFilterOption[];
       }>(`/api/customers?${q}`);
       const items = Array.isArray(data.items)
         ? data.items
@@ -141,6 +148,9 @@ export const CustomerModule = () => {
           ? data.customers
           : [];
       setCustomers(items);
+      if (Array.isArray(data.commercialOwnerOptions)) {
+        setOwnerOptions(data.commercialOwnerOptions);
+      }
       setPagination({
         page: data.page ?? page,
         limit: data.limit ?? CUSTOMER_PAGE_SIZE,
@@ -153,7 +163,7 @@ export const CustomerModule = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, ownerFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -269,15 +279,34 @@ export const CustomerModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="customers-toolbar"
       >
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por razão social, nome fantasia ou CNPJ..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center max-w-3xl">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por razão social, nome fantasia ou CNPJ..."
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <select
+            aria-label="Filtrar por responsável comercial"
+            className="w-full sm:w-56 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            value={ownerFilter}
+            onChange={(e) => {
+              setOwnerFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Todos os responsáveis</option>
+            <option value={CUSTOMER_LIST_OWNER_NONE}>{COMMERCIAL_OWNER_EMPTY_LABEL}</option>
+            {ownerOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-3">
           <TourHelpButton onClick={() => setTourOpen(true)} />
@@ -670,6 +699,7 @@ export const CustomerModule = () => {
                           : row
                       )
                     );
+                    if (ownerFilter) void fetchData();
                   }}
                 />
               </div>

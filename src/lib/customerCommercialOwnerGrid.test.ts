@@ -83,6 +83,7 @@ describe("responsável comercial na listagem de clientes", () => {
   it("a listagem anexa o responsável em lote, sem inferir por pedido", () => {
     const service = read("src/lib/crmCustomerCommercialOwner.ts");
     const server = read("server.ts");
+    const mod = read("src/components/CustomerModule.tsx");
     const attach = /export async function attachCustomerCommercialOwnerListFields[\s\S]*?\n\}/.exec(
       service
     )?.[0];
@@ -91,6 +92,11 @@ describe("responsável comercial na listagem de clientes", () => {
     assert.doesNotMatch(attach, /inferCommercialOwnerFromNomusOrders|findUnique/);
     assert.match(service, /customerId: \{ in: customerIds \}, isActive: true/);
     assert.match(server, /attachCustomerCommercialOwnerListFields\(withRisk\)/);
+    assert.match(server, /buildCustomerListWhere\(list\.search, list\.commercialOwner\)/);
+    assert.match(server, /listCommercialOwnerFilterOptions\(\)/);
+    assert.match(mod, /aria-label="Filtrar por responsável comercial"/);
+    assert.match(mod, /q\.set\("commercialOwner", ownerFilter\)/);
+    assert.match(mod, /value=\{CUSTOMER_LIST_OWNER_NONE\}/);
     assert.doesNotMatch(
       /app\.get\("\/api\/customers"[\s\S]*?app\.get\("\/api\/customers\/indicators"/.exec(server)?.[0] ??
         "",
