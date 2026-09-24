@@ -63,23 +63,47 @@ describe("crmCustomerCommercialOwner", () => {
     assert.match(templates, /crm\.customers\.assign_seller/);
   });
 
-  it("Gestor comercial pode alterar responsável", () => {
+  it("Gestor comercial e supervisor comercial podem alterar responsável", () => {
     assert.equal(canAssignCustomerCommercialOwner(gestorAuth()), true);
-  });
-
-  it("ADMIN e SUPER_ADMIN podem alterar responsável", () => {
     assert.equal(
-      canAssignCustomerCommercialOwner({ role: "ADMIN", permissions: [], effectivePermissions: [] }),
+      canAssignCustomerCommercialOwner({
+        role: "COMMERCIAL_MANAGER",
+        accessProfileName: null,
+      }),
       true
     );
     assert.equal(
       canAssignCustomerCommercialOwner({
-        role: "SUPER_ADMIN",
-        permissions: [],
-        effectivePermissions: [],
+        role: "VIEWER",
+        accessProfileName: "Supervisor comercial",
       }),
       true
     );
+  });
+
+  it("somente super administrador e supervisor comercial alteram; permissão solta não libera", () => {
+    assert.equal(
+      canAssignCustomerCommercialOwner({
+        role: "SUPER_ADMIN",
+        accessProfileName: null,
+      }),
+      true
+    );
+    assert.equal(
+      canAssignCustomerCommercialOwner({
+        role: "ADMIN",
+        accessProfileName: "Administrador",
+      }),
+      false
+    );
+    assert.equal(
+      canAssignCustomerCommercialOwner({
+        role: "SELLER",
+        accessProfileName: "Vendedor",
+      }),
+      false
+    );
+    assert.equal(canAssignCustomerCommercialOwner(viewerAuth()), false);
   });
 
   it("vendedor comum e visualizador não podem alterar", () => {

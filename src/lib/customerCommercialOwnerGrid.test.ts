@@ -64,7 +64,8 @@ describe("responsável comercial na listagem de clientes", () => {
     assert.match(table, /event\.stopPropagation\(\)/);
     assert.match(table, /handleOpenModal\(c, \{ focus: "commercial-owner" \}\)/);
     assert.match(table, /\{allowAssignOwner \? \(/);
-    assert.match(mod, /crm\.customers\.assign_seller/);
+    assert.match(mod, /canAssignCustomerCommercialOwnerAccess\(auth\.authUser\)/);
+    assert.doesNotMatch(mod, /role === "ADMIN"/);
     assert.doesNotMatch(table, /<tr[^>]*onClick/);
 
     assert.match(mod, /focusSelect=\{ownerSelectFocus\}/);

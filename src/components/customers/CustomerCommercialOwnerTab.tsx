@@ -222,8 +222,8 @@ export function CustomerCommercialOwnerTab({ customerId, focusSelect = false, on
         {!payload.canEdit ? (
           <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
             <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-            Somente Gestor Comercial ou Administrador pode alterar o responsável comercial do
-            cliente.
+            Somente o super administrador ou o supervisor comercial pode alterar o responsável
+            comercial do cliente.
           </div>
         ) : null}
         <SearchableSelect

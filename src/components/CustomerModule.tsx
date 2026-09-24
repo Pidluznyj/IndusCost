@@ -49,6 +49,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange } from "@/src/lib/customerListQuery";
+import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
 
 type CustomerListMeta = {
   page: number;
@@ -58,7 +59,6 @@ type CustomerListMeta = {
 };
 
 const CUSTOMER_PAGE_SIZE = 20;
-const CUSTOMER_COMMERCIAL_OWNER_ASSIGN = "crm.customers.assign_seller";
 const COMMERCIAL_OWNER_EMPTY_LABEL = "Sem responsável";
 const CUSTOMER_LIST_OWNER_NONE = "none";
 
@@ -81,10 +81,7 @@ export const CustomerModule = () => {
   const allowCreate = canCreateCustomers(resourceCheck);
   const allowEdit = canEditCustomers(resourceCheck);
   const allowImport = canImportCustomers(resourceCheck);
-  const allowAssignOwner =
-    auth.authUser?.role === "ADMIN" ||
-    auth.authUser?.role === "SUPER_ADMIN" ||
-    auth.hasPermission(CUSTOMER_COMMERCIAL_OWNER_ASSIGN);
+  const allowAssignOwner = canAssignCustomerCommercialOwnerAccess(auth.authUser);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);

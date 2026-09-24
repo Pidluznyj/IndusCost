@@ -3,10 +3,8 @@
  */
 import { Prisma } from "@prisma/client";
 import type { CrmCustomerCommercialOwner } from "@prisma/client";
-import {
-  hasPermission,
-  type AppAuthContext,
-} from "@/src/lib/appAuth.js";
+import { type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { writeCommercialAuditLog } from "@/src/lib/commercialAuditLog.js";
 import {
@@ -36,10 +34,9 @@ export const CRM_CUSTOMER_COMMERCIAL_OWNER_ENTITY = "CrmCustomerCommercialOwner"
 export const CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION = "crm.customers.assign_seller";
 
 export function canAssignCustomerCommercialOwner(
-  auth: Pick<AppAuthContext, "role" | "permissions" | "effectivePermissions">
+  auth: Pick<AppAuthContext, "role"> & { accessProfileName?: string | null }
 ): boolean {
-  if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN") return true;
-  return hasPermission(auth, CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION);
+  return canAssignCustomerCommercialOwnerAccess(auth);
 }
 
 export function parseSellerAliasExternalIds(value: unknown): number[] {
@@ -413,8 +410,7 @@ export async function patchCustomerCommercialOwner(
       body: {
         error: "FORBIDDEN",
         message:
-          "Somente Gestor Comercial ou Administrador pode alterar o responsável comercial do cliente.",
-        requiredPermissions: [CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION],
+          "Somente o super administrador ou o supervisor comercial pode alterar o responsável comercial do cliente.",
       },
     };
   }
