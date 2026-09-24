@@ -5,6 +5,7 @@ import {
   buildNomusProductFixture52022,
   extractNomusNcm,
   findNomusProductRowsByCode,
+  inferOperationalTypeFromSku,
   inferProductTypeWithConfidence,
   isNomusBomComponentScope,
   isNomusRawMaterialScope,
@@ -136,5 +137,108 @@ describe("nomusProductsSyncMap", () => {
 
   it("17. NCM com espaços nas bordas é trim()ado, conteúdo intacto", () => {
     assert.strictEqual(extractNomusNcm({ ncm: " 39269090 " }), "39269090");
+  });
+});
+
+function nomusCatalogRow(
+  sku: string,
+  nomeTipoProduto: string,
+  nomeGrupoProduto: string,
+  nomeFamiliaProduto: string
+) {
+  return {
+    id: 1,
+    codigo: sku,
+    nome: `Descrição comercial ${sku}`,
+    descricao: `Descrição comercial ${sku}`,
+    nomeTipoProduto,
+    nomeGrupoProduto,
+    nomeFamiliaProduto,
+    nomeTipoRessuprimento: "Fabricado",
+    ativo: true,
+    template: false,
+  };
+}
+
+describe("família operacional IndusCost na classificação de Product novo", () => {
+  it("622.03AA acabado com lista de materiais → PRODUCT HIGH", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("622.03AA", "Produto acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "PRODUCT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_6XX");
+  });
+
+  it("611.80AA acabado com lista de materiais → PRODUCT HIGH", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("611.80AA", "Produto acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "PRODUCT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_6XX");
+  });
+
+  it("301.37AA acabado, lista de materiais e peça injetada → COMPONENT HIGH", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("301.37AA", "Produto acabado", "Lista de materiais", "Peça injetada")
+    );
+    assert.equal(inferred.type, "COMPONENT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_3XX");
+  });
+
+  it("301.28AA acabado com lista de materiais → COMPONENT HIGH", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("301.28AA", "Produto acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "COMPONENT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_3XX");
+  });
+
+  it("315.14AA acabado com lista de materiais → COMPONENT HIGH", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("315.14AA", "Produto acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "COMPONENT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_3XX");
+  });
+
+  it("651.23AA semi-acabado Nomus continua PRODUCT HIGH pela família 6xx", () => {
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("651.23AA", "Produto semi-acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "PRODUCT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "INDUSCOST_OPERATIONAL_FAMILY_6XX");
+  });
+
+  it("grupo Lista de materiais sozinho não classifica COMPONENT", () => {
+    const row = nomusCatalogRow("160.08--", "", "Lista de materiais", "");
+    const inferred = inferProductTypeWithConfidence(row);
+    assert.equal(inferred.confidence, "LOW");
+    assert.equal(inferred.reason, "LOW_CONFIDENCE");
+    assert.notEqual(inferred.type, "COMPONENT");
+    assert.equal(
+      isNomusBomComponentScope("", "BOM - Lista de materiais", "", null),
+      false
+    );
+    const mapped = mapNomusProductsFromApiRows([row], new Set());
+    assert.equal(mapped.eligible.length, 0);
+    assert.ok(
+      mapped.blocked.some((b) => b.reasons.includes("UNSAFE_PRODUCT_TYPE"))
+    );
+  });
+
+  it("010.19AA fica fora da família operacional e segue a regra semântica", () => {
+    assert.equal(inferOperationalTypeFromSku("010.19AA").type, null);
+    const inferred = inferProductTypeWithConfidence(
+      nomusCatalogRow("010.19AA", "Produto acabado", "Lista de materiais", "Produto acabado")
+    );
+    assert.equal(inferred.type, "PRODUCT");
+    assert.equal(inferred.confidence, "HIGH");
+    assert.equal(inferred.reason, "NOMUS_FINISHED_PRODUCT");
   });
 });

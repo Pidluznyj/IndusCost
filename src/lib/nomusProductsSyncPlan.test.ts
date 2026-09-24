@@ -8,6 +8,7 @@ import {
   type ExistingProductSnapshot,
   type ProductLifecycleRow,
 } from "./nomusProductsSyncPlan";
+import { inferProductTypeWithConfidence } from "./nomusProductsSyncMap.js";
 
 function snapshot(overrides: Partial<ExistingProductSnapshot> = {}): ExistingProductSnapshot {
   return {
@@ -280,5 +281,70 @@ describe("extractInactiveLifecycleRows — só inativação explícita", () => {
       new Map()
     );
     assert.equal(rows.length, 1);
+  });
+});
+
+describe("planProductSyncMutation — type existente não é reclassificado", () => {
+  function assertTypePreserved(
+    sku: string,
+    current: "PRODUCT" | "COMPONENT",
+    nomus: { nomeTipoProduto: string; nomeGrupoProduto: string; nomeFamiliaProduto: string }
+  ) {
+    const inferred = inferProductTypeWithConfidence({
+      id: 1,
+      codigo: sku,
+      ...nomus,
+    });
+    const index = buildProductMatchIndex([snapshot({ id: sku, sku, type: current })]);
+    const m = planProductSyncMutation(
+      row({
+        externalId: 1,
+        sku,
+        type: inferred.type,
+        typeInferenceConfidence: inferred.confidence,
+        raw: { id: 1, codigo: sku },
+      }),
+      index
+    );
+    assert.equal(m.kind, "UPDATE");
+    if (m.kind !== "UPDATE") return;
+    assert.ok(!("type" in m.data));
+    assert.ok(!m.changedFields.includes("type"));
+    if (inferred.type === current && inferred.confidence === "HIGH") {
+      assert.equal(m.typeMismatch, null);
+    }
+  }
+
+  it("622.02AA PRODUCT existente não recebe UPDATE de type", () => {
+    assertTypePreserved("622.02AA", "PRODUCT", {
+      nomeTipoProduto: "Produto acabado",
+      nomeGrupoProduto: "Lista de materiais",
+      nomeFamiliaProduto: "Produto acabado",
+    });
+  });
+
+  it("301.28AA COMPONENT existente não recebe UPDATE de type", () => {
+    assertTypePreserved("301.28AA", "COMPONENT", {
+      nomeTipoProduto: "Produto acabado",
+      nomeGrupoProduto: "Lista de materiais",
+      nomeFamiliaProduto: "Produto acabado",
+    });
+  });
+
+  it("651.23AA PRODUCT existente não vira COMPONENT por semi-acabado Nomus", () => {
+    const inferred = inferProductTypeWithConfidence({
+      id: 1,
+      codigo: "651.23AA",
+      nomeTipoProduto: "Produto semi-acabado",
+      nomeGrupoProduto: "Lista de materiais",
+      nomeFamiliaProduto: "Produto acabado",
+    });
+    assert.equal(inferred.type, "PRODUCT");
+    assert.equal(inferred.confidence, "HIGH");
+    assertTypePreserved("651.23AA", "PRODUCT", {
+      nomeTipoProduto: "Produto semi-acabado",
+      nomeGrupoProduto: "Lista de materiais",
+      nomeFamiliaProduto: "Produto acabado",
+    });
   });
 });

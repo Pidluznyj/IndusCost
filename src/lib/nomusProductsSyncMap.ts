@@ -270,6 +270,44 @@ export function isNomusInsumoScope(
   });
 }
 
+/**
+ * Família operacional do IndusCost a partir do SKU.
+ * A primeira parte numérica de 3 dígitos antes do ponto decide:
+ * 300–399 → COMPONENT, 600–699 → PRODUCT. Fora disso, sem decisão.
+ * Não usa startsWith("3"|"6") e não lê tipo/grupo/família do Nomus.
+ */
+export function inferOperationalTypeFromSku(sku: string | null | undefined): {
+  type: ItemType | null;
+  confidence: "HIGH" | "LOW";
+  reason: string | null;
+} {
+  const code = (sku ?? "").trim();
+  const match = /^(\d{3})\./.exec(code);
+  if (!match) {
+    return { type: null, confidence: "LOW", reason: null };
+  }
+  const family = Number.parseInt(match[1]!, 10);
+  if (family >= 300 && family <= 399) {
+    return {
+      type: "COMPONENT",
+      confidence: "HIGH",
+      reason: "INDUSCOST_OPERATIONAL_FAMILY_3XX",
+    };
+  }
+  if (family >= 600 && family <= 699) {
+    return {
+      type: "PRODUCT",
+      confidence: "HIGH",
+      reason: "INDUSCOST_OPERATIONAL_FAMILY_6XX",
+    };
+  }
+  return { type: null, confidence: "LOW", reason: null };
+}
+
+/**
+ * Evidência cadastral de componente que NÃO usa o grupo "BOM / Lista de materiais".
+ * Ter BOM só indica estrutura; PRODUCT também possui BOM.
+ */
 export function isNomusBomComponentScope(
   typeName: string | null,
   groupName: string | null,
@@ -277,32 +315,54 @@ export function isNomusBomComponentScope(
   supplyTypeName: string | null
 ): boolean {
   const type = (typeName ?? "").toUpperCase();
-  const group = (groupName ?? "").toUpperCase();
   const family = (familyName ?? "").toUpperCase();
   const supply = (supplyTypeName ?? "").toUpperCase();
+  void groupName;
 
-  if (group.includes("BOM") || group.includes("LISTA DE MATERIAIS")) return true;
   if (family.includes("OUTROS COMPONENTES") || family.includes("COMPONENTE")) return true;
-  if (type.includes("PRODUTO INDUSTRIALIZADO") || type.includes("INDUSTRIALIZADO")) {
-    if (supply.includes("COMPRADO") || group.includes("BOM")) return true;
-  }
-  if (supply.includes("COMPRADO") && (group.includes("BOM") || family.includes("COMPONENT"))) {
+  if (
+    (type.includes("PRODUTO INDUSTRIALIZADO") || type.includes("INDUSTRIALIZADO")) &&
+    supply.includes("COMPRADO")
+  ) {
     return true;
   }
+  if (supply.includes("COMPRADO") && family.includes("COMPONENT")) return true;
   return false;
 }
 
 export function inferProductTypeWithConfidence(
   raw: NomusProductApiRow
-): { type: ItemType; confidence: "HIGH" | "LOW" } {
+): { type: ItemType; confidence: "HIGH" | "LOW"; reason: string | null } {
   const meta = extractNomusMeta(raw);
+  const operational = inferOperationalTypeFromSku(nomusProductSkuFromRow(raw));
+  if (operational.type) {
+    return {
+      type: operational.type,
+      confidence: "HIGH",
+      reason: operational.reason,
+    };
+  }
+
   const typeName = (meta.nomeTipoProduto ?? "").toUpperCase();
   const groupName = (meta.nomeGrupoProduto ?? "").toUpperCase();
   const familyName = (meta.nomeFamiliaProduto ?? "").toUpperCase();
   const supplyName = (meta.nomusSupplyTypeName ?? "").toUpperCase();
 
-  if (isNomusBomComponentScope(meta.nomeTipoProduto, meta.nomeGrupoProduto, meta.nomeFamiliaProduto, meta.nomusSupplyTypeName)) {
-    return { type: "COMPONENT", confidence: "HIGH" };
+  if (
+    isNomusBomComponentScope(
+      meta.nomeTipoProduto,
+      meta.nomeGrupoProduto,
+      meta.nomeFamiliaProduto,
+      meta.nomusSupplyTypeName
+    )
+  ) {
+    const familyComponent =
+      familyName.includes("OUTROS COMPONENTES") || familyName.includes("COMPONENTE");
+    return {
+      type: "COMPONENT",
+      confidence: "HIGH",
+      reason: familyComponent ? "NOMUS_COMPONENT_FAMILY" : "NOMUS_INDUSTRIALIZED_PURCHASED",
+    };
   }
 
   if (
@@ -313,26 +373,26 @@ export function inferProductTypeWithConfidence(
     typeName.includes("SEMI ELABORADO") ||
     typeName.includes("SEMIELABORADO")
   ) {
-    return { type: "COMPONENT", confidence: "HIGH" };
+    return { type: "COMPONENT", confidence: "HIGH", reason: "NOMUS_SEMI_FINISHED" };
   }
   if (
     typeName.includes("COMPONENTE") ||
     typeName.includes("COMPONENT") ||
     groupName.includes("COMPONENTE")
   ) {
-    return { type: "COMPONENT", confidence: "HIGH" };
+    return { type: "COMPONENT", confidence: "HIGH", reason: "NOMUS_COMPONENT_FAMILY" };
   }
   if (
     typeName.includes("PRODUTO ACABADO") ||
     typeName.includes("ACABADO") ||
     groupName.includes("PRODUTO ACABADO")
   ) {
-    return { type: "PRODUCT", confidence: "HIGH" };
+    return { type: "PRODUCT", confidence: "HIGH", reason: "NOMUS_FINISHED_PRODUCT" };
   }
   if (typeName.includes("PRODUTO INDUSTRIALIZADO") && supplyName.includes("COMPRADO")) {
-    return { type: "COMPONENT", confidence: "HIGH" };
+    return { type: "COMPONENT", confidence: "HIGH", reason: "NOMUS_INDUSTRIALIZED_PURCHASED" };
   }
-  return { type: "PRODUCT", confidence: "LOW" };
+  return { type: "PRODUCT", confidence: "LOW", reason: "LOW_CONFIDENCE" };
 }
 
 function collectDiagnostics(raw: NomusProductApiRow[]): NomusProductsMapDiagnostics {
