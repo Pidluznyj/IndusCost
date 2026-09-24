@@ -1,9 +1,11 @@
 /**
- * Segregação adicional do Detalhe do Pedido de Venda por persona.
+ * Segregação adicional de Pedidos de Venda por persona.
  *
  * Não substitui resource permissions nem a regra própria da aba Tributos
  * (`canViewSalesOrderFiscalTaxes`). O deny do role SELLER vence grants
- * genéricos só para Custos, Resultado detalhado e Auditoria 360º.
+ * genéricos só para Custos, Resultado detalhado, Auditoria 360º e os
+ * relatórios do topo da lista (Resultado, Recebíveis, Descontos,
+ * Produtos Vendidos e Inteligência de Matéria-Prima).
  *
  * COMMERCIAL_MANAGER, ADMIN, SUPER_ADMIN, VIEWER e perfis customizados
  * não são afetados por esta regra.
@@ -43,4 +45,11 @@ export function shouldLoadSalesOrderIndustrialResult(
   access: SalesOrderDetailAccess
 ): boolean {
   return access.canViewCosts || access.canViewDetailedResult;
+}
+
+/** Relatórios ligados pelos botões do topo da lista de Pedidos de Venda. */
+export function canOpenSalesOrderListReports(
+  auth: SalesOrderDetailAccessInput | null | undefined
+): boolean {
+  return !isSalesOrderSellerPersona(auth?.role);
 }

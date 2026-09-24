@@ -103,6 +103,7 @@ import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canOpenAdminSettingsHub } from "@/src/lib/adminSettingsAccess";
+import { canOpenSalesOrderListReports } from "@/src/lib/sales-orders/salesOrderDetailAccess";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
 import { BarChart3, CalendarRange, Factory, Layers, Package, Percent, TrendingUp } from "lucide-react";
 
@@ -134,6 +135,46 @@ function ModulePageShell({
       </div>
       {children}
     </div>
+  );
+}
+
+const SALES_ORDER_LIST_REPORT_LINK_CLASS =
+  "inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent";
+
+function SalesOrderListReportGate({ children }: { children: React.ReactNode }) {
+  const auth = useAuth();
+  if (!canOpenSalesOrderListReports({ role: auth.authUser?.role ?? null })) {
+    return <Navigate to="/sales-orders" replace />;
+  }
+  return children;
+}
+
+function SalesOrdersListHeaderActions() {
+  const auth = useAuth();
+  if (!canOpenSalesOrderListReports({ role: auth.authUser?.role ?? null })) return null;
+  return (
+    <>
+      <Link to="/sales-orders/result" className={SALES_ORDER_LIST_REPORT_LINK_CLASS}>
+        <TrendingUp className="h-4 w-4 text-primary" />
+        Resultado
+      </Link>
+      <Link to="/sales-orders/monthly-receivables" className={SALES_ORDER_LIST_REPORT_LINK_CLASS}>
+        <CalendarRange className="h-4 w-4 text-primary" />
+        Recebíveis mensais
+      </Link>
+      <Link to="/sales-orders/commercial-discounts" className={SALES_ORDER_LIST_REPORT_LINK_CLASS}>
+        <Percent className="h-4 w-4 text-primary" />
+        Descontos comerciais
+      </Link>
+      <Link to="/sales-orders/sold-products" className={SALES_ORDER_LIST_REPORT_LINK_CLASS}>
+        <BarChart3 className="h-4 w-4 text-primary" />
+        Produtos Vendidos
+      </Link>
+      <Link to="/sales-orders/material-demand" className={SALES_ORDER_LIST_REPORT_LINK_CLASS}>
+        <Factory className="h-4 w-4 text-primary" />
+        Inteligência de Matéria-Prima
+      </Link>
+    </>
   );
 }
 
@@ -739,17 +780,23 @@ export default function App() {
         />
         <Route
           path="sales-orders/material-usage"
-          element={<Navigate to="/sales-orders/material-demand" replace />}
+          element={
+            <SalesOrderListReportGate>
+              <Navigate to="/sales-orders/material-demand" replace />
+            </SalesOrderListReportGate>
+          }
         />
         <Route
           path="sales-orders/material-demand"
           element={
-            <ModulePageShell
-              title="Pedidos de venda — Inteligência de Matéria-Prima"
-              description="Previsto x Faturado — demanda estimada de matéria-prima a partir dos pedidos de venda filtrados."
-            >
-              <ProductMaterialDemandDashboard context="sales-orders" />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Pedidos de venda — Inteligência de Matéria-Prima"
+                description="Previsto x Faturado — demanda estimada de matéria-prima a partir dos pedidos de venda filtrados."
+              >
+                <ProductMaterialDemandDashboard context="sales-orders" />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route
@@ -862,81 +909,91 @@ export default function App() {
         <Route
           path="sales-orders/sold-products/:productId/customers"
           element={
-            <ModulePageShell
-              title="Clientes compradores"
-              description="Clientes que compraram o produto selecionado, com métricas comerciais e ações sugeridas."
-            >
-              <SoldProductCustomersPage />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Clientes compradores"
+                description="Clientes que compraram o produto selecionado, com métricas comerciais e ações sugeridas."
+              >
+                <SoldProductCustomersPage />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route
           path="sales-orders/sold-products"
           element={
-            <ModulePageShell
-              title="Produtos Vendidos"
-              description="Ranking de produtos por quantidade vendida com base em pedidos de venda."
-            >
-              <SoldProductsReportPage />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Produtos Vendidos"
+                description="Ranking de produtos por quantidade vendida com base em pedidos de venda."
+              >
+                <SoldProductsReportPage />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route path="sales-orders/management" element={<Navigate to="/sales-orders" replace />} />
         <Route
           path="sales-orders/result"
           element={
-            <ModulePageShell
-              title="Resultado — Pedidos de Venda"
-              description="Visão executiva de venda, custo, margem gerencial e projeção comercial."
-              headerActions={
-                <Link
-                  to="/sales-orders"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                >
-                  Lista de pedidos
-                </Link>
-              }
-            >
-              <SalesOrderResultPage />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Resultado — Pedidos de Venda"
+                description="Visão executiva de venda, custo, margem gerencial e projeção comercial."
+                headerActions={
+                  <Link
+                    to="/sales-orders"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    Lista de pedidos
+                  </Link>
+                }
+              >
+                <SalesOrderResultPage />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route
           path="sales-orders/monthly-receivables"
           element={
-            <ModulePageShell
-              title="Recebíveis mensais por Pedido de Venda"
-              description="Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento."
-              headerActions={
-                <Link
-                  to="/sales-orders"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                >
-                  Lista de pedidos
-                </Link>
-              }
-            >
-              <SalesOrderMonthlyReceivablesReportPage />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Recebíveis mensais por Pedido de Venda"
+                description="Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento."
+                headerActions={
+                  <Link
+                    to="/sales-orders"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    Lista de pedidos
+                  </Link>
+                }
+              >
+                <SalesOrderMonthlyReceivablesReportPage />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route
           path="sales-orders/commercial-discounts"
           element={
-            <ModulePageShell
-              title="Relatório de descontos comerciais"
-              description="Valor bruto, valor concedido em descontos, líquido e margem comercial dos Pedidos de Venda."
-              headerActions={
-                <Link
-                  to="/sales-orders"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                >
-                  Lista de pedidos
-                </Link>
-              }
-            >
-              <SalesOrderCommercialDiscountReportPage />
-            </ModulePageShell>
+            <SalesOrderListReportGate>
+              <ModulePageShell
+                title="Relatório de descontos comerciais"
+                description="Valor bruto, valor concedido em descontos, líquido e margem comercial dos Pedidos de Venda."
+                headerActions={
+                  <Link
+                    to="/sales-orders"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    Lista de pedidos
+                  </Link>
+                }
+              >
+                <SalesOrderCommercialDiscountReportPage />
+              </ModulePageShell>
+            </SalesOrderListReportGate>
           }
         />
         <Route
@@ -956,45 +1013,7 @@ export default function App() {
             <ModulePageShell
               title="Pedidos de venda"
               description={<SalesOrdersPageLastUpdateSubtitle />}
-              headerActions={
-                <>
-                  <Link
-                    to="/sales-orders/result"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    Resultado
-                  </Link>
-                  <Link
-                    to="/sales-orders/monthly-receivables"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <CalendarRange className="h-4 w-4 text-primary" />
-                    Recebíveis mensais
-                  </Link>
-                  <Link
-                    to="/sales-orders/commercial-discounts"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <Percent className="h-4 w-4 text-primary" />
-                    Descontos comerciais
-                  </Link>
-                  <Link
-                    to="/sales-orders/sold-products"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    Produtos Vendidos
-                  </Link>
-                  <Link
-                    to="/sales-orders/material-demand"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <Factory className="h-4 w-4 text-primary" />
-                    Inteligência de Matéria-Prima
-                  </Link>
-                </>
-              }
+              headerActions={<SalesOrdersListHeaderActions />}
             >
               <SalesOrdersModule />
             </ModulePageShell>

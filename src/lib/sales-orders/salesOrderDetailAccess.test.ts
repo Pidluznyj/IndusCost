@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  canOpenSalesOrderListReports,
   resolveSalesOrderDetailAccess,
   shouldLoadSalesOrderIndustrialResult,
 } from "./salesOrderDetailAccess.js";
@@ -102,5 +103,56 @@ describe("segregação do detalhe do PV por persona SELLER", () => {
     const denyAt = handler.indexOf("!auditAccess.canOpenAudit360");
     const engineAt = handler.indexOf("getOrderFullAudit(");
     assert.ok(denyAt >= 0 && engineAt > denyAt);
+  });
+
+  it("SELLER não vê os relatórios do topo da lista de pedidos", () => {
+    assert.equal(canOpenSalesOrderListReports({ role: "SELLER" }), false);
+    assert.equal(canOpenSalesOrderListReports({ role: "seller" }), false);
+    for (const role of ["COMMERCIAL_MANAGER", "ADMIN", "SUPER_ADMIN", "VIEWER", "CUSTOM_PROFILE", null, ""] as const) {
+      assert.equal(canOpenSalesOrderListReports({ role }), true, String(role));
+    }
+
+    const app = read("src/App.tsx");
+    const header = app.slice(
+      app.indexOf("function SalesOrdersListHeaderActions()"),
+      app.indexOf("function AdminSettingsRoute()")
+    );
+    assert.match(header, /canOpenSalesOrderListReports/);
+    assert.match(header, /return null/);
+    assert.ok(header.indexOf("return null") < header.indexOf("Resultado"));
+    for (const label of [
+      "Resultado",
+      "Recebíveis mensais",
+      "Descontos comerciais",
+      "Produtos Vendidos",
+      "Inteligência de Matéria-Prima",
+    ]) {
+      assert.match(header, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    assert.match(app, /headerActions=\{<SalesOrdersListHeaderActions \/>\}/);
+
+    const gate = app.slice(
+      app.indexOf("function SalesOrderListReportGate("),
+      app.indexOf("function SalesOrdersListHeaderActions()")
+    );
+    assert.match(gate, /canOpenSalesOrderListReports/);
+    assert.match(gate, /Navigate to="\/sales-orders" replace/);
+    for (const marker of [
+      "<SalesOrderResultPage",
+      "<SalesOrderMonthlyReceivablesReportPage",
+      "<SalesOrderCommercialDiscountReportPage",
+      "<SoldProductsReportPage",
+      "<SoldProductCustomersPage",
+      'context="sales-orders"',
+    ]) {
+      const at = app.indexOf(marker);
+      assert.ok(at > 0, marker);
+      assert.match(app.slice(Math.max(0, at - 900), at), /SalesOrderListReportGate/);
+    }
+    const engineering = app.slice(
+      app.indexOf('path="products/material-demand"'),
+      app.indexOf('path="products/where-used"')
+    );
+    assert.doesNotMatch(engineering, /SalesOrderListReportGate/);
   });
 });
