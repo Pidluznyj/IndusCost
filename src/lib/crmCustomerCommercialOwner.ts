@@ -23,6 +23,7 @@ import {
   resolveCommercialOwnerDisplay,
 } from "@/src/lib/commercial/commercialPersonIdentityResolver.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { CUSTOMER_LIST_OWNER_NONE } from "@/src/lib/customerListQuery.js";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
 import type {
   ActiveCommercialSellerOption,
@@ -207,11 +208,20 @@ export function manualCommercialOwnerMatchesSellerScope(
   return false;
 }
 
-export function buildManualCommercialOwnerPortfolioWhere(
-  scope: Pick<CrmCommercialAccessScope, "externalSellerId" | "responsible" | "sellerIdentityKey"> & {
-    externalSellerIds?: number[] | null;
-  }
-): Prisma.CrmCustomerCommercialOwnerWhereInput | undefined {
+const COMMERCIAL_OWNER_ID_ONLY_PREFIX = "__ID_ONLY__:";
+
+export type CommercialOwnerPortfolioScope = Pick<
+  CrmCommercialAccessScope,
+  "externalSellerId" | "responsible" | "sellerIdentityKey"
+> & {
+  externalSellerIds?: number[] | null;
+};
+
+/** Chaves e IDs usados tanto no WHERE da carteira quanto no match em memória. */
+export function commercialOwnerPortfolioMatchParts(scope: CommercialOwnerPortfolioScope): {
+  identityKeys: string[];
+  ids: number[];
+} {
   const ids = [
     ...new Set(
       [
@@ -222,17 +232,22 @@ export function buildManualCommercialOwnerPortfolioWhere(
   ].sort((a, b) => a - b);
   const identityKey =
     scope.sellerIdentityKey?.trim() ||
-    (scope.responsible?.trim()
-      ? normalizeSellerIdentityName(scope.responsible)
-      : null);
-  const idOnlyKeys = ids.map((id) => `__ID_ONLY__:${id}`);
+    (scope.responsible?.trim() ? normalizeSellerIdentityName(scope.responsible) : "");
+  const identityKeys = [
+    ...(identityKey ? [identityKey] : []),
+    ...ids.map((id) => `${COMMERCIAL_OWNER_ID_ONLY_PREFIX}${id}`),
+  ];
+  return { identityKeys, ids };
+}
+
+export function buildManualCommercialOwnerPortfolioWhere(
+  scope: CommercialOwnerPortfolioScope
+): Prisma.CrmCustomerCommercialOwnerWhereInput | undefined {
+  const { identityKeys, ids } = commercialOwnerPortfolioMatchParts(scope);
 
   const or: Prisma.CrmCustomerCommercialOwnerWhereInput[] = [];
-  if (identityKey) {
+  for (const identityKey of identityKeys) {
     or.push({ sellerIdentityKey: identityKey });
-  }
-  for (const idKey of idOnlyKeys) {
-    or.push({ sellerIdentityKey: idKey });
   }
   if (ids.length === 1) {
     or.push({ sellerExternalId: ids[0]! });
@@ -253,6 +268,24 @@ export function buildManualCommercialOwnerPortfolioWhere(
     return { isActive: true, ...or[0]! };
   }
   return { isActive: true, OR: or };
+}
+
+export type CommercialOwnerAssignmentIdentity = {
+  sellerIdentityKey: string | null;
+  sellerExternalId: number | null;
+  sellerAliasExternalIds: number[];
+};
+
+/** Mesma identidade do WHERE da carteira, avaliada em memória. */
+export function assignmentMatchesCommercialOwnerPortfolio(
+  assignment: CommercialOwnerAssignmentIdentity,
+  scope: CommercialOwnerPortfolioScope
+): boolean {
+  const { identityKeys, ids } = commercialOwnerPortfolioMatchParts(scope);
+  const key = assignment.sellerIdentityKey?.trim() ?? "";
+  if (key && identityKeys.includes(key)) return true;
+  if (assignment.sellerExternalId != null && ids.includes(assignment.sellerExternalId)) return true;
+  return assignment.sellerAliasExternalIds.some((id) => ids.includes(id));
 }
 
 export function adminSellerOptionToActiveCommercialSeller(
@@ -580,38 +613,145 @@ export type CommercialOwnerFilterOption = {
   name: string;
 };
 
-/** Opções do filtro da grade: uma linha por identidade ativa, sem N+1. */
-export async function listCommercialOwnerFilterOptions(): Promise<CommercialOwnerFilterOption[]> {
+export type CommercialOwnerFilterBuild = {
+  options: CommercialOwnerFilterOption[];
+  activeAssignments: number;
+  resolvedAssignments: number;
+  unresolvedAssignments: number;
+};
+
+function adminSellerOptionPortfolioScope(option: AdminSellerOption): CommercialOwnerPortfolioScope {
+  return {
+    sellerIdentityKey: option.sellerIdentityKey,
+    externalSellerId: option.externalSellerId,
+    externalSellerIds: option.externalSellerIds,
+    responsible: option.responsible,
+  };
+}
+
+function isCanonicalCommercialOwnerFilterSeller(option: AdminSellerOption): boolean {
+  const name = option.displayName.trim();
+  return Boolean(name) && name !== ORDER_SELLER_UNMAPPED_LABEL;
+}
+
+function pickCanonicalSellerOption(
+  assignment: CommercialOwnerAssignmentIdentity,
+  matches: AdminSellerOption[]
+): AdminSellerOption | null {
+  const displayable = matches.filter(isCanonicalCommercialOwnerFilterSeller);
+  if (displayable.length === 0) return null;
+  const key = assignment.sellerIdentityKey?.trim() ?? "";
+  const namedExact =
+    key && !key.startsWith(COMMERCIAL_OWNER_ID_ONLY_PREFIX)
+      ? displayable.filter((option) => option.sellerIdentityKey.trim() === key)
+      : [];
+  const pool = namedExact.length > 0 ? namedExact : displayable;
+  pool.sort((a, b) => {
+    if (b.ordersCount !== a.ordersCount) return b.ordersCount - a.ordersCount;
+    return buildAdminSellerOptionKey(a).localeCompare(buildAdminSellerOptionKey(b));
+  });
+  return pool[0] ?? null;
+}
+
+/**
+ * Opções do filtro da grade: só responsáveis do diretório consolidado
+ * que tenham ao menos uma atribuição ativa resolvida. Deduplica pela
+ * optionKey canônica, não pelo rótulo.
+ */
+export function buildCommercialOwnerFilterOptions(
+  assignments: readonly CommercialOwnerAssignmentIdentity[],
+  sellers: readonly AdminSellerOption[]
+): CommercialOwnerFilterBuild {
+  const byKey = new Map<string, CommercialOwnerFilterOption>();
+  let resolvedAssignments = 0;
+  let unresolvedAssignments = 0;
+  for (const assignment of assignments) {
+    const matches = sellers.filter((seller) =>
+      assignmentMatchesCommercialOwnerPortfolio(assignment, adminSellerOptionPortfolioScope(seller))
+    );
+    const seller = pickCanonicalSellerOption(assignment, matches);
+    if (!seller) {
+      unresolvedAssignments += 1;
+      continue;
+    }
+    resolvedAssignments += 1;
+    const key = buildAdminSellerOptionKey(seller);
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, name: seller.displayName.trim() });
+    }
+  }
+  const options = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return {
+    options,
+    activeAssignments: assignments.length,
+    resolvedAssignments,
+    unresolvedAssignments,
+  };
+}
+
+/**
+ * WHERE do filtro da grade. `none` = sem atribuição ativa.
+ * Demais valores são `buildAdminSellerOptionKey` e casam aliases legados
+ * pela mesma regra de `buildManualCommercialOwnerPortfolioWhere`.
+ */
+export function buildCustomerCommercialOwnerFilterWhere(
+  ownerKey: string,
+  sellers: readonly AdminSellerOption[]
+): Prisma.CustomerWhereInput | undefined {
+  const key = ownerKey.trim();
+  if (!key) return undefined;
+  if (key === CUSTOMER_LIST_OWNER_NONE) {
+    return { NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } } };
+  }
+  const seller = resolveSellerOptionFromKey([...sellers], key);
+  if (!seller || !isCanonicalCommercialOwnerFilterSeller(seller)) {
+    return { id: { in: [] } };
+  }
+  const portfolio = buildManualCommercialOwnerPortfolioWhere(adminSellerOptionPortfolioScope(seller));
+  if (!portfolio) return { id: { in: [] } };
+  return { CrmCustomerCommercialOwner: { is: portfolio } };
+}
+
+async function loadActiveCommercialOwnerAssignments(): Promise<CommercialOwnerAssignmentIdentity[]> {
   const rows = await prisma.crmCustomerCommercialOwner.findMany({
     where: { isActive: true },
-    distinct: ["sellerIdentityKey"],
     select: {
       sellerIdentityKey: true,
-      sellerCanonicalName: true,
-      sellerResponsibleName: true,
       sellerExternalId: true,
+      sellerAliasExternalIds: true,
     },
   });
-  const options: CommercialOwnerFilterOption[] = [];
-  for (const row of rows) {
-    const key = row.sellerIdentityKey?.trim();
-    if (!key) continue;
-    const name = commercialOwnerListDisplayName({
-      source: "MANUAL",
-      sellerCanonicalName: row.sellerCanonicalName,
-      sellerResponsibleName: row.sellerResponsibleName,
-      sellerExternalId: row.sellerExternalId,
-      sellerIdentityKey: key,
-      sellerAliasExternalIds: [],
-      confidence: null,
-      updatedAt: null,
-      updatedByName: null,
-    });
-    if (!name) continue;
-    options.push({ key, name });
-  }
-  options.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  return options;
+  return rows.map((row) => ({
+    sellerIdentityKey: row.sellerIdentityKey,
+    sellerExternalId: row.sellerExternalId,
+    sellerAliasExternalIds: parseSellerAliasExternalIds(row.sellerAliasExternalIds),
+  }));
+}
+
+/** Opções do filtro da grade. Uma leitura das atribuições e um diretório consolidado. */
+export async function listCommercialOwnerFilterOptions(
+  sellers?: readonly AdminSellerOption[]
+): Promise<CommercialOwnerFilterOption[]> {
+  const [assignments, directory] = await Promise.all([
+    loadActiveCommercialOwnerAssignments(),
+    sellers ?? fetchAdminSellerOptionsFromDb(),
+  ]);
+  return buildCommercialOwnerFilterOptions(assignments, directory).options;
+}
+
+/** Filtro da listagem: opções canônicas e WHERE, sem consulta por cliente. */
+export async function prepareCommercialOwnerCustomerListFilter(ownerKey: string): Promise<
+  CommercialOwnerFilterBuild & { ownerWhere: Prisma.CustomerWhereInput | undefined }
+> {
+  const [assignments, directory] = await Promise.all([
+    loadActiveCommercialOwnerAssignments(),
+    fetchAdminSellerOptionsFromDb(),
+  ]);
+  const built = buildCommercialOwnerFilterOptions(assignments, directory);
+  return {
+    ...built,
+    ownerWhere: buildCustomerCommercialOwnerFilterWhere(ownerKey, directory),
+  };
 }
 
 /**

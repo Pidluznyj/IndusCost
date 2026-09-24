@@ -245,7 +245,7 @@ import {
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
 import {
   attachCustomerCommercialOwnerListFields,
-  listCommercialOwnerFilterOptions,
+  prepareCommercialOwnerCustomerListFilter,
 } from "./src/lib/crmCustomerCommercialOwner.js";
 import { registerCrmReportsRoutes } from "./src/lib/commercial/crmReportsRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
@@ -13987,8 +13987,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
 
       const list = parseCustomerListQuery(query);
-      const where = buildCustomerListWhere(list.search, list.commercialOwner);
-      const [total, items, commercialOwnerOptions] = await Promise.all([
+      const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
+      const where = buildCustomerListWhere(list.search, ownerFilter.ownerWhere);
+      const commercialOwnerOptions = ownerFilter.options;
+      const [total, items] = await Promise.all([
         prisma.customer.count({ where }),
         prisma.customer.findMany({
           where,
@@ -13996,7 +13998,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           skip: list.skip,
           take: list.limit,
         }),
-        listCommercialOwnerFilterOptions(),
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);

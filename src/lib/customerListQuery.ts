@@ -100,26 +100,18 @@ export function buildCustomerSearchWhere(search: string): Prisma.CustomerWhereIn
   return { OR: ors };
 }
 
-/** Filtro do responsável comercial persistido. Vazio = sem restrição. */
+/** Clientes sem CrmCustomerCommercialOwner ativo. Outras chaves não filtram aqui. */
 export function buildCustomerOwnerWhere(ownerKey: string): Prisma.CustomerWhereInput | undefined {
   const key = ownerKey.trim();
-  if (!key) return undefined;
-  if (key === CUSTOMER_LIST_OWNER_NONE) {
-    return { NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } } };
-  }
-  return {
-    CrmCustomerCommercialOwner: {
-      is: { isActive: true, sellerIdentityKey: key },
-    },
-  };
+  if (key !== CUSTOMER_LIST_OWNER_NONE) return undefined;
+  return { NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } } };
 }
 
 export function buildCustomerListWhere(
   search: string,
-  ownerKey: string
+  ownerWhere?: Prisma.CustomerWhereInput
 ): Prisma.CustomerWhereInput | undefined {
   const searchWhere = buildCustomerSearchWhere(search);
-  const ownerWhere = buildCustomerOwnerWhere(ownerKey);
   if (searchWhere && ownerWhere) return { AND: [searchWhere, ownerWhere] };
   return searchWhere ?? ownerWhere;
 }

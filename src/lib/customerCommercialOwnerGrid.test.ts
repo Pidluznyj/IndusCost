@@ -92,8 +92,9 @@ describe("responsável comercial na listagem de clientes", () => {
     assert.doesNotMatch(attach, /inferCommercialOwnerFromNomusOrders|findUnique/);
     assert.match(service, /customerId: \{ in: customerIds \}, isActive: true/);
     assert.match(server, /attachCustomerCommercialOwnerListFields\(withRisk\)/);
-    assert.match(server, /buildCustomerListWhere\(list\.search, list\.commercialOwner\)/);
-    assert.match(server, /listCommercialOwnerFilterOptions\(\)/);
+    assert.match(server, /prepareCommercialOwnerCustomerListFilter\(list\.commercialOwner\)/);
+    assert.match(server, /buildCustomerListWhere\(list\.search, ownerFilter\.ownerWhere\)/);
+    assert.match(server, /commercialOwnerOptions = ownerFilter\.options/);
     assert.match(mod, /aria-label="Filtrar por responsável comercial"/);
     assert.match(mod, /q\.set\("commercialOwner", ownerFilter\)/);
     assert.match(mod, /value=\{CUSTOMER_LIST_OWNER_NONE\}/);
