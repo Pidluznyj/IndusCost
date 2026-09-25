@@ -10,6 +10,7 @@ import type {
 import {
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
 } from "./commissionReceiptClosingApi.shared.js";
+import { formatInstallmentLabel } from "./commissionReceiptInstallment.shared.js";
 
 export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE =
   "COMERCIAL: RELATÓRIO DE COMISSÕES";
@@ -113,7 +114,8 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     "ID externo/Nomus": line.nomusReceivableId != null ? String(line.nomusReceivableId) : "",
     "Data de vencimento": formatDateBr(line.dueDate),
     "Data de baixa": formatDateBr(line.settlementDate),
-    Parcela: line.installmentNumber != null ? String(line.installmentNumber) : "",
+    // "1/3" como na tela; sem número = célula vazia (padrão do relatório).
+    Parcela: formatInstallmentLabel(line.installmentNumber, line.installmentTotal, ""),
     "Origem do dado": sourceLabel(line.source),
   };
 }

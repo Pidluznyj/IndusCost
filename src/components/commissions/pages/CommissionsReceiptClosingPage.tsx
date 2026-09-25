@@ -26,6 +26,7 @@ import {
   formatCommissionsApiError,
 } from "@/src/components/commissions/commissionsUi";
 import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
+import { CommissionsReceiptClosingDetailTable } from "@/src/components/commissions/CommissionsReceiptClosingDetailTable";
 import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 import type {
   CommissionsReceiptClosingLine,
@@ -45,11 +46,9 @@ import {
   findReceiptClosingSellerRowByKey,
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
-  type ReceiptClosingDetailTotals,
   type ReceiptClosingSellerTotals,
 } from "@/src/lib/commissions/commissionReceiptClosingSellerFilter.shared";
 import { RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
-import { formatReceiptClosingCanonicalSellerDisplay } from "@/src/lib/commissions/commissionReceiptSeller";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
 
@@ -68,17 +67,6 @@ function formatDate(iso: string | null): string {
   } catch {
     return "—";
   }
-}
-
-function statusBadgeClass(status: string): string {
-  if (status === "COMMISSIONABLE") return "bg-emerald-100 text-emerald-800";
-  if (status === "CUSTOMER_EXCLUDED") return "bg-slate-200 text-slate-800";
-  if (status === "GROUP_COMPANY_EXCLUDED") return "bg-slate-100 text-slate-700";
-  if (status === "EXCLUDED") return "bg-slate-100 text-slate-700";
-  if (status === "NO_SCHEDULE" || status === "STALE_SCHEDULE") {
-    return "bg-amber-100 text-amber-900";
-  }
-  return "bg-amber-100 text-amber-900";
 }
 
 function SellerTable({
@@ -158,130 +146,6 @@ function SellerTable({
             </td>
             <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.releasedCommission)}</td>
             <td className="px-2 py-2 text-right">{totals.exceptionCount}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </CommissionsTableScroll>
-  );
-}
-
-function DetailTable({
-  rows,
-  totals,
-}: {
-  rows: CommissionsReceiptClosingLine[];
-  totals: ReceiptClosingDetailTotals;
-}) {
-  if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nenhuma linha no período.</p>;
-  }
-  return (
-    <CommissionsTableScroll>
-      {/*
-        Largura mínima menor que a original (1500px): saíram CR, Vendedor raw e
-        Motivo, então cabe mais linha na tela sem rolagem horizontal. O motivo
-        virou tooltip da própria linha — ver `title` no <tr>.
-      */}
-      <table className="min-w-[1100px] text-xs" data-testid="commissions-receipt-closing-detail-table">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th className="px-2 py-2">NF</th>
-            <th className="px-2 py-2">Pedido</th>
-            <th className="px-2 py-2">Cliente</th>
-            <th className="px-2 py-2">Vendedor</th>
-            <th className="px-2 py-2 text-right">Valor real</th>
-            <th className="px-2 py-2 text-right">Recebido</th>
-            <th className="px-2 py-2 text-right">Base comissão</th>
-            <th className="px-2 py-2 text-right">Juros/multa ignorados</th>
-            <th className="px-2 py-2 text-right">Comissão agendada</th>
-            <th className="px-2 py-2 text-right">Comissão liberada</th>
-            <th className="px-2 py-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const ignored = row.ignoredFinancialChargesAmount ?? 0;
-            const original = row.receivableOriginalAmount ?? null;
-            const base =
-              row.commissionPrincipalAmount ?? row.commissionableBaseAmount;
-            // Motivo saiu da grade e virou tooltip da linha inteira: passar o
-            // mouse em qualquer célula explica o status. Sem motivo, sem
-            // tooltip — `undefined` não renderiza atributo.
-            const reasonTooltip = row.statusReason
-              ? `${row.status}: ${row.statusReason}`
-              : undefined;
-            return (
-            <tr
-              key={row.lineKey}
-              className="border-b"
-              title={reasonTooltip}
-              data-status-reason={row.statusReason ?? undefined}
-            >
-              <td className="px-2 py-2">{row.nfeNumber ?? "—"}</td>
-              <td className="px-2 py-2">{row.orderCode ?? "—"}</td>
-              <td className="px-2 py-2">{row.customerName ?? "—"}</td>
-              <td className="px-2 py-2">{formatReceiptClosingCanonicalSellerDisplay(row)}</td>
-              <td className="px-2 py-2 text-right">
-                {original != null ? formatFinanceCurrency(original) : "—"}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {row.uniqueReceivedAmount > 0
-                  ? formatFinanceCurrency(row.uniqueReceivedAmount)
-                  : "—"}
-              </td>
-              <td className="px-2 py-2 text-right">{formatFinanceCurrency(base)}</td>
-              <td
-                className={`px-2 py-2 text-right ${ignored > 0 ? "text-amber-800 font-medium" : "text-muted-foreground"}`}
-                title={
-                  ignored > 0
-                    ? "Recebido acima do original do CR — juros/multa/acréscimos não entram na comissão"
-                    : undefined
-                }
-              >
-                {ignored > 0 ? formatFinanceCurrency(ignored) : "—"}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {row.scheduledCommissionAmount != null
-                  ? formatFinanceCurrency(row.scheduledCommissionAmount)
-                  : "—"}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {formatFinanceCurrency(row.releasedCommissionAmount)}
-              </td>
-              <td className="px-2 py-2">
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}
-                >
-                  {row.status}
-                </span>
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          {/*
-            11 colunas: NF, Pedido, Cliente, Vendedor (colSpan 4),
-            Valor real, Recebido, Base comissão, Juros/multa ignorados,
-            Comissão agendada, Comissão liberada (6 células) e Status (1).
-            Soma 11 — precisa bater com o thead, senão a linha de totais
-            desalinha das colunas de valor.
-          */}
-          <tr className="border-t-2 bg-muted/20 font-semibold" data-testid="commissions-receipt-closing-detail-totals">
-            <td className="px-2 py-2" colSpan={4}>
-              Totais ({totals.lineCount} linha{totals.lineCount === 1 ? "" : "s"})
-            </td>
-            <td className="px-2 py-2 text-right">—</td>
-            <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.receivedAmount)}</td>
-            <td className="px-2 py-2 text-right">—</td>
-            <td className="px-2 py-2 text-right">—</td>
-            <td className="px-2 py-2 text-right">
-              {formatFinanceCurrency(totals.scheduledCommissionAmount)}
-            </td>
-            <td className="px-2 py-2 text-right">
-              {formatFinanceCurrency(totals.releasedCommissionAmount)}
-            </td>
-            <td className="px-2 py-2" />
           </tr>
         </tfoot>
       </table>
@@ -1035,7 +899,7 @@ export function CommissionsReceiptClosingPage() {
                 </label>
               ) : null}
             </div>
-            <DetailTable rows={filteredDetailLines} totals={detailTotals} />
+            <CommissionsReceiptClosingDetailTable rows={filteredDetailLines} totals={detailTotals} />
           </section>
         </>
       ) : null}

@@ -29,9 +29,27 @@ describe("commissionReceiptClosingUi", () => {
 
   it("detalhamento exibe totais filtrados no rodapé", () => {
     const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
+    const table = read("src/components/commissions/CommissionsReceiptClosingDetailTable.tsx");
     assert.match(page, /computeReceiptClosingDetailTotals/);
-    assert.match(page, /commissions-receipt-closing-detail-totals/);
+    assert.match(
+      page,
+      /<CommissionsReceiptClosingDetailTable rows=\{filteredDetailLines\} totals=\{detailTotals\} \/>/
+    );
+    assert.match(table, /commissions-receipt-closing-detail-totals/);
     assert.match(page, /RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL/);
+  });
+
+  it("detalhamento: coluna Parcela (n/total) e Status em bolinha, sem badge textual", () => {
+    const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
+    const table = read("src/components/commissions/CommissionsReceiptClosingDetailTable.tsx");
+    assert.doesNotMatch(page, /statusBadgeClass|function DetailTable/);
+    assert.match(table, /formatInstallmentLabel\(row\.installmentNumber, row\.installmentTotal\)/);
+    assert.match(table, /<ReceiptClosingStatusDot status=\{row\.status\} statusReason=\{row\.statusReason\} \/>/);
+    assert.match(table, /formatCommissionReceiptLineStatus/);
+    assert.match(table, /aria-label=\{`Status: \$\{label\}`\}/);
+    assert.match(table, /colSpan=\{5\}/);
+    // thead/tbody/tfoot direto no wrapper: uma única <table>.
+    assert.doesNotMatch(table, /<table/);
   });
 
   it("empresas do grupo ficam fora do detalhamento padrão com toggle de auditoria", () => {

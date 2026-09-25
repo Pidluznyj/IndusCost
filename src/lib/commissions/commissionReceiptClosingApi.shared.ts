@@ -126,6 +126,13 @@ export type ReceiptClosingApiLine = {
   nomusReceivableId: number | null;
   receivableNumber: string | null;
   installmentNumber: number | null;
+  /**
+   * Quantidade de CRs da NF do título (todos, recebidos ou não no mês) — denominador
+   * da coluna "Parcela" (ex.: 2/3). Preenchido no servidor por
+   * `enrichReceiptClosingPageInstallments`; null quando não dá para afirmar com
+   * segurança (ver commissionReceiptInstallment.shared.ts).
+   */
+  installmentTotal?: number | null;
   settlementDate: string | null;
   /** Dia civil do recebimento que definiu a competência. Não é a baixa. */
   receiptDate?: string | null;
