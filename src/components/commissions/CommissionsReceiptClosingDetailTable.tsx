@@ -6,6 +6,10 @@ import type { ReceiptClosingDetailTotals } from "@/src/lib/commissions/commissio
 import { formatReceiptClosingCanonicalSellerDisplay } from "@/src/lib/commissions/commissionReceiptSeller";
 import { formatInstallmentLabel } from "@/src/lib/commissions/commissionReceiptInstallment.shared";
 import {
+  COMMISSION_LEDGER_INCLUSION_TYPE_LABELS,
+  formatCarryoverLineTag,
+} from "@/src/lib/commissions/commissionReceiptCoverage.shared";
+import {
   formatCommissionReceiptLineReason,
   formatCommissionReceiptLineStatus,
 } from "@/src/lib/commissions/commissionReceiptLineStatusLabels";
@@ -117,6 +121,9 @@ export function CommissionsReceiptClosingDetailTable({
           // tooltip — `undefined` não renderiza atributo. A bolinha de status
           // tem o próprio tooltip (status por extenso + motivo).
           const reasonTooltip = row.statusReason ? `${row.status}: ${row.statusReason}` : undefined;
+          // Pendência de período anterior incluída neste fechamento: etiqueta na
+          // célula da NF (sem coluna nova — preserva o layout Parcela/Status).
+          const carryoverTag = formatCarryoverLineTag(row);
           return (
             <tr
               key={row.lineKey}
@@ -124,7 +131,20 @@ export function CommissionsReceiptClosingDetailTable({
               title={reasonTooltip}
               data-status-reason={row.statusReason ?? undefined}
             >
-              <td className={cn(TD, "whitespace-nowrap")}>{row.nfeNumber ?? "—"}</td>
+              <td className={cn(TD, "whitespace-nowrap")}>
+                {row.nfeNumber ?? "—"}
+                {carryoverTag ? (
+                  <span
+                    className="mt-0.5 block w-fit rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-semibold text-amber-900"
+                    title={
+                      row.inclusionType ? COMMISSION_LEDGER_INCLUSION_TYPE_LABELS[row.inclusionType] : undefined
+                    }
+                    data-testid="commissions-receipt-closing-carryover-tag"
+                  >
+                    {carryoverTag}
+                  </span>
+                ) : null}
+              </td>
               <td className={cn(TD, "whitespace-nowrap")}>{row.orderCode ?? "—"}</td>
               <td className={TD}>{row.customerName ?? "—"}</td>
               <td className={TD}>{formatReceiptClosingCanonicalSellerDisplay(row)}</td>

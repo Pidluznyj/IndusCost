@@ -165,6 +165,69 @@ describe("commissionReceiptCompetence", () => {
     assert.equal(release.periodReleasedCommissionAmount, 300);
   });
 
+  it("pendência tardia: evento do mês já contemplado conta como anterior (só o incremento é liberado)", () => {
+    // CR 900 (R$ 10.000, comissão R$ 300): 51 (R$ 6.000) pago no fechamento de
+    // julho; 52 (R$ 6.000, também julho) só chegou depois. Na competência
+    // natural, 52 libera o que julho teria pago a mais se tivesse chegado a tempo.
+    const events: CommissionReceiptEventInput[] = [
+      { ...receiptEvent(51, 900, "2026-07-10", 6000), countsAsPrior: true },
+      receiptEvent(52, 900, "2026-07-25", 6000),
+    ];
+    const competence = buildReceiptCompetenceByReceivable(events, 2026, 7).get(900)!;
+    assert.deepEqual(competence.receiptIds, [52]);
+    assert.equal(competence.periodReceivedAmount, 6000);
+    assert.equal(competence.priorReceivedAmount, 6000);
+    const late = computeCompetenceReleaseBreakdown({
+      receivableOriginalAmount: 10000,
+      scheduledCommissionAmount: 300,
+      competence,
+    });
+    const onTime = computeCompetenceReleaseBreakdown({
+      receivableOriginalAmount: 10000,
+      scheduledCommissionAmount: 300,
+      competence: buildReceiptCompetenceByReceivable([receiptEvent(51, 900, "2026-07-10", 6000)], 2026, 7).get(900)!,
+    });
+    // 180 (já pago) + 120 (pendência) = 300: o cap do título vale para a soma.
+    assert.equal(onTime.periodReleasedCommissionAmount, 180);
+    assert.equal(late.periodReleasedCommissionAmount, 120);
+    // Sem a marcação, o mesmo evento é do período (regra normal inalterada).
+    const normal = buildReceiptCompetenceByReceivable(
+      [receiptEvent(51, 900, "2026-07-10", 6000), receiptEvent(52, 900, "2026-07-25", 6000)],
+      2026,
+      7
+    ).get(900)!;
+    assert.deepEqual(normal.receiptIds, [51, 52]);
+    assert.equal(normal.priorReceivedAmount, 0);
+  });
+
+  it("pendência tardia: evento POSTERIOR já pago também conta como anterior (ordem de pagamento)", () => {
+    // CR 900 (R$ 10.000, R$ 300): 53 (agosto, R$ 8.000) já pago em agosto; 52
+    // (julho, R$ 4.000) chegou depois. Julho libera só o que falta até o cap.
+    const competence = buildReceiptCompetenceByReceivable(
+      [
+        receiptEvent(52, 900, "2026-07-25", 4000),
+        { ...receiptEvent(53, 900, "2026-08-05", 8000), countsAsPrior: true },
+      ],
+      2026,
+      7
+    ).get(900)!;
+    assert.equal(competence.priorReceivedAmount, 8000);
+    const release = computeCompetenceReleaseBreakdown({
+      receivableOriginalAmount: 10000,
+      scheduledCommissionAmount: 300,
+      competence,
+    });
+    // 240 (agosto) + 60 = 300 — nunca 240 + 120 = 360.
+    assert.equal(release.periodReleasedCommissionAmount, 60);
+    // Sem a marcação o posterior segue fora da competência de julho (regra normal).
+    const normal = buildReceiptCompetenceByReceivable(
+      [receiptEvent(52, 900, "2026-07-25", 4000), receiptEvent(53, 900, "2026-08-05", 8000)],
+      2026,
+      7
+    ).get(900)!;
+    assert.equal(normal.priorReceivedAmount, 0);
+  });
+
   it("cap nunca libera acima da comissão calculada da venda", () => {
     const competence = buildReceiptCompetenceByReceivable(
       [receiptEvent(1, 900, "2026-07-10", 13000)],

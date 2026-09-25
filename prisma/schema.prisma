@@ -7993,6 +7993,49 @@ enum CommissionReceiptLedgerLineStatus {
   ERROR
 }
 
+/// Quem contemplou (pagou) a comissão de um evento de recebimento.
+enum CommissionReceiptCoverageSource {
+  /// Histórico oficial do Nomus (competências até o cutover), via importação.
+  NOMUS_LEGACY
+  /// Fechamento oficial IndusCost (CommissionMonthlyClosing CLOSED).
+  INDUSCOST_CLOSING
+  /// Ajuste manual auditado.
+  MANUAL_ADJUSTMENT
+}
+
+/// Situação do registro de cobertura. Só COVERED conta como pagamento.
+enum CommissionReceiptCoverageStatus {
+  COVERED
+  PENDING
+  IGNORED
+  /// Fechamento cancelado/reprocessado ou cobertura substituída — histórico.
+  SUPERSEDED
+}
+
+/// Como o evento de recebimento foi associado à cobertura (qualidade da prova).
+enum CommissionReceiptCoverageAssociationMethod {
+  RECEIPT_ID
+  RECEIVABLE_ID
+  RECEIVABLE_AMOUNT_DATE
+  MANUAL
+  INDUSCOST_LEDGER
+}
+
+/// Por que a linha entrou no fechamento.
+enum CommissionReceiptLedgerInclusionType {
+  /// Recebimento da própria competência do fechamento.
+  NORMAL
+  /// Recebimento pós-cutover de competência anterior ainda não contemplado.
+  LATE_CARRYOVER
+  /// Recebimento pré-cutover (janela de transição) não coberto pelo Nomus.
+  LEGACY_CARRYOVER
+  MANUAL_ADJUSTMENT
+}
+
+enum CommissionLegacyCoverageImportSource {
+  NOMUS
+}
+
 model CommissionPerson {
   id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nomusPersonId Int?
@@ -8376,6 +8419,7 @@ model CommissionMonthlyClosing {
   supersededBy CommissionMonthlyClosing?     @relation("CommissionClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   supersedes   CommissionMonthlyClosing[]    @relation("CommissionClosingSupersession")
   ledgerLines  CommissionReceiptLedgerLine[]
+  coverages    CommissionReceiptCoverage[]
 
   @@index([year, month])
   @@index([status])
@@ -8430,6 +8474,14 @@ model CommissionReceiptLedgerLine {
   status                      CommissionReceiptLedgerLineStatus
   exceptionReason             String?
   calculationHash             String?
+  /// Eventos NomusReceivableReceipt.externalId contemplados por esta linha.
+  receiptExternalIds          Int[]                             @default([])
+  /// Dia civil do recebimento (competência natural) — nunca reescrito.
+  receiptDate                 DateTime?                         @db.Date
+  /// Competência natural (mês do receiptDate). year/month = competência do fechamento.
+  naturalYear                 Int?
+  naturalMonth                Int?
+  inclusionType               CommissionReceiptLedgerInclusionType @default(NORMAL)
   createdAt                   DateTime                          @default(now()) @db.Timestamptz(6)
   updatedAt                   DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -8440,6 +8492,7 @@ model CommissionReceiptLedgerLine {
   canonicalSeller           CommissionPerson?                @relation("ReceiptLedgerCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   customerExclusionRule     CommissionCustomerExclusionRule? @relation(fields: [customerExclusionRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   customer                  Customer?                        @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  coverages                 CommissionReceiptCoverage[]
 
   @@index([year, month])
   @@index([closingId])
@@ -8451,6 +8504,80 @@ model CommissionReceiptLedgerLine {
   @@index([commissionRecordId])
   @@index([commissionPaymentScheduleId])
   @@index([settlementDate])
+  @@index([naturalYear, naturalMonth])
+  @@index([inclusionType])
+}
+
+/// Cobertura de comissão por EVENTO de recebimento (NomusReceivableReceipt).
+/// Responde quem contemplou (Nomus legado ou fechamento IndusCost), em qual
+/// competência/fechamento e com qual valor. Índice único parcial (migration):
+/// um receiptExternalId só pode ter UMA cobertura COVERED — Nomus e IndusCost
+/// nunca pagam o mesmo recebimento.
+model CommissionReceiptCoverage {
+  id                      String                                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptExternalId       Int?
+  receivableExternalId    Int
+  coverageSource          CommissionReceiptCoverageSource
+  coverageStatus          CommissionReceiptCoverageStatus            @default(COVERED)
+  /// Dia civil do recebimento (competência natural).
+  naturalReceiptDate      DateTime                                   @db.Date
+  naturalYear             Int
+  naturalMonth            Int
+  /// Competência em que foi contemplado (mês do fechamento / do relatório Nomus).
+  coveredYear             Int?
+  coveredMonth            Int?
+  closingId               String?                                    @db.Uuid
+  ledgerLineId            String?                                    @db.Uuid
+  legacyReference         String?
+  legacyImportId          String?                                    @db.Uuid
+  coveredReceivedAmount   Decimal                                    @db.Decimal(20, 2)
+  coveredCommissionAmount Decimal?                                   @db.Decimal(20, 2)
+  associationMethod       CommissionReceiptCoverageAssociationMethod
+  notes                   String?
+  createdBy               String?
+  createdAt               DateTime                                   @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  closing      CommissionMonthlyClosing?       @relation(fields: [closingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  ledgerLine   CommissionReceiptLedgerLine?    @relation(fields: [ledgerLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  legacyImport CommissionLegacyCoverageImport? @relation(fields: [legacyImportId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([receiptExternalId])
+  @@index([receivableExternalId])
+  @@index([naturalYear, naturalMonth])
+  @@index([coveredYear, coveredMonth])
+  @@index([coverageSource])
+  @@index([coverageStatus])
+  @@index([closingId])
+  @@index([ledgerLineId])
+  @@index([legacyImportId])
+}
+
+/// Importação do relatório oficial de comissão do Nomus (cobertura legada).
+/// Idempotente por (source, fileHash): o mesmo arquivo nunca gera cobertura duas vezes.
+model CommissionLegacyCoverageImport {
+  id                  String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source              CommissionLegacyCoverageImportSource @default(NOMUS)
+  referenceYear       Int
+  referenceMonth      Int
+  filename            String
+  fileHash            String
+  importedAt          DateTime                             @default(now()) @db.Timestamptz(6)
+  importedBy          String?
+  rowCount            Int                                  @default(0)
+  matchedCount        Int                                  @default(0)
+  unmatchedCount      Int                                  @default(0)
+  ambiguousCount      Int                                  @default(0)
+  alreadyCoveredCount Int                                  @default(0)
+  notes               String?
+  /// Resultado por linha do arquivo (auditoria: casado, ambíguo, sem correspondência).
+  resultRowsJson      Json?
+  createdAt           DateTime                             @default(now()) @db.Timestamptz(6)
+
+  coverages CommissionReceiptCoverage[]
+
+  @@unique([source, fileHash])
+  @@index([referenceYear, referenceMonth])
 }
 
 enum CommissionOrderSnapshotStatus {

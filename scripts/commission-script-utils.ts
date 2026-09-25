@@ -5,7 +5,7 @@ import {
 } from "../src/lib/commissions/commission-record-status.ts";
 import { hasFlag, parseArg, parseYearPeriod, TRACE_LEGACY_SCRIPT_WARNING, warnTraceLegacyMode } from "./commission-audit-args.ts";
 
-export { parseArg, hasFlag, parseYearPeriod, requireDatabaseUrl, warnTraceLegacyMode, TRACE_LEGACY_SCRIPT_WARNING } from "./commission-audit-args.ts";
+export { parseArg, parseArgValue, hasFlag, parseYearPeriod, requireDatabaseUrl, warnTraceLegacyMode, TRACE_LEGACY_SCRIPT_WARNING } from "./commission-audit-args.ts";
 export {
   parseCommissionReportSourceMode,
   formatReportSourceLabel,

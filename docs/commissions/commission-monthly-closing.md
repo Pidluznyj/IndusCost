@@ -61,3 +61,16 @@ Com fechamento CLOSED, a tela lê o ledger; PDF/XLSX usam esses dados.
   numéricas na largura do conteúdo e a sobra para Cliente/Vendedor. Cabe sem
   rolagem horizontal a partir de ~1.010 px de área útil (1366×768 com o menu
   aberto); em telas menores a rolagem horizontal continua disponível.
+
+## Cobertura, cutover Nomus → IndusCost e pendências anteriores (2026-09-25)
+
+- Competências até 09/2026: o Nomus é a fonte oficial — prévia disponível, apply e
+  reprocesso bloqueados. O fechamento oficial no IndusCost começa em 10/2026.
+- Cada evento de recebimento contemplado por um fechamento CLOSED ganha cobertura
+  (`CommissionReceiptCoverage`, gravada na mesma transação do ledger); cancelamento e
+  reprocesso a rebaixam para `SUPERSEDED`.
+- Grid **Pendências de períodos anteriores** na prévia: recebimentos de competências
+  anteriores ainda não cobertos podem ser incluídos no fechamento atual sem mudar o
+  `receiptDate` (ledger guarda `naturalYear/naturalMonth` e `inclusionType`).
+- Detalhes, estados, importação do Nomus, auditoria e troubleshooting:
+  [commission-coverage-cutover.md](commission-coverage-cutover.md).
