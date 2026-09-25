@@ -1,6 +1,5 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { BadgePercent, Info, Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
+import React, { memo } from "react";
+import { CalendarClock, Percent, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
@@ -13,100 +12,39 @@ import { SALES_ORDER_LIST_KPI_SECTION } from "@/src/lib/salesOrderManagementKpiL
 import { formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import {
-  buildSalesOrderListCostBreakdownTooltipText,
-  shareOfSoldValuePercent,
-} from "@/src/lib/salesOrderListCostBreakdown";
+  GRANTED_PAYMENT_TERM_CARD_LABEL,
+  GRANTED_PAYMENT_TERM_CARD_TEST_ID,
+  resolveGrantedPaymentTermCardPresentation,
+  type SalesOrderGrantedPaymentTermSummary,
+} from "@/src/lib/salesOrderGrantedPaymentTerm";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import "./sales-order-list-summary-cards.css";
 
-function SalesOrderListCostHoverTooltip({
-  text,
-  children,
-}: {
-  text: string;
-  children: React.ReactNode;
-}) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(
-    null
-  );
-
-  const updatePosition = useCallback(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const width = Math.min(22 * 16, Math.max(16 * 16, window.innerWidth * 0.7));
-    let left = rect.left;
-    if (left + width > window.innerWidth - 8) {
-      left = Math.max(8, window.innerWidth - width - 8);
-    }
-    setCoords({
-      top: rect.bottom + 8,
-      left,
-      width,
-    });
-  }, []);
-
-  const show = useCallback(() => {
-    updatePosition();
-    setOpen(true);
-  }, [updatePosition]);
-
-  const hide = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onReposition = () => updatePosition();
-    window.addEventListener("scroll", onReposition, true);
-    window.addEventListener("resize", onReposition);
-    return () => {
-      window.removeEventListener("scroll", onReposition, true);
-      window.removeEventListener("resize", onReposition);
-    };
-  }, [open, updatePosition]);
-
-  return (
-    <div
-      ref={wrapRef}
-      className="relative min-w-0"
-      data-testid="sales-order-list-estimated-cost-card"
-      onMouseEnter={show}
-      onMouseLeave={hide}
-      onFocus={show}
-      onBlur={hide}
-    >
-      {children}
-      {open && coords && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="sales-order-list-cost-tooltip-panel"
-              role="tooltip"
-              data-testid="sales-order-list-estimated-cost-tooltip"
-              style={{
-                top: coords.top,
-                left: coords.left,
-                width: coords.width,
-              }}
-            >
-              {text}
-            </div>,
-            document.body
-          )
-        : null}
-    </div>
-  );
-}
-
+/**
+ * Visão Geral da listagem de Pedidos de Venda.
+ *
+ * Ordem: Pedidos filtrados · Valor vendido · Prazo médio concedido · Ticket médio ·
+ * Margem comercial (só com permissão econômica). Os cards de imposto e de custo
+ * saíram deste overview (2026-09) — os cálculos continuam no motor de margem,
+ * relatórios, abas Custos/Tributos e Gestão de Pedidos.
+ */
 export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCards({
   summary,
   marginSummary,
+  paymentTermSummary,
+  paymentTermSummaryLoading = false,
   showMarginCard = false,
   loading,
 }: {
   summary: SalesOrderListSummary;
   marginSummary?: SalesOrderListMarginSummary | null;
+  /**
+   * Prazo médio concedido — endpoint dedicado (GET /api/sales-orders/payment-term-summary),
+   * visível para todos que veem Pedidos de Venda. `null` = indisponível/falha do endpoint.
+   */
+  paymentTermSummary?: SalesOrderGrantedPaymentTermSummary | null;
+  paymentTermSummaryLoading?: boolean;
   showMarginCard?: boolean;
   loading: boolean;
 }) {
@@ -118,79 +56,10 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
   const marginMoneyLabel = marginUnavailable
     ? "—"
     : formatCompactCurrency(marginSummary?.totalMarginValue ?? null);
-  const costUnavailable = !showMarginCard || marginUnavailable;
-  const costAmount =
-    loading || costUnavailable ? null : (marginSummary?.totalCost ?? null);
-  const soldValueForShare =
-    marginSummary?.grossSalesAmount && marginSummary.grossSalesAmount > 0
-      ? marginSummary.grossSalesAmount
-      : summary.totalNetAmount;
-  const costShareOfSold = !loading && !costUnavailable
-    ? shareOfSoldValuePercent(marginSummary?.totalCost ?? 0, soldValueForShare)
-    : null;
-  const costShareSubtitle =
-    costShareOfSold != null
-      ? `${formatSalesOrderMarginPercent(costShareOfSold)} do valor vendido`
-      : undefined;
-  const costBreakdownTooltip =
-    !loading && !costUnavailable
-      ? buildSalesOrderListCostBreakdownTooltipText(marginSummary?.costBreakdown, {
-          soldValue: soldValueForShare,
-        })
-      : null;
 
-  const taxUnavailable = !showMarginCard || marginUnavailable;
-  const taxAmount =
-    loading || taxUnavailable ? null : (marginSummary?.taxAmount ?? null);
-  const taxShareOfSold =
-    !loading && !taxUnavailable
-      ? shareOfSoldValuePercent(marginSummary?.taxAmount ?? 0, soldValueForShare)
-      : null;
-  const taxShareSubtitle =
-    taxShareOfSold != null
-      ? `${formatSalesOrderMarginPercent(taxShareOfSold)} do valor vendido`
-      : undefined;
-
-  const costCard = (
-    <SystemTotalizerCard
-      className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-      label="Custo estimado"
-      amount={costAmount}
-      amountFormat="currency"
-      value={
-        loading
-          ? undefined
-          : costUnavailable
-            ? showMarginCard
-              ? "Indisponível"
-              : "—"
-            : undefined
-      }
-      subtitle={loading || costUnavailable ? undefined : costShareSubtitle}
-      tone={costUnavailable ? "neutral" : "internal"}
-      icon={Scale}
-      helperText={
-        !showMarginCard
-          ? "Custo industrial interno (requer permissão de custo/margem)."
-          : costUnavailable
-            ? "Sem custo publicado suficiente nos pedidos filtrados."
-            : "Custo industrial ÷ valor vendido do filtro. Passe o mouse para MP/HH/HM e impostos."
-      }
-      valueSize={costUnavailable && !loading ? "text" : "default"}
-      labelAccessory={
-        costBreakdownTooltip ? (
-          <span
-            className="inline-flex text-muted-foreground"
-            aria-hidden
-            title="Discriminação do custo"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </span>
-        ) : undefined
-      }
-      loading={loading}
-    />
-  );
+  // Estado visual FULL/PARTIAL/LOW/UNAVAILABLE resolvido no motor puro (sem cálculo no React).
+  const paymentTermLoading = loading || paymentTermSummaryLoading;
+  const paymentTerm = resolveGrantedPaymentTermCardPresentation(paymentTermSummary);
 
   return (
     <SalesOrderKpiSection
@@ -223,42 +92,23 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
-        {showMarginCard ? (
-          <div data-testid="sales-order-list-tax-payable-card" className="min-w-0">
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Imposto a pagar"
-              amount={taxAmount}
-              amountFormat="currency"
-              value={
-                loading
-                  ? undefined
-                  : taxUnavailable
-                    ? "Indisponível"
-                    : undefined
-              }
-              subtitle={loading || taxUnavailable ? undefined : taxShareSubtitle}
-              tone={taxUnavailable ? "neutral" : "warning"}
-              icon={BadgePercent}
-              helperText={
-                taxUnavailable
-                  ? "Sem regra fiscal suficiente nos pedidos filtrados."
-                  : "Impostos da regra fiscal deduzidos da margem nos pedidos filtrados."
-              }
-              valueSize={taxUnavailable && !loading ? "text" : "default"}
-              loading={loading}
-            />
-          </div>
-        ) : null}
-        {costBreakdownTooltip ? (
-          <SalesOrderListCostHoverTooltip text={costBreakdownTooltip}>
-            {costCard}
-          </SalesOrderListCostHoverTooltip>
-        ) : (
-          <div className="min-w-0" data-testid="sales-order-list-estimated-cost-card">
-            {costCard}
-          </div>
-        )}
+        <div
+          data-testid={GRANTED_PAYMENT_TERM_CARD_TEST_ID}
+          data-quality={paymentTermLoading ? "LOADING" : paymentTerm.quality}
+          className="min-w-0"
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label={GRANTED_PAYMENT_TERM_CARD_LABEL}
+            value={paymentTermLoading ? undefined : paymentTerm.value}
+            subtitle={paymentTermLoading ? undefined : paymentTerm.subtitle}
+            tone={paymentTerm.tone}
+            icon={CalendarClock}
+            helperText={paymentTerm.helperText}
+            valueSize={paymentTermLoading ? "default" : paymentTerm.valueSize}
+            loading={paymentTermLoading}
+          />
+        </div>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Ticket médio"

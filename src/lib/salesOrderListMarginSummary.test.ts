@@ -17,9 +17,10 @@ describe("salesOrderListMarginSummary", () => {
     assert.match(cards, /sales-order-list-general-margin-card/);
     assert.match(cards, /SalesOrderMarginInfoTooltip/);
     assert.match(cards, /Margem comercial do Pedido/);
-    assert.match(cards, /Imposto a pagar/);
-    assert.match(cards, /sales-order-list-tax-payable-card/);
-    assert.match(cards, /marginSummary\?\.taxAmount/);
+    // Imposto a pagar / Custo estimado saíram do overview (2026-09); margem permanece.
+    assert.doesNotMatch(cards, /Imposto a pagar/);
+    assert.doesNotMatch(cards, /sales-order-list-tax-payable-card/);
+    assert.doesNotMatch(cards, /marginSummary\?\.taxAmount/);
     assert.match(module, /marginSummary/);
     assert.match(module, /showMarginCard=\{showMarginEconomics\}/);
   });

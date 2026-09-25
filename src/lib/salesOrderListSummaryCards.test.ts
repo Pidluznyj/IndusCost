@@ -16,8 +16,12 @@ describe("salesOrderListSummaryCards visual", () => {
     const totalizerCss = read("src/components/ui/system-totalizer-card.css");
     assert.match(cards, /sales-order-list-summary-grid/);
     assert.match(cards, /sales-order-list-summary-cards\.css/);
-    assert.match(cards, /Imposto a pagar/);
-    assert.match(cards, /sales-order-list-tax-payable-card/);
+    assert.match(cards, /Prazo médio concedido|GRANTED_PAYMENT_TERM_CARD_LABEL/);
+    assert.match(cards, /GRANTED_PAYMENT_TERM_CARD_TEST_ID/);
+    assert.doesNotMatch(cards, /Imposto a pagar/);
+    assert.doesNotMatch(cards, /sales-order-list-tax-payable-card/);
+    assert.doesNotMatch(cards, /Custo estimado/);
+    assert.doesNotMatch(cards, /sales-order-list-estimated-cost-card/);
     assert.match(css, /--metric-card-min:\s*152px/);
     assert.match(totalizerCss, /white-space:\s*nowrap/);
     assert.match(totalizerCss, /font-weight:\s*600/);
