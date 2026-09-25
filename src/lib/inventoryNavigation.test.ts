@@ -167,5 +167,8 @@ describe("InventoryModule estados", () => {
     assert.match(mod, /InventoryLoading/);
     assert.match(mod, /InventoryErrorBanner/);
     assert.match(mod, /UnauthorizedAccessGate/);
+    assert.match(mod, /Extrair XLS/);
+    assert.match(mod, /Extrair PDF/);
+    assert.match(mod, /\/inventory\/position-report\/print/);
   });
 });

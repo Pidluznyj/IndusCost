@@ -1,0 +1,50 @@
+.inventory-position-report-document {
+  color: #0f172a;
+  font-size: 9pt;
+}
+
+.inventory-position-report-notes {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.inventory-position-report-notes li + li {
+  margin-top: 4px;
+}
+
+.inventory-position-report-meta th {
+  width: 34mm;
+  text-align: left;
+  vertical-align: top;
+}
+
+.inventory-position-report-table th,
+.inventory-position-report-table td,
+.inventory-position-report-meta th,
+.inventory-position-report-meta td {
+  border: 1px solid #cbd5e1;
+  padding: 3px 4px;
+  vertical-align: top;
+}
+
+.inventory-position-report-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.inventory-position-report-repeat th {
+  font-weight: 600;
+  text-align: left;
+  background: #f8fafc;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  .inventory-position-report-route .print-document thead {
+    display: table-header-group;
+  }
+}

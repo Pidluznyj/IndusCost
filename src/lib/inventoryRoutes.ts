@@ -7,6 +7,11 @@ import type { RequestHandler } from "express";
 import { Prisma, type InventoryMovement, type InventoryMovementType } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { loadInventoryPositionReport } from "@/src/lib/inventory/inventoryPositionReport.server.js";
+import {
+  buildInventoryPositionReportXlsx,
+  inventoryPositionReportFilename,
+} from "@/src/lib/inventory/inventoryPositionReportXlsx.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -351,6 +356,28 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/dashboard", e);
       res.status(500).json(inventoryApiError("Erro ao carregar dashboard de estoque."));
+    }
+  });
+
+  app.get("/api/inventory/position-report", ...view, async (_req, res) => {
+    try {
+      res.json(await loadInventoryPositionReport(prisma, new Date()));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/position-report", e);
+      res.status(500).json(inventoryApiError("Erro ao montar a posição de estoque."));
+    }
+  });
+
+  app.get("/api/inventory/position-report.xlsx", ...view, async (_req, res) => {
+    try {
+      const report = await loadInventoryPositionReport(prisma, new Date());
+      const filename = inventoryPositionReportFilename(report.generatedAt);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buildInventoryPositionReportXlsx(report));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/position-report.xlsx", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar a posição de estoque."));
     }
   });
 
