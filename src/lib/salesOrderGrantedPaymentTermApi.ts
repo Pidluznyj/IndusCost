@@ -1,5 +1,5 @@
 /**
- * Endpoint e helper de URL do KPI "Prazo médio concedido" da listagem de
+ * Endpoint e helper de URL do KPI "Prazo médio de recebimento" da listagem de
  * Pedidos de Venda (frontend-safe — sem Prisma/Node).
  *
  * Rota estática registrada ANTES de `/api/sales-orders/:id` (ver server.ts).

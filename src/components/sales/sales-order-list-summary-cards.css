@@ -3,7 +3,7 @@
   overflow: visible;
 }
 
-/* 5 cards (inclui Prazo médio concedido) na mesma faixa em desktop. */
+/* 5 cards (inclui Prazo médio de recebimento) na mesma faixa em desktop. */
 .sales-order-list-summary-grid {
   --metric-card-min: 152px;
 }

@@ -1,10 +1,10 @@
 /**
- * Rota do KPI "Prazo médio concedido" — listagem de Pedidos de Venda.
+ * Rota do KPI "Prazo médio de recebimento" — listagem de Pedidos de Venda.
  *
  * GET /api/sales-orders/payment-term-summary
  *   Mesma autorização da listagem: requireAppAuth + requireResource
  *   ("commercial.sales_orders", "view"). NÃO exige permissão de custo/margem —
- *   a métrica é condição comercial de pagamento, não informação econômica.
+ *   a métrica é prazo de recebimento (NF-e → vencimento do CR), não informação econômica.
  *
  * Deve ser registrada ANTES de `/api/sales-orders/:id` (rota estática).
  */

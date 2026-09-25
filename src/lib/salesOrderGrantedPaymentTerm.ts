@@ -1,40 +1,43 @@
 /**
- * Prazo médio concedido — listagem Comercial de Pedidos de Venda.
+ * Prazo médio de recebimento — listagem Comercial de Pedidos de Venda.
  *
- * Motor PURO (sem Prisma, sem React, sem Node): interpreta a condição comercial
- * de pagamento (`SalesOrder.paymentTerms`) de forma conservadora (fail-closed) e
- * pondera o prazo concedido pelo valor líquido vendido (`SalesOrder.totalNetValue`)
- * da população filtrada da listagem.
+ * Motor PURO (sem Prisma, sem React, sem Node).
  *
- * O indicador mede a CONDIÇÃO COMERCIAL DE PAGAMENTO CONCEDIDA no pedido.
- * NÃO é PMR/DSO, NÃO usa Contas a Receber, recebimento real, liquidação nem
- * vencimentos calculados a partir da emissão. `paymentMethod` (PIX/boleto/…)
- * nunca define prazo.
+ * Definição (revisão 2026-09-25): o prazo de um título é o número de dias entre a
+ * DATA DE EMISSÃO DA NF-e de origem e o VENCIMENTO do título do Contas a Receber
+ * (SalesOrder → SalesOrderNfeLink → NomusNfe.xmlDhEmi / NomusAccountsReceivable.dueDate).
+ * O prazo do pedido é a média dos seus títulos ponderada pelo valor de cada título.
+ * O prazo médio geral é a média dos pedidos filtrados ponderada por
+ * `SalesOrder.totalNetValue` (somente valores positivos).
  *
- * Fórmula:
- *   prazo médio concedido =
- *     Σ (valor líquido positivo do pedido × prazo médio da condição)
- *     ÷ Σ valor líquido positivo dos pedidos com condição reconhecida
+ * Pedidos ainda sem títulos de CR usam, como fallback declarado, a condição
+ * comercial de pagamento (`SalesOrder.paymentTerms`) interpretada por um parser
+ * fail-closed ("30/60" → 45; "À vista" → 0). Pedidos sem título e sem condição
+ * interpretável ficam fora da média e aparecem na cobertura.
  *
- * Prazo médio da condição = média simples das parcelas ("30/60" → 45;
- * "30/60/90" → 60; "À vista" → 0). Pesos desconhecidos (%, entrada, sinal…)
- * são rejeitados em vez de inventar uma média.
+ * Não mede atraso nem liquidação: usa vencimento, nunca `settlementDate` ou
+ * `amountReceived`. `paymentMethod` (PIX/boleto/…) nunca define prazo.
  */
 
-export const SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE = "SalesOrder.paymentTerms" as const;
+export const SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE =
+  "NomusAccountsReceivable.dueDate - NomusNfe.xmlDhEmi | SalesOrder.paymentTerms" as const;
 
 /** Metodologia estável exposta no DTO (não é só texto de UI). */
 export const SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY =
-  "Média ponderada pelo valor líquido dos pedidos filtrados, usando SalesOrder.paymentTerms. " +
-  "Condições com múltiplos prazos usam média das parcelas. " +
-  "Condições não interpretáveis são excluídas e refletidas na cobertura.";
+  "Prazo por título = vencimento do título do Contas a Receber menos a data de emissão da NF-e de origem, " +
+  "ponderado pelo valor do título; prazo do pedido = média dos seus títulos; prazo médio geral = média dos " +
+  "pedidos filtrados ponderada pelo valor líquido (SalesOrder.totalNetValue > 0). Pedidos sem títulos usam " +
+  "SalesOrder.paymentTerms quando interpretável (média das parcelas). Pedidos sem título e sem condição " +
+  "interpretável são excluídos e refletidos na cobertura. Não considera liquidação nem atraso.";
 
-/** Limite superior defensivo de dias por parcela (acima disso = não reconhecido). */
+/** Limite superior defensivo de dias por parcela da condição comercial. */
 export const GRANTED_PAYMENT_TERM_MAX_DAYS = 365;
-/** Limite defensivo de parcelas numa condição. */
+/** Limite defensivo de parcelas numa condição comercial. */
 export const GRANTED_PAYMENT_TERM_MAX_INSTALLMENTS = 24;
+/** Limite defensivo de dias entre emissão da NF-e e vencimento do título (2 anos). */
+export const GRANTED_PAYMENT_TERM_MAX_RECEIVABLE_DAYS = 730;
 
-/** Qualidade por cobertura (% do valor líquido positivo reconhecido). */
+/** Qualidade por cobertura (% do valor líquido positivo com prazo resolvido). */
 export const GRANTED_PAYMENT_TERM_FULL_COVERAGE_PERCENT = 95;
 export const GRANTED_PAYMENT_TERM_PARTIAL_COVERAGE_PERCENT = 80;
 
@@ -156,7 +159,8 @@ function recognized(
 }
 
 /**
- * Parser FAIL-CLOSED da condição comercial de pagamento.
+ * Parser FAIL-CLOSED da condição comercial de pagamento (fallback para pedidos
+ * ainda sem títulos de CR).
  *
  * Reconhece apenas quando o texto COMPLETO é interpretável sem ambiguidade:
  *   "À vista" / "A vista" / "AVISTA"      → 0
@@ -203,18 +207,139 @@ export function parseGrantedPaymentTerm(
 }
 
 // ---------------------------------------------------------------------------
-// Ponderação
+// Prazo por título / por pedido (emissão da NF-e → vencimento do CR)
 // ---------------------------------------------------------------------------
 
-/** Grupo agregado por condição (ex.: `groupBy paymentTerms` da população de peso). */
-export type GrantedPaymentTermGroupInput = {
+/** Título do Contas a Receber vinculado ao pedido via NF-e de origem. */
+export type GrantedPaymentTermTitleInput = {
+  /** Vencimento do título (NomusAccountsReceivable.dueDate). */
+  dueDate: Date | null;
+  /** Emissão da NF-e de origem (NomusNfe.xmlDhEmi; fallback dataProcessamento). */
+  invoiceIssueDate: Date | null;
+  /** Valor do título (amountReceivable). Só valores positivos pesam. */
+  amount: number;
+};
+
+export type GrantedPaymentTermOrderInput = {
+  id: string;
+  /** SalesOrder.totalNetValue — peso do pedido na média geral (só > 0). */
+  totalNetValue: number;
+  /** SalesOrder.paymentTerms — fallback quando o pedido não tem títulos válidos. */
   paymentTerms: string | null;
-  orderCount: number;
-  /**
-   * Σ `totalNetValue` dos pedidos do grupo. Só grupos com valor POSITIVO entram
-   * na ponderação — a consulta deve restringir `totalNetValue > 0` (nunca abs()).
-   */
+  titles: GrantedPaymentTermTitleInput[];
+};
+
+export type GrantedPaymentTermOrderSource = "RECEIVABLE_TITLES" | "COMMERCIAL_TERMS" | "NONE";
+
+export type GrantedPaymentTermOrderResolution = {
+  orderId: string;
+  source: GrantedPaymentTermOrderSource;
+  /** Prazo do pedido em dias (null quando não resolvido). */
+  days: number | null;
+  titlesUsed: number;
+  titlesIgnored: number;
+  /** Motivo do parser quando a condição comercial foi consultada. */
+  reason: GrantedPaymentTermParseReason | null;
+};
+
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && Number.isFinite(value.getTime());
+}
+
+/** Dias civis (calendário local) de `from` até `to`; ignora hora. */
+export function civilDaysBetween(from: Date, to: Date): number {
+  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * Prazo de um título: vencimento − emissão da NF-e. Inválido (null) quando falta
+ * data, o valor não é positivo, o prazo é negativo ou excede o limite defensivo.
+ */
+export function resolveReceivableTitleTermDays(title: GrantedPaymentTermTitleInput): number | null {
+  if (!isValidDate(title.dueDate) || !isValidDate(title.invoiceIssueDate)) return null;
+  if (!Number.isFinite(title.amount) || title.amount <= 0) return null;
+  const days = civilDaysBetween(title.invoiceIssueDate, title.dueDate);
+  if (!Number.isFinite(days) || days < 0 || days > GRANTED_PAYMENT_TERM_MAX_RECEIVABLE_DAYS) return null;
+  return days;
+}
+
+/** Prazo do pedido = média dos títulos válidos ponderada pelo valor de cada título. */
+export function resolveOrderReceivableTermDays(
+  titles: readonly GrantedPaymentTermTitleInput[]
+): { days: number | null; titlesUsed: number; titlesIgnored: number } {
+  let weightedDays = 0;
+  let weight = 0;
+  let titlesUsed = 0;
+  let titlesIgnored = 0;
+  for (const title of titles) {
+    const days = resolveReceivableTitleTermDays(title);
+    if (days == null) {
+      titlesIgnored += 1;
+      continue;
+    }
+    weightedDays += title.amount * days;
+    weight += title.amount;
+    titlesUsed += 1;
+  }
+  const days = weight > 0 ? weightedDays / weight : null;
+  return {
+    days: days != null && Number.isFinite(days) ? days : null,
+    titlesUsed,
+    titlesIgnored,
+  };
+}
+
+/**
+ * Prazo de um pedido: títulos do CR (fonte principal); sem títulos válidos, a
+ * condição comercial interpretável (fallback); senão, não resolvido.
+ */
+export function resolveGrantedPaymentTermForOrder(
+  order: GrantedPaymentTermOrderInput
+): GrantedPaymentTermOrderResolution {
+  const receivable = resolveOrderReceivableTermDays(order.titles);
+  if (receivable.days != null) {
+    return {
+      orderId: order.id,
+      source: "RECEIVABLE_TITLES",
+      days: receivable.days,
+      titlesUsed: receivable.titlesUsed,
+      titlesIgnored: receivable.titlesIgnored,
+      reason: null,
+    };
+  }
+  const parsed = parseGrantedPaymentTerm(order.paymentTerms);
+  if (parsed.recognized && parsed.averageDays != null) {
+    return {
+      orderId: order.id,
+      source: "COMMERCIAL_TERMS",
+      days: parsed.averageDays,
+      titlesUsed: 0,
+      titlesIgnored: receivable.titlesIgnored,
+      reason: parsed.reason,
+    };
+  }
+  return {
+    orderId: order.id,
+    source: "NONE",
+    days: null,
+    titlesUsed: 0,
+    titlesIgnored: receivable.titlesIgnored,
+    reason: parsed.reason,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Média geral (ponderada por SalesOrder.totalNetValue > 0)
+// ---------------------------------------------------------------------------
+
+export type GrantedPaymentTermSourceStats = {
+  orders: number;
   salesAmount: number;
+  /** % do valor líquido positivo dos pedidos filtrados resolvido por esta fonte. */
+  salesSharePercent: number;
+  weightedAverageDays: number | null;
 };
 
 export type SalesOrderGrantedPaymentTermUnrecognizedTerm = {
@@ -226,29 +351,36 @@ export type SalesOrderGrantedPaymentTermUnrecognizedTerm = {
 };
 
 export type SalesOrderGrantedPaymentTermSummary = {
-  /** false quando nenhum valor reconhecido / sem população válida. */
+  /** false quando nenhum pedido resolvido / sem população válida. */
   available: boolean;
   /** Dias, precisão interna (UI arredonda para 1 casa). null quando indisponível. */
   weightedAverageDays: number | null;
-  /** % do valor líquido positivo com condição reconhecida — cobertura PRINCIPAL. */
+  /** % do valor líquido positivo com prazo resolvido — cobertura PRINCIPAL. */
   coveragePercent: number;
-  /** % dos pedidos (com peso) com condição reconhecida. */
+  /** % dos pedidos (com peso) com prazo resolvido. */
   orderCoveragePercent: number;
   quality: GrantedPaymentTermQuality;
   /** Pedidos da população filtrada (mesmo count da listagem). */
   totalOrders: number;
   /** Pedidos com totalNetValue > 0 (população de ponderação). */
   weightedPopulationOrders: number;
-  recognizedOrders: number;
-  unrecognizedOrders: number;
+  coveredOrders: number;
+  uncoveredOrders: number;
   /** Pedidos filtrados fora do peso (totalNetValue <= 0) — auditoria. */
   zeroOrNegativeOrders: number;
   totalWeightedSalesAmount: number;
-  recognizedSalesAmount: number;
-  unrecognizedSalesAmount: number;
+  coveredSalesAmount: number;
+  uncoveredSalesAmount: number;
+  /** Quanto da média veio de títulos do CR e quanto da condição comercial. */
+  sources: {
+    receivableTitles: GrantedPaymentTermSourceStats;
+    commercialTerms: GrantedPaymentTermSourceStats;
+  };
+  titlesUsed: number;
+  titlesIgnored: number;
   source: typeof SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE;
   methodology: string;
-  /** Top condições não reconhecidas (valor vendido desc) — decide novas regras do parser. */
+  /** Pedidos sem título válido e sem condição interpretável, agrupados por condição (valor desc). */
   unrecognizedTerms: SalesOrderGrantedPaymentTermUnrecognizedTerm[];
 };
 
@@ -265,6 +397,12 @@ function safePercent(part: number, total: number): number {
   return Number.isFinite(percent) ? percent : 0;
 }
 
+function safeAverage(weightedDays: number, weight: number): number | null {
+  if (!(weight > 0)) return null;
+  const average = weightedDays / weight;
+  return Number.isFinite(average) ? average : null;
+}
+
 function compareUnrecognizedTerms(
   a: SalesOrderGrantedPaymentTermUnrecognizedTerm,
   b: SalesOrderGrantedPaymentTermUnrecognizedTerm
@@ -272,6 +410,10 @@ function compareUnrecognizedTerms(
   if (b.salesAmount !== a.salesAmount) return b.salesAmount - a.salesAmount;
   if (b.orderCount !== a.orderCount) return b.orderCount - a.orderCount;
   return (a.paymentTerms ?? "").localeCompare(b.paymentTerms ?? "", "pt-BR");
+}
+
+function emptySourceStats(): GrantedPaymentTermSourceStats {
+  return { orders: 0, salesAmount: 0, salesSharePercent: 0, weightedAverageDays: null };
 }
 
 export function buildEmptySalesOrderGrantedPaymentTermSummary(
@@ -286,84 +428,110 @@ export function buildEmptySalesOrderGrantedPaymentTermSummary(
     quality: "UNAVAILABLE",
     totalOrders: total,
     weightedPopulationOrders: 0,
-    recognizedOrders: 0,
-    unrecognizedOrders: 0,
+    coveredOrders: 0,
+    uncoveredOrders: 0,
     zeroOrNegativeOrders: total,
     totalWeightedSalesAmount: 0,
-    recognizedSalesAmount: 0,
-    unrecognizedSalesAmount: 0,
+    coveredSalesAmount: 0,
+    uncoveredSalesAmount: 0,
+    sources: { receivableTitles: emptySourceStats(), commercialTerms: emptySourceStats() },
+    titlesUsed: 0,
+    titlesIgnored: 0,
     source: SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
     methodology: SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY,
     unrecognizedTerms: [],
   };
 }
 
+type SourceAccumulator = { orders: number; salesAmount: number; weightedDays: number };
+
 /**
- * Ponderação pura (separada da interpretação textual).
- *
- * `groups` deve vir da população de PESO (totalNetValue > 0) agrupada por
- * `paymentTerms`; grupos com valor não positivo ou sem pedidos são ignorados na
- * ponderação (nunca entram no denominador). `totalOrders` é o count da população
- * filtrada completa (mesmo where da listagem), usado para `zeroOrNegativeOrders`.
+ * Média geral pura: `orders` é a população filtrada completa da listagem (mesmo
+ * where), cada um com seus títulos de CR já vinculados. Pedidos com
+ * totalNetValue <= 0 não pesam nem entram no denominador (auditoria em
+ * `zeroOrNegativeOrders`).
  */
-export function computeGrantedPaymentTermSummary(
-  groups: readonly GrantedPaymentTermGroupInput[],
-  options: { totalOrders: number; unrecognizedTopLimit?: number }
+export function computeSalesOrderGrantedPaymentTermSummary(
+  orders: readonly GrantedPaymentTermOrderInput[],
+  options?: { unrecognizedTopLimit?: number }
 ): SalesOrderGrantedPaymentTermSummary {
-  const totalOrders = Math.max(
-    0,
-    Number.isFinite(options.totalOrders) ? Math.trunc(options.totalOrders) : 0
-  );
   const topLimit = Math.max(
     0,
-    Math.trunc(options.unrecognizedTopLimit ?? GRANTED_PAYMENT_TERM_UNRECOGNIZED_TOP_LIMIT)
+    Math.trunc(options?.unrecognizedTopLimit ?? GRANTED_PAYMENT_TERM_UNRECOGNIZED_TOP_LIMIT)
   );
 
-  let weightedDays = 0;
-  let recognizedSalesAmount = 0;
-  let unrecognizedSalesAmount = 0;
   let weightedPopulationOrders = 0;
-  let recognizedOrders = 0;
-  let unrecognizedOrders = 0;
-  const unrecognizedTerms: SalesOrderGrantedPaymentTermUnrecognizedTerm[] = [];
+  let zeroOrNegativeOrders = 0;
+  let coveredOrders = 0;
+  let uncoveredOrders = 0;
+  let coveredSalesAmount = 0;
+  let uncoveredSalesAmount = 0;
+  let weightedDays = 0;
+  let titlesUsed = 0;
+  let titlesIgnored = 0;
+  const bySource: Record<"RECEIVABLE_TITLES" | "COMMERCIAL_TERMS", SourceAccumulator> = {
+    RECEIVABLE_TITLES: { orders: 0, salesAmount: 0, weightedDays: 0 },
+    COMMERCIAL_TERMS: { orders: 0, salesAmount: 0, weightedDays: 0 },
+  };
+  const unrecognizedByTerms = new Map<string | null, SalesOrderGrantedPaymentTermUnrecognizedTerm>();
 
-  for (const group of groups) {
-    const salesAmount = Number.isFinite(group.salesAmount) ? group.salesAmount : 0;
-    const orderCount =
-      Number.isFinite(group.orderCount) && group.orderCount > 0
-        ? Math.trunc(group.orderCount)
-        : 0;
+  for (const order of orders) {
+    const weight = Number.isFinite(order.totalNetValue) ? order.totalNetValue : 0;
     // Só valor líquido POSITIVO pesa. Zero/negativo não distorce nem entra no denominador.
-    if (salesAmount <= 0 || orderCount <= 0) continue;
-
-    weightedPopulationOrders += orderCount;
-    const parsed = parseGrantedPaymentTerm(group.paymentTerms);
-    if (parsed.recognized && parsed.averageDays != null) {
-      weightedDays += salesAmount * parsed.averageDays;
-      recognizedSalesAmount += salesAmount;
-      recognizedOrders += orderCount;
-    } else {
-      unrecognizedSalesAmount += salesAmount;
-      unrecognizedOrders += orderCount;
-      unrecognizedTerms.push({
-        paymentTerms: group.paymentTerms,
-        orderCount,
-        salesAmount,
-        reason: parsed.reason,
-        reasonLabel: describeGrantedPaymentTermReason(parsed.reason),
-      });
+    if (weight <= 0) {
+      zeroOrNegativeOrders += 1;
+      continue;
     }
+    weightedPopulationOrders += 1;
+    const resolution = resolveGrantedPaymentTermForOrder(order);
+    titlesUsed += resolution.titlesUsed;
+    titlesIgnored += resolution.titlesIgnored;
+
+    if (resolution.source === "NONE" || resolution.days == null) {
+      uncoveredOrders += 1;
+      uncoveredSalesAmount += weight;
+      const key = order.paymentTerms ?? null;
+      const reason = resolution.reason ?? "UNRECOGNIZED_FORMAT";
+      const existing = unrecognizedByTerms.get(key);
+      if (existing) {
+        existing.orderCount += 1;
+        existing.salesAmount += weight;
+      } else {
+        unrecognizedByTerms.set(key, {
+          paymentTerms: key,
+          orderCount: 1,
+          salesAmount: weight,
+          reason,
+          reasonLabel: describeGrantedPaymentTermReason(reason),
+        });
+      }
+      continue;
+    }
+
+    coveredOrders += 1;
+    coveredSalesAmount += weight;
+    weightedDays += weight * resolution.days;
+    const acc = bySource[resolution.source];
+    acc.orders += 1;
+    acc.salesAmount += weight;
+    acc.weightedDays += weight * resolution.days;
   }
 
-  const totalWeightedSalesAmount = recognizedSalesAmount + unrecognizedSalesAmount;
-  const coveragePercent = safePercent(recognizedSalesAmount, totalWeightedSalesAmount);
-  const orderCoveragePercent = safePercent(recognizedOrders, weightedPopulationOrders);
-  const rawAverage = recognizedSalesAmount > 0 ? weightedDays / recognizedSalesAmount : null;
-  const weightedAverageDays = rawAverage != null && Number.isFinite(rawAverage) ? rawAverage : null;
+  const totalWeightedSalesAmount = coveredSalesAmount + uncoveredSalesAmount;
+  const coveragePercent = safePercent(coveredSalesAmount, totalWeightedSalesAmount);
+  const orderCoveragePercent = safePercent(coveredOrders, weightedPopulationOrders);
+  const weightedAverageDays = safeAverage(weightedDays, coveredSalesAmount);
   const quality =
     weightedAverageDays == null ? "UNAVAILABLE" : resolveGrantedPaymentTermQuality(coveragePercent);
 
-  unrecognizedTerms.sort(compareUnrecognizedTerms);
+  const toStats = (acc: SourceAccumulator): GrantedPaymentTermSourceStats => ({
+    orders: acc.orders,
+    salesAmount: acc.salesAmount,
+    salesSharePercent: safePercent(acc.salesAmount, totalWeightedSalesAmount),
+    weightedAverageDays: safeAverage(acc.weightedDays, acc.salesAmount),
+  });
+
+  const unrecognizedTerms = [...unrecognizedByTerms.values()].sort(compareUnrecognizedTerms);
 
   return {
     available: quality !== "UNAVAILABLE",
@@ -371,14 +539,20 @@ export function computeGrantedPaymentTermSummary(
     coveragePercent,
     orderCoveragePercent,
     quality,
-    totalOrders,
+    totalOrders: orders.length,
     weightedPopulationOrders,
-    recognizedOrders,
-    unrecognizedOrders,
-    zeroOrNegativeOrders: Math.max(0, totalOrders - weightedPopulationOrders),
+    coveredOrders,
+    uncoveredOrders,
+    zeroOrNegativeOrders,
     totalWeightedSalesAmount,
-    recognizedSalesAmount,
-    unrecognizedSalesAmount,
+    coveredSalesAmount,
+    uncoveredSalesAmount,
+    sources: {
+      receivableTitles: toStats(bySource.RECEIVABLE_TITLES),
+      commercialTerms: toStats(bySource.COMMERCIAL_TERMS),
+    },
+    titlesUsed,
+    titlesIgnored,
     source: SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
     methodology: SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY,
     unrecognizedTerms: unrecognizedTerms.slice(0, topLimit),
@@ -389,16 +563,18 @@ export function computeGrantedPaymentTermSummary(
 // Apresentação (card) — sem aritmética de negócio no React
 // ---------------------------------------------------------------------------
 
-export const GRANTED_PAYMENT_TERM_CARD_LABEL = "Prazo médio concedido";
+export const GRANTED_PAYMENT_TERM_CARD_LABEL = "Prazo médio de recebimento";
 export const GRANTED_PAYMENT_TERM_CARD_TEST_ID = "sales-order-list-average-payment-term-card";
 export const GRANTED_PAYMENT_TERM_HELP_TEXT =
-  "Média ponderada pelo valor líquido dos pedidos filtrados, calculada a partir da condição comercial de pagamento. " +
-  "Ex.: 30/60 = 45 dias. Não representa atraso ou prazo real de recebimento.";
+  "Dias entre a emissão da NF-e e o vencimento dos títulos do Contas a Receber vinculados ao pedido, " +
+  "ponderados pelo valor dos títulos; média geral ponderada pelo valor líquido dos pedidos filtrados. " +
+  "Pedidos sem títulos usam a condição comercial de pagamento quando interpretável (ex.: 30/60 = 45 dias). " +
+  "Não mede atraso nem data real de recebimento.";
 export const GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT =
-  `${GRANTED_PAYMENT_TERM_HELP_TEXT} Condições de pagamento não reconhecidas foram excluídas da média.`;
+  `${GRANTED_PAYMENT_TERM_HELP_TEXT} Pedidos sem títulos de CR e sem condição interpretável foram excluídos da média.`;
 export const GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL = "Cobertura insuficiente";
 export const GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL = "Indisponível";
-export const GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE = "Sem condições de pagamento suficientes";
+export const GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE = "Sem títulos ou condições de pagamento suficientes";
 export const GRANTED_PAYMENT_TERM_LOAD_ERROR_SUBTITLE = "Não foi possível carregar o indicador.";
 
 const oneDecimalFormatter = new Intl.NumberFormat("pt-BR", {
@@ -406,7 +582,7 @@ const oneDecimalFormatter = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,
 });
 
-/** "47,84" → "47,8 dias"; 0 → "0,0 dias"; inválido → "—". */
+/** 47,84 → "47,8 dias"; 0 → "0,0 dias"; inválido → "—". */
 export function formatGrantedPaymentTermDays(days: number | null | undefined): string {
   if (days == null || !Number.isFinite(days)) return "—";
   return `${oneDecimalFormatter.format(days)} dias`;
@@ -416,6 +592,21 @@ export function formatGrantedPaymentTermDays(days: number | null | undefined): s
 export function formatGrantedPaymentTermCoverage(percent: number | null | undefined): string {
   if (percent == null || !Number.isFinite(percent)) return "—";
   return `${oneDecimalFormatter.format(percent)}%`;
+}
+
+/** Texto de ajuda do card: metodologia + participação de cada fonte quando houver cobertura. */
+export function buildGrantedPaymentTermHelpText(
+  summary: SalesOrderGrantedPaymentTermSummary | null | undefined,
+  quality: GrantedPaymentTermQuality
+): string {
+  const base =
+    quality === "PARTIAL" || quality === "LOW"
+      ? GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT
+      : GRANTED_PAYMENT_TERM_HELP_TEXT;
+  if (!summary || !(summary.coveredSalesAmount > 0)) return base;
+  const titles = formatGrantedPaymentTermCoverage(summary.sources.receivableTitles.salesSharePercent);
+  const terms = formatGrantedPaymentTermCoverage(summary.sources.commercialTerms.salesSharePercent);
+  return `${base} Fonte: títulos do CR em ${titles} do valor vendido; condição comercial em ${terms}.`;
 }
 
 export type GrantedPaymentTermCardTone = "info" | "warning" | "neutral";
@@ -434,7 +625,7 @@ export type GrantedPaymentTermCardPresentation = {
  *   FULL        → "47,8 dias" / "Cobertura: 98,2% do valor vendido" (info)
  *   PARTIAL     → "47,8 dias" / "Cobertura parcial: 89,4%" (warning)
  *   LOW         → "Cobertura insuficiente" / "Cobertura: 54,1%" (warning) — número não é exibido
- *   UNAVAILABLE → "Indisponível" / "Sem condições de pagamento suficientes" (neutral)
+ *   UNAVAILABLE → "Indisponível" / "Sem títulos ou condições de pagamento suficientes" (neutral)
  *   null (endpoint falhou) → "Indisponível" / "Não foi possível carregar o indicador." (neutral)
  */
 export function resolveGrantedPaymentTermCardPresentation(
@@ -455,6 +646,7 @@ export function resolveGrantedPaymentTermCardPresentation(
   const usable = summary.available && days != null && Number.isFinite(days);
   const quality: GrantedPaymentTermQuality = usable ? summary.quality : "UNAVAILABLE";
   const coverage = formatGrantedPaymentTermCoverage(summary.coveragePercent);
+  const helperText = buildGrantedPaymentTermHelpText(summary, quality);
 
   switch (quality) {
     case "FULL":
@@ -464,7 +656,7 @@ export function resolveGrantedPaymentTermCardPresentation(
         valueSize: "default",
         subtitle: `Cobertura: ${coverage} do valor vendido`,
         tone: "info",
-        helperText: GRANTED_PAYMENT_TERM_HELP_TEXT,
+        helperText,
       };
     case "PARTIAL":
       return {
@@ -473,7 +665,7 @@ export function resolveGrantedPaymentTermCardPresentation(
         valueSize: "default",
         subtitle: `Cobertura parcial: ${coverage}`,
         tone: "warning",
-        helperText: GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT,
+        helperText,
       };
     case "LOW":
       return {
@@ -482,7 +674,7 @@ export function resolveGrantedPaymentTermCardPresentation(
         valueSize: "text",
         subtitle: `Cobertura: ${coverage}`,
         tone: "warning",
-        helperText: GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT,
+        helperText,
       };
     default:
       return {

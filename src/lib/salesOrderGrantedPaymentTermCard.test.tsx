@@ -1,5 +1,5 @@
 /**
- * Card "Prazo médio concedido" — Visão Geral da listagem de Pedidos de Venda.
+ * Card "Prazo médio de recebimento" — Visão Geral da listagem de Pedidos de Venda.
  * Render estático real do componente (loader vazio para `.css`, como landingPage.test).
  */
 import assert from "node:assert/strict";
@@ -8,6 +8,7 @@ import { before, describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  GRANTED_PAYMENT_TERM_CARD_LABEL,
   GRANTED_PAYMENT_TERM_CARD_TEST_ID,
   buildEmptySalesOrderGrantedPaymentTermSummary,
   type SalesOrderGrantedPaymentTermSummary,
@@ -63,14 +64,14 @@ function render(props: {
 
 function cardHtml(html: string): string {
   const start = html.indexOf(`data-testid="${GRANTED_PAYMENT_TERM_CARD_TEST_ID}"`);
-  assert.ok(start > 0, "card Prazo médio concedido não renderizado");
+  assert.ok(start > 0, "card Prazo médio de recebimento não renderizado");
   const end = html.indexOf("Ticket médio", start);
   assert.ok(end > start);
   return html.slice(start, end);
 }
 
-describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
-  it("overview tem Pedidos filtrados, Valor vendido, Prazo médio concedido e Ticket médio — sem Imposto/Custo", () => {
+describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
+  it("overview tem Pedidos filtrados, Valor vendido, Prazo médio de recebimento e Ticket médio — sem Imposto/Custo", () => {
     const html = render({
       paymentTermSummary: summaryWith({
         available: true,
@@ -79,16 +80,18 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
         coveragePercent: 96.4,
       }),
     });
+    assert.equal(GRANTED_PAYMENT_TERM_CARD_LABEL, "Prazo médio de recebimento");
     const order = [
       "Pedidos filtrados",
       "Valor vendido",
-      "Prazo médio concedido",
+      "Prazo médio de recebimento",
       "Ticket médio",
     ].map((label) => html.indexOf(label));
     assert.ok(order.every((idx) => idx >= 0), "labels ausentes");
     assert.deepEqual(order, [...order].sort((a, b) => a - b));
     assert.doesNotMatch(html, /Imposto a pagar/);
     assert.doesNotMatch(html, /Custo estimado/);
+    assert.doesNotMatch(html, /Prazo médio concedido/);
     assert.doesNotMatch(html, /sales-order-list-tax-payable-card/);
     assert.doesNotMatch(html, /sales-order-list-estimated-cost-card/);
     assert.doesNotMatch(html, /Margem comercial/);
@@ -100,11 +103,11 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
     assert.match(html, /Margem comercial/);
     assert.match(html, /sales-order-list-general-margin-card/);
     assert.ok(html.indexOf("Ticket médio") < html.indexOf("Margem comercial"));
-    assert.ok(html.indexOf("Prazo médio concedido") < html.indexOf("Ticket médio"));
+    assert.ok(html.indexOf("Prazo médio de recebimento") < html.indexOf("Ticket médio"));
     assert.doesNotMatch(html, /Imposto a pagar|Custo estimado/);
   });
 
-  it("FULL mostra dias e cobertura do valor vendido", () => {
+  it("FULL mostra dias, cobertura do valor vendido e a metodologia (emissão da NF-e → vencimento)", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({
@@ -112,14 +115,21 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
           quality: "FULL",
           weightedAverageDays: 47.84,
           coveragePercent: 96.4,
+          coveredSalesAmount: 100,
+          sources: {
+            receivableTitles: { orders: 1, salesAmount: 80, salesSharePercent: 80, weightedAverageDays: 50 },
+            commercialTerms: { orders: 1, salesAmount: 20, salesSharePercent: 20, weightedAverageDays: 39.2 },
+          },
         }),
       })
     );
     assert.match(card, /data-quality="FULL"/);
     assert.match(card, /47,8 dias/);
     assert.match(card, /Cobertura: 96,4% do valor vendido/);
-    assert.match(card, /30\/60 = 45 dias/);
-    assert.match(card, /Não representa atraso ou prazo real de recebimento/);
+    assert.match(card, /emissão da NF-e/);
+    assert.match(card, /vencimento dos títulos do Contas a Receber/);
+    assert.match(card, /títulos do CR em 80,0% do valor vendido; condição comercial em 20,0%/);
+    assert.match(card, /Não mede atraso/);
     assert.match(card, /data-variant="info"/);
   });
 
@@ -138,7 +148,7 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
     assert.match(card, /47,8 dias/);
     assert.match(card, /Cobertura parcial: 89,4%/);
     assert.match(card, /data-variant="warning"/);
-    assert.match(card, /não reconhecidas foram excluídas/);
+    assert.match(card, /foram excluídos da média/);
   });
 
   it("LOW mostra Cobertura insuficiente (sem o número principal)", () => {
@@ -159,7 +169,7 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
     assert.match(card, /metric-card-value--text/);
   });
 
-  it("UNAVAILABLE mostra Indisponível + Sem condições de pagamento suficientes", () => {
+  it("UNAVAILABLE mostra Indisponível + Sem títulos ou condições de pagamento suficientes", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({ available: false, quality: "UNAVAILABLE" }),
@@ -167,7 +177,7 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
     );
     assert.match(card, /data-quality="UNAVAILABLE"/);
     assert.match(card, /Indisponível/);
-    assert.match(card, /Sem condições de pagamento suficientes/);
+    assert.match(card, /Sem títulos ou condições de pagamento suficientes/);
     assert.match(card, /data-variant="neutral"/);
   });
 
@@ -187,7 +197,6 @@ describe("SalesOrderListSummaryCards — Prazo médio concedido", () => {
     assert.match(card, /data-quality="LOADING"/);
     assert.match(card, /metric-card-loading/);
     assert.doesNotMatch(card, /Indisponível/);
-    // Demais cards não estão em loading.
     const before = html.slice(0, html.indexOf(`data-testid="${GRANTED_PAYMENT_TERM_CARD_TEST_ID}"`));
     assert.doesNotMatch(before, /metric-card-loading/);
   });

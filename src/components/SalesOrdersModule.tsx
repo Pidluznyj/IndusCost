@@ -239,7 +239,7 @@ function SalesOrderList() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
-  // Prazo médio concedido — KPI dedicado, para todos que veem Pedidos de Venda
+  // Prazo médio de recebimento — KPI dedicado, para todos que veem Pedidos de Venda
   // (não depende de showMarginEconomics). null = indisponível/falha.
   const [paymentTermSummary, setPaymentTermSummary] =
     useState<SalesOrderGrantedPaymentTermSummary | null>(null);
@@ -663,7 +663,7 @@ function SalesOrderList() {
           setMarginSummary(null);
         }
 
-        // Prazo médio concedido — endpoint dedicado e leve (queries agregadas),
+        // Prazo médio de recebimento — endpoint dedicado e leve (queries constantes),
         // MESMA query dos filtros aplicados; população completa, não só a página.
         // Fail-soft: falha aqui nunca derruba a listagem nem limpa as linhas.
         if (!signal?.aborted) {

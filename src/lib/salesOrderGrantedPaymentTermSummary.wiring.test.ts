@@ -1,10 +1,11 @@
 /**
- * Prazo médio concedido — wiring/paridade:
+ * Prazo médio de recebimento — wiring/paridade:
  *   - endpoint usa EXATAMENTE o where canônico da listagem (parseSalesOrderListQuery +
  *     resolveSalesOrderListSellerWhere + resolveSalesOrderListWhere), sem duplicar WHERE;
- *   - população completa (page/pageSize não limitam a agregação);
- *   - número constante de queries agregadas (groupBy + aggregate), sem findMany/N+1,
- *     sem nomusRawResponse, sem escrita, sem CR;
+ *   - população completa (page/pageSize não limitam a carga);
+ *   - cadeia canônica do CR (SalesOrderNfeLink válida → NomusNfe.xmlDhEmi →
+ *     NomusAccountsReceivable.sourceInvoiceId), número constante de queries,
+ *     sem leitura por pedido, sem nomusRawResponse/rawPayload, sem escrita;
  *   - permissão = listagem (sem margem/custo); rota estática antes de /api/sales-orders/:id;
  *   - UI: fetch dedicado com AbortSignal, fail-soft, independente de showMarginEconomics;
  *   - cards: Imposto a pagar / Custo estimado fora do overview; Margem comercial permanece.
@@ -19,7 +20,7 @@ import {
   getSalesOrderGrantedPaymentTermSummaryUrl,
 } from "./salesOrderGrantedPaymentTermApi.js";
 import {
-  buildSalesOrderGrantedPaymentTermWeightWhere,
+  buildSalesOrderGrantedPaymentTermOrderSelect,
   loadSalesOrderGrantedPaymentTermSummary,
 } from "./salesOrderGrantedPaymentTermSummary.server.js";
 import {
@@ -27,7 +28,7 @@ import {
   resolveSalesOrderListSellerWhere,
   resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
-import { andSalesOrderListWhere } from "./salesOrderListReceivableFilter.js";
+import { buildSalesOrderValidNfeLinkWhere } from "./salesOrdersListSummary.js";
 
 const ROOT = process.cwd();
 
@@ -42,30 +43,36 @@ function codeOnly(source: string): string {
 
 type RecordedCall = { method: string; args: Record<string, unknown> };
 
-/** Prisma fake: registra chamadas; qualquer leitura por pedido (findMany etc.) falha. */
+const NF_101_ISSUE = new Date(2026, 8, 1); // 01/09/2026
+const NF_103_PROCESSING = new Date(2026, 8, 10); // 10/09/2026 (sem xmlDhEmi)
+
+/**
+ * Prisma fake: registra chamadas; qualquer leitura por pedido (findFirst/count…) falha.
+ * População: A (títulos 30/60 da NF 101), B (sem NF, condição "28 DDL"), C (NF 102 sem
+ * títulos e condição "boleto"), D (valor zero), E (NF 103 sem xmlDhEmi → dataProcessamento).
+ */
 function createFakeDb(calls: RecordedCall[]): PrismaClient {
   const record = (method: string, args: unknown) => {
     calls.push({ method, args: (args ?? {}) as Record<string, unknown> });
   };
   const forbid = (method: string) => async (args: unknown) => {
     record(method, args);
-    throw new Error(`${method} não é permitido no KPI de prazo médio concedido`);
+    throw new Error(`${method} não é permitido no KPI de prazo médio de recebimento`);
   };
   return {
     salesOrder: {
-      groupBy: async (args: unknown) => {
-        record("salesOrder.groupBy", args);
+      findMany: async (args: unknown) => {
+        record("salesOrder.findMany", args);
         return [
-          { paymentTerms: "30/60", _count: { _all: 2 }, _sum: { totalNetValue: 10_000 } },
-          { paymentTerms: "boleto", _count: { _all: 1 }, _sum: { totalNetValue: 2_500 } },
-          { paymentTerms: null, _count: { _all: 1 }, _sum: { totalNetValue: 500 } },
+          { id: "A", totalNetValue: 10_000, paymentTerms: "30/60", nfeLinks: [{ nfeExternalId: 101, dataProcessamento: NF_101_ISSUE }] },
+          { id: "B", totalNetValue: 30_000, paymentTerms: "28 DDL", nfeLinks: [] },
+          { id: "C", totalNetValue: 5_000, paymentTerms: "boleto", nfeLinks: [{ nfeExternalId: 102, dataProcessamento: new Date(2026, 8, 5) }] },
+          { id: "D", totalNetValue: 0, paymentTerms: null, nfeLinks: [] },
+          { id: "E", totalNetValue: 2_000, paymentTerms: null, nfeLinks: [{ nfeExternalId: 103, dataProcessamento: NF_103_PROCESSING }] },
         ];
       },
-      aggregate: async (args: unknown) => {
-        record("salesOrder.aggregate", args);
-        return { _count: { _all: 6 } };
-      },
-      findMany: forbid("salesOrder.findMany"),
+      groupBy: forbid("salesOrder.groupBy"),
+      aggregate: forbid("salesOrder.aggregate"),
       findFirst: forbid("salesOrder.findFirst"),
       findUnique: forbid("salesOrder.findUnique"),
       count: forbid("salesOrder.count"),
@@ -74,11 +81,28 @@ function createFakeDb(calls: RecordedCall[]): PrismaClient {
       create: forbid("salesOrder.create"),
       delete: forbid("salesOrder.delete"),
     },
-    // Filtro "Status CR" da listagem consulta o CR só para montar o where (mesmo caminho da lista).
+    nomusNfe: {
+      findMany: async (args: unknown) => {
+        record("nomusNfe.findMany", args);
+        return [
+          { externalId: 101, xmlDhEmi: NF_101_ISSUE, dataProcessamento: NF_101_ISSUE },
+          { externalId: 102, xmlDhEmi: new Date(2026, 8, 5), dataProcessamento: new Date(2026, 8, 5) },
+          { externalId: 103, xmlDhEmi: null, dataProcessamento: NF_103_PROCESSING },
+        ];
+      },
+      findFirst: forbid("nomusNfe.findFirst"),
+    },
+    // Títulos por NF (sourceInvoiceId) — também consultado pelo filtro "Status CR" da listagem.
     nomusAccountsReceivable: {
       findMany: async (args: unknown) => {
         record("nomusAccountsReceivable.findMany", args);
-        return [];
+        const where = (args as { where?: { sourceInvoiceId?: { in?: number[] } } }).where;
+        if (!where?.sourceInvoiceId?.in) return [];
+        return [
+          { externalId: 1, sourceInvoiceId: 101, sourceInvoiceNumber: "101", dueDate: new Date(2026, 9, 1), amountReceivable: 5_000, amountReceived: 0, balanceReceivable: 5_000, settlementDate: null },
+          { externalId: 2, sourceInvoiceId: 101, sourceInvoiceNumber: "101", dueDate: new Date(2026, 9, 31), amountReceivable: 5_000, amountReceived: 5_000, balanceReceivable: 0, settlementDate: new Date(2026, 9, 28) },
+          { externalId: 3, sourceInvoiceId: 103, sourceInvoiceNumber: "103", dueDate: new Date(2026, 8, 24), amountReceivable: 2_000, amountReceived: 0, balanceReceivable: 2_000, settlementDate: null },
+        ];
       },
     },
     salesOrderNfeLink: {
@@ -146,69 +170,91 @@ describe("payment-term-summary — paridade com o where oficial da listagem", ()
 
       const salesOrderCalls = calls.filter((c) => c.method.startsWith("salesOrder."));
       assert.deepEqual(
-        salesOrderCalls.map((c) => c.method).sort(),
-        ["salesOrder.aggregate", "salesOrder.groupBy"],
-        "exatamente 1 groupBy + 1 aggregate; nenhuma leitura por pedido"
+        salesOrderCalls.map((c) => c.method),
+        ["salesOrder.findMany"],
+        "exatamente 1 findMany da população; nenhuma leitura por pedido"
+      );
+      assert.ok(calls.filter((c) => c.method === "nomusNfe.findMany").length <= 1, "NF-e em 1 query");
+      assert.ok(
+        calls.filter((c) => c.method === "nomusAccountsReceivable.findMany").length <= 2,
+        "títulos em 1 query (+1 do filtro Status CR quando aplicado)"
       );
 
-      const groupBy = calls.find((c) => c.method === "salesOrder.groupBy")!.args;
-      const aggregate = calls.find((c) => c.method === "salesOrder.aggregate")!.args;
-
-      assert.deepEqual(groupBy.by, ["paymentTerms"]);
-      assert.deepEqual(groupBy._count, { _all: true });
-      assert.deepEqual(groupBy._sum, { totalNetValue: true });
+      const findMany = salesOrderCalls[0]!.args;
+      assert.deepEqual(findMany.where, expectedWhere);
+      assert.deepEqual(findMany.select, buildSalesOrderGrantedPaymentTermOrderSelect());
       assert.deepEqual(
-        groupBy.where,
-        andSalesOrderListWhere(expectedWhere, buildSalesOrderGrantedPaymentTermWeightWhere())
+        (findMany.select as { nfeLinks: { where: unknown } }).nfeLinks.where,
+        buildSalesOrderValidNfeLinkWhere(),
+        "só NF-e válidas (processadas, não canceladas)"
       );
-      assert.deepEqual(aggregate.where, expectedWhere);
-      assert.deepEqual(aggregate._count, { _all: true });
 
-      // Paginação nunca limita a agregação; nada de select/raw.
-      for (const args of [groupBy, aggregate]) {
-        assert.equal("skip" in args, false);
-        assert.equal("take" in args, false);
-        assert.equal("select" in args, false);
-        assert.equal("include" in args, false);
-        assert.doesNotMatch(JSON.stringify(args), /nomusRawResponse/);
+      // Paginação nunca limita a carga; nada de raw.
+      assert.equal("skip" in findMany, false);
+      assert.equal("take" in findMany, false);
+      assert.equal("include" in findMany, false);
+      for (const call of calls) {
+        assert.doesNotMatch(JSON.stringify(call.args), /nomusRawResponse|rawPayload|xmlRaw/);
       }
 
-      assert.equal(summary.source, "SalesOrder.paymentTerms");
+      assert.match(summary.source, /NomusAccountsReceivable\.dueDate/);
     });
   }
 
-  it("DTO calculado a partir dos agregados (sem ler pedido a pedido)", async () => {
+  it("DTO calculado a partir da cadeia NF-e → títulos (emissão → vencimento), com fallback declarado", async () => {
     const calls: RecordedCall[] = [];
-    const summary = await loadSalesOrderGrantedPaymentTermSummary(createFakeDb(calls), {
-      year: "2026",
-    });
-    assert.equal(summary.totalOrders, 6);
+    const summary = await loadSalesOrderGrantedPaymentTermSummary(createFakeDb(calls), { year: "2026" });
+    // A: 30d@5000 + 60d@5000 → 45 (títulos, NF 101 xmlDhEmi 01/09)
+    // B: sem NF → condição "28 DDL" → 28
+    // C: NF 102 sem títulos + "boleto" → não resolvido
+    // D: valor zero → fora do peso
+    // E: NF 103 sem xmlDhEmi → dataProcessamento 10/09; título vence 24/09 → 14
+    assert.equal(summary.totalOrders, 5);
     assert.equal(summary.weightedPopulationOrders, 4);
-    assert.equal(summary.zeroOrNegativeOrders, 2);
-    assert.equal(summary.recognizedOrders, 2);
-    assert.equal(summary.unrecognizedOrders, 2);
-    assert.equal(summary.recognizedSalesAmount, 10_000);
-    assert.equal(summary.unrecognizedSalesAmount, 3_000);
-    assert.equal(summary.totalWeightedSalesAmount, 13_000);
-    assert.equal(summary.weightedAverageDays, 45);
-    assert.ok(Math.abs(summary.coveragePercent - (10_000 * 100) / 13_000) < 1e-9);
-    assert.equal(summary.orderCoveragePercent, 50);
-    assert.equal(summary.quality, "LOW");
+    assert.equal(summary.zeroOrNegativeOrders, 1);
+    assert.equal(summary.coveredOrders, 3);
+    assert.equal(summary.uncoveredOrders, 1);
+    assert.equal(summary.coveredSalesAmount, 42_000);
+    assert.equal(summary.uncoveredSalesAmount, 5_000);
+    assert.equal(summary.totalWeightedSalesAmount, 47_000);
+    const expectedDays = (10_000 * 45 + 30_000 * 28 + 2_000 * 14) / 42_000;
+    assert.ok(Math.abs(summary.weightedAverageDays! - expectedDays) < 1e-9);
+    assert.ok(Math.abs(summary.coveragePercent - (42_000 * 100) / 47_000) < 1e-9);
+    assert.equal(summary.quality, "PARTIAL");
     assert.equal(summary.available, true);
+    assert.equal(summary.titlesUsed, 3);
+    assert.equal(summary.titlesIgnored, 0);
+    assert.equal(summary.sources.receivableTitles.orders, 2);
+    assert.equal(summary.sources.receivableTitles.salesAmount, 12_000);
+    assert.equal(summary.sources.commercialTerms.orders, 1);
+    assert.equal(summary.sources.commercialTerms.salesAmount, 30_000);
     assert.deepEqual(
-      summary.unrecognizedTerms.map((t) => [t.paymentTerms, t.salesAmount, t.reason]),
-      [
-        ["boleto", 2_500, "UNRECOGNIZED_FORMAT"],
-        [null, 500, "MISSING"],
-      ]
+      summary.unrecognizedTerms.map((t) => [t.paymentTerms, t.orderCount, t.salesAmount, t.reason]),
+      [["boleto", 1, 5_000, "UNRECOGNIZED_FORMAT"]]
     );
-    assert.equal(calls.filter((c) => c.method === "salesOrder.findMany").length, 0);
+    // Títulos buscados pelas NF-e válidas da população (sourceInvoiceId), nunca pedido a pedido.
+    const titlesCall = calls.find((c) => c.method === "nomusAccountsReceivable.findMany")!;
+    assert.deepEqual(
+      (titlesCall.args as { where: { sourceInvoiceId: { in: number[] } } }).where.sourceInvoiceId.in,
+      [101, 102, 103]
+    );
+    const nfeCall = calls.find((c) => c.method === "nomusNfe.findMany")!;
+    assert.deepEqual((nfeCall.args as { where: { externalId: { in: number[] } } }).where.externalId.in, [101, 102, 103]);
+    assert.deepEqual(nfeCall.args.select, { externalId: true, xmlDhEmi: true, dataProcessamento: true });
   });
 
-  it("peso = totalNetValue > 0 (sem abs, sem zero no denominador)", () => {
-    assert.deepEqual(buildSalesOrderGrantedPaymentTermWeightWhere(), {
-      totalNetValue: { gt: 0 },
-    });
+  it("população sem NF-e não consulta NF-e nem títulos", async () => {
+    const calls: RecordedCall[] = [];
+    const db = createFakeDb(calls);
+    (db as unknown as { salesOrder: { findMany: unknown } }).salesOrder.findMany = async (args: unknown) => {
+      calls.push({ method: "salesOrder.findMany", args: (args ?? {}) as Record<string, unknown> });
+      return [{ id: "X", totalNetValue: 100, paymentTerms: "30", nfeLinks: [] }];
+    };
+    const summary = await loadSalesOrderGrantedPaymentTermSummary(db, {});
+    assert.equal(summary.weightedAverageDays, 30);
+    assert.equal(summary.sources.commercialTerms.orders, 1);
+    assert.equal(calls.filter((c) => c.method === "nomusNfe.findMany").length, 0);
+    assert.equal(calls.filter((c) => c.method === "nomusAccountsReceivable.findMany").length, 0);
   });
 });
 
@@ -225,31 +271,33 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
   const WRITE_PATTERN =
     /\.(update|updateMany|create|createMany|delete|deleteMany|upsert)\(|\$transaction|\$executeRaw|\$queryRaw/;
 
-  it("loader reutiliza os helpers canônicos e só agrega (groupBy + aggregate)", () => {
+  it("loader reutiliza os helpers canônicos e a cadeia oficial do CR, com queries constantes", () => {
     assert.match(loader, /parseSalesOrderListQuery\(/);
     assert.match(loader, /resolveSalesOrderListSellerWhere\(/);
     assert.match(loader, /resolveSalesOrderListWhere\(/);
-    assert.match(loader, /andSalesOrderListWhere\(/);
-    assert.match(loader, /db\.salesOrder\.groupBy\(/);
-    assert.match(loader, /by:\s*\["paymentTerms"\]/);
-    assert.match(loader, /totalNetValue:\s*\{\s*gt:\s*0\s*\}/);
+    assert.match(loader, /buildSalesOrderValidNfeLinkWhere\(\)/);
+    assert.match(loader, /loadSalesOrderListReceivablesByNfeExternalIds\(/);
+    assert.match(loader, /collectReceivablesForOrderNfes\(/);
+    assert.match(loader, /xmlDhEmi/);
     assert.match(loader, /Promise\.all\(/);
-    assert.equal((loader.match(/db\.salesOrder\./g) ?? []).length, 2, "número constante de queries");
-    assert.doesNotMatch(loader, /\.(findMany|findFirst|findUnique|count)\(/);
-    assert.doesNotMatch(loader, /nomusRawResponse/);
+    assert.equal((loader.match(/db\.salesOrder\./g) ?? []).length, 1, "1 query de população");
+    assert.equal((loader.match(/db\.nomusNfe\./g) ?? []).length, 1, "1 query de NF-e");
+    assert.doesNotMatch(loader, /db\.nomusAccountsReceivable\./, "títulos via helper compartilhado");
+    assert.doesNotMatch(loader, /groupBy|aggregate|findFirst|findUnique|\.count\(/);
+    assert.doesNotMatch(loader, /nomusRawResponse|rawPayload|xmlRaw/);
     assert.doesNotMatch(loader, /for\s*\(|while\s*\(|forEach\(/, "sem loop com Prisma (N+1)");
+    assert.doesNotMatch(loader, /await[^;]*\.map\(/, "sem await dentro de map");
     assert.doesNotMatch(loader, WRITE_PATTERN);
-    assert.doesNotMatch(loader, /nomusAccountsReceivable|salesOrderNfeLink|nomusNfe/i);
-    assert.doesNotMatch(loader, /settlementDate|amountReceived|paymentReceivedAt|balanceReceivable/);
-    assert.doesNotMatch(loader, /paymentMethod/);
+    assert.doesNotMatch(loader, /settlementDate|amountReceived|balanceReceivable|paymentMethod/);
   });
 
-  it("motor puro não importa Prisma/React/Node e nunca usa paymentMethod/CR como fonte", () => {
+  it("motor puro não importa Prisma/React/Node; usa vencimento, nunca liquidação", () => {
     assert.doesNotMatch(pure, /@prisma\/client|from "react"|from "node:|from "\.\/prisma/);
     assert.match(pure, /export function parseGrantedPaymentTerm/);
-    assert.match(pure, /export function computeGrantedPaymentTermSummary/);
+    assert.match(pure, /export function resolveReceivableTitleTermDays/);
+    assert.match(pure, /export function computeSalesOrderGrantedPaymentTermSummary/);
     assert.match(pure, /SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY/);
-    assert.doesNotMatch(pure, /settlementDate|amountReceived|dueDate|paymentReceivedAt/);
+    assert.doesNotMatch(pure, /settlementDate|amountReceived|paymentReceivedAt/);
     assert.doesNotMatch(pure, /paymentMethod\s*[:=]/);
     assert.doesNotMatch(pure, WRITE_PATTERN);
   });
@@ -294,7 +342,7 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(module, /paymentTermSummaryLoading=\{paymentTermSummaryLoading\}/);
     assert.match(module, /new AbortController\(\)/);
 
-    const start = module.indexOf("// Prazo médio concedido — endpoint dedicado");
+    const start = module.indexOf("// Prazo médio de recebimento — endpoint dedicado");
     const end = module.indexOf("// Margens só DEPOIS da grade", start);
     assert.ok(start > 0 && end > start, "bloco do KPI antes das margens");
     const block = module.slice(start, end);
@@ -307,7 +355,6 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(block, /setPaymentTermSummaryLoading\(false\)/);
     assert.doesNotMatch(block, /setRows\(\[\]\)|setSummary\(|setMarginSummary\(|alert\(/, "falha do KPI não derruba a lista");
 
-    // A lista continua carregando/renderizando independentemente do KPI.
     const idxKpi = module.indexOf("getSalesOrderGrantedPaymentTermSummaryUrl(q)");
     const idxListFetch = module.indexOf("`/api/sales-orders?${q}`");
     assert.ok(idxListFetch > 0 && idxListFetch < idxKpi, "KPI só depois do GET da lista");
@@ -341,7 +388,6 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     }
     assert.doesNotMatch(cards, /\.reduce\(\s*\(/, "sem aritmética de negócio no React");
     assert.doesNotMatch(css, /sales-order-list-cost-tooltip-panel/, "CSS morto removido");
-    // Ordem visual: Pedidos filtrados → Valor vendido → Prazo médio → Ticket médio → Margem.
     const order = [
       'label="Pedidos filtrados"',
       'label="Valor vendido"',
@@ -362,7 +408,7 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(marginTypes, /totalCost: number;/);
   });
 
-  it("testes novos registrados na lista unitária canônica", () => {
+  it("testes registrados na lista unitária canônica", () => {
     const list = read("scripts/unit-test-files.txt");
     assert.match(list, /src\/lib\/salesOrderGrantedPaymentTerm\.test\.ts/);
     assert.match(list, /src\/lib\/salesOrderGrantedPaymentTermSummary\.wiring\.test\.ts/);

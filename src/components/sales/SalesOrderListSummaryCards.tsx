@@ -24,7 +24,7 @@ import "./sales-order-list-summary-cards.css";
 /**
  * Visão Geral da listagem de Pedidos de Venda.
  *
- * Ordem: Pedidos filtrados · Valor vendido · Prazo médio concedido · Ticket médio ·
+ * Ordem: Pedidos filtrados · Valor vendido · Prazo médio de recebimento · Ticket médio ·
  * Margem comercial (só com permissão econômica). Os cards de imposto e de custo
  * saíram deste overview (2026-09) — os cálculos continuam no motor de margem,
  * relatórios, abas Custos/Tributos e Gestão de Pedidos.
@@ -40,7 +40,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
   summary: SalesOrderListSummary;
   marginSummary?: SalesOrderListMarginSummary | null;
   /**
-   * Prazo médio concedido — endpoint dedicado (GET /api/sales-orders/payment-term-summary),
+   * Prazo médio de recebimento — endpoint dedicado (GET /api/sales-orders/payment-term-summary),
    * visível para todos que veem Pedidos de Venda. `null` = indisponível/falha do endpoint.
    */
   paymentTermSummary?: SalesOrderGrantedPaymentTermSummary | null;
