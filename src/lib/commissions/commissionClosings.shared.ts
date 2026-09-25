@@ -5,6 +5,11 @@
  */
 import { roundMoney } from "./commission-money.shared.js";
 import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  getCommissionReportingAuthority,
+  type CommissionReportingAuthority,
+} from "./commissionCoverageCutover.js";
+import {
   RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
@@ -79,6 +84,8 @@ export type CommissionClosingListItem = {
   criticalDivergence: boolean;
   calculationHash: string | null;
   notes: string | null;
+  /** Competência do histórico Nomus: registro técnico, nunca fechamento oficial. */
+  reportingAuthority: CommissionReportingAuthority;
 };
 
 export type CommissionClosingSellerSummary = {
@@ -132,6 +139,7 @@ export type CommissionClosingSellerReport = {
     closedAt: string | null;
     closedByName: string | null;
     note: string | null;
+    reportingAuthority: CommissionReportingAuthority;
   };
   seller: {
     id: string | null;
@@ -402,10 +410,14 @@ export function buildClosingSellerReport(
       month: closing.month,
       periodLabel,
       status: closing.status,
-      statusLabel: formatCommissionClosingPeriodStatus(closing.status),
+      statusLabel: formatCommissionClosingAuthorityStatus(
+        closing.status,
+        getCommissionReportingAuthority(closing.year, closing.month)
+      ),
       closedAt: closing.closedAt,
       closedByName,
       note: closing.notes,
+      reportingAuthority: getCommissionReportingAuthority(closing.year, closing.month),
     },
     seller: {
       id: seller.sellerId,
@@ -449,7 +461,10 @@ export function mapClosingListItemFromPage(
     month: c.month,
     periodLabel: formatCommissionPeriodLabel(c.year, c.month),
     status: c.status,
-    statusLabel: formatCommissionClosingPeriodStatus(c.status),
+    statusLabel: formatCommissionClosingAuthorityStatus(
+      c.status,
+      getCommissionReportingAuthority(c.year, c.month)
+    ),
     closedAt: c.closedAt,
     closedBy: c.closedBy,
     closedByName,
@@ -464,6 +479,36 @@ export function mapClosingListItemFromPage(
     criticalDivergence: page.criticalDivergence,
     calculationHash: c.calculationHash,
     notes: c.notes,
+    reportingAuthority: getCommissionReportingAuthority(c.year, c.month),
+  };
+}
+
+/** Fechamento de competência do histórico Nomus nunca é rotulado como oficial. */
+export function formatCommissionClosingAuthorityStatus(
+  status: string,
+  authority: Pick<CommissionReportingAuthority, "isLegacyPeriod">
+): string {
+  return authority.isLegacyPeriod
+    ? "Registro técnico — não oficial (período Nomus)"
+    : formatCommissionClosingPeriodStatus(status);
+}
+
+/**
+ * Textos de título/origem/rodapé dos documentos (PDF por vendedor e geral) conforme
+ * a autoridade: no histórico Nomus viram espelho técnico, com marcador em toda página.
+ */
+export function resolveCommissionClosingDocumentTexts(
+  authority: Pick<CommissionReportingAuthority, "isLegacyPeriod">,
+  official: { title: string; source: string; footer: string }
+): { title: string; source: string; footer: string; pageMarker: string | null; notices: string[] } {
+  if (!authority.isLegacyPeriod) return { ...official, pageMarker: null, notices: [] };
+  const text = COMMISSION_LEGACY_REPORT_TEXT;
+  return {
+    title: text.documentTitle,
+    source: `${text.printNotice} · ${text.officialSourceLine}`,
+    footer: `${text.pageMarker} · ${text.printNotProof}`,
+    pageMarker: text.pageMarker,
+    notices: [text.officialSourceLine, text.printNotice, text.printNotProof],
   };
 }
 

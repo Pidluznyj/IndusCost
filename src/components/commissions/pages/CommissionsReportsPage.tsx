@@ -37,6 +37,10 @@ import type {
   CommissionReportsPayload,
 } from "@/src/lib/commissions/commissionReports.shared";
 import { buildCommissionReportsExportFilename } from "@/src/lib/commissions/commissionReports.shared";
+import { COMMISSION_LEGACY_REPORT_TEXT } from "@/src/lib/commissions/commissionCoverageCutover";
+import { CommissionLegacyPeriodBanner } from "@/src/components/commissions/CommissionLegacyPeriodBanner";
+import { CommissionReportingSourcesPanel } from "@/src/components/commissions/CommissionReportingSourcesPanel";
+import { CommissionTechnicalMirrorConfirmDialog } from "@/src/components/commissions/CommissionTechnicalMirrorConfirmDialog";
 import {
   SalesOrderMarginDetailDrawer,
   type SalesOrderMarginDetailCommissionContext,
@@ -215,8 +219,8 @@ function CommissionAmountCell({ row }: { row: CommissionReportRecord }): JSX.Ele
             >
               ≠ snap
             </span>
-          ) : row.source === "ORDER_SNAPSHOT" ||
-            row.source === "MATERIALIZED_SCHEDULE" ? (
+          ) : row.officialSource !== "NOMUS" &&
+            (row.source === "ORDER_SNAPSHOT" || row.source === "MATERIALIZED_SCHEDULE") ? (
             <span
               className="whitespace-nowrap text-[10px] text-muted-foreground"
               title="Valor alinhado à materialização oficial"
@@ -284,6 +288,8 @@ export function CommissionsReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  /** "TENHO CIÊNCIA" pendente para exportar meses do histórico Nomus (não fica lembrado). */
+  const [mirrorConfirmOpen, setMirrorConfirmOpen] = useState(false);
 
   const pageSize = 50;
   const yearOptions = useMemo(
@@ -381,7 +387,10 @@ export function CommissionsReportsPage() {
       const a = document.createElement("a");
       a.href = url;
       const yearNum = Number.parseInt(year, 10) || now.getFullYear();
-      a.download = buildCommissionReportsExportFilename(yearNum, months);
+      // Nome do servidor (espelho técnico quando inclui o histórico Nomus).
+      a.download =
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        buildCommissionReportsExportFilename(yearNum, months);
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -389,6 +398,19 @@ export function CommissionsReportsPage() {
     } finally {
       setExporting(false);
     }
+  }
+
+  // Autoridade dos meses consultados vem do servidor (helper central do cutover).
+  const reportingAuthority = data?.reportingAuthority ?? null;
+  const includesLegacy = reportingAuthority?.includesLegacyPeriod === true;
+  const legacyText = COMMISSION_LEGACY_REPORT_TEXT;
+
+  function requestExport() {
+    if (includesLegacy) {
+      setMirrorConfirmOpen(true);
+      return;
+    }
+    void handleExport();
   }
 
   const summary = data?.summary;
@@ -401,8 +423,20 @@ export function CommissionsReportsPage() {
     <div className="space-y-5" data-testid="commissions-reports-page">
       <CommissionsSectionIntro
         title="Relatórios de comissão"
-        description="Consulta dos registros do Fechamento (data de recebimento). Aplica as regras de Exceções por cliente (não comissionáveis), zerando a comissão e destacando os casos no resumo e no detalhe."
+        description="Consulta dos registros do Fechamento (data de recebimento). Aplica as regras de Exceções por cliente (não comissionáveis), zerando a comissão e destacando os casos no resumo e no detalhe. Competências até 09/2026 têm o Nomus como fonte oficial: aqui aparecem só como reconstrução técnica."
         testId="commissions-reports-intro"
+      />
+
+      <CommissionLegacyPeriodBanner authority={reportingAuthority} />
+
+      <CommissionReportingSourcesPanel
+        year={Number.parseInt(year, 10) || now.getFullYear()}
+        legacyReports={data?.legacyOfficialReports ?? []}
+        onConsultLegacyMonth={(month) => {
+          setMonths([month]);
+          setPage(1);
+        }}
+        officialDescription="Os fechamentos oficiais do IndusCost aparecem abaixo com status Fechado e na aba Fechamentos."
       />
 
       {summary &&
@@ -518,8 +552,9 @@ export function CommissionsReportsPage() {
           <button
             type="button"
             className={financeBiButtonOutlineClass}
-            onClick={() => void handleExport()}
+            onClick={requestExport}
             disabled={exporting || loading}
+            title={includesLegacy ? legacyText.exportTooltip : undefined}
             data-testid="commissions-reports-export"
           >
             {exporting ? (
@@ -527,7 +562,7 @@ export function CommissionsReportsPage() {
             ) : (
               <Download className="mr-1 inline h-3.5 w-3.5" />
             )}
-            Exportar XLSX
+            {includesLegacy ? legacyText.exportButton : "Exportar XLSX"}
           </button>
         </form>
         {selectedSellerKey ? (
@@ -547,9 +582,20 @@ export function CommissionsReportsPage() {
         <CommissionsKpiSection title="Resumo" testId="commissions-reports-summary">
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label="Comissão total"
+            label={
+              !includesLegacy
+                ? "Comissão total"
+                : reportingAuthority?.source === "NOMUS"
+                  ? "Comissão reconstruída"
+                  : "Comissão total (inclui reconstrução não oficial)"
+            }
             amount={summary.totalCommission}
             amountFormat="currency"
+            helperText={
+              includesLegacy
+                ? `${legacyText.reconstructedTag} — não oficial. Meses até 09/2026: fonte oficial Nomus.`
+                : undefined
+            }
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -720,6 +766,15 @@ export function CommissionsReportsPage() {
                     <div className="text-[11px] text-muted-foreground">
                       {formatPeriodStatus(row.periodStatus)}
                     </div>
+                    {row.officialSource === "NOMUS" ? (
+                      <div
+                        className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                        title={legacyText.bannerBody}
+                        data-testid="commissions-reports-legacy-row-tag"
+                      >
+                        {legacyText.reconstructedTag} · oficial: Nomus
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDateBr(row.settlementDate)}</td>
                   <td className="max-w-[10rem] overflow-hidden px-3 py-2">
@@ -914,13 +969,22 @@ export function CommissionsReportsPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-muted-foreground">Comissão final</dt>
+                <dt className="text-xs text-muted-foreground">
+                  {detail.officialSource === "NOMUS" ? "Comissão reconstruída (não oficial)" : "Comissão final"}
+                </dt>
                 <dd>{formatFinanceCurrency(detail.finalCommissionAmount)}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Status</dt>
                 <dd>
                   {formatPeriodStatus(detail.periodStatus)} · {formatLineStatus(detail.lineStatus)}
+                  {detail.officialSource === "NOMUS" ? (
+                    <span className="block text-xs font-semibold text-amber-900">
+                      {legacyText.sellerContext} · {legacyText.reconstructedValue}
+                    </span>
+                  ) : detail.periodStatus === "CLOSED" ? (
+                    <span className="block text-xs text-emerald-800">{legacyText.officialValue}</span>
+                  ) : null}
                 </dd>
               </div>
               <div className="sm:col-span-2">
@@ -968,6 +1032,15 @@ export function CommissionsReportsPage() {
             : null
         }
         onClose={() => setOrderDetailRow(null)}
+      />
+      <CommissionTechnicalMirrorConfirmDialog
+        open={mirrorConfirmOpen}
+        periodLabel={`${year} (meses selecionados)`}
+        onCancel={() => setMirrorConfirmOpen(false)}
+        onConfirm={() => {
+          setMirrorConfirmOpen(false);
+          void handleExport();
+        }}
       />
     </div>
   );

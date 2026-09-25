@@ -399,3 +399,99 @@ export function formatCarryoverLineTag(line: {
   if (!line.naturalYear || !line.naturalMonth) return "Retroativa";
   return `Retroativa ${formatCommissionYearMonthLabel({ year: line.naturalYear, month: line.naturalMonth })}`;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Cobertura conhecida da linha (detalhe/auditoria)                   */
+/* ------------------------------------------------------------------ */
+
+/** Cobertura ativa de um recebimento da linha (quem contemplou e em que competência). */
+export type ReceiptClosingLineCoverageEntry = {
+  receiptExternalId: number;
+  source: CommissionCoverageSource;
+  coveredYear: number | null;
+  coveredMonth: number | null;
+};
+
+/** Nota curta (etiqueta) + detalhe (tooltip/leitor de tela) da cobertura da linha. */
+export type ReceiptClosingLineCoverageNote = {
+  tag: string;
+  detail: string;
+};
+
+const COVERAGE_SOURCE_SHORT: Record<CommissionCoverageSource, string> = {
+  NOMUS_LEGACY: "Nomus",
+  INDUSCOST_CLOSING: "IndusCost",
+  MANUAL_ADJUSTMENT: "Ajuste manual",
+};
+
+/**
+ * Explica ONDE os recebimentos da linha foram contemplados, sem mudar o receiptDate:
+ * ex. recebimento de 08/2026 pago no relatório do Nomus de 09/2026. Cobertura pelo
+ * próprio fechamento exibido não gera nota (não acrescenta informação).
+ */
+export function buildReceiptClosingLineCoverageNote(input: {
+  entries: readonly ReceiptClosingLineCoverageEntry[];
+  natural: CommissionYearMonth;
+  period: CommissionYearMonth;
+  officialSource: "NOMUS" | "INDUSCOST";
+}): ReceiptClosingLineCoverageNote | null {
+  const relevant = input.entries.filter(
+    (entry) =>
+      entry.source !== "INDUSCOST_CLOSING" ||
+      entry.coveredYear !== input.period.year ||
+      entry.coveredMonth !== input.period.month
+  );
+  if (relevant.length === 0) return null;
+  const covered = (entry: ReceiptClosingLineCoverageEntry) =>
+    entry.coveredYear != null && entry.coveredMonth != null
+      ? formatCommissionYearMonthLabel({ year: entry.coveredYear, month: entry.coveredMonth })
+      : "competência não informada";
+  const tags = [...new Set(relevant.map((entry) => `${COVERAGE_SOURCE_SHORT[entry.source]} ${covered(entry)}`))];
+  const places = [
+    ...new Set(relevant.map((entry) => `${covered(entry)} (${COVERAGE_SOURCE_SHORT[entry.source]})`)),
+  ];
+  return {
+    tag: `Contemplado: ${tags.join(" · ")}`,
+    detail:
+      `Competência natural: ${formatCommissionYearMonthLabel(input.natural)} · ` +
+      `Fonte oficial: ${input.officialSource === "NOMUS" ? "Nomus" : "IndusCost"} · ` +
+      `Contemplado em: ${places.join(", ")}`,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Relatório oficial do Nomus registrado (competências pré-cutover)   */
+/* ------------------------------------------------------------------ */
+
+/** Importação registrada do relatório oficial do Nomus (CommissionLegacyCoverageImport). */
+export type CommissionLegacyOfficialReportImport = {
+  id: string;
+  referenceYear: number;
+  referenceMonth: number;
+  filename: string;
+  importedAt: string;
+  importedBy: string | null;
+  rowCount: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  ambiguousCount: number;
+  alreadyCoveredCount: number;
+};
+
+/** Situação do relatório oficial do Nomus de uma competência pré-cutover. */
+export type CommissionLegacyOfficialReportStatus = {
+  year: number;
+  month: number;
+  registered: boolean;
+  imports: CommissionLegacyOfficialReportImport[];
+};
+
+export const COMMISSION_LEGACY_OFFICIAL_REPORT_MISSING =
+  "O relatório oficial deste período ainda não foi arquivado no IndusCost. Consulte o relatório oficial no Nomus.";
+
+/** "Conciliado" quando todas as linhas associaram; senão resume o que falta. */
+export function formatLegacyOfficialReportReconciliation(item: CommissionLegacyOfficialReportImport): string {
+  const pending = item.unmatchedCount + item.ambiguousCount;
+  if (pending === 0) return `Conciliado (${item.matchedCount + item.alreadyCoveredCount}/${item.rowCount} linhas)`;
+  return `${item.matchedCount + item.alreadyCoveredCount}/${item.rowCount} linhas associadas · ${item.ambiguousCount} ambígua(s) · ${item.unmatchedCount} sem correspondência`;
+}

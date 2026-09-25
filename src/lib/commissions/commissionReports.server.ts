@@ -36,6 +36,7 @@ import {
   type OfficialCommissionSnapshotRef,
 } from "./commissionReportOfficialReconcile.js";
 import { decimalToNumber } from "./commission-money.js";
+import { listLegacyOfficialReportStatuses } from "./commissionReceiptCoverage.server.js";
 import * as XLSX from "xlsx";
 
 function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -635,14 +636,24 @@ export async function getCommissionReportsPage(
   scope: CommissionAccessScope
 ): Promise<CommissionReportsPayload> {
   const loaded = await loadReportSource({ query, scope });
+  // Competências pré-cutover do ano: o oficial é o relatório do Nomus (registrado ou não).
+  const legacyOfficialReports = await listLegacyOfficialReportStatuses(prisma, { year: query.year }).catch(
+    (error: unknown) => {
+      console.warn("[commissionReports] relatórios oficiais do Nomus indisponíveis", error);
+      return [];
+    }
+  );
   if (loaded.lines.length === 0) {
-    return buildEmptyCommissionReportsPayload(query);
+    return { ...buildEmptyCommissionReportsPayload(query), legacyOfficialReports };
   }
   const withOrders = await attachLocalOrderIdsToReportLines(loaded.lines);
   const enriched = await enrichReportLinesWithOfficialSnapshots(withOrders);
   const exclusionRules = await loadActiveCustomerExclusionRuleSnapshots();
   const lines = applyActiveCustomerExclusionsToReportLines(enriched, exclusionRules);
-  return assembleCommissionReportsPayload(lines, query, loaded.monthsIncluded);
+  return {
+    ...assembleCommissionReportsPayload(lines, query, loaded.monthsIncluded),
+    legacyOfficialReports,
+  };
 }
 
 export async function exportCommissionReportsXlsx(

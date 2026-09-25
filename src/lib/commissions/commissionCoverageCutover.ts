@@ -94,13 +94,192 @@ export function isCompetenceOfficialInIndusCost(year: number, month: number): bo
   return compareCommissionYearMonth({ year, month }, COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH) >= 0;
 }
 
+const MONTH_NAMES_PT = [
+  "janeiro",
+  "fevereiro",
+  "março",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+];
+
+/** "outubro/2026". */
+export function formatCommissionYearMonthLongLabel(value: CommissionYearMonth): string {
+  return `${MONTH_NAMES_PT[value.month - 1] ?? String(value.month)}/${value.year}`;
+}
+
+/** Último dia em que o Nomus é a fonte oficial ("30/09/2026"). */
+export const COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL = new Date(
+  Date.parse(`${COMMISSION_OFFICIAL_CUTOVER_DATE}T00:00:00.000Z`) - 86_400_000
+)
+  .toISOString()
+  .slice(0, 10)
+  .split("-")
+  .reverse()
+  .join("/");
+
+/** "01/10/2026". */
+export const COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL = COMMISSION_OFFICIAL_CUTOVER_DATE.split("-")
+  .reverse()
+  .join("/");
+
+/**
+ * Código determinístico do bloqueio de fechamento, pagamento ou reprocesso oficial
+ * de competência anterior ao cutover (histórico oficial do Nomus).
+ */
+export const COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER = "COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER";
+
+/** Data (dia civil) em que o IndusCost já é a fonte oficial (>= cutover)? Inválida = não. */
+export function isCommissionDateOfficialInIndusCost(value: Date | string | null | undefined): boolean {
+  const key = toCivilDateKey(value);
+  return key != null && key >= COMMISSION_OFFICIAL_CUTOVER_DATE;
+}
+
+/** Mensagem única do bloqueio de pagamento de período anterior ao cutover. */
+export const COMMISSION_PRE_CUTOVER_PAYMENT_BLOCKED_REASON =
+  "Este período pertence ao histórico oficial do Nomus. Pagamentos de comissão pelo IndusCost valem a partir de " +
+  `${formatCommissionYearMonthLongLabel(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH)}.`;
+
 /** Mensagem única do bloqueio de fechamento antes do cutover. */
 export const COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON =
-  `Competências até ${formatCommissionYearMonthLabel(
-    previousCommissionYearMonth(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH)
-  )} têm o Nomus como fonte oficial de comissão. O fechamento oficial no IndusCost ` +
-  `começa em ${formatCommissionYearMonthLabel(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH)}; ` +
-  "recebimentos anteriores não cobertos entram como pendência legada nesses fechamentos.";
+  "Este período pertence ao histórico oficial do Nomus. O IndusCost passou a ser a fonte oficial de " +
+  `fechamento em ${formatCommissionYearMonthLongLabel(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH)}.`;
+
+/* ------------------------------------------------------------------ */
+/*  Autoridade dos relatórios: documento oficial × espelho técnico     */
+/* ------------------------------------------------------------------ */
+
+/** Quem emite o relatório OFICIAL de comissão da competência. */
+export type CommissionReportingSource = "NOMUS" | "INDUSCOST";
+
+/** O que o IndusCost produz para a competência. */
+export type CommissionReportDocumentType = "LEGACY_TECHNICAL_MIRROR" | "INDUSCOST_OFFICIAL";
+
+/**
+ * Autoridade do relatório da competência. Não confundir com cobertura (quem PAGOU
+ * um recebimento): um recebimento de 08/2026 pode estar coberto pelo Nomus em
+ * 09/2026 e a reconstrução de agosto continua não oficial.
+ */
+export type CommissionReportingAuthority = {
+  year: number;
+  month: number;
+  source: CommissionReportingSource;
+  /** O IndusCost é a fonte oficial (fechamento, relatório e pagamento oficiais). */
+  officialInIndusCost: boolean;
+  /** Competência do histórico oficial do Nomus (antes do cutover). */
+  isLegacyPeriod: boolean;
+  /** Início oficial do IndusCost (`YYYY-MM-DD`). */
+  cutoverDate: string;
+  documentType: CommissionReportDocumentType;
+};
+
+/**
+ * Fonte oficial do relatório de comissão da competência — ÚNICO ponto de decisão
+ * para telas, exportações e bloqueios. Competência inválida é tratada como
+ * histórico (conservador: nunca vira documento oficial).
+ */
+export function getCommissionReportingAuthority(year: number, month: number): CommissionReportingAuthority {
+  const valid = Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12;
+  const official = valid && isCompetenceOfficialInIndusCost(year, month);
+  return {
+    year,
+    month,
+    source: official ? "INDUSCOST" : "NOMUS",
+    officialInIndusCost: official,
+    isLegacyPeriod: !official,
+    cutoverDate: COMMISSION_OFFICIAL_CUTOVER_DATE,
+    documentType: official ? "INDUSCOST_OFFICIAL" : "LEGACY_TECHNICAL_MIRROR",
+  };
+}
+
+/** Autoridade de um intervalo de competências (relatórios de vários meses). */
+export type CommissionRangeReportingAuthority = {
+  /** NOMUS / INDUSCOST quando o intervalo é de uma só fonte; MIXED quando cruza o cutover. */
+  source: CommissionReportingSource | "MIXED";
+  /** Só é documento oficial IndusCost quando TODAS as competências são >= cutover. */
+  officialInIndusCost: boolean;
+  includesLegacyPeriod: boolean;
+  cutoverDate: string;
+  documentType: CommissionReportDocumentType;
+};
+
+export function getCommissionReportingAuthorityForRange(
+  from: CommissionYearMonth,
+  to: CommissionYearMonth
+): CommissionRangeReportingAuthority {
+  const first = getCommissionReportingAuthority(from.year, from.month);
+  const last = getCommissionReportingAuthority(to.year, to.month);
+  const officialInIndusCost = first.officialInIndusCost && last.officialInIndusCost;
+  return {
+    source: officialInIndusCost ? "INDUSCOST" : last.officialInIndusCost ? "MIXED" : "NOMUS",
+    officialInIndusCost,
+    includesLegacyPeriod: first.isLegacyPeriod || last.isLegacyPeriod,
+    cutoverDate: COMMISSION_OFFICIAL_CUTOVER_DATE,
+    documentType: officialInIndusCost ? "INDUSCOST_OFFICIAL" : "LEGACY_TECHNICAL_MIRROR",
+  };
+}
+
+/** Textos únicos dos avisos de período histórico (tela, exportação e impressão). */
+export const COMMISSION_LEGACY_REPORT_TEXT = {
+  bannerTitle: "HISTÓRICO PRÉ-INDUSCOST — NÃO OFICIAL",
+  bannerBody:
+    `Até ${COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL}, o relatório oficial de comissões era emitido pelo Nomus. ` +
+    "Os valores apresentados nesta tela são uma reconstrução técnica do IndusCost para consulta e auditoria " +
+    "e podem diferir do relatório oficial utilizado para pagamento.",
+  officialSourceLine: "Fonte oficial deste período: Nomus",
+  screenTitle: "Espelho técnico de comissões",
+  screenSubtitle: "Reconstrução técnica — período Nomus",
+  documentTitle: "ESPELHO TÉCNICO DE COMISSÕES — NÃO OFICIAL",
+  documentMarker: "RELATÓRIO NÃO OFICIAL",
+  pageMarker: "NÃO OFICIAL — PERÍODO NOMUS",
+  sheetMarker: "Documento não oficial — fonte oficial: Nomus",
+  documentTypeLabel: "ESPELHO TÉCNICO",
+  officialSourceValue: "NOMUS",
+  generatedBy: "INDUSCOST",
+  fileNotice:
+    `Este arquivo foi reconstruído pelo IndusCost para fins de consulta e auditoria. Até ${COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL}, ` +
+    "os relatórios oficiais de comissão eram emitidos pelo Nomus. Os valores deste arquivo podem divergir do " +
+    "relatório oficial utilizado para pagamento.",
+  printNotice: "Reconstrução técnica gerada pelo IndusCost",
+  printNotProof: "NÃO utilizar como comprovante oficial de comissão.",
+  exportButton: "Exportar espelho técnico",
+  printButton: "Imprimir espelho técnico",
+  exportTooltip:
+    "Este período possui o Nomus como fonte oficial. O arquivo gerado pelo IndusCost é apenas para consulta e auditoria.",
+  confirmTitle: "TENHO CIÊNCIA",
+  confirmBody: [
+    "Este período é anterior ao início oficial dos fechamentos de comissão pelo IndusCost.",
+    `Até ${COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL}, a fonte oficial era o Nomus.`,
+    "O documento que será gerado é uma reconstrução técnica e NÃO substitui o relatório oficial do Nomus nem " +
+      "deve ser utilizado como comprovante de pagamento de comissão.",
+  ],
+  confirmAction: "Entendi — exportar espelho técnico",
+  sellerContext: "Consulta histórica — fonte oficial Nomus",
+  reconstructedValue: "Valor reconstruído pelo IndusCost",
+  officialValue: "Valor oficial IndusCost",
+  reconstructedTag: "Reconstruído",
+} as const;
+
+/** Prefixo dos arquivos de espelho técnico (nunca parecem documento oficial). */
+export const COMMISSION_TECHNICAL_MIRROR_FILE_PREFIX = "espelho-tecnico-comissoes";
+
+/** Nome de arquivo do espelho técnico (nunca parece documento oficial). */
+export function buildCommissionTechnicalMirrorFilename(
+  year: number,
+  month: number,
+  extension: "xlsx" | "csv" | "pdf",
+  suffix?: string | null
+): string {
+  const key = `${year}-${String(month).padStart(2, "0")}`;
+  const extra = suffix ? `-${suffix}` : "";
+  return `${COMMISSION_TECHNICAL_MIRROR_FILE_PREFIX}-${key}${extra}-induscost.${extension}`;
+}
 
 /** Meses civis de `from` até `to` (inclusive), em ordem. */
 export function listCommissionYearMonths(

@@ -8,6 +8,7 @@ import { loadCommissionReceiptPreview } from "./commissionReceiptEngine.server.j
 import type { CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import type { CommissionReceiptEventScope } from "./commissionReceiptCompetence.server.js";
 import {
+  COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
   COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON,
   formatCommissionYearMonthLabel,
   isCompetenceOfficialInIndusCost,
@@ -339,7 +340,7 @@ async function buildReceiptClosingContent(
   const { year, month } = input.filters;
   if (!isCompetenceOfficialInIndusCost(year, month)) {
     throw new ReceiptClosingValidationError(
-      "PRE_CUTOVER_COMPETENCE",
+      COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
       COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON
     );
   }

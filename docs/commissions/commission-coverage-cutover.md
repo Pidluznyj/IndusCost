@@ -44,7 +44,7 @@ COMMISSION_LEGACY_RECONCILIATION_START_DATE = "2026-08-01" // início da janela 
 
 - **Até 30/09/2026** o Nomus é a fonte oficial. Competências até 09/2026:
   a prévia continua idêntica (serve para comparar com o Nomus), mas **apply e reprocesso são
-  bloqueados** (`PRE_CUTOVER_COMPETENCE`, mensagem `COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON`).
+  bloqueados** (`COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER`, mensagem `COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON`).
   Cancelar um fechamento antigo continua permitido.
 - **A partir de 01/10/2026** o IndusCost controla integralmente: fechamento oficial,
   cobertura e pendências.
@@ -315,5 +315,72 @@ competência), pré-cutover, dentro da janela de conciliação. **Não são dív
   "Não encontrado na cobertura Nomus" e "Falta confirmação histórica: importe a cobertura do
   Nomus de 08/2026, 09/2026" — inclusão bloqueada até a importação.
 
+## 14. Autoridade dos relatórios (documento oficial × espelho técnico)
+
+| Competência | Fonte oficial do relatório de comissão | O que o IndusCost gera |
+|---|---|---|
+| até 09/2026 (até 30/09/2026) | **Nomus** | **Espelho técnico** — reconstrução para consulta/auditoria, NÃO oficial |
+| a partir de 10/2026 (desde 01/10/2026) | **IndusCost** | Fechamento, relatório e pagamento oficiais |
+
+Helper central (único ponto de decisão; nenhuma tela compara datas):
+`getCommissionReportingAuthority(year, month)` → `{ source: "NOMUS" | "INDUSCOST", officialInIndusCost,
+isLegacyPeriod, cutoverDate: "2026-10-01", documentType: "LEGACY_TECHNICAL_MIRROR" | "INDUSCOST_OFFICIAL" }`
+e `getCommissionReportingAuthorityForRange(from, to)` para relatórios de vários meses (`MIXED` quando cruza o
+cutover — documento não oficial). O servidor devolve `reportingAuthority` no payload do fechamento, dos
+Relatórios e de cada item de Fechamentos; o frontend só consome.
+
+Conceitos que não se confundem:
+
+- **Relatório oficial** — o documento que determinou o pagamento: Nomus até 09/2026, fechamento CLOSED do
+  IndusCost a partir de 10/2026.
+- **Reconstrução técnica (espelho técnico)** — o que o IndusCost calcula para uma competência do Nomus. Útil para
+  auditoria, conciliação e diagnóstico; pode divergir do relatório oficial (receiptDate × baixa, sincronização
+  tardia, regras históricas). Exemplo: CR 19236/NF 7704 e CR 19413/NF 7752 aparecem na reconstrução de agosto pelo
+  `receiptDate`, mas isso não prova que foram (ou não) pagos no relatório do Nomus de agosto.
+- **Cobertura** — quem PAGOU um recebimento (seções 5–8). Um recebimento de 08/2026 pode estar coberto pelo Nomus
+  em 09/2026; a reconstrução de agosto continua não oficial. Na tela, a linha mostra
+  "Contemplado: Nomus 09/2026" (detalhe: "Competência natural: 08/2026 · Fonte oficial: Nomus · Contemplado em:
+  09/2026 (Nomus)").
+- **Competência natural** — mês do `receiptDate`. **Competência de pagamento** — mês do fechamento que contemplou.
+
+Tela (pré-cutover), sem remover o acesso histórico:
+
+- Banner obrigatório "HISTÓRICO PRÉ-INDUSCOST — NÃO OFICIAL" + texto da reconstrução técnica + "Fonte oficial deste
+  período: Nomus" + "Consulta histórica — fonte oficial Nomus · Valor reconstruído pelo IndusCost" (texto explícito,
+  não só cor) no Fechamento do mês, em Relatórios (quando a seleção inclui meses do Nomus) e nos detalhes de
+  Fechamentos. Inclui a situação do relatório oficial do Nomus: registrado (arquivo, data, conciliação) ou "O
+  relatório oficial deste período ainda não foi arquivado no IndusCost".
+- Nomenclatura: "Espelho técnico de comissões" / "Reconstrução técnica — período Nomus"; cards "Comissão
+  reconstruída" (nunca "Comissão final a pagar"); "a pagar" some das linhas do histórico nos Relatórios.
+- Botões "Exportar espelho técnico" / "Imprimir espelho técnico" com tooltip; cada clique pede "TENHO CIÊNCIA"
+  (não fica lembrado). "Fechar comissão" e "Recalcular/Reprocessar" não aparecem.
+- Relatórios e Fechamentos: painel "HISTÓRICO OFICIAL NOMUS — Até setembro/2026" (competências do ano, relatório
+  do Nomus registrado ou não, "Consultar reconstrução técnica") ao lado de "RELATÓRIOS OFICIAIS INDUSCOST — A partir
+  de outubro/2026"; a lista de fechamentos mostra "Fonte oficial: Nomus/IndusCost" por linha e um registro
+  pré-cutover aparece como "Registro técnico — não oficial (período Nomus)".
+
+Documentos (a autoridade é calculada pela competência dentro do builder — chamada direta também sai marcada):
+
+- XLSX do fechamento, dos Relatórios e por vendedor: 1ª aba começa com "ESPELHO TÉCNICO DE COMISSÕES — NÃO
+  OFICIAL", "RELATÓRIO NÃO OFICIAL", fonte oficial NOMUS, período consultado, aviso, natureza (reconstrução
+  técnica), tipo ESPELHO TÉCNICO, gerado por INDUSCOST e cutover 01/10/2026; as demais abas começam com "Documento
+  não oficial — fonte oficial: Nomus". Nome: `espelho-tecnico-comissoes-AAAA-MM[-...]-induscost.xlsx`.
+- CSV: mesmas linhas de aviso no início e nome de espelho técnico.
+- PDF/impressão: faixa fixa "NÃO OFICIAL — PERÍODO NOMUS" no topo e no rodapé (repetida em toda página) + avisos na
+  primeira página ("Fonte oficial do período: Nomus", "Reconstrução técnica gerada pelo IndusCost", "NÃO utilizar
+  como comprovante oficial de comissão.").
+- A partir de 10/2026 os documentos seguem exatamente o padrão oficial anterior (sem aviso histórico).
+
+Backend (vale para requisição manual; a UI só espelha):
+
+- `COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER` + "Este período pertence ao histórico oficial do Nomus. O IndusCost
+  passou a ser a fonte oficial de fechamento em outubro/2026." em: aplicar fechamento e reprocessar (API — antes de
+  qualquer prévia/materialização — e serviço de fechamento), criar/aprovar/pagar lote de pagamento de comissão
+  (`periodStart` antes do cutover).
+- Não bloqueados, de propósito: cancelar um registro antigo (reduz oficialidade), recálculos técnicos
+  (`/recalculate`, `/audit/rerun`, reprocesso de materialização de pedidos) — não geram documento oficial nem
+  pagamento. Nenhum perfil (inclusive SUPER_ADMIN) transforma competência pré-cutover em fechamento oficial;
+  permissões existentes não mudaram.
+
 Coberto pelos testes `commissionReceiptCoverage.test.ts` (CASOS 1–25, reprocesso, CR 19236/19413),
-`commissionLegacyCoverageImport.test.ts` e `commissionReceiptClosingCarryoverGrid.test.tsx`.
+`commissionLegacyCoverageImport.test.ts` `commissionReceiptClosingCarryoverGrid.test.tsx`, `commissionReportingAuthority.test.ts` e `commissionLegacyReportingUi.test.tsx`.

@@ -4,9 +4,12 @@
 import { roundMoney } from "./commission-money.shared.js";
 import type {
   CommissionLedgerInclusionType,
+  CommissionLegacyOfficialReportStatus,
   ReceiptClosingCarryoverSection,
   ReceiptClosingCommissionComposition,
+  ReceiptClosingLineCoverageNote,
 } from "./commissionReceiptCoverage.shared.js";
+import type { CommissionReportingAuthority } from "./commissionCoverageCutover.js";
 
 export type ReceiptClosingPageMode = "EMPTY" | "PREVIEW" | "CLOSED";
 
@@ -190,6 +193,8 @@ export type ReceiptClosingApiLine = {
   naturalMonth?: number | null;
   /** NORMAL ou pendência de período anterior incluída neste fechamento. */
   inclusionType?: CommissionLedgerInclusionType;
+  /** Onde os recebimentos da linha foram contemplados (ex.: Nomus 09/2026) — auditoria. */
+  coverageNote?: ReceiptClosingLineCoverageNote | null;
 };
 
 export type ReceiptClosingApiSellerRow = {
@@ -258,6 +263,13 @@ export type ReceiptClosingPagePayload = {
   pendingCarryover?: ReceiptClosingCarryoverSection | null;
   /** Comissão da competência atual + pendências anteriores = total do fechamento. */
   composition?: ReceiptClosingCommissionComposition;
+  /**
+   * Quem emite o relatório oficial da competência (calculado no servidor pelo helper
+   * central): antes do cutover a tela/export é espelho técnico do histórico Nomus.
+   */
+  reportingAuthority?: CommissionReportingAuthority;
+  /** Competência pré-cutover: relatório oficial do Nomus registrado (importação) ou não. */
+  legacyOfficialReport?: CommissionLegacyOfficialReportStatus | null;
 };
 
 /** Pendência de período anterior (não NORMAL)? */

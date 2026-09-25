@@ -807,7 +807,12 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
             nomusBase: nomusQuery.nomusBase,
             nomusCommission: nomusQuery.nomusCommission,
           },
-          ctx.scope
+          ctx.scope,
+          {
+            carryoverReceiptIds: parseCarryoverReceiptIds(
+              (req.query as Record<string, unknown>).carryoverReceiptIds
+            ),
+          }
         );
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -843,7 +848,12 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
             nomusBase: nomusQuery.nomusBase,
             nomusCommission: nomusQuery.nomusCommission,
           },
-          ctx.scope
+          ctx.scope,
+          {
+            carryoverReceiptIds: parseCarryoverReceiptIds(
+              (req.query as Record<string, unknown>).carryoverReceiptIds
+            ),
+          }
         );
         res.setHeader(
           "Content-Type",
@@ -1882,6 +1892,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const payload = await getCommissionPaymentBatchById(req.params.id, ctx.scope);
       return res.json(payload);
     } catch (error) {
+      if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       const message = error instanceof Error ? error.message : "Erro ao aprovar lote.";
       console.error("POST /api/commissions/payment-batches/:id/approve", error);
       return res.status(400).json({ error: message });

@@ -71,7 +71,9 @@ describe("commissionReceiptClosingUi", () => {
   it("cards de resumo usam grid largo e amountFormat para valores monetários", () => {
     const page = read("src/components/commissions/pages/CommissionsReceiptClosingPage.tsx");
     assert.match(page, /minColumnWidth=\{240\}/);
-    assert.match(page, /label="Total recebido gerencial"/);
+    // Rótulo condicional: histórico Nomus mostra valor reconstruído (não oficial).
+    assert.match(page, /"Total recebido gerencial"/);
+    assert.match(page, /"Total recebido \(reconstruído\)"/);
     assert.match(page, /amount=\{cards\.totalReceivedAmount\}/);
     assert.match(page, /amountFormat="currency"/);
     assert.match(page, /label="Recebido sem schedule"/);

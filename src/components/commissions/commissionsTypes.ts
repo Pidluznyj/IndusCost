@@ -1,9 +1,12 @@
 /** Tipos de payload das APIs de comissões (frontend — sem imports server-only). */
 import type {
   CommissionLedgerInclusionType,
+  CommissionLegacyOfficialReportStatus,
   ReceiptClosingCarryoverSection,
   ReceiptClosingCommissionComposition,
+  ReceiptClosingLineCoverageNote,
 } from "@/src/lib/commissions/commissionReceiptCoverage.shared";
+import type { CommissionReportingAuthority } from "@/src/lib/commissions/commissionCoverageCutover";
 
 export type CommissionSellerDisplayDto = {
   id: string | null;
@@ -1211,6 +1214,8 @@ export type CommissionsReceiptClosingLine = {
   naturalMonth?: number | null;
   /** NORMAL ou pendência de período anterior incluída neste fechamento. */
   inclusionType?: CommissionLedgerInclusionType;
+  /** Onde os recebimentos da linha foram contemplados (ex.: Nomus 09/2026) — auditoria. */
+  coverageNote?: ReceiptClosingLineCoverageNote | null;
 };
 
 export type CommissionsReceiptClosingSellerRow = {
@@ -1258,4 +1263,8 @@ export type CommissionsReceiptClosingPayload = {
   pendingCarryover?: ReceiptClosingCarryoverSection | null;
   /** Comissão da competência atual + pendências anteriores = total do fechamento. */
   composition?: ReceiptClosingCommissionComposition;
+  /** Fonte oficial do relatório da competência (calculada no servidor). */
+  reportingAuthority?: CommissionReportingAuthority;
+  /** Pré-cutover: relatório oficial do Nomus registrado (importação) ou não. */
+  legacyOfficialReport?: CommissionLegacyOfficialReportStatus | null;
 };

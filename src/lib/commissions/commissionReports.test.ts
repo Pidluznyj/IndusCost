@@ -122,12 +122,21 @@ describe("commissionReports months helpers", () => {
 
   it("filename reflete filtro", () => {
     assert.equal(
+      buildCommissionReportsExportFilename(2027, "all"),
+      "comissao-relatorio-2027-todos-os-meses.xlsx"
+    );
+    assert.equal(
+      buildCommissionReportsExportFilename(2026, [10, 11]),
+      "comissao-relatorio-2026-out-nov.xlsx"
+    );
+    // Com competência do histórico Nomus o arquivo é espelho técnico.
+    assert.equal(
       buildCommissionReportsExportFilename(2026, "all"),
-      "comissao-relatorio-2026-todos-os-meses.xlsx"
+      "espelho-tecnico-comissoes-2026-todos-os-meses-induscost.xlsx"
     );
     assert.equal(
       buildCommissionReportsExportFilename(2026, [6, 7]),
-      "comissao-relatorio-2026-jun-jul.xlsx"
+      "espelho-tecnico-comissoes-2026-jun-jul-induscost.xlsx"
     );
   });
 
@@ -513,7 +522,9 @@ describe("commissionReports UI months multiselect", () => {
 
   it("cards monetários usam amountFormat currency", () => {
     const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
-    assert.match(page, /label="Comissão total"[\s\S]*?amountFormat="currency"/);
+    // Rótulo condicional: com histórico Nomus o total vira "Comissão reconstruída".
+    assert.match(page, /"Comissão total"[\s\S]*?amountFormat="currency"/);
+    assert.match(page, /"Comissão reconstruída"/);
     assert.match(page, /label="Base comissionável"[\s\S]*?amountFormat="currency"/);
     assert.match(page, /label="Valor recebido"[\s\S]*?amountFormat="currency"/);
     assert.match(page, /label="Comissão excluída"[\s\S]*?amountFormat="currency"/);

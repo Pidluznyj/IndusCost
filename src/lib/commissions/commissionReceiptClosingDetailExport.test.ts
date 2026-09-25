@@ -80,7 +80,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
-        month: 6,
+        month: 10,
         totalReceivables: 1,
         totalReceivedAmount: 1000,
         totalCommissionableBase: 1000,
@@ -110,7 +110,7 @@ describe("commissionReceiptClosingDetailExport", () => {
       )
     );
     assert.ok(resumo.some((row) => row.Campo === "Ano" && row.Valor === 2026));
-    assert.ok(resumo.some((row) => row.Campo === "Mês" && row.Valor === 6));
+    assert.ok(resumo.some((row) => row.Campo === "Mês" && row.Valor === 10));
     assert.ok(
       resumo.some(
         (row) =>
@@ -132,7 +132,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
-        month: 6,
+        month: 10,
         totalReceivables: 2,
         totalReceivedAmount: 1500,
         totalCommissionableBase: 1500,
@@ -184,12 +184,17 @@ describe("commissionReceiptClosingDetailExport", () => {
 
   it("nome de arquivo segue padrão por período e modo", () => {
     assert.equal(
-      buildReceiptClosingDetailExportFilename(2026, 6, "PREVIEW"),
-      "commission-receipt-closing-detalhamento-2026-06-previa.xlsx"
+      buildReceiptClosingDetailExportFilename(2026, 10, "PREVIEW"),
+      "commission-receipt-closing-detalhamento-2026-10-previa.xlsx"
     );
     assert.equal(
+      buildReceiptClosingDetailExportFilename(2026, 10, "CLOSED"),
+      "commission-receipt-closing-detalhamento-2026-10-fechado.xlsx"
+    );
+    // Competência do histórico Nomus: espelho técnico, nunca nome de relatório oficial.
+    assert.equal(
       buildReceiptClosingDetailExportFilename(2026, 6, "CLOSED"),
-      "commission-receipt-closing-detalhamento-2026-06-fechado.xlsx"
+      "espelho-tecnico-comissoes-2026-06-induscost.xlsx"
     );
   });
 
@@ -197,7 +202,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
-        month: 6,
+        month: 10,
         totalReceivables: 1,
         totalReceivedAmount: 1000,
         totalCommissionableBase: 0,
@@ -249,7 +254,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
-        month: 6,
+        month: 10,
         totalReceivables: 1,
         totalReceivedAmount: 800,
         totalCommissionableBase: 0,
@@ -296,7 +301,7 @@ describe("commissionReceiptClosingDetailExport", () => {
     const page = buildReceiptClosingPageFromPreview({
       preview: {
         year: 2026,
-        month: 6,
+        month: 10,
         totalReceivables: 1,
         totalReceivedAmount: 500,
         totalCommissionableBase: 0,

@@ -19,10 +19,21 @@ import {
   buildReceiptClosingDetailExportFilename,
 } from "./commissionReceiptClosingDetailExport.js";
 import {
+  COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
+  COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON,
+  buildCommissionTechnicalMirrorFilename,
+  getCommissionReportingAuthority,
+} from "./commissionCoverageCutover.js";
+import {
   appendReceiptClosingNote,
   formatCriticalDivergenceAcceptanceNote,
+  ReceiptClosingValidationError,
 } from "./commissionReceiptClosing.js";
 import { enrichReceiptClosingPageInstallments } from "./commissionReceiptInstallment.server.js";
+import {
+  enrichReceiptClosingPageCoverage,
+  loadLegacyOfficialReportStatus,
+} from "./commissionReceiptCoverage.server.js";
 import {
   applyCommissionReceiptClosing,
   cancelCommissionReceiptClosing,
@@ -64,6 +75,25 @@ async function resolveReceiptClosingOwnScope(
   };
 }
 
+/**
+ * Contexto comum a toda página do fechamento: cobertura conhecida das linhas
+ * (auditoria) e, antes do cutover, o relatório oficial do Nomus registrado. Ambos só
+ * leitura e sem derrubar a tela se a consulta falhar.
+ */
+async function decorateReceiptClosingPage(
+  page: ReceiptClosingPagePayload
+): Promise<ReceiptClosingPagePayload> {
+  const withCoverage = await enrichReceiptClosingPageCoverage(prisma, page);
+  if (!getCommissionReportingAuthority(page.year, page.month).isLegacyPeriod) return withCoverage;
+  const legacyOfficialReport = await loadLegacyOfficialReportStatus(prisma, page.year, page.month).catch(
+    (error: unknown) => {
+      console.warn("[commissionReceiptClosing] relatório oficial do Nomus indisponível", error);
+      return null;
+    }
+  );
+  return { ...withCoverage, legacyOfficialReport };
+}
+
 async function buildReceiptClosingPagePayload(
   filters: ReceiptClosingFilters,
   scope?: CommissionAccessScope
@@ -73,7 +103,7 @@ async function buildReceiptClosingPagePayload(
     const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
     const ownScope = await resolveReceiptClosingOwnScope(scope);
     // Coluna Parcela (n/total): total pelos CRs da NF, sem tocar o ledger histórico.
-    return enrichReceiptClosingPageInstallments(
+    const page = await enrichReceiptClosingPageInstallments(
       prisma,
       buildReceiptClosingPageFromLedger({
         closing,
@@ -83,8 +113,9 @@ async function buildReceiptClosingPagePayload(
         ownScope,
       })
     );
+    return decorateReceiptClosingPage(page);
   }
-  return buildReceiptClosingPageEmpty(filters.year, filters.month);
+  return decorateReceiptClosingPage(buildReceiptClosingPageEmpty(filters.year, filters.month));
 }
 
 export async function getReceiptClosingPage(
@@ -129,7 +160,7 @@ export async function getReceiptClosingPreviewPage(
   });
   const ownScope = await resolveReceiptClosingOwnScope(scope);
   // Coluna Parcela (n/total): mesma regra do fechamento (CLOSED).
-  return enrichReceiptClosingPageInstallments(
+  const page = await enrichReceiptClosingPageInstallments(
     prisma,
     buildReceiptClosingPageFromPreview({
       preview: payload.preview,
@@ -142,14 +173,28 @@ export async function getReceiptClosingPreviewPage(
       pendingCarryover: scopeCarryoverSection(payload.carryover, ownScope),
     })
   );
+  return decorateReceiptClosingPage(page);
+}
+
+/** Nome do CSV: histórico Nomus vira espelho técnico; oficial mantém o padrão. */
+export function buildReceiptClosingCsvFilename(
+  year: number,
+  month: number,
+  exportMode: "PREVIEW" | "CLOSED"
+): string {
+  if (getCommissionReportingAuthority(year, month).isLegacyPeriod) {
+    return buildCommissionTechnicalMirrorFilename(year, month, "csv");
+  }
+  return `commission-receipt-closing-${year}-${String(month).padStart(2, "0")}-${exportMode === "CLOSED" ? "closed" : "preview"}.csv`;
 }
 
 export async function exportReceiptClosingCsv(
   filters: ReceiptClosingFilters,
-  scope?: CommissionAccessScope
+  scope?: CommissionAccessScope,
+  options: { carryoverReceiptIds?: readonly number[] } = {}
 ): Promise<{ csv: string; filename: string }> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
-  const page = await loadReceiptClosingExportPage(filters, scope);
+  const page = await loadReceiptClosingExportPage(filters, scope, options);
   const exportMode = closing ? "CLOSED" : "PREVIEW";
   const hash = closing?.calculationHash ?? page.closing?.calculationHash ?? null;
   return {
@@ -163,13 +208,14 @@ export async function exportReceiptClosingCsv(
       materializationSummary: page.materializationSummary,
       calculationHash: hash,
     }),
-    filename: `commission-receipt-closing-${filters.year}-${String(filters.month).padStart(2, "0")}-${exportMode === "CLOSED" ? "closed" : "preview"}.csv`,
+    filename: buildReceiptClosingCsvFilename(filters.year, filters.month, exportMode),
   };
 }
 
 async function loadReceiptClosingExportPage(
   filters: ReceiptClosingFilters,
-  scope?: CommissionAccessScope
+  scope?: CommissionAccessScope,
+  options: { carryoverReceiptIds?: readonly number[] } = {}
 ): Promise<ReceiptClosingPagePayload> {
   const closing = await findClosedReceiptClosing(prisma, filters.year, filters.month);
   if (closing) {
@@ -183,18 +229,37 @@ async function loadReceiptClosingExportPage(
       scope
     );
   }
-  return getReceiptClosingPreviewPage(filters, scope);
+  // Prévia exportada = prévia da tela, inclusive pendências incluídas (só IDs;
+  // o servidor recalcula tudo como na tela).
+  return getReceiptClosingPreviewPage(filters, scope, {
+    carryoverReceiptIds: options.carryoverReceiptIds ?? [],
+  });
 }
 
 export async function exportReceiptClosingDetailXlsx(
   filters: ReceiptClosingFilters,
-  scope?: CommissionAccessScope
+  scope?: CommissionAccessScope,
+  options: { carryoverReceiptIds?: readonly number[] } = {}
 ): Promise<{ buffer: Buffer; filename: string }> {
-  const page = await loadReceiptClosingExportPage(filters, scope);
+  const page = await loadReceiptClosingExportPage(filters, scope, options);
   return {
     buffer: buildReceiptClosingDetailExportBuffer(page),
     filename: buildReceiptClosingDetailExportFilename(page.year, page.month, page.exportMode),
   };
+}
+
+/**
+ * Competência do histórico oficial do Nomus: nenhum fechamento/reprocesso oficial pelo
+ * IndusCost — nem por requisição manual. Bloqueia ANTES de qualquer prévia ou
+ * materialização (o serviço de fechamento repete a verificação).
+ */
+function assertCompetenceOfficialInIndusCost(year: number, month: number): void {
+  if (!getCommissionReportingAuthority(year, month).officialInIndusCost) {
+    throw new ReceiptClosingValidationError(
+      COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
+      COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON
+    );
+  }
 }
 
 export async function applyReceiptClosingFromApi(input: {
@@ -206,6 +271,7 @@ export async function applyReceiptClosingFromApi(input: {
   /** Pendências anteriores escolhidas na prévia (só IDs; o servidor recalcula tudo). */
   carryoverReceiptIds?: readonly number[];
 }) {
+  assertCompetenceOfficialInIndusCost(input.year, input.month);
   const carryoverReceiptIds = input.carryoverReceiptIds ?? [];
   const preview = await getReceiptClosingPreviewPage(
     { year: input.year, month: input.month },
@@ -260,6 +326,7 @@ export async function cancelReceiptClosingFromApi(input: {
 }
 
 export async function reprocessReceiptClosingPreviewFromApi(filters: ReceiptClosingFilters) {
+  assertCompetenceOfficialInIndusCost(filters.year, filters.month);
   return reprocessCommissionReceiptClosingPreview(filters);
 }
 
@@ -269,5 +336,6 @@ export async function reprocessReceiptClosingApplyFromApi(input: {
   userId: string;
   reason: string;
 }) {
+  assertCompetenceOfficialInIndusCost(input.year, input.month);
   return reprocessCommissionReceiptClosingApply(prisma, input);
 }

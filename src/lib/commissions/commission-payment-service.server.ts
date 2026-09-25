@@ -2,6 +2,26 @@ import type { PrismaClient } from "@prisma/client";
 import { decimalToNumber, roundMoney, toPrismaDecimal, clampPaymentAmount } from "./commission-money.js";
 import { computeBalanceAfterRelease } from "./commission-release-service.js";
 import { loadCommissionSettings } from "./commission-settings.server.js";
+import { CommissionValidationError } from "./commissionApiValidation.js";
+import {
+  COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
+  COMMISSION_PRE_CUTOVER_PAYMENT_BLOCKED_REASON,
+  isCommissionDateOfficialInIndusCost,
+} from "./commissionCoverageCutover.js";
+
+/**
+ * Pagar comissão pelo IndusCost só vale para períodos oficiais (a partir do cutover):
+ * antes disso o Nomus é a fonte oficial. Vale para criar, aprovar e pagar lote —
+ * inclusive por requisição manual.
+ */
+function assertPaymentPeriodOfficialInIndusCost(periodStart: Date): void {
+  if (!isCommissionDateOfficialInIndusCost(periodStart)) {
+    throw new CommissionValidationError(
+      COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER,
+      COMMISSION_PRE_CUTOVER_PAYMENT_BLOCKED_REASON
+    );
+  }
+}
 
 export type UnpaidReleasedCommissionRow = {
   commissionRecordId: string;
@@ -73,6 +93,7 @@ export async function createCommissionPaymentBatch(
     createdBy?: string | null;
   }
 ): Promise<{ batchId: string; totalSelected: number }> {
+  assertPaymentPeriodOfficialInIndusCost(input.periodStart);
   const settings = await loadCommissionSettings(db);
   if (!settings.manualPaymentEnabled) {
     throw new Error("Pagamento manual de comissão está desabilitado nas configurações.");
@@ -142,9 +163,10 @@ export async function approveCommissionPaymentBatch(
 ): Promise<void> {
   const batch = await db.commissionPaymentBatch.findUnique({
     where: { id: batchId },
-    select: { status: true },
+    select: { status: true, periodStart: true },
   });
   if (!batch) throw new Error("Lote não encontrado.");
+  assertPaymentPeriodOfficialInIndusCost(batch.periodStart);
   if (batch.status !== "DRAFT") throw new Error("Somente lotes em rascunho podem ser aprovados.");
 
   await db.commissionPaymentBatch.update({
@@ -188,6 +210,7 @@ export async function markCommissionPaymentBatchPaid(
     });
 
     if (!batch) throw new Error("Lote não encontrado.");
+    assertPaymentPeriodOfficialInIndusCost(batch.periodStart);
     if (batch.status === "PAID") throw new Error("Lote já está pago.");
     if (batch.status === "CANCELLED") throw new Error("Lote cancelado não pode ser pago.");
     if (settings.requireApprovalBeforePaid && batch.status !== "APPROVED") {
