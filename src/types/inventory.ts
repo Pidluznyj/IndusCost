@@ -220,8 +220,28 @@ export type InventoryDashboardRecentMovement = {
   responsibleUserId: string | null;
 };
 
+export type InventoryValuationMetric = {
+  available: boolean;
+  unavailableReason: string | null;
+  value: number | null;
+  coveredItems: number;
+  uncoveredItems: number;
+  coveredPhysicalQuantity: string;
+  uncoveredPhysicalQuantity: string;
+  coveragePercent: number | null;
+  negativePhysicalItems: number;
+};
+
+export type InventoryManagerialValuation = {
+  salesPotential: InventoryValuationMetric;
+  industrialCost: InventoryValuationMetric;
+  populationItemCount: number;
+  excludedPositiveItems: number;
+};
+
 export type InventoryDashboardPayload = {
   totalInventoryValue: number;
+  valuation: InventoryManagerialValuation;
   itemsCount: number;
   belowMinimumCount: number;
   belowReorderPointCount: number;

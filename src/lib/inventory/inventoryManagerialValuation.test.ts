@@ -1,0 +1,346 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { Prisma } from "@prisma/client";
+import { describe, it } from "node:test";
+import {
+  aggregateInventoryPhysicalBalances,
+  computeInventoryManagerialValuation,
+  INVENTORY_INDUSTRIAL_COST_UNAVAILABLE,
+  INVENTORY_RETAIL_VALUATION_UNAVAILABLE,
+  indexUnitAmountByProductId,
+  type InventoryValuationLine,
+} from "./inventoryManagerialValuation.js";
+import { loadInventoryValuationUnitPrices } from "./inventoryManagerialValuation.server.js";
+
+const D = (value: string | number) => new Prisma.Decimal(value);
+
+function line(
+  partial: Partial<InventoryValuationLine> & Pick<InventoryValuationLine, "itemId">
+): InventoryValuationLine {
+  return {
+    itemType: "FINISHED_PRODUCT",
+    productId: "product-1",
+    physicalQuantity: D(100),
+    ...partial,
+  };
+}
+
+function prices(entries: Array<[string, string | number | null]>): Map<string, Prisma.Decimal | null> {
+  return new Map(
+    entries.map(([id, amount]) => [id, amount == null ? null : D(amount)])
+  );
+}
+
+describe("inventory managerial valuation", () => {
+  it("1. saldo 100 e Varejo 1 a 10 vale 1000", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", physicalQuantity: D(100) })],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.value, 1000);
+    assert.equal(result.salesPotential.coveredItems, 1);
+    assert.equal(result.salesPotential.uncoveredItems, 0);
+  });
+
+  it("2. saldo 100 e custo industrial 6 vale 600", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", physicalQuantity: D(100) })],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.industrialCost.value, 600);
+    assert.equal(result.industrialCost.coveredItems, 1);
+  });
+
+  it("3. dois produtos somam venda e custo", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "i1", productId: "p1", physicalQuantity: D(2) }),
+        line({ itemId: "i2", productId: "p2", physicalQuantity: D(3) }),
+      ],
+      retailPriceByProductId: prices([
+        ["p1", 10],
+        ["p2", 4],
+      ]),
+      industrialCostByProductId: prices([
+        ["p1", 6],
+        ["p2", 1],
+      ]),
+    });
+    assert.equal(result.salesPotential.value, 32);
+    assert.equal(result.industrialCost.value, 15);
+    assert.equal(result.populationItemCount, 2);
+  });
+
+  it("4. saldo zero não entra na cobertura", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "i1", physicalQuantity: D(0) }),
+        line({ itemId: "i2", productId: "p2", physicalQuantity: D(5) }),
+      ],
+      retailPriceByProductId: prices([
+        ["product-1", 10],
+        ["p2", 2],
+      ]),
+      industrialCostByProductId: prices([
+        ["product-1", 1],
+        ["p2", 1],
+      ]),
+    });
+    assert.equal(result.populationItemCount, 1);
+    assert.equal(result.salesPotential.coveredItems, 1);
+    assert.equal(result.salesPotential.value, 10);
+  });
+
+  it("5. preço ausente não soma e conta descoberta", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1" })],
+      retailPriceByProductId: prices([]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.value, 0);
+    assert.equal(result.salesPotential.coveredItems, 0);
+    assert.equal(result.salesPotential.uncoveredItems, 1);
+    assert.equal(result.salesPotential.available, true);
+  });
+
+  it("6. custo ausente não soma e conta descoberta", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1" })],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([]),
+    });
+    assert.equal(result.industrialCost.value, 0);
+    assert.equal(result.industrialCost.uncoveredItems, 1);
+    assert.equal(result.salesPotential.value, 1000);
+  });
+
+  it("7. preço zero publicado cobre o item e soma zero", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", physicalQuantity: D(4) })],
+      retailPriceByProductId: prices([["product-1", 0]]),
+      industrialCostByProductId: prices([["product-1", 2]]),
+    });
+    assert.equal(result.salesPotential.coveredItems, 1);
+    assert.equal(result.salesPotential.uncoveredItems, 0);
+    assert.equal(result.salesPotential.value, 0);
+  });
+
+  it("8. custo zero oficial cobre o item e soma zero", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", physicalQuantity: D(4) })],
+      retailPriceByProductId: prices([["product-1", 8]]),
+      industrialCostByProductId: prices([["product-1", 0]]),
+    });
+    assert.equal(result.industrialCost.coveredItems, 1);
+    assert.equal(result.industrialCost.value, 0);
+  });
+
+  it("9. item sem productId não usa descrição", () => {
+    const src = readFileSync(new URL("./inventoryManagerialValuation.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /description/);
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", productId: null })],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.value, 0);
+    assert.equal(result.salesPotential.uncoveredItems, 1);
+    assert.equal(result.industrialCost.uncoveredItems, 1);
+  });
+
+  it("10. matéria-prima não recebe Varejo 1", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({
+          itemId: "mp",
+          itemType: "RAW_MATERIAL",
+          productId: "product-1",
+          physicalQuantity: D(50),
+        }),
+      ],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.value, 0);
+    assert.equal(result.salesPotential.coveredItems, 0);
+    assert.equal(result.salesPotential.uncoveredItems, 0);
+    assert.equal(result.industrialCost.value, 0);
+    assert.equal(result.populationItemCount, 0);
+    assert.equal(result.excludedPositiveItems, 1);
+  });
+
+  it("11. componente com produto e preço entra na valorização", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({
+          itemId: "c1",
+          itemType: "COMPONENT",
+          productId: "comp-product",
+          physicalQuantity: D(7),
+        }),
+      ],
+      retailPriceByProductId: prices([["comp-product", 3]]),
+      industrialCostByProductId: prices([["comp-product", 2]]),
+    });
+    assert.equal(result.salesPotential.value, 21);
+    assert.equal(result.industrialCost.value, 14);
+    assert.equal(result.salesPotential.coveredItems, 1);
+  });
+
+  it("13. Decimal não acumula erro de ponto flutuante", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "a", productId: "p", physicalQuantity: D("0.1") }),
+        line({ itemId: "b", productId: "p", physicalQuantity: D("0.1") }),
+        line({ itemId: "c", productId: "p", physicalQuantity: D("0.1") }),
+      ],
+      retailPriceByProductId: prices([["p", "0.1"]]),
+      industrialCostByProductId: prices([["p", "0.2"]]),
+    });
+    assert.equal(result.salesPotential.value, 0.03);
+    assert.equal(result.industrialCost.value, 0.06);
+    assert.notEqual(0.1 * 0.1 + 0.1 * 0.1 + 0.1 * 0.1, 0.03);
+  });
+
+  it("14. Varejo 1 inexistente não vira zero e não escolhe outra tabela", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1" })],
+      retailPriceByProductId: null,
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.available, false);
+    assert.equal(result.salesPotential.value, null);
+    assert.equal(result.salesPotential.unavailableReason, INVENTORY_RETAIL_VALUATION_UNAVAILABLE);
+    assert.equal(result.salesPotential.uncoveredItems, 1);
+    assert.equal(result.industrialCost.value, 600);
+  });
+
+  it("15. custo oficial inexistente deixa a cobertura explícita", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1" }), line({ itemId: "i2", productId: "p2" })],
+      retailPriceByProductId: prices([
+        ["product-1", 10],
+        ["p2", 1],
+      ]),
+      industrialCostByProductId: null,
+    });
+    assert.equal(result.industrialCost.available, false);
+    assert.equal(result.industrialCost.value, null);
+    assert.equal(result.industrialCost.unavailableReason, INVENTORY_INDUSTRIAL_COST_UNAVAILABLE);
+    assert.equal(result.industrialCost.coveredItems, 0);
+    assert.equal(result.industrialCost.uncoveredItems, 2);
+    assert.equal(result.industrialCost.coveragePercent, 0);
+  });
+
+  it("saldo negativo da população fica fora da soma e não se esconde", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", physicalQuantity: D(-4) })],
+      retailPriceByProductId: prices([["product-1", 10]]),
+      industrialCostByProductId: prices([["product-1", 6]]),
+    });
+    assert.equal(result.salesPotential.value, 0);
+    assert.equal(result.salesPotential.negativePhysicalItems, 1);
+    assert.equal(result.populationItemCount, 0);
+  });
+
+  it("vários almoxarifados do mesmo item somam o saldo físico", () => {
+    const lines = aggregateInventoryPhysicalBalances([
+      { itemId: "i1", itemType: "FINISHED_PRODUCT", productId: "p", physicalQuantity: "40" },
+      { itemId: "i1", itemType: "FINISHED_PRODUCT", productId: "p", physicalQuantity: "60" },
+    ]);
+    const result = computeInventoryManagerialValuation({
+      lines,
+      retailPriceByProductId: prices([["p", 2]]),
+      industrialCostByProductId: prices([["p", 1]]),
+    });
+    assert.equal(result.salesPotential.value, 200);
+    assert.equal(result.salesPotential.coveredItems, 1);
+  });
+
+  it("preço duplicado do mesmo produto não escolhe uma linha", () => {
+    const indexed = indexUnitAmountByProductId([
+      { productId: "p", amount: 10 },
+      { productId: "p", amount: 99 },
+    ]);
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", productId: "p", physicalQuantity: D(2) })],
+      retailPriceByProductId: indexed,
+      industrialCostByProductId: prices([["p", 1]]),
+    });
+    assert.equal(result.salesPotential.uncoveredItems, 1);
+    assert.equal(result.salesPotential.value, 0);
+  });
+});
+
+describe("loadInventoryValuationUnitPrices", () => {
+  it("12. vários produtos usam uma leitura de preço e uma de custo", async () => {
+    const calls = { priceItems: 0, retailVersion: 0, costVersion: 0 };
+    const productIds = ["p1", "p2", "p3"];
+    const db = {
+      priceTable: {
+        findUnique: async () => ({ id: "table-varejo", status: "ACTIVE" }),
+      },
+      priceTableVersion: {
+        findFirst: async () => {
+          calls.retailVersion += 1;
+          return { id: "version-1" };
+        },
+      },
+      priceTableItem: {
+        findMany: async (args: { where: { productId: { in: string[] } } }) => {
+          calls.priceItems += 1;
+          assert.deepEqual(args.where.productId.in, productIds);
+          return productIds.map((productId) => ({ productId, salePrice: new Prisma.Decimal(10) }));
+        },
+      },
+      productionCostTableVersion: {
+        findFirst: async () => {
+          calls.costVersion += 1;
+          return {
+            id: "cost-1",
+            items: productIds.map((productId) => ({
+              productId,
+              unitProductionCost: new Prisma.Decimal(4),
+            })),
+          };
+        },
+      },
+    };
+
+    const loaded = await loadInventoryValuationUnitPrices(
+      db as never,
+      productIds,
+      new Date("2026-09-25T12:00:00.000Z")
+    );
+
+    assert.equal(calls.priceItems, 1);
+    assert.equal(calls.retailVersion, 1);
+    assert.equal(calls.costVersion, 1);
+    assert.equal(loaded.retailPriceByProductId?.get("p2")?.toString(), "10");
+    assert.equal(loaded.industrialCostByProductId?.get("p3")?.toString(), "4");
+  });
+
+  it("14. tabela Varejo 1 ausente não consulta itens de preço", async () => {
+    let priceItems = 0;
+    const db = {
+      priceTable: { findUnique: async () => null },
+      priceTableVersion: { findFirst: async () => null },
+      priceTableItem: {
+        findMany: async () => {
+          priceItems += 1;
+          return [];
+        },
+      },
+      productionCostTableVersion: {
+        findFirst: async () => null,
+      },
+    };
+    const loaded = await loadInventoryValuationUnitPrices(db as never, ["p1"], new Date());
+    assert.equal(priceItems, 0);
+    assert.equal(loaded.retailPriceByProductId, null);
+    assert.equal(loaded.retailUnavailableReason, INVENTORY_RETAIL_VALUATION_UNAVAILABLE);
+    assert.equal(loaded.industrialCostByProductId, null);
+  });
+});

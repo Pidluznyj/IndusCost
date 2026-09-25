@@ -4,6 +4,7 @@ import {
   Ban,
   Boxes,
   ClipboardList,
+  Factory,
   Lock,
   Package,
   ShieldAlert,
@@ -28,6 +29,7 @@ import type {
   InventoryDashboardCriticalItem,
   InventoryDashboardPayload,
   InventoryDashboardRecentMovement,
+  InventoryValuationMetric,
 } from "@/src/types/inventory";
 
 type Props = {
@@ -168,17 +170,59 @@ function KpiLink({
   );
 }
 
+function valuationCoverageSubtitle(base: string, metric: InventoryValuationMetric): string {
+  const population = metric.coveredItems + metric.uncoveredItems;
+  if (!metric.available || population === 0) return base;
+  return `${base} · ${metric.coveredItems} de ${population} itens`;
+}
+
+function valuationHint(metric: InventoryValuationMetric, missingLabel: string): string | undefined {
+  const parts: string[] = [];
+  if (!metric.available && metric.unavailableReason) parts.push(metric.unavailableReason);
+  if (metric.available && metric.uncoveredItems > 0) {
+    parts.push(`${metric.uncoveredItems} itens sem ${missingLabel}`);
+  }
+  if (metric.negativePhysicalItems > 0) {
+    parts.push(
+      `${metric.negativePhysicalItems} ${
+        metric.negativePhysicalItems === 1 ? "item com saldo negativo" : "itens com saldo negativo"
+      } fora da valorização`
+    );
+  }
+  return parts.length > 0 ? parts.join(". ") : undefined;
+}
+
 export function InventoryDashboardTab({ data, loading = false }: Props) {
+  const sales = data.valuation.salesPotential;
+  const cost = data.valuation.industrialCost;
   return (
     <div className="space-y-6" data-testid="inventory-dashboard">
       <SummaryKpiGrid className={SYSTEM_TOTALIZER_GRID_CLASS} testId="inventory-dashboard-kpis">
-        <KpiLink to="/inventory/balances" testId="inventory-kpi-total-value">
+        <KpiLink to="/inventory/balances" testId="inventory-kpi-sales-potential">
           <FinanceExecutiveTotalizerCard
-            label="Valor total em estoque"
-            amount={data.totalInventoryValue}
+            label="Valor potencial de venda"
+            amount={sales.available ? sales.value : null}
             amountFormat="currency"
+            value={sales.available ? undefined : "Indisponível"}
+            valueSize={sales.available ? "default" : "text"}
+            subtitle={valuationCoverageSubtitle("Base: Tabela Comercial Varejo 1", sales)}
+            helperText={valuationHint(sales, "preço Varejo 1")}
             tone="neutral"
             icon={Boxes}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances" testId="inventory-kpi-industrial-cost">
+          <FinanceExecutiveTotalizerCard
+            label="Custo industrial do estoque"
+            amount={cost.available ? cost.value : null}
+            amountFormat="currency"
+            value={cost.available ? undefined : "Indisponível"}
+            valueSize={cost.available ? "default" : "text"}
+            subtitle={valuationCoverageSubtitle("Base: custo industrial vigente", cost)}
+            helperText={valuationHint(cost, "custo industrial")}
+            tone="neutral"
+            icon={Factory}
             loading={loading}
           />
         </KpiLink>

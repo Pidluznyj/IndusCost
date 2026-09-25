@@ -138,7 +138,9 @@ describe("InventoryDashboardTab", () => {
   it("4. dashboard tab usa totalizadores executivos", () => {
     const tab = read("src/components/inventory/InventoryDashboardTab.tsx");
     assert.match(tab, /FinanceExecutiveTotalizerCard/);
-    assert.match(tab, /Valor total em estoque/);
+    assert.match(tab, /Valor potencial de venda/);
+    assert.match(tab, /Custo industrial do estoque/);
+    assert.match(tab, /Tabela Comercial Varejo 1/);
     assert.match(tab, /inventory-recent-movements/);
   });
 

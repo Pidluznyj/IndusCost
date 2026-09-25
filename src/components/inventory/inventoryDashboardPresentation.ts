@@ -6,6 +6,8 @@ import type {
   InventoryDashboardCriticalItem,
   InventoryDashboardPayload,
   InventoryDashboardRecentMovement,
+  InventoryManagerialValuation,
+  InventoryValuationMetric,
 } from "@/src/types/inventory";
 
 function finiteNumber(value: unknown, fallback = 0): number {
@@ -71,12 +73,39 @@ function normalizeArray<T>(value: unknown, mapper: (raw: unknown) => T | null): 
   return out;
 }
 
+function normalizeValuationMetric(raw: unknown): InventoryValuationMetric {
+  const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const available = row.available === true;
+  return {
+    available,
+    unavailableReason: typeof row.unavailableReason === "string" ? row.unavailableReason : null,
+    value: available ? finiteNumber(row.value) : null,
+    coveredItems: finiteNumber(row.coveredItems),
+    uncoveredItems: finiteNumber(row.uncoveredItems),
+    coveredPhysicalQuantity: safeString(row.coveredPhysicalQuantity) || "0",
+    uncoveredPhysicalQuantity: safeString(row.uncoveredPhysicalQuantity) || "0",
+    coveragePercent: finiteNumberOrNull(row.coveragePercent),
+    negativePhysicalItems: finiteNumber(row.negativePhysicalItems),
+  };
+}
+
+function normalizeValuation(raw: unknown): InventoryManagerialValuation {
+  const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    salesPotential: normalizeValuationMetric(row.salesPotential),
+    industrialCost: normalizeValuationMetric(row.industrialCost),
+    populationItemCount: finiteNumber(row.populationItemCount),
+    excludedPositiveItems: finiteNumber(row.excludedPositiveItems),
+  };
+}
+
 /** Aceita payload parcial da API sem quebrar a UI. */
 export function normalizeInventoryDashboard(raw: unknown): InventoryDashboardPayload {
   const data = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 
   return {
     totalInventoryValue: finiteNumber(data.totalInventoryValue),
+    valuation: normalizeValuation(data.valuation),
     itemsCount: finiteNumber(data.itemsCount),
     belowMinimumCount: finiteNumber(data.belowMinimumCount),
     belowReorderPointCount: finiteNumber(data.belowReorderPointCount),

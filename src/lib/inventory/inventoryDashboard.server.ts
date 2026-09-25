@@ -4,6 +4,14 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { calculateInventoryStatus } from "./inventoryStatus.js";
 import {
+  aggregateInventoryPhysicalBalances,
+  computeInventoryManagerialValuation,
+  emptyInventoryManagerialValuation,
+  isInventoryValuationItemType,
+  type InventoryManagerialValuation,
+} from "./inventoryManagerialValuation.js";
+import { loadInventoryValuationUnitPrices } from "./inventoryManagerialValuation.server.js";
+import {
   inventoryDec,
   inventoryDecOrNull,
   serializeInventoryDashboardMovement,
@@ -22,7 +30,9 @@ export type InventoryDashboardCriticalItem = {
 };
 
 export type InventoryDashboardPayload = {
+  /** Soma legada de InventoryBalance.totalValue. Não é o card de venda nem o de custo. */
   totalInventoryValue: number;
+  valuation: InventoryManagerialValuation;
   itemsCount: number;
   belowMinimumCount: number;
   belowReorderPointCount: number;
@@ -113,6 +123,7 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
         blockedQuantity: true,
         quarantineQuantity: true,
         totalValue: true,
+        item: { select: { itemType: true, productId: true } },
       },
     }),
     prisma.inventoryMovement.findMany({
@@ -178,9 +189,34 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
   finishedProductsAvailable.sort((a, b) => b.availableQuantity - a.availableQuantity);
 
   const totalInventoryValue = inventoryDec(valueAgg._sum.totalValue);
+  const physicalLines = aggregateInventoryPhysicalBalances(
+    balances.map((row) => ({
+      itemId: row.itemId,
+      itemType: row.item.itemType,
+      productId: row.item.productId,
+      physicalQuantity: row.physicalQuantity,
+    }))
+  );
+  const productIds = physicalLines
+    .filter(
+      (line) =>
+        isInventoryValuationItemType(line.itemType) &&
+        line.physicalQuantity.gt(0) &&
+        Boolean(line.productId)
+    )
+    .map((line) => line.productId as string);
+  const unitPrices = await loadInventoryValuationUnitPrices(prisma, productIds, new Date());
+  const valuation = computeInventoryManagerialValuation({
+    lines: physicalLines,
+    retailPriceByProductId: unitPrices.retailPriceByProductId,
+    industrialCostByProductId: unitPrices.industrialCostByProductId,
+    retailUnavailableReason: unitPrices.retailUnavailableReason,
+    industrialUnavailableReason: unitPrices.industrialUnavailableReason,
+  });
 
   return {
     totalInventoryValue,
+    valuation,
     itemsCount: items.length,
     belowMinimumCount,
     belowReorderPointCount,
@@ -199,6 +235,7 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
 export function emptyInventoryDashboard(): InventoryDashboardPayload {
   return {
     totalInventoryValue: 0,
+    valuation: emptyInventoryManagerialValuation(),
     itemsCount: 0,
     belowMinimumCount: 0,
     belowReorderPointCount: 0,
@@ -215,6 +252,7 @@ export function emptyInventoryDashboard(): InventoryDashboardPayload {
 
 export const INVENTORY_DASHBOARD_KEYS = [
   "totalInventoryValue",
+  "valuation",
   "itemsCount",
   "belowMinimumCount",
   "belowReorderPointCount",
