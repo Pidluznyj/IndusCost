@@ -12,6 +12,24 @@ import "@/src/components/inventory/inventory-position-report-print.css";
 
 const ROUTE_BODY_CLASS = "inventory-position-report-route";
 
+/** Largura × altura. `A4 landscape` perde para um `@page { size: A4 }` posterior. */
+const PAGE_STYLE = [
+  "@page inventory-position-sheet { size: 297mm 210mm; margin: 10mm 8mm 12mm; }",
+  "@page { size: 297mm 210mm; margin: 10mm 8mm 12mm; }",
+  "html, body.inventory-position-report-route { page: inventory-position-sheet; }",
+].join("\n");
+
+function pinLandscapePageStyle(): HTMLStyleElement {
+  const existing = document.head.querySelector<HTMLStyleElement>(
+    "style[data-inventory-position-report-page]"
+  );
+  const style = existing ?? document.createElement("style");
+  style.setAttribute("data-inventory-position-report-page", "1");
+  style.textContent = PAGE_STYLE;
+  document.head.appendChild(style);
+  return style;
+}
+
 export function InventoryPositionReportPrintView() {
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<InventoryPositionReport | null>(null);
@@ -21,11 +39,13 @@ export function InventoryPositionReportPrintView() {
   usePrintRouteBodyClass(ROUTE_BODY_CLASS);
 
   useEffect(() => {
-    const style = document.createElement("style");
-    style.setAttribute("data-inventory-position-report-page", "1");
-    style.textContent = "@page { size: A4 landscape; margin: 8mm; }";
-    document.head.appendChild(style);
+    const style = pinLandscapePageStyle();
+    const onBeforePrint = () => {
+      pinLandscapePageStyle();
+    };
+    window.addEventListener("beforeprint", onBeforePrint);
     return () => {
+      window.removeEventListener("beforeprint", onBeforePrint);
       style.remove();
     };
   }, []);
@@ -63,6 +83,7 @@ export function InventoryPositionReportPrintView() {
 
   const handlePrint = useCallback(() => {
     if (!report) return;
+    pinLandscapePageStyle();
     triggerBrowserPrint();
   }, [report]);
 

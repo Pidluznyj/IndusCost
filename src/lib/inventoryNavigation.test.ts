@@ -173,6 +173,11 @@ describe("InventoryModule estados", () => {
     const printCss = read("src/components/inventory/inventory-position-report-print.css");
     assert.match(printCss, /body\.inventory-position-report-route \*/);
     assert.match(printCss, /visibility: visible !important/);
-    assert.match(printCss, /A4 landscape/);
+    assert.match(printCss, /@page inventory-position-sheet/);
+    assert.match(printCss, /size: 297mm 210mm/);
+    assert.match(printCss, /page: inventory-position-sheet/);
+    const printView = read("src/components/inventory/InventoryPositionReportPrintView.tsx");
+    assert.match(printView, /size: 297mm 210mm/);
+    assert.match(printView, /beforeprint/);
   });
 });

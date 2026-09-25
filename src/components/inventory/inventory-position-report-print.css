@@ -5,13 +5,21 @@
  * visibilidade para uma lista fechada de relatórios. Sem o override abaixo,
  * Imprimir / PDF sai em branco.
  *
- * A4 paisagem: vários CSS globais também declaram @page. A regra desta rota
- * fica no topo e de novo dentro de @media print, e a página injeta a mesma
- * regra em runtime.
+ * A4 paisagem (297mm × 210mm). `@page` genérico não tem especificidade: o
+ * último do bundle vence, e main.tsx importa regras `size: A4` / retrato
+ * depois deste arquivo. Página nomeada não é substituída por essas regras.
+ * A view ainda recoloca a mesma medida no fim do <head> imediatamente antes
+ * de imprimir, em milímetros, para o diálogo "Salvar como PDF" não cair no
+ * retrato padrão.
  */
-@page {
-  size: A4 landscape;
+@page inventory-position-sheet {
+  size: 297mm 210mm;
   margin: 10mm 8mm 12mm;
+}
+
+html,
+body.inventory-position-report-route {
+  page: inventory-position-sheet;
 }
 
 .inventory-position-report-document {
@@ -129,8 +137,8 @@
 }
 
 @media print {
-  @page {
-    size: A4 landscape;
+  @page inventory-position-sheet {
+    size: 297mm 210mm;
     margin: 10mm 8mm 12mm;
   }
 
