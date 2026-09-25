@@ -22,11 +22,15 @@ import type {
   ReceiptClosingLedgerLineSnapshot,
   ReceiptClosingSnapshot,
 } from "./commissionReceiptClosing.js";
+import type { ReceiptClosingCarryoverSection } from "./commissionReceiptCoverage.shared.js";
 import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
   isReceiptClosingGroupCompanyLine,
   partitionReceiptClosingLinesByGroupCompany,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
+  buildReceiptClosingCommissionComposition,
+  isReceiptClosingCarryoverLine,
+  receiptClosingReceivedAnchorKey,
   resolveReceiptClosingSellerGroupKey,
   sumUniqueReceivedFromLines,
   type ReceiptClosingApiLine,
@@ -57,7 +61,10 @@ export type ReceiptClosingOwnScopeFilter = {
 };
 
 export function lineMatchesReceiptClosingOwnScope(
-  line: ReceiptClosingApiLine,
+  line: Pick<
+    ReceiptClosingApiLine,
+    "canonicalSellerId" | "rawSellerId" | "canonicalSellerName" | "rawSellerName"
+  >,
   own: ReceiptClosingOwnScopeFilter
 ): boolean {
   if (line.canonicalSellerId && own.ownCanonicalSellerIds.has(line.canonicalSellerId)) return true;
@@ -209,12 +216,13 @@ function sumUniqueReceivableReceived(
   lines: ReceiptClosingApiLine[],
   predicate: (line: ReceiptClosingApiLine) => boolean
 ): number {
-  const byReceivable = new Map<number, ReceiptClosingApiLine[]>();
+  const byReceivable = new Map<string, ReceiptClosingApiLine[]>();
   for (const line of lines) {
-    if (line.nomusReceivableId == null || !predicate(line)) continue;
-    const group = byReceivable.get(line.nomusReceivableId) ?? [];
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null || !predicate(line)) continue;
+    const group = byReceivable.get(anchor) ?? [];
     group.push(line);
-    byReceivable.set(line.nomusReceivableId, group);
+    byReceivable.set(anchor, group);
   }
   let total = 0;
   for (const group of byReceivable.values()) {
@@ -226,15 +234,16 @@ function sumUniqueReceivableReceived(
 export function markReceivableReceivedAnchors(
   lines: ReceiptClosingApiLine[]
 ): ReceiptClosingApiLine[] {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   return lines.map((line) => {
-    if (line.nomusReceivableId == null) {
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null) {
       return { ...line, uniqueReceivedAmount: line.receivedAmount };
     }
-    if (seen.has(line.nomusReceivableId)) {
+    if (seen.has(anchor)) {
       return { ...line, uniqueReceivedAmount: 0 };
     }
-    seen.add(line.nomusReceivableId);
+    seen.add(anchor);
     return { ...line, uniqueReceivedAmount: line.receivedAmount };
   });
 }
@@ -245,13 +254,14 @@ function countUniqueReceivablesByBucket(
   lines: ReceiptClosingApiLine[],
   bucket: ReceivableBucket
 ): number {
-  const seen = new Set<number>();
-  const byReceivable = new Map<number, ReceiptClosingApiLine[]>();
+  const seen = new Set<string>();
+  const byReceivable = new Map<string, ReceiptClosingApiLine[]>();
   for (const line of lines) {
-    if (line.nomusReceivableId == null) continue;
-    const group = byReceivable.get(line.nomusReceivableId) ?? [];
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null) continue;
+    const group = byReceivable.get(anchor) ?? [];
     group.push(line);
-    byReceivable.set(line.nomusReceivableId, group);
+    byReceivable.set(anchor, group);
   }
   for (const [id, group] of byReceivable) {
     if (receivableBucketForGroup(group) === bucket && !seen.has(id)) {
@@ -262,15 +272,16 @@ function countUniqueReceivablesByBucket(
 }
 
 function countReceivablesWithMaterializedSchedule(lines: ReceiptClosingApiLine[]): number {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const line of lines) {
-    if (line.nomusReceivableId == null) continue;
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null) continue;
     if (line.status === "NO_SCHEDULE" || line.status === "STALE_SCHEDULE") continue;
     if (
       line.commissionReceivableScheduleId != null ||
       SCHEDULE_SOURCES.has(line.source)
     ) {
-      seen.add(line.nomusReceivableId);
+      seen.add(anchor);
     }
   }
   return seen.size;
@@ -280,10 +291,11 @@ function countUniqueReceivablesWithStatus(
   lines: ReceiptClosingApiLine[],
   statuses: Set<string>
 ): number {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const line of lines) {
-    if (line.nomusReceivableId == null || !statuses.has(line.status)) continue;
-    seen.add(line.nomusReceivableId);
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null || !statuses.has(line.status)) continue;
+    seen.add(anchor);
   }
   return seen.size;
 }
@@ -298,9 +310,10 @@ export function buildReceiptClosingMaterializationSummary(input: {
   totalExpectedCommission: number;
   totalReleasedCommission: number;
 }): ReceiptClosingMaterializationSummary {
-  const uniqueReceivableIds = new Set<number>();
+  const uniqueReceivableIds = new Set<string>();
   for (const line of input.managerialLines) {
-    if (line.nomusReceivableId != null) uniqueReceivableIds.add(line.nomusReceivableId);
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor != null) uniqueReceivableIds.add(anchor);
   }
 
   const receivablesWithScheduleCount = countReceivablesWithMaterializedSchedule(
@@ -354,12 +367,13 @@ export function buildReceiptClosingMaterializationCards(
   reconciliation: ReceiptClosingReconciliationSummary,
   groupCompanyAuditReceivedAmount = 0
 ): ReceiptClosingMaterializationCards {
-  const byReceivable = new Map<number, ReceiptClosingApiLine[]>();
+  const byReceivable = new Map<string, ReceiptClosingApiLine[]>();
   for (const line of lines) {
-    if (line.nomusReceivableId == null) continue;
-    const group = byReceivable.get(line.nomusReceivableId) ?? [];
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor == null) continue;
+    const group = byReceivable.get(anchor) ?? [];
     group.push(line);
-    byReceivable.set(line.nomusReceivableId, group);
+    byReceivable.set(anchor, group);
   }
 
   let receivedWithScheduleAmount = 0;
@@ -708,6 +722,10 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     status: line.status,
     statusReason: line.statusReason ?? line.exclusionReason,
     source: line.source,
+    receiptExternalIds: [...(line.receiptIds ?? [])],
+    naturalYear: line.naturalYear ?? line.year,
+    naturalMonth: line.naturalMonth ?? line.month,
+    inclusionType: line.inclusionType ?? "NORMAL",
   };
 }
 
@@ -739,7 +757,7 @@ export function mapLedgerLineToApiLine(
     // (enrichReceiptClosingPageInstallments), sem tocar o ledger.
     installmentTotal: null,
     settlementDate: line.settlementDate,
-    receiptDate: null,
+    receiptDate: line.receiptDate ?? null,
     dueDate: null,
     customerId: null,
     customerExternalId: null,
@@ -784,6 +802,10 @@ export function mapLedgerLineToApiLine(
     status: line.status,
     statusReason: line.exceptionReason ?? line.exclusionReason,
     source: scheduleId != null ? "PERSISTED_SCHEDULE" : "PERSISTED_LEDGER",
+    receiptExternalIds: line.receiptExternalIds ?? [],
+    naturalYear: line.naturalYear ?? _closing.year,
+    naturalMonth: line.naturalMonth ?? _closing.month,
+    inclusionType: line.inclusionType ?? "NORMAL",
   };
 }
 
@@ -792,7 +814,7 @@ export function buildReceiptClosingBySeller(
 ): ReceiptClosingApiSellerRow[] {
   const map = new Map<
     string,
-    ReceiptClosingApiSellerRow & { seenReceivables: Set<number>; seenExceptions: Set<string> }
+    ReceiptClosingApiSellerRow & { seenReceivables: Set<string>; seenExceptions: Set<string> }
   >();
   for (const line of lines) {
     if (line.status === "GROUP_COMPANY_EXCLUDED") continue;
@@ -813,13 +835,14 @@ export function buildReceiptClosingBySeller(
       expectedCommission: 0,
       releasedCommission: 0,
       exceptionCount: 0,
-      seenReceivables: new Set<number>(),
+      seenReceivables: new Set<string>(),
       seenExceptions: new Set<string>(),
     };
 
-    if (line.nomusReceivableId != null) {
-      if (!row.seenReceivables.has(line.nomusReceivableId)) {
-        row.seenReceivables.add(line.nomusReceivableId);
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor != null) {
+      if (!row.seenReceivables.has(anchor)) {
+        row.seenReceivables.add(anchor);
         row.receivedAmount = round2(row.receivedAmount + line.receivedAmount);
         row.receivableCount += 1;
       }
@@ -914,8 +937,8 @@ function summarizeManagerialReceiptClosingSummary(lines: ReceiptClosingApiLine[]
   totalReleasedCommission: number;
   totalExcludedAmount: number;
 } {
-  const uniqueReceivables = new Set<number>();
-  const seenReceived = new Set<number>();
+  const uniqueReceivables = new Set<string>();
+  const seenReceived = new Set<string>();
   let totalReceivedAmount = 0;
   let totalCommissionableBase = 0;
   let totalExpectedCommission = 0;
@@ -923,10 +946,11 @@ function summarizeManagerialReceiptClosingSummary(lines: ReceiptClosingApiLine[]
   let totalExcludedAmount = 0;
 
   for (const line of lines) {
-    if (line.nomusReceivableId != null) {
-      uniqueReceivables.add(line.nomusReceivableId);
-      if (!seenReceived.has(line.nomusReceivableId)) {
-        seenReceived.add(line.nomusReceivableId);
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor != null) {
+      uniqueReceivables.add(anchor);
+      if (!seenReceived.has(anchor)) {
+        seenReceived.add(anchor);
         totalReceivedAmount = round2(totalReceivedAmount + line.receivedAmount);
       }
     }
@@ -971,17 +995,22 @@ export function enrichReceiptClosingPagePayload(
     partitionReceiptClosingLinesByGroupCompany(anchored);
   const managerialSummary = summarizeManagerialReceiptClosingSummary(managerialLines);
   const groupAuditReceived = sumUniqueReceivableReceived(groupCompanyAuditLines, () => true);
+  // Conciliação com o Nomus compara a COMPETÊNCIA: pendências de períodos
+  // anteriores incluídas no fechamento não entram nessa comparação.
+  const competencePreviewLines = options.previewLines?.filter(
+    (line) => !isReceiptClosingCarryoverLine(line)
+  );
   const reconciliation =
-    options.previewLines != null
+    competencePreviewLines != null
       ? summarizeNomusReceiptReconciliation(
           buildNomusReceiptReconciliationReport({
-            lines: options.previewLines,
+            lines: competencePreviewLines,
             nomusBase: options.nomusBase ?? null,
             nomusCommission: options.nomusCommission ?? null,
           })
         )
       : buildReceiptClosingReconciliationFromApiLines({
-          lines: anchored,
+          lines: anchored.filter((line) => !isReceiptClosingCarryoverLine(line)),
           nomusBase: options.nomusBase ?? null,
           nomusCommission: options.nomusCommission ?? null,
         });
@@ -1022,6 +1051,7 @@ export function enrichReceiptClosingPagePayload(
     criticalDivergence: critical.criticalDivergence,
     criticalDivergenceReason: critical.criticalDivergenceReason,
     requiresCriticalConfirmation: critical.requiresCriticalConfirmation,
+    composition: buildReceiptClosingCommissionComposition(managerialLines),
   };
 }
 
@@ -1034,6 +1064,8 @@ export function buildReceiptClosingPageFromPreview(input: {
   nomusCommission?: number | null;
   /** Quando definido, restringe o payload (linhas + cards/resumo derivados) às linhas do vendedor. */
   ownScope?: ReceiptClosingOwnScopeFilter | null;
+  /** Pendências de períodos anteriores (já filtradas para o escopo do usuário). */
+  pendingCarryover?: ReceiptClosingCarryoverSection | null;
 }): ReceiptClosingPagePayload {
   const mappedLines = input.preview.lines.map(mapPreviewLineToApiLine);
   const ownScope = input.ownScope ?? null;
@@ -1059,6 +1091,7 @@ export function buildReceiptClosingPageFromPreview(input: {
     bySeller: buildReceiptClosingBySeller(lines),
     lines,
     groupCompanyAuditLines: [],
+    pendingCarryover: input.pendingCarryover ?? null,
   };
   // Escopo "own": a reconciliação Nomus (options.previewLines) usa o motor de
   // prévia bruto e não deve ver linhas de outros vendedores — cai no fallback

@@ -14,6 +14,10 @@ import {
   type CommissionMonthlyClosingStatus,
   type CommissionReceiptLedgerLineStatus,
 } from "./commissionReceiptLedger.js";
+import type {
+  CommissionLedgerInclusionType,
+  ReceiptClosingCarryoverSection,
+} from "./commissionReceiptCoverage.shared.js";
 
 /** Status de prévia sem valor no enum Prisma → persistência segura no ledger. */
 function toPersistedLedgerLineStatus(
@@ -178,6 +182,13 @@ export type ReceiptClosingLedgerLineSnapshot = {
   exclusionReason: string | null;
   ruleNameSnapshot: string | null;
   ruleSnapshotJson: unknown;
+  /** Eventos de recebimento contemplados pela linha. */
+  receiptExternalIds?: number[];
+  /** Dia civil do recebimento (competência natural). */
+  receiptDate?: string | null;
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+  inclusionType?: CommissionLedgerInclusionType;
 };
 
 export type ReceiptClosingPreviewPayload = {
@@ -185,6 +196,8 @@ export type ReceiptClosingPreviewPayload = {
   existingClosing: ReceiptClosingSnapshot | null;
   canApply: boolean;
   applyBlockedReason: string | null;
+  /** Pendências de períodos anteriores (só competências oficiais no IndusCost). */
+  carryover?: ReceiptClosingCarryoverSection | null;
 };
 
 export type ReceiptClosingApplyResult = {
@@ -192,6 +205,10 @@ export type ReceiptClosingApplyResult = {
   calculationHash: string;
   summary: ReceiptClosingSnapshot;
   lineCount: number;
+  /** Linhas de pendência de períodos anteriores incluídas no fechamento. */
+  carryoverLineCount?: number;
+  /** Registros de cobertura INDUSCOST_CLOSING gravados (um por recebimento). */
+  coverageCount?: number;
 };
 
 export type ReceiptClosingReprocessDiff = {
@@ -422,6 +439,14 @@ export function mapPreviewLineToLedgerCreateData(
     nomusOrderItemId: line.nomusOrderItemId,
     ruleId: line.ruleId,
     closingId,
+    carryover:
+      line.inclusionType && line.inclusionType !== "NORMAL"
+        ? {
+            naturalYear: line.naturalYear ?? line.year,
+            naturalMonth: line.naturalMonth ?? line.month,
+            inclusionType: line.inclusionType,
+          }
+        : null,
   });
 
   const ruleSnapshotJson =
@@ -502,6 +527,13 @@ export function mapPreviewLineToLedgerCreateData(
     status: persistedStatus,
     exceptionReason: exceptionWithOriginalStatus,
     calculationHash: line.ledgerLineKey,
+    // Cobertura por evento: quais recebimentos a linha contempla, a competência
+    // natural (receiptDate nunca é reescrito) e por que entrou neste fechamento.
+    receiptExternalIds: [...(line.receiptIds ?? [])],
+    receiptDate: line.receiptDate ? new Date(`${line.receiptDate.slice(0, 10)}T00:00:00.000Z`) : null,
+    naturalYear: line.naturalYear ?? line.year,
+    naturalMonth: line.naturalMonth ?? line.month,
+    inclusionType: line.inclusionType ?? "NORMAL",
   };
 }
 
@@ -527,6 +559,11 @@ export function mapLedgerRowToSnapshot(row: {
   exclusionReason: string | null;
   ruleNameSnapshot: string | null;
   ruleSnapshotJson: unknown;
+  receiptExternalIds?: number[] | null;
+  receiptDate?: Date | null;
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+  inclusionType?: CommissionLedgerInclusionType | null;
 }): ReceiptClosingLedgerLineSnapshot {
   return {
     id: row.id,
@@ -550,6 +587,11 @@ export function mapLedgerRowToSnapshot(row: {
     exclusionReason: row.exclusionReason,
     ruleNameSnapshot: row.ruleNameSnapshot,
     ruleSnapshotJson: row.ruleSnapshotJson,
+    receiptExternalIds: row.receiptExternalIds ?? [],
+    receiptDate: row.receiptDate ? row.receiptDate.toISOString().slice(0, 10) : null,
+    naturalYear: row.naturalYear ?? null,
+    naturalMonth: row.naturalMonth ?? null,
+    inclusionType: row.inclusionType ?? "NORMAL",
   };
 }
 

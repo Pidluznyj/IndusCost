@@ -6,9 +6,14 @@ import {
   buildReceiptClosingPageEmpty,
   buildReceiptClosingPageFromLedger,
   buildReceiptClosingPageFromPreview,
+  lineMatchesReceiptClosingOwnScope,
   type ReceiptClosingOwnScopeFilter,
   type ReceiptClosingPagePayload,
 } from "./commissionReceiptClosingApi.js";
+import {
+  summarizeCarryoverRows,
+  type ReceiptClosingCarryoverSection,
+} from "./commissionReceiptCoverage.shared.js";
 import {
   buildReceiptClosingDetailExportBuffer,
   buildReceiptClosingDetailExportFilename,
@@ -99,11 +104,29 @@ export async function getReceiptClosingPage(
   );
 }
 
+/**
+ * Grid de pendências no escopo do usuário: vendedor com escopo "own" só vê as
+ * próprias linhas. A cobertura é global — o filtro não muda o que está coberto.
+ */
+function scopeCarryoverSection(
+  section: ReceiptClosingCarryoverSection | null | undefined,
+  ownScope: ReceiptClosingOwnScopeFilter | null
+): ReceiptClosingCarryoverSection | null {
+  if (!section) return null;
+  if (!ownScope) return section;
+  const rows = section.rows.filter((row) => lineMatchesReceiptClosingOwnScope(row, ownScope));
+  return { ...section, rows, summary: summarizeCarryoverRows(rows) };
+}
+
 export async function getReceiptClosingPreviewPage(
   filters: ReceiptClosingFilters,
-  scope?: CommissionAccessScope
+  scope?: CommissionAccessScope,
+  options: { carryoverReceiptIds?: readonly number[] } = {}
 ): Promise<ReceiptClosingPagePayload> {
-  const payload = await previewCommissionReceiptClosing(filters);
+  const payload = await previewCommissionReceiptClosing(filters, {
+    carryoverReceiptIds: options.carryoverReceiptIds ?? [],
+    includeCarryover: true,
+  });
   const ownScope = await resolveReceiptClosingOwnScope(scope);
   // Coluna Parcela (n/total): mesma regra do fechamento (CLOSED).
   return enrichReceiptClosingPageInstallments(
@@ -116,6 +139,7 @@ export async function getReceiptClosingPreviewPage(
       nomusBase: filters.nomusBase,
       nomusCommission: filters.nomusCommission,
       ownScope,
+      pendingCarryover: scopeCarryoverSection(payload.carryover, ownScope),
     })
   );
 }
@@ -179,8 +203,15 @@ export async function applyReceiptClosingFromApi(input: {
   userId: string;
   notes?: string | null;
   acknowledgeCriticalDivergence?: boolean;
+  /** Pendências anteriores escolhidas na prévia (só IDs; o servidor recalcula tudo). */
+  carryoverReceiptIds?: readonly number[];
 }) {
-  const preview = await getReceiptClosingPreviewPage({ year: input.year, month: input.month });
+  const carryoverReceiptIds = input.carryoverReceiptIds ?? [];
+  const preview = await getReceiptClosingPreviewPage(
+    { year: input.year, month: input.month },
+    undefined,
+    { carryoverReceiptIds }
+  );
   if (!preview.canApply) {
     throw new CommissionValidationError(
       "CLOSING_BLOCKED",
@@ -216,6 +247,7 @@ export async function applyReceiptClosingFromApi(input: {
     month: input.month,
     userId: input.userId,
     notes,
+    carryoverReceiptIds,
   });
 }
 

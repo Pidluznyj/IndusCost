@@ -137,6 +137,7 @@ type MockClosing = {
 function createMockDb() {
   const closings = new Map<string, MockClosing>();
   const lines: Array<Record<string, unknown>> = [];
+  const coverage: Array<Record<string, unknown>> = [];
   let closingSeq = 0;
 
   // Reproduz o índice único parcial do banco:
@@ -170,6 +171,31 @@ function createMockDb() {
   const db = {
     closings,
     lines,
+    coverage,
+    // Cobertura por recebimento (cancelamento/reprocesso rebaixam para SUPERSEDED).
+    commissionReceiptCoverage: {
+      findMany: async () => coverage.filter((row) => row.coverageStatus === "COVERED"),
+      createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        coverage.push(...data.map((row) => ({ ...row })));
+        return { count: data.length };
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { closingId?: string; coverageStatus?: string };
+        data: Record<string, unknown>;
+      }) => {
+        let count = 0;
+        for (const row of coverage) {
+          if (where.closingId != null && row.closingId !== where.closingId) continue;
+          if (where.coverageStatus != null && row.coverageStatus !== where.coverageStatus) continue;
+          Object.assign(row, data);
+          count += 1;
+        }
+        return { count };
+      },
+    },
     commissionMonthlyClosing: {
       findFirst: async ({ where }: { where: Record<string, unknown> }) => {
         for (const row of closings.values()) {
@@ -259,6 +285,7 @@ function createMockDb() {
     $transaction: async <T>(fn: (tx: typeof db) => Promise<T>) => {
       const snapshotClosings = new Map(closings);
       const snapshotLines = [...lines];
+      const snapshotCoverage = coverage.map((row) => ({ ...row }));
       try {
         return await fn(db);
       } catch (error) {
@@ -266,6 +293,8 @@ function createMockDb() {
         for (const [key, value] of snapshotClosings) closings.set(key, value);
         lines.length = 0;
         lines.push(...snapshotLines);
+        coverage.length = 0;
+        coverage.push(...snapshotCoverage);
         throw error;
       }
     },
@@ -779,6 +808,9 @@ describe("commissionReceiptClosing", () => {
     await db.commissionReceiptLedgerLine.createMany({
       data: [mapPreviewLineToLedgerCreateData(previewLine({ ledgerLineKey: "k-cancel" }), closing.id)],
     });
+    await db.commissionReceiptCoverage.createMany({
+      data: [{ receiptExternalId: 1, closingId: closing.id, coverageStatus: "COVERED" }],
+    });
 
     const cancelled = await cancelCommissionReceiptClosing(db as never, {
       closingId: closing.id,
@@ -789,6 +821,8 @@ describe("commissionReceiptClosing", () => {
     assert.equal(cancelled.status, "CANCELLED");
     assert.equal(db.lines.length, 1);
     assert.match(cancelled.notes ?? "", /Fechamento incorreto/);
+    // Cancelado não é pagamento oficial: a cobertura do fechamento deixa de valer.
+    assert.equal(db.coverage[0]?.coverageStatus, "SUPERSEDED");
   });
 
   it("fechamento fechado não muda se preview mudar depois", () => {

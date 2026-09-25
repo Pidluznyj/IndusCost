@@ -1,4 +1,9 @@
 /** Tipos de payload das APIs de comissões (frontend — sem imports server-only). */
+import type {
+  CommissionLedgerInclusionType,
+  ReceiptClosingCarryoverSection,
+  ReceiptClosingCommissionComposition,
+} from "@/src/lib/commissions/commissionReceiptCoverage.shared";
 
 export type CommissionSellerDisplayDto = {
   id: string | null;
@@ -1199,6 +1204,13 @@ export type CommissionsReceiptClosingLine = {
   status: string;
   statusReason: string | null;
   source: string;
+  /** Eventos de recebimento contemplados pela linha (auditoria de cobertura). */
+  receiptExternalIds?: number[];
+  /** Competência natural (mês do receiptDate); ausente = a do fechamento. */
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+  /** NORMAL ou pendência de período anterior incluída neste fechamento. */
+  inclusionType?: CommissionLedgerInclusionType;
 };
 
 export type CommissionsReceiptClosingSellerRow = {
@@ -1242,4 +1254,8 @@ export type CommissionsReceiptClosingPayload = {
   bySeller: CommissionsReceiptClosingSellerRow[];
   lines: CommissionsReceiptClosingLine[];
   groupCompanyAuditLines: CommissionsReceiptClosingLine[];
+  /** Pendências de períodos anteriores (prévia de competência oficial IndusCost). */
+  pendingCarryover?: ReceiptClosingCarryoverSection | null;
+  /** Comissão da competência atual + pendências anteriores = total do fechamento. */
+  composition?: ReceiptClosingCommissionComposition;
 };

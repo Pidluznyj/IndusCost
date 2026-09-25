@@ -1,3 +1,4 @@
+import { parseCarryoverReceiptIds } from "./commissions/commissionReceiptCoverage.shared.js";
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
@@ -701,7 +702,11 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
       const filters = parseReceiptClosingQuery(req.query as Record<string, unknown>);
-      const payload = await getReceiptClosingPreviewPage(filters, ctx.scope);
+      const payload = await getReceiptClosingPreviewPage(filters, ctx.scope, {
+        carryoverReceiptIds: parseCarryoverReceiptIds(
+          (req.query as Record<string, unknown>).carryoverReceiptIds
+        ),
+      });
       return res.json(payload);
     } catch (error) {
       try {
@@ -730,6 +735,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         userId: ctx.user.id,
         notes: body.notes,
         acknowledgeCriticalDivergence: body.acknowledgeCriticalDivergence,
+        carryoverReceiptIds: body.carryoverReceiptIds,
       });
       const payload = await getReceiptClosingPage(body.year, body.month, undefined, ctx.scope);
       return res.status(201).json({ result, payload });

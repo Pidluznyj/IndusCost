@@ -16,7 +16,11 @@ import {
   resolveMaterializedItemExclusionMeta,
 } from "./commissionReceiptEngine.js";
 import type { CommissionReceiptCompetence } from "./commissionReceiptCompetence.js";
-import { loadCommissionReceiptCompetenceForPeriod } from "./commissionReceiptCompetence.server.js";
+import {
+  loadCommissionReceiptCompetenceForPeriod,
+  loadCommissionReceiptCompetenceForScope,
+  type CommissionReceiptEventScope,
+} from "./commissionReceiptCompetence.server.js";
 import type { CommissionReceiptSellerRecordInput } from "./commissionReceiptSeller.js";
 import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import { loadActiveCommissionRules } from "./commission-rule-engine.js";
@@ -60,6 +64,11 @@ export type LoadCommissionReceiptPreviewInput = {
   includeExceptions?: boolean;
   /** Fallback explícito: recalcular comissão por item (auditoria legada). */
   allowItemRecalculationFallback?: boolean;
+  /**
+   * Recorte por eventos de recebimento do período (cobertura/pendências). Ausente =
+   * competência inteira do mês, exatamente como antes.
+   */
+  receiptScope?: CommissionReceiptEventScope | null;
 };
 
 function mapPrismaScheduleStatus(
@@ -201,11 +210,9 @@ export async function loadCommissionReceiptPreview(
   // A baixa (`settlementDate`) não seleciona nada — CR recebido em 31/07 e
   // baixado em 03/08 pertence a julho, e o inverso (baixa no mês sem
   // recebimento) vira inconsistência, nunca entrada silenciosa.
-  const competenceByReceivable = await loadCommissionReceiptCompetenceForPeriod(
-    prisma,
-    input.year,
-    input.month
-  );
+  const competenceByReceivable = input.receiptScope
+    ? await loadCommissionReceiptCompetenceForScope(prisma, input.year, input.month, input.receiptScope)
+    : await loadCommissionReceiptCompetenceForPeriod(prisma, input.year, input.month);
   const competenceReceivableIds = [...competenceByReceivable.keys()];
 
   const arPrismaRows =

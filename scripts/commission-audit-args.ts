@@ -62,3 +62,17 @@ export function warnTraceLegacyMode(context: string, officialHint?: string): voi
   console.warn(`⚠ ${TRACE_LEGACY_SCRIPT_WARNING} (${context})`);
   if (officialHint) console.warn(`  Fonte oficial: ${officialHint}`);
 }
+
+/**
+ * `--name=valor` ou `--name valor` (ex.: `--ids 19236,19413`). Scripts antigos
+ * seguem com `parseArg` (só `=`); este aceita as duas formas.
+ */
+export function parseArgValue(name: string): string | undefined {
+  const inline = parseArg(name);
+  if (inline !== undefined) return inline;
+  const args = process.argv.slice(2);
+  const index = args.indexOf(`--${name}`);
+  if (index < 0) return undefined;
+  const next = args[index + 1];
+  return next != null && !next.startsWith("--") ? next : undefined;
+}

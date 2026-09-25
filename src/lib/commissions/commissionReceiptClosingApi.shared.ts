@@ -2,6 +2,11 @@
  * Tipos e helpers puros do fechamento por recebimento — seguros para frontend.
  */
 import { roundMoney } from "./commission-money.shared.js";
+import type {
+  CommissionLedgerInclusionType,
+  ReceiptClosingCarryoverSection,
+  ReceiptClosingCommissionComposition,
+} from "./commissionReceiptCoverage.shared.js";
 
 export type ReceiptClosingPageMode = "EMPTY" | "PREVIEW" | "CLOSED";
 
@@ -178,6 +183,13 @@ export type ReceiptClosingApiLine = {
   status: string;
   statusReason: string | null;
   source: string;
+  /** Eventos de recebimento contemplados pela linha (auditoria de cobertura). */
+  receiptExternalIds?: number[];
+  /** Competência natural (mês do receiptDate); ausente = a do fechamento. */
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+  /** NORMAL ou pendência de período anterior incluída neste fechamento. */
+  inclusionType?: CommissionLedgerInclusionType;
 };
 
 export type ReceiptClosingApiSellerRow = {
@@ -242,7 +254,61 @@ export type ReceiptClosingPagePayload = {
   lines: ReceiptClosingApiLine[];
   /** Empresas do grupo — somente para auditoria técnica opcional na UI. */
   groupCompanyAuditLines: ReceiptClosingApiLine[];
+  /** Pendências de períodos anteriores (prévia de competência oficial IndusCost). */
+  pendingCarryover?: ReceiptClosingCarryoverSection | null;
+  /** Comissão da competência atual + pendências anteriores = total do fechamento. */
+  composition?: ReceiptClosingCommissionComposition;
 };
+
+/** Pendência de período anterior (não NORMAL)? */
+export function isReceiptClosingCarryoverLine(line: {
+  inclusionType?: CommissionLedgerInclusionType | null;
+}): boolean {
+  return line.inclusionType != null && line.inclusionType !== "NORMAL";
+}
+
+/**
+ * Chave de "recebido único": o título na competência. Linha normal = só o CR
+ * (comportamento histórico); pendência = CR + tipo + competência natural — outro
+ * evento do mesmo título, que não pode ser deduplicado contra a linha normal.
+ */
+export function receiptClosingReceivedAnchorKey(line: {
+  nomusReceivableId: number | null;
+  inclusionType?: CommissionLedgerInclusionType | null;
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+}): string | null {
+  if (line.nomusReceivableId == null) return null;
+  if (!isReceiptClosingCarryoverLine(line)) return String(line.nomusReceivableId);
+  return `${line.nomusReceivableId}|${line.inclusionType}|${line.naturalYear ?? ""}-${line.naturalMonth ?? ""}`;
+}
+
+/** Composição da comissão final do fechamento (competência atual × pendências). */
+export function buildReceiptClosingCommissionComposition(
+  lines: ReadonlyArray<Pick<ReceiptClosingApiLine, "status" | "releasedCommissionAmount" | "uniqueReceivedAmount" | "inclusionType">>
+): ReceiptClosingCommissionComposition {
+  let current = 0;
+  let carryover = 0;
+  let carryoverLineCount = 0;
+  let carryoverReceived = 0;
+  for (const line of lines) {
+    const isCarryover = isReceiptClosingCarryoverLine(line);
+    if (isCarryover) {
+      carryoverLineCount += 1;
+      carryoverReceived = roundMoney(carryoverReceived + line.uniqueReceivedAmount);
+    }
+    if (line.status !== "COMMISSIONABLE") continue;
+    if (isCarryover) carryover = roundMoney(carryover + line.releasedCommissionAmount);
+    else current = roundMoney(current + line.releasedCommissionAmount);
+  }
+  return {
+    currentCompetenceCommission: current,
+    carryoverCommission: carryover,
+    totalCommission: roundMoney(current + carryover),
+    carryoverLineCount,
+    carryoverReceivedAmount: carryoverReceived,
+  };
+}
 
 /** Soma dos valores exibidos na coluna "Valor recebido" do detalhamento (âncoras por título). */
 export function sumUniqueReceivedFromLines(lines: ReceiptClosingApiLine[]): number {

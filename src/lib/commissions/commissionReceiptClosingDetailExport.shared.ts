@@ -11,6 +11,8 @@ import {
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
 } from "./commissionReceiptClosingApi.shared.js";
 import { formatInstallmentLabel } from "./commissionReceiptInstallment.shared.js";
+import { COMMISSION_LEDGER_INCLUSION_TYPE_LABELS } from "./commissionReceiptCoverage.shared.js";
+import { formatCommissionYearMonthLabel } from "./commissionCoverageCutover.js";
 
 export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE =
   "COMERCIAL: RELATÓRIO DE COMISSÕES";
@@ -39,6 +41,12 @@ const DETAIL_COLUMNS = [
   "Data de baixa",
   "Parcela",
   "Origem do dado",
+  // Cobertura / pendências de períodos anteriores (colunas novas no fim).
+  "Competência original",
+  "Incluído no fechamento",
+  "Tipo de inclusão",
+  "Origem da cobertura",
+  "Pendência retroativa?",
 ] as const;
 
 const POR_VENDEDOR_COLUMNS = [
@@ -88,7 +96,21 @@ function sourceLabel(source: string): string {
   }
 }
 
-function mapDetailRow(line: ReceiptClosingApiLine) {
+type DetailRowContext = {
+  year: number;
+  month: number;
+  exportMode: ReceiptClosingPagePayload["exportMode"];
+};
+
+function formatCoverageOrigin(context: DetailRowContext): string {
+  if (context.exportMode === "CLOSED") return "Fechamento IndusCost (CLOSED)";
+  return "Prévia — ainda não coberto";
+}
+
+function mapDetailRow(line: ReceiptClosingApiLine, context: DetailRowContext) {
+  const inclusionType = line.inclusionType ?? "NORMAL";
+  const naturalYear = line.naturalYear ?? context.year;
+  const naturalMonth = line.naturalMonth ?? context.month;
   const seller = mapReceiptClosingLineToExportSellerColumns(line);
   const receivedDisplay =
     line.uniqueReceivedAmount > 0 ? formatCurrencyBr(line.uniqueReceivedAmount) : "";
@@ -117,6 +139,11 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     // "1/3" como na tela; sem número = célula vazia (padrão do relatório).
     Parcela: formatInstallmentLabel(line.installmentNumber, line.installmentTotal, ""),
     "Origem do dado": sourceLabel(line.source),
+    "Competência original": formatCommissionYearMonthLabel({ year: naturalYear, month: naturalMonth }),
+    "Incluído no fechamento": formatCommissionYearMonthLabel({ year: context.year, month: context.month }),
+    "Tipo de inclusão": COMMISSION_LEDGER_INCLUSION_TYPE_LABELS[inclusionType] ?? inclusionType,
+    "Origem da cobertura": formatCoverageOrigin(context),
+    "Pendência retroativa?": inclusionType === "NORMAL" ? "Não" : "Sim",
   };
 }
 
@@ -206,6 +233,11 @@ function applyDetailSheetFormatting(ws: XLSX.WorkSheet, headerRowIndex: number, 
     { wch: 18 },
     { wch: 8 },
     { wch: 20 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 24 },
+    { wch: 26 },
+    { wch: 10 },
   ];
   ws["!freeze"] = {
     xSplit: 0,
@@ -239,7 +271,12 @@ export function buildReceiptClosingDetailExportWorkbook(
     "Resumo"
   );
 
-  const detailObjects = payload.lines.map(mapDetailRow);
+  const context: DetailRowContext = {
+    year: payload.year,
+    month: payload.month,
+    exportMode: payload.exportMode,
+  };
+  const detailObjects = payload.lines.map((line) => mapDetailRow(line, context));
   const detailSheet = XLSX.utils.json_to_sheet(detailObjects, { header: [...DETAIL_COLUMNS] });
   const headerRowIndex = 1;
   const lastRow = detailObjects.length + headerRowIndex;

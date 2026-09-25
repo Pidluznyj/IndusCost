@@ -24,6 +24,12 @@ export type CommissionReceiptEventInput = {
   /** Dia civil de `dataRecebimento`. */
   receiptDate: Date | string;
   receivedAmount: number;
+  /**
+   * Evento já contemplado por uma fonte oficial, do período ou posterior (pendência
+   * avaliada na sua competência natural): soma no acumulado anterior do cap
+   * incremental, não no recebido do período. Ausente = regra normal pela data.
+   */
+  countsAsPrior?: boolean;
 };
 
 /**
@@ -120,8 +126,12 @@ export function buildReceiptCompetenceByReceivable(
 
   for (const event of events) {
     const amount = Number.isFinite(event.receivedAmount) ? event.receivedAmount : 0;
-    const inPeriod = isReceiptInCompetencePeriod(event.receiptDate, year, month);
-    const beforePeriod = isReceiptBeforeCompetencePeriod(event.receiptDate, year, month);
+    const inPeriodByDate = isReceiptInCompetencePeriod(event.receiptDate, year, month);
+    const beforeByDate = isReceiptBeforeCompetencePeriod(event.receiptDate, year, month);
+    // Já pago (pendência): conta como anterior mesmo sendo do período ou posterior.
+    const countsAsPrior = event.countsAsPrior === true && !beforeByDate;
+    const inPeriod = inPeriodByDate && !countsAsPrior;
+    const beforePeriod = beforeByDate || countsAsPrior;
     // Recebimentos POSTERIORES ao período não entram: a competência de julho não
     // pode ser alterada por um recebimento de agosto.
     if (!inPeriod && !beforePeriod) continue;

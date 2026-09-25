@@ -25,15 +25,40 @@ export type CompetenceWithArDb = Pick<
   "nomusReceivableReceipt" | "nomusAccountsReceivable"
 >;
 
+/**
+ * Recorte opcional dos eventos DO PERÍODO (os anteriores seguem inteiros no cap
+ * incremental, igual à competência normal):
+ *   - include: só estes eventos (pendência de período anterior avaliada na sua
+ *     competência natural, sem reabrir o que já foi contemplado);
+ *   - alreadyCovered (com include): eventos dos MESMOS títulos já pagos por uma
+ *     fonte oficial — do período ou de meses posteriores — entram como anteriores.
+ *     A pendência libera só o incremento sobre o que já foi pago (ordem de
+ *     pagamento): a soma nunca passa da comissão do título;
+ *   - exclude: todos menos estes (competência atual sem eventos já cobertos por
+ *     outra fonte oficial).
+ */
+export type CommissionReceiptEventScope = {
+  includeReceiptExternalIds?: readonly number[] | null;
+  alreadyCoveredReceiptExternalIds?: readonly number[] | null;
+  excludeReceiptExternalIds?: readonly number[] | null;
+};
+
 async function loadReceiptEventsForPeriod(
   db: CompetenceDb,
   year: number,
-  month: number
+  month: number,
+  scope?: CommissionReceiptEventScope | null
 ): Promise<CommissionReceiptEventInput[]> {
   const { from, to } = resolveCompetencePeriodUtcBounds(year, month);
+  const include = scope?.includeReceiptExternalIds ?? null;
+  if (include != null && include.length === 0) return [];
+  const exclude = new Set(scope?.excludeReceiptExternalIds ?? []);
 
-  const inPeriod = await db.nomusReceivableReceipt.findMany({
-    where: { receiptDate: { gte: from, lte: to } },
+  const inPeriodRows = await db.nomusReceivableReceipt.findMany({
+    where: {
+      receiptDate: { gte: from, lte: to },
+      ...(include != null ? { externalId: { in: [...include] } } : {}),
+    },
     select: {
       externalId: true,
       receivableExternalId: true,
@@ -41,8 +66,32 @@ async function loadReceiptEventsForPeriod(
       receivedAmount: true,
     },
   });
+  const inPeriod =
+    exclude.size > 0 ? inPeriodRows.filter((row) => !exclude.has(row.externalId)) : inPeriodRows;
 
   const receivableIds = [...new Set(inPeriod.map((row) => row.receivableExternalId))];
+  // Pendência (include): eventos dos mesmos títulos já pagos (do período ou
+  // posteriores) contam como anteriores no cap incremental.
+  const includeSet = new Set(include ?? []);
+  const alreadyCoveredIds = (scope?.alreadyCoveredReceiptExternalIds ?? []).filter(
+    (id) => !includeSet.has(id)
+  );
+  const alreadyCovered =
+    include != null && receivableIds.length > 0 && alreadyCoveredIds.length > 0
+      ? await db.nomusReceivableReceipt.findMany({
+          where: {
+            receivableExternalId: { in: receivableIds },
+            receiptDate: { gte: from },
+            externalId: { in: alreadyCoveredIds },
+          },
+          select: {
+            externalId: true,
+            receivableExternalId: true,
+            receiptDate: true,
+            receivedAmount: true,
+          },
+        })
+      : [];
   // Recebimentos anteriores dos MESMOS títulos: alimentam o cap incremental
   // (mês seguinte de um recebimento parcial libera só o saldo da comissão).
   const before =
@@ -61,12 +110,21 @@ async function loadReceiptEventsForPeriod(
         })
       : [];
 
-  return [...inPeriod, ...before].map((row) => ({
-    receiptExternalId: row.externalId,
-    receivableExternalId: row.receivableExternalId,
-    receiptDate: row.receiptDate,
-    receivedAmount: decimalToNumber(row.receivedAmount),
-  }));
+  return [
+    ...[...inPeriod, ...before].map((row) => ({
+      receiptExternalId: row.externalId,
+      receivableExternalId: row.receivableExternalId,
+      receiptDate: row.receiptDate,
+      receivedAmount: decimalToNumber(row.receivedAmount),
+    })),
+    ...alreadyCovered.map((row) => ({
+      receiptExternalId: row.externalId,
+      receivableExternalId: row.receivableExternalId,
+      receiptDate: row.receiptDate,
+      receivedAmount: decimalToNumber(row.receivedAmount),
+      countsAsPrior: true,
+    })),
+  ];
 }
 
 /** Competência do mês por título — fonte oficial do período de comissão. */
@@ -76,6 +134,17 @@ export async function loadCommissionReceiptCompetenceForPeriod(
   month: number
 ): Promise<Map<number, CommissionReceiptCompetence>> {
   const events = await loadReceiptEventsForPeriod(db, year, month);
+  return buildReceiptCompetenceByReceivable(events, year, month);
+}
+
+/** Competência do mês restrita a um recorte de eventos (mesma regra de agregação). */
+export async function loadCommissionReceiptCompetenceForScope(
+  db: CompetenceDb,
+  year: number,
+  month: number,
+  scope: CommissionReceiptEventScope
+): Promise<Map<number, CommissionReceiptCompetence>> {
+  const events = await loadReceiptEventsForPeriod(db, year, month, scope);
   return buildReceiptCompetenceByReceivable(events, year, month);
 }
 

@@ -320,6 +320,15 @@ export type CommissionReceiptPreviewLine = {
   scheduleCommissionAmount?: number | null;
   /** Comissão do snapshot oficial do pedido (Auditoria 360º). */
   orderSnapshotCommissionAmount?: number | null;
+  /**
+   * Competência natural (mês do receiptDate). Ausente = a própria competência da
+   * linha (year/month). Em pendência incluída em outro fechamento, year/month é o
+   * fechamento e natural* é a competência original — o receiptDate nunca muda.
+   */
+  naturalYear?: number;
+  naturalMonth?: number;
+  /** Por que a linha entrou no fechamento (ausente = NORMAL). */
+  inclusionType?: "NORMAL" | "LATE_CARRYOVER" | "LEGACY_CARRYOVER" | "MANUAL_ADJUSTMENT";
 };
 
 export type CommissionReceiptPreviewBucket = {

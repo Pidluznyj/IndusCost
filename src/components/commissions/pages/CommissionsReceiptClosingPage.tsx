@@ -27,6 +27,12 @@ import {
 } from "@/src/components/commissions/commissionsUi";
 import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import { CommissionsReceiptClosingDetailTable } from "@/src/components/commissions/CommissionsReceiptClosingDetailTable";
+import { CommissionsReceiptClosingCarryoverGrid } from "@/src/components/commissions/CommissionsReceiptClosingCarryoverGrid";
+import { isCompetenceOfficialInIndusCost } from "@/src/lib/commissions/commissionCoverageCutover";
+import {
+  summarizeCarryoverRows,
+  type ReceiptClosingCarryoverRow,
+} from "@/src/lib/commissions/commissionReceiptCoverage.shared";
 import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 import type {
   CommissionsReceiptClosingLine,
@@ -44,6 +50,7 @@ import {
   computeReceiptClosingSellerTotals,
   filterReceiptClosingLinesBySellerKey,
   findReceiptClosingSellerRowByKey,
+  receiptClosingLineSellerKey,
   receiptClosingSellerFilterLabel,
   receiptClosingSellerRowKey,
   type ReceiptClosingSellerTotals,
@@ -189,6 +196,10 @@ export function CommissionsReceiptClosingPage() {
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [printRequestId, setPrintRequestId] = useState(0);
   const [printingPdf, setPrintingPdf] = useState(false);
+  /** Linhas marcadas no grid de pendências (ainda não enviadas ao servidor). */
+  const [carryoverChecked, setCarryoverChecked] = useState<Set<string>>(() => new Set());
+  /** Recebimentos incluídos na prévia atual (o servidor recalcula e revalida). */
+  const [includedCarryoverIds, setIncludedCarryoverIds] = useState<number[]>([]);
 
   useEffect(() => {
     void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
@@ -310,6 +321,8 @@ export function CommissionsReceiptClosingPage() {
       );
       setSellerFilterKey(null);
       setShowGroupCompanyAudit(false);
+      setCarryoverChecked(new Set());
+      setIncludedCarryoverIds([]);
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível carregar o fechamento."));
@@ -319,15 +332,30 @@ export function CommissionsReceiptClosingPage() {
     }
   }, [nomusBase, nomusCommission]);
 
-  const loadPreview = useCallback(async () => {
+  const loadPreview = useCallback(async (
+    carryoverIds: readonly number[] = [],
+    options: { keepFilters?: boolean } = {}
+  ) => {
     setLoading(true);
     setError(null);
     try {
+      const qs = nomusQueryParams();
+      // Só IDs de recebimento: valores, vendedor e competência vêm do servidor.
+      if (carryoverIds.length > 0) qs.set("carryoverReceiptIds", carryoverIds.join(","));
       const payload = await fetchJsonOk<CommissionsReceiptClosingPayload>(
-        `/api/commissions/receipt-closing/preview?${nomusQueryParams()}`
+        `/api/commissions/receipt-closing/preview?${qs}`
       );
-      setSellerFilterKey(null);
-      setShowGroupCompanyAudit(false);
+      if (!options.keepFilters) {
+        setSellerFilterKey(null);
+        setShowGroupCompanyAudit(false);
+      }
+      setCarryoverChecked(new Set());
+      setIncludedCarryoverIds(
+        (payload.pendingCarryover?.rows ?? [])
+          .filter((row) => row.selected)
+          .flatMap((row) => row.receiptExternalIds)
+          .sort((a, b) => a - b)
+      );
       setData(payload);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível gerar a prévia."));
@@ -434,6 +462,8 @@ export function CommissionsReceiptClosingPage() {
           acknowledgeCriticalDivergence:
             data?.requiresCriticalConfirmation && criticalConfirm === "DIVERGENCIA CRITICA",
           notes: applyNotes || null,
+          // Pendências escolhidas nesta prévia (mesma competência); o servidor revalida.
+          carryoverReceiptIds: carryoverAppliesToForm ? includedCarryoverIds : [],
         }),
       });
       setApplyOpen(false);
@@ -472,6 +502,57 @@ export function CommissionsReceiptClosingPage() {
     } finally {
       setReprocessing(false);
     }
+  }
+
+  const carryoverSection = data?.mode === "PREVIEW" ? data.pendingCarryover ?? null : null;
+  const carryoverAppliesToForm =
+    data != null && data.year === Number(year) && data.month === Number(month);
+
+  const carryoverRows = useMemo(() => {
+    const rows = carryoverSection?.rows ?? [];
+    if (!sellerFilterKey) return rows;
+    return rows.filter(
+      (row) => receiptClosingLineSellerKey({ ...row, status: row.lineStatus }) === sellerFilterKey
+    );
+  }, [carryoverSection, sellerFilterKey]);
+
+  const carryoverSummary = useMemo(() => summarizeCarryoverRows(carryoverRows), [carryoverRows]);
+
+  function toggleCarryoverRow(row: ReceiptClosingCarryoverRow) {
+    setCarryoverChecked((current) => {
+      const next = new Set(current);
+      if (next.has(row.rowKey)) next.delete(row.rowKey);
+      else next.add(row.rowKey);
+      return next;
+    });
+  }
+
+  function selectEligibleCarryovers() {
+    setCarryoverChecked(
+      new Set(carryoverRows.filter((row) => row.includable && !row.selected).map((row) => row.rowKey))
+    );
+  }
+
+  function includeCarryoverReceipts(receiptIds: readonly number[]) {
+    if (receiptIds.length === 0) return;
+    const next = [...new Set([...includedCarryoverIds, ...receiptIds])].sort((a, b) => a - b);
+    void loadPreview(next, { keepFilters: true });
+  }
+
+  function includeCheckedCarryovers() {
+    includeCarryoverReceipts(
+      carryoverRows
+        .filter((row) => carryoverChecked.has(row.rowKey) && row.includable && !row.selected)
+        .flatMap((row) => row.receiptExternalIds)
+    );
+  }
+
+  function removeCarryoverRow(row: ReceiptClosingCarryoverRow) {
+    const drop = new Set(row.receiptExternalIds);
+    void loadPreview(
+      includedCarryoverIds.filter((id) => !drop.has(id)),
+      { keepFilters: true }
+    );
   }
 
   const cards = data?.cards;
@@ -841,6 +922,40 @@ export function CommissionsReceiptClosingPage() {
             />
           </CommissionsKpiSection>
 
+          {data.composition && isCompetenceOfficialInIndusCost(data.year, data.month) ? (
+            <CommissionsKpiSection
+              title="Composição da comissão"
+              eyebrow="Competência atual + pendências de períodos anteriores = total do fechamento"
+              testId="commissions-receipt-closing-composition"
+              minColumnWidth={240}
+            >
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                label="Comissão da competência"
+                amount={data.composition.currentCompetenceCommission}
+                amountFormat="currency"
+                tone="money"
+              />
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                label="Pendências anteriores incluídas"
+                amount={data.composition.carryoverCommission}
+                amountFormat="currency"
+                tone="money"
+                helperText={`${data.composition.carryoverLineCount} linha(s) · recebido ${formatFinanceCurrency(
+                  data.composition.carryoverReceivedAmount
+                )}`}
+              />
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+                label="Total do fechamento"
+                amount={data.composition.totalCommission}
+                amountFormat="currency"
+                tone="success"
+              />
+            </CommissionsKpiSection>
+          ) : null}
+
           <section className="space-y-2">
             <h4 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
               Por vendedor
@@ -855,6 +970,22 @@ export function CommissionsReceiptClosingPage() {
               onRowClick={handleSellerRowClick}
             />
           </section>
+
+          {carryoverSection && carryoverSection.rows.length > 0 ? (
+            <CommissionsReceiptClosingCarryoverGrid
+              section={carryoverSection}
+              rows={carryoverRows}
+              summary={carryoverSummary}
+              checkedKeys={carryoverChecked}
+              canInclude={canClose}
+              busy={loading}
+              onToggleRow={toggleCarryoverRow}
+              onSelectEligible={selectEligibleCarryovers}
+              onIncludeChecked={includeCheckedCarryovers}
+              onIncludeRow={(row) => includeCarryoverReceipts(row.receiptExternalIds)}
+              onRemoveRow={removeCarryoverRow}
+            />
+          ) : null}
 
           <section className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -912,6 +1043,16 @@ export function CommissionsReceiptClosingPage() {
               Esta ação grava o ledger oficial. Digite{" "}
               <strong>FECHAR COMISSAO</strong> para confirmar.
             </p>
+            {carryoverAppliesToForm && carryoverSection && carryoverSection.summary.selectedCount > 0 ? (
+              <p
+                className="mt-2 text-sm text-[#111827]"
+                data-testid="commissions-receipt-closing-apply-carryover"
+              >
+                Inclui {carryoverSection.summary.selectedCount} pendência(s) de períodos anteriores —
+                comissão {formatFinanceCurrency(carryoverSection.summary.selectedCommissionAmount)}. O
+                servidor recalcula e revalida cada recebimento antes de gravar.
+              </p>
+            ) : null}
             {data?.requiresCriticalConfirmation ? (
               <p className="mt-2 text-sm text-amber-800">
                 Há divergência crítica ({data.criticalDivergenceReason}). Digite também{" "}

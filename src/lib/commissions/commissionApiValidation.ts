@@ -1,3 +1,4 @@
+import { parseCarryoverReceiptIds } from "./commissionReceiptCoverage.shared.js";
 import type {
   CommissionCalculationRunMode,
   CommissionPersonSource,
@@ -803,6 +804,9 @@ export function parseReceiptClosingApplyBody(body: unknown) {
     notes: optionalString(record.notes),
     acknowledgeCriticalDivergence:
       record.acknowledgeCriticalDivergence === true || criticalConfirm === "DIVERGENCIA CRITICA",
+    // Só IDs de recebimento: valor, comissão, vendedor e competência são sempre
+    // recalculados no servidor (nunca aceitos do navegador).
+    carryoverReceiptIds: parseCarryoverReceiptIds(record.carryoverReceiptIds),
   };
 }
 

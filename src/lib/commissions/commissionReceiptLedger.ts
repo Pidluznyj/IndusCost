@@ -77,7 +77,29 @@ export type CommissionReceiptLedgerLineKeyInput = {
   installmentNumber: number | null;
   nomusOrderItemId: number | null;
   ruleId: string | null;
+  /**
+   * Pendência de período anterior incluída no fechamento: competência natural +
+   * tipo de inclusão entram na chave SÓ nesse caso — linha normal e pendência do
+   * mesmo título no mesmo fechamento nunca colidem, e as chaves normais não mudam.
+   */
+  carryover?: {
+    naturalYear: number;
+    naturalMonth: number;
+    inclusionType: string;
+  } | null;
 };
+
+/** Sufixo da chave só para pendências (linhas normais mantêm a chave histórica). */
+function carryoverKeyParts(input: CommissionReceiptLedgerLineKeyInput): string[] {
+  const carryover = input.carryover;
+  if (!carryover || carryover.inclusionType === "NORMAL") return [];
+  return [
+    "carryover",
+    carryover.inclusionType,
+    String(carryover.naturalYear),
+    String(carryover.naturalMonth),
+  ];
+}
 
 export type CommissionMonthlyClosingHashInput = {
   year: number;
@@ -128,6 +150,7 @@ export function buildCommissionReceiptLedgerLineKey(
     input.installmentNumber ?? "",
     input.nomusOrderItemId ?? "",
     input.ruleId ?? "",
+    ...carryoverKeyParts(input),
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -147,6 +170,7 @@ export function buildPersistedCommissionReceiptLedgerLineKey(
     input.installmentNumber ?? "",
     input.nomusOrderItemId ?? "",
     input.ruleId ?? "",
+    ...carryoverKeyParts(input),
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
