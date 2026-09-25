@@ -144,7 +144,8 @@ describe("InventoryDashboardTab", () => {
     assert.match(tab, /label="MP"/);
     assert.match(tab, /label="PA"/);
     assert.match(tab, /label="Componentes"/);
-    assert.match(tab, /Custo de suprimentos/);
+    assert.match(tab, /Custo congelado de MP/);
+    assert.match(tab, /custo fabril congelado no Varejo 1/);
     assert.match(tab, /Custo industrial/);
     assert.match(tab, /Custo de fabricação/);
     assert.match(tab, /Valor de venda/);

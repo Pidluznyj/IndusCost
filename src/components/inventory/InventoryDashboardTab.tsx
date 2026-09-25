@@ -186,17 +186,18 @@ function typeSliceSubtitle(slice: InventoryValuationTypeSlice): string {
     return `Valor de venda · ${slice.saleItemCount} de ${slice.positiveItemCount} itens${missing}`;
   }
   if (slice.cardBasis === "SUPPLY_COST") {
-    return `Custo de suprimentos · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
+    return `Custo congelado de MP · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
   }
   if (slice.cardBasis === "INDUSTRIAL_COST") {
-    return `Custo industrial · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
+    return `Custo fabril congelado · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
   }
   if (slice.cardBasis === "MIXED") {
     return `Valor de venda · ${slice.saleItemCount} itens · custo · ${slice.costItemCount}${missing}`;
   }
+  if (slice.sourceUnavailableReason) return slice.sourceUnavailableReason;
   return slice.includedInRetailValuation
     ? `${slice.uncoveredItemCount} itens sem preço e sem custo`
-    : `${slice.uncoveredItemCount} itens sem custo de suprimentos`;
+    : `${slice.uncoveredItemCount} itens sem custo congelado de MP`;
 }
 
 function retailTypeSubtitle(slice: InventoryValuationTypeSlice): string {
@@ -216,9 +217,9 @@ function retailTypeSubtitle(slice: InventoryValuationTypeSlice): string {
 
 function typeSliceHint(slice: InventoryValuationTypeSlice): string {
   if (!slice.includedInRetailValuation) {
-    return "Saldo físico × custo atual do cadastro de Suprimentos. Matéria-prima não usa a tabela Varejo 1.";
+    return "Saldo físico × custo posto congelado na tabela oficial de matéria-prima da formação de preço.";
   }
-  return "O valor do card é o saldo físico × preço da tabela Varejo 1. O custo de fabricação é o mesmo saldo × custo industrial vigente.";
+  return "O valor do card é o saldo físico × preço da tabela Varejo 1. O custo de fabricação é o custo fabril congelado na mesma formação de preço, com matéria-prima, homem-hora e hora-máquina.";
 }
 
 function TypeValueCard({
@@ -238,7 +239,7 @@ function TypeValueCard({
   const showSale = slice.includedInRetailValuation && sale.available && sale.value != null;
   const showSupply = !slice.includedInRetailValuation && slice.cardValue != null;
   const showMoney = showSale || showSupply;
-  const emptyLabel = slice.includedInRetailValuation ? "Indisponível" : "Sem custo";
+  const emptyLabel = slice.includedInRetailValuation || slice.sourceUnavailableReason ? "Indisponível" : "Sem custo";
   return (
     <KpiLink to="/inventory/balances" testId={testId}>
       <FinanceExecutiveTotalizerCard
@@ -301,8 +302,8 @@ export function InventoryDashboardTab({ data, loading = false }: Props) {
             amountFormat="currency"
             value={cost.available ? undefined : "Indisponível"}
             valueSize={cost.available ? "default" : "text"}
-            subtitle={valuationCoverageSubtitle("Base: custo industrial vigente", cost)}
-            helperText={valuationHint(cost, "custo industrial")}
+            subtitle={valuationCoverageSubtitle("Base: custo fabril congelado no Varejo 1", cost)}
+            helperText={valuationHint(cost, "custo fabril congelado")}
             tone="neutral"
             icon={Factory}
             loading={loading}

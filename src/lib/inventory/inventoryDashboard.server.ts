@@ -7,11 +7,13 @@ import {
   aggregateInventoryPhysicalBalances,
   computeInventoryManagerialValuation,
   emptyInventoryManagerialValuation,
-  indexUnitAmountByProductId,
   isInventoryValuationItemType,
   type InventoryManagerialValuation,
 } from "./inventoryManagerialValuation.js";
-import { loadInventoryValuationUnitPrices } from "./inventoryManagerialValuation.server.js";
+import {
+  loadInventoryMaterialFrozenCosts,
+  loadInventoryValuationUnitPrices,
+} from "./inventoryManagerialValuation.server.js";
 import {
   inventoryDec,
   inventoryDecOrNull,
@@ -218,21 +220,13 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
         .map((line) => line.materialId as string)
     ),
   ];
-  const supplyRows =
-    materialIds.length === 0
-      ? []
-      : await prisma.material.findMany({
-          where: { id: { in: materialIds } },
-          select: { id: true, currentCost: true },
-        });
-  const supplyCostByMaterialId = indexUnitAmountByProductId(
-    supplyRows.map((row) => ({ productId: row.id, amount: row.currentCost }))
-  );
+  const materialCosts = await loadInventoryMaterialFrozenCosts(prisma, materialIds, new Date());
   const valuation = computeInventoryManagerialValuation({
     lines: physicalLines,
     retailPriceByProductId: unitPrices.retailPriceByProductId,
     industrialCostByProductId: unitPrices.industrialCostByProductId,
-    supplyCostByMaterialId,
+    supplyCostByMaterialId: materialCosts.supplyCostByMaterialId,
+    supplyCostUnavailableReason: materialCosts.supplyCostUnavailableReason,
     retailUnavailableReason: unitPrices.retailUnavailableReason,
     industrialUnavailableReason: unitPrices.industrialUnavailableReason,
   });

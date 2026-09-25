@@ -3,7 +3,9 @@
  *
  * Quantidade: saldo físico já agregado por item (InventoryBalance).
  * Preço: somente a tabela comercial publicada de código VAREJO_1.
- * Custo: somente o custo industrial publicado vigente (ProductionCostTableItem.unitProductionCost).
+ * Custo de PA e componente: frozenTotalCost da mesma versão do Varejo 1.
+ * Esse valor é o custo fabril congelado na formação de preço (matéria-prima, homem-hora e hora-máquina).
+ * Custo de matéria-prima: landedCostSnapshot da tabela oficial de MP publicada.
  *
  * Não grava saldo, não lê descrição e não trata ausência de preço/custo como zero.
  */
@@ -24,7 +26,10 @@ export const INVENTORY_RETAIL_VALUATION_UNAVAILABLE =
   "Tabela Comercial Varejo 1 não está publicada.";
 
 export const INVENTORY_INDUSTRIAL_COST_UNAVAILABLE =
-  "Não existe custo industrial vigente publicado.";
+  "Tabela Comercial Varejo 1 não está publicada, então o custo fabril congelado não está disponível.";
+
+export const INVENTORY_MATERIAL_COST_UNAVAILABLE =
+  "Não existe tabela oficial de matéria-prima publicada.";
 
 export type InventoryValuationLine = {
   itemId: string;
@@ -62,8 +67,8 @@ export type InventoryValuationTypeSlice = {
   positiveItemCount: number;
   salesPotential: InventoryValuationMetric;
   /**
-   * Número do card: preço Varejo 1 quando o item tem, senão o custo daquele tipo.
-   * MP usa só o custo atual de Suprimentos. Null quando há saldo e nenhum item pôde ser valorizado.
+   * Número do card de MP: custo posto congelado. PA e componente usam o valor de venda no número grande.
+   * Null quando há saldo e nenhum item pôde ser valorizado.
    */
   cardValue: number | null;
   cardBasis: InventoryTypeCardBasis;
@@ -71,10 +76,12 @@ export type InventoryValuationTypeSlice = {
   costItemCount: number;
   uncoveredItemCount: number;
   /**
-   * Custo de fabricação deste recorte: saldo físico × custo industrial publicado.
-   * Null em matéria-prima, que usa o custo atual de Suprimentos.
+   * Custo de fabricação deste recorte: saldo físico × custo fabril congelado no Varejo 1.
+   * Null em matéria-prima, que usa o custo posto congelado da tabela oficial de MP.
    */
   manufacturingCost: InventoryValuationMetric | null;
+  /** Preenchido quando a fonte oficial daquele card não está publicada. */
+  sourceUnavailableReason: string | null;
 };
 
 export type InventoryManagerialValuation = {
@@ -301,6 +308,7 @@ function finishTypeSlice(input: {
   card: CardDraft;
   costBasis: "SUPPLY_COST" | "INDUSTRIAL_COST";
   manufacturingCost: InventoryValuationMetric | null;
+  sourceUnavailableReason?: string | null;
 }): InventoryValuationTypeSlice {
   return {
     includedInRetailValuation: input.includedInRetailValuation,
@@ -312,6 +320,7 @@ function finishTypeSlice(input: {
     costItemCount: input.card.costItemCount,
     uncoveredItemCount: input.card.uncoveredItemCount,
     manufacturingCost: input.manufacturingCost,
+    sourceUnavailableReason: input.sourceUnavailableReason ?? null,
   };
 }
 
@@ -321,8 +330,9 @@ export function computeInventoryManagerialValuation(input: {
   retailPriceByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null;
   /** Null = nenhuma versão de custo industrial publicada vigente. */
   industrialCostByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null;
-  /** Custo atual do cadastro de Suprimentos, por materialId. MP não usa Varejo 1. */
+  /** Custo posto congelado da tabela oficial de MP, por materialId. Null = tabela não publicada. */
   supplyCostByMaterialId?: ReadonlyMap<string, Prisma.Decimal | null> | null;
+  supplyCostUnavailableReason?: string | null;
   retailUnavailableReason?: string | null;
   industrialUnavailableReason?: string | null;
 }): InventoryManagerialValuation {
@@ -425,6 +435,7 @@ export function computeInventoryManagerialValuation(input: {
         card: rawCard,
         costBasis: "SUPPLY_COST",
         manufacturingCost: null,
+        sourceUnavailableReason: input.supplyCostUnavailableReason ?? null,
       }),
       finishedProduct: finishTypeSlice({
         includedInRetailValuation: true,

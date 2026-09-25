@@ -113,6 +113,8 @@ function normalizeTypeSlice(raw: unknown, includedInRetailValuation: boolean): I
     costItemCount: finiteNumber(row.costItemCount),
     uncoveredItemCount: finiteNumber(row.uncoveredItemCount),
     manufacturingCost: row.manufacturingCost == null ? null : normalizeValuationMetric(row.manufacturingCost),
+    sourceUnavailableReason:
+      typeof row.sourceUnavailableReason === "string" ? row.sourceUnavailableReason : null,
   };
 }
 

@@ -10,7 +10,10 @@ import {
   indexUnitAmountByProductId,
   type InventoryValuationLine,
 } from "./inventoryManagerialValuation.js";
-import { loadInventoryValuationUnitPrices } from "./inventoryManagerialValuation.server.js";
+import {
+  loadInventoryMaterialFrozenCosts,
+  loadInventoryValuationUnitPrices,
+} from "./inventoryManagerialValuation.server.js";
 
 const D = (value: string | number) => new Prisma.Decimal(value);
 
@@ -400,8 +403,8 @@ describe("inventory managerial valuation", () => {
 });
 
 describe("loadInventoryValuationUnitPrices", () => {
-  it("12. vários produtos usam uma leitura de preço e uma de custo", async () => {
-    const calls = { priceItems: 0, retailVersion: 0, costVersion: 0 };
+  it("12. preço e custo fabril saem da mesma linha do Varejo 1", async () => {
+    const calls = { priceItems: 0, retailVersion: 0 };
     const productIds = ["p1", "p2", "p3"];
     const db = {
       priceTable: {
@@ -417,19 +420,11 @@ describe("loadInventoryValuationUnitPrices", () => {
         findMany: async (args: { where: { productId: { in: string[] } } }) => {
           calls.priceItems += 1;
           assert.deepEqual(args.where.productId.in, productIds);
-          return productIds.map((productId) => ({ productId, salePrice: new Prisma.Decimal(10) }));
-        },
-      },
-      productionCostTableVersion: {
-        findFirst: async () => {
-          calls.costVersion += 1;
-          return {
-            id: "cost-1",
-            items: productIds.map((productId) => ({
-              productId,
-              unitProductionCost: new Prisma.Decimal(4),
-            })),
-          };
+          return productIds.map((productId) => ({
+            productId,
+            salePrice: new Prisma.Decimal(10),
+            frozenTotalCost: new Prisma.Decimal(4),
+          }));
         },
       },
     };
@@ -442,9 +437,33 @@ describe("loadInventoryValuationUnitPrices", () => {
 
     assert.equal(calls.priceItems, 1);
     assert.equal(calls.retailVersion, 1);
-    assert.equal(calls.costVersion, 1);
     assert.equal(loaded.retailPriceByProductId?.get("p2")?.toString(), "10");
     assert.equal(loaded.industrialCostByProductId?.get("p3")?.toString(), "4");
+    assert.equal(loaded.industrialUnavailableReason, null);
+  });
+
+  it("MP usa o custo posto congelado da tabela oficial", async () => {
+    const calls = { versions: 0, items: 0 };
+    const db = {
+      materialCostTableVersion: {
+        findFirst: async () => {
+          calls.versions += 1;
+          return { id: "mp-version" };
+        },
+      },
+      materialCostTableItem: {
+        findMany: async (args: { where: { materialId: { in: string[] } } }) => {
+          calls.items += 1;
+          assert.deepEqual(args.where.materialId.in, ["mat-1"]);
+          return [{ materialId: "mat-1", landedCostSnapshot: new Prisma.Decimal("1.5") }];
+        },
+      },
+    };
+    const loaded = await loadInventoryMaterialFrozenCosts(db as never, ["mat-1"], new Date("2026-09-25T12:00:00.000Z"));
+    assert.equal(calls.versions, 1);
+    assert.equal(calls.items, 1);
+    assert.equal(loaded.supplyCostByMaterialId?.get("mat-1")?.toString(), "1.5");
+    assert.equal(loaded.supplyCostUnavailableReason, null);
   });
 
   it("14. tabela Varejo 1 ausente não consulta itens de preço", async () => {
@@ -457,9 +476,6 @@ describe("loadInventoryValuationUnitPrices", () => {
           priceItems += 1;
           return [];
         },
-      },
-      productionCostTableVersion: {
-        findFirst: async () => null,
       },
     };
     const loaded = await loadInventoryValuationUnitPrices(db as never, ["p1"], new Date());

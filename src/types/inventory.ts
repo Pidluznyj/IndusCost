@@ -245,6 +245,7 @@ export type InventoryValuationTypeSlice = {
   uncoveredItemCount: number;
   /** Custo de fabricação do recorte. Null em matéria-prima. */
   manufacturingCost: InventoryValuationMetric | null;
+  sourceUnavailableReason: string | null;
 };
 
 export type InventoryManagerialValuation = {
