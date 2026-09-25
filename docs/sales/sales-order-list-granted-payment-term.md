@@ -196,7 +196,30 @@ e sem condição interpretável, agrupados por texto da condição.
 Resposta `{ paymentTermMonthly: SalesOrderGrantedPaymentTermMonthlySeries }` com `year`,
 `previousYear`, `monthBasis`, `rows[12]` (`current`/`previous`: `chartDays`,
 `weightedAverageDays`, `quality`, `coveragePercent`, `invoicedSharePercent`, contagens),
-`currentYearSummary`, `previousYearSummary`, `source` e `methodology`.
+`currentYearSummary`, `previousYearSummary`, `periodComparison`, `source` e `methodology`.
+
+### Período selecionado × mesmo período do ano anterior (cards do Resultado)
+
+Dois cards acima do gráfico respondem "no acumulado estamos melhor ou pior?". Vêm no
+mesmo endpoint (`periodComparison`), filtrando em memória as mesmas duas populações:
+nenhuma consulta extra.
+
+- **Período atual** (datas civis inclusivas, pela emissão do pedido):
+  - sem Mês: 01/01 do ano filtrado até a data de referência (`asOfDate` da tela; ausente
+    ou inválida = hoje). Ano já encerrado = ano inteiro;
+  - com Mês: o mês inteiro; mês em andamento = até a data de referência;
+  - período que ainda não começou fica inteiro (sem pedidos = sem número).
+- **Ano anterior**: as **mesmas datas** um ano antes (29/02 vira 28/02), mesmos filtros.
+- Cada lado usa exatamente o cálculo do card (`computeSalesOrderGrantedPaymentTermSummary`)
+  e só mostra número com qualidade FULL/PARTIAL; LOW mostra "Cobertura insuficiente".
+- **Delta** = dias do atual − dias do anterior, arredondado a 1 casa (a precisão exibida).
+  Menos dias = recebimento mais rápido = **melhor** (selo verde "−5,0 dias vs 2025 ·
+  melhor"); mais dias = **pior** (selo vermelho); igual = "Igual a 2025"; sem os dois
+  números = "Sem base de comparação".
+- Rótulos: "Prazo médio 2026 · acumulado" ou "Prazo médio Set/2026"; "Mesmo período 2025".
+  O subtítulo traz as datas e a cobertura do faturado ("01/01 a 25/09/2026 · cobertura
+  98,1% do faturado").
+- As barras continuam 12 meses: o Mês da tela só afeta os cards.
 
 ## Frontend
 
@@ -218,6 +241,10 @@ afetados. O KPI não depende de `showMarginEconomics`.
   fail-soft da UI, cards e rodapé.
 - `src/lib/salesOrderGrantedPaymentTermCard.test.tsx` — render real do card nos estados
   FULL/PARTIAL/LOW/UNAVAILABLE (sem faturados × sem títulos)/falha/loading.
+- Comparação do período (Resultado): datas (acumulado, ano encerrado/futuro, mês em
+  andamento, 29/02), paridade com o card, tendência e delta, cobertura baixa, sem base,
+  Mês e `asOfDate` da tela no loader, render dos dois cards
+  (`src/lib/salesOrderResultReceivableTermChart.test.tsx`).
 
 ## Fora de escopo / não alterado
 

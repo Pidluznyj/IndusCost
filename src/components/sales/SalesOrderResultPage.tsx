@@ -20,8 +20,14 @@ import {
   buildSalesOrderYearOptions,
   SALES_ORDER_MONTH_OPTIONS,
 } from "@/src/lib/salesOrderPeriodFilter";
-import { getSalesOrderResultApiPath } from "@/src/lib/salesOrderResultApi";
-import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
+import {
+  getSalesOrderResultApiPath,
+  getSalesOrderResultProjectionApiPath,
+} from "@/src/lib/salesOrderResultApi";
+import type {
+  SalesOrderResultDashboardPayload,
+  SalesOrderResultProjectionPayload,
+} from "@/src/lib/salesOrderResultTypes";
 import { buildSalesOrderResultTotalsMarginTooltipText } from "@/src/lib/salesOrderMarginDisplay";
 import {
   metricVariantToTotalizerTone,
@@ -55,6 +61,7 @@ import type { SalesOrderGrantedPaymentTermMonthlySeries } from "@/src/lib/salesO
 import {
   buildInitialSalesOrderResultAppliedFilters,
   buildSalesOrderResultQueryString,
+  formatSalesOrderResultAsOfDate,
   hasPendingSalesOrderResultFilters,
   toSalesOrderResultApiFilters,
   type SalesOrderResultAppliedFilters,
@@ -86,7 +93,7 @@ export function SalesOrderResultPage() {
   const canView = useMemo(() => canViewSalesOrderModule(auth), [auth]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
-  const asOfDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const asOfDate = useMemo(() => formatSalesOrderResultAsOfDate(new Date()), []);
 
   // Rascunho — só vira consulta ao clicar em Pesquisar.
   const [year, setYear] = useState(() => String(currentYear));
@@ -121,6 +128,9 @@ export function SalesOrderResultPage() {
   );
   const [termLoading, setTermLoading] = useState(false);
   const [termError, setTermError] = useState<string | null>(null);
+  const [projectionPayload, setProjectionPayload] =
+    useState<SalesOrderResultProjectionPayload | null>(null);
+  const [projectionLoading, setProjectionLoading] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
 
   const draft = useMemo<SalesOrderResultAppliedFilters>(
@@ -184,7 +194,7 @@ export function SalesOrderResultPage() {
     return () => ac.abort();
   }, [canView, sellerOptionsQuery]);
 
-  // Resultado (KPIs + gráficos de margem e projeção) — só com filtros aplicados.
+  // Resultado (KPIs + margem mensal; projeção como reserva) — só com filtros aplicados.
   useEffect(() => {
     if (!canView) return;
     const ac = new AbortController();
@@ -208,7 +218,32 @@ export function SalesOrderResultPage() {
     return () => ac.abort();
   }, [canView, applied, asOfDate]);
 
+  // Realizado vs Projetado — endpoint leve (sem motor de margem): o gráfico não
+  // espera a margem. Mesmos números do dashboard; se falhar, usa os do dashboard.
+  useEffect(() => {
+    if (!canView) return;
+    const ac = new AbortController();
+    setProjectionLoading(true);
+    void fetchJsonOk<SalesOrderResultProjectionPayload>(
+      getSalesOrderResultProjectionApiPath(toSalesOrderResultApiFilters(applied, asOfDate)),
+      { signal: ac.signal }
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) setProjectionPayload(data);
+      })
+      .catch((e: unknown) => {
+        if (isAbortError(e, ac.signal)) return;
+        console.error(e);
+        setProjectionPayload(null);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setProjectionLoading(false);
+      });
+    return () => ac.abort();
+  }, [canView, applied, asOfDate]);
+
   // Prazo médio de recebimento mês a mês — endpoint leve e independente (fail-soft).
+  // Cards do período: Mês da tela e data de referência; barras: 12 meses.
   useEffect(() => {
     if (!canView) return;
     const ac = new AbortController();
@@ -216,7 +251,7 @@ export function SalesOrderResultPage() {
     setTermError(null);
     void fetchJsonOk<{ paymentTermMonthly?: SalesOrderGrantedPaymentTermMonthlySeries }>(
       getSalesOrderGrantedPaymentTermMonthlyUrl(
-        buildSalesOrderResultQueryString(applied, { includeMonth: false })
+        buildSalesOrderResultQueryString(applied, { asOfDate })
       ),
       { signal: ac.signal }
     )
@@ -233,7 +268,7 @@ export function SalesOrderResultPage() {
         if (!ac.signal.aborted) setTermLoading(false);
       });
     return () => ac.abort();
-  }, [canView, applied]);
+  }, [canView, applied, asOfDate]);
 
   const marginTooltipText = useMemo(() => {
     const totals = payload?.totals;
@@ -254,6 +289,8 @@ export function SalesOrderResultPage() {
 
   const totals = payload?.totals;
   const warnings = payload?.warnings;
+  // Projeção: endpoint leve primeiro; o dashboard traz os mesmos números (reserva).
+  const projectionSource = projectionPayload ?? payload;
 
   return (
     <div className="space-y-6" data-testid="sales-order-result-page">
@@ -577,12 +614,30 @@ export function SalesOrderResultPage() {
         error={termError}
       />
 
-      {payload ? <SalesOrderResultMonthlyMarginChart rows={payload.monthlyMargin} /> : null}
       {payload ? (
+        <SalesOrderResultMonthlyMarginChart rows={payload.monthlyMargin} />
+      ) : loading ? (
+        <div
+          className={`${financeBiCardClass} flex min-h-[400px] items-center justify-center gap-2 p-5 text-sm text-[#6B7280]`}
+          data-testid="sales-order-result-monthly-chart-loading"
+        >
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+          Carregando margem mensal…
+        </div>
+      ) : null}
+      {projectionSource ? (
         <SalesOrderResultProjectionChart
-          rows={payload.realizedVsProjected}
-          projection={payload.projection}
+          rows={projectionSource.realizedVsProjected}
+          projection={projectionSource.projection}
         />
+      ) : projectionLoading ? (
+        <div
+          className={`${financeBiCardClass} flex min-h-[400px] items-center justify-center gap-2 p-5 text-sm text-[#6B7280]`}
+          data-testid="sales-order-result-projection-loading"
+        >
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+          Carregando projeção…
+        </div>
       ) : null}
     </div>
   );

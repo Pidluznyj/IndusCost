@@ -37,7 +37,8 @@ import type {
 import {
   extractNomusRawItems,
   matchRawItemToDbItem,
-  resolveSalesOrderItemNomusStatus,
+  resolveMatchedNomusRawItemStatus,
+  type NomusRawItem,
 } from "./salesOrderNomusRaw.js";
 
 export const SALES_ORDER_ITEM_MARGIN_SELECT = {
@@ -135,7 +136,9 @@ function mapItemToResolverInput(
   item: SalesOrderItemForMargin,
   order: SalesOrderForMargin,
   itemIndex: number,
-  totalItems: number
+  totalItems: number,
+  // Itens do JSON do pedido — o chamador em lote extrai uma vez por pedido.
+  rawItems: NomusRawItem[] = extractNomusRawItems(order.nomusRawResponse)
 ): SalesOrderMarginResolverItem {
   const dbItem = {
     externalProductId: item.externalProductId,
@@ -143,13 +146,10 @@ function mapItemToResolverInput(
     productNameSnapshot: item.productNameSnapshot,
   };
   const matchOptions = { itemIndex, totalDbItems: totalItems };
-  const rawItems = extractNomusRawItems(order.nomusRawResponse);
   const matched = matchRawItemToDbItem(rawItems, dbItem, matchOptions);
-  const nomusStatus = resolveSalesOrderItemNomusStatus(
-    order.nomusRawResponse,
-    dbItem,
-    matchOptions
-  );
+  // Mesmo resultado de resolveSalesOrderItemNomusStatus(order.nomusRawResponse,
+  // dbItem, matchOptions), que extraía e casava de novo os mesmos itens do JSON.
+  const nomusStatus = resolveMatchedNomusRawItemStatus(matched);
 
   const persistedCanceled =
     item.nomusIsCanceled === true ||
@@ -284,8 +284,12 @@ export async function buildSalesOrderMarginContext(
 
   for (const order of orders) {
     const items = order.items ?? itemsByOrderId.get(order.id) ?? [];
+    if (items.length === 0) continue;
+    // Itens do JSON do Nomus extraídos UMA vez por pedido (antes: duas vezes por
+    // item, custo quadrático no nº de itens). Mesmas funções, mesmo resultado.
+    const rawItems = extractNomusRawItems(order.nomusRawResponse);
     items.forEach((item, index) => {
-      resolverItems.push(mapItemToResolverInput(item, order, index, items.length));
+      resolverItems.push(mapItemToResolverInput(item, order, index, items.length, rawItems));
       itemOrderMap.set(item.id, order.id);
     });
   }
@@ -598,8 +602,9 @@ export async function buildSalesOrderMarginInputsForOrder(
   prisma: PrismaClient,
   order: SalesOrderForMargin & { items: SalesOrderItemForMargin[] }
 ) {
+  const rawItems = extractNomusRawItems(order.nomusRawResponse);
   const resolverItems = order.items.map((item, index) =>
-    mapItemToResolverInput(item, order, index, order.items.length)
+    mapItemToResolverInput(item, order, index, order.items.length, rawItems)
   );
   return buildSalesOrderMarginInputsFromVersionedProductionCosts(prisma, resolverItems);
 }

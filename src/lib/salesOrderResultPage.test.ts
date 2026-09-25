@@ -14,6 +14,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   buildInitialSalesOrderResultAppliedFilters,
   buildSalesOrderResultQueryString,
+  formatSalesOrderResultAsOfDate,
   hasPendingSalesOrderResultFilters,
   toSalesOrderResultApiFilters,
 } from "./salesOrderResultFilters.js";
@@ -95,6 +96,18 @@ describe("salesOrderResultFilters — rascunho × aplicado", () => {
       buildSalesOrderResultQueryString(buildInitialSalesOrderResultAppliedFilters(2025)),
       "year=2025"
     );
+
+    // SLA: Mês + data de referência (cards do período); as barras seguem 12 meses no servidor.
+    const term = new URLSearchParams(buildSalesOrderResultQueryString(applied, { asOfDate: "2026-09-25" }));
+    assert.equal(term.get("month"), "9");
+    assert.equal(term.get("asOfDate"), "2026-09-25");
+    assert.equal(full.has("asOfDate"), false);
+  });
+
+  it("data de referência da tela = dia civil local (não o dia UTC)", () => {
+    assert.equal(formatSalesOrderResultAsOfDate(new Date(2026, 8, 25, 23, 30)), "2026-09-25");
+    assert.equal(formatSalesOrderResultAsOfDate(new Date(2026, 0, 1, 0, 5)), "2026-01-01");
+    assert.equal(formatSalesOrderResultAsOfDate(new Date(2024, 1, 29, 12)), "2024-02-29");
   });
 
   it("filtros do motor do Resultado (números e asOfDate)", () => {
@@ -192,16 +205,19 @@ describe("SalesOrderResultPage — filtros no padrão do sistema e gráfico do S
     assert.match(page, /data-testid="sales-order-result-clear-filters"/);
     assert.match(page, /data-testid="sales-order-result-filters-pending"/);
     assert.match(page, /hasPendingSalesOrderResultFilters\(draft, applied\)/);
-    // Efeitos de consulta dependem só dos filtros APLICADOS (nunca do rascunho).
-    assert.match(page, /\}, \[canView, applied, asOfDate\]\);/);
-    assert.match(page, /\}, \[canView, applied\]\);/);
+    // Efeitos de consulta dependem só dos filtros APLICADOS (nunca do rascunho):
+    // resultado, projeção e SLA (+ data de referência) e vendedores.
+    assert.equal((page.match(/\}, \[canView, applied, asOfDate\]\);/g) ?? []).length, 3);
     assert.match(page, /\}, \[canView, sellerOptionsQuery\]\);/);
     assert.doesNotMatch(page, /void load\(\);/, "sem recarga automática a cada mudança de filtro");
-    // 3 consultas (vendedores, resultado, SLA), cada uma cancelável.
-    assert.equal((page.match(/fetchJsonOk</g) ?? []).length, 3);
-    assert.equal((page.match(/new AbortController\(\)/g) ?? []).length, 3);
-    assert.equal((page.match(/\{ signal: ac\.signal \}/g) ?? []).length, 3);
-    assert.equal((page.match(/return \(\) => ac\.abort\(\);/g) ?? []).length, 3);
+    // 4 consultas (vendedores, resultado, projeção, SLA), cada uma cancelável.
+    assert.equal((page.match(/fetchJsonOk</g) ?? []).length, 4);
+    assert.equal((page.match(/new AbortController\(\)/g) ?? []).length, 4);
+    assert.equal((page.match(/\{ signal: ac\.signal \}/g) ?? []).length, 4);
+    assert.equal((page.match(/return \(\) => ac\.abort\(\);/g) ?? []).length, 4);
+    // Data de referência = dia civil LOCAL (toISOString daria o dia UTC).
+    assert.match(page, /useMemo\(\(\) => formatSalesOrderResultAsOfDate\(new Date\(\)\), \[\]\)/);
+    assert.doesNotMatch(page, /toISOString\(\)\.slice\(0, 10\)/);
   });
 
   it("dropdowns com dados do servidor: vendedor, cliente, produto e Status CR múltiplo", () => {
@@ -221,17 +237,38 @@ describe("SalesOrderResultPage — filtros no padrão do sistema e gráfico do S
 
   it("gráfico mensal do prazo de recebimento (12 meses × ano anterior) e os dois gráficos originais", () => {
     assert.match(page, /<SalesOrderResultReceivableTermChart/);
+    // Mês e data de referência vão para o endpoint: os cards do período usam os
+    // dois; as barras continuam 12 meses (o loader ignora o Mês no where).
     assert.match(
       page,
-      /getSalesOrderGrantedPaymentTermMonthlyUrl\(\s*buildSalesOrderResultQueryString\(applied, \{ includeMonth: false \}\)/
+      /getSalesOrderGrantedPaymentTermMonthlyUrl\(\s*buildSalesOrderResultQueryString\(applied, \{ asOfDate \}\)/
     );
+    assert.doesNotMatch(page, /includeMonth: false/);
     assert.match(page, /setTermError\("Não foi possível carregar o prazo médio de recebimento mês a mês\."\)/);
     assert.match(page, /<SalesOrderResultMonthlyMarginChart rows=\{payload\.monthlyMargin\}/);
     assert.match(page, /<SalesOrderResultProjectionChart/);
     // Falha do SLA não mexe no resultado (fail-soft independente).
     const termStart = page.indexOf("getSalesOrderGrantedPaymentTermMonthlyUrl(");
-    const termBlock = page.slice(termStart, page.indexOf("}, [canView, applied]);", termStart));
+    const termBlock = page.slice(termStart, page.indexOf("}, [canView, applied, asOfDate]);", termStart));
+    assert.ok(termBlock.length > 0);
     assert.doesNotMatch(termBlock, /setPayload|setError\(/);
+  });
+
+  it("projeção vem do endpoint leve (não espera a margem); dashboard é a reserva", () => {
+    assert.match(
+      page,
+      /getSalesOrderResultProjectionApiPath\(toSalesOrderResultApiFilters\(applied, asOfDate\)\)/
+    );
+    assert.match(page, /const projectionSource = projectionPayload \?\? payload;/);
+    assert.match(page, /rows=\{projectionSource\.realizedVsProjected\}/);
+    assert.match(page, /projection=\{projectionSource\.projection\}/);
+    assert.match(page, /data-testid="sales-order-result-projection-loading"/);
+    assert.match(page, /data-testid="sales-order-result-monthly-chart-loading"/);
+    // Falha da projeção leve não mexe no resultado nem mostra erro (usa a reserva).
+    const projStart = page.indexOf("getSalesOrderResultProjectionApiPath(");
+    const projBlock = page.slice(projStart, page.indexOf("}, [canView, applied, asOfDate]);", projStart));
+    assert.ok(projBlock.length > 0);
+    assert.doesNotMatch(projBlock, /setPayload|setError\(/);
   });
 
   it("barra de filtros idêntica à da listagem (mesmas classes)", () => {
@@ -251,7 +288,7 @@ describe("Resultado — performance e escopo sem mudar números", () => {
   it("a rota da tela não calcula a série anual de margem da listagem; o charts-cache continua calculando", () => {
     assert.match(
       routes,
-      /buildSalesOrderResultDashboard\(\s*prisma,\s*req\.query as Record<string, unknown>,\s*new Date\(\),\s*\{ includeListMarginChartSeries: false \}\s*\)/
+      /buildSalesOrderResultDashboard\(prisma, query, now, \{\s*includeListMarginChartSeries: false,\s*timings,\s*\}\)/
     );
     assert.match(engine, /options\.includeListMarginChartSeries !== false/);
     assert.match(engine, /!includeListMarginChartSeries\s*\? Promise\.resolve\(LIST_MARGIN_CHART_SERIES_SKIPPED\)/);

@@ -26,6 +26,7 @@ import {
   buildSalesOrderGrantedPaymentTermOrderSelect,
   loadSalesOrderGrantedPaymentTermMonthlySeries,
   loadSalesOrderGrantedPaymentTermSummary,
+  parseGrantedPaymentTermReferenceDate,
 } from "./salesOrderGrantedPaymentTermSummary.server.js";
 import { andSalesOrderListWhere } from "./salesOrderListReceivableFilter.js";
 import { buildSalesOrderProductFilterWhere } from "./salesOrderProductFilter.js";
@@ -374,6 +375,55 @@ describe("payment-term-monthly — 12 meses × ano anterior com o where oficial 
       .map((c) => JSON.stringify(c.args.where));
     assert.equal(wheres.length, 2);
     for (const where of wheres) assert.match(where, /"id":\{"in":\[\]\}/);
+  });
+
+  it("cards do período: Mês e data de referência da tela, mesmas populações (sem consulta extra)", async () => {
+    const calls: RecordedCall[] = [];
+    const month = await loadSalesOrderGrantedPaymentTermMonthlySeries(createMonthlyFakeDb(calls), {
+      year: "2026",
+      month: "1",
+      asOfDate: "2026-01-20",
+    });
+    assert.equal(calls.filter((c) => c.method === "salesOrder.findMany").length, 2);
+    assert.equal(month.periodComparison.month, 1);
+    assert.equal(month.periodComparison.current.label, "01/01 a 20/01/2026");
+    assert.equal(month.periodComparison.previous.label, "01/01 a 20/01/2025");
+    assert.equal(month.periodComparison.current.displayDays, 45);
+    assert.equal(month.periodComparison.previous.displayDays, 14);
+    assert.equal(month.periodComparison.trend, "WORSE");
+    // Barras: 12 meses, sem o Mês.
+    assert.equal(month.rows.length, 12);
+
+    // Acumulado cortado em 11/01: o pedido de 12/01/2025 fica fora do ano anterior.
+    const ytd = await loadSalesOrderGrantedPaymentTermMonthlySeries(createMonthlyFakeDb([]), {
+      year: "2026",
+      asOfDate: "2026-01-11",
+    });
+    assert.equal(ytd.periodComparison.month, null);
+    assert.equal(ytd.periodComparison.current.displayDays, 45);
+    assert.equal(ytd.periodComparison.previous.summary.totalOrders, 0);
+    assert.equal(ytd.periodComparison.trend, "UNAVAILABLE");
+
+    // Data inválida → hoje (now).
+    const fallback = await loadSalesOrderGrantedPaymentTermMonthlySeries(
+      createMonthlyFakeDb([]),
+      { year: "2026", asOfDate: "2026-02-31" },
+      new Date(2026, 0, 15, 10)
+    );
+    assert.equal(fallback.periodComparison.current.to, "2026-01-15");
+    assert.equal(fallback.periodComparison.previous.to, "2025-01-15");
+  });
+
+  it("data de referência: YYYY-MM-DD civil local; ausente ou inválida usa agora", () => {
+    const now = new Date(2026, 8, 25, 10);
+    const parsed = parseGrantedPaymentTermReferenceDate("2026-03-05", now);
+    assert.deepEqual(
+      [parsed.getFullYear(), parsed.getMonth(), parsed.getDate()],
+      [2026, 2, 5]
+    );
+    assert.equal(parseGrantedPaymentTermReferenceDate(undefined, now), now);
+    assert.equal(parseGrantedPaymentTermReferenceDate("25/09/2026", now), now);
+    assert.equal(parseGrantedPaymentTermReferenceDate("2026-02-30", now), now);
   });
 });
 

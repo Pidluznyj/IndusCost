@@ -374,9 +374,25 @@ export function extractNomusItemStatusFromOrderRaw(
   options?: { itemIndex?: number; totalDbItems?: number }
 ): string | null {
   const rawItems = extractNomusRawItems(orderRaw);
-  const matched = matchRawItemToDbItem(rawItems, dbItem, options);
+  return resolveMatchedNomusRawItemStatusText(matchRawItemToDbItem(rawItems, dbItem, options));
+}
+
+/** Texto de status de um item do JSON já casado ao item persistido (null se não casou). */
+function resolveMatchedNomusRawItemStatusText(matched: NomusRawItem | null): string | null {
   if (!matched) return null;
   return matched.status ?? deepExtractNomusItemStatus(matched.raw);
+}
+
+/**
+ * Status Nomus normalizado de um item já casado com `matchRawItemToDbItem` — o mesmo
+ * resultado de `resolveSalesOrderItemNomusStatus(orderRaw, dbItem, options)` sem
+ * extrair e casar de novo os itens do JSON (uso em lote: motor de margem extrai os
+ * itens uma vez por pedido).
+ */
+export function resolveMatchedNomusRawItemStatus(
+  matched: NomusRawItem | null
+): SalesOrderItemNomusStatus {
+  return normalizeSalesOrderItemNomusStatus(resolveMatchedNomusRawItemStatusText(matched));
 }
 
 export function resolveSalesOrderItemNomusStatus(

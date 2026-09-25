@@ -307,3 +307,4 @@ src/lib/salesOrderResultPage.test.ts
 src/lib/salesOrderResultReceivableTermChart.test.tsx
 src/lib/nomus/nomusReceivableReceiptCoverage.test.ts
 src/lib/inventory/inventoryManagerialValuation.test.ts
+src/lib/salesOrderResultPerformance.test.ts
