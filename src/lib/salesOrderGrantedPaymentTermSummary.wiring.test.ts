@@ -17,13 +17,18 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { PrismaClient } from "@prisma/client";
 import {
+  SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH,
   SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH,
+  getSalesOrderGrantedPaymentTermMonthlyUrl,
   getSalesOrderGrantedPaymentTermSummaryUrl,
 } from "./salesOrderGrantedPaymentTermApi.js";
 import {
   buildSalesOrderGrantedPaymentTermOrderSelect,
+  loadSalesOrderGrantedPaymentTermMonthlySeries,
   loadSalesOrderGrantedPaymentTermSummary,
 } from "./salesOrderGrantedPaymentTermSummary.server.js";
+import { andSalesOrderListWhere } from "./salesOrderListReceivableFilter.js";
+import { buildSalesOrderProductFilterWhere } from "./salesOrderProductFilter.js";
 import {
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
@@ -265,6 +270,113 @@ describe("payment-term-summary — paridade com o where oficial da listagem", ()
   });
 });
 
+describe("payment-term-monthly — 12 meses × ano anterior com o where oficial da listagem", () => {
+  const PRODUCT_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+  /** População por chamada: 1ª = ano filtrado, 2ª = ano anterior (ordem do Promise.all). */
+  function createMonthlyFakeDb(calls: RecordedCall[]): PrismaClient {
+    const db = createFakeDb(calls);
+    const populations = [
+      [
+        {
+          id: "C1",
+          issueDate: new Date(2026, 0, 10),
+          totalNetValue: 10_000,
+          paymentTerms: null,
+          nfeLinks: [{ nfeExternalId: 101, dataProcessamento: NF_101_ISSUE }],
+        },
+      ],
+      [
+        {
+          id: "P1",
+          issueDate: new Date(2025, 0, 12),
+          totalNetValue: 4_000,
+          paymentTerms: "28 DDL",
+          nfeLinks: [{ nfeExternalId: 103, dataProcessamento: NF_103_PROCESSING }],
+        },
+      ],
+    ];
+    let call = 0;
+    (db as unknown as { salesOrder: { findMany: unknown } }).salesOrder.findMany = async (
+      args: unknown
+    ) => {
+      calls.push({ method: "salesOrder.findMany", args: (args ?? {}) as Record<string, unknown> });
+      return populations[call++] ?? [];
+    };
+    return db;
+  }
+
+  async function expectedYearWhere(query: Record<string, unknown>, year: number) {
+    const db = createFakeDb([]);
+    const parsed = parseSalesOrderListQuery(query);
+    const sellerWhere = await resolveSalesOrderListSellerWhere(db, {
+      sellerKeyRaw: parsed.sellerKeyRaw,
+      sellerText: parsed.sellerText,
+    });
+    return andSalesOrderListWhere(
+      await resolveSalesOrderListWhere(db, { ...parsed, year, month: null }, sellerWhere),
+      buildSalesOrderProductFilterWhere(query.productId)
+    );
+  }
+
+  it("ano filtrado e anterior com os filtros da tela, sem o Mês, com produto; queries constantes", async () => {
+    const query = {
+      year: "2026",
+      month: "9",
+      customerId: "c1",
+      sellerKey: "123",
+      status: "SENT_TO_NOMUS",
+      productId: PRODUCT_ID,
+      page: "3",
+    };
+    const calls: RecordedCall[] = [];
+    const series = await loadSalesOrderGrantedPaymentTermMonthlySeries(createMonthlyFakeDb(calls), query);
+
+    const populationCalls = calls.filter((c) => c.method === "salesOrder.findMany");
+    assert.equal(populationCalls.length, 2, "uma consulta por ano");
+    assert.deepEqual(populationCalls[0]!.args.where, await expectedYearWhere(query, 2026));
+    assert.deepEqual(populationCalls[1]!.args.where, await expectedYearWhere(query, 2025));
+    assert.deepEqual(populationCalls[0]!.args.select, buildSalesOrderGrantedPaymentTermOrderSelect());
+    const currentWhere = JSON.stringify(populationCalls[0]!.args.where);
+    assert.match(currentWhere, /"customerId":"c1"/);
+    assert.match(currentWhere, /"externalSellerId":123/);
+    assert.match(currentWhere, /"status":"SENT_TO_NOMUS"/);
+    assert.match(currentWhere, new RegExp(`"productId":"${PRODUCT_ID}"`));
+    for (const call of populationCalls) {
+      assert.equal("skip" in call.args, false);
+      assert.equal("take" in call.args, false);
+    }
+    assert.equal(calls.filter((c) => c.method === "nomusNfe.findMany").length, 1);
+    assert.equal(calls.filter((c) => c.method === "nomusAccountsReceivable.findMany").length, 1);
+    assert.equal(
+      calls.filter((c) => /.(findFirst|findUnique|count|update|updateMany|create|delete)$/.test(c.method)).length,
+      0
+    );
+
+    assert.equal(series.year, 2026);
+    assert.equal(series.previousYear, 2025);
+    assert.equal(series.rows[0]!.current.chartDays, 45, "títulos 30/60 da NF 101");
+    assert.equal(series.rows[0]!.previous.chartDays, 14, "título da NF 103 prevalece sobre 28 DDL");
+    assert.equal(series.rows.slice(1).every((r) => r.current.totalOrders === 0), true);
+  });
+
+  it("sem Ano na query usa o ano corrente; produto inválido não é ignorado em silêncio", async () => {
+    const calls: RecordedCall[] = [];
+    const series = await loadSalesOrderGrantedPaymentTermMonthlySeries(
+      createMonthlyFakeDb(calls),
+      { productId: "nao-e-uuid" },
+      new Date(2025, 5, 1)
+    );
+    assert.equal(series.year, 2025);
+    assert.equal(series.previousYear, 2024);
+    const wheres = calls
+      .filter((c) => c.method === "salesOrder.findMany")
+      .map((c) => JSON.stringify(c.args.where));
+    assert.equal(wheres.length, 2);
+    for (const where of wheres) assert.match(where, /"id":\{"in":\[\]\}/);
+  });
+});
+
 describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => {
   const loader = codeOnly(read("src/lib/salesOrderGrantedPaymentTermSummary.server.ts"));
   const pure = codeOnly(read("src/lib/salesOrderGrantedPaymentTerm.ts"));
@@ -294,7 +406,9 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.doesNotMatch(loader, /groupBy|aggregate|findFirst|findUnique|\.count\(/);
     assert.doesNotMatch(loader, /nomusRawResponse|rawPayload|xmlRaw/);
     assert.doesNotMatch(loader, /for\s*\(|while\s*\(|forEach\(/, "sem loop com Prisma (N+1)");
-    assert.doesNotMatch(loader, /await[^;]*\.map\(/, "sem await dentro de map");
+    assert.doesNotMatch(loader, /\.map\(\s*async/, "sem consulta dentro de map (N+1)");
+    // Consultas de população limitadas ao número de wheres (1 no card, 2 na série mensal).
+    assert.match(loader, /wheres\.map\(\(where\) => db\.salesOrder\.findMany\(\{ where, select \}\)\)/);
     assert.doesNotMatch(loader, WRITE_PATTERN);
     assert.doesNotMatch(loader, /settlementDate|amountReceived|balanceReceivable|paymentMethod/);
   });
@@ -320,6 +434,11 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(routes, /\.status\(500\)/);
     assert.equal(SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH, "/api/sales-orders/payment-term-summary");
     assert.doesNotMatch(SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH, /:/, "rota estática");
+    // Série mensal (tela Resultado): mesma guarda, rota estática no mesmo registro.
+    assert.match(routes, /SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH, \.\.\.guard/);
+    assert.match(routes, /loadSalesOrderGrantedPaymentTermMonthlySeries\(/);
+    assert.equal(SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH, "/api/sales-orders/payment-term-monthly");
+    assert.doesNotMatch(SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH, /:/, "rota estática");
   });
 
   it("server.ts registra a rota estática antes de /api/sales-orders/:id", () => {
@@ -343,6 +462,11 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
       "/api/sales-orders/payment-term-summary?year=2026&month=9"
     );
     assert.equal(getSalesOrderGrantedPaymentTermSummaryUrl(), "/api/sales-orders/payment-term-summary");
+    assert.equal(
+      getSalesOrderGrantedPaymentTermMonthlyUrl("year=2026&customerId=c1"),
+      "/api/sales-orders/payment-term-monthly?year=2026&customerId=c1"
+    );
+    assert.equal(getSalesOrderGrantedPaymentTermMonthlyUrl(), "/api/sales-orders/payment-term-monthly");
   });
 
   it("UI: fetch dedicado com a MESMA query, AbortSignal, fail-soft e sem depender de showMarginEconomics", () => {
@@ -369,13 +493,18 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.ok(idxListFetch > 0 && idxListFetch < idxKpi, "KPI só depois do GET da lista");
   });
 
-  it("cards: Imposto a pagar e Custo estimado fora do overview; Margem comercial, testId e rodapé", () => {
+  it("cards: Imposto a pagar e Custo estimado fora do overview; Margem comercial, testId e mesma altura", () => {
     assert.match(cards, /GRANTED_PAYMENT_TERM_CARD_TEST_ID/);
     assert.match(cards, /GRANTED_PAYMENT_TERM_CARD_LABEL/);
     assert.match(cards, /resolveGrantedPaymentTermCardPresentation\(/);
-    assert.match(cards, /paymentTerm\.footnote/);
-    assert.match(cards, /sales-order-list-average-payment-term-footnote/);
-    assert.match(css, /\.sales-order-list-summary-footnote/);
+    // Participação do faturado vai para o tooltip: o card não tem linha extra.
+    assert.doesNotMatch(cards, /footnote/);
+    assert.doesNotMatch(css, /sales-order-list-summary-footnote/);
+    // Todos os cards da faixa com a altura do mais alto (label em 2 linhas, badge de margem).
+    assert.match(
+      css,
+      /\.sales-order-list-summary-grid > \* > div,\s*\.sales-order-list-summary-grid \.metric-card \{\s*height: 100%;\s*\}/
+    );
     assert.match(cards, /CalendarClock/);
     assert.match(cards, /Margem comercial/);
     assert.match(cards, /sales-order-list-general-margin-card/);

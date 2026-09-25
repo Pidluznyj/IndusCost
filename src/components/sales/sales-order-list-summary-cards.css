@@ -8,15 +8,15 @@
   --metric-card-min: 152px;
 }
 
-/* Nota de rodapé discreta do card de prazo (participação do valor faturado). */
-.sales-order-list-summary-footnote {
-  display: block;
-  font-size: 10px;
-  line-height: 1.3;
-  color: var(--color-muted-foreground, #64748b);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/*
+ * Cards da faixa sempre com a mesma altura: o mais alto da linha (label em duas
+ * linhas, badge de margem parcial) define a altura e os demais esticam, em vez
+ * de ficarem mais baixos. Os itens do grid já esticam (align-items: stretch);
+ * aqui o wrapper interno e o card acompanham essa altura.
+ */
+.sales-order-list-summary-grid > * > div,
+.sales-order-list-summary-grid .metric-card {
+  height: 100%;
 }
 
 /* Badge de margem parcial. */

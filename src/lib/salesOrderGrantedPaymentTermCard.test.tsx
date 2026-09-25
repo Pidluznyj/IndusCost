@@ -76,6 +76,16 @@ function cardHtml(html: string): string {
   return html.slice(start, end);
 }
 
+/** Texto visível do card: sem atributos (title/aria-label do tooltip ficam de fora). */
+function visibleText(card: string): string {
+  return card.replace(/<[^>]*>/g, " ");
+}
+
+/** Texto do tooltip de ajuda do card (atributo title do botão de ajuda). */
+function tooltipText(card: string): string {
+  return [...card.matchAll(/<button[^>]*title="([^"]*)"/g)].map((m) => m[1]).join("\n");
+}
+
 describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
   it("overview tem Pedidos filtrados, Valor vendido, Prazo médio de recebimento e Ticket médio — sem Imposto/Custo", () => {
     const html = render({
@@ -113,7 +123,7 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.doesNotMatch(html, /Imposto a pagar|Custo estimado/);
   });
 
-  it("FULL mostra dias, cobertura do faturado, rodapé com participação do faturado e metodologia", () => {
+  it("FULL mostra dias e cobertura do faturado; participação do faturado e fonte só no tooltip", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({
@@ -132,12 +142,15 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.match(card, /data-quality="FULL"/);
     assert.match(card, /47,8 dias/);
     assert.match(card, /Cobertura: 96,4% do valor faturado/);
-    assert.match(card, /data-testid="sales-order-list-average-payment-term-footnote"/);
-    assert.match(card, /Faturado: 77,4% do valor vendido/);
-    assert.match(card, /emissão da NF-e/);
-    assert.match(card, /vencimento dos títulos do Contas a Receber/);
-    assert.match(card, /títulos do CR em 80,0% do valor faturado; condição comercial em 20,0%/);
-    assert.match(card, /Não mede atraso/);
+    assert.doesNotMatch(card, /footnote|metric-card-footer/, "sem linha extra no card");
+    // Faturado e fonte no tooltip, nunca como texto visível do card.
+    const tooltip = tooltipText(card);
+    assert.match(tooltip, /^Faturado: 77,4% do valor vendido \(pedidos sem NF-e ainda não entram na média\)\./);
+    assert.match(tooltip, /títulos do CR em 80,0% do valor faturado; condição comercial em 20,0%/);
+    assert.match(tooltip, /emissão da NF-e/);
+    assert.match(tooltip, /vencimento dos títulos do Contas a Receber/);
+    assert.match(tooltip, /Não mede atraso/);
+    assert.doesNotMatch(visibleText(card), /Faturado:|Fonte:/);
     assert.match(card, /data-variant="info"/);
   });
 
@@ -155,9 +168,10 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.match(card, /data-quality="PARTIAL"/);
     assert.match(card, /47,8 dias/);
     assert.match(card, /Cobertura parcial: 89,4% do faturado/);
-    assert.match(card, /Faturado: 77,4% do valor vendido/);
+    assert.match(tooltipText(card), /Faturado: 77,4% do valor vendido/);
+    assert.doesNotMatch(visibleText(card), /Faturado:/);
     assert.match(card, /data-variant="warning"/);
-    assert.match(card, /foram excluídos da média/);
+    assert.match(tooltipText(card), /foram excluídos da média/);
   });
 
   it("LOW mostra Cobertura insuficiente (sem o número principal) e expõe o prazo só no tooltip", () => {
@@ -196,7 +210,8 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.match(noTitles, /data-quality="UNAVAILABLE"/);
     assert.match(noTitles, /Indisponível/);
     assert.match(noTitles, /Sem títulos ou condições de pagamento suficientes/);
-    assert.match(noTitles, /Faturado: 77,4% do valor vendido/);
+    assert.match(tooltipText(noTitles), /Faturado: 77,4% do valor vendido/);
+    assert.doesNotMatch(visibleText(noTitles), /Faturado:/);
     assert.match(noTitles, /data-variant="neutral"/);
 
     const noInvoices = cardHtml(
@@ -211,7 +226,7 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
       })
     );
     assert.match(noInvoices, /Sem pedidos faturados no filtro/);
-    assert.match(noInvoices, /Faturado: 0,0% do valor vendido/);
+    assert.match(tooltipText(noInvoices), /Faturado: 0,0% do valor vendido/);
   });
 
   it("falha do endpoint (summary null) mostra Indisponível sem rodapé e sem derrubar os demais cards", () => {

@@ -107,14 +107,22 @@ condição comercial. "Cobertura insuficiente" agora significa problema real de 
 | UNAVAILABLE | `Indisponível` | `Sem pedidos faturados no filtro` ou `Sem títulos ou condições de pagamento suficientes` | neutral |
 | falha do endpoint | `Indisponível` | `Não foi possível carregar o indicador.` | neutral |
 
-Rodapé (`sales-order-list-average-payment-term-footnote`, quando há valor vendido):
-"Faturado: 77,4% do valor vendido".
+O card tem só valor + um subtítulo, como os demais (v4, 2026-09-25: a linha extra
+"Faturado: X% do valor vendido" deixava o card mais alto que os outros e foi para o
+tooltip). A faixa de cards usa a mesma altura para todos: o mais alto da linha (label em
+duas linhas, badge de margem parcial) define a altura e os demais esticam
+(`sales-order-list-summary-cards.css`).
 
-Tooltip (ícone de ajuda): metodologia (emissão da NF-e → vencimento, ponderação, pedidos
-sem NF-e fora, fallback da condição comercial, não mede atraso); em cobertura
-parcial/baixa acrescenta a exclusão; em LOW acrescenta o prazo calculado só sobre a parte
-coberta marcado como não confiável; quando há cobertura, acrescenta "Fonte: títulos do CR
-em X% do valor faturado; condição comercial em Y%."
+Tooltip (ícone de ajuda), primeiro os números do filtro e depois a metodologia:
+
+```
+Faturado: 31,0% do valor vendido (pedidos sem NF-e ainda não entram na média).
+Fonte: títulos do CR em 99,5% do valor faturado; condição comercial em 0,3%.
+[LOW] Prazo calculado só sobre a parte coberta: 47,8 dias (não confiável).
+
+Dias entre a emissão da NF-e e o vencimento dos títulos do Contas a Receber ...
+[PARTIAL/LOW] Pedidos faturados sem título de CR e sem condição interpretável foram excluídos da média.
+```
 
 ## API
 
@@ -167,6 +175,28 @@ Resposta `{ paymentTermSummary: SalesOrderGrantedPaymentTermSummary }`:
 
 `unrecognizedTerms` lista (top 20 por valor vendido) os pedidos faturados sem título válido
 e sem condição interpretável, agrupados por texto da condição.
+
+### Série mensal (tela Resultado)
+
+`GET /api/sales-orders/payment-term-monthly?<mesma query da tela Resultado>`
+
+- Mesma autorização e mesmo módulo de rotas do card (rota estática antes de `/:id`).
+- 12 meses do ano filtrado × os mesmos 12 meses do ano anterior. Para cada ano, o where
+  é o canônico da listagem (`resolveSalesOrderListWhere`) com todos os filtros da tela,
+  **exceto Mês**, mais o filtro opcional de produto da tela Resultado (pedidos que
+  contêm o produto).
+- Mês = emissão do pedido (`SalesOrder.issueDate`), a mesma base do filtro Ano/Mês. Cada
+  mês usa exatamente o cálculo do card: o ponto de set/2026 é igual ao card filtrado em
+  Ano 2026 + Mês Setembro com os mesmos demais filtros.
+- A barra só aparece com qualidade FULL/PARTIAL (mesma regra do card); mês com cobertura
+  baixa fica sem barra e o tooltip explica.
+- Queries: 2 `salesOrder.findMany` (um por ano) + 1 `nomusNfe.findMany` + 1 títulos para a
+  união das NF-e. Sem leitura por pedido, sem raw, read-only.
+
+Resposta `{ paymentTermMonthly: SalesOrderGrantedPaymentTermMonthlySeries }` com `year`,
+`previousYear`, `monthBasis`, `rows[12]` (`current`/`previous`: `chartDays`,
+`weightedAverageDays`, `quality`, `coveragePercent`, `invoicedSharePercent`, contagens),
+`currentYearSummary`, `previousYearSummary`, `source` e `methodology`.
 
 ## Frontend
 

@@ -106,16 +106,6 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
             icon={CalendarClock}
             helperText={paymentTerm.helperText}
             valueSize={paymentTermLoading ? "default" : paymentTerm.valueSize}
-            footer={
-              !paymentTermLoading && paymentTerm.footnote ? (
-                <span
-                  className="sales-order-list-summary-footnote"
-                  data-testid="sales-order-list-average-payment-term-footnote"
-                >
-                  {paymentTerm.footnote}
-                </span>
-              ) : undefined
-            }
             loading={paymentTermLoading}
           />
         </div>

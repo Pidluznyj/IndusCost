@@ -642,33 +642,47 @@ export function formatGrantedPaymentTermCoverage(percent: number | null | undefi
   return `${oneDecimalFormatter.format(percent)}%`;
 }
 
-/** Nota de rodapé do card: participação do valor faturado no valor vendido do filtro. */
-export function buildGrantedPaymentTermFootnote(
+/**
+ * Participação do valor faturado no valor vendido do filtro. Vai para o TOOLTIP
+ * do card (não ocupa linha no card, que mantém a mesma altura dos demais).
+ */
+export function buildGrantedPaymentTermInvoicedShareText(
   summary: SalesOrderGrantedPaymentTermSummary | null | undefined
 ): string | null {
   if (!summary || !(summary.positiveSalesAmount > 0)) return null;
-  return `Faturado: ${formatGrantedPaymentTermCoverage(summary.invoicedSharePercent)} do valor vendido`;
+  return (
+    `Faturado: ${formatGrantedPaymentTermCoverage(summary.invoicedSharePercent)} do valor vendido ` +
+    "(pedidos sem NF-e ainda não entram na média)."
+  );
 }
 
 /**
- * Texto de ajuda do card: metodologia, exclusões (parcial/baixa), prazo calculado
- * quando a cobertura é baixa (auditoria) e participação de cada fonte.
+ * Tooltip do card: primeiro os números do filtro (participação do faturado,
+ * fontes títulos do CR × condição comercial, prazo não confiável quando a
+ * cobertura é baixa), depois a metodologia.
  */
 export function buildGrantedPaymentTermHelpText(
   summary: SalesOrderGrantedPaymentTermSummary | null | undefined,
   quality: GrantedPaymentTermQuality
 ): string {
-  let text =
+  const methodology =
     quality === "PARTIAL" || quality === "LOW"
       ? GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT
       : GRANTED_PAYMENT_TERM_HELP_TEXT;
-  if (!summary || !(summary.coveredSalesAmount > 0)) return text;
-  if (quality === "LOW" && summary.weightedAverageDays != null) {
-    text += ` Prazo calculado só sobre a parte coberta: ${formatGrantedPaymentTermDays(summary.weightedAverageDays)} (não confiável).`;
+  const facts: string[] = [];
+  const invoicedShare = buildGrantedPaymentTermInvoicedShareText(summary);
+  if (invoicedShare) facts.push(invoicedShare);
+  if (summary && summary.coveredSalesAmount > 0) {
+    const titles = formatGrantedPaymentTermCoverage(summary.sources.receivableTitles.salesSharePercent);
+    const terms = formatGrantedPaymentTermCoverage(summary.sources.commercialTerms.salesSharePercent);
+    facts.push(`Fonte: títulos do CR em ${titles} do valor faturado; condição comercial em ${terms}.`);
+    if (quality === "LOW" && summary.weightedAverageDays != null) {
+      facts.push(
+        `Prazo calculado só sobre a parte coberta: ${formatGrantedPaymentTermDays(summary.weightedAverageDays)} (não confiável).`
+      );
+    }
   }
-  const titles = formatGrantedPaymentTermCoverage(summary.sources.receivableTitles.salesSharePercent);
-  const terms = formatGrantedPaymentTermCoverage(summary.sources.commercialTerms.salesSharePercent);
-  return `${text} Fonte: títulos do CR em ${titles} do valor faturado; condição comercial em ${terms}.`;
+  return facts.length > 0 ? `${facts.join("\n")}\n\n${methodology}` : methodology;
 }
 
 export type GrantedPaymentTermCardTone = "info" | "warning" | "neutral";
@@ -678,8 +692,6 @@ export type GrantedPaymentTermCardPresentation = {
   value: string;
   valueSize: "default" | "text";
   subtitle: string;
-  /** Linha discreta abaixo do subtítulo (participação do faturado); null quando não há dado. */
-  footnote: string | null;
   tone: GrantedPaymentTermCardTone;
   helperText: string;
 };
@@ -692,7 +704,8 @@ export type GrantedPaymentTermCardPresentation = {
  *   UNAVAILABLE → "Indisponível" / "Sem pedidos faturados no filtro" ou
  *                 "Sem títulos ou condições de pagamento suficientes" (neutral)
  *   null (endpoint falhou) → "Indisponível" / "Não foi possível carregar o indicador." (neutral)
- * Rodapé (quando há valor vendido): "Faturado: 77,4% do valor vendido".
+ * Tooltip: participação do faturado, fontes (títulos do CR × condição comercial) e
+ * metodologia. O card não tem linha extra: mantém a altura dos demais da faixa.
  */
 export function resolveGrantedPaymentTermCardPresentation(
   summary: SalesOrderGrantedPaymentTermSummary | null | undefined
@@ -703,7 +716,6 @@ export function resolveGrantedPaymentTermCardPresentation(
       value: GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL,
       valueSize: "text",
       subtitle: GRANTED_PAYMENT_TERM_LOAD_ERROR_SUBTITLE,
-      footnote: null,
       tone: "neutral",
       helperText: GRANTED_PAYMENT_TERM_HELP_TEXT,
     };
@@ -714,7 +726,6 @@ export function resolveGrantedPaymentTermCardPresentation(
   const quality: GrantedPaymentTermQuality = usable ? summary.quality : "UNAVAILABLE";
   const coverage = formatGrantedPaymentTermCoverage(summary.coveragePercent);
   const helperText = buildGrantedPaymentTermHelpText(summary, quality);
-  const footnote = buildGrantedPaymentTermFootnote(summary);
 
   switch (quality) {
     case "FULL":
@@ -723,7 +734,6 @@ export function resolveGrantedPaymentTermCardPresentation(
         value: formatGrantedPaymentTermDays(days),
         valueSize: "default",
         subtitle: `Cobertura: ${coverage} do valor faturado`,
-        footnote,
         tone: "info",
         helperText,
       };
@@ -733,7 +743,6 @@ export function resolveGrantedPaymentTermCardPresentation(
         value: formatGrantedPaymentTermDays(days),
         valueSize: "default",
         subtitle: `Cobertura parcial: ${coverage} do faturado`,
-        footnote,
         tone: "warning",
         helperText,
       };
@@ -743,7 +752,6 @@ export function resolveGrantedPaymentTermCardPresentation(
         value: GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL,
         valueSize: "text",
         subtitle: `Cobertura: ${coverage} do faturado`,
-        footnote,
         tone: "warning",
         helperText,
       };
@@ -756,9 +764,184 @@ export function resolveGrantedPaymentTermCardPresentation(
           summary.weightedPopulationOrders === 0 && summary.positiveSalesAmount > 0
             ? GRANTED_PAYMENT_TERM_NOT_INVOICED_SUBTITLE
             : GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE,
-        footnote,
         tone: "neutral",
-        helperText: GRANTED_PAYMENT_TERM_HELP_TEXT,
+        helperText,
       };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Série mensal (12 meses × mesmo período do ano anterior) — tela Resultado
+// ---------------------------------------------------------------------------
+
+export const GRANTED_PAYMENT_TERM_MONTH_LABELS = [
+  "Jan",
+  "Fev",
+  "Mar",
+  "Abr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Set",
+  "Out",
+  "Nov",
+  "Dez",
+] as const;
+
+export const SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY =
+  "Mês = emissão do pedido (SalesOrder.issueDate), a mesma base do filtro Ano/Mês. Cada mês usa o mesmo " +
+  "cálculo do card: prazo por título = vencimento do CR menos a emissão da NF-e, média do pedido ponderada " +
+  "pelo valor dos títulos e média do mês ponderada pelo valor líquido dos pedidos faturados. A barra só " +
+  "aparece com cobertura de pelo menos 80% do valor faturado. Aplica os filtros da tela, exceto Mês " +
+  "(visão de 12 meses comparada ao mesmo período do ano anterior).";
+
+/** Pedido da população com a data de emissão (base do mês na série mensal). */
+export type GrantedPaymentTermDatedOrderInput = GrantedPaymentTermOrderInput & {
+  issueDate: Date | null;
+};
+
+export type SalesOrderGrantedPaymentTermMonthlyPoint = {
+  /** Valor da barra: só com qualidade FULL/PARTIAL (mesma regra do card); null = sem barra. */
+  chartDays: number | null;
+  /** Prazo calculado mesmo com cobertura baixa — só para auditoria/tooltip. */
+  weightedAverageDays: number | null;
+  quality: GrantedPaymentTermQuality;
+  coveragePercent: number;
+  invoicedSharePercent: number;
+  totalOrders: number;
+  invoicedOrders: number;
+  coveredOrders: number;
+  invoicedSalesAmount: number;
+};
+
+export type SalesOrderGrantedPaymentTermMonthlyRow = {
+  month: number;
+  monthLabel: string;
+  current: SalesOrderGrantedPaymentTermMonthlyPoint;
+  previous: SalesOrderGrantedPaymentTermMonthlyPoint;
+};
+
+export type SalesOrderGrantedPaymentTermMonthlySeries = {
+  year: number;
+  previousYear: number;
+  /** Base do mês: emissão do pedido (mesma do filtro Ano/Mês da listagem). */
+  monthBasis: "SalesOrder.issueDate";
+  rows: SalesOrderGrantedPaymentTermMonthlyRow[];
+  currentYearSummary: SalesOrderGrantedPaymentTermSummary;
+  previousYearSummary: SalesOrderGrantedPaymentTermSummary;
+  source: typeof SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE;
+  methodology: string;
+};
+
+/** Barra do gráfico só quando o card também mostraria o número (FULL/PARTIAL). */
+export function resolveGrantedPaymentTermChartDays(
+  summary: SalesOrderGrantedPaymentTermSummary
+): number | null {
+  if (!summary.available) return null;
+  if (summary.quality !== "FULL" && summary.quality !== "PARTIAL") return null;
+  const days = summary.weightedAverageDays;
+  return days != null && Number.isFinite(days) ? days : null;
+}
+
+function toGrantedPaymentTermMonthlyPoint(
+  summary: SalesOrderGrantedPaymentTermSummary
+): SalesOrderGrantedPaymentTermMonthlyPoint {
+  return {
+    chartDays: resolveGrantedPaymentTermChartDays(summary),
+    weightedAverageDays: summary.weightedAverageDays,
+    quality: summary.quality,
+    coveragePercent: summary.coveragePercent,
+    invoicedSharePercent: summary.invoicedSharePercent,
+    totalOrders: summary.totalOrders,
+    invoicedOrders: summary.weightedPopulationOrders,
+    coveredOrders: summary.coveredOrders,
+    invoicedSalesAmount: summary.invoicedSalesAmount,
+  };
+}
+
+function bucketGrantedPaymentTermOrdersByIssueMonth(
+  orders: readonly GrantedPaymentTermDatedOrderInput[],
+  year: number
+): GrantedPaymentTermDatedOrderInput[][] {
+  const buckets: GrantedPaymentTermDatedOrderInput[][] = Array.from({ length: 12 }, () => []);
+  for (const order of orders) {
+    const date = order.issueDate;
+    if (!isValidDate(date)) continue;
+    if (date.getFullYear() !== year) continue;
+    buckets[date.getMonth()]!.push(order);
+  }
+  return buckets;
+}
+
+/**
+ * Série mensal pura. Cada mês usa EXATAMENTE o cálculo do card
+ * (`computeSalesOrderGrantedPaymentTermSummary`) sobre os pedidos emitidos no mês:
+ * o ponto de set/2026 é igual ao card filtrado em Ano 2026 + Mês Setembro com os
+ * mesmos demais filtros. O resumo anual usa a população inteira de cada ano.
+ */
+export function buildSalesOrderGrantedPaymentTermMonthlySeries(input: {
+  year: number;
+  currentYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
+  previousYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
+}): SalesOrderGrantedPaymentTermMonthlySeries {
+  const previousYear = input.year - 1;
+  const currentBuckets = bucketGrantedPaymentTermOrdersByIssueMonth(input.currentYearOrders, input.year);
+  const previousBuckets = bucketGrantedPaymentTermOrdersByIssueMonth(
+    input.previousYearOrders,
+    previousYear
+  );
+  const rows = GRANTED_PAYMENT_TERM_MONTH_LABELS.map((monthLabel, index) => ({
+    month: index + 1,
+    monthLabel,
+    current: toGrantedPaymentTermMonthlyPoint(
+      computeSalesOrderGrantedPaymentTermSummary(currentBuckets[index]!)
+    ),
+    previous: toGrantedPaymentTermMonthlyPoint(
+      computeSalesOrderGrantedPaymentTermSummary(previousBuckets[index]!)
+    ),
+  }));
+  return {
+    year: input.year,
+    previousYear,
+    monthBasis: "SalesOrder.issueDate",
+    rows,
+    currentYearSummary: computeSalesOrderGrantedPaymentTermSummary(input.currentYearOrders),
+    previousYearSummary: computeSalesOrderGrantedPaymentTermSummary(input.previousYearOrders),
+    source: SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
+    methodology: SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY,
+  };
+}
+
+const integerFormatter = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+
+/** Rótulo curto em cima da barra: 35,94 → "36". */
+export function formatGrantedPaymentTermChartLabel(days: number | null | undefined): string {
+  if (days == null || !Number.isFinite(days)) return "";
+  return integerFormatter.format(days);
+}
+
+/** Linha do tooltip de um mês/ano do gráfico (sem aritmética no React). */
+export function describeGrantedPaymentTermMonthlyPoint(
+  point: SalesOrderGrantedPaymentTermMonthlyPoint
+): string {
+  if (point.totalOrders === 0) return "Sem pedidos";
+  if (point.invoicedOrders === 0) return "Sem pedidos faturados";
+  const coverage = formatGrantedPaymentTermCoverage(point.coveragePercent);
+  if (point.chartDays != null) {
+    const partial = point.quality === "PARTIAL" ? " (parcial)" : "";
+    return `${formatGrantedPaymentTermDays(point.chartDays)} · cobertura ${coverage} do faturado${partial} · ${point.invoicedOrders} pedido(s) faturado(s)`;
+  }
+  if (point.quality === "LOW") return `Cobertura insuficiente (${coverage} do faturado)`;
+  return GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE;
+}
+
+/** Resumo anual exibido no cabeçalho do gráfico (mesma regra de exibição do card). */
+export function describeGrantedPaymentTermYearSummary(
+  summary: SalesOrderGrantedPaymentTermSummary
+): string {
+  const days = resolveGrantedPaymentTermChartDays(summary);
+  if (days != null) return formatGrantedPaymentTermDays(days);
+  if (summary.available && summary.quality === "LOW") return GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL;
+  return GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL;
 }
