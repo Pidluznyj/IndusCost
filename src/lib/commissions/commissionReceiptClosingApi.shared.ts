@@ -127,6 +127,8 @@ export type ReceiptClosingApiLine = {
   receivableNumber: string | null;
   installmentNumber: number | null;
   settlementDate: string | null;
+  /** Dia civil do recebimento que definiu a competência. Não é a baixa. */
+  receiptDate?: string | null;
   dueDate: string | null;
   customerId: string | null;
   customerExternalId: number | null;

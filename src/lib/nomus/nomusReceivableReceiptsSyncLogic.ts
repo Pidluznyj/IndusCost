@@ -14,8 +14,14 @@ export type JsonObject = Record<string, unknown>;
 /** Tamanho de página observado na instalação (o endpoint ignora tamanhoPagina). */
 export const NOMUS_RECEIPTS_PAGE_SIZE = 50;
 
-/** Teto de páginas por execução — backfill histórico usa `--maxPages` explícito. */
-export const NOMUS_RECEIPTS_DEFAULT_MAX_PAGES = 200;
+/**
+ * Teto de segurança do full scan. Não é janela de negócio.
+ * 200 páginas (10.000 eventos) já truncava a origem quando ela passava desse
+ * tamanho e, com `--require-full-scan`, a rotina falhava depois de gravar só
+ * o prefixo. 2.000 páginas continuam fail-closed: estourar o teto é
+ * INCOMPLETE, nunca sucesso silencioso.
+ */
+export const NOMUS_RECEIPTS_DEFAULT_MAX_PAGES = 2000;
 
 export type ReceiptsSyncCliOptions = {
   mode: "preview" | "apply";
@@ -126,20 +132,30 @@ export function pickReceiptsArray(payload: unknown): unknown[] {
   return [];
 }
 
+/**
+ * Há próxima página?
+ *
+ * Página vazia é o único fim implícito. Página curta NÃO encerra a varredura:
+ * o endpoint não documenta que 50 registros são obrigatórios em toda página
+ * intermediária, e parar em 49 descartava o restante da origem.
+ *
+ * Quando o payload declara `totalPaginas` ou `hasMore`, esse contrato vence
+ * o tamanho da página — inclusive se a página atual veio curta.
+ */
 export function hasNextReceiptsPage(
   payload: unknown,
   page: number,
   currentLen: number,
-  pageSize: number = NOMUS_RECEIPTS_PAGE_SIZE
+  _pageSize: number = NOMUS_RECEIPTS_PAGE_SIZE
 ): boolean {
-  if (currentLen === 0 || currentLen < pageSize) return false;
-  if (!payload || typeof payload !== "object") return currentLen > 0;
-  const data = payload as Record<string, unknown>;
-  const totalPages =
-    Number(data.totalPaginas ?? data.totalPages ?? data.paginas ?? data.total_paginas) || null;
-  if (totalPages != null && Number.isFinite(totalPages)) return page < totalPages;
-  if (typeof data.hasMore === "boolean") return data.hasMore;
-  return currentLen >= pageSize;
+  if (currentLen === 0) return false;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const data = payload as Record<string, unknown>;
+    const totalRaw = Number(data.totalPaginas ?? data.totalPages ?? data.paginas ?? data.total_paginas);
+    if (Number.isFinite(totalRaw) && totalRaw > 0) return page < totalRaw;
+    if (typeof data.hasMore === "boolean") return data.hasMore;
+  }
+  return true;
 }
 
 export function computeReceiptsPaginationPlan(options: ReceiptsSyncCliOptions): {

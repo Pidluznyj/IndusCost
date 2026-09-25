@@ -61,10 +61,12 @@ describe("nomusReceivableReceiptsSyncLogic", () => {
   it("respeita as 50 linhas por página da instalação", () => {
     assert.equal(NOMUS_RECEIPTS_PAGE_SIZE, 50);
     assert.equal(hasNextReceiptsPage([], 1, 50), true);
-    assert.equal(hasNextReceiptsPage([], 1, 49), false);
+    assert.equal(hasNextReceiptsPage([], 1, 49), true);
     assert.equal(hasNextReceiptsPage([], 1, 0), false);
     assert.equal(hasNextReceiptsPage({ totalPaginas: 2 }, 2, 50), false);
+    assert.equal(hasNextReceiptsPage({ totalPaginas: 10 }, 5, 49), true);
     assert.equal(hasNextReceiptsPage({ hasMore: false }, 1, 50), false);
+    assert.equal(hasNextReceiptsPage({ hasMore: true }, 3, 12), true);
   });
 
   it("extrai a lista de recebimentos de formatos de envelope conhecidos", () => {
@@ -310,7 +312,7 @@ describe("contrato do runner automático", () => {
       const cmd = pkg.scripts[`sync:nomus:receipts:fullscan:${mode}`];
       assert.ok(cmd, `script npm ausente para ${mode}`);
       assert.match(cmd, /--require-full-scan/);
-      assert.match(cmd, /--maxPages 200/);
+      assert.match(cmd, /--maxPages 2000/);
       assert.doesNotMatch(cmd, /--since/);
       assert.doesNotMatch(cmd, /--startPage/);
     }

@@ -12,7 +12,7 @@
  *   tsx scripts/nomusReceivableReceiptsSync.ts apply --since 2026-01-01   (backfill)
  *
  * Rotina automática diária (full scan determinístico, sem `--since`):
- *   tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 200 --json --require-full-scan
+ *   tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 2000 --json --require-full-scan
  *
  * `preview` NÃO grava nada. `apply` é explícito.
  * HTTP/retry/429/backoff/redaction vêm de `fetchNomusJson` — nenhum cliente paralelo.
@@ -42,7 +42,6 @@ import {
   computeReceiptsPaginationPlan,
   hasNextReceiptsPage,
   NOMUS_RECEIPTS_PAGE_SIZE,
-  pageIsFullyBeforeSince,
   parseReceiptsSyncCli,
   pickReceiptsArray,
   resolveReceiptsRunStatus,
@@ -117,20 +116,17 @@ async function fetchAllPages(
     pagesRead += 1;
     recordsRead += items.length;
 
-    const pageCivilDates: Array<string | null> = [];
     for (const item of items) {
       const mapped = mapNomusReceivableReceiptPayload(item);
       if (isNomusReceiptMapFailure(mapped)) {
         rejected.push({ externalId: mapped.externalId, reasons: mapped.reasons });
         // Rejeitado no mapeamento ainda assim foi devolvido pela origem.
         if (mapped.externalId != null) seenExternalIds.add(mapped.externalId);
-        pageCivilDates.push(null);
         continue;
       }
       if (!isNomusReceiptMapSuccess(mapped)) continue;
       const row = mapped.row;
       seenExternalIds.add(row.externalId);
-      pageCivilDates.push(toCivilDateKey(row.receiptDate));
       // `recebimentos.id` é a identidade do evento: nunca duplicar na mesma rodada.
       if (byExternalId.has(row.externalId)) {
         duplicateExternalIds.push(row.externalId);
@@ -148,10 +144,9 @@ async function fetchAllPages(
       stoppedBecauseMaxPages = true;
       break;
     }
-    if (pageIsFullyBeforeSince(pageCivilDates, options.sinceCivilDate)) {
-      stoppedBecauseSince = true;
-      break;
-    }
+    // `--since` não interrompe a paginação. A ordenação de /rest/recebimentos
+    // não é contratual: uma página inteiramente antiga não prova que as
+    // seguintes também são. O recorte só desqualifica a prova de full scan.
     if (!hasNextReceiptsPage(payload, page, items.length, NOMUS_RECEIPTS_PAGE_SIZE)) {
       stoppedBecauseNoNext = true;
       break;

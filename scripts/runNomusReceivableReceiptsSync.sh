@@ -83,7 +83,7 @@ echo "SYNC_WINDOW=none (endpoint sem parâmetro de janela comprovado)"
 echo
 echo "=== EXECUÇÃO ==="
 # Comando lógico: tsx scripts/nomusReceivableReceiptsSync.ts <MODE> \
-#   --maxPages 200 --json --require-full-scan
+#   --maxPages 2000 --json --require-full-scan
 # Sem --since, sem --page, sem --startPage: full scan determinístico.
 echo "CMD=npm run sync:nomus:receipts:fullscan:${MODE}"
 set +e

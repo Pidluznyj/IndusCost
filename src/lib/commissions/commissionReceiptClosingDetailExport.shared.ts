@@ -35,7 +35,7 @@ const DETAIL_COLUMNS = [
   "ID interno do título",
   "ID externo/Nomus",
   "Data de vencimento",
-  "Data de baixa/recebimento",
+  "Data de baixa",
   "Parcela",
   "Origem do dado",
 ] as const;
@@ -98,7 +98,7 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     Cliente: line.customerName ?? "",
     "Vendedor Raw": seller.vendedorRaw,
     "Vendedor Canônico": seller.vendedorCanonico,
-    "Data de recebimento": formatDateBr(line.settlementDate),
+    "Data de recebimento": formatDateBr(line.receiptDate),
     "Valor recebido": receivedDisplay,
     "Schedule Comissão":
       line.scheduledCommissionAmount != null
@@ -112,7 +112,7 @@ function mapDetailRow(line: ReceiptClosingApiLine) {
     "ID interno do título": line.lineKey,
     "ID externo/Nomus": line.nomusReceivableId != null ? String(line.nomusReceivableId) : "",
     "Data de vencimento": formatDateBr(line.dueDate),
-    "Data de baixa/recebimento": formatDateBr(line.settlementDate),
+    "Data de baixa": formatDateBr(line.settlementDate),
     Parcela: line.installmentNumber != null ? String(line.installmentNumber) : "",
     "Origem do dado": sourceLabel(line.source),
   };
