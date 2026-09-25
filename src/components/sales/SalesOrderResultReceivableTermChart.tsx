@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Loader2 } from "lucide-react";
+import { CalendarClock, History, Loader2 } from "lucide-react";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { getExecutiveChartColors } from "@/src/lib/executiveDashboardChartTheme";
 import { FinanceBiChartExpandButton } from "@/src/components/finance/bi/FinanceBiChartExpandButton";
@@ -19,13 +19,19 @@ import {
   useFinanceBiExpandedChartHeight,
 } from "@/src/components/finance/bi/FinanceBiChartExpandModal";
 import {
-  SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY,
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerBadge,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
   describeGrantedPaymentTermMonthlyPoint,
-  describeGrantedPaymentTermYearSummary,
   formatGrantedPaymentTermChartLabel,
-  formatGrantedPaymentTermCoverage,
+  resolveGrantedPaymentTermPeriodCards,
   type SalesOrderGrantedPaymentTermMonthlyRow,
   type SalesOrderGrantedPaymentTermMonthlySeries,
+  type SalesOrderGrantedPaymentTermPeriodComparison,
 } from "@/src/lib/salesOrderGrantedPaymentTerm";
 
 export const SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID =
@@ -139,9 +145,67 @@ function ChartBody({
 }
 
 /**
- * Prazo médio de recebimento mês a mês (tela Resultado): 12 meses do ano filtrado
- * × mesmo período do ano anterior. Números e textos vêm do motor puro — sem
- * cálculo no React. Barra só com cobertura ≥ 80% do faturado (regra do card).
+ * Dois cards acima do gráfico: prazo médio do período selecionado (acumulado do
+ * ano até hoje, ou o mês escolhido) × as mesmas datas do ano anterior, com selo
+ * "melhor/pior" (menos dias = recebimento mais rápido). Textos e tons vêm do
+ * motor puro — sem cálculo no React.
+ */
+function ReceivableTermPeriodCards({
+  comparison,
+  loading,
+}: {
+  comparison: SalesOrderGrantedPaymentTermPeriodComparison;
+  loading: boolean;
+}) {
+  const cards = resolveGrantedPaymentTermPeriodCards(comparison);
+  return (
+    <div
+      className="mt-3 mb-4"
+      data-testid={`${SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}-period`}
+      data-trend={comparison.trend}
+    >
+      <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+        <SystemTotalizerCard
+          testId={`${SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}-period-current`}
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          label={cards.current.label}
+          value={cards.current.value}
+          valueSize={cards.current.valueSize}
+          subtitle={cards.current.subtitle}
+          tone={cards.current.tone}
+          icon={CalendarClock}
+          helperText={cards.current.helperText}
+          footer={
+            <SystemTotalizerBadge
+              label={cards.current.badgeLabel}
+              tone={cards.current.badgeTone}
+              testId={`${SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}-period-trend`}
+            />
+          }
+          loading={loading}
+        />
+        <SystemTotalizerCard
+          testId={`${SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}-period-previous`}
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          label={cards.previous.label}
+          value={cards.previous.value}
+          valueSize={cards.previous.valueSize}
+          subtitle={cards.previous.subtitle}
+          tone={cards.previous.tone}
+          icon={History}
+          helperText={cards.previous.helperText}
+          footer={<SystemTotalizerBadge label={cards.previous.badgeLabel} tone={cards.previous.badgeTone} />}
+          loading={loading}
+        />
+      </SummaryKpiGrid>
+    </div>
+  );
+}
+
+/**
+ * Prazo médio de recebimento (tela Resultado): cards do período selecionado × mesmo
+ * período do ano anterior e gráfico mês a mês (12 meses do ano filtrado × ano
+ * anterior). Barra só com cobertura ≥ 80% do faturado (regra do card da listagem).
  */
 export function SalesOrderResultReceivableTermChart({
   series,
@@ -156,7 +220,6 @@ export function SalesOrderResultReceivableTermChart({
   const expandedHeight = useFinanceBiExpandedChartHeight(560);
   const openExpand = useCallback(() => setExpanded(true), []);
   const closeExpand = useCallback(() => setExpanded(false), []);
-  const colors = getExecutiveChartColors("salesOrders");
 
   const data = useMemo<ChartDatum[]>(
     () =>
@@ -177,18 +240,26 @@ export function SalesOrderResultReceivableTermChart({
     : "Prazo médio de recebimento por mês";
   const subtitle =
     "Dias entre a emissão da NF-e e o vencimento dos títulos do Contas a Receber, ponderados pelo valor " +
-    "líquido dos pedidos faturados. Mês = emissão do pedido; o filtro Mês não se aplica (visão de 12 meses).";
+    "líquido dos pedidos faturados. Cards: período selecionado × as mesmas datas do ano anterior. " +
+    "Barras: mês a mês pela emissão do pedido (o filtro Mês não se aplica às barras).";
 
   return (
     <>
       <div
         className={`${financeBiCardClass} p-5`}
         data-testid={SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}
-        title={series ? SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY : undefined}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
+            <h3 className="text-sm font-bold text-[#111827]">
+              {title}
+              {series && loading ? (
+                <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-normal text-[#6B7280]">
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                  Atualizando…
+                </span>
+              ) : null}
+            </h3>
             <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p>
           </div>
           {series && !empty ? (
@@ -199,41 +270,7 @@ export function SalesOrderResultReceivableTermChart({
           ) : null}
         </div>
 
-        {series ? (
-          <div
-            className="mt-2 mb-3 flex flex-wrap items-center gap-2 text-[11px] text-[#374151]"
-            data-testid={`${SALES_ORDER_RESULT_RECEIVABLE_TERM_CHART_TEST_ID}-year-summary`}
-          >
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-[#E5E7EB] px-2 py-0.5">
-              <span
-                className="h-2 w-2 rounded-sm"
-                style={{ background: colors.currentYearBar }}
-                aria-hidden
-              />
-              {year}: <strong>{describeGrantedPaymentTermYearSummary(series.currentYearSummary)}</strong>
-              <span className="text-[#6B7280]">
-                · cobertura {formatGrantedPaymentTermCoverage(series.currentYearSummary.coveragePercent)} do faturado
-              </span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-[#E5E7EB] px-2 py-0.5">
-              <span
-                className="h-2 w-2 rounded-sm"
-                style={{ background: colors.previousYearBar }}
-                aria-hidden
-              />
-              {previousYear}: <strong>{describeGrantedPaymentTermYearSummary(series.previousYearSummary)}</strong>
-              <span className="text-[#6B7280]">
-                · cobertura {formatGrantedPaymentTermCoverage(series.previousYearSummary.coveragePercent)} do faturado
-              </span>
-            </span>
-            {loading ? (
-              <span className="inline-flex items-center gap-1 text-[#6B7280]">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                Atualizando…
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+        {series ? <ReceivableTermPeriodCards comparison={series.periodComparison} loading={loading} /> : null}
 
         {!series && loading ? (
           <div

@@ -1,10 +1,29 @@
 import type { SalesOrderResultFilters } from "./salesOrderResultTypes.js";
 
+export const SALES_ORDER_RESULT_API_PATH = "/api/sales-orders/results";
+
+/**
+ * Projeção leve da aba Resultado (Realizado vs Projetado): mesmo escopo e mesmos
+ * números do dashboard, sem o motor de margem — o gráfico não espera a margem.
+ */
+export const SALES_ORDER_RESULT_PROJECTION_API_PATH = "/api/sales-orders/results/projection";
+
 /**
  * Query da aba Resultado — mesmos parâmetros canônicos da listagem de Pedidos
  * (`parseSalesOrderListQuery`), mais productId/asOfDate específicos do dashboard.
  */
 export function getSalesOrderResultApiPath(query: Partial<SalesOrderResultFilters>): string {
+  return `${SALES_ORDER_RESULT_API_PATH}?${buildSalesOrderResultApiParams(query).toString()}`;
+}
+
+/** Mesma query do dashboard, no endpoint leve da projeção. */
+export function getSalesOrderResultProjectionApiPath(
+  query: Partial<SalesOrderResultFilters>
+): string {
+  return `${SALES_ORDER_RESULT_PROJECTION_API_PATH}?${buildSalesOrderResultApiParams(query).toString()}`;
+}
+
+function buildSalesOrderResultApiParams(query: Partial<SalesOrderResultFilters>): URLSearchParams {
   const params = new URLSearchParams();
   if (query.year != null) params.set("year", String(query.year));
   if (query.month != null) params.set("month", String(query.month));
@@ -22,7 +41,7 @@ export function getSalesOrderResultApiPath(query: Partial<SalesOrderResultFilter
   if (query.maxNetValue) params.set("maxNetValue", query.maxNetValue);
   if (query.companyId) params.set("company", query.companyId);
   if (query.asOfDate) params.set("asOfDate", query.asOfDate);
-  return `/api/sales-orders/results?${params.toString()}`;
+  return params;
 }
 
 export const SALES_ORDER_RESULT_MARGIN_TOOLTIP = {

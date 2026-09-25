@@ -146,6 +146,9 @@ export async function loadSalesOrderGrantedPaymentTermSummary(
  * Usa o where canônico da listagem para cada ano (todos os filtros da tela,
  * exceto Mês — visão de 12 meses) + o filtro opcional de produto da tela
  * Resultado (pedidos que contêm o produto, mesma regra do motor do Resultado).
+ * Os cards de comparação (período selecionado × mesmas datas do ano anterior)
+ * usam o Mês e o `asOfDate` da tela, filtrando em memória as mesmas populações:
+ * nenhuma consulta extra.
  */
 export async function loadSalesOrderGrantedPaymentTermMonthlySeries(
   db: PrismaClient,
@@ -171,5 +174,18 @@ export async function loadSalesOrderGrantedPaymentTermMonthlySeries(
     year,
     currentYearOrders: currentYearOrders ?? [],
     previousYearOrders: previousYearOrders ?? [],
+    // Cards "período selecionado × mesmo período do ano anterior": respeitam o
+    // Mês da tela e cortam o período em andamento na data de referência.
+    month: listQuery.month,
+    referenceDate: parseGrantedPaymentTermReferenceDate(query.asOfDate, now),
   });
+}
+
+/** `asOfDate` (YYYY-MM-DD, data civil) da tela; inválido/ausente → `now`. */
+export function parseGrantedPaymentTermReferenceDate(value: unknown, now: Date): Date {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return now;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isFinite(date.getTime()) && date.getDate() === Number(match[3]) ? date : now;
 }

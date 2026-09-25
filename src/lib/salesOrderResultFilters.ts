@@ -40,6 +40,8 @@ export type SalesOrderResultQueryStringOptions = {
   includeSeller?: boolean;
   /** false = omite o Produto (endpoints da listagem não conhecem o filtro). */
   includeProduct?: boolean;
+  /** Data de referência (YYYY-MM-DD): cards do SLA cortam o período em andamento nela. */
+  asOfDate?: string;
 };
 
 /** Query com os nomes canônicos de `parseSalesOrderListQuery` (+ productId do Resultado). */
@@ -56,7 +58,20 @@ export function buildSalesOrderResultQueryString(
   if (filters.customerId) params.set("customerId", filters.customerId);
   if (options.includeSeller !== false && filters.sellerKey) params.set("sellerKey", filters.sellerKey);
   if (options.includeProduct !== false && filters.productId) params.set("productId", filters.productId);
+  if (options.asOfDate) params.set("asOfDate", options.asOfDate);
   return params.toString();
+}
+
+/**
+ * Data de referência da tela: dia civil LOCAL (YYYY-MM-DD). `toISOString()` daria
+ * o dia UTC — em Brasília, depois das 21h, já seria o dia seguinte.
+ */
+export function formatSalesOrderResultAsOfDate(now: Date): string {
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 /** Filtros aplicados no formato de `getSalesOrderResultApiPath` (motor do Resultado). */

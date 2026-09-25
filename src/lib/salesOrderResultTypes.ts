@@ -122,6 +122,16 @@ export type SalesOrderResultDashboardPayload = {
   source: SalesOrderResultSource;
 };
 
+/**
+ * Projeção leve da aba Resultado (Realizado vs Projetado, KPIs de projeção e
+ * comparativo de vendas YoY): mesmo escopo e mesmos números do dashboard
+ * completo, sem o motor de margem — carrega sem esperar a margem.
+ */
+export type SalesOrderResultProjectionPayload = Pick<
+  SalesOrderResultDashboardPayload,
+  "filters" | "monthlySalesComparison" | "realizedVsProjected" | "projection"
+>;
+
 export type SalesOrderResultItemInput = {
   salesOrderItemId: string;
   orderId: string;

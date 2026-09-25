@@ -439,6 +439,24 @@ export function buildOfficialSalesMarginRulesResult(
   };
 }
 
+/**
+ * Config Nomus + contexto de custo da margem já calculados para uma população de
+ * pedidos com a política de custo da própria config
+ * (`salesMarginNomusConfigToCostPolicy`). Permite que duas apurações sobre os
+ * MESMOS pedidos (ex.: tela Resultado — margem gerencial e margem comercial dos
+ * KPIs) não recalculem custo/preço versionado. O contexto é só lido.
+ */
+export type SalesOrderMarginPrecomputedContext = {
+  nomusConfig: Awaited<ReturnType<typeof loadSalesMarginNomusConfig>>["config"];
+  marginContext: Awaited<ReturnType<typeof buildSalesOrderMarginContext>>;
+  /**
+   * Contexto fiscal oficial já resolvido (`resolveOfficialSalesMarginTaxContext`)
+   * para os produtos destes pedidos com esta config. Usado só onde o adapter o
+   * resolveria (taxMode deductFromGross sem taxContext explícito).
+   */
+  officialTaxContext?: Awaited<ReturnType<typeof resolveOfficialSalesMarginTaxContext>>;
+};
+
 /** Carrega custos + config Nomus, executa motor oficial e retorna rules + margem por pedido. */
 async function buildOfficialSalesMarginRulesForOrders(
   db: PrismaClient,
@@ -446,20 +464,26 @@ async function buildOfficialSalesMarginRulesForOrders(
   options?: Parameters<typeof buildSalesOrderMarginContext>[2] & {
     buildInput?: OfficialSalesMarginRulesBuildInput;
     costPolicy?: import("./salesOrderMarginTypes.js").SalesOrderMarginCostPolicy;
+    /** Contexto já calculado para ESTES pedidos (mesma política de custo). */
+    precomputed?: SalesOrderMarginPrecomputedContext;
   }
 ): Promise<{
   rules: ReturnType<typeof buildOfficialSalesMarginRulesResult>;
   marginByOrder: Map<string, SalesOrderMarginOrderResult>;
   nomusConfig: Awaited<ReturnType<typeof loadSalesMarginNomusConfig>>["config"];
 }> {
-  const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
+  const precomputed = options?.precomputed;
+  const nomusConfig =
+    precomputed?.nomusConfig ?? (await loadSalesMarginNomusConfig(db)).config;
   const costPolicy =
     options?.costPolicy ?? salesMarginNomusConfigToCostPolicy(nomusConfig);
 
-  const marginContext = await buildSalesOrderMarginContext(db, orders, {
-    ...options,
-    costPolicy,
-  });
+  const marginContext =
+    precomputed?.marginContext ??
+    (await buildSalesOrderMarginContext(db, orders, {
+      ...options,
+      costPolicy,
+    }));
   const rulesOrders = mapMarginContextToRulesOrders(orders, marginContext.byOrderId);
   const taxMode = options?.buildInput?.taxMode ?? nomusConfig.taxMode;
 
@@ -471,7 +495,9 @@ async function buildOfficialSalesMarginRulesForOrders(
         .map((item) => item.productId)
         .filter((id): id is string => Boolean(id))
     );
-    officialTaxContext = await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig);
+    officialTaxContext =
+      precomputed?.officialTaxContext ??
+      (await resolveOfficialSalesMarginTaxContext(db, productIds, nomusConfig));
     taxContext = officialTaxContext;
   }
 
@@ -960,6 +986,12 @@ export async function buildOfficialSalesOrderListMarginSummary(
      * Default = `orders` (retrocompat); a listagem passa a população year-only.
      */
     ordersForMonthlySeries?: SalesOrderForMargin[];
+    /**
+     * Config Nomus + contexto de custo já calculados para `orders` com a política
+     * de custo da própria config (tela Resultado: a margem gerencial usa o mesmo
+     * contexto). Default: calcula aqui, como antes. Resultado idêntico.
+     */
+    precomputedMarginContext?: SalesOrderMarginPrecomputedContext;
   }
 ): Promise<SalesOrderListMarginSummary> {
   const year =
@@ -989,7 +1021,13 @@ export async function buildOfficialSalesOrderListMarginSummary(
   >["marginByOrder"] = new Map();
 
   if (orders.length > 0) {
-    const built = await buildOfficialSalesMarginRulesForOrders(db, orders);
+    const built = await buildOfficialSalesMarginRulesForOrders(
+      db,
+      orders,
+      options?.precomputedMarginContext
+        ? { precomputed: options.precomputedMarginContext }
+        : undefined
+    );
     rules = built.rules;
     marginByOrder = built.marginByOrder;
   }

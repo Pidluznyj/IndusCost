@@ -830,6 +830,8 @@ export type SalesOrderGrantedPaymentTermMonthlySeries = {
   rows: SalesOrderGrantedPaymentTermMonthlyRow[];
   currentYearSummary: SalesOrderGrantedPaymentTermSummary;
   previousYearSummary: SalesOrderGrantedPaymentTermSummary;
+  /** Período selecionado × mesmas datas do ano anterior (cards acima do gráfico). */
+  periodComparison: SalesOrderGrantedPaymentTermPeriodComparison;
   source: typeof SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE;
   methodology: string;
 };
@@ -884,6 +886,10 @@ export function buildSalesOrderGrantedPaymentTermMonthlySeries(input: {
   year: number;
   currentYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
   previousYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
+  /** Mês selecionado na tela (1–12) ou null = ano inteiro (acumulado). Só afeta os cards. */
+  month?: number | null;
+  /** Data de referência (hoje) para cortar o período em andamento; default = fim do ano. */
+  referenceDate?: Date;
 }): SalesOrderGrantedPaymentTermMonthlySeries {
   const previousYear = input.year - 1;
   const currentBuckets = bucketGrantedPaymentTermOrdersByIssueMonth(input.currentYearOrders, input.year);
@@ -908,6 +914,13 @@ export function buildSalesOrderGrantedPaymentTermMonthlySeries(input: {
     rows,
     currentYearSummary: computeSalesOrderGrantedPaymentTermSummary(input.currentYearOrders),
     previousYearSummary: computeSalesOrderGrantedPaymentTermSummary(input.previousYearOrders),
+    periodComparison: buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: input.year,
+      month: input.month ?? null,
+      referenceDate: input.referenceDate ?? new Date(input.year, 11, 31),
+      currentYearOrders: input.currentYearOrders,
+      previousYearOrders: input.previousYearOrders,
+    }),
     source: SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
     methodology: SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY,
   };
@@ -944,4 +957,284 @@ export function describeGrantedPaymentTermYearSummary(
   if (days != null) return formatGrantedPaymentTermDays(days);
   if (summary.available && summary.quality === "LOW") return GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL;
   return GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL;
+}
+
+// ---------------------------------------------------------------------------
+// Período selecionado × mesmo período do ano anterior (cards acima do gráfico)
+// ---------------------------------------------------------------------------
+
+/** Menos dias = recebimento mais rápido = MELHOR. */
+export type GrantedPaymentTermTrend = "BETTER" | "WORSE" | "EQUAL" | "UNAVAILABLE";
+
+export type SalesOrderGrantedPaymentTermPeriodSide = {
+  year: number;
+  /** Datas civis inclusivas (YYYY-MM-DD) pela emissão do pedido. */
+  from: string;
+  to: string;
+  /** "01/01 a 25/09/2026". */
+  label: string;
+  /** Prazo exibível (FULL/PARTIAL, mesma regra do card); null = sem número. */
+  displayDays: number | null;
+  summary: SalesOrderGrantedPaymentTermSummary;
+};
+
+export type SalesOrderGrantedPaymentTermPeriodComparison = {
+  basis: "SalesOrder.issueDate";
+  /** Mês selecionado (1–12) ou null = ano (acumulado até a data de referência). */
+  month: number | null;
+  current: SalesOrderGrantedPaymentTermPeriodSide;
+  previous: SalesOrderGrantedPaymentTermPeriodSide;
+  /** Dias do período atual − dias do mesmo período do ano anterior (null sem os dois). */
+  deltaDays: number | null;
+  trend: GrantedPaymentTermTrend;
+};
+
+type CivilRange = { from: Date; to: Date };
+
+function lastDayOfMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function startOfCivilDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function shiftCivilDateOneYearBack(date: Date): Date {
+  const year = date.getFullYear() - 1;
+  const monthIndex = date.getMonth();
+  return new Date(year, monthIndex, Math.min(date.getDate(), lastDayOfMonth(year, monthIndex)));
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatCivilKey(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function formatCivilRangeLabel(range: CivilRange): string {
+  const to = `${pad2(range.to.getDate())}/${pad2(range.to.getMonth() + 1)}/${range.to.getFullYear()}`;
+  if (range.from.getTime() === range.to.getTime()) return to;
+  return `${pad2(range.from.getDate())}/${pad2(range.from.getMonth() + 1)} a ${to}`;
+}
+
+function normalizeSelectedMonth(month: number | null | undefined): number | null {
+  return month != null && Number.isInteger(month) && month >= 1 && month <= 12 ? month : null;
+}
+
+/**
+ * Períodos comparados (datas civis inclusivas, pela emissão do pedido):
+ *   - sem Mês: 01/01 do ano até a data de referência (acumulado); ano já
+ *     encerrado → ano inteiro;
+ *   - com Mês: o mês inteiro; mês em andamento → até a data de referência;
+ *   - ano anterior: as MESMAS datas um ano antes (29/02 → 28/02).
+ * Período que ainda não começou fica inteiro (sem pedidos → sem número).
+ */
+export function resolveGrantedPaymentTermComparisonRanges(input: {
+  year: number;
+  month: number | null;
+  referenceDate: Date;
+}): { current: CivilRange; previous: CivilRange } {
+  const month = normalizeSelectedMonth(input.month);
+  const start = month == null ? new Date(input.year, 0, 1) : new Date(input.year, month - 1, 1);
+  const end =
+    month == null
+      ? new Date(input.year, 11, 31)
+      : new Date(input.year, month - 1, lastDayOfMonth(input.year, month - 1));
+  const reference = startOfCivilDay(input.referenceDate);
+  const currentEnd =
+    reference.getTime() >= start.getTime() && reference.getTime() < end.getTime() ? reference : end;
+  return {
+    current: { from: start, to: currentEnd },
+    previous: {
+      from: shiftCivilDateOneYearBack(start),
+      to: shiftCivilDateOneYearBack(currentEnd),
+    },
+  };
+}
+
+function filterGrantedPaymentTermOrdersByRange(
+  orders: readonly GrantedPaymentTermDatedOrderInput[],
+  range: CivilRange
+): GrantedPaymentTermDatedOrderInput[] {
+  const from = range.from.getTime();
+  const toExclusive = new Date(
+    range.to.getFullYear(),
+    range.to.getMonth(),
+    range.to.getDate() + 1
+  ).getTime();
+  return orders.filter((order) => {
+    const date = order.issueDate;
+    if (!isValidDate(date)) return false;
+    const time = date.getTime();
+    return time >= from && time < toExclusive;
+  });
+}
+
+/** Tendência pelo delta arredondado a 1 casa (mesma precisão exibida). */
+export function resolveGrantedPaymentTermTrend(deltaDays: number | null): GrantedPaymentTermTrend {
+  if (deltaDays == null || !Number.isFinite(deltaDays)) return "UNAVAILABLE";
+  const rounded = Math.round(deltaDays * 10) / 10;
+  if (rounded < 0) return "BETTER";
+  if (rounded > 0) return "WORSE";
+  return "EQUAL";
+}
+
+/**
+ * Comparação pura do período selecionado com as mesmas datas do ano anterior,
+ * usando o MESMO cálculo do card sobre os pedidos emitidos em cada período.
+ */
+export function buildSalesOrderGrantedPaymentTermPeriodComparison(input: {
+  year: number;
+  month: number | null;
+  referenceDate: Date;
+  currentYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
+  previousYearOrders: readonly GrantedPaymentTermDatedOrderInput[];
+}): SalesOrderGrantedPaymentTermPeriodComparison {
+  const month = normalizeSelectedMonth(input.month);
+  const ranges = resolveGrantedPaymentTermComparisonRanges({
+    year: input.year,
+    month,
+    referenceDate: input.referenceDate,
+  });
+  const side = (
+    year: number,
+    range: CivilRange,
+    orders: readonly GrantedPaymentTermDatedOrderInput[]
+  ): SalesOrderGrantedPaymentTermPeriodSide => {
+    const summary = computeSalesOrderGrantedPaymentTermSummary(
+      filterGrantedPaymentTermOrdersByRange(orders, range)
+    );
+    return {
+      year,
+      from: formatCivilKey(range.from),
+      to: formatCivilKey(range.to),
+      label: formatCivilRangeLabel(range),
+      displayDays: resolveGrantedPaymentTermChartDays(summary),
+      summary,
+    };
+  };
+  const current = side(input.year, ranges.current, input.currentYearOrders);
+  const previous = side(input.year - 1, ranges.previous, input.previousYearOrders);
+  const deltaDays =
+    current.displayDays != null && previous.displayDays != null
+      ? current.displayDays - previous.displayDays
+      : null;
+  return {
+    basis: "SalesOrder.issueDate",
+    month,
+    current,
+    previous,
+    deltaDays,
+    trend: resolveGrantedPaymentTermTrend(deltaDays),
+  };
+}
+
+const signedOneDecimalFormatter = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** −0,4 → "−0,4 dias"; 3,24 → "+3,2 dias"; 0 → "0,0 dias". */
+export function formatGrantedPaymentTermDeltaDays(deltaDays: number | null | undefined): string {
+  if (deltaDays == null || !Number.isFinite(deltaDays)) return "—";
+  const rounded = Math.round(deltaDays * 10) / 10;
+  const text = signedOneDecimalFormatter.format(Math.abs(rounded));
+  if (rounded < 0) return `−${text} dias`;
+  if (rounded > 0) return `+${text} dias`;
+  return `${text} dias`;
+}
+
+export type GrantedPaymentTermPeriodCardTone = "success" | "danger" | "info" | "neutral";
+
+export type GrantedPaymentTermPeriodCardPresentation = {
+  label: string;
+  value: string;
+  valueSize: "default" | "text";
+  subtitle: string;
+  tone: GrantedPaymentTermPeriodCardTone;
+  badgeLabel: string;
+  badgeTone: GrantedPaymentTermPeriodCardTone;
+  helperText: string;
+};
+
+function periodSideValue(side: SalesOrderGrantedPaymentTermPeriodSide): {
+  value: string;
+  valueSize: "default" | "text";
+} {
+  if (side.displayDays != null) {
+    return { value: formatGrantedPaymentTermDays(side.displayDays), valueSize: "default" };
+  }
+  if (side.summary.available && side.summary.quality === "LOW") {
+    return { value: GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL, valueSize: "text" };
+  }
+  return { value: GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL, valueSize: "text" };
+}
+
+function periodSideSubtitle(side: SalesOrderGrantedPaymentTermPeriodSide): string {
+  if (side.summary.weightedPopulationOrders === 0) return `${side.label} · sem pedidos faturados`;
+  return `${side.label} · cobertura ${formatGrantedPaymentTermCoverage(side.summary.coveragePercent)} do faturado`;
+}
+
+function appendInvoicedShare(text: string, side: SalesOrderGrantedPaymentTermPeriodSide): string {
+  const share = buildGrantedPaymentTermInvoicedShareText(side.summary);
+  return share ? `${text}\n${share}` : text;
+}
+
+const TREND_TONE: Record<GrantedPaymentTermTrend, GrantedPaymentTermPeriodCardTone> = {
+  BETTER: "success",
+  WORSE: "danger",
+  EQUAL: "info",
+  UNAVAILABLE: "neutral",
+};
+
+/**
+ * Os dois cards acima do gráfico (sem cálculo no React):
+ *   - atual: "Prazo médio 2026 · acumulado" (ou "Prazo médio Set/2026"), selo com o
+ *     delta contra o ano anterior (verde = melhor/menos dias, vermelho = pior);
+ *   - anterior: "Mesmo período 2025", selo "Base da comparação".
+ */
+export function resolveGrantedPaymentTermPeriodCards(
+  comparison: SalesOrderGrantedPaymentTermPeriodComparison
+): { current: GrantedPaymentTermPeriodCardPresentation; previous: GrantedPaymentTermPeriodCardPresentation } {
+  const { current, previous } = comparison;
+  const monthLabel =
+    comparison.month != null ? GRANTED_PAYMENT_TERM_MONTH_LABELS[comparison.month - 1] : null;
+  const delta = formatGrantedPaymentTermDeltaDays(comparison.deltaDays);
+  const badgeLabel: Record<GrantedPaymentTermTrend, string> = {
+    BETTER: `${delta} vs ${previous.year} · melhor`,
+    WORSE: `${delta} vs ${previous.year} · pior`,
+    EQUAL: `Igual a ${previous.year}`,
+    UNAVAILABLE: "Sem base de comparação",
+  };
+  return {
+    current: {
+      label: monthLabel ? `Prazo médio ${monthLabel}/${current.year}` : `Prazo médio ${current.year} · acumulado`,
+      ...periodSideValue(current),
+      subtitle: periodSideSubtitle(current),
+      tone: TREND_TONE[comparison.trend],
+      badgeLabel: badgeLabel[comparison.trend],
+      badgeTone: TREND_TONE[comparison.trend],
+      helperText: appendInvoicedShare(
+        `Prazo médio de recebimento dos pedidos emitidos de ${current.label}, com os filtros da tela e o ` +
+          `mesmo cálculo do card da listagem. Comparado com as mesmas datas de ${previous.year}: menos dias = ` +
+          "recebimento mais rápido = melhor.",
+        current
+      ),
+    },
+    previous: {
+      label: `Mesmo período ${previous.year}`,
+      ...periodSideValue(previous),
+      subtitle: periodSideSubtitle(previous),
+      tone: "neutral",
+      badgeLabel: "Base da comparação",
+      badgeTone: "neutral",
+      helperText: appendInvoicedShare(
+        `Pedidos emitidos de ${previous.label}: as mesmas datas do período selecionado, um ano antes, com os ` +
+          "mesmos filtros.",
+        previous
+      ),
+    },
+  };
 }

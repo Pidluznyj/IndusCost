@@ -26,6 +26,11 @@ import {
   describeGrantedPaymentTermYearSummary,
   formatGrantedPaymentTermChartLabel,
   resolveGrantedPaymentTermChartDays,
+  buildSalesOrderGrantedPaymentTermPeriodComparison,
+  formatGrantedPaymentTermDeltaDays,
+  resolveGrantedPaymentTermComparisonRanges,
+  resolveGrantedPaymentTermPeriodCards,
+  resolveGrantedPaymentTermTrend,
   civilDaysBetween,
   computeSalesOrderGrantedPaymentTermSummary,
   describeGrantedPaymentTermReason,
@@ -879,5 +884,234 @@ describe("série mensal do prazo de recebimento (tela Resultado)", () => {
     const empty = computeSalesOrderGrantedPaymentTermSummary([]);
     assert.equal(resolveGrantedPaymentTermChartDays(empty), null);
     assert.equal(describeGrantedPaymentTermYearSummary(empty), "Indisponível");
+  });
+});
+
+describe("período selecionado × mesmo período do ano anterior (cards do Resultado)", () => {
+  function datedOrder(
+    id: string,
+    issueDate: Date,
+    totalNetValue: number,
+    titles: GrantedPaymentTermTitleInput[]
+  ): GrantedPaymentTermDatedOrderInput {
+    return { id, issueDate, totalNetValue, paymentTerms: null, invoiced: true, titles };
+  }
+  const civil = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const rangeKeys = (input: { year: number; month: number | null; referenceDate: Date }) => {
+    const ranges = resolveGrantedPaymentTermComparisonRanges(input);
+    return {
+      current: [civil(ranges.current.from), civil(ranges.current.to)],
+      previous: [civil(ranges.previous.from), civil(ranges.previous.to)],
+    };
+  };
+  const REFERENCE = new Date(2026, 8, 25, 15, 0); // 25/09/2026 15:00
+
+  it("sem Mês: acumulado do ano até a data de referência × as mesmas datas do ano anterior", () => {
+    assert.deepEqual(rangeKeys({ year: 2026, month: null, referenceDate: REFERENCE }), {
+      current: ["2026-01-01", "2026-09-25"],
+      previous: ["2025-01-01", "2025-09-25"],
+    });
+  });
+
+  it("ano encerrado e ano futuro ficam inteiros", () => {
+    assert.deepEqual(rangeKeys({ year: 2025, month: null, referenceDate: REFERENCE }), {
+      current: ["2025-01-01", "2025-12-31"],
+      previous: ["2024-01-01", "2024-12-31"],
+    });
+    assert.deepEqual(rangeKeys({ year: 2027, month: null, referenceDate: REFERENCE }), {
+      current: ["2027-01-01", "2027-12-31"],
+      previous: ["2026-01-01", "2026-12-31"],
+    });
+  });
+
+  it("com Mês: mês em andamento corta na data; mês encerrado inteiro; 29/02 vira 28/02", () => {
+    assert.deepEqual(rangeKeys({ year: 2026, month: 9, referenceDate: REFERENCE }), {
+      current: ["2026-09-01", "2026-09-25"],
+      previous: ["2025-09-01", "2025-09-25"],
+    });
+    assert.deepEqual(rangeKeys({ year: 2026, month: 2, referenceDate: REFERENCE }), {
+      current: ["2026-02-01", "2026-02-28"],
+      previous: ["2025-02-01", "2025-02-28"],
+    });
+    assert.deepEqual(rangeKeys({ year: 2024, month: 2, referenceDate: new Date(2024, 1, 29, 9) }), {
+      current: ["2024-02-01", "2024-02-29"],
+      previous: ["2023-02-01", "2023-02-28"],
+    });
+    assert.deepEqual(rangeKeys({ year: 2028, month: null, referenceDate: new Date(2028, 1, 29) }), {
+      current: ["2028-01-01", "2028-02-29"],
+      previous: ["2027-01-01", "2027-02-28"],
+    });
+  });
+
+  it("acumulado: mesmos pedidos do período, mesmo cálculo do card; menos dias = melhor", () => {
+    const inPeriod = [
+      datedOrder("a", d(10, 3, 2026), 10_000, [title(40, 10_000)]),
+      datedOrder("b", d(25, 9, 2026, 23), 10_000, [title(40, 10_000)]), // último dia, inclusivo
+    ];
+    const current = [
+      ...inPeriod,
+      datedOrder("c", d(26, 9, 2026), 10_000, [title(90, 10_000)]), // depois da data de referência
+      datedOrder("e", d(2, 10, 2026), 10_000, [title(120, 10_000)]),
+    ];
+    const previous = [
+      datedOrder("p1", d(5, 5, 2025), 20_000, [title(45, 20_000)]),
+      datedOrder("p2", d(25, 9, 2025), 20_000, [title(45, 20_000)]),
+      datedOrder("p3", d(26, 9, 2025), 20_000, [title(200, 20_000)]), // fora das mesmas datas
+    ];
+    const comparison = buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: 2026,
+      month: null,
+      referenceDate: REFERENCE,
+      currentYearOrders: current,
+      previousYearOrders: previous,
+    });
+
+    assert.equal(comparison.basis, "SalesOrder.issueDate");
+    assert.equal(comparison.month, null);
+    assert.deepEqual(
+      [comparison.current.from, comparison.current.to, comparison.current.label],
+      ["2026-01-01", "2026-09-25", "01/01 a 25/09/2026"]
+    );
+    assert.deepEqual(
+      [comparison.previous.from, comparison.previous.to, comparison.previous.label],
+      ["2025-01-01", "2025-09-25", "01/01 a 25/09/2025"]
+    );
+    assert.deepEqual(comparison.current.summary, computeSalesOrderGrantedPaymentTermSummary(inPeriod));
+    assert.equal(comparison.current.displayDays, 40);
+    assert.equal(comparison.previous.displayDays, 45);
+    assert.equal(comparison.deltaDays, -5);
+    assert.equal(comparison.trend, "BETTER");
+
+    const cards = resolveGrantedPaymentTermPeriodCards(comparison);
+    assert.equal(cards.current.label, "Prazo médio 2026 · acumulado");
+    assert.equal(cards.current.value, formatGrantedPaymentTermDays(40));
+    assert.equal(cards.current.valueSize, "default");
+    assert.equal(cards.current.subtitle, "01/01 a 25/09/2026 · cobertura 100,0% do faturado");
+    assert.equal(cards.current.badgeLabel, "−5,0 dias vs 2025 · melhor");
+    assert.equal(cards.current.badgeTone, "success");
+    assert.equal(cards.current.tone, "success");
+    assert.match(cards.current.helperText, /menos dias = recebimento mais rápido = melhor/);
+    assert.equal(cards.previous.label, "Mesmo período 2025");
+    assert.equal(cards.previous.value, formatGrantedPaymentTermDays(45));
+    assert.equal(cards.previous.badgeLabel, "Base da comparação");
+    assert.equal(cards.previous.tone, "neutral");
+  });
+
+  it("Mês selecionado: só o mês (cortado na data); prazo maior que o do ano anterior = pior", () => {
+    const comparison = buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: 2026,
+      month: 9,
+      referenceDate: REFERENCE,
+      currentYearOrders: [
+        datedOrder("a", d(10, 3, 2026), 10_000, [title(10, 10_000)]), // outro mês
+        datedOrder("b", d(20, 9, 2026), 10_000, [title(50, 10_000)]),
+      ],
+      previousYearOrders: [
+        datedOrder("p", d(10, 9, 2025), 10_000, [title(45, 10_000)]),
+        datedOrder("p2", d(28, 9, 2025), 10_000, [title(10, 10_000)]), // depois de 25/09
+      ],
+    });
+    assert.equal(comparison.month, 9);
+    assert.equal(comparison.current.label, "01/09 a 25/09/2026");
+    assert.equal(comparison.previous.label, "01/09 a 25/09/2025");
+    assert.equal(comparison.deltaDays, 5);
+    assert.equal(comparison.trend, "WORSE");
+    const cards = resolveGrantedPaymentTermPeriodCards(comparison);
+    assert.equal(cards.current.label, "Prazo médio Set/2026");
+    assert.equal(cards.current.badgeLabel, "+5,0 dias vs 2025 · pior");
+    assert.equal(cards.current.badgeTone, "danger");
+  });
+
+  it("sem base de comparação e cobertura baixa não viram número", () => {
+    const withoutPrevious = buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: 2026,
+      month: null,
+      referenceDate: REFERENCE,
+      currentYearOrders: [datedOrder("a", d(10, 3, 2026), 10_000, [title(40, 10_000)])],
+      previousYearOrders: [],
+    });
+    assert.equal(withoutPrevious.previous.displayDays, null);
+    assert.equal(withoutPrevious.deltaDays, null);
+    assert.equal(withoutPrevious.trend, "UNAVAILABLE");
+    const cards = resolveGrantedPaymentTermPeriodCards(withoutPrevious);
+    assert.equal(cards.current.badgeLabel, "Sem base de comparação");
+    assert.equal(cards.current.badgeTone, "neutral");
+    assert.equal(cards.previous.value, "Indisponível");
+    assert.equal(cards.previous.valueSize, "text");
+    assert.equal(cards.previous.subtitle, "01/01 a 25/09/2025 · sem pedidos faturados");
+
+    const lowCoverage = buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: 2026,
+      month: null,
+      referenceDate: REFERENCE,
+      currentYearOrders: [
+        datedOrder("a", d(10, 3, 2026), 10_000, [title(40, 10_000)]),
+        datedOrder("b", d(11, 3, 2026), 90_000, []), // faturado sem título: fora da cobertura
+      ],
+      previousYearOrders: [datedOrder("p", d(10, 3, 2025), 10_000, [title(45, 10_000)])],
+    });
+    assert.equal(lowCoverage.current.summary.quality, "LOW");
+    assert.equal(lowCoverage.current.displayDays, null);
+    assert.equal(lowCoverage.trend, "UNAVAILABLE");
+    assert.equal(resolveGrantedPaymentTermPeriodCards(lowCoverage).current.value, "Cobertura insuficiente");
+  });
+
+  it("tendência e delta com a mesma precisão exibida (1 casa)", () => {
+    assert.equal(resolveGrantedPaymentTermTrend(-0.04), "EQUAL");
+    assert.equal(resolveGrantedPaymentTermTrend(0.04), "EQUAL");
+    assert.equal(resolveGrantedPaymentTermTrend(-0.06), "BETTER");
+    assert.equal(resolveGrantedPaymentTermTrend(0.06), "WORSE");
+    assert.equal(resolveGrantedPaymentTermTrend(null), "UNAVAILABLE");
+    assert.equal(resolveGrantedPaymentTermTrend(Number.NaN), "UNAVAILABLE");
+    assert.equal(formatGrantedPaymentTermDeltaDays(-5), "−5,0 dias");
+    assert.equal(formatGrantedPaymentTermDeltaDays(3.24), "+3,2 dias");
+    assert.equal(formatGrantedPaymentTermDeltaDays(0), "0,0 dias");
+    assert.equal(formatGrantedPaymentTermDeltaDays(-0.04), "0,0 dias");
+    assert.equal(formatGrantedPaymentTermDeltaDays(null), "—");
+
+    const equal = buildSalesOrderGrantedPaymentTermPeriodComparison({
+      year: 2026,
+      month: null,
+      referenceDate: REFERENCE,
+      currentYearOrders: [datedOrder("a", d(10, 3, 2026), 10_000, [title(30, 10_000)])],
+      previousYearOrders: [datedOrder("p", d(10, 3, 2025), 10_000, [title(30, 10_000)])],
+    });
+    assert.equal(equal.trend, "EQUAL");
+    const cards = resolveGrantedPaymentTermPeriodCards(equal);
+    assert.equal(cards.current.badgeLabel, "Igual a 2025");
+    assert.equal(cards.current.badgeTone, "info");
+  });
+
+  it("série mensal traz a comparação (Mês/data da tela); sem data = ano inteiro", () => {
+    const currentYearOrders = [datedOrder("a", d(10, 9, 2026), 10_000, [title(40, 10_000)])];
+    const previousYearOrders = [datedOrder("p", d(10, 9, 2025), 10_000, [title(45, 10_000)])];
+    const series = buildSalesOrderGrantedPaymentTermMonthlySeries({
+      year: 2026,
+      currentYearOrders,
+      previousYearOrders,
+      month: 9,
+      referenceDate: REFERENCE,
+    });
+    assert.deepEqual(
+      series.periodComparison,
+      buildSalesOrderGrantedPaymentTermPeriodComparison({
+        year: 2026,
+        month: 9,
+        referenceDate: REFERENCE,
+        currentYearOrders,
+        previousYearOrders,
+      })
+    );
+    // Barras continuam 12 meses (o Mês só afeta os cards).
+    assert.equal(series.rows.length, 12);
+    const wholeYear = buildSalesOrderGrantedPaymentTermMonthlySeries({
+      year: 2026,
+      currentYearOrders,
+      previousYearOrders,
+    });
+    assert.equal(wholeYear.periodComparison.month, null);
+    assert.equal(wholeYear.periodComparison.current.to, "2026-12-31");
+    assert.equal(wholeYear.periodComparison.previous.to, "2025-12-31");
   });
 });
