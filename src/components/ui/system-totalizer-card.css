@@ -156,6 +156,12 @@
   text-overflow: ellipsis;
 }
 
+.metric-card.system-totalizer-metric-card.inventory-type-card--dual .metric-card-subtitle {
+  white-space: pre-line;
+  overflow: visible;
+  text-overflow: unset;
+}
+
 .metric-card.system-totalizer-metric-card .metric-card-icon-wrap {
   width: 1.75rem;
   height: 1.75rem;

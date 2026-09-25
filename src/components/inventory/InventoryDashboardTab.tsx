@@ -10,6 +10,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
@@ -198,11 +199,26 @@ function typeSliceSubtitle(slice: InventoryValuationTypeSlice): string {
     : `${slice.uncoveredItemCount} itens sem custo de suprimentos`;
 }
 
+function retailTypeSubtitle(slice: InventoryValuationTypeSlice): string {
+  if (slice.positiveItemCount === 0) return "Nenhum item com saldo";
+  const sale = slice.salesPotential;
+  const saleLine =
+    sale.available && sale.value != null ? "Valor de venda" : "Valor de venda indisponível";
+  const cost = slice.manufacturingCost;
+  const missing =
+    cost && cost.available && cost.uncoveredItems > 0 ? ` · ${cost.uncoveredItems} sem custo` : "";
+  const costLine =
+    cost && cost.available && cost.value != null
+      ? `Custo de fabricação ${formatFinanceKpiCurrency(cost.value)}${missing}`
+      : "Custo de fabricação indisponível";
+  return `${saleLine}\n${costLine}`;
+}
+
 function typeSliceHint(slice: InventoryValuationTypeSlice): string {
   if (!slice.includedInRetailValuation) {
     return "Saldo físico × custo atual do cadastro de Suprimentos. Matéria-prima não usa a tabela Varejo 1.";
   }
-  return "Preço da tabela Varejo 1. Sem preço publicado, o item entra pelo custo industrial vigente.";
+  return "O valor do card é o saldo físico × preço da tabela Varejo 1. O custo de fabricação é o mesmo saldo × custo industrial vigente.";
 }
 
 function TypeValueCard({
@@ -218,17 +234,21 @@ function TypeValueCard({
   icon: LucideIcon;
   loading: boolean;
 }) {
-  const showMoney = slice.cardValue != null;
-  const emptyLabel = slice.includedInRetailValuation ? "Sem preço nem custo" : "Sem custo";
+  const sale = slice.salesPotential;
+  const showSale = slice.includedInRetailValuation && sale.available && sale.value != null;
+  const showSupply = !slice.includedInRetailValuation && slice.cardValue != null;
+  const showMoney = showSale || showSupply;
+  const emptyLabel = slice.includedInRetailValuation ? "Indisponível" : "Sem custo";
   return (
     <KpiLink to="/inventory/balances" testId={testId}>
       <FinanceExecutiveTotalizerCard
         label={label}
-        amount={showMoney ? slice.cardValue : null}
+        className={slice.includedInRetailValuation ? "inventory-type-card--dual" : undefined}
+        amount={showMoney ? (showSale ? sale.value : slice.cardValue) : null}
         amountFormat="currency"
         value={showMoney ? undefined : emptyLabel}
         valueSize={showMoney ? "default" : "text"}
-        subtitle={typeSliceSubtitle(slice)}
+        subtitle={slice.includedInRetailValuation ? retailTypeSubtitle(slice) : typeSliceSubtitle(slice)}
         helperText={typeSliceHint(slice)}
         tone="neutral"
         icon={icon}

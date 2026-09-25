@@ -325,6 +325,9 @@ describe("inventory managerial valuation", () => {
     assert.equal(card.uncoveredItemCount, 1);
     assert.equal(card.cardValue, 120);
     assert.equal(card.salesPotential.value, 100);
+    assert.equal(card.manufacturingCost?.value, 1010);
+    assert.equal(card.manufacturingCost?.coveredItems, 2);
+    assert.equal(card.manufacturingCost?.uncoveredItems, 1);
   });
 
   it("preço zero publicado não cai para o custo", () => {
@@ -368,6 +371,31 @@ describe("inventory managerial valuation", () => {
     assert.equal(card.uncoveredItemCount, 1);
     assert.equal(card.saleItemCount, 0);
     assert.equal(result.salesPotential.value, 0);
+    assert.equal(card.manufacturingCost, null);
+  });
+
+  it("PA e componente separam valor de venda e custo de fabricação", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "pa", itemType: "FINISHED_PRODUCT", productId: "pa", physicalQuantity: D(10) }),
+        line({ itemId: "comp", itemType: "COMPONENT", productId: "comp", physicalQuantity: D(2) }),
+      ],
+      retailPriceByProductId: prices([
+        ["pa", 8],
+        ["comp", 5],
+      ]),
+      industrialCostByProductId: prices([
+        ["pa", 3],
+        ["comp", 1.5],
+      ]),
+    });
+    assert.equal(result.byItemType.finishedProduct.salesPotential.value, 80);
+    assert.equal(result.byItemType.finishedProduct.manufacturingCost?.value, 30);
+    assert.equal(result.byItemType.component.salesPotential.value, 10);
+    assert.equal(result.byItemType.component.manufacturingCost?.value, 3);
+    assert.equal(result.salesPotential.value, 90);
+    assert.equal(result.industrialCost.value, 33);
+    assert.equal(result.byItemType.rawMaterial.manufacturingCost, null);
   });
 });
 

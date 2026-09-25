@@ -70,6 +70,11 @@ export type InventoryValuationTypeSlice = {
   saleItemCount: number;
   costItemCount: number;
   uncoveredItemCount: number;
+  /**
+   * Custo de fabricação deste recorte: saldo físico × custo industrial publicado.
+   * Null em matéria-prima, que usa o custo atual de Suprimentos.
+   */
+  manufacturingCost: InventoryValuationMetric | null;
 };
 
 export type InventoryManagerialValuation = {
@@ -295,6 +300,7 @@ function finishTypeSlice(input: {
   salesPotential: InventoryValuationMetric;
   card: CardDraft;
   costBasis: "SUPPLY_COST" | "INDUSTRIAL_COST";
+  manufacturingCost: InventoryValuationMetric | null;
 }): InventoryValuationTypeSlice {
   return {
     includedInRetailValuation: input.includedInRetailValuation,
@@ -305,6 +311,7 @@ function finishTypeSlice(input: {
     saleItemCount: input.card.saleItemCount,
     costItemCount: input.card.costItemCount,
     uncoveredItemCount: input.card.uncoveredItemCount,
+    manufacturingCost: input.manufacturingCost,
   };
 }
 
@@ -323,6 +330,8 @@ export function computeInventoryManagerialValuation(input: {
   const cost = emptyDraft();
   const finishedSales = emptyDraft();
   const componentSales = emptyDraft();
+  const finishedManufacturing = emptyDraft();
+  const componentManufacturing = emptyDraft();
   const rawCard = emptyCardDraft();
   const finishedCard = emptyCardDraft();
   const componentCard = emptyCardDraft();
@@ -359,8 +368,14 @@ export function computeInventoryManagerialValuation(input: {
     if (quantity.lt(ZERO)) {
       sales.negativePhysicalItems += 1;
       cost.negativePhysicalItems += 1;
-      if (line.itemType === "FINISHED_PRODUCT") finishedSales.negativePhysicalItems += 1;
-      if (line.itemType === "COMPONENT") componentSales.negativePhysicalItems += 1;
+      if (line.itemType === "FINISHED_PRODUCT") {
+        finishedSales.negativePhysicalItems += 1;
+        finishedManufacturing.negativePhysicalItems += 1;
+      }
+      if (line.itemType === "COMPONENT") {
+        componentSales.negativePhysicalItems += 1;
+        componentManufacturing.negativePhysicalItems += 1;
+      }
       continue;
     }
 
@@ -368,6 +383,7 @@ export function computeInventoryManagerialValuation(input: {
     applyUnitPrice(cost, quantity, line.productId, input.industrialCostByProductId);
     if (line.itemType === "FINISHED_PRODUCT") {
       applyUnitPrice(finishedSales, quantity, line.productId, input.retailPriceByProductId);
+      applyUnitPrice(finishedManufacturing, quantity, line.productId, input.industrialCostByProductId);
       applyRetailOrIndustrialCost(
         finishedCard,
         quantity,
@@ -378,6 +394,7 @@ export function computeInventoryManagerialValuation(input: {
     }
     if (line.itemType === "COMPONENT") {
       applyUnitPrice(componentSales, quantity, line.productId, input.retailPriceByProductId);
+      applyUnitPrice(componentManufacturing, quantity, line.productId, input.industrialCostByProductId);
       applyRetailOrIndustrialCost(
         componentCard,
         quantity,
@@ -393,14 +410,11 @@ export function computeInventoryManagerialValuation(input: {
   const retailReason = input.retailUnavailableReason ?? INVENTORY_RETAIL_VALUATION_UNAVAILABLE;
 
   const emptyRetail = finishMetric(emptyDraft(), retailAvailable, retailReason);
+  const costReason = input.industrialUnavailableReason ?? INVENTORY_INDUSTRIAL_COST_UNAVAILABLE;
 
   return {
     salesPotential: finishMetric(sales, retailAvailable, retailReason),
-    industrialCost: finishMetric(
-      cost,
-      costAvailable,
-      input.industrialUnavailableReason ?? INVENTORY_INDUSTRIAL_COST_UNAVAILABLE
-    ),
+    industrialCost: finishMetric(cost, costAvailable, costReason),
     populationItemCount: sales.coveredItems + sales.uncoveredItems,
     excludedPositiveItems,
     byItemType: {
@@ -410,6 +424,7 @@ export function computeInventoryManagerialValuation(input: {
         salesPotential: emptyRetail,
         card: rawCard,
         costBasis: "SUPPLY_COST",
+        manufacturingCost: null,
       }),
       finishedProduct: finishTypeSlice({
         includedInRetailValuation: true,
@@ -417,6 +432,7 @@ export function computeInventoryManagerialValuation(input: {
         salesPotential: finishMetric(finishedSales, retailAvailable, retailReason),
         card: finishedCard,
         costBasis: "INDUSTRIAL_COST",
+        manufacturingCost: finishMetric(finishedManufacturing, costAvailable, costReason),
       }),
       component: finishTypeSlice({
         includedInRetailValuation: true,
@@ -424,6 +440,7 @@ export function computeInventoryManagerialValuation(input: {
         salesPotential: finishMetric(componentSales, retailAvailable, retailReason),
         card: componentCard,
         costBasis: "INDUSTRIAL_COST",
+        manufacturingCost: finishMetric(componentManufacturing, costAvailable, costReason),
       }),
     },
   };
