@@ -92,6 +92,14 @@ function normalizeValuationMetric(raw: unknown): InventoryValuationMetric {
 
 function normalizeTypeSlice(raw: unknown, includedInRetailValuation: boolean): InventoryValuationTypeSlice {
   const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const basis = safeString(row.cardBasis);
+  const cardBasis: InventoryValuationTypeSlice["cardBasis"] =
+    basis === "SALE" ||
+    basis === "SUPPLY_COST" ||
+    basis === "INDUSTRIAL_COST" ||
+    basis === "MIXED"
+      ? basis
+      : "NONE";
   return {
     includedInRetailValuation:
       typeof row.includedInRetailValuation === "boolean"
@@ -99,6 +107,11 @@ function normalizeTypeSlice(raw: unknown, includedInRetailValuation: boolean): I
         : includedInRetailValuation,
     positiveItemCount: finiteNumber(row.positiveItemCount),
     salesPotential: normalizeValuationMetric(row.salesPotential),
+    cardValue: row.cardValue == null ? null : finiteNumber(row.cardValue),
+    cardBasis,
+    saleItemCount: finiteNumber(row.saleItemCount),
+    costItemCount: finiteNumber(row.costItemCount),
+    uncoveredItemCount: finiteNumber(row.uncoveredItemCount),
   };
 }
 

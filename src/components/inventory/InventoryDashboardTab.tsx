@@ -176,16 +176,33 @@ function valuationCoverageSubtitle(base: string, metric: InventoryValuationMetri
 }
 
 function typeSliceSubtitle(slice: InventoryValuationTypeSlice): string {
-  if (!slice.includedInRetailValuation) {
-    if (slice.positiveItemCount === 0) return "Nenhum item com saldo";
-    return `${slice.positiveItemCount} ${
-      slice.positiveItemCount === 1 ? "item com saldo" : "itens com saldo"
-    } · fora do Varejo 1`;
-  }
-  const metric = slice.salesPotential;
-  if (!metric.available) return "Tabela Varejo 1 indisponível";
   if (slice.positiveItemCount === 0) return "Nenhum item com saldo";
-  return valuationCoverageSubtitle("Parte do valor de venda", metric);
+  const missing =
+    slice.uncoveredItemCount > 0
+      ? ` · ${slice.uncoveredItemCount} sem dado`
+      : "";
+  if (slice.cardBasis === "SALE") {
+    return `Valor de venda · ${slice.saleItemCount} de ${slice.positiveItemCount} itens${missing}`;
+  }
+  if (slice.cardBasis === "SUPPLY_COST") {
+    return `Custo de suprimentos · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
+  }
+  if (slice.cardBasis === "INDUSTRIAL_COST") {
+    return `Custo industrial · ${slice.costItemCount} de ${slice.positiveItemCount} itens${missing}`;
+  }
+  if (slice.cardBasis === "MIXED") {
+    return `Valor de venda · ${slice.saleItemCount} itens · custo · ${slice.costItemCount}${missing}`;
+  }
+  return slice.includedInRetailValuation
+    ? `${slice.uncoveredItemCount} itens sem preço e sem custo`
+    : `${slice.uncoveredItemCount} itens sem custo de suprimentos`;
+}
+
+function typeSliceHint(slice: InventoryValuationTypeSlice): string {
+  if (!slice.includedInRetailValuation) {
+    return "Saldo físico × custo atual do cadastro de Suprimentos. Matéria-prima não usa a tabela Varejo 1.";
+  }
+  return "Preço da tabela Varejo 1. Sem preço publicado, o item entra pelo custo industrial vigente.";
 }
 
 function TypeValueCard({
@@ -201,22 +218,18 @@ function TypeValueCard({
   icon: LucideIcon;
   loading: boolean;
 }) {
-  const metric = slice.salesPotential;
-  const showMoney = slice.includedInRetailValuation && metric.available;
+  const showMoney = slice.cardValue != null;
+  const emptyLabel = slice.includedInRetailValuation ? "Sem preço nem custo" : "Sem custo";
   return (
     <KpiLink to="/inventory/balances" testId={testId}>
       <FinanceExecutiveTotalizerCard
         label={label}
-        amount={showMoney ? metric.value : null}
+        amount={showMoney ? slice.cardValue : null}
         amountFormat="currency"
-        value={showMoney ? undefined : slice.includedInRetailValuation ? "Indisponível" : "Fora do Varejo 1"}
+        value={showMoney ? undefined : emptyLabel}
         valueSize={showMoney ? "default" : "text"}
         subtitle={typeSliceSubtitle(slice)}
-        helperText={
-          slice.includedInRetailValuation
-            ? valuationHint(metric, "preço Varejo 1")
-            : "Matéria-prima não usa a tabela comercial. O valor de venda acima é só PA e componentes."
-        }
+        helperText={typeSliceHint(slice)}
         tone="neutral"
         icon={icon}
         loading={loading}

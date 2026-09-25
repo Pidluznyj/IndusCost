@@ -232,10 +232,17 @@ export type InventoryValuationMetric = {
   negativePhysicalItems: number;
 };
 
+export type InventoryTypeCardBasis = "SALE" | "SUPPLY_COST" | "INDUSTRIAL_COST" | "MIXED" | "NONE";
+
 export type InventoryValuationTypeSlice = {
   includedInRetailValuation: boolean;
   positiveItemCount: number;
   salesPotential: InventoryValuationMetric;
+  cardValue: number | null;
+  cardBasis: InventoryTypeCardBasis;
+  saleItemCount: number;
+  costItemCount: number;
+  uncoveredItemCount: number;
 };
 
 export type InventoryManagerialValuation = {

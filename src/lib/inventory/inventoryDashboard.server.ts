@@ -7,6 +7,7 @@ import {
   aggregateInventoryPhysicalBalances,
   computeInventoryManagerialValuation,
   emptyInventoryManagerialValuation,
+  indexUnitAmountByProductId,
   isInventoryValuationItemType,
   type InventoryManagerialValuation,
 } from "./inventoryManagerialValuation.js";
@@ -123,7 +124,7 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
         blockedQuantity: true,
         quarantineQuantity: true,
         totalValue: true,
-        item: { select: { itemType: true, productId: true } },
+        item: { select: { itemType: true, productId: true, materialId: true } },
       },
     }),
     prisma.inventoryMovement.findMany({
@@ -194,6 +195,7 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
       itemId: row.itemId,
       itemType: row.item.itemType,
       productId: row.item.productId,
+      materialId: row.item.materialId,
       physicalQuantity: row.physicalQuantity,
     }))
   );
@@ -206,10 +208,31 @@ export async function buildInventoryDashboard(): Promise<InventoryDashboardPaylo
     )
     .map((line) => line.productId as string);
   const unitPrices = await loadInventoryValuationUnitPrices(prisma, productIds, new Date());
+  const materialIds = [
+    ...new Set(
+      physicalLines
+        .filter(
+          (line) =>
+            line.itemType === "RAW_MATERIAL" && line.physicalQuantity.gt(0) && Boolean(line.materialId)
+        )
+        .map((line) => line.materialId as string)
+    ),
+  ];
+  const supplyRows =
+    materialIds.length === 0
+      ? []
+      : await prisma.material.findMany({
+          where: { id: { in: materialIds } },
+          select: { id: true, currentCost: true },
+        });
+  const supplyCostByMaterialId = indexUnitAmountByProductId(
+    supplyRows.map((row) => ({ productId: row.id, amount: row.currentCost }))
+  );
   const valuation = computeInventoryManagerialValuation({
     lines: physicalLines,
     retailPriceByProductId: unitPrices.retailPriceByProductId,
     industrialCostByProductId: unitPrices.industrialCostByProductId,
+    supplyCostByMaterialId,
     retailUnavailableReason: unitPrices.retailUnavailableReason,
     industrialUnavailableReason: unitPrices.industrialUnavailableReason,
   });

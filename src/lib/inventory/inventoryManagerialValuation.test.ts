@@ -20,6 +20,7 @@ function line(
   return {
     itemType: "FINISHED_PRODUCT",
     productId: "product-1",
+    materialId: null,
     physicalQuantity: D(100),
     ...partial,
   };
@@ -301,6 +302,71 @@ describe("inventory managerial valuation", () => {
       industrialCostByProductId: prices([["p", 1]]),
     });
     assert.equal(result.salesPotential.uncoveredItems, 1);
+    assert.equal(result.salesPotential.value, 0);
+  });
+
+  it("card de PA usa venda e, sem preço, o custo industrial", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "com-preco", productId: "p1", physicalQuantity: D(10) }),
+        line({ itemId: "sem-preco", productId: "p2", physicalQuantity: D(4) }),
+        line({ itemId: "sem-nada", productId: "p3", physicalQuantity: D(8) }),
+      ],
+      retailPriceByProductId: prices([["p1", 10]]),
+      industrialCostByProductId: prices([
+        ["p1", 99],
+        ["p2", 5],
+      ]),
+    });
+    const card = result.byItemType.finishedProduct;
+    assert.equal(card.cardBasis, "MIXED");
+    assert.equal(card.saleItemCount, 1);
+    assert.equal(card.costItemCount, 1);
+    assert.equal(card.uncoveredItemCount, 1);
+    assert.equal(card.cardValue, 120);
+    assert.equal(card.salesPotential.value, 100);
+  });
+
+  it("preço zero publicado não cai para o custo", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [line({ itemId: "i1", productId: "p", physicalQuantity: D(3) })],
+      retailPriceByProductId: prices([["p", 0]]),
+      industrialCostByProductId: prices([["p", 50]]),
+    });
+    const card = result.byItemType.finishedProduct;
+    assert.equal(card.cardBasis, "SALE");
+    assert.equal(card.cardValue, 0);
+    assert.equal(card.costItemCount, 0);
+  });
+
+  it("MP usa saldo físico × custo atual de suprimentos", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({
+          itemId: "mp1",
+          itemType: "RAW_MATERIAL",
+          productId: "nao-usar",
+          materialId: "mat-1",
+          physicalQuantity: D(100),
+        }),
+        line({
+          itemId: "mp2",
+          itemType: "RAW_MATERIAL",
+          productId: null,
+          materialId: null,
+          physicalQuantity: D(40),
+        }),
+      ],
+      retailPriceByProductId: prices([["nao-usar", 999]]),
+      industrialCostByProductId: prices([["nao-usar", 999]]),
+      supplyCostByMaterialId: prices([["mat-1", "1.5"]]),
+    });
+    const card = result.byItemType.rawMaterial;
+    assert.equal(card.cardBasis, "SUPPLY_COST");
+    assert.equal(card.cardValue, 150);
+    assert.equal(card.costItemCount, 1);
+    assert.equal(card.uncoveredItemCount, 1);
+    assert.equal(card.saleItemCount, 0);
     assert.equal(result.salesPotential.value, 0);
   });
 });

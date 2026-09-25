@@ -144,6 +144,8 @@ describe("InventoryDashboardTab", () => {
     assert.match(tab, /label="MP"/);
     assert.match(tab, /label="PA"/);
     assert.match(tab, /label="Componentes"/);
+    assert.match(tab, /Custo de suprimentos/);
+    assert.match(tab, /Custo industrial/);
     assert.doesNotMatch(tab, /Abaixo do mínimo/);
     assert.match(tab, /inventory-recent-movements/);
   });

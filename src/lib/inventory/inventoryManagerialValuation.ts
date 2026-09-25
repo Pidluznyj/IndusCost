@@ -30,6 +30,8 @@ export type InventoryValuationLine = {
   itemId: string;
   itemType: string;
   productId: string | null;
+  /** Vínculo oficial com o cadastro de Suprimentos. Não é descrição. */
+  materialId: string | null;
   physicalQuantity: Prisma.Decimal;
 };
 
@@ -48,12 +50,26 @@ export type InventoryValuationMetric = {
   negativePhysicalItems: number;
 };
 
+export const INVENTORY_SUPPLY_COST_BASIS = "SUPPLY_COST" as const;
+export const INVENTORY_INDUSTRIAL_COST_BASIS = "INDUSTRIAL_COST" as const;
+
+export type InventoryTypeCardBasis = "SALE" | "SUPPLY_COST" | "INDUSTRIAL_COST" | "MIXED" | "NONE";
+
 export type InventoryValuationTypeSlice = {
   /** Matéria-prima não entra no Varejo 1. PA e componente entram. */
   includedInRetailValuation: boolean;
   /** Itens deste tipo com saldo físico positivo. */
   positiveItemCount: number;
   salesPotential: InventoryValuationMetric;
+  /**
+   * Número do card: preço Varejo 1 quando o item tem, senão o custo daquele tipo.
+   * MP usa só o custo atual de Suprimentos. Null quando há saldo e nenhum item pôde ser valorizado.
+   */
+  cardValue: number | null;
+  cardBasis: InventoryTypeCardBasis;
+  saleItemCount: number;
+  costItemCount: number;
+  uncoveredItemCount: number;
 };
 
 export type InventoryManagerialValuation = {
@@ -78,6 +94,7 @@ export type InventoryValuationBalanceRow = {
   itemId: string;
   itemType: string;
   productId: string | null;
+  materialId?: string | null;
   physicalQuantity: unknown;
 };
 
@@ -116,7 +133,12 @@ export function aggregateInventoryPhysicalBalances(
 ): InventoryValuationLine[] {
   const byItem = new Map<
     string,
-    { itemType: string; productId: string | null; physicalQuantity: Prisma.Decimal }
+    {
+      itemType: string;
+      productId: string | null;
+      materialId: string | null;
+      physicalQuantity: Prisma.Decimal;
+    }
   >();
   for (const row of rows) {
     const current = byItem.get(row.itemId);
@@ -125,6 +147,7 @@ export function aggregateInventoryPhysicalBalances(
       byItem.set(row.itemId, {
         itemType: row.itemType,
         productId: row.productId,
+        materialId: row.materialId ?? null,
         physicalQuantity: qty,
       });
       continue;
@@ -135,6 +158,7 @@ export function aggregateInventoryPhysicalBalances(
     itemId,
     itemType: row.itemType,
     productId: row.productId,
+    materialId: row.materialId,
     physicalQuantity: row.physicalQuantity,
   }));
 }
@@ -206,12 +230,92 @@ function applyUnitPrice(
   draft.value = draft.value.add(quantity.mul(unit));
 }
 
+function lookupUnit(
+  map: ReadonlyMap<string, Prisma.Decimal | null> | null | undefined,
+  id: string | null
+): Prisma.Decimal | null {
+  if (!map || !id || !map.has(id)) return null;
+  const unit = map.get(id);
+  return unit == null ? null : unit;
+}
+
+type CardDraft = {
+  value: Prisma.Decimal;
+  saleItemCount: number;
+  costItemCount: number;
+  uncoveredItemCount: number;
+};
+
+function emptyCardDraft(): CardDraft {
+  return { value: ZERO, saleItemCount: 0, costItemCount: 0, uncoveredItemCount: 0 };
+}
+
+function addCardAmount(draft: CardDraft, quantity: Prisma.Decimal, unit: Prisma.Decimal, kind: "sale" | "cost"): void {
+  draft.value = draft.value.add(quantity.mul(unit));
+  if (kind === "sale") draft.saleItemCount += 1;
+  else draft.costItemCount += 1;
+}
+
+function cardBasisFor(draft: CardDraft, costBasis: "SUPPLY_COST" | "INDUSTRIAL_COST"): InventoryTypeCardBasis {
+  if (draft.saleItemCount > 0 && draft.costItemCount > 0) return "MIXED";
+  if (draft.saleItemCount > 0) return "SALE";
+  if (draft.costItemCount > 0) return costBasis;
+  return "NONE";
+}
+
+function cardValueFor(draft: CardDraft, positiveItemCount: number): number | null {
+  if (positiveItemCount === 0) return 0;
+  if (draft.saleItemCount + draft.costItemCount === 0) return null;
+  return moneyNumber(draft.value);
+}
+
+function applyRetailOrIndustrialCost(
+  draft: CardDraft,
+  quantity: Prisma.Decimal,
+  productId: string | null,
+  retailPriceByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null,
+  industrialCostByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null
+): void {
+  const sale = lookupUnit(retailPriceByProductId, productId);
+  if (sale != null) {
+    addCardAmount(draft, quantity, sale, "sale");
+    return;
+  }
+  const cost = lookupUnit(industrialCostByProductId, productId);
+  if (cost != null) {
+    addCardAmount(draft, quantity, cost, "cost");
+    return;
+  }
+  draft.uncoveredItemCount += 1;
+}
+
+function finishTypeSlice(input: {
+  includedInRetailValuation: boolean;
+  positiveItemCount: number;
+  salesPotential: InventoryValuationMetric;
+  card: CardDraft;
+  costBasis: "SUPPLY_COST" | "INDUSTRIAL_COST";
+}): InventoryValuationTypeSlice {
+  return {
+    includedInRetailValuation: input.includedInRetailValuation,
+    positiveItemCount: input.positiveItemCount,
+    salesPotential: input.salesPotential,
+    cardValue: cardValueFor(input.card, input.positiveItemCount),
+    cardBasis: cardBasisFor(input.card, input.costBasis),
+    saleItemCount: input.card.saleItemCount,
+    costItemCount: input.card.costItemCount,
+    uncoveredItemCount: input.card.uncoveredItemCount,
+  };
+}
+
 export function computeInventoryManagerialValuation(input: {
   lines: readonly InventoryValuationLine[];
   /** Null = tabela Varejo 1 inexistente ou sem versão publicada vigente. */
   retailPriceByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null;
   /** Null = nenhuma versão de custo industrial publicada vigente. */
   industrialCostByProductId: ReadonlyMap<string, Prisma.Decimal | null> | null;
+  /** Custo atual do cadastro de Suprimentos, por materialId. MP não usa Varejo 1. */
+  supplyCostByMaterialId?: ReadonlyMap<string, Prisma.Decimal | null> | null;
   retailUnavailableReason?: string | null;
   industrialUnavailableReason?: string | null;
 }): InventoryManagerialValuation {
@@ -219,6 +323,9 @@ export function computeInventoryManagerialValuation(input: {
   const cost = emptyDraft();
   const finishedSales = emptyDraft();
   const componentSales = emptyDraft();
+  const rawCard = emptyCardDraft();
+  const finishedCard = emptyCardDraft();
+  const componentCard = emptyCardDraft();
   let excludedPositiveItems = 0;
   let rawMaterialPositiveItems = 0;
   let finishedPositiveItems = 0;
@@ -232,6 +339,9 @@ export function computeInventoryManagerialValuation(input: {
       if (quantity.gt(ZERO)) {
         rawMaterialPositiveItems += 1;
         excludedPositiveItems += 1;
+        const supplyCost = lookupUnit(input.supplyCostByMaterialId, line.materialId);
+        if (supplyCost != null) addCardAmount(rawCard, quantity, supplyCost, "cost");
+        else rawCard.uncoveredItemCount += 1;
       }
       continue;
     }
@@ -258,9 +368,23 @@ export function computeInventoryManagerialValuation(input: {
     applyUnitPrice(cost, quantity, line.productId, input.industrialCostByProductId);
     if (line.itemType === "FINISHED_PRODUCT") {
       applyUnitPrice(finishedSales, quantity, line.productId, input.retailPriceByProductId);
+      applyRetailOrIndustrialCost(
+        finishedCard,
+        quantity,
+        line.productId,
+        input.retailPriceByProductId,
+        input.industrialCostByProductId
+      );
     }
     if (line.itemType === "COMPONENT") {
       applyUnitPrice(componentSales, quantity, line.productId, input.retailPriceByProductId);
+      applyRetailOrIndustrialCost(
+        componentCard,
+        quantity,
+        line.productId,
+        input.retailPriceByProductId,
+        input.industrialCostByProductId
+      );
     }
   }
 
@@ -280,21 +404,27 @@ export function computeInventoryManagerialValuation(input: {
     populationItemCount: sales.coveredItems + sales.uncoveredItems,
     excludedPositiveItems,
     byItemType: {
-      rawMaterial: {
+      rawMaterial: finishTypeSlice({
         includedInRetailValuation: false,
         positiveItemCount: rawMaterialPositiveItems,
         salesPotential: emptyRetail,
-      },
-      finishedProduct: {
+        card: rawCard,
+        costBasis: "SUPPLY_COST",
+      }),
+      finishedProduct: finishTypeSlice({
         includedInRetailValuation: true,
         positiveItemCount: finishedPositiveItems,
         salesPotential: finishMetric(finishedSales, retailAvailable, retailReason),
-      },
-      component: {
+        card: finishedCard,
+        costBasis: "INDUSTRIAL_COST",
+      }),
+      component: finishTypeSlice({
         includedInRetailValuation: true,
         positiveItemCount: componentPositiveItems,
         salesPotential: finishMetric(componentSales, retailAvailable, retailReason),
-      },
+        card: componentCard,
+        costBasis: "INDUSTRIAL_COST",
+      }),
     },
   };
 }
