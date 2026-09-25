@@ -31,25 +31,40 @@ function SectionTable({
   emittedAt: string;
 }) {
   const showSale = section.itemType !== "RAW_MATERIAL";
+  const colSpan = showSale ? 8 : 6;
   return (
-    <PrintTable className="inventory-position-report-table">
+    <PrintTable className={showSale ? "inventory-position-report-table has-sale" : "inventory-position-report-table"}>
+      <colgroup>
+        <col className="col-code" />
+        <col className="col-desc" />
+        <col className="col-unit" />
+        <col className="col-qty" />
+        <col className="col-money" />
+        <col className="col-money" />
+        {showSale ? (
+          <>
+            <col className="col-money" />
+            <col className="col-money" />
+          </>
+        ) : null}
+      </colgroup>
       <thead>
         <tr className="inventory-position-report-repeat">
-          <th colSpan={showSale ? 8 : 6}>
+          <th colSpan={colSpan}>
             {companyName} · Posição de estoque · {section.title} · Emitido em {emittedAt}
           </th>
         </tr>
         <tr>
-          <th>Código</th>
-          <th>Descrição</th>
-          <th>Un.</th>
-          <th>Quantidade</th>
-          <th>Custo unitário</th>
-          <th>Valor contábil</th>
+          <th className="col-code">Código</th>
+          <th className="col-desc">Descrição</th>
+          <th className="col-unit">Un.</th>
+          <th className="col-qty">Quantidade</th>
+          <th className="col-money">Custo unitário</th>
+          <th className="col-money">Valor contábil</th>
           {showSale ? (
             <>
-              <th>Preço Varejo 1</th>
-              <th>Valor de venda</th>
+              <th className="col-money">Preço Varejo 1</th>
+              <th className="col-money">Valor de venda</th>
             </>
           ) : null}
         </tr>
@@ -57,21 +72,21 @@ function SectionTable({
       <tbody>
         {section.rows.length === 0 ? (
           <tr>
-            <td colSpan={showSale ? 8 : 6}>Nenhum item com saldo físico positivo.</td>
+            <td colSpan={colSpan}>Nenhum item com saldo físico positivo.</td>
           </tr>
         ) : (
           section.rows.map((row) => (
             <tr key={`${section.itemType}-${row.itemCode}`}>
-              <td>{row.itemCode}</td>
-              <td>{row.description}</td>
-              <td>{row.unit}</td>
-              <td className="num">{formatQty(row.physicalQuantity)}</td>
-              <td className="num">{formatMoney(row.unitCost)}</td>
-              <td className="num">{formatMoney(row.totalCost)}</td>
+              <td className="col-code">{row.itemCode}</td>
+              <td className="col-desc">{row.description}</td>
+              <td className="col-unit">{row.unit}</td>
+              <td className="col-qty">{formatQty(row.physicalQuantity)}</td>
+              <td className="col-money">{formatMoney(row.unitCost)}</td>
+              <td className="col-money">{formatMoney(row.totalCost)}</td>
               {showSale ? (
                 <>
-                  <td className="num">{formatMoney(row.unitSalePrice)}</td>
-                  <td className="num">{formatMoney(row.totalSaleValue)}</td>
+                  <td className="col-money">{formatMoney(row.unitSalePrice)}</td>
+                  <td className="col-money">{formatMoney(row.totalSaleValue)}</td>
                 </>
               ) : null}
             </tr>

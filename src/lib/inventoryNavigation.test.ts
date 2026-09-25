@@ -170,5 +170,9 @@ describe("InventoryModule estados", () => {
     assert.match(mod, /Extrair XLS/);
     assert.match(mod, /Extrair PDF/);
     assert.match(mod, /\/inventory\/position-report\/print/);
+    const printCss = read("src/components/inventory/inventory-position-report-print.css");
+    assert.match(printCss, /body\.inventory-position-report-route \*/);
+    assert.match(printCss, /visibility: visible !important/);
+    assert.match(printCss, /A4 landscape/);
   });
 });

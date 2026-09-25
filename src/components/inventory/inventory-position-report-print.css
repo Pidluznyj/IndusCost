@@ -1,6 +1,24 @@
+/**
+ * Impressão da posição de estoque.
+ *
+ * reports-print.css aplica `body * { visibility: hidden }` e só devolve
+ * visibilidade para uma lista fechada de relatórios. Sem o override abaixo,
+ * Imprimir / PDF sai em branco.
+ *
+ * A4 paisagem: vários CSS globais também declaram @page. A regra desta rota
+ * fica no topo e de novo dentro de @media print, e a página injeta a mesma
+ * regra em runtime.
+ */
+@page {
+  size: A4 landscape;
+  margin: 10mm 8mm 12mm;
+}
+
 .inventory-position-report-document {
   color: #0f172a;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 9pt;
+  line-height: 1.35;
 }
 
 .inventory-position-report-notes {
@@ -9,42 +27,240 @@
 }
 
 .inventory-position-report-notes li + li {
-  margin-top: 4px;
+  margin-top: 3px;
+}
+
+.inventory-position-report-meta,
+.inventory-position-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.inventory-position-report-meta th,
+.inventory-position-report-meta td,
+.inventory-position-report-table th,
+.inventory-position-report-table td {
+  border: 1px solid #cbd5e1;
+  padding: 3px 5px;
+  vertical-align: top;
 }
 
 .inventory-position-report-meta th {
-  width: 34mm;
+  width: 36mm;
   text-align: left;
-  vertical-align: top;
+  background: #f8fafc;
+  font-weight: 700;
 }
 
-.inventory-position-report-table th,
-.inventory-position-report-table td,
-.inventory-position-report-meta th,
-.inventory-position-report-meta td {
-  border: 1px solid #cbd5e1;
-  padding: 3px 4px;
-  vertical-align: top;
+.inventory-position-report-table col.col-code {
+  width: 28mm;
 }
 
-.inventory-position-report-table .num {
-  text-align: right;
+.inventory-position-report-table col.col-unit {
+  width: 12mm;
+}
+
+.inventory-position-report-table col.col-qty {
+  width: 24mm;
+}
+
+.inventory-position-report-table col.col-money {
+  width: 30mm;
+}
+
+.inventory-position-report-table .col-code {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.inventory-position-report-table .col-desc {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.inventory-position-report-table .col-unit {
+  text-align: center;
   white-space: nowrap;
 }
 
-.inventory-position-report-repeat th {
-  font-weight: 600;
+.inventory-position-report-table .col-qty,
+.inventory-position-report-table .col-money,
+.inventory-position-report-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-position-report-table thead th {
+  background: #d6e0ea;
+  color: #0f2744;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   text-align: left;
+}
+
+.inventory-position-report-table thead th.col-qty,
+.inventory-position-report-table thead th.col-money {
+  text-align: right;
+}
+
+.inventory-position-report-table thead th.col-unit {
+  text-align: center;
+}
+
+.inventory-position-report-repeat th {
+  background: #e8eef5 !important;
+  color: #0f2744 !important;
+  font-weight: 600;
+  text-align: left !important;
+  white-space: normal;
+}
+
+.inventory-position-report-table tbody tr:nth-child(even) td {
   background: #f8fafc;
+}
+
+.inventory-position-report-table tfoot th {
+  background: #eef3f8;
+  font-weight: 700;
+  text-align: left;
 }
 
 @media print {
   @page {
     size: A4 landscape;
-    margin: 8mm;
+    margin: 10mm 8mm 12mm;
   }
 
-  .inventory-position-report-route .print-document thead {
-    display: table-header-group;
+  html,
+  body.inventory-position-report-route {
+    background: #fff !important;
+    overflow: visible !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Anula o visibility:hidden global nesta rota. */
+  body.inventory-position-report-route,
+  body.inventory-position-report-route * {
+    visibility: visible !important;
+  }
+
+  body.inventory-position-report-route .print-no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.inventory-position-report-route .inventory-position-report-sheet {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  #inventory-position-report-print-root,
+  #inventory-position-report-print-root * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #inventory-position-report-print-root {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: 28mm minmax(0, 1fr) 62mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-logo {
+    max-height: 18mm !important;
+    max-width: 26mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-company-text,
+  #inventory-position-report-print-root .print-doc-meta {
+    font-size: 7.5pt !important;
+    line-height: 1.3 !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-company-name {
+    font-size: 11pt !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-meta-title {
+    font-size: 10pt !important;
+    white-space: normal !important;
+  }
+
+  #inventory-position-report-print-root .print-doc-subtitle {
+    font-size: 8pt !important;
+    line-height: 1.35 !important;
+    color: #334155 !important;
+    margin-top: 2mm !important;
+  }
+
+  #inventory-position-report-print-root .print-section {
+    break-inside: auto;
+    page-break-inside: auto;
+    margin-bottom: 3mm;
+  }
+
+  #inventory-position-report-print-root .print-section-title {
+    font-size: 8.5pt !important;
+    margin: 3mm 0 1.5mm !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  #inventory-position-report-print-root table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+  }
+
+  #inventory-position-report-print-root thead {
+    display: table-header-group !important;
+  }
+
+  #inventory-position-report-print-root tfoot {
+    display: table-footer-group !important;
+  }
+
+  #inventory-position-report-print-root tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #inventory-position-report-print-root th,
+  #inventory-position-report-print-root td {
+    padding: 1.1mm 1.4mm !important;
+    overflow-wrap: break-word;
+  }
+
+  #inventory-position-report-print-root .print-document-footer {
+    break-inside: avoid;
+    margin-top: 4mm;
   }
 }

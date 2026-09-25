@@ -102,7 +102,7 @@ export function InventoryPositionReportPrintView() {
           Imprimir / PDF
         </button>
       </div>
-      <div className="mx-auto max-w-[297mm] bg-white p-6 shadow-sm print:max-w-none print:p-0 print:shadow-none">
+      <div className="inventory-position-report-sheet mx-auto max-w-[297mm] bg-white p-6 shadow-sm">
         <InventoryPositionReportPrintDocument report={report} branding={branding} />
       </div>
     </div>
