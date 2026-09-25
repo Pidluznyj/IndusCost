@@ -7,12 +7,16 @@
  * DATA DE EMISSÃO DA NF-e de origem e o VENCIMENTO do título do Contas a Receber
  * (SalesOrder → SalesOrderNfeLink → NomusNfe.xmlDhEmi / NomusAccountsReceivable.dueDate).
  * O prazo do pedido é a média dos seus títulos ponderada pelo valor de cada título.
- * O prazo médio geral é a média dos pedidos filtrados ponderada por
+ * O prazo médio geral é a média dos PEDIDOS FATURADOS do filtro ponderada por
  * `SalesOrder.totalNetValue` (somente valores positivos).
  *
- * Pedidos ainda sem títulos de CR usam, como fallback declarado, a condição
+ * Só pedidos faturados (com NF-e válida) entram na média e na cobertura: sem NF-e
+ * ainda não há recebimento a medir. A participação do valor faturado no valor
+ * vendido do filtro é informada à parte (`invoicedSharePercent`).
+ *
+ * Pedidos faturados sem títulos válidos usam, como fallback declarado, a condição
  * comercial de pagamento (`SalesOrder.paymentTerms`) interpretada por um parser
- * fail-closed ("30/60" → 45; "À vista" → 0). Pedidos sem título e sem condição
+ * fail-closed ("30/60" → 45; "À vista" → 0). Faturados sem título e sem condição
  * interpretável ficam fora da média e aparecem na cobertura.
  *
  * Não mede atraso nem liquidação: usa vencimento, nunca `settlementDate` ou
@@ -26,9 +30,10 @@ export const SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE =
 export const SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY =
   "Prazo por título = vencimento do título do Contas a Receber menos a data de emissão da NF-e de origem, " +
   "ponderado pelo valor do título; prazo do pedido = média dos seus títulos; prazo médio geral = média dos " +
-  "pedidos filtrados ponderada pelo valor líquido (SalesOrder.totalNetValue > 0). Pedidos sem títulos usam " +
-  "SalesOrder.paymentTerms quando interpretável (média das parcelas). Pedidos sem título e sem condição " +
-  "interpretável são excluídos e refletidos na cobertura. Não considera liquidação nem atraso.";
+  "pedidos faturados do filtro ponderada pelo valor líquido (SalesOrder.totalNetValue > 0). Pedidos sem NF-e " +
+  "válida não entram na média nem na cobertura (participação do faturado informada à parte). Pedidos faturados " +
+  "sem títulos usam SalesOrder.paymentTerms quando interpretável (média das parcelas). Faturados sem título e " +
+  "sem condição interpretável são excluídos e refletidos na cobertura. Não considera liquidação nem atraso.";
 
 /** Limite superior defensivo de dias por parcela da condição comercial. */
 export const GRANTED_PAYMENT_TERM_MAX_DAYS = 365;
@@ -37,7 +42,7 @@ export const GRANTED_PAYMENT_TERM_MAX_INSTALLMENTS = 24;
 /** Limite defensivo de dias entre emissão da NF-e e vencimento do título (2 anos). */
 export const GRANTED_PAYMENT_TERM_MAX_RECEIVABLE_DAYS = 730;
 
-/** Qualidade por cobertura (% do valor líquido positivo com prazo resolvido). */
+/** Qualidade por cobertura (% do valor líquido positivo FATURADO com prazo resolvido). */
 export const GRANTED_PAYMENT_TERM_FULL_COVERAGE_PERCENT = 95;
 export const GRANTED_PAYMENT_TERM_PARTIAL_COVERAGE_PERCENT = 80;
 
@@ -160,7 +165,7 @@ function recognized(
 
 /**
  * Parser FAIL-CLOSED da condição comercial de pagamento (fallback para pedidos
- * ainda sem títulos de CR).
+ * faturados sem títulos válidos de CR).
  *
  * Reconhece apenas quando o texto COMPLETO é interpretável sem ambiguidade:
  *   "À vista" / "A vista" / "AVISTA"      → 0
@@ -224,12 +229,18 @@ export type GrantedPaymentTermOrderInput = {
   id: string;
   /** SalesOrder.totalNetValue — peso do pedido na média geral (só > 0). */
   totalNetValue: number;
-  /** SalesOrder.paymentTerms — fallback quando o pedido não tem títulos válidos. */
+  /** SalesOrder.paymentTerms — fallback quando o pedido faturado não tem títulos válidos. */
   paymentTerms: string | null;
+  /** Tem ao menos uma NF-e válida (processada, não cancelada) — mesma regra do filtro "Com NF". */
+  invoiced: boolean;
   titles: GrantedPaymentTermTitleInput[];
 };
 
-export type GrantedPaymentTermOrderSource = "RECEIVABLE_TITLES" | "COMMERCIAL_TERMS" | "NONE";
+export type GrantedPaymentTermOrderSource =
+  | "RECEIVABLE_TITLES"
+  | "COMMERCIAL_TERMS"
+  | "NOT_INVOICED"
+  | "NONE";
 
 export type GrantedPaymentTermOrderResolution = {
   orderId: string;
@@ -292,12 +303,22 @@ export function resolveOrderReceivableTermDays(
 }
 
 /**
- * Prazo de um pedido: títulos do CR (fonte principal); sem títulos válidos, a
- * condição comercial interpretável (fallback); senão, não resolvido.
+ * Prazo de um pedido: só faturados. Títulos do CR (fonte principal); sem títulos
+ * válidos, a condição comercial interpretável (fallback); senão, não resolvido.
  */
 export function resolveGrantedPaymentTermForOrder(
   order: GrantedPaymentTermOrderInput
 ): GrantedPaymentTermOrderResolution {
+  if (!order.invoiced) {
+    return {
+      orderId: order.id,
+      source: "NOT_INVOICED",
+      days: null,
+      titlesUsed: 0,
+      titlesIgnored: 0,
+      reason: null,
+    };
+  }
   const receivable = resolveOrderReceivableTermDays(order.titles);
   if (receivable.days != null) {
     return {
@@ -331,13 +352,13 @@ export function resolveGrantedPaymentTermForOrder(
 }
 
 // ---------------------------------------------------------------------------
-// Média geral (ponderada por SalesOrder.totalNetValue > 0)
+// Média geral (pedidos faturados, ponderada por SalesOrder.totalNetValue > 0)
 // ---------------------------------------------------------------------------
 
 export type GrantedPaymentTermSourceStats = {
   orders: number;
   salesAmount: number;
-  /** % do valor líquido positivo dos pedidos filtrados resolvido por esta fonte. */
+  /** % do valor líquido positivo FATURADO resolvido por esta fonte. */
   salesSharePercent: number;
   weightedAverageDays: number | null;
 };
@@ -351,24 +372,32 @@ export type SalesOrderGrantedPaymentTermUnrecognizedTerm = {
 };
 
 export type SalesOrderGrantedPaymentTermSummary = {
-  /** false quando nenhum pedido resolvido / sem população válida. */
+  /** false quando nenhum pedido faturado resolvido / sem população válida. */
   available: boolean;
   /** Dias, precisão interna (UI arredonda para 1 casa). null quando indisponível. */
   weightedAverageDays: number | null;
-  /** % do valor líquido positivo com prazo resolvido — cobertura PRINCIPAL. */
+  /** % do valor líquido positivo FATURADO com prazo resolvido — cobertura PRINCIPAL. */
   coveragePercent: number;
-  /** % dos pedidos (com peso) com prazo resolvido. */
+  /** % dos pedidos faturados (com peso) com prazo resolvido. */
   orderCoveragePercent: number;
   quality: GrantedPaymentTermQuality;
   /** Pedidos da população filtrada (mesmo count da listagem). */
   totalOrders: number;
-  /** Pedidos com totalNetValue > 0 (população de ponderação). */
+  /** Pedidos faturados com totalNetValue > 0 (população de ponderação). */
   weightedPopulationOrders: number;
   coveredOrders: number;
   uncoveredOrders: number;
   /** Pedidos filtrados fora do peso (totalNetValue <= 0) — auditoria. */
   zeroOrNegativeOrders: number;
-  totalWeightedSalesAmount: number;
+  /** Pedidos com valor positivo ainda sem NF-e válida (não entram na média). */
+  notInvoicedOrders: number;
+  notInvoicedSalesAmount: number;
+  /** Σ totalNetValue de todos os pedidos filtrados com valor positivo. */
+  positiveSalesAmount: number;
+  /** Σ totalNetValue dos pedidos faturados com valor positivo (denominador da cobertura). */
+  invoicedSalesAmount: number;
+  /** % do valor vendido positivo que já está faturado. */
+  invoicedSharePercent: number;
   coveredSalesAmount: number;
   uncoveredSalesAmount: number;
   /** Quanto da média veio de títulos do CR e quanto da condição comercial. */
@@ -380,7 +409,7 @@ export type SalesOrderGrantedPaymentTermSummary = {
   titlesIgnored: number;
   source: typeof SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE;
   methodology: string;
-  /** Pedidos sem título válido e sem condição interpretável, agrupados por condição (valor desc). */
+  /** Faturados sem título válido e sem condição interpretável, agrupados por condição (valor desc). */
   unrecognizedTerms: SalesOrderGrantedPaymentTermUnrecognizedTerm[];
 };
 
@@ -431,7 +460,11 @@ export function buildEmptySalesOrderGrantedPaymentTermSummary(
     coveredOrders: 0,
     uncoveredOrders: 0,
     zeroOrNegativeOrders: total,
-    totalWeightedSalesAmount: 0,
+    notInvoicedOrders: 0,
+    notInvoicedSalesAmount: 0,
+    positiveSalesAmount: 0,
+    invoicedSalesAmount: 0,
+    invoicedSharePercent: 0,
     coveredSalesAmount: 0,
     uncoveredSalesAmount: 0,
     sources: { receivableTitles: emptySourceStats(), commercialTerms: emptySourceStats() },
@@ -448,8 +481,8 @@ type SourceAccumulator = { orders: number; salesAmount: number; weightedDays: nu
 /**
  * Média geral pura: `orders` é a população filtrada completa da listagem (mesmo
  * where), cada um com seus títulos de CR já vinculados. Pedidos com
- * totalNetValue <= 0 não pesam nem entram no denominador (auditoria em
- * `zeroOrNegativeOrders`).
+ * totalNetValue <= 0 não pesam (auditoria em `zeroOrNegativeOrders`); pedidos
+ * sem NF-e válida não entram na média nem na cobertura (`notInvoiced*`).
  */
 export function computeSalesOrderGrantedPaymentTermSummary(
   orders: readonly GrantedPaymentTermOrderInput[],
@@ -462,6 +495,8 @@ export function computeSalesOrderGrantedPaymentTermSummary(
 
   let weightedPopulationOrders = 0;
   let zeroOrNegativeOrders = 0;
+  let notInvoicedOrders = 0;
+  let notInvoicedSalesAmount = 0;
   let coveredOrders = 0;
   let uncoveredOrders = 0;
   let coveredSalesAmount = 0;
@@ -482,8 +517,14 @@ export function computeSalesOrderGrantedPaymentTermSummary(
       zeroOrNegativeOrders += 1;
       continue;
     }
-    weightedPopulationOrders += 1;
     const resolution = resolveGrantedPaymentTermForOrder(order);
+    if (resolution.source === "NOT_INVOICED") {
+      notInvoicedOrders += 1;
+      notInvoicedSalesAmount += weight;
+      continue;
+    }
+
+    weightedPopulationOrders += 1;
     titlesUsed += resolution.titlesUsed;
     titlesIgnored += resolution.titlesIgnored;
 
@@ -517,8 +558,9 @@ export function computeSalesOrderGrantedPaymentTermSummary(
     acc.weightedDays += weight * resolution.days;
   }
 
-  const totalWeightedSalesAmount = coveredSalesAmount + uncoveredSalesAmount;
-  const coveragePercent = safePercent(coveredSalesAmount, totalWeightedSalesAmount);
+  const invoicedSalesAmount = coveredSalesAmount + uncoveredSalesAmount;
+  const positiveSalesAmount = invoicedSalesAmount + notInvoicedSalesAmount;
+  const coveragePercent = safePercent(coveredSalesAmount, invoicedSalesAmount);
   const orderCoveragePercent = safePercent(coveredOrders, weightedPopulationOrders);
   const weightedAverageDays = safeAverage(weightedDays, coveredSalesAmount);
   const quality =
@@ -527,7 +569,7 @@ export function computeSalesOrderGrantedPaymentTermSummary(
   const toStats = (acc: SourceAccumulator): GrantedPaymentTermSourceStats => ({
     orders: acc.orders,
     salesAmount: acc.salesAmount,
-    salesSharePercent: safePercent(acc.salesAmount, totalWeightedSalesAmount),
+    salesSharePercent: safePercent(acc.salesAmount, invoicedSalesAmount),
     weightedAverageDays: safeAverage(acc.weightedDays, acc.salesAmount),
   });
 
@@ -544,7 +586,11 @@ export function computeSalesOrderGrantedPaymentTermSummary(
     coveredOrders,
     uncoveredOrders,
     zeroOrNegativeOrders,
-    totalWeightedSalesAmount,
+    notInvoicedOrders,
+    notInvoicedSalesAmount,
+    positiveSalesAmount,
+    invoicedSalesAmount,
+    invoicedSharePercent: safePercent(invoicedSalesAmount, positiveSalesAmount),
     coveredSalesAmount,
     uncoveredSalesAmount,
     sources: {
@@ -567,14 +613,16 @@ export const GRANTED_PAYMENT_TERM_CARD_LABEL = "Prazo médio de recebimento";
 export const GRANTED_PAYMENT_TERM_CARD_TEST_ID = "sales-order-list-average-payment-term-card";
 export const GRANTED_PAYMENT_TERM_HELP_TEXT =
   "Dias entre a emissão da NF-e e o vencimento dos títulos do Contas a Receber vinculados ao pedido, " +
-  "ponderados pelo valor dos títulos; média geral ponderada pelo valor líquido dos pedidos filtrados. " +
-  "Pedidos sem títulos usam a condição comercial de pagamento quando interpretável (ex.: 30/60 = 45 dias). " +
+  "ponderados pelo valor dos títulos; média geral ponderada pelo valor líquido dos pedidos faturados do filtro. " +
+  "Pedidos sem NF-e não entram (ainda não há recebimento a medir); pedidos faturados sem títulos usam a " +
+  "condição comercial de pagamento quando interpretável (ex.: 30/60 = 45 dias). " +
   "Não mede atraso nem data real de recebimento.";
 export const GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT =
-  `${GRANTED_PAYMENT_TERM_HELP_TEXT} Pedidos sem títulos de CR e sem condição interpretável foram excluídos da média.`;
+  `${GRANTED_PAYMENT_TERM_HELP_TEXT} Pedidos faturados sem título de CR e sem condição interpretável foram excluídos da média.`;
 export const GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL = "Cobertura insuficiente";
 export const GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL = "Indisponível";
 export const GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE = "Sem títulos ou condições de pagamento suficientes";
+export const GRANTED_PAYMENT_TERM_NOT_INVOICED_SUBTITLE = "Sem pedidos faturados no filtro";
 export const GRANTED_PAYMENT_TERM_LOAD_ERROR_SUBTITLE = "Não foi possível carregar o indicador.";
 
 const oneDecimalFormatter = new Intl.NumberFormat("pt-BR", {
@@ -594,19 +642,33 @@ export function formatGrantedPaymentTermCoverage(percent: number | null | undefi
   return `${oneDecimalFormatter.format(percent)}%`;
 }
 
-/** Texto de ajuda do card: metodologia + participação de cada fonte quando houver cobertura. */
+/** Nota de rodapé do card: participação do valor faturado no valor vendido do filtro. */
+export function buildGrantedPaymentTermFootnote(
+  summary: SalesOrderGrantedPaymentTermSummary | null | undefined
+): string | null {
+  if (!summary || !(summary.positiveSalesAmount > 0)) return null;
+  return `Faturado: ${formatGrantedPaymentTermCoverage(summary.invoicedSharePercent)} do valor vendido`;
+}
+
+/**
+ * Texto de ajuda do card: metodologia, exclusões (parcial/baixa), prazo calculado
+ * quando a cobertura é baixa (auditoria) e participação de cada fonte.
+ */
 export function buildGrantedPaymentTermHelpText(
   summary: SalesOrderGrantedPaymentTermSummary | null | undefined,
   quality: GrantedPaymentTermQuality
 ): string {
-  const base =
+  let text =
     quality === "PARTIAL" || quality === "LOW"
       ? GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT
       : GRANTED_PAYMENT_TERM_HELP_TEXT;
-  if (!summary || !(summary.coveredSalesAmount > 0)) return base;
+  if (!summary || !(summary.coveredSalesAmount > 0)) return text;
+  if (quality === "LOW" && summary.weightedAverageDays != null) {
+    text += ` Prazo calculado só sobre a parte coberta: ${formatGrantedPaymentTermDays(summary.weightedAverageDays)} (não confiável).`;
+  }
   const titles = formatGrantedPaymentTermCoverage(summary.sources.receivableTitles.salesSharePercent);
   const terms = formatGrantedPaymentTermCoverage(summary.sources.commercialTerms.salesSharePercent);
-  return `${base} Fonte: títulos do CR em ${titles} do valor vendido; condição comercial em ${terms}.`;
+  return `${text} Fonte: títulos do CR em ${titles} do valor faturado; condição comercial em ${terms}.`;
 }
 
 export type GrantedPaymentTermCardTone = "info" | "warning" | "neutral";
@@ -616,17 +678,21 @@ export type GrantedPaymentTermCardPresentation = {
   value: string;
   valueSize: "default" | "text";
   subtitle: string;
+  /** Linha discreta abaixo do subtítulo (participação do faturado); null quando não há dado. */
+  footnote: string | null;
   tone: GrantedPaymentTermCardTone;
   helperText: string;
 };
 
 /**
- * Estado visual do card por qualidade:
- *   FULL        → "47,8 dias" / "Cobertura: 98,2% do valor vendido" (info)
- *   PARTIAL     → "47,8 dias" / "Cobertura parcial: 89,4%" (warning)
- *   LOW         → "Cobertura insuficiente" / "Cobertura: 54,1%" (warning) — número não é exibido
- *   UNAVAILABLE → "Indisponível" / "Sem títulos ou condições de pagamento suficientes" (neutral)
+ * Estado visual do card por qualidade (cobertura = % do valor FATURADO com prazo):
+ *   FULL        → "47,8 dias" / "Cobertura: 98,2% do valor faturado" (info)
+ *   PARTIAL     → "47,8 dias" / "Cobertura parcial: 89,4% do faturado" (warning)
+ *   LOW         → "Cobertura insuficiente" / "Cobertura: 54,1% do faturado" (warning) — número só no tooltip
+ *   UNAVAILABLE → "Indisponível" / "Sem pedidos faturados no filtro" ou
+ *                 "Sem títulos ou condições de pagamento suficientes" (neutral)
  *   null (endpoint falhou) → "Indisponível" / "Não foi possível carregar o indicador." (neutral)
+ * Rodapé (quando há valor vendido): "Faturado: 77,4% do valor vendido".
  */
 export function resolveGrantedPaymentTermCardPresentation(
   summary: SalesOrderGrantedPaymentTermSummary | null | undefined
@@ -637,6 +703,7 @@ export function resolveGrantedPaymentTermCardPresentation(
       value: GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL,
       valueSize: "text",
       subtitle: GRANTED_PAYMENT_TERM_LOAD_ERROR_SUBTITLE,
+      footnote: null,
       tone: "neutral",
       helperText: GRANTED_PAYMENT_TERM_HELP_TEXT,
     };
@@ -647,6 +714,7 @@ export function resolveGrantedPaymentTermCardPresentation(
   const quality: GrantedPaymentTermQuality = usable ? summary.quality : "UNAVAILABLE";
   const coverage = formatGrantedPaymentTermCoverage(summary.coveragePercent);
   const helperText = buildGrantedPaymentTermHelpText(summary, quality);
+  const footnote = buildGrantedPaymentTermFootnote(summary);
 
   switch (quality) {
     case "FULL":
@@ -654,7 +722,8 @@ export function resolveGrantedPaymentTermCardPresentation(
         quality,
         value: formatGrantedPaymentTermDays(days),
         valueSize: "default",
-        subtitle: `Cobertura: ${coverage} do valor vendido`,
+        subtitle: `Cobertura: ${coverage} do valor faturado`,
+        footnote,
         tone: "info",
         helperText,
       };
@@ -663,7 +732,8 @@ export function resolveGrantedPaymentTermCardPresentation(
         quality,
         value: formatGrantedPaymentTermDays(days),
         valueSize: "default",
-        subtitle: `Cobertura parcial: ${coverage}`,
+        subtitle: `Cobertura parcial: ${coverage} do faturado`,
+        footnote,
         tone: "warning",
         helperText,
       };
@@ -672,7 +742,8 @@ export function resolveGrantedPaymentTermCardPresentation(
         quality,
         value: GRANTED_PAYMENT_TERM_LOW_COVERAGE_LABEL,
         valueSize: "text",
-        subtitle: `Cobertura: ${coverage}`,
+        subtitle: `Cobertura: ${coverage} do faturado`,
+        footnote,
         tone: "warning",
         helperText,
       };
@@ -681,7 +752,11 @@ export function resolveGrantedPaymentTermCardPresentation(
         quality: "UNAVAILABLE",
         value: GRANTED_PAYMENT_TERM_UNAVAILABLE_LABEL,
         valueSize: "text",
-        subtitle: GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE,
+        subtitle:
+          summary.weightedPopulationOrders === 0 && summary.positiveSalesAmount > 0
+            ? GRANTED_PAYMENT_TERM_NOT_INVOICED_SUBTITLE
+            : GRANTED_PAYMENT_TERM_UNAVAILABLE_SUBTITLE,
+        footnote,
         tone: "neutral",
         helperText: GRANTED_PAYMENT_TERM_HELP_TEXT,
       };

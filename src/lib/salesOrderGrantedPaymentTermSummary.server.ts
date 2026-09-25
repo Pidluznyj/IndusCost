@@ -108,6 +108,8 @@ export async function loadSalesOrderGrantedPaymentTermSummary(
       id: order.id,
       totalNetValue: decimalToNumber(order.totalNetValue) ?? 0,
       paymentTerms: order.paymentTerms,
+      // Faturado = tem ao menos uma NF-e válida (mesma regra do filtro "Com NF").
+      invoiced: order.nfeLinks.length > 0,
       titles,
     };
   });

@@ -41,7 +41,13 @@ const LIST_SUMMARY: SalesOrderListSummary = {
 function summaryWith(
   overrides: Partial<SalesOrderGrantedPaymentTermSummary>
 ): SalesOrderGrantedPaymentTermSummary {
-  return { ...buildEmptySalesOrderGrantedPaymentTermSummary(12), ...overrides };
+  return {
+    ...buildEmptySalesOrderGrantedPaymentTermSummary(12),
+    positiveSalesAmount: 250_000,
+    invoicedSalesAmount: 193_500,
+    invoicedSharePercent: 77.4,
+    ...overrides,
+  };
 }
 
 function render(props: {
@@ -107,7 +113,7 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.doesNotMatch(html, /Imposto a pagar|Custo estimado/);
   });
 
-  it("FULL mostra dias, cobertura do valor vendido e a metodologia (emissão da NF-e → vencimento)", () => {
+  it("FULL mostra dias, cobertura do faturado, rodapé com participação do faturado e metodologia", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({
@@ -125,15 +131,17 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     );
     assert.match(card, /data-quality="FULL"/);
     assert.match(card, /47,8 dias/);
-    assert.match(card, /Cobertura: 96,4% do valor vendido/);
+    assert.match(card, /Cobertura: 96,4% do valor faturado/);
+    assert.match(card, /data-testid="sales-order-list-average-payment-term-footnote"/);
+    assert.match(card, /Faturado: 77,4% do valor vendido/);
     assert.match(card, /emissão da NF-e/);
     assert.match(card, /vencimento dos títulos do Contas a Receber/);
-    assert.match(card, /títulos do CR em 80,0% do valor vendido; condição comercial em 20,0%/);
+    assert.match(card, /títulos do CR em 80,0% do valor faturado; condição comercial em 20,0%/);
     assert.match(card, /Não mede atraso/);
     assert.match(card, /data-variant="info"/);
   });
 
-  it("PARTIAL mostra dias + cobertura parcial (warning)", () => {
+  it("PARTIAL mostra dias + cobertura parcial do faturado (warning)", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({
@@ -146,12 +154,13 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     );
     assert.match(card, /data-quality="PARTIAL"/);
     assert.match(card, /47,8 dias/);
-    assert.match(card, /Cobertura parcial: 89,4%/);
+    assert.match(card, /Cobertura parcial: 89,4% do faturado/);
+    assert.match(card, /Faturado: 77,4% do valor vendido/);
     assert.match(card, /data-variant="warning"/);
     assert.match(card, /foram excluídos da média/);
   });
 
-  it("LOW mostra Cobertura insuficiente (sem o número principal)", () => {
+  it("LOW mostra Cobertura insuficiente (sem o número principal) e expõe o prazo só no tooltip", () => {
     const card = cardHtml(
       render({
         paymentTermSummary: summaryWith({
@@ -159,33 +168,58 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
           quality: "LOW",
           weightedAverageDays: 47.84,
           coveragePercent: 54.1,
+          coveredSalesAmount: 100,
         }),
       })
     );
     assert.match(card, /data-quality="LOW"/);
     assert.match(card, /Cobertura insuficiente/);
-    assert.match(card, /Cobertura: 54,1%/);
-    assert.doesNotMatch(card, /47,8 dias/);
+    assert.match(card, /Cobertura: 54,1% do faturado/);
     assert.match(card, /metric-card-value--text/);
+    // Número só no tooltip (title), nunca como valor principal.
+    const valueStart = card.indexOf('data-testid="metric-card-value"');
+    const valueEnd = card.indexOf("</p>", valueStart);
+    assert.doesNotMatch(card.slice(valueStart, valueEnd), /47,8 dias/);
+    assert.match(card, /Prazo calculado só sobre a parte coberta: 47,8 dias \(não confiável\)/);
   });
 
-  it("UNAVAILABLE mostra Indisponível + Sem títulos ou condições de pagamento suficientes", () => {
-    const card = cardHtml(
+  it("UNAVAILABLE mostra Indisponível com o motivo (sem faturados × sem títulos)", () => {
+    const noTitles = cardHtml(
       render({
-        paymentTermSummary: summaryWith({ available: false, quality: "UNAVAILABLE" }),
+        paymentTermSummary: summaryWith({
+          available: false,
+          quality: "UNAVAILABLE",
+          weightedPopulationOrders: 3,
+        }),
       })
     );
-    assert.match(card, /data-quality="UNAVAILABLE"/);
-    assert.match(card, /Indisponível/);
-    assert.match(card, /Sem títulos ou condições de pagamento suficientes/);
-    assert.match(card, /data-variant="neutral"/);
+    assert.match(noTitles, /data-quality="UNAVAILABLE"/);
+    assert.match(noTitles, /Indisponível/);
+    assert.match(noTitles, /Sem títulos ou condições de pagamento suficientes/);
+    assert.match(noTitles, /Faturado: 77,4% do valor vendido/);
+    assert.match(noTitles, /data-variant="neutral"/);
+
+    const noInvoices = cardHtml(
+      render({
+        paymentTermSummary: summaryWith({
+          available: false,
+          quality: "UNAVAILABLE",
+          weightedPopulationOrders: 0,
+          invoicedSalesAmount: 0,
+          invoicedSharePercent: 0,
+        }),
+      })
+    );
+    assert.match(noInvoices, /Sem pedidos faturados no filtro/);
+    assert.match(noInvoices, /Faturado: 0,0% do valor vendido/);
   });
 
-  it("falha do endpoint (summary null) mostra Indisponível sem derrubar os demais cards", () => {
+  it("falha do endpoint (summary null) mostra Indisponível sem rodapé e sem derrubar os demais cards", () => {
     const html = render({ paymentTermSummary: null });
     const card = cardHtml(html);
     assert.match(card, /Indisponível/);
     assert.match(card, /Não foi possível carregar o indicador\./);
+    assert.doesNotMatch(card, /sales-order-list-average-payment-term-footnote/);
     assert.match(html, /Pedidos filtrados/);
     assert.match(html, /Valor vendido/);
     assert.match(html, /Ticket médio/);
@@ -197,6 +231,7 @@ describe("SalesOrderListSummaryCards — Prazo médio de recebimento", () => {
     assert.match(card, /data-quality="LOADING"/);
     assert.match(card, /metric-card-loading/);
     assert.doesNotMatch(card, /Indisponível/);
+    assert.doesNotMatch(card, /sales-order-list-average-payment-term-footnote/);
     const before = html.slice(0, html.indexOf(`data-testid="${GRANTED_PAYMENT_TERM_CARD_TEST_ID}"`));
     assert.doesNotMatch(before, /metric-card-loading/);
   });

@@ -1,7 +1,8 @@
 /**
  * Prazo médio de recebimento — parser fail-closed (fallback), prazo por título
- * (emissão da NF-e → vencimento do CR), prazo por pedido, média geral ponderada
- * por valor líquido, qualidade por cobertura e apresentação do card.
+ * (emissão da NF-e → vencimento do CR), prazo por pedido, média geral dos pedidos
+ * faturados ponderada por valor líquido, cobertura sobre o faturado, qualidade e
+ * apresentação do card.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -15,6 +16,7 @@ import {
   SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY,
   SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
   buildEmptySalesOrderGrantedPaymentTermSummary,
+  buildGrantedPaymentTermFootnote,
   buildGrantedPaymentTermHelpText,
   civilDaysBetween,
   computeSalesOrderGrantedPaymentTermSummary,
@@ -44,13 +46,20 @@ function title(daysAfterIssue: number, amount: number, issue: Date = NF_ISSUE): 
   return { dueDate: due, invoiceIssueDate: issue, amount };
 }
 
+/** Pedido FATURADO (com NF-e válida) por padrão. */
 function order(
   id: string,
   totalNetValue: number,
   titles: GrantedPaymentTermTitleInput[],
-  paymentTerms: string | null = null
+  paymentTerms: string | null = null,
+  invoiced = true
 ): GrantedPaymentTermOrderInput {
-  return { id, totalNetValue, paymentTerms, titles };
+  return { id, totalNetValue, paymentTerms, invoiced, titles };
+}
+
+/** Pedido ainda SEM NF-e (não entra na média). */
+function notInvoiced(id: string, totalNetValue: number, paymentTerms: string | null = null) {
+  return order(id, totalNetValue, [], paymentTerms, false);
 }
 
 function summaryWith(
@@ -290,7 +299,7 @@ describe("prazo por título — emissão da NF-e → vencimento do CR", () => {
     assert.deepEqual(resolveOrderReceivableTermDays([]), { days: null, titlesUsed: 0, titlesIgnored: 0 });
   });
 
-  it("resolução por pedido: títulos primeiro; condição comercial só como fallback; senão NONE", () => {
+  it("resolução por pedido: só faturados; títulos primeiro; condição comercial como fallback; senão NONE", () => {
     const withTitles = resolveGrantedPaymentTermForOrder(order("a", 1_000, [title(28, 500), title(56, 500)], "30/60/90"));
     assert.equal(withTitles.source, "RECEIVABLE_TITLES");
     assert.equal(withTitles.days, 42);
@@ -314,10 +323,16 @@ describe("prazo por título — emissão da NF-e → vencimento do CR", () => {
     const unrecognized = resolveGrantedPaymentTermForOrder(order("e", 1_000, [], "boleto 30 dias"));
     assert.equal(unrecognized.source, "NONE");
     assert.equal(unrecognized.reason, "UNRECOGNIZED_FORMAT");
+
+    // Sem NF-e: não há recebimento a medir, mesmo com condição interpretável.
+    const pending = resolveGrantedPaymentTermForOrder(notInvoiced("f", 1_000, "30/60"));
+    assert.equal(pending.source, "NOT_INVOICED");
+    assert.equal(pending.days, null);
+    assert.equal(pending.reason, null);
   });
 });
 
-describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada por valor líquido", () => {
+describe("computeSalesOrderGrantedPaymentTermSummary — média dos faturados ponderada por valor líquido", () => {
   it("A R$ 10.000 @ 30 + B R$ 90.000 @ 60 → 57 dias (não 45)", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 10_000, [title(30, 10_000)]),
@@ -328,12 +343,15 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.available, true);
     assert.equal(summary.coveragePercent, 100);
     assert.equal(summary.orderCoveragePercent, 100);
+    assert.equal(summary.invoicedSharePercent, 100);
     assert.equal(summary.coveredSalesAmount, 100_000);
-    assert.equal(summary.totalWeightedSalesAmount, 100_000);
+    assert.equal(summary.invoicedSalesAmount, 100_000);
+    assert.equal(summary.positiveSalesAmount, 100_000);
     assert.equal(summary.coveredOrders, 2);
     assert.equal(summary.weightedPopulationOrders, 2);
     assert.equal(summary.totalOrders, 2);
     assert.equal(summary.zeroOrNegativeOrders, 0);
+    assert.equal(summary.notInvoicedOrders, 0);
     assert.equal(summary.titlesUsed, 2);
     assert.equal(summary.sources.receivableTitles.orders, 2);
     assert.equal(summary.sources.receivableTitles.salesSharePercent, 100);
@@ -343,8 +361,6 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
   });
 
   it("o peso entre pedidos é o valor líquido do pedido, não o valor dos títulos", () => {
-    // Pedido A: valor líquido 10.000, títulos somam 12.000 (ex.: IPI na NF) — 30 dias.
-    // Pedido B: valor líquido 90.000, títulos somam 60.000 (faturamento parcial) — 60 dias.
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 10_000, [title(30, 12_000)]),
       order("b", 90_000, [title(60, 60_000)]),
@@ -360,6 +376,35 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.weightedAverageDays, 58.5);
   });
 
+  it("pedidos sem NF-e não entram na média nem na cobertura; participação do faturado é informada", () => {
+    const summary = computeSalesOrderGrantedPaymentTermSummary([
+      order("a", 10_000, [title(30, 10_000)]),
+      order("b", 20_000, [title(60, 20_000)]),
+      notInvoiced("c", 70_000, "30/60"), // ainda sem NF-e: fora da média mesmo com condição
+    ]);
+    assert.equal(summary.weightedAverageDays, 50);
+    assert.equal(summary.coveragePercent, 100);
+    assert.equal(summary.quality, "FULL");
+    assert.equal(summary.weightedPopulationOrders, 2);
+    assert.equal(summary.notInvoicedOrders, 1);
+    assert.equal(summary.notInvoicedSalesAmount, 70_000);
+    assert.equal(summary.invoicedSalesAmount, 30_000);
+    assert.equal(summary.positiveSalesAmount, 100_000);
+    assert.equal(summary.invoicedSharePercent, 30);
+    assert.deepEqual(summary.unrecognizedTerms, []);
+  });
+
+  it("cenário 'todos os meses': 77,4% faturado não derruba a qualidade quando os faturados têm título", () => {
+    const summary = computeSalesOrderGrantedPaymentTermSummary([
+      order("a", 774, [title(40, 774)]),
+      notInvoiced("b", 226, null),
+    ]);
+    assert.equal(summary.quality, "FULL");
+    assert.equal(summary.coveragePercent, 100);
+    assert.equal(summary.weightedAverageDays, 40);
+    assert.ok(Math.abs(summary.invoicedSharePercent - 77.4) < 1e-9);
+  });
+
   it("somente à vista (vencimento na emissão da NF-e) → 0 dias, disponível e FULL", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 5_000, [title(0, 5_000)]),
@@ -372,10 +417,10 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.sources.commercialTerms.orders, 1);
   });
 
-  it("mistura de fontes: títulos do CR + condição comercial de pedidos ainda sem NF", () => {
+  it("mistura de fontes entre faturados: títulos do CR + condição comercial (faturado sem título)", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 10_000, [title(30, 5_000), title(60, 5_000)]), // 45 via títulos
-      order("b", 30_000, [], "28 DDL"), // 28 via condição
+      order("b", 30_000, [], "28 DDL"), // faturado sem título → 28 via condição
       order("c", 2_000, [title(14, 2_000)]), // 14 via títulos
     ]);
     const expected = (10_000 * 45 + 30_000 * 28 + 2_000 * 14) / 42_000;
@@ -389,12 +434,13 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.sources.commercialTerms.weightedAverageDays, 28);
   });
 
-  it("cobertura: R$ 80.000 resolvido + R$ 20.000 sem título e sem condição → 80% (PARTIAL)", () => {
+  it("cobertura sobre o faturado: R$ 80.000 resolvido + R$ 20.000 faturado sem título/condição → 80% (PARTIAL)", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 50_000, [title(30, 50_000)]),
       order("b", 30_000, [], "30"),
       order("c", 15_000, [], "boleto 30 dias"),
       order("d", 5_000, [], null),
+      notInvoiced("e", 400_000, null), // não afeta a cobertura
     ]);
     assert.equal(summary.coveragePercent, 80);
     assert.equal(summary.orderCoveragePercent, 50);
@@ -402,6 +448,9 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.weightedAverageDays, 30);
     assert.equal(summary.coveredSalesAmount, 80_000);
     assert.equal(summary.uncoveredSalesAmount, 20_000);
+    assert.equal(summary.invoicedSalesAmount, 100_000);
+    assert.equal(summary.positiveSalesAmount, 500_000);
+    assert.equal(summary.invoicedSharePercent, 20);
     assert.equal(summary.uncoveredOrders, 2);
     assert.deepEqual(
       summary.unrecognizedTerms.map((t) => [t.paymentTerms, t.orderCount, t.salesAmount, t.reason]),
@@ -424,7 +473,8 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.weightedPopulationOrders, 1);
     assert.equal(summary.zeroOrNegativeOrders, 3);
     assert.equal(summary.totalOrders, 4);
-    assert.equal(summary.totalWeightedSalesAmount, 10_000);
+    assert.equal(summary.invoicedSalesAmount, 10_000);
+    assert.equal(summary.positiveSalesAmount, 10_000);
     assert.equal(summary.coveragePercent, 100);
   });
 
@@ -458,6 +508,13 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(onlyUncovered.coveragePercent, 0);
     assert.equal(onlyUncovered.unrecognizedTerms.length, 2);
     assert.equal(onlyUncovered.unrecognizedTerms[0]!.paymentTerms, "boleto");
+
+    const onlyNotInvoiced = computeSalesOrderGrantedPaymentTermSummary([notInvoiced("a", 5_000, "30")]);
+    assert.equal(onlyNotInvoiced.quality, "UNAVAILABLE");
+    assert.equal(onlyNotInvoiced.weightedPopulationOrders, 0);
+    assert.equal(onlyNotInvoiced.notInvoicedOrders, 1);
+    assert.equal(onlyNotInvoiced.invoicedSharePercent, 0);
+    assert.equal(onlyNotInvoiced.positiveSalesAmount, 5_000);
 
     const onlyZero = computeSalesOrderGrantedPaymentTermSummary([order("a", 0, [title(30, 10)])]);
     assert.equal(onlyZero.quality, "UNAVAILABLE");
@@ -493,6 +550,7 @@ describe("computeSalesOrderGrantedPaymentTermSummary — média geral ponderada 
     assert.equal(summary.methodology, SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY);
     assert.match(summary.methodology, /emissão da NF-e/);
     assert.match(summary.methodology, /vencimento/);
+    assert.match(summary.methodology, /pedidos faturados/);
     assert.match(summary.methodology, /totalNetValue > 0/);
     assert.match(summary.methodology, /Não considera liquidação nem atraso/);
   });
@@ -551,62 +609,98 @@ describe("apresentação do card", () => {
     assert.equal(formatGrantedPaymentTermCoverage(undefined), "—");
   });
 
-  it("FULL mostra dias + cobertura do valor vendido (tone info) e explica a fonte", () => {
+  it("FULL mostra dias, cobertura do faturado, rodapé com participação do faturado e fonte", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 30_000, [title(30, 30_000)]),
       order("b", 70_000, [], "60"),
+      notInvoiced("c", 100_000, null),
     ]);
     const p = resolveGrantedPaymentTermCardPresentation(summary);
     assert.equal(p.quality, "FULL");
     assert.equal(p.value, "51,0 dias");
     assert.equal(p.valueSize, "default");
-    assert.equal(p.subtitle, "Cobertura: 100,0% do valor vendido");
+    assert.equal(p.subtitle, "Cobertura: 100,0% do valor faturado");
+    assert.equal(p.footnote, "Faturado: 50,0% do valor vendido");
     assert.equal(p.tone, "info");
     assert.match(p.helperText, /emissão da NF-e/);
     assert.match(p.helperText, /vencimento dos títulos do Contas a Receber/);
+    assert.match(p.helperText, /Pedidos sem NF-e não entram/);
     assert.match(p.helperText, /30\/60 = 45 dias/);
     assert.match(p.helperText, /Não mede atraso/);
-    assert.match(p.helperText, /títulos do CR em 30,0% do valor vendido; condição comercial em 70,0%/);
+    assert.match(p.helperText, /títulos do CR em 30,0% do valor faturado; condição comercial em 70,0%/);
     assert.doesNotMatch(p.helperText, /foram excluídos/);
+    assert.doesNotMatch(p.helperText, /não confiável/);
   });
 
-  it("PARTIAL mostra dias + cobertura parcial (warning) e explica exclusão", () => {
+  it("PARTIAL mostra dias + cobertura parcial do faturado (warning) e explica exclusão", () => {
     const p = resolveGrantedPaymentTermCardPresentation(
-      summaryWith({ available: true, quality: "PARTIAL", weightedAverageDays: 47.84, coveragePercent: 89.4 })
+      summaryWith({
+        available: true,
+        quality: "PARTIAL",
+        weightedAverageDays: 47.84,
+        coveragePercent: 89.4,
+        positiveSalesAmount: 1_000,
+        invoicedSharePercent: 77.4,
+      })
     );
     assert.equal(p.value, "47,8 dias");
-    assert.equal(p.subtitle, "Cobertura parcial: 89,4%");
+    assert.equal(p.subtitle, "Cobertura parcial: 89,4% do faturado");
+    assert.equal(p.footnote, "Faturado: 77,4% do valor vendido");
     assert.equal(p.tone, "warning");
     assert.match(p.helperText, /foram excluídos da média/);
-    assert.equal(buildGrantedPaymentTermHelpText(null, "FULL"), p.helperText.replace(/ Pedidos sem títulos de CR.*$/, ""));
+    assert.equal(buildGrantedPaymentTermHelpText(null, "PARTIAL"), p.helperText);
   });
 
-  it("LOW não exibe o número como KPI principal", () => {
+  it("LOW não exibe o número como KPI principal, mas o expõe no tooltip como não confiável", () => {
     const p = resolveGrantedPaymentTermCardPresentation(
-      summaryWith({ available: true, quality: "LOW", weightedAverageDays: 47.84, coveragePercent: 54.1 })
+      summaryWith({
+        available: true,
+        quality: "LOW",
+        weightedAverageDays: 47.84,
+        coveragePercent: 54.1,
+        coveredSalesAmount: 541,
+        invoicedSalesAmount: 1_000,
+        positiveSalesAmount: 1_000,
+        invoicedSharePercent: 100,
+      })
     );
     assert.equal(p.quality, "LOW");
     assert.equal(p.value, "Cobertura insuficiente");
     assert.equal(p.valueSize, "text");
-    assert.equal(p.subtitle, "Cobertura: 54,1%");
+    assert.equal(p.subtitle, "Cobertura: 54,1% do faturado");
     assert.equal(p.tone, "warning");
     assert.doesNotMatch(p.value, /dias/);
+    assert.match(p.helperText, /Prazo calculado só sobre a parte coberta: 47,8 dias \(não confiável\)/);
   });
 
-  it("UNAVAILABLE e falha do endpoint mostram Indisponível", () => {
-    const unavailable = resolveGrantedPaymentTermCardPresentation(
-      summaryWith({ available: false, quality: "UNAVAILABLE", weightedAverageDays: null })
+  it("UNAVAILABLE distingue 'sem faturados' de 'sem títulos'; falha do endpoint mostra Indisponível", () => {
+    const noInvoices = resolveGrantedPaymentTermCardPresentation(
+      computeSalesOrderGrantedPaymentTermSummary([notInvoiced("a", 5_000, "30")])
     );
-    assert.equal(unavailable.value, "Indisponível");
-    assert.equal(unavailable.subtitle, "Sem títulos ou condições de pagamento suficientes");
-    assert.equal(unavailable.tone, "neutral");
-    assert.equal(unavailable.valueSize, "text");
+    assert.equal(noInvoices.value, "Indisponível");
+    assert.equal(noInvoices.subtitle, "Sem pedidos faturados no filtro");
+    assert.equal(noInvoices.footnote, "Faturado: 0,0% do valor vendido");
+    assert.equal(noInvoices.tone, "neutral");
+
+    const noTitles = resolveGrantedPaymentTermCardPresentation(
+      computeSalesOrderGrantedPaymentTermSummary([order("a", 5_000, [], "boleto")])
+    );
+    assert.equal(noTitles.value, "Indisponível");
+    assert.equal(noTitles.subtitle, "Sem títulos ou condições de pagamento suficientes");
+    assert.equal(noTitles.footnote, "Faturado: 100,0% do valor vendido");
+    assert.equal(noTitles.valueSize, "text");
+
+    const empty = resolveGrantedPaymentTermCardPresentation(buildEmptySalesOrderGrantedPaymentTermSummary());
+    assert.equal(empty.subtitle, "Sem títulos ou condições de pagamento suficientes");
+    assert.equal(empty.footnote, null);
 
     const failed = resolveGrantedPaymentTermCardPresentation(null);
     assert.equal(failed.quality, "UNAVAILABLE");
     assert.equal(failed.value, "Indisponível");
     assert.equal(failed.subtitle, "Não foi possível carregar o indicador.");
+    assert.equal(failed.footnote, null);
     assert.equal(failed.tone, "neutral");
+    assert.equal(buildGrantedPaymentTermFootnote(null), null);
   });
 
   it("DTO inconsistente (FULL sem dias) cai em Indisponível, nunca em número falso", () => {

@@ -6,6 +6,7 @@
  *   - cadeia canônica do CR (SalesOrderNfeLink válida → NomusNfe.xmlDhEmi →
  *     NomusAccountsReceivable.sourceInvoiceId), número constante de queries,
  *     sem leitura por pedido, sem nomusRawResponse/rawPayload, sem escrita;
+ *   - só pedidos faturados entram na média/cobertura (participação do faturado no DTO);
  *   - permissão = listagem (sem margem/custo); rota estática antes de /api/sales-orders/:id;
  *   - UI: fetch dedicado com AbortSignal, fail-soft, independente de showMarginEconomics;
  *   - cards: Imposto a pagar / Custo estimado fora do overview; Margem comercial permanece.
@@ -48,8 +49,9 @@ const NF_103_PROCESSING = new Date(2026, 8, 10); // 10/09/2026 (sem xmlDhEmi)
 
 /**
  * Prisma fake: registra chamadas; qualquer leitura por pedido (findFirst/count…) falha.
- * População: A (títulos 30/60 da NF 101), B (sem NF, condição "28 DDL"), C (NF 102 sem
- * títulos e condição "boleto"), D (valor zero), E (NF 103 sem xmlDhEmi → dataProcessamento).
+ * População: A (faturado, títulos 30/60 da NF 101), B (sem NF, condição "28 DDL"),
+ * C (faturado, NF 102 sem títulos, condição "boleto"), D (valor zero),
+ * E (faturado, NF 103 sem xmlDhEmi → dataProcessamento).
  */
 function createFakeDb(calls: RecordedCall[]): PrismaClient {
   const record = (method: string, args: unknown) => {
@@ -201,33 +203,36 @@ describe("payment-term-summary — paridade com o where oficial da listagem", ()
     });
   }
 
-  it("DTO calculado a partir da cadeia NF-e → títulos (emissão → vencimento), com fallback declarado", async () => {
+  it("DTO calculado a partir da cadeia NF-e → títulos (emissão → vencimento) só para faturados", async () => {
     const calls: RecordedCall[] = [];
     const summary = await loadSalesOrderGrantedPaymentTermSummary(createFakeDb(calls), { year: "2026" });
     // A: 30d@5000 + 60d@5000 → 45 (títulos, NF 101 xmlDhEmi 01/09)
-    // B: sem NF → condição "28 DDL" → 28
-    // C: NF 102 sem títulos + "boleto" → não resolvido
+    // B: sem NF-e → não entra (notInvoiced), mesmo com condição "28 DDL"
+    // C: NF 102 sem títulos + "boleto" → faturado não resolvido
     // D: valor zero → fora do peso
     // E: NF 103 sem xmlDhEmi → dataProcessamento 10/09; título vence 24/09 → 14
     assert.equal(summary.totalOrders, 5);
-    assert.equal(summary.weightedPopulationOrders, 4);
+    assert.equal(summary.weightedPopulationOrders, 3);
     assert.equal(summary.zeroOrNegativeOrders, 1);
-    assert.equal(summary.coveredOrders, 3);
+    assert.equal(summary.notInvoicedOrders, 1);
+    assert.equal(summary.notInvoicedSalesAmount, 30_000);
+    assert.equal(summary.coveredOrders, 2);
     assert.equal(summary.uncoveredOrders, 1);
-    assert.equal(summary.coveredSalesAmount, 42_000);
+    assert.equal(summary.coveredSalesAmount, 12_000);
     assert.equal(summary.uncoveredSalesAmount, 5_000);
-    assert.equal(summary.totalWeightedSalesAmount, 47_000);
-    const expectedDays = (10_000 * 45 + 30_000 * 28 + 2_000 * 14) / 42_000;
+    assert.equal(summary.invoicedSalesAmount, 17_000);
+    assert.equal(summary.positiveSalesAmount, 47_000);
+    assert.ok(Math.abs(summary.invoicedSharePercent - (17_000 * 100) / 47_000) < 1e-9);
+    const expectedDays = (10_000 * 45 + 2_000 * 14) / 12_000;
     assert.ok(Math.abs(summary.weightedAverageDays! - expectedDays) < 1e-9);
-    assert.ok(Math.abs(summary.coveragePercent - (42_000 * 100) / 47_000) < 1e-9);
-    assert.equal(summary.quality, "PARTIAL");
+    assert.ok(Math.abs(summary.coveragePercent - (12_000 * 100) / 17_000) < 1e-9);
+    assert.equal(summary.quality, "LOW");
     assert.equal(summary.available, true);
     assert.equal(summary.titlesUsed, 3);
     assert.equal(summary.titlesIgnored, 0);
     assert.equal(summary.sources.receivableTitles.orders, 2);
     assert.equal(summary.sources.receivableTitles.salesAmount, 12_000);
-    assert.equal(summary.sources.commercialTerms.orders, 1);
-    assert.equal(summary.sources.commercialTerms.salesAmount, 30_000);
+    assert.equal(summary.sources.commercialTerms.orders, 0);
     assert.deepEqual(
       summary.unrecognizedTerms.map((t) => [t.paymentTerms, t.orderCount, t.salesAmount, t.reason]),
       [["boleto", 1, 5_000, "UNRECOGNIZED_FORMAT"]]
@@ -243,7 +248,7 @@ describe("payment-term-summary — paridade com o where oficial da listagem", ()
     assert.deepEqual(nfeCall.args.select, { externalId: true, xmlDhEmi: true, dataProcessamento: true });
   });
 
-  it("população sem NF-e não consulta NF-e nem títulos", async () => {
+  it("população sem NF-e não consulta NF-e nem títulos e fica indisponível (sem faturados)", async () => {
     const calls: RecordedCall[] = [];
     const db = createFakeDb(calls);
     (db as unknown as { salesOrder: { findMany: unknown } }).salesOrder.findMany = async (args: unknown) => {
@@ -251,8 +256,10 @@ describe("payment-term-summary — paridade com o where oficial da listagem", ()
       return [{ id: "X", totalNetValue: 100, paymentTerms: "30", nfeLinks: [] }];
     };
     const summary = await loadSalesOrderGrantedPaymentTermSummary(db, {});
-    assert.equal(summary.weightedAverageDays, 30);
-    assert.equal(summary.sources.commercialTerms.orders, 1);
+    assert.equal(summary.quality, "UNAVAILABLE");
+    assert.equal(summary.weightedAverageDays, null);
+    assert.equal(summary.notInvoicedOrders, 1);
+    assert.equal(summary.invoicedSharePercent, 0);
     assert.equal(calls.filter((c) => c.method === "nomusNfe.findMany").length, 0);
     assert.equal(calls.filter((c) => c.method === "nomusAccountsReceivable.findMany").length, 0);
   });
@@ -279,6 +286,7 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(loader, /loadSalesOrderListReceivablesByNfeExternalIds\(/);
     assert.match(loader, /collectReceivablesForOrderNfes\(/);
     assert.match(loader, /xmlDhEmi/);
+    assert.match(loader, /invoiced: order\.nfeLinks\.length > 0/);
     assert.match(loader, /Promise\.all\(/);
     assert.equal((loader.match(/db\.salesOrder\./g) ?? []).length, 1, "1 query de população");
     assert.equal((loader.match(/db\.nomusNfe\./g) ?? []).length, 1, "1 query de NF-e");
@@ -297,6 +305,7 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.match(pure, /export function resolveReceivableTitleTermDays/);
     assert.match(pure, /export function computeSalesOrderGrantedPaymentTermSummary/);
     assert.match(pure, /SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY/);
+    assert.match(pure, /"NOT_INVOICED"/);
     assert.doesNotMatch(pure, /settlementDate|amountReceived|paymentReceivedAt/);
     assert.doesNotMatch(pure, /paymentMethod\s*[:=]/);
     assert.doesNotMatch(pure, WRITE_PATTERN);
@@ -360,10 +369,13 @@ describe("payment-term-summary — estrutura (read-only, leve, sem N+1)", () => 
     assert.ok(idxListFetch > 0 && idxListFetch < idxKpi, "KPI só depois do GET da lista");
   });
 
-  it("cards: Imposto a pagar e Custo estimado fora do overview; Margem comercial e testId novo", () => {
+  it("cards: Imposto a pagar e Custo estimado fora do overview; Margem comercial, testId e rodapé", () => {
     assert.match(cards, /GRANTED_PAYMENT_TERM_CARD_TEST_ID/);
     assert.match(cards, /GRANTED_PAYMENT_TERM_CARD_LABEL/);
     assert.match(cards, /resolveGrantedPaymentTermCardPresentation\(/);
+    assert.match(cards, /paymentTerm\.footnote/);
+    assert.match(cards, /sales-order-list-average-payment-term-footnote/);
+    assert.match(css, /\.sales-order-list-summary-footnote/);
     assert.match(cards, /CalendarClock/);
     assert.match(cards, /Margem comercial/);
     assert.match(cards, /sales-order-list-general-margin-card/);
