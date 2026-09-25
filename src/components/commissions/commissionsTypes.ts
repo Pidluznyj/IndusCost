@@ -1157,6 +1157,8 @@ export type CommissionsReceiptClosingLine = {
   nomusReceivableId: number | null;
   receivableNumber: string | null;
   installmentNumber: number | null;
+  /** Quantidade de CRs da NF (denominador da coluna Parcela); null = não confirmado. */
+  installmentTotal?: number | null;
   settlementDate: string | null;
   dueDate: string | null;
   customerId: string | null;

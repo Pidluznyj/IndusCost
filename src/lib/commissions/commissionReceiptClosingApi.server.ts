@@ -17,6 +17,7 @@ import {
   appendReceiptClosingNote,
   formatCriticalDivergenceAcceptanceNote,
 } from "./commissionReceiptClosing.js";
+import { enrichReceiptClosingPageInstallments } from "./commissionReceiptInstallment.server.js";
 import {
   applyCommissionReceiptClosing,
   cancelCommissionReceiptClosing,
@@ -66,13 +67,17 @@ async function buildReceiptClosingPagePayload(
   if (closing) {
     const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
     const ownScope = await resolveReceiptClosingOwnScope(scope);
-    return buildReceiptClosingPageFromLedger({
-      closing,
-      ledgerLines,
-      nomusBase: filters.nomusBase,
-      nomusCommission: filters.nomusCommission,
-      ownScope,
-    });
+    // Coluna Parcela (n/total): total pelos CRs da NF, sem tocar o ledger histórico.
+    return enrichReceiptClosingPageInstallments(
+      prisma,
+      buildReceiptClosingPageFromLedger({
+        closing,
+        ledgerLines,
+        nomusBase: filters.nomusBase,
+        nomusCommission: filters.nomusCommission,
+        ownScope,
+      })
+    );
   }
   return buildReceiptClosingPageEmpty(filters.year, filters.month);
 }
@@ -100,15 +105,19 @@ export async function getReceiptClosingPreviewPage(
 ): Promise<ReceiptClosingPagePayload> {
   const payload = await previewCommissionReceiptClosing(filters);
   const ownScope = await resolveReceiptClosingOwnScope(scope);
-  return buildReceiptClosingPageFromPreview({
-    preview: payload.preview,
-    closing: payload.existingClosing,
-    canApply: payload.canApply,
-    applyBlockedReason: payload.applyBlockedReason,
-    nomusBase: filters.nomusBase,
-    nomusCommission: filters.nomusCommission,
-    ownScope,
-  });
+  // Coluna Parcela (n/total): mesma regra do fechamento (CLOSED).
+  return enrichReceiptClosingPageInstallments(
+    prisma,
+    buildReceiptClosingPageFromPreview({
+      preview: payload.preview,
+      closing: payload.existingClosing,
+      canApply: payload.canApply,
+      applyBlockedReason: payload.applyBlockedReason,
+      nomusBase: filters.nomusBase,
+      nomusCommission: filters.nomusCommission,
+      ownScope,
+    })
+  );
 }
 
 export async function exportReceiptClosingCsv(

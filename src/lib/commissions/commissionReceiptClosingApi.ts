@@ -664,6 +664,9 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     nomusReceivableId: line.nomusReceivableId,
     receivableNumber: line.receivableNumber,
     installmentNumber: line.installmentNumber,
+    // Denominador vem da população de CRs da NF — preenchido no .server
+    // (enrichReceiptClosingPageInstallments), nunca pela quantidade de linhas.
+    installmentTotal: null,
     settlementDate: line.settlementDate,
     receiptDate: line.receiptDate ?? null,
     dueDate: line.dueDate,
@@ -732,6 +735,9 @@ export function mapLedgerLineToApiLine(
     nomusReceivableId: line.nomusReceivableId,
     receivableNumber: null,
     installmentNumber: line.installmentNumber,
+    // Número persistido no ledger; o total vem dos CRs da NF no .server
+    // (enrichReceiptClosingPageInstallments), sem tocar o ledger.
+    installmentTotal: null,
     settlementDate: line.settlementDate,
     receiptDate: null,
     dueDate: null,
