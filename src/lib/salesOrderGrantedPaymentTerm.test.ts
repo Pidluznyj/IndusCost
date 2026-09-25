@@ -16,8 +16,16 @@ import {
   SALES_ORDER_GRANTED_PAYMENT_TERM_METHODOLOGY,
   SALES_ORDER_GRANTED_PAYMENT_TERM_SOURCE,
   buildEmptySalesOrderGrantedPaymentTermSummary,
-  buildGrantedPaymentTermFootnote,
+  GRANTED_PAYMENT_TERM_HELP_TEXT,
+  GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT,
+  SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY,
+  buildGrantedPaymentTermInvoicedShareText,
   buildGrantedPaymentTermHelpText,
+  buildSalesOrderGrantedPaymentTermMonthlySeries,
+  describeGrantedPaymentTermMonthlyPoint,
+  describeGrantedPaymentTermYearSummary,
+  formatGrantedPaymentTermChartLabel,
+  resolveGrantedPaymentTermChartDays,
   civilDaysBetween,
   computeSalesOrderGrantedPaymentTermSummary,
   describeGrantedPaymentTermReason,
@@ -30,6 +38,7 @@ import {
   resolveGrantedPaymentTermQuality,
   resolveOrderReceivableTermDays,
   resolveReceivableTitleTermDays,
+  type GrantedPaymentTermDatedOrderInput,
   type GrantedPaymentTermOrderInput,
   type GrantedPaymentTermTitleInput,
   type SalesOrderGrantedPaymentTermSummary,
@@ -609,7 +618,7 @@ describe("apresentação do card", () => {
     assert.equal(formatGrantedPaymentTermCoverage(undefined), "—");
   });
 
-  it("FULL mostra dias, cobertura do faturado, rodapé com participação do faturado e fonte", () => {
+  it("FULL mostra dias e cobertura do faturado; participação do faturado e fonte ficam no tooltip", () => {
     const summary = computeSalesOrderGrantedPaymentTermSummary([
       order("a", 30_000, [title(30, 30_000)]),
       order("b", 70_000, [], "60"),
@@ -620,19 +629,26 @@ describe("apresentação do card", () => {
     assert.equal(p.value, "51,0 dias");
     assert.equal(p.valueSize, "default");
     assert.equal(p.subtitle, "Cobertura: 100,0% do valor faturado");
-    assert.equal(p.footnote, "Faturado: 50,0% do valor vendido");
+    assert.equal("footnote" in p, false, "sem linha extra no card");
     assert.equal(p.tone, "info");
+    assert.ok(
+      p.helperText.startsWith(
+        "Faturado: 50,0% do valor vendido (pedidos sem NF-e ainda não entram na média).\n" +
+          "Fonte: títulos do CR em 30,0% do valor faturado; condição comercial em 70,0%.\n\n"
+      ),
+      p.helperText
+    );
+    assert.ok(p.helperText.endsWith(GRANTED_PAYMENT_TERM_HELP_TEXT));
     assert.match(p.helperText, /emissão da NF-e/);
     assert.match(p.helperText, /vencimento dos títulos do Contas a Receber/);
     assert.match(p.helperText, /Pedidos sem NF-e não entram/);
     assert.match(p.helperText, /30\/60 = 45 dias/);
     assert.match(p.helperText, /Não mede atraso/);
-    assert.match(p.helperText, /títulos do CR em 30,0% do valor faturado; condição comercial em 70,0%/);
     assert.doesNotMatch(p.helperText, /foram excluídos/);
     assert.doesNotMatch(p.helperText, /não confiável/);
   });
 
-  it("PARTIAL mostra dias + cobertura parcial do faturado (warning) e explica exclusão", () => {
+  it("PARTIAL mostra dias + cobertura parcial do faturado (warning); tooltip traz faturado e exclusão", () => {
     const p = resolveGrantedPaymentTermCardPresentation(
       summaryWith({
         available: true,
@@ -645,10 +661,12 @@ describe("apresentação do card", () => {
     );
     assert.equal(p.value, "47,8 dias");
     assert.equal(p.subtitle, "Cobertura parcial: 89,4% do faturado");
-    assert.equal(p.footnote, "Faturado: 77,4% do valor vendido");
     assert.equal(p.tone, "warning");
+    assert.ok(p.helperText.startsWith("Faturado: 77,4% do valor vendido"));
+    assert.ok(p.helperText.endsWith(GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT));
     assert.match(p.helperText, /foram excluídos da média/);
-    assert.equal(buildGrantedPaymentTermHelpText(null, "PARTIAL"), p.helperText);
+    assert.equal(buildGrantedPaymentTermHelpText(null, "PARTIAL"), GRANTED_PAYMENT_TERM_PARTIAL_HELP_TEXT);
+    assert.equal(buildGrantedPaymentTermHelpText(null, "FULL"), GRANTED_PAYMENT_TERM_HELP_TEXT);
   });
 
   it("LOW não exibe o número como KPI principal, mas o expõe no tooltip como não confiável", () => {
@@ -679,7 +697,7 @@ describe("apresentação do card", () => {
     );
     assert.equal(noInvoices.value, "Indisponível");
     assert.equal(noInvoices.subtitle, "Sem pedidos faturados no filtro");
-    assert.equal(noInvoices.footnote, "Faturado: 0,0% do valor vendido");
+    assert.ok(noInvoices.helperText.startsWith("Faturado: 0,0% do valor vendido"));
     assert.equal(noInvoices.tone, "neutral");
 
     const noTitles = resolveGrantedPaymentTermCardPresentation(
@@ -687,20 +705,25 @@ describe("apresentação do card", () => {
     );
     assert.equal(noTitles.value, "Indisponível");
     assert.equal(noTitles.subtitle, "Sem títulos ou condições de pagamento suficientes");
-    assert.equal(noTitles.footnote, "Faturado: 100,0% do valor vendido");
+    assert.ok(noTitles.helperText.startsWith("Faturado: 100,0% do valor vendido"));
+    assert.doesNotMatch(noTitles.helperText, /Fonte:/, "sem cobertura não há fonte a informar");
     assert.equal(noTitles.valueSize, "text");
 
     const empty = resolveGrantedPaymentTermCardPresentation(buildEmptySalesOrderGrantedPaymentTermSummary());
     assert.equal(empty.subtitle, "Sem títulos ou condições de pagamento suficientes");
-    assert.equal(empty.footnote, null);
+    assert.equal(empty.helperText, GRANTED_PAYMENT_TERM_HELP_TEXT);
 
     const failed = resolveGrantedPaymentTermCardPresentation(null);
     assert.equal(failed.quality, "UNAVAILABLE");
     assert.equal(failed.value, "Indisponível");
     assert.equal(failed.subtitle, "Não foi possível carregar o indicador.");
-    assert.equal(failed.footnote, null);
+    assert.equal(failed.helperText, GRANTED_PAYMENT_TERM_HELP_TEXT);
     assert.equal(failed.tone, "neutral");
-    assert.equal(buildGrantedPaymentTermFootnote(null), null);
+    assert.equal(buildGrantedPaymentTermInvoicedShareText(null), null);
+    assert.equal(
+      buildGrantedPaymentTermInvoicedShareText(buildEmptySalesOrderGrantedPaymentTermSummary()),
+      null
+    );
   });
 
   it("DTO inconsistente (FULL sem dias) cai em Indisponível, nunca em número falso", () => {
@@ -720,5 +743,141 @@ describe("apresentação do card", () => {
       summaryWith({ available: true, quality: "FULL", weightedAverageDays: 132.49, coveragePercent: 100 })
     );
     assert.equal(long.value, "132,5 dias");
+  });
+});
+
+describe("série mensal do prazo de recebimento (tela Resultado)", () => {
+  function dated(
+    id: string,
+    issueDate: Date | null,
+    totalNetValue: number,
+    titles: GrantedPaymentTermTitleInput[],
+    paymentTerms: string | null = null,
+    invoiced = true
+  ): GrantedPaymentTermDatedOrderInput {
+    return { id, issueDate, totalNetValue, paymentTerms, invoiced, titles };
+  }
+
+  it("12 meses por mês de emissão, ano filtrado × anterior, com o MESMO cálculo do card", () => {
+    const january = [
+      dated("a", d(5, 1, 2026), 10_000, [title(30, 10_000)]),
+      dated("b", d(20, 1, 2026), 30_000, [title(60, 30_000)]),
+    ];
+    const current = [
+      ...january,
+      dated("c", d(3, 9, 2026), 5_000, [], null, false), // setembro: ainda sem NF-e
+    ];
+    const previous = [dated("p", d(10, 1, 2025), 8_000, [title(28, 8_000)])];
+    const series = buildSalesOrderGrantedPaymentTermMonthlySeries({
+      year: 2026,
+      currentYearOrders: current,
+      previousYearOrders: previous,
+    });
+
+    assert.equal(series.year, 2026);
+    assert.equal(series.previousYear, 2025);
+    assert.equal(series.monthBasis, "SalesOrder.issueDate");
+    assert.equal(series.methodology, SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_METHODOLOGY);
+    assert.equal(series.rows.length, 12);
+    assert.deepEqual(
+      series.rows.map((r) => r.month),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    );
+    assert.deepEqual(
+      series.rows.map((r) => r.monthLabel),
+      ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    );
+
+    const jan = series.rows[0]!;
+    assert.equal(jan.current.chartDays, (10_000 * 30 + 30_000 * 60) / 40_000);
+    assert.equal(jan.previous.chartDays, 28);
+    // Paridade com o card do mês: mesmo número que o card filtrado em jan/2026.
+    const card = computeSalesOrderGrantedPaymentTermSummary(january);
+    assert.equal(jan.current.weightedAverageDays, card.weightedAverageDays);
+    assert.equal(jan.current.coveragePercent, card.coveragePercent);
+    assert.equal(jan.current.invoicedOrders, 2);
+    assert.equal(jan.current.totalOrders, 2);
+
+    const sep = series.rows[8]!;
+    assert.equal(sep.current.chartDays, null);
+    assert.equal(sep.current.totalOrders, 1);
+    assert.equal(sep.current.invoicedOrders, 0);
+    assert.equal(describeGrantedPaymentTermMonthlyPoint(sep.current), "Sem pedidos faturados");
+
+    const feb = series.rows[1]!;
+    assert.equal(feb.current.chartDays, null);
+    assert.equal(describeGrantedPaymentTermMonthlyPoint(feb.current), "Sem pedidos");
+
+    // Resumo anual = população inteira do ano (inclui o pedido sem NF-e na participação).
+    assert.equal(series.currentYearSummary.weightedAverageDays, 52.5);
+    assert.equal(series.currentYearSummary.notInvoicedOrders, 1);
+    assert.ok(Math.abs(series.currentYearSummary.invoicedSharePercent - (40_000 * 100) / 45_000) < 1e-9);
+    assert.equal(series.previousYearSummary.weightedAverageDays, 28);
+  });
+
+  it("mês com cobertura baixa não vira barra (regra do card) e o tooltip explica; PARTIAL vira barra", () => {
+    const series = buildSalesOrderGrantedPaymentTermMonthlySeries({
+      year: 2026,
+      currentYearOrders: [
+        dated("a", d(1, 3, 2026), 100, [title(30, 100)]),
+        dated("b", d(2, 3, 2026), 900, [], "boleto"),
+        dated("c", d(1, 4, 2026), 850, [title(40, 850)]),
+        dated("d", d(2, 4, 2026), 150, [], null),
+      ],
+      previousYearOrders: [],
+    });
+    const mar = series.rows[2]!.current;
+    assert.equal(mar.quality, "LOW");
+    assert.equal(mar.chartDays, null);
+    assert.equal(mar.weightedAverageDays, 30, "prazo calculado fica disponível para auditoria");
+    assert.equal(describeGrantedPaymentTermMonthlyPoint(mar), "Cobertura insuficiente (10,0% do faturado)");
+
+    const apr = series.rows[3]!.current;
+    assert.equal(apr.quality, "PARTIAL");
+    assert.equal(apr.chartDays, 40);
+    assert.equal(
+      describeGrantedPaymentTermMonthlyPoint(apr),
+      "40,0 dias · cobertura 85,0% do faturado (parcial) · 2 pedido(s) faturado(s)"
+    );
+  });
+
+  it("ignora datas inválidas e de outro ano na distribuição mensal", () => {
+    const series = buildSalesOrderGrantedPaymentTermMonthlySeries({
+      year: 2026,
+      currentYearOrders: [
+        dated("ok", d(15, 6, 2026), 1_000, [title(30, 1_000)]),
+        dated("sem-data", null, 1_000, [title(90, 1_000)]),
+        dated("data-invalida", new Date("x"), 1_000, [title(90, 1_000)]),
+        dated("outro-ano", d(15, 6, 2024), 1_000, [title(90, 1_000)]),
+      ],
+      previousYearOrders: [],
+    });
+    const monthsWithOrders = series.rows.filter((r) => r.current.totalOrders > 0);
+    assert.equal(monthsWithOrders.length, 1);
+    assert.equal(monthsWithOrders[0]!.month, 6);
+    assert.equal(monthsWithOrders[0]!.current.chartDays, 30);
+    assert.equal(series.rows.every((r) => r.previous.totalOrders === 0), true);
+  });
+
+  it("rótulos da barra, resumo anual e regra de exibição", () => {
+    assert.equal(formatGrantedPaymentTermChartLabel(35.94), "36");
+    assert.equal(formatGrantedPaymentTermChartLabel(0), "0");
+    assert.equal(formatGrantedPaymentTermChartLabel(null), "");
+    assert.equal(formatGrantedPaymentTermChartLabel(Number.NaN), "");
+
+    const full = computeSalesOrderGrantedPaymentTermSummary([order("a", 100, [title(45, 100)])]);
+    assert.equal(resolveGrantedPaymentTermChartDays(full), 45);
+    assert.equal(describeGrantedPaymentTermYearSummary(full), "45,0 dias");
+
+    const low = computeSalesOrderGrantedPaymentTermSummary([
+      order("a", 100, [title(30, 100)]),
+      order("b", 900, [], "boleto"),
+    ]);
+    assert.equal(resolveGrantedPaymentTermChartDays(low), null);
+    assert.equal(describeGrantedPaymentTermYearSummary(low), "Cobertura insuficiente");
+
+    const empty = computeSalesOrderGrantedPaymentTermSummary([]);
+    assert.equal(resolveGrantedPaymentTermChartDays(empty), null);
+    assert.equal(describeGrantedPaymentTermYearSummary(empty), "Indisponível");
   });
 });

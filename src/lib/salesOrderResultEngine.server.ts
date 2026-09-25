@@ -38,8 +38,28 @@ import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboard
 import type {
   SalesOrderResultDashboardPayload,
   SalesOrderResultFilters,
+  SalesOrderResultMonthlyRow,
   SalesOrderResultMonthlySalesComparisonRow,
 } from "./salesOrderResultTypes.js";
+
+/** Série de margem comercial da população anual (gráfico da listagem via charts-cache). */
+type ListMarginChartSeriesResult =
+  | { kind: "ok"; monthlyCommercialMargin: SalesOrderResultMonthlyRow[] }
+  | { kind: "skipped" }
+  | { kind: "failed" };
+
+const LIST_MARGIN_CHART_SERIES_SKIPPED: ListMarginChartSeriesResult = { kind: "skipped" };
+
+export type BuildSalesOrderResultDashboardOptions = {
+  /**
+   * Série mensal de margem comercial da população ANUAL (gráfico da listagem de
+   * Pedidos, servido pelo charts-cache). Default true: o cache e os scripts de
+   * auditoria continuam iguais. A rota da tela Resultado passa false — a tela
+   * não exibe essa série, e ela era a parte mais cara da requisição (motor de
+   * margem sobre todos os pedidos do ano, mesmo com filtro de um único mês).
+   */
+  includeListMarginChartSeries?: boolean;
+};
 
 /** Select único: regras de pedido + itens para margem (mesmo universo da listagem). */
 const SALES_ORDER_RESULT_PRISMA_SELECT = {
@@ -117,8 +137,10 @@ export function parseSalesOrderResultFilters(
 export async function buildSalesOrderResultDashboard(
   db: PrismaClient,
   query: Record<string, unknown>,
-  now = new Date()
+  now = new Date(),
+  options: BuildSalesOrderResultDashboardOptions = {}
 ): Promise<SalesOrderResultDashboardPayload> {
+  const includeListMarginChartSeries = options.includeListMarginChartSeries !== false;
   const filters = parseSalesOrderResultFilters(query, now);
   const referenceDate = parseAsOfDate(filters.asOfDate, now);
 
@@ -154,7 +176,10 @@ export async function buildSalesOrderResultDashboard(
     customerId: filters.customerId,
     sellerId: filters.sellerId,
     companyId: filters.companyId,
-    productId: filters.productId,
+    // O filtro de produto já está no where (pedidos que contêm o produto). O
+    // bundle comparava o UUID do produto com o id do ITEM do pedido — nunca
+    // casava e zerava Qtde Pedidos e a projeção. Sem repassar, vale o escopo do where.
+    productId: undefined,
   });
 
   const marginOrders = orders as SalesOrderForMargin[];
@@ -204,7 +229,11 @@ export async function buildSalesOrderResultDashboard(
       // dedução de imposto. Decisão do usuário: paridade com a listagem, mesmo
       // que a apuração fiscal detalhada continue disponível em `rules`/`source`.
       buildOfficialSalesOrderListMarginSummary(db, marginOrders, { year: filters.year }),
-      (async () => {
+      // Série de margem comercial da população ANUAL (gráfico da listagem, via
+      // charts-cache). A tela Resultado não a exibe: pulada quando a rota pede.
+      !includeListMarginChartSeries
+        ? Promise.resolve(LIST_MARGIN_CHART_SERIES_SKIPPED)
+        : (async (): Promise<ListMarginChartSeriesResult> => {
         try {
           const { buildSalesOrderCommercialMarginReadModels } = await import(
             "./salesOrderCommercialMarginReadService.server.js"
@@ -264,13 +293,13 @@ export async function buildSalesOrderResultDashboard(
             }),
             filters.year
           );
-          return { ok: true as const, monthlyCommercialMargin };
+          return { kind: "ok", monthlyCommercialMargin };
         } catch (err) {
           console.warn(
             "[buildSalesOrderResultDashboard] falha na série mensal de margem comercial.",
             err
           );
-          return { ok: false as const };
+          return { kind: "failed" };
         }
       })(),
       // Ano anterior: mesma população OP-02 (filtros da listagem), só para série YoY de vendas.
@@ -332,20 +361,25 @@ export async function buildSalesOrderResultDashboard(
     taxSourceLabel: "Margem comercial — mesma regra da listagem de Pedidos de Venda",
   };
 
-  const monthlyCommercialMargin = chartResult.ok
+  // Pulada (rota Resultado): lista vazia — série não calculada nesta rota.
+  // Falha: mantém o fallback anterior (linhas zeradas por mês).
+  const monthlyCommercialMargin: SalesOrderResultMonthlyRow[] =
+    chartResult.kind === "ok"
     ? chartResult.monthlyCommercialMargin
-    : marginPayload.monthlyMargin.map((row) => ({
-        ...row,
-        marginAmount: 0,
-        marginPercent: null as number | null,
-        costAmount: 0,
-        taxAmount: 0,
-        coveredNetValue: 0,
-        totalNetValue: 0,
-        isPartial: false,
-        coveredOrders: 0,
-        totalEligibleOrders: row.ordersCount,
-      }));
+    : chartResult.kind === "skipped"
+      ? []
+      : marginPayload.monthlyMargin.map((row) => ({
+          ...row,
+          marginAmount: 0,
+          marginPercent: null as number | null,
+          costAmount: 0,
+          taxAmount: 0,
+          coveredNetValue: 0,
+          totalNetValue: 0,
+          isPartial: false,
+          coveredOrders: 0,
+          totalEligibleOrders: row.ordersCount,
+        }));
 
   const monthlySales = salesBundle.monthlyTimeline.map((point) => ({
     month: point.month,

@@ -1,12 +1,17 @@
 /**
- * Rota do KPI "Prazo médio de recebimento" — listagem de Pedidos de Venda.
+ * Rotas do KPI "Prazo médio de recebimento" — Pedidos de Venda.
  *
  * GET /api/sales-orders/payment-term-summary
- *   Mesma autorização da listagem: requireAppAuth + requireResource
- *   ("commercial.sales_orders", "view"). NÃO exige permissão de custo/margem —
- *   a métrica é prazo de recebimento (NF-e → vencimento do CR), não informação econômica.
+ *   Card da listagem: população filtrada completa (mesma query da listagem).
+ * GET /api/sales-orders/payment-term-monthly
+ *   Tela Resultado: 12 meses do ano filtrado × mesmo período do ano anterior
+ *   (mesmos filtros da tela, exceto Mês; aceita o filtro de produto do Resultado).
  *
- * Deve ser registrada ANTES de `/api/sales-orders/:id` (rota estática).
+ * Ambas com a autorização da listagem: requireAppAuth + requireResource
+ * ("commercial.sales_orders", "view"). NÃO exigem permissão de custo/margem —
+ * a métrica é prazo de recebimento (NF-e → vencimento do CR), não informação econômica.
+ *
+ * Devem ser registradas ANTES de `/api/sales-orders/:id` (rotas estáticas).
  */
 import type express from "express";
 import type { RequestHandler } from "express";
@@ -15,8 +20,14 @@ import {
   COMMERCIAL_RESOURCE_KEYS,
 } from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
-import { SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH } from "./salesOrderGrantedPaymentTermApi.js";
-import { loadSalesOrderGrantedPaymentTermSummary } from "./salesOrderGrantedPaymentTermSummary.server.js";
+import {
+  SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH,
+  SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH,
+} from "./salesOrderGrantedPaymentTermApi.js";
+import {
+  loadSalesOrderGrantedPaymentTermMonthlySeries,
+  loadSalesOrderGrantedPaymentTermSummary,
+} from "./salesOrderGrantedPaymentTermSummary.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -43,7 +54,22 @@ export function registerSalesOrderGrantedPaymentTermRoutes(
       console.error(`GET ${SALES_ORDER_GRANTED_PAYMENT_TERM_SUMMARY_PATH}`, error);
       res
         .status(500)
-        .json({ error: "Erro ao carregar o prazo médio concedido dos pedidos." });
+        .json({ error: "Erro ao carregar o prazo médio de recebimento dos pedidos." });
+    }
+  });
+
+  app.get(SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH, ...guard, async (req, res) => {
+    try {
+      const paymentTermMonthly = await loadSalesOrderGrantedPaymentTermMonthlySeries(
+        prisma,
+        req.query as Record<string, unknown>
+      );
+      res.json({ paymentTermMonthly });
+    } catch (error) {
+      console.error(`GET ${SALES_ORDER_GRANTED_PAYMENT_TERM_MONTHLY_PATH}`, error);
+      res
+        .status(500)
+        .json({ error: "Erro ao carregar o prazo médio de recebimento mês a mês." });
     }
   });
 }

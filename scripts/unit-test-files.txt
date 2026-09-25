@@ -303,3 +303,5 @@ src/components/supply-chain/supplier-performance/SupplierNomusOrdersSection.test
 src/lib/salesOrderGrantedPaymentTerm.test.ts
 src/lib/salesOrderGrantedPaymentTermSummary.wiring.test.ts
 src/lib/salesOrderGrantedPaymentTermCard.test.tsx
+src/lib/salesOrderResultPage.test.ts
+src/lib/salesOrderResultReceivableTermChart.test.tsx

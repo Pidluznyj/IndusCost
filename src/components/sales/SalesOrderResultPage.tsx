@@ -1,10 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2, Package, Percent, Scale, ShoppingBag, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  Info,
+  Loader2,
+  Package,
+  Percent,
+  Scale,
+  Search,
+  ShoppingBag,
+  Wallet,
+} from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { canViewSalesOrderModule } from "@/src/lib/salesOrderListUi";
+import { canViewSalesOrderModule, SALES_ORDER_LIST_STATUS_LABELS } from "@/src/lib/salesOrderListUi";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
+import type { EntityAutocompleteSelection as ProductAutocompleteSelection } from "@/src/components/common/EntityAutocompleteFilter";
 import {
   buildSalesOrderYearOptions,
   SALES_ORDER_MONTH_OPTIONS,
@@ -26,33 +37,78 @@ import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySec
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderResultMonthlyMarginChart } from "@/src/components/sales/SalesOrderResultMonthlyMarginChart";
 import { SalesOrderResultProjectionChart } from "@/src/components/sales/SalesOrderResultProjectionChart";
+import { SalesOrderResultReceivableTermChart } from "@/src/components/sales/SalesOrderResultReceivableTermChart";
+import { SalesOrderProductAutocompleteFilter } from "@/src/components/sales/SalesOrderProductAutocompleteFilter";
+import { SalesOrderReceivableStatusMultiSelect } from "@/src/components/sales/SalesOrderReceivableStatusMultiSelect";
+import {
+  SALES_ORDER_FILTER_ACTION_BUTTON_CLASS,
+  SALES_ORDER_FILTER_CONTROL_CLASS,
+  SALES_ORDER_FILTER_LABEL_CLASS,
+  SALES_ORDER_FILTER_PRIMARY_ACTION_CLASS,
+} from "@/src/components/sales/salesOrderFilterBarStyles";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { getSalesOrderSellerFilterOptionsUrl } from "@/src/lib/salesOrderListReportExportUi";
 import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
 import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
-import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
-import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters";
+import { getSalesOrderGrantedPaymentTermMonthlyUrl } from "@/src/lib/salesOrderGrantedPaymentTermApi";
+import type { SalesOrderGrantedPaymentTermMonthlySeries } from "@/src/lib/salesOrderGrantedPaymentTerm";
+import {
+  buildInitialSalesOrderResultAppliedFilters,
+  buildSalesOrderResultQueryString,
+  hasPendingSalesOrderResultFilters,
+  toSalesOrderResultApiFilters,
+  type SalesOrderResultAppliedFilters,
+} from "@/src/lib/salesOrderResultFilters";
+import { cn } from "@/src/lib/utils";
 
-const FILTER_CONTROL =
-  "mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm";
+function FilterLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className={SALES_ORDER_FILTER_LABEL_CLASS}>
+      {children}
+    </label>
+  );
+}
 
+function isAbortError(error: unknown, signal: AbortSignal): boolean {
+  return signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+}
+
+/**
+ * Resultado de Pedidos de Venda.
+ *
+ * Filtros no padrão do sistema (igual à listagem): os controles só mudam o
+ * rascunho; as consultas usam os filtros APLICADOS, que mudam apenas ao clicar
+ * em Pesquisar (ou Limpar filtros). Vendedores e produtos vêm do servidor e
+ * aparecem em dropdown. Cada consulta cancela a anterior (AbortController).
+ */
 export function SalesOrderResultPage() {
   const auth = useAuth();
   const canView = useMemo(() => canViewSalesOrderModule(auth), [auth]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
+  const asOfDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState<number | "">("");
+  // Rascunho — só vira consulta ao clicar em Pesquisar.
+  const [year, setYear] = useState(() => String(currentYear));
+  const [month, setMonth] = useState("");
+  const [status, setStatus] = useState("");
+  const [hasInvoice, setHasInvoice] = useState("");
+  const [receivableStatus, setReceivableStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(
     null
   );
-  const [productQuery, setProductQuery] = useState("");
   const [sellerKey, setSellerKey] = useState("");
-  const [status, setStatus] = useState("");
-  const [hasInvoice, setHasInvoice] = useState("");
-  const [receivableStatus, setReceivableStatus] = useState("");
+  const [productId, setProductId] = useState("");
+  const [productSelection, setProductSelection] = useState<ProductAutocompleteSelection | null>(
+    null
+  );
+
+  // Filtros aplicados — única fonte das consultas.
+  const [applied, setApplied] = useState<SalesOrderResultAppliedFilters>(() =>
+    buildInitialSalesOrderResultAppliedFilters(currentYear)
+  );
+
   const [sellerFilterOptions, setSellerFilterOptions] = useState<SalesOrderSellerFilterOption[]>(
     []
   );
@@ -60,83 +116,124 @@ export function SalesOrderResultPage() {
   const [payload, setPayload] = useState<SalesOrderResultDashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [termSeries, setTermSeries] = useState<SalesOrderGrantedPaymentTermMonthlySeries | null>(
+    null
+  );
+  const [termLoading, setTermLoading] = useState(false);
+  const [termError, setTermError] = useState<string | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
 
-  const asOfDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const draft = useMemo<SalesOrderResultAppliedFilters>(
+    () => ({
+      year,
+      month,
+      status,
+      hasInvoice,
+      receivableStatus,
+      customerId,
+      sellerKey,
+      productId,
+    }),
+    [year, month, status, hasInvoice, receivableStatus, customerId, sellerKey, productId]
+  );
+  const filtersPending = hasPendingSalesOrderResultFilters(draft, applied);
 
-  const listFilterQuery = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("year", String(year));
-    if (month !== "") params.set("month", String(month));
-    if (customerId) params.set("customerId", customerId);
-    if (sellerKey) params.set("sellerKey", sellerKey);
-    if (status) params.set("status", status);
-    if (hasInvoice) params.set("hasInvoice", hasInvoice);
-    if (receivableStatus) params.set("receivableStatus", receivableStatus);
-    return params.toString();
-  }, [year, month, customerId, sellerKey, status, hasInvoice, receivableStatus]);
+  const applyFilters = useCallback(() => {
+    // Objeto novo a cada clique: Pesquisar sempre recarrega, mesmo sem mudança.
+    setApplied({ ...draft });
+  }, [draft]);
 
+  const clearFilters = useCallback(() => {
+    const initial = buildInitialSalesOrderResultAppliedFilters(currentYear);
+    setYear(initial.year);
+    setMonth("");
+    setStatus("");
+    setHasInvoice("");
+    setReceivableStatus("");
+    setCustomerId("");
+    setCustomerSelection(null);
+    setSellerKey("");
+    setProductId("");
+    setProductSelection(null);
+    setApplied(initial);
+  }, [currentYear]);
+
+  // Vendedores do dropdown: população APLICADA sem o próprio vendedor (padrão da listagem).
+  const sellerOptionsQuery = useMemo(
+    () => buildSalesOrderResultQueryString(applied, { includeSeller: false, includeProduct: false }),
+    [applied]
+  );
   useEffect(() => {
-    let cancelled = false;
+    if (!canView) return;
+    const ac = new AbortController();
     setSellerOptionsLoading(true);
     void fetchJsonOk<{ options?: SalesOrderSellerFilterOption[] }>(
-      getSalesOrderSellerFilterOptionsUrl(listFilterQuery)
+      getSalesOrderSellerFilterOptionsUrl(sellerOptionsQuery),
+      { signal: ac.signal }
     )
       .then((res) => {
-        if (cancelled) return;
-        setSellerFilterOptions(Array.isArray(res.options) ? res.options : []);
+        if (!ac.signal.aborted) setSellerFilterOptions(Array.isArray(res.options) ? res.options : []);
       })
-      .catch(() => {
-        if (!cancelled) setSellerFilterOptions([]);
+      .catch((e: unknown) => {
+        if (isAbortError(e, ac.signal)) return;
+        setSellerFilterOptions([]);
       })
       .finally(() => {
-        if (!cancelled) setSellerOptionsLoading(false);
+        if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [listFilterQuery]);
+    return () => ac.abort();
+  }, [canView, sellerOptionsQuery]);
 
-  const load = useCallback(async () => {
+  // Resultado (KPIs + gráficos de margem e projeção) — só com filtros aplicados.
+  useEffect(() => {
     if (!canView) return;
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
-    try {
-      const path = getSalesOrderResultApiPath({
-        year,
-        month: month === "" ? undefined : month,
-        customerId: customerId || undefined,
-        productId: productQuery.trim() || undefined,
-        sellerKey: sellerKey || undefined,
-        status: status || undefined,
-        hasInvoice: hasInvoice || undefined,
-        receivableStatus: receivableStatus || undefined,
-        asOfDate,
+    void fetchJsonOk<SalesOrderResultDashboardPayload>(
+      getSalesOrderResultApiPath(toSalesOrderResultApiFilters(applied, asOfDate)),
+      { signal: ac.signal }
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) setPayload(data);
+      })
+      .catch((e: unknown) => {
+        if (isAbortError(e, ac.signal)) return;
+        setError(e instanceof Error ? e.message : "Erro ao carregar resultado.");
+        setPayload(null);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false);
       });
-      const data = await fetchJsonOk<SalesOrderResultDashboardPayload>(path);
-      setPayload(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar resultado.");
-      setPayload(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    canView,
-    year,
-    month,
-    customerId,
-    productQuery,
-    sellerKey,
-    status,
-    hasInvoice,
-    receivableStatus,
-    asOfDate,
-  ]);
+    return () => ac.abort();
+  }, [canView, applied, asOfDate]);
 
+  // Prazo médio de recebimento mês a mês — endpoint leve e independente (fail-soft).
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!canView) return;
+    const ac = new AbortController();
+    setTermLoading(true);
+    setTermError(null);
+    void fetchJsonOk<{ paymentTermMonthly?: SalesOrderGrantedPaymentTermMonthlySeries }>(
+      getSalesOrderGrantedPaymentTermMonthlyUrl(
+        buildSalesOrderResultQueryString(applied, { includeMonth: false })
+      ),
+      { signal: ac.signal }
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) setTermSeries(data.paymentTermMonthly ?? null);
+      })
+      .catch((e: unknown) => {
+        if (isAbortError(e, ac.signal)) return;
+        console.error(e);
+        setTermError("Não foi possível carregar o prazo médio de recebimento mês a mês.");
+        setTermSeries(null);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setTermLoading(false);
+      });
+    return () => ac.abort();
+  }, [canView, applied]);
 
   const marginTooltipText = useMemo(() => {
     const totals = payload?.totals;
@@ -168,61 +265,76 @@ export function SalesOrderResultPage() {
         </p>
       </div>
 
-      <div className={`${financeBiCardClass} p-4`} data-testid="sales-order-result-filters">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <label className="text-xs font-semibold text-[#374151]">
-            Ano
+      <form
+        className="space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
+        data-testid="sales-order-result-filters"
+        onSubmit={(e) => {
+          e.preventDefault();
+          applyFilters();
+        }}
+      >
+        <div className="grid grid-cols-12 gap-2">
+          {/* Linha 1: período + status + NF + CR */}
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-order-result-filter-year">Ano</FilterLabel>
             <select
-              className={FILTER_CONTROL}
+              id="sales-order-result-filter-year"
+              className={SALES_ORDER_FILTER_CONTROL_CLASS}
               value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
+              onChange={(e) => setYear(e.target.value)}
+              aria-label="Filtrar por ano de emissão"
               data-testid="sales-order-result-filter-year"
             >
               {yearOptions.map((y) => (
-                <option key={y} value={y}>
+                <option key={y} value={String(y)}>
                   {y}
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-xs font-semibold text-[#374151]">
-            Mês
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-order-result-filter-month">Mês</FilterLabel>
             <select
-              className={FILTER_CONTROL}
+              id="sales-order-result-filter-month"
+              className={SALES_ORDER_FILTER_CONTROL_CLASS}
               value={month}
-              onChange={(e) => setMonth(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label="Filtrar por mês de emissão"
               data-testid="sales-order-result-filter-month"
             >
-              <option value="">Todos</option>
+              <option value="">Todos os meses</option>
               {SALES_ORDER_MONTH_OPTIONS.map((m) => (
-                <option key={m.value} value={m.value}>
+                <option key={m.value} value={String(m.value)}>
                   {m.label}
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-xs font-semibold text-[#374151]">
-            Situação
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-order-result-filter-status">Status</FilterLabel>
             <select
-              className={FILTER_CONTROL}
+              id="sales-order-result-filter-status"
+              className={SALES_ORDER_FILTER_CONTROL_CLASS}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
               data-testid="sales-order-result-filter-status"
             >
               <option value="">Todos</option>
-              {Object.entries(SALES_ORDER_STATUS_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>
+              {Object.entries(SALES_ORDER_LIST_STATUS_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
                   {label}
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-xs font-semibold text-[#374151]">
-            Vínculo NF
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="sales-order-result-filter-has-invoice">Vínculo NF</FilterLabel>
             <select
-              className={FILTER_CONTROL}
+              id="sales-order-result-filter-has-invoice"
+              className={SALES_ORDER_FILTER_CONTROL_CLASS}
               value={hasInvoice}
               onChange={(e) => setHasInvoice(e.target.value)}
+              aria-label="Filtrar por vínculo de NF"
               data-testid="sales-order-result-filter-has-invoice"
             >
               {INVOICE_FILTER_OPTIONS.map((o) => (
@@ -231,24 +343,44 @@ export function SalesOrderResultPage() {
                 </option>
               ))}
             </select>
-          </label>
-          <div className="lg:col-span-2">
+          </div>
+          <div
+            className="col-span-12 sm:col-span-6 lg:col-span-4"
+            data-testid="sales-order-result-filter-receivable"
+          >
+            <FilterLabel htmlFor="sales-order-result-filter-receivable-status">Status CR</FilterLabel>
+            <SalesOrderReceivableStatusMultiSelect
+              value={receivableStatus}
+              onChange={setReceivableStatus}
+              controlClassName={SALES_ORDER_FILTER_CONTROL_CLASS}
+            />
+          </div>
+
+          {/* Linha 2: cliente + vendedor + produto (dropdowns com dados do servidor) */}
+          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
             <CustomerAutocompleteFilter
               label="Cliente"
               value={customerSelection}
+              placeholder="Todos os clientes"
               onChange={(sel) => {
                 setCustomerSelection(sel);
                 setCustomerId(sel?.id ?? "");
               }}
+              onClear={() => {
+                setCustomerSelection(null);
+                setCustomerId("");
+              }}
             />
           </div>
-          <label className="text-xs font-semibold text-[#374151]">
-            Vendedor
+          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
+            <FilterLabel htmlFor="sales-order-result-filter-seller">Vendedor</FilterLabel>
             <select
-              className={FILTER_CONTROL}
+              id="sales-order-result-filter-seller"
+              className={SALES_ORDER_FILTER_CONTROL_CLASS}
               value={sellerKey}
               onChange={(e) => setSellerKey(e.target.value)}
               disabled={sellerOptionsLoading}
+              aria-label="Filtrar por vendedor Nomus"
               data-testid="sales-order-result-filter-seller"
             >
               <option value="">Todos os vendedores</option>
@@ -259,34 +391,45 @@ export function SalesOrderResultPage() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-xs font-semibold text-[#374151]">
-            Status CR
-            <select
-              className={FILTER_CONTROL}
-              value={receivableStatus}
-              onChange={(e) => setReceivableStatus(e.target.value)}
-              data-testid="sales-order-result-filter-receivable"
-            >
-              {RECEIVABLE_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs font-semibold text-[#374151] lg:col-span-2">
-            Produto (ID opcional)
-            <input
-              className={FILTER_CONTROL}
-              value={productQuery}
-              onChange={(e) => setProductQuery(e.target.value)}
-              placeholder="UUID do produto (filtro adicional)"
-              data-testid="sales-order-result-filter-product"
+          </div>
+          <div className="col-span-12 lg:col-span-4" data-testid="sales-order-result-filter-product">
+            <SalesOrderProductAutocompleteFilter
+              value={productSelection}
+              onChange={(sel) => {
+                setProductSelection(sel);
+                setProductId(sel?.id ?? "");
+              }}
             />
-          </label>
+          </div>
         </div>
-      </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/70 pt-2">
+          {filtersPending ? (
+            <span
+              className="mr-auto text-[11px] text-muted-foreground"
+              data-testid="sales-order-result-filters-pending"
+            >
+              Filtros alterados — clique em Pesquisar para atualizar.
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={clearFilters}
+            className={SALES_ORDER_FILTER_ACTION_BUTTON_CLASS}
+            data-testid="sales-order-result-clear-filters"
+          >
+            Limpar filtros
+          </button>
+          <button
+            type="submit"
+            className={cn(SALES_ORDER_FILTER_ACTION_BUTTON_CLASS, SALES_ORDER_FILTER_PRIMARY_ACTION_CLASS)}
+            data-testid="sales-order-result-apply-filters"
+          >
+            <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Pesquisar</span>
+          </button>
+        </div>
+      </form>
 
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -425,15 +568,21 @@ export function SalesOrderResultPage() {
               ) : null}
             </div>
           ) : null}
-
-          {payload ? <SalesOrderResultMonthlyMarginChart rows={payload.monthlyMargin} /> : null}
-          {payload ? (
-            <SalesOrderResultProjectionChart
-              rows={payload.realizedVsProjected}
-              projection={payload.projection}
-            />
-          ) : null}
         </>
+      ) : null}
+
+      <SalesOrderResultReceivableTermChart
+        series={termSeries}
+        loading={termLoading}
+        error={termError}
+      />
+
+      {payload ? <SalesOrderResultMonthlyMarginChart rows={payload.monthlyMargin} /> : null}
+      {payload ? (
+        <SalesOrderResultProjectionChart
+          rows={payload.realizedVsProjected}
+          projection={payload.projection}
+        />
       ) : null}
     </div>
   );
