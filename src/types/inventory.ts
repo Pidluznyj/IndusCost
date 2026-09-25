@@ -232,11 +232,22 @@ export type InventoryValuationMetric = {
   negativePhysicalItems: number;
 };
 
+export type InventoryValuationTypeSlice = {
+  includedInRetailValuation: boolean;
+  positiveItemCount: number;
+  salesPotential: InventoryValuationMetric;
+};
+
 export type InventoryManagerialValuation = {
   salesPotential: InventoryValuationMetric;
   industrialCost: InventoryValuationMetric;
   populationItemCount: number;
   excludedPositiveItems: number;
+  byItemType: {
+    rawMaterial: InventoryValuationTypeSlice;
+    finishedProduct: InventoryValuationTypeSlice;
+    component: InventoryValuationTypeSlice;
+  };
 };
 
 export type InventoryDashboardPayload = {

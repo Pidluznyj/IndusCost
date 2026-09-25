@@ -1,15 +1,13 @@
 import React from "react";
 import {
-  AlertTriangle,
-  Ban,
+  Box,
   Boxes,
-  ClipboardList,
   Factory,
-  Lock,
+  Layers,
   Package,
-  ShieldAlert,
-  TrendingDown,
+  Puzzle,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
@@ -30,6 +28,7 @@ import type {
   InventoryDashboardPayload,
   InventoryDashboardRecentMovement,
   InventoryValuationMetric,
+  InventoryValuationTypeSlice,
 } from "@/src/types/inventory";
 
 type Props = {
@@ -176,6 +175,56 @@ function valuationCoverageSubtitle(base: string, metric: InventoryValuationMetri
   return `${base} · ${metric.coveredItems} de ${population} itens`;
 }
 
+function typeSliceSubtitle(slice: InventoryValuationTypeSlice): string {
+  if (!slice.includedInRetailValuation) {
+    if (slice.positiveItemCount === 0) return "Nenhum item com saldo";
+    return `${slice.positiveItemCount} ${
+      slice.positiveItemCount === 1 ? "item com saldo" : "itens com saldo"
+    } · fora do Varejo 1`;
+  }
+  const metric = slice.salesPotential;
+  if (!metric.available) return "Tabela Varejo 1 indisponível";
+  if (slice.positiveItemCount === 0) return "Nenhum item com saldo";
+  return valuationCoverageSubtitle("Parte do valor de venda", metric);
+}
+
+function TypeValueCard({
+  label,
+  testId,
+  slice,
+  icon,
+  loading,
+}: {
+  label: string;
+  testId: string;
+  slice: InventoryValuationTypeSlice;
+  icon: LucideIcon;
+  loading: boolean;
+}) {
+  const metric = slice.salesPotential;
+  const showMoney = slice.includedInRetailValuation && metric.available;
+  return (
+    <KpiLink to="/inventory/balances" testId={testId}>
+      <FinanceExecutiveTotalizerCard
+        label={label}
+        amount={showMoney ? metric.value : null}
+        amountFormat="currency"
+        value={showMoney ? undefined : slice.includedInRetailValuation ? "Indisponível" : "Fora do Varejo 1"}
+        valueSize={showMoney ? "default" : "text"}
+        subtitle={typeSliceSubtitle(slice)}
+        helperText={
+          slice.includedInRetailValuation
+            ? valuationHint(metric, "preço Varejo 1")
+            : "Matéria-prima não usa a tabela comercial. O valor de venda acima é só PA e componentes."
+        }
+        tone="neutral"
+        icon={icon}
+        loading={loading}
+      />
+    </KpiLink>
+  );
+}
+
 function valuationHint(metric: InventoryValuationMetric, missingLabel: string): string | undefined {
   const parts: string[] = [];
   if (!metric.available && metric.unavailableReason) parts.push(metric.unavailableReason);
@@ -236,66 +285,27 @@ export function InventoryDashboardTab({ data, loading = false }: Props) {
             loading={loading}
           />
         </KpiLink>
-        <KpiLink to="/inventory/balances?belowMinimum=1" testId="inventory-kpi-below-minimum">
-          <FinanceExecutiveTotalizerCard
-            label="Abaixo do mínimo"
-            amount={data.belowMinimumCount}
-            amountFormat="number"
-            tone="warning"
-            icon={TrendingDown}
-            loading={loading}
-          />
-        </KpiLink>
-        <KpiLink to="/inventory/balances?belowReorderPoint=1" testId="inventory-kpi-below-reorder">
-          <FinanceExecutiveTotalizerCard
-            label="Abaixo do ponto de reposição"
-            amount={data.belowReorderPointCount}
-            amountFormat="number"
-            tone="warning"
-            icon={AlertTriangle}
-            loading={loading}
-          />
-        </KpiLink>
-        <KpiLink to="/inventory/balances?negativeStock=1" testId="inventory-kpi-negative">
-          <FinanceExecutiveTotalizerCard
-            label="Saldo negativo"
-            amount={data.negativeStockCount}
-            amountFormat="number"
-            tone="danger"
-            icon={ShieldAlert}
-            loading={loading}
-          />
-        </KpiLink>
-        <KpiLink to="/inventory/balances?hasBlocked=1" testId="inventory-kpi-blocked">
-          <FinanceExecutiveTotalizerCard
-            label="Bloqueados"
-            amount={data.blockedItemsCount}
-            amountFormat="number"
-            tone="neutral"
-            icon={Lock}
-            loading={loading}
-          />
-        </KpiLink>
-        <KpiLink to="/inventory/reservations" testId="inventory-kpi-reserved">
-          <FinanceExecutiveTotalizerCard
-            label="Reservados"
-            amount={data.reservedItemsCount}
-            amountFormat="number"
-            tone="info"
-            icon={ClipboardList}
-            loading={loading}
-          />
-        </KpiLink>
-        <KpiLink to="/inventory/balances?hasQuarantine=1" testId="inventory-kpi-quarantine">
-          <FinanceExecutiveTotalizerCard
-            label="Quarentena"
-            amount={data.quarantineItemsCount}
-            amountFormat="number"
-            tone="neutral"
-            icon={Ban}
-            loading={loading}
-          />
-        </KpiLink>
+        <TypeValueCard
+          label="MP"
+          testId="inventory-kpi-raw-material"
+          slice={data.valuation.byItemType.rawMaterial}
+          icon={Layers}
+          loading={loading}
+        />
+        <TypeValueCard
+          label="PA"
+          testId="inventory-kpi-finished-product"
+          slice={data.valuation.byItemType.finishedProduct}
+          icon={Box}
+          loading={loading}
+        />
+        <TypeValueCard
+          label="Componentes"
+          testId="inventory-kpi-component"
+          slice={data.valuation.byItemType.component}
+          icon={Puzzle}
+          loading={loading}
+        />
       </SummaryKpiGrid>
 
       <InventoryBalanceGlossary compact />

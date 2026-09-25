@@ -8,6 +8,7 @@ import type {
   InventoryDashboardRecentMovement,
   InventoryManagerialValuation,
   InventoryValuationMetric,
+  InventoryValuationTypeSlice,
 } from "@/src/types/inventory";
 
 function finiteNumber(value: unknown, fallback = 0): number {
@@ -89,13 +90,34 @@ function normalizeValuationMetric(raw: unknown): InventoryValuationMetric {
   };
 }
 
+function normalizeTypeSlice(raw: unknown, includedInRetailValuation: boolean): InventoryValuationTypeSlice {
+  const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    includedInRetailValuation:
+      typeof row.includedInRetailValuation === "boolean"
+        ? row.includedInRetailValuation
+        : includedInRetailValuation,
+    positiveItemCount: finiteNumber(row.positiveItemCount),
+    salesPotential: normalizeValuationMetric(row.salesPotential),
+  };
+}
+
 function normalizeValuation(raw: unknown): InventoryManagerialValuation {
   const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const byType =
+    row.byItemType && typeof row.byItemType === "object"
+      ? (row.byItemType as Record<string, unknown>)
+      : {};
   return {
     salesPotential: normalizeValuationMetric(row.salesPotential),
     industrialCost: normalizeValuationMetric(row.industrialCost),
     populationItemCount: finiteNumber(row.populationItemCount),
     excludedPositiveItems: finiteNumber(row.excludedPositiveItems),
+    byItemType: {
+      rawMaterial: normalizeTypeSlice(byType.rawMaterial, false),
+      finishedProduct: normalizeTypeSlice(byType.finishedProduct, true),
+      component: normalizeTypeSlice(byType.component, true),
+    },
   };
 }
 

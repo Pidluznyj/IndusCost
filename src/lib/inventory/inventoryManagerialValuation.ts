@@ -48,6 +48,14 @@ export type InventoryValuationMetric = {
   negativePhysicalItems: number;
 };
 
+export type InventoryValuationTypeSlice = {
+  /** Matéria-prima não entra no Varejo 1. PA e componente entram. */
+  includedInRetailValuation: boolean;
+  /** Itens deste tipo com saldo físico positivo. */
+  positiveItemCount: number;
+  salesPotential: InventoryValuationMetric;
+};
+
 export type InventoryManagerialValuation = {
   salesPotential: InventoryValuationMetric;
   industrialCost: InventoryValuationMetric;
@@ -55,6 +63,15 @@ export type InventoryManagerialValuation = {
   populationItemCount: number;
   /** Itens de outros tipos com saldo físico positivo, fora dos dois cards. */
   excludedPositiveItems: number;
+  /**
+   * Recorte do valor de venda. PA + componentes = o card geral.
+   * MP fica de fora da soma de propósito.
+   */
+  byItemType: {
+    rawMaterial: InventoryValuationTypeSlice;
+    finishedProduct: InventoryValuationTypeSlice;
+    component: InventoryValuationTypeSlice;
+  };
 };
 
 export type InventoryValuationBalanceRow = {
@@ -200,36 +217,61 @@ export function computeInventoryManagerialValuation(input: {
 }): InventoryManagerialValuation {
   const sales = emptyDraft();
   const cost = emptyDraft();
+  const finishedSales = emptyDraft();
+  const componentSales = emptyDraft();
   let excludedPositiveItems = 0;
+  let rawMaterialPositiveItems = 0;
+  let finishedPositiveItems = 0;
+  let componentPositiveItems = 0;
 
   for (const line of input.lines) {
     const quantity = line.physicalQuantity;
     if (quantity.eq(ZERO)) continue;
+
+    if (line.itemType === "RAW_MATERIAL") {
+      if (quantity.gt(ZERO)) {
+        rawMaterialPositiveItems += 1;
+        excludedPositiveItems += 1;
+      }
+      continue;
+    }
 
     if (!isInventoryValuationItemType(line.itemType)) {
       if (quantity.gt(ZERO)) excludedPositiveItems += 1;
       continue;
     }
 
+    if (quantity.gt(ZERO)) {
+      if (line.itemType === "FINISHED_PRODUCT") finishedPositiveItems += 1;
+      if (line.itemType === "COMPONENT") componentPositiveItems += 1;
+    }
+
     if (quantity.lt(ZERO)) {
       sales.negativePhysicalItems += 1;
       cost.negativePhysicalItems += 1;
+      if (line.itemType === "FINISHED_PRODUCT") finishedSales.negativePhysicalItems += 1;
+      if (line.itemType === "COMPONENT") componentSales.negativePhysicalItems += 1;
       continue;
     }
 
     applyUnitPrice(sales, quantity, line.productId, input.retailPriceByProductId);
     applyUnitPrice(cost, quantity, line.productId, input.industrialCostByProductId);
+    if (line.itemType === "FINISHED_PRODUCT") {
+      applyUnitPrice(finishedSales, quantity, line.productId, input.retailPriceByProductId);
+    }
+    if (line.itemType === "COMPONENT") {
+      applyUnitPrice(componentSales, quantity, line.productId, input.retailPriceByProductId);
+    }
   }
 
   const retailAvailable = input.retailPriceByProductId != null;
   const costAvailable = input.industrialCostByProductId != null;
+  const retailReason = input.retailUnavailableReason ?? INVENTORY_RETAIL_VALUATION_UNAVAILABLE;
+
+  const emptyRetail = finishMetric(emptyDraft(), retailAvailable, retailReason);
 
   return {
-    salesPotential: finishMetric(
-      sales,
-      retailAvailable,
-      input.retailUnavailableReason ?? INVENTORY_RETAIL_VALUATION_UNAVAILABLE
-    ),
+    salesPotential: finishMetric(sales, retailAvailable, retailReason),
     industrialCost: finishMetric(
       cost,
       costAvailable,
@@ -237,6 +279,23 @@ export function computeInventoryManagerialValuation(input: {
     ),
     populationItemCount: sales.coveredItems + sales.uncoveredItems,
     excludedPositiveItems,
+    byItemType: {
+      rawMaterial: {
+        includedInRetailValuation: false,
+        positiveItemCount: rawMaterialPositiveItems,
+        salesPotential: emptyRetail,
+      },
+      finishedProduct: {
+        includedInRetailValuation: true,
+        positiveItemCount: finishedPositiveItems,
+        salesPotential: finishMetric(finishedSales, retailAvailable, retailReason),
+      },
+      component: {
+        includedInRetailValuation: true,
+        positiveItemCount: componentPositiveItems,
+        salesPotential: finishMetric(componentSales, retailAvailable, retailReason),
+      },
+    },
   };
 }
 

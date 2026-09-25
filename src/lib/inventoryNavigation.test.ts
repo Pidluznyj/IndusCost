@@ -141,6 +141,10 @@ describe("InventoryDashboardTab", () => {
     assert.match(tab, /Valor potencial de venda/);
     assert.match(tab, /Custo industrial do estoque/);
     assert.match(tab, /Tabela Comercial Varejo 1/);
+    assert.match(tab, /label="MP"/);
+    assert.match(tab, /label="PA"/);
+    assert.match(tab, /label="Componentes"/);
+    assert.doesNotMatch(tab, /Abaixo do mínimo/);
     assert.match(tab, /inventory-recent-movements/);
   });
 

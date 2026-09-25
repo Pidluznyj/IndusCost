@@ -150,6 +150,37 @@ describe("inventory managerial valuation", () => {
     assert.equal(result.industrialCost.uncoveredItems, 1);
   });
 
+  it("PA e componentes somam o valor de venda; MP fica de fora", () => {
+    const result = computeInventoryManagerialValuation({
+      lines: [
+        line({ itemId: "pa", itemType: "FINISHED_PRODUCT", productId: "pa-1", physicalQuantity: D(100) }),
+        line({ itemId: "comp", itemType: "COMPONENT", productId: "c-1", physicalQuantity: D(50) }),
+        line({ itemId: "mp", itemType: "RAW_MATERIAL", productId: "m-1", physicalQuantity: D(1000) }),
+      ],
+      retailPriceByProductId: prices([
+        ["pa-1", 10],
+        ["c-1", 4],
+        ["m-1", 99],
+      ]),
+      industrialCostByProductId: prices([
+        ["pa-1", 6],
+        ["c-1", 2],
+        ["m-1", 1],
+      ]),
+    });
+    assert.equal(result.byItemType.finishedProduct.salesPotential.value, 1000);
+    assert.equal(result.byItemType.component.salesPotential.value, 200);
+    assert.equal(result.byItemType.rawMaterial.includedInRetailValuation, false);
+    assert.equal(result.byItemType.rawMaterial.positiveItemCount, 1);
+    assert.equal(result.byItemType.rawMaterial.salesPotential.value, 0);
+    assert.equal(
+      (result.byItemType.finishedProduct.salesPotential.value ?? 0) +
+        (result.byItemType.component.salesPotential.value ?? 0),
+      result.salesPotential.value
+    );
+    assert.equal(result.salesPotential.value, 1200);
+  });
+
   it("10. matéria-prima não recebe Varejo 1", () => {
     const result = computeInventoryManagerialValuation({
       lines: [
