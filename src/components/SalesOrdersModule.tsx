@@ -57,6 +57,8 @@ import {
   getSalesOrderListMarginSummaryUrl,
   getSalesOrderListPageMarginsUrl,
 } from "@/src/lib/salesOrderListMarginSummaryApi";
+import { getSalesOrderGrantedPaymentTermSummaryUrl } from "@/src/lib/salesOrderGrantedPaymentTermApi";
+import type { SalesOrderGrantedPaymentTermSummary } from "@/src/lib/salesOrderGrantedPaymentTerm";
 import {
   downloadSalesOrderReportXlsx,
   getSalesOrderReportPayloadUrl,
@@ -237,6 +239,11 @@ function SalesOrderList() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
+  // Prazo médio concedido — KPI dedicado, para todos que veem Pedidos de Venda
+  // (não depende de showMarginEconomics). null = indisponível/falha.
+  const [paymentTermSummary, setPaymentTermSummary] =
+    useState<SalesOrderGrantedPaymentTermSummary | null>(null);
+  const [paymentTermSummaryLoading, setPaymentTermSummaryLoading] = useState(true);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   // Mês vigente (1–12) — default aplicado na 1ª carga para reduzir o volume da lista.
   const currentMonth = useMemo(() => String(new Date().getMonth() + 1), []);
@@ -625,6 +632,7 @@ function SalesOrderList() {
   const load = useCallback(
     async (page: number, signal?: AbortSignal) => {
       setLoading(true);
+      setPaymentTermSummaryLoading(true);
       try {
         const q = buildListQueryString(page);
         const data = await fetchJsonOk<SalesOrderListResponse | SalesOrderRow[]>(
@@ -653,6 +661,27 @@ function SalesOrderList() {
           setTotalPages(1);
           setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
           setMarginSummary(null);
+        }
+
+        // Prazo médio concedido — endpoint dedicado e leve (queries agregadas),
+        // MESMA query dos filtros aplicados; população completa, não só a página.
+        // Fail-soft: falha aqui nunca derruba a listagem nem limpa as linhas.
+        if (!signal?.aborted) {
+          void fetchJsonOk<{ paymentTermSummary: SalesOrderGrantedPaymentTermSummary }>(
+            getSalesOrderGrantedPaymentTermSummaryUrl(q),
+            { signal }
+          )
+            .then((data) => {
+              if (!signal?.aborted) setPaymentTermSummary(data.paymentTermSummary ?? null);
+            })
+            .catch((e) => {
+              if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+              console.error(e);
+              setPaymentTermSummary(null);
+            })
+            .finally(() => {
+              if (!signal?.aborted) setPaymentTermSummaryLoading(false);
+            });
         }
 
         // Margens só DEPOIS da grade — nunca em paralelo (summary puxava
@@ -711,6 +740,8 @@ function SalesOrderList() {
         setTotalPages(1);
         setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
         setMarginSummary(null);
+        setPaymentTermSummary(null);
+        setPaymentTermSummaryLoading(false);
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -1147,6 +1178,8 @@ function SalesOrderList() {
       <SalesOrderListSummaryCards
         summary={summary}
         marginSummary={marginSummary}
+        paymentTermSummary={paymentTermSummary}
+        paymentTermSummaryLoading={paymentTermSummaryLoading}
         showMarginCard={showMarginEconomics}
         loading={loading}
       />

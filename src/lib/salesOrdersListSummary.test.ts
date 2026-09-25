@@ -395,21 +395,25 @@ describe("salesOrdersListSummary", () => {
     assert.ok(page.includes("SalesOrderListSummaryCards"));
     assert.ok(cards.includes("Pedidos filtrados"));
     assert.ok(cards.includes("Valor vendido"));
-    assert.ok(cards.includes("Imposto a pagar"));
-    assert.ok(cards.includes("taxAmount"));
-    assert.ok(cards.includes("sales-order-list-tax-payable-card"));
-    assert.ok(cards.includes("Custo estimado"));
-    assert.ok(cards.includes("totalCost"));
-    assert.ok(cards.includes("costBreakdown"));
-    assert.ok(cards.includes("buildSalesOrderListCostBreakdownTooltipText"));
-    assert.ok(cards.includes("shareOfSoldValuePercent"));
-    assert.ok(cards.includes("do valor vendido"));
-    assert.ok(cards.includes("createPortal"));
-    assert.ok(cards.includes("sales-order-list-cost-tooltip-panel"));
+    // 2026-09: Imposto a pagar / Custo estimado saíram do overview; entrou Prazo médio concedido.
+    assert.ok(cards.includes("GRANTED_PAYMENT_TERM_CARD_LABEL"));
+    assert.ok(cards.includes("GRANTED_PAYMENT_TERM_CARD_TEST_ID"));
+    assert.ok(cards.includes("paymentTermSummary"));
+    assert.ok(cards.includes("resolveGrantedPaymentTermCardPresentation"));
+    assert.ok(!cards.includes("Imposto a pagar"));
+    assert.ok(!cards.includes("taxAmount"));
+    assert.ok(!cards.includes("sales-order-list-tax-payable-card"));
+    assert.ok(!cards.includes("Custo estimado"));
+    assert.ok(!cards.includes("sales-order-list-estimated-cost-card"));
+    assert.ok(!cards.includes("buildSalesOrderListCostBreakdownTooltipText"));
+    assert.ok(!cards.includes("shareOfSoldValuePercent"));
+    assert.ok(!cards.includes("createPortal"));
+    assert.ok(!cards.includes("sales-order-list-cost-tooltip-panel"));
     assert.ok(cards.includes("Ticket médio"));
     assert.ok(cards.includes("Margem comercial"));
     assert.doesNotMatch(cards, /label="Itens"/);
     assert.ok(page.includes("marginSummary"));
+    assert.ok(page.includes("paymentTermSummary"));
   });
 
   it("buildSalesOrderListTotalsFromPrismaOrders preserva paridade com length", () => {

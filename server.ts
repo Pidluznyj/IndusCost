@@ -477,6 +477,7 @@ import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCash
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
+import { registerSalesOrderGrantedPaymentTermRoutes } from "./src/lib/salesOrderGrantedPaymentTermRoutes.js";
 import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
 import { registerSalesOrderIndustrialResultReportRoutes } from "./src/lib/salesOrderIndustrialResultReportRoutes.js";
 import { registerSalesOrderMonthlyReceivablesReportRoutes } from "./src/lib/salesOrderMonthlyReceivablesReportRoutes.js";
@@ -16407,6 +16408,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"))
       );
     },
+  });
+
+  // KPI "Prazo médio concedido" (listagem) — rota estática, mesma permissão da
+  // listagem (sem margem/custo). Registrada ANTES de `/api/sales-orders/:id`.
+  registerSalesOrderGrantedPaymentTermRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   registerSalesOrderReportRoutes(app, {
