@@ -72,5 +72,8 @@ Com fechamento CLOSED, a tela lê o ledger; PDF/XLSX usam esses dados.
 - Grid **Pendências de períodos anteriores** na prévia: recebimentos de competências
   anteriores ainda não cobertos podem ser incluídos no fechamento atual sem mudar o
   `receiptDate` (ledger guarda `naturalYear/naturalMonth` e `inclusionType`).
+- Autoridade dos relatórios: até 09/2026 a tela, o XLSX, o CSV e o PDF saem como **espelho técnico
+  não oficial** (fonte oficial: Nomus, com "TENHO CIÊNCIA" antes de exportar); fechar, reprocessar e
+  pagar competência pré-cutover é bloqueado no servidor (`COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER`).
 - Detalhes, estados, importação do Nomus, auditoria e troubleshooting:
   [commission-coverage-cutover.md](commission-coverage-cutover.md).

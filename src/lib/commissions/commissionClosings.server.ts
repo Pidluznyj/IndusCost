@@ -2,6 +2,14 @@
  * Fechamentos oficiais — leitura do ledger CLOSED (sem recálculo).
  */
 import * as XLSX from "xlsx";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL,
+  buildCommissionTechnicalMirrorFilename,
+  getCommissionReportingAuthority,
+} from "./commissionCoverageCutover.js";
+import { listLegacyOfficialReportStatuses } from "./commissionReceiptCoverage.server.js";
+import type { CommissionLegacyOfficialReportStatus } from "./commissionReceiptCoverage.shared.js";
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { RECEIPT_CLOSING_SOURCE } from "./commissionReceiptClosing.js";
@@ -67,7 +75,11 @@ function sellerVisibleToScope(
 export async function listCommissionClosings(
   query: ListCommissionClosingsQuery,
   scope: CommissionAccessScope
-): Promise<{ items: CommissionClosingListItem[] }> {
+): Promise<{
+  items: CommissionClosingListItem[];
+  /** Competências pré-cutover do ano: relatório oficial do Nomus registrado ou não. */
+  legacyOfficialReports: CommissionLegacyOfficialReportStatus[];
+}> {
   const where: {
     status?: string | { in: string[] };
     source: string;
@@ -132,7 +144,14 @@ export async function listCommissionClosings(
     if (item) items.push(item);
   }
 
-  return { items };
+  const legacyOfficialReports =
+    query.year != null
+      ? await listLegacyOfficialReportStatuses(prisma, { year: query.year }).catch((error: unknown) => {
+          console.warn("[commissionClosings] relatórios oficiais do Nomus indisponíveis", error);
+          return [];
+        })
+      : [];
+  return { items, legacyOfficialReports };
 }
 
 export async function getCommissionClosingDetail(
@@ -243,20 +262,39 @@ function formatCurrencyBr(value: number): string {
 
 export function buildCommissionClosingSellerXlsx(report: CommissionClosingSellerReport): Buffer {
   const wb = XLSX.utils.book_new();
+  // Autoridade pela competência (helper central) — nunca pelo botão que chamou.
+  const legacy = getCommissionReportingAuthority(report.closing.year, report.closing.month).isLegacyPeriod;
+  const text = COMMISSION_LEGACY_REPORT_TEXT;
+  const disclaimer: unknown[][] = legacy
+    ? [
+        [text.documentTitle],
+        [text.documentMarker],
+        ["Fonte oficial do período:", text.officialSourceValue],
+        ["Período consultado:", report.closing.periodLabel],
+        ["Aviso:", text.fileNotice],
+        ["Natureza do documento:", text.printNotice],
+        ["Tipo do documento:", text.documentTypeLabel],
+        ["Fonte oficial:", text.officialSourceValue],
+        ["Gerado por:", text.generatedBy],
+        ["Cutover oficial:", COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL],
+        [],
+      ]
+    : [];
   const resumo = XLSX.utils.aoa_to_sheet([
-    ["Relatório de Comissão — por vendedor"],
+    ...disclaimer,
+    [legacy ? `${text.documentTitle} — por vendedor` : "Relatório de Comissão — por vendedor"],
     ["Vendedor", report.seller.displayName],
     ["Período", report.closing.periodLabel],
     ["Status", report.closing.statusLabel],
     ["Fechado em", formatDateBr(report.closing.closedAt)],
     ["Fechado por", report.closing.closedByName ?? ""],
-    ["Origem", "Ledger oficial de comissões"],
+    ["Origem", legacy ? `${text.printNotice} (${text.sheetMarker})` : "Ledger oficial de comissões"],
     [],
     ["Total recebido", report.summary.totalReceivedAmount],
     ["Base comissionável", report.summary.commissionBaseAmount],
     ["Comissão bruta", report.summary.grossCommissionAmount],
     ["Comissão excluída", report.summary.excludedCommissionAmount],
-    ["Comissão final", report.summary.finalCommissionAmount],
+    [legacy ? "Comissão reconstruída (não oficial)" : "Comissão final", report.summary.finalCommissionAmount],
     ["Títulos", report.summary.titleCount],
     ["Pedidos", report.summary.orderCount],
     ["Clientes", report.summary.customerCount],
@@ -318,8 +356,14 @@ export function buildCommissionClosingSellerXlsx(report: CommissionClosingSeller
       "",
     ],
   ];
-  const analitico = XLSX.utils.aoa_to_sheet(analiticoRows);
-  analitico["!autofilter"] = { ref: `A1:O${Math.max(report.rows.length + 1, 1)}` };
+  const marker: unknown[][] = legacy
+    ? [[`${text.sheetMarker} — período ${report.closing.periodLabel}`, text.documentTitle], []]
+    : [];
+  const analitico = XLSX.utils.aoa_to_sheet([...marker, ...analiticoRows]);
+  const headerRow = marker.length + 1;
+  analitico["!autofilter"] = {
+    ref: `A${headerRow}:O${Math.max(report.rows.length + headerRow, headerRow)}`,
+  };
   XLSX.utils.book_append_sheet(wb, analitico, "Analítico");
 
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -333,6 +377,14 @@ export function buildCommissionClosingSellerXlsxFilename(report: CommissionClosi
     .replace(/^-|-$/g, "")
     .toLowerCase()
     .slice(0, 40);
+  if (getCommissionReportingAuthority(report.closing.year, report.closing.month).isLegacyPeriod) {
+    return buildCommissionTechnicalMirrorFilename(
+      report.closing.year,
+      report.closing.month,
+      "xlsx",
+      sellerSlug || "vendedor"
+    );
+  }
   return `comissao-fechamento-${report.closing.year}-${String(report.closing.month).padStart(2, "0")}-${sellerSlug || "vendedor"}.xlsx`;
 }
 

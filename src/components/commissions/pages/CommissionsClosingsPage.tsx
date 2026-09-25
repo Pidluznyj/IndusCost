@@ -43,6 +43,14 @@ import type {
 import { isCanonicalSellerDisplayName } from "@/src/lib/commissions/commissionClosings.shared";
 import { CommissionClosingSellerReportPrintDocument } from "@/src/components/commissions/CommissionClosingSellerReportPrintDocument";
 import { CommissionClosingReportPrintDocument } from "@/src/components/commissions/CommissionClosingReportPrintDocument";
+import { CommissionLegacyPeriodBanner } from "@/src/components/commissions/CommissionLegacyPeriodBanner";
+import { CommissionReportingSourcesPanel } from "@/src/components/commissions/CommissionReportingSourcesPanel";
+import { CommissionTechnicalMirrorConfirmDialog } from "@/src/components/commissions/CommissionTechnicalMirrorConfirmDialog";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  formatCommissionYearMonthLabel,
+} from "@/src/lib/commissions/commissionCoverageCutover";
+import type { CommissionLegacyOfficialReportStatus } from "@/src/lib/commissions/commissionReceiptCoverage.shared";
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 import type { ReceiptClosingReprocessPreview } from "@/src/lib/commissions/commissionReceiptClosing";
 import { cn } from "@/src/lib/utils";
@@ -82,6 +90,13 @@ export function CommissionsClosingsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<CommissionClosingListItem[]>([]);
+  /** Competências pré-cutover do ano: relatório oficial do Nomus registrado ou não. */
+  const [legacyReports, setLegacyReports] = useState<CommissionLegacyOfficialReportStatus[]>([]);
+  /** "TENHO CIÊNCIA" pendente (exportação/impressão de competência do histórico Nomus). */
+  const [mirrorConfirm, setMirrorConfirm] = useState<{
+    periodLabel: string;
+    action: () => void | Promise<void>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("list");
@@ -127,10 +142,12 @@ export function CommissionsClosingsPage() {
       if (month) qs.set("month", month);
       qs.set("status", "CLOSED");
       if (search.trim()) qs.set("search", search.trim());
-      const data = await fetchJsonOk<{ items: CommissionClosingListItem[] }>(
-        `/api/commissions/closings?${qs.toString()}`
-      );
+      const data = await fetchJsonOk<{
+        items: CommissionClosingListItem[];
+        legacyOfficialReports?: CommissionLegacyOfficialReportStatus[];
+      }>(`/api/commissions/closings?${qs.toString()}`);
       setItems(data.items ?? []);
+      setLegacyReports(data.legacyOfficialReports ?? []);
     } catch (e: unknown) {
       setError(formatCommissionsApiError(e, "Não foi possível carregar os fechamentos."));
       setItems([]);
@@ -205,6 +222,18 @@ export function CommissionsClosingsPage() {
     }
   }
 
+  /** Competência do histórico Nomus: exportar/imprimir pede "TENHO CIÊNCIA" a cada vez. */
+  function runWithLegacyAcknowledgement(
+    period: { year: number; month: number; reportingAuthority?: { isLegacyPeriod: boolean } | null },
+    action: () => void | Promise<void>
+  ) {
+    if (!period.reportingAuthority?.isLegacyPeriod) {
+      void action();
+      return;
+    }
+    setMirrorConfirm({ periodLabel: formatCommissionYearMonthLabel(period), action });
+  }
+
   async function exportSellerXlsx() {
     if (!detail || !sellerReport) return;
     setExporting(true);
@@ -218,7 +247,10 @@ export function CommissionsClosingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `comissao-${sellerReport.closing.year}-${sellerReport.closing.month}-${sellerReport.seller.displayName}.xlsx`;
+      // Nome do servidor (espelho técnico no histórico Nomus).
+      a.download =
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        `comissao-${sellerReport.closing.year}-${sellerReport.closing.month}-${sellerReport.seller.displayName}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -239,7 +271,9 @@ export function CommissionsClosingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `comissao-fechamento-${item.year}-${String(item.month).padStart(2, "0")}.xlsx`;
+      a.download =
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        `comissao-fechamento-${item.year}-${String(item.month).padStart(2, "0")}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -376,7 +410,11 @@ export function CommissionsClosingsPage() {
     const text = [
       `Relatório de Comissão — ${sellerReport.seller.displayName}`,
       `Fechamento ${sellerReport.closing.periodLabel}`,
-      `Comissão final: ${formatFinanceCurrency(sellerReport.summary.finalCommissionAmount)}`,
+      `${
+        sellerReport.closing.reportingAuthority?.isLegacyPeriod
+          ? "Comissão reconstruída (NÃO OFICIAL — fonte oficial: Nomus)"
+          : "Comissão final"
+      }: ${formatFinanceCurrency(sellerReport.summary.finalCommissionAmount)}`,
       `Base: ${formatFinanceCurrency(sellerReport.summary.commissionBaseAmount)}`,
       `Recebido: ${formatFinanceCurrency(sellerReport.summary.totalReceivedAmount)}`,
       `Títulos: ${sellerReport.summary.titleCount}`,
@@ -403,7 +441,7 @@ export function CommissionsClosingsPage() {
     <div className="space-y-5" data-testid="commissions-closings-page">
       <CommissionsSectionIntro
         title="Fechamentos de Comissão"
-        description="Consulte relatórios oficiais já fechados, por mês e por vendedor. A fonte é o ledger oficial — sem recálculo."
+        description="Consulte os fechamentos oficiais do IndusCost (a partir de 10/2026), por mês e por vendedor. A fonte é o ledger — sem recálculo. Competências até 09/2026 têm o Nomus como fonte oficial; registros técnicos dessas competências aparecem marcados como não oficiais."
         testId="commissions-closings-intro"
       />
 
@@ -497,6 +535,12 @@ export function CommissionsClosingsPage() {
             </div>
           </div>
 
+          <CommissionReportingSourcesPanel
+            year={Number.parseInt(year, 10) || now.getFullYear()}
+            legacyReports={legacyReports}
+            officialDescription="Os fechamentos oficiais do IndusCost (CLOSED) aparecem na lista abaixo."
+          />
+
           {loading ? <CommissionsLoading label="Carregando fechamentos…" /> : null}
 
           {!loading && items.length === 0 ? (
@@ -526,9 +570,24 @@ export function CommissionsClosingsPage() {
               <tbody className="divide-y divide-border">
                 {items.map((item) => (
                   <tr key={item.closingId} data-testid="commissions-closings-row">
-                    <td className="px-3 py-2 font-medium">{item.periodLabel}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {item.periodLabel}
+                      <div
+                        className="text-[11px] font-normal text-muted-foreground"
+                        data-testid="commissions-closings-official-source"
+                      >
+                        Fonte oficial: {item.reportingAuthority?.isLegacyPeriod ? "Nomus" : "IndusCost"}
+                      </div>
+                    </td>
                     <td className="px-3 py-2">
-                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
+                      <span
+                        className={cn(
+                          "rounded px-2 py-0.5 text-xs",
+                          item.reportingAuthority?.isLegacyPeriod
+                            ? "bg-amber-100 font-semibold text-amber-900"
+                            : "bg-emerald-100 text-emerald-900"
+                        )}
+                      >
                         {item.statusLabel}
                       </span>
                     </td>
@@ -561,28 +620,40 @@ export function CommissionsClosingsPage() {
                         <button
                           type="button"
                           className="rounded border px-2 py-1 text-xs hover:bg-accent"
-                          onClick={() => void printClosingGeneral(item)}
+                          onClick={() => runWithLegacyAcknowledgement(item, () => printClosingGeneral(item))}
+                          title={
+                            item.reportingAuthority?.isLegacyPeriod
+                              ? COMMISSION_LEGACY_REPORT_TEXT.exportTooltip
+                              : undefined
+                          }
                         >
-                          PDF
+                          {item.reportingAuthority?.isLegacyPeriod ? "PDF espelho técnico" : "PDF"}
                         </button>
                         <button
                           type="button"
                           className="rounded border px-2 py-1 text-xs hover:bg-accent"
                           disabled={exporting}
-                          onClick={() => void exportClosingXlsx(item)}
+                          onClick={() => runWithLegacyAcknowledgement(item, () => exportClosingXlsx(item))}
+                          title={
+                            item.reportingAuthority?.isLegacyPeriod
+                              ? COMMISSION_LEGACY_REPORT_TEXT.exportTooltip
+                              : undefined
+                          }
                         >
-                          XLSX
+                          {item.reportingAuthority?.isLegacyPeriod ? "XLSX espelho técnico" : "XLSX"}
                         </button>
                         {canManageClosing ? (
                           <>
-                            <button
-                              type="button"
-                              className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50"
-                              onClick={() => void openRecalc(item)}
-                              data-testid="commissions-closings-recalc"
-                            >
-                              Recalcular
-                            </button>
+                            {!item.reportingAuthority?.isLegacyPeriod ? (
+                              <button
+                                type="button"
+                                className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                                onClick={() => void openRecalc(item)}
+                                data-testid="commissions-closings-recalc"
+                              >
+                                Recalcular
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
@@ -605,6 +676,7 @@ export function CommissionsClosingsPage() {
 
       {view === "detail" && detail ? (
         <div className="space-y-4" data-testid="commissions-closings-detail">
+          <CommissionLegacyPeriodBanner authority={detail.closing.reportingAuthority} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <button
@@ -618,7 +690,10 @@ export function CommissionsClosingsPage() {
                 <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
               </button>
               <h2 className="text-lg font-semibold">
-                Fechamento de Comissão — {detail.closing.periodLabel}
+                {detail.closing.reportingAuthority?.isLegacyPeriod
+                  ? COMMISSION_LEGACY_REPORT_TEXT.screenTitle
+                  : "Fechamento de Comissão"}{" "}
+                — {detail.closing.periodLabel}
               </h2>
               <p className="text-sm text-muted-foreground">
                 Fechado em{" "}
@@ -632,28 +707,40 @@ export function CommissionsClosingsPage() {
               <button
                 type="button"
                 className={`${financeBiButtonOutlineClass} inline-flex items-center`}
-                onClick={() => void printClosingGeneral(detail.closing)}
+                onClick={() =>
+                  runWithLegacyAcknowledgement(detail.closing, () => printClosingGeneral(detail.closing))
+                }
               >
-                <Printer className="mr-2 h-4 w-4" /> PDF geral
+                <Printer className="mr-2 h-4 w-4" />{" "}
+                {detail.closing.reportingAuthority?.isLegacyPeriod
+                  ? COMMISSION_LEGACY_REPORT_TEXT.printButton
+                  : "PDF geral"}
               </button>
               <button
                 type="button"
                 className={`${financeBiButtonOutlineClass} inline-flex items-center`}
                 disabled={exporting}
-                onClick={() => void exportClosingXlsx(detail.closing)}
+                onClick={() =>
+                  runWithLegacyAcknowledgement(detail.closing, () => exportClosingXlsx(detail.closing))
+                }
               >
-                <Download className="mr-2 h-4 w-4" /> XLSX geral
+                <Download className="mr-2 h-4 w-4" />{" "}
+                {detail.closing.reportingAuthority?.isLegacyPeriod
+                  ? COMMISSION_LEGACY_REPORT_TEXT.exportButton
+                  : "XLSX geral"}
               </button>
               {canManageClosing ? (
                 <>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
-                    onClick={() => void openRecalc(detail.closing)}
-                    data-testid="commissions-closings-detail-recalc"
-                  >
-                    Recalcular
-                  </button>
+                  {!detail.closing.reportingAuthority?.isLegacyPeriod ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                      onClick={() => void openRecalc(detail.closing)}
+                      data-testid="commissions-closings-detail-recalc"
+                    >
+                      Recalcular
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="inline-flex items-center rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
@@ -694,7 +781,11 @@ export function CommissionsClosingsPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão final a pagar"
+              label={
+                detail.closing.reportingAuthority?.isLegacyPeriod
+                  ? "Comissão reconstruída (não oficial)"
+                  : "Comissão final a pagar"
+              }
               amount={detail.cards.finalCommissionAmount}
               amountFormat="currency"
             />
@@ -783,6 +874,7 @@ export function CommissionsClosingsPage() {
 
       {view === "seller" && sellerReport ? (
         <div className="space-y-4" data-testid="commissions-closings-seller-report">
+          <CommissionLegacyPeriodBanner authority={sellerReport.closing.reportingAuthority} />
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <button
@@ -796,24 +888,28 @@ export function CommissionsClosingsPage() {
                 Relatório de Comissão — {sellerReport.seller.displayName}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Fechamento {sellerReport.closing.periodLabel} · {sellerReport.closing.statusLabel} ·
-                Ledger oficial
+                {sellerReport.closing.reportingAuthority?.isLegacyPeriod
+                  ? `Competência ${sellerReport.closing.periodLabel} · ${sellerReport.closing.statusLabel} · ${COMMISSION_LEGACY_REPORT_TEXT.sellerContext}`
+                  : `Fechamento ${sellerReport.closing.periodLabel} · ${sellerReport.closing.statusLabel} · Ledger oficial`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 className={`${financeBiButtonOutlineClass} inline-flex items-center`}
-                onClick={() => printSellerPdf()}
+                onClick={() => runWithLegacyAcknowledgement(sellerReport.closing, () => printSellerPdf())}
                 data-testid="commissions-closings-seller-pdf"
               >
-                <Printer className="mr-2 h-4 w-4" /> PDF
+                <Printer className="mr-2 h-4 w-4" />{" "}
+                {sellerReport.closing.reportingAuthority?.isLegacyPeriod
+                  ? COMMISSION_LEGACY_REPORT_TEXT.printButton
+                  : "PDF"}
               </button>
               <button
                 type="button"
                 className={`${financeBiButtonOutlineClass} inline-flex items-center`}
                 disabled={exporting}
-                onClick={() => void exportSellerXlsx()}
+                onClick={() => runWithLegacyAcknowledgement(sellerReport.closing, exportSellerXlsx)}
                 data-testid="commissions-closings-seller-xlsx"
               >
                 {exporting ? (
@@ -871,7 +967,11 @@ export function CommissionsClosingsPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão final a pagar"
+              label={
+                sellerReport.closing.reportingAuthority?.isLegacyPeriod
+                  ? "Comissão reconstruída (não oficial)"
+                  : "Comissão final a pagar"
+              }
               amount={sellerReport.summary.finalCommissionAmount}
               amountFormat="currency"
             />
@@ -1199,6 +1299,17 @@ export function CommissionsClosingsPage() {
           </div>
         </div>
       ) : null}
+
+      <CommissionTechnicalMirrorConfirmDialog
+        open={mirrorConfirm != null}
+        periodLabel={mirrorConfirm?.periodLabel ?? ""}
+        onCancel={() => setMirrorConfirm(null)}
+        onConfirm={() => {
+          const action = mirrorConfirm?.action;
+          setMirrorConfirm(null);
+          if (action) void action();
+        }}
+      />
 
       {printRequestId > 0 && printMode === "seller" && sellerReport
         ? createPortal(

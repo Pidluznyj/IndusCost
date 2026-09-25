@@ -400,8 +400,8 @@ describe("enriquecimento no servidor (PREVIEW e CLOSED)", () => {
 
   it("rotas da tela e dos exports passam pelo enriquecimento (PREVIEW e CLOSED)", () => {
     const api = read("src/lib/commissions/commissionReceiptClosingApi.server.ts");
-    assert.match(api, /return enrichReceiptClosingPageInstallments\(\s*prisma,\s*buildReceiptClosingPageFromLedger\(/);
-    assert.match(api, /return enrichReceiptClosingPageInstallments\(\s*prisma,\s*buildReceiptClosingPageFromPreview\(/);
+    assert.match(api, /await enrichReceiptClosingPageInstallments\(\s*prisma,\s*buildReceiptClosingPageFromLedger\(/);
+    assert.match(api, /await enrichReceiptClosingPageInstallments\(\s*prisma,\s*buildReceiptClosingPageFromPreview\(/);
     const server = read("src/lib/commissions/commissionReceiptInstallment.server.ts");
     assert.doesNotMatch(server, /\.(create|update|upsert|delete)(Many)?\(/, "só leitura");
   });

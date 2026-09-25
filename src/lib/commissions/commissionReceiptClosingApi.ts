@@ -24,6 +24,12 @@ import type {
 } from "./commissionReceiptClosing.js";
 import type { ReceiptClosingCarryoverSection } from "./commissionReceiptCoverage.shared.js";
 import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL,
+  formatCommissionYearMonthLabel,
+  getCommissionReportingAuthority,
+} from "./commissionCoverageCutover.js";
+import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
   isReceiptClosingGroupCompanyLine,
   partitionReceiptClosingLinesByGroupCompany,
@@ -1092,6 +1098,7 @@ export function buildReceiptClosingPageFromPreview(input: {
     lines,
     groupCompanyAuditLines: [],
     pendingCarryover: input.pendingCarryover ?? null,
+    reportingAuthority: getCommissionReportingAuthority(input.preview.year, input.preview.month),
   };
   // Escopo "own": a reconciliação Nomus (options.previewLines) usa o motor de
   // prévia bruto e não deve ver linhas de outros vendedores — cai no fallback
@@ -1122,6 +1129,7 @@ export function buildReceiptClosingPageFromLedger(input: {
     closing: input.closing,
     canApply: false,
     applyBlockedReason: "Fechamento já aplicado — use reprocessamento controlado.",
+    reportingAuthority: getCommissionReportingAuthority(input.closing.year, input.closing.month),
     summary: {
       totalReceivables: input.closing.lineCount,
       totalReceivedAmount: input.closing.totalReceivedAmount,
@@ -1170,6 +1178,7 @@ export function buildReceiptClosingPageEmpty(year: number, month: number): Recei
     bySeller: [],
     lines: [],
     groupCompanyAuditLines: [],
+    reportingAuthority: getCommissionReportingAuthority(year, month),
   };
 }
 
@@ -1293,7 +1302,23 @@ export function buildReceiptClosingExportCsv(input: {
       .join(",");
   });
 
+  // Competência do histórico Nomus: o CSV também é espelho técnico, nunca oficial.
+  const authority = getCommissionReportingAuthority(input.year, input.month);
+  const legacyLines = authority.isLegacyPeriod
+    ? [
+        `# ${COMMISSION_LEGACY_REPORT_TEXT.documentTitle}`,
+        `# ${COMMISSION_LEGACY_REPORT_TEXT.documentMarker}`,
+        `# officialSource,${COMMISSION_LEGACY_REPORT_TEXT.officialSourceValue}`,
+        `# period,${formatCommissionYearMonthLabel({ year: input.year, month: input.month })}`,
+        `# notice,${escapeCsvCell(COMMISSION_LEGACY_REPORT_TEXT.fileNotice)}`,
+        `# documentType,${COMMISSION_LEGACY_REPORT_TEXT.documentTypeLabel}`,
+        `# generatedBy,${COMMISSION_LEGACY_REPORT_TEXT.generatedBy}`,
+        `# officialCutover,${COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL}`,
+      ]
+    : [];
+
   return [
+    ...legacyLines,
     `# exportMode=${input.exportMode}`,
     `# calculationHash=${hash}`,
     ...cardLines,

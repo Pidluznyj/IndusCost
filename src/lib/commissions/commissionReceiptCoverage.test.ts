@@ -654,7 +654,7 @@ describe("cobertura de comissão — cutover e janela legada", () => {
     assert.equal(payload.canApply, false);
     assert.equal(payload.applyBlockedReason, COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON);
     assert.equal(payload.carryover ?? null, null);
-    await rejectsWithCode(world.apply(2026, 8), "PRE_CUTOVER_COMPETENCE");
+    await rejectsWithCode(world.apply(2026, 8), "COMMISSION_PERIOD_BEFORE_INDUSCOST_CUTOVER");
     assert.equal(world.closings.size, 0);
   });
 });

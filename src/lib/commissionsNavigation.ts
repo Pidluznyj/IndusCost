@@ -100,14 +100,14 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     label: "Fechamento do mês",
     path: COMMISSIONS_SECTION_PATHS.monthlyClosing,
     description:
-      "Comissão oficial a pagar com base nos títulos baixados/recebidos no mês (settlementDate)",
+      "Fechamento oficial pelos recebimentos reais do mês (receiptDate) a partir de 10/2026; competências até 09/2026 são espelho técnico do histórico oficial do Nomus",
   },
   {
     id: "closings",
     label: "Fechamentos",
     path: COMMISSIONS_SECTION_PATHS.closings,
     description:
-      "Consulta dos fechamentos oficiais já gravados, com relatório por vendedor",
+      "Consulta dos fechamentos oficiais do IndusCost já gravados, com relatório por vendedor (histórico Nomus marcado como não oficial)",
   },
   {
     id: "customerExclusions",

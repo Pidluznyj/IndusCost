@@ -16,6 +16,15 @@ import {
   COMMISSION_CLOSING_SELLER_REPORT_PRINT_SUBTITLE,
   COMMISSION_CLOSING_SELLER_REPORT_PRINT_TITLE,
 } from "@/src/lib/commissions/commissionClosings.shared";
+import { resolveCommissionClosingDocumentTexts } from "@/src/lib/commissions/commissionClosings.shared";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  getCommissionReportingAuthority,
+} from "@/src/lib/commissions/commissionCoverageCutover";
+import {
+  CommissionLegacyPrintNotices,
+  CommissionLegacyPrintPageMarkers,
+} from "@/src/components/commissions/CommissionLegacyPrintMarkers";
 import "@/src/components/sales/sales-order-report-print.css";
 import "@/src/components/commissions/commission-closing-print.css";
 
@@ -66,6 +75,13 @@ export function CommissionClosingSellerReportPrintDocument({
 }) {
   const brand = branding ?? DEFAULT_BRANDING;
   const { closing, seller, summary, rows, totals } = report;
+  // Autoridade pela competência (helper central): histórico Nomus = espelho técnico.
+  const authority = getCommissionReportingAuthority(closing.year, closing.month);
+  const texts = resolveCommissionClosingDocumentTexts(authority, {
+    title: COMMISSION_CLOSING_SELLER_REPORT_PRINT_TITLE,
+    source: COMMISSION_CLOSING_SELLER_REPORT_PRINT_SOURCE,
+    footer: COMMISSION_CLOSING_SELLER_REPORT_PRINT_FOOTER,
+  });
 
   const metaLines = useMemo(
     () => [
@@ -77,29 +93,40 @@ export function CommissionClosingSellerReportPrintDocument({
         value: closing.closedAt ? formatFinanceDateTime(closing.closedAt) : "—",
       },
       { label: "Fechado por", value: displayFinanceText(closing.closedByName) },
-      { label: "Origem", value: COMMISSION_CLOSING_SELLER_REPORT_PRINT_SOURCE },
+      { label: "Origem", value: texts.source },
     ],
-    [closing, seller.displayName]
+    [closing, seller.displayName, texts.source]
   );
 
   return (
-    <div id="sales-orders-print-root" className="comm-closing-print-root">
+    <div
+      id="sales-orders-print-root"
+      className={`comm-closing-print-root${authority.isLegacyPeriod ? " comm-closing-legacy" : ""}`}
+    >
+      <CommissionLegacyPrintPageMarkers pageMarker={texts.pageMarker} />
       <div className="sales-orders-print-document comm-closing-print-document">
         <div className="sales-orders-print-cover">
           <PrintHeader
             branding={brand}
-            documentTitle={COMMISSION_CLOSING_SELLER_REPORT_PRINT_TITLE}
+            documentTitle={texts.title}
             documentHighlight={seller.displayName}
             metaLines={metaLines}
-            subtitle={COMMISSION_CLOSING_SELLER_REPORT_PRINT_SUBTITLE}
+            subtitle={
+              authority.isLegacyPeriod
+                ? COMMISSION_LEGACY_REPORT_TEXT.screenSubtitle
+                : COMMISSION_CLOSING_SELLER_REPORT_PRINT_SUBTITLE
+            }
             className="sales-orders-print-doc-header"
           />
           <div className="sales-orders-print-filter-band">
             <p className="sales-orders-print-filter-band-label">Contexto</p>
             <p className="sales-orders-print-filter-band-value">
-              Fechamento {closing.periodLabel} · {closing.statusLabel} · Ledger oficial
+              {authority.isLegacyPeriod
+                ? `Competência ${closing.periodLabel} · ${closing.statusLabel} · ${COMMISSION_LEGACY_REPORT_TEXT.officialSourceLine}`
+                : `Fechamento ${closing.periodLabel} · ${closing.statusLabel} · Ledger oficial`}
             </p>
           </div>
+          <CommissionLegacyPrintNotices notices={texts.notices} />
         </div>
 
         <section className="sales-orders-print-section sales-orders-print-section--summary">
@@ -114,7 +141,7 @@ export function CommissionClosingSellerReportPrintDocument({
               value={formatFinanceCurrency(summary.commissionBaseAmount)}
             />
             <SummaryKpiCard
-              label="Comissão final"
+              label={authority.isLegacyPeriod ? "Comissão reconstruída (não oficial)" : "Comissão final"}
               value={formatFinanceCurrency(summary.finalCommissionAmount)}
             />
             <SummaryKpiCard label="Títulos" value={formatFinanceInteger(summary.titleCount)} />
@@ -229,7 +256,7 @@ export function CommissionClosingSellerReportPrintDocument({
         </section>
 
         <p className="sales-orders-print-footer-note">
-          {COMMISSION_CLOSING_SELLER_REPORT_PRINT_FOOTER} ·{" "}
+          {texts.footer} ·{" "}
           {formatFinanceDateTime(new Date().toISOString())}
         </p>
       </div>

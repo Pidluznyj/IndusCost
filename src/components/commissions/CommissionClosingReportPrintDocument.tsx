@@ -15,6 +15,15 @@ import {
   COMMISSION_CLOSING_REPORT_PRINT_TITLE,
 } from "@/src/lib/commissions/commissionClosingReportPrintMeta";
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  getCommissionReportingAuthority,
+} from "@/src/lib/commissions/commissionCoverageCutover";
+import { resolveCommissionClosingDocumentTexts } from "@/src/lib/commissions/commissionClosings.shared";
+import {
+  CommissionLegacyPrintNotices,
+  CommissionLegacyPrintPageMarkers,
+} from "@/src/components/commissions/CommissionLegacyPrintMarkers";
 import "@/src/components/sales/sales-order-report-print.css";
 import "@/src/components/commissions/commission-closing-print.css";
 
@@ -57,7 +66,18 @@ export function CommissionClosingReportPrintDocument({
   const cards = payload.cards;
   const closing = payload.closing;
   const period = monthLabel(payload.year, payload.month);
-  const statusLabel = payload.mode === "CLOSED" ? "FECHADO" : payload.mode;
+  // Autoridade pela competência (helper central): histórico Nomus = espelho técnico.
+  const authority = getCommissionReportingAuthority(payload.year, payload.month);
+  const texts = resolveCommissionClosingDocumentTexts(authority, {
+    title: COMMISSION_CLOSING_REPORT_PRINT_TITLE,
+    source: COMMISSION_CLOSING_REPORT_PRINT_SOURCE,
+    footer: COMMISSION_CLOSING_REPORT_PRINT_FOOTER_NOTE,
+  });
+  const statusLabel = authority.isLegacyPeriod
+    ? "ESPELHO TÉCNICO — NÃO OFICIAL"
+    : payload.mode === "CLOSED"
+      ? "FECHADO"
+      : payload.mode;
 
   const metaLines = useMemo(() => {
     const lines = [
@@ -67,7 +87,7 @@ export function CommissionClosingReportPrintDocument({
         label: "Registros",
         value: formatFinanceInteger(payload.lines.length),
       },
-      { label: "Origem", value: COMMISSION_CLOSING_REPORT_PRINT_SOURCE },
+      { label: "Origem", value: texts.source },
     ];
     if (closing?.closedAt) {
       lines.splice(2, 0, {
@@ -88,6 +108,7 @@ export function CommissionClosingReportPrintDocument({
     period,
     payload.lines.length,
     statusLabel,
+    texts.source,
   ]);
 
   const filterBand = [
@@ -103,21 +124,30 @@ export function CommissionClosingReportPrintDocument({
     .join(" · ");
 
   return (
-    <div id="sales-orders-print-root" className="comm-closing-print-root">
+    <div
+      id="sales-orders-print-root"
+      className={`comm-closing-print-root${authority.isLegacyPeriod ? " comm-closing-legacy" : ""}`}
+    >
+      <CommissionLegacyPrintPageMarkers pageMarker={texts.pageMarker} />
       <div className="sales-orders-print-document comm-closing-print-document">
         <div className="sales-orders-print-cover">
           <PrintHeader
             branding={brand}
-            documentTitle={COMMISSION_CLOSING_REPORT_PRINT_TITLE}
+            documentTitle={texts.title}
             documentHighlight={period}
             metaLines={metaLines}
-            subtitle={COMMISSION_CLOSING_REPORT_PRINT_SUBTITLE}
+            subtitle={
+              authority.isLegacyPeriod
+                ? COMMISSION_LEGACY_REPORT_TEXT.screenSubtitle
+                : COMMISSION_CLOSING_REPORT_PRINT_SUBTITLE
+            }
             className="sales-orders-print-doc-header"
           />
           <div className="sales-orders-print-filter-band">
             <p className="sales-orders-print-filter-band-label">Filtros / contexto</p>
             <p className="sales-orders-print-filter-band-value">{filterBand}</p>
           </div>
+          <CommissionLegacyPrintNotices notices={texts.notices} />
         </div>
 
         <section className="sales-orders-print-section">
@@ -160,7 +190,7 @@ export function CommissionClosingReportPrintDocument({
               value={formatFinanceCurrency(cards.excludedCommissionAmount)}
             />
             <SummaryKpiCard
-              label="Comissão final a pagar"
+              label={authority.isLegacyPeriod ? "Comissão reconstruída (não oficial)" : "Comissão final a pagar"}
               value={formatFinanceCurrency(cards.finalCommissionAmount)}
             />
             <SummaryKpiCard
@@ -276,7 +306,7 @@ export function CommissionClosingReportPrintDocument({
         </section>
 
         <footer className="sales-orders-print-footer">
-          <p>{COMMISSION_CLOSING_REPORT_PRINT_FOOTER_NOTE}</p>
+          <p>{texts.footer}</p>
         </footer>
       </div>
     </div>

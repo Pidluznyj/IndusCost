@@ -12,7 +12,13 @@ import {
 } from "./commissionReceiptClosingApi.shared.js";
 import { formatInstallmentLabel } from "./commissionReceiptInstallment.shared.js";
 import { COMMISSION_LEDGER_INCLUSION_TYPE_LABELS } from "./commissionReceiptCoverage.shared.js";
-import { formatCommissionYearMonthLabel } from "./commissionCoverageCutover.js";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL,
+  buildCommissionTechnicalMirrorFilename,
+  formatCommissionYearMonthLabel,
+  getCommissionReportingAuthority,
+} from "./commissionCoverageCutover.js";
 
 export const RECEIPT_CLOSING_DETAIL_EXPORT_TITLE =
   "COMERCIAL: RELATÓRIO DE COMISSÕES";
@@ -165,15 +171,58 @@ function buildPorVendedorRows(payload: ReceiptClosingPagePayload) {
   }));
 }
 
-function buildResumoRows(payload: ReceiptClosingPagePayload) {
+/**
+ * Linhas antes da tabela nas abas "Analítico" e "Por vendedor" do espelho técnico
+ * (marcador de documento não oficial + linha em branco). Leitores: `range` = este valor.
+ */
+export const RECEIPT_CLOSING_LEGACY_SHEET_TABLE_OFFSET = 2;
+
+/**
+ * Bloco inicial da 1ª aba do espelho técnico (competência do histórico Nomus),
+ * antes de qualquer dado: deixa o arquivo inequivocamente não oficial.
+ */
+export function buildReceiptClosingLegacyDisclaimerRows(year: number, month: number): string[][] {
+  const text = COMMISSION_LEGACY_REPORT_TEXT;
+  return [
+    [text.documentTitle],
+    [text.documentMarker],
+    ["Fonte oficial do período:", text.officialSourceValue],
+    ["Período consultado:", formatCommissionYearMonthLabel({ year, month })],
+    ["Aviso:", text.fileNotice],
+    ["Natureza do documento:", text.printNotice],
+    ["Tipo do documento:", text.documentTypeLabel],
+    ["Fonte oficial:", text.officialSourceValue],
+    ["Gerado por:", text.generatedBy],
+    ["Cutover oficial:", COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL],
+  ];
+}
+
+/** Marcador das demais abas: quem recortar só uma aba não perde a origem. */
+function buildLegacySheetMarkerRow(year: number, month: number): string[] {
+  const text = COMMISSION_LEGACY_REPORT_TEXT;
+  return [
+    `${text.sheetMarker} — período ${formatCommissionYearMonthLabel({ year, month })}`,
+    `${text.documentTitle} · gerado pelo IndusCost · cutover oficial ${COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL}`,
+  ];
+}
+
+function buildResumoRows(payload: ReceiptClosingPagePayload, legacy: boolean) {
   const { year, month, cards, materializationSummary, closing, mode } = payload;
-  const title =
-    mode === "CLOSED"
+  const title = legacy
+    ? COMMISSION_LEGACY_REPORT_TEXT.documentTitle
+    : mode === "CLOSED"
       ? RECEIPT_CLOSING_DETAIL_EXPORT_TITLE
       : RECEIPT_CLOSING_DETAIL_EXPORT_TITLE_PREVIEW;
   return [
     { Campo: "Relatório", Valor: title },
-    { Campo: "Status", Valor: mode === "CLOSED" ? "FECHADO" : mode },
+    {
+      Campo: "Status",
+      Valor: legacy
+        ? `${COMMISSION_LEGACY_REPORT_TEXT.documentTypeLabel} — NÃO OFICIAL`
+        : mode === "CLOSED"
+          ? "FECHADO"
+          : mode,
+    },
     { Campo: "Ano", Valor: year },
     { Campo: "Mês", Valor: month },
     { Campo: "Fechado em", Valor: closing?.closedAt ? formatDateBr(closing.closedAt) : "" },
@@ -201,7 +250,11 @@ function buildResumoRows(payload: ReceiptClosingPagePayload) {
     { Campo: "Base comissionável", Valor: formatCurrencyBr(cards.commissionableBaseAmount) },
     { Campo: "Comissão bruta", Valor: formatCurrencyBr(cards.grossCommissionAmount) },
     { Campo: "Comissão excluída", Valor: formatCurrencyBr(cards.excludedCommissionAmount) },
-    { Campo: "Comissão final a pagar", Valor: formatCurrencyBr(cards.finalCommissionAmount) },
+    {
+      // Histórico Nomus: valor reconstruído, nunca "a pagar".
+      Campo: legacy ? "Comissão reconstruída (não oficial)" : "Comissão final a pagar",
+      Valor: formatCurrencyBr(cards.finalCommissionAmount),
+    },
     {
       Campo: "Divergências críticas aceitas",
       Valor: closing?.notes?.includes("CRITICAL_DIVERGENCE_ACCEPTED") ? "Sim" : "Não",
@@ -256,37 +309,56 @@ export function buildReceiptClosingDetailExportFilename(
   month: number,
   exportMode: "PREVIEW" | "CLOSED" | "NONE"
 ): string {
+  // Histórico Nomus: nome de espelho técnico, nunca de relatório oficial.
+  if (getCommissionReportingAuthority(year, month).isLegacyPeriod) {
+    return buildCommissionTechnicalMirrorFilename(year, month, "xlsx");
+  }
   const mm = String(month).padStart(2, "0");
   const suffix = exportMode === "CLOSED" ? "fechado" : "previa";
   return `commission-receipt-closing-detalhamento-${year}-${mm}-${suffix}.xlsx`;
 }
 
+/**
+ * Tabela com `rowsBefore` linhas acima (marcador do espelho técnico). Sem linhas
+ * acima, idêntico ao `json_to_sheet` de sempre.
+ */
+function tableSheet<T extends Record<string, unknown>>(
+  objects: T[],
+  header: readonly string[],
+  rowsBefore: string[][]
+): XLSX.WorkSheet {
+  if (rowsBefore.length === 0) return XLSX.utils.json_to_sheet(objects, { header: [...header] });
+  const ws = XLSX.utils.aoa_to_sheet(rowsBefore);
+  XLSX.utils.sheet_add_json(ws, objects, { header: [...header], origin: { r: rowsBefore.length, c: 0 } });
+  return ws;
+}
+
 export function buildReceiptClosingDetailExportWorkbook(
   payload: ReceiptClosingPagePayload
 ): XLSX.WorkBook {
+  // A autoridade vem SEMPRE da competência (helper central), nunca do botão nem de
+  // um campo do payload: chamada direta também gera espelho técnico no histórico.
+  const legacy = getCommissionReportingAuthority(payload.year, payload.month).isLegacyPeriod;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(
-    wb,
-    XLSX.utils.json_to_sheet(buildResumoRows(payload)),
-    "Resumo"
-  );
+  const resumoRows = buildResumoRows(payload, legacy);
+  const disclaimerRows = legacy ? [...buildReceiptClosingLegacyDisclaimerRows(payload.year, payload.month), []] : [];
+  XLSX.utils.book_append_sheet(wb, tableSheet(resumoRows, ["Campo", "Valor"], disclaimerRows), "Resumo");
 
+  const markerRows = legacy ? [buildLegacySheetMarkerRow(payload.year, payload.month), []] : [];
   const context: DetailRowContext = {
     year: payload.year,
     month: payload.month,
     exportMode: payload.exportMode,
   };
   const detailObjects = payload.lines.map((line) => mapDetailRow(line, context));
-  const detailSheet = XLSX.utils.json_to_sheet(detailObjects, { header: [...DETAIL_COLUMNS] });
-  const headerRowIndex = 1;
+  const detailSheet = tableSheet(detailObjects, DETAIL_COLUMNS, markerRows);
+  const headerRowIndex = markerRows.length + 1;
   const lastRow = detailObjects.length + headerRowIndex;
   applyDetailSheetFormatting(detailSheet, headerRowIndex, lastRow);
   XLSX.utils.book_append_sheet(wb, detailSheet, "Analítico");
 
   const porVendedorObjects = buildPorVendedorRows(payload);
-  const porVendedorSheet = XLSX.utils.json_to_sheet(porVendedorObjects, {
-    header: [...POR_VENDEDOR_COLUMNS],
-  });
+  const porVendedorSheet = tableSheet(porVendedorObjects, POR_VENDEDOR_COLUMNS, markerRows);
   porVendedorSheet["!cols"] = [
     { wch: 28 },
     { wch: 16 },

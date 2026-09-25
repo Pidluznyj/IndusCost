@@ -17,6 +17,17 @@ import {
   COMMISSION_SOURCE_MISMATCH_STATUS,
   lineFinalCommissionForDiagnosis,
 } from "./commissionReportOfficialReconcile.js";
+import {
+  COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL,
+  COMMISSION_LEGACY_REPORT_TEXT,
+  COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL,
+  COMMISSION_TECHNICAL_MIRROR_FILE_PREFIX,
+  getCommissionReportingAuthority,
+  getCommissionReportingAuthorityForRange,
+  type CommissionRangeReportingAuthority,
+  type CommissionReportingSource,
+} from "./commissionCoverageCutover.js";
+import type { CommissionLegacyOfficialReportStatus } from "./commissionReceiptCoverage.shared.js";
 
 export const COMMISSION_REPORTS_UNRESOLVED_SELLER_KEY = "unresolved" as const;
 export const COMMISSION_REPORTS_NO_SELLER_KEY = "no-seller" as const;
@@ -142,7 +153,10 @@ export type CommissionReportRecord = {
   isSellerUnresolved: boolean;
   isNoSeller: boolean;
   isZeroCommission: boolean;
+  /** "a pagar" só em competência oficial do IndusCost (nunca no histórico Nomus). */
   isPayable: boolean;
+  /** Fonte oficial do relatório da competência da linha (helper central do cutover). */
+  officialSource: CommissionReportingSource;
   /** Linha diverge do CommissionOrderSnapshot oficial (schedule zerado / desatualizado). */
   divergesFromOrderSnapshot: boolean;
   source: string;
@@ -205,7 +219,27 @@ export type CommissionReportsPayload = {
     periodStatus: CommissionReportPeriodStatus;
     closingId: string | null;
   }>;
+  /**
+   * Autoridade dos meses consultados: com qualquer competência do histórico Nomus o
+   * relatório é espelho técnico (não oficial). Calculada no servidor.
+   */
+  reportingAuthority?: CommissionRangeReportingAuthority;
+  /** Competências pré-cutover do ano: relatório oficial do Nomus registrado ou não. */
+  legacyOfficialReports?: CommissionLegacyOfficialReportStatus[];
 };
+
+/** Autoridade do relatório pelos meses consultados (helper central; nunca pelo botão). */
+export function resolveCommissionReportsAuthority(
+  year: number,
+  months: CommissionReportsMonthsFilter
+): CommissionRangeReportingAuthority {
+  const resolved = resolveCommissionReportMonths(months);
+  const list = resolved.length > 0 ? resolved : [...COMMISSION_REPORT_ALL_MONTHS];
+  return getCommissionReportingAuthorityForRange(
+    { year, month: Math.min(...list) },
+    { year, month: Math.max(...list) }
+  );
+}
 
 export type CommissionReportSourceLine = Omit<ReceiptClosingApiLine, "ratePercent"> & {
   /** null = percentual não auditável (nunca inventar 0% ao reconciliar com o snapshot oficial). */
@@ -303,6 +337,7 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
   const gross = lineGross(line);
   const excluded = isCustomerExcluded || isGroupCompany ? gross : 0;
   const final = lineFinalCommission(line);
+  const authority = getCommissionReportingAuthority(line.year, line.month);
   const divergesFromOrderSnapshot =
     line.status === COMMISSION_SOURCE_MISMATCH_STATUS ||
     line.source === "ORDER_SNAPSHOT" ||
@@ -346,7 +381,9 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     isSellerUnresolved,
     isNoSeller,
     isZeroCommission: final === 0 && gross === 0,
-    isPayable: line.status === "COMMISSIONABLE" && final > 0,
+    // Histórico Nomus: valor reconstruído, nunca "a pagar" pelo IndusCost.
+    isPayable: authority.officialInIndusCost && line.status === "COMMISSIONABLE" && final > 0,
+    officialSource: authority.source,
     divergesFromOrderSnapshot,
     source: line.source,
   };
@@ -636,6 +673,7 @@ export function buildEmptyCommissionReportsPayload(
       search: query.search,
     },
     monthsIncluded: [],
+    reportingAuthority: resolveCommissionReportsAuthority(query.year, query.months),
   };
 }
 
@@ -673,6 +711,7 @@ export function assembleCommissionReportsPayload(
       search: query.search,
     },
     monthsIncluded,
+    reportingAuthority: resolveCommissionReportsAuthority(query.year, query.months),
   };
 }
 
@@ -695,6 +734,34 @@ export function buildCommissionReportsExportWorkbook(input: {
   summary?: CommissionReportSummary;
 }): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
+  // Autoridade SEMPRE pelos meses do relatório (helper central): chamada direta
+  // também sai marcada como espelho técnico quando inclui o histórico Nomus.
+  const authority = resolveCommissionReportsAuthority(input.year, input.months);
+  const legacy = authority.includesLegacyPeriod;
+  const text = COMMISSION_LEGACY_REPORT_TEXT;
+  const periodLabel = `${formatCommissionReportMonthsLabel(input.months)} de ${input.year}`;
+  const officialSourceLabel =
+    authority.source === "MIXED"
+      ? `NOMUS até ${COMMISSION_LAST_NOMUS_OFFICIAL_DAY_LABEL} · INDUSCOST a partir de ${COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL}`
+      : text.officialSourceValue;
+  const disclaimerRows: unknown[][] = legacy
+    ? [
+        [text.documentTitle],
+        [text.documentMarker],
+        ["Fonte oficial do período:", officialSourceLabel],
+        ["Período consultado:", periodLabel],
+        ["Aviso:", text.fileNotice],
+        ["Natureza do documento:", text.printNotice],
+        ["Tipo do documento:", text.documentTypeLabel],
+        ["Fonte oficial:", officialSourceLabel],
+        ["Gerado por:", text.generatedBy],
+        ["Cutover oficial:", COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL],
+        [],
+      ]
+    : [];
+  const markerRows: unknown[][] = legacy
+    ? [[`${text.sheetMarker} — ${periodLabel}`, `${text.documentTitle} · gerado pelo IndusCost`], []]
+    : [];
 
   const sellerRows = [
     [
@@ -720,7 +787,11 @@ export function buildCommissionReportsExportWorkbook(input: {
       s.primaryStatus,
     ]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sellerRows), "Resumo por vendedor");
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([...disclaimerRows, ...sellerRows]),
+    "Resumo por vendedor"
+  );
 
   const detailRows = [
     [
@@ -744,6 +815,7 @@ export function buildCommissionReportsExportWorkbook(input: {
       "Empresa do grupo",
       "Sem vendedor",
       "Motivo",
+      ...(legacy ? ["Fonte oficial"] : []),
     ],
     ...input.records.map((r) => [
       r.year,
@@ -766,19 +838,32 @@ export function buildCommissionReportsExportWorkbook(input: {
       r.isGroupCompany ? "Sim" : "Não",
       r.isNoSeller || r.isSellerUnresolved ? "Sim" : "Não",
       r.statusReason ?? r.exclusionReason ?? "",
+      ...(legacy
+        ? [
+            (r.officialSource ?? getCommissionReportingAuthority(r.year, r.month).source) === "NOMUS"
+              ? "NOMUS — espelho técnico (não oficial)"
+              : "INDUSCOST",
+          ]
+        : []),
     ]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), "Registros detalhados");
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([...markerRows, ...detailRows]),
+    "Registros detalhados"
+  );
 
   const summary = input.summary;
   const meta = XLSX.utils.aoa_to_sheet([
-    ["Relatório de comissões"],
+    ...markerRows,
+    [legacy ? text.documentTitle : "Relatório de comissões"],
     ["Ano", input.year],
     ["Meses", formatCommissionReportMonthsLabel(input.months)],
     ["Gerado em", new Date().toISOString()],
     [
       "Observação",
-      "Valores oficiais do ledger/prévia de Fechamento (competência pela data real do recebimento; a coluna Baixa é informação administrativa). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
+      (legacy ? `${text.fileNotice} ` : "") +
+        "Valores do ledger/prévia de Fechamento (competência pela data real do recebimento; a coluna Baixa é informação administrativa). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
     ],
     ["Clientes excluídos (únicos)", summary?.excludedCustomerCount ?? ""],
     ["Comissão excluída por regra", summary?.excludedCommission ?? ""],
@@ -797,16 +882,31 @@ export function buildCommissionReportsExportFilename(
   year: number,
   months: CommissionReportsMonthsFilter
 ): string {
+  // Com competência do histórico Nomus o arquivo é espelho técnico (nome não oficial).
+  if (resolveCommissionReportsAuthority(year, months).includesLegacyPeriod) {
+    return buildCommissionReportsFilenameBase(year, months, COMMISSION_TECHNICAL_MIRROR_FILE_PREFIX).replace(
+      /\.xlsx$/,
+      "-induscost.xlsx"
+    );
+  }
+  return buildCommissionReportsFilenameBase(year, months, "comissao-relatorio");
+}
+
+function buildCommissionReportsFilenameBase(
+  year: number,
+  months: CommissionReportsMonthsFilter,
+  prefix: string
+): string {
   if (isCommissionReportAllMonths(months)) {
-    return `comissao-relatorio-${year}-todos-os-meses.xlsx`;
+    return `${prefix}-${year}-todos-os-meses.xlsx`;
   }
   const resolved = resolveCommissionReportMonths(months);
   if (resolved.length === 0) {
-    return `comissao-relatorio-${year}-todos-os-meses.xlsx`;
+    return `${prefix}-${year}-todos-os-meses.xlsx`;
   }
   if (resolved.length <= 3) {
     const slugs = resolved.map((m) => MONTH_FILE_SLUGS[m - 1] ?? String(m));
-    return `comissao-relatorio-${year}-${slugs.join("-")}.xlsx`;
+    return `${prefix}-${year}-${slugs.join("-")}.xlsx`;
   }
-  return `comissao-relatorio-${year}-${resolved.length}-meses.xlsx`;
+  return `${prefix}-${year}-${resolved.length}-meses.xlsx`;
 }

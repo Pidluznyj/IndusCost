@@ -144,6 +144,18 @@ export function CommissionsReceiptClosingDetailTable({
                     {carryoverTag}
                   </span>
                 ) : null}
+                {row.coverageNote ? (
+                  // Onde os recebimentos foram contemplados (ex.: Nomus 09/2026) — explica
+                  // carryover do histórico sem mudar o receiptDate.
+                  <span
+                    className="mt-0.5 block w-fit rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-700"
+                    title={row.coverageNote.detail}
+                    data-testid="commissions-receipt-closing-coverage-tag"
+                  >
+                    {row.coverageNote.tag}
+                    <span className="sr-only"> — {row.coverageNote.detail}</span>
+                  </span>
+                ) : null}
               </td>
               <td className={cn(TD, "whitespace-nowrap")}>{row.orderCode ?? "—"}</td>
               <td className={TD}>{row.customerName ?? "—"}</td>

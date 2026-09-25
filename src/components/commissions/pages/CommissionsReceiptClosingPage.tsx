@@ -28,7 +28,12 @@ import {
 import { CommissionsPeriodFilterFields } from "@/src/components/commissions/CommissionsPeriodFilterFields";
 import { CommissionsReceiptClosingDetailTable } from "@/src/components/commissions/CommissionsReceiptClosingDetailTable";
 import { CommissionsReceiptClosingCarryoverGrid } from "@/src/components/commissions/CommissionsReceiptClosingCarryoverGrid";
-import { isCompetenceOfficialInIndusCost } from "@/src/lib/commissions/commissionCoverageCutover";
+import {
+  COMMISSION_LEGACY_REPORT_TEXT,
+  formatCommissionYearMonthLabel,
+} from "@/src/lib/commissions/commissionCoverageCutover";
+import { CommissionLegacyPeriodBanner } from "@/src/components/commissions/CommissionLegacyPeriodBanner";
+import { CommissionTechnicalMirrorConfirmDialog } from "@/src/components/commissions/CommissionTechnicalMirrorConfirmDialog";
 import {
   summarizeCarryoverRows,
   type ReceiptClosingCarryoverRow,
@@ -81,11 +86,14 @@ function SellerTable({
   totals,
   selectedKey,
   onRowClick,
+  legacy = false,
 }: {
   rows: CommissionsReceiptClosingSellerRow[];
   totals: ReceiptClosingSellerTotals;
   selectedKey: string | null;
   onRowClick: (row: CommissionsReceiptClosingSellerRow) => void;
+  /** Competência do histórico Nomus: valores reconstruídos, nunca "final". */
+  legacy?: boolean;
 }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum vendedor no período.</p>;
@@ -100,7 +108,9 @@ function SellerTable({
             <th className="px-2 py-2 text-right">Base</th>
             <th className="px-2 py-2 text-right">Comissão bruta</th>
             <th className="px-2 py-2 text-right">Comissão excluída</th>
-            <th className="px-2 py-2 text-right">Comissão final</th>
+            <th className="px-2 py-2 text-right">
+              {legacy ? "Comissão reconstruída" : "Comissão final"}
+            </th>
             <th className="px-2 py-2 text-right">Exceções</th>
           </tr>
         </thead>
@@ -200,6 +210,11 @@ export function CommissionsReceiptClosingPage() {
   const [carryoverChecked, setCarryoverChecked] = useState<Set<string>>(() => new Set());
   /** Recebimentos incluídos na prévia atual (o servidor recalcula e revalida). */
   const [includedCarryoverIds, setIncludedCarryoverIds] = useState<number[]>([]);
+  /** "TENHO CIÊNCIA" pendente (exportação/impressão de competência do histórico Nomus). */
+  const [mirrorConfirm, setMirrorConfirm] = useState<{
+    periodLabel: string;
+    action: () => void | Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
@@ -365,12 +380,26 @@ export function CommissionsReceiptClosingPage() {
     }
   }, [year, month, nomusBase, nomusCommission]);
 
+  /** Competência exportada = a exibida (payload), não o que está digitado no filtro. */
+  function exportTarget(): { year: string; month: string } {
+    return data ? { year: String(data.year), month: String(data.month) } : { year, month };
+  }
+
+  /** Mesma prévia da tela: pendências incluídas vão junto (só IDs; o servidor recalcula). */
+  function exportQueryParams(): URLSearchParams {
+    const qs = nomusQueryParams();
+    if (data?.mode === "PREVIEW" && includedCarryoverIds.length > 0) {
+      qs.set("carryoverReceiptIds", includedCarryoverIds.join(","));
+    }
+    return qs;
+  }
+
   async function exportDetailXlsxAll() {
     setExportingDetail(true);
     try {
-      const qs = nomusQueryParams();
+      const target = exportTarget();
       const res = await fetch(
-        `/api/commissions/receipt-closing/${encodeURIComponent(year)}/${encodeURIComponent(month)}/export-detail.xlsx?${qs}`
+        `/api/commissions/receipt-closing/${encodeURIComponent(target.year)}/${encodeURIComponent(target.month)}/export-detail.xlsx?${exportQueryParams()}`
       );
       if (!res.ok) throw new Error("Falha ao exportar detalhamento.");
       const blob = await res.blob();
@@ -378,7 +407,11 @@ export function CommissionsReceiptClosingPage() {
       const match = disposition.match(/filename="([^"]+)"/);
       const filename =
         match?.[1] ??
-        `commission-receipt-closing-detalhamento-${year}-${month.padStart(2, "0")}-previa.xlsx`;
+        buildReceiptClosingDetailExportFilename(
+          Number(target.year),
+          Number(target.month),
+          data?.exportMode ?? "PREVIEW"
+        );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -402,8 +435,8 @@ export function CommissionsReceiptClosingPage() {
         filteredDetailLines as ReceiptClosingPagePayload["lines"]
       );
       const baseName = buildReceiptClosingDetailExportFilename(
-        Number(year),
-        Number(month),
+        data.year,
+        data.month,
         data.exportMode === "NONE" ? "PREVIEW" : data.exportMode
       );
       const suffix = sellerFilterLabel?.replace(/[^\w\-]+/g, "_") ?? "filtrado";
@@ -427,16 +460,20 @@ export function CommissionsReceiptClosingPage() {
   async function exportCsv() {
     setExporting(true);
     try {
-      const qs = nomusQueryParams();
+      const target = exportTarget();
       const res = await fetch(
-        `/api/commissions/receipt-closing/${encodeURIComponent(year)}/${encodeURIComponent(month)}/export.csv?${qs}`
+        `/api/commissions/receipt-closing/${encodeURIComponent(target.year)}/${encodeURIComponent(target.month)}/export.csv?${exportQueryParams()}`
       );
       if (!res.ok) throw new Error("Falha ao exportar CSV.");
       const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `commission-receipt-closing-${year}-${month.padStart(2, "0")}.csv`;
+      // Nome definido pelo servidor (espelho técnico no histórico Nomus).
+      a.download =
+        disposition.match(/filename="([^"]+)"/)?.[1] ??
+        `commission-receipt-closing-${target.year}-${target.month.padStart(2, "0")}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -555,6 +592,26 @@ export function CommissionsReceiptClosingPage() {
     );
   }
 
+  // Autoridade do relatório vem do servidor (helper central) — a tela não compara datas.
+  const reportingAuthority = data?.reportingAuthority ?? null;
+  const legacyPeriod = reportingAuthority?.isLegacyPeriod === true;
+  const legacyText = COMMISSION_LEGACY_REPORT_TEXT;
+
+  /**
+   * Exportar/imprimir competência do histórico Nomus pede "TENHO CIÊNCIA" a cada vez
+   * (não fica lembrado). Competência oficial segue direto.
+   */
+  function runWithLegacyAcknowledgement(action: () => void | Promise<void>) {
+    if (!legacyPeriod || !data) {
+      void action();
+      return;
+    }
+    setMirrorConfirm({
+      periodLabel: formatCommissionYearMonthLabel({ year: data.year, month: data.month }),
+      action,
+    });
+  }
+
   const cards = data?.cards;
   const isClosed = data?.mode === "CLOSED";
   const applyReady =
@@ -569,10 +626,19 @@ export function CommissionsReceiptClosingPage() {
             Comissões
           </p>
           <h3 className="text-xl font-extrabold tracking-tight text-[#111827]">
-            Fechamento por recebimento
+            {legacyPeriod ? legacyText.screenTitle : "Fechamento por recebimento"}
           </h3>
+          {legacyPeriod ? (
+            <p
+              className="mt-1 text-sm font-semibold text-amber-800"
+              data-testid="commissions-receipt-closing-legacy-subtitle"
+            >
+              {legacyText.screenSubtitle}
+            </p>
+          ) : null}
           <p className="mt-1 max-w-3xl text-sm text-[#6B7280]">
-            Fechamento oficial mensal com base nos recebimentos reais do mês (
+            {legacyPeriod ? "Reconstrução técnica" : "Fechamento oficial mensal"} com base nos
+            recebimentos reais do mês (
             <code>receiptDate</code>) — a baixa do Contas a Receber (<code>settlementDate</code>)
             é informação administrativa e não define a competência. Valores vêm exclusivamente da
             API — sem recálculo no frontend.
@@ -595,11 +661,13 @@ export function CommissionsReceiptClosingPage() {
           <button
             type="button"
             className={financeBiButtonOutlineClass}
-            onClick={() => void exportCsv()}
+            onClick={() => runWithLegacyAcknowledgement(exportCsv)}
             disabled={exporting || !data || data.lines.length === 0}
+            title={legacyPeriod ? legacyText.exportTooltip : undefined}
+            data-testid="commissions-receipt-closing-export-csv"
           >
             <Download className="mr-2 h-4 w-4" />
-            Exportar CSV
+            {legacyPeriod ? `${legacyText.exportButton} (CSV)` : "Exportar CSV"}
           </button>
           <DiagnosticReportButton
             scope="COMMISSION_RECEIPT_CLOSING"
@@ -615,14 +683,24 @@ export function CommissionsReceiptClosingPage() {
         </div>
       </div>
 
+      <CommissionLegacyPeriodBanner
+        authority={reportingAuthority}
+        officialReport={data?.legacyOfficialReport}
+        showOfficialReport
+      />
+
       {isClosed && data?.closing ? (
         <ExecutiveAlert
           variant="info"
           density="compact"
-          title={`Fechamento FECHADO — ${data.closing.closedAt ? formatDate(data.closing.closedAt) : ""}`}
+          title={
+            legacyPeriod
+              ? "Registro técnico no IndusCost — NÃO OFICIAL (período Nomus)"
+              : `Fechamento FECHADO — ${data.closing.closedAt ? formatDate(data.closing.closedAt) : ""}`
+          }
           description={`Relatório lendo ledger gravado (id ${data.closing.closingId.slice(0, 8)}…). Hash: ${data.closing.calculationHash ?? "—"}`}
         />
-      ) : data?.mode === "PREVIEW" ? (
+      ) : data?.mode === "PREVIEW" && !legacyPeriod ? (
         <ExecutiveAlert
           variant="attention"
           density="compact"
@@ -719,8 +797,9 @@ export function CommissionsReceiptClosingPage() {
         <button
           type="button"
           className={`${financeBiButtonOutlineClass} inline-flex items-center`}
-          onClick={() => void exportDetailXlsx()}
+          onClick={() => runWithLegacyAcknowledgement(exportDetailXlsx)}
           disabled={exportingDetail || !data || data.lines.length === 0}
+          title={legacyPeriod ? legacyText.exportTooltip : undefined}
           data-testid="commissions-receipt-closing-export-detail"
         >
           {exportingDetail ? (
@@ -728,19 +807,24 @@ export function CommissionsReceiptClosingPage() {
           ) : (
             <Download className="mr-2 h-4 w-4" />
           )}
-          {sellerFilterKey
-            ? `Exportar filtrado (${filteredDetailLines.length})`
-            : "Exportar detalhamento"}
+          {legacyPeriod
+            ? sellerFilterKey
+              ? `${legacyText.exportButton} (${filteredDetailLines.length})`
+              : legacyText.exportButton
+            : sellerFilterKey
+              ? `Exportar filtrado (${filteredDetailLines.length})`
+              : "Exportar detalhamento"}
         </button>
         {sellerFilterKey ? (
           <button
             type="button"
             className={financeBiButtonOutlineClass}
-            onClick={() => void exportDetailXlsxAll()}
+            onClick={() => runWithLegacyAcknowledgement(exportDetailXlsxAll)}
             disabled={exportingDetail || !data || data.lines.length === 0}
+            title={legacyPeriod ? legacyText.exportTooltip : undefined}
             data-testid="commissions-receipt-closing-export-detail-all"
           >
-            Exportar tudo
+            {legacyPeriod ? `${legacyText.exportButton} — tudo` : "Exportar tudo"}
           </button>
         ) : null}
         {canClose && data?.canApply && data.mode === "PREVIEW" ? (
@@ -758,8 +842,9 @@ export function CommissionsReceiptClosingPage() {
           <button
             type="button"
             className={`${financeBiButtonOutlineClass} inline-flex items-center`}
-            onClick={() => requestCommissionClosingPrint()}
+            onClick={() => runWithLegacyAcknowledgement(requestCommissionClosingPrint)}
             disabled={printingPdf}
+            title={legacyPeriod ? legacyText.exportTooltip : undefined}
             data-testid="commissions-receipt-closing-print-pdf"
           >
             {printingPdf ? (
@@ -767,10 +852,10 @@ export function CommissionsReceiptClosingPage() {
             ) : (
               <Printer className="mr-2 h-4 w-4" />
             )}
-            Imprimir / PDF
+            {legacyPeriod ? legacyText.printButton : "Imprimir / PDF"}
           </button>
         ) : null}
-        {canReprocess && isClosed ? (
+        {canReprocess && isClosed && !legacyPeriod ? (
           <button
             type="button"
             className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
@@ -799,8 +884,16 @@ export function CommissionsReceiptClosingPage() {
       {cards && data && data.mode !== "EMPTY" ? (
         <>
           <CommissionsKpiSection
-            title="Resumo do fechamento por recebimento"
-            eyebrow="Materialização e totais do período selecionado"
+            title={
+              legacyPeriod
+                ? "Resumo — reconstrução técnica (não oficial)"
+                : "Resumo do fechamento por recebimento"
+            }
+            eyebrow={
+              legacyPeriod
+                ? `${legacyText.reconstructedValue} · ${legacyText.officialSourceLine}`
+                : "Materialização e totais do período selecionado"
+            }
             testId="commissions-receipt-closing-kpi"
             minColumnWidth={240}
           >
@@ -849,7 +942,7 @@ export function CommissionsReceiptClosingPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Total recebido gerencial"
+              label={legacyPeriod ? "Total recebido (reconstruído)" : "Total recebido gerencial"}
               amount={cards.totalReceivedAmount}
               amountFormat="currency"
               tone="money"
@@ -877,14 +970,14 @@ export function CommissionsReceiptClosingPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Base comissionável"
+              label={legacyPeriod ? "Base comissionável (reconstruída)" : "Base comissionável"}
               amount={cards.commissionableBaseAmount}
               amountFormat="currency"
               tone="money"
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão bruta"
+              label={legacyPeriod ? "Comissão bruta (reconstruída)" : "Comissão bruta"}
               amount={cards.grossCommissionAmount}
               amountFormat="currency"
               tone="money"
@@ -898,10 +991,17 @@ export function CommissionsReceiptClosingPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão final a pagar"
+              label={legacyPeriod ? "Comissão reconstruída" : "Comissão final a pagar"}
               amount={cards.finalCommissionAmount}
               amountFormat="currency"
-              tone="success"
+              tone={legacyPeriod ? "warning" : "success"}
+              helperText={
+                legacyPeriod
+                  ? `${legacyText.reconstructedTag} — não oficial. ${legacyText.officialSourceLine}`
+                  : isClosed
+                    ? legacyText.officialValue
+                    : undefined
+              }
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -915,14 +1015,16 @@ export function CommissionsReceiptClosingPage() {
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Status"
               badge={{
-                label: receiptClosingStatusBadgeLabel(cards.reportStatus),
-                tone: receiptClosingStatusBadgeTone(cards.reportStatus),
+                label: legacyPeriod
+                  ? "Espelho técnico — não oficial"
+                  : receiptClosingStatusBadgeLabel(cards.reportStatus),
+                tone: legacyPeriod ? "warning" : receiptClosingStatusBadgeTone(cards.reportStatus),
                 testId: "commissions-receipt-closing-status-badge",
               }}
             />
           </CommissionsKpiSection>
 
-          {data.composition && isCompetenceOfficialInIndusCost(data.year, data.month) ? (
+          {data.composition && reportingAuthority?.officialInIndusCost ? (
             <CommissionsKpiSection
               title="Composição da comissão"
               eyebrow="Competência atual + pendências de períodos anteriores = total do fechamento"
@@ -968,6 +1070,7 @@ export function CommissionsReceiptClosingPage() {
               totals={sellerTotals}
               selectedKey={sellerFilterKey}
               onRowClick={handleSellerRowClick}
+              legacy={legacyPeriod}
             />
           </section>
 
@@ -993,7 +1096,8 @@ export function CommissionsReceiptClosingPage() {
                 className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
                 data-testid="commissions-receipt-closing-detail-heading"
               >
-                Detalhamento ({filteredDetailLines.length} linha
+                {legacyPeriod ? "Detalhamento — espelho técnico" : "Detalhamento"} (
+                {filteredDetailLines.length} linha
                 {filteredDetailLines.length === 1 ? "" : "s"})
               </h4>
               {sellerFilterKey && sellerFilterLabel ? (
@@ -1034,6 +1138,17 @@ export function CommissionsReceiptClosingPage() {
           </section>
         </>
       ) : null}
+
+      <CommissionTechnicalMirrorConfirmDialog
+        open={mirrorConfirm != null}
+        periodLabel={mirrorConfirm?.periodLabel ?? ""}
+        onCancel={() => setMirrorConfirm(null)}
+        onConfirm={() => {
+          const action = mirrorConfirm?.action;
+          setMirrorConfirm(null);
+          if (action) void action();
+        }}
+      />
 
       {applyOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

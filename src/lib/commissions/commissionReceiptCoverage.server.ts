@@ -17,6 +17,7 @@ import {
   compareCommissionYearMonth,
   firstDayOfCompetenceUtc,
   formatCommissionYearMonthKey,
+  getCommissionReportingAuthority,
   isCompetenceOfficialInIndusCost,
   listCommissionYearMonths,
   previousCommissionYearMonth,
@@ -24,11 +25,16 @@ import {
   type CommissionYearMonth,
 } from "./commissionCoverageCutover.js";
 import {
+  buildReceiptClosingLineCoverageNote,
   resolveCarryoverSelection,
   resolveCommissionReceiptCoverageState,
   summarizeCarryoverRows,
+  type CommissionLegacyOfficialReportImport,
+  type CommissionLegacyOfficialReportStatus,
   type ReceiptClosingCarryoverSection,
+  type ReceiptClosingLineCoverageEntry,
 } from "./commissionReceiptCoverage.shared.js";
+import type { ReceiptClosingApiLine, ReceiptClosingPagePayload } from "./commissionReceiptClosingApi.shared.js";
 import {
   buildCarryoverRows,
   toCarryoverPreviewLine,
@@ -353,4 +359,124 @@ export async function loadReceiptClosingCarryovers(
     },
     selectedLines,
   };
+}
+
+/**
+ * Detalhe/auditoria da página: cobertura ativa dos recebimentos de cada linha (ex.:
+ * "Contemplado: Nomus 09/2026" na reconstrução de agosto). Só leitura; se a consulta
+ * falhar a página segue sem a nota.
+ */
+export async function enrichReceiptClosingPageCoverage(
+  db: Pick<PrismaClient, "commissionReceiptCoverage">,
+  page: ReceiptClosingPagePayload
+): Promise<ReceiptClosingPagePayload> {
+  const ids = [
+    ...new Set(
+      [...page.lines, ...page.groupCompanyAuditLines].flatMap((line) => line.receiptExternalIds ?? [])
+    ),
+  ];
+  if (ids.length === 0) return page;
+  try {
+    const rows = await db.commissionReceiptCoverage.findMany({
+      where: { coverageStatus: "COVERED", receiptExternalId: { in: ids } },
+      select: { receiptExternalId: true, coverageSource: true, coveredYear: true, coveredMonth: true },
+    });
+    const byReceipt = new Map<number, ReceiptClosingLineCoverageEntry>();
+    for (const row of rows) {
+      if (row.receiptExternalId == null) continue;
+      byReceipt.set(row.receiptExternalId, {
+        receiptExternalId: row.receiptExternalId,
+        source: row.coverageSource,
+        coveredYear: row.coveredYear,
+        coveredMonth: row.coveredMonth,
+      });
+    }
+    if (byReceipt.size === 0) return page;
+    const authority = getCommissionReportingAuthority(page.year, page.month);
+    const decorate = (line: ReceiptClosingApiLine): ReceiptClosingApiLine => {
+      const entries = (line.receiptExternalIds ?? [])
+        .map((id) => byReceipt.get(id))
+        .filter((entry): entry is ReceiptClosingLineCoverageEntry => entry != null);
+      if (entries.length === 0) return line;
+      const coverageNote = buildReceiptClosingLineCoverageNote({
+        entries,
+        natural: { year: line.naturalYear ?? page.year, month: line.naturalMonth ?? page.month },
+        period: { year: page.year, month: page.month },
+        officialSource: authority.source,
+      });
+      return coverageNote ? { ...line, coverageNote } : line;
+    };
+    return {
+      ...page,
+      lines: page.lines.map(decorate),
+      groupCompanyAuditLines: page.groupCompanyAuditLines.map(decorate),
+    };
+  } catch (error) {
+    console.warn("[commissionReceiptCoverage] cobertura das linhas indisponível", error);
+    return page;
+  }
+}
+
+const LEGACY_IMPORT_SELECT = {
+  id: true,
+  referenceYear: true,
+  referenceMonth: true,
+  filename: true,
+  importedAt: true,
+  importedBy: true,
+  rowCount: true,
+  matchedCount: true,
+  unmatchedCount: true,
+  ambiguousCount: true,
+  alreadyCoveredCount: true,
+} as const;
+
+function mapLegacyOfficialReportImport(row: {
+  id: string;
+  referenceYear: number;
+  referenceMonth: number;
+  filename: string;
+  importedAt: Date;
+  importedBy: string | null;
+  rowCount: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  ambiguousCount: number;
+  alreadyCoveredCount: number;
+}): CommissionLegacyOfficialReportImport {
+  return { ...row, importedAt: row.importedAt.toISOString() };
+}
+
+/**
+ * Relatório oficial do Nomus registrado para as competências pré-cutover do ano
+ * (arquivo importado, quando e por quem, e como conciliou). Competências oficiais do
+ * IndusCost não entram. Só leitura.
+ */
+export async function listLegacyOfficialReportStatuses(
+  db: Pick<PrismaClient, "commissionLegacyCoverageImport">,
+  input: { year: number; month?: number | null }
+): Promise<CommissionLegacyOfficialReportStatus[]> {
+  const months = (input.month ? [input.month] : Array.from({ length: 12 }, (_, i) => i + 1)).filter(
+    (month) => getCommissionReportingAuthority(input.year, month).isLegacyPeriod
+  );
+  if (months.length === 0) return [];
+  const rows = await db.commissionLegacyCoverageImport.findMany({
+    where: { source: "NOMUS", referenceYear: input.year, referenceMonth: { in: months } },
+    select: LEGACY_IMPORT_SELECT,
+    orderBy: [{ referenceMonth: "asc" }, { importedAt: "desc" }],
+  });
+  return months.map((month) => {
+    const imports = rows.filter((row) => row.referenceMonth === month).map(mapLegacyOfficialReportImport);
+    return { year: input.year, month, registered: imports.length > 0, imports };
+  });
+}
+
+/** Situação do relatório oficial do Nomus de UMA competência (null se oficial IndusCost). */
+export async function loadLegacyOfficialReportStatus(
+  db: Pick<PrismaClient, "commissionLegacyCoverageImport">,
+  year: number,
+  month: number
+): Promise<CommissionLegacyOfficialReportStatus | null> {
+  const [status] = await listLegacyOfficialReportStatuses(db, { year, month });
+  return status ?? null;
 }

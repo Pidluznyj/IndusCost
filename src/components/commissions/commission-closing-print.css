@@ -79,3 +79,51 @@
     font-size: 8px !important;
   }
 }
+
+/*
+ * Espelho técnico (competência do histórico Nomus): faixa fixa no topo e no rodapé
+ * — no print o navegador repete elementos fixed em TODA página.
+ */
+.comm-closing-legacy-page-marker {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  padding: 0.8mm 0;
+}
+
+.comm-closing-legacy-page-marker--top {
+  top: 0;
+}
+
+.comm-closing-legacy-page-marker--bottom {
+  bottom: 0;
+}
+
+.comm-closing-legacy-notice {
+  border: 2px solid #f59e0b;
+  background: #fffbeb;
+  color: #78350f;
+  padding: 2mm 3mm;
+  margin: 2mm 0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.comm-closing-legacy-notice p {
+  margin: 0.5mm 0;
+}
+
+@media print {
+  #sales-orders-print-root.comm-closing-print-root.comm-closing-legacy {
+    padding-top: 7mm;
+    padding-bottom: 7mm;
+  }
+}
