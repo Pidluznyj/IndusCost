@@ -184,16 +184,16 @@ function DetailTable({
       */}
       <table className="min-w-[1100px] text-xs" data-testid="commissions-receipt-closing-detail-table">
         <thead>
-          <tr className="border-b text-left uppercase text-muted-foreground">
+          <tr className="border-b text-left text-muted-foreground">
             <th className="px-2 py-2">NF</th>
             <th className="px-2 py-2">Pedido</th>
             <th className="px-2 py-2">Cliente</th>
-            <th className="px-2 py-2">Vendedor canônico</th>
-            <th className="px-2 py-2 text-right">Original CR</th>
-            <th className="px-2 py-2 text-right">Recebido bruto</th>
+            <th className="px-2 py-2">Vendedor</th>
+            <th className="px-2 py-2 text-right">Valor real</th>
+            <th className="px-2 py-2 text-right">Recebido</th>
             <th className="px-2 py-2 text-right">Base comissão</th>
             <th className="px-2 py-2 text-right">Juros/multa ignorados</th>
-            <th className="px-2 py-2 text-right">Schedule comissão</th>
+            <th className="px-2 py-2 text-right">Comissão agendada</th>
             <th className="px-2 py-2 text-right">Comissão liberada</th>
             <th className="px-2 py-2">Status</th>
           </tr>
@@ -261,10 +261,11 @@ function DetailTable({
         </tbody>
         <tfoot>
           {/*
-            11 colunas: NF, Pedido, Cliente, Vendedor canônico (colSpan 4),
-            Original CR, Recebido bruto, Base, Juros ignorados, Schedule,
-            Liberada (6 células) e Status (1). Soma 11 — precisa bater com o
-            thead, senão a linha de totais desalinha das colunas de valor.
+            11 colunas: NF, Pedido, Cliente, Vendedor (colSpan 4),
+            Valor real, Recebido, Base comissão, Juros/multa ignorados,
+            Comissão agendada, Comissão liberada (6 células) e Status (1).
+            Soma 11 — precisa bater com o thead, senão a linha de totais
+            desalinha das colunas de valor.
           */}
           <tr className="border-t-2 bg-muted/20 font-semibold" data-testid="commissions-receipt-closing-detail-totals">
             <td className="px-2 py-2" colSpan={4}>
