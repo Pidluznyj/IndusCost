@@ -25,7 +25,6 @@ import {
   COLLECTOR_NO_WAREHOUSE_FOR_SECTOR,
   createAndStartCollectorSectorSession,
   finalizeCollectorSession,
-  findActiveCountingSession,
   listCollectorSessionItemsBlind,
   resolveCollectorSectorContextPayload,
   resolveWarehousesForSector,
@@ -40,7 +39,18 @@ import { parseCollectorQrText } from "./collectorQrContract.js";
 import {
   parseCollectorSector,
   collectorSectorLabel,
+  type CollectorSectorCode,
 } from "./collectorSectorContract.js";
+import {
+  createAndStartCollectorProductSectorSession,
+  isCollectorProductSector,
+  resolveCollectorProductSectorOperationalContext,
+  resolveCollectorProductSectorWarehouses,
+} from "./collectorProductSectorCounting.server.js";
+import {
+  COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE,
+  findCollectorSectorActiveSession,
+} from "./collectorSessionCompatibility.server.js";
 import {
   createTailscaleLocalApiTransport,
   createTailscalePeerIdentityResolver,
@@ -81,10 +91,28 @@ function respondCollectorValidationError(
         ? 403
         : error.code === COUNT_LINE_VERSION_CONFLICT ||
             error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
-            error.code === QR_AMBIGUOUS
+            error.code === QR_AMBIGUOUS ||
+            error.code === COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE
           ? 409
           : 400;
   return res.status(status).json({ error: error.message, code: error.code });
+}
+
+/**
+ * COUNTING que o setor pode continuar. MP mantém o fluxo atual (a mais recente);
+ * Componentes/Produto acabado avaliam todas as COUNTING do almoxarifado.
+ * Incompatível → COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE (409), nunca escondida.
+ */
+function findSectorActiveSession(
+  prisma: PrismaClient,
+  sector: CollectorSectorCode,
+  warehouseId: string
+) {
+  return findCollectorSectorActiveSession(prisma, {
+    sector,
+    warehouseId,
+    scope: isCollectorProductSector(sector) ? "all" : "latest",
+  });
 }
 
 function rejectIdentityFields(body: unknown): void {
@@ -238,17 +266,21 @@ export function registerInventoryCollectorRoutes(
       }
 
       const sector = parseCollectorSector(sectorRaw);
-      const resolved = await resolveCollectorSectorContextPayload(prisma, sector);
+      // Dispatch na borda: MP segue no resolvedor próprio; Componentes/Produto
+      // acabado resolvem almoxarifado só por presença logística do produto.
+      const resolved = isCollectorProductSector(sector)
+        ? await resolveCollectorProductSectorOperationalContext(prisma, sector)
+        : await resolveCollectorSectorContextPayload(prisma, sector);
       const warehouses = resolved.warehouses;
       let activeSession = null;
       const warehouseIdQ = String(req.query.warehouseId ?? "").trim();
       if (UUID_RE.test(warehouseIdQ)) {
         activeSession = summarizeActiveSession(
-          await findActiveCountingSession(prisma, warehouseIdQ)
+          await findSectorActiveSession(prisma, sector, warehouseIdQ)
         );
       } else if (warehouses.length === 1) {
         activeSession = summarizeActiveSession(
-          await findActiveCountingSession(prisma, warehouses[0].id)
+          await findSectorActiveSession(prisma, sector, warehouses[0].id)
         );
       }
 
@@ -325,6 +357,18 @@ export function registerInventoryCollectorRoutes(
       if (!UUID_RE.test(warehouseId)) {
         return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
       }
+      if (isCollectorProductSector(sector)) {
+        // Sem fallback "qualquer ACTIVE": precisa haver presença do setor.
+        const productWarehouses = await resolveCollectorProductSectorWarehouses(prisma, sector);
+        if (!productWarehouses.some((w) => w.id === warehouseId)) {
+          throw new InventoryValidationError(
+            "Almoxarifado não elegível para este setor.",
+            "WAREHOUSE_NOT_ELIGIBLE"
+          );
+        }
+        const productSession = await findSectorActiveSession(prisma, sector, warehouseId);
+        return res.json({ activeSession: summarizeActiveSession(productSession) });
+      }
       const warehouses = await resolveWarehousesForSector(prisma, sector, {
         requireNonEmpty: false,
       });
@@ -347,7 +391,7 @@ export function registerInventoryCollectorRoutes(
           );
         }
       }
-      const session = await findActiveCountingSession(prisma, warehouseId);
+      const session = await findSectorActiveSession(prisma, sector, warehouseId);
       res.json({ activeSession: summarizeActiveSession(session) });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) {
@@ -382,9 +426,13 @@ export function registerInventoryCollectorRoutes(
         typeof body.operationId === "string" ? body.operationId.trim() : null;
 
       if (!warehouseId) {
-        const warehouses = await resolveWarehousesForSector(prisma, sector, {
-          requireNonEmpty: true,
-        });
+        const warehouses = isCollectorProductSector(sector)
+          ? await resolveCollectorProductSectorWarehouses(prisma, sector, {
+              requireNonEmpty: true,
+            })
+          : await resolveWarehousesForSector(prisma, sector, {
+              requireNonEmpty: true,
+            });
         if (warehouses.length !== 1) {
           return res.status(400).json({
             error: "Informe o almoxarifado (há mais de um elegível).",
@@ -398,13 +446,15 @@ export function registerInventoryCollectorRoutes(
         return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
       }
 
-      const result = await createAndStartCollectorSectorSession(prisma, {
-        sector,
+      const sessionInput = {
         warehouseId,
         deviceId: device.deviceId,
         deviceName: caps?.name ?? null,
         operationId,
-      });
+      };
+      const result = isCollectorProductSector(sector)
+        ? await createAndStartCollectorProductSectorSession(prisma, { ...sessionInput, sector })
+        : await createAndStartCollectorSectorSession(prisma, { ...sessionInput, sector });
       res.status(result.reused ? 200 : 201).json(result);
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) {

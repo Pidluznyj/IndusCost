@@ -195,6 +195,14 @@ export async function withdrawCollectorMaterial(
   },
   device: { id: string }
 ): Promise<CollectorWithdrawalResult> {
+  // Retirada é só de Matéria-prima: Componentes/Produto acabado existem no
+  // contrato para CONTAGEM e não podem rotular uma retirada.
+  if (input.sector !== "RAW_MATERIAL") {
+    throw new InventoryValidationError(
+      "Setor de retirada não suportado.",
+      "COLLECTOR_INVALID_SECTOR"
+    );
+  }
   const person = parseWithdrawalPerson(input.person);
   const quantity = parseWithdrawalQuantity(input.quantity);
   const operationId = String(input.operationId ?? "").trim();
