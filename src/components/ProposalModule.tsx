@@ -664,8 +664,9 @@ export const ProposalModule = () => {
   /** Propostas oficiais entram pelo Nomus. Criação manual fica só com Super Admin. */
   const allowCreateWithCatalog =
     auth.isSuperAdmin() && allowCreate && allowViewProducts && allowViewCustomers;
-  const allowEdit = canEditProposal(proposalCheck);
-  const allowDelete = canDeleteProposal(proposalCheck);
+  const allowMutateProposal = auth.isSuperAdmin();
+  const allowEdit = allowMutateProposal && canEditProposal(proposalCheck);
+  const allowDelete = allowMutateProposal && canDeleteProposal(proposalCheck);
   const allowPrint = canPrintProposal(proposalCheck);
 
   const navigate = useNavigate();
@@ -1080,6 +1081,7 @@ export const ProposalModule = () => {
   };
 
   const handleEdit = useCallback(async (id: string) => {
+    if (!auth.isSuperAdmin()) return;
     setAnalysisProposalId(null);
     setLoading(true);
     formationHydrateAttemptedRef.current = new Set();
@@ -1107,7 +1109,7 @@ export const ProposalModule = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [auth]);
 
   useEffect(() => {
     if (loading) return;
@@ -1208,6 +1210,7 @@ export const ProposalModule = () => {
   }, [formData]);
 
   const handleSave = async () => {
+    if (!auth.isSuperAdmin()) return;
     if (saving) return;
     if (!formData.customerId) {
       alert("Selecione um cliente.");
@@ -1284,6 +1287,7 @@ export const ProposalModule = () => {
   }, []);
 
   const handleDelete = async (id: string) => {
+    if (!auth.isSuperAdmin()) return;
     if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
       await fetchOk(`/api/proposals/${id}`, { method: "DELETE" });
@@ -2981,7 +2985,7 @@ export const ProposalModule = () => {
                     </td>
                     <td className="p-4 text-right whitespace-nowrap align-middle">
                       <div className="inline-flex flex-shrink-0 items-center justify-end gap-1.5">
-                        {p.status === "APPROVED" ? (
+                        {p.status === "APPROVED" && (p.salesOrder || allowMutateProposal) ? (
                           <button
                             type="button"
                             onClick={() => void handleSalesOrderFromProposal(p)}

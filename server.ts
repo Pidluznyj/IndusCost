@@ -15851,7 +15851,24 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(responsibles);
   });
 
-  app.post("/api/proposals/:id/generate-sales-order", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
+  const requireProposalManualWrite: express.RequestHandler = async (req, res, next) => {
+    const auth = await getCurrentAppUser(req);
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    if (auth.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Propostas oficiais vêm do Nomus. Apenas Super Admin pode alterar ou excluir.",
+      });
+    }
+    return next();
+  };
+
+  app.post("/api/proposals/:id/generate-sales-order", requireAppAuth, requireResource("commercial.proposals", "update"), requireProposalManualWrite, async (req, res) => {
     const { id } = req.params;
 
     const existing = await prisma.salesOrder.findUnique({
@@ -16137,7 +16154,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
+  app.put("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "update"), requireProposalManualWrite, async (req, res) => {
     const { id } = req.params;
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
@@ -16204,7 +16221,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/proposals/:id/status", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
+  app.patch("/api/proposals/:id/status", requireAppAuth, requireResource("commercial.proposals", "update"), requireProposalManualWrite, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     if (!isValidProposalStatus(status)) {
@@ -16219,7 +16236,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(proposal);
   });
 
-  app.delete("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "delete"), async (req, res) => {
+  app.delete("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "delete"), requireProposalManualWrite, async (req, res) => {
     const { id } = req.params;
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
