@@ -222,8 +222,12 @@ export function buildVisualAuditClosingRows(
   closingPage: ReceiptClosingPagePayload
 ): VisualAuditClosingRow[] {
   const managerial = closingPage.lines.map(mapReceiptClosingLineToVisualAuditRow);
+  // Auditoria técnica: inclui os clientes das Exceções, que ficam fora dos relatórios.
+  const customerExcluded = (closingPage.customerExcludedAuditLines ?? []).map(
+    mapReceiptClosingLineToVisualAuditRow
+  );
   const group = closingPage.groupCompanyAuditLines.map(mapReceiptClosingLineToVisualAuditRow);
-  return [...managerial, ...group];
+  return [...managerial, ...customerExcluded, ...group];
 }
 
 export function filterVisualAuditClosingRows(

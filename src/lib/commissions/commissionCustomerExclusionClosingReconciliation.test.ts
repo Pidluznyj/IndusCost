@@ -11,6 +11,7 @@ import {
   countManualExcludedCustomersInClosing,
 } from "./commissionCustomerExclusionClosingReconciliation.js";
 import { buildCommissionReceivableForecastPreview } from "./commissionReceiptEngine.js";
+import { buildReceivableForecastOfficialPayload } from "./commissionReceivableForecastOfficial.js";
 import { COMMISSION_GROUP_COMPANY_EXCLUSION_REASON } from "./commissionInternalGroupExclusion.js";
 import type { CommissionSellerIdentityContext } from "./commissionSellerIdentity.js";
 
@@ -117,6 +118,13 @@ describe("commissionCustomerExclusionClosingReconciliation", () => {
     ];
 
     const payload = buildCustomerExclusionClosingReconciliation(closingPage, registeredRules);
+    // O relatório do fechamento não traz o cliente excluído; a aba Exceções lê a auditoria.
+    assert.equal(closingPage.lines.some((line) => line.status === "CUSTOMER_EXCLUDED"), false);
+    assert.deepEqual(
+      payload.manualExcludedCustomers.map((row) => row.customerName),
+      ["ESMALTEC"]
+    );
+    assert.equal(payload.manualExcludedCustomers[0]!.receivedAmount, 1000);
     assert.equal(
       countManualExcludedCustomersInClosing(payload),
       closingPage.materializationSummary.excludedCustomerCount
@@ -202,6 +210,13 @@ describe("commissionCustomerExclusionClosingReconciliation", () => {
       identityCtx,
     });
     assert.equal(preview.lines[0]!.status, "CUSTOMER_EXCLUDED");
+    // Previsão dos vendedores: o título do cliente excluído não aparece (nem card).
+    const official = buildReceivableForecastOfficialPayload(preview);
+    assert.equal(official.details.length, 0);
+    assert.equal(official.monthly.length, 0);
+    assert.equal(official.materializationSummary.totalReceivablesCount, 0);
+    assert.equal(official.materializationSummary.excludedCustomerCount, 0);
+    assert.equal(official.officialCards.totalReceivedAmount, 0);
   });
 
   it("linha CUSTOMER_EXCLUDED expõe ruleId para reconciliação", () => {

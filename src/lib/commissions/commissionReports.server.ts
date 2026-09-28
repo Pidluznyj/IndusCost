@@ -10,7 +10,10 @@ import {
   getReceiptClosingPreviewPage,
 } from "./commissionReceiptClosingApi.server.js";
 import { markReceivableReceivedAnchors } from "./commissionReceiptClosingApi.js";
-import type { ReceiptClosingApiLine } from "./commissionReceiptClosingApi.shared.js";
+import {
+  omitCustomerExcludedFromCommissionReports,
+  type ReceiptClosingApiLine,
+} from "./commissionReceiptClosingApi.shared.js";
 import {
   assembleCommissionReportsPayload,
   buildCommissionReportsExportFilename,
@@ -671,7 +674,7 @@ export async function exportCommissionReportsXlsx(
     loaded.monthsIncluded
   );
   const records = filterCommissionReportRecords(
-    lines.map(mapSourceLineToReportRecord),
+    omitCustomerExcludedFromCommissionReports(lines).map(mapSourceLineToReportRecord),
     query
   );
   const months: CommissionReportsMonthsFilter = query.months;

@@ -340,12 +340,12 @@ describe("commissionReports.shared", () => {
     );
     assert.equal(allMonths.summary.recordCount, allMonths.pagination.total);
     assert.equal(allMonths.summary.sellerCount, allMonths.sellers.length);
-    assert.equal(allMonths.summary.excludedCustomerCount, 1);
-    assert.equal(
-      allMonths.summary.excludedCommission,
-      roundSellerSum(allMonths.sellers, "excludedCommission")
-    );
-    assert.ok(allMonths.summary.excludedCommission > 0);
+    // Cliente das Exceções por cliente não aparece: nem registro, nem valor, nem contagem.
+    assert.equal(allMonths.pagination.total, 3);
+    assert.ok(allMonths.records.every((record) => record.lineKey !== "ex"));
+    assert.equal(allMonths.summary.receivedAmount, 350);
+    assert.equal(allMonths.summary.excludedCustomerCount, 0);
+    assert.equal(allMonths.summary.excludedCommission, 0);
 
     const bySeller = assembleCommissionReportsPayload(
       lines,
@@ -363,14 +363,14 @@ describe("commissionReports.shared", () => {
         { year: 2026, month: 7, periodStatus: "PREVIEW", closingId: null },
       ]
     );
-    // CUSTOMER_EXCLUDED agrupa em bucket unassigned, mas ainda filtra pelo sellerId canônico.
-    assert.equal(bySeller.summary.sellerCount, 2);
+    // A venda do cliente excluído, feita pelo Rodrigo, não entra no relatório dele.
+    assert.equal(bySeller.summary.sellerCount, 1);
     assert.equal(bySeller.sellers[0]?.sellerName, "Rodrigo");
     assert.ok(
-      bySeller.sellers.some((s) => s.sellerName === "Sem vendedor / Excluído")
+      bySeller.sellers.every((s) => s.sellerName !== "Sem vendedor / Excluído")
     );
-    assert.equal(bySeller.summary.excludedCustomerCount, 1);
-    assert.ok(bySeller.summary.excludedCommission > 0);
+    assert.equal(bySeller.summary.excludedCustomerCount, 0);
+    assert.equal(bySeller.summary.excludedCommission, 0);
     assert.equal(
       bySeller.summary.totalCommission,
       roundSellerSum(bySeller.sellers, "finalCommission")
@@ -383,7 +383,7 @@ describe("commissionReports.shared", () => {
       bySeller.summary.receivedAmount,
       roundSellerSum(bySeller.sellers, "receivedAmount")
     );
-    assert.equal(bySeller.summary.recordCount, 3);
+    assert.equal(bySeller.summary.recordCount, 2);
 
     const multi = assembleCommissionReportsPayload(
       lines,
@@ -527,7 +527,7 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(page, /"Comissão reconstruída"/);
     assert.match(page, /label="Base comissionável"[\s\S]*?amountFormat="currency"/);
     assert.match(page, /label="Valor recebido"[\s\S]*?amountFormat="currency"/);
-    assert.match(page, /label="Comissão excluída"[\s\S]*?amountFormat="currency"/);
+    assert.doesNotMatch(page, /label="Comissão excluída"/);
     assert.match(page, /label="Registros"[\s\S]*?amountFormat="number"/);
   });
 
@@ -540,11 +540,14 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(server, /loadActiveCustomerExclusionRuleSnapshots/);
   });
 
-  it("informa clientes não comissionáveis no resumo e no alerta", () => {
+  it("clientes das Exceções por cliente não aparecem (sem alerta, card, coluna ou filtro)", () => {
     const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
-    assert.match(page, /commissions-reports-exclusion-alert/);
-    assert.match(page, /Clientes não comissionáveis/);
-    assert.match(page, /Exceções por cliente/);
+    assert.doesNotMatch(page, /commissions-reports-exclusion-alert/);
+    assert.doesNotMatch(page, /Clientes não comissionáveis/);
+    assert.doesNotMatch(page, /label="Clientes excluídos"/);
+    assert.doesNotMatch(page, /excludedCommission/);
+    assert.doesNotMatch(page, /value: "CUSTOMER_EXCLUDED"/);
+    assert.match(page, /Clientes cadastrados em Exceções por cliente não aparecem neste relatório/);
   });
   it("comissão zerada exibe alerta suave com motivo (tooltip)", () => {
     const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");

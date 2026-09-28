@@ -48,6 +48,39 @@ export function partitionReceiptClosingLinesByGroupCompany<T extends { status: s
   return { managerialLines, groupCompanyAuditLines };
 }
 
+/**
+ * Venda de cliente cadastrado em Comercial › Comissões › Exceções por cliente (status do
+ * motor CUSTOMER_EXCLUDED): não aparece em nenhum relatório de comissão dos vendedores —
+ * nem como linha, nem nos totais, nem como "comissão excluída" —, mesmo quando o vendedor
+ * fez a venda. Motor, ledger e cobertura continuam registrando a linha (comissão zero); a
+ * auditoria fica na aba Exceções por cliente.
+ */
+export function isCustomerExcludedFromCommissionReports(line: { status: string }): boolean {
+  return line.status === "CUSTOMER_EXCLUDED";
+}
+
+export function partitionReceiptClosingLinesByCustomerExclusion<T extends { status: string }>(
+  lines: T[]
+): { reportLines: T[]; customerExcludedAuditLines: T[] } {
+  const reportLines: T[] = [];
+  const customerExcludedAuditLines: T[] = [];
+  for (const line of lines) {
+    if (isCustomerExcludedFromCommissionReports(line)) {
+      customerExcludedAuditLines.push(line);
+    } else {
+      reportLines.push(line);
+    }
+  }
+  return { reportLines, customerExcludedAuditLines };
+}
+
+/** Linhas de um relatório de comissão dos vendedores: sem clientes das Exceções por cliente. */
+export function omitCustomerExcludedFromCommissionReports<T extends { status: string }>(
+  lines: readonly T[]
+): T[] {
+  return lines.filter((line) => !isCustomerExcludedFromCommissionReports(line));
+}
+
 export function isReceiptClosingSellerExcludedFromCommission(status: string): boolean {
   return RECEIPT_CLOSING_SELLER_EXCLUDED_STATUSES.has(status);
 }
@@ -255,10 +288,16 @@ export type ReceiptClosingPagePayload = {
     countByStatus: Record<string, number>;
   };
   bySeller: ReceiptClosingApiSellerRow[];
-  /** Linhas gerenciais (exclui empresas do grupo). */
+  /** Linhas gerenciais (exclui empresas do grupo e clientes das Exceções por cliente). */
   lines: ReceiptClosingApiLine[];
   /** Empresas do grupo — somente para auditoria técnica opcional na UI. */
   groupCompanyAuditLines: ReceiptClosingApiLine[];
+  /**
+   * Clientes das Exceções por cliente — auditoria só no servidor (aba Exceções por
+   * cliente). A API do fechamento remove o campo antes de responder: nunca chega à tela
+   * nem aos relatórios/exportações dos vendedores.
+   */
+  customerExcludedAuditLines?: ReceiptClosingApiLine[];
   /** Pendências de períodos anteriores (prévia de competência oficial IndusCost). */
   pendingCarryover?: ReceiptClosingCarryoverSection | null;
   /** Comissão da competência atual + pendências anteriores = total do fechamento. */

@@ -293,7 +293,6 @@ export function buildCommissionClosingSellerXlsx(report: CommissionClosingSeller
     ["Total recebido", report.summary.totalReceivedAmount],
     ["Base comissionável", report.summary.commissionBaseAmount],
     ["Comissão bruta", report.summary.grossCommissionAmount],
-    ["Comissão excluída", report.summary.excludedCommissionAmount],
     [legacy ? "Comissão reconstruída (não oficial)" : "Comissão final", report.summary.finalCommissionAmount],
     ["Títulos", report.summary.titleCount],
     ["Pedidos", report.summary.orderCount],

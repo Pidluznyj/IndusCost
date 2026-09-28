@@ -66,7 +66,8 @@ export function CommissionsOrderProvisionPage() {
   const [includeZero, setIncludeZero] = useState(false);
   /**
    * Filtro exclusivo: SÓ pedidos com comissão zerada. Útil para auditar
-   * cliente excluído/regra sem base. Ao ligar, desliga o `includeZero`
+   * rateio anulado/regra sem base (cliente das Exceções nunca aparece aqui —
+   * a auditoria dele fica na aba Exceções por cliente). Ao ligar, desliga o `includeZero`
    * (não faz sentido combinar — o resultado já é composto só de zeros).
    */
   const [onlyZero, setOnlyZero] = useState(false);
@@ -407,7 +408,7 @@ export function CommissionsOrderProvisionPage() {
                   setPage(1);
                 }}
               />
-              Incluir comissão zero (ex.: cliente excluído)
+              Incluir comissão zero
             </label>
             <label
               className="inline-flex items-center gap-2 text-xs text-muted-foreground"
@@ -426,7 +427,7 @@ export function CommissionsOrderProvisionPage() {
                   setPage(1);
                 }}
               />
-              Somente comissões zeradas (auditoria de exclusão/rateio anulado)
+              Somente comissões zeradas (auditoria de rateio anulado/regra sem base)
             </label>
             <div className="flex flex-wrap gap-2">
               <button
@@ -524,7 +525,7 @@ export function CommissionsOrderProvisionPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão bruta (antes exclusão)"
+              label="Comissão bruta"
               amount={payload.cards.totalGrossCommissionAmount}
               amountFormat="currency"
             />
@@ -583,7 +584,7 @@ export function CommissionsOrderProvisionPage() {
               title="Sem pedidos neste filtro"
               description={
                 payload.message ??
-                "Ajuste o período ou inclua comissões zeradas para ver exclusões."
+                "Ajuste o período ou inclua comissões zeradas."
               }
             />
           ) : (
@@ -640,11 +641,7 @@ export function CommissionsOrderProvisionPage() {
                         {formatFinanceCurrency(row.totalFinalCommissionAmount)}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {row.hasCustomerExcludedItems
-                          ? "Cliente excluído (itens a zero)"
-                          : row.totalFinalCommissionAmount <= 0.009
-                            ? "Comissão zero"
-                            : "—"}
+                        {row.totalFinalCommissionAmount <= 0.009 ? "Comissão zero" : "—"}
                       </td>
                     </tr>
                   ))}

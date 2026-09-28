@@ -168,10 +168,6 @@ export function CommissionClosingReportPrintDocument({
               value={formatFinanceCurrency(cards.receivedWithScheduleAmount)}
             />
             <SummaryKpiCard
-              label="Recebido cliente excluído"
-              value={formatFinanceCurrency(cards.receivedExcludedCustomerAmount)}
-            />
-            <SummaryKpiCard
               label="Empresas do grupo excluídas"
               value={formatFinanceInteger(
                 payload.materializationSummary.groupCompanyExcludedCount
@@ -184,10 +180,6 @@ export function CommissionClosingReportPrintDocument({
             <SummaryKpiCard
               label="Comissão bruta"
               value={formatFinanceCurrency(cards.grossCommissionAmount)}
-            />
-            <SummaryKpiCard
-              label="Comissão excluída"
-              value={formatFinanceCurrency(cards.excludedCommissionAmount)}
             />
             <SummaryKpiCard
               label={authority.isLegacyPeriod ? "Comissão reconstruída (não oficial)" : "Comissão final a pagar"}
@@ -219,7 +211,6 @@ export function CommissionClosingReportPrintDocument({
                 <th className="col-money">Recebido único</th>
                 <th className="col-money">Base</th>
                 <th className="col-money">Comissão bruta</th>
-                <th className="col-money">Comissão excluída</th>
                 <th className="col-money">Comissão final</th>
                 <th>Exceções</th>
               </tr>
@@ -236,9 +227,6 @@ export function CommissionClosingReportPrintDocument({
                   </td>
                   <td className="sales-orders-print-money col-money">
                     {formatFinanceCurrency(row.grossCommission)}
-                  </td>
-                  <td className="sales-orders-print-money col-money">
-                    {formatFinanceCurrency(row.excludedCommission)}
                   </td>
                   <td className="sales-orders-print-money col-money">
                     {formatFinanceCurrency(row.releasedCommission)}

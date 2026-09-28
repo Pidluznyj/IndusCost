@@ -134,7 +134,7 @@ export function CommissionsCustomerExclusionsPage() {
         variant="info"
         density="compact"
         title="Regra oficial"
-        description="Exceções impactam o cálculo no backend (CommissionCustomerExclusionRule). Clientes excluídos não entram no grid comissionável do vendedor e aparecem na auditoria como excluídos."
+        description="Exceções impactam o cálculo no backend (CommissionCustomerExclusionRule). Clientes cadastrados aqui não aparecem em nenhum relatório de comissão dos vendedores (Fechamento do mês, Fechamentos, Provisão por pedido e Relatórios), mesmo que o vendedor tenha feito a venda. A auditoria dessas vendas fica nesta aba."
       />
 
       <div className="rounded-xl border p-4 space-y-3">
@@ -147,7 +147,9 @@ export function CommissionsCustomerExclusionsPage() {
           monthLabel="Mês do fechamento"
         />
         <p className="text-xs text-muted-foreground">
-          A reconciliação abaixo usa o mesmo universo do Fechamento do mês (receiptDate).
+          A reconciliação abaixo usa o mesmo universo do Fechamento do mês (receiptDate). Os clientes
+          excluídos aparecem só aqui: não entram no Total recebido gerencial nem nos relatórios dos
+          vendedores.
         </p>
       </div>
 

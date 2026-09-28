@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 import { prisma } from "@/src/lib/prisma.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber } from "./commission-money.js";
+import { resolveCustomerExclusionForSale } from "./commissionCustomerExclusionApply.js";
+import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
 import {
   assembleCommissionOrderProvisionPayload,
   assembleCommissionOrderProvisionReportPayload,
@@ -106,30 +108,37 @@ async function loadCommissionOrderProvisionSnapshots(
 
   const where: Prisma.CommissionOrderSnapshotWhereInput = { AND: and };
 
-  const rows = await prisma.commissionOrderSnapshot.findMany({
-    where,
-    select: {
-      id: true,
-      salesOrderId: true,
-      nfeId: true,
-      saleDate: true,
-      customerNameSnapshot: true,
-      canonicalSellerId: true,
-      canonicalSellerName: true,
-      rawSellerId: true,
-      rawSellerName: true,
-      totalSoldAmount: true,
-      totalGrossCommissionAmount: true,
-      totalFinalCommissionAmount: true,
-      salesOrder: { select: { orderCode: true } },
-      items: {
-        select: { status: true },
-        where: { status: "CUSTOMER_EXCLUDED" },
-        take: 1,
+  const [rows, exclusionRules] = await Promise.all([
+    prisma.commissionOrderSnapshot.findMany({
+      where,
+      select: {
+        id: true,
+        salesOrderId: true,
+        nfeId: true,
+        saleDate: true,
+        customerId: true,
+        customer: { select: { taxId: true, nomusExternalPersonId: true } },
+        customerNameSnapshot: true,
+        canonicalSellerId: true,
+        canonicalSellerName: true,
+        rawSellerId: true,
+        rawSellerName: true,
+        totalSoldAmount: true,
+        totalGrossCommissionAmount: true,
+        totalFinalCommissionAmount: true,
+        salesOrder: { select: { orderCode: true } },
+        items: {
+          select: { status: true },
+          where: { status: "CUSTOMER_EXCLUDED" },
+          take: 1,
+        },
       },
-    },
-    orderBy: [{ saleDate: "desc" }, { createdAt: "desc" }],
-  });
+      orderBy: [{ saleDate: "desc" }, { createdAt: "desc" }],
+    }),
+    // Clientes das Exceções por cliente somem da provisão mesmo com snapshot anterior à
+    // regra (mesma aplicação "soft" dos Relatórios, aqui na data da venda).
+    loadActiveCustomerExclusionRuleSnapshots(),
+  ]);
 
   const snapshots: CommissionOrderProvisionSnapshotInput[] = rows.map((row) => ({
     id: row.id,
@@ -148,6 +157,15 @@ async function loadCommissionOrderProvisionSnapshots(
     totalFinalCommissionAmount:
       decimalToNumber(row.totalFinalCommissionAmount) ?? 0,
     hasCustomerExcludedItems: row.items.length > 0,
+    customerExcludedByActiveRule:
+      resolveCustomerExclusionForSale({
+        customerId: row.customerId,
+        customerExternalId: row.customer?.nomusExternalPersonId ?? null,
+        customerTaxId: row.customer?.taxId ?? null,
+        customerName: row.customerNameSnapshot,
+        referenceDate: row.saleDate,
+        rules: exclusionRules,
+      }) != null,
   }));
 
   return { query, snapshots };

@@ -6,7 +6,11 @@ import {
   isCanonicalSellerDisplayName,
   resolveClosingSellerGroupKey,
 } from "./commissionClosings.shared.js";
-import type { ReceiptClosingApiLine } from "./commissionReceiptClosingApi.shared.js";
+import { enrichReceiptClosingPagePayload } from "./commissionReceiptClosingApi.js";
+import type {
+  ReceiptClosingApiLine,
+  ReceiptClosingSnapshotShared,
+} from "./commissionReceiptClosingApi.shared.js";
 import { formatCommissionReceiptLineStatus } from "./commissionReceiptLineStatusLabels.js";
 
 function line(
@@ -138,6 +142,91 @@ describe("commissionClosings.shared", () => {
     assert.equal(report!.totals.finalCommissionAmount, 23.75);
     assert.equal(report!.rows[0]?.statusLabel, formatCommissionReceiptLineStatus("COMMISSIONABLE"));
     assert.equal(report!.rows[0]?.overpaidAmount, 50);
+  });
+
+  it("resumo e relatório do vendedor não mostram cliente das Exceções por cliente", () => {
+    const closing: ReceiptClosingSnapshotShared = {
+      closingId: "c10",
+      year: 2026,
+      month: 10,
+      status: "CLOSED",
+      calculationHash: "abc",
+      totalReceivedAmount: 1800,
+      totalCommissionableBase: 950,
+      totalExpectedCommission: 23.75,
+      totalReleasedCommission: 23.75,
+      totalExcludedAmount: 15,
+      totalExceptionAmount: 0,
+      lineCount: 2,
+      closedAt: "2026-11-05T12:00:00.000Z",
+      closedBy: "user-1",
+      notes: null,
+    };
+    // Mesmo caminho da tela Fechamentos: página do fechamento → linhas do relatório.
+    const page = enrichReceiptClosingPagePayload({
+      year: 2026,
+      month: 10,
+      mode: "CLOSED",
+      exportMode: "CLOSED",
+      closing,
+      canApply: false,
+      applyBlockedReason: null,
+      summary: {
+        totalReceivables: 2,
+        totalReceivedAmount: 1800,
+        totalCommissionableBase: 950,
+        totalExpectedCommission: 23.75,
+        totalReleasedCommission: 23.75,
+        totalExcludedAmount: 15,
+        totalExceptionAmount: 0,
+        countByStatus: { COMMISSIONABLE: 1, CUSTOMER_EXCLUDED: 1 },
+      },
+      bySeller: [],
+      lines: [
+        line({ lineKey: "ok" }),
+        line({
+          lineKey: "ex",
+          nomusReceivableId: 2,
+          receivableNumber: "CR-2",
+          customerId: "cust-esmaltec",
+          customerName: "Esmaltec S/A",
+          receivedAmount: 800,
+          uniqueReceivedAmount: 800,
+          commissionableBaseAmount: 0,
+          expectedCommissionAmount: 0,
+          releasedCommissionAmount: 0,
+          grossCommissionAmount: 15,
+          exclusionReason: "Exceção comercial",
+          status: "CUSTOMER_EXCLUDED",
+        }),
+      ],
+      groupCompanyAuditLines: [],
+    });
+
+    const sellers = buildClosingSellerSummaries(page.lines);
+    assert.deepEqual(
+      sellers.map((s) => s.sellerName),
+      ["GISLENE LIMA"]
+    );
+    assert.equal(sellers[0]!.customerCount, 1);
+    assert.equal(sellers[0]!.totalReceivedAmount, 1000);
+    assert.equal(sellers[0]!.excludedCommissionAmount, 0);
+    assert.equal(page.cards.totalReceivedAmount, 1000);
+    assert.equal(page.cards.excludedCommissionAmount, 0);
+
+    const report = buildClosingSellerReport(
+      page.lines,
+      resolveClosingSellerGroupKey(page.lines[0]!),
+      closing,
+      "Paulo"
+    );
+    assert.ok(report);
+    assert.deepEqual(
+      report!.rows.map((row) => row.customerName),
+      ["Cliente A"]
+    );
+    assert.equal(report!.summary.excludedCommissionAmount, 0);
+    assert.equal(report!.summary.customerCount, 1);
   });
 
   it("rejeita label Vendedor ID como canônico", () => {

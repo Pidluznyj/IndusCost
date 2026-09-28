@@ -3,10 +3,12 @@
  * Fonte oficial: linhas do ledger de Fechamento por recebimento.
  * A competência do mês vem da data real do recebimento (receiptDate);
  * `settlementDate` é a baixa administrativa transportada para auditoria.
+ * Clientes cadastrados em Exceções por cliente não aparecem (nem linha, nem total).
  */
 import * as XLSX from "xlsx";
 import { roundMoney } from "./commission-money.shared.js";
 import {
+  omitCustomerExcludedFromCommissionReports,
   RECEIPT_CLOSING_NO_SELLER_GROUP_KEY,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_LABEL,
@@ -682,7 +684,9 @@ export function assembleCommissionReportsPayload(
   query: CommissionReportsQuery,
   monthsIncluded: CommissionReportsPayload["monthsIncluded"]
 ): CommissionReportsPayload {
-  const allRecords = sourceLines.map(mapSourceLineToReportRecord);
+  // Relatório dos vendedores: vendas de clientes das Exceções por cliente ficam de fora
+  // (também as reclassificadas pela regra ativa na data do recebimento).
+  const allRecords = omitCustomerExcludedFromCommissionReports(sourceLines).map(mapSourceLineToReportRecord);
   const filtered = filterCommissionReportRecords(allRecords, query).sort((a, b) => {
     const da = a.settlementDate ? Date.parse(a.settlementDate) : 0;
     const db = b.settlementDate ? Date.parse(b.settlementDate) : 0;
@@ -770,7 +774,6 @@ export function buildCommissionReportsExportWorkbook(input: {
       "Valor recebido",
       "Base comissionável",
       "Comissão bruta",
-      "Comissão excluída",
       "Comissão final",
       "% médio",
       "Status principal",
@@ -781,7 +784,6 @@ export function buildCommissionReportsExportWorkbook(input: {
       s.receivedAmount,
       s.commissionableBase,
       s.grossCommission,
-      s.excludedCommission,
       s.finalCommission,
       s.avgRatePercent ?? "",
       s.primaryStatus,
@@ -807,11 +809,9 @@ export function buildCommissionReportsExportWorkbook(input: {
       "Base comissionável",
       "Comissão %",
       "Comissão bruta R$",
-      "Comissão excluída R$",
       "Comissão final R$",
       "Status período",
       "Status linha",
-      "Cliente excluído (regra)",
       "Empresa do grupo",
       "Sem vendedor",
       "Motivo",
@@ -830,11 +830,9 @@ export function buildCommissionReportsExportWorkbook(input: {
       r.commissionableBaseAmount,
       r.ratePercent ?? "",
       r.grossCommissionAmount,
-      r.excludedCommissionAmount,
       r.finalCommissionAmount,
       r.periodStatus,
       r.lineStatus,
-      r.isCustomerExcluded ? "Sim" : "Não",
       r.isGroupCompany ? "Sim" : "Não",
       r.isNoSeller || r.isSellerUnresolved ? "Sim" : "Não",
       r.statusReason ?? r.exclusionReason ?? "",
@@ -863,10 +861,8 @@ export function buildCommissionReportsExportWorkbook(input: {
     [
       "Observação",
       (legacy ? `${text.fileNotice} ` : "") +
-        "Valores do ledger/prévia de Fechamento (competência pela data real do recebimento; a coluna Baixa é informação administrativa). Clientes não comissionáveis (Exceções por cliente) são zerados e identificados.",
+        "Valores do ledger/prévia de Fechamento (competência pela data real do recebimento; a coluna Baixa é informação administrativa). Clientes cadastrados em Exceções por cliente não aparecem neste relatório.",
     ],
-    ["Clientes excluídos (únicos)", summary?.excludedCustomerCount ?? ""],
-    ["Comissão excluída por regra", summary?.excludedCommission ?? ""],
     ["Empresas do grupo", summary?.groupCompanyExcludedCount ?? ""],
     [
       "Comissão total formatada (amostra)",

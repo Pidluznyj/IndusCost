@@ -4,7 +4,8 @@
  *
  * Fórmula canônica (já materializada):
  * totalFinalCommissionAmount = Σ CommissionOrderItemSnapshot.finalCommissionAmount
- * Cliente excluído → final do item = 0 (reflete no total do pedido).
+ * Clientes das Exceções por cliente não aparecem (snapshot com item excluído ou regra
+ * ativa na data da venda) — mesma regra de todos os relatórios de comissão dos vendedores.
  */
 
 import * as XLSX from "xlsx";
@@ -29,8 +30,8 @@ export type CommissionOrderProvisionQuery = {
   includeZeroCommission: boolean;
   /**
    * Quando `true`, o backend devolve SOMENTE pedidos com
-   * `totalFinalCommissionAmount ≤ 0` (comissão zerada — normalmente cliente
-   * excluído, snapshot com regra sem base, ou rateio anulado). É mutuamente
+   * `totalFinalCommissionAmount ≤ 0` (comissão zerada — snapshot com regra sem
+   * base ou rateio anulado; cliente das Exceções nunca aparece). É mutuamente
    * exclusivo com `includeZeroCommission`: se `onlyZeroCommission=true`, o
    * `includeZeroCommission` é ignorado (o resultado só tem zeros por
    * definição). Útil para o gestor auditar quais pedidos ficaram sem comissão
@@ -431,7 +432,24 @@ export type CommissionOrderProvisionSnapshotInput = {
   totalGrossCommissionAmount: number;
   totalFinalCommissionAmount: number;
   hasCustomerExcludedItems: boolean;
+  /**
+   * Regra ativa de Exceções por cliente cobre o cliente na data da venda — vale mesmo
+   * que o snapshot tenha sido materializado antes do cadastro da regra.
+   */
+  customerExcludedByActiveRule?: boolean;
 };
+
+/**
+ * Provisão dos vendedores sem clientes das Exceções por cliente: sai o snapshot (NF)
+ * inteiro — a exclusão depende só de cliente, data e regra, então vale para toda a venda.
+ */
+export function omitCustomerExcludedProvisionSnapshots<
+  T extends Pick<CommissionOrderProvisionSnapshotInput, "hasCustomerExcludedItems" | "customerExcludedByActiveRule">,
+>(snapshots: ReadonlyArray<T>): T[] {
+  return snapshots.filter(
+    (snapshot) => !snapshot.hasCustomerExcludedItems && snapshot.customerExcludedByActiveRule !== true
+  );
+}
 
 function toIsoDate(value: Date | string): string {
   if (typeof value === "string") return value.slice(0, 10);
@@ -596,7 +614,7 @@ export function filterCommissionOrderProvisionZeroRows(
 ): CommissionOrderProvisionRow[] {
   if (query.onlyZeroCommission) {
     // Filtro exclusivo: SÓ pedidos com comissão final zerada (rateio anulado,
-    // cliente excluído, snapshot sem base). Ignora `includeZeroCommission`
+    // snapshot sem base). Ignora `includeZeroCommission`
     // por definição — o resultado já é composto só de zeros.
     return rows.filter((r) => r.totalFinalCommissionAmount <= 0.009);
   }
@@ -611,7 +629,7 @@ export function assembleCommissionOrderProvisionPayload(input: {
   snapshots: ReadonlyArray<CommissionOrderProvisionSnapshotInput>;
 }): CommissionOrderProvisionPayload {
   const rows = filterCommissionOrderProvisionZeroRows(
-    aggregateCommissionOrderProvisionRows(input.snapshots),
+    aggregateCommissionOrderProvisionRows(omitCustomerExcludedProvisionSnapshots(input.snapshots)),
     input.query
   );
   const cards = buildCommissionOrderProvisionCards(rows);
@@ -657,7 +675,7 @@ export function assembleCommissionOrderProvisionReportPayload(input: {
   snapshots: ReadonlyArray<CommissionOrderProvisionSnapshotInput>;
 }): CommissionOrderProvisionReportPayload {
   const rows = filterCommissionOrderProvisionZeroRows(
-    aggregateCommissionOrderProvisionRows(input.snapshots),
+    aggregateCommissionOrderProvisionRows(omitCustomerExcludedProvisionSnapshots(input.snapshots)),
     input.query
   );
   const cards = buildCommissionOrderProvisionCards(rows);
@@ -752,7 +770,6 @@ export function buildCommissionOrderProvisionExportWorkbook(
       "Base vendida",
       "Comissão bruta",
       "Comissão final",
-      "Cliente excluído",
     ],
     ...payload.rows.map((r) => [
       r.orderCode ?? r.salesOrderId,
@@ -763,7 +780,6 @@ export function buildCommissionOrderProvisionExportWorkbook(
       r.totalSoldAmount,
       r.totalGrossCommissionAmount,
       r.totalFinalCommissionAmount,
-      r.hasCustomerExcludedItems ? "Sim" : "Não",
     ]),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), "Pedidos");
@@ -775,7 +791,7 @@ export function buildCommissionOrderProvisionExportWorkbook(
     ["Gerado em", payload.generatedAt],
     ["Pedidos", payload.cards.orderCount],
     ["Base vendida", payload.cards.totalSoldAmount],
-    ["Comissão bruta (antes exclusão)", payload.cards.totalGrossCommissionAmount],
+    ["Comissão bruta", payload.cards.totalGrossCommissionAmount],
     ["Comissão acumulada", payload.cards.totalFinalCommissionAmount],
   ]);
   XLSX.utils.book_append_sheet(wb, meta, "Filtros");

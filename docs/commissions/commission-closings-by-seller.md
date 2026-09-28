@@ -18,7 +18,7 @@ Aba **Comercial > Comissões > Fechamentos** para consultar fechamentos **já gr
 | Fechamento mensal | Um por mês/ano (ex.: Junho/2026), com hash, totais e auditoria |
 | Relatório por vendedor | Agrupa as linhas do ledger pelo vendedor canônico (`CommissionPerson`) |
 
-Exclusões de cliente com vendedor atribuível entram na visão daquele vendedor (comissão zerada), para transparência da carteira.
+Clientes cadastrados em Exceções por cliente **não** aparecem no relatório do vendedor (nem com comissão zerada), mesmo que ele tenha feito a venda. A auditoria fica na aba Exceções por cliente — ver `commission-customer-exclusions-reports.md`.
 
 ## Como usar
 

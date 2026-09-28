@@ -7,6 +7,7 @@ import {
   buildReceiptClosingPageFromLedger,
   buildReceiptClosingPageFromPreview,
   lineMatchesReceiptClosingOwnScope,
+  withoutCustomerExcludedAudit,
   type ReceiptClosingOwnScopeFilter,
   type ReceiptClosingPagePayload,
 } from "./commissionReceiptClosingApi.js";
@@ -78,12 +79,13 @@ async function resolveReceiptClosingOwnScope(
 /**
  * Contexto comum a toda página do fechamento: cobertura conhecida das linhas
  * (auditoria) e, antes do cutover, o relatório oficial do Nomus registrado. Ambos só
- * leitura e sem derrubar a tela se a consulta falhar.
+ * leitura e sem derrubar a tela se a consulta falhar. A auditoria das Exceções por
+ * cliente não sai daqui: tela, exportações e Fechamentos são relatórios dos vendedores.
  */
 async function decorateReceiptClosingPage(
   page: ReceiptClosingPagePayload
 ): Promise<ReceiptClosingPagePayload> {
-  const withCoverage = await enrichReceiptClosingPageCoverage(prisma, page);
+  const withCoverage = await enrichReceiptClosingPageCoverage(prisma, withoutCustomerExcludedAudit(page));
   if (!getCommissionReportingAuthority(page.year, page.month).isLegacyPeriod) return withCoverage;
   const legacyOfficialReport = await loadLegacyOfficialReportStatus(prisma, page.year, page.month).catch(
     (error: unknown) => {

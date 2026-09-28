@@ -12,6 +12,7 @@ import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
   mapPreviewLineToApiLine,
   RECEIPT_CLOSING_EXPORT_HEADERS,
+  withoutCustomerExcludedAudit,
 } from "./commissionReceiptClosingApi.js";
 import { filterReceiptClosingLinesBySellerKey } from "./commissionReceiptClosingSellerFilter.js";
 import {
@@ -271,7 +272,7 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(page.cards.totalReceivedAmount, 1000);
   });
 
-  it("cliente excluído aparece em card próprio", () => {
+  it("cliente das Exceções por cliente fica fora do relatório e vai só para a auditoria", () => {
     const lines = [
       previewLine({
         ledgerLineKey: "k1",
@@ -293,19 +294,25 @@ describe("commissionReceiptClosingApi", () => {
       canApply: true,
       applyBlockedReason: null,
     });
-    assert.equal(payload.cards.receivedExcludedCustomerAmount, 1000);
-    assert.equal(payload.cards.excludedCommissionAmount, 15);
-    const unassigned = payload.bySeller.find((row) => row.sellerId == null && row.sellerName == null);
-    assert.ok(unassigned);
-    assert.equal(unassigned?.excludedCommission, 15);
-    assert.equal(unassigned?.receivedAmount, 1000);
-    assert.equal(unassigned?.exceptionCount, 0);
-    // Cliente excluído mantém vendedor atribuível para auditoria/filtro; agrupamento é unassigned.
-    assert.equal(payload.lines[0]?.canonicalSellerName, "GISLENE LIMA");
-    assert.equal(payload.lines[0]?.rawSellerName, "GISLENE");
+    // Nem linha, nem vendedor, nem card: o relatório não mostra o cliente excluído.
+    assert.equal(payload.lines.length, 0);
+    assert.equal(payload.bySeller.length, 0);
+    assert.equal(payload.cards.totalReceivedAmount, 0);
+    assert.equal(payload.cards.receivedExcludedCustomerAmount, 0);
+    assert.equal(payload.cards.grossCommissionAmount, 0);
+    assert.equal(payload.cards.excludedCommissionAmount, 0);
+    assert.equal(payload.summary.totalReceivedAmount, 0);
+    assert.equal(payload.summary.totalExcludedAmount, 0);
+    assert.equal(payload.materializationSummary.totalReceivablesCount, 0);
+    // Auditoria (aba Exceções por cliente): linha preservada com o vendedor atribuível.
+    assert.equal(payload.customerExcludedAuditLines?.length, 1);
+    assert.equal(payload.customerExcludedAuditLines?.[0]?.canonicalSellerName, "GISLENE LIMA");
+    assert.equal(payload.customerExcludedAuditLines?.[0]?.rawSellerName, "GISLENE");
+    // A resposta da API do fechamento nunca leva a auditoria.
+    assert.equal("customerExcludedAuditLines" in withoutCustomerExcludedAudit(payload), false);
   });
 
-  it("cliente excluído com vendedor raw não infla total da vendedora", () => {
+  it("venda de cliente das Exceções feita pela vendedora não aparece no relatório dela", () => {
     const lines = [
       previewLine({
         ledgerLineKey: "ok",
@@ -352,18 +359,27 @@ describe("commissionReceiptClosingApi", () => {
     const gislene = payload.bySeller.find((row) => row.sellerId === "seller-1");
     const unassigned = payload.bySeller.find((row) => row.sellerId == null && row.sellerName == null);
     assert.ok(gislene);
-    assert.ok(unassigned);
+    assert.equal(unassigned, undefined);
+    assert.equal(payload.bySeller.length, 1);
     assert.equal(gislene?.receivedAmount, 5000);
     assert.equal(gislene?.releasedCommission, 100);
-    assert.equal(unassigned?.receivedAmount, 1800);
-    assert.equal(unassigned?.excludedCommission, 35);
+    assert.equal(gislene?.excludedCommission, 0);
+    assert.equal(payload.cards.totalReceivedAmount, 5000);
+    assert.deepEqual(
+      payload.lines.map((line) => line.customerName),
+      ["Cliente"]
+    );
     assert.equal(
       filterReceiptClosingLinesBySellerKey(payload.lines, "seller-1").length,
       1
     );
     assert.equal(
       filterReceiptClosingLinesBySellerKey(payload.lines, "—").length,
-      2
+      0
+    );
+    assert.deepEqual(
+      payload.customerExcludedAuditLines?.map((line) => line.customerName),
+      ["Esmaltec S/A", "Britania Eletrodomesticos SA"]
     );
   });
 
@@ -405,7 +421,7 @@ describe("commissionReceiptClosingApi", () => {
     assert.match(payload.materializationSummary.rebuildScriptHint ?? "", /rebuild-commission-materialization/);
   });
 
-  it("preview com schedule e excluído expõe resumo auditável", () => {
+  it("preview com schedule e excluído: excluído fica fora dos totais e só conta na auditoria", () => {
     const lines = [
       previewLine({ ledgerLineKey: "k1", nomusReceivableId: 100 }),
       previewLine({
@@ -436,10 +452,13 @@ describe("commissionReceiptClosingApi", () => {
       canApply: true,
       applyBlockedReason: null,
     });
-    assert.equal(payload.materializationSummary.totalReceivablesCount, 3);
-    assert.equal(payload.materializationSummary.receivablesWithScheduleCount, 2);
+    assert.equal(payload.materializationSummary.totalReceivablesCount, 2);
+    assert.equal(payload.materializationSummary.receivablesWithScheduleCount, 1);
     assert.equal(payload.materializationSummary.receivablesWithoutScheduleCount, 1);
+    // Contagem da conciliação — usada só pela auditoria da aba Exceções por cliente.
     assert.equal(payload.materializationSummary.excludedCustomerCount, 1);
+    assert.equal(payload.customerExcludedAuditLines?.length, 1);
+    assert.equal(payload.lines.some((line) => line.status === "CUSTOMER_EXCLUDED"), false);
     assert.equal(payload.materializationSummary.totalExpectedCommission, 20);
     assert.equal(payload.materializationSummary.totalReleasedCommission, 20);
   });
