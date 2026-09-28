@@ -217,6 +217,37 @@ describe("UI — histórico Nomus não oficial", () => {
     assert.equal((html.match(/Consultar reconstrução técnica/g) ?? []).length, 2);
   });
 
+  it("painel de fontes oficiais fica recolhido por padrão e abre sob demanda", () => {
+    const html = renderToStaticMarkup(
+      <panelModule.CommissionReportingSourcesPanel
+        year={2026}
+        legacyReports={[status(8, false), status(9, true)]}
+        officialDescription="Fechamentos oficiais abaixo."
+      />
+    );
+    assert.match(html, /^<details\b/);
+    assert.doesNotMatch(html, /<details[^>]*\bopen=""/);
+    const summary = /<summary\b[^>]*>([\s\S]*?)<\/summary>/.exec(html)?.[1] ?? "";
+    const summaryText = plain(summary);
+    assert.match(summaryText, /Fontes oficiais dos relatórios de comissão/);
+    assert.match(summaryText, /Histórico Nomus até setembro\/2026 \( ?2 competência\(s\) do Nomus em 2026 · 1 com relatório oficial registrado ?\)/);
+    assert.match(summaryText, /Relatórios oficiais IndusCost a partir de outubro\/2026/);
+    assert.match(summaryText, /Ver detalhes/);
+    // Detalhe continua no documento (abre sem nova consulta).
+    assert.match(plain(html), /Relatório oficial Nomus registrado: SIM — nomus-2026-09\.xlsx/);
+    assert.match(
+      renderToStaticMarkup(
+        <panelModule.CommissionReportingSourcesPanel
+          year={2026}
+          legacyReports={[]}
+          officialDescription="Fechamentos oficiais abaixo."
+          defaultOpen
+        />
+      ),
+      /<details[^>]*\bopen=""/
+    );
+  });
+
   it("'TENHO CIÊNCIA' antes de exportar o espelho técnico (texto completo e ação explícita)", () => {
     const html = renderToStaticMarkup(
       <dialogModule.CommissionTechnicalMirrorConfirmDialog open periodLabel="09/2026" onCancel={() => {}} onConfirm={() => {}} />
