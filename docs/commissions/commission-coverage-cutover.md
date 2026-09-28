@@ -40,6 +40,7 @@ Constantes únicas (não repetir datas no código):
 ```ts
 COMMISSION_OFFICIAL_CUTOVER_DATE = "2026-10-01"            // IndusCost oficial a partir daqui
 COMMISSION_LEGACY_RECONCILIATION_START_DATE = "2026-08-01" // início da janela de conciliação
+COMMISSION_PORTFOLIO_OUTLOOK_START_DATE = "2026-09-01"     // primeiro mês da Previsão de comissões
 ```
 
 - **Até 30/09/2026** o Nomus é a fonte oficial. Competências até 09/2026:
@@ -48,6 +49,14 @@ COMMISSION_LEGACY_RECONCILIATION_START_DATE = "2026-08-01" // início da janela 
   Cancelar um fechamento antigo continua permitido.
 - **A partir de 01/10/2026** o IndusCost controla integralmente: fechamento oficial,
   cobertura e pendências.
+- **Previsão de comissões (Comissões › Previsão)** mostra só de **setembro/2026** em diante (decisão
+  de 28/09/2026); os meses anteriores são consultados nos relatórios de comissão do Nomus. O servidor
+  põe o piso no início do período (`clampOutlookFromMonth` em `parseCommissionPortfolioOutlookQuery`:
+  vazio, inválido ou anterior vira 09/2026; um período todo anterior volta vazio). A tela abre em
+  09/2026, os campos De/Até não aceitam mês anterior e o aviso `COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE`
+  indica o Nomus. Os cards só somam recebimentos e previstos do período (inclusive "Realizado ainda
+  fora de fechamento"). O detalhe do título continua com o histórico completo dele, para o realizado
+  e o previsto fecharem com a comissão atribuída. O cutover oficial acima não muda.
 
 ## 3. receiptDate é a competência natural
 

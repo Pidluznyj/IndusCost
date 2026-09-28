@@ -1,5 +1,6 @@
 /**
- * Cutover oficial da comissão Nomus → IndusCost e janela de reconciliação legada.
+ * Cutover oficial da comissão Nomus → IndusCost, janela de reconciliação legada e
+ * início da Previsão de comissões.
  * ÚNICO lugar com essas datas — nenhum outro módulo deve hardcodar o corte.
  *
  *   até 30/09/2026 → fonte oficial histórica = Nomus
@@ -39,6 +40,19 @@ export const COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH: CommissionYearMonth = yearM
 /** Primeira competência (ano/mês) da janela de reconciliação legada. */
 export const COMMISSION_LEGACY_RECONCILIATION_START_YEAR_MONTH: CommissionYearMonth = yearMonthOf(
   COMMISSION_LEGACY_RECONCILIATION_START_DATE
+);
+
+/**
+ * Primeiro dia exibido na Previsão de comissões (Comissões › Previsão). Decisão
+ * do negócio em 28/09/2026: a previsão mostra só de setembro/2026 em diante; os
+ * meses anteriores são consultados nos relatórios de comissão do Nomus. Não muda
+ * o cutover oficial (fechamento, pagamento e autoridade dos relatórios).
+ */
+export const COMMISSION_PORTFOLIO_OUTLOOK_START_DATE = "2026-09-01";
+
+/** Primeira competência (ano/mês) exibida na Previsão de comissões. */
+export const COMMISSION_PORTFOLIO_OUTLOOK_START_YEAR_MONTH: CommissionYearMonth = yearMonthOf(
+  COMMISSION_PORTFOLIO_OUTLOOK_START_DATE
 );
 
 /** Chave comparável `YYYY-MM`. */

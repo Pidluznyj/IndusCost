@@ -9,6 +9,7 @@ import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber } from "./commission-money.js";
 import {
   buildCommissionPortfolioOutlook,
+  clampOutlookFromMonth,
   type OutlookCoverageSource,
   type OutlookPayload,
   type OutlookQuery,
@@ -36,7 +37,8 @@ export function parseCommissionPortfolioOutlookQuery(
   const page = Math.max(1, Number(raw.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(raw.pageSize) || 25));
   return {
-    fromMonth: monthKey(raw.from),
+    // Previsão só do primeiro mês em diante (setembro/2026); o anterior fica no Nomus.
+    fromMonth: clampOutlookFromMonth(monthKey(raw.from)),
     toMonth: monthKey(raw.to),
     canonicalSellerId: scope.dataScope === "own" ? null : text(raw.sellerId),
     customerId: text(raw.customerId),
