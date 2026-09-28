@@ -226,7 +226,11 @@ export function buildCustomerExclusionClosingReconciliation(
   closingPage: ReceiptClosingPagePayload,
   registeredRules: CustomerExclusionRuleSnapshot[]
 ): CustomerExclusionClosingReconciliationPayload {
-  const manualExcludedCustomers = aggregateCustomerExcludedLines(closingPage.lines);
+  // O relatório do fechamento não traz os clientes das Exceções (auditoria separada).
+  const manualExcludedCustomers = aggregateCustomerExcludedLines([
+    ...closingPage.lines,
+    ...(closingPage.customerExcludedAuditLines ?? []),
+  ]);
   const groupCompanyExcluded = aggregateGroupCompanyLines(closingPage.groupCompanyAuditLines);
 
   return {

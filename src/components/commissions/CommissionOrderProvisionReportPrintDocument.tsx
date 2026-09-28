@@ -99,7 +99,7 @@ export function CommissionOrderProvisionReportPrintDocument({
               value={formatFinanceCurrency(cards.totalSoldAmount)}
             />
             <SummaryKpiCard
-              label="Comissão bruta (antes exclusão)"
+              label="Comissão bruta"
               value={formatFinanceCurrency(cards.totalGrossCommissionAmount)}
             />
           </div>

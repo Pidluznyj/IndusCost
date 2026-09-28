@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as XLSX from "xlsx";
-import type { CommissionReceiptPreviewLine } from "./commissionReceiptEngine.js";
+import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import {
   buildReceiptClosingBySeller,
   buildReceiptClosingExportCsv,
@@ -339,5 +339,84 @@ describe("commissionReceiptClosingDetailExport", () => {
     const rows = buildReceiptClosingBySeller(page.lines);
     assert.equal(rows.length, 1);
     assert.equal(rows[0]?.sellerName, "Sem vendedor no pedido Nomus");
+  });
+
+  it("clientes das Exceções por cliente não aparecem no XLSX nem no CSV do fechamento", () => {
+    const page = buildReceiptClosingPageFromPreview({
+      preview: {
+        year: 2026,
+        month: 10,
+        totalReceivables: 2,
+        totalReceivedAmount: 1800,
+        totalCommissionableBase: 1000,
+        totalExpectedCommission: 20,
+        totalReleasedCommission: 20,
+        totalExcludedAmount: 15,
+        totalExceptionAmount: 0,
+        countByStatus: {
+          COMMISSIONABLE: 1,
+          CUSTOMER_EXCLUDED: 1,
+        } as CommissionReceiptPreviewResult["countByStatus"],
+        bySeller: [],
+        byCustomer: [],
+        lines: [
+          previewLine({ ledgerLineKey: "ok" }),
+          previewLine({
+            ledgerLineKey: "ex",
+            nomusReceivableId: 200,
+            receivableNumber: "CR-200",
+            customerName: "Esmaltec S/A",
+            receivedAmount: 800,
+            status: "CUSTOMER_EXCLUDED",
+            releasedCommissionAmount: 0,
+            expectedCommissionAmount: 0,
+            grossCommissionAmount: 15,
+            commissionableBaseAmount: 0,
+            exclusionReason: "Exceção comercial",
+          }),
+        ],
+      },
+      closing: null,
+      canApply: true,
+      applyBlockedReason: null,
+    });
+
+    const wb = buildReceiptClosingDetailExportWorkbook(page);
+    const detail = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Analítico"]!);
+    assert.deepEqual(
+      detail.map((row) => row.CR),
+      ["CR-100"]
+    );
+    assert.equal(detail[0]?.["Empresa do grupo?"], "Não");
+    assert.equal("Cliente excluído?" in (detail[0] ?? {}), false);
+
+    const porVendedor = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Por vendedor"]!);
+    assert.equal(porVendedor.length, 1);
+    assert.equal("Comissão excluída" in (porVendedor[0] ?? {}), false);
+    assert.equal(parseCurrencyBr(porVendedor[0]?.["Recebido único"]), 1000);
+
+    const resumo = XLSX.utils.sheet_to_json<{ Campo: string; Valor: unknown }>(wb.Sheets["Resumo"]!);
+    assert.equal(
+      resumo.some((row) => /cliente excluído|clientes excluídos|comissão excluída/i.test(String(row.Campo))),
+      false
+    );
+    assert.ok(
+      resumo.some(
+        (row) => row.Campo === "Total recebido no mês" && parseCurrencyBr(row.Valor) === 1000
+      )
+    );
+
+    const csv = buildReceiptClosingExportCsv({
+      year: 2026,
+      month: 10,
+      closing: null,
+      exportMode: "PREVIEW",
+      lines: page.lines,
+      cards: page.cards,
+      materializationSummary: page.materializationSummary,
+    });
+    assert.doesNotMatch(csv, /Esmaltec/);
+    assert.doesNotMatch(csv, /CR-200/);
+    assert.doesNotMatch(csv, /excludedCustomerCount|receivedExcludedCustomerAmount|excludedCommissionAmount/);
   });
 });

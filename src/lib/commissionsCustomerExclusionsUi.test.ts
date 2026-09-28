@@ -126,4 +126,46 @@ describe("commissionsCustomerExclusionsUi", () => {
     assert.match(hook, /\/inactivate/);
     assert.match(hook, /method: "POST"/);
   });
+
+  it("cliente das Exceções não aparece em nenhum relatório de comissão dos vendedores", () => {
+    const page = read("src/components/commissions/pages/CommissionsCustomerExclusionsPage.tsx");
+    assert.match(page, /não aparecem em nenhum relatório de comissão dos vendedores/);
+    assert.match(page, /mesmo que o vendedor tenha feito a venda/);
+    const navigation = read("src/lib/commissionsNavigation.ts");
+    assert.match(navigation, /não aparecem nos relatórios dos vendedores/);
+    assert.doesNotMatch(navigation, /sem ocultar vendas/);
+
+    // Telas e documentos dos vendedores: nada de card/coluna de cliente excluído.
+    const reportSurfaces = [
+      "src/components/commissions/pages/CommissionsReceiptClosingPage.tsx",
+      "src/components/commissions/pages/CommissionsClosingsPage.tsx",
+      "src/components/commissions/pages/CommissionsReportsPage.tsx",
+      "src/components/commissions/pages/CommissionsOrderProvisionPage.tsx",
+      "src/components/commissions/pages/CommissionsReceivableForecastPage.tsx",
+      "src/components/commissions/CommissionClosingReportPrintDocument.tsx",
+      "src/components/commissions/CommissionOrderProvisionReportPrintDocument.tsx",
+    ];
+    for (const path of reportSurfaces) {
+      const source = read(path);
+      assert.doesNotMatch(source, /Clientes excluídos/, path);
+      assert.doesNotMatch(source, /Recebido cliente excluído/, path);
+      assert.doesNotMatch(source, /Comissão excluída/, path);
+      assert.doesNotMatch(source, /excludedCommission/, path);
+      assert.doesNotMatch(source, /antes exclusão/, path);
+      assert.doesNotMatch(source, /hasCustomerExcludedItems/, path);
+    }
+
+    // API do fechamento remove a auditoria antes de responder (tela, exportações, Fechamentos).
+    const closingApiServer = read("src/lib/commissions/commissionReceiptClosingApi.server.ts");
+    assert.match(closingApiServer, /enrichReceiptClosingPageCoverage\(prisma, withoutCustomerExcludedAudit\(page\)\)/);
+    // Relatórios: página e XLSX sem as linhas de clientes excluídos.
+    const reportsShared = read("src/lib/commissions/commissionReports.shared.ts");
+    assert.match(reportsShared, /omitCustomerExcludedFromCommissionReports\(sourceLines\)/);
+    const reportsServer = read("src/lib/commissions/commissionReports.server.ts");
+    assert.match(reportsServer, /omitCustomerExcludedFromCommissionReports\(lines\)\.map\(mapSourceLineToReportRecord\)/);
+    // Provisão por pedido: regra ativa aplicada na data da venda.
+    const provisionServer = read("src/lib/commissions/commissionOrderProvision.server.ts");
+    assert.match(provisionServer, /loadActiveCustomerExclusionRuleSnapshots\(\)/);
+    assert.match(provisionServer, /customerExcludedByActiveRule:/);
+  });
 });

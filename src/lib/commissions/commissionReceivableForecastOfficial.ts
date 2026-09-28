@@ -11,6 +11,7 @@ import {
   markReceivableReceivedAnchors,
 } from "./commissionReceiptClosingApi.js";
 import {
+  omitCustomerExcludedFromCommissionReports,
   partitionReceiptClosingLinesByGroupCompany,
   type ReceiptClosingMaterializationSummary,
   type ReceiptClosingReconciliationSummary,
@@ -78,12 +79,15 @@ export function buildReceivableForecastOfficialPayload(
   query: CommissionReceivableForecastQuery = {},
   ref: Date = new Date()
 ): ReceivableForecastOfficialPayload {
-  const visualRows = preview.lines.map((line) =>
+  // Clientes das Exceções por cliente não entram na previsão dos vendedores (nem título,
+  // nem total, nem card) — mesma regra dos relatórios de comissão.
+  const reportPreviewLines = omitCustomerExcludedFromCommissionReports(preview.lines);
+  const visualRows = reportPreviewLines.map((line) =>
     buildVisualAuditRow(receiptLineToVisualAuditInput(line))
   );
   const summary = aggregateReceivableForecastFromRows(visualRows, query, ref);
 
-  const apiLines = markReceivableReceivedAnchors(preview.lines.map(mapPreviewLineToApiLine));
+  const apiLines = markReceivableReceivedAnchors(reportPreviewLines.map(mapPreviewLineToApiLine));
   const { managerialLines, groupCompanyAuditLines } =
     partitionReceiptClosingLinesByGroupCompany(apiLines);
 

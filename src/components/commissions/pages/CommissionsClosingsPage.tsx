@@ -775,12 +775,6 @@ export function CommissionsClosingsPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão excluída"
-              amount={detail.cards.excludedCommissionAmount}
-              amountFormat="currency"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label={
                 detail.closing.reportingAuthority?.isLegacyPeriod
                   ? "Comissão reconstruída (não oficial)"
@@ -820,7 +814,6 @@ export function CommissionsClosingsPage() {
                   <th className="px-3 py-2">Recebido</th>
                   <th className="px-3 py-2">Base</th>
                   <th className="px-3 py-2">Bruta</th>
-                  <th className="px-3 py-2">Excluída</th>
                   <th className="px-3 py-2">Final</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Ações</th>
@@ -846,9 +839,6 @@ export function CommissionsClosingsPage() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       {formatFinanceCurrency(row.grossCommissionAmount)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {formatFinanceCurrency(row.excludedCommissionAmount)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 font-semibold">
                       {formatFinanceCurrency(row.finalCommissionAmount)}
@@ -957,12 +947,6 @@ export function CommissionsClosingsPage() {
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão bruta"
               amount={sellerReport.summary.grossCommissionAmount}
-              amountFormat="currency"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão excluída"
-              amount={sellerReport.summary.excludedCommissionAmount}
               amountFormat="currency"
             />
             <SystemTotalizerCard

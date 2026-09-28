@@ -201,7 +201,12 @@ describe("commissionOrderProvision", () => {
         }),
       ],
     });
-    assert.equal(payload.rows.length, 2, "só PD 2 e PD 3 (zerados)");
+    // PD 2 é de cliente das Exceções por cliente: não aparece nem na auditoria de zerados.
+    assert.deepEqual(
+      payload.rows.map((r) => r.orderCode),
+      ["PD 3"],
+      "só PD 3 (zerado sem exclusão de cliente)"
+    );
     for (const r of payload.rows) {
       assert.ok(r.totalFinalCommissionAmount <= 0.009);
     }
@@ -735,6 +740,47 @@ describe("commissionOrderProvision — relatório completo (print/XLSX)", () => 
       header: 1,
     }) as unknown[][];
     assert.equal(bySeller.length, 3); // header + 2 vendedores
+  });
+
+  it("cliente das Exceções por cliente não aparece nem com comissão zero incluída (tela, print e XLSX)", () => {
+    const withZero = { ...query, includeZeroCommission: true };
+    // o3: item CUSTOMER_EXCLUDED materializado; o4: regra cadastrada depois do snapshot
+    // (comissão ainda positiva no snapshot) — os dois saem do relatório do vendedor.
+    const all = [
+      ...snapshots,
+      {
+        ...snap({
+          id: "s4",
+          salesOrderId: "o4",
+          orderCode: "PD 00004",
+          saleDate: new Date(2026, 3, 1),
+          totalFinalCommissionAmount: 25,
+        }),
+        customerExcludedByActiveRule: true,
+      },
+    ];
+    const report = assembleCommissionOrderProvisionReportPayload({ query: withZero, snapshots: all });
+    assert.deepEqual(
+      report.rows.map((r) => r.orderCode),
+      ["PD 00002", "PD 00001"]
+    );
+    assert.equal(report.cards.orderCount, 2);
+    assert.equal(report.cards.totalFinalCommissionAmount, 80);
+    assert.equal(report.cards.zeroCommissionOrderCount, 0);
+
+    const paged = assembleCommissionOrderProvisionPayload({
+      query: { ...withZero, page: 1, pageSize: 50 },
+      snapshots: all,
+    });
+    assert.deepEqual(paged.cards, report.cards);
+    assert.equal(paged.rows.some((r) => r.salesOrderId === "o3" || r.salesOrderId === "o4"), false);
+
+    const wb = buildCommissionOrderProvisionExportWorkbook(report);
+    const detail = XLSX.utils.sheet_to_json(wb.Sheets["Pedidos"]!, { header: 1 }) as unknown[][];
+    assert.equal(detail.length, 3); // header + PD 00002 + PD 00001
+    assert.equal((detail[0] as unknown[]).includes("Cliente excluído"), false);
+    const filters = XLSX.utils.sheet_to_json(wb.Sheets["Filtros"]!, { header: 1 }) as unknown[][];
+    assert.equal(filters.some((row) => String(row[0] ?? "").includes("antes exclusão")), false);
   });
 
   it("buildCommissionOrderProvisionExportFilename varia com o filtro de meses", () => {

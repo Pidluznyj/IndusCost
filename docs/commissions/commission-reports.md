@@ -17,6 +17,11 @@ Endpoints:
 Para consultar vários meses já fechados e o relatório **por vendedor**, use a aba
 **Fechamentos** (`/commissions/fechamentos`). Ver `commission-closings-by-seller.md`.
 
+## Clientes das Exceções por cliente
+
+Não aparecem em nenhum relatório de comissão dos vendedores (tela, PDF, XLSX, CSV). Ver
+`commission-customer-exclusions-reports.md`.
+
 ## PDF
 
 - Título: **COMERCIAL: RELATÓRIO DE COMISSÕES**

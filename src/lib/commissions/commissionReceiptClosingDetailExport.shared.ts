@@ -39,7 +39,9 @@ const DETAIL_COLUMNS = [
   "Comissão liberada",
   "Status",
   "Motivo",
-  "Cliente excluído?",
+  // Clientes das Exceções por cliente não entram no relatório; empresa do grupo só aparece
+  // na auditoria opcional (detalhe filtrado com "Mostrar empresas do grupo").
+  "Empresa do grupo?",
   "Vendedor resolvido?",
   "ID interno do título",
   "ID externo/Nomus",
@@ -60,7 +62,6 @@ const POR_VENDEDOR_COLUMNS = [
   "Recebido único",
   "Base",
   "Comissão bruta",
-  "Comissão excluída",
   "Comissão final",
   "Exceções",
 ] as const;
@@ -76,9 +77,8 @@ function formatCurrencyBr(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function formatCustomerExcluded(line: ReceiptClosingApiLine): string {
-  if (line.status === "GROUP_COMPANY_EXCLUDED") return "Empresa do grupo";
-  return line.status === "CUSTOMER_EXCLUDED" || line.exclusionReason != null ? "Sim" : "Não";
+function formatGroupCompany(line: ReceiptClosingApiLine): string {
+  return line.status === "GROUP_COMPANY_EXCLUDED" ? "Sim" : "Não";
 }
 
 function formatSellerResolved(line: ReceiptClosingApiLine): string {
@@ -136,7 +136,7 @@ function mapDetailRow(line: ReceiptClosingApiLine, context: DetailRowContext) {
     "Comissão liberada": formatCurrencyBr(line.releasedCommissionAmount),
     Status: line.status,
     Motivo: line.statusReason ?? "",
-    "Cliente excluído?": formatCustomerExcluded(line),
+    "Empresa do grupo?": formatGroupCompany(line),
     "Vendedor resolvido?": formatSellerResolved(line),
     "ID interno do título": line.lineKey,
     "ID externo/Nomus": line.nomusReceivableId != null ? String(line.nomusReceivableId) : "",
@@ -165,7 +165,6 @@ function buildPorVendedorRows(payload: ReceiptClosingPagePayload) {
     "Recebido único": formatCurrencyBr(row.receivedAmount),
     Base: formatCurrencyBr(row.commissionableBase),
     "Comissão bruta": formatCurrencyBr(row.grossCommission),
-    "Comissão excluída": formatCurrencyBr(row.excludedCommission),
     "Comissão final": formatCurrencyBr(row.releasedCommission),
     Exceções: row.exceptionCount,
   }));
@@ -234,7 +233,6 @@ function buildResumoRows(payload: ReceiptClosingPagePayload, legacy: boolean) {
     },
     { Campo: "Com schedule", Valor: materializationSummary.receivablesWithScheduleCount },
     { Campo: "Sem schedule", Valor: materializationSummary.receivablesWithoutScheduleCount },
-    { Campo: "Clientes excluídos", Valor: materializationSummary.excludedCustomerCount },
     {
       Campo: "Empresas do grupo excluídas",
       Valor: materializationSummary.groupCompanyExcludedCount,
@@ -249,7 +247,6 @@ function buildResumoRows(payload: ReceiptClosingPagePayload, legacy: boolean) {
     { Campo: "Recebido sem schedule", Valor: formatCurrencyBr(cards.receivedWithoutScheduleAmount) },
     { Campo: "Base comissionável", Valor: formatCurrencyBr(cards.commissionableBaseAmount) },
     { Campo: "Comissão bruta", Valor: formatCurrencyBr(cards.grossCommissionAmount) },
-    { Campo: "Comissão excluída", Valor: formatCurrencyBr(cards.excludedCommissionAmount) },
     {
       // Histórico Nomus: valor reconstruído, nunca "a pagar".
       Campo: legacy ? "Comissão reconstruída (não oficial)" : "Comissão final a pagar",
@@ -363,7 +360,6 @@ export function buildReceiptClosingDetailExportWorkbook(
     { wch: 28 },
     { wch: 16 },
     { wch: 14 },
-    { wch: 16 },
     { wch: 16 },
     { wch: 16 },
     { wch: 10 },

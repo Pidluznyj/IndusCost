@@ -23,7 +23,9 @@ Após confirmação válida, o fechamento **não** pode falhar por `ruleId`.
 ## ruleId / snapshot
 
 - `CommissionReceiptLedgerLine.ruleId` → FK opcional para `CommissionRule`.
-- Linhas de **cliente excluído** usam `customerExclusionRuleId` (não `ruleId`).
+- Linhas de **cliente excluído** usam `customerExclusionRuleId` (não `ruleId`). Continuam no
+  ledger (comissão zero), mas ficam fora dos relatórios dos vendedores — ver
+  `commission-customer-exclusions-reports.md`.
 - Antes do `createMany`, `sanitizeLedgerLineRuleRefs` remove IDs inexistentes e preserva snapshot em `ruleSnapshotJson` / `ruleNameSnapshot`.
 - Alerta técnico: `COMMISSION_RULE_SNAPSHOT_WITHOUT_ACTIVE_RULE`.
 

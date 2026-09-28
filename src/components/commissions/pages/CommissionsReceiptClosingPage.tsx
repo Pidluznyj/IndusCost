@@ -107,7 +107,6 @@ function SellerTable({
             <th className="px-2 py-2 text-right">Recebido único</th>
             <th className="px-2 py-2 text-right">Base</th>
             <th className="px-2 py-2 text-right">Comissão bruta</th>
-            <th className="px-2 py-2 text-right">Comissão excluída</th>
             <th className="px-2 py-2 text-right">
               {legacy ? "Comissão reconstruída" : "Comissão final"}
             </th>
@@ -136,9 +135,6 @@ function SellerTable({
                   {formatFinanceCurrency(row.commissionableBase)}
                 </td>
                 <td className="px-2 py-2 text-right">{formatFinanceCurrency(row.grossCommission)}</td>
-                <td className="px-2 py-2 text-right">
-                  {formatFinanceCurrency(row.excludedCommission)}
-                </td>
                 <td className="px-2 py-2 text-right font-semibold">
                   {formatFinanceCurrency(row.releasedCommission)}
                 </td>
@@ -158,9 +154,6 @@ function SellerTable({
               {formatFinanceCurrency(totals.commissionableBase)}
             </td>
             <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.grossCommission)}</td>
-            <td className="px-2 py-2 text-right">
-              {formatFinanceCurrency(totals.excludedCommission)}
-            </td>
             <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.releasedCommission)}</td>
             <td className="px-2 py-2 text-right">{totals.exceptionCount}</td>
           </tr>
@@ -917,12 +910,6 @@ export function CommissionsReceiptClosingPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Clientes excluídos"
-              amount={data.materializationSummary.excludedCustomerCount}
-              amountFormat="number"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Empresas do grupo excluídas"
               amount={data.materializationSummary.groupCompanyExcludedCount}
               amountFormat="number"
@@ -956,13 +943,6 @@ export function CommissionsReceiptClosingPage() {
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Recebido cliente excluído"
-              amount={cards.receivedExcludedCustomerAmount}
-              amountFormat="currency"
-              tone="money"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Recebido sem schedule"
               amount={cards.receivedWithoutScheduleAmount}
               amountFormat="currency"
@@ -981,13 +961,6 @@ export function CommissionsReceiptClosingPage() {
               amount={cards.grossCommissionAmount}
               amountFormat="currency"
               tone="money"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Comissão excluída"
-              amount={cards.excludedCommissionAmount}
-              amountFormat="currency"
-              tone="warning"
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}

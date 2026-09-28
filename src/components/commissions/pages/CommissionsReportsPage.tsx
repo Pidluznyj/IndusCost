@@ -29,7 +29,6 @@ import {
   SystemTotalizerCard,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
 } from "@/src/components/ui/SystemTotalizerCard";
-import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { cn } from "@/src/lib/utils";
 import type {
   CommissionReportRecord,
@@ -68,7 +67,6 @@ const STATUS_OPTIONS = [
   { value: "CLOSED", label: "Fechado" },
   { value: "PREVIEW", label: "Prévia" },
   { value: "COMMISSIONABLE", label: "Comissionável" },
-  { value: "CUSTOMER_EXCLUDED", label: "Cliente excluído" },
   { value: "GROUP_COMPANY_EXCLUDED", label: "Empresa do grupo" },
   { value: "SELLER_UNRESOLVED", label: "Vendedor não resolvido" },
   { value: "NO_SELLER", label: "Sem vendedor" },
@@ -84,8 +82,6 @@ const STATUS_OPTIONS = [
 
 /** Motivos técnicos → texto acionável para o usuário arrumar o cadastro. */
 const REASON_LABELS: Record<string, string> = {
-  CLIENTE_EXCLUIDO_POR_REGRA:
-    "Cliente excluído de comissionamento — revise exclusões de cliente.",
   EMPRESA_GRUPO_EXCLUIDA:
     "Empresa do grupo econômico — não gera comissão.",
   VENDEDOR_NOMUS_NAO_INFORMADO:
@@ -423,7 +419,7 @@ export function CommissionsReportsPage() {
     <div className="space-y-5" data-testid="commissions-reports-page">
       <CommissionsSectionIntro
         title="Relatórios de comissão"
-        description="Consulta dos registros do Fechamento (data de recebimento). Aplica as regras de Exceções por cliente (não comissionáveis), zerando a comissão e destacando os casos no resumo e no detalhe. Competências até 09/2026 têm o Nomus como fonte oficial: aqui aparecem só como reconstrução técnica."
+        description="Consulta dos registros do Fechamento (data de recebimento). Clientes cadastrados em Exceções por cliente não aparecem neste relatório. Competências até 09/2026 têm o Nomus como fonte oficial: aqui aparecem só como reconstrução técnica."
         testId="commissions-reports-intro"
       />
 
@@ -439,15 +435,6 @@ export function CommissionsReportsPage() {
         officialDescription="Os fechamentos oficiais do IndusCost aparecem abaixo com status Fechado e na aba Fechamentos."
       />
 
-      {summary &&
-      (summary.excludedCustomerCount > 0 || summary.excludedCommission > 0) ? (
-        <ExecutiveAlert
-          variant="warning"
-          title="Clientes não comissionáveis aplicados"
-          description={`${summary.excludedCustomerCount} cliente(s) excluído(s) por regra · comissão excluída ${formatFinanceCurrency(summary.excludedCommission)}. Esses valores não entram na comissão final a pagar.`}
-          testId="commissions-reports-exclusion-alert"
-        />
-      ) : null}
       <div
         className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
         data-testid="commissions-reports-filters"
@@ -623,13 +610,6 @@ export function CommissionsReportsPage() {
           />
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label="Clientes excluídos"
-            amount={summary.excludedCustomerCount}
-            amountFormat="number"
-            helperText="Únicos · regra Exceções por cliente"
-          />
-          <SystemTotalizerCard
-            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Empresas do grupo"
             amount={summary.groupCompanyExcludedCount}
             amountFormat="number"
@@ -639,13 +619,6 @@ export function CommissionsReportsPage() {
             label="Vendedor não resolvido"
             amount={summary.unresolvedSellerCount}
             amountFormat="number"
-          />
-          <SystemTotalizerCard
-            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label="Comissão excluída"
-            amount={summary.excludedCommission}
-            amountFormat="currency"
-            helperText="Zerada por cliente não comissionável"
           />
         </CommissionsKpiSection>
       ) : null}
@@ -666,7 +639,6 @@ export function CommissionsReportsPage() {
                 <th className="px-3 py-2">Valor recebido</th>
                 <th className="px-3 py-2">Base</th>
                 <th className="px-3 py-2">Comissão bruta</th>
-                <th className="px-3 py-2">Excluída</th>
                 <th className="px-3 py-2">Comissão final</th>
                 <th className="px-3 py-2">% médio</th>
                 <th className="px-3 py-2">Status</th>
@@ -688,7 +660,6 @@ export function CommissionsReportsPage() {
                   <td className="px-3 py-2">{formatFinanceCurrency(row.receivedAmount)}</td>
                   <td className="px-3 py-2">{formatFinanceCurrency(row.commissionableBase)}</td>
                   <td className="px-3 py-2">{formatFinanceCurrency(row.grossCommission)}</td>
-                  <td className="px-3 py-2">{formatFinanceCurrency(row.excludedCommission)}</td>
                   <td className="px-3 py-2 font-semibold">
                     {formatFinanceCurrency(row.finalCommission)}
                   </td>
@@ -794,11 +765,6 @@ export function CommissionsReportsPage() {
                     >
                       {row.customerName ?? "—"}
                     </div>
-                    {row.isCustomerExcluded ? (
-                      <span className="mt-0.5 mr-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
-                        Excluído
-                      </span>
-                    ) : null}
                     {row.isGroupCompany ? (
                       <span className="mt-0.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
                         Grupo

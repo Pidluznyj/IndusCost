@@ -114,7 +114,7 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     label: "Exceções por cliente",
     path: COMMISSIONS_SECTION_PATHS.customerExclusions,
     description:
-      "Clientes que não geram comissão — regra auditável com vigência, sem ocultar vendas",
+      "Clientes que não geram comissão e não aparecem nos relatórios dos vendedores — regra auditável com vigência",
   },
   {
     id: "orderProvision",

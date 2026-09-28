@@ -32,6 +32,7 @@ import {
 import {
   COMMISSION_RECEIPT_MATERIALIZATION_PENDING_MESSAGE,
   isReceiptClosingGroupCompanyLine,
+  partitionReceiptClosingLinesByCustomerExclusion,
   partitionReceiptClosingLinesByGroupCompany,
   RECEIPT_CLOSING_UNASSIGNED_SELLER_GROUP_KEY,
   buildReceiptClosingCommissionComposition,
@@ -49,9 +50,9 @@ import {
 
 /**
  * Empresa do grupo: zera vendedor canônico (não entra no resumo por vendedor comissionável).
- * Cliente excluído por regra: **mantém** o vendedor atribuível — a comissão continua
- * agrupada em "Sem vendedor / Excluído" via `resolveReceiptClosingSellerGroupKey`,
- * mas Relatórios / detalhe podem filtrar e informar a carteira.
+ * Cliente excluído por regra (Exceções por cliente): mantém o vendedor atribuível na
+ * linha, só para auditoria — a linha fica fora dos relatórios dos vendedores
+ * (`partitionReceiptClosingLinesByCustomerExclusion`).
  */
 /**
  * Filtro de escopo "own" para linhas do fechamento por recebimento — mesma
@@ -997,8 +998,15 @@ export function enrichReceiptClosingPagePayload(
 ): ReceiptClosingPagePayload {
   const reportStatus: "PREVIEW" | "CLOSED" = base.exportMode === "CLOSED" ? "CLOSED" : "PREVIEW";
   const anchored = markReceivableReceivedAnchors(base.lines);
-  const { managerialLines, groupCompanyAuditLines } =
+  const { managerialLines: withoutGroupCompanies, groupCompanyAuditLines } =
     partitionReceiptClosingLinesByGroupCompany(anchored);
+  // Clientes das Exceções por cliente saem de todo o relatório (linhas, vendedores, cards,
+  // resumo, composição) e ficam só na auditoria. A conciliação com o Nomus abaixo continua
+  // sobre todas as linhas da competência. "Recebido único" recalculado entre as linhas do
+  // relatório (um título não mistura cliente excluído e comissionável; é só garantia).
+  const { reportLines, customerExcludedAuditLines } =
+    partitionReceiptClosingLinesByCustomerExclusion(withoutGroupCompanies);
+  const managerialLines = markReceivableReceivedAnchors(reportLines);
   const managerialSummary = summarizeManagerialReceiptClosingSummary(managerialLines);
   const groupAuditReceived = sumUniqueReceivableReceived(groupCompanyAuditLines, () => true);
   // Conciliação com o Nomus compara a COMPETÊNCIA: pendências de períodos
@@ -1041,6 +1049,7 @@ export function enrichReceiptClosingPagePayload(
     ...base,
     lines: managerialLines,
     groupCompanyAuditLines,
+    customerExcludedAuditLines,
     bySeller: buildReceiptClosingBySeller(managerialLines),
     summary: {
       ...base.summary,
@@ -1059,6 +1068,15 @@ export function enrichReceiptClosingPagePayload(
     requiresCriticalConfirmation: critical.requiresCriticalConfirmation,
     composition: buildReceiptClosingCommissionComposition(managerialLines),
   };
+}
+
+/**
+ * Payload que sai da API do fechamento (tela, exportações, Fechamentos, escopo "own"):
+ * sem a auditoria das Exceções por cliente, que fica só no servidor.
+ */
+export function withoutCustomerExcludedAudit(page: ReceiptClosingPagePayload): ReceiptClosingPagePayload {
+  const { customerExcludedAuditLines: _customerExcludedAudit, ...reportPage } = page;
+  return reportPage;
 }
 
 export function buildReceiptClosingPageFromPreview(input: {
@@ -1210,9 +1228,7 @@ export function buildReceiptClosingExportCsv(input: {
     cardLines.push("# cards");
     cardLines.push(`# totalReceivedAmount,${input.cards.totalReceivedAmount.toFixed(2)}`);
     cardLines.push(`# receivedWithScheduleAmount,${input.cards.receivedWithScheduleAmount.toFixed(2)}`);
-    cardLines.push(
-      `# receivedExcludedCustomerAmount,${input.cards.receivedExcludedCustomerAmount.toFixed(2)}`
-    );
+    // Clientes das Exceções por cliente não entram no relatório (nem valor excluído).
     cardLines.push(
       `# receivedGroupCompanyExcludedAmount,${input.cards.receivedGroupCompanyExcludedAmount.toFixed(2)}`
     );
@@ -1221,7 +1237,6 @@ export function buildReceiptClosingExportCsv(input: {
     );
     cardLines.push(`# commissionableBaseAmount,${input.cards.commissionableBaseAmount.toFixed(2)}`);
     cardLines.push(`# grossCommissionAmount,${input.cards.grossCommissionAmount.toFixed(2)}`);
-    cardLines.push(`# excludedCommissionAmount,${input.cards.excludedCommissionAmount.toFixed(2)}`);
     cardLines.push(`# finalCommissionAmount,${input.cards.finalCommissionAmount.toFixed(2)}`);
     if (input.cards.nomusCommissionDiff != null) {
       cardLines.push(`# nomusCommissionDiff,${input.cards.nomusCommissionDiff.toFixed(2)}`);
@@ -1237,7 +1252,6 @@ export function buildReceiptClosingExportCsv(input: {
     cardLines.push(`# totalReceivablesCount,${m.totalReceivablesCount}`);
     cardLines.push(`# receivablesWithScheduleCount,${m.receivablesWithScheduleCount}`);
     cardLines.push(`# receivablesWithoutScheduleCount,${m.receivablesWithoutScheduleCount}`);
-    cardLines.push(`# excludedCustomerCount,${m.excludedCustomerCount}`);
     cardLines.push(`# groupCompanyExcludedCount,${m.groupCompanyExcludedCount}`);
     cardLines.push(
       `# groupCompanyExcludedReceivedAmount,${m.groupCompanyExcludedReceivedAmount.toFixed(2)}`

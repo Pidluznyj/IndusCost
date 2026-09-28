@@ -131,7 +131,8 @@ export function CommissionsReceivableForecastPage() {
             Comissão prevista sobre títulos a receber em aberto, agrupados por{" "}
             <strong>vencimento</strong> (<code>dueDate</code>). Usa o mesmo motor do Fechamento do
             mês (schedules materializados, vendedor Nomus, exclusões). O fechamento oficial ocorre
-            no recebimento (<code>receiptDate</code>). Calculado exclusivamente no backend.
+            no recebimento (<code>receiptDate</code>). Calculado exclusivamente no backend. Clientes
+            cadastrados em Exceções por cliente não aparecem na previsão.
           </p>
           {data?.reconciliationNote ? (
             <p
@@ -288,12 +289,6 @@ export function CommissionsReceivableForecastPage() {
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Sem schedule"
               amount={data?.materializationSummary?.receivablesWithoutScheduleCount ?? 0}
-              amountFormat="number"
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Clientes excluídos"
-              amount={data?.materializationSummary?.excludedCustomerCount ?? 0}
               amountFormat="number"
             />
             <SystemTotalizerCard
