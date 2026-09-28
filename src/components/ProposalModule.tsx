@@ -661,8 +661,9 @@ export const ProposalModule = () => {
   const allowCreate = canCreateProposal(proposalCheck);
   const allowViewProducts = canViewProducts(proposalCheck);
   const allowViewCustomers = canViewCustomers(proposalCheck);
-  /** Criar/editar itens exige catálogo de produtos e clientes — sem isso, some o botão (sem alert 403). */
-  const allowCreateWithCatalog = allowCreate && allowViewProducts && allowViewCustomers;
+  /** Propostas oficiais entram pelo Nomus. Criação manual fica só com Super Admin. */
+  const allowCreateWithCatalog =
+    auth.isSuperAdmin() && allowCreate && allowViewProducts && allowViewCustomers;
   const allowEdit = canEditProposal(proposalCheck);
   const allowDelete = canDeleteProposal(proposalCheck);
   const allowPrint = canPrintProposal(proposalCheck);
@@ -1053,6 +1054,7 @@ export const ProposalModule = () => {
   }, [currentPage, listFiltersKey, loadProposalListPage]);
 
   const handleCreateNew = () => {
+    if (!auth.isSuperAdmin()) return;
     setEditingProposal(null);
     setTablePriceSessionAlerts([]);
     setDefaultTableChangedNotice(null);

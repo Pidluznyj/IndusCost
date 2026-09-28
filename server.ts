@@ -16074,6 +16074,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   app.post("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "create"), async (req, res) => {
+    const auth = await getCurrentAppUser(req);
+    if (!auth || auth.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Novas propostas entram pelo Nomus. Apenas Super Admin pode criar manualmente.",
+      });
+    }
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
