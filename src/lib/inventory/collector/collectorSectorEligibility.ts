@@ -18,6 +18,26 @@ export const RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE = {
 export type RawMaterialStockControlledItemWhere =
   typeof RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE;
 
+/**
+ * Where Prisma para item logístico de Componentes controlado em estoque.
+ * Identidade por produto oficial (productId) — nunca materialId. O Collector só
+ * conta InventoryItem já existente: não cria item, produto nem saldo.
+ */
+export const COMPONENT_STOCK_CONTROLLED_ITEM_WHERE = {
+  status: "ACTIVE" as const,
+  itemType: "COMPONENT" as const,
+  productId: { not: null } as const,
+  controlsStock: true,
+};
+
+/** Where Prisma para item logístico de Produto acabado controlado em estoque. */
+export const FINISHED_PRODUCT_STOCK_CONTROLLED_ITEM_WHERE = {
+  status: "ACTIVE" as const,
+  itemType: "FINISHED_PRODUCT" as const,
+  productId: { not: null } as const,
+  controlsStock: true,
+};
+
 /** Material oficial elegível a vínculo de estoque (mesma regra OP-08). */
 export function isOfficialMaterialEligibleForStockLink(material: {
   status: string | null;

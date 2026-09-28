@@ -36,6 +36,11 @@ import {
   type CollectorSectorPrepareDiagnostics,
   type CollectorWarehouseSummary,
 } from "./collectorSectorPrepare.server.js";
+import {
+  assertCollectorSessionCompatibleWithSector,
+  collectorSectorFromSessionCode,
+  lockCollectorWarehouseSessions,
+} from "./collectorSessionCompatibility.server.js";
 
 export const COLLECTOR_NO_WAREHOUSE_FOR_SECTOR = "COLLECTOR_NO_WAREHOUSE_FOR_SECTOR";
 export const COLLECTOR_PENDING_ITEMS = "PENDING_ITEMS";
@@ -188,11 +193,18 @@ export async function createAndStartCollectorSectorSession(
   });
 
   return prisma.$transaction(async (tx) => {
+    await lockCollectorWarehouseSessions(tx, input.warehouseId);
     const existing = await tx.inventoryCountSession.findFirst({
       where: { warehouseId: input.warehouseId, status: "COUNTING" },
       orderBy: { startedAt: "desc" },
     });
     if (existing) {
+      // Só reaproveita sessão cujas linhas sejam todas do itemType do setor.
+      // Incompatível não é escondida para abrir outra concorrente: erro 409.
+      await assertCollectorSessionCompatibleWithSector(tx, {
+        sector: input.sector,
+        session: existing,
+      });
       const lineCount = await tx.inventoryCountLine.count({
         where: { sessionId: existing.id },
       });
@@ -582,6 +594,9 @@ export async function applyCollectorSessionAdjustments(
       movementsCreated: result.movementsCreated,
       deviceId: input.deviceId,
       operationId: input.operationId ?? null,
+      // Setor pelo prefixo do código (null em conferência que não é do Collector).
+      sector: collectorSectorFromSessionCode(session.code),
+      warehouseId: session.warehouseId,
     },
     userId: null,
   });

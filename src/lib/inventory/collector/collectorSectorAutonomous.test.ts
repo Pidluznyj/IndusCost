@@ -43,8 +43,9 @@ describe("collectorSectorContract", () => {
     assert.equal(parseCollectorSector("RAW_MATERIAL"), "RAW_MATERIAL");
     assert.equal(parseCollectorSector("raw-material"), "RAW_MATERIAL");
     assert.equal(parseCollectorSector("raw_material"), "RAW_MATERIAL");
+    // "finished-product" virou setor válido (Produto acabado); semiacabado segue fora do contrato.
     assert.throws(
-      () => parseCollectorSector("finished-product"),
+      () => parseCollectorSector("semi-finished"),
       (e: unknown) =>
         e instanceof InventoryValidationError && e.code === COLLECTOR_INVALID_SECTOR
     );

@@ -30,6 +30,14 @@ import {
   useCollectorEnrollment,
 } from "./CollectorEnrollmentGate";
 import { parseQuantityText } from "./collectorCountFlow";
+import {
+  isProductCollectorSectorCode,
+  productSectorOperationalMessage,
+} from "./collectorProductSectorMessages";
+import {
+  COLLECTOR_SECTORS,
+  parseCollectorSector,
+} from "@/src/lib/inventory/collector/collectorSectorContract";
 
 type Boot =
   | { phase: "checking" }
@@ -38,8 +46,33 @@ type Boot =
   | { phase: "error"; message: string }
   | { phase: "ready"; context: CollectorSectorContext };
 
+/** Código do setor pelo slug do deep-link; null quando o slug não é de setor. */
+function sectorCodeFromSlug(slug: string): string | null {
+  try {
+    return parseCollectorSector(slug);
+  } catch {
+    return null;
+  }
+}
+
+function sectorLabelFromSlug(slug: string): string {
+  try {
+    return COLLECTOR_SECTORS[parseCollectorSector(slug)].label;
+  } catch {
+    return "Collector";
+  }
+}
+
 function operationalMessage(context: CollectorSectorContext): string | null {
   const state = context.operationalState;
+  // Componentes / Produto acabado têm mensagens próprias; as de MP seguem abaixo.
+  if (context.sector && isProductCollectorSectorCode(context.sector.code)) {
+    return productSectorOperationalMessage({
+      sectorCode: context.sector.code,
+      operationalState: state,
+      itemsEligible: context.diagnostics?.itemsEligible,
+    });
+  }
   if (state === "CONFIGURATION_REQUIRED") {
     return "Nenhum almoxarifado ACTIVE configurado. Cadastre um almoxarifado no estoque antes de contar.";
   }
@@ -415,12 +448,14 @@ export function CollectorSectorPage() {
   }, [withdrawItems, withdrawQ]);
 
   const sectorLabel = useMemo(() => {
-    if (boot.phase === "ready") return boot.context.sector?.label ?? "Matéria-prima";
+    if (boot.phase === "ready") {
+      return boot.context.sector?.label ?? sectorLabelFromSlug(sectorParam);
+    }
     if (boot.phase === "configuration_error" && boot.context?.sector?.label) {
       return boot.context.sector.label;
     }
-    return "Matéria-prima";
-  }, [boot]);
+    return sectorLabelFromSlug(sectorParam);
+  }, [boot, sectorParam]);
 
   if (boot.phase === "checking") {
     return (
@@ -478,6 +513,9 @@ export function CollectorSectorPage() {
   }
 
   const warehouses = boot.context.warehouses ?? [];
+  // Retirada existe só em Matéria-prima; Componentes/Produto acabado só contam.
+  const withdrawalEnabled =
+    (boot.context.sector?.code ?? sectorCodeFromSlug(sectorParam)) === "RAW_MATERIAL";
   const selectionHint =
     boot.context.operationalState === "NEEDS_WAREHOUSE_SELECTION"
       ? operationalMessage(boot.context)
@@ -539,14 +577,16 @@ export function CollectorSectorPage() {
             {sessionId ? "Continuar contagem" : "Nova contagem"}
           </button>
 
-          <button
-            type="button"
-            disabled={busy || (warehouses.length > 1 && !warehouseId)}
-            onClick={() => void openWithdraw()}
-            className="w-full rounded-2xl bg-sky-500 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
-          >
-            Retirar material
-          </button>
+          {withdrawalEnabled ? (
+            <button
+              type="button"
+              disabled={busy || (warehouses.length > 1 && !warehouseId)}
+              onClick={() => void openWithdraw()}
+              className="w-full rounded-2xl bg-sky-500 px-4 py-5 text-xl font-bold text-slate-950 disabled:opacity-40"
+            >
+              Retirar material
+            </button>
+          ) : null}
         </div>
       ) : null}
 

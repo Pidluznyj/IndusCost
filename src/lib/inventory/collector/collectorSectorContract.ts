@@ -19,6 +19,20 @@ export const COLLECTOR_SECTORS = {
     label: "Matéria-prima",
     sessionCodePrefix: "MP",
   },
+  // Contagem de itens logísticos de produto oficial (productId) já existentes —
+  // fluxo próprio em collectorProductSectorCounting.server.ts; MP segue intacto.
+  COMPONENT: {
+    code: "COMPONENT",
+    slug: "componentes",
+    label: "Componentes",
+    sessionCodePrefix: "CP",
+  },
+  FINISHED_PRODUCT: {
+    code: "FINISHED_PRODUCT",
+    slug: "produto-acabado",
+    label: "Produto acabado",
+    sessionCodePrefix: "PA",
+  },
 } as const;
 
 export type CollectorSectorCode = keyof typeof COLLECTOR_SECTORS;

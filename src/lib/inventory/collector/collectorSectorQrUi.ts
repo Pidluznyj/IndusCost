@@ -11,7 +11,10 @@
 import { isCollectorPublicBaseUrlErrorCode } from "./collectorPublicBaseUrl.js";
 import { COLLECTOR_SECTOR_CODES, COLLECTOR_SECTORS } from "./collectorSectorContract.js";
 
-/** Único setor existente no contrato hoje — ver collectorSectorContract.ts. */
+/**
+ * Setor pré-selecionado no seletor (Matéria-prima). Os setores disponíveis vêm
+ * do contrato — ver collectorSectorContract.ts e COLLECTOR_SECTOR_QR_OPTIONS.
+ */
 export const COLLECTOR_SECTOR_QR_DEFAULT_SECTOR = "RAW_MATERIAL";
 
 export type CollectorSectorQrOption = { code: string; label: string };

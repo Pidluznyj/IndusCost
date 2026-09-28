@@ -40,11 +40,18 @@ export type CollectorSectorContext = CollectorContext & {
     | "NEEDS_WAREHOUSE_SELECTION"
     | "CONFIGURATION_REQUIRED"
     | "NO_ELIGIBLE_ITEMS";
+  /** Matéria-prima e setores de produto (Componentes / Produto acabado) têm contadores próprios. */
   diagnostics?: {
     activeWarehouses: number;
-    warehousesWithRawMaterialPresence: number;
-    eligibleMaterials: number;
-    linkedRawMaterialItems: number;
+    warehousesWithRawMaterialPresence?: number;
+    eligibleMaterials?: number;
+    linkedRawMaterialItems?: number;
+    warehousesWithPresence?: number;
+    itemsTotal?: number;
+    itemsEligible?: number;
+    itemsWithBalance?: number;
+    itemsWithoutBalance?: number;
+    itemsWithoutPresence?: number;
   };
 };
 

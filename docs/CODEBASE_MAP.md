@@ -351,7 +351,7 @@ IndusCost/
 **Exports**: `createInventoryMovement`, `recordInventoryCount`, `registerInventoryCollectorRoutes`, `requireInventoryCollectorDevice`.
 **Dependencies**: `@prisma/client`, Node `http`/`crypto` (Tailscale LocalAPI).
 **Dependents**: `src/components/inventory/*`, Collector sub-app (`/collector` standalone routes).
-**Gotchas**: Ledger corrections are always a new `REVERSAL` movement, never update/delete; Collector trusts only `socket.remoteAddress`, never `X-Forwarded-For`, unless an opt-in single-hop local-proxy header rule applies. After a physical-quantity change, `reconcileMaterialQuantityFromInventoryInTx` projects the canonical aggregated `physicalQuantity` onto linked `Material.quantity` (never `availableQuantity`).
+**Gotchas**: Ledger corrections are always a new `REVERSAL` movement, never update/delete; Collector trusts only `socket.remoteAddress`, never `X-Forwarded-For`, unless an opt-in single-hop local-proxy header rule applies. Collector counts three sectors: `RAW_MATERIAL` (MP-, material cold-start in `collectorSectorPrepare/Population`), and `COMPONENT` (CP-) / `FINISHED_PRODUCT` (PA-) over existing product items only (`collectorProductSectorCounting.server.ts`); routes dispatch per sector, and reusing a COUNTING session requires all its lines to match the sector's `itemType` (`collectorSessionCompatibility.server.ts`, else 409 `COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE`). Withdrawal stays MP-only. After a physical-quantity change, `reconcileMaterialQuantityFromInventoryInTx` projects the canonical aggregated `physicalQuantity` onto linked `Material.quantity` (never `availableQuantity`).
 
 ---
 
