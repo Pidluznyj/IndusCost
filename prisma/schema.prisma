@@ -2854,6 +2854,13 @@ model AppUser {
   goalKeyResultsOwned                    GoalKeyResult[]                      @relation("GoalKeyResultOwner")
   goalQuotasAssigned                     GoalKeyResultQuota[]                 @relation("GoalQuotaAssignee")
   goalInitiativesAssigned                GoalInitiative[]                     @relation("GoalInitiativeAssignee")
+  commercialPolicyVersionsPublished      CommercialPolicyVersion[]            @relation("CommercialPolicyPublishedBy")
+  commercialPolicyAttempts               CommercialPolicyKnowledgeAttempt[]
+  commercialPolicyChallenges             CommercialPolicySignatureChallenge[]
+  commercialPolicyPhotos                 CommercialPolicyPhotoEvidence[]
+  commercialPolicyAcceptances            CommercialPolicyAcceptance[]
+  commercialPolicyInvalidations          CommercialPolicyAcceptanceInvalidation[] @relation("CommercialPolicyInvalidatedBy")
+  commercialPolicyControlledCopies       CommercialPolicyControlledCopy[]
 
   @@index([role])
   @@index([isActive])
@@ -2988,6 +2995,156 @@ model SecurityAuditLog {
   @@index([actorUserId, createdAt])
   @@index([targetUserId, createdAt])
   @@index([eventType, createdAt])
+}
+
+/// Política corporativa versionada. Neste incremento só existe COMMERCIAL_POLICY
+/// para a audiência SELLER. O texto oficial é gravado pelo Super Admin; a
+/// migration não publica conteúdo.
+enum CommercialPolicyStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+model CommercialPolicy {
+  id           String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyType   String                    @unique
+  audienceRole AppUserRole
+  createdAt    DateTime                  @default(now()) @db.Timestamptz(6)
+  versions     CommercialPolicyVersion[]
+}
+
+model CommercialPolicyVersion {
+  id                String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyId          String                   @db.Uuid
+  versionNumber     Int
+  title             String
+  content           String
+  summaryRules      Json
+  declarations      Json
+  questions         Json
+  contentHash       String                   @default("")
+  status            CommercialPolicyStatus   @default(DRAFT)
+  effectiveFrom     DateTime                 @db.Timestamptz(6)
+  publishedAt       DateTime?                @db.Timestamptz(6)
+  publishedByUserId String?                  @db.Uuid
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                 @updatedAt @db.Timestamptz(6)
+  policy            CommercialPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  publishedBy       AppUser?                 @relation("CommercialPolicyPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  attempts          CommercialPolicyKnowledgeAttempt[]
+  challenges        CommercialPolicySignatureChallenge[]
+  photos            CommercialPolicyPhotoEvidence[]
+  acceptances       CommercialPolicyAcceptance[]
+  controlledCopies  CommercialPolicyControlledCopy[]
+
+  @@unique([policyId, versionNumber])
+  @@index([status, effectiveFrom])
+}
+
+model CommercialPolicyKnowledgeAttempt {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyVersionId String                  @db.Uuid
+  userId          String                  @db.Uuid
+  attemptNumber   Int
+  answers         Json
+  passed          Boolean
+  createdAt       DateTime                @default(now()) @db.Timestamptz(6)
+  policyVersion   CommercialPolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  user            AppUser                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, policyVersionId, createdAt])
+}
+
+model CommercialPolicySignatureChallenge {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String                  @db.Uuid
+  policyVersionId String                  @db.Uuid
+  expiresAt       DateTime                @db.Timestamptz(6)
+  usedAt          DateTime?               @db.Timestamptz(6)
+  createdAt       DateTime                @default(now()) @db.Timestamptz(6)
+  user            AppUser                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  policyVersion   CommercialPolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, policyVersionId])
+}
+
+model CommercialPolicyPhotoEvidence {
+  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String                   @db.Uuid
+  policyVersionId String                   @db.Uuid
+  challengeId     String                   @db.Uuid
+  storageKey      String
+  contentHash     String
+  mimeType        String
+  byteSize        Int
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
+  user            AppUser                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  policyVersion   CommercialPolicyVersion  @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  acceptance      CommercialPolicyAcceptance?
+
+  @@index([userId, challengeId])
+}
+
+/// Aceite assinado. Não há rota de update/delete. Invalidação é outra tabela.
+model CommercialPolicyAcceptance {
+  id                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyVersionId         String                   @db.Uuid
+  userId                  String                   @db.Uuid
+  userNameSnapshot        String
+  userEmailSnapshot       String
+  roleSnapshot            String
+  externalSellerIdSnapshot Int?
+  acceptedAt              DateTime                 @db.Timestamptz(6)
+  ipAddress               String?
+  userAgent               String?
+  sessionId               String
+  challengeId             String                   @unique @db.Uuid
+  photoEvidenceId         String                   @unique @db.Uuid
+  questionnaireAttemptId  String                   @db.Uuid
+  declarationsAccepted    Json
+  policyContentHash       String
+  photoHash               String
+  evidenceHash            String
+  appCommit               String?
+  canonicalPayload        Json
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(6)
+  policyVersion           CommercialPolicyVersion  @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  user                    AppUser                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  photo                   CommercialPolicyPhotoEvidence @relation(fields: [photoEvidenceId], references: [id], onDelete: Restrict)
+  invalidations           CommercialPolicyAcceptanceInvalidation[]
+
+  @@unique([policyVersionId, userId])
+  @@index([userId, acceptedAt])
+}
+
+model CommercialPolicyAcceptanceInvalidation {
+  id           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  acceptanceId String                     @db.Uuid
+  actorUserId  String                     @db.Uuid
+  reason       String
+  createdAt    DateTime                   @default(now()) @db.Timestamptz(6)
+  acceptance   CommercialPolicyAcceptance @relation(fields: [acceptanceId], references: [id], onDelete: Restrict)
+  actor        AppUser                    @relation("CommercialPolicyInvalidatedBy", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([acceptanceId])
+}
+
+/// Cópia controlada emitida para um usuário. Não é URL pública.
+model CommercialPolicyControlledCopy {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyVersionId   String                  @db.Uuid
+  generatedByUserId String                  @db.Uuid
+  generatedAt       DateTime                @db.Timestamptz(6)
+  documentDigest    String
+  copyDigest        String
+  recipientName     String
+  recipientEmail    String
+  policyVersion     CommercialPolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  generatedBy       AppUser                 @relation(fields: [generatedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([policyVersionId, generatedAt])
+  @@index([generatedByUserId])
 }
 
 /// Catálogo administrativo de produtos do ERP Nomus (inclui matérias-primas bloqueadas do sync Product).

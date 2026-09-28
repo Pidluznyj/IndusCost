@@ -21,13 +21,15 @@ describe("home autenticada", () => {
     assert.equal(getHomeGreeting(new Date(2026, 6, 16, 21)), "Boa noite");
   });
 
-  it("login e sessão ativa sempre chegam à home", () => {
+  it("login e sessão ativa chegam à home, exceto troca obrigatória de senha", () => {
     const login = read("src/components/AuthLoginPage.tsx");
     const loginRoute = read("src/components/PublicLoginRoute.tsx");
     const landingRoute = read("src/components/PublicLandingRoute.tsx");
     const defaultRedirect = read("src/components/DefaultModuleRedirect.tsx");
-    assert.match(login, /navigate\("\/home", \{ replace: true \}\)/);
+    assert.doesNotMatch(login, /navigate\("\/home"/);
     assert.doesNotMatch(login, /redirectAfterLogin/);
+    assert.match(loginRoute, /mustChangePassword/);
+    assert.match(loginRoute, /PASSWORD_CHANGE_ROUTE/);
     assert.match(loginRoute, /Navigate to="\/home" replace/);
     assert.doesNotMatch(loginRoute, /state\?\.from|redirectAfterLogin/);
     assert.match(landingRoute, /Navigate to="\/home" replace/);

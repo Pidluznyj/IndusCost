@@ -18,6 +18,7 @@ import {
   isAllowedDuringPasswordChange,
   normalizeGuardPath,
   requestHasAppSessionCookie,
+  resolveAuthenticatedAccessGate,
 } from "./passwordChangeRequiredGuard.js";
 import { APP_SESSION_COOKIE_NAME } from "./appAuth.shared.js";
 
@@ -26,6 +27,17 @@ import { APP_SESSION_COOKIE_NAME } from "./appAuth.shared.js";
 /* ================================================================== */
 
 describe("decisão do guard", () => {
+  it("ordena o gate: senha obrigatória antes do acesso autenticado", () => {
+    assert.equal(
+      resolveAuthenticatedAccessGate({ mustChangePassword: true }),
+      "PASSWORD_CHANGE_REQUIRED"
+    );
+    assert.equal(
+      resolveAuthenticatedAccessGate({ mustChangePassword: false }),
+      "AUTHENTICATED"
+    );
+  });
+
   it("sem cookie de sessão humana, nada é tocado", () => {
     const d = decidePasswordChangeGuard({
       hasSessionCookie: false,

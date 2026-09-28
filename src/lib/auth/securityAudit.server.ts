@@ -19,8 +19,14 @@ export const SECURITY_AUDIT_EVENTS = {
   PASSWORD_RESET_BY_SUPER_ADMIN: "PASSWORD_RESET_BY_SUPER_ADMIN",
   /** Conclusão da troca obrigatória após login com credencial temporária. */
   PASSWORD_FORCED_CHANGE_COMPLETED: "PASSWORD_FORCED_CHANGE_COMPLETED",
+  /** SUPER_ADMIN passou a exigir troca no próximo acesso, sem alterar o hash. */
+  PASSWORD_CHANGE_REQUIRED_SET: "PASSWORD_CHANGE_REQUIRED_SET",
+  /** SUPER_ADMIN removeu a exigência sem o usuário trocar a senha. */
+  PASSWORD_CHANGE_REQUIRED_CLEARED: "PASSWORD_CHANGE_REQUIRED_CLEARED",
   /** Credencial inicial atribuída na criação do usuário (temporária). */
   USER_INITIAL_PASSWORD_ASSIGNED: "USER_INITIAL_PASSWORD_ASSIGNED",
+  /** Emissão de cópia controlada da Política Comercial. O digest fica na tabela da cópia. */
+  COMMERCIAL_POLICY_CONTROLLED_COPY: "COMMERCIAL_POLICY_CONTROLLED_COPY",
 } as const;
 
 export type SecurityAuditEvent =
@@ -31,6 +37,7 @@ export type SecurityAuditSource =
   | "SELF_SERVICE"
   | "FORCED_CHANGE"
   | "ADMIN_RESET"
+  | "ADMIN_FLAG"
   | "USER_CREATION";
 
 /**

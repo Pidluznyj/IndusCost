@@ -5,6 +5,8 @@ import { useAuth } from "@/src/contexts/AuthContext";
 
 /** Rota única do ciclo de senha do próprio usuário (obrigatória e voluntária). */
 export const PASSWORD_CHANGE_ROUTE = "/security/change-password";
+/** Aceite da Política Comercial vigente. Só depois da senha pessoal. */
+export const COMMERCIAL_POLICY_ROUTE = "/security/commercial-policy";
 
 export const RequireAuth: React.FC = () => {
   const { authLoading, authenticated, authError, authUser } = useAuth();
@@ -37,6 +39,13 @@ export const RequireAuth: React.FC = () => {
   // voltar no histórico ou digitar a URL na mão não contorna nada.
   if (authUser?.mustChangePassword && location.pathname !== PASSWORD_CHANGE_ROUTE) {
     return <Navigate to={PASSWORD_CHANGE_ROUTE} replace />;
+  }
+  if (
+    !authUser?.mustChangePassword &&
+    authUser?.commercialPolicyAcceptanceRequired &&
+    location.pathname !== COMMERCIAL_POLICY_ROUTE
+  ) {
+    return <Navigate to={COMMERCIAL_POLICY_ROUTE} replace />;
   }
 
   return <Outlet />;

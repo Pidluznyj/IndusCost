@@ -193,7 +193,7 @@ describe("server.ts — criação de usuário e login", () => {
     const inicio = server.indexOf('app.post("/api/admin/users"');
     const fim = server.indexOf('app.get("/api/admin/users/:id"', inicio);
     const rota = server.slice(inicio, fim > inicio ? fim : inicio + 8000);
-    assert.match(rota, /mustChangePassword: true/);
+    assert.match(rota, /mustChangePassword: requirePasswordChange/);
     assert.match(rota, /passwordChangedAt: new Date\(\)/);
     assert.match(rota, /prisma\.\$transaction\(async \(tx\) => \{/);
     assert.match(rota, /SECURITY_AUDIT_EVENTS\.USER_INITIAL_PASSWORD_ASSIGNED/);

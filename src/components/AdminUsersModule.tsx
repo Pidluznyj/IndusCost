@@ -27,6 +27,7 @@ import {
 import {
   describePasswordError,
   requestAdminResetPassword,
+  requestSetPasswordChangeRequired,
 } from "@/src/lib/auth/passwordLifecycleClient";
 import { SellerNomusPicker, type SellerNomusPickerValue } from "@/src/components/admin/SellerNomusPicker";
 import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
@@ -108,6 +109,7 @@ type CreateForm = {
   email: string;
   isActive: boolean;
   password: string;
+  mustChangePassword: boolean;
 };
 
 const EMPTY_CREATE: CreateForm = {
@@ -116,6 +118,7 @@ const EMPTY_CREATE: CreateForm = {
   email: "",
   isActive: true,
   password: "",
+  mustChangePassword: true,
 };
 
 const EMPTY_SELLER_LINK: SellerNomusPickerValue = {
@@ -218,6 +221,8 @@ export const AdminUsersModule: React.FC = () => {
   const [resetTemporaryPassword, setResetTemporaryPassword] = useState<string | null>(null);
   const [resetCopied, setResetCopied] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [passwordFlagSaving, setPasswordFlagSaving] = useState(false);
+  const [passwordFlagError, setPasswordFlagError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -789,6 +794,7 @@ export const AdminUsersModule: React.FC = () => {
           email: createForm.email.trim(),
           password: createForm.password,
           isActive: createForm.isActive,
+          mustChangePassword: createForm.mustChangePassword,
         }),
       });
       setCreateOpen(false);
@@ -798,6 +804,32 @@ export const AdminUsersModule: React.FC = () => {
       setCreateError(err instanceof Error ? err.message : "Falha ao criar usuário.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePasswordChangeRequired = async (required: boolean) => {
+    if (!selectedId || authUser?.role !== "SUPER_ADMIN") return;
+    setPasswordFlagSaving(true);
+    setPasswordFlagError(null);
+    try {
+      const result = await requestSetPasswordChangeRequired(selectedId, required);
+      setUsers((current) =>
+        current.map((user) =>
+          user.id === selectedId
+            ? { ...user, mustChangePassword: result.mustChangePassword }
+            : user
+        )
+      );
+    } catch (err) {
+      const code = err instanceof HttpError ? err.code : undefined;
+      setPasswordFlagError(
+        describePasswordError(
+          code,
+          err instanceof Error ? err.message : "Falha ao atualizar a exigência de senha."
+        )
+      );
+    } finally {
+      setPasswordFlagSaving(false);
     }
   };
 
@@ -1229,6 +1261,29 @@ export const AdminUsersModule: React.FC = () => {
                   className="shrink-0 border-b border-border px-4 py-3"
                   data-testid="user-permission-profile-bar"
                 >
+                  {authUser?.role === "SUPER_ADMIN" && selectedListUser ? (
+                    <label className="mb-3 flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={selectedListUser.mustChangePassword === true}
+                        disabled={passwordFlagSaving}
+                        onChange={(e) => void handlePasswordChangeRequired(e.target.checked)}
+                      />
+                      <span className="text-[11px] leading-relaxed">
+                        <span className="font-semibold text-foreground">
+                          Exigir troca de senha no próximo login
+                        </span>
+                        <span className="mt-0.5 block text-muted-foreground">
+                          O usuário deverá criar uma nova senha pessoal antes de voltar a acessar o
+                          sistema. Vale para qualquer papel, não só para vendedor.
+                        </span>
+                        {passwordFlagError ? (
+                          <span className="mt-1 block font-medium text-red-700">{passwordFlagError}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ) : null}
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]">
                       <label className="block min-w-0">
@@ -1911,9 +1966,30 @@ export const AdminUsersModule: React.FC = () => {
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {describePasswordPolicy()} Como quem digita é você, ela vale como senha
-                temporária: o usuário terá de definir a própria senha no primeiro acesso.
+                {describePasswordPolicy()} A senha inicial usa o mesmo armazenamento seguro da
+                senha definitiva.
               </p>
+              {authUser?.role === "SUPER_ADMIN" ? (
+                <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={createForm.mustChangePassword}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, mustChangePassword: e.target.checked }))
+                    }
+                  />
+                  <span className="text-[11px] leading-relaxed">
+                    <span className="font-semibold text-foreground">
+                      Exigir troca de senha no próximo login
+                    </span>
+                    <span className="mt-0.5 block text-muted-foreground">
+                      O usuário deverá criar uma nova senha pessoal antes de acessar o sistema.
+                      Novos usuários nascem com esta opção marcada.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
               <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
                 O usuário será criado sem perfil e sem acesso. Depois da criação, abra o usuário
                 para atribuir um perfil pronto ou configurar as permissões manualmente.

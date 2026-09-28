@@ -14,6 +14,7 @@ import {
   changeOwnPassword,
   completeForcedPasswordChange,
   PASSWORD_LIFECYCLE_ERRORS,
+  setPasswordChangeRequired,
 } from "./passwordLifecycle.server.js";
 import {
   FakePrisma,
@@ -306,16 +307,15 @@ describe("completeForcedPasswordChange — troca obrigatória", () => {
     assert.equal(r.ok === false && r.code, PASSWORD_LIFECYCLE_ERRORS.PASSWORD_REUSED);
   });
 
-  it("revoga tudo e emite a sessão nova", async () => {
+  it("revoga tudo e não emite sessão nova", async () => {
     const { db } = setup({ mustChangePassword: true }, 2);
     const r = await completeForcedPasswordChange(deps(db), {
       userId: "user-1",
       newPassword: SENHA_NOVA,
     });
     assert.equal(r.ok === true && r.sessionsRevoked, 2);
-    const vivas = db.activeSessionsOf("user-1");
-    assert.equal(vivas.length, 1);
-    assert.equal(vivas[0].tokenHash, "sha256(token-novo-em-claro)");
+    assert.equal(r.ok === true && r.session, null);
+    assert.equal(db.activeSessionsOf("user-1").length, 0);
   });
 
   it("audita PASSWORD_FORCED_CHANGE_COMPLETED", async () => {
@@ -342,6 +342,48 @@ describe("completeForcedPasswordChange — troca obrigatória", () => {
     });
     assert.equal(r.ok === false && r.code, PASSWORD_LIFECYCLE_ERRORS.PASSWORD_STATE_CHANGED);
     assert.equal(db.userById("user-1")?.passwordHash, "fake:senha da requisicao vencedora");
+  });
+});
+
+describe("setPasswordChangeRequired", () => {
+  it("marca a flag sem alterar o hash e sem revogar sessão", async () => {
+    const { db } = setup({ mustChangePassword: false }, 1);
+    const hashAntes = db.userById("user-1")?.passwordHash;
+    const r = await setPasswordChangeRequired(deps(db), {
+      actorUserId: "super-1",
+      targetUserId: "user-1",
+      required: true,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(db.userById("user-1")?.mustChangePassword, true);
+    assert.equal(db.userById("user-1")?.passwordHash, hashAntes);
+    assert.equal(db.activeSessionsOf("user-1").length, 1);
+    assert.equal(db.audits[0].eventType, SECURITY_AUDIT_EVENTS.PASSWORD_CHANGE_REQUIRED_SET);
+    assert.equal(JSON.stringify(db.audits).includes(SENHA_ATUAL), false);
+  });
+
+  it("pode ser remarcada depois de já ter sido cumprida", async () => {
+    const { db } = setup({ mustChangePassword: false });
+    const r = await setPasswordChangeRequired(deps(db), {
+      actorUserId: "super-1",
+      targetUserId: "user-1",
+      required: true,
+    });
+    assert.equal(r.ok === true && r.changed, true);
+  });
+
+  it("desmarcar audita CLEARED e não mexe no hash", async () => {
+    const { db } = setup({ mustChangePassword: true });
+    const hashAntes = db.userById("user-1")?.passwordHash;
+    const r = await setPasswordChangeRequired(deps(db), {
+      actorUserId: "super-1",
+      targetUserId: "user-1",
+      required: false,
+    });
+    assert.equal(r.ok === true && r.changed, true);
+    assert.equal(db.userById("user-1")?.mustChangePassword, false);
+    assert.equal(db.userById("user-1")?.passwordHash, hashAntes);
+    assert.equal(db.audits[0].eventType, SECURITY_AUDIT_EVENTS.PASSWORD_CHANGE_REQUIRED_CLEARED);
   });
 });
 

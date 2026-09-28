@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, LogIn, RefreshCw, TrendingUp } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
@@ -18,7 +18,6 @@ export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
   onRetrySessionCheck,
 }) => {
   const auth = useAuth();
-  const navigate = useNavigate();
   const { login } = auth;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,8 +45,7 @@ export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
     setSubmitting(true);
     try {
       await login(email, password);
-      // Sempre a home autenticada — não retorna à URL anterior.
-      navigate("/home", { replace: true });
+      // Quem decide o destino é PublicLoginRoute: troca obrigatória ou /home.
     } catch (err) {
       setFormError(
         err instanceof Error

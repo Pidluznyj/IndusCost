@@ -608,8 +608,12 @@ import {
   ADMIN_ELEVATION_REQUIRED_CODE,
   ADMIN_ELEVATION_TTL_MS,
 } from "./src/lib/auth/adminElevation.shared.js";
-import { createPasswordChangeRequiredGuard } from "./src/lib/auth/passwordChangeRequiredGuard.js";
+import { createPasswordChangeRequiredGuard, requestHasAppSessionCookie } from "./src/lib/auth/passwordChangeRequiredGuard.js";
 import { registerPasswordLifecycleRoutes } from "./src/lib/auth/passwordLifecycleRoutes.js";
+import { createCommercialPolicyAcceptanceGuard } from "./src/lib/commercialPolicy/commercialPolicyGuard.js";
+import { createPrismaCommercialPolicyStore } from "./src/lib/commercialPolicy/commercialPolicyPrismaStore.js";
+import { registerCommercialPolicyRoutes } from "./src/lib/commercialPolicy/commercialPolicyRoutes.js";
+import { sellerHasPendingPolicy } from "./src/lib/commercialPolicy/commercialPolicyService.js";
 import {
   loginThrottle,
   authRateLimitedBody,
@@ -1921,6 +1925,41 @@ async function startServer() {
     passwordChangeRequiredGuard(req, res, next).catch(next);
   });
 
+  const commercialPolicyStore = createPrismaCommercialPolicyStore(prisma);
+  const commercialPolicyAcceptanceGuard = createCommercialPolicyAcceptanceGuard({
+    hasSessionCookie: requestHasAppSessionCookie,
+    onError: (error) => console.error("[commercial-policy-guard]", error),
+    resolvePending: async (req) => {
+      const request = req as express.Request;
+      if (request.appAuth?.mustChangePassword) return false;
+      if (request.appAuth && request.appAuth.role !== "SELLER") return false;
+      if (request.appAuth && !request.appAuth.isActive) return false;
+      if (request.appAuth) {
+        return sellerHasPendingPolicy(commercialPolicyStore, request.appAuth, new Date());
+      }
+      const cookies = parseCookiesFromHeader(request.headers.cookie);
+      const token = cookies[APP_SESSION_COOKIE_NAME];
+      if (!token) return null;
+      const session = await prisma.appSession.findFirst({
+        where: {
+          tokenHash: hashSessionToken(token),
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        select: {
+          user: { select: { id: true, role: true, isActive: true, mustChangePassword: true } },
+        },
+      });
+      const user = session?.user;
+      if (!user?.isActive) return null;
+      if (user.mustChangePassword || user.role !== "SELLER") return false;
+      return sellerHasPendingPolicy(commercialPolicyStore, user, new Date());
+    },
+  });
+  app.use("/api", (req, res, next) => {
+    commercialPolicyAcceptanceGuard(req, res, next).catch(next);
+  });
+
   const {
     requireAppAuth,
     requirePermission,
@@ -2212,6 +2251,13 @@ async function startServer() {
     requireAdminUsersManage: requireUsersManageOrBootstrap,
     getCurrentAppUser,
     setAppSessionCookie,
+    clearAppSessionCookie,
+  });
+  registerCommercialPolicyRoutes(app, {
+    requireAppAuth,
+    getCurrentAppUser,
+    store: commercialPolicyStore,
+    countActiveSellers: () => prisma.appUser.count({ where: { role: "SELLER", isActive: true } }),
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -2293,12 +2339,16 @@ async function startServer() {
         },
       });
       setAppSessionCookie(res, token);
-      return res.json({
-        user: toSafeAppUser(refreshed, {
-          accessProfileName: refreshed.accessProfile?.name ?? null,
-          employee: refreshed.employee,
-        }),
+      const safeUser = toSafeAppUser(refreshed, {
+        accessProfileName: refreshed.accessProfile?.name ?? null,
+        employee: refreshed.employee,
       });
+      const commercialPolicyAcceptanceRequired = await sellerHasPendingPolicy(
+        commercialPolicyStore,
+        safeUser,
+        new Date()
+      );
+      return res.json({ user: { ...safeUser, commercialPolicyAcceptanceRequired } });
     } catch (error) {
       console.error("POST /api/auth/login", error);
       return res.status(500).json({ error: "Erro ao autenticar usuário." });
@@ -2355,19 +2405,35 @@ async function startServer() {
               employee: user.employee,
             },
           });
-          if (compact) return res.json(compact);
+          if (compact) {
+            const commercialPolicyAcceptanceRequired = await sellerHasPendingPolicy(
+              commercialPolicyStore,
+              compact.user,
+              new Date()
+            );
+            return res.json({
+              ...compact,
+              user: { ...compact.user, commercialPolicyAcceptanceRequired },
+            });
+          }
         } catch (dtoError) {
           console.error("GET /api/auth/me effectiveAccess DTO", dtoError);
         }
       }
 
+      const safeUser = toSafeAppUser(user, {
+        accessProfileName: user.accessProfile?.name ?? null,
+        employee: user.employee,
+        sessionCompact: true,
+      });
+      const commercialPolicyAcceptanceRequired = await sellerHasPendingPolicy(
+        commercialPolicyStore,
+        safeUser,
+        new Date()
+      );
       return res.json({
         authenticated: true,
-        user: toSafeAppUser(user, {
-          accessProfileName: user.accessProfile?.name ?? null,
-          employee: user.employee,
-          sessionCompact: true,
-        }),
+        user: { ...safeUser, commercialPolicyAcceptanceRequired },
       });
     } catch (error) {
       console.error("GET /api/auth/me", error);
@@ -2444,15 +2510,31 @@ async function startServer() {
             employee: user.employee,
           },
         });
-        if (compact) return res.json(compact);
+        if (compact) {
+          const commercialPolicyAcceptanceRequired = await sellerHasPendingPolicy(
+            commercialPolicyStore,
+            compact.user,
+            new Date()
+          );
+          return res.json({
+            ...compact,
+            user: { ...compact.user, commercialPolicyAcceptanceRequired },
+          });
+        }
       }
+      const safeUser = toSafeAppUser(user, {
+        accessProfileName: user.accessProfile?.name ?? null,
+        employee: user.employee,
+        sessionCompact: true,
+      });
+      const commercialPolicyAcceptanceRequired = await sellerHasPendingPolicy(
+        commercialPolicyStore,
+        safeUser,
+        new Date()
+      );
       return res.json({
         authenticated: true,
-        user: toSafeAppUser(user, {
-          accessProfileName: user.accessProfile?.name ?? null,
-          employee: user.employee,
-          sessionCompact: true,
-        }),
+        user: { ...safeUser, commercialPolicyAcceptanceRequired },
       });
     } catch (error) {
       console.error("POST /api/auth/sync-session-permissions", error);
@@ -2629,6 +2711,11 @@ async function startServer() {
 
       const passwordHash = await hashPassword(password);
       const actorUserId = req.appAuth?.id ?? null;
+      // Senha inicial escolhida por outra pessoa. O padrão exige troca no
+      // primeiro acesso. Só SUPER_ADMIN pode desligar isso enviando false.
+      const requirePasswordChange = !(
+        req.appAuth?.role === "SUPER_ADMIN" && req.body?.mustChangePassword === false
+      );
       const user = await prisma.$transaction(async (tx) => {
         const created = await tx.appUser.create({
           data: {
@@ -2640,9 +2727,7 @@ async function startServer() {
             accessProfileId,
             employeeId: employee.id,
             isActive,
-            // A senha inicial foi escolhida por OUTRA pessoa: vale como
-            // credencial temporária e exige troca no primeiro acesso.
-            mustChangePassword: true,
+            mustChangePassword: requirePasswordChange,
             passwordChangedAt: new Date(),
             externalSellerId: sellerLink.externalSellerId,
             externalSellerIds: sellerLink.externalSellerIds,

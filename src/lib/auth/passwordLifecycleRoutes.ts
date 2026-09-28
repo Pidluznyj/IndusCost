@@ -25,6 +25,7 @@ import {
   changeOwnPassword,
   completeForcedPasswordChange,
   isPasswordLifecycleFailure,
+  setPasswordChangeRequired,
   type RequestOrigin,
 } from "./passwordLifecycle.server.js";
 import { resolveAuditIpAddress, normalizeUserAgent } from "./securityAudit.server.js";
@@ -33,6 +34,7 @@ export const PASSWORD_LIFECYCLE_ROUTES = {
   changePassword: "/api/auth/change-password",
   completePasswordChange: "/api/auth/complete-password-change",
   adminResetPassword: "/api/admin/users/:id/reset-password",
+  adminPasswordChangeRequired: "/api/admin/users/:id/password-change-required",
 } as const;
 
 export type PasswordLifecycleRouteDeps = {
@@ -44,6 +46,8 @@ export type PasswordLifecycleRouteDeps = {
   getCurrentAppUser: (req: Request) => Promise<AppAuthContext | null>;
   /** Emissor de cookie canônico do servidor — TTL e flags não mudam aqui. */
   setAppSessionCookie: (res: Response, token: string) => void;
+  /** Remove o cookie da sessão humana. Usado no logout obrigatório após a troca. */
+  clearAppSessionCookie: (res: Response) => void;
   rateLimiter?: AuthRateLimiter;
 };
 
@@ -161,13 +165,14 @@ export function registerPasswordLifecycleRoutes(
           });
         }
 
-        deps.setAppSessionCookie(res, result.session.token);
+        deps.clearAppSessionCookie(res);
         limiter.clear("change-password", auth.id);
 
         return res.json({
           success: true,
           mustChangePassword: false,
           sessionsRevoked: result.sessionsRevoked,
+          loggedOut: true,
         });
       } catch (error) {
         console.error("POST /api/auth/complete-password-change", error);
@@ -264,6 +269,73 @@ export function registerPasswordLifecycleRoutes(
           error: "INTERNAL_ERROR",
           code: "INTERNAL_ERROR",
           message: "Erro ao redefinir a senha.",
+        });
+      }
+    }
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* Flag de troca obrigatória — SOMENTE SUPER_ADMIN, sem mexer no hash */
+  /* ---------------------------------------------------------------- */
+  app.post(
+    PASSWORD_LIFECYCLE_ROUTES.adminPasswordChangeRequired,
+    deps.requireAdminUsersManage,
+    async (req, res) => {
+      try {
+        const auth = await deps.getCurrentAppUser(req);
+        if (!auth) {
+          return res.status(401).json({
+            error: "UNAUTHORIZED",
+            code: "UNAUTHORIZED",
+            message: "Autenticação necessária.",
+          });
+        }
+        if (auth.role !== "SUPER_ADMIN") {
+          return res.status(403).json({
+            error: "FORBIDDEN",
+            code: "FORBIDDEN",
+            message: "Apenas um super administrador pode exigir a troca de senha.",
+          });
+        }
+        if (typeof req.body?.required !== "boolean") {
+          return res.status(400).json({
+            error: "INVALID_REQUIRED",
+            code: "INVALID_REQUIRED",
+            message: "Informe se a troca de senha é obrigatória.",
+          });
+        }
+        const targetUserId = String(req.params.id ?? "").trim();
+        if (!targetUserId) {
+          return res
+            .status(400)
+            .json({ error: "INVALID_ID", code: "INVALID_ID", message: "ID inválido." });
+        }
+
+        const result = await setPasswordChangeRequired(
+          { db: deps.prisma },
+          {
+            actorUserId: auth.id,
+            targetUserId,
+            required: req.body.required,
+            origin: requestOrigin(req),
+          }
+        );
+        if (isPasswordLifecycleFailure(result)) {
+          return res
+            .status(result.status)
+            .json({ error: result.code, code: result.code, message: result.message });
+        }
+        return res.json({
+          success: true,
+          mustChangePassword: result.mustChangePassword,
+          changed: result.changed,
+        });
+      } catch (error) {
+        console.error("POST /api/admin/users/:id/password-change-required", error);
+        return res.status(500).json({
+          error: "INTERNAL_ERROR",
+          code: "INTERNAL_ERROR",
+          message: "Erro ao atualizar a exigência de troca de senha.",
         });
       }
     }

@@ -99,6 +99,8 @@ import { ExperienceEvaluationPrintView } from "@/src/components/employee/Experie
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { PasswordChangePage } from "@/src/components/security/PasswordChangePage";
+import { CommercialPolicyAcceptancePage } from "@/src/components/security/CommercialPolicyAcceptancePage";
+import { MyCommercialAcceptancesPage } from "@/src/components/security/MyCommercialAcceptancesPage";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
@@ -239,6 +241,7 @@ export default function App() {
           RequirePathViewAccess — precisa abrir mesmo com a ACL bloqueada
           durante a troca obrigatória. */}
       <Route path="/security/change-password" element={<PasswordChangePage />} />
+      <Route path="/security/commercial-policy" element={<CommercialPolicyAcceptancePage />} />
       {/* P11: telas autenticadas fora do Layout — mesmo view da sidebar */}
       <Route element={<RequirePathViewAccess />}>
       <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />
@@ -258,6 +261,7 @@ export default function App() {
       </Route>
       <Route element={<Layout />}>
         <Route path="home" element={<HomePage />} />
+        <Route path="account/commercial-acceptances" element={<MyCommercialAcceptancesPage />} />
         <Route
           path="dashboard"
           element={

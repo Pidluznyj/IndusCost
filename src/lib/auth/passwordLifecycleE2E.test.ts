@@ -3,7 +3,7 @@
  *
  * Reproduz a topologia do server.ts: login → sessão opaca em AppSession →
  * guard de troca obrigatória montado em /api antes das rotas de negócio →
- * complete-password-change → sessão rotacionada → sistema liberado.
+ * complete-password-change → sessão destruída → novo login com a senha pessoal.
  *
  * O cliente é um `fetch` cru com jar de cookie manual: se o bloqueio dependesse
  * do React, este teste passaria mesmo com a feature quebrada — e é justamente
@@ -48,7 +48,7 @@ class CookieJar {
   capture(setCookie: string | null): void {
     if (!setCookie) return;
     const match = setCookie.match(new RegExp(`${APP_SESSION_COOKIE_NAME}=([^;]*)`));
-    if (match) this.value = match[1] || null;
+    if (match) this.value = match[1] ? match[1] : null;
   }
 
   header(): Record<string, string> {
@@ -115,6 +115,10 @@ async function startApp(): Promise<Ctx> {
       maxAge: APP_SESSION_TTL_MS,
       path: "/",
     });
+  }
+
+  function clearAppSessionCookie(res: express.Response) {
+    res.clearCookie(APP_SESSION_COOKIE_NAME, { path: "/" });
   }
 
   // --- login (equivalente ao POST /api/auth/login do server.ts) ---
@@ -185,6 +189,7 @@ async function startApp(): Promise<Ctx> {
     requireAdminUsersManage: requireAppAuth,
     getCurrentAppUser: async (req) => (await readAppSession(req)) as never,
     setAppSessionCookie,
+    clearAppSessionCookie,
     rateLimiter: new AuthRateLimiter(),
   });
 
@@ -293,15 +298,17 @@ describe("E2E — reset administrativo até a liberação do sistema", () => {
       assert.equal(atalho.status, 403);
       assert.equal(atalho.body.code, "PASSWORD_CHANGE_REQUIRED");
 
-      /* 8. A troca obrigatória conclui. */
+      /* 8. A troca obrigatória conclui e desloga. */
       const concluir = await request(ctx, novo, "POST", "/api/auth/complete-password-change", {
         newPassword: SENHA_DEFINITIVA,
+        mustChangePassword: false,
       });
       assert.equal(concluir.status, 200);
       assert.equal(concluir.body.mustChangePassword, false);
+      assert.equal(concluir.body.loggedOut, true);
+      assert.equal(novo.raw(), null, "cookie da sessão de troca foi removido");
 
-      /* 9. A sessão foi rotacionada: o cookie mudou e o token anterior morreu. */
-      assert.notEqual(novo.raw(), tokenRestrito, "cookie precisa ter sido substituído");
+      /* 9. A sessão anterior morreu e não há sessão nova. */
       const jarAntigo = new CookieJar();
       jarAntigo.set(tokenRestrito);
       assert.equal(
@@ -309,13 +316,9 @@ describe("E2E — reset administrativo até a liberação do sistema", () => {
         401,
         "sessão anterior à troca não pode continuar valendo"
       );
+      assert.equal(ctx.db.activeSessionsOf("user-1").length, 0);
 
-      /* 10. /me confirma o estado e o sistema volta a funcionar. */
-      const meDepois = await request(ctx, novo, "GET", "/api/auth/me");
-      assert.equal((meDepois.body.user as Record<string, unknown>).mustChangePassword, false);
-      assert.equal((await request(ctx, novo, "GET", "/api/sales-orders")).status, 200);
-
-      /* 11. A temporária deixou de valer; a definitiva vale. */
+      /* 10. A temporária deixou de valer; a definitiva vale e entra no fluxo normal. */
       assert.equal(
         (await request(ctx, new CookieJar(), "POST", "/api/auth/login", {
           email: EMAIL,
@@ -323,13 +326,15 @@ describe("E2E — reset administrativo até a liberação do sistema", () => {
         })).status,
         401
       );
+      const jarNovoLogin = new CookieJar();
       assert.equal(
-        (await request(ctx, new CookieJar(), "POST", "/api/auth/login", {
+        (await request(ctx, jarNovoLogin, "POST", "/api/auth/login", {
           email: EMAIL,
           password: SENHA_DEFINITIVA,
         })).status,
         200
       );
+      assert.equal((await request(ctx, jarNovoLogin, "GET", "/api/sales-orders")).status, 200);
 
       /* 12. A trilha de auditoria existe e não vazou segredo. */
       const eventos = ctx.db.audits.map((a) => a.eventType);
@@ -388,6 +393,40 @@ describe("E2E — reset administrativo até a liberação do sistema", () => {
       });
       assert.equal(troca.status, 200);
       assert.equal((await request(ctx, jar, "GET", "/api/sales-orders")).status, 200);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("flag marcada com sessão já aberta bloqueia o próximo request, sem esperar logout", async () => {
+    const ctx = await startApp();
+    try {
+      const jar = new CookieJar();
+      assert.equal(
+        (await request(ctx, jar, "POST", "/api/auth/login", {
+          email: EMAIL,
+          password: SENHA_ORIGINAL,
+        })).status,
+        200
+      );
+      assert.equal((await request(ctx, jar, "GET", "/api/sales-orders")).status, 200);
+
+      const admin = new CookieJar();
+      await request(ctx, admin, "POST", "/api/auth/login", {
+        email: "super@exemplo.test",
+        password: "senha do super admin",
+      });
+      const marca = await request(ctx, admin, "POST", "/api/admin/users/user-1/password-change-required", {
+        required: true,
+      });
+      assert.equal(marca.status, 200);
+
+      const bloqueado = await request(ctx, jar, "GET", "/api/sales-orders");
+      assert.equal(bloqueado.status, 403);
+      assert.equal(bloqueado.body.code, "PASSWORD_CHANGE_REQUIRED");
+      const me = await request(ctx, jar, "GET", "/api/auth/me");
+      assert.equal(me.status, 200);
+      assert.equal((me.body.user as Record<string, unknown>).mustChangePassword, true);
     } finally {
       await ctx.close();
     }

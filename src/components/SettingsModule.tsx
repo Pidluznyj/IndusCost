@@ -25,6 +25,7 @@ import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
+import { CommercialPolicyAdminPanel } from "@/src/components/security/CommercialPolicyAdminPanel";
 import { AccessProfilesModule } from "@/src/components/AccessProfilesModule";
 import { AdminKpiSection } from "@/src/components/admin/adminUi";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
@@ -389,7 +390,7 @@ export const SettingsModule = () => {
   const canManageMaterialStockMirror =
     auth.hasPermission("settings.material_stock_mirror.manage") ||
     permissions.canPerformAction("admin.settings.material_stock_mirror", "execute");
-  const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles">("users");
+  const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles" | "policies">("users");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
@@ -2604,6 +2605,20 @@ export const SettingsModule = () => {
                 >
                   Usuários
                 </button>
+                {auth.isSuperAdmin() ? (
+                  <button
+                    type="button"
+                    onClick={() => setSecuritySubTab("policies")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold",
+                      securitySubTab === "policies"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent"
+                    )}
+                  >
+                    Políticas e aceites
+                  </button>
+                ) : null}
                 {canViewAccessProfilesPerm ? (
                   <button
                     type="button"
@@ -2619,7 +2634,7 @@ export const SettingsModule = () => {
                   </button>
                 ) : null}
               </div>
-              {securitySubTab === "users" ? <AdminUsersModule /> : <AccessProfilesModule />}
+              {securitySubTab === "users" ? <AdminUsersModule /> : securitySubTab === "policies" ? <CommercialPolicyAdminPanel /> : <AccessProfilesModule />}
             </div>
           )}
 

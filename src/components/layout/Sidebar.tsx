@@ -869,6 +869,25 @@ export const Sidebar = () => {
             <span className="ml-3 text-sm font-medium truncate">Alterar senha</span>
           )}
         </button>
+        {authUser?.role === "SELLER" ? (
+          <button
+            type="button"
+            title={collapsed ? "Meus aceites" : undefined}
+            aria-label={collapsed ? "Meus aceites" : undefined}
+            className={cn(
+              "flex items-center w-full rounded-md transition-colors duration-200 min-w-0 min-h-11",
+              collapsed ? "justify-center px-1 py-2" : "px-3 py-2.5",
+              "text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+            )}
+            onClick={() => {
+              if (isMobile) closeMobileSidebar();
+              navigate("/account/commercial-acceptances");
+            }}
+          >
+            <FileText className="h-[18px] w-[18px] shrink-0" />
+            {!collapsed && <span className="ml-3 text-sm font-medium truncate">Meus aceites</span>}
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={pendingLogout}

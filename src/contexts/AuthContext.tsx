@@ -9,7 +9,9 @@ import React, {
 } from "react";
 import {
   APP_AUTH_REQUIRED_EVENT,
+  APP_PASSWORD_CHANGE_REQUIRED_EVENT,
   APP_PERMISSIONS_STALE_EVENT,
+  APP_POLICY_ACCEPTANCE_REQUIRED_EVENT,
   fetchJsonOk,
 } from "@/src/lib/http";
 import type {
@@ -159,13 +161,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handlePermissionsStale = () => {
       void refreshPermissions({ announceChange: true });
     };
+    const handlePasswordChangeRequired = () => {
+      void loadMe();
+    };
+    const handlePolicyAcceptanceRequired = () => {
+      void loadMe();
+    };
     window.addEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
     window.addEventListener(APP_PERMISSIONS_STALE_EVENT, handlePermissionsStale);
+    window.addEventListener(APP_PASSWORD_CHANGE_REQUIRED_EVENT, handlePasswordChangeRequired);
+    window.addEventListener(APP_POLICY_ACCEPTANCE_REQUIRED_EVENT, handlePolicyAcceptanceRequired);
     return () => {
       window.removeEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
       window.removeEventListener(APP_PERMISSIONS_STALE_EVENT, handlePermissionsStale);
+      window.removeEventListener(APP_PASSWORD_CHANGE_REQUIRED_EVENT, handlePasswordChangeRequired);
+      window.removeEventListener(APP_POLICY_ACCEPTANCE_REQUIRED_EVENT, handlePolicyAcceptanceRequired);
     };
-  }, [refreshPermissions]);
+  }, [refreshPermissions, loadMe]);
 
   useEffect(() => {
     if (!authenticated) return;

@@ -43,6 +43,7 @@ type Harness = {
   db: FakePrisma;
   url: string;
   cookies: string[];
+  sessionCleared: () => boolean;
   close: () => Promise<void>;
 };
 
@@ -58,6 +59,7 @@ async function startHarness(opts: {
   );
   const db = new FakePrisma(users, sessions);
   const cookies: string[] = [];
+  let cleared = false;
 
   const app = express();
   app.use(express.json());
@@ -86,6 +88,9 @@ async function startHarness(opts: {
     setAppSessionCookie: (_res, token) => {
       cookies.push(token);
     },
+    clearAppSessionCookie: () => {
+      cleared = true;
+    },
     rateLimiter: opts.rateLimiter ?? new AuthRateLimiter(),
   });
 
@@ -97,6 +102,7 @@ async function startHarness(opts: {
   return {
     db,
     cookies,
+    sessionCleared: () => cleared,
     url: `http://127.0.0.1:${addr.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
@@ -254,7 +260,7 @@ describe("POST /api/auth/complete-password-change", () => {
     }
   });
 
-  it("com troca pendente: conclui, rotaciona a sessão e libera o estado", async () => {
+  it("com troca pendente: conclui, encerra a sessão e não libera o sistema na mesma sessão", async () => {
     const h = await startHarness({
       actor: { id: "user-1", role: "VIEWER" },
       users: [makeUser({ mustChangePassword: true, passwordHash: await hashDaSenhaAtual() })],
@@ -263,12 +269,16 @@ describe("POST /api/auth/complete-password-change", () => {
     try {
       const r = await post(h.url, "/api/auth/complete-password-change", {
         newPassword: SENHA_NOVA,
+        mustChangePassword: false,
       });
       assert.equal(r.status, 200);
       assert.equal(r.body.mustChangePassword, false);
-      assert.equal(h.cookies.length, 1);
+      assert.equal(r.body.loggedOut, true);
+      assert.equal(h.cookies.length, 0, "não emite cookie novo");
+      assert.equal(h.sessionCleared(), true);
       assert.equal(h.db.userById("user-1")?.mustChangePassword, false);
-      assert.equal(h.db.activeSessionsOf("user-1").length, 1);
+      assert.equal(h.db.activeSessionsOf("user-1").length, 0);
+      assert.equal(JSON.stringify(r.body).includes(SENHA_NOVA), false);
       assert.equal(
         h.db.audits[0].eventType,
         SECURITY_AUDIT_EVENTS.PASSWORD_FORCED_CHANGE_COMPLETED
@@ -413,4 +423,42 @@ describe("POST /api/admin/users/:id/reset-password — efeito e contrato", () =>
       await h.close();
     }
   });
+});
+
+describe("POST /api/admin/users/:id/password-change-required", () => {
+  it("SUPER_ADMIN marca e desmarca sem alterar o hash", async () => {
+    const h = await startHarness({ actor: { id: "super-1", role: "SUPER_ADMIN" } });
+    try {
+      const hashAntes = h.db.userById("user-1")?.passwordHash;
+      const marca = await post(h.url, "/api/admin/users/user-1/password-change-required", {
+        required: true,
+      });
+      assert.equal(marca.status, 200);
+      assert.equal(marca.body.mustChangePassword, true);
+      assert.equal(h.db.userById("user-1")?.passwordHash, hashAntes);
+      const limpa = await post(h.url, "/api/admin/users/user-1/password-change-required", {
+        required: false,
+      });
+      assert.equal(limpa.status, 200);
+      assert.equal(limpa.body.mustChangePassword, false);
+      assert.equal(h.db.userById("user-1")?.passwordHash, hashAntes);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const role of ["ADMIN", "COMMERCIAL_MANAGER", "SELLER", "VIEWER"]) {
+    it(`${role} não marca a flag`, async () => {
+      const h = await startHarness({ actor: { id: `ator-${role}`, role } });
+      try {
+        const r = await post(h.url, "/api/admin/users/user-1/password-change-required", {
+          required: true,
+        });
+        assert.equal(r.status, 403);
+        assert.equal(h.db.userById("user-1")?.mustChangePassword, false);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });

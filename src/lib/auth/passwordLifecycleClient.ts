@@ -29,6 +29,8 @@ export type PasswordChangeResponse = {
   success: true;
   mustChangePassword: false;
   sessionsRevoked: number;
+  /** Troca obrigatória encerra a sessão. Troca voluntária segue logada. */
+  loggedOut?: boolean;
 };
 
 export type AdminResetPasswordResponse = {
@@ -59,6 +61,17 @@ export async function requestCompletePasswordChange(input: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+export async function requestSetPasswordChangeRequired(
+  userId: string,
+  required: boolean
+): Promise<{ success: true; mustChangePassword: boolean; changed: boolean }> {
+  return fetchJsonOk(`/api/admin/users/${encodeURIComponent(userId)}/password-change-required`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ required }),
   });
 }
 

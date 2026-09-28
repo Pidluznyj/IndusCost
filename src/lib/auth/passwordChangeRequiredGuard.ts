@@ -16,6 +16,34 @@
 
 import { APP_SESSION_COOKIE_NAME } from "./appAuth.shared.js";
 
+/**
+ * Ordem dos gates depois que a credencial já foi aceita:
+ *   PASSWORD_CHANGE_REQUIRED → POLICY_ACCEPTANCE_REQUIRED → AUTHENTICATED
+ * A senha sempre vence. A política só existe para SELLER ativo, e só depois
+ * que a troca obrigatória já foi concluída.
+ */
+export type AuthenticatedAccessGate =
+  | "PASSWORD_CHANGE_REQUIRED"
+  | "POLICY_ACCEPTANCE_REQUIRED"
+  | "AUTHENTICATED";
+
+export function resolveAuthenticatedAccessGate(user: {
+  mustChangePassword: boolean;
+  role?: string;
+  isActive?: boolean;
+  hasPendingCommercialPolicy?: boolean;
+}): AuthenticatedAccessGate {
+  if (user.mustChangePassword) return "PASSWORD_CHANGE_REQUIRED";
+  if (
+    user.isActive !== false &&
+    user.role === "SELLER" &&
+    user.hasPendingCommercialPolicy === true
+  ) {
+    return "POLICY_ACCEPTANCE_REQUIRED";
+  }
+  return "AUTHENTICATED";
+}
+
 export const PASSWORD_CHANGE_REQUIRED_CODE = "PASSWORD_CHANGE_REQUIRED";
 
 /**

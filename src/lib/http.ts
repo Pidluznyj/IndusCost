@@ -15,6 +15,10 @@ import { isNonSessionUnauthorizedCode } from "@/src/lib/auth/adminElevation.shar
 
 export const APP_AUTH_REQUIRED_EVENT = "app-auth-required";
 export const APP_PERMISSIONS_STALE_EVENT = "app-permissions-stale";
+/** 403 PASSWORD_CHANGE_REQUIRED: a sessão segue viva, mas o acesso normal não. */
+export const APP_PASSWORD_CHANGE_REQUIRED_EVENT = "app-password-change-required";
+/** 403 POLICY_ACCEPTANCE_REQUIRED: SELLER ainda não assinou a versão vigente. */
+export const APP_POLICY_ACCEPTANCE_REQUIRED_EVENT = "app-policy-acceptance-required";
 
 export const PERMISSIONS_VERSION_STALE_CODE = "PERMISSIONS_VERSION_STALE";
 
@@ -73,6 +77,18 @@ export function notifyAuthRequired(): void {
 export function notifyPermissionsStale(): void {
   if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
     window.dispatchEvent(new CustomEvent(APP_PERMISSIONS_STALE_EVENT));
+  }
+}
+
+export function notifyPasswordChangeRequired(): void {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent(APP_PASSWORD_CHANGE_REQUIRED_EVENT));
+  }
+}
+
+export function notifyPolicyAcceptanceRequired(): void {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent(APP_POLICY_ACCEPTANCE_REQUIRED_EVENT));
   }
 }
 
@@ -160,6 +176,20 @@ export async function fetchJsonOk<T = unknown>(
       notifyPermissionsStale();
       throw new PermissionsStaleError(payload.message);
     }
+    if (
+      res.status === 403 &&
+      payload.code === "PASSWORD_CHANGE_REQUIRED" &&
+      !init.suppressAuthEvent
+    ) {
+      notifyPasswordChangeRequired();
+    }
+    if (
+      res.status === 403 &&
+      payload.code === "POLICY_ACCEPTANCE_REQUIRED" &&
+      !init.suppressAuthEvent
+    ) {
+      notifyPolicyAcceptanceRequired();
+    }
     throw new HttpError(
       res.status,
       payload.message,
@@ -186,6 +216,20 @@ export async function fetchOk(
   }
   if (!res.ok) {
     const payload = await parseApiErrorPayload(res);
+    if (
+      res.status === 403 &&
+      payload.code === "PASSWORD_CHANGE_REQUIRED" &&
+      !init.suppressAuthEvent
+    ) {
+      notifyPasswordChangeRequired();
+    }
+    if (
+      res.status === 403 &&
+      payload.code === "POLICY_ACCEPTANCE_REQUIRED" &&
+      !init.suppressAuthEvent
+    ) {
+      notifyPolicyAcceptanceRequired();
+    }
     throw new HttpError(
       res.status,
       payload.message,

@@ -22,7 +22,10 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
 describe("eventos", () => {
   it("cobre os eventos mínimos exigidos", () => {
     assert.deepEqual(Object.keys(SECURITY_AUDIT_EVENTS).sort(), [
+      "COMMERCIAL_POLICY_CONTROLLED_COPY",
       "PASSWORD_CHANGED",
+      "PASSWORD_CHANGE_REQUIRED_CLEARED",
+      "PASSWORD_CHANGE_REQUIRED_SET",
       "PASSWORD_FORCED_CHANGE_COMPLETED",
       "PASSWORD_RESET_BY_SUPER_ADMIN",
       "USER_INITIAL_PASSWORD_ASSIGNED",

@@ -84,7 +84,7 @@ const PasswordField: React.FC<FieldProps> = ({
 };
 
 export const PasswordChangePage: React.FC = () => {
-  const { authUser, loadMe } = useAuth();
+  const { authUser, logout } = useAuth();
   const navigate = useNavigate();
 
   const forced = authUser?.mustChangePassword === true;
@@ -129,15 +129,19 @@ export const PasswordChangePage: React.FC = () => {
     try {
       if (forced) {
         await requestCompletePasswordChange({ newPassword });
-      } else {
-        await requestChangeOwnPassword({ currentPassword, newPassword });
+        clearFields();
+        await logout();
+        navigate("/login", {
+          replace: true,
+          state: {
+            authError: "Senha alterada com sucesso. Entre novamente usando sua nova senha.",
+          },
+        });
+        return;
       }
+      await requestChangeOwnPassword({ currentPassword, newPassword });
       clearFields();
-      // O backend rotacionou a sessão e trocou o cookie; recarregar o /me
-      // confirma o novo estado (mustChangePassword = false) antes de liberar.
-      await loadMe();
       setSuccess(true);
-      if (forced) navigate("/home", { replace: true });
     } catch (err) {
       const code = err instanceof HttpError ? err.code : undefined;
       setError(
@@ -167,11 +171,11 @@ export const PasswordChangePage: React.FC = () => {
             </div>
             <div className="min-w-0">
               <h1 className="text-base font-bold text-foreground">
-                {forced ? "Sua senha precisa ser alterada" : "Alterar senha"}
+                {forced ? "Crie sua nova senha" : "Alterar senha"}
               </h1>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {forced
-                  ? "Por segurança, defina uma nova senha antes de continuar."
+                  ? "Por segurança, você precisa criar uma senha pessoal antes de acessar o IndusCost."
                   : "Defina uma nova senha para a sua conta."}
               </p>
             </div>
@@ -230,8 +234,19 @@ export const PasswordChangePage: React.FC = () => {
               <p className="text-[11px] font-medium text-amber-700">{localError}</p>
             ) : null}
 
-            <div className="flex items-center justify-end gap-2 pt-1">
-              {forced ? null : (
+            <div className="flex items-center justify-between gap-2 pt-1">
+              {forced ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    void logout().then(() => navigate("/login", { replace: true }));
+                  }}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Sair
+                </button>
+              ) : (
                 <button
                   type="button"
                   disabled={saving}
@@ -254,8 +269,11 @@ export const PasswordChangePage: React.FC = () => {
         </div>
 
         <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-          Trocar a senha encerra as sessões abertas em outros dispositivos. A senha do
-          IndusCost não expira por tempo — mínimo de {PASSWORD_MIN_LENGTH} caracteres.
+          {forced
+            ? "Depois de salvar, a sessão é encerrada. Entre de novo com a senha nova."
+            : "Trocar a senha encerra as sessões abertas em outros dispositivos. A senha do IndusCost não expira por tempo — mínimo de " +
+              PASSWORD_MIN_LENGTH +
+              " caracteres."}
         </p>
       </div>
     </div>

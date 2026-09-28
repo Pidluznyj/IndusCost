@@ -12,7 +12,7 @@
  *
  * Invariantes de sessão:
  *   troca voluntária  → revoga TODAS as sessões + emite UMA nova (requisição atual)
- *   troca obrigatória → revoga TODAS as sessões + emite UMA nova (requisição atual)
+ *   troca obrigatória → revoga TODAS as sessões + NÃO emite sessão (logout obrigatório)
  *   reset admin       → revoga TODAS as sessões do alvo + NÃO emite sessão
  *
  * A revogação usa `AppSession.revokedAt` (o registro é preservado).
@@ -91,7 +91,8 @@ export type PasswordChangeSuccess = {
   ok: true;
   userId: string;
   sessionsRevoked: number;
-  session: IssuedSession;
+  /** Presente na troca voluntária. Ausente na troca obrigatória: o usuário entra de novo. */
+  session: IssuedSession | null;
 };
 
 export type AdminResetSuccess = {
@@ -418,7 +419,7 @@ export async function completeForcedPasswordChange(
       ok: false,
       status: 422,
       code: PASSWORD_LIFECYCLE_ERRORS.PASSWORD_REUSED,
-      message: "A nova senha deve ser diferente da senha temporária.",
+      message: "A nova senha deve ser diferente da senha atual.",
     };
   }
 
@@ -430,7 +431,7 @@ export async function completeForcedPasswordChange(
     newPasswordHash,
     extraCas: { mustChangePassword: true },
     nextMustChangePassword: false,
-    issueSession: true,
+    issueSession: false,
     audit: {
       eventType: SECURITY_AUDIT_EVENTS.PASSWORD_FORCED_CHANGE_COMPLETED,
       actorUserId: user.id,
@@ -445,8 +446,76 @@ export async function completeForcedPasswordChange(
     ok: true,
     userId: user.id,
     sessionsRevoked: result.sessionsRevoked,
-    session: result.session as IssuedSession,
+    session: null,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* 2b. Flag administrativa, sem trocar a senha                         */
+/* ------------------------------------------------------------------ */
+
+export type PasswordChangeRequiredFlagSuccess = {
+  ok: true;
+  userId: string;
+  mustChangePassword: boolean;
+  changed: boolean;
+};
+
+/**
+ * SUPER_ADMIN marca ou desmarca a troca obrigatória sem alterar o hash.
+ * A sessão viva passa a ver o estado no próximo request: o guard lê o
+ * usuário no banco, não uma cópia antiga da flag.
+ */
+export async function setPasswordChangeRequired(
+  deps: PasswordLifecycleDeps,
+  input: {
+    actorUserId: string;
+    targetUserId: string;
+    required: boolean;
+    origin?: RequestOrigin;
+  }
+): Promise<PasswordChangeRequiredFlagSuccess | PasswordLifecycleFailure> {
+  const d = resolveDeps(deps);
+  const user = await d.db.appUser.findUnique({
+    where: { id: input.targetUserId },
+    select: { id: true, isActive: true, mustChangePassword: true },
+  });
+  if (!user) {
+    return {
+      ok: false,
+      status: 404,
+      code: PASSWORD_LIFECYCLE_ERRORS.NOT_FOUND,
+      message: "Usuário não encontrado.",
+    };
+  }
+
+  if (user.mustChangePassword === input.required) {
+    return { ok: true, userId: user.id, mustChangePassword: input.required, changed: false };
+  }
+
+  const now = d.now();
+  const outcome = await d.db.$transaction(async (tx) => {
+    const updated = await tx.appUser.updateMany({
+      where: { id: user.id, mustChangePassword: user.mustChangePassword },
+      data: { mustChangePassword: input.required },
+    });
+    if (updated.count !== 1) return stateChangedFailure();
+
+    await writeSecurityAuditLog(tx, {
+      eventType: input.required
+        ? SECURITY_AUDIT_EVENTS.PASSWORD_CHANGE_REQUIRED_SET
+        : SECURITY_AUDIT_EVENTS.PASSWORD_CHANGE_REQUIRED_CLEARED,
+      actorUserId: input.actorUserId,
+      targetUserId: user.id,
+      ipAddress: input.origin?.ipAddress ?? null,
+      userAgent: input.origin?.userAgent ?? null,
+      metadata: { source: "ADMIN_FLAG", changedAt: now.toISOString() },
+    });
+    return { ok: true as const };
+  });
+  if (isPasswordLifecycleFailure(outcome)) return outcome;
+
+  return { ok: true, userId: user.id, mustChangePassword: input.required, changed: true };
 }
 
 /* ------------------------------------------------------------------ */

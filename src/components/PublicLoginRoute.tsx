@@ -3,12 +3,13 @@ import { Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { AuthLoginPage } from "@/src/components/AuthLoginPage";
+import { COMMERCIAL_POLICY_ROUTE, PASSWORD_CHANGE_ROUTE } from "@/src/components/RequireAuth";
 
 type LoginLocationState = {
   authError?: string | null;
 };
 
-/** Rota pública de login; sessão ativa ou pós-login → sempre /home. */
+/** Rota pública de login. Troca obrigatória vai direto à tela de senha, sem passar pelo /home. */
 export const PublicLoginRoute: React.FC = () => {
   const auth = useAuth();
   const location = useLocation();
@@ -24,6 +25,12 @@ export const PublicLoginRoute: React.FC = () => {
   }
 
   if (auth.authenticated) {
+    if (auth.authUser?.mustChangePassword) {
+      return <Navigate to={PASSWORD_CHANGE_ROUTE} replace />;
+    }
+    if (auth.authUser?.commercialPolicyAcceptanceRequired) {
+      return <Navigate to={COMMERCIAL_POLICY_ROUTE} replace />;
+    }
     return <Navigate to="/home" replace />;
   }
 

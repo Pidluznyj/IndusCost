@@ -183,6 +183,9 @@ src/lib/auth/passwordLifecycle.test.ts
 src/lib/auth/passwordLifecycleRoutes.test.ts
 src/lib/auth/passwordLifecycleE2E.test.ts
 src/lib/auth/passwordChangeRequiredGuard.test.ts
+src/lib/commercialPolicy/commercialPolicy.test.ts
+src/lib/commercialPolicy/official/polCom001V1.test.ts
+src/lib/auth/authGatePipeline.test.ts
 src/lib/auth/passwordLifecycleWiring.test.ts
 src/lib/auth/authRateLimit.test.ts
 src/lib/auth/loginThrottle.test.ts
