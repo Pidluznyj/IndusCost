@@ -323,9 +323,7 @@ import {
 import { logEmployeeHrAudit, summarizeConflictResolutions } from "./src/lib/employeeHrAudit.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
-  applyCommercialActivityProposalToCreate,
   applyCommercialActivityProposalToUpdate,
-  applyCommercialActivitySalesOrderToCreate,
   applyCommercialActivitySalesOrderToUpdate,
   COMMERCIAL_ACTIVITY_API_INCLUDE,
   mapCommercialActivityForApi,
@@ -333,6 +331,10 @@ import {
   resolveCommercialActivityProposalLink,
   resolveCommercialActivitySalesOrderLink,
 } from "./src/lib/commercialActivityApi.js";
+import {
+  loadCrmContactContext,
+  registerCrmContact,
+} from "./src/lib/commercial/crmContactRegistration.server.js";
 import {
   buildCostAnalysisExplainability,
   buildPricingSnapshotExplainability,
@@ -14208,7 +14210,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   const CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX = 8000;
   const CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX = 128;
   const CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX = 64;
-  const CRM_COMMERCIAL_ACTIVITY_CREATED_BY_NAME_FALLBACK = "Comercial Lazarios";
 
   function parseCommercialActivitiesLimit(raw: unknown): number {
     const s = typeof raw === "string" ? raw.trim() : "";
@@ -14284,6 +14285,34 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
+  /**
+   * Dados do modal "Registrar contato": cliente, responsável comercial atual e
+   * usuário autenticado, pela mesma regra da gravação (crmContactRegistration).
+   */
+  app.get("/api/customers/:customerId/commercial-activities/context", requireAppAuth, requireResource("commercial.crm.activities", "create"), async (req, res) => {
+    const { customerId } = req.params;
+    if (!isUuidParam(customerId)) {
+      return res.status(400).json({ error: "customerId inválido." });
+    }
+    try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) return res.status(401).json({ error: "Autenticação necessária." });
+      const context = await loadCrmContactContext(prisma, {
+        customerId,
+        actor: { id: authUser.id, name: authUser.name?.trim() || authUser.email },
+      });
+      if (!context) return res.status(404).json({ error: "Cliente não encontrado." });
+      res.json(context);
+    } catch (error) {
+      console.error("GET /api/customers/:customerId/commercial-activities/context", error);
+      res.status(500).json({ error: "Erro ao carregar dados do contato." });
+    }
+  });
+
+  /**
+   * Registro de contato estruturado. Responsável comercial, usuário e status são
+   * calculados no servidor; o payload só traz os campos do contato.
+   */
   app.post("/api/customers/:customerId/commercial-activities", requireAppAuth, requireResource("commercial.crm.activities", "create"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
@@ -14297,151 +14326,24 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           return res.status(400).json({ error: "Payload muito grande." });
         }
       }
-
-      const customer = await prisma.customer.findUnique({
-        where: { id: customerId },
-        select: { id: true },
-      });
-      if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
-
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) return res.status(401).json({ error: "Autenticação necessária." });
       const body = (rawBody && typeof rawBody === "object" ? rawBody : {}) as Record<
         string,
         unknown
       >;
-
-      const subject = normalizeCrmOptionalString(
-        body.subject,
-        CRM_COMMERCIAL_ACTIVITY_SUBJECT_MAX
-      );
-      const description = normalizeCrmOptionalString(
-        body.description,
-        CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
-      );
-      if (!subject && !description) {
-        return res
-          .status(400)
-          .json({ error: "Informe subject ou description (texto não vazio)." });
-      }
-
-      const channel = normalizeCrmOptionalString(
-        body.channel,
-        CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
-        true
-      );
-      const reason = normalizeCrmOptionalString(
-        body.reason,
-        CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
-        true
-      );
-      const activityType = reason || "CONTACT";
-
-      const contactDate = parseOptionalIsoDate(body.contactDate) ?? new Date();
-      const nextActionAt = parseOptionalIsoDate(body.nextActionAt);
-
-      let statusRaw =
-        typeof body.status === "string" && body.status.trim()
-          ? body.status.trim()
-          : undefined;
-      if (!statusRaw) {
-        statusRaw = nextActionAt ? "OPEN" : "DONE";
-      }
-
-      const outcome = normalizeCrmOptionalString(
-        body.outcome,
-        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-      );
-      const nextActionDescription = normalizeCrmOptionalString(
-        body.nextActionDescription,
-        CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
-      );
-      const assignedTo = normalizeCrmOptionalString(
-        body.assignedTo,
-        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-      );
-
-      let priority: number | undefined;
-      if (body.priority !== undefined && body.priority !== null) {
-        if (typeof body.priority === "number" && Number.isFinite(body.priority)) {
-          priority = Math.trunc(body.priority);
-        } else if (typeof body.priority === "string" && body.priority.trim()) {
-          const p = Number.parseInt(body.priority.trim(), 10);
-          if (Number.isFinite(p)) priority = p;
-        }
-      }
-
-      let createdByName = normalizeCrmOptionalString(
-        body.createdByName,
-        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-      );
-      if (!createdByName) {
-        createdByName = CRM_COMMERCIAL_ACTIVITY_CREATED_BY_NAME_FALLBACK;
-      }
-      const createdByPhone = normalizeCrmOptionalString(
-        body.createdByPhone,
-        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-      );
-      const createdByEmail = normalizeCrmOptionalString(
-        body.createdByEmail,
-        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-      );
-
-      const scheduledAt = parseOptionalIsoDate(body.scheduledAt);
-      const completedAt = parseOptionalIsoDate(body.completedAt);
-
-      const salesOrderIdRaw = parseOptionalUuidField(body.salesOrderId);
-      if (salesOrderIdRaw === "INVALID") {
-        return res.status(400).json({ error: "salesOrderId inválido." });
-      }
-      const proposalIdRaw = parseOptionalUuidField(body.proposalId);
-      if (proposalIdRaw === "INVALID") {
-        return res.status(400).json({ error: "proposalId inválido." });
-      }
-
-      const salesOrderLink = await resolveCommercialActivitySalesOrderLink(
+      const result = await registerCrmContact(prisma, {
         customerId,
-        salesOrderIdRaw ?? undefined,
-        prisma
-      );
-      if (salesOrderLink.ok === false) {
-        return res.status(400).json({ error: salesOrderLink.error });
-      }
-      const proposalLink = await resolveCommercialActivityProposalLink(
-        customerId,
-        proposalIdRaw ?? undefined,
-        prisma
-      );
-      if (proposalLink.ok === false) {
-        return res.status(400).json({ error: proposalLink.error });
-      }
-
-      const createData: Prisma.CommercialActivityCreateInput = {
-        Customer: { connect: { id: customerId } },
-        activityType,
-        status: statusRaw,
-        contactDate,
-        ...(subject !== undefined ? { subject } : {}),
-        ...(description !== undefined ? { description } : {}),
-        ...(channel !== undefined ? { channel } : {}),
-        ...(reason !== undefined ? { reason } : {}),
-        ...(outcome !== undefined ? { outcome } : {}),
-        ...(nextActionAt !== undefined ? { nextActionAt } : {}),
-        ...(nextActionDescription !== undefined ? { nextActionDescription } : {}),
-        ...(assignedTo !== undefined ? { assignedTo } : {}),
-        ...(priority !== undefined ? { priority } : {}),
-        ...(scheduledAt !== undefined ? { scheduledAt } : {}),
-        ...(completedAt !== undefined ? { completedAt } : {}),
-        createdByName,
-        ...(createdByPhone !== undefined ? { createdByPhone } : {}),
-        ...(createdByEmail !== undefined ? { createdByEmail } : {}),
-      };
-      applyCommercialActivitySalesOrderToCreate(createData, salesOrderIdRaw ?? undefined);
-      applyCommercialActivityProposalToCreate(createData, proposalIdRaw ?? undefined);
-
-      const created = await prisma.commercialActivity.create({
-        data: createData,
-        include: COMMERCIAL_ACTIVITY_API_INCLUDE,
+        body,
+        actor: { id: authUser.id, name: authUser.name?.trim() || authUser.email },
       });
-      res.status(201).json(mapCommercialActivityForApi(created));
+      if (result.ok === false) {
+        return res.status(result.status).json({
+          error: result.error,
+          ...(result.fieldErrors ? { fieldErrors: result.fieldErrors } : {}),
+        });
+      }
+      res.status(201).json(result.activity);
     } catch (error) {
       console.error("POST /api/customers/:customerId/commercial-activities", error);
       res.status(500).json({ error: "Erro ao registrar atividade comercial." });
@@ -14546,11 +14448,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         }
       }
       if ("assignedTo" in body) {
-        const v = normalizeCrmOptionalString(
-          body.assignedTo,
-          CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
-        );
-        data.assignedTo = v === undefined ? null : v;
+        // Responsável comercial do contato é o snapshot do momento do registro
+        // (calculado no servidor): o histórico não pode ser reescrito.
+        return res.status(400).json({
+          error: "O responsável comercial do contato é histórico e não pode ser alterado.",
+        });
       }
       if ("scheduledAt" in body) {
         if (body.scheduledAt === null) data.scheduledAt = null;

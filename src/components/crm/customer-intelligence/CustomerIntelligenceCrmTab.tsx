@@ -5,6 +5,12 @@ import type {
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes";
 import { CustomerIntelligenceTabKpiGrid } from "@/src/components/crm/customer-intelligence/CustomerIntelligenceTabKpiGrid";
+import {
+  crmActivityTypeLabel,
+  crmContactResultLabel,
+  crmContactStatusLabel,
+  crmNextActionSummary,
+} from "@/src/lib/commercial/crmContactCatalog";
 
 const RELATIONSHIP_STATUS_LABELS: Record<CustomerIntelligenceRelationshipStatus, string> = {
   ativo: "Ativo",
@@ -111,7 +117,7 @@ export function CustomerIntelligenceCrmTab({ report }: { report: CustomerIntelli
                         {formatDateTime(activity.contactDate ?? activity.createdAt)}
                       </span>
                       <span className="text-xs rounded bg-muted px-1.5 py-0.5 font-medium">
-                        {activity.activityType}
+                        {crmActivityTypeLabel(activity.activityType)}
                       </span>
                       {activity.isOverdue ? (
                         <span className="text-xs font-semibold text-red-700">Vencida</span>
@@ -121,12 +127,19 @@ export function CustomerIntelligenceCrmTab({ report }: { report: CustomerIntelli
                       {activity.subject?.trim() || activity.description?.trim() || "Atividade comercial"}
                     </p>
                     {activity.outcome ? (
-                      <p className="text-xs text-muted-foreground mt-0.5">{activity.outcome}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {crmContactResultLabel(activity.outcome, activity.activityType)}
+                      </p>
                     ) : null}
                     {activity.nextActionAt ? (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Próxima ação: {formatDateTime(activity.nextActionAt)}
-                        {activity.nextActionDescription ? ` — ${activity.nextActionDescription}` : ""}
+                        Próxima ação:{" "}
+                        {[
+                          formatDateTime(activity.nextActionAt),
+                          crmNextActionSummary(activity.nextActionType, activity.nextActionDescription),
+                        ]
+                          .filter(Boolean)
+                          .join(" — ")}
                       </p>
                     ) : null}
                   </li>
@@ -144,7 +157,7 @@ export function CustomerIntelligenceCrmTab({ report }: { report: CustomerIntelli
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="py-2 pr-3 font-semibold">Vencimento</th>
-                    <th className="py-2 pr-3 font-semibold">Assunto</th>
+                    <th className="py-2 pr-3 font-semibold">Próxima ação</th>
                     <th className="py-2 pr-3 font-semibold">Responsável</th>
                     <th className="py-2 pr-3 font-semibold">Status</th>
                   </tr>
@@ -159,10 +172,14 @@ export function CustomerIntelligenceCrmTab({ report }: { report: CustomerIntelli
                         ) : null}
                       </td>
                       <td className="py-2 pr-3">
-                        {task.subject?.trim() || task.nextActionDescription?.trim() || "—"}
+                        {crmNextActionSummary(task.nextActionType, task.nextActionDescription) ||
+                          task.subject?.trim() ||
+                          "—"}
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap">{task.assignedTo ?? "—"}</td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{task.status}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {crmContactStatusLabel(task.status) ?? "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

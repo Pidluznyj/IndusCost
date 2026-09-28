@@ -196,7 +196,7 @@ Enrich permitido por cliente: último pedido, valor no período/12m, carteira ab
 | `Proposal` / itens de proposta | Não são pedido oficial; não geram carteira/faturamento/comissão neste módulo |
 | `SalesOrder.responsible` como **única** fonte de vendedor | Legado; sync oficial usa Nomus |
 | Responsável comercial como vendedor comissionável | Conceitos distintos |
-| `CommercialActivity.assignedTo` / `createdByName` como dono da carteira | São operação de follow-up, não `CrmCustomerCommercialOwner` |
+| `CommercialActivity.assignedTo` / `createdByName` como dono da carteira | São operação de follow-up, não `CrmCustomerCommercialOwner`. No registro de contato estruturado, `assignedTo` é o snapshot do Responsável Comercial no momento do contato (calculado no servidor) e `createdByName` o usuário que registrou — continuam sem ser eixo de carteira ([crm-contact-registration.md](./crm-contact-registration.md)) |
 | Usuário que criou o pedido no IndusCost | Não é eixo de carteira nem de comissão |
 | Soma ad-hoc de propostas abertas como “carteira” | Substituído por carteira aberta de pedidos |
 

@@ -120,6 +120,14 @@ import {
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { CrmCustomerPortfolioSection } from "@/src/components/crm/CrmCustomerPortfolioSection";
+import { CrmContactModal } from "@/src/components/crm/CrmContactModal";
+import {
+  crmContactChannelLabel,
+  crmContactReasonLabel,
+  crmContactResultLabel,
+  crmContactStatusLabel,
+  crmNextActionLabel,
+} from "@/src/lib/commercial/crmContactCatalog";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
 import type {
   CrmCustomerListFilter,
@@ -167,8 +175,12 @@ export type CrmActivity = {
   outcome: string | null;
   nextActionAt: string | null;
   nextActionDescription: string | null;
+  /** Código da próxima ação (crmContactCatalog); null em contatos antigos. */
+  nextActionType?: string | null;
   createdByName: string | null;
+  /** Telefone utilizado no contato (não é o cadastro do cliente). */
   createdByPhone: string | null;
+  /** E-mail utilizado no contato (não é o cadastro do cliente). */
   createdByEmail: string | null;
   createdAt: string;
   proposal: { number: number; title: string | null; status: string } | null;
@@ -260,30 +272,6 @@ type ActivitiesResponse = { activities: CrmActivity[] };
 
 const CRM_LIST_LIMIT = 50;
 const CRM_ACTIVITY_LIMIT = 50;
-
-const CHANNEL_OPTIONS = [
-  "WHATSAPP",
-  "PHONE",
-  "EMAIL",
-  "MEETING",
-  "VISIT",
-  "VIDEO_CALL",
-  "OTHER",
-] as const;
-
-const REASON_OPTIONS = [
-  "PROSPECTION",
-  "FOLLOW_UP",
-  "PROPOSAL",
-  "NEGOTIATION",
-  "POST_SALE",
-  "REACTIVATION",
-  "COMPLAINT",
-  "RELATIONSHIP",
-  "OTHER",
-] as const;
-
-const STATUS_OPTIONS = ["DONE", "OPEN", "WAITING", "CANCELLED"] as const;
 
 export type CrmCustomerProfile = {
   id: string;
@@ -553,18 +541,6 @@ function formatDateTimePt(iso: string | null | undefined): string {
   });
 }
 
-function datetimeLocalNow(): string {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-}
-
-function datetimeLocalToIso(value: string): string | undefined {
-  if (!value.trim()) return undefined;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return undefined;
-  return d.toISOString();
-}
 
 function sortActivitiesDesc(a: CrmActivity, b: CrmActivity): number {
   const ac = parseActivityDate(a.contactDate) || parseActivityDate(a.createdAt);
@@ -643,22 +619,20 @@ function getActivityChannelIcon(channel: string | null): ChannelVisual {
 
 function getActivityStatusBadge(status: string): { label: string; className: string } {
   const u = status.trim().toUpperCase();
+  const label = crmContactStatusLabel(status) ?? displayLine(status);
   if (u === "DONE") {
-    return { label: "Concluído", className: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+    return { label, className: "bg-emerald-50 text-emerald-800 border-emerald-200" };
   }
   if (u === "OPEN") {
-    return { label: "Aberto", className: "bg-sky-50 text-sky-800 border-sky-200" };
+    return { label, className: "bg-sky-50 text-sky-800 border-sky-200" };
   }
   if (u === "WAITING") {
-    return { label: "Aguardando", className: "bg-amber-50 text-amber-900 border-amber-200" };
+    return { label, className: "bg-amber-50 text-amber-900 border-amber-200" };
   }
   if (u === "CANCELLED" || u === "CANCELED") {
-    return { label: "Cancelado", className: "bg-slate-100 text-slate-600 border-slate-200" };
+    return { label, className: "bg-slate-100 text-slate-600 border-slate-200" };
   }
-  return {
-    label: displayLine(status),
-    className: "bg-muted/80 text-muted-foreground border-border",
-  };
+  return { label, className: "bg-muted/80 text-muted-foreground border-border" };
 }
 
 function isActivityFollowUpOverdue(activity: CrmActivity): boolean {
@@ -933,14 +907,14 @@ const CommercialTimelineItem: React.FC<CommercialTimelineItemProps> = ({
             </span>
             <span
               className={cn(
-                "text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border",
+                "text-[11px] font-bold px-2.5 py-1 rounded-full border",
                 channel.badgeClass
               )}
             >
-              {displayLine(activity.channel)}
+              {displayLine(crmContactChannelLabel(activity.channel))}
             </span>
-            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground">
-              {displayLine(activity.reason)}
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground">
+              {displayLine(crmContactReasonLabel(activity.reason))}
             </span>
             <ActivityStatusBadge activity={activity} />
           </div>
@@ -967,15 +941,35 @@ const CommercialTimelineItem: React.FC<CommercialTimelineItemProps> = ({
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
               Resultado
             </span>
-            <span className="font-medium">{displayLine(activity.outcome)}</span>
+            <span className="font-medium">
+              {displayLine(crmContactResultLabel(activity.outcome, activity.reason))}
+            </span>
           </p>
           <p>
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
-              Responsável
+              Responsável comercial
             </span>
-            <span className="font-medium">{displayLine(activity.assignedTo)}</span>
+            <span className="font-medium">
+              {activity.assignedTo?.trim() ? activity.assignedTo : "Sem responsável comercial"}
+            </span>
           </p>
-          {(activity.nextActionAt || activity.nextActionDescription) && (
+          <p>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+              Registrado por
+            </span>
+            <span className="font-medium">{displayLine(activity.createdByName)}</span>
+          </p>
+          {activity.createdByPhone || activity.createdByEmail ? (
+            <p>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+                Contato utilizado
+              </span>
+              <span className="font-medium break-words">
+                {[activity.createdByPhone, activity.createdByEmail].filter(Boolean).join(" · ")}
+              </span>
+            </p>
+          ) : null}
+          {(activity.nextActionType || activity.nextActionAt || activity.nextActionDescription) && (
             <p className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-muted/30 border border-border/60 px-3 py-2">
               <Clock className="h-4 w-4 text-primary mt-0.5 shrink-0" />
               <span>
@@ -983,11 +977,18 @@ const CommercialTimelineItem: React.FC<CommercialTimelineItemProps> = ({
                   Próxima ação
                 </span>
                 <span className="font-medium">
-                  {activity.nextActionAt ? formatDateTimePt(activity.nextActionAt) : "—"}
-                  {activity.nextActionDescription
-                    ? ` — ${displayLine(activity.nextActionDescription)}`
-                    : ""}
+                  {[
+                    crmNextActionLabel(activity.nextActionType),
+                    activity.nextActionAt ? formatDateTimePt(activity.nextActionAt) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
                 </span>
+                {activity.nextActionDescription ? (
+                  <span className="block text-muted-foreground whitespace-pre-wrap break-words">
+                    {displayLine(activity.nextActionDescription)}
+                  </span>
+                ) : null}
               </span>
             </p>
           )}
@@ -1433,8 +1434,6 @@ export const CrmModule = () => {
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalSaving, setModalSaving] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   /**
    * Contato aberto a partir de Relatórios: cliente-alvo explícito, sem trocar
@@ -1447,20 +1446,6 @@ export const CrmModule = () => {
   } | null>(null);
   /** Recarga dos Relatórios depois de registrar contato por lá. */
   const [reportsRefreshToken, setReportsRefreshToken] = useState(0);
-
-  const [formContactDate, setFormContactDate] = useState(datetimeLocalNow);
-  const [formChannel, setFormChannel] = useState<string>("WHATSAPP");
-  const [formReason, setFormReason] = useState<string>("FOLLOW_UP");
-  const [formSubject, setFormSubject] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formOutcome, setFormOutcome] = useState("");
-  const [formStatus, setFormStatus] = useState<string>("DONE");
-  const [formAssignedTo, setFormAssignedTo] = useState("Comercial Lazarios");
-  const [formCreatedByName, setFormCreatedByName] = useState("Comercial Lazarios");
-  const [formCreatedByPhone, setFormCreatedByPhone] = useState("");
-  const [formCreatedByEmail, setFormCreatedByEmail] = useState("");
-  const [formNextActionAt, setFormNextActionAt] = useState("");
-  const [formNextActionDescription, setFormNextActionDescription] = useState("");
 
   const [selectedCustomerProfile, setSelectedCustomerProfile] = useState<CrmCustomerProfile | null>(
     null
@@ -2157,44 +2142,25 @@ export const CrmModule = () => {
     }
   };
 
-  const resetContactForm = useCallback(() => {
-    setModalError(null);
-    setFormContactDate(datetimeLocalNow());
-    setFormChannel("WHATSAPP");
-    setFormReason("FOLLOW_UP");
-    setFormSubject("");
-    setFormDescription("");
-    setFormOutcome("");
-    setFormStatus("DONE");
-    setFormAssignedTo("Comercial Lazarios");
-    setFormCreatedByName("Comercial Lazarios");
-    setFormCreatedByPhone("");
-    setFormCreatedByEmail("");
-    setFormNextActionAt("");
-    setFormNextActionDescription("");
-  }, []);
-
   const openModal = () => {
     setContactTarget(null);
-    resetContactForm();
     setModalOpen(true);
   };
 
   /** "Registrar contato" nas listas de Relatórios — mesmo modal e mesmo endpoint canônico. */
   const openContactFromReports = useCallback(
     (customer: { customerId: string; displayName: string; taxId: string }) => {
-      resetContactForm();
       setContactTarget({ id: customer.customerId, displayName: customer.displayName, taxId: customer.taxId });
       setModalOpen(true);
     },
-    [resetContactForm]
+    []
   );
 
-  const closeContactModal = () => {
-    if (modalSaving) return;
+  /** O modal não chama isto durante o salvamento (evita perder o envio). */
+  const closeContactModal = useCallback(() => {
     setModalOpen(false);
     setContactTarget(null);
-  };
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2297,71 +2263,26 @@ export const CrmModule = () => {
     [customers, activeCrmManagementTab]
   );
 
-  const handleSaveContact = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const targetCustomerId = contactTarget?.id ?? selectedId;
-    if (!targetCustomerId) {
-      setModalError("Selecione um cliente na lista.");
+  /** Contato gravado: fecha o modal e recarrega último contato / próxima ação. */
+  const handleContactSaved = async () => {
+    const fromReports = contactTarget != null;
+    setModalOpen(false);
+    setContactTarget(null);
+    setToast("Contato registrado com sucesso.");
+    window.setTimeout(() => setToast(null), 4000);
+    if (fromReports) {
+      // Aberto em Relatórios: só os relatórios recarregam (último contato/follow-up).
+      setReportsRefreshToken((n) => n + 1);
       return;
     }
-    const subject = formSubject.trim();
-    const description = formDescription.trim();
-    if (!subject && !description) {
-      setModalError("Informe assunto ou descrição.");
-      return;
-    }
-    const contactIso = datetimeLocalToIso(formContactDate);
-    if (!contactIso) {
-      setModalError("Data do contato inválida.");
-      return;
-    }
-    const nextIso = formNextActionAt.trim() ? datetimeLocalToIso(formNextActionAt) : undefined;
-    if (formNextActionAt.trim() && !nextIso) {
-      setModalError("Data da próxima ação inválida.");
-      return;
-    }
-
-    setModalSaving(true);
-    setModalError(null);
+    if (!selectedId) return;
     try {
-      const body: Record<string, unknown> = {
-        contactDate: contactIso,
-        channel: formChannel,
-        reason: formReason,
-        subject: subject || undefined,
-        description: description || undefined,
-        outcome: formOutcome.trim() || undefined,
-        status: formStatus,
-        assignedTo: formAssignedTo.trim() || undefined,
-        createdByName: formCreatedByName.trim() || "Comercial Lazarios",
-        createdByPhone: formCreatedByPhone.trim() || undefined,
-        createdByEmail: formCreatedByEmail.trim() || undefined,
-        nextActionAt: nextIso,
-        nextActionDescription: formNextActionDescription.trim() || undefined,
-      };
-      await fetchJsonOk(`/api/customers/${targetCustomerId}/commercial-activities`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      setModalOpen(false);
-      setToast("Contato registrado com sucesso.");
-      window.setTimeout(() => setToast(null), 4000);
-      if (contactTarget) {
-        // Aberto em Relatórios: só os relatórios recarregam (último contato/follow-up).
-        setContactTarget(null);
-        setReportsRefreshToken((n) => n + 1);
-        return;
-      }
-      if (!selectedId) return;
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, portfolioOffset, portfolioSellerKey, portfolioPeriod);
     } catch (err) {
-      setModalError(err instanceof Error ? err.message : "Falha ao salvar o contato.");
-    } finally {
-      setModalSaving(false);
+      console.error("CRM: falha ao recarregar depois de registrar o contato", err);
     }
   };
 
@@ -2865,7 +2786,7 @@ export const CrmModule = () => {
                     >
                       {PROFILE_CHANNEL_OPTIONS.map((o) => (
                         <option key={o} value={o}>
-                          {o}
+                          {crmContactChannelLabel(o)}
                         </option>
                       ))}
                     </select>
@@ -3086,197 +3007,19 @@ export const CrmModule = () => {
         </div>
       ) : null}
 
-      {/* Modal novo contato */}
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
-          >
-            <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
-              <div className="min-w-0">
-                <h4 className="text-lg font-bold">Novo contato</h4>
-                {contactTarget ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {contactTarget.displayName}
-                    {contactTarget.taxId ? ` · ${contactTarget.taxId}` : ""}
-                  </p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={closeContactModal}
-                className="rounded-lg p-2 hover:bg-accent text-muted-foreground"
-                aria-label="Fechar"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSaveContact} className="flex flex-col flex-1 min-h-0">
-              <div className="p-5 space-y-6 overflow-y-auto flex-1">
-                {modalError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                    {modalError}
-                  </div>
-                ) : null}
-                <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
-                  Registre apenas informações úteis para o atendimento comercial. Evite dados sensíveis,
-                  íntimos ou desnecessários.
-                </p>
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
-                  <h5 className="text-sm font-bold text-foreground">Dados do contato</h5>
-                  <ProfileFormField label="Data do contato">
-                    <input
-                      type="datetime-local"
-                      required
-                      value={formContactDate}
-                      onChange={(e) => setFormContactDate(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <ProfileFormField label="Canal">
-                      <select
-                        value={formChannel}
-                        onChange={(e) => setFormChannel(e.target.value)}
-                        className={modalInputClass}
-                      >
-                        {CHANNEL_OPTIONS.map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    </ProfileFormField>
-                    <ProfileFormField label="Motivo">
-                      <select
-                        value={formReason}
-                        onChange={(e) => setFormReason(e.target.value)}
-                        className={modalInputClass}
-                      >
-                        {REASON_OPTIONS.map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    </ProfileFormField>
-                  </div>
-                  <ProfileFormField label="Status">
-                    <select
-                      value={formStatus}
-                      onChange={(e) => setFormStatus(e.target.value)}
-                      className={modalInputClass}
-                    >
-                      {STATUS_OPTIONS.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
-                  </ProfileFormField>
-                  <ProfileFormField label="Responsável">
-                    <input
-                      value={formAssignedTo}
-                      onChange={(e) => setFormAssignedTo(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                  <ProfileFormField label="Registrado por">
-                    <input
-                      value={formCreatedByName}
-                      onChange={(e) => setFormCreatedByName(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <ProfileFormField label="Telefone (opcional)">
-                      <input
-                        value={formCreatedByPhone}
-                        onChange={(e) => setFormCreatedByPhone(e.target.value)}
-                        className={modalInputClass}
-                      />
-                    </ProfileFormField>
-                    <ProfileFormField label="E-mail (opcional)">
-                      <input
-                        value={formCreatedByEmail}
-                        onChange={(e) => setFormCreatedByEmail(e.target.value)}
-                        className={modalInputClass}
-                      />
-                    </ProfileFormField>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
-                  <h5 className="text-sm font-bold text-foreground">Resumo da conversa</h5>
-                  <ProfileFormField label="Assunto">
-                    <input
-                      value={formSubject}
-                      onChange={(e) => setFormSubject(e.target.value)}
-                      className={modalInputClass}
-                      placeholder="Resumo curto"
-                    />
-                  </ProfileFormField>
-                  <ProfileFormField label="Descrição / observações">
-                    <textarea
-                      value={formDescription}
-                      onChange={(e) => setFormDescription(e.target.value)}
-                      rows={5}
-                      className={modalTextareaClass}
-                      placeholder="Detalhes do contato"
-                    />
-                  </ProfileFormField>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                  <h5 className="text-sm font-bold text-foreground">Resultado</h5>
-                  <ProfileFormField label="Resultado do contato">
-                    <input
-                      value={formOutcome}
-                      onChange={(e) => setFormOutcome(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                </div>
-                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-4">
-                  <h5 className="text-sm font-bold text-foreground">Próxima ação</h5>
-                  <ProfileFormField label="Data da próxima ação">
-                    <input
-                      type="datetime-local"
-                      value={formNextActionAt}
-                      onChange={(e) => setFormNextActionAt(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                  <ProfileFormField label="Descrição da próxima ação">
-                    <input
-                      value={formNextActionDescription}
-                      onChange={(e) => setFormNextActionDescription(e.target.value)}
-                      className={modalInputClass}
-                    />
-                  </ProfileFormField>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 p-5 border-t border-border bg-card shrink-0">
-                <button
-                  type="button"
-                  disabled={modalSaving}
-                  onClick={closeContactModal}
-                  className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={modalSaving}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-                >
-                  {modalSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Salvar contato
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Modal registrar contato — responsável, usuário e status vêm do servidor. */}
+      {modalOpen && (contactTarget || selectedId) ? (
+        <CrmContactModal
+          customer={
+            contactTarget ?? {
+              id: selectedId as string,
+              displayName: selectedCustomer?.displayName ?? null,
+              taxId: selectedCustomer?.taxId ?? null,
+            }
+          }
+          onClose={closeContactModal}
+          onSaved={handleContactSaved}
+        />
       ) : null}
     </div>
   );

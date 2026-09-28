@@ -2240,19 +2240,33 @@ model CommercialActivity {
   description           String?
   scheduledAt           DateTime?   @db.Timestamp(6)
   completedAt           DateTime?   @db.Timestamp(6)
+  /// OPEN = próxima ação pendente; DONE = sem pendência. No registro de contato é derivado da próxima ação.
   status                String      @default("OPEN")
   priority              Int?
+  /// Nome do responsável comercial do cliente NO MOMENTO do contato (snapshot calculado no servidor).
   assignedTo            String?
   closeReason           String?
   contactDate           DateTime?   @db.Timestamp(6)
   channel               String?
   reason                String?
+  /// Código do resultado (src/lib/commercial/crmContactCatalog.ts). Contatos antigos: texto livre.
   outcome               String?
   nextActionAt          DateTime?   @db.Timestamp(6)
   nextActionDescription String?
+  /// Código da próxima ação (crmContactCatalog.ts); "NONE" = nenhuma ação necessária. NULL nos contatos antigos.
+  nextActionType        String?
+  /// Nome do usuário autenticado que registrou (snapshot).
   createdByName         String?
+  /// Usuário autenticado que registrou (AppUser.id). NULL nos contatos antigos.
+  createdByUserId       String?     @db.Uuid
+  /// Telefone utilizado neste contato. Não é o cadastro do cliente e não o altera.
   createdByPhone        String?
+  /// E-mail utilizado neste contato. Não é o cadastro do cliente e não o altera.
   createdByEmail        String?
+  /// Identidade (sellerIdentityKey) do responsável comercial no momento do contato. NULL = sem responsável.
+  commercialOwnerIdentityKey      String?
+  /// Id Nomus (sellerExternalId) do responsável comercial no momento do contato, quando houver.
+  commercialOwnerExternalSellerId Int?
   createdAt             DateTime    @default(now()) @db.Timestamp(6)
   updatedAt             DateTime    @default(now()) @db.Timestamp(6)
   Customer              Customer    @relation(fields: [customerId], references: [id])

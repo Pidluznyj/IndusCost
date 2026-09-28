@@ -338,6 +338,8 @@ export type CustomerIntelligenceCrmActivity = {
   completedAt: string | null;
   nextActionAt: string | null;
   nextActionDescription: string | null;
+  /** Código da próxima ação (crmContactCatalog); null em contatos antigos. */
+  nextActionType?: string | null;
   channel: string | null;
   outcome: string | null;
   assignedTo: string | null;
@@ -350,6 +352,7 @@ export type CustomerIntelligenceCrmTask = {
   subject: string | null;
   nextActionAt: string;
   nextActionDescription: string | null;
+  nextActionType?: string | null;
   assignedTo: string | null;
   status: string;
   isOverdue: boolean;
@@ -557,6 +560,7 @@ export type CustomerIntelligenceActivityInput = {
   outcome: string | null;
   nextActionAt: Date | null;
   nextActionDescription: string | null;
+  nextActionType?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

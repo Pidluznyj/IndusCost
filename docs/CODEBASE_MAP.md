@@ -291,7 +291,7 @@ IndusCost/
 **Exports**: `fetchCrmCustomersList`, `buildCrmSellerDashboardResponse`, `buildCustomerIntelligenceReport`, `resolveCrmCommercialAccessScope`, `crmCanonicalSalesOrderWhere`.
 **Dependencies**: `salesOrderRulesAdapter.js`, `financeInternalGroupExclusions.js`.
 **Dependents**: `src/components/crm/*`, dashboards.
-**Gotchas**: "Responsável Comercial" (portfolio owner) is a distinct axis from "Vendedor do Pedido" (order's Nomus seller) — repeatedly stressed as a do-not-conflate rule. `customerCommercialProposalLegacy.ts` is `@deprecated` in favor of the SalesOrder-based view.
+**Gotchas**: "Responsável Comercial" (portfolio owner) is a distinct axis from "Vendedor do Pedido" (order's Nomus seller) — repeatedly stressed as a do-not-conflate rule. `customerCommercialProposalLegacy.ts` is `@deprecated` in favor of the SalesOrder-based view. CRM contact registration (`CommercialActivity`) is structured through `commercial/crmContactCatalog.ts` (codes, pt-BR labels, result/next-action per reason, canonical validation) and `commercial/crmContactRegistration.server.ts` (owner/user/status derived server-side, snapshots) — see `docs/commercial/crm-contact-registration.md`.
 
 ---
 

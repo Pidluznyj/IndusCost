@@ -5,6 +5,7 @@
  */
 
 import { daysBetweenDates, toIsoDateOnly } from "@/src/lib/customerIntelligenceUtils.js";
+import { crmContactResultLabel } from "@/src/lib/commercial/crmContactCatalog.js";
 import {
   CUSTOMER_INTELLIGENCE_CRM_ACTIVITY_CREATE_PERMISSION,
   CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS,
@@ -149,6 +150,7 @@ export function buildCustomerIntelligenceCrm(input: {
       completedAt: a.completedAt?.toISOString() ?? null,
       nextActionAt: a.nextActionAt?.toISOString() ?? null,
       nextActionDescription: a.nextActionDescription,
+      nextActionType: a.nextActionType ?? null,
       channel: a.channel,
       outcome: a.outcome,
       assignedTo: a.assignedTo,
@@ -166,6 +168,7 @@ export function buildCustomerIntelligenceCrm(input: {
       subject: a.subject,
       nextActionAt: a.nextActionAt!.toISOString(),
       nextActionDescription: a.nextActionDescription,
+      nextActionType: a.nextActionType ?? null,
       assignedTo: a.assignedTo,
       status: a.status,
       isOverdue: a.nextActionAt! < now,
@@ -174,7 +177,9 @@ export function buildCustomerIntelligenceCrm(input: {
   const notesFromActivities: CustomerIntelligenceCrm["notes"] = sortedActivities
     .flatMap((a) => {
       const parts: CustomerIntelligenceCrm["notes"] = [];
-      const text = [a.subject, a.description, a.outcome].filter(Boolean).join(" — ").trim();
+      // Resultado estruturado vira rótulo pt-BR (activityType = motivo do contato).
+      const outcome = crmContactResultLabel(a.outcome, a.activityType);
+      const text = [a.subject, a.description, outcome].filter(Boolean).join(" — ").trim();
       if (text) {
         parts.push({
           text,

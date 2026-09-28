@@ -35,9 +35,13 @@ export type CommercialActivityApiRow = {
   outcome: string | null;
   nextActionAt: Date | null;
   nextActionDescription: string | null;
+  nextActionType?: string | null;
   createdByName: string | null;
+  createdByUserId?: string | null;
   createdByPhone: string | null;
   createdByEmail: string | null;
+  commercialOwnerIdentityKey?: string | null;
+  commercialOwnerExternalSellerId?: number | null;
   createdAt: Date;
   salesOrderId?: string | null;
   proposalId?: string | null;
@@ -91,9 +95,13 @@ export function mapCommercialActivityForApi(row: CommercialActivityApiRow) {
     outcome: row.outcome,
     nextActionAt: row.nextActionAt,
     nextActionDescription: row.nextActionDescription,
+    nextActionType: row.nextActionType ?? null,
     createdByName: row.createdByName,
+    createdByUserId: row.createdByUserId ?? null,
     createdByPhone: row.createdByPhone,
     createdByEmail: row.createdByEmail,
+    commercialOwnerIdentityKey: row.commercialOwnerIdentityKey ?? null,
+    commercialOwnerExternalSellerId: row.commercialOwnerExternalSellerId ?? null,
     createdAt: row.createdAt,
     salesOrderId: row.salesOrderId ?? null,
     proposalId: row.proposalId ?? null,

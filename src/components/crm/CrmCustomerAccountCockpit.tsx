@@ -26,6 +26,12 @@ import {
   buildCustomerListStatusTags,
 } from "@/src/components/crm/crmCustomerPortfolioUi";
 import type { PortfolioEmptySummary } from "@/src/components/crm/crmCustomerPortfolioUi";
+import {
+  crmContactChannelLabel,
+  crmContactReasonLabel,
+  crmContactResultLabel,
+  crmNextActionSummary,
+} from "@/src/lib/commercial/crmContactCatalog";
 
 const SalesOrderDetailDialog = React.lazy(() =>
   import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
@@ -41,10 +47,22 @@ export type CrmAccountCockpitActivity = {
   createdAt: string;
   nextActionAt: string | null;
   nextActionDescription: string | null;
+  /** Código da próxima ação (crmContactCatalog); null em contatos antigos. */
+  nextActionType?: string | null;
   status: string;
   channel: string | null;
+  reason?: string | null;
+  outcome?: string | null;
   assignedTo: string | null;
 };
+
+/** Título curto do contato: assunto antigo ou "Motivo · Resultado". */
+function recentContactTitle(a: CrmAccountCockpitActivity): string | null {
+  if (a.subject?.trim()) return a.subject;
+  const result = crmContactResultLabel(a.outcome, a.reason);
+  if (result) return [crmContactReasonLabel(a.reason), result].filter(Boolean).join(" · ");
+  return a.description;
+}
 
 export type CrmAccountCockpitProfile = {
   commercialTemperature: string | null;
@@ -461,7 +479,9 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
             </div>
             <div>
               <dt className="text-[10px] font-semibold uppercase text-muted-foreground">Canal preferido</dt>
-              <dd className="font-semibold mt-0.5">{displayLine(profile?.preferredChannel)}</dd>
+              <dd className="font-semibold mt-0.5">
+                {displayLine(crmContactChannelLabel(profile?.preferredChannel))}
+              </dd>
             </div>
           </dl>
           {profile?.relationshipNotes?.trim() ? (
@@ -492,7 +512,7 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
                     {overdueActivities.slice(0, 3).map((a) => (
                       <li key={a.id} className="text-xs rounded-lg border border-red-200/80 bg-red-50/50 px-3 py-2">
                         <span className="font-semibold text-foreground">
-                          {displayLine(a.nextActionDescription ?? a.subject ?? "Follow-up")}
+                          {displayLine(crmNextActionSummary(a.nextActionType, a.nextActionDescription) ?? a.subject ?? "Follow-up")}
                         </span>
                         <span className="text-muted-foreground block mt-0.5">
                           {formatDateTimePt(a.nextActionAt)}
@@ -509,7 +529,7 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
                     {upcomingActivities.map((a) => (
                       <li key={a.id} className="text-xs rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
                         <span className="font-semibold text-foreground">
-                          {displayLine(a.nextActionDescription ?? a.subject ?? "Follow-up")}
+                          {displayLine(crmNextActionSummary(a.nextActionType, a.nextActionDescription) ?? a.subject ?? "Follow-up")}
                         </span>
                         <span className="text-muted-foreground block mt-0.5">
                           {formatDateTimePt(a.nextActionAt)}
@@ -548,7 +568,7 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
               <ul className="space-y-2 text-sm">
                 {recentActivities.map((a) => (
                   <li key={a.id} className="rounded-lg border border-border/60 px-3 py-2">
-                    <span className="font-semibold">{displayLine(a.subject ?? a.description ?? "Contato")}</span>
+                    <span className="font-semibold">{displayLine(recentContactTitle(a) ?? "Contato")}</span>
                     <span className="text-muted-foreground block text-xs mt-0.5">
                       {formatDateShortPt(a.contactDate ?? a.createdAt)}
                     </span>

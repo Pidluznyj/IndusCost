@@ -108,6 +108,7 @@ export async function loadCustomerIntelligenceData(customerId: string) {
         outcome: true,
         nextActionAt: true,
         nextActionDescription: true,
+        nextActionType: true,
         createdAt: true,
         updatedAt: true,
       },

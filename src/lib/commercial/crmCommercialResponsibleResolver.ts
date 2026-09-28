@@ -154,3 +154,19 @@ export async function resolveCommercialResponsibleMap(
     return new Map();
   }
 }
+
+/**
+ * Responsável comercial de UM cliente para gravação (registro de contato no
+ * CRM). Mesma regra do batch — dono manual ativo, sem setor administrativo —,
+ * mas SEM engolir erro: se a leitura falhar, quem grava deve abortar em vez de
+ * registrar "sem responsável" por engano.
+ */
+export async function resolveCommercialResponsibleForCustomer(
+  customerId: string,
+  loadOwners: (
+    customerIds: string[]
+  ) => Promise<Map<string, ResolvedCustomerCommercialOwner>> = loadManualCommercialOwnersForCustomers
+): Promise<CommercialResponsibleInjection> {
+  const owners = await loadOwners([customerId]);
+  return resolvedOwnerToInjection(owners.get(customerId) ?? null);
+}

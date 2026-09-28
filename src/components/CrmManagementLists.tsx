@@ -6,6 +6,11 @@ import {
   formatManagementRiskReason,
   managementRiskBadgeClass,
 } from "@/src/components/crmManagementUi";
+import {
+  crmContactChannelLabel,
+  crmContactReasonLabel,
+  crmNextActionSummary,
+} from "@/src/lib/commercial/crmContactCatalog";
 
 export type CrmManagementListsProps = {
   data: ManagementDashboardResponse;
@@ -177,7 +182,7 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
                   {typeof row.daysUntil === "number" ? ` · em ${row.daysUntil} dia(s)` : ""}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">
-                  {displayLine(row.nextActionDescription)}
+                  {displayLine(crmNextActionSummary(row.nextActionType, row.nextActionDescription))}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {displayLine(row.assignedTo ?? row.createdByName)}
@@ -235,11 +240,11 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
       <div className="grid gap-4 md:grid-cols-3">
         {(
           [
-            ["Por canal", data.activityBreakdown.byChannel],
-            ["Por motivo", data.activityBreakdown.byReason],
-            ["Por responsável", data.activityBreakdown.byResponsible],
+            ["Por canal", data.activityBreakdown.byChannel, crmContactChannelLabel],
+            ["Por motivo", data.activityBreakdown.byReason, crmContactReasonLabel],
+            ["Por responsável", data.activityBreakdown.byResponsible, null],
           ] as const
-        ).map(([title, items]) => (
+        ).map(([title, items, labelOf]) => (
           <div key={title} className="rounded-xl border border-border/80 bg-muted/10 p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
               {title}
@@ -253,7 +258,9 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
                     key={`${title}-${item.key}`}
                     className="flex items-center justify-between gap-2 text-xs"
                   >
-                    <span className="text-foreground truncate">{item.key}</span>
+                    <span className="text-foreground truncate">
+                      {labelOf ? (labelOf(item.key) ?? item.key) : item.key}
+                    </span>
                     <span className="font-semibold tabular-nums text-muted-foreground shrink-0">
                       {formatNumberPt(item.count)}
                     </span>

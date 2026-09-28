@@ -63,6 +63,10 @@ src/lib/crmSellerMatchSql.test.ts
 src/lib/crmSellerDashboard.test.ts
 src/lib/crmManagementDashboardOfficialOrders.test.ts
 src/lib/crmManagementDashboard.test.ts
+src/lib/commercial/crmContactCatalog.test.ts
+src/lib/commercial/crmContactRegistration.test.ts
+src/lib/commercial/crmContactConsumers.test.ts
+src/components/crm/CrmContactModal.test.tsx
 src/lib/commercial/crmSalesOrderMetricsService.test.ts
 src/lib/nomusStockDocuments.test.ts
 src/lib/output-documents/outputDocumentsListQuery.test.ts

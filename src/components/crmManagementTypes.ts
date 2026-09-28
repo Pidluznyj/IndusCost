@@ -94,6 +94,8 @@ export type ManagementFollowUp = {
   displayName: string;
   nextActionAt: string;
   nextActionDescription: string | null;
+  /** Código da próxima ação (crmContactCatalog); null em contatos antigos. */
+  nextActionType?: string | null;
   assignedTo: string | null;
   createdByName: string | null;
   daysOverdue?: number;

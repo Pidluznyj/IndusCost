@@ -53,6 +53,7 @@ type ActivityRow = {
   createdAt: Date;
   nextActionAt: Date | null;
   nextActionDescription: string | null;
+  nextActionType: string | null;
   assignedTo: string | null;
   createdByName: string | null;
   status: string | null;
@@ -127,6 +128,7 @@ export async function buildCrmManagementDashboardResponse(
         createdAt: true,
         nextActionAt: true,
         nextActionDescription: true,
+        nextActionType: true,
         assignedTo: true,
         createdByName: true,
         status: true,
@@ -143,6 +145,8 @@ export async function buildCrmManagementDashboardResponse(
         commercialTemperature: string | null;
       }>
     >,
+    // "Por responsável" = responsável comercial gravado no contato (assignedTo);
+    // quem registrou não é responsável — sem ele, "Sem responsável".
     prisma.$queryRaw<{ kind: string; key: string; count: bigint }[]>(Prisma.sql`
       SELECT 'channel' AS kind, COALESCE(NULLIF(TRIM(a."channel"), ''), 'Não informado') AS key,
         COUNT(*)::bigint AS count
@@ -156,7 +160,7 @@ export async function buildCrmManagementDashboardResponse(
       GROUP BY 2
       UNION ALL
       SELECT 'responsible',
-        COALESCE(NULLIF(TRIM(a."assignedTo"), ''), NULLIF(TRIM(a."createdByName"), ''), 'Sem responsável'),
+        COALESCE(NULLIF(TRIM(a."assignedTo"), ''), 'Sem responsável'),
         COUNT(*)::bigint
       FROM "CommercialActivity" a
       WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
@@ -361,6 +365,7 @@ export async function buildCrmManagementDashboardResponse(
       displayName: c ? mgmtDisplayName(c.companyName, c.tradeName) : "(cliente)",
       nextActionAt: mgmtIso(a.nextActionAt) ?? now.toISOString(),
       nextActionDescription: a.nextActionDescription,
+      nextActionType: a.nextActionType,
       assignedTo: a.assignedTo,
       createdByName: a.createdByName,
     };
