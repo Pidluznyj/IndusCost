@@ -186,6 +186,15 @@ export function InventoryModule({ initialTab }: Props = {}) {
             </button>
             <button
               type="button"
+              onClick={() => navigate("/inventory/position-report/print?modo=quantidade")}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              data-testid="inventory-position-report-qty"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir quantidades
+            </button>
+            <button
+              type="button"
               onClick={() => void refresh()}
               disabled={loading}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60"

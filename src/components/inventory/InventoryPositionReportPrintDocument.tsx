@@ -25,11 +25,61 @@ function SectionTable({
   section,
   companyName,
   emittedAt,
+  quantityOnly,
 }: {
   section: InventoryPositionReportSection;
   companyName: string;
   emittedAt: string;
+  quantityOnly: boolean;
 }) {
+  if (quantityOnly) {
+    const colSpan = 4;
+    return (
+      <PrintTable className="inventory-position-report-table is-quantity">
+        <colgroup>
+          <col className="col-code" />
+          <col className="col-desc" />
+          <col className="col-unit" />
+          <col className="col-qty" />
+        </colgroup>
+        <thead>
+          <tr className="inventory-position-report-repeat">
+            <th colSpan={colSpan}>
+              {companyName} · Posição de estoque · {section.title} · Emitido em {emittedAt}
+            </th>
+          </tr>
+          <tr>
+            <th className="col-code">Código</th>
+            <th className="col-desc">Descrição</th>
+            <th className="col-unit">Un.</th>
+            <th className="col-qty">Quantidade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {section.rows.length === 0 ? (
+            <tr>
+              <td colSpan={colSpan}>Nenhum item com saldo físico positivo.</td>
+            </tr>
+          ) : (
+            section.rows.map((row) => (
+              <tr key={`${section.itemType}-${row.itemCode}`}>
+                <td className="col-code">{row.itemCode}</td>
+                <td className="col-desc">{row.description}</td>
+                <td className="col-unit">{row.unit}</td>
+                <td className="col-qty">{formatQty(row.physicalQuantity)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colSpan={colSpan}>Total · {section.itemCount} itens</th>
+          </tr>
+        </tfoot>
+      </PrintTable>
+    );
+  }
+
   const showSale = section.itemType !== "RAW_MATERIAL";
   const colSpan = showSale ? 8 : 6;
   return (
@@ -112,14 +162,128 @@ function SectionTable({
   );
 }
 
+const QUANTITY_ONLY_PURPOSE =
+  "Lista dos itens em estoque e das quantidades físicas, somadas entre os almoxarifados.";
+
+const QUANTITY_ONLY_NOTES = [
+  "A quantidade é o saldo físico somado do item em todos os almoxarifados.",
+  "Saldo igual a zero não entra na lista.",
+  "Saldo negativo fica na seção própria e não entra na lista de saldos positivos.",
+];
+
 export function InventoryPositionReportPrintDocument({
   report,
   branding,
+  quantityOnly = false,
 }: {
   report: InventoryPositionReport;
   branding: BrandingSettingsDTO;
+  quantityOnly?: boolean;
 }) {
   const emittedAt = formatPrintDateTime(report.generatedAt);
+  if (quantityOnly) {
+    const filters = [
+      ...report.filters.filter((filter) =>
+        ["Posição", "Itens", "Almoxarifados", "Tipos"].includes(filter.label)
+      ),
+      {
+        label: "Saldo negativo",
+        value: "Listado à parte e fora da lista de saldos positivos.",
+      },
+    ];
+    return (
+      <PrintDocumentShell
+        rootId="inventory-position-report-print-root"
+        className="inventory-position-report-document"
+        footer={
+          <p>
+            {branding.companyName} · Documento gerado pelo IndusCost em {emittedAt}.
+          </p>
+        }
+      >
+        <PrintHeader
+          branding={branding}
+          documentKind="RELATÓRIO"
+          documentTitle="POSIÇÃO DE ESTOQUE"
+          metaLines={[
+            { label: "Emitido em", value: emittedAt },
+            { label: "População", value: "Saldo físico positivo" },
+            { label: "Tipos", value: "MP, componentes e produtos acabados" },
+            { label: "Conteúdo", value: "Item e quantidade" },
+          ]}
+          subtitle={QUANTITY_ONLY_PURPOSE}
+        />
+
+        <PrintSection title="Filtros utilizados">
+          <PrintTable className="inventory-position-report-meta">
+            <tbody>
+              {filters.map((filter) => (
+                <tr key={filter.label}>
+                  <th>{filter.label}</th>
+                  <td>{filter.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PrintTable>
+        </PrintSection>
+
+        <PrintSection title="Como a lista foi formada">
+          <ul className="inventory-position-report-notes">
+            {QUANTITY_ONLY_NOTES.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+            {report.excludedOtherPositiveItems > 0 ? (
+              <li>
+                {report.excludedOtherPositiveItems} itens de outros tipos têm saldo positivo e ficam fora desta
+                lista.
+              </li>
+            ) : null}
+          </ul>
+        </PrintSection>
+
+        {report.sections.map((section) => (
+          <PrintSection key={section.itemType} title={section.title} flow>
+            <SectionTable
+              section={section}
+              companyName={branding.companyName}
+              emittedAt={emittedAt}
+              quantityOnly
+            />
+          </PrintSection>
+        ))}
+
+        <PrintSection title="Saldos negativos fora da lista" flow>
+          {report.negativeLines.length === 0 ? (
+            <p>Nenhum saldo físico negativo.</p>
+          ) : (
+            <PrintTable className="inventory-position-report-table is-quantity">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Descrição</th>
+                  <th>Tipo</th>
+                  <th>Un.</th>
+                  <th>Quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.negativeLines.map((line) => (
+                  <tr key={`${line.itemTypeLabel}-${line.itemCode}`}>
+                    <td>{line.itemCode}</td>
+                    <td>{line.description}</td>
+                    <td>{line.itemTypeLabel}</td>
+                    <td>{line.unit}</td>
+                    <td className="num">{formatQty(line.physicalQuantity)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </PrintTable>
+          )}
+        </PrintSection>
+      </PrintDocumentShell>
+    );
+  }
+
   return (
     <PrintDocumentShell
       rootId="inventory-position-report-print-root"
@@ -176,7 +340,12 @@ export function InventoryPositionReportPrintDocument({
 
       {report.sections.map((section) => (
         <PrintSection key={section.itemType} title={`${section.title} · ${section.costBasisLabel}`} flow>
-          <SectionTable section={section} companyName={branding.companyName} emittedAt={emittedAt} />
+          <SectionTable
+            section={section}
+            companyName={branding.companyName}
+            emittedAt={emittedAt}
+            quantityOnly={false}
+          />
         </PrintSection>
       ))}
 

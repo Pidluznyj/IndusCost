@@ -17,9 +17,18 @@
   margin: 10mm 8mm 12mm;
 }
 
+@page inventory-position-qty-sheet {
+  size: 210mm 297mm;
+  margin: 12mm 10mm 14mm;
+}
+
 html,
 body.inventory-position-report-route {
   page: inventory-position-sheet;
+}
+
+body.inventory-position-report-route.inventory-position-report-portrait {
+  page: inventory-position-qty-sheet;
 }
 
 .inventory-position-report-document {
@@ -75,6 +84,18 @@ body.inventory-position-report-route {
 
 .inventory-position-report-table col.col-money {
   width: 30mm;
+}
+
+.inventory-position-report-table.is-quantity col.col-code {
+  width: 36mm;
+}
+
+.inventory-position-report-table.is-quantity col.col-unit {
+  width: 16mm;
+}
+
+.inventory-position-report-table.is-quantity col.col-qty {
+  width: 32mm;
 }
 
 .inventory-position-report-table .col-code {
@@ -140,6 +161,11 @@ body.inventory-position-report-route {
   @page inventory-position-sheet {
     size: 297mm 210mm;
     margin: 10mm 8mm 12mm;
+  }
+
+  @page inventory-position-qty-sheet {
+    size: 210mm 297mm;
+    margin: 12mm 10mm 14mm;
   }
 
   html,
