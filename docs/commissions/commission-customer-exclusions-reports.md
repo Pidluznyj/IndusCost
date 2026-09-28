@@ -74,3 +74,29 @@ transparência da carteira").
 `commissionReceiptClosingDetailExport.test.ts`, `commissionClosings.test.ts`,
 `commissionOrderProvision.test.ts`, `commissionCustomerExclusionClosingReconciliation.test.ts` e
 `commissionsCustomerExclusionsUi.test.ts` (todos em `npm run test:commissions`).
+
+## Validação de regressão (2026-09-28)
+
+Pedido do usuário: garantir que nada que funcionava parou de funcionar. Comparação entre o
+estado anterior às mudanças do dia (`61dc8486`) e o main com as três entregas (painel de fontes
+recolhido `94a13b84`, clientes excluídos fora dos relatórios `cba981e7`, correção do motor
+`5f3b556d`).
+
+- **Seleção:** 435 arquivos de teste — todos os que importam, direta ou transitivamente, algum
+  dos 26 módulos alterados (grafo de imports do projeto) e os que leem código-fonte das áreas
+  afetadas. Cada arquivo rodou isolado nas duas árvores, com `DATABASE_URL` fora do ar.
+- **Resultado:** base 5230 testes / 78 falhas; main 5241 testes / as mesmas 78 falhas (todas
+  anteriores). Nenhuma regressão — nenhum teste que passava falha —, nenhum arquivo quebrado ou
+  com timeout; +11 testes novos, todos passando.
+- **Suítes e gates:** `test:commissions` 728 testes / 5 falhas pré-existentes; `test:unit` 3874 /
+  25 pré-existentes; `tsc` 1366 = baseline; build, `check:server-imports`,
+  `check:frontend-server-imports` e `check:browser-bundle` OK.
+- **Telas** (harness com as funções reais do servidor): Fechamento do mês, Relatórios,
+  Fechamentos (lista, detalhe e relatório por vendedor, em mês oficial e em histórico gravado),
+  Provisão por pedido (inclusive "Somente comissões zeradas") e Exceções por cliente (impacto por
+  regra). Sem erro de execução; os únicos avisos no console são as tabelas aninhadas do
+  `CommissionsTableScroll`, que já existiam.
+- **Consumidores do motor revisados:** fechamento e validação, cobertura/pendências, "a pagar"
+  (`resolveMonthlyPayableReport`: painel, validação, conciliação CR × comissão), reconciliação da
+  aba Exceções, auditoria visual, diagnósticos e scripts de CLI. Único efeito: venda de cliente
+  das Exceções deixa de contar como comissão/pendência mesmo com schedule antigo (esperado).
