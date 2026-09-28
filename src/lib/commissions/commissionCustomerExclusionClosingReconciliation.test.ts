@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CommissionReceiptPreviewLine } from "./commissionReceiptEngine.js";
+import type { CommissionReceiptPreviewLine, CommissionReceiptPreviewResult } from "./commissionReceiptEngine.js";
 import {
   buildReceiptClosingPageFromPreview,
   mapPreviewLineToApiLine,
@@ -217,6 +217,51 @@ describe("commissionCustomerExclusionClosingReconciliation", () => {
     assert.equal(official.materializationSummary.totalReceivablesCount, 0);
     assert.equal(official.materializationSummary.excludedCustomerCount, 0);
     assert.equal(official.officialCards.totalReceivedAmount, 0);
+  });
+
+  it("impacto por regra usa exclusionRuleId (o motor deixa ruleId nulo no cliente excluído)", () => {
+    const lines = [
+      previewLine({ ledgerLineKey: "ex-motor", nomusReceivableId: 7134, ruleId: null, ruleName: null }),
+    ];
+    const preview: CommissionReceiptPreviewResult = {
+      year: 2026,
+      month: 9,
+      totalReceivables: 1,
+      totalReceivedAmount: 1000,
+      totalCommissionableBase: 0,
+      totalExpectedCommission: 0,
+      totalReleasedCommission: 0,
+      totalExcludedAmount: 0,
+      totalExceptionAmount: 0,
+      countByStatus: { CUSTOMER_EXCLUDED: 1 } as CommissionReceiptPreviewResult["countByStatus"],
+      bySeller: [],
+      byCustomer: [],
+      lines,
+    };
+    const closingPage = buildReceiptClosingPageFromPreview({
+      preview,
+      closing: null,
+      canApply: false,
+      applyBlockedReason: null,
+    });
+    const payload = buildCustomerExclusionClosingReconciliation(closingPage, [
+      mapCustomerExclusionRuleSnapshot({
+        id: "rule-ex-1",
+        customerId: "cust-1",
+        customerExternalId: null,
+        customerNameSnapshot: "ESMALTEC",
+        normalizedCustomerName: "esmaltec",
+        reason: "Regra interna",
+        effectiveFrom: new Date("2026-01-01"),
+        effectiveTo: new Date("2030-12-31"),
+        status: "ACTIVE",
+        notes: null,
+        customerTaxId: null,
+      }),
+    ]);
+    assert.equal(payload.manualExcludedCustomers[0]?.exclusionRuleId, "rule-ex-1");
+    assert.equal(payload.registeredRulesImpact[0]!.usedInClosing, true);
+    assert.equal(payload.registeredRulesImpact[0]!.receivableCount, 1);
   });
 
   it("linha CUSTOMER_EXCLUDED expõe ruleId para reconciliação", () => {

@@ -13,8 +13,15 @@ transparência da carteira").
 - Ponto único: `isCustomerExcludedFromCommissionReports`,
   `partitionReceiptClosingLinesByCustomerExclusion` e `omitCustomerExcludedFromCommissionReports`
   em `src/lib/commissions/commissionReceiptClosingApi.shared.ts`.
-- Vigência: vale o que a regra já decide (cliente + data). Venda fora da vigência continua
-  comissionada e aparece normalmente.
+- Vigência: vale o que a regra já decide (cliente + data da venda). Venda fora da vigência
+  continua comissionada e aparece normalmente.
+- Motor (2026-09-28, correção pós-homologação): a regra vale também para título com schedule
+  materializado — schedule gravado antes do cadastro da regra ou zerado "sem regra". Antes só o
+  título sem schedule era conferido; o schedule ditava o status e a venda da Esmaltec (NF 7134 /
+  PD 02364, schedule zerado → `NO_RULE`) aparecia para a vendedora. Agora
+  `previewLineFromMaterializedSchedule` confere `resolveCustomerExclusionForReceivable` antes:
+  a linha vira `CUSTOMER_EXCLUDED`, libera zero e a comissão bruta guarda o que o schedule daria
+  (auditoria). Vale para prévia, fechamento e previsão.
 
 ## Onde vale
 
@@ -28,18 +35,24 @@ transparência da carteira").
 
 ## O que não muda
 
-- Motor, ledger, schedules, cobertura (`CommissionReceiptCoverage`) e conciliação com o Nomus: a
-  linha do cliente excluído continua registrada, com comissão zero.
-- Fechamento já gravado mostra o que foi fechado, sem as linhas `CUSTOMER_EXCLUDED`. Cliente
-  cadastrado depois do fechamento continua nas linhas comissionadas daquele mês (a comissão foi
-  apurada); para mudar, reprocessar.
+- Ledger, schedules, cobertura (`CommissionReceiptCoverage`) e conciliação com o Nomus: a linha
+  do cliente excluído continua registrada, com comissão zero (e passa a contar como coberta, não
+  como pendência).
+- Fechamento oficial já gravado (a partir de 10/2026) mostra o que foi fechado, sem as linhas
+  `CUSTOMER_EXCLUDED`; cliente cadastrado depois do fechamento continua nas linhas daquele mês
+  (a comissão foi apurada) — para mudar, reprocessar.
+- Histórico Nomus já gravado (registro técnico, sem reprocesso): a regra ativa é aplicada só na
+  exibição (`legacyDisplayExclusionRules` em `buildReceiptClosingPageFromLedger`, data do
+  recebimento) — a linha sai do relatório e vai para a auditoria; o ledger não muda.
 - Empresas do grupo seguem como auditoria opcional ("Mostrar empresas do grupo na auditoria").
 
 ## Auditoria
 
 - Aba **Exceções por cliente** → "Reconciliação com Fechamento do mês": clientes excluídos,
   títulos, recebido e impacto por regra, lidos de `customerExcludedAuditLines` direto dos builders
-  no servidor (`buildCustomerExclusionClosingReconciliation`).
+  no servidor (`buildCustomerExclusionClosingReconciliation`). O impacto por regra usa
+  `exclusionRuleId` da linha (o motor deixa `ruleId` nulo no cliente excluído; antes toda regra
+  aparecia como "Sem impacto no mês").
 - Auditoria visual (técnica, aba oculta) continua listando as linhas.
 
 ## Efeito nos números e nas exportações
@@ -57,7 +70,7 @@ transparência da carteira").
 
 ## Testes
 
-`commissionReceiptClosingApi.test.ts`, `commissionReports.test.ts`,
+`commissionReceiptEngine.test.ts`, `commissionReceiptClosingApi.test.ts`, `commissionReports.test.ts`,
 `commissionReceiptClosingDetailExport.test.ts`, `commissionClosings.test.ts`,
 `commissionOrderProvision.test.ts`, `commissionCustomerExclusionClosingReconciliation.test.ts` e
 `commissionsCustomerExclusionsUi.test.ts` (todos em `npm run test:commissions`).

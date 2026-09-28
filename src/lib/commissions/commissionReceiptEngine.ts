@@ -1111,7 +1111,17 @@ function previewLineFromMaterializedSchedule(
   identityCtx?: CommissionSellerIdentityContext,
   commissionMode: "released" | "forecast" = "released"
 ): CommissionReceiptPreviewLine {
-  const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
+  const scheduleStatus = mapMaterializedScheduleToLedgerStatus(schedule);
+  // Exceções por cliente dependem só de cliente, data e regra: valem também para título
+  // com schedule materializado antes do cadastro da regra ou que ficou "sem regra"/zerado
+  // (mesma verificação do título sem schedule). Cliente excluído nunca comissiona.
+  const receiptExclusion =
+    scheduleStatus.status === "CUSTOMER_EXCLUDED"
+      ? null
+      : resolveCustomerExclusionForReceivable({ receivable, order, exclusionRules });
+  const { status, reason } = receiptExclusion
+    ? { status: "CUSTOMER_EXCLUDED" as const, reason: COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON }
+    : scheduleStatus;
   const divergesFromSnapshot = scheduleDivergesFromOrderSnapshot(schedule);
   const effectiveScheduled = resolveEffectiveScheduledCommissionAmount(schedule);
   const scheduleForRelease: MaterializedReceivableScheduleInput = divergesFromSnapshot
@@ -1143,11 +1153,13 @@ function previewLineFromMaterializedSchedule(
   const commissionableBase = release.commissionableBaseAmount;
   const showsSnapshotAmounts =
     status === "COMMISSIONABLE" || status === "COMMISSION_SOURCE_MISMATCH";
-  const expectedCommission = isForecast
-    ? forecastRelease!.forecastCommissionAmount
-    : showsSnapshotAmounts
-      ? settledRelease!.expectedCommissionAmount
-      : 0;
+  const expectedCommission = receiptExclusion
+    ? 0
+    : isForecast
+      ? forecastRelease!.forecastCommissionAmount
+      : showsSnapshotAmounts
+        ? settledRelease!.expectedCommissionAmount
+        : 0;
   // Mismatch: mostra prevista do snapshot, mas não libera para pagamento até reorder/materializar.
   const released =
     !isForecast && status === "COMMISSIONABLE" ? settledRelease!.expectedCommissionAmount : 0;
@@ -1180,12 +1192,21 @@ function previewLineFromMaterializedSchedule(
               ? schedule.scheduledCommissionAmount
               : expectedCommission)
         )
-      : expectedCommission;
-  const exclusionRuleId = resolveMaterializedScheduleExclusionRuleId({
-    schedule,
-    receivable,
-    exclusionRules,
-  });
+      : receiptExclusion
+        ? // Auditoria: comissão que o schedule daria (a linha não libera nada).
+          roundMoney(
+            isForecast
+              ? forecastRelease!.forecastCommissionAmount
+              : settledRelease!.expectedCommissionAmount
+          )
+        : expectedCommission;
+  const exclusionRuleId = receiptExclusion
+    ? receiptExclusion.rule.id
+    : resolveMaterializedScheduleExclusionRuleId({
+        schedule,
+        receivable,
+        exclusionRules,
+      });
 
   const seller =
     order != null
@@ -1262,7 +1283,7 @@ function previewLineFromMaterializedSchedule(
     status,
     statusReason: reason,
     exclusionRuleId,
-    exclusionReason: schedule.exclusionReason,
+    exclusionReason: receiptExclusion ? receiptExclusion.reason : schedule.exclusionReason,
     source: divergesFromSnapshot ? "ORDER_SNAPSHOT" : "MATERIALIZED_SCHEDULE",
     scheduleCommissionAmount: normalizeCommissionLedgerMoney(schedule.scheduledCommissionAmount),
     orderSnapshotCommissionAmount: normalizeCommissionLedgerMoney(

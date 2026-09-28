@@ -182,6 +182,8 @@ export type ReceiptClosingLedgerLineSnapshot = {
   exclusionReason: string | null;
   ruleNameSnapshot: string | null;
   ruleSnapshotJson: unknown;
+  /** Regra de Exceções por cliente da linha (FK `customerExclusionRuleId`). */
+  customerExclusionRuleId?: string | null;
   /** Eventos de recebimento contemplados pela linha. */
   receiptExternalIds?: number[];
   /** Dia civil do recebimento (competência natural). */
@@ -559,6 +561,7 @@ export function mapLedgerRowToSnapshot(row: {
   exclusionReason: string | null;
   ruleNameSnapshot: string | null;
   ruleSnapshotJson: unknown;
+  customerExclusionRuleId?: string | null;
   receiptExternalIds?: number[] | null;
   receiptDate?: Date | null;
   naturalYear?: number | null;
@@ -587,6 +590,7 @@ export function mapLedgerRowToSnapshot(row: {
     exclusionReason: row.exclusionReason,
     ruleNameSnapshot: row.ruleNameSnapshot,
     ruleSnapshotJson: row.ruleSnapshotJson,
+    customerExclusionRuleId: row.customerExclusionRuleId ?? null,
     receiptExternalIds: row.receiptExternalIds ?? [],
     receiptDate: row.receiptDate ? row.receiptDate.toISOString().slice(0, 10) : null,
     naturalYear: row.naturalYear ?? null,

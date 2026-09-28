@@ -23,6 +23,8 @@ import type {
   ReceiptClosingSnapshot,
 } from "./commissionReceiptClosing.js";
 import type { ReceiptClosingCarryoverSection } from "./commissionReceiptCoverage.shared.js";
+import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
+import { applyActiveCustomerExclusionsToClosingLines } from "./commissionReportsCustomerExclusion.js";
 import {
   COMMISSION_LEGACY_REPORT_TEXT,
   COMMISSION_OFFICIAL_CUTOVER_DAY_LABEL,
@@ -725,6 +727,7 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     commissionReceivableScheduleId: line.commissionReceivableScheduleId,
     ruleId: line.ruleId,
     ruleName: line.ruleName,
+    exclusionRuleId: line.exclusionRuleId ?? null,
     exclusionReason: line.exclusionReason,
     status: line.status,
     statusReason: line.statusReason ?? line.exclusionReason,
@@ -805,6 +808,9 @@ export function mapLedgerLineToApiLine(
     commissionReceivableScheduleId: scheduleId,
     ruleId: ruleSnapshot?.ruleId != null ? String(ruleSnapshot.ruleId) : null,
     ruleName: line.ruleNameSnapshot,
+    exclusionRuleId:
+      line.customerExclusionRuleId ??
+      (typeof ruleSnapshot?.exclusionRuleId === "string" ? ruleSnapshot.exclusionRuleId : null),
     exclusionReason: line.exclusionReason,
     status: line.status,
     statusReason: line.exceptionReason ?? line.exclusionReason,
@@ -1136,9 +1142,23 @@ export function buildReceiptClosingPageFromLedger(input: {
   nomusCommission?: number | null;
   /** Quando definido, restringe o payload (linhas + cards/resumo derivados) às linhas do vendedor. */
   ownScope?: ReceiptClosingOwnScopeFilter | null;
+  /**
+   * Histórico Nomus já gravado (registro técnico, sem reprocesso): regras ativas de
+   * Exceções por cliente aplicadas só na exibição — a linha sai dos relatórios dos
+   * vendedores. Ignorado em competência oficial (o fechamento oficial mostra o gravado).
+   */
+  legacyDisplayExclusionRules?: CustomerExclusionRuleSnapshot[] | null;
 }): ReceiptClosingPagePayload {
   const mappedLines = input.ledgerLines.map((line) => mapLedgerLineToApiLine(line, input.closing));
-  const lines = filterReceiptClosingLinesByOwnScope(mappedLines, input.ownScope ?? null);
+  const scopedLines = filterReceiptClosingLinesByOwnScope(mappedLines, input.ownScope ?? null);
+  const lines =
+    input.legacyDisplayExclusionRules?.length &&
+    getCommissionReportingAuthority(input.closing.year, input.closing.month).isLegacyPeriod
+      ? applyActiveCustomerExclusionsToClosingLines(scopedLines, input.legacyDisplayExclusionRules, {
+          year: input.closing.year,
+          month: input.closing.month,
+        })
+      : scopedLines;
   const base = {
     year: input.closing.year,
     month: input.closing.month,

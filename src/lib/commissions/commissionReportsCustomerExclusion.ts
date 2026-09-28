@@ -1,6 +1,7 @@
 /**
- * Soft-aplica das regras de cliente não comissionável nos Relatórios.
- * Não altera ledger/fechamento — só a classificação exibida / exportada.
+ * Soft-aplica das regras de cliente não comissionável nos Relatórios e no fechamento já
+ * gravado do histórico Nomus. Não altera ledger/fechamento — só a classificação exibida /
+ * exportada.
  */
 import {
   CUSTOMER_COMMISSION_EXCLUSION_MESSAGE,
@@ -9,6 +10,7 @@ import {
 import { resolveCustomerExclusionForSale } from "./commissionCustomerExclusionApply.js";
 import { roundMoney } from "./commission-money.shared.js";
 import type { CommissionReportSourceLine } from "./commissionReports.shared.js";
+import type { ReceiptClosingApiLine } from "./commissionReceiptClosingApi.shared.js";
 
 const CUSTOMER_EXCLUDED_BY_RULE_REASON = "CLIENTE_EXCLUIDO_POR_REGRA";
 
@@ -20,7 +22,12 @@ function parseReferenceDate(iso: string | null | undefined, year: number, month:
   return new Date(Date.UTC(year, month - 1, 15));
 }
 
-function previousDisplayCommission(line: CommissionReportSourceLine): number {
+function previousDisplayCommission(
+  line: Pick<
+    ReceiptClosingApiLine,
+    "grossCommissionAmount" | "releasedCommissionAmount" | "expectedCommissionAmount"
+  >
+): number {
   const candidates = [
     line.grossCommissionAmount,
     line.releasedCommissionAmount,
@@ -72,6 +79,45 @@ export function applyActiveCustomerExclusionsToReportLines(
         line.source === "PERSISTED_LEDGER" || line.source === "PERSISTED_SCHEDULE"
           ? `${line.source}+CUSTOMER_EXCLUSION_RULE`
           : line.source,
+    };
+  });
+}
+
+/**
+ * Fechamento já gravado do histórico Nomus (registro técnico, sem reprocesso): a regra
+ * ativa de Exceções por cliente reclassifica a linha só na exibição, para ela sair dos
+ * relatórios dos vendedores. Data de referência: recebimento. O ledger não muda.
+ */
+export function applyActiveCustomerExclusionsToClosingLines(
+  lines: ReceiptClosingApiLine[],
+  rules: CustomerExclusionRuleSnapshot[],
+  period: { year: number; month: number }
+): ReceiptClosingApiLine[] {
+  if (lines.length === 0 || rules.length === 0) return lines;
+
+  return lines.map((line) => {
+    if (line.status === "CUSTOMER_EXCLUDED" || line.status === "GROUP_COMPANY_EXCLUDED") {
+      return line;
+    }
+
+    const exclusion = resolveCustomerExclusionForSale({
+      customerId: line.customerId,
+      customerExternalId: line.customerExternalId,
+      customerName: line.customerName,
+      referenceDate: parseReferenceDate(line.receiptDate ?? line.settlementDate, period.year, period.month),
+      rules,
+    });
+    if (!exclusion) return line;
+
+    return {
+      ...line,
+      status: "CUSTOMER_EXCLUDED",
+      statusReason: CUSTOMER_EXCLUDED_BY_RULE_REASON,
+      exclusionRuleId: exclusion.rule.id,
+      exclusionReason: exclusion.reason || CUSTOMER_COMMISSION_EXCLUSION_MESSAGE,
+      expectedCommissionAmount: 0,
+      releasedCommissionAmount: 0,
+      grossCommissionAmount: previousDisplayCommission(line),
     };
   });
 }

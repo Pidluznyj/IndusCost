@@ -4,6 +4,7 @@ import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js
 import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import {
   buildCommissionReceiptPreview,
+  buildCommissionReceivableForecastPreview,
   COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON,
   COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
   filterReceivablesByReceiptCompetence,
@@ -535,6 +536,121 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.status, "COMMISSIONABLE");
     assert.equal(result.lines[0]?.expectedCommissionAmount, 200);
     assert.equal(result.lines[0]?.releasedCommissionAmount, 200);
+  });
+
+  it("schedule ativo de cliente das Exceções vira CUSTOMER_EXCLUDED (regra cadastrada depois)", () => {
+    const sched = materializedSchedule({
+      receivableId: 511,
+      scheduledCommissionAmount: 200,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({ nomusReceivableId: 511, amountReceivable: 10000, amountReceived: 10000 }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[511, [sched]]]),
+      rules: [],
+      exclusionRules: [exclusionRule({ id: "ex-sched" })],
+      identityCtx: OK_IDENTITY,
+    });
+
+    const line = result.lines[0]!;
+    assert.equal(line.status, "CUSTOMER_EXCLUDED");
+    assert.equal(line.statusReason, COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON);
+    assert.equal(line.expectedCommissionAmount, 0);
+    assert.equal(line.releasedCommissionAmount, 0);
+    // Auditoria: comissão que o schedule daria.
+    assert.equal(line.grossCommissionAmount, 200);
+    assert.equal(line.exclusionRuleId, "ex-sched");
+    assert.equal(line.exclusionReason, "Política comercial");
+    assert.equal(line.commissionReceivableScheduleId, "sched-511");
+    assert.equal(result.totalReleasedCommission, 0);
+    assert.equal(result.totalExpectedCommission, 0);
+  });
+
+  it("schedule zerado sem regra de cliente das Exceções também vira CUSTOMER_EXCLUDED", () => {
+    const sched = materializedSchedule({
+      receivableId: 512,
+      scheduledCommissionAmount: 0,
+      receivableNominalAmount: 10000,
+      itemSnapshotStatuses: ["NO_RULE"],
+    });
+    const base = {
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({ nomusReceivableId: 512, amountReceivable: 10000, amountReceived: 10000 }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[512, [sched]]]),
+      rules: [],
+      identityCtx: OK_IDENTITY,
+    };
+    // Sem a regra: pendência "sem regra" (aparecia no relatório do vendedor).
+    assert.equal(buildCommissionReceiptPreview({ ...base, exclusionRules: [] }).lines[0]?.status, "NO_RULE");
+    const excluded = buildCommissionReceiptPreview({
+      ...base,
+      exclusionRules: [exclusionRule({ id: "ex-zero" })],
+    }).lines[0]!;
+    assert.equal(excluded.status, "CUSTOMER_EXCLUDED");
+    assert.equal(excluded.exclusionRuleId, "ex-zero");
+    assert.equal(excluded.releasedCommissionAmount, 0);
+  });
+
+  it("regra fora da vigência na data da venda mantém o schedule comissionável", () => {
+    const sched = materializedSchedule({
+      receivableId: 513,
+      scheduledCommissionAmount: 200,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({ nomusReceivableId: 513, amountReceivable: 10000, amountReceived: 10000 }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[513, [sched]]]),
+      rules: [],
+      exclusionRules: [exclusionRule({ id: "ex-late", effectiveFrom: new Date("2026-07-01") })],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "COMMISSIONABLE");
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 200);
+    assert.equal(result.lines[0]?.exclusionRuleId, null);
+  });
+
+  it("previsão: schedule de cliente das Exceções não prevê comissão", () => {
+    const sched = materializedSchedule({
+      receivableId: 514,
+      scheduledCommissionAmount: 200,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceivableForecastPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 514,
+          amountReceivable: 10000,
+          amountReceived: 0,
+          balanceReceivable: 10000,
+          settlementDate: null,
+          receiptCompetence: null,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[514, [sched]]]),
+      rules: [],
+      exclusionRules: [exclusionRule({ id: "ex-prev" })],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "CUSTOMER_EXCLUDED");
+    assert.equal(result.lines[0]?.expectedCommissionAmount, 0);
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
   });
 
   it("título recebido parcial libera comissão proporcional via schedule", () => {

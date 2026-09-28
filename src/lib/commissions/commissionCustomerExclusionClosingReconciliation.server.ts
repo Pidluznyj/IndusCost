@@ -9,6 +9,7 @@ import {
   previewCommissionReceiptClosing,
 } from "./commissionReceiptClosing.server.js";
 import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
+import type { CustomerExclusionRuleSnapshot } from "./commissionCustomerExclusion.js";
 import {
   buildCustomerExclusionClosingReconciliation,
   type CustomerExclusionClosingReconciliationPayload,
@@ -16,12 +17,18 @@ import {
 
 async function loadClosingPageForExclusionReconciliation(
   year: number,
-  month: number
+  month: number,
+  registeredRules: CustomerExclusionRuleSnapshot[]
 ) {
   const closing = await findClosedReceiptClosing(prisma, year, month);
   if (closing) {
     const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
-    return buildReceiptClosingPageFromLedger({ closing, ledgerLines });
+    // Mesmo universo do Fechamento do mês: histórico Nomus gravado aplica as regras ativas.
+    return buildReceiptClosingPageFromLedger({
+      closing,
+      ledgerLines,
+      legacyDisplayExclusionRules: registeredRules,
+    });
   }
 
   const previewPayload = await previewCommissionReceiptClosing({ year, month });
@@ -37,10 +44,8 @@ export async function loadCustomerExclusionClosingReconciliation(
   year: number,
   month: number
 ): Promise<CustomerExclusionClosingReconciliationPayload> {
-  const [closingPage, registeredRules] = await Promise.all([
-    loadClosingPageForExclusionReconciliation(year, month),
-    loadActiveCustomerExclusionRuleSnapshots(),
-  ]);
+  const registeredRules = await loadActiveCustomerExclusionRuleSnapshots();
+  const closingPage = await loadClosingPageForExclusionReconciliation(year, month, registeredRules);
 
   return buildCustomerExclusionClosingReconciliation(closingPage, registeredRules);
 }
