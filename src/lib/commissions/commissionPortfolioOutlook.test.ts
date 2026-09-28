@@ -4,10 +4,14 @@ import { describe, it } from "node:test";
 import { allocateProportional } from "./commission-money.shared.js";
 import {
   buildCommissionPortfolioOutlook,
+  clampOutlookFromMonth,
+  COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH,
+  COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE,
   outlookInvariantsHold,
   type OutlookQuery,
   type OutlookScheduleInput,
 } from "./commissionPortfolioOutlook.js";
+import { parseCommissionPortfolioOutlookQuery } from "./commissionPortfolioOutlook.server.js";
 import { resolveCommissionAccessScope } from "./commissionAccessScope.js";
 import type { AppAuthContext } from "@/src/lib/auth/appAuth.shared.js";
 
@@ -505,5 +509,162 @@ describe("previsão de comissões", () => {
     assert.equal(payload.cards.forecast, 0);
     assert.equal(payload.cards.expected, payload.cards.realized + payload.cards.forecast);
     assert.equal(september?.kind, "current");
+  });
+});
+
+describe("previsão só de setembro/2026 em diante", () => {
+  const globalScope = resolveCommissionAccessScope(auth({ role: "SUPER_ADMIN" }));
+
+  function receipt(externalId: number, receiptDate: string, receivedAmount: number) {
+    return { externalId, receiptDate, receivedAmount, coverageSource: null, coveredCommissionAmount: null };
+  }
+
+  const facts = [
+    // Recebido em maio/2026: histórico do Nomus.
+    schedule({
+      scheduleId: "maio",
+      receivableId: 1,
+      dueDate: "2026-05-10",
+      balanceReceivable: 0,
+      amountReceivedOnTitle: 10_000,
+      receipts: [receipt(1, "2026-05-12", 10_000)],
+    }),
+    // Vencido em agosto e não recebido: o previsto continua em agosto.
+    schedule({ scheduleId: "agosto", receivableId: 2, dueDate: "2026-08-15" }),
+    schedule({
+      scheduleId: "setembro",
+      receivableId: 3,
+      dueDate: "2026-09-05",
+      balanceReceivable: 0,
+      amountReceivedOnTitle: 10_000,
+      receipts: [receipt(3, "2026-09-10", 10_000)],
+    }),
+    schedule({ scheduleId: "novembro", receivableId: 4, dueDate: "2026-11-15" }),
+  ];
+
+  it("28. o início do período nunca fica antes de setembro/2026", () => {
+    assert.equal(COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH, "2026-09");
+    for (const value of [null, undefined, "", "maio", "2026-5", "2025-12", "2026-05", "2026-08", "2026-09"]) {
+      assert.equal(clampOutlookFromMonth(value), "2026-09", String(value));
+    }
+    assert.equal(clampOutlookFromMonth("2026-10"), "2026-10");
+    assert.equal(clampOutlookFromMonth("2027-01"), "2027-01");
+    assert.match(COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE, /setembro\/2026 em diante/);
+    assert.match(COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE, /relatórios de comissão do Nomus/);
+  });
+
+  it("29. o servidor aplica o piso com período vazio ou anterior; período posterior fica", () => {
+    assert.equal(parseCommissionPortfolioOutlookQuery({}, globalScope).fromMonth, "2026-09");
+    assert.equal(parseCommissionPortfolioOutlookQuery({}, globalScope).toMonth, null);
+    const may = parseCommissionPortfolioOutlookQuery({ from: "2026-05", to: "2026-05" }, globalScope);
+    assert.equal(may.fromMonth, "2026-09");
+    assert.equal(may.toMonth, "2026-05");
+    assert.equal(parseCommissionPortfolioOutlookQuery({ from: "2026-11" }, globalScope).fromMonth, "2026-11");
+  });
+
+  it("30. meses anteriores somem de cards, meses e títulos; setembro em diante não muda", () => {
+    const payload = buildCommissionPortfolioOutlook(
+      facts,
+      parseCommissionPortfolioOutlookQuery({}, globalScope),
+      TODAY
+    );
+    assert.deepEqual(
+      payload.months.map((row) => row.month),
+      ["2026-09", "2026-11"]
+    );
+    assert.deepEqual(
+      payload.lines.map((line) => line.scheduleId).sort(),
+      ["novembro", "setembro"]
+    );
+    assert.equal(payload.cards.realized, 300);
+    assert.equal(payload.cards.forecast, 300);
+    assert.equal(payload.cards.expected, 600);
+    assert.equal(payload.cards.overdueForecast, 0);
+    assert.equal(payload.cards.awaitingClosing, 300);
+
+    // O motor segue genérico: sem piso na consulta, o histórico inteiro aparece.
+    const full = buildCommissionPortfolioOutlook(facts, query(), TODAY);
+    assert.equal(full.totalLines, 4);
+    assert.deepEqual(
+      payload.months.find((row) => row.month === "2026-09"),
+      full.months.find((row) => row.month === "2026-09")
+    );
+    assert.deepEqual(
+      payload.months.find((row) => row.month === "2026-11"),
+      full.months.find((row) => row.month === "2026-11")
+    );
+  });
+
+  it("31. período todo antes de setembro/2026 (ex.: maio) não devolve nada", () => {
+    const payload = buildCommissionPortfolioOutlook(
+      facts,
+      parseCommissionPortfolioOutlookQuery({ from: "2026-05", to: "2026-05" }, globalScope),
+      TODAY
+    );
+    assert.equal(payload.totalLines, 0);
+    assert.deepEqual(payload.months, []);
+    assert.deepEqual(Object.values(payload.cards), [0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("32. recebimento de agosto não entra no realizado fora de fechamento do período", () => {
+    const partial = [
+      schedule({
+        scheduleId: "parcial",
+        dueDate: "2026-10-20",
+        balanceReceivable: 6_000,
+        amountReceivedOnTitle: 4_000,
+        receipts: [receipt(7, "2026-08-20", 4_000)],
+      }),
+    ];
+    const payload = buildCommissionPortfolioOutlook(partial, query({ fromMonth: "2026-09" }), TODAY);
+    const line = payload.lines[0]!;
+    assert.equal(line.status, "PARCIALMENTE_RECEBIDA");
+    assert.equal(line.realizedCommission, 120);
+    assert.equal(line.forecastCommission, 180);
+    assert.equal(payload.cards.realized, 0);
+    assert.equal(payload.cards.forecast, 180);
+    assert.equal(payload.cards.awaitingClosing, 0);
+
+    const all = buildCommissionPortfolioOutlook(partial, query(), TODAY);
+    assert.equal(all.cards.awaitingClosing, 120);
+  });
+
+  it("33. título sem recebimento e sem previsto aparece pelo vencimento", () => {
+    const payload = buildCommissionPortfolioOutlook(
+      [
+        schedule({
+          scheduleId: "baixa-dezembro",
+          receivableId: 1,
+          dueDate: "2026-12-01",
+          balanceReceivable: 0,
+          amountReceivedOnTitle: 10_000,
+        }),
+        schedule({
+          scheduleId: "sem-vendedor-outubro",
+          receivableId: 2,
+          dueDate: "2026-10-01",
+          sellerResolutionStatus: "NO_SELLER",
+          canonicalSellerId: null,
+          rawSellerId: null,
+        }),
+        schedule({
+          scheduleId: "baixa-julho",
+          receivableId: 3,
+          dueDate: "2026-07-01",
+          balanceReceivable: 0,
+          amountReceivedOnTitle: 10_000,
+        }),
+      ],
+      parseCommissionPortfolioOutlookQuery({}, globalScope),
+      TODAY
+    );
+    assert.deepEqual(
+      payload.lines.map((line) => [line.scheduleId, line.status]),
+      [
+        ["baixa-dezembro", "INCONSISTENCIA_SEM_RECEBIMENTO"],
+        ["sem-vendedor-outubro", "SEM_VENDEDOR"],
+      ]
+    );
+    assert.equal(payload.cards.expected, 0);
   });
 });

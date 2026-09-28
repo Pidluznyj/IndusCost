@@ -10,11 +10,33 @@
  * settlementDate não entra.
  */
 import { roundMoney } from "./commission-money.shared.js";
+import {
+  COMMISSION_PORTFOLIO_OUTLOOK_START_YEAR_MONTH,
+  formatCommissionYearMonthKey,
+  formatCommissionYearMonthLongLabel,
+} from "./commissionCoverageCutover.js";
 
 export const COMMISSION_PORTFOLIO_OUTLOOK_NOTE =
   "Projeção de leitura. A comissão continua a do pedido, rateada pelo CR. " +
   "Recebimento realiza pela data do recebimento. O que falta segue o vencimento. " +
   "Esta consulta não fecha mês, não cobre recebimento e não paga o vendedor.";
+
+/** Primeiro mês (`YYYY-MM`) da previsão. Antes dele, vale o relatório do Nomus. */
+export const COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH = formatCommissionYearMonthKey(
+  COMMISSION_PORTFOLIO_OUTLOOK_START_YEAR_MONTH
+);
+
+export const COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE =
+  `A previsão mostra de ${formatCommissionYearMonthLongLabel(COMMISSION_PORTFOLIO_OUTLOOK_START_YEAR_MONTH)} ` +
+  "em diante. Para meses anteriores, consulte os relatórios de comissão do Nomus.";
+
+/** Início do período: vazio, inválido ou anterior ao primeiro mês vira o primeiro mês. */
+export function clampOutlookFromMonth(value: string | null | undefined): string {
+  const month = typeof value === "string" ? value.trim() : "";
+  return /^\d{4}-\d{2}$/.test(month) && month > COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH
+    ? month
+    : COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH;
+}
 
 export type OutlookCoverageSource = "NOMUS_LEGACY" | "INDUSCOST_CLOSING" | "MANUAL_ADJUSTMENT";
 
@@ -382,6 +404,9 @@ function lineVisible(line: OutlookLine, query: OutlookQuery): boolean {
     if (receipt.month) months.add(receipt.month);
   }
   if (line.forecastCommission > 0 && line.dueMonth) months.add(line.dueMonth);
+  // Sem recebimento nem previsto (sem vendedor, cliente excluído, cancelada, baixa
+  // sem recebimento): o vencimento situa a linha no período.
+  if (months.size === 0 && line.dueMonth) months.add(line.dueMonth);
   if (months.size === 0) return false;
   for (const month of months) {
     if (inMonthRange(month, query.fromMonth, query.toMonth)) return true;
@@ -436,6 +461,7 @@ export function buildCommissionPortfolioOutlook(
 
   for (const line of projected) {
     let lastPaidMonth: string | null = null;
+    let awaitingInPeriod = 0;
     for (const receipt of line.receipts) {
       if (!receipt.month || !inMonthRange(receipt.month, from, to)) continue;
       const bucket = touch(receipt.month);
@@ -445,6 +471,9 @@ export function buildCommissionPortfolioOutlook(
       cards.realized = roundMoney(cards.realized + receipt.realizedCommission);
       cards.released = roundMoney(cards.released + receipt.releasedCommission);
       cards.paid = roundMoney(cards.paid + receipt.paidCommission);
+      awaitingInPeriod = roundMoney(
+        awaitingInPeriod + Math.max(0, receipt.realizedCommission - receipt.releasedCommission)
+      );
       lastPaidMonth = receipt.month;
     }
     const paidOnReceipts = roundMoney(
@@ -464,13 +493,11 @@ export function buildCommissionPortfolioOutlook(
         cards.overdueForecast = roundMoney(cards.overdueForecast + line.forecastCommission);
       }
     }
-    const lineInPeriod =
-      (!from && !to) ||
-      line.receipts.some((receipt) => receipt.month && inMonthRange(receipt.month, from, to)) ||
-      (line.dueMonth != null && line.forecastCommission > 0 && inMonthRange(line.dueMonth, from, to));
-    if (lineInPeriod) {
-      cards.awaitingClosing = roundMoney(cards.awaitingClosing + line.awaitingClosing);
-    }
+    // Só o realizado de recebimentos do período: um recebimento fora do filtro
+    // (ex.: antes do primeiro mês da previsão) não entra, mesmo com a linha visível.
+    cards.awaitingClosing = roundMoney(
+      cards.awaitingClosing + Math.min(line.awaitingClosing, awaitingInPeriod)
+    );
   }
 
   cards.expected = roundMoney(cards.realized + cards.forecast);

@@ -18,7 +18,10 @@ import {
 } from "@/src/components/commissions/commissionsUi";
 import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
 import {
+  COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH,
+  COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE,
   COMMISSION_PORTFOLIO_OUTLOOK_NOTE,
+  clampOutlookFromMonth,
   type OutlookPayload,
 } from "@/src/lib/commissions/commissionPortfolioOutlook";
 
@@ -44,8 +47,9 @@ type Filters = {
   page: number;
 };
 
-const EMPTY_FILTERS: Filters = {
-  from: "",
+// A previsão começa no primeiro mês (setembro/2026); antes dele, relatório do Nomus.
+const DEFAULT_FILTERS: Filters = {
+  from: COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH,
   to: "",
   sellerId: "",
   orderCode: "",
@@ -66,8 +70,8 @@ function queryString(filters: Filters): string {
 }
 
 export function CommissionsPortfolioOutlookPage() {
-  const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
-  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
+  const [draft, setDraft] = useState<Filters>(DEFAULT_FILTERS);
+  const [applied, setApplied] = useState<Filters>(DEFAULT_FILTERS);
   const [data, setData] = useState<OutlookPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +120,9 @@ export function CommissionsPortfolioOutlookPage() {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          setApplied({ ...draft, page: 1 });
+          const next = { ...draft, from: clampOutlookFromMonth(draft.from), page: 1 };
+          setDraft(next);
+          setApplied(next);
         }}
       >
         <label className="text-xs text-slate-600">
@@ -124,6 +130,7 @@ export function CommissionsPortfolioOutlookPage() {
           <input
             type="month"
             className={COMMISSIONS_FILTER_FIELD_CLASS}
+            min={COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH}
             value={draft.from}
             onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))}
           />
@@ -133,6 +140,7 @@ export function CommissionsPortfolioOutlookPage() {
           <input
             type="month"
             className={COMMISSIONS_FILTER_FIELD_CLASS}
+            min={COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH}
             value={draft.to}
             onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))}
           />
@@ -191,6 +199,9 @@ export function CommissionsPortfolioOutlookPage() {
           Atualizar
         </button>
       </form>
+      <p className="text-xs text-slate-500" data-testid="commissions-outlook-history-note">
+        {COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE}
+      </p>
 
       {error ? <CommissionsErrorBanner message={error} /> : null}
       {loading && !data ? <CommissionsLoading label="Montando a previsão…" /> : null}
