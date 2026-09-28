@@ -482,9 +482,35 @@ export type CommissionLegacyOfficialReportImport = {
 export type CommissionLegacyOfficialReportStatus = {
   year: number;
   month: number;
-  registered: boolean;
-  imports: CommissionLegacyOfficialReportImport[];
+  /**
+   * Relatório oficial do Nomus registrado e detalhe da importação (arquivo, quem importou,
+   * associação das linhas): informação técnica, só para super admin. Ausentes para os demais
+   * usuários — a API remove antes de responder (`redactLegacyOfficialReportDetails`).
+   */
+  registered?: boolean;
+  imports?: CommissionLegacyOfficialReportImport[];
 };
+
+/** Quem vê o detalhe técnico do relatório oficial do Nomus registrado: só super admin. */
+export function canViewLegacyOfficialReportDetails(role: string | null | undefined): boolean {
+  return role === "SUPER_ADMIN";
+}
+
+/**
+ * Resposta para quem não é super admin: mantém só as competências do Nomus (ano/mês) e tira
+ * o relatório registrado da competência e todo detalhe de importação.
+ */
+export function redactLegacyOfficialReportDetails<T extends object>(payload: T): T {
+  const next = { ...payload } as T & {
+    legacyOfficialReport?: CommissionLegacyOfficialReportStatus | null;
+    legacyOfficialReports?: CommissionLegacyOfficialReportStatus[];
+  };
+  if ("legacyOfficialReport" in next) delete next.legacyOfficialReport;
+  if (Array.isArray(next.legacyOfficialReports)) {
+    next.legacyOfficialReports = next.legacyOfficialReports.map(({ year, month }) => ({ year, month }));
+  }
+  return next;
+}
 
 export const COMMISSION_LEGACY_OFFICIAL_REPORT_MISSING =
   "O relatório oficial deste período ainda não foi arquivado no IndusCost. Consulte o relatório oficial no Nomus.";

@@ -35,6 +35,7 @@ import {
 import { CommissionLegacyPeriodBanner } from "@/src/components/commissions/CommissionLegacyPeriodBanner";
 import { CommissionTechnicalMirrorConfirmDialog } from "@/src/components/commissions/CommissionTechnicalMirrorConfirmDialog";
 import {
+  canViewLegacyOfficialReportDetails,
   summarizeCarryoverRows,
   type ReceiptClosingCarryoverRow,
 } from "@/src/lib/commissions/commissionReceiptCoverage.shared";
@@ -165,6 +166,7 @@ function SellerTable({
 
 export function CommissionsReceiptClosingPage() {
   const auth = useAuth();
+  const canSeeLegacyReportDetails = canViewLegacyOfficialReportDetails(auth.authUser?.role);
   const permissions = usePermissions();
   const canClose =
     canCloseReceiptClosing(auth) ||
@@ -678,8 +680,9 @@ export function CommissionsReceiptClosingPage() {
 
       <CommissionLegacyPeriodBanner
         authority={reportingAuthority}
-        officialReport={data?.legacyOfficialReport}
-        showOfficialReport
+        // Relatório oficial do Nomus registrado (arquivo, importação, associação): só super admin.
+        officialReport={canSeeLegacyReportDetails ? data?.legacyOfficialReport : null}
+        showOfficialReport={canSeeLegacyReportDetails}
       />
 
       {isClosed && data?.closing ? (

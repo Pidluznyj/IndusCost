@@ -1,4 +1,8 @@
-import { parseCarryoverReceiptIds } from "./commissions/commissionReceiptCoverage.shared.js";
+import {
+  canViewLegacyOfficialReportDetails,
+  parseCarryoverReceiptIds,
+  redactLegacyOfficialReportDetails,
+} from "./commissions/commissionReceiptCoverage.shared.js";
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
@@ -251,6 +255,14 @@ async function resolveScopeOrRespond(
   return { user, scope: scopeResult.scope };
 }
 
+/**
+ * Detalhe técnico do relatório oficial do Nomus registrado (arquivo, quem importou,
+ * associação das linhas): só super admin recebe; os demais ficam só com as competências.
+ */
+function withLegacyReportDetailsFor<T extends object>(user: AppAuthContext, payload: T): T {
+  return canViewLegacyOfficialReportDetails(user.role) ? payload : redactLegacyOfficialReportDetails(payload);
+}
+
 export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
 
@@ -465,7 +477,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (!ctx) return;
       const query = parseCommissionReportsQuery(req.query as Record<string, unknown>);
       const payload = await getCommissionReportsPage(query, ctx.scope);
-      return res.json(payload);
+      return res.json(withLegacyReportDetailsFor(ctx.user, payload));
     } catch (error) {
       try {
         return handleQueryError(res, error);
@@ -591,7 +603,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         ctx.scope
       );
       res.setHeader("Cache-Control", "no-store");
-      return res.json(payload);
+      return res.json(withLegacyReportDetailsFor(ctx.user, payload));
     } catch (error) {
       console.error("GET /api/commissions/closings", error);
       return res.status(500).json({ error: "Erro ao listar fechamentos de comissão." });
@@ -707,7 +719,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           (req.query as Record<string, unknown>).carryoverReceiptIds
         ),
       });
-      return res.json(payload);
+      return res.json(withLegacyReportDetailsFor(ctx.user, payload));
     } catch (error) {
       try {
         return handleQueryError(res, error);
@@ -738,7 +750,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         carryoverReceiptIds: body.carryoverReceiptIds,
       });
       const payload = await getReceiptClosingPage(body.year, body.month, undefined, ctx.scope);
-      return res.status(201).json({ result, payload });
+      return res.status(201).json({ result, payload: withLegacyReportDetailsFor(ctx.user, payload) });
     } catch (error) {
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       try {
@@ -776,7 +788,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
         },
         ctx.scope
       );
-      return res.json(payload);
+      return res.json(withLegacyReportDetailsFor(ctx.user, payload));
     } catch (error) {
       try {
         return handleQueryError(res, error);
@@ -915,7 +927,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           });
         }
         res.setHeader("Cache-Control", "no-store");
-        return res.json(payload);
+        return res.json(withLegacyReportDetailsFor(ctx.user, payload));
       } catch (error) {
         console.error("GET /api/commissions/receipt-closing/:year/:month/report", error);
         return res.status(500).json({ error: "Erro ao carregar relatório fechado de comissões." });
@@ -989,7 +1001,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
           reason: body.reason,
         });
         const payload = await getReceiptClosingPage(body.year, body.month, undefined, ctx.scope);
-        return res.json({ result, payload });
+        return res.json({ result, payload: withLegacyReportDetailsFor(ctx.user, payload) });
       } catch (error) {
         if (error instanceof CommissionValidationError) return handleValidationError(res, error);
         try {

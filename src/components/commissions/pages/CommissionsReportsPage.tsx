@@ -8,6 +8,8 @@ import {
   X,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canViewLegacyOfficialReportDetails } from "@/src/lib/commissions/commissionReceiptCoverage.shared";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import {
@@ -268,6 +270,7 @@ function buildReportsQuery(params: {
 }
 
 export function CommissionsReportsPage() {
+  const auth = useAuth();
   const now = new Date();
   const [year, setYear] = useState(String(now.getFullYear()));
   const [months, setMonths] = useState<CommissionReportsMonthsFilter>([now.getMonth() + 1]);
@@ -433,6 +436,7 @@ export function CommissionsReportsPage() {
           setPage(1);
         }}
         officialDescription="Os fechamentos oficiais do IndusCost aparecem abaixo com status Fechado e na aba Fechamentos."
+        showOfficialReportDetails={canViewLegacyOfficialReportDetails(auth.authUser?.role)}
       />
 
       <div

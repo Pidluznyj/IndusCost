@@ -50,7 +50,10 @@ import {
   COMMISSION_LEGACY_REPORT_TEXT,
   formatCommissionYearMonthLabel,
 } from "@/src/lib/commissions/commissionCoverageCutover";
-import type { CommissionLegacyOfficialReportStatus } from "@/src/lib/commissions/commissionReceiptCoverage.shared";
+import {
+  canViewLegacyOfficialReportDetails,
+  type CommissionLegacyOfficialReportStatus,
+} from "@/src/lib/commissions/commissionReceiptCoverage.shared";
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 import type { ReceiptClosingReprocessPreview } from "@/src/lib/commissions/commissionReceiptClosing";
 import { cn } from "@/src/lib/utils";
@@ -539,6 +542,7 @@ export function CommissionsClosingsPage() {
             year={Number.parseInt(year, 10) || now.getFullYear()}
             legacyReports={legacyReports}
             officialDescription="Os fechamentos oficiais do IndusCost (CLOSED) aparecem na lista abaixo."
+            showOfficialReportDetails={canViewLegacyOfficialReportDetails(auth.authUser?.role)}
           />
 
           {loading ? <CommissionsLoading label="Carregando fechamentos…" /> : null}

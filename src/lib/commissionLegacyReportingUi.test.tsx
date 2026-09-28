@@ -4,6 +4,7 @@
  * toda página e nota de cobertura no detalhamento. Loader vazio para `.css`.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import { before, describe, it } from "node:test";
 import React from "react";
@@ -23,7 +24,9 @@ import {
   getCommissionReportingAuthorityForRange,
 } from "./commissions/commissionCoverageCutover.js";
 import {
+  canViewLegacyOfficialReportDetails,
   COMMISSION_LEGACY_OFFICIAL_REPORT_MISSING,
+  redactLegacyOfficialReportDetails,
   type CommissionLegacyOfficialReportStatus,
 } from "./commissions/commissionReceiptCoverage.shared.js";
 import type { CommissionsReceiptClosingLine } from "../components/commissions/commissionsTypes.js";
@@ -197,13 +200,14 @@ describe("UI — histórico Nomus não oficial", () => {
     assert.ok(missing.includes(COMMISSION_LEGACY_OFFICIAL_REPORT_MISSING));
   });
 
-  it("aba Relatórios/Fechamentos separa HISTÓRICO OFICIAL NOMUS de RELATÓRIOS OFICIAIS INDUSCOST", () => {
+  it("aba Relatórios/Fechamentos separa HISTÓRICO OFICIAL NOMUS de RELATÓRIOS OFICIAIS INDUSCOST (super admin)", () => {
     const html = renderToStaticMarkup(
       <panelModule.CommissionReportingSourcesPanel
         year={2026}
         legacyReports={[status(8, false), status(9, true)]}
         onConsultLegacyMonth={() => {}}
         officialDescription="Fechamentos oficiais abaixo."
+        showOfficialReportDetails
       />
     );
     const text = plain(html);
@@ -223,6 +227,7 @@ describe("UI — histórico Nomus não oficial", () => {
         year={2026}
         legacyReports={[status(8, false), status(9, true)]}
         officialDescription="Fechamentos oficiais abaixo."
+        showOfficialReportDetails
       />
     );
     assert.match(html, /^<details\b/);
@@ -246,6 +251,98 @@ describe("UI — histórico Nomus não oficial", () => {
       ),
       /<details[^>]*\bopen=""/
     );
+  });
+
+  it("usuário que não é super admin não vê o detalhe técnico do relatório oficial do Nomus", () => {
+    // Painel: competências e reconstrução técnica continuam; arquivo/importação/associação não.
+    const html = renderToStaticMarkup(
+      <panelModule.CommissionReportingSourcesPanel
+        year={2026}
+        legacyReports={[{ year: 2026, month: 8 }, { year: 2026, month: 9 }]}
+        onConsultLegacyMonth={() => {}}
+        officialDescription="Fechamentos oficiais abaixo."
+      />
+    );
+    const text = plain(html);
+    assert.match(text, /08\/2026 · Fonte oficial: Nomus/);
+    assert.match(text, /09\/2026 · Fonte oficial: Nomus/);
+    assert.equal((html.match(/Consultar reconstrução técnica/g) ?? []).length, 2);
+    assert.doesNotMatch(text, /registrado/i);
+    assert.doesNotMatch(text, /importado em|linhas associadas|\.xlsx/);
+    const summary = plain(/<summary\b[^>]*>([\s\S]*?)<\/summary>/.exec(html)?.[1] ?? "");
+    assert.match(summary, /\( ?2 competência\(s\) do Nomus em 2026 ?\)/);
+    // Mesmo com o dado presente, sem a permissão o painel não mostra o detalhe.
+    const withData = plain(
+      renderToStaticMarkup(
+        <panelModule.CommissionReportingSourcesPanel
+          year={2026}
+          legacyReports={[status(9, true)]}
+          officialDescription="Fechamentos oficiais abaixo."
+        />
+      )
+    );
+    assert.doesNotMatch(withData, /registrado|nomus-2026-09\.xlsx/i);
+
+    // Alerta do Fechamento do mês: aviso obrigatório fica; a parte técnica some.
+    const banner = plain(
+      renderToStaticMarkup(
+        <bannerModule.CommissionLegacyPeriodBanner
+          authority={getCommissionReportingAuthority(2026, 9)}
+          officialReport={null}
+          showOfficialReport={false}
+        />
+      )
+    );
+    assert.match(banner, /HISTÓRICO PRÉ-INDUSCOST — NÃO OFICIAL/);
+    assert.match(banner, /Fonte oficial deste período: Nomus/);
+    assert.doesNotMatch(banner, /Relatório oficial do Nomus registrado/);
+  });
+
+  it("detalhe técnico do relatório oficial do Nomus: só super admin recebe da API", () => {
+    assert.equal(canViewLegacyOfficialReportDetails("SUPER_ADMIN"), true);
+    for (const role of ["ADMIN", "COMMERCIAL_MANAGER", "SELLER", null, undefined]) {
+      assert.equal(canViewLegacyOfficialReportDetails(role), false, String(role));
+    }
+
+    const page = { year: 2026, month: 9, lines: [] as unknown[], legacyOfficialReport: status(9, true) };
+    const redactedPage = redactLegacyOfficialReportDetails(page);
+    assert.equal("legacyOfficialReport" in redactedPage, false);
+    assert.deepEqual(redactedPage.lines, []);
+    assert.equal(page.legacyOfficialReport.registered, true, "não altera o payload original");
+
+    const reports = {
+      summary: { recordCount: 3 },
+      legacyOfficialReports: [status(8, false), status(9, true)],
+    };
+    const redactedReports = redactLegacyOfficialReportDetails(reports);
+    assert.deepEqual(redactedReports.legacyOfficialReports, [
+      { year: 2026, month: 8 },
+      { year: 2026, month: 9 },
+    ]);
+    assert.deepEqual(redactedReports.summary, { recordCount: 3 });
+
+    // Rotas: toda resposta com página do fechamento, Relatórios ou Fechamentos passa pela regra.
+    const routes = readFileSync(new URL("./commissionsRoutes.ts", import.meta.url), "utf8");
+    assert.equal((routes.match(/withLegacyReportDetailsFor\(ctx\.user, payload\)/g) ?? []).length, 7);
+    assert.match(routes, /canViewLegacyOfficialReportDetails\(user\.role\)/);
+    // Telas: o detalhe só aparece para quem a regra permite.
+    const closingPage = readFileSync(
+      new URL("../components/commissions/pages/CommissionsReceiptClosingPage.tsx", import.meta.url),
+      "utf8"
+    );
+    assert.match(closingPage, /officialReport=\{canSeeLegacyReportDetails \? data\?\.legacyOfficialReport : null\}/);
+    assert.match(closingPage, /showOfficialReport=\{canSeeLegacyReportDetails\}/);
+    for (const pageFile of ["CommissionsReportsPage.tsx", "CommissionsClosingsPage.tsx"]) {
+      const source = readFileSync(
+        new URL(`../components/commissions/pages/${pageFile}`, import.meta.url),
+        "utf8"
+      );
+      assert.match(
+        source,
+        /showOfficialReportDetails=\{canViewLegacyOfficialReportDetails\(auth\.authUser\?\.role\)\}/,
+        pageFile
+      );
+    }
   });
 
   it("'TENHO CIÊNCIA' antes de exportar o espelho técnico (texto completo e ação explícita)", () => {

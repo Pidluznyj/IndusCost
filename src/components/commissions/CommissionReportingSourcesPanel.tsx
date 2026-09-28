@@ -20,14 +20,20 @@ function formatDate(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("pt-BR");
 }
 
-/** Linha do painel fechado: competências do Nomus no ano e quantas têm relatório registrado. */
+/**
+ * Linha do painel fechado: competências do Nomus no ano e, só para super admin, quantas têm
+ * relatório oficial registrado (informação técnica).
+ */
 export function summarizeLegacyOfficialReports(
   year: number,
-  legacyReports: readonly CommissionLegacyOfficialReportStatus[]
+  legacyReports: readonly CommissionLegacyOfficialReportStatus[],
+  includeRegistered = false
 ): string {
   if (legacyReports.length === 0) return `nenhuma competência do Nomus em ${year}`;
+  const months = `${legacyReports.length} competência(s) do Nomus em ${year}`;
+  if (!includeRegistered) return months;
   const registered = legacyReports.filter((item) => item.registered).length;
-  return `${legacyReports.length} competência(s) do Nomus em ${year} · ${registered} com relatório oficial registrado`;
+  return `${months} · ${registered} com relatório oficial registrado`;
 }
 
 /**
@@ -45,6 +51,7 @@ export function CommissionReportingSourcesPanel({
   onConsultLegacyMonth,
   officialDescription,
   defaultOpen = false,
+  showOfficialReportDetails = false,
 }: {
   year: number;
   /** Competências pré-cutover do ano (vazio quando o ano é todo oficial IndusCost). */
@@ -52,6 +59,8 @@ export function CommissionReportingSourcesPanel({
   onConsultLegacyMonth?: (month: number) => void;
   officialDescription: string;
   defaultOpen?: boolean;
+  /** Relatório oficial do Nomus registrado e detalhe da importação — só super admin. */
+  showOfficialReportDetails?: boolean;
 }) {
   const lastNomus = previousCommissionYearMonth(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH);
   const cutoverYear = COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH.year;
@@ -71,7 +80,8 @@ export function CommissionReportingSourcesPanel({
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
             Histórico Nomus até {formatCommissionYearMonthLongLabel(lastNomus)} (
-            {summarizeLegacyOfficialReports(year, legacyReports)}) · Relatórios oficiais IndusCost a partir de{" "}
+            {summarizeLegacyOfficialReports(year, legacyReports, showOfficialReportDetails)}) · Relatórios oficiais
+            IndusCost a partir de{" "}
             {formatCommissionYearMonthLongLabel(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH)}
           </span>
         </span>
@@ -109,8 +119,8 @@ export function CommissionReportingSourcesPanel({
                     <p className="font-semibold text-amber-950">
                       {formatCommissionYearMonthLabel(item)} · Fonte oficial: Nomus
                     </p>
-                    {item.imports.length > 0 ? (
-                      item.imports.map((imported) => (
+                    {!showOfficialReportDetails ? null : (item.imports ?? []).length > 0 ? (
+                      (item.imports ?? []).map((imported) => (
                         <p key={imported.id} className="text-amber-900">
                           Relatório oficial Nomus registrado: SIM — {imported.filename} · importado em{" "}
                           {formatDate(imported.importedAt)} · {formatLegacyOfficialReportReconciliation(imported)}

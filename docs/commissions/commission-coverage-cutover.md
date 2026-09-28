@@ -348,14 +348,19 @@ Tela (pré-cutover), sem remover o acesso histórico:
 - Banner obrigatório "HISTÓRICO PRÉ-INDUSCOST — NÃO OFICIAL" + texto da reconstrução técnica + "Fonte oficial deste
   período: Nomus" + "Consulta histórica — fonte oficial Nomus · Valor reconstruído pelo IndusCost" (texto explícito,
   não só cor) no Fechamento do mês, em Relatórios (quando a seleção inclui meses do Nomus) e nos detalhes de
-  Fechamentos. Inclui a situação do relatório oficial do Nomus: registrado (arquivo, data, conciliação) ou "O
-  relatório oficial deste período ainda não foi arquivado no IndusCost".
+  Fechamentos. Para o **super admin**, inclui a situação do relatório oficial do Nomus: registrado (arquivo, data,
+  quem importou, conciliação) ou "O relatório oficial deste período ainda não foi arquivado no IndusCost".
+- Detalhe técnico do relatório oficial do Nomus registrado (2026-09-28): só super admin
+  (`canViewLegacyOfficialReportDetails`). Para os demais usuários a API remove `legacyOfficialReport` e deixa em
+  `legacyOfficialReports` só ano/mês (`redactLegacyOfficialReportDetails`, aplicado nas rotas de Fechamento do mês,
+  prévia, relatório para impressão, aplicar/reprocessar, Relatórios e Fechamentos); o alerta e o painel também só
+  mostram o bloco quando a regra permite. O aviso obrigatório do período continua para todos.
 - Nomenclatura: "Espelho técnico de comissões" / "Reconstrução técnica — período Nomus"; cards "Comissão
   reconstruída" (nunca "Comissão final a pagar"); "a pagar" some das linhas do histórico nos Relatórios.
 - Botões "Exportar espelho técnico" / "Imprimir espelho técnico" com tooltip; cada clique pede "TENHO CIÊNCIA"
   (não fica lembrado). "Fechar comissão" e "Recalcular/Reprocessar" não aparecem.
 - Relatórios e Fechamentos: painel "HISTÓRICO OFICIAL NOMUS — Até setembro/2026" (competências do ano, relatório
-  do Nomus registrado ou não, "Consultar reconstrução técnica") ao lado de "RELATÓRIOS OFICIAIS INDUSCOST — A partir
+  do Nomus registrado ou não — só super admin —, "Consultar reconstrução técnica") ao lado de "RELATÓRIOS OFICIAIS INDUSCOST — A partir
   de outubro/2026"; a lista de fechamentos mostra "Fonte oficial: Nomus/IndusCost" por linha e um registro
   pré-cutover aparece como "Registro técnico — não oficial (período Nomus)".
 
