@@ -1,8 +1,8 @@
 /** Rotas canônicas do módulo Comissões (React Router). */
 
 /**
- * Modo simplificado: Fechamento do mês + Exceções por cliente + Relatórios.
- * Previsão e Auditoria Visual permanecem no código para reescrita futura, mas estão ocultas na UI.
+ * Modo simplificado: Fechamento do mês + Exceções por cliente + Relatórios + Previsão.
+ * A previsão antiga (receivableForecast) e a Auditoria Visual seguem ocultas.
  */
 export const COMMISSIONS_SIMPLIFIED_UI = true as const;
 
@@ -14,6 +14,7 @@ export const COMMISSIONS_UI_SECTION_IDS = [
   "closings",
   "customerExclusions",
   "orderProvision",
+  "portfolioOutlook",
   "reports",
   "reprocess",
 ] as const;
@@ -81,6 +82,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   visualAudit: "/commissions/auditoria",
   customerExclusions: "/commissions/exclusoes-cliente",
   orderProvision: "/commissions/provisao-pedido",
+  portfolioOutlook: "/commissions/fluxo",
   reports: "/commissions/relatorios",
   reprocess: "/commissions/reprocessar",
 };
@@ -122,6 +124,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.orderProvision,
     description:
       "Comissão acumulada por pedidos (snapshot oficial), sem depender do período de pagamento",
+  },
+  {
+    id: "portfolioOutlook",
+    label: "Previsão",
+    path: COMMISSIONS_SECTION_PATHS.portfolioOutlook,
+    description:
+      "Realizado pelo recebimento, previsto pelo vencimento e saldo ainda não pago ao vendedor. Não fecha nem paga.",
   },
   {
     id: "reports",
@@ -170,6 +179,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (firstSegment === "fechamentos") return true;
   if (firstSegment === "exclusoes-cliente") return true;
   if (firstSegment === "provisao-pedido") return true;
+  if (firstSegment === "fluxo") return true;
   if (firstSegment === "relatorios") return true;
   if (firstSegment === "reprocessar") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
@@ -189,6 +199,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (next === "fechamentos") return "closings";
   if (next === "exclusoes-cliente") return "customerExclusions";
   if (next === "provisao-pedido") return "orderProvision";
+  if (next === "fluxo") return "portfolioOutlook";
   if (next === "relatorios") return "reports";
   if (next === "reprocessar") return "reprocess";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";

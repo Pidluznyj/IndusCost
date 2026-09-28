@@ -1,8 +1,8 @@
 /**
- * Módulo Comissões — Fechamento do mês + Exceções por cliente + Relatórios.
+ * Módulo Comissões — Fechamento do mês + Exceções por cliente + Relatórios + Previsão.
  *
- * Previsão e Auditoria Visual permanecem em pages/ para reescrita futura,
- * mas estão ocultas na UI (rotas redirecionam para Fechamento).
+ * A previsão antiga e a Auditoria Visual permanecem ocultas.
+ * A previsão nova fica em /commissions/fluxo e só lê os dados já materializados.
  * Ver COMMISSIONS_HIDDEN_SECTION_IDS e COMMISSIONS_LEGACY_PATH_REDIRECTS.
  */
 import React from "react";
@@ -26,6 +26,7 @@ import { CommissionsClosingsPage } from "@/src/components/commissions/pages/Comm
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
 import { CommissionsOrderProvisionPage } from "@/src/components/commissions/pages/CommissionsOrderProvisionPage";
+import { CommissionsPortfolioOutlookPage } from "@/src/components/commissions/pages/CommissionsPortfolioOutlookPage";
 import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
 
 function CommissionsHomeRedirect({ path }: { path: string }) {
@@ -156,6 +157,10 @@ export function CommissionsModule() {
         <Route
           path="provisao-pedido"
           element={guard("orderProvision", <CommissionsOrderProvisionPage />)}
+        />
+        <Route
+          path="fluxo"
+          element={guard("portfolioOutlook", <CommissionsPortfolioOutlookPage />)}
         />
         <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
         <Route path="reprocessar" element={guard("reprocess", <CommissionsReprocessPage />)} />

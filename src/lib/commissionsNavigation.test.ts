@@ -31,19 +31,21 @@ function checker(perms: string[]): PermissionChecker {
 describe("commissionsNavigation", () => {
   it("modo simplificado expõe fechamento, fechamentos, exclusões, provisão, relatórios e reprocessamento", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 6);
+    assert.equal(COMMISSIONS_SECTIONS.length, 7);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
     assert.equal(COMMISSIONS_SECTIONS[1]?.id, "closings");
     assert.equal(COMMISSIONS_SECTIONS[2]?.id, "customerExclusions");
     assert.equal(COMMISSIONS_SECTIONS[3]?.id, "orderProvision");
-    assert.equal(COMMISSIONS_SECTIONS[4]?.id, "reports");
-    assert.equal(COMMISSIONS_SECTIONS[5]?.id, "reprocess");
+    assert.equal(COMMISSIONS_SECTIONS[4]?.id, "portfolioOutlook");
+    assert.equal(COMMISSIONS_SECTIONS[5]?.id, "reports");
+    assert.equal(COMMISSIONS_SECTIONS[6]?.id, "reprocess");
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "receivableForecast"), false);
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "visualAudit"), false);
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
     assert.equal(COMMISSIONS_SECTION_PATHS.closings, "/commissions/fechamentos");
     assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
     assert.equal(COMMISSIONS_SECTION_PATHS.orderProvision, "/commissions/provisao-pedido");
+    assert.equal(COMMISSIONS_SECTION_PATHS.portfolioOutlook, "/commissions/fluxo");
     assert.equal(COMMISSIONS_SECTION_PATHS.reports, "/commissions/relatorios");
     assert.equal(COMMISSIONS_SECTION_PATHS.reprocess, "/commissions/reprocessar");
     assert.equal(isCommissionsHiddenSection("receivableForecast"), true);
@@ -77,6 +79,7 @@ describe("commissionsNavigation", () => {
     assert.equal(isCommissionsCanonicalPath("/commissions/exclusoes-cliente"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/relatorios"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/provisao-pedido"), true);
+    assert.equal(isCommissionsCanonicalPath("/commissions/fluxo"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/fechamentos"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/reprocessar"), true);
     assert.equal(isCommissionsCanonicalPath("/commissions/payable"), true);
@@ -99,6 +102,7 @@ describe("commissions frontend wiring", () => {
     assert.match(moduleSrc, /CommissionsCustomerExclusionsPage/);
     assert.match(moduleSrc, /CommissionsClosingsPage/);
     assert.match(moduleSrc, /CommissionsOrderProvisionPage/);
+    assert.match(moduleSrc, /CommissionsPortfolioOutlookPage/);
     assert.match(moduleSrc, /CommissionsReportsPage/);
     assert.match(moduleSrc, /CommissionsReprocessPage/);
     assert.match(moduleSrc, /CommissionsDeprecatedTabRedirect/);
@@ -109,10 +113,12 @@ describe("commissions frontend wiring", () => {
     assert.match(moduleSrc, /commissions-tab-\$\{section\.id\}/);
     assert.match(moduleSrc, /path="fechamentos"/);
     assert.match(moduleSrc, /path="provisao-pedido"/);
+    assert.match(moduleSrc, /path="fluxo"/);
     assert.match(moduleSrc, /path="relatorios"/);
     assert.match(moduleSrc, /path="reprocessar"/);
     assert.match(moduleSrc, /guard\("closings"/);
     assert.match(moduleSrc, /guard\("orderProvision"/);
+    assert.match(moduleSrc, /guard\("portfolioOutlook"/);
     assert.match(moduleSrc, /guard\("reports"/);
     assert.match(moduleSrc, /guard\("reprocess"/);
     assert.match(moduleSrc, /guard\("monthlyClosing"/);

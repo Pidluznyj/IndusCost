@@ -20,6 +20,7 @@ const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
   closings: TabResourceKeys.COMISSOES_FECHAMENTOS,
   customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
   orderProvision: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
+  portfolioOutlook: TabResourceKeys.COMISSOES_RELATORIOS,
   reports: TabResourceKeys.COMISSOES_RELATORIOS,
   reprocess: TabResourceKeys.COMISSOES_REPROCESSAR,
 };
@@ -55,6 +56,9 @@ export function canViewCommissionsSection(
     return check.hasAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]);
   }
   if (sectionId === "orderProvision") {
+    return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
+  }
+  if (sectionId === "portfolioOutlook") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
   if (sectionId === "reports") {
@@ -97,6 +101,7 @@ export function listAllowedCommissionsLiveSectionIds(
   | "closings"
   | "customerExclusions"
   | "orderProvision"
+  | "portfolioOutlook"
   | "reports"
   | "reprocess"
 > {

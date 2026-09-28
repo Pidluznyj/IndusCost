@@ -74,6 +74,7 @@ export type CommissionsLiveTabId =
   | "closings"
   | "customerExclusions"
   | "orderProvision"
+  | "portfolioOutlook"
   | "reports"
   | "reprocess";
 
@@ -101,6 +102,11 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
     id: "orderProvision",
     resourceKey: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
     label: "Provisão por pedido",
+  },
+  {
+    id: "portfolioOutlook",
+    resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
+    label: "Previsão",
   },
   {
     id: "reports",
