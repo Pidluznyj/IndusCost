@@ -3,19 +3,24 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
 import {
-  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
+  CommissionsKpiSection,
   CommissionsLoading,
+  CommissionsSectionIntro,
   CommissionsTableScroll,
   formatCommissionsApiError,
 } from "@/src/components/commissions/commissionsUi";
 import { COMMISSIONS_FILTER_FIELD_CLASS } from "@/src/lib/commissionsPeriodFilter";
-import type { OutlookPayload } from "@/src/lib/commissions/commissionPortfolioOutlook";
+import {
+  COMMISSION_PORTFOLIO_OUTLOOK_NOTE,
+  type OutlookPayload,
+} from "@/src/lib/commissions/commissionPortfolioOutlook";
 
 const STATUS_LABEL: Record<string, string> = {
   PREVISTA: "Prevista",
@@ -101,13 +106,11 @@ export function CommissionsPortfolioOutlookPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">Previsão de comissões</h2>
-        <p className="mt-1 max-w-3xl text-sm text-slate-600">
-          Quanto já foi realizado pelo recebimento do cliente, quanto ainda está previsto pelo vencimento
-          e quanto disso já foi liberado ou pago ao vendedor. A comissão continua sendo a da venda.
-        </p>
-      </div>
+      <CommissionsSectionIntro
+        title="Previsão de comissões"
+        description={COMMISSION_PORTFOLIO_OUTLOOK_NOTE}
+        testId="commissions-outlook-intro"
+      />
 
       <form
         className="flex flex-wrap items-end gap-2"
@@ -194,39 +197,78 @@ export function CommissionsPortfolioOutlookPage() {
 
       {data ? (
         <>
-          <p className="text-xs text-slate-500">{data.note}</p>
-          <div className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <CommissionsKpiSection
+            title="Recebimento do cliente"
+            eyebrow="Realizado na data do recebimento. O previsto permanece no vencimento."
+            testId="commissions-outlook-receipt"
+          >
             <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Realizado no período"
               amount={cards?.realized ?? 0}
               amountFormat="currency"
               tone="success"
-              subtitle="O cliente pagou. Não é o pagamento ao vendedor."
+              subtitle="O cliente pagou"
+              helperText="O cliente pagou. Não é o pagamento ao vendedor."
             />
             <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Ainda previsto"
               amount={cards?.forecast ?? 0}
               amountFormat="currency"
               tone="info"
-              subtitle="Ainda depende de recebimento, na data de vencimento."
+              subtitle="No mês do vencimento"
+              helperText="Ainda depende de recebimento e permanece na data de vencimento, mesmo se estiver vencido."
             />
             <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Total esperado"
               amount={cards?.expected ?? 0}
               amountFormat="currency"
               tone="money"
-              subtitle="Realizado mais o que ainda está previsto."
+              subtitle="Realizado + previsto"
+              helperText="Realizado mais o que ainda está previsto. Não soma pedido, nota e título de novo."
             />
-            <SystemTotalizerCard label="Liberado" amount={cards?.released ?? 0} amountFormat="currency" subtitle="Contemplado em fechamento ou histórico" />
-            <SystemTotalizerCard label="Pago" amount={cards?.paid ?? 0} amountFormat="currency" tone="success" subtitle="Histórico Nomus ou lote pago" />
-            <SystemTotalizerCard label="Saldo a pagar" amount={cards?.balanceToPay ?? 0} amountFormat="currency" tone="warning" subtitle="Liberado e ainda não pago" />
-          </div>
+          </CommissionsKpiSection>
           {(cards?.overdueForecast ?? 0) > 0 ? (
             <p className="text-sm text-amber-800">
               Vencido e ainda não recebido: {formatFinanceCurrency(cards?.overdueForecast ?? 0)}. O mês previsto
               continua sendo o do vencimento.
             </p>
           ) : null}
+
+          <CommissionsKpiSection
+            title="Pagamento ao vendedor"
+            eyebrow="Liberado entrou em fechamento. Pago saiu para o vendedor."
+            testId="commissions-outlook-payout"
+          >
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Liberado"
+              amount={cards?.released ?? 0}
+              amountFormat="currency"
+              subtitle="Em fechamento ou histórico"
+              helperText="Parcela do realizado já contemplada em fechamento ou no histórico. Não significa pago ao vendedor."
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Pago"
+              amount={cards?.paid ?? 0}
+              amountFormat="currency"
+              tone="success"
+              subtitle="Histórico Nomus ou lote"
+              helperText="Valor já pago ao vendedor pelo histórico Nomus ou por lote com status pago."
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Saldo a pagar"
+              amount={cards?.balanceToPay ?? 0}
+              amountFormat="currency"
+              tone="warning"
+              subtitle="Liberado e ainda não pago"
+              helperText="Diferença entre o que já foi liberado e o que já foi pago ao vendedor."
+            />
+          </CommissionsKpiSection>
           {(cards?.awaitingClosing ?? 0) > 0 ? (
             <p className="text-sm text-slate-600">
               Realizado ainda fora de fechamento: {formatFinanceCurrency(cards?.awaitingClosing ?? 0)}.
