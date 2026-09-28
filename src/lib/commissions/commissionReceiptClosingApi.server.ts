@@ -31,6 +31,7 @@ import {
   ReceiptClosingValidationError,
 } from "./commissionReceiptClosing.js";
 import { enrichReceiptClosingPageInstallments } from "./commissionReceiptInstallment.server.js";
+import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
 import {
   enrichReceiptClosingPageCoverage,
   loadLegacyOfficialReportStatus,
@@ -104,6 +105,11 @@ async function buildReceiptClosingPagePayload(
   if (closing) {
     const ledgerLines = await loadReceiptClosingLedgerLines(prisma, closing.closingId);
     const ownScope = await resolveReceiptClosingOwnScope(scope);
+    // Histórico Nomus gravado não é reprocessável: Exceções por cliente só na exibição.
+    const legacyDisplayExclusionRules = getCommissionReportingAuthority(filters.year, filters.month)
+      .isLegacyPeriod
+      ? await loadActiveCustomerExclusionRuleSnapshots()
+      : null;
     // Coluna Parcela (n/total): total pelos CRs da NF, sem tocar o ledger histórico.
     const page = await enrichReceiptClosingPageInstallments(
       prisma,
@@ -113,6 +119,7 @@ async function buildReceiptClosingPagePayload(
         nomusBase: filters.nomusBase,
         nomusCommission: filters.nomusCommission,
         ownScope,
+        legacyDisplayExclusionRules,
       })
     );
     return decorateReceiptClosingPage(page);

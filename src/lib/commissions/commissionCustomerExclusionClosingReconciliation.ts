@@ -88,6 +88,8 @@ function aggregateCustomerExcludedLines(
 
   for (const line of lines) {
     if (line.status !== "CUSTOMER_EXCLUDED" || line.nomusReceivableId == null) continue;
+    // Linha de cliente excluído traz a regra em exclusionRuleId (ruleId fica nulo).
+    const ruleId = line.exclusionRuleId ?? line.ruleId;
     const key = customerKeyFromLine(line);
     const bucket =
       buckets.get(key) ??
@@ -96,7 +98,7 @@ function aggregateCustomerExcludedLines(
         customerName: line.customerName,
         customerExternalId: line.customerExternalId,
         customerId: line.customerId,
-        exclusionRuleId: line.ruleId,
+        exclusionRuleId: ruleId,
         exclusionReason: line.exclusionReason,
         exclusionLabel: CUSTOMER_EXCLUSION_EXCLUDED_FROM_COMMISSION_LABEL,
         receivableCount: 0,
@@ -112,10 +114,10 @@ function aggregateCustomerExcludedLines(
     }
     receivablesSeen.set(key, seen);
 
-    if (line.ruleId && !bucket.matchedRuleIds.includes(line.ruleId)) {
-      bucket.matchedRuleIds.push(line.ruleId);
+    if (ruleId && !bucket.matchedRuleIds.includes(ruleId)) {
+      bucket.matchedRuleIds.push(ruleId);
     }
-    if (!bucket.exclusionRuleId && line.ruleId) bucket.exclusionRuleId = line.ruleId;
+    if (!bucket.exclusionRuleId && ruleId) bucket.exclusionRuleId = ruleId;
     if (!bucket.exclusionReason && line.exclusionReason) {
       bucket.exclusionReason = line.exclusionReason;
     }

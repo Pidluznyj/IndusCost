@@ -16,6 +16,11 @@ import {
 } from "./commissionReceiptClosingApi.js";
 import { filterReceiptClosingLinesBySellerKey } from "./commissionReceiptClosingSellerFilter.js";
 import {
+  normalizeCustomerNameForExclusion,
+  type CustomerExclusionRuleSnapshot,
+} from "./commissionCustomerExclusion.js";
+import type { ReceiptClosingLedgerLineSnapshot, ReceiptClosingSnapshot } from "./commissionReceiptClosing.js";
+import {
   parseReceiptClosingApplyBody,
   parseReceiptClosingCancelBody,
   parseReceiptClosingReprocessBody,
@@ -154,6 +159,107 @@ describe("commissionReceiptClosingApi", () => {
     assert.equal(payload.exportMode, "CLOSED");
     assert.equal(payload.canApply, false);
     assert.equal(payload.cards.reportStatus, "CLOSED");
+  });
+
+  it("histórico Nomus gravado: regra ativa de Exceções tira a linha do relatório só na exibição", () => {
+    const esmaltecRule: CustomerExclusionRuleSnapshot = {
+      id: "rule-esmaltec",
+      customerId: "cust-esmaltec",
+      customerExternalId: null,
+      customerTaxId: null,
+      normalizedCustomerTaxId: null,
+      customerNameSnapshot: "Esmaltec S/A",
+      normalizedCustomerName: normalizeCustomerNameForExclusion("Esmaltec S/A"),
+      reason: "Regra interna",
+      effectiveFrom: new Date("2026-01-01"),
+      effectiveTo: new Date("2030-12-31"),
+      status: "ACTIVE",
+      notes: null,
+    };
+    const closingFor = (month: number): ReceiptClosingSnapshot => ({
+      closingId: `close-${month}`,
+      year: 2026,
+      month,
+      status: "CLOSED",
+      calculationHash: "hash",
+      totalReceivedAmount: 288465.1,
+      totalCommissionableBase: 1000,
+      totalExpectedCommission: 20,
+      totalReleasedCommission: 20,
+      totalExcludedAmount: 0,
+      totalExceptionAmount: 0,
+      lineCount: 2,
+      closedAt: "2026-10-01T00:00:00.000Z",
+      closedBy: "user-1",
+      notes: null,
+    });
+    const ledgerLine = (
+      partial: Partial<ReceiptClosingLedgerLineSnapshot> & Pick<ReceiptClosingLedgerLineSnapshot, "id">
+    ): ReceiptClosingLedgerLineSnapshot => ({
+      ledgerLineKey: partial.id,
+      nomusReceivableId: 100,
+      installmentNumber: 1,
+      settlementDate: "2026-09-15T00:00:00.000Z",
+      customerName: "Cliente",
+      orderCode: "PED-1",
+      nfeNumber: "123",
+      productCode: null,
+      canonicalSellerId: "seller-1",
+      canonicalSellerName: "GISLENE LIMA",
+      receivedAmount: 1000,
+      allocatedCommercialBase: 1000,
+      commissionRatePercent: 2,
+      expectedCommissionAmount: 20,
+      releasedCommissionAmount: 20,
+      status: "COMMISSIONABLE",
+      exceptionReason: null,
+      exclusionReason: null,
+      ruleNameSnapshot: "2%",
+      ruleSnapshotJson: null,
+      ...partial,
+    });
+    const ledgerLines = [
+      ledgerLine({ id: "ok" }),
+      // Gravado como "sem regra" antes do cadastro da exceção (NF 7134 / PD 02364).
+      ledgerLine({
+        id: "esmaltec",
+        nomusReceivableId: 7134,
+        customerName: "Esmaltec S/A",
+        orderCode: "PD 02364",
+        nfeNumber: "7134",
+        receivedAmount: 287465.1,
+        allocatedCommercialBase: 287465.1,
+        commissionRatePercent: 0,
+        expectedCommissionAmount: 0,
+        releasedCommissionAmount: 0,
+        status: "NO_RULE",
+        exceptionReason: "Nenhuma regra de comissão aplicável",
+      }),
+    ];
+
+    const legacy = buildReceiptClosingPageFromLedger({
+      closing: closingFor(9),
+      ledgerLines,
+      legacyDisplayExclusionRules: [esmaltecRule],
+    });
+    assert.deepEqual(
+      legacy.lines.map((line) => line.customerName),
+      ["Cliente"]
+    );
+    assert.equal(legacy.bySeller.length, 1);
+    assert.equal(legacy.bySeller[0]?.receivedAmount, 1000);
+    assert.equal(legacy.bySeller[0]?.exceptionCount, 0);
+    assert.equal(legacy.cards.totalReceivedAmount, 1000);
+    assert.equal(legacy.customerExcludedAuditLines?.[0]?.customerName, "Esmaltec S/A");
+    assert.equal(legacy.customerExcludedAuditLines?.[0]?.exclusionRuleId, "rule-esmaltec");
+
+    // Fechamento oficial (a partir de 10/2026) mostra o que foi gravado.
+    const official = buildReceiptClosingPageFromLedger({
+      closing: closingFor(10),
+      ledgerLines,
+      legacyDisplayExclusionRules: [esmaltecRule],
+    });
+    assert.equal(official.lines.some((line) => line.customerName === "Esmaltec S/A"), true);
   });
 
   it("card recebido = soma única dos títulos (sem duplicar multi-item)", () => {

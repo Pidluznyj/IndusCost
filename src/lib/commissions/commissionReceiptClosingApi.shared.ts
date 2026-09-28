@@ -215,6 +215,8 @@ export type ReceiptClosingApiLine = {
   commissionReceivableScheduleId: string | null;
   ruleId: string | null;
   ruleName: string | null;
+  /** Regra de Exceções por cliente (CommissionCustomerExclusionRule) — nunca vai em `ruleId`. */
+  exclusionRuleId?: string | null;
   exclusionReason: string | null;
   status: string;
   statusReason: string | null;
