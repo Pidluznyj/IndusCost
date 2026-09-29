@@ -183,8 +183,12 @@ export const CommercialPolicyReader: React.FC<{
         ) : null}
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className={`${indexOpen ? "block" : "hidden"} w-full border-r border-border bg-muted/40 md:block md:w-72 md:shrink-0`}>
-          <nav aria-label="Capítulos da política" className="max-h-[70vh] overflow-auto p-3 md:max-h-none">
+        {/* O índice rola sozinho (min-h-0 + overflow) para os 33 capítulos caberem em qualquer altura. */}
+        <aside className={`${indexOpen ? "block" : "hidden"} min-h-0 w-full border-r border-border bg-muted/40 md:block md:w-72 md:shrink-0 md:overflow-y-auto`}>
+          <nav aria-label="Capítulos da política" className="max-h-[70vh] overflow-auto p-3 md:max-h-none md:overflow-visible">
+            <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Índice · capítulo {index + 1} de {chapters.length}
+            </p>
             <ul className="space-y-1">
               {chapters.map((item, itemIndex) => (
                 <li key={item.id}>

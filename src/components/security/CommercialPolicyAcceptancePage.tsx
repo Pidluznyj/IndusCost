@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { HttpError } from "@/src/lib/http";
 import {
+  COMMERCIAL_POLICY_ACCEPTANCE_STEPS,
   downloadAuthenticatedFile,
   loadPendingPolicy,
   reauthForPolicy,
@@ -15,15 +16,7 @@ import {
 import { isOfficialCommercialPolicyContent } from "@/src/lib/commercialPolicy/official/polCom001V1View.js";
 import { CommercialPolicyReader } from "@/src/components/security/CommercialPolicyReader";
 
-const STEPS = [
-  "Política",
-  "Principais regras",
-  "Teste",
-  "Declarações",
-  "Identidade",
-  "Registro visual",
-  "Assinar",
-];
+const STEPS = COMMERCIAL_POLICY_ACCEPTANCE_STEPS;
 
 export const CommercialPolicyAcceptancePage: React.FC = () => {
   const { authUser, loadMe, logout } = useAuth();

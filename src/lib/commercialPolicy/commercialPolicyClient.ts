@@ -1,5 +1,16 @@
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 
+/** Etapas do fluxo de aceite do vendedor, na ordem em que a página as apresenta. */
+export const COMMERCIAL_POLICY_ACCEPTANCE_STEPS = [
+  "Política",
+  "Principais regras",
+  "Teste",
+  "Declarações",
+  "Identidade",
+  "Registro visual",
+  "Assinar",
+] as const;
+
 export type PendingPolicy = {
   id: string;
   version: number;

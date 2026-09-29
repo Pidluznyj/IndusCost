@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { downloadAuthenticatedFile } from "@/src/lib/commercialPolicy/commercialPolicyClient";
+import { COMMERCIAL_POLICY_ACCEPTANCE_STEPS, downloadAuthenticatedFile } from "@/src/lib/commercialPolicy/commercialPolicyClient";
 import { CommercialPolicyReader } from "@/src/components/security/CommercialPolicyReader";
 
 type Finding = {
@@ -194,6 +194,8 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error" | "info"; text: string; findings?: Finding[] } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewView, setPreviewView] = useState<"admin" | "seller">("admin");
+  const [sellerFinishNotice, setSellerFinishNotice] = useState(false);
   const [divergencesOpen, setDivergencesOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -648,21 +650,100 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       </section>
 
       {previewOpen ? (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true" aria-label="Prévia da política oficial">
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
-            <p className="text-xs font-semibold text-muted-foreground">
-              Prévia integral da POL-COM-001 versão {doc?.versionLabel ?? "1.0"} — mesmo leitor apresentado ao vendedor · {PUBLICATION_LABEL[integrity?.publicationStatus ?? "NOT_PUBLISHED"]}
-            </p>
-            <button type="button" className="rounded-lg border border-border px-3 py-1 text-xs font-semibold" onClick={() => setPreviewOpen(false)}>
-              Fechar prévia
-            </button>
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/95" role="dialog" aria-modal="true" aria-label="Prévia da política oficial">
+          {/* Barra administrativa: deixa claro que é a área do SUPER_ADMIN e alterna entre a visão de gestão e a simulação do vendedor. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 bg-slate-900 px-4 py-2 text-slate-100">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Badge className="border-amber-400 bg-amber-400/15 text-amber-200">ÁREA ADMINISTRATIVA · SUPER_ADMIN</Badge>
+              <p className="truncate text-sm font-bold">Prévia da {doc?.code ?? "POL-COM-001"} · versão {doc?.versionLabel ?? "1.0"}</p>
+              <Badge className={statusClass(integrity?.publicationStatus ?? "NOT_PUBLISHED")}>{PUBLICATION_LABEL[integrity?.publicationStatus ?? "NOT_PUBLISHED"]}</Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-slate-600 p-0.5 text-xs font-semibold" role="tablist" aria-label="Modo da prévia">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewView === "admin"}
+                  className={`rounded-md px-3 py-1.5 ${previewView === "admin" ? "bg-slate-100 text-slate-900" : "text-slate-200 hover:bg-slate-800"}`}
+                  onClick={() => setPreviewView("admin")}
+                >
+                  Visão do administrador
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewView === "seller"}
+                  className={`rounded-md px-3 py-1.5 ${previewView === "seller" ? "bg-slate-100 text-slate-900" : "text-slate-200 hover:bg-slate-800"}`}
+                  onClick={() => setPreviewView("seller")}
+                >
+                  Como o vendedor verá
+                </button>
+              </div>
+              <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-800" onClick={generatePdf}>
+                Gerar PDF / cópia controlada
+              </button>
+              <button type="button" className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900" onClick={() => setPreviewOpen(false)}>
+                Fechar prévia
+              </button>
+            </div>
           </div>
-          <CommercialPolicyReader
-            mode="preview"
-            versionLabel={doc?.versionLabel}
-            effectiveFrom={published?.effectiveFrom ?? null}
-            onGeneratePdf={generatePdf}
-          />
+
+          {/* Moldura: o documento fica centralizado como um cartão; as laterais escuras reforçam que é uma prévia e não a tela do vendedor. */}
+          <div className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
+            <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700 bg-background shadow-2xl">
+              {previewView === "admin" ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-muted/40 px-4 py-2 text-xs">
+                    <span className="font-semibold">Prévia administrativa</span>
+                    <span className="text-muted-foreground">Não gera aceite, não registra leitura e não publica.</span>
+                    {blockers > 0 && integrity?.publicationStatus !== "PUBLISHED" ? (
+                      <span className="text-red-900">{blockers} achado(s) bloqueante(s) impedem a publicação — veja "Ver divergências".</span>
+                    ) : null}
+                    <span className="text-muted-foreground">SHA-256 {short(doc?.contentHash)}</span>
+                  </div>
+                  <CommercialPolicyReader
+                    mode="preview"
+                    versionLabel={doc?.versionLabel}
+                    effectiveFrom={published?.effectiveFrom ?? null}
+                    onGeneratePdf={generatePdf}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="border-b border-border bg-sky-50 px-4 py-2 text-xs text-sky-950">
+                    <p>
+                      <span className="font-semibold">Simulação da experiência do vendedor.</span> Após a publicação, todo perfil SELLER com senha pessoal ativa é levado a esta tela no próximo acesso e só entra no IndusCost depois de concluir as {COMMERCIAL_POLICY_ACCEPTANCE_STEPS.length} etapas. Nesta simulação nada é registrado.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+                    <p className="text-xs font-semibold text-muted-foreground">Etapa 1 de {COMMERCIAL_POLICY_ACCEPTANCE_STEPS.length} — Leitura</p>
+                    <span className="text-xs font-semibold text-muted-foreground/60" aria-disabled="true">Sair</span>
+                  </div>
+                  <ol className="flex flex-wrap gap-1 border-b border-border px-4 py-2 text-[11px]" aria-label="Etapas do aceite">
+                    {COMMERCIAL_POLICY_ACCEPTANCE_STEPS.map((step, stepIndex) => (
+                      <li key={step} className={`rounded-full border px-2 py-0.5 ${stepIndex === 0 ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground"}`}>
+                        {stepIndex + 1}. {step}
+                      </li>
+                    ))}
+                  </ol>
+                  {sellerFinishNotice ? (
+                    <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950">
+                      No vendedor, "Concluir leitura" avança para a Etapa 2 — Principais regras; depois vêm o teste de compreensão (100% de acerto), as declarações, a reautenticação por senha, o registro visual e a assinatura, que gera o comprovante com SHA-256. Nesta simulação nada foi registrado.
+                      {" "}
+                      <button type="button" className="font-semibold underline" onClick={() => setSellerFinishNotice(false)}>Entendi</button>
+                    </div>
+                  ) : null}
+                  <CommercialPolicyReader
+                    mode="acceptance"
+                    versionLabel={doc?.versionLabel}
+                    effectiveFrom={published?.effectiveFrom ?? null}
+                    onGeneratePdf={generatePdf}
+                    onFinish={() => setSellerFinishNotice(true)}
+                  />
+                </>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
