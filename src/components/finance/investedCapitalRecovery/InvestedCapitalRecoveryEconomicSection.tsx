@@ -7,8 +7,11 @@
 import React from "react";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
-import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { formatFinanceInteger } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   FINANCE_KPI_ICR_COMPARABLE_SALE,
@@ -32,70 +35,80 @@ export function InvestedCapitalRecoveryEconomicSection({
   const marginNegative = kpis.economicMarginTotal < 0;
   return (
     <ExecutiveSummarySection
-      eyebrow="1 · Economia dos pedidos"
-      title="Como o valor vendido se divide"
+      eyebrow="Bloco 1"
+      title="1. Economia dos pedidos"
+      actions={
+        <p className="max-w-xs text-right text-[11px] text-[#6B7280]">
+          O que foi vendido e quanto dessa venda representa capital × margem.
+        </p>
+      }
       testId="icr-economic-section"
     >
       <SummaryKpiGrid minColumnWidth={200} className={SYSTEM_TOTALIZER_GRID_CLASS}>
-        <FinanceExecutiveTotalizerCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           testId="icr-kpi-sold"
           label="Vendemos"
           amount={kpis.totalSaleValueAnalyzed}
           amountFormat="currency"
           tone="info"
-          sub={`Valor líquido de ${formatFinanceInteger(ordersCount)} pedido(s) · não é NF-e nem recebido`}
-          hint={FINANCE_KPI_ICR_SOLD}
+          subtitle={`Soma do valor líquido de ${formatFinanceInteger(ordersCount)} PV(s) da população filtrada`}
+          helperText={FINANCE_KPI_ICR_SOLD}
         />
-        <FinanceExecutiveTotalizerCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           testId="icr-kpi-invested-capital"
           label="Capital investido"
           amount={kpis.investedCapitalAnalyzedTotal}
           amountFormat="currency"
           tone="warning"
-          sub="Custo industrial + imposto, nos pedidos com custo resolvido"
-          hint={FINANCE_KPI_ICR_INVESTED_CAPITAL}
+          subtitle="Custo industrial + imposto dos pedidos com capital resolvido"
+          helperText={FINANCE_KPI_ICR_INVESTED_CAPITAL}
         />
-        <FinanceExecutiveTotalizerCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           testId="icr-kpi-economic-margin"
           label="Margem econômica dos PVs"
           amount={kpis.economicMarginTotal}
           amountFormat="currency"
-          tone={marginNegative ? "danger" : "success"}
-          sub={
+          tone={marginNegative ? "danger" : "margin"}
+          subtitle={
             marginNegative
-              ? "Venda comparável − capital investido · negativa"
-              : "Venda comparável − capital investido"
+              ? "Venda − capital investido, na mesma população comparável · negativa"
+              : "Venda − capital investido, na mesma população comparável"
           }
-          hint={FINANCE_KPI_ICR_ECONOMIC_MARGIN}
+          helperText={FINANCE_KPI_ICR_ECONOMIC_MARGIN}
         />
-        <FinanceExecutiveTotalizerCard
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           testId="icr-kpi-insufficient-data"
-          label="Dados insuficientes"
+          label="Pedidos com dados insuficientes"
           value={formatFinanceInteger(kpis.ordersInsufficientDataCount)}
           tone={kpis.ordersInsufficientDataCount > 0 ? "warning" : "neutral"}
-          sub="PVs sem custo resolvido · fora da margem econômica"
-          hint={FINANCE_KPI_ICR_INSUFFICIENT_DATA}
+          subtitle="Não entram no cálculo oficial da margem até o custo ser resolvido"
+          helperText={FINANCE_KPI_ICR_INSUFFICIENT_DATA}
         />
       </SummaryKpiGrid>
 
       <div className="grid gap-2 xl:grid-cols-2">
         <InvestedCapitalRecoveryFormulaStrip
-          testId="icr-formula-sale"
-          result={{ label: "Venda comparável", amount: kpis.comparableSaleValueTotal, hint: FINANCE_KPI_ICR_COMPARABLE_SALE }}
+          testId="icr-formula-capital"
+          title="Composição do capital investido"
+          result={{ label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal, detail: "dinheiro colocado" }}
           terms={[
-            { label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal },
-            { label: "Margem econômica", amount: kpis.economicMarginTotal },
+            { label: "Custo industrial", amount: kpis.totalIndustrialCostAnalyzed, detail: "custo oficial de produção", hint: FINANCE_KPI_ICR_INDUSTRIAL_COST },
+            { label: "Imposto", amount: kpis.totalTaxesAnalyzed, detail: "da margem comercial, já incluído no capital", hint: FINANCE_KPI_ICR_TAXES },
           ]}
-          note={`Só os ${formatFinanceInteger(kpis.ordersComparableCount)} pedido(s) com custo resolvido — a mesma população do capital investido.`}
         />
         <InvestedCapitalRecoveryFormulaStrip
-          testId="icr-formula-capital"
-          result={{ label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal }}
+          testId="icr-formula-sale"
+          title="Leitura econômica"
+          result={{ label: "Venda comparável", amount: kpis.comparableSaleValueTotal, detail: "pedidos com custo válido", hint: FINANCE_KPI_ICR_COMPARABLE_SALE }}
           terms={[
-            { label: "Custo industrial", amount: kpis.totalIndustrialCostAnalyzed, hint: FINANCE_KPI_ICR_INDUSTRIAL_COST },
-            { label: "Imposto", amount: kpis.totalTaxesAnalyzed, hint: FINANCE_KPI_ICR_TAXES },
+            { label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal, detail: "dinheiro colocado" },
+            { label: "Margem econômica", amount: kpis.economicMarginTotal, detail: "excedente da venda" },
           ]}
-          note="Imposto usado na margem comercial do pedido — já incluído no capital."
+          note={`Só os ${formatFinanceInteger(kpis.ordersComparableCount)} pedido(s) com custo resolvido — a mesma população do capital investido.`}
         />
       </div>
     </ExecutiveSummarySection>

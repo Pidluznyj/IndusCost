@@ -222,6 +222,7 @@ src/lib/finance/salesOrderInvestedCapitalRecoveryIntercompany.wiring.test.ts
 src/lib/finance/salesOrderInvestedCapitalRecoveryTaxColumn.wiring.test.ts
 src/lib/finance/salesOrderInvestedCapitalRecoveryTotalsAndDetailDialog.wiring.test.ts
 src/lib/finance/salesOrderInvestedCapitalRecoveryUi.test.tsx
+src/lib/finance/salesOrderInvestedCapitalRecoveryCsv.test.ts
 src/lib/finance/salesOrderStagedDeliverySchedule.test.ts
 src/lib/finance/stagedDeliveryScheduleRepair.test.ts
 src/lib/finance/effectiveScheduleMatrix.integration.test.ts

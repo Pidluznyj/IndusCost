@@ -132,11 +132,14 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     const payload = buildPayload();
     const html = renderToStaticMarkup(<economicModule.InvestedCapitalRecoveryEconomicSection kpis={payload.kpis} ordersCount={payload.rows.length} />);
     const t = text(html);
-    assert.match(t, /1 · Economia dos pedidos/);
+    assert.match(t, /1\. Economia dos pedidos/);
+    assert.match(t, /O que foi vendido e quanto dessa venda representa capital × margem/);
     assert.match(t, /Vendemos/);
     assert.match(t, /Capital investido/);
     assert.match(t, /Margem econômica dos PVs/);
-    assert.match(t, /Dados insuficientes/);
+    assert.match(t, /Pedidos com dados insuficientes/);
+    assert.match(t, /Composição do capital investido/);
+    assert.match(t, /Leitura econômica/);
     // Venda comparável = capital + margem: A 100, C 100, E 100 → 300 = 230 + 70.
     assert.equal(payload.kpis.comparableSaleValueTotal, 300);
     assert.equal(payload.kpis.investedCapitalAnalyzedTotal, 230);
@@ -148,7 +151,7 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     assert.match(html, /data-testid="icr-formula-capital"/);
     assert.match(t, /Custo industrial/);
     assert.match(t, /Imposto/);
-    assert.match(html, /metric-card--success/); // margem positiva
+    assert.match(html, /metric-card--margin/); // margem positiva no tom nativo de margem
     assert.doesNotMatch(t, /\bLucro\b/i);
   });
 
@@ -164,12 +167,12 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     const payload = buildPayload();
     const html = renderToStaticMarkup(<realizedModule.InvestedCapitalRecoveryRealizedSection kpis={payload.kpis} />);
     const t = text(html);
-    assert.match(t, /2 · O que já aconteceu/);
+    assert.match(t, /2\. O que já aconteceu/);
     assert.match(t, /Capital recuperado/);
     assert.match(t, /Ganho já realizado/);
     assert.match(t, /Total recebido/);
+    assert.match(t, /Recuperação do capital investido/);
     assert.match(html, /data-testid="icr-recovery-bar"/);
-    assert.match(html, /data-testid="icr-formula-received"/);
     // A 60 + C 10 + E 60 = 130 recuperado; ganho realizado só A (15); recebido comparável 145.
     assert.equal(payload.kpis.capitalRecoveredTotal, 130);
     assert.equal(payload.kpis.realizedGainTotal, 15);
@@ -190,12 +193,15 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
       </receivablesModule.InvestedCapitalRecoveryReceivablesSection>
     );
     const t = text(html);
-    assert.match(t, /3 · O que ainda tem para entrar/);
+    assert.match(t, /3\. O que ainda tem para entrar/);
     assert.match(t, /Falta receber/);
-    assert.match(t, /Capital a recuperar nos recebíveis/);
+    assert.match(t, /Capital a recuperar nos CRs/);
     assert.match(t, /Ganho a receber/);
     assert.match(t, /Capital na rua sem CR aberto/);
     assert.match(t, /Não classificado/);
+    assert.match(t, /Regra por PV/);
+    assert.match(html, /data-testid="icr-receivables-bar"/);
+    assert.match(html, /data-testid="icr-formula-money-on-street"/);
     assert.match(html, /data-testid="aging-slot"/);
     // A 0+25, C 20+0, E 40+0, D 50 não classificado → 135 = 60 + 25 + 50.
     assert.equal(payload.kpis.totalOutstandingReceivable, 135);
@@ -210,7 +216,9 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     const payload = buildPayload();
     const html = renderToStaticMarkup(<executiveModule.InvestedCapitalRecoveryExecutiveSection kpis={payload.kpis} />);
     const t = text(html);
-    assert.match(t, /4 · Leitura gerencial/);
+    assert.match(t, /4\. Leitura gerencial/);
+    assert.match(t, /Soma do valor dos PVs/);
+    assert.match(t, /Custo industrial \+ imposto/);
     assert.match(t, /Recuperaram capital/);
     assert.match(t, /Parcialmente recuperados/);
     assert.match(t, /Prazo médio realizado/);

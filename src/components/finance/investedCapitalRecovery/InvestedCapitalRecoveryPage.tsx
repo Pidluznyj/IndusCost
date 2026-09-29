@@ -40,6 +40,10 @@ import { InvestedCapitalRecoveryEconomicSection } from "@/src/components/finance
 import { InvestedCapitalRecoveryRealizedSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryRealizedSection";
 import { InvestedCapitalRecoveryReceivablesSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryReceivablesSection";
 import { InvestedCapitalRecoveryExecutiveSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryExecutiveSection";
+import {
+  buildInvestedCapitalRecoveryCsv,
+  INVESTED_CAPITAL_RECOVERY_CSV_FILENAME,
+} from "@/src/lib/finance/salesOrderInvestedCapitalRecoveryCsv";
 import type {
   InvestedCapitalRecoveryPayload,
   InvestedCapitalRecoveryRow,
@@ -430,6 +434,19 @@ export function InvestedCapitalRecoveryPage() {
   const maxAging = data ? Math.max(1, ...data.agingBuckets.map((b) => b.amount)) : 1;
   const yearOptions = useMemo(() => buildFinanceArYearOptions(), []);
 
+  /** CSV do detalhamento — só transcreve as linhas do DTO já carregadas (sem rede, sem cálculo). */
+  const handleExportCsv = useCallback(() => {
+    if (!data) return;
+    const csv = buildInvestedCapitalRecoveryCsv(sortedRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = INVESTED_CAPITAL_RECOVERY_CSV_FILENAME;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [data, sortedRows]);
+
   const thProps = { activeKey: sortKey, dir: sortDir, onSort: toggleSort } as const;
 
   return (
@@ -686,12 +703,19 @@ export function InvestedCapitalRecoveryPage() {
           <InvestedCapitalRecoveryExecutiveSection kpis={data.kpis} />
 
           <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden" data-testid="icr-orders-section">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">5 · Detalhamento por pedido</p>
-                <h2 className="text-sm font-bold text-foreground">Auditoria pedido a pedido — clique na linha para abrir o Pedido</h2>
+                <h2 className="text-sm font-bold text-foreground">Detalhamento por pedido</h2>
+                <p className="text-[11px] text-muted-foreground">Clique em um PV para abrir o Pedido · valores em R$ · colunas seguem os blocos acima</p>
               </div>
-              <p className="text-[11px] text-muted-foreground">Valores em R$ · colunas seguem os blocos acima</p>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-muted/40"
+                data-testid="icr-export-csv"
+              >
+                Exportar CSV
+              </button>
             </div>
             <div className="max-h-[600px] overflow-auto relative">
               <table className="w-full min-w-[1900px] text-xs relative border-collapse" data-testid="invested-capital-recovery-table">

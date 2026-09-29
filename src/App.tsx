@@ -1221,7 +1221,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Recuperação do Dinheiro Investido"
-              description="Quanto do capital aplicado nos pedidos já retornou e quanto ainda está na rua."
+              description="Quanto do capital aplicado já voltou, quanto ainda está na rua e quanto do recebível representa capital × ganho."
             >
               <InvestedCapitalRecoveryPage />
             </ModulePageShell>
