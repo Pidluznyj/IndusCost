@@ -44,6 +44,15 @@ O DOCX foi extraído integralmente (texto + 7 tabelas) e comparado linha a linha
 - **Leitor**: renderiza tabelas; modo `preview` (mesmo renderizador do vendedor, sem "Concluir leitura").
 - **Painel admin**: cartão (código, título, versão 1.0, classificação, empresa/CNPJ, status, hash, integridade, achados, vigência, publicação); botões Visualizar / Gerar PDF / Ver divergências / Publicar (desabilitado com BLOCKING, com confirmação); tabela de achados + matriz de reconciliação; política viva (vigente, rascunho, changeset, o que mudou, snapshots, vigência futura, aceites por versão, cobertura); histórico; editor manual recolhido em "Criar nova versão manual"; estados de carregamento/erro.
 
+### 4.1 Guia de publicação e CRUD do conteúdo (complemento, mesmo dia)
+
+- **"O que falta para publicar"** no cartão e na prévia administrativa: cada bloqueio com *o documento diz / o sistema faz / quem resolve (SISTEMA · DOCUMENTO · DECISÃO) / onde / como resolver* (`PrePublishFinding.resolution`). Nada é marcado à mão: a tela reconfere documento × sistema a cada abertura.
+- **Conteúdo da política**: tabela de versões (rótulo, situação, título, vigência, publicação, contagens) com *Visualizar*, *Editar* (rascunho), *Publicar*, *Descartar*, *Duplicar como rascunho* (publicada/aposentada) e *Cópia controlada*; botões *Novo rascunho a partir da POL-COM-001* e *Novo rascunho em branco*.
+- **Editor estruturado** (`CommercialPolicyVersionEditor`): capítulos (adicionar/remover/reordenar), blocos parágrafo/subtítulo/tópico/termo/tabela, regras-resumo, declarações, perguntas (alternativas, correta, explicação, capítulo a reler) e vigência; *Visualizar como o vendedor* renderiza o rascunho não salvo no mesmo leitor.
+- **Formato**: o `content` da versão passa a ser uma marcação leve (`policyDocumentFormat.ts`: `# capítulo`, `## subtítulo`, `- tópico`, `> termo :: definição`, `| célula | célula |`), com roundtrip exato dos 33 capítulos oficiais; ids = slug do título (as perguntas continuam endereçáveis); o PDF converte para texto plano. O hash oficial mudou (nenhuma versão publicada, nada afetado).
+- **Rotas**: `POST /versions/from-official`, `POST /versions/:id/duplicate`, `GET/PUT/DELETE /versions/:id` (PUT/DELETE só em DRAFT → 409 `VERSION_IMMUTABLE`). Qualquer rascunho que ainda se apresente como POL-COM-001 continua sujeito à auditoria documento × sistema ao publicar.
+- O leitor do vendedor (`CommercialPolicyAcceptancePage`) renderiza qualquer versão (oficial ou editada) no leitor estruturado.
+
 ## 5. Política viva — como funciona
 
 - **Baseline**: ao publicar a 1.0, o snapshot normativo atual (liberação, carteira, classificação, atribuição; matriz/supervisor explicitamente `parameterized: false`) é congelado na versão com hash; conteúdo, regras, declarações, perguntas, changeset e vigência ficam imutáveis (`VERSION_IMMUTABLE`; `attachNormative`/`saveDraft` recusam versão publicada).

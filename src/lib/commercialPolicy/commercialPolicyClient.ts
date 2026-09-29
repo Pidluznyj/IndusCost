@@ -14,6 +14,8 @@ export const COMMERCIAL_POLICY_ACCEPTANCE_STEPS = [
 export type PendingPolicy = {
   id: string;
   version: number;
+  /** Rótulo documental ("1.0", "1.1"). */
+  label?: string;
   title: string;
   content: string;
   summaryRules: string[];

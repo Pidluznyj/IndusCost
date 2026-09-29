@@ -33,9 +33,13 @@ import {
 } from "./commercialPolicyNormative.js";
 import { officialCommercialPolicyBody, officialCommercialPolicyHash } from "./official/polCom001V1.js";
 import {
+  createDraftFromOfficialPolicy,
   createPolicyDraft,
   createSignatureChallenge,
+  discardPolicyDraft,
+  duplicatePolicyVersion,
   findPendingRevisionDraft,
+  updatePolicyDraft,
   invalidateCommercialPolicyAcceptance,
   openNormativeRevision,
   publishOfficialCommercialPolicy,
@@ -698,7 +702,51 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     if (invalid) return res.status(422).json({ error: "INVALID_POLICY", code: "INVALID_POLICY", message: invalid });
     const created = await createPolicyDraft(store, body, now());
     if (created.ok === false) return res.status(created.status).json(created);
-    return res.status(201).json({ version: versionPublicView(created.version) });
+    return res.status(201).json({ version: versionAdminView(created.version) });
+  });
+
+  /** CRUD do conteúdo: rascunho a partir do documento oficial, duplicar, ler, editar e descartar. Publicada é imutável. */
+  app.post("/api/admin/commercial-policy/versions/from-official", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const created = await createDraftFromOfficialPolicy(store, now());
+    if (created.ok === false) return res.status(created.status).json(created);
+    return res.status(201).json({ version: versionAdminView(created.version) });
+  });
+
+  app.post("/api/admin/commercial-policy/versions/:id/duplicate", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const created = await duplicatePolicyVersion(store, String(req.params.id ?? ""), now());
+    if (created.ok === false) return res.status(created.status).json(created);
+    return res.status(201).json({ version: versionAdminView(created.version) });
+  });
+
+  app.get("/api/admin/commercial-policy/versions/:id", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const version = await store.getVersion(String(req.params.id ?? ""));
+    if (!version) return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND", message: "Versão não encontrada." });
+    return res.json({ version: versionAdminView(version) });
+  });
+
+  app.put("/api/admin/commercial-policy/versions/:id", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const body = readBody(req.body);
+    const effectiveRaw = typeof req.body?.effectiveFrom === "string" ? new Date(req.body.effectiveFrom) : null;
+    const effectiveFrom = effectiveRaw && !Number.isNaN(effectiveRaw.getTime()) ? effectiveRaw : null;
+    const saved = await updatePolicyDraft(store, String(req.params.id ?? ""), { ...body, effectiveFrom });
+    if (saved.ok === false) return res.status(saved.status).json(saved);
+    return res.json({ version: versionAdminView(saved.version) });
+  });
+
+  app.delete("/api/admin/commercial-policy/versions/:id", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const discarded = await discardPolicyDraft(store, String(req.params.id ?? ""));
+    if (discarded.ok === false) return res.status(discarded.status).json(discarded);
+    return res.json({ version: versionAdminView(discarded.version) });
   });
 
   app.post("/api/admin/commercial-policy/versions/:id/publish", deps.requireAppAuth, async (req, res) => {

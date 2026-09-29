@@ -190,6 +190,7 @@ src/lib/commercialPolicy/commercialPolicy.test.ts
 src/lib/commercialPolicy/official/polCom001V1.test.ts
 src/lib/commercialPolicy/commercialPolicyNormative.test.ts
 src/lib/commercialPolicy/commercialPolicyPublication.test.ts
+src/lib/commercialPolicy/policyDocumentFormat.test.ts
 src/lib/auth/authGatePipeline.test.ts
 src/lib/auth/passwordLifecycleWiring.test.ts
 src/lib/auth/authRateLimit.test.ts

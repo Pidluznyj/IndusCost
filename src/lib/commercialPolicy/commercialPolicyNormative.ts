@@ -310,6 +310,13 @@ export type FindingCategory =
   | "CAMPANHA"
   | "CLASSIFICACAO";
 
+/** Quem resolve e onde: o painel transforma isso em "o que fazer / onde fazer". */
+export type FindingResolution = {
+  owner: "SISTEMA" | "DOCUMENTO" | "DECISÃO";
+  where: string;
+  steps: string[];
+};
+
 export type PrePublishFinding = {
   code: string;
   category: FindingCategory;
@@ -320,6 +327,70 @@ export type PrePublishFinding = {
   document: string;
   system: string;
   action: string;
+  resolution: FindingResolution;
+};
+
+const RESOLUTIONS: Record<string, FindingResolution> = {
+  DECLARED_VERSION_MISMATCH: {
+    owner: "DOCUMENTO",
+    where: "Administração › Configurações › Políticas e aceites › Conteúdo da política (editor do rascunho, Anexo III)",
+    steps: ["Abrir o rascunho no editor de conteúdo.", "Corrigir toda menção a \"versão 2.0\" para \"versão 1.0\".", "Salvar o rascunho e conferir de novo em \"Ver divergências\"."],
+  },
+  DOCUMENT_INTERNAL_VERSION_MISMATCH: {
+    owner: "DOCUMENTO",
+    where: "Relatório de publicação (docs/) e cópia controlada",
+    steps: ["Nada a fazer no sistema: a correção do Anexo III para 1.0 já está na representação estruturada.", "Manter o registro desta correção no relatório de publicação."],
+  },
+  COMMISSION_MATRIX_NOT_PARAMETERIZED: {
+    owner: "SISTEMA",
+    where: "Motor de comissão (Comissões › Configurações / regras de comissão) — hoje só existe faixa por tabela de preço",
+    steps: [
+      "Decidir com a Diretoria: parametrizar a matriz por Margem Oficial no motor (faixas 1% / 1% / 2% / 3% / 4% e alçadas) — exige desenvolvimento no cálculo de comissão —",
+      "ou revisar formalmente o Anexo I no editor de conteúdo (nova versão) para descrever a regra que o sistema executa.",
+      "Só depois disso a divergência deixa de bloquear; não há como marcá-la como resolvida manualmente.",
+    ],
+  },
+  SUPERVISOR_SHARE_NOT_PARAMETERIZED: {
+    owner: "SISTEMA",
+    where: "Comissões › Configurações (CommissionSettings) — não há campo de supervisor nem vínculo vendedor → supervisor",
+    steps: [
+      "Decidir com a Diretoria: criar o parâmetro dos 33% adicionais do Supervisor e o vínculo de time no motor de comissão (desenvolvimento),",
+      "ou revisar a Seção 14 no editor de conteúdo (nova versão).",
+    ],
+  },
+  PORTFOLIO_INACTIVITY_MISMATCH: {
+    owner: "DOCUMENTO",
+    where: "Editor de conteúdo (Seção 11) ou rotina crm-owner-inactivity-review",
+    steps: [
+      "Opção A (documento): abrir um rascunho a partir da POL-COM-001 e reescrever a Seção 11 descrevendo o relógio por última NF / Documento de Saída válido; salvar e publicar como nova versão.",
+      "Opção B (sistema): reverter a rotina de carteira para contar a partir do PV aprovado (desenvolvimento).",
+      "Enquanto texto e rotina divergirem, a publicação fica bloqueada.",
+    ],
+  },
+  COMMISSION_RELEASE_UNVERIFIED: {
+    owner: "SISTEMA",
+    where: "Banco / Comissões › Configurações",
+    steps: ["Reabrir esta tela com o banco disponível: a regra de liberação é lida de CommissionSettings."],
+  },
+  COMMISSION_RELEASE_ALIGNED: { owner: "DECISÃO", where: "—", steps: ["Nada a fazer."] },
+  COMMISSION_RELEASE_NOT_PROPORTIONAL: {
+    owner: "SISTEMA",
+    where: "Comissões › Configurações › Liberação (pagamento proporcional)",
+    steps: ["Habilitar a liberação proporcional ao recebimento", "ou revisar a Seção 16 no editor de conteúdo (nova versão)."],
+  },
+  COMMISSION_RELEASE_MISMATCH: {
+    owner: "SISTEMA",
+    where: "Comissões › Configurações › Liberação (regra padrão)",
+    steps: ["Voltar a base de liberação para o recebimento do cliente (a mudança abre o rascunho de revisão automaticamente)", "ou revisar a Seção 16 no editor de conteúdo (nova versão)."],
+  },
+  ELECTRONIC_GATE_AUDIENCE: {
+    owner: "DECISÃO",
+    where: "Diretoria / Administração",
+    steps: ["Decidir se executivos, consultores e supervisão também assinarão pelo sistema (ampliação do gate) ou pelo Anexo III em papel.", "Não bloqueia a publicação."],
+  },
+  COVERAGE_MANUAL_PROCESS: { owner: "DECISÃO", where: "CRM (registro de cobertura, contatos e propostas)", steps: ["Nada a fazer para publicar."] },
+  CAMPAIGN_CONTROLLED_REFERENCE: { owner: "DECISÃO", where: "—", steps: ["Nada a fazer para publicar."] },
+  CUSTOMER_CLASSIFICATION_CONNECTED: { owner: "DECISÃO", where: "Comissões › Exceções por cliente", steps: ["Nada a fazer para publicar."] },
 };
 
 export type ReconciliationStatus =
@@ -347,8 +418,12 @@ function releaseIsProportionalToReceipt(snapshot: NormativeSnapshot): "ALIGNED" 
   return snapshot.commissionRelease.mode === "PROPORTIONAL" ? "ALIGNED" : "FULL_ONLY";
 }
 
-function finding(input: Omit<PrePublishFinding, "blocking">): PrePublishFinding {
-  return { ...input, blocking: input.severity === "BLOCKING" };
+function finding(input: Omit<PrePublishFinding, "blocking" | "resolution">): PrePublishFinding {
+  return {
+    ...input,
+    blocking: input.severity === "BLOCKING",
+    resolution: RESOLUTIONS[input.code] ?? { owner: "DECISÃO", where: "—", steps: [input.action] },
+  };
 }
 
 /**

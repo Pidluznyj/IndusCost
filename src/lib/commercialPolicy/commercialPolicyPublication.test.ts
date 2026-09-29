@@ -52,6 +52,7 @@ import {
   POL_COM_001_TITLE,
   POL_COM_001_VERSION_LABEL,
   officialCommercialPolicyBody,
+  officialCommercialPolicyContent,
   officialCommercialPolicyHash,
 } from "./official/polCom001V1.js";
 import { POL_COM_001_CHAPTERS, officialPolicyPlainText } from "./official/polCom001V1Document.js";
@@ -528,7 +529,7 @@ describe("política viva — v1.0 como baseline (complementares 1–15)", () => 
     ]);
     assert.equal(draft.previousVersionId, version.id);
     assert.equal(versionLabelOf(draft), "1.1");
-    assert.equal(versionLabelOf({ content: officialPolicyPlainText(), versionNumber: 7, changeSet: undefined }), "1.0");
+    assert.equal(versionLabelOf({ content: officialCommercialPolicyContent(), versionNumber: 7, changeSet: undefined }), "1.0");
     const proposed = draft.normativeSnapshot as typeof SNAPSHOT;
     assert.equal(proposed.portfolio.inactivityDays, 120);
     assert.equal(SNAPSHOT.portfolio.inactivityDays, 90);
@@ -588,7 +589,7 @@ describe("política viva — v1.0 como baseline (complementares 1–15)", () => 
     const opened = await openNormativeRevision(store, change("portfolio.inactivityDays", 90, 120, "90 dias", "120 dias"));
     assert.equal(opened.ok, true);
     if (!opened.ok || !opened.version) return;
-    assert.equal(opened.version.content, officialPolicyPlainText());
+    assert.equal(opened.version.content, officialCommercialPolicyContent());
     assert.deepEqual(opened.version.changeSet?.map((item) => item.policySection), [POLICY_SECTIONS.inactivity]);
     assert.equal(opened.version.title, "Política Comercial 1.1");
   });

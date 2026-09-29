@@ -4,8 +4,7 @@
  * apontam para esse texto e não criam regra comercial nova.
  */
 import { hashPolicyContent, type PolicyQuestion, type PolicyVersionBody } from "../commercialPolicyRules.js";
-import { POL_COM_001_CHAPTERS, officialPolicyPlainText } from "./polCom001V1Document.js";
-import { POL_COM_001_TITLE } from "./polCom001V1View.js";
+import { POL_COM_001_TITLE, officialCommercialPolicyContent } from "./polCom001V1View.js";
 
 export {
   POL_COM_001_APPROVER,
@@ -17,6 +16,7 @@ export {
   POL_COM_001_TITLE,
   POL_COM_001_VERSION_LABEL,
   isOfficialCommercialPolicyContent,
+  officialCommercialPolicyContent,
 } from "./polCom001V1View.js";
 
 export const POL_COM_001_SUMMARY_RULES = [
@@ -205,7 +205,7 @@ export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
 export function officialCommercialPolicyBody(): PolicyVersionBody {
   return {
     title: POL_COM_001_TITLE,
-    content: officialPolicyPlainText(POL_COM_001_CHAPTERS),
+    content: officialCommercialPolicyContent(),
     summaryRules: [...POL_COM_001_SUMMARY_RULES],
     declarations: [...POL_COM_001_DECLARATIONS],
     questions: POL_COM_001_QUESTIONS,
