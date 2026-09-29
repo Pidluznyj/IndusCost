@@ -8,7 +8,7 @@ export const INVESTED_CAPITAL_RECOVERY_PRINT_DOCUMENT_TITLE = "FINANCEIRO";
 export const INVESTED_CAPITAL_RECOVERY_PRINT_DOCUMENT_HIGHLIGHT =
   "RECUPERAÇÃO DO DINHEIRO INVESTIDO";
 export const INVESTED_CAPITAL_RECOVERY_PRINT_SUBTITLE =
-  "Quanto do capital aplicado nos pedidos já retornou e quanto ainda está na rua";
+  "Quanto do capital aplicado já voltou, quanto ainda está na rua e quanto do recebível representa capital × ganho";
 export const INVESTED_CAPITAL_RECOVERY_PRINT_DATA_SOURCE =
   "Pedido de Venda (custo industrial oficial + Contas a Receber reais)";
 export const INVESTED_CAPITAL_RECOVERY_PRINT_DISCLAIMER =

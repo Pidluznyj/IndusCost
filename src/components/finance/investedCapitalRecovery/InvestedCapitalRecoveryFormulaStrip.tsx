@@ -12,6 +12,8 @@ import { cn } from "@/src/lib/utils";
 export type InvestedCapitalRecoveryFormulaTerm = {
   label: string;
   amount: number | null;
+  /** Legenda curta abaixo do valor (ex.: "dinheiro colocado"). */
+  detail?: string;
   hint?: string;
 };
 
@@ -26,8 +28,8 @@ function TermBox({
   return (
     <div
       className={cn(
-        "min-w-0 rounded-lg border px-3 py-2",
-        emphasize ? "border-[#BFDBFE] bg-[#EFF6FF]" : "border-[#E5E7EB] bg-[#F9FAFB]"
+        "min-w-0 flex-1 rounded-lg border px-3 py-2",
+        emphasize ? "border-[#BFDBFE] bg-[#EFF6FF]" : "border-[#E5E7EB] bg-white"
       )}
       data-testid="icr-formula-term"
     >
@@ -44,6 +46,7 @@ function TermBox({
       >
         {term.amount == null ? "—" : formatFinanceCurrency(term.amount)}
       </p>
+      {term.detail ? <p className="mt-0.5 text-[10px] text-[#6B7280]">{term.detail}</p> : null}
     </div>
   );
 }
@@ -65,11 +68,14 @@ function OperatorBadge({ sign }: { sign: "=" | "+" }) {
 }
 
 export function InvestedCapitalRecoveryFormulaStrip({
+  title,
   result,
   terms,
   note,
   testId,
 }: {
+  /** Título da fórmula (ex.: "Composição do capital investido"). */
+  title?: string;
   result: InvestedCapitalRecoveryFormulaTerm;
   terms: InvestedCapitalRecoveryFormulaTerm[];
   /** Observação curta abaixo da fórmula (ex.: população considerada). */
@@ -78,13 +84,16 @@ export function InvestedCapitalRecoveryFormulaStrip({
 }) {
   const readable = `${result.label} = ${terms.map((term) => term.label).join(" + ")}`;
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white px-3 py-2.5" data-testid={testId} aria-label={readable}>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5" data-testid={testId} aria-label={readable}>
+      {title ? <p className="mb-2 text-xs font-bold text-[#111827]">{title}</p> : null}
+      <div className="flex flex-wrap items-stretch gap-2">
         <TermBox term={result} emphasize />
-        <OperatorBadge sign="=" />
+        <div className="flex items-center"><OperatorBadge sign="=" /></div>
         {terms.map((term, index) => (
           <React.Fragment key={term.label}>
-            {index > 0 ? <OperatorBadge sign="+" /> : null}
+            {index > 0 ? (
+              <div className="flex items-center"><OperatorBadge sign="+" /></div>
+            ) : null}
             <TermBox term={term} />
           </React.Fragment>
         ))}
