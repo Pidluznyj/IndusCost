@@ -183,3 +183,56 @@ export const FINANCE_HORIZON_BILLING_BUCKET_TOOLTIPS = {
   "31_45": horizonBucketTooltip(HORIZON_BILLING_BASE, "31–45 dias"),
   "46_60": horizonBucketTooltip(HORIZON_BILLING_BASE, "46–60 dias"),
 } as const;
+
+/* Financeiro > Recuperação do Dinheiro Investido — decomposição econômica do PV. */
+
+export const FINANCE_KPI_ICR_SOLD =
+  "Soma do valor líquido comercial dos Pedidos de Venda da população filtrada. Não é NF-e, CR, valor recebido nem faturamento fiscal." as const;
+
+export const FINANCE_KPI_ICR_INVESTED_CAPITAL =
+  "Custo industrial oficial + imposto usado no cálculo da margem comercial do pedido, só nos pedidos com custo resolvido. É o dinheiro desembolsado antes de receber." as const;
+
+export const FINANCE_KPI_ICR_INDUSTRIAL_COST =
+  "Componente de custo industrial oficial do capital investido (sem o imposto). Custo industrial + imposto = capital investido, centavo a centavo." as const;
+
+export const FINANCE_KPI_ICR_TAXES =
+  "Imposto usado no cálculo da margem comercial do Pedido de Venda — já incluído no capital investido." as const;
+
+export const FINANCE_KPI_ICR_COMPARABLE_SALE =
+  "Venda só dos pedidos com capital válido — a mesma população do capital investido. Fecha: venda comparável = capital investido + margem econômica." as const;
+
+export const FINANCE_KPI_ICR_ECONOMIC_MARGIN =
+  "Venda − capital investido, pedido a pedido, só nos pedidos com capital válido. Margem negativa continua visível. Não é lucro: não considera despesas estruturais, administrativas nem financeiras." as const;
+
+export const FINANCE_KPI_ICR_INSUFFICIENT_DATA =
+  "Pedidos sem custo industrial resolvido. Compõem a venda total, mas ficam fora da margem econômica, do capital e das decomposições — o problema não é escondido." as const;
+
+export const FINANCE_KPI_ICR_CAPITAL_RECOVERED =
+  "Parte do dinheiro efetivamente recebido (CR real baixado) que devolveu o capital, pedido a pedido: MIN(recebido, capital investido)." as const;
+
+export const FINANCE_KPI_ICR_REALIZED_GAIN =
+  "Parte do recebido que já excede o capital do pedido: MAX(recebido − capital investido, 0), pedido a pedido. Não é recebido total − capital total." as const;
+
+export const FINANCE_KPI_ICR_RECEIVED_COMPARABLE =
+  "Dinheiro efetivamente recebido (CR real baixado) dos pedidos com capital válido. Fecha: recebido = capital recuperado + ganho realizado." as const;
+
+export const FINANCE_KPI_ICR_MONEY_ON_STREET =
+  "Capital investido que ainda não voltou: MAX(capital investido − recebido, 0), pedido a pedido. Não é saldo a receber." as const;
+
+export const FINANCE_KPI_ICR_OUTSTANDING =
+  "Saldo dos CR reais em aberto vinculados aos pedidos da população filtrada — todos os pedidos, inclusive os sem custo resolvido." as const;
+
+export const FINANCE_KPI_ICR_CAPITAL_RECEIVABLE_COVERED =
+  "Parte do CR real em aberto que ainda é recuperação do capital investido: MIN(CR aberto, capital na rua), pedido a pedido." as const;
+
+export const FINANCE_KPI_ICR_GAIN_RECEIVABLE =
+  "Parte do CR real em aberto que excede o capital ainda exposto: MAX(CR aberto − capital na rua, 0), pedido a pedido. Pedido sem custo resolvido não entra — ausência de custo nunca vira ganho." as const;
+
+export const FINANCE_KPI_ICR_CAPITAL_WITHOUT_OPEN_RECEIVABLE =
+  "Capital na rua que ainda não está representado por CR real em aberto: MAX(capital na rua − CR aberto, 0), pedido a pedido." as const;
+
+export const FINANCE_KPI_ICR_OUTSTANDING_UNCLASSIFIED =
+  "CR real em aberto de pedidos sem custo resolvido — não pode ser separado em capital a recuperar e ganho a receber." as const;
+
+export const FINANCE_KPI_ICR_AVERAGE_DAYS =
+  "Prazo médio entre a saída do pedido e a recuperação do capital. Sem evidência canônica de data de saída/faturamento, fica indisponível — não é estimado." as const;

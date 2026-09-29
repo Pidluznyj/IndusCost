@@ -2,14 +2,43 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   computeCapitalRecovered,
+  computeCapitalReceivableCovered,
+  computeCapitalWithoutOpenReceivable,
+  computeEconomicMargin,
+  computeGainReceivable,
   computeInvestedCapitalRecoveryStatus,
   computeMoneyOnStreet,
+  computeRealizedGain,
   computeRecoveryPercent,
   distributeMoneyOnStreetAcrossAging,
+  isValidInvestedCapital,
   resolveCapitalRecoveryDate,
   resolveForecastCapitalRecoveryDate,
+  resolveInvestedCapitalComponents,
   resolveInvestedCapitalRecoveryForecastSource,
 } from "./salesOrderInvestedCapitalRecoveryMath.js";
+
+/** Decomposição completa de um PV pela matemática pura (o que o snapshot faz). */
+function decompose(input: { sale: number; capital: number | null; received: number; outstanding: number }) {
+  const moneyOnStreet = computeMoneyOnStreet(input.capital, input.received);
+  return {
+    economicMargin: computeEconomicMargin(input.sale, input.capital),
+    capitalRecovered: computeCapitalRecovered(input.capital, input.received),
+    realizedGain: computeRealizedGain(input.capital, input.received),
+    moneyOnStreet,
+    capitalReceivableCovered: computeCapitalReceivableCovered(input.capital, moneyOnStreet, input.outstanding),
+    gainReceivable: computeGainReceivable(input.capital, moneyOnStreet, input.outstanding),
+    capitalWithoutOpenReceivable: computeCapitalWithoutOpenReceivable(
+      input.capital,
+      moneyOnStreet,
+      input.outstanding
+    ),
+  };
+}
+
+function cents(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 describe("salesOrderInvestedCapitalRecoveryMath — TEST-01..03 (capitalRecovered/moneyOnStreet/percent/status)", () => {
   it("TEST-01 — capital=100, received=40", () => {
@@ -262,5 +291,157 @@ describe("salesOrderInvestedCapitalRecoveryMath — dados incompletos/ausentes (
   it("received negativo/NaN é tratado como 0, nunca gera capitalRecovered negativo", () => {
     assert.equal(computeCapitalRecovered(100, -50), 0);
     assert.equal(computeCapitalRecovered(100, Number.NaN), 0);
+  });
+});
+
+describe("salesOrderInvestedCapitalRecoveryMath — decomposição econômica do PV (CASOS A–E)", () => {
+  it("CASO A — venda 100, capital 60, recebido 75, CR aberto 25", () => {
+    const d = decompose({ sale: 100, capital: 60, received: 75, outstanding: 25 });
+    assert.deepEqual(d, {
+      economicMargin: 40,
+      capitalRecovered: 60,
+      realizedGain: 15,
+      moneyOnStreet: 0,
+      capitalReceivableCovered: 0,
+      gainReceivable: 25,
+      capitalWithoutOpenReceivable: 0,
+    });
+  });
+
+  it("CASO B — venda 100, capital 60, recebido 30, CR aberto 70 (recebível maior que o capital na rua)", () => {
+    const d = decompose({ sale: 100, capital: 60, received: 30, outstanding: 70 });
+    assert.deepEqual(d, {
+      economicMargin: 40,
+      capitalRecovered: 30,
+      realizedGain: 0,
+      moneyOnStreet: 30,
+      capitalReceivableCovered: 30,
+      gainReceivable: 40,
+      capitalWithoutOpenReceivable: 0,
+    });
+  });
+
+  it("CASO C — venda 100, capital 60, recebido 10, CR aberto 20 (recebível menor que o capital na rua)", () => {
+    const d = decompose({ sale: 100, capital: 60, received: 10, outstanding: 20 });
+    assert.deepEqual(d, {
+      economicMargin: 40,
+      capitalRecovered: 10,
+      realizedGain: 0,
+      moneyOnStreet: 50,
+      capitalReceivableCovered: 20,
+      gainReceivable: 0,
+      capitalWithoutOpenReceivable: 30,
+    });
+  });
+
+  it("CASO D — capital null: tudo null, nunca ganho artificial por falta de custo", () => {
+    const d = decompose({ sale: 100, capital: null, received: 50, outstanding: 50 });
+    assert.deepEqual(d, {
+      economicMargin: null,
+      capitalRecovered: null,
+      realizedGain: null,
+      moneyOnStreet: null,
+      capitalReceivableCovered: null,
+      gainReceivable: null,
+      capitalWithoutOpenReceivable: null,
+    });
+    // capital 0 ou negativo = inválido, mesma regra de DADOS_INSUFICIENTES.
+    assert.equal(computeEconomicMargin(100, 0), null);
+    assert.equal(computeGainReceivable(0, 0, 50), null);
+    assert.equal(computeCapitalReceivableCovered(-5, 0, 50), null);
+    assert.equal(isValidInvestedCapital(0), false);
+    assert.equal(isValidInvestedCapital(null), false);
+    assert.equal(isValidInvestedCapital(0.01), true);
+  });
+
+  it("CASO E — venda 100, capital 110, recebido 60, CR aberto 40: margem NEGATIVA permanece visível", () => {
+    const d = decompose({ sale: 100, capital: 110, received: 60, outstanding: 40 });
+    assert.deepEqual(d, {
+      economicMargin: -10,
+      capitalRecovered: 60,
+      realizedGain: 0,
+      moneyOnStreet: 50,
+      capitalReceivableCovered: 40,
+      gainReceivable: 0,
+      capitalWithoutOpenReceivable: 10,
+    });
+  });
+
+  it("capital totalmente recuperado, zero recebido e zero em aberto", () => {
+    const full = decompose({ sale: 100, capital: 60, received: 60, outstanding: 40 });
+    assert.equal(full.moneyOnStreet, 0);
+    assert.equal(full.capitalReceivableCovered, 0);
+    assert.equal(full.gainReceivable, 40);
+    assert.equal(full.capitalWithoutOpenReceivable, 0);
+
+    const nothing = decompose({ sale: 100, capital: 60, received: 0, outstanding: 0 });
+    assert.equal(nothing.capitalRecovered, 0);
+    assert.equal(nothing.moneyOnStreet, 60);
+    assert.equal(nothing.capitalReceivableCovered, 0);
+    assert.equal(nothing.gainReceivable, 0);
+    assert.equal(nothing.capitalWithoutOpenReceivable, 60);
+    assert.equal(nothing.economicMargin, 40);
+  });
+
+  it("moneyOnStreet null (sem capital) → coberto/ganho/sem CR ficam null, nunca 0 silencioso", () => {
+    assert.equal(computeCapitalReceivableCovered(60, null, 50), null);
+    assert.equal(computeGainReceivable(60, null, 50), null);
+    assert.equal(computeCapitalWithoutOpenReceivable(60, null, 50), null);
+  });
+
+  it("reconciliações centavo a centavo em cenários variados (inclusive centavos quebrados)", () => {
+    const scenarios = [
+      { sale: 100, capital: 60, received: 75, outstanding: 25 },
+      { sale: 100, capital: 60, received: 30, outstanding: 70 },
+      { sale: 100, capital: 60, received: 10, outstanding: 20 },
+      { sale: 100, capital: 110, received: 60, outstanding: 40 },
+      { sale: 1234.56, capital: 987.65, received: 333.33, outstanding: 901.23 },
+      { sale: 0.03, capital: 0.01, received: 0.02, outstanding: 0.01 },
+      { sale: 250.5, capital: 250.5, received: 99.99, outstanding: 150.51 },
+      { sale: 10, capital: 30, received: 0, outstanding: 0 },
+    ];
+    for (const s of scenarios) {
+      const d = decompose(s);
+      const label = JSON.stringify(s);
+      assert.equal(cents(d.capitalRecovered! + d.moneyOnStreet!), cents(s.capital!), `capital ${label}`);
+      assert.equal(cents(d.capitalRecovered! + d.realizedGain!), cents(s.received), `recebido ${label}`);
+      assert.equal(cents(d.capitalReceivableCovered! + d.gainReceivable!), cents(s.outstanding), `CR aberto ${label}`);
+      assert.equal(
+        cents(d.capitalReceivableCovered! + d.capitalWithoutOpenReceivable!),
+        d.moneyOnStreet,
+        `na rua ${label}`
+      );
+      assert.equal(cents(s.capital! + d.economicMargin!), cents(s.sale), `venda ${label}`);
+    }
+  });
+});
+
+describe("salesOrderInvestedCapitalRecoveryMath — capital = custo industrial + imposto (centavo a centavo)", () => {
+  it("imposto com meio centavo (6 casas do motor de margem) não deixa a soma um centavo acima", () => {
+    // Antes: custo = round(112,53 − 12,525) = 100,01 e imposto = round(12,525) = 12,53 → 112,54 ≠ 112,53.
+    const cases = [
+      { cost: 100, tax: 12.525 },
+      { cost: 100, tax: 10.625 },
+      { cost: 73.4, tax: 9.175 },
+      { cost: 100.004, tax: 0.004 },
+      { cost: 1234.567891, tax: 98.7654321 },
+      { cost: 50, tax: 0 },
+    ];
+    for (const c of cases) {
+      const investedCapital = cents(c.cost + c.tax);
+      const parts = resolveInvestedCapitalComponents(investedCapital, c.tax);
+      assert.equal(parts.totalTaxes, cents(c.tax), JSON.stringify(c));
+      assert.equal(cents(parts.industrialCost! + parts.totalTaxes!), investedCapital, JSON.stringify(c));
+    }
+  });
+
+  it("sem capital resolvido, custo e imposto ficam null (não disfarça custo ausente)", () => {
+    assert.deepEqual(resolveInvestedCapitalComponents(null, 12.5), { industrialCost: null, totalTaxes: null });
+    assert.deepEqual(resolveInvestedCapitalComponents(Number.NaN, 12.5), { industrialCost: null, totalTaxes: null });
+  });
+
+  it("imposto ausente/NaN vira 0 e o custo é o capital inteiro", () => {
+    assert.deepEqual(resolveInvestedCapitalComponents(100, null), { industrialCost: 100, totalTaxes: 0 });
+    assert.deepEqual(resolveInvestedCapitalComponents(100, Number.NaN), { industrialCost: 100, totalTaxes: 0 });
   });
 });

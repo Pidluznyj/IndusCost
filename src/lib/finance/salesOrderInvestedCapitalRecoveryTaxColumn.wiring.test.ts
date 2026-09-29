@@ -64,16 +64,24 @@ describe("Recuperação do Dinheiro Investido — imposto incluído no Capital I
     const page = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage.tsx"
     );
-    assert.match(page, />\s*Imposto\s*</);
+    const economic = read(
+      "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryEconomicSection.tsx"
+    );
+    // Coluna "Imposto" na tabela de pedidos + termo "Imposto" na fórmula Capital = Custo + Imposto.
+    assert.match(page, /label="Imposto"|>\s*Imposto\s*</);
+    assert.match(economic, /label: "Imposto", amount: kpis\.totalTaxesAnalyzed/);
     assert.doesNotMatch(page, /informativo/);
+    assert.doesNotMatch(economic, /informativo/);
     assert.match(page, /custo \+ imposto|incluído no capital/);
   });
 
-  it("PDF reflete a mesma coluna Imposto e o mesmo total do KPI (kpis.totalTaxesAnalyzed), sem 'informativo'", () => {
+  it("PDF reflete o mesmo Imposto e o mesmo total do KPI (kpis.totalTaxesAnalyzed), sem 'informativo'", () => {
     const doc = read(
       "src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPrintDocument.tsx"
     );
-    assert.match(doc, />Imposto</); // header <th>Imposto</th> tem uma linha só, sem quebra
+    // Card "Imposto (incluído no capital)" + termo "Imposto" da fórmula Capital investido = Custo + Imposto.
+    assert.match(doc, /label="Imposto \(incluído no capital\)"/);
+    assert.match(doc, /\{ label: "Imposto", amount: kpis\.totalTaxesAnalyzed \}/);
     assert.match(doc, /kpis\.totalTaxesAnalyzed/);
     assert.doesNotMatch(doc, /informativo/);
   });
