@@ -213,6 +213,26 @@ describe("rascunho e publicação", () => {
     assert.equal(canApplyNormativeValue({ policyStatus: "PUBLISHED", effectiveFrom: NOW, now: later }), true);
   });
 
+  it("a rotina de 90 dias deixa de bloquear a publicação, sem marcar a política IN_SYNC", () => {
+    const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
+    const finding = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
+    assert.equal(finding?.blocking, false);
+    assert.match(finding?.system ?? "", /SENT_TO_NOMUS/);
+    assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
+    const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
+    assert.equal(snapshot.portfolio.inactivityDays, 90);
+    assert.equal(snapshot.portfolio.crmEvidenceCanPreserveAssignment, true);
+    assert.equal(snapshot.portfolio.systemBehavior, "REVIEW_THEN_REMOVE_OR_PRESERVE");
+    assert.equal(
+      comparePublishedPolicyToCurrentNormativeState({
+        publishedHash: "abc",
+        current: snapshot,
+        publicationAuditBlocking: true,
+      }),
+      "POLICY_SYSTEM_MISMATCH"
+    );
+  });
+
   it("o anexo III em versão 2.0 bloqueia a publicação da 1.0", () => {
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
     assert.ok(audit.findings.some((item) => item.code === "DECLARED_VERSION_MISMATCH"));

@@ -31,6 +31,7 @@ export type AutoAssignResult = {
   skippedAlreadyOwned: number;
   skippedUnmapped: number;
   skippedForbidden: number;
+  skippedInactivityBlocked: number;
   errors: number;
   assignedCustomerIds: string[];
 };
@@ -44,6 +45,12 @@ function resolveSellerLabel(row: {
   const name = row.nomusSellerName?.trim() || row.responsible?.trim() || null;
   if (!name || isSellerIdOnlyLabel(name)) return null;
   return name;
+}
+
+export function isAutoAssignBlockedByInactivity(
+  existing: { isActive: boolean; blockAutoAssignUntilManual: boolean } | null | undefined
+): boolean {
+  return Boolean(existing && !existing.isActive && existing.blockAutoAssignUntilManual);
 }
 
 export function isMappableOrderSeller(row: {
@@ -88,13 +95,18 @@ export async function previewCommercialOwnerAutoAssignFromOrders(
       distinct_seller_count: number;
     }[]
   >(Prisma.sql`
-    WITH eligible_customers AS (
+    WITH     eligible_customers AS (
       SELECT c.id, c."companyName" AS customer_name
       FROM "Customer" c
       WHERE NOT EXISTS (
         SELECT 1
         FROM "CrmCustomerCommercialOwner" own
         WHERE own."customerId" = c.id AND own."isActive" = true
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "CrmCustomerCommercialOwner" blocked
+        WHERE blocked."customerId" = c.id AND blocked."blockAutoAssignUntilManual" = true
       )
       ${customerFilter}
     ),
@@ -214,7 +226,14 @@ export async function assignCommercialOwnerFromSuggestion(
   prisma: PrismaClient,
   suggestion: AutoAssignSellerSuggestion,
   options?: { performedBy?: string; dryRun?: boolean }
-): Promise<"assigned" | "skipped_owned" | "skipped_unmapped" | "skipped_forbidden" | "error"> {
+): Promise<
+  | "assigned"
+  | "skipped_owned"
+  | "skipped_unmapped"
+  | "skipped_forbidden"
+  | "skipped_inactivity_blocked"
+  | "error"
+> {
   if (!suggestion.sellerName || suggestion.alert === "CUSTOMER_OWNER_AUTO_ASSIGN_SELLER_NOT_MAPPED") {
     return "skipped_unmapped";
   }
@@ -239,6 +258,21 @@ export async function assignCommercialOwnerFromSuggestion(
         });
       }
       return "skipped_owned";
+    }
+
+    if (isAutoAssignBlockedByInactivity(existing)) {
+      if (!options?.dryRun) {
+        await writeCommercialAuditLog({
+          entityType: CRM_CUSTOMER_COMMERCIAL_OWNER_ENTITY,
+          entityId: suggestion.customerId,
+          action: "SKIP_AUTO_ASSIGN_INACTIVITY_BLOCK",
+          fieldName: "commercialOwner",
+          oldValue: existing.sellerCanonicalName,
+          newValue: suggestion.sellerName,
+          performedBy: options?.performedBy ?? "system/auto-assign",
+        });
+      }
+      return "skipped_inactivity_blocked";
     }
 
     if (options?.dryRun) return "assigned";
@@ -320,6 +354,7 @@ export async function applyCommercialOwnerAutoAssignFromOrders(
     skippedAlreadyOwned: 0,
     skippedUnmapped: 0,
     skippedForbidden: 0,
+    skippedInactivityBlocked: 0,
     errors: 0,
     assignedCustomerIds: [],
   };
@@ -335,6 +370,7 @@ export async function applyCommercialOwnerAutoAssignFromOrders(
     } else if (status === "skipped_owned") result.skippedAlreadyOwned += 1;
     else if (status === "skipped_unmapped") result.skippedUnmapped += 1;
     else if (status === "skipped_forbidden") result.skippedForbidden += 1;
+    else if (status === "skipped_inactivity_blocked") result.skippedInactivityBlocked += 1;
     else result.errors += 1;
   }
 
@@ -355,6 +391,7 @@ export async function autoAssignCommercialOwnersAfterNomusSync(
     skippedAlreadyOwned: 0,
     skippedUnmapped: 0,
     skippedForbidden: 0,
+    skippedInactivityBlocked: 0,
     errors: 0,
     assignedCustomerIds: [],
   };

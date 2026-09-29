@@ -1503,6 +1503,7 @@ model Customer {
   CommercialActivity               CommercialActivity[]
   CrmCustomerProfile               CrmCustomerProfile?
   CrmCustomerCommercialOwner       CrmCustomerCommercialOwner?
+  CrmCustomerPortfolioReview       CrmCustomerPortfolioReview[]
   CustomerCnpjLookup               CustomerCnpjLookup[]
   person                           Person?                           @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   contactPerson                    Person?                           @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -2325,6 +2326,10 @@ model CrmCustomerCommercialOwner {
   sellerAliasExternalIds Json     @default("[]")
   assignmentSource       String   @default("MANUAL")
   isActive               Boolean  @default(true)
+  /// Após baixa por POL-COM-001 §11, impede autoatribuição até um supervisor atribuir manualmente.
+  blockAutoAssignUntilManual Boolean @default(false)
+  endedAt                DateTime? @db.Timestamp(6)
+  endReason              String?
   notes                  String?
   createdByUserId        String?  @db.Uuid
   createdByName          String?
@@ -2337,6 +2342,37 @@ model CrmCustomerCommercialOwner {
   @@index([sellerIdentityKey])
   @@index([sellerExternalId])
   @@index([isActive])
+  @@index([blockAutoAssignUntilManual])
+}
+
+/// Eventos imutáveis da revisão mensal de carteira (POL-COM-001 §11). Não substitui o vínculo ativo.
+model CrmCustomerPortfolioReview {
+  id                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId                      String
+  customerId                 String    @db.Uuid
+  action                     String
+  reasonCode                 String
+  previousOwnerIdentityKey   String?
+  previousOwnerName          String?
+  ownerStartedAt             DateTime? @db.Timestamp(6)
+  ownerEndedAt               DateTime? @db.Timestamp(6)
+  lastApprovedSalesOrderId   String?   @db.Uuid
+  lastApprovedSalesOrderCode String?
+  lastApprovedIssueDate      DateTime? @db.Timestamp(6)
+  daysSinceLastApprovedOrder Int?
+  crmValid                   Boolean   @default(false)
+  evidenceType               String?
+  evidenceId                 String?
+  evidenceDate               DateTime? @db.Timestamp(6)
+  nextReviewDate             DateTime? @db.Timestamp(6)
+  payload                    Json?
+  createdAt                  DateTime  @default(now()) @db.Timestamptz(6)
+  Customer                   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([customerId, createdAt])
+  @@index([action])
+  @@index([reasonCode])
 }
 
 model CommercialAuditLog {

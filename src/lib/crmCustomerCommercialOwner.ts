@@ -485,6 +485,9 @@ export async function patchCustomerCommercialOwner(
     sellerAliasExternalIds: aliasIds,
     assignmentSource: "MANUAL",
     isActive: true,
+    blockAutoAssignUntilManual: false,
+    endedAt: null,
+    endReason: null,
     notes: input.notes?.trim() || null,
     updatedByUserId: input.auth.id,
     updatedByName: input.auth.name,
@@ -498,7 +501,14 @@ export async function patchCustomerCommercialOwner(
       createdByUserId: input.auth.id,
       createdByName: input.auth.name,
     },
-    update: data,
+    update: existing?.isActive
+      ? data
+      : {
+          ...data,
+          createdAt: new Date(),
+          createdByUserId: input.auth.id,
+          createdByName: input.auth.name,
+        },
   });
 
   const newResolved = manualOwnerRowToResolved(

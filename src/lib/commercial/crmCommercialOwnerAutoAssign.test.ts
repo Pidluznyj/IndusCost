@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   AUTO_ASSIGN_SOURCE,
+  isAutoAssignBlockedByInactivity,
   isMappableOrderSeller,
 } from "./crmCommercialOwnerAutoAssign.js";
 
@@ -39,5 +40,12 @@ describe("crmCommercialOwnerAutoAssign", () => {
 
   it("fonte AUTO_FROM_SALES_ORDER_SELLER", () => {
     assert.equal(AUTO_ASSIGN_SOURCE, "AUTO_FROM_SALES_ORDER_SELLER");
+  });
+
+  it("bloqueia restauração automática após INACTIVITY_90_DAYS", () => {
+    assert.equal(
+      isAutoAssignBlockedByInactivity({ isActive: false, blockAutoAssignUntilManual: true }),
+      true
+    );
   });
 });

@@ -54,6 +54,7 @@ ok("UI com dois filtros");
 section("4–5. Autoatribuição e não substituição");
 assert.match(autoAssign, /AUTO_FROM_SALES_ORDER_SELLER/);
 assert.match(autoAssign, /SKIP_AUTO_ASSIGN_ALREADY_OWNED|skipped_owned/);
+assert.match(autoAssign, /SKIP_AUTO_ASSIGN_INACTIVITY_BLOCK|blockAutoAssignUntilManual/);
 assert.match(sync, /autoAssignCommercialOwnersAfterNomusSync/);
 assert.equal(AUTO_ASSIGN_SOURCE, "AUTO_FROM_SALES_ORDER_SELLER");
 assert.equal(

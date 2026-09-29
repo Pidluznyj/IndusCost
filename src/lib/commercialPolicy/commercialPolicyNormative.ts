@@ -78,16 +78,17 @@ export const DOCUMENT_INACTIVITY_DAYS = 90;
 
 /**
  * Fatos confirmados no código. A matriz de margem do Anexo I não existe como
- * parâmetro. O alerta de 90 dias no CRM não remove o responsável. Os 33% do
+ * parâmetro. A rotina mensal de carteira (POL-COM-001 §11) remove o responsável
+ * exclusivo após 90 dias sem PV aprovado, salvo CRM válido. Os 33% do
  * supervisor não estão em CommissionSettings.
  */
 export const SYSTEM_NORMATIVE_FACTS = {
   commissionMatrixParameterized: false,
   commissionMatrixSource: null as null,
   supervisorShareParameterized: false,
-  portfolioInactivityRemovesResponsible: false,
-  portfolioCrmEvidenceCanPreserveAssignment: false,
-  portfolioSystemBehavior: "CRM_ALERT_ONLY" as const,
+  portfolioInactivityRemovesResponsible: true,
+  portfolioCrmEvidenceCanPreserveAssignment: true,
+  portfolioSystemBehavior: "REVIEW_THEN_REMOVE_OR_PRESERVE" as const,
   coverageParameterized: false,
   channelSlaParameterized: false,
   sellerAttribution: "SALES_ORDER_NOMUS_SELLER" as const,
@@ -111,10 +112,10 @@ export type NormativeSnapshot = {
     source: "CommissionSettings";
   };
   portfolio: {
-    parameterized: false;
-    inactivityDays: null;
-    crmEvidenceCanPreserveAssignment: null;
-    systemBehavior: "CRM_ALERT_ONLY";
+    parameterized: true;
+    inactivityDays: number;
+    crmEvidenceCanPreserveAssignment: true;
+    systemBehavior: "REVIEW_THEN_REMOVE_OR_PRESERVE";
   };
   pricing: {
     parameterized: false;
@@ -198,9 +199,9 @@ export function buildCurrentCommercialPolicyNormativeSnapshot(
       source: "CommissionSettings",
     },
     portfolio: {
-      parameterized: false,
-      inactivityDays: null,
-      crmEvidenceCanPreserveAssignment: null,
+      parameterized: true,
+      inactivityDays: DOCUMENT_INACTIVITY_DAYS,
+      crmEvidenceCanPreserveAssignment: true,
       systemBehavior: SYSTEM_NORMATIVE_FACTS.portfolioSystemBehavior,
     },
     pricing: { parameterized: false, normativeVersionId: null },
@@ -283,9 +284,10 @@ export function auditPolCom001Publication(content: string): {
   });
   findings.push({
     code: "PORTFOLIO_INACTIVITY_MISMATCH",
-    blocking: true,
+    blocking: false,
     document: "90 dias sem PV aprovado e sem CRM válido removem o responsável exclusivo.",
-    system: "O CRM apenas alerta cliente sem compra há mais de 90 dias. Não remove o responsável nem preserva a carteira por registro.",
+    system:
+      "Rotina mensal customerCommercialOwnerInactivity: último SalesOrder SENT_TO_NOMUS (issueDate), preservação por CRM estruturado, baixa com INACTIVITY_90_DAYS e histórico em CrmCustomerPortfolioReview. O alerta de 90 dias do CRM permanece diagnóstico e não substitui esta rotina.",
   });
   findings.push({
     code: "ELECTRONIC_GATE_AUDIENCE",
@@ -451,7 +453,7 @@ export function buildTransitionSnapshot(input: {
 export const POLICY_SYSTEM_MATRIX = [
   { section: "7 / Anexo I", rule: "Faixas de comissão", source: "Não parametrizado", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
   { section: "12", rule: "33% do supervisor", source: "Não parametrizado", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
-  { section: "11", rule: "90 dias e CRM", source: "Alerta de CRM, sem baixa de responsável", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
+  { section: "11", rule: "90 dias e CRM", source: "customerCommercialOwnerInactivity (PV aprovado + CRM estruturado)", type: "NORMATIVE", versionable: true, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
   { section: "14", rule: "Liberação por recebimento", source: "CommissionSettings.release.default_rule", type: "NORMATIVE", versionable: true, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
   { section: "5", rule: "Vendedor do pedido", source: "salesOrder.nomusSeller", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
   { section: "6", rule: "Conta institucional", source: "CommissionCustomerExclusionRule", type: "CONTROLLED_REFERENCE", versionable: true, impact: "CONTROLLED_REFERENCE_CHANGED", status: "CONNECTED" },

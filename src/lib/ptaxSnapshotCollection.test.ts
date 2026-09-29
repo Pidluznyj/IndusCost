@@ -62,10 +62,10 @@ describe("ptax snapshot scheduled job", () => {
 
   it("listRegisteredScheduledJobs inclui Brent (nova agenda) e PTAX (agenda legada)", () => {
     const jobs = listRegisteredScheduledJobs();
-    assert.equal(jobs.length, 2);
+    assert.equal(jobs.length, 3);
     assert.deepEqual(
       jobs.map((job) => job.id),
-      ["brent-commodity-collection", "ptax-snapshot-collection"]
+      ["brent-commodity-collection", "ptax-snapshot-collection", "crm-owner-inactivity-review"]
     );
     const brent = jobs.find((j) => j.id === "brent-commodity-collection")!;
     const ptax = jobs.find((j) => j.id === "ptax-snapshot-collection")!;

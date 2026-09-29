@@ -148,14 +148,33 @@ export const PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB = {
     "Coleta automática da PTAX de fechamento (BCB) para Inteligência de Mercado. Agenda legada 09:00/15:30 preservada.",
 } as const;
 
+export const PORTFOLIO_INACTIVITY_REGISTERED_JOB = {
+  id: "crm-owner-inactivity-review",
+  name: "Revisão de carteira comercial (POL-COM-001 §11)",
+  timezone: BRENT_COLLECTION_TIMEZONE,
+  schedule: "04:10 no dia 01",
+  cronExpression: "10 4 1 * *",
+  runsOnWeekdaysOnly: false,
+  slots: [{ slot: "MONTHLY", time: "04:10" }],
+  description:
+    "No dia 1, após as sincronizações noturnas, revisa responsáveis comerciais: 90 dias corridos sem Pedido de Venda aprovado, com preservação por CRM válido.",
+} as const;
+
 export function listRegisteredScheduledJobs() {
-  return [BRENT_COMMODITY_REGISTERED_JOB, PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB];
+  return [
+    BRENT_COMMODITY_REGISTERED_JOB,
+    PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB,
+    PORTFOLIO_INACTIVITY_REGISTERED_JOB,
+  ];
 }
 
 export function getRegisteredScheduledJob(jobId: string) {
   if (jobId === BRENT_COMMODITY_JOB_ID) return BRENT_COMMODITY_REGISTERED_JOB;
   if (jobId === PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB.id) {
     return PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB;
+  }
+  if (jobId === PORTFOLIO_INACTIVITY_REGISTERED_JOB.id) {
+    return PORTFOLIO_INACTIVITY_REGISTERED_JOB;
   }
   return null;
 }

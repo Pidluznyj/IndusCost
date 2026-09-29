@@ -362,8 +362,11 @@ async function checkRuntime() {
 
   const jobs = listRegisteredScheduledJobs();
   const ids = jobs.map((j) => j.id).sort();
-  if (JSON.stringify(ids) === JSON.stringify(["brent-commodity-collection", "ptax-snapshot-collection"])) {
-    ok("runtime:registered-jobs", "listRegisteredScheduledJobs = [brent, ptax]");
+  if (
+    JSON.stringify(ids) ===
+    JSON.stringify(["brent-commodity-collection", "crm-owner-inactivity-review", "ptax-snapshot-collection"])
+  ) {
+    ok("runtime:registered-jobs", "listRegisteredScheduledJobs = [brent, inactivity, ptax]");
   } else {
     fail("runtime:registered-jobs", `ids inesperados: ${ids.join(", ")}`);
   }

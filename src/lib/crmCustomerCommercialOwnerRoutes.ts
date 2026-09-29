@@ -10,6 +10,7 @@ import {
   COMMERCIAL_ACTIONS,
   COMMERCIAL_RESOURCE_KEYS,
 } from "@/src/lib/commercialAccess.js";
+import { startPortfolioInactivityScheduledJob } from "@/src/lib/commercial/customerCommercialOwnerInactivityJob.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -22,6 +23,7 @@ export function registerCrmCustomerCommercialOwnerRoutes(
   guards: AuthGuards
 ): void {
   const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
+  startPortfolioInactivityScheduledJob();
 
   app.get(
     "/api/crm/commercial-sellers/active",
