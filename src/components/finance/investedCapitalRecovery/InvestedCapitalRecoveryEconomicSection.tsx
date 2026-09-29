@@ -19,6 +19,7 @@ import {
   FINANCE_KPI_ICR_INDUSTRIAL_COST,
   FINANCE_KPI_ICR_INSUFFICIENT_DATA,
   FINANCE_KPI_ICR_INVESTED_CAPITAL,
+  FINANCE_KPI_ICR_SALE_UNRESOLVED_COST,
   FINANCE_KPI_ICR_SOLD,
   FINANCE_KPI_ICR_TAXES,
 } from "@/src/lib/financeKpiTooltips";
@@ -89,6 +90,17 @@ export function InvestedCapitalRecoveryEconomicSection({
           helperText={FINANCE_KPI_ICR_INSUFFICIENT_DATA}
         />
       </SummaryKpiGrid>
+
+      {/* Reconciliação total × comparável: a venda total inclui os PVs sem custo, que nunca viram capital nem margem. */}
+      <InvestedCapitalRecoveryFormulaStrip
+        testId="icr-formula-sale-total"
+        title="Reconciliação da venda"
+        result={{ label: "Venda total", amount: kpis.totalSaleValueAnalyzed, detail: `${formatFinanceInteger(ordersCount)} PV(s) do filtro`, hint: FINANCE_KPI_ICR_SOLD }}
+        terms={[
+          { label: "Venda comparável", amount: kpis.comparableSaleValueTotal, detail: `${formatFinanceInteger(kpis.ordersComparableCount)} PV(s) com custo resolvido`, hint: FINANCE_KPI_ICR_COMPARABLE_SALE },
+          { label: "Venda sem custo resolvido", amount: kpis.saleValueUnresolvedCostTotal, detail: `${formatFinanceInteger(kpis.ordersUnresolvedCostCount)} PV(s) · fora de capital e margem`, hint: FINANCE_KPI_ICR_SALE_UNRESOLVED_COST },
+        ]}
+      />
 
       <div className="grid gap-2 xl:grid-cols-2">
         <InvestedCapitalRecoveryFormulaStrip

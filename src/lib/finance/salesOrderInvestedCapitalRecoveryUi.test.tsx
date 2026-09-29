@@ -149,6 +149,12 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     assert.match(t, new RegExp(brl(70).replace(/[.$]/g, "\\$&")));
     assert.match(html, /data-testid="icr-formula-sale"/);
     assert.match(html, /data-testid="icr-formula-capital"/);
+    // Venda total 400 = comparável 300 + sem custo resolvido 100 (D).
+    assert.match(html, /data-testid="icr-formula-sale-total"/);
+    assert.match(t, /Venda sem custo resolvido/);
+    assert.equal(payload.kpis.saleValueUnresolvedCostTotal, 100);
+    assert.equal(payload.kpis.ordersUnresolvedCostCount, 1);
+    assert.match(t, new RegExp(brl(400).replace(/[.$]/g, "\\$&")));
     assert.match(t, /Custo industrial/);
     assert.match(t, /Imposto/);
     assert.match(html, /metric-card--margin/); // margem positiva no tom nativo de margem
@@ -170,7 +176,11 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     assert.match(t, /2\. O que já aconteceu/);
     assert.match(t, /Capital recuperado/);
     assert.match(t, /Ganho já realizado/);
-    assert.match(t, /Total recebido/);
+    assert.match(t, /Recebido comparável/);
+    assert.match(t, /Recebido total/);
+    assert.match(t, /Recebido não classificável/);
+    assert.match(html, /data-testid="icr-formula-received-total"/);
+    assert.match(html, /data-testid="icr-formula-received-comparable"/);
     assert.match(t, /Recuperação do capital investido/);
     assert.match(html, /data-testid="icr-recovery-bar"/);
     // A 60 + C 10 + E 60 = 130 recuperado; ganho realizado só A (15); recebido comparável 145.
@@ -181,8 +191,11 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     // Percentuais vêm prontos: 130/230 = 56,52% e 100/230 = 43,48%.
     assert.match(html, /width:56\.52%/);
     assert.match(html, /width:43\.48%/);
-    // Recebido total (inclusive D) aparece como nota, sem virar recebido comparável.
+    // Recebido total (inclusive D) = comparável 145 + não classificável 50, sem virar recebido comparável.
+    assert.equal(payload.kpis.actualReceivedTotal, 195);
+    assert.equal(payload.kpis.actualReceivedUnclassifiedTotal, 50);
     assert.match(t, new RegExp(brl(195).replace(/[.$]/g, "\\$&")));
+    assert.match(t, new RegExp(brl(50).replace(/[.$]/g, "\\$&")));
   });
 
   it("bloco 3 mostra falta receber, capital a recuperar, ganho a receber, capital sem CR e a parcela não classificada", () => {
@@ -202,6 +215,9 @@ describe("Recuperação do Dinheiro Investido — render das seções (Visão Ge
     assert.match(t, /Regra por PV/);
     assert.match(html, /data-testid="icr-receivables-bar"/);
     assert.match(html, /data-testid="icr-formula-money-on-street"/);
+    assert.match(html, /data-testid="icr-formula-outstanding-total"/);
+    assert.match(t, /CR aberto não classificável/);
+    assert.equal(payload.kpis.outstandingReceivableComparableTotal, 85);
     assert.match(html, /data-testid="aging-slot"/);
     // A 0+25, C 20+0, E 40+0, D 50 não classificado → 135 = 60 + 25 + 50.
     assert.equal(payload.kpis.totalOutstandingReceivable, 135);

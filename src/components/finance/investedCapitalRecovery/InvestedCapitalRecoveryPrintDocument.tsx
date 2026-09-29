@@ -155,6 +155,13 @@ export function InvestedCapitalRecoveryPrintDocument({
           </div>
           <div className="sales-orders-icr-print-formula-grid">
             <FormulaTable
+              result={{ label: "Venda total", amount: kpis.totalSaleValueAnalyzed }}
+              terms={[
+                { label: "Venda comparável", amount: kpis.comparableSaleValueTotal },
+                { label: "Venda sem custo resolvido", amount: kpis.saleValueUnresolvedCostTotal },
+              ]}
+            />
+            <FormulaTable
               result={{ label: "Venda comparável", amount: kpis.comparableSaleValueTotal }}
               terms={[
                 { label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal },
@@ -176,12 +183,19 @@ export function InvestedCapitalRecoveryPrintDocument({
           <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
             <SummaryKpiCard label="Capital recuperado" value={money(kpis.capitalRecoveredTotal)} tone="positive" />
             <SummaryKpiCard label="Ganho já realizado" value={money(kpis.realizedGainTotal)} tone="positive" />
-            <SummaryKpiCard label="Total recebido (comparável)" value={money(kpis.actualReceivedComparableTotal)} tone="info" />
+            <SummaryKpiCard label="Recebido comparável" value={money(kpis.actualReceivedComparableTotal)} tone="info" />
+            <SummaryKpiCard label="Recebido total (todos os PVs)" value={money(kpis.actualReceivedTotal)} tone="info" />
             <SummaryKpiCard label="Capital na rua hoje" value={money(kpis.moneyOnStreetToday)} tone="warning" />
             <SummaryKpiCard label="% do capital recuperado" value={percent(kpis.capitalRecoveredPercent)} />
-            <SummaryKpiCard label="% do capital na rua" value={percent(kpis.moneyOnStreetPercent)} />
           </div>
           <div className="sales-orders-icr-print-formula-grid">
+            <FormulaTable
+              result={{ label: "Recebido total", amount: kpis.actualReceivedTotal }}
+              terms={[
+                { label: "Recebido comparável", amount: kpis.actualReceivedComparableTotal },
+                { label: "Recebido não classificável", amount: kpis.actualReceivedUnclassifiedTotal },
+              ]}
+            />
             <FormulaTable
               result={{ label: "Recebido comparável", amount: kpis.actualReceivedComparableTotal }}
               terms={[
@@ -210,11 +224,17 @@ export function InvestedCapitalRecoveryPrintDocument({
           </div>
           <div className="sales-orders-icr-print-formula-grid">
             <FormulaTable
-              result={{ label: "Recebíveis em aberto", amount: kpis.totalOutstandingReceivable }}
+              result={{ label: "CR aberto total", amount: kpis.totalOutstandingReceivable }}
+              terms={[
+                { label: "CR aberto comparável", amount: kpis.outstandingReceivableComparableTotal },
+                { label: "CR aberto não classificável", amount: kpis.outstandingReceivableUnclassifiedTotal },
+              ]}
+            />
+            <FormulaTable
+              result={{ label: "CR aberto comparável", amount: kpis.outstandingReceivableComparableTotal }}
               terms={[
                 { label: "Capital a recuperar", amount: kpis.capitalReceivableCoveredTotal },
                 { label: "Ganho a receber", amount: kpis.gainReceivableTotal },
-                { label: "Não classificado", amount: kpis.outstandingReceivableUnclassifiedTotal },
               ]}
             />
             <FormulaTable

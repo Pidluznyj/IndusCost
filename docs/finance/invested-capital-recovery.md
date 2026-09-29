@@ -66,9 +66,41 @@ inteiros, **só os PVs com capital válido** e fecham entre si:
 5. `comparableSaleValueTotal = investedCapitalAnalyzedTotal + economicMarginTotal`
 6. `investedCapitalAnalyzedTotal = totalIndustrialCostAnalyzed + totalTaxesAnalyzed`
 
-`actualReceivedTotal` (todos os PVs) existe à parte, para o rodapé da tabela — nunca é misturado com o
-comparável. `capitalRecoveredPercent` / `moneyOnStreetPercent` também vêm do backend. Os KPIs raiz do serviço
+`capitalRecoveredPercent` / `moneyOnStreetPercent` também vêm do backend. Os KPIs raiz do serviço
 usam o mesmo acumulador em centavos (`sum`).
+
+### 4.1 Reconciliação total × comparável (2026-09-29)
+
+Venda total, venda comparável e recebido total somavam populações diferentes sem que a tela mostrasse a ponte
+entre elas. O mesmo acumulador passou a devolver a parcela **não classificável** (PVs sem capital válido) de
+cada grandeza, e os três blocos mostram a reconciliação como fórmula visual (nada é calculado na tela):
+
+7. `totalSaleValueAnalyzed = comparableSaleValueTotal + saleValueUnresolvedCostTotal`
+8. `actualReceivedTotal = actualReceivedComparableTotal + actualReceivedUnclassifiedTotal`
+9. `totalOutstandingReceivable = outstandingReceivableComparableTotal + outstandingReceivableUnclassifiedTotal` (já existia)
+
+e continuam valendo `actualReceivedComparableTotal = capitalRecoveredTotal + realizedGainTotal` e
+`comparableSaleValueTotal = investedCapitalAnalyzedTotal + economicMarginTotal`. O PV sem custo resolvido entra em
+venda/recebido/CR totais e **nunca** em capital recuperado, ganho realizado, capital a recuperar ou ganho a
+receber (os campos do snapshot são `null`). `ordersUnresolvedCostCount` complementa `ordersComparableCount`.
+
+| Grandeza | Antes (tela) | Depois (tela + PDF) |
+|---|---|---|
+| Venda | "Vendemos" (todos) e "Venda comparável" (com custo), sem ponte | Venda total = Venda comparável + Venda sem custo resolvido |
+| Recebido | card "Total recebido" mostrava o **comparável**; o total aparecia só numa nota de rodapé | cards Recebido comparável e Recebido total; Recebido total = Recebido comparável + Recebido não classificável; Recebido comparável = Capital recuperado + Ganho realizado |
+| CR aberto | barra com "não classificado", sem a igualdade explícita | CR aberto total = CR aberto comparável + CR aberto não classificável; CR aberto comparável = Capital a recuperar + Ganho a receber |
+
+Exemplo numérico (fixture dos testes: A 100/60/75/25, C 100/60/10/20, E 100/110/60/40 e D sem custo 100/–/50/50):
+venda total 400 = comparável 300 (= capital 230 + margem 70) + sem custo 100; recebido total 195 = comparável 145
+(= recuperado 130 + ganho 15) + não classificável 50; CR aberto 135 = comparável 85 (= capital a recuperar 60 + ganho
+a receber 25) + não classificável 50.
+
+Auditoria dos CR por PV (regras canônicas já existentes, nada novo): o serviço só considera CR **reais** da
+carteira operacional (`loadFinanceArManagementRowsFromPrisma` → `filterFinanceArOperationalPortfolioRows`, que
+suprime pré-NF inferior e títulos de PV cancelado via `financeArCancelledSalesOrderExclusion`) vinculados ao PV
+por NF-e ou pista (`resolveFinanceArNfeOrderLinksFromRows`); por PV, recebido = Σ `amountReceived` e CR aberto =
+Σ `balanceReceivable` (`Snapshot.ts`), então CR aberto integral, baixa parcial, PV sem CR e múltiplos documentos
+(inclusive frações de meio centavo) fecham por centavo nos totais — `Totals.test.ts` casos (7) e (8).
 
 ## 5. Por cliente (`salesOrderInvestedCapitalRecoveryByCustomer.ts`)
 
@@ -81,10 +113,13 @@ nenhum PV com capital válido devolve `null` nos campos de capital.
 
 1. **Economia dos pedidos** — Vendemos · Capital investido · Margem econômica dos PVs · Dados insuficientes;
    fórmulas "Venda comparável = Capital investido + Margem econômica" e "Capital investido = Custo industrial + Imposto".
-2. **O que já aconteceu** — Capital recuperado · Ganho já realizado · Total recebido (comparável) · Capital na rua;
-   barra "Capital investido = Recuperado + Na rua" com percentuais; fórmula do recebido.
+   Reconciliação "Venda total = Venda comparável + Venda sem custo resolvido".
+2. **O que já aconteceu** — Capital recuperado · Ganho já realizado · Recebido comparável · Recebido total;
+   fórmulas "Recebido total = Recebido comparável + Recebido não classificável" e "Recebido comparável = Capital
+   recuperado + Ganho realizado"; barra "Capital investido = Recuperado + Na rua" com percentuais.
 3. **O que ainda tem para entrar** — Falta receber · Capital a recuperar nos recebíveis · Ganho a receber ·
-   Capital na rua sem CR aberto; fórmulas do CR aberto (com "Não classificado") e do capital na rua; aging e top clientes.
+   Capital na rua sem CR aberto; barra do CR aberto (com "Não classificado"), fórmula "CR aberto total = CR aberto
+   comparável + CR aberto não classificável" e a do capital na rua; aging e top clientes.
 4. **Leitura gerencial** — Vendemos / Investimos / Capital na rua / Ganho a receber + contagens + prazo médio.
 5. **Detalhamento por pedido** — tabela de auditoria com grupos de colunas iguais aos blocos; a linha abre o
    `SalesOrderDetailDialog` oficial.

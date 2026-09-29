@@ -119,10 +119,17 @@ export type InvestedCapitalRecoveryPayload = {
      * fechar entre si; ver `salesOrderInvestedCapitalRecoveryTotals.ts`.
      */
     ordersComparableCount: number;
+    /** Pedidos sem custo resolvido — complemento de ordersComparableCount. */
+    ordersUnresolvedCostCount: number;
     comparableSaleValueTotal: number;
+    /** Venda total = comparableSaleValueTotal + saleValueUnresolvedCostTotal. */
+    saleValueUnresolvedCostTotal: number;
     economicMarginTotal: number;
+    /** = actualReceivedComparableTotal + actualReceivedUnclassifiedTotal. */
     actualReceivedTotal: number;
     actualReceivedComparableTotal: number;
+    /** Recebido dos pedidos sem custo resolvido — nunca vira capital nem ganho. */
+    actualReceivedUnclassifiedTotal: number;
     realizedGainTotal: number;
     outstandingReceivableComparableTotal: number;
     outstandingReceivableUnclassifiedTotal: number;

@@ -90,6 +90,17 @@ export function InvestedCapitalRecoveryReceivablesSection({
         unclassified={kpis.outstandingReceivableUnclassifiedTotal}
       />
 
+      {/* Reconciliação total × comparável do CR aberto (mesma regra da venda e do recebido). */}
+      <InvestedCapitalRecoveryFormulaStrip
+        testId="icr-formula-outstanding-total"
+        title="Reconciliação do CR aberto"
+        result={{ label: "CR aberto total", amount: kpis.totalOutstandingReceivable, detail: "todos os PVs do filtro", hint: FINANCE_KPI_ICR_OUTSTANDING }}
+        terms={[
+          { label: "CR aberto comparável", amount: kpis.outstandingReceivableComparableTotal, detail: "capital a recuperar + ganho a receber" },
+          { label: "CR aberto não classificável", amount: kpis.outstandingReceivableUnclassifiedTotal, detail: "PVs sem custo resolvido" },
+        ]}
+      />
+
       <p className="rounded-lg border border-dashed border-[#B9C6D8] bg-[#FBFCFE] px-3 py-2 text-xs text-[#43526A]" data-testid="icr-receivables-rule">
         <strong className="text-[#111827]">Regra por PV:</strong> capital a recuperar = MIN(falta receber, capital na rua).
         Ganho a receber = MAX(falta receber − capital na rua, 0). A soma é feita pedido a pedido, nunca pela

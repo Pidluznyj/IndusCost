@@ -201,6 +201,15 @@ export const FINANCE_KPI_ICR_TAXES =
 export const FINANCE_KPI_ICR_COMPARABLE_SALE =
   "Venda só dos pedidos com capital válido — a mesma população do capital investido. Fecha: venda comparável = capital investido + margem econômica." as const;
 
+export const FINANCE_KPI_ICR_SALE_UNRESOLVED_COST =
+  "Venda dos pedidos sem custo industrial resolvido. Entra na venda total, mas nunca é classificada como capital ou margem. Fecha: venda total = venda comparável + venda sem custo resolvido." as const;
+
+export const FINANCE_KPI_ICR_RECEIVED_TOTAL =
+  "CR real baixado de todos os pedidos do filtro, inclusive os sem custo resolvido. Fecha: recebido total = recebido comparável + recebido não classificável." as const;
+
+export const FINANCE_KPI_ICR_RECEIVED_UNCLASSIFIED =
+  "Recebido dos pedidos sem custo resolvido: sem capital válido não há como dizer o que é retorno de capital e o que é ganho, então esta parcela fica fora de capital recuperado e ganho realizado." as const;
+
 export const FINANCE_KPI_ICR_ECONOMIC_MARGIN =
   "Venda − capital investido, pedido a pedido, só nos pedidos com capital válido. Margem negativa continua visível. Não é lucro: não considera despesas estruturais, administrativas nem financeiras." as const;
 
