@@ -8,18 +8,22 @@ import { prisma as defaultPrisma } from "@/src/lib/prisma.js";
 import { CRM_CUSTOMER_COMMERCIAL_OWNER_ENTITY } from "@/src/lib/crmCustomerCommercialOwner.js";
 import {
   APPROVED_SALES_ORDER_STATUS,
+  DATA_ANOMALY,
   INACTIVITY_END_REASON_LABEL,
+  MISSING_INVOICE_DATE,
   NEVER_INVOICED,
   PORTFOLIO_INACTIVITY_REASON,
   PORTFOLIO_PRESERVED_REASON,
-  calendarDaysBetweenSaoPaulo,
   decideCommercialOwnerInactivityAction,
   evaluateCommercialPortfolioPreservation,
+  mapCrmPreviewReasonCode,
+  pickInvoiceClock,
   pickLatestApprovedSalesOrder,
-  pickLatestValidInvoice,
   portfolioInactivityDays,
   saoPauloDateIso,
+  calendarDaysBetweenSaoPaulo,
   type CommercialPortfolioPreservation,
+  type InvoiceDateSource,
   type LastApprovedSalesOrder,
   type LastValidInvoice,
   type PortfolioContactEvidence,
@@ -62,6 +66,10 @@ export type PortfolioInactivityPreviewRow = {
   lastValidInvoiceId: string | null;
   lastValidInvoiceNumber: string | null;
   lastValidInvoiceDate: string | null;
+  invoiceDateSource: InvoiceDateSource | null;
+  invoiceValidity: string | null;
+  stockDocumentId: string | null;
+  stockDocumentValidity: string | null;
   daysSinceLastValidInvoice: number | null;
   invoiceStatus: string | null;
   invoiceCanceled: boolean | null;
@@ -70,7 +78,10 @@ export type PortfolioInactivityPreviewRow = {
   lastApprovedIssueDate: string | null;
   daysSinceLastApprovedOrder: number | null;
   crmValid: boolean;
+  crmReasonCode: string | null;
   crmEvidenceType: string | null;
+  crmEvidenceId: string | null;
+  crmBusinessEvidenceDate: string | null;
   evidenceType: string | null;
   evidenceId: string | null;
   evidenceStatus: string | null;
@@ -83,8 +94,9 @@ export type PortfolioInactivityPreviewRow = {
   nextStepDate: string | null;
   preservationReason: string | null;
   reasonCode: string;
-  proposedAction: PortfolioInactivityAction | "KEEP_ACTIVE";
-  action: PortfolioInactivityAction | "KEEP_ACTIVE";
+  decisionReason: string;
+  proposedAction: PortfolioInactivityAction | "KEEP_ACTIVE" | "NEVER_INVOICED";
+  action: PortfolioInactivityAction | "KEEP_ACTIVE" | "NEVER_INVOICED";
   status: string;
 };
 
@@ -99,7 +111,10 @@ export type PortfolioInactivityPreview = {
   removalEligible: number;
   neverInvoiced: number;
   neverApprovedSalesOrder: number;
+  dataAnomaly: number;
   alreadyUnassigned: number;
+  invoiceDateSourceCounts: Record<InvoiceDateSource, number>;
+  crmReasonCounts: Record<string, number>;
   rows: PortfolioInactivityPreviewRow[];
 };
 
@@ -112,6 +127,7 @@ export type PortfolioInactivityApplyResult = {
   skippedUnassigned: number;
   neverInvoiced: number;
   neverApproved: number;
+  dataAnomaly: number;
   results: Array<{
     customerId: string;
     action: PortfolioInactivityAction | "NO_CHANGE";
@@ -253,8 +269,8 @@ export async function loadLastValidInvoices(
   }
 
   for (const [customerId, candidates] of candidatesByCustomer) {
-    const latest = pickLatestValidInvoice(candidates);
-    if (latest) map.set(customerId, latest);
+    const clock = pickInvoiceClock(candidates);
+    if (clock.invoice) map.set(customerId, clock.invoice);
   }
   return map;
 }
@@ -329,6 +345,14 @@ export async function loadPortfolioCrmEvidence(
   return { proposals, contacts };
 }
 
+function clockKindFromInvoice(
+  invoice: LastValidInvoice | null
+): "INVOICE" | "NEVER_INVOICED" | "DATA_ANOMALY" {
+  if (!invoice) return "NEVER_INVOICED";
+  if (invoice.invoiceDateSource === "MISSING" || invoice.invoiceDate == null) return "DATA_ANOMALY";
+  return "INVOICE";
+}
+
 function decideRow(input: {
   owner: OwnerRow | null;
   lastInvoice: LastValidInvoice | null;
@@ -338,6 +362,7 @@ function decideRow(input: {
   return decideCommercialOwnerInactivityAction({
     hasActiveOwner: Boolean(input.owner?.isActive),
     lastValidInvoice: input.lastInvoice,
+    invoiceClockKind: clockKindFromInvoice(input.lastInvoice),
     referenceDate: input.referenceDate,
     preservation: input.preservation,
   });
@@ -345,9 +370,25 @@ function decideRow(input: {
 
 function previewAction(
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>
-): PortfolioInactivityAction | "KEEP_ACTIVE" {
+): PortfolioInactivityAction | "KEEP_ACTIVE" | "NEVER_INVOICED" {
   if (decision.status === "ACTIVE") return "KEEP_ACTIVE";
+  if (decision.status === "NEVER_INVOICED") return "NEVER_INVOICED";
+  if (decision.status === "DATA_ANOMALY") return "REVIEW_REQUIRED";
   return decision.action;
+}
+
+function emptyDateSourceCounts(): Record<InvoiceDateSource, number> {
+  return {
+    NFE_XML_DH_EMI: 0,
+    STOCK_DOCUMENT_DATE: 0,
+    NFE_PROCESSING_DATE: 0,
+    MISSING: 0,
+  };
+}
+
+function bumpCount(map: Record<string, number>, key: string | null | undefined) {
+  if (!key) return;
+  map[key] = (map[key] ?? 0) + 1;
 }
 
 function toPreviewRow(input: {
@@ -358,10 +399,13 @@ function toPreviewRow(input: {
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>;
 }): PortfolioInactivityPreviewRow {
   const action = previewAction(input.decision);
-  const invoiceDate = input.lastInvoice ? saoPauloDateIso(input.lastInvoice.invoiceDate) : null;
+  const invoiceDate = input.lastInvoice?.invoiceDate
+    ? saoPauloDateIso(input.lastInvoice.invoiceDate)
+    : null;
   const evidenceDate = input.preservation.evidenceDate
     ? saoPauloDateIso(input.preservation.evidenceDate)
     : null;
+  const crmReasonCode = mapCrmPreviewReasonCode(input.preservation);
   return {
     customerId: input.customer.id,
     customerExternalId: input.customer.nomusExternalPersonId,
@@ -375,6 +419,10 @@ function toPreviewRow(input: {
     lastValidInvoiceId: input.lastInvoice?.invoiceId ?? null,
     lastValidInvoiceNumber: input.lastInvoice?.invoiceNumber ?? null,
     lastValidInvoiceDate: invoiceDate,
+    invoiceDateSource: input.lastInvoice?.invoiceDateSource ?? null,
+    invoiceValidity: input.lastInvoice?.invoiceValidity ?? null,
+    stockDocumentId: input.lastInvoice?.stockDocumentId ?? null,
+    stockDocumentValidity: input.lastInvoice?.stockDocumentValidity ?? null,
     daysSinceLastValidInvoice: input.decision.daysSinceLastValidInvoice,
     invoiceStatus: input.lastInvoice?.invoiceStatus ?? null,
     invoiceCanceled: input.lastInvoice ? input.lastInvoice.invoiceCanceled : null,
@@ -383,7 +431,10 @@ function toPreviewRow(input: {
     lastApprovedIssueDate: invoiceDate,
     daysSinceLastApprovedOrder: input.decision.daysSinceLastValidInvoice,
     crmValid: input.preservation.valid,
+    crmReasonCode,
     crmEvidenceType: input.preservation.evidenceType,
+    crmEvidenceId: input.preservation.evidenceId,
+    crmBusinessEvidenceDate: evidenceDate,
     evidenceType: input.preservation.evidenceType,
     evidenceId: input.preservation.evidenceId,
     evidenceStatus: input.preservation.evidenceStatus,
@@ -398,6 +449,7 @@ function toPreviewRow(input: {
       : null,
     preservationReason: input.preservation.preservationReason,
     reasonCode: input.decision.reasonCode,
+    decisionReason: input.decision.reasonCode,
     proposedAction: action,
     action,
     status: input.decision.status,
@@ -428,7 +480,10 @@ export async function previewCommercialOwnerInactivity(
   let preserved = 0;
   let removal = 0;
   let neverInvoiced = 0;
+  let dataAnomaly = 0;
   let unassigned = 0;
+  const invoiceDateSourceCounts = emptyDateSourceCounts();
+  const crmReasonCounts: Record<string, number> = {};
 
   for (const customer of customers as CustomerRow[]) {
     const owner = ownerByCustomer.get(customer.id) ?? null;
@@ -441,18 +496,24 @@ export async function previewCommercialOwnerInactivity(
       contacts: evidence.contacts.get(customer.id) ?? [],
     });
     const decision = decideRow({ owner, lastInvoice, preservation, referenceDate });
-    if (owner?.isActive) withActive += 1;
+    if (owner?.isActive) {
+      withActive += 1;
+      if (lastInvoice?.invoiceDateSource) invoiceDateSourceCounts[lastInvoice.invoiceDateSource] += 1;
+      if (decision.reviewDue) bumpCount(crmReasonCounts, mapCrmPreviewReasonCode(preservation));
+    }
     if (decision.status === "ACTIVE") within += 1;
     if (decision.reviewDue) inReview += 1;
     if (decision.status === "PRESERVED_BY_CRM") preserved += 1;
     if (decision.action === "REMOVE_OWNER") removal += 1;
-    if (decision.reasonCode === NEVER_INVOICED || decision.status === "NEVER_INVOICED") neverInvoiced += 1;
+    if (decision.status === "NEVER_INVOICED") neverInvoiced += 1;
+    if (decision.status === "DATA_ANOMALY") dataAnomaly += 1;
     if (decision.status === "UNASSIGNED") unassigned += 1;
 
     const shouldList =
       Boolean(owner?.isActive) ||
       decision.reviewDue ||
-      decision.reasonCode === NEVER_INVOICED;
+      decision.status === "NEVER_INVOICED" ||
+      decision.status === "DATA_ANOMALY";
     if (shouldList) {
       rows.push(toPreviewRow({ customer, owner, lastInvoice, preservation, decision }));
     }
@@ -469,7 +530,10 @@ export async function previewCommercialOwnerInactivity(
     removalEligible: removal,
     neverInvoiced,
     neverApprovedSalesOrder: neverInvoiced,
+    dataAnomaly,
     alreadyUnassigned: unassigned,
+    invoiceDateSourceCounts,
+    crmReasonCounts,
     rows,
   };
 }
@@ -485,8 +549,17 @@ async function recordReviewAndMaybeRemove(input: {
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>;
 }): Promise<"REMOVED" | "PRESERVED" | "NO_CHANGE"> {
   if (!input.owner.isActive) return "NO_CHANGE";
+  if (input.decision.status === "NEVER_INVOICED" || input.decision.status === "DATA_ANOMALY") {
+    return "NO_CHANGE";
+  }
   if (input.decision.action === "REVIEW_REQUIRED") return "NO_CHANGE";
   if (input.decision.action === "KEEP_OWNER" && !input.decision.reviewDue) return "NO_CHANGE";
+  if (
+    input.decision.action === "REMOVE_OWNER" &&
+    (!input.lastInvoice?.invoiceDate || input.lastInvoice.invoiceDateSource === "MISSING")
+  ) {
+    return "NO_CHANGE";
+  }
 
   const days = input.decision.daysSinceLastValidInvoice;
   const payload = {
@@ -498,14 +571,19 @@ async function recordReviewAndMaybeRemove(input: {
     lastInvoicedSalesOrderNumber: input.lastInvoice?.salesOrderCode ?? null,
     lastValidInvoiceId: input.lastInvoice?.invoiceId ?? null,
     lastValidInvoiceNumber: input.lastInvoice?.invoiceNumber ?? null,
-    lastValidInvoiceDate: input.lastInvoice ? saoPauloDateIso(input.lastInvoice.invoiceDate) : null,
+    lastValidInvoiceDate: input.lastInvoice?.invoiceDate
+      ? saoPauloDateIso(input.lastInvoice.invoiceDate)
+      : null,
+    invoiceDateSource: input.lastInvoice?.invoiceDateSource ?? null,
     daysSinceLastValidInvoice: days,
     invoiceStatus: input.lastInvoice?.invoiceStatus ?? null,
     invoiceCanceled: input.lastInvoice?.invoiceCanceled ?? null,
     crmValid: input.preservation.valid,
+    crmReasonCode: mapCrmPreviewReasonCode(input.preservation),
     crmDecision: input.preservation.valid ? PORTFOLIO_PRESERVED_REASON : input.preservation.reasonCode,
     evidenceType: input.preservation.evidenceType,
     evidenceId: input.preservation.evidenceId,
+    decisionReason: input.decision.reasonCode,
     runId: input.runId,
     analyzedAt: input.referenceDate.toISOString(),
     clockSource: "lastValidInvoiceDate",
@@ -557,8 +635,8 @@ async function recordReviewAndMaybeRemove(input: {
       where: { customerId: input.customer.id },
     });
     if (!current?.isActive) return;
-    await tx.crmCustomerCommercialOwner.update({
-      where: { customerId: input.customer.id },
+    const deactivated = await tx.crmCustomerCommercialOwner.updateMany({
+      where: { customerId: input.customer.id, isActive: true },
       data: {
         isActive: false,
         blockAutoAssignUntilManual: true,
@@ -570,6 +648,7 @@ async function recordReviewAndMaybeRemove(input: {
         updatedByName: PORTFOLIO_INACTIVITY_PERFORMED_BY,
       },
     });
+    if (deactivated.count === 0) return;
     await tx.crmCustomerPortfolioReview.create({
       data: {
         runId: input.runId,
@@ -634,6 +713,7 @@ export async function applyCommercialOwnerInactivity(
   let preserved = 0;
   let unchanged = 0;
   let neverInvoiced = 0;
+  let dataAnomaly = 0;
 
   for (const owner of owners) {
     const customer = customerById.get(owner.customerId);
@@ -651,12 +731,21 @@ export async function applyCommercialOwnerInactivity(
       contacts: evidence.contacts.get(owner.customerId) ?? [],
     });
     const decision = decideRow({ owner, lastInvoice, preservation, referenceDate });
-    if (decision.reasonCode === NEVER_INVOICED || decision.status === "NEVER_INVOICED") {
+    if (decision.status === "NEVER_INVOICED" || decision.reasonCode === NEVER_INVOICED) {
       neverInvoiced += 1;
       results.push({
         customerId: owner.customerId,
         action: "REVIEW_REQUIRED",
         reasonCode: NEVER_INVOICED,
+      });
+      continue;
+    }
+    if (decision.status === "DATA_ANOMALY" || decision.reasonCode === MISSING_INVOICE_DATE) {
+      dataAnomaly += 1;
+      results.push({
+        customerId: owner.customerId,
+        action: "REVIEW_REQUIRED",
+        reasonCode: DATA_ANOMALY,
       });
       continue;
     }
@@ -703,11 +792,14 @@ export async function applyCommercialOwnerInactivity(
     skippedUnassigned: 0,
     neverInvoiced,
     neverApproved: neverInvoiced,
+    dataAnomaly,
     results,
   };
 }
 
 export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPreview): string {
+  const src = preview.invoiceDateSourceCounts;
+  const crm = preview.crmReasonCounts;
   const lines = [
     `referenceDate=${preview.referenceDate}`,
     `analisados=${preview.analyzedCustomers}`,
@@ -717,7 +809,15 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
     `preservados por CRM=${preview.preservedByCrm}`,
     `elegíveis para remoção=${preview.removalEligible}`,
     `never invoiced=${preview.neverInvoiced}`,
+    `data anomaly=${preview.dataAnomaly}`,
     `já sem responsável=${preview.alreadyUnassigned}`,
+    `identidade ativos=${preview.withinActivityWindow + preview.inReview + preview.neverInvoiced + preview.dataAnomaly}/${preview.customersWithActiveOwner}`,
+    "",
+    `invoiceDateSource: NFE_XML_DH_EMI=${src.NFE_XML_DH_EMI} STOCK_DOCUMENT_DATE=${src.STOCK_DOCUMENT_DATE} NFE_PROCESSING_DATE=${src.NFE_PROCESSING_DATE} MISSING=${src.MISSING}`,
+    `CRM: ${Object.entries(crm)
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, value]) => `${key}=${value}`)
+      .join(" ") || "-"}`,
     "",
   ];
   for (const row of preview.rows) {
@@ -730,9 +830,10 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
         `PV=${row.lastInvoicedSalesOrderNumber ?? "nunca"}`,
         `NF=${row.lastValidInvoiceNumber ?? "-"}`,
         `NF date=${row.lastValidInvoiceDate ?? "-"}`,
+        `dateSource=${row.invoiceDateSource ?? "-"}`,
         `dias=${row.daysSinceLastValidInvoice ?? "-"}`,
         `crm=${row.crmValid ? "sim" : "não"}`,
-        row.crmEvidenceType ?? row.evidenceType ?? "-",
+        `crmReason=${row.crmReasonCode ?? "-"}`,
         row.reasonCode,
         `action=${row.action ?? row.proposedAction}`,
       ].join(" | ")

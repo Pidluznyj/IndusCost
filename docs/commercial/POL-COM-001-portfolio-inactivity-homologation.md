@@ -20,7 +20,22 @@ Cliente sem nenhuma NF/DS válida: `NEVER_INVOICED` — **não remove** o respon
 
 A POL-COM-001 v1.0 ainda descreve “90 dias sem PV aprovado”. Finding `PORTFOLIO_INACTIVITY_MISMATCH` permanece **blocking** (`POLICY_VERSION_REQUIRED`) até nova versão publicada. **Não** marcar IN_SYNC.
 
-Colunas existentes de `CrmCustomerPortfolioReview` (`lastApprovedSalesOrder*`) recebem o PV faturado e a data da NF; o `payload` JSON guarda os nomes corretos (`lastValidInvoiceDate`, `lastValidInvoiceId`, `lastInvoicedSalesOrderId`, `daysSinceLastValidInvoice`). Sem migration nova.
+Colunas existentes de `CrmCustomerPortfolioReview` (`lastApprovedSalesOrder*`) recebem o PV faturado e a data da NF; o `payload` JSON guarda os nomes corretos (`lastValidInvoiceDate`, `lastValidInvoiceId`, `lastInvoicedSalesOrderId`, `daysSinceLastValidInvoice`, `invoiceDateSource`). Sem migration nova.
+
+Dívida técnica (não nesta execução): `lastApprovedSalesOrderId` → `lastInvoicedSalesOrderId`; `lastApprovedIssueDate` → `lastValidInvoiceAt`.
+
+## Data canônica da compra
+
+Contrato fiscal já usado em Faturamento (`COALESCE(xmlDhEmi, dataProcessamento)`):
+
+1. `NomusNfe.xmlDhEmi` → `NFE_XML_DH_EMI`
+2. `NomusNfe.dataProcessamento` (campo Nomus da NF, **não** `syncedAt`) → `NFE_PROCESSING_DATE`
+3. `NomusStockDocument.dataDocumento` de DS **VALID** → `STOCK_DOCUMENT_DATE`
+4. nenhuma data utilizável (inclui epoch 1970) → `MISSING` / `DATA_ANOMALY` — **não remove**
+
+NF AUTHORIZED sem Documento de Saída: **COUNTED** (`nfeValidityAdvancesKanban` avança só com AUTHORIZED).
+
+## 90 dias
 
 ## 90 dias
 

@@ -5,6 +5,8 @@ import {
   APPROVED_SALES_ORDER_STATUS,
   NEVER_APPROVED_SALES_ORDER,
   NEVER_INVOICED,
+  DATA_ANOMALY,
+  MISSING_INVOICE_DATE,
   PORTFOLIO_INACTIVITY_REASON,
   PORTFOLIO_PRESERVED_REASON,
   calendarDaysBetweenSaoPaulo,
@@ -15,6 +17,8 @@ import {
   isPortfolioReviewDue,
   pickLatestApprovedSalesOrder,
   pickLatestValidInvoice,
+  pickInvoiceClock,
+  resolveInvoiceBusinessDate,
   portfolioInactivityDays,
   saoPauloDateIso,
 } from "./customerCommercialOwnerInactivity.js";
@@ -406,9 +410,12 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
         invoiceExternalId: 1,
         invoiceNumber: "1",
         invoiceDate: LAST_PV,
+        invoiceDateSource: "NFE_XML_DH_EMI",
         invoiceStatus: "4",
+        invoiceValidity: "AUTHORIZED",
         invoiceCanceled: false,
         stockDocumentId: null,
+        stockDocumentValidity: null,
       },
       referenceDate,
       preservation,
@@ -428,6 +435,7 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
       contacts: [],
     });
     assert.equal(preservation.valid, false);
+    assert.equal(preservation.reasonCode, "TECHNICAL_UPDATE_ONLY");
     const decision = decideCommercialOwnerInactivityAction({
       hasActiveOwner: true,
       lastValidInvoice: {
@@ -437,9 +445,12 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
         invoiceExternalId: 1,
         invoiceNumber: "1",
         invoiceDate: LAST_PV,
+        invoiceDateSource: "NFE_XML_DH_EMI",
         invoiceStatus: "4",
+        invoiceValidity: "AUTHORIZED",
         invoiceCanceled: false,
         stockDocumentId: null,
+        stockDocumentValidity: null,
       },
       referenceDate,
       preservation,
@@ -499,9 +510,12 @@ describe("POL-COM-001 §11 — relógio por NF / Documento de Saída válido", (
       invoiceExternalId: 123456,
       invoiceNumber: "123456",
       invoiceDate: spNoon(iso),
+      invoiceDateSource: "NFE_XML_DH_EMI" as const,
       invoiceStatus: "4",
+      invoiceValidity: "AUTHORIZED",
       invoiceCanceled: false,
       stockDocumentId: "st-1",
+      stockDocumentValidity: "VALID",
     };
   }
 
@@ -676,5 +690,119 @@ describe("POL-COM-001 §11 — relógio por NF / Documento de Saída válido", (
       isPortfolioReviewDue({ lastValidInvoiceDate: invoiceAlmostNextUtcDay, referenceDate: reference }),
       false
     );
+  });
+
+  it("xmlDhEmi presente usa XML como fonte", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({
+        xmlDhEmi: spNoon("2026-08-20"),
+        dataProcessamento: spNoon("2026-09-01"),
+        stockDataDocumento: spNoon("2026-07-01"),
+      }),
+    ]);
+    assert.equal(latest?.invoiceDateSource, "NFE_XML_DH_EMI");
+    assert.equal(saoPauloDateIso(latest!.invoiceDate!), "2026-08-20");
+  });
+
+  it("xmlDhEmi ausente e DS válido usa dataDocumento", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({
+        xmlDhEmi: null,
+        dataProcessamento: null,
+        stockDataDocumento: spNoon("2026-07-15"),
+        stockIsCancelled: false,
+        stockStatusRaw: "emitido",
+      }),
+    ]);
+    assert.equal(latest?.invoiceDateSource, "STOCK_DOCUMENT_DATE");
+    assert.equal(saoPauloDateIso(latest!.invoiceDate!), "2026-07-15");
+  });
+
+  it("somente dataProcessamento usa fallback Nomus da NF", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({
+        xmlDhEmi: null,
+        dataProcessamento: spNoon("2026-08-10"),
+        stockDocumentId: null,
+        stockDataDocumento: null,
+      }),
+    ]);
+    assert.equal(latest?.invoiceDateSource, "NFE_PROCESSING_DATE");
+  });
+
+  it("NF autorizada sem data utilizável é DATA_ANOMALY, nunca 1970", () => {
+    const clock = pickInvoiceClock([
+      candidate({
+        xmlDhEmi: new Date(0),
+        dataProcessamento: null,
+        stockDataDocumento: null,
+        stockDocumentId: null,
+      }),
+    ]);
+    assert.equal(clock.kind, "DATA_ANOMALY");
+    assert.equal(clock.invoice?.invoiceDateSource, "MISSING");
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: clock.invoice,
+      invoiceClockKind: "DATA_ANOMALY",
+      referenceDate,
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.status, "DATA_ANOMALY");
+    assert.equal(decision.action, "REVIEW_REQUIRED");
+    assert.equal(decision.reasonCode, MISSING_INVOICE_DATE);
+    assert.notEqual(decision.action, "REMOVE_OWNER");
+  });
+
+  it("uma NFe com DS cancelado e DS válido continua contando o válido", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({
+        stockDocumentId: "st-canc",
+        stockIsCancelled: true,
+        stockStatusRaw: "cancelado",
+        xmlDhEmi: spNoon("2026-08-01"),
+      }),
+      candidate({
+        stockDocumentId: "st-ok",
+        stockIsCancelled: false,
+        stockStatusRaw: "emitido",
+        xmlDhEmi: spNoon("2026-08-01"),
+      }),
+    ]);
+    assert.equal(latest?.stockDocumentId, "st-ok");
+    assert.ok(latest);
+  });
+
+  it("todos os DS cancelados não usam o documento; NF autorizada ainda conta", () => {
+    const nfeOnly = candidate({
+      stockDocumentId: null,
+      stockIsCancelled: false,
+      xmlDhEmi: spNoon("2026-08-01"),
+    });
+    const cancelled = candidate({
+      stockDocumentId: "st-canc",
+      stockIsCancelled: true,
+      stockStatusRaw: "cancelado",
+      xmlDhEmi: spNoon("2026-08-01"),
+    });
+    const latest = pickLatestValidInvoice([cancelled, nfeOnly]);
+    assert.equal(latest?.stockDocumentId, null);
+    assert.equal(latest?.invoiceDateSource, "NFE_XML_DH_EMI");
+  });
+
+  it("NF AUTHORIZED sem DS conta como faturamento", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({
+        stockDocumentId: null,
+        stockIsCancelled: false,
+        stockStatusRaw: null,
+        stockTipo: null,
+        stockDataDocumento: null,
+        xmlDhEmi: spNoon("2026-08-20"),
+      }),
+    ]);
+    assert.ok(latest);
+    assert.equal(latest?.stockDocumentId, null);
+    assert.equal(latest?.invoiceValidity, "AUTHORIZED");
   });
 });

@@ -149,6 +149,23 @@ function createFakePrisma(seed: {
         Object.assign(row, data);
         return row;
       },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { customerId: string; isActive?: boolean };
+        data: Partial<Owner>;
+      }) => {
+        const row = owners.find(
+          (item) =>
+            item.customerId === where.customerId &&
+            (where.isActive == null || item.isActive === where.isActive)
+        );
+        if (!row) return { count: 0 };
+        writes.ownerUpdate += 1;
+        Object.assign(row, data);
+        return { count: 1 };
+      },
     },
     customer: {
       findMany: async (args?: { where?: { id?: { in: string[] } } }) => {
@@ -414,7 +431,44 @@ describe("apply/preview da revisão de carteira", () => {
     assert.equal(review.payload.lastValidInvoiceDate, "2026-06-01");
     assert.equal(review.payload.lastInvoicedSalesOrderId, "so-1");
     assert.equal(review.payload.daysSinceLastValidInvoice, 90);
+    assert.equal(review.payload.invoiceDateSource, "NFE_XML_DH_EMI");
     assert.equal(review.payload.clockSource, "lastValidInvoiceDate");
     assert.equal(Object.prototype.hasOwnProperty.call(review.payload, "lastApprovedIssueDate"), false);
+  });
+
+  it("DATA_ANOMALY não remove o responsável", async () => {
+    const fake = createFakePrisma({
+      customers: [{ id: CUSTOMER_A, companyName: "Cliente A", taxId: "1", nomusExternalPersonId: 10 }],
+      owners: [{ ...maria }],
+      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PD 02710", issueDate: LAST_PV, status: "SENT_TO_NOMUS" }],
+      nfeLinks: [
+        {
+          salesOrderId: "so-1",
+          nfeExternalId: 7650,
+          nfeNumber: "7650",
+          nfeStatus: 4,
+          dataProcessamento: null,
+          nomusNfeId: "nfe-7650",
+        },
+      ],
+      nfes: [
+        {
+          id: "nfe-7650",
+          externalId: 7650,
+          numero: "7650",
+          status: 4,
+          xmlDhEmi: null,
+          dataProcessamento: null,
+          xmlCancelamento: null,
+        },
+      ],
+    });
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(preview.dataAnomaly, 1);
+    assert.equal(preview.removalEligible, 0);
+    const apply = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(apply.removed, 0);
+    assert.equal(apply.dataAnomaly, 1);
+    assert.equal(fake.owners[0]?.isActive, true);
   });
 });

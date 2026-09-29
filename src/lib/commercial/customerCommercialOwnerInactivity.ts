@@ -6,7 +6,7 @@
 import { DOCUMENT_INACTIVITY_DAYS } from "@/src/lib/commercialPolicy/commercialPolicyNormative.js";
 import { getSaoPauloDateTimeParts } from "@/src/lib/brentCommodityJob.js";
 import { CRM_NEXT_ACTION_NONE } from "@/src/lib/commercial/crmContactCatalog.js";
-import { isNomusNfeCancelled } from "@/src/lib/finance/nfeStatus.js";
+import { normalizeNfeStatus } from "@/src/lib/finance/nfeStatus.js";
 import {
   classifyNfeValidity,
   classifyOutputDocumentValidity,
@@ -16,6 +16,8 @@ export const PORTFOLIO_INACTIVITY_POLICY_SECTION = "11" as const;
 export const PORTFOLIO_INACTIVITY_REASON = "INACTIVITY_90_DAYS" as const;
 export const PORTFOLIO_PRESERVED_REASON = "PORTFOLIO_REVIEW_PRESERVED" as const;
 export const NEVER_INVOICED = "NEVER_INVOICED" as const;
+export const DATA_ANOMALY = "DATA_ANOMALY" as const;
+export const MISSING_INVOICE_DATE = "MISSING_INVOICE_DATE" as const;
 /** @deprecated alias estável: a classificação operacional passou a ser NEVER_INVOICED. */
 export const NEVER_APPROVED_SALES_ORDER = NEVER_INVOICED;
 
@@ -32,7 +34,8 @@ export type PortfolioConceptualStatus =
   | "REMOVAL_ELIGIBLE"
   | "UNASSIGNED"
   | "NEVER_APPROVED"
-  | "NEVER_INVOICED";
+  | "NEVER_INVOICED"
+  | "DATA_ANOMALY";
 
 export type PortfolioInactivityAction = "KEEP_OWNER" | "REMOVE_OWNER" | "REVIEW_REQUIRED" | "NO_CHANGE";
 
@@ -43,16 +46,25 @@ export type LastApprovedSalesOrder = {
   status: string;
 };
 
+export type InvoiceDateSource =
+  | "NFE_XML_DH_EMI"
+  | "STOCK_DOCUMENT_DATE"
+  | "NFE_PROCESSING_DATE"
+  | "MISSING";
+
 export type LastValidInvoice = {
   salesOrderId: string;
   salesOrderCode: string;
   invoiceId: string | null;
   invoiceExternalId: number | null;
   invoiceNumber: string | null;
-  invoiceDate: Date;
+  invoiceDate: Date | null;
+  invoiceDateSource: InvoiceDateSource;
   invoiceStatus: string;
+  invoiceValidity: string;
   invoiceCanceled: boolean;
   stockDocumentId: string | null;
+  stockDocumentValidity: string | null;
 };
 
 export type PortfolioInvoiceCandidate = {
@@ -114,6 +126,7 @@ export type PortfolioDecisionInput = {
   lastValidInvoice?: LastValidInvoice | null;
   /** @deprecated fallback só para testes/API antiga; o relógio oficial é lastValidInvoice */
   lastApprovedOrder?: LastApprovedSalesOrder | null;
+  invoiceClockKind?: "INVOICE" | "NEVER_INVOICED" | "DATA_ANOMALY";
   referenceDate: Date;
   preservation: CommercialPortfolioPreservation;
 };
@@ -355,6 +368,13 @@ export function evaluateCommercialPortfolioPreservation(input: {
   const openProposal = [...input.proposals]
     .filter((row) => hasMaterialProposalEvidence(row, input.referenceDate))
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+  const technicalProposal = [...input.proposals]
+    .filter(
+      (row) =>
+        OPEN_PROPOSAL_STATUSES.has(row.status) &&
+        !hasMaterialProposalEvidence(row, input.referenceDate)
+    )
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
   if (openProposal) {
     const projectLike = openProposal.status === "ANALYSIS";
     const evidenceType = projectLike ? "ACTIVE_PROJECT_OR_HOMOLOGATION" : "ACTIVE_PROPOSAL";
@@ -456,6 +476,23 @@ export function evaluateCommercialPortfolioPreservation(input: {
     recentContacts[0] ??
     [...input.contacts].sort((a, b) => contactInstant(b).getTime() - contactInstant(a).getTime())[0];
   if (!latest) {
+    if (technicalProposal) {
+      return {
+        valid: false,
+        reasonCode: "TECHNICAL_UPDATE_ONLY",
+        evidenceType: "TECHNICAL_UPDATE_ONLY",
+        evidenceId: technicalProposal.id,
+        evidenceDate: technicalProposal.updatedAt,
+        nextReviewDate: null,
+        ...NO_DIAGNOSTICS,
+        evidenceStatus: technicalProposal.status,
+        evidenceCode: formatProposalEvidenceCode(technicalProposal),
+        evidenceAgeDays: calendarDaysBetweenSaoPaulo(technicalProposal.updatedAt, input.referenceDate),
+        evidenceDateSource: "updatedAt",
+        preservationReason:
+          "TECHNICAL_UPDATE_ONLY: proposta aberta sem expectedCloseDate/nextActionAt; updatedAt técnico não preserva.",
+      };
+    }
     return {
       valid: false,
       reasonCode: "NO_VALID_CRM_EVIDENCE",
@@ -499,10 +536,15 @@ export function evaluateCommercialPortfolioPreservation(input: {
   }
 
   if (!outcome || GENERIC_OR_TERMINAL_OUTCOMES.has(outcome)) {
+    const terminal =
+      outcome === "NEGOTIATION_ENDED" ||
+      outcome === "NEGOTIATION_LOST" ||
+      outcome === "PROPOSAL_REJECTED" ||
+      outcome === "DOES_NOT_WANT_TO_RESUME";
     return {
       valid: false,
-      reasonCode: "GENERIC_CRM_RECORD",
-      evidenceType: "GENERIC_NOTE",
+      reasonCode: terminal ? "TERMINAL_RECORD" : "GENERIC_CRM_RECORD",
+      evidenceType: terminal ? "TERMINAL_RECORD" : "GENERIC_NOTE",
       evidenceId: latest.id,
       evidenceDate: contactInstant(latest),
       nextReviewDate: null,
@@ -541,9 +583,12 @@ function invoiceFromApprovedOrder(order: LastApprovedSalesOrder): LastValidInvoi
     invoiceExternalId: null,
     invoiceNumber: null,
     invoiceDate: order.issueDate,
+    invoiceDateSource: "NFE_XML_DH_EMI",
     invoiceStatus: order.status,
+    invoiceValidity: "AUTHORIZED",
     invoiceCanceled: false,
     stockDocumentId: null,
+    stockDocumentValidity: null,
   };
 }
 
@@ -552,8 +597,14 @@ function resolveLastValidInvoice(input: PortfolioDecisionInput): LastValidInvoic
   return input.lastApprovedOrder ? invoiceFromApprovedOrder(input.lastApprovedOrder) : null;
 }
 
+function isInvoiceDateAnomaly(invoice: LastValidInvoice | null, clockKind?: PortfolioDecisionInput["invoiceClockKind"]): boolean {
+  if (clockKind === "DATA_ANOMALY") return true;
+  if (!invoice) return false;
+  return invoice.invoiceDateSource === "MISSING" || invoice.invoiceDate == null;
+}
+
 function decisionDays(invoice: LastValidInvoice | null, referenceDate: Date): number | null {
-  return invoice ? calendarDaysBetweenSaoPaulo(invoice.invoiceDate, referenceDate) : null;
+  return invoice?.invoiceDate ? calendarDaysBetweenSaoPaulo(invoice.invoiceDate, referenceDate) : null;
 }
 
 export function decideCommercialOwnerInactivityAction(input: PortfolioDecisionInput): PortfolioDecision {
@@ -571,7 +622,18 @@ export function decideCommercialOwnerInactivityAction(input: PortfolioDecisionIn
     };
   }
 
-  if (!invoice) {
+  if (isInvoiceDateAnomaly(invoice, input.invoiceClockKind)) {
+    return {
+      status: "DATA_ANOMALY",
+      action: "REVIEW_REQUIRED",
+      reasonCode: MISSING_INVOICE_DATE,
+      daysSinceLastValidInvoice: null,
+      daysSinceLastApprovedOrder: null,
+      reviewDue: false,
+    };
+  }
+
+  if (!invoice || input.invoiceClockKind === "NEVER_INVOICED") {
     return {
       status: "NEVER_INVOICED",
       action: "REVIEW_REQUIRED",
@@ -624,45 +686,163 @@ export function pickLatestApprovedSalesOrder(
   return approved[0] ?? null;
 }
 
+/** Rejeita epoch/1970 e datas inválidas — nunca são compra comercial. */
+export function isUsableInvoiceDate(value: Date | null | undefined): value is Date {
+  if (!value || Number.isNaN(value.getTime())) return false;
+  return value.getTime() > 0;
+}
+
+export function classifyPortfolioNfeValidity(candidate: PortfolioInvoiceCandidate) {
+  const normalized = normalizeNfeStatus({
+    status: candidate.nfeStatus,
+    xmlCancelamento: candidate.xmlCancelamento,
+  });
+  return classifyNfeValidity({
+    statusNormalized: normalized.statusNormalized,
+    isCanceled: normalized.isCanceled || Boolean(candidate.xmlCancelamento?.trim()),
+    isValidForBilling: normalized.isValidForBilling,
+    statusRaw: candidate.nfeStatus,
+  });
+}
+
+export function classifyPortfolioStockValidity(candidate: PortfolioInvoiceCandidate) {
+  if (!candidate.stockDocumentId) return null;
+  return classifyOutputDocumentValidity({
+    isCancelled: candidate.stockIsCancelled,
+    statusRaw: candidate.stockStatusRaw,
+    tipoDocumentoEstoque: candidate.stockTipo,
+    idNfe: candidate.nfeExternalId,
+  });
+}
+
+/**
+ * Data canônica da compra. Contrato fiscal do IndusCost (Faturamento):
+ * COALESCE(xmlDhEmi, dataProcessamento). dataProcessamento vem do payload Nomus
+ * da NF-e, não do syncedAt da sincronização. dataDocumento de DS válido só entra
+ * se a NF não tiver data própria.
+ */
+export function resolveInvoiceBusinessDate(candidate: PortfolioInvoiceCandidate): {
+  date: Date | null;
+  source: InvoiceDateSource;
+} {
+  if (isUsableInvoiceDate(candidate.xmlDhEmi)) {
+    return { date: candidate.xmlDhEmi, source: "NFE_XML_DH_EMI" };
+  }
+  if (isUsableInvoiceDate(candidate.dataProcessamento)) {
+    return { date: candidate.dataProcessamento, source: "NFE_PROCESSING_DATE" };
+  }
+  const stockValidity = classifyPortfolioStockValidity(candidate);
+  if (stockValidity === "VALID" && isUsableInvoiceDate(candidate.stockDataDocumento)) {
+    return { date: candidate.stockDataDocumento, source: "STOCK_DOCUMENT_DATE" };
+  }
+  return { date: null, source: "MISSING" };
+}
+
 export function portfolioInvoiceIssueDate(candidate: PortfolioInvoiceCandidate): Date | null {
-  return candidate.xmlDhEmi ?? candidate.dataProcessamento ?? candidate.stockDataDocumento;
+  return resolveInvoiceBusinessDate(candidate).date;
+}
+
+export function isAuthorizedPortfolioInvoice(candidate: PortfolioInvoiceCandidate): boolean {
+  if (classifyPortfolioNfeValidity(candidate) !== "AUTHORIZED") return false;
+  const stockValidity = classifyPortfolioStockValidity(candidate);
+  if (stockValidity === "CANCELLED" || stockValidity === "RETURN" || stockValidity === "TRANSFER") {
+    return false;
+  }
+  return true;
 }
 
 export function isValidPortfolioInvoice(candidate: PortfolioInvoiceCandidate): boolean {
-  if (candidate.stockIsCancelled) return false;
-  if (candidate.xmlCancelamento?.trim()) return false;
-  if (isNomusNfeCancelled(candidate.nfeStatus)) return false;
-  if (classifyNfeValidity({ statusRaw: candidate.nfeStatus }) !== "AUTHORIZED") return false;
-  if (candidate.stockDocumentId) {
-    const stockValidity = classifyOutputDocumentValidity({
-      isCancelled: candidate.stockIsCancelled,
-      statusRaw: candidate.stockStatusRaw,
-      tipoDocumentoEstoque: candidate.stockTipo,
-      idNfe: candidate.nfeExternalId,
-    });
-    if (stockValidity === "CANCELLED" || stockValidity === "RETURN" || stockValidity === "TRANSFER") {
-      return false;
-    }
-  }
-  return portfolioInvoiceIssueDate(candidate) != null;
+  return isAuthorizedPortfolioInvoice(candidate) && resolveInvoiceBusinessDate(candidate).date != null;
+}
+
+function toLastValidInvoice(
+  candidate: PortfolioInvoiceCandidate,
+  resolved: { date: Date | null; source: InvoiceDateSource }
+): LastValidInvoice {
+  const nfeValidity = classifyPortfolioNfeValidity(candidate);
+  const stockValidity = classifyPortfolioStockValidity(candidate);
+  return {
+    salesOrderId: candidate.salesOrderId,
+    salesOrderCode: candidate.salesOrderCode,
+    invoiceId: candidate.nfeId ?? candidate.stockDocumentId,
+    invoiceExternalId: candidate.nfeExternalId,
+    invoiceNumber: candidate.nfeNumber,
+    invoiceDate: resolved.date,
+    invoiceDateSource: resolved.source,
+    invoiceStatus: String(candidate.nfeStatus ?? nfeValidity),
+    invoiceValidity: nfeValidity,
+    invoiceCanceled: nfeValidity === "CANCELLED",
+    stockDocumentId: candidate.stockDocumentId,
+    stockDocumentValidity: stockValidity,
+  };
 }
 
 export function pickLatestValidInvoice(candidates: PortfolioInvoiceCandidate[]): LastValidInvoice | null {
   const valid = candidates
     .filter(isValidPortfolioInvoice)
-    .map((row) => ({ row, invoiceDate: portfolioInvoiceIssueDate(row)! }))
-    .sort((a, b) => b.invoiceDate.getTime() - a.invoiceDate.getTime());
+    .map((row) => ({ row, resolved: resolveInvoiceBusinessDate(row) }))
+    .filter((item): item is { row: PortfolioInvoiceCandidate; resolved: { date: Date; source: InvoiceDateSource } } =>
+      item.resolved.date != null
+    )
+    .sort((a, b) => b.resolved.date.getTime() - a.resolved.date.getTime());
   const latest = valid[0];
   if (!latest) return null;
-  return {
-    salesOrderId: latest.row.salesOrderId,
-    salesOrderCode: latest.row.salesOrderCode,
-    invoiceId: latest.row.nfeId ?? latest.row.stockDocumentId,
-    invoiceExternalId: latest.row.nfeExternalId,
-    invoiceNumber: latest.row.nfeNumber,
-    invoiceDate: latest.invoiceDate,
-    invoiceStatus: String(latest.row.nfeStatus ?? "AUTHORIZED"),
-    invoiceCanceled: false,
-    stockDocumentId: latest.row.stockDocumentId,
-  };
+  return toLastValidInvoice(latest.row, latest.resolved);
+}
+
+export function pickInvoiceClock(candidates: PortfolioInvoiceCandidate[]): {
+  kind: "INVOICE" | "DATA_ANOMALY" | "NEVER_INVOICED";
+  invoice: LastValidInvoice | null;
+} {
+  const dated = pickLatestValidInvoice(candidates);
+  if (dated) return { kind: "INVOICE", invoice: dated };
+  const authorizedWithoutDate = candidates.find(
+    (row) => isAuthorizedPortfolioInvoice(row) && resolveInvoiceBusinessDate(row).source === "MISSING"
+  );
+  if (authorizedWithoutDate) {
+    return {
+      kind: "DATA_ANOMALY",
+      invoice: toLastValidInvoice(authorizedWithoutDate, { date: null, source: "MISSING" }),
+    };
+  }
+  return { kind: "NEVER_INVOICED", invoice: null };
+}
+
+export function mapCrmPreviewReasonCode(preservation: CommercialPortfolioPreservation): string {
+  if (preservation.valid) {
+    switch (preservation.evidenceType) {
+      case "ACTIVE_PROPOSAL":
+        return "ACTIVE_PROPOSAL";
+      case "ACTIVE_NEGOTIATION":
+        return "ACTIVE_NEGOTIATION";
+      case "CONFIRMED_FUTURE_NEXT_STEP":
+        return "VALID_NEXT_STEP";
+      case "DOCUMENTED_TEMPORARY_PAUSE":
+        return "TEMPORARY_PAUSE";
+      case "ACTIVE_PROJECT_OR_HOMOLOGATION":
+        return "ACTIVE_PROJECT";
+      case "CONCRETE_COMMERCIAL_FACT":
+        return "RECENT_MATERIAL_CONTACT";
+      default:
+        return preservation.evidenceType ?? PORTFOLIO_PRESERVED_REASON;
+    }
+  }
+  switch (preservation.reasonCode) {
+    case "NO_VALID_CRM_EVIDENCE":
+      return "NO_CRM_EVIDENCE";
+    case "STALE_CRM_RECORD":
+      return "STALE_RECORD";
+    case "GENERIC_CRM_RECORD":
+      return "GENERIC_RECORD";
+    case "TERMINAL_RECORD":
+      return "TERMINAL_RECORD";
+    case "ARTIFICIAL_CRM_RECORD":
+      return "ARTIFICIAL_RETENTION_RECORD";
+    case "CRM_WITHOUT_NEXT_STEP":
+      return "MISSING_NEXT_STEP";
+    case "TECHNICAL_UPDATE_ONLY":
+      return "TECHNICAL_UPDATE_ONLY";
+    default:
+      return preservation.reasonCode;
+  }
 }
