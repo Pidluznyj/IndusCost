@@ -104,6 +104,16 @@ export type ResolveSalesOrderItemFlowInput = {
   hasProductRouting?: boolean | null;
   hasProductBom?: boolean | null;
   explicitRequiresProduction?: boolean | null;
+  /**
+   * Corte oficial informado (parcial ou integral). Ausente: o motor deriva
+   * o corte só do status FULFILLED_WITH_CUT.
+   */
+  officialCutQuantity?: Prisma.Decimal | string | number | null;
+  /**
+   * Cancelamento oficial parcial. Ausente: cancelamento integral só quando
+   * o status é CANCELED. Não transforma cancelamento em atendimento.
+   */
+  officialCanceledQuantity?: Prisma.Decimal | string | number | null;
 };
 
 export type SalesOrderItemFlowProgress = {
@@ -424,10 +434,14 @@ export function resolveSalesOrderItemFlow(
     );
   }
 
-  // Quantidades de corte / cancelamento
+  // Corte e cancelamento reduzem a obrigação. Não são atendimento.
+  // Cancelamento entra primeiro; o corte só ocupa o que ainda cabe no pedido.
+  // 0 <= cut <= ordered, 0 <= cancelled <= ordered, cut + cancelled <= ordered.
   let canceledQuantity = ZERO;
   let cutQuantity = ZERO;
-  if (fulfillment.classification === "CANCELED" || input.nomusIsCanceled === true) {
+  const fullyCanceled =
+    fulfillment.classification === "CANCELED" || input.nomusIsCanceled === true;
+  if (fullyCanceled) {
     canceledQuantity = orderedQuantity != null ? max0(orderedQuantity) : ZERO;
   } else if (fulfillment.classification === "FULFILLED_WITH_CUT") {
     if (orderedQuantity != null && fulfilledQuantity != null) {
@@ -435,10 +449,7 @@ export function resolveSalesOrderItemFlow(
     } else if (orderedQuantity != null) {
       cutQuantity = max0(orderedQuantity);
     }
-  } else if (
-    input.nomusIsCut === true &&
-    fulfillment.classification !== "FULFILLED_WITH_CUT"
-  ) {
+  } else if (input.nomusIsCut === true) {
     pushInconsistency(
       inconsistencies,
       "CUT_WITHOUT_OFFICIAL_STATUS",
@@ -446,17 +457,28 @@ export function resolveSalesOrderItemFlow(
     );
   }
 
-  // Alvo operacional a cobrir com DS/NF (exclui cancelado e corte).
-  // OP só é exigida sobre remainingFulfillment (saldo ainda não atendido).
-  let shipTargetQuantity = ZERO;
-  if (fulfillment.classification === "CANCELED" || input.nomusIsCanceled === true) {
-    shipTargetQuantity = ZERO;
-  } else if (fulfillment.classification === "FULFILLED_WITH_CUT") {
-    shipTargetQuantity =
-      fulfilledQuantity != null ? max0(fulfilledQuantity) : ZERO;
-  } else if (orderedQuantity != null) {
-    shipTargetQuantity = max0(orderedQuantity.sub(canceledQuantity).sub(cutQuantity));
+  if (!fullyCanceled && input.officialCanceledQuantity != null) {
+    canceledQuantity = max0(qtyOrZero(input.officialCanceledQuantity));
   }
+  if (!fullyCanceled && input.officialCutQuantity != null) {
+    cutQuantity = max0(qtyOrZero(input.officialCutQuantity));
+  }
+
+  if (orderedQuantity != null) {
+    const ordered = max0(orderedQuantity);
+    canceledQuantity = minQty(canceledQuantity, ordered);
+    cutQuantity = minQty(cutQuantity, max0(ordered.sub(canceledQuantity)));
+  } else {
+    canceledQuantity = ZERO;
+    cutQuantity = ZERO;
+  }
+
+  // Obrigação ativa = pedido − corte − cancelamento. Saldo = obrigação − atendido.
+  // Excesso de atendimento não gera residual negativo.
+  const shipTargetQuantity =
+    orderedQuantity != null
+      ? max0(max0(orderedQuantity).sub(cutQuantity).sub(canceledQuantity))
+      : ZERO;
 
   const activeObligationQuantity = shipTargetQuantity;
   const fulfilledForObligation =
