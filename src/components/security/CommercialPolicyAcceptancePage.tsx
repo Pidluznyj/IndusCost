@@ -190,6 +190,14 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           </button>
         </div>
         {error ? <p className="px-4 py-2 text-xs text-red-800">{error}</p> : null}
+        {policy.whatChanged && policy.whatChanged.some((line) => line.startsWith("POLÍTICA")) ? (
+          <section className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-bold">O que mudou nesta versão</h2>
+            {policy.whatChanged.map((line) => (
+              <p key={line} className="text-xs">{line}</p>
+            ))}
+          </section>
+        ) : null}
         <CommercialPolicyReader
           effectiveFrom={policy.effectiveFrom}
           initialChapterId={reviewChapterId}

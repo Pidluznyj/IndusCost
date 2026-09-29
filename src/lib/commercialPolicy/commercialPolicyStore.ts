@@ -1,3 +1,4 @@
+import type { PolicyChange } from "./commercialPolicyNormative.js";
 import type { PolicyQuestion, PolicyVersionBody } from "./commercialPolicyRules.js";
 
 export type StoredVersion = PolicyVersionBody & {
@@ -9,6 +10,11 @@ export type StoredVersion = PolicyVersionBody & {
   effectiveFrom: Date;
   publishedAt: Date | null;
   publishedByUserId: string | null;
+  normativeSnapshot?: unknown;
+  normativeSnapshotHash?: string;
+  changeSet?: PolicyChange[];
+  changeSetHash?: string;
+  previousVersionId?: string | null;
 };
 
 export type StoredAttempt = {
@@ -58,6 +64,8 @@ export type StoredAcceptance = {
   questionnaireAttemptId: string;
   declarationsAccepted: string[];
   policyContentHash: string;
+  normativeSnapshotHash?: string;
+  changeSetHash?: string;
   photoHash: string;
   evidenceHash: string;
   appCommit: string | null;
@@ -94,6 +102,14 @@ export type CommercialPolicyStore = {
   insertControlledCopy(row: StoredControlledCopy): Promise<StoredControlledCopy>;
   retirePublishedExcept(policyId: string, keepId: string): Promise<void>;
   markPublished(id: string, patch: { contentHash: string; publishedAt: Date; publishedByUserId: string }): Promise<StoredVersion | null>;
+  attachNormative(id: string, patch: {
+    normativeSnapshot: unknown;
+    normativeSnapshotHash: string;
+    changeSet: PolicyChange[];
+    changeSetHash: string;
+    previousVersionId: string | null;
+  }): Promise<StoredVersion | null>;
+  retireDraft(id: string): Promise<StoredVersion | null>;
   findAcceptance(userId: string, versionId: string): Promise<StoredAcceptance | null>;
   getAcceptance(id: string): Promise<StoredAcceptance | null>;
   listAcceptances(): Promise<StoredAcceptance[]>;
@@ -202,6 +218,22 @@ export function createMemoryCommercialPolicyStore(): CommercialPolicyStore & {
       row.contentHash = patch.contentHash;
       row.publishedAt = patch.publishedAt;
       row.publishedByUserId = patch.publishedByUserId;
+      return row;
+    },
+    async attachNormative(id, patch) {
+      const row = versions.find((item) => item.id === id);
+      if (!row || row.status !== "DRAFT") return null;
+      row.normativeSnapshot = patch.normativeSnapshot;
+      row.normativeSnapshotHash = patch.normativeSnapshotHash;
+      row.changeSet = patch.changeSet;
+      row.changeSetHash = patch.changeSetHash;
+      row.previousVersionId = patch.previousVersionId;
+      return row;
+    },
+    async retireDraft(id) {
+      const row = versions.find((item) => item.id === id);
+      if (!row || row.status !== "DRAFT") return null;
+      row.status = "RETIRED";
       return row;
     },
     async findAcceptance(userId, versionId) {

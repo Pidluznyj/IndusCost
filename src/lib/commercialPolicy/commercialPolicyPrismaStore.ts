@@ -1,5 +1,6 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
+import type { PolicyChange } from "./commercialPolicyNormative.js";
 import {
   COMMERCIAL_POLICY_AUDIENCE,
   COMMERCIAL_POLICY_TYPE,
@@ -44,6 +45,11 @@ function mapVersion(row: {
   declarations: unknown;
   questions: unknown;
   contentHash: string;
+  normativeSnapshot: unknown;
+  normativeSnapshotHash: string;
+  changeSet: unknown;
+  changeSetHash: string;
+  previousVersionId: string | null;
   status: "DRAFT" | "PUBLISHED" | "RETIRED";
   effectiveFrom: Date;
   publishedAt: Date | null;
@@ -59,6 +65,11 @@ function mapVersion(row: {
     declarations: asStringList(row.declarations),
     questions: asQuestions(row.questions),
     contentHash: row.contentHash,
+    normativeSnapshot: row.normativeSnapshot,
+    normativeSnapshotHash: row.normativeSnapshotHash,
+    changeSet: Array.isArray(row.changeSet) ? (row.changeSet as PolicyChange[]) : [],
+    changeSetHash: row.changeSetHash,
+    previousVersionId: row.previousVersionId,
     status: row.status,
     effectiveFrom: row.effectiveFrom,
     publishedAt: row.publishedAt,
@@ -83,6 +94,8 @@ function mapAcceptance(row: {
   questionnaireAttemptId: string;
   declarationsAccepted: unknown;
   policyContentHash: string;
+  normativeSnapshotHash: string;
+  changeSetHash: string;
   photoHash: string;
   evidenceHash: string;
   appCommit: string | null;
@@ -126,6 +139,8 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
           declarations: row.declarations,
           questions: row.questions,
           contentHash: "",
+          normativeSnapshotHash: "",
+          changeSetHash: "",
           status: "DRAFT",
           effectiveFrom: row.effectiveFrom,
         },
@@ -145,6 +160,30 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
           questions: body.questions,
           effectiveFrom,
         },
+      });
+      return mapVersion(updated);
+    },
+    async attachNormative(id, patch) {
+      const current = await client.commercialPolicyVersion.findUnique({ where: { id } });
+      if (!current || current.status !== "DRAFT") return null;
+      const updated = await client.commercialPolicyVersion.update({
+        where: { id },
+        data: {
+          normativeSnapshot: patch.normativeSnapshot as Prisma.InputJsonValue,
+          normativeSnapshotHash: patch.normativeSnapshotHash,
+          changeSet: patch.changeSet as unknown as Prisma.InputJsonValue,
+          changeSetHash: patch.changeSetHash,
+          previousVersionId: patch.previousVersionId,
+        },
+      });
+      return mapVersion(updated);
+    },
+    async retireDraft(id) {
+      const current = await client.commercialPolicyVersion.findUnique({ where: { id } });
+      if (!current || current.status !== "DRAFT") return null;
+      const updated = await client.commercialPolicyVersion.update({
+        where: { id },
+        data: { status: "RETIRED" },
       });
       return mapVersion(updated);
     },
@@ -343,6 +382,8 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
               questionnaireAttemptId: row.questionnaireAttemptId,
               declarationsAccepted: row.declarationsAccepted,
               policyContentHash: row.policyContentHash,
+              normativeSnapshotHash: row.normativeSnapshotHash ?? "",
+              changeSetHash: row.changeSetHash ?? "",
               photoHash: row.photoHash,
               evidenceHash: row.evidenceHash,
               appCommit: row.appCommit,

@@ -11,6 +11,7 @@ export type PendingPolicy = {
   contentHash: string;
   effectiveFrom: string;
   publishedAt: string | null;
+  whatChanged?: string[];
 };
 
 export type PendingResponse = {

@@ -220,7 +220,11 @@ function handleQueryError(res: express.Response, error: unknown) {
 
 function handleValidationError(res: express.Response, error: CommissionValidationError) {
   const status =
-    error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : 400;
+    error.code === "NOT_FOUND"
+      ? 404
+      : error.code === "CONFLICT" || error.code === "PENDING_POLICY_PUBLICATION"
+        ? 409
+        : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 

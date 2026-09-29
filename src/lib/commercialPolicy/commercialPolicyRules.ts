@@ -142,11 +142,16 @@ export type EvidencePayloadInput = {
   questionnaireAttemptId: string;
   answers: SubmittedAnswer[];
   declarationsAccepted: string[];
+  normativeSnapshotHash?: string;
+  changeSetHash?: string;
+  previousPolicyVersionId?: string | null;
   appCommit: string | null;
 };
 
 export function buildEvidenceHash(input: EvidencePayloadInput): { hash: string; payload: EvidencePayloadInput } {
-  const payload: EvidencePayloadInput = { ...input };
+  const payload = Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as EvidencePayloadInput;
   return { hash: sha256Hex(stableStringify(payload)), payload };
 }
 

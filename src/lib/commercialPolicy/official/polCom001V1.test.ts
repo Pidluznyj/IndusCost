@@ -65,25 +65,33 @@ describe("POL-COM-001 conteúdo oficial", () => {
     assert.equal(right.passed, true);
   });
 
-  it("publicar a oficial duas vezes não cria outra versão vigente", async () => {
+  it("a publicação oficial fica bloqueada enquanto documento e sistema divergem", async () => {
     const store = createMemoryCommercialPolicyStore();
     const first = await publishOfficialCommercialPolicy(store, "super-1", NOW);
     const second = await publishOfficialCommercialPolicy(store, "super-1", NOW);
-    assert.equal(first.ok, true);
-    assert.equal(second.ok, true);
-    if (!first.ok || !second.ok) return;
-    assert.equal(second.alreadyPublished, true);
-    assert.equal(first.version.id, second.version.id);
-    assert.equal(await store.countEffectivePublished(NOW), 1);
-    assert.equal(await sellerHasPendingPolicy(store, SELLER, NOW), true);
+    assert.equal(first.ok, false);
+    assert.equal(second.ok, false);
+    if (first.ok || second.ok) return;
+    assert.equal(first.code, "NOT_READY_FOR_PUBLICATION");
+    assert.equal(second.code, "NOT_READY_FOR_PUBLICATION");
+    assert.ok(first.findings?.some((item) => item.code === "DECLARED_VERSION_MISMATCH"));
+    assert.ok(first.findings?.some((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED"));
+    assert.equal(await store.countEffectivePublished(NOW), 0);
+    assert.equal(await sellerHasPendingPolicy(store, SELLER, NOW), false);
   });
 
   it("duas versões vigentes ao mesmo tempo bloqueiam o aceite", async () => {
     const store = createMemoryCommercialPolicyStore();
-    await publishOfficialCommercialPolicy(store, "super-1", NOW);
-    const extra = await createPolicyDraft(store, officialCommercialPolicyBody(), NOW);
+    const first = await createPolicyDraft(store, officialCommercialPolicyBody(), NOW);
+    const extra = await createPolicyDraft(store, { ...officialCommercialPolicyBody(), title: "Cópia de conflito" }, NOW);
+    assert.equal(first.ok, true);
     assert.equal(extra.ok, true);
-    if (!extra.ok) return;
+    if (!first.ok || !extra.ok) return;
+    await store.markPublished(first.version.id, {
+      contentHash: officialCommercialPolicyHash(),
+      publishedAt: NOW,
+      publishedByUserId: "super-1",
+    });
     await store.markPublished(extra.version.id, {
       contentHash: "outro",
       publishedAt: NOW,

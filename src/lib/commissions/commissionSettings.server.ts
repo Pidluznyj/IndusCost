@@ -10,6 +10,7 @@ import {
   loadCommissionSettings,
 } from "./commission-settings.server.js";
 import { CommissionValidationError, type CommissionSettingsWriteInput } from "./commissionApiValidation.js";
+import { blockedNormativeCommissionSettingChanges } from "../commercialPolicy/commercialPolicyNormative.js";
 
 export { CommissionValidationError };
 export type { CommissionSettingsWriteInput };
@@ -88,7 +89,7 @@ export async function updateCommissionSettings(
   const merged: CommissionSettingsSnapshot = { ...current, ...input };
 
   const validation = validateCommissionSettingsSnapshot(merged);
-  if (!validation.ok) {
+  if (validation.ok === false) {
     throw new CommissionValidationError("INVALID_FIELD", validation.error);
   }
 
@@ -97,6 +98,14 @@ export async function updateCommissionSettings(
   >;
   if (updates.length === 0) {
     return { ...current, warnings: validation.warnings };
+  }
+
+  const blocked = blockedNormativeCommissionSettingChanges(current, merged);
+  if (blocked.length > 0) {
+    throw new CommissionValidationError(
+      "PENDING_POLICY_PUBLICATION",
+      "Alteração normativa de comissão não entra em vigor sem nova versão publicada da Política Comercial."
+    );
   }
 
   for (const [field, value] of updates) {

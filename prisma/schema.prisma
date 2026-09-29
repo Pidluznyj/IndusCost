@@ -3024,6 +3024,11 @@ model CommercialPolicyVersion {
   declarations      Json
   questions         Json
   contentHash       String                   @default("")
+  normativeSnapshot Json?
+  normativeSnapshotHash String               @default("")
+  changeSet         Json?
+  changeSetHash     String                   @default("")
+  previousVersionId String?                  @db.Uuid
   status            CommercialPolicyStatus   @default(DRAFT)
   effectiveFrom     DateTime                 @db.Timestamptz(6)
   publishedAt       DateTime?                @db.Timestamptz(6)
@@ -3104,6 +3109,8 @@ model CommercialPolicyAcceptance {
   questionnaireAttemptId  String                   @db.Uuid
   declarationsAccepted    Json
   policyContentHash       String
+  normativeSnapshotHash   String                   @default("")
+  changeSetHash           String                   @default("")
   photoHash               String
   evidenceHash            String
   appCommit               String?

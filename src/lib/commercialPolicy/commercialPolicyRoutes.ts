@@ -11,6 +11,7 @@ import {
 } from "@/src/lib/auth/securityAudit.server.js";
 import { verifyPassword } from "@/src/lib/auth/appAuth.server.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { loadCommissionSettings } from "@/src/lib/commissions/commission-settings.server.js";
 import {
   acceptanceReceiptLines,
   buildControlledPolicyPdf,
@@ -19,9 +20,17 @@ import {
 } from "./commercialPolicyPdf.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
+  auditPolCom001Publication,
+  buildCurrentCommercialPolicyNormativeSnapshot,
+  COMMERCIAL_POLICY_DEPENDENCIES,
+  comparePublishedPolicyToCurrentNormativeState,
+} from "./commercialPolicyNormative.js";
+import { officialCommercialPolicyBody } from "./official/polCom001V1.js";
+import {
   createPolicyDraft,
   createSignatureChallenge,
   invalidateCommercialPolicyAcceptance,
+  openNormativeRevision,
   publishOfficialCommercialPolicy,
   publishPolicyVersion,
   readPendingForSeller,
@@ -384,6 +393,86 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     return res.status(published.alreadyPublished ? 200 : 201).json({
       alreadyPublished: published.alreadyPublished,
       version: versionPublicView(published.version),
+    });
+  });
+
+  app.get("/api/admin/commercial-policy/integrity", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const publication = auditPolCom001Publication(officialCommercialPolicyBody().content);
+    let release = { releaseDefaultRule: "EACH_RECEIVABLE_PAID", partialPaymentEnabled: true };
+    let settingsSource = "DEFAULT";
+    try {
+      const settings = await loadCommissionSettings(prisma);
+      release = {
+        releaseDefaultRule: settings.releaseDefaultRule,
+        partialPaymentEnabled: settings.partialPaymentEnabled,
+      };
+      settingsSource = "DATABASE";
+    } catch {
+      settingsSource = "DEFAULT_DATABASE_UNAVAILABLE";
+    }
+    const current = buildCurrentCommercialPolicyNormativeSnapshot(release);
+    const published = await store.currentPublished(now());
+    const compared = comparePublishedPolicyToCurrentNormativeState({
+      publishedHash: published?.normativeSnapshotHash || null,
+      current,
+      publicationAuditBlocking: !publication.ready,
+    });
+    return res.json({
+      status: compared,
+      publication: publication.status,
+      findings: publication.findings,
+      currentRelease: current.commissionRelease,
+      settingsSource,
+    });
+  });
+
+  app.post("/api/admin/commercial-policy/normative-revisions", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const kind = String(req.body?.kind ?? "");
+    if (!COMMERCIAL_POLICY_DEPENDENCIES.some((item) => item.key === kind)) {
+      return res.status(422).json({ ok: false, code: "INVALID_DEPENDENCY", message: "Dependência normativa desconhecida." });
+    }
+    const opened = await openNormativeRevision(store, {
+      kind: kind as "commission.releaseRule",
+      currentLabel: String(req.body?.currentLabel ?? "1.0"),
+      release: {
+        releaseDefaultRule: String(req.body?.releaseDefaultRule ?? "EACH_RECEIVABLE_PAID"),
+        partialPaymentEnabled: req.body?.partialPaymentEnabled !== false,
+      },
+      oldValue: req.body?.oldValue ?? null,
+      newValue: req.body?.newValue ?? null,
+      oldDisplayValue: String(req.body?.oldDisplayValue ?? ""),
+      newDisplayValue: String(req.body?.newDisplayValue ?? ""),
+      reason: String(req.body?.reason ?? ""),
+      changedBy: user.id,
+      now: now(),
+    });
+    if (opened.ok === false) return res.status(opened.status).json(opened);
+    if (opened.version) {
+      try {
+        await writeSecurityAuditLog(prisma, {
+          eventType: SECURITY_AUDIT_EVENTS.POLICY_DRAFT_CREATED,
+          actorUserId: user.id,
+          targetUserId: null,
+          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+          userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          metadata: {
+            dependencyKey: kind,
+            sourceVersion: String(req.body?.currentLabel ?? "1.0"),
+            draftVersionId: opened.version.id,
+          },
+        });
+      } catch (error) {
+        console.error("[commercial-policy-normative-audit]", error);
+      }
+    }
+    return res.status(opened.duplicate ? 200 : 201).json({
+      impact: opened.impact,
+      duplicate: opened.duplicate,
+      version: opened.version ? versionPublicView(opened.version) : null,
     });
   });
 

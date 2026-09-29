@@ -15,10 +15,25 @@ import {
   type PolicyVersionBody,
   type SubmittedAnswer,
 } from "./commercialPolicyRules.js";
+import { isOfficialCommercialPolicyContent } from "./official/polCom001V1View.js";
 import { officialCommercialPolicyBody, officialCommercialPolicyHash } from "./official/polCom001V1.js";
+import {
+  auditPolCom001Publication,
+  buildCurrentCommercialPolicyNormativeSnapshot,
+  formatWhatChanged,
+  planPolicyRevision,
+  type NormativeChangeKind,
+  type ReleaseNormativeInput,
+} from "./commercialPolicyNormative.js";
 import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
 
-export type PolicyFailure = { ok: false; status: number; code: string; message: string };
+export type PolicyFailure = {
+  ok: false;
+  status: number;
+  code: string;
+  message: string;
+  findings?: Array<{ code: string; document: string; system: string }>;
+};
 
 export type PolicyActor = {
   id: string;
@@ -66,6 +81,13 @@ export function versionPublicView(version: StoredVersion) {
     effectiveFrom: version.effectiveFrom.toISOString(),
     publishedAt: version.publishedAt?.toISOString() ?? null,
     status: version.status,
+    normativeSnapshotHash: version.normativeSnapshotHash ?? "",
+    changeSetHash: version.changeSetHash ?? "",
+    whatChanged: formatWhatChanged(
+      version.changeSet ?? [],
+      version.changeSet?.[0]?.sourceVersionNew ?? String(version.versionNumber),
+      version.changeSet?.[0]?.sourceVersionOld ?? "anterior"
+    ),
   };
 }
 
@@ -120,6 +142,19 @@ export async function publishPolicyVersion(
   }
   const error = validatePolicyDraft(bodyOf(version));
   if (error) return fail(422, "INVALID_POLICY", error);
+  if (isOfficialCommercialPolicyContent(version.content)) {
+    const audit = auditPolCom001Publication(version.content);
+    if (!audit.ready) {
+      return {
+        ...fail(
+          409,
+          "NOT_READY_FOR_PUBLICATION",
+          "A POL-COM-001 não pode ser publicada enquanto o documento divergir das regras executadas pelo IndusCost."
+        ),
+        findings: audit.findings.map((item) => ({ code: item.code, document: item.document, system: item.system })),
+      };
+    }
+  }
   const contentHash = hashPolicyContent(bodyOf(version));
   const published = await store.markPublished(version.id, {
     contentHash,
@@ -137,6 +172,17 @@ export async function publishOfficialCommercialPolicy(
   now: Date
 ): Promise<{ ok: true; version: StoredVersion; alreadyPublished: boolean } | PolicyFailure> {
   const hash = officialCommercialPolicyHash();
+  const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
+  if (!audit.ready) {
+    return {
+      ...fail(
+        409,
+        "NOT_READY_FOR_PUBLICATION",
+        "A POL-COM-001 não pode ser publicada enquanto o documento divergir das regras executadas pelo IndusCost."
+      ),
+      findings: audit.findings.map((item) => ({ code: item.code, document: item.document, system: item.system })),
+    };
+  }
   const versions = await store.listVersions();
   const existing = versions.find((row) => row.status === "PUBLISHED" && row.contentHash === hash);
   if (existing) return { ok: true, version: existing, alreadyPublished: true };
@@ -345,6 +391,9 @@ export async function signCommercialPolicy(
     answers: attempt.answers,
     declarationsAccepted: current.declarations,
     appCommit: deps.appCommit,
+    ...(current.normativeSnapshotHash ? { normativeSnapshotHash: current.normativeSnapshotHash } : {}),
+    ...(current.changeSetHash ? { changeSetHash: current.changeSetHash } : {}),
+    ...(current.previousVersionId ? { previousPolicyVersionId: current.previousVersionId } : {}),
   });
 
   const committed = await store.commitAcceptance({
@@ -364,6 +413,8 @@ export async function signCommercialPolicy(
     questionnaireAttemptId: attempt.id,
     declarationsAccepted: [...current.declarations],
     policyContentHash: current.contentHash,
+    normativeSnapshotHash: current.normativeSnapshotHash ?? "",
+    changeSetHash: current.changeSetHash ?? "",
     photoHash: photo.contentHash,
     evidenceHash: evidence.hash,
     appCommit: deps.appCommit,
@@ -392,5 +443,63 @@ export async function invalidateCommercialPolicyAcceptance(
     createdAt: now,
   });
   return { ok: true as const, invalidationId: event.id, acceptanceId: acceptance.id };
+}
+
+export async function openNormativeRevision(
+  store: CommercialPolicyStore,
+  input: {
+    kind: NormativeChangeKind;
+    currentLabel: string;
+    release: ReleaseNormativeInput;
+    oldValue: unknown;
+    newValue: unknown;
+    oldDisplayValue: string;
+    newDisplayValue: string;
+    reason: string;
+    changedBy: string;
+    now: Date;
+  }
+) {
+  const currentSnapshot = buildCurrentCommercialPolicyNormativeSnapshot(input.release);
+  const versions = await store.listVersions();
+  const existingHash = versions.find((row) => row.status === "DRAFT")?.changeSetHash ?? null;
+  const plan = planPolicyRevision({
+    kind: input.kind,
+    currentLabel: input.currentLabel,
+    currentSnapshot,
+    oldValue: input.oldValue,
+    newValue: input.newValue,
+    oldDisplayValue: input.oldDisplayValue,
+    newDisplayValue: input.newDisplayValue,
+    reason: input.reason,
+    changedBy: input.changedBy,
+    changedAt: input.now.toISOString(),
+    existingDraftChangeSetHash: existingHash,
+  });
+  if (!plan.draftRequired || !plan.changeSetHash) {
+    return { ok: true as const, impact: plan.impact, version: null, duplicate: false };
+  }
+  if (plan.duplicate) {
+    const existing = versions.find((row) => row.status === "DRAFT" && row.changeSetHash === plan.changeSetHash);
+    return { ok: true as const, impact: plan.impact, version: existing ?? null, duplicate: true };
+  }
+  const published = versions.find((row) => row.status === "PUBLISHED");
+  const draft = await createPolicyDraft(
+    store,
+    {
+      ...officialCommercialPolicyBody(),
+      title: `Política Comercial ${plan.nextLabel ?? ""}`.trim(),
+    },
+    input.now
+  );
+  if (draft.ok === false) return draft;
+  const attached = await store.attachNormative(draft.version.id, {
+    normativeSnapshot: plan.snapshot,
+    normativeSnapshotHash: plan.snapshotHash,
+    changeSet: plan.changeSet,
+    changeSetHash: plan.changeSetHash,
+    previousVersionId: published?.id ?? null,
+  });
+  return { ok: true as const, impact: plan.impact, version: attached, duplicate: false, releaseUnchanged: input.release };
 }
 

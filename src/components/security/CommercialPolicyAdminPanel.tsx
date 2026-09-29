@@ -32,6 +32,11 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
   const [rows, setRows] = useState<Array<{ id: string; version: number; status: string; title: string; contentHash: string }>>([]);
   const [acceptances, setAcceptances] = useState<Array<{ id: string; userNameSnapshot: string; userEmailSnapshot?: string; acceptedAt: string; evidenceHash: string; policyVersionId?: string }>>([]);
   const [coverage, setCoverage] = useState<{ required: number; signed: number; pending: number; percent: number } | null>(null);
+  const [integrity, setIntegrity] = useState<{
+    status: string;
+    publication: string;
+    findings: Array<{ code: string; document: string; system: string }>;
+  } | null>(null);
 
   const reload = () => {
     void fetchJsonOk<{ versions: Array<{ id: string; version: number; status: string; title: string; contentHash: string }> }>(
@@ -44,6 +49,11 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       setAcceptances(data.acceptances);
       setCoverage(data.coverage);
     });
+    void fetchJsonOk<{
+      status: string;
+      publication: string;
+      findings: Array<{ code: string; document: string; system: string }>;
+    }>("/api/admin/commercial-policy/integrity").then(setIntegrity);
   };
 
   useEffect(() => {
@@ -52,15 +62,19 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
 
   const publishOfficial = async () => {
     setMessage(null);
-    const result = await fetchJsonOk<{ alreadyPublished: boolean }>("/api/admin/commercial-policy/official/pol-com-001", {
-      method: "POST",
-    });
-    setMessage(
-      result.alreadyPublished
-        ? "A POL-COM-001 versão 1.0 já estava publicada. Nenhum texto foi alterado."
-        : "POL-COM-001 versão 1.0 publicada a partir do documento oficial. Vendedores sem aceite desta versão serão bloqueados no próximo acesso."
-    );
-    reload();
+    try {
+      const result = await fetchJsonOk<{ alreadyPublished: boolean }>("/api/admin/commercial-policy/official/pol-com-001", {
+        method: "POST",
+      });
+      setMessage(
+        result.alreadyPublished
+          ? "A POL-COM-001 versão 1.0 já estava publicada. Nenhum texto foi alterado."
+          : "POL-COM-001 versão 1.0 publicada a partir do documento oficial. Vendedores sem aceite desta versão serão bloqueados no próximo acesso."
+      );
+      reload();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "A publicação foi recusada.");
+    }
   };
 
   const publish = async () => {
@@ -104,6 +118,22 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
           Publicar POL-COM-001 versão 1.0
         </button>
       </div>
+      <section className="rounded-lg border border-border p-3">
+        <h3 className="text-xs font-bold">Integridade normativa</h3>
+        <p className="mt-1 text-xs">Situação: {integrity?.status ?? "carregando"}</p>
+        <p className="text-xs">Publicação da V1.0: {integrity?.publication ?? "—"}</p>
+        {integrity?.findings?.length ? (
+          <ul className="mt-2 space-y-2">
+            {integrity.findings.map((finding) => (
+              <li key={finding.code} className="text-xs">
+                <span className="font-semibold">{finding.code}</span>
+                <span className="block">Documento: {finding.document}</span>
+                <span className="block">Sistema: {finding.system}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
       {coverage ? (
         <div className="grid gap-2 sm:grid-cols-4">
           <p className="rounded-lg border border-border p-3 text-xs">Obrigados: {coverage.required}</p>
