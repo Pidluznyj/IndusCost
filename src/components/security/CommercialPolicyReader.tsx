@@ -110,10 +110,12 @@ export const CommercialPolicyReader: React.FC<{
   initialChapterId?: string | null;
   mode?: "acceptance" | "preview";
   versionLabel?: string;
+  title?: string;
   chapters?: OfficialPolicyChapter[];
   onGeneratePdf: () => void;
   onFinish?: () => void;
-}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, chapters: chaptersProp, onGeneratePdf, onFinish }) => {
+}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish }) => {
+  const documentTitle = titleProp ? titleCase(titleProp) : "Política Comercial e de Comissionamento";
   const chapters = chaptersProp ?? POL_COM_001_CHAPTERS;
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
   const [chapterId, setChapterId] = useState(start);
@@ -250,7 +252,7 @@ export const CommercialPolicyReader: React.FC<{
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">
                 Uso interno e restrito{mode === "preview" ? " · prévia do super admin" : ""}
               </p>
-              <h1 className="font-serif text-xl font-semibold leading-tight tracking-tight text-slate-900">Política Comercial e de Comissionamento</h1>
+              <h1 className="font-serif text-xl font-semibold leading-tight tracking-tight text-slate-900">{documentTitle}</h1>
               <p className="text-xs text-slate-600">
                 {POL_COM_001_CODE} · Versão {versionLabel} · {POL_COM_001_COMPANY} · CNPJ {POL_COM_001_CNPJ} · Vigência: {vigencia}
               </p>

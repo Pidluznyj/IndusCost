@@ -15,7 +15,7 @@ import {
   type PolicyVersionBody,
   type SubmittedAnswer,
 } from "./commercialPolicyRules.js";
-import { POL_COM_001_VERSION_LABEL, isOfficialCommercialPolicyContent } from "./official/polCom001V1View.js";
+import { POL_COM_001_VERSION_LABEL, isOfficialCommercialPolicyContent, mentionsCommercialPolicyCode } from "./official/polCom001V1View.js";
 import { officialCommercialPolicyBody, officialCommercialPolicyHash } from "./official/polCom001V1.js";
 import {
   auditPolCom001Publication,
@@ -175,6 +175,74 @@ export async function createPolicyDraft(
   return { ok: true, version };
 }
 
+/** Edita um rascunho (título, conteúdo, regras, declarações, perguntas, vigência). Versão publicada nunca. */
+export async function updatePolicyDraft(
+  store: CommercialPolicyStore,
+  versionId: string,
+  input: PolicyVersionBody & { effectiveFrom?: Date | null }
+): Promise<{ ok: true; version: StoredVersion } | PolicyFailure> {
+  const version = await store.getVersion(versionId);
+  if (!version) return fail(404, "NOT_FOUND", "Versão não encontrada.");
+  if (version.status !== "DRAFT") {
+    return fail(409, "VERSION_IMMUTABLE", "Versão publicada não pode ser editada. Duplique-a como rascunho.");
+  }
+  const body: PolicyVersionBody = {
+    title: input.title,
+    content: input.content,
+    summaryRules: input.summaryRules,
+    declarations: input.declarations,
+    questions: input.questions,
+  };
+  const error = validatePolicyDraft(body);
+  if (error) return fail(422, "INVALID_POLICY", error);
+  const saved = await store.saveDraft(version.id, body, input.effectiveFrom ?? version.effectiveFrom);
+  if (!saved) return fail(409, "VERSION_IMMUTABLE", "A versão deixou de ser rascunho.");
+  return { ok: true, version: saved };
+}
+
+/** Descarta um rascunho (vira RETIRED; nada é apagado). */
+export async function discardPolicyDraft(
+  store: CommercialPolicyStore,
+  versionId: string
+): Promise<{ ok: true; version: StoredVersion } | PolicyFailure> {
+  const version = await store.getVersion(versionId);
+  if (!version) return fail(404, "NOT_FOUND", "Versão não encontrada.");
+  if (version.status !== "DRAFT") return fail(409, "VERSION_IMMUTABLE", "Só rascunhos podem ser descartados.");
+  const retired = await store.retireDraft(version.id);
+  if (!retired) return fail(409, "VERSION_IMMUTABLE", "A versão deixou de ser rascunho.");
+  return { ok: true, version: retired };
+}
+
+/** Novo rascunho com o conteúdo de uma versão existente (publicada, aposentada ou rascunho). */
+export async function duplicatePolicyVersion(
+  store: CommercialPolicyStore,
+  versionId: string,
+  now: Date
+): Promise<{ ok: true; version: StoredVersion } | PolicyFailure> {
+  const source = await store.getVersion(versionId);
+  if (!source) return fail(404, "NOT_FOUND", "Versão não encontrada.");
+  return createPolicyDraft(
+    store,
+    {
+      title: source.title,
+      content: source.content,
+      summaryRules: [...source.summaryRules],
+      declarations: [...source.declarations],
+      questions: source.questions.map((question) => ({ ...question, options: question.options.map((option) => ({ ...option })) })),
+      effectiveFrom: now,
+    },
+    now
+  );
+}
+
+/** Novo rascunho a partir do documento oficial POL-COM-001 v1.0 (texto, regras, declarações e perguntas). */
+export async function createDraftFromOfficialPolicy(
+  store: CommercialPolicyStore,
+  now: Date
+): Promise<{ ok: true; version: StoredVersion } | PolicyFailure> {
+  return createPolicyDraft(store, { ...officialCommercialPolicyBody(), effectiveFrom: now }, now);
+}
+
 export type PublishOptions = {
   /** Snapshot normativo lido das fontes oficiais no momento da publicação. */
   currentSnapshot?: NormativeSnapshot | null;
@@ -201,7 +269,8 @@ export async function publishPolicyVersion(
   const error = validatePolicyDraft(bodyOf(version));
   if (error) return fail(422, "INVALID_POLICY", error);
   const currentSnapshot = options.currentSnapshot ?? null;
-  if (isOfficialCommercialPolicyContent(version.content)) {
+  // Qualquer texto que se apresente como POL-COM-001 (oficial ou editado) passa pela auditoria documento × sistema.
+  if (isOfficialCommercialPolicyContent(version.content) || mentionsCommercialPolicyCode(version.content)) {
     const audit = auditPolCom001Publication(version.content, currentSnapshot);
     if (!audit.ready) {
       return {

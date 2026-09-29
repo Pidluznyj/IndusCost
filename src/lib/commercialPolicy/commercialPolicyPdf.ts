@@ -1,4 +1,5 @@
 /** PDF textual simples (Helvetica/WinAnsi). A foto não entra no comprovante; só o hash. */
+import { policyContentToPlainLines } from "./policyDocumentFormat.js";
 
 const WINANSI: Record<string, string> = {
   "á": "\\341",
@@ -242,7 +243,7 @@ export function policyDocumentLines(input: {
     `Publicação: ${input.publishedAt ?? "— (não publicada)"}`,
     `SHA-256 do conteúdo: ${input.contentHash}`,
     "",
-    ...input.content.split(/\r?\n/),
+    ...policyContentToPlainLines(input.content),
     "",
     "Principais regras",
     ...input.summaryRules.map((rule, index) => `${index + 1}. ${rule}`),

@@ -13,7 +13,7 @@ import {
   uploadPolicyPhoto,
   type PendingPolicy,
 } from "@/src/lib/commercialPolicy/commercialPolicyClient";
-import { isOfficialCommercialPolicyContent } from "@/src/lib/commercialPolicy/official/polCom001V1View.js";
+import { parsePolicyChapters } from "@/src/lib/commercialPolicy/policyDocumentFormat";
 import { CommercialPolicyReader } from "@/src/components/security/CommercialPolicyReader";
 
 const STEPS = COMMERCIAL_POLICY_ACCEPTANCE_STEPS;
@@ -173,7 +173,9 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
     );
   }
 
-  if (step === 0 && isOfficialCommercialPolicyContent(policy.content)) {
+  // Toda versão (oficial ou editada no painel) é lida no mesmo leitor estruturado.
+  const chapters = parsePolicyChapters(policy.content);
+  if (step === 0 && chapters.length > 0) {
     return (
       <div className="flex h-screen flex-col bg-background">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
@@ -192,6 +194,9 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           </section>
         ) : null}
         <CommercialPolicyReader
+          chapters={chapters}
+          title={policy.title}
+          versionLabel={policy.label}
           effectiveFrom={policy.effectiveFrom}
           initialChapterId={reviewChapterId}
           onGeneratePdf={() => void downloadAuthenticatedFile(`/api/commercial-policy/versions/${policy.id}/document`, "POL-COM-001-copia-controlada.pdf")}
