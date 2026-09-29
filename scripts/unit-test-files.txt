@@ -215,6 +215,14 @@ src/lib/salesOrderCommercialMarginReportsExport.test.ts
 src/lib/sales/salesOrderCommercialDiscountReport.test.ts
 src/lib/finance/salesOrderEffectiveFinancialSchedule.test.ts
 src/lib/finance/salesOrderInvestedCapitalRecoveryByCustomer.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryMath.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoverySnapshot.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryTotals.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryFiltersAndPdf.wiring.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryIntercompany.wiring.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryTaxColumn.wiring.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryTotalsAndDetailDialog.wiring.test.ts
+src/lib/finance/salesOrderInvestedCapitalRecoveryUi.test.tsx
 src/lib/finance/salesOrderStagedDeliverySchedule.test.ts
 src/lib/finance/stagedDeliveryScheduleRepair.test.ts
 src/lib/finance/effectiveScheduleMatrix.integration.test.ts

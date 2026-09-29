@@ -1,9 +1,27 @@
 /**
  * Visão Por Cliente da Recuperação do Dinheiro Investido.
- * Só apresenta o agregado já calculado no backend a partir do snapshot por pedido.
+ * Só apresenta o agregado já calculado no backend a partir do snapshot por pedido
+ * (economia, caixa realizado e decomposição do CR aberto por cliente).
  */
 import React, { useMemo, useState } from "react";
-import { formatFinanceCurrency, formatFinanceCurrencyCompact, formatFinanceDate } from "@/src/lib/financeAccountsReceivableFormat";
+import { formatFinanceCurrency, formatFinanceDate, formatFinanceInteger } from "@/src/lib/financeAccountsReceivableFormat";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
+import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
+import {
+  FINANCE_KPI_ICR_CAPITAL_RECEIVABLE_COVERED,
+  FINANCE_KPI_ICR_CAPITAL_RECOVERED,
+  FINANCE_KPI_ICR_CAPITAL_WITHOUT_OPEN_RECEIVABLE,
+  FINANCE_KPI_ICR_ECONOMIC_MARGIN,
+  FINANCE_KPI_ICR_GAIN_RECEIVABLE,
+  FINANCE_KPI_ICR_INVESTED_CAPITAL,
+  FINANCE_KPI_ICR_MONEY_ON_STREET,
+  FINANCE_KPI_ICR_OUTSTANDING,
+  FINANCE_KPI_ICR_REALIZED_GAIN,
+  FINANCE_KPI_ICR_SOLD,
+  FINANCE_KPI_ICR_TAXES,
+} from "@/src/lib/financeKpiTooltips";
 import { cn } from "@/src/lib/utils";
 import type {
   InvestedCapitalRecoveryByCustomer,
@@ -25,52 +43,34 @@ const PAGE_SIZE = 25;
 type SortKey =
   | "customerName"
   | "orders"
+  | "sold"
   | "invoiced"
+  | "industrialCost"
+  | "taxes"
   | "investedCapital"
+  | "economicMargin"
   | "received"
   | "recoveredCapital"
-  | "capitalAtRisk"
   | "realizedGain"
-  | "potentialResult";
+  | "capitalAtRisk"
+  | "outstandingReceivable"
+  | "capitalReceivableCovered"
+  | "gainReceivable"
+  | "capitalWithoutOpenReceivable"
+  | "potentialResult"
+  | "recoveredPercent";
+
+const SALDO_ECONOMICO_HINT =
+  "Diferença entre o valor já faturado e o capital total investido nos pedidos considerados. Em pedidos parcialmente faturados, o valor pode ser negativo mesmo que o resultado final esperado da venda seja positivo.";
 
 function money(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return formatFinanceCurrency(value);
 }
 
-function compact(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return formatFinanceCurrencyCompact(value);
-}
-
 function percentLabel(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-}
-
-function KpiCard({
-  label,
-  value,
-  title,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  title: string;
-  tone?: "in" | "out" | "neutral";
-}) {
-  const toneClass =
-    tone === "in"
-      ? "border-emerald-200 text-emerald-800"
-      : tone === "out"
-        ? "border-red-200 text-red-800"
-        : "border-border text-foreground";
-  return (
-    <div className={cn("rounded-lg border bg-card px-3 py-2.5 shadow-sm", toneClass)} title={title}>
-      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-extrabold tabular-nums tracking-tight">{value}</p>
-    </div>
-  );
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
@@ -175,7 +175,8 @@ export function InvestedCapitalRecoveryCustomerPanel({
   }
 
   const summary = byCustomer.summary;
-  const full = (value: number | null | undefined) => money(value);
+  const marginNegative = summary.economicMargin != null && summary.economicMargin < 0;
+  const thProps = { active: sortKey, dir: sortDir, onSort: toggleSort } as const;
 
   return (
     <div className="flex flex-col gap-3" data-testid="invested-capital-recovery-customer-view">
@@ -184,44 +185,40 @@ export function InvestedCapitalRecoveryCustomerPanel({
         consolida os dados oficiais por cliente. Operações com empresas do grupo não são consideradas nesta análise.
       </p>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Clientes faturados" value={String(summary.invoicedCustomers)} title="Clientes do filtro com valor fiscal faturado maior que zero." />
-        <KpiCard label="Pedidos" value={String(summary.orders)} title="Pedidos de venda considerados no filtro, os mesmos da visão geral." />
-        <KpiCard label="Vendemos" value={compact(summary.sold)} title={full(summary.sold)} />
-        <KpiCard label="Faturado" value={compact(summary.invoiced)} title={`Valor fiscal das NF-e do pedido. ${full(summary.invoiced)}`} />
-        <KpiCard label="Custo industrial" value={compact(summary.industrialCost)} title={full(summary.industrialCost)} />
-        <KpiCard label="Impostos" value={compact(summary.taxes)} title={`Imposto da margem comercial do pedido, já incluído no capital. ${full(summary.taxes)}`} />
-        <KpiCard
-          label="Capital investido"
-          value={compact(summary.investedCapital)}
-          title={`Custo industrial + imposto, na mesma regra da visão geral. ${full(summary.investedCapital)}`}
-          tone="out"
-        />
-        <KpiCard label="Recebido" value={compact(summary.received)} title={`Contas a receber já baixadas, somadas por pedido. ${full(summary.received)}`} />
-        <KpiCard
-          label="Capital recuperado"
-          value={compact(summary.recoveredCapital)}
-          title={`Parte do recebimento que já cobriu o capital de cada pedido. ${full(summary.recoveredCapital)}`}
-          tone="in"
-        />
-        <KpiCard
-          label="Dinheiro na rua"
-          value={compact(summary.capitalAtRisk)}
-          title={`Capital investido que ainda não voltou, pedido a pedido. ${full(summary.capitalAtRisk)}`}
-          tone="out"
-        />
-        <KpiCard
-          label="Ganho realizado"
-          value={compact(summary.realizedGain)}
-          title={`Parcela dos recebimentos que já excedeu o capital de cada pedido. Não é recebido total menos capital total. ${full(summary.realizedGain)}`}
-          tone="in"
-        />
-        <KpiCard
-          label="Saldo econômico atual"
-          value={compact(summary.potentialResult)}
-          title={`Diferença entre o valor já faturado e o capital total investido nos pedidos considerados. Em pedidos parcialmente faturados, o valor pode ser negativo mesmo que o resultado final esperado da venda seja positivo. ${full(summary.potentialResult)}`}
-        />
-      </div>
+      <ExecutiveSummarySection
+        eyebrow="Consolidado por cliente"
+        title="Economia dos pedidos por cliente"
+        testId="icr-customer-economic-section"
+      >
+        <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard compact label="Clientes faturados" value={formatFinanceInteger(summary.invoicedCustomers)} tone="neutral" sub="Com valor fiscal faturado maior que zero" />
+          <FinanceExecutiveTotalizerCard compact label="Pedidos" value={formatFinanceInteger(summary.orders)} tone="neutral" sub="Os mesmos da visão geral" />
+          <FinanceExecutiveTotalizerCard compact label="Vendemos" amount={summary.sold} amountFormat="currency" tone="info" hint={FINANCE_KPI_ICR_SOLD} />
+          <FinanceExecutiveTotalizerCard compact label="Faturado" amount={summary.invoiced} amountFormat="currency" tone="info" sub="Valor fiscal das NF-e do pedido" />
+          <FinanceExecutiveTotalizerCard compact label="Custo industrial" amount={summary.industrialCost} amountFormat="currency" tone="neutral" />
+          <FinanceExecutiveTotalizerCard compact label="Impostos" amount={summary.taxes} amountFormat="currency" tone="neutral" hint={FINANCE_KPI_ICR_TAXES} />
+          <FinanceExecutiveTotalizerCard compact label="Capital investido" amount={summary.investedCapital} amountFormat="currency" tone="warning" sub="Custo industrial + imposto" hint={FINANCE_KPI_ICR_INVESTED_CAPITAL} />
+          <FinanceExecutiveTotalizerCard compact label="Margem econômica" amount={summary.economicMargin} amountFormat="currency" tone={marginNegative ? "danger" : "success"} sub="Vendido − capital, pedido a pedido" hint={FINANCE_KPI_ICR_ECONOMIC_MARGIN} />
+          <FinanceExecutiveTotalizerCard compact label="Saldo econômico atual" amount={summary.potentialResult} amountFormat="currency" tone="neutral" hint={SALDO_ECONOMICO_HINT} />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
+
+      <ExecutiveSummarySection
+        eyebrow="Consolidado por cliente"
+        title="O que já entrou e o que ainda tem para entrar"
+        testId="icr-customer-cash-section"
+      >
+        <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <FinanceExecutiveTotalizerCard compact label="Recebido" amount={summary.received} amountFormat="currency" tone="info" sub="Contas a receber já baixadas" />
+          <FinanceExecutiveTotalizerCard compact label="Capital recuperado" amount={summary.recoveredCapital} amountFormat="currency" tone="success" hint={FINANCE_KPI_ICR_CAPITAL_RECOVERED} />
+          <FinanceExecutiveTotalizerCard compact label="Ganho realizado" amount={summary.realizedGain} amountFormat="currency" tone="success" hint={FINANCE_KPI_ICR_REALIZED_GAIN} />
+          <FinanceExecutiveTotalizerCard compact label="Dinheiro na rua" amount={summary.capitalAtRisk} amountFormat="currency" tone="warning" hint={FINANCE_KPI_ICR_MONEY_ON_STREET} />
+          <FinanceExecutiveTotalizerCard compact label="Falta receber" amount={summary.outstandingReceivable} amountFormat="currency" tone="info" hint={FINANCE_KPI_ICR_OUTSTANDING} />
+          <FinanceExecutiveTotalizerCard compact label="Capital a recuperar nos recebíveis" amount={summary.capitalReceivableCovered} amountFormat="currency" tone="warning" hint={FINANCE_KPI_ICR_CAPITAL_RECEIVABLE_COVERED} />
+          <FinanceExecutiveTotalizerCard compact label="Ganho a receber" amount={summary.gainReceivable} amountFormat="currency" tone="success" hint={FINANCE_KPI_ICR_GAIN_RECEIVABLE} />
+          <FinanceExecutiveTotalizerCard compact label="Capital na rua sem CR aberto" amount={summary.capitalWithoutOpenReceivable} amountFormat="currency" tone="danger" hint={FINANCE_KPI_ICR_CAPITAL_WITHOUT_OPEN_RECEIVABLE} />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
         <HorizontalBars
@@ -246,22 +243,27 @@ export function InvestedCapitalRecoveryCustomerPanel({
 
       <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="relative max-h-[600px] overflow-auto">
-          <table className="relative w-full min-w-[1400px] border-collapse text-xs" data-testid="invested-capital-recovery-customer-table">
+          <table className="relative w-full min-w-[1900px] border-collapse text-xs" data-testid="invested-capital-recovery-customer-table">
             <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
               <tr className="border-b border-slate-800 text-left text-[10px] font-semibold uppercase tracking-wide">
-                <CustomerTh label="Cliente" sortKey="customerName" active={sortKey} dir={sortDir} onSort={toggleSort} sticky />
-                <CustomerTh label="Pedidos" sortKey="orders" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                <CustomerTh label="Vendido" sortKey="invoiced" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" disabled />
-                <CustomerTh label="Faturado" sortKey="invoiced" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                <CustomerTh label="Custo ind." sortKey="investedCapital" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" disabled />
-                <CustomerTh label="Impostos" sortKey="investedCapital" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" disabled />
-                <CustomerTh label="Cap. invest." sortKey="investedCapital" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" title="Custo industrial + imposto" />
-                <CustomerTh label="Recebido" sortKey="received" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                <CustomerTh label="Cap. recup." sortKey="recoveredCapital" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                <CustomerTh label="Na rua" sortKey="capitalAtRisk" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                <CustomerTh label="Ganho realiz." sortKey="realizedGain" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" title="Excedente do recebimento sobre o capital, pedido a pedido" />
-                <CustomerTh label="Saldo atual" sortKey="potentialResult" active={sortKey} dir={sortDir} onSort={toggleSort} align="right" title="Diferença entre o valor já faturado e o capital total investido nos pedidos considerados. Em pedidos parcialmente faturados, o valor pode ser negativo mesmo que o resultado final esperado da venda seja positivo." />
-                <th className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap">% recup.</th>
+                <CustomerTh label="Cliente" sortKey="customerName" {...thProps} sticky />
+                <CustomerTh label="Pedidos" sortKey="orders" {...thProps} align="right" />
+                <CustomerTh label="Vendido" sortKey="sold" {...thProps} align="right" />
+                <CustomerTh label="Faturado" sortKey="invoiced" {...thProps} align="right" />
+                <CustomerTh label="Custo ind." sortKey="industrialCost" {...thProps} align="right" />
+                <CustomerTh label="Impostos" sortKey="taxes" {...thProps} align="right" />
+                <CustomerTh label="Cap. invest." sortKey="investedCapital" {...thProps} align="right" title="Custo industrial + imposto" />
+                <CustomerTh label="Margem econ." sortKey="economicMargin" {...thProps} align="right" title="Vendido − capital investido, pedido a pedido (só pedidos com custo)" />
+                <CustomerTh label="Recebido" sortKey="received" {...thProps} align="right" />
+                <CustomerTh label="Cap. recup." sortKey="recoveredCapital" {...thProps} align="right" />
+                <CustomerTh label="Ganho realiz." sortKey="realizedGain" {...thProps} align="right" title="Excedente do recebimento sobre o capital, pedido a pedido" />
+                <CustomerTh label="Na rua" sortKey="capitalAtRisk" {...thProps} align="right" />
+                <CustomerTh label="Falta receber" sortKey="outstandingReceivable" {...thProps} align="right" title="CR real em aberto dos pedidos do cliente" />
+                <CustomerTh label="Cap. no CR" sortKey="capitalReceivableCovered" {...thProps} align="right" title="Parte do CR aberto que ainda é retorno de capital" />
+                <CustomerTh label="Ganho a rec." sortKey="gainReceivable" {...thProps} align="right" title="Parte do CR aberto que excede o capital na rua" />
+                <CustomerTh label="Cap. s/ CR" sortKey="capitalWithoutOpenReceivable" {...thProps} align="right" title="Capital na rua sem CR aberto que o cubra" />
+                <CustomerTh label="Saldo atual" sortKey="potentialResult" {...thProps} align="right" title={SALDO_ECONOMICO_HINT} />
+                <CustomerTh label="% recup." sortKey="recoveredPercent" {...thProps} align="right" />
               </tr>
             </thead>
             <tbody>
@@ -285,10 +287,17 @@ export function InvestedCapitalRecoveryCustomerPanel({
                   <td className="px-1.5 py-1.5 text-right tabular-nums text-muted-foreground">{money(row.industrialCost)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums text-muted-foreground">{money(row.taxes)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold">{money(row.investedCapital)}</td>
+                  <td className={cn("px-1.5 py-1.5 text-right tabular-nums font-medium", row.economicMargin != null && row.economicMargin < 0 && "text-rose-700")}>
+                    {money(row.economicMargin)}
+                  </td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.received)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums font-medium text-emerald-700">{money(row.recoveredCapital)}</td>
-                  <td className="px-1.5 py-1.5 text-right tabular-nums font-bold text-rose-700">{money(row.capitalAtRisk)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums font-medium text-emerald-700">{money(row.realizedGain)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums font-bold text-rose-700">{money(row.capitalAtRisk)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.outstandingReceivable)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums text-amber-700">{money(row.capitalReceivableCovered)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums text-emerald-700">{money(row.gainReceivable)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums text-rose-700">{money(row.capitalWithoutOpenReceivable)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.potentialResult)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{percentLabel(row.recoveredPercent)}</td>
                 </tr>
@@ -345,7 +354,6 @@ function CustomerTh({
   align = "left",
   sticky = false,
   title,
-  disabled = false,
 }: {
   label: string;
   sortKey: SortKey;
@@ -355,22 +363,20 @@ function CustomerTh({
   align?: "left" | "right";
   sticky?: boolean;
   title?: string;
-  disabled?: boolean;
 }) {
   return (
     <th
       className={cn(
-        "sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap",
+        "sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none",
         align === "right" && "text-right",
-        sticky && "left-0 z-30",
-        !disabled && "cursor-pointer select-none"
+        sticky && "left-0 z-30"
       )}
       title={title}
-      onClick={disabled ? undefined : () => onSort(sortKey)}
+      onClick={() => onSort(sortKey)}
     >
       <div className={cn("flex items-center gap-0.5", align === "right" && "justify-end")}>
         {label}
-        {disabled ? null : <SortIcon active={active === sortKey} dir={dir} />}
+        <SortIcon active={active === sortKey} dir={dir} />
       </div>
     </th>
   );
@@ -389,7 +395,7 @@ function CustomerOrdersDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" role="dialog" aria-modal="true">
-      <div className="mt-6 w-full max-w-6xl rounded-xl border border-border bg-card shadow-lg">
+      <div className="mt-6 w-full max-w-7xl rounded-xl border border-border bg-card shadow-lg">
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div>
             <h2 className="text-base font-bold text-foreground">{customer.customerName}</h2>
@@ -399,22 +405,27 @@ function CustomerOrdersDialog({
             Fechar
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-4 lg:grid-cols-7">
           <Mini label="Pedidos" value={String(customer.orders)} />
           <Mini label="Vendido" value={money(customer.sold)} />
           <Mini label="Faturado" value={money(customer.invoiced)} />
           <Mini label="Capital investido" value={money(customer.investedCapital)} />
+          <Mini label="Margem econômica" value={money(customer.economicMargin)} />
           <Mini label="Recebido" value={money(customer.received)} />
           <Mini label="Capital recuperado" value={money(customer.recoveredCapital)} />
-          <Mini label="Dinheiro na rua" value={money(customer.capitalAtRisk)} />
           <Mini label="Ganho realizado" value={money(customer.realizedGain)} />
+          <Mini label="Dinheiro na rua" value={money(customer.capitalAtRisk)} />
+          <Mini label="Falta receber" value={money(customer.outstandingReceivable)} />
+          <Mini label="Capital a recuperar" value={money(customer.capitalReceivableCovered)} />
+          <Mini label="Ganho a receber" value={money(customer.gainReceivable)} />
+          <Mini label="Capital sem CR" value={money(customer.capitalWithoutOpenReceivable)} />
           <Mini label="Saldo econômico atual" value={money(customer.potentialResult)} />
         </div>
         <div className="max-h-[50vh] overflow-auto px-4 pb-4">
-          <table className="w-full min-w-[1100px] border-collapse text-xs">
+          <table className="w-full min-w-[1500px] border-collapse text-xs">
             <thead className="sticky top-0 bg-slate-900 text-white">
               <tr className="text-left text-[10px] uppercase">
-                {["PV", "Data", "Vendido", "Faturado", "Custo ind.", "Impostos", "Cap. invest.", "Recebido", "Cap. recup.", "Na rua", "Ganho", "Saldo atual", "Status"].map((label) => (
+                {["PV", "Data", "Vendido", "Faturado", "Custo ind.", "Impostos", "Cap. invest.", "Margem econ.", "Recebido", "Cap. recup.", "Ganho realiz.", "Na rua", "Falta receber", "Cap. no CR", "Ganho a rec.", "Cap. s/ CR", "Saldo atual", "Status"].map((label) => (
                   <th key={label} className="px-1.5 py-2 whitespace-nowrap">{label}</th>
                 ))}
               </tr>
@@ -437,10 +448,15 @@ function CustomerOrdersDialog({
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.industrialCost)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.totalTaxes)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.investedCapital)}</td>
+                  <td className={cn("px-1.5 py-1.5 text-right tabular-nums", row.economicMargin != null && row.economicMargin < 0 && "text-rose-700")}>{money(row.economicMargin)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.actualReceived)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.capitalRecovered)}</td>
-                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.moneyOnStreet)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.realizedGain)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.moneyOnStreet)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.outstandingReceivable)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.capitalReceivableCovered)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.gainReceivable)}</td>
+                  <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.capitalWithoutOpenReceivable)}</td>
                   <td className="px-1.5 py-1.5 text-right tabular-nums">{money(row.potentialResult)}</td>
                   <td className="px-1.5 py-1.5 text-center" title={STATUS_META[row.status].label}>
                     <span className={cn("inline-block h-2.5 w-2.5 rounded-full", STATUS_META[row.status].dotClass)} />

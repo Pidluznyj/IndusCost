@@ -21,9 +21,11 @@ function money(value: number | null): string {
   return formatFinanceCurrency(value);
 }
 
-function SummaryKpiCard({ label, value }: { label: string; value: string }) {
+type SummaryTone = "positive" | "warning" | "risk" | "info";
+
+function SummaryKpiCard({ label, value, tone }: { label: string; value: string; tone?: SummaryTone }) {
   return (
-    <div className="sales-orders-print-summary-card">
+    <div className={`sales-orders-print-summary-card${tone ? ` sales-orders-print-summary-card--${tone}` : ""}`}>
       <p className="sales-orders-print-summary-card-label">{label}</p>
       <p className="sales-orders-print-summary-card-value">{value}</p>
     </div>
@@ -72,16 +74,31 @@ export function InvestedCapitalRecoveryCustomerPrintDocument({
         </div>
 
         <section className="sales-orders-print-section sales-orders-print-section--summary">
-          <div className="sales-orders-print-summary-grid">
+          <h2 className="sales-orders-print-section-title">Economia dos pedidos por cliente</h2>
+          <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
+            <SummaryKpiCard label="Vendemos" value={money(summary.sold)} tone="info" />
             <SummaryKpiCard label="Faturado" value={money(summary.invoiced)} />
-            <SummaryKpiCard label="Capital investido" value={money(summary.investedCapital)} />
-            <SummaryKpiCard label="Recebido" value={money(summary.received)} />
-            <SummaryKpiCard label="Capital recuperado" value={money(summary.recoveredCapital)} />
-            <SummaryKpiCard label="Dinheiro na rua" value={money(summary.capitalAtRisk)} />
-            <SummaryKpiCard label="Ganho realizado" value={money(summary.realizedGain)} />
+            <SummaryKpiCard label="Capital investido" value={money(summary.investedCapital)} tone="warning" />
+            <SummaryKpiCard
+              label="Margem econômica"
+              value={money(summary.economicMargin)}
+              tone={summary.economicMargin != null && summary.economicMargin < 0 ? "risk" : "positive"}
+            />
             <SummaryKpiCard label="Saldo econômico atual" value={money(summary.potentialResult)} />
+            <SummaryKpiCard label="Pedidos" value={formatFinanceInteger(summary.orders)} />
           </div>
-          <p className="sales-orders-print-footnote">{INVESTED_CAPITAL_RECOVERY_PRINT_DISCLAIMER}</p>
+          <h2 className="sales-orders-print-section-title">O que já entrou e o que ainda tem para entrar</h2>
+          <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
+            <SummaryKpiCard label="Recebido" value={money(summary.received)} tone="info" />
+            <SummaryKpiCard label="Capital recuperado" value={money(summary.recoveredCapital)} tone="positive" />
+            <SummaryKpiCard label="Ganho realizado" value={money(summary.realizedGain)} tone="positive" />
+            <SummaryKpiCard label="Dinheiro na rua" value={money(summary.capitalAtRisk)} tone="warning" />
+            <SummaryKpiCard label="Falta receber" value={money(summary.outstandingReceivable)} />
+            <SummaryKpiCard label="Capital a recuperar nos recebíveis" value={money(summary.capitalReceivableCovered)} tone="warning" />
+            <SummaryKpiCard label="Ganho a receber" value={money(summary.gainReceivable)} tone="positive" />
+            <SummaryKpiCard label="Capital na rua sem CR aberto" value={money(summary.capitalWithoutOpenReceivable)} tone="risk" />
+          </div>
+          <p className="sales-orders-print-disclaimer">{INVESTED_CAPITAL_RECOVERY_PRINT_DISCLAIMER}</p>
         </section>
 
         <section className="sales-orders-print-section sales-orders-print-section--detail">
@@ -98,10 +115,15 @@ export function InvestedCapitalRecoveryCustomerPrintDocument({
                   <th>Pedidos</th>
                   <th>Faturado</th>
                   <th>Cap. invest.</th>
+                  <th>Margem econ.</th>
                   <th>Recebido</th>
                   <th>Cap. recup.</th>
-                  <th>Na rua</th>
                   <th>Ganho realiz.</th>
+                  <th>Na rua</th>
+                  <th>Falta receber</th>
+                  <th>Cap. no CR</th>
+                  <th>Ganho a rec.</th>
+                  <th>Cap. s/ CR</th>
                   <th>Saldo atual</th>
                 </tr>
               </thead>
@@ -112,17 +134,22 @@ export function InvestedCapitalRecoveryCustomerPrintDocument({
                     <td>{row.orders}</td>
                     <td>{money(row.invoiced)}</td>
                     <td>{money(row.investedCapital)}</td>
+                    <td>{money(row.economicMargin)}</td>
                     <td>{money(row.received)}</td>
                     <td>{money(row.recoveredCapital)}</td>
-                    <td>{money(row.capitalAtRisk)}</td>
                     <td>{money(row.realizedGain)}</td>
+                    <td>{money(row.capitalAtRisk)}</td>
+                    <td>{money(row.outstandingReceivable)}</td>
+                    <td>{money(row.capitalReceivableCovered)}</td>
+                    <td>{money(row.gainReceivable)}</td>
+                    <td>{money(row.capitalWithoutOpenReceivable)}</td>
                     <td>{money(row.potentialResult)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <p className="sales-orders-print-footnote">{INVESTED_CAPITAL_RECOVERY_PRINT_FOOTER_NOTE}</p>
+          <p className="sales-orders-print-disclaimer">{INVESTED_CAPITAL_RECOVERY_PRINT_FOOTER_NOTE}</p>
         </section>
       </div>
     </div>

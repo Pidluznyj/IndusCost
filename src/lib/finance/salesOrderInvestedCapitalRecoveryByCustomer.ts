@@ -11,6 +11,7 @@
  * usam o mesmo acumulador inteiro de centavos, então a soma dos clientes
  * fecha com o resumo sem residual de float.
  */
+import { isValidInvestedCapital } from "./salesOrderInvestedCapitalRecoveryMath.js";
 import type { SalesOrderInvestedCapitalRecoverySnapshot } from "./salesOrderInvestedCapitalRecoverySnapshot.js";
 
 export const INVESTED_CAPITAL_RECOVERY_UNIDENTIFIED_CUSTOMER_KEY = "__unidentified__";
@@ -31,6 +32,16 @@ export type InvestedCapitalRecoveryCustomerMoney = {
   capitalAtRisk: number | null;
   realizedGain: number | null;
   potentialResult: number | null;
+  /** Σ (vendido − capital) dos pedidos com capital válido; pode ser negativa. Null sem capital. */
+  economicMargin: number | null;
+  /** CR real em aberto de todos os pedidos do cliente (inclusive sem capital). */
+  outstandingReceivable: number;
+  /** Σ MIN(CR aberto, capital na rua) por pedido. Null sem capital. */
+  capitalReceivableCovered: number | null;
+  /** Σ MAX(CR aberto − capital na rua, 0) por pedido. Null sem capital. */
+  gainReceivable: number | null;
+  /** Σ MAX(capital na rua − CR aberto, 0) por pedido. Null sem capital. */
+  capitalWithoutOpenReceivable: number | null;
   /** capital recuperado / capital investido × 100. Null sem capital. */
   recoveredPercent: number | null;
   /** saldo econômico atual / faturado × 100. Null sem faturamento ou sem capital. */
@@ -78,6 +89,11 @@ type CentsBucket = {
   capitalAtRisk: number;
   realizedGain: number;
   potentialResult: number;
+  economicMargin: number;
+  outstandingReceivable: number;
+  capitalReceivableCovered: number;
+  gainReceivable: number;
+  capitalWithoutOpenReceivable: number;
   withCapital: number;
 };
 
@@ -95,6 +111,11 @@ function emptyBucket(): CentsBucket {
     capitalAtRisk: 0,
     realizedGain: 0,
     potentialResult: 0,
+    economicMargin: 0,
+    outstandingReceivable: 0,
+    capitalReceivableCovered: 0,
+    gainReceivable: 0,
+    capitalWithoutOpenReceivable: 0,
     withCapital: 0,
   };
 }
@@ -113,7 +134,9 @@ function addOrder(bucket: CentsBucket, order: SalesOrderInvestedCapitalRecoveryS
   bucket.sold += toCents(order.saleValue);
   bucket.invoiced += toCents(order.invoicedValue);
   bucket.received += toCents(order.actualReceived);
-  if (order.investedCapital == null) {
+  bucket.outstandingReceivable += toCents(order.outstandingReceivable);
+  // Mesma definição de capital válido do snapshot/serviço (DADOS_INSUFICIENTES).
+  if (!isValidInvestedCapital(order.investedCapital)) {
     bucket.insufficientDataOrders += 1;
     return;
   }
@@ -125,6 +148,10 @@ function addOrder(bucket: CentsBucket, order: SalesOrderInvestedCapitalRecoveryS
   bucket.capitalAtRisk += toCents(order.moneyOnStreet ?? 0);
   bucket.realizedGain += toCents(order.realizedGain ?? 0);
   bucket.potentialResult += toCents(order.potentialResult ?? 0);
+  bucket.economicMargin += toCents(order.economicMargin ?? 0);
+  bucket.capitalReceivableCovered += toCents(order.capitalReceivableCovered ?? 0);
+  bucket.gainReceivable += toCents(order.gainReceivable ?? 0);
+  bucket.capitalWithoutOpenReceivable += toCents(order.capitalWithoutOpenReceivable ?? 0);
 }
 
 function percent(numeratorCents: number, denominatorCents: number): number | null {
@@ -149,6 +176,11 @@ function moneyFromBucket(bucket: CentsBucket): InvestedCapitalRecoveryCustomerMo
     capitalAtRisk: hasCapital ? fromCents(bucket.capitalAtRisk) : null,
     realizedGain: hasCapital ? fromCents(bucket.realizedGain) : null,
     potentialResult,
+    economicMargin: hasCapital ? fromCents(bucket.economicMargin) : null,
+    outstandingReceivable: fromCents(bucket.outstandingReceivable),
+    capitalReceivableCovered: hasCapital ? fromCents(bucket.capitalReceivableCovered) : null,
+    gainReceivable: hasCapital ? fromCents(bucket.gainReceivable) : null,
+    capitalWithoutOpenReceivable: hasCapital ? fromCents(bucket.capitalWithoutOpenReceivable) : null,
     recoveredPercent: hasCapital ? percent(bucket.recoveredCapital, bucket.investedCapital) : null,
     economicMarginPercent:
       hasCapital && bucket.invoiced > 0 ? percent(bucket.potentialResult, bucket.invoiced) : null,
@@ -245,6 +277,7 @@ export function sumInvestedCapitalRecoveryCustomerMoney(
     bucket.sold += toCents(row.sold);
     bucket.invoiced += toCents(row.invoiced);
     bucket.received += toCents(row.received);
+    bucket.outstandingReceivable += toCents(row.outstandingReceivable);
     if (row.investedCapital == null) continue;
     bucket.withCapital += 1;
     bucket.industrialCost += toCents(row.industrialCost ?? 0);
@@ -254,6 +287,10 @@ export function sumInvestedCapitalRecoveryCustomerMoney(
     bucket.capitalAtRisk += toCents(row.capitalAtRisk ?? 0);
     bucket.realizedGain += toCents(row.realizedGain ?? 0);
     bucket.potentialResult += toCents(row.potentialResult ?? 0);
+    bucket.economicMargin += toCents(row.economicMargin ?? 0);
+    bucket.capitalReceivableCovered += toCents(row.capitalReceivableCovered ?? 0);
+    bucket.gainReceivable += toCents(row.gainReceivable ?? 0);
+    bucket.capitalWithoutOpenReceivable += toCents(row.capitalWithoutOpenReceivable ?? 0);
   }
   return moneyFromBucket(bucket);
 }

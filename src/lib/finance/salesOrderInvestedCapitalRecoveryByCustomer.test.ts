@@ -305,11 +305,81 @@ describe("Recuperação do Dinheiro Investido — agregação por cliente", () =
     assert.equal(summed.capitalAtRisk, summary.capitalAtRisk);
     assert.equal(summed.realizedGain, summary.realizedGain);
     assert.equal(summed.potentialResult, summary.potentialResult);
+    assert.equal(summed.economicMargin, summary.economicMargin);
+    assert.equal(summed.outstandingReceivable, summary.outstandingReceivable);
+    assert.equal(summed.capitalReceivableCovered, summary.capitalReceivableCovered);
+    assert.equal(summed.gainReceivable, summary.gainReceivable);
+    assert.equal(summed.capitalWithoutOpenReceivable, summary.capitalWithoutOpenReceivable);
     assert.equal(summary.investedCapital, 250);
     assert.equal(summary.received, 175);
     assert.equal(summary.recoveredCapital, 120);
     assert.equal(summary.capitalAtRisk, 130);
     assert.equal(summary.realizedGain, 50);
+    // Margem econômica = Σ (vendido − capital) só dos pedidos com capital: (160−100)+(80−100)+(40−50).
+    assert.equal(summary.economicMargin, 60 - 20 - 10);
+  });
+
+  it("decomposição por cliente só soma os snapshots — identidades fecham por cliente e no resumo", () => {
+    function open(amount: number, externalId: number) {
+      return {
+        externalId,
+        dueDate: "2026-10-01",
+        settlementDate: null,
+        amountReceivable: amount,
+        amountReceived: 0,
+        balanceReceivable: amount,
+      };
+    }
+    const result = aggregateInvestedCapitalRecoveryByCustomer([
+      // CASO A e CASO C no mesmo cliente.
+      snap({ salesOrderId: "a", customerId: "x", customerName: "X", saleValue: 100, investedCapital: 60, industrialCost: 48, totalTaxes: 12, realReceivables: [received(75, 1), open(25, 2)] }),
+      snap({ salesOrderId: "c", customerId: "x", customerName: "X", saleValue: 100, investedCapital: 60, industrialCost: 48, totalTaxes: 12, realReceivables: [received(10, 3), open(20, 4)] }),
+      // CASO E (margem negativa) noutro cliente + CASO D (sem custo, com CR aberto).
+      snap({ salesOrderId: "e", customerId: "y", customerName: "Y", saleValue: 100, investedCapital: 110, industrialCost: 88, totalTaxes: 22, realReceivables: [received(60, 5), open(40, 6)] }),
+      snap({ salesOrderId: "d", customerId: "y", customerName: "Y", saleValue: 100, investedCapital: null, industrialCost: null, totalTaxes: null, realReceivables: [received(50, 7), open(50, 8)] }),
+    ]);
+    const x = result.customers.find((row) => row.customerId === "x")!;
+    assert.equal(x.economicMargin, 80);
+    assert.equal(x.outstandingReceivable, 45);
+    assert.equal(x.capitalReceivableCovered, 20);
+    assert.equal(x.gainReceivable, 25);
+    assert.equal(x.capitalWithoutOpenReceivable, 30);
+    assert.equal(x.capitalAtRisk, 50);
+    assert.equal(x.capitalReceivableCovered! + x.capitalWithoutOpenReceivable!, x.capitalAtRisk);
+    assert.equal(x.recoveredCapital! + x.realizedGain!, x.received);
+
+    const y = result.customers.find((row) => row.customerId === "y")!;
+    assert.equal(y.insufficientDataOrders, 1);
+    assert.equal(y.economicMargin, -10);
+    assert.equal(y.outstandingReceivable, 90); // 40 (E) + 50 (D, não classificado)
+    assert.equal(y.capitalReceivableCovered, 40);
+    assert.equal(y.gainReceivable, 0);
+    assert.equal(y.capitalWithoutOpenReceivable, 10);
+    // O recebido de D (50) NÃO vira ganho nem capital recuperado.
+    assert.equal(y.received, 110);
+    assert.equal(y.recoveredCapital, 60);
+    assert.equal(y.realizedGain, 0);
+
+    assert.equal(result.summary.economicMargin, 70);
+    assert.equal(result.summary.outstandingReceivable, 135);
+    assert.equal(result.summary.capitalReceivableCovered, 60);
+    assert.equal(result.summary.gainReceivable, 25);
+    assert.equal(result.summary.capitalWithoutOpenReceivable, 40);
+    assert.equal(result.summary.investedCapital, 230);
+    assert.equal(result.summary.economicMargin! + result.summary.investedCapital!, 300);
+  });
+
+  it("capital 0 (não null) conta como dados insuficientes, igual ao KPI da visão geral", () => {
+    const result = aggregateInvestedCapitalRecoveryByCustomer([
+      snap({ salesOrderId: "zero", customerId: "z", investedCapital: 0, industrialCost: 0, totalTaxes: 0, saleValue: 80, realReceivables: [received(10, 1)] }),
+    ]);
+    const row = result.customers[0]!;
+    assert.equal(row.insufficientDataOrders, 1);
+    assert.equal(row.investedCapital, null);
+    assert.equal(row.economicMargin, null);
+    assert.equal(row.gainReceivable, null);
+    assert.equal(row.received, 10);
+    assert.equal(row.sold, 80);
   });
 
   it("a visão por cliente reutiliza a população já filtrada e não cria outro motor", () => {

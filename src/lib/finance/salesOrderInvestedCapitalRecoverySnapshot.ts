@@ -29,6 +29,10 @@
 
 import {
   computeCapitalRecovered,
+  computeCapitalReceivableCovered,
+  computeCapitalWithoutOpenReceivable,
+  computeEconomicMargin,
+  computeGainReceivable,
   computeInvestedCapitalRecoveryStatus,
   computeMoneyOnStreet,
   computePotentialResult,
@@ -80,7 +84,8 @@ export type SalesOrderInvestedCapitalRecoveryOrderInput = {
   /**
    * Componente de custo puro de `investedCapital` (sem o imposto) — o
    * chamador já garante `industrialCost + totalTaxes === investedCapital`
-   * por construção (subtração do imposto sobre o capital já somado, nunca
+   * por construção (`resolveInvestedCapitalComponents`: imposto levado a
+   * centavos ANTES da subtração sobre o capital já arredondado, nunca dois
    * arredondamentos independentes), para os KPIs de totais reconciliarem
    * exatamente na tela.
    */
@@ -116,6 +121,14 @@ export type SalesOrderInvestedCapitalRecoverySnapshot = {
   realizedGain: number | null;
   /** Faturado − capital integral deste pedido. Null sem capital válido. */
   potentialResult: number | null;
+  /** saleValue − investedCapital (pode ser negativa). Null sem capital válido. */
+  economicMargin: number | null;
+  /** MIN(CR real aberto, capital na rua): parte do CR aberto que ainda é retorno de capital. Null sem capital válido. */
+  capitalReceivableCovered: number | null;
+  /** MAX(CR real aberto − capital na rua, 0): parte do CR aberto que já é ganho. Null sem capital válido. */
+  gainReceivable: number | null;
+  /** MAX(capital na rua − CR real aberto, 0): capital exposto sem CR aberto que o cubra. Null sem capital válido. */
+  capitalWithoutOpenReceivable: number | null;
   recoveryPercent: number | null;
   status: InvestedCapitalRecoveryStatus;
   capitalRecoveryDate: string | null;
@@ -159,18 +172,35 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
     }
   }
 
-  const capitalRecovered = computeCapitalRecovered(input.investedCapital, actualReceived);
-  const moneyOnStreet = computeMoneyOnStreet(input.investedCapital, actualReceived);
-  const realizedGain = computeRealizedGain(input.investedCapital, actualReceived);
+  // Capital e venda já em centavos ANTES de qualquer conta — assim todas as
+  // identidades (capital = recuperado + na rua, venda = capital + margem, …)
+  // fecham exatamente com os valores ecoados no snapshot.
+  const investedCapital = input.investedCapital == null ? null : roundMoney(input.investedCapital);
+  const saleValue = roundMoney(input.saleValue);
+  const capitalRecovered = computeCapitalRecovered(investedCapital, actualReceived);
+  const moneyOnStreet = computeMoneyOnStreet(investedCapital, actualReceived);
+  const realizedGain = computeRealizedGain(investedCapital, actualReceived);
   const invoicedValue = roundMoney(
     input.invoicedValue != null && Number.isFinite(input.invoicedValue) ? input.invoicedValue : 0
   );
-  const potentialResult = computePotentialResult(input.investedCapital, invoicedValue);
-  const recoveryPercent = computeRecoveryPercent(input.investedCapital, actualReceived);
-  const status = computeInvestedCapitalRecoveryStatus(input.investedCapital, capitalRecovered);
-  const capitalRecoveryDate = resolveCapitalRecoveryDate(input.investedCapital, settledEvents);
+  const potentialResult = computePotentialResult(investedCapital, invoicedValue);
+  const economicMargin = computeEconomicMargin(saleValue, investedCapital);
+  const capitalReceivableCovered = computeCapitalReceivableCovered(
+    investedCapital,
+    moneyOnStreet,
+    outstandingReceivable
+  );
+  const gainReceivable = computeGainReceivable(investedCapital, moneyOnStreet, outstandingReceivable);
+  const capitalWithoutOpenReceivable = computeCapitalWithoutOpenReceivable(
+    investedCapital,
+    moneyOnStreet,
+    outstandingReceivable
+  );
+  const recoveryPercent = computeRecoveryPercent(investedCapital, actualReceived);
+  const status = computeInvestedCapitalRecoveryStatus(investedCapital, capitalRecovered);
+  const capitalRecoveryDate = resolveCapitalRecoveryDate(investedCapital, settledEvents);
   const forecastCapitalRecoveryDate = resolveForecastCapitalRecoveryDate(
-    input.investedCapital,
+    investedCapital,
     actualReceived,
     openEvents
   );
@@ -188,17 +218,21 @@ export function buildSalesOrderInvestedCapitalRecoverySnapshot(
     issueDate: input.issueDate ?? null,
     customerName: input.customerName,
     sellerName: input.sellerName,
-    saleValue: roundMoney(input.saleValue),
+    saleValue,
     invoicedValue,
-    investedCapital: input.investedCapital == null ? null : roundMoney(input.investedCapital),
+    investedCapital,
     investedCapitalSource: "INDUSTRIAL_RESULT",
-    investedCapitalUnavailableReason: input.investedCapital == null ? input.investedCapitalUnavailableReason : null,
+    investedCapitalUnavailableReason: investedCapital == null ? input.investedCapitalUnavailableReason : null,
     actualReceived,
     outstandingReceivable,
     capitalRecovered,
     moneyOnStreet,
     realizedGain,
     potentialResult,
+    economicMargin,
+    capitalReceivableCovered,
+    gainReceivable,
+    capitalWithoutOpenReceivable,
     recoveryPercent,
     status,
     capitalRecoveryDate,

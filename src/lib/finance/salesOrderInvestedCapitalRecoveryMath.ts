@@ -5,9 +5,10 @@
  * reconciliados) em (capitalRecovered, moneyOnStreet, recoveryPercent,
  * status, datas, aging).
  *
- * Autoridade do custo: `investedCapital` é o custo COMERCIAL do Pedido
- * (mesmo motor que já alimenta marginValue/marginPercent no Detalhe do
- * Pedido — decisão de negócio confirmada, não o custo industrial). Ver
+ * Autoridade do custo: `investedCapital` é o custo INDUSTRIAL oficial do
+ * Pedido + o imposto usado na margem comercial do Pedido de Venda (somados
+ * pelo serviço, ver `salesOrderInvestedCapitalRecoverySnapshot.ts`) — nunca
+ * o custo comercial da formação de preço. Ver
  * docs/finance/invested-capital-recovery.md.
  *
  * Autoridade do "recebido": `actualReceived` só pode conter dinheiro
@@ -15,6 +16,20 @@
  * emitida ou promessa. A precedência CR real > previsão é resolvida a
  * montante (FIN-05, `salesOrderEffectiveFinancialSchedule.ts`); este módulo
  * não reimplementa essa regra, só consome o resultado.
+ *
+ * Decomposição econômica (por PV, sempre em centavos, null sem capital
+ * válido — nunca 0 silencioso):
+ *   economicMargin              = saleValue − investedCapital (pode ser negativa)
+ *   capitalReceivableCovered    = MIN(outstandingReceivable, moneyOnStreet)
+ *   gainReceivable              = MAX(outstandingReceivable − moneyOnStreet, 0)
+ *   capitalWithoutOpenReceivable= MAX(moneyOnStreet − outstandingReceivable, 0)
+ * Identidades que fecham centavo a centavo por PV:
+ *   investedCapital       = capitalRecovered + moneyOnStreet
+ *   actualReceived        = capitalRecovered + realizedGain
+ *   outstandingReceivable = capitalReceivableCovered + gainReceivable
+ *   moneyOnStreet         = capitalReceivableCovered + capitalWithoutOpenReceivable
+ *   saleValue             = investedCapital + economicMargin
+ *   investedCapital       = industrialCost + totalTaxes (ver `resolveInvestedCapitalComponents`)
  */
 
 function roundMoney(value: number): number {
@@ -24,6 +39,42 @@ function roundMoney(value: number): number {
 
 function isValidPositiveCapital(investedCapital: number | null | undefined): investedCapital is number {
   return investedCapital != null && Number.isFinite(investedCapital) && investedCapital > 0;
+}
+
+/**
+ * ÚNICA definição de "capital válido" da tela — a mesma que decide
+ * DADOS_INSUFICIENTES. Serviço (população comparável dos KPIs) e agregação
+ * por cliente usam este helper; nunca um `!= null` próprio (capital 0 é
+ * inválido, não "capital de zero").
+ */
+export function isValidInvestedCapital(
+  investedCapital: number | null | undefined
+): investedCapital is number {
+  return isValidPositiveCapital(investedCapital);
+}
+
+/**
+ * Decomposição do capital em custo industrial + imposto que FECHA centavo a
+ * centavo. O imposto do motor de margem chega com até 6 casas
+ * (`roundPricingMoney`); se o custo for derivado subtraindo esse valor bruto
+ * e o imposto for arredondado separadamente, a soma pode dar capital ± 0,01
+ * (ex.: custo 100 + imposto 12,525 → capital 112,53, mas 100,01 + 12,53 =
+ * 112,54). Por isso o imposto é levado a centavos ANTES da subtração e o
+ * capital (já arredondado pelo chamador) nunca é alterado — só a
+ * decomposição absorve o centavo. Sem capital válido, ambos null.
+ */
+export function resolveInvestedCapitalComponents(
+  investedCapital: number | null | undefined,
+  taxAmount: number | null | undefined
+): { industrialCost: number | null; totalTaxes: number | null } {
+  if (investedCapital == null || !Number.isFinite(investedCapital)) {
+    return { industrialCost: null, totalTaxes: null };
+  }
+  const totalTaxes = roundMoney(taxAmount != null && Number.isFinite(taxAmount) ? taxAmount : 0);
+  return {
+    industrialCost: roundMoney(roundMoney(investedCapital) - totalTaxes),
+    totalTaxes,
+  };
 }
 
 export type InvestedCapitalRecoveryStatus =
@@ -82,6 +133,68 @@ export function computePotentialResult(
   if (!isValidPositiveCapital(investedCapital)) return null;
   const invoiced = Number.isFinite(invoicedValue) ? (invoicedValue as number) : 0;
   return roundMoney(invoiced - investedCapital);
+}
+
+/**
+ * Margem econômica do pedido = saleValue − investedCapital. NÃO usa MAX(…, 0):
+ * um PV economicamente negativo precisa continuar aparecendo negativo. Null
+ * sem capital válido (nunca vira saleValue inteiro por falta de custo).
+ */
+export function computeEconomicMargin(
+  saleValue: number | null | undefined,
+  investedCapital: number | null | undefined
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  const sale = saleValue != null && Number.isFinite(saleValue) ? saleValue : 0;
+  return roundMoney(sale - investedCapital);
+}
+
+/**
+ * Parte do CR real em aberto que ainda é recuperação do capital investido
+ * = MIN(outstandingReceivable, moneyOnStreet). Null sem capital válido ou sem
+ * moneyOnStreet resolvido — não inventa valor.
+ */
+export function computeCapitalReceivableCovered(
+  investedCapital: number | null | undefined,
+  moneyOnStreet: number | null | undefined,
+  outstandingReceivable: number
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  if (moneyOnStreet == null || !Number.isFinite(moneyOnStreet)) return null;
+  const outstanding = Number.isFinite(outstandingReceivable) ? Math.max(outstandingReceivable, 0) : 0;
+  return roundMoney(Math.min(outstanding, Math.max(moneyOnStreet, 0)));
+}
+
+/**
+ * Parte do CR real em aberto que excede o capital ainda exposto
+ * = MAX(outstandingReceivable − moneyOnStreet, 0). Pedido sem capital
+ * resolvido devolve null: ausência de custo nunca vira ganho artificial.
+ */
+export function computeGainReceivable(
+  investedCapital: number | null | undefined,
+  moneyOnStreet: number | null | undefined,
+  outstandingReceivable: number
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  if (moneyOnStreet == null || !Number.isFinite(moneyOnStreet)) return null;
+  const outstanding = Number.isFinite(outstandingReceivable) ? Math.max(outstandingReceivable, 0) : 0;
+  return roundMoney(Math.max(outstanding - Math.max(moneyOnStreet, 0), 0));
+}
+
+/**
+ * Capital ainda exposto que NÃO está coberto por CR real em aberto
+ * = MAX(moneyOnStreet − outstandingReceivable, 0). Complemento de
+ * `computeCapitalReceivableCovered`: covered + withoutOpen == moneyOnStreet.
+ */
+export function computeCapitalWithoutOpenReceivable(
+  investedCapital: number | null | undefined,
+  moneyOnStreet: number | null | undefined,
+  outstandingReceivable: number
+): number | null {
+  if (!isValidPositiveCapital(investedCapital)) return null;
+  if (moneyOnStreet == null || !Number.isFinite(moneyOnStreet)) return null;
+  const outstanding = Number.isFinite(outstandingReceivable) ? Math.max(outstandingReceivable, 0) : 0;
+  return roundMoney(Math.max(Math.max(moneyOnStreet, 0) - outstanding, 0));
 }
 
 /** recoveryPercent = MIN(actualReceived / investedCapital, 1) * 100; nunca > 100; null quando capital ausente/inválido. */

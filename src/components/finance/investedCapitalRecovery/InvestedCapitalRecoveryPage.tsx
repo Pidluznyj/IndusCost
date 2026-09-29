@@ -2,7 +2,13 @@
  * Financeiro > Recuperação do Dinheiro Investido — tela analítica somente
  * leitura. Backend é autoridade: este componente só envia filtros e
  * renderiza o DTO; nenhum capitalRecovered/moneyOnStreet/percent/status/
- * aging/KPI é recalculado aqui.
+ * aging/KPI/margem/decomposição é recalculado aqui.
+ *
+ * Leitura em blocos (decomposição econômica do PV): 1. Economia dos pedidos,
+ * 2. O que já aconteceu, 3. O que ainda tem para entrar, 4. Leitura
+ * gerencial, 5. Detalhamento por pedido (auditoria). As igualdades entre os
+ * blocos já chegam reconciliadas do backend (população comparável = pedidos
+ * com custo resolvido) — ver docs/finance/invested-capital-recovery.md.
  *
  * Filtros: seguem o padrão draft/applied já usado em Contas a Receber >
  * Títulos — os inputs só alteram estado local (`draftFilters`); a busca
@@ -18,7 +24,7 @@ import {
   FinanceModuleErrorBanner,
   FinanceModulePageLoading,
 } from "@/src/components/finance/shared/FinanceModuleStates";
-import { formatFinanceCurrency, formatFinanceDate } from "@/src/lib/financeAccountsReceivableFormat";
+import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   buildFinanceArYearOptions,
   FINANCE_AR_MONTH_OPTIONS,
@@ -30,6 +36,10 @@ import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding
 import { InvestedCapitalRecoveryPrintDocument } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPrintDocument";
 import { InvestedCapitalRecoveryCustomerPanel } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryCustomerPanel";
 import { InvestedCapitalRecoveryCustomerPrintDocument } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryCustomerPrintDocument";
+import { InvestedCapitalRecoveryEconomicSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryEconomicSection";
+import { InvestedCapitalRecoveryRealizedSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryRealizedSection";
+import { InvestedCapitalRecoveryReceivablesSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryReceivablesSection";
+import { InvestedCapitalRecoveryExecutiveSection } from "@/src/components/finance/investedCapitalRecovery/InvestedCapitalRecoveryExecutiveSection";
 import type {
   InvestedCapitalRecoveryPayload,
   InvestedCapitalRecoveryRow,
@@ -123,21 +133,6 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
   return <span className="text-sky-300 text-[10px] ml-0.5">{dir === "asc" ? "▲" : "▼"}</span>;
 }
 
-function KpiCard({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "in" | "out" | "neutral" }) {
-  const toneClass =
-    tone === "in"
-      ? "border-emerald-200 text-emerald-800"
-      : tone === "out"
-        ? "border-red-200 text-red-800"
-        : "border-border text-foreground";
-  return (
-    <div className={cn("rounded-lg border bg-card px-3 py-2.5 shadow-sm", toneClass)}>
-      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-extrabold tabular-nums tracking-tight">{value}</p>
-    </div>
-  );
-}
-
 type InvestedCapitalRecoveryUiFilters = {
   startDate: string;
   endDate: string;
@@ -174,7 +169,7 @@ function buildQuery(filters: InvestedCapitalRecoveryUiFilters): string {
   if (filters.startDate) params.set("startDate", filters.startDate);
   if (filters.endDate) params.set("endDate", filters.endDate);
   if (filters.q) params.set("q", filters.q);
-  
+
   if (!hasDateRange) {
     if (filters.year) params.set("year", filters.year);
     if (filters.month) params.set("month", filters.month);
@@ -206,6 +201,60 @@ function buildFilterLabels(filters: InvestedCapitalRecoveryUiFilters): string {
 }
 
 const PAGE_SIZE = 25;
+
+/** Cabeçalho de coluna da tabela de pedidos — ordenável, com tooltip da regra. */
+function OrderTh({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onSort,
+  title,
+  align = "right",
+  className,
+}: {
+  label: string;
+  sortKey: keyof InvestedCapitalRecoveryRow;
+  activeKey: keyof InvestedCapitalRecoveryRow;
+  dir: "asc" | "desc";
+  onSort: (key: keyof InvestedCapitalRecoveryRow) => void;
+  title: string;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  return (
+    <th
+      className={cn(
+        "sticky top-6 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none",
+        align === "right" && "text-right",
+        className
+      )}
+      onClick={() => onSort(sortKey)}
+      title={title}
+    >
+      <div className={cn("flex items-center gap-0.5", align === "right" && "justify-end")}>
+        {label}
+        <SortIcon active={activeKey === sortKey} dir={dir} />
+      </div>
+    </th>
+  );
+}
+
+/** Cabeçalho de grupo (mesmos blocos da leitura acima da tabela). */
+function GroupTh({ label, colSpan, className }: { label: string; colSpan: number; className?: string }) {
+  return (
+    <th
+      colSpan={colSpan}
+      scope="colgroup"
+      className={cn(
+        "sticky top-0 z-30 h-6 border-b border-slate-700 bg-slate-800 px-1.5 py-0 text-center text-[9px] font-semibold uppercase tracking-wider text-slate-300",
+        className
+      )}
+    >
+      {label}
+    </th>
+  );
+}
 
 export function InvestedCapitalRecoveryPage() {
   const [draftFilters, setDraftFilters] = useState<InvestedCapitalRecoveryUiFilters>(defaultFilters());
@@ -381,19 +430,15 @@ export function InvestedCapitalRecoveryPage() {
   const maxAging = data ? Math.max(1, ...data.agingBuckets.map((b) => b.amount)) : 1;
   const yearOptions = useMemo(() => buildFinanceArYearOptions(), []);
 
+  const thProps = { activeKey: sortKey, dir: sortDir, onSort: toggleSort } as const;
+
   return (
     <div className="flex flex-col gap-3" data-testid="invested-capital-recovery-page">
-      <div>
-        <h1 className="text-lg font-bold text-foreground">Recuperação do Dinheiro Investido</h1>
-        <p className="text-sm text-muted-foreground">
-          Quanto do capital aplicado nos pedidos já retornou e quanto ainda está na rua.
-        </p>
-        <p className="mt-1 rounded-md border border-dashed border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground">
-          Fonte oficial: motor de Pedido de Venda (custo industrial oficial + Contas a Receber reais).
-          Esta tela apenas consolida dados oficiais — não cria títulos, não dá baixa, não altera o Pedido.
-          Operações com empresas do grupo não são consideradas nesta análise.
-        </p>
-      </div>
+      <p className="rounded-md border border-dashed border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        Fonte oficial: motor de Pedido de Venda (custo industrial oficial + imposto da margem comercial + Contas a Receber reais).
+        Esta tela apenas consolida dados oficiais — não cria títulos, não dá baixa, não altera o Pedido.
+        Operações com empresas do grupo não são consideradas nesta análise.
+      </p>
 
       <div className="flex gap-1" role="tablist" aria-label="Visões da recuperação do dinheiro investido">
         <button
@@ -590,206 +635,94 @@ export function InvestedCapitalRecoveryPage() {
       ) : (
         <>
           {/*
-            Leitura executiva (visão de conselho): vendemos X, para isso
-            investimos Y (custo + imposto) e falta receber Z — respondendo
-            "onde está o dinheiro" mesmo com crescimento de pedidos.
+            Leitura executiva em blocos: 1. como a venda se divide (capital +
+            margem econômica), 2. o que já entrou (retorno de capital + ganho),
+            3. o que ainda tem para entrar (CR aberto = capital + ganho futuro,
+            e capital ainda sem CR), 4. leitura gerencial — tudo do DTO.
           */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiCard label="Vendemos (Total Vendido)" value={money(data.kpis.totalSaleValueAnalyzed)} />
-            <KpiCard label="Investimos (Capital = Custo + Imposto)" value={money(data.kpis.investedCapitalAnalyzedTotal)} tone="out" />
-            <KpiCard label="Custo Industrial Total" value={money(data.kpis.totalIndustrialCostAnalyzed)} />
-            <KpiCard label="Imposto Total (incluído no capital)" value={money(data.kpis.totalTaxesAnalyzed)} />
-            <KpiCard label="Falta Receber" value={money(data.kpis.totalOutstandingReceivable)} tone="out" />
-            <KpiCard label="Dinheiro na Rua Hoje" value={money(data.kpis.moneyOnStreetToday)} tone="out" />
-            <KpiCard label="Capital Recuperado" value={money(data.kpis.capitalRecoveredTotal)} tone="in" />
-            <KpiCard label="Recuperaram capital" value={String(data.kpis.ordersFullyRecoveredCount)} />
-            <KpiCard label="Parcialmente recuperados" value={String(data.kpis.ordersPartiallyRecoveredCount)} />
-            <KpiCard label="Dados insuficientes" value={String(data.kpis.ordersInsufficientDataCount)} />
-            <KpiCard
-              label="Prazo médio realizado"
-              value={
-                data.kpis.averageDaysToRecoverCapital == null
-                  ? "—"
-                  : `${data.kpis.averageDaysToRecoverCapital} dias`
-              }
-            />
-          </div>
-
-          <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-foreground">Capital na Rua por Faixa</h2>
-            <div className="flex flex-col gap-1.5">
-              {data.agingBuckets.map((bucket) => (
-                <div key={bucket.key} className="flex items-center gap-2 text-xs">
-                  <span className="w-28 shrink-0 text-muted-foreground">{bucket.label}</span>
-                  <div className="h-4 flex-1 overflow-hidden rounded bg-muted/40">
-                    <div
-                      className="h-full rounded bg-red-400"
-                      style={{ width: `${Math.round((bucket.amount / maxAging) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="w-24 shrink-0 text-right tabular-nums font-medium">{money(bucket.amount)}</span>
+          <InvestedCapitalRecoveryEconomicSection kpis={data.kpis} ordersCount={data.rows.length} />
+          <InvestedCapitalRecoveryRealizedSection kpis={data.kpis} />
+          <InvestedCapitalRecoveryReceivablesSection kpis={data.kpis}>
+            <div className="grid gap-3 xl:grid-cols-2">
+              <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
+                <h2 className="mb-2 text-sm font-semibold text-foreground">Capital na Rua por Faixa</h2>
+                <div className="flex flex-col gap-1.5">
+                  {data.agingBuckets.map((bucket) => (
+                    <div key={bucket.key} className="flex items-center gap-2 text-xs">
+                      <span className="w-28 shrink-0 text-muted-foreground">{bucket.label}</span>
+                      <div className="h-4 flex-1 overflow-hidden rounded bg-muted/40">
+                        <div
+                          className="h-full rounded bg-red-400"
+                          style={{ width: `${Math.round((bucket.amount / maxAging) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-24 shrink-0 text-right tabular-nums font-medium">{money(bucket.amount)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
+              </section>
 
-          <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-foreground">Top Clientes — Capital na Rua</h2>
-            <div className="flex flex-col gap-1.5">
-              {data.topCustomers.map((c) => (
-                <div key={c.customerName} className="flex items-center gap-2 text-xs">
-                  <span className="w-40 shrink-0 truncate text-muted-foreground">{c.customerName}</span>
-                  <div className="h-4 flex-1 overflow-hidden rounded bg-muted/40">
-                    <div className="h-full rounded bg-amber-400" style={{ width: `${c.percentOfTotal}%` }} />
-                  </div>
-                  <span className="w-32 shrink-0 text-right tabular-nums font-medium">
-                    {money(c.moneyOnStreet)} ({c.percentOfTotal.toFixed(0)}%)
-                  </span>
+              <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
+                <h2 className="mb-2 text-sm font-semibold text-foreground">Top Clientes — Capital na Rua</h2>
+                <div className="flex flex-col gap-1.5">
+                  {data.topCustomers.map((c) => (
+                    <div key={c.customerName} className="flex items-center gap-2 text-xs">
+                      <span className="w-40 shrink-0 truncate text-muted-foreground">{c.customerName}</span>
+                      <div className="h-4 flex-1 overflow-hidden rounded bg-muted/40">
+                        <div className="h-full rounded bg-amber-400" style={{ width: `${c.percentOfTotal}%` }} />
+                      </div>
+                      <span className="w-32 shrink-0 text-right tabular-nums font-medium">
+                        {money(c.moneyOnStreet)} ({c.percentOfTotal.toFixed(0)}%)
+                      </span>
+                    </div>
+                  ))}
+                  {data.topCustomers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Nenhum cliente com capital na rua no período.</p>
+                  ) : null}
                 </div>
-              ))}
-              {data.topCustomers.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nenhum cliente com capital na rua no período.</p>
-              ) : null}
+              </section>
             </div>
-          </section>
+          </InvestedCapitalRecoveryReceivablesSection>
+          <InvestedCapitalRecoveryExecutiveSection kpis={data.kpis} />
 
-          <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden" data-testid="icr-orders-section">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-3 py-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">5 · Detalhamento por pedido</p>
+                <h2 className="text-sm font-bold text-foreground">Auditoria pedido a pedido — clique na linha para abrir o Pedido</h2>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Valores em R$ · colunas seguem os blocos acima</p>
+            </div>
             <div className="max-h-[600px] overflow-auto relative">
-              <table className="w-full min-w-[1200px] text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
+              <table className="w-full min-w-[1900px] text-xs relative border-collapse" data-testid="invested-capital-recovery-table">
                 <thead className="sticky top-0 z-20 bg-slate-900 text-white shadow-sm">
+                  <tr>
+                    <GroupTh label="Pedido" colSpan={2} />
+                    <GroupTh label="Economia do pedido" colSpan={5} className="border-l border-slate-700" />
+                    <GroupTh label="O que já aconteceu" colSpan={3} className="border-l border-slate-700" />
+                    <GroupTh label="O que ainda tem para entrar" colSpan={5} className="border-l border-slate-700" />
+                    <GroupTh label="Acompanhamento" colSpan={4} className="border-l border-slate-700" />
+                  </tr>
                   <tr className="border-b border-slate-800 text-left text-[10px] font-semibold uppercase tracking-wide">
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("orderCode")}
-                      title="Pedido de Venda"
-                    >
-                      <div className="flex items-center gap-0.5">
-                        PV
-                        <SortIcon active={sortKey === "orderCode"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("customerName")}
-                      title="Nome do Cliente"
-                    >
-                      <div className="flex items-center gap-0.5">
-                        Cliente
-                        <SortIcon active={sortKey === "customerName"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("saleValue")}
-                      title="Valor do Pedido de Venda"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Venda
-                        <SortIcon active={sortKey === "saleValue"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("investedCapital")}
-                      title="Capital Investido (Imposto + Custo de Produção)"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Cap. Invest.
-                        <SortIcon active={sortKey === "investedCapital"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("totalTaxes")}
-                      title="Imposto usado no cálculo da margem comercial — já incluído no Capital Investido"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Imposto
-                        <SortIcon active={sortKey === "totalTaxes"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("industrialCost")}
-                      title="Custo industrial de produção oficial"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Custo Prod.
-                        <SortIcon active={sortKey === "industrialCost"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("actualReceived")}
-                      title="Valor efetivamente recebido"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Recebido
-                        <SortIcon active={sortKey === "actualReceived"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("capitalRecovered")}
-                      title="Capital recuperado"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Cap. Recup.
-                        <SortIcon active={sortKey === "capitalRecovered"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none text-amber-300"
-                      onClick={() => toggleSort("moneyOnStreet")}
-                      title="Capital na Rua = Capital Investido - Capital Recuperado"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        Cap. na Rua
-                        <SortIcon active={sortKey === "moneyOnStreet"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("outstandingReceivable")}
-                      title="A Receber = Valor Pedido - Recebido"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        A Receber
-                        <SortIcon active={sortKey === "outstandingReceivable"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-right whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("recoveryPercent")}
-                      title="Percentual de capital recuperado"
-                    >
-                      <div className="flex items-center justify-end gap-0.5">
-                        % Rec.
-                        <SortIcon active={sortKey === "recoveryPercent"} dir={sortDir} />
-                      </div>
-                    </th>
-
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("capitalRecoveryDate")}
-                      title="Mês/Ano em que o capital foi pago"
-                    >
-                      <div className="flex items-center gap-0.5">
-                        Pagou em
-                        <SortIcon active={sortKey === "capitalRecoveryDate"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th
-                      className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 whitespace-nowrap cursor-pointer select-none"
-                      onClick={() => toggleSort("forecastCapitalRecoveryDate")}
-                      title="Previsão Mês/Ano de recuperação do capital"
-                    >
-                      <div className="flex items-center gap-0.5">
-                        Prev. Rec.
-                        <SortIcon active={sortKey === "forecastCapitalRecoveryDate"} dir={sortDir} />
-                      </div>
-                    </th>
-                    <th className="sticky top-0 z-20 bg-slate-900 px-1.5 py-2 text-center whitespace-nowrap" title="Status Econômico">Status</th>
+                    <OrderTh label="PV" sortKey="orderCode" align="left" title="Pedido de Venda" {...thProps} />
+                    <OrderTh label="Cliente" sortKey="customerName" align="left" title="Nome do Cliente" {...thProps} />
+                    <OrderTh label="Vendido" sortKey="saleValue" title="Valor líquido do Pedido de Venda" className="border-l border-slate-700" {...thProps} />
+                    <OrderTh label="Cap. Invest." sortKey="investedCapital" title="Capital investido = custo industrial + imposto" {...thProps} />
+                    <OrderTh label="Custo Prod." sortKey="industrialCost" title="Custo industrial de produção oficial" {...thProps} />
+                    <OrderTh label="Imposto" sortKey="totalTaxes" title="Imposto usado no cálculo da margem comercial — já incluído no capital investido" {...thProps} />
+                    <OrderTh label="Margem econ." sortKey="economicMargin" title="Margem econômica = vendido − capital investido (pode ser negativa; sem custo resolvido fica vazia)" {...thProps} />
+                    <OrderTh label="Recebido" sortKey="actualReceived" title="Valor efetivamente recebido (CR real baixado)" className="border-l border-slate-700" {...thProps} />
+                    <OrderTh label="Cap. Recup." sortKey="capitalRecovered" title="Capital recuperado = MIN(recebido, capital investido)" {...thProps} />
+                    <OrderTh label="Ganho realiz." sortKey="realizedGain" title="Ganho realizado = MAX(recebido − capital investido, 0)" {...thProps} />
+                    <OrderTh label="Cap. na Rua" sortKey="moneyOnStreet" title="Capital na rua = MAX(capital investido − recebido, 0)" className="border-l border-slate-700 text-amber-300" {...thProps} />
+                    <OrderTh label="Falta receber" sortKey="outstandingReceivable" title="Saldo dos CR reais em aberto vinculados ao Pedido" {...thProps} />
+                    <OrderTh label="Cap. no CR" sortKey="capitalReceivableCovered" title="Capital a recuperar nos recebíveis = MIN(CR aberto, capital na rua)" {...thProps} />
+                    <OrderTh label="Ganho a rec." sortKey="gainReceivable" title="Ganho a receber = MAX(CR aberto − capital na rua, 0)" {...thProps} />
+                    <OrderTh label="Cap. s/ CR" sortKey="capitalWithoutOpenReceivable" title="Capital na rua sem CR aberto = MAX(capital na rua − CR aberto, 0)" {...thProps} />
+                    <OrderTh label="% Rec." sortKey="recoveryPercent" title="Percentual de capital recuperado" className="border-l border-slate-700" {...thProps} />
+                    <OrderTh label="Pagou em" sortKey="capitalRecoveryDate" align="left" title="Mês/Ano em que o capital foi recuperado" {...thProps} />
+                    <OrderTh label="Prev. Rec." sortKey="forecastCapitalRecoveryDate" align="left" title="Previsão Mês/Ano de recuperação do capital (agenda de CR real aberto)" {...thProps} />
+                    <th className="sticky top-6 z-20 bg-slate-900 px-1.5 py-2 text-center whitespace-nowrap" title="Status Econômico">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -812,7 +745,7 @@ export function InvestedCapitalRecoveryPage() {
                       <td className="px-1.5 py-1.5" title={row.customerName ?? undefined}>
                         {row.customerName ? (row.customerName.length > 15 ? row.customerName.slice(0, 15) + "…" : row.customerName) : "—"}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums font-medium whitespace-nowrap border-l border-border/60">
                         {money(row.saleValue)}
                       </td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">
@@ -823,29 +756,48 @@ export function InvestedCapitalRecoveryPage() {
                         )}
                       </td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                        {row.industrialCost == null ? "—" : money(row.industrialCost)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
                         {row.totalTaxes == null ? (
                           "—"
                         ) : (
                           <span title={row.taxSourceLabel ?? undefined}>{money(row.totalTaxes)}</span>
                         )}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">
-                        {row.industrialCost == null ? "—" : money(row.industrialCost)}
+                      <td
+                        className={cn(
+                          "px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium",
+                          row.economicMargin != null && row.economicMargin < 0 ? "text-rose-700" : "text-foreground"
+                        )}
+                      >
+                        {money(row.economicMargin)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">{money(row.actualReceived)}</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap border-l border-border/60">{money(row.actualReceived)}</td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-emerald-700">
                         {money(row.capitalRecovered)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-bold text-rose-700">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-emerald-700">
+                        {money(row.realizedGain ?? null)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-bold text-rose-700 border-l border-border/60">
                         {money(row.moneyOnStreet)}
                       </td>
                       <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap font-medium">
                         {money(row.outstandingReceivable)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right whitespace-nowrap">
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-amber-700">
+                        {money(row.capitalReceivableCovered)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-emerald-700">
+                        {money(row.gainReceivable)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap text-rose-700">
+                        {money(row.capitalWithoutOpenReceivable)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right whitespace-nowrap border-l border-border/60">
                         <RecoveryProgressBar percent={row.recoveryPercent} />
                       </td>
-
                       <td className="px-1.5 py-1.5 whitespace-nowrap font-medium text-foreground">
                         {formatMonthYear(row.capitalRecoveryDate)}
                       </td>

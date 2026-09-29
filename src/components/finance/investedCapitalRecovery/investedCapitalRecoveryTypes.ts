@@ -28,6 +28,14 @@ export type InvestedCapitalRecoveryRow = {
   moneyOnStreet: number | null;
   realizedGain?: number | null;
   potentialResult?: number | null;
+  /** Vendido − capital investido (pode ser negativa). Null sem capital válido. */
+  economicMargin: number | null;
+  /** Parte do CR real aberto que ainda é retorno de capital. Null sem capital válido. */
+  capitalReceivableCovered: number | null;
+  /** Parte do CR real aberto que já é ganho. Null sem capital válido. */
+  gainReceivable: number | null;
+  /** Capital na rua ainda sem CR real aberto que o cubra. Null sem capital válido. */
+  capitalWithoutOpenReceivable: number | null;
   recoveryPercent: number | null;
   status: InvestedCapitalRecoveryStatus;
   capitalRecoveryDate: string | null;
@@ -60,6 +68,11 @@ export type InvestedCapitalRecoveryCustomerMoney = {
   capitalAtRisk: number | null;
   realizedGain: number | null;
   potentialResult: number | null;
+  economicMargin: number | null;
+  outstandingReceivable: number;
+  capitalReceivableCovered: number | null;
+  gainReceivable: number | null;
+  capitalWithoutOpenReceivable: number | null;
   recoveredPercent: number | null;
   economicMarginPercent: number | null;
 };
@@ -101,6 +114,23 @@ export type InvestedCapitalRecoveryPayload = {
     totalSaleValueAnalyzed: number;
     totalIndustrialCostAnalyzed: number;
     totalTaxesAnalyzed: number;
+    /**
+     * Totais COMPARÁVEIS — mesma população (pedidos com capital válido) para
+     * fechar entre si; ver `salesOrderInvestedCapitalRecoveryTotals.ts`.
+     */
+    ordersComparableCount: number;
+    comparableSaleValueTotal: number;
+    economicMarginTotal: number;
+    actualReceivedTotal: number;
+    actualReceivedComparableTotal: number;
+    realizedGainTotal: number;
+    outstandingReceivableComparableTotal: number;
+    outstandingReceivableUnclassifiedTotal: number;
+    capitalReceivableCoveredTotal: number;
+    gainReceivableTotal: number;
+    capitalWithoutOpenReceivableTotal: number;
+    capitalRecoveredPercent: number | null;
+    moneyOnStreetPercent: number | null;
   };
   agingBuckets: Array<{ key: string; label: string; amount: number }>;
   topCustomers: Array<{ customerName: string; moneyOnStreet: number; percentOfTotal: number }>;

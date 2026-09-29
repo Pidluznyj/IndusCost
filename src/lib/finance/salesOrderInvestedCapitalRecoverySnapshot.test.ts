@@ -241,3 +241,103 @@ describe("buildSalesOrderInvestedCapitalRecoverySnapshot", () => {
     assert.equal(withTax.investedCapital, withoutTax.investedCapital);
   });
 });
+
+describe("buildSalesOrderInvestedCapitalRecoverySnapshot — decomposição econômica por pedido", () => {
+  /** PV com um CR baixado (`received`) e um CR aberto (`outstanding`). */
+  function decomposed(input: { sale: number; capital: number | null; received: number; outstanding: number }) {
+    return buildSalesOrderInvestedCapitalRecoverySnapshot(
+      {
+        ...baseOrder(),
+        saleValue: input.sale,
+        investedCapital: input.capital,
+        investedCapitalUnavailableReason: input.capital == null ? "Custo publicado não localizado na data do pedido" : null,
+        realReceivables: [
+          {
+            externalId: 1,
+            dueDate: "2026-06-01",
+            settlementDate: "2026-06-05",
+            amountReceivable: input.received,
+            amountReceived: input.received,
+            balanceReceivable: 0,
+          },
+          {
+            externalId: 2,
+            dueDate: "2026-10-01",
+            settlementDate: null,
+            amountReceivable: input.outstanding,
+            amountReceived: 0,
+            balanceReceivable: input.outstanding,
+          },
+        ],
+      },
+      TODAY
+    );
+  }
+
+  function cents(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  it("CASOS A, B, C e E chegam ao snapshot com os mesmos números da matemática pura", () => {
+    const a = decomposed({ sale: 100, capital: 60, received: 75, outstanding: 25 });
+    assert.equal(a.economicMargin, 40);
+    assert.equal(a.capitalRecovered, 60);
+    assert.equal(a.realizedGain, 15);
+    assert.equal(a.moneyOnStreet, 0);
+    assert.equal(a.capitalReceivableCovered, 0);
+    assert.equal(a.gainReceivable, 25);
+    assert.equal(a.capitalWithoutOpenReceivable, 0);
+    assert.equal(a.status, "CAPITAL_RECUPERADO");
+
+    const b = decomposed({ sale: 100, capital: 60, received: 30, outstanding: 70 });
+    assert.equal(b.capitalReceivableCovered, 30);
+    assert.equal(b.gainReceivable, 40);
+    assert.equal(b.capitalWithoutOpenReceivable, 0);
+
+    const c = decomposed({ sale: 100, capital: 60, received: 10, outstanding: 20 });
+    assert.equal(c.moneyOnStreet, 50);
+    assert.equal(c.capitalReceivableCovered, 20);
+    assert.equal(c.gainReceivable, 0);
+    assert.equal(c.capitalWithoutOpenReceivable, 30);
+
+    const e = decomposed({ sale: 100, capital: 110, received: 60, outstanding: 40 });
+    assert.equal(e.economicMargin, -10);
+    assert.equal(e.capitalReceivableCovered, 40);
+    assert.equal(e.gainReceivable, 0);
+    assert.equal(e.capitalWithoutOpenReceivable, 10);
+  });
+
+  it("CASO D — sem capital: recebido e CR aberto continuam corretos, mas nada é classificado", () => {
+    const d = decomposed({ sale: 100, capital: null, received: 50, outstanding: 50 });
+    assert.equal(d.actualReceived, 50);
+    assert.equal(d.outstandingReceivable, 50);
+    assert.equal(d.economicMargin, null);
+    assert.equal(d.capitalRecovered, null);
+    assert.equal(d.moneyOnStreet, null);
+    assert.equal(d.realizedGain, null);
+    assert.equal(d.capitalReceivableCovered, null);
+    assert.equal(d.gainReceivable, null);
+    assert.equal(d.capitalWithoutOpenReceivable, null);
+    assert.equal(d.status, "DADOS_INSUFICIENTES");
+  });
+
+  it("todas as identidades fecham centavo a centavo com os valores ecoados no próprio snapshot", () => {
+    const scenarios = [
+      { sale: 100, capital: 60, received: 75, outstanding: 25 },
+      { sale: 100, capital: 60, received: 30, outstanding: 70 },
+      { sale: 100, capital: 110, received: 60, outstanding: 40 },
+      { sale: 1234.56, capital: 987.65, received: 333.33, outstanding: 901.23 },
+      // Entrada com mais de 2 casas: o snapshot arredonda ANTES de qualquer conta.
+      { sale: 1000.005, capital: 700.004, received: 199.999, outstanding: 800.006 },
+    ];
+    for (const s of scenarios) {
+      const r = decomposed(s);
+      const label = JSON.stringify(s);
+      assert.equal(cents(r.capitalRecovered! + r.moneyOnStreet!), r.investedCapital, `capital ${label}`);
+      assert.equal(cents(r.capitalRecovered! + r.realizedGain!), r.actualReceived, `recebido ${label}`);
+      assert.equal(cents(r.capitalReceivableCovered! + r.gainReceivable!), r.outstandingReceivable, `CR ${label}`);
+      assert.equal(cents(r.capitalReceivableCovered! + r.capitalWithoutOpenReceivable!), r.moneyOnStreet, `rua ${label}`);
+      assert.equal(cents(r.investedCapital! + r.economicMargin!), r.saleValue, `venda ${label}`);
+    }
+  });
+});

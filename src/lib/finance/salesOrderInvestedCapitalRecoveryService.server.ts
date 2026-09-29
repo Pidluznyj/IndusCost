@@ -59,8 +59,14 @@ import type { InvestedCapitalRecoveryByCustomerResult } from "./salesOrderInvest
 import {
   distributeMoneyOnStreetAcrossAging,
   INVESTED_CAPITAL_AGING_BUCKET_LABELS,
+  isValidInvestedCapital,
+  resolveInvestedCapitalComponents,
   type InvestedCapitalAgingBucketKey,
 } from "./salesOrderInvestedCapitalRecoveryMath.js";
+import {
+  buildInvestedCapitalRecoveryComparableTotals,
+  type InvestedCapitalRecoveryComparableTotals,
+} from "./salesOrderInvestedCapitalRecoveryTotals.js";
 
 /** Janela de carga de CR reais — evita full scan histórico; ver cabeçalho do arquivo. */
 const AR_LOOKBACK_YEARS = 3;
@@ -122,7 +128,7 @@ export type SalesOrderInvestedCapitalRecoveryKpis = {
   totalIndustrialCostAnalyzed: number;
   /** Componente de imposto de `investedCapitalAnalyzedTotal` — totalIndustrialCostAnalyzed + totalTaxesAnalyzed == investedCapitalAnalyzedTotal. */
   totalTaxesAnalyzed: number;
-};
+} & InvestedCapitalRecoveryComparableTotals;
 
 export type SalesOrderInvestedCapitalRecoveryTopCustomer = {
   customerName: string;
@@ -255,14 +261,21 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
     // SEMPRE presente (fallback na regra fiscal padrão ativa) — ver cabeçalho.
     const marginTaxAmount = marginByOrderId.get(orderRow.salesOrderId)?.marginSummary.taxAmount ?? 0;
     const costOk = orderRow.costSourceStatus === "OK";
-    // Capital primeiro, custo por SUBTRAÇÃO do capital já arredondado — nunca
-    // dois arredondamentos independentes — para industrialCost + totalTaxes
-    // == investedCapital bater exatamente nos KPIs de totais da tela.
+    // Capital primeiro (custo + imposto, arredondado uma vez); custo e imposto
+    // exibidos saem de `resolveInvestedCapitalComponents` — imposto levado a
+    // centavos ANTES da subtração sobre o capital já arredondado — para
+    // industrialCost + totalTaxes == investedCapital bater exatamente por
+    // pedido e nos KPIs de totais da tela (o imposto do motor de margem tem
+    // até 6 casas; subtrair o valor bruto e arredondar o imposto à parte
+    // deixava a soma um centavo acima em frações de meio centavo).
     const investedCapitalValue = costOk
       ? roundMoney(orderRow.totalIndustrialCost + marginTaxAmount)
       : null;
-    const industrialCostValue =
-      investedCapitalValue == null ? null : roundMoney(investedCapitalValue - marginTaxAmount);
+    const investedCapitalComponents = resolveInvestedCapitalComponents(
+      investedCapitalValue,
+      marginTaxAmount
+    );
+    const industrialCostValue = investedCapitalComponents.industrialCost;
     return buildSalesOrderInvestedCapitalRecoverySnapshot(
       {
         salesOrderId: orderRow.salesOrderId,
@@ -286,7 +299,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
           balanceReceivable: r.balanceReceivable ?? 0,
         })),
         industrialCost: industrialCostValue,
-        totalTaxes: marginTaxAmount,
+        totalTaxes: investedCapitalComponents.totalTaxes,
         taxSourceLabel: MARGIN_TAX_SOURCE_LABEL,
       },
       todayCivilDate
@@ -302,8 +315,10 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const customersView = aggregateInvestedCapitalRecoveryByCustomer(rows);
 
   // 5) KPIs — SOMA sobre a MESMA população que a tabela mostra (nunca uma
-  //    página, sempre `rows` inteiro).
-  const withCapital = rows.filter((r) => r.investedCapital != null);
+  //    página, sempre `rows` inteiro). "Com capital" = capital VÁLIDO (a
+  //    mesma definição que decide DADOS_INSUFICIENTES; capital 0 não é
+  //    capital) — única população dos totais comparáveis abaixo.
+  const withCapital = rows.filter((r) => isValidInvestedCapital(r.investedCapital));
   const moneyOnStreetToday = roundMoney(sum(withCapital, (r) => r.moneyOnStreet ?? 0));
   const capitalRecoveredTotal = roundMoney(sum(withCapital, (r) => r.capitalRecovered ?? 0));
   const investedCapitalAnalyzedTotal = roundMoney(sum(withCapital, (r) => r.investedCapital ?? 0));
@@ -320,6 +335,11 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
   const ordersFullyRecoveredCount = rows.filter((r) => r.status === "CAPITAL_RECUPERADO").length;
   const ordersPartiallyRecoveredCount = rows.filter((r) => r.status === "EM_RECUPERACAO").length;
   const ordersInsufficientDataCount = rows.filter((r) => r.status === "DADOS_INSUFICIENTES").length;
+  // Totais comparáveis (mesma população `withCapital`, em centavos inteiros)
+  // — venda comparável, margem econômica, recebido/CR comparáveis e a
+  // decomposição do CR aberto e do capital na rua. Só soma o que o snapshot
+  // já decidiu por pedido.
+  const comparableTotals = buildInvestedCapitalRecoveryComparableTotals(rows);
 
   const daysToRecoverKnown = rows
     .map((r) => computeDaysToRecoverCapitalIfKnown(r))
@@ -383,6 +403,7 @@ export async function getSalesOrderInvestedCapitalRecoveryPayload(
       totalSaleValueAnalyzed,
       totalIndustrialCostAnalyzed,
       totalTaxesAnalyzed,
+      ...comparableTotals,
     },
     agingBuckets: (Object.keys(agingTotals) as InvestedCapitalAgingBucketKey[]).map((key) => ({
       key,
@@ -440,8 +461,19 @@ async function computeInvestedCapitalRecoveryPopulationDiagnostics(
   }
 }
 
+/**
+ * Soma em centavos inteiros (cada valor do snapshot já está em centavos) —
+ * mesmo acumulador dos totais comparáveis e da agregação por cliente, para os
+ * KPIs raiz fecharem com eles sem residual de float.
+ */
 function sum<T>(items: readonly T[], pick: (item: T) => number): number {
-  return items.reduce((acc, item) => acc + pick(item), 0);
+  let cents = 0;
+  for (const item of items) {
+    const value = pick(item);
+    if (!Number.isFinite(value)) continue;
+    cents += Math.round((value + Number.EPSILON) * 100);
+  }
+  return cents / 100;
 }
 
 function roundMoney(value: number): number {

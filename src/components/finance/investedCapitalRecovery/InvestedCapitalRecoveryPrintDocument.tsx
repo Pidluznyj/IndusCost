@@ -1,12 +1,17 @@
+/**
+ * PDF de Financeiro > Recuperação do Dinheiro Investido (Visão Geral) — mesma
+ * leitura em blocos da tela (economia, o que já aconteceu, o que ainda tem
+ * para entrar, leitura gerencial) e a tabela analítica. Só renderiza o DTO:
+ * todos os totais, inclusive os do rodapé da tabela, vêm dos KPIs do backend.
+ */
 import React, { useMemo } from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { PrintHeader } from "@/src/components/print/PrintHeader";
 import {
-  displayFinanceText,
   formatFinanceCurrency,
-  formatFinanceDate,
   formatFinanceDateTime,
   formatFinanceInteger,
+  formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   INVESTED_CAPITAL_RECOVERY_PRINT_DATA_SOURCE,
@@ -16,17 +21,7 @@ import {
   INVESTED_CAPITAL_RECOVERY_PRINT_FOOTER_NOTE,
   INVESTED_CAPITAL_RECOVERY_PRINT_SUBTITLE,
 } from "@/src/lib/finance/salesOrderInvestedCapitalRecoveryPrintMeta";
-import type {
-  InvestedCapitalRecoveryPayload,
-  InvestedCapitalRecoveryStatus,
-} from "@/src/components/finance/investedCapitalRecovery/investedCapitalRecoveryTypes";
-
-const STATUS_META: Record<InvestedCapitalRecoveryStatus, { label: string; dotClass: string }> = {
-  SEM_RECUPERACAO: { label: "Sem recuperação", dotClass: "bg-rose-500 shadow-rose-200" },
-  EM_RECUPERACAO: { label: "Em recuperação", dotClass: "bg-amber-500 shadow-amber-200" },
-  CAPITAL_RECUPERADO: { label: "Capital recuperado", dotClass: "bg-emerald-500 shadow-emerald-200" },
-  DADOS_INSUFICIENTES: { label: "Dados insuficientes", dotClass: "bg-zinc-400 shadow-zinc-200" },
-};
+import type { InvestedCapitalRecoveryPayload } from "@/src/components/finance/investedCapitalRecovery/investedCapitalRecoveryTypes";
 
 function money(value: number | null): string {
   if (value == null) return "—";
@@ -38,37 +33,9 @@ function moneyTable(value: number | null): string {
   return formatFinanceCurrency(value);
 }
 
-function PrintStatusBadge({ status }: { status: InvestedCapitalRecoveryStatus }) {
-  const meta = STATUS_META[status];
-  return (
-    <div className="flex items-center justify-center">
-      <div 
-        className={`h-2.5 w-2.5 rounded-full ${meta.dotClass}`} 
-        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} 
-        title={meta.label}
-      />
-    </div>
-  );
-}
-
-function PrintProgressBar({ percent }: { percent: number | null }) {
-  if (percent == null || !Number.isFinite(percent)) return <span>—</span>;
-  const clamped = Math.min(Math.max(percent, 0), 100);
-  const colorClass = clamped >= 100 ? "bg-emerald-500" : clamped > 0 ? "bg-amber-500" : "bg-zinc-200";
-  return (
-    <div className="flex items-center gap-1 justify-end">
-      <div 
-        className="h-1.5 w-6 bg-slate-200 rounded-full overflow-hidden shrink-0" 
-        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
-      >
-        <div 
-          className={`h-full ${colorClass}`} 
-          style={{ width: `${clamped}%`, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} 
-        />
-      </div>
-      <span>{clamped.toFixed(0)}%</span>
-    </div>
-  );
+function percent(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return formatFinancePercent(value);
 }
 
 function formatMonthYear(dateStr?: string | null): string {
@@ -86,12 +53,49 @@ function formatMonthYear(dateStr?: string | null): string {
   return `${month}/${year}`;
 }
 
-function SummaryKpiCard({ label, value }: { label: string; value: string }) {
+type SummaryTone = "positive" | "warning" | "risk" | "info";
+
+function SummaryKpiCard({ label, value, tone }: { label: string; value: string; tone?: SummaryTone }) {
   return (
-    <div className="sales-orders-print-summary-card">
+    <div className={`sales-orders-print-summary-card${tone ? ` sales-orders-print-summary-card--${tone}` : ""}`}>
       <p className="sales-orders-print-summary-card-label">{label}</p>
       <p className="sales-orders-print-summary-card-value">{value}</p>
     </div>
+  );
+}
+
+type FormulaTerm = { label: string; amount: number | null };
+
+/** "Resultado = Termo + Termo" com os valores já reconciliados pelo backend. */
+function FormulaTable({ result, terms }: { result: FormulaTerm; terms: FormulaTerm[] }) {
+  const cells: Array<{ text: string; amount?: number | null; operator?: boolean }> = [{ text: result.label, amount: result.amount }];
+  terms.forEach((term, index) => {
+    cells.push({ text: index === 0 ? "=" : "+", operator: true });
+    cells.push({ text: term.label, amount: term.amount });
+  });
+  return (
+    <table className="sales-orders-icr-print-formula-table">
+      <thead>
+        <tr>
+          {cells.map((cell, index) => (
+            <th key={index} style={cell.operator ? { width: "3%" } : undefined}>{cell.text}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          {cells.map((cell, index) => (
+            <td
+              key={index}
+              className={cell.amount != null && cell.amount < 0 ? "col-negative" : undefined}
+              style={cell.operator ? { textAlign: "center", fontWeight: 700 } : undefined}
+            >
+              {cell.operator ? cell.text : money(cell.amount ?? null)}
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -105,11 +109,6 @@ export function InvestedCapitalRecoveryPrintDocument({
   filterLabels: string;
 }) {
   const { kpis, agingBuckets, topCustomers, rows } = payload;
-
-  const totalActualReceived = useMemo(
-    () => rows.reduce((acc, r) => acc + (r.actualReceived || 0), 0),
-    [rows]
-  );
 
   const metaLines = useMemo(
     () => [
@@ -141,30 +140,100 @@ export function InvestedCapitalRecoveryPrintDocument({
         </div>
 
         <section className="sales-orders-print-section sales-orders-print-section--summary">
-          <h2 className="sales-orders-print-section-title">Resumo executivo</h2>
+          <h2 className="sales-orders-print-section-title">1. Economia dos pedidos</h2>
+          <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
+            <SummaryKpiCard label="Vendemos" value={money(kpis.totalSaleValueAnalyzed)} tone="info" />
+            <SummaryKpiCard label="Capital investido" value={money(kpis.investedCapitalAnalyzedTotal)} tone="warning" />
+            <SummaryKpiCard label="Custo industrial" value={money(kpis.totalIndustrialCostAnalyzed)} />
+            <SummaryKpiCard label="Imposto (incluído no capital)" value={money(kpis.totalTaxesAnalyzed)} />
+            <SummaryKpiCard
+              label="Margem econômica dos PVs"
+              value={money(kpis.economicMarginTotal)}
+              tone={kpis.economicMarginTotal < 0 ? "risk" : "positive"}
+            />
+            <SummaryKpiCard label="Dados insuficientes (PVs)" value={formatFinanceInteger(kpis.ordersInsufficientDataCount)} />
+          </div>
+          <div className="sales-orders-icr-print-formula-grid">
+            <FormulaTable
+              result={{ label: "Venda comparável", amount: kpis.comparableSaleValueTotal }}
+              terms={[
+                { label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal },
+                { label: "Margem econômica", amount: kpis.economicMarginTotal },
+              ]}
+            />
+            <FormulaTable
+              result={{ label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal }}
+              terms={[
+                { label: "Custo industrial", amount: kpis.totalIndustrialCostAnalyzed },
+                { label: "Imposto", amount: kpis.totalTaxesAnalyzed },
+              ]}
+            />
+          </div>
+        </section>
+
+        <section className="sales-orders-print-section sales-orders-print-section--summary">
+          <h2 className="sales-orders-print-section-title">2. O que já aconteceu</h2>
+          <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
+            <SummaryKpiCard label="Capital recuperado" value={money(kpis.capitalRecoveredTotal)} tone="positive" />
+            <SummaryKpiCard label="Ganho já realizado" value={money(kpis.realizedGainTotal)} tone="positive" />
+            <SummaryKpiCard label="Total recebido (comparável)" value={money(kpis.actualReceivedComparableTotal)} tone="info" />
+            <SummaryKpiCard label="Capital na rua hoje" value={money(kpis.moneyOnStreetToday)} tone="warning" />
+            <SummaryKpiCard label="% do capital recuperado" value={percent(kpis.capitalRecoveredPercent)} />
+            <SummaryKpiCard label="% do capital na rua" value={percent(kpis.moneyOnStreetPercent)} />
+          </div>
+          <div className="sales-orders-icr-print-formula-grid">
+            <FormulaTable
+              result={{ label: "Recebido comparável", amount: kpis.actualReceivedComparableTotal }}
+              terms={[
+                { label: "Capital recuperado", amount: kpis.capitalRecoveredTotal },
+                { label: "Ganho realizado", amount: kpis.realizedGainTotal },
+              ]}
+            />
+            <FormulaTable
+              result={{ label: "Capital investido", amount: kpis.investedCapitalAnalyzedTotal }}
+              terms={[
+                { label: "Capital recuperado", amount: kpis.capitalRecoveredTotal },
+                { label: "Capital na rua", amount: kpis.moneyOnStreetToday },
+              ]}
+            />
+          </div>
+        </section>
+
+        <section className="sales-orders-print-section sales-orders-print-section--summary">
+          <h2 className="sales-orders-print-section-title">3. O que ainda tem para entrar</h2>
           <div className="sales-orders-print-summary-grid">
-            <SummaryKpiCard label="Vendemos (Total Vendido)" value={money(kpis.totalSaleValueAnalyzed)} />
-            <SummaryKpiCard
-              label="Investimos (Capital = Custo + Imposto)"
-              value={money(kpis.investedCapitalAnalyzedTotal)}
+            <SummaryKpiCard label="Falta receber (CR real aberto)" value={money(kpis.totalOutstandingReceivable)} tone="info" />
+            <SummaryKpiCard label="Capital a recuperar nos recebíveis" value={money(kpis.capitalReceivableCoveredTotal)} tone="warning" />
+            <SummaryKpiCard label="Ganho a receber" value={money(kpis.gainReceivableTotal)} tone="positive" />
+            <SummaryKpiCard label="Capital na rua sem CR aberto" value={money(kpis.capitalWithoutOpenReceivableTotal)} tone="risk" />
+            <SummaryKpiCard label="CR não classificado (sem custo)" value={money(kpis.outstandingReceivableUnclassifiedTotal)} />
+          </div>
+          <div className="sales-orders-icr-print-formula-grid">
+            <FormulaTable
+              result={{ label: "Recebíveis em aberto", amount: kpis.totalOutstandingReceivable }}
+              terms={[
+                { label: "Capital a recuperar", amount: kpis.capitalReceivableCoveredTotal },
+                { label: "Ganho a receber", amount: kpis.gainReceivableTotal },
+                { label: "Não classificado", amount: kpis.outstandingReceivableUnclassifiedTotal },
+              ]}
             />
-            <SummaryKpiCard label="Custo Industrial Total" value={money(kpis.totalIndustrialCostAnalyzed)} />
-            <SummaryKpiCard label="Imposto Total (incluído no capital)" value={money(kpis.totalTaxesAnalyzed)} />
-            <SummaryKpiCard label="Falta Receber" value={money(kpis.totalOutstandingReceivable)} />
-            <SummaryKpiCard label="Dinheiro na Rua Hoje" value={money(kpis.moneyOnStreetToday)} />
-            <SummaryKpiCard label="Capital Recuperado" value={money(kpis.capitalRecoveredTotal)} />
-            <SummaryKpiCard
-              label="Recuperaram capital"
-              value={formatFinanceInteger(kpis.ordersFullyRecoveredCount)}
+            <FormulaTable
+              result={{ label: "Capital na rua", amount: kpis.moneyOnStreetToday }}
+              terms={[
+                { label: "Capital no CR aberto", amount: kpis.capitalReceivableCoveredTotal },
+                { label: "Capital sem CR aberto", amount: kpis.capitalWithoutOpenReceivableTotal },
+              ]}
             />
-            <SummaryKpiCard
-              label="Parcialmente recuperados"
-              value={formatFinanceInteger(kpis.ordersPartiallyRecoveredCount)}
-            />
-            <SummaryKpiCard
-              label="Dados insuficientes"
-              value={formatFinanceInteger(kpis.ordersInsufficientDataCount)}
-            />
+          </div>
+        </section>
+
+        <section className="sales-orders-print-section sales-orders-print-section--summary">
+          <h2 className="sales-orders-print-section-title">4. Leitura gerencial</h2>
+          <div className="sales-orders-print-summary-grid">
+            <SummaryKpiCard label="Recuperaram capital" value={formatFinanceInteger(kpis.ordersFullyRecoveredCount)} tone="positive" />
+            <SummaryKpiCard label="Parcialmente recuperados" value={formatFinanceInteger(kpis.ordersPartiallyRecoveredCount)} tone="warning" />
+            <SummaryKpiCard label="Dados insuficientes" value={formatFinanceInteger(kpis.ordersInsufficientDataCount)} />
+            <SummaryKpiCard label="Pedidos comparáveis" value={formatFinanceInteger(kpis.ordersComparableCount)} />
             <SummaryKpiCard
               label="Prazo médio realizado"
               value={
@@ -226,7 +295,7 @@ export function InvestedCapitalRecoveryPrintDocument({
 
         <section className="sales-orders-print-section sales-orders-print-section--detail">
           <h2 className="sales-orders-print-section-title">
-            Detalhamento analítico ({formatFinanceInteger(rows.length)}
+            5. Detalhamento por pedido ({formatFinanceInteger(rows.length)}
             {payload.truncated ? ` de ${formatFinanceInteger(payload.totalOrdersInScope)}` : ""}) — Valores em R$
           </h2>
           {rows.length === 0 ? (
@@ -239,13 +308,18 @@ export function InvestedCapitalRecoveryPrintDocument({
                 <tr>
                   <th className="col-order" title="Pedido de Venda">PV</th>
                   <th className="col-client" title="Nome do Cliente">Cliente</th>
-                  <th className="col-money" title="Valor do Pedido de Venda">Venda</th>
-                  <th className="col-money" title="Capital Investido (Imposto + Custo de Produção)">Cap. Invest.</th>
-                  <th className="col-money" title="Recebido">Recebido</th>
-                  <th className="col-money" title="Capital Recuperado">Cap. Recup.</th>
-                  <th className="col-money" title="Capital na Rua">Cap. na Rua</th>
-                  <th className="col-money" title="A Receber">A Receber</th>
-                  <th className="col-date" title="Mês/Ano em que o capital foi pago">Pagou</th>
+                  <th className="col-money" title="Valor líquido do Pedido de Venda">Vendido</th>
+                  <th className="col-money" title="Capital investido = custo industrial + imposto">Cap. invest.</th>
+                  <th className="col-money" title="Margem econômica = vendido − capital investido">Margem</th>
+                  <th className="col-money" title="Recebido (CR real baixado)">Recebido</th>
+                  <th className="col-money" title="Capital recuperado">Cap. recup.</th>
+                  <th className="col-money" title="Ganho realizado">G. realiz.</th>
+                  <th className="col-money" title="Capital na rua">Cap. na rua</th>
+                  <th className="col-money" title="Falta receber (CR real aberto)">A receber</th>
+                  <th className="col-money" title="Capital a recuperar nos recebíveis">Cap. no CR</th>
+                  <th className="col-money" title="Ganho a receber">G. a rec.</th>
+                  <th className="col-money" title="Capital na rua sem CR aberto">Cap. s/ CR</th>
+                  <th className="col-date" title="Mês/Ano em que o capital foi recuperado">Pagou</th>
                   <th className="col-date" title="Previsão Mês/Ano de recuperação">Prev.</th>
                 </tr>
               </thead>
@@ -258,10 +332,15 @@ export function InvestedCapitalRecoveryPrintDocument({
                     </td>
                     <td className="col-money">{moneyTable(row.saleValue)}</td>
                     <td className="col-money">{moneyTable(row.investedCapital)}</td>
+                    <td className={`col-money${row.economicMargin != null && row.economicMargin < 0 ? " text-rose-600" : ""}`}>{moneyTable(row.economicMargin)}</td>
                     <td className="col-money">{moneyTable(row.actualReceived)}</td>
                     <td className="col-money text-emerald-600 font-medium">{moneyTable(row.capitalRecovered)}</td>
+                    <td className="col-money text-emerald-600">{moneyTable(row.realizedGain ?? null)}</td>
                     <td className="col-money text-rose-600 font-medium">{moneyTable(row.moneyOnStreet)}</td>
                     <td className="col-money">{moneyTable(row.outstandingReceivable)}</td>
+                    <td className="col-money">{moneyTable(row.capitalReceivableCovered)}</td>
+                    <td className="col-money text-emerald-600">{moneyTable(row.gainReceivable)}</td>
+                    <td className="col-money text-rose-600">{moneyTable(row.capitalWithoutOpenReceivable)}</td>
                     <td className="col-date">{formatMonthYear(row.capitalRecoveryDate)}</td>
                     <td className="col-date">{formatMonthYear(row.forecastCapitalRecoveryDate)}</td>
                   </tr>
@@ -272,10 +351,15 @@ export function InvestedCapitalRecoveryPrintDocument({
                   <td colSpan={2}>Total</td>
                   <td className="col-money">{moneyTable(kpis.totalSaleValueAnalyzed)}</td>
                   <td className="col-money">{moneyTable(kpis.investedCapitalAnalyzedTotal)}</td>
-                  <td className="col-money">{moneyTable(totalActualReceived)}</td>
+                  <td className="col-money">{moneyTable(kpis.economicMarginTotal)}</td>
+                  <td className="col-money">{moneyTable(kpis.actualReceivedTotal)}</td>
                   <td className="col-money text-emerald-600 font-medium">{moneyTable(kpis.capitalRecoveredTotal)}</td>
+                  <td className="col-money text-emerald-600">{moneyTable(kpis.realizedGainTotal)}</td>
                   <td className="col-money text-rose-600 font-medium">{moneyTable(kpis.moneyOnStreetToday)}</td>
                   <td className="col-money">{moneyTable(kpis.totalOutstandingReceivable)}</td>
+                  <td className="col-money">{moneyTable(kpis.capitalReceivableCoveredTotal)}</td>
+                  <td className="col-money text-emerald-600">{moneyTable(kpis.gainReceivableTotal)}</td>
+                  <td className="col-money text-rose-600">{moneyTable(kpis.capitalWithoutOpenReceivableTotal)}</td>
                   <td className="col-num" colSpan={2} />
                 </tr>
               </tfoot>
