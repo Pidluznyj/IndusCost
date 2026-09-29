@@ -1011,6 +1011,8 @@ export function buildListPayload(args: {
   orderTotalBySalesOrderId?: ReadonlyMap<string, number> | null;
   /** Fonte materializada (compatibilidade O2C). */
   dataSource?: "order_to_cash_audit" | "portfolio_reconciliation";
+  /** Data de referência dos buckets de recebimento. Sem ela, usa o dia corrente. */
+  asOfDate?: Date | string;
 }) {
   const filteredFacts = args.facts.filter((f) => factMatchesListFilters(f, args.filters));
   const allOrderRows = aggregateFactsToOrderRows(filteredFacts, {
@@ -1050,6 +1052,7 @@ export function buildListPayload(args: {
     facts: summaryFacts,
     summary,
     runSummary: !hasRestrictivePortfolioListFilters(args.filters) ? runSummary : null,
+    asOfDate: args.asOfDate,
   });
 
   const comparison = buildPortfolioReconciliationComparison({

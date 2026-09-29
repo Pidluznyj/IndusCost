@@ -30,8 +30,7 @@ import {
 } from "./financePortfolioOrderStatusApi.server.js";
 import { getOrderFullAudit } from "./finance/orderFullAuditService.js";
 import { resolveSalesOrderDetailAccess } from "./sales-orders/salesOrderDetailAccess.js";
-import { isSalesOrderVisibleInPortfolioReconciliation } from "./finance/financePortfolioOperationalOrderGate.server.js";
-import { prisma } from "@/src/lib/prisma.js";
+import { isRequestSalesOrderVisibleInPortfolioReconciliation } from "./finance/financePortfolioOperationalOrderGate.server.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
@@ -484,8 +483,7 @@ export function registerFinancePortfolioReconciliationRoutes(
           });
           return;
         }
-        const visible = await isSalesOrderVisibleInPortfolioReconciliation(
-          prisma,
+        const visible = await isRequestSalesOrderVisibleInPortfolioReconciliation(
           salesOrderId
         );
         if (!visible) {

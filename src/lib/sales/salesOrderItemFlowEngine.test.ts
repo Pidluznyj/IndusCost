@@ -67,16 +67,9 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     );
     assert.equal(r.activeRemainingQuantity?.eq(6), true);
     assert.equal(r.shipTargetQuantity.eq(10), true);
-    // restante ainda precisa doc/NF para a obrigação total, ou produção já coberta
-    assert.ok(
-      r.currentStage === "WAITING_OUTPUT_DOCUMENT" ||
-        r.currentStage === "WAITING_NFE" ||
-        r.currentStage === "IN_PRODUCTION" ||
-        r.currentStage === "WAITING_PRODUCTION_ORDER" ||
-        r.currentStage === "SHIPPED_COMPLETED"
-    );
-    // com OP 10, doc 4, NF 4 → falta documentar o restante 6
-    assert.equal(r.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    assert.equal(r.productionOrderQuantity.eq(10), true);
+    // OP sem status Encerrada e sem producedQuantity não prova execução do saldo 6.
+    assert.equal(r.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.equal(r.progress.documented.eq(40), true); // 4/10 * 100
   });
 
@@ -418,8 +411,8 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     assert.ok(r);
     assert.equal(r!.requiresProduction, true);
     assert.equal(r!.productionOrderQuantity.eq(10), true);
-    // OP Liberada + qty planejada: motor atual libera o gate de OP e aguarda DS.
-    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    // OP Liberada cobre o planejamento e não prova execução.
+    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.ok(
       r!.inconsistencies.some((i) => i.code === "PRODUCTION_QTY_NOT_NORMALIZED")
     );
@@ -516,8 +509,8 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
     assert.ok(r);
     assert.equal(r!.documentedQuantity.eq(0), true);
-    // DS cancelado não conta; com OP Liberada o motor segue para aguardar DS válido.
-    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    // DS cancelado não conta. OP Liberada também não libera o item para DS.
+    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 
   it("PD 02586: DS + NF cancelada + NF autorizada (só via idNfe) → SHIPPED_COMPLETED", () => {
@@ -886,7 +879,7 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     });
     const pack = map.get(ORDER)!;
     const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
-    assert.notEqual(r!.currentStage, "WAITING_PRODUCTION_ORDER");
-    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    assert.equal(r!.productionOrderQuantity.eq(8), true);
+    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 });

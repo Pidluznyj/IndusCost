@@ -153,7 +153,8 @@ describe("operationsAdminPermissions — admin / RH sensível", () => {
     assert.equal(canViewModule("employees", ctx), true);
     assert.equal(canViewModule("guide", ctx), true);
     assert.equal(canViewModule("fleet", ctx), true);
-    assert.equal(canViewModule("settings", ctx), true);
+    // Hub Configurações permanece exclusivo de SUPER_ADMIN.
+    assert.equal(canViewModule("settings", ctx), false);
     const nav = buildResourceAwareSidebarNavigation(ctx);
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "inventory"));
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "employees"));

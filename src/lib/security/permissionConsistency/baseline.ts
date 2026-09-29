@@ -79,8 +79,19 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:costs.view","reason":"PERM-32: costs.view também em engineering.products.tab.cost (margem/custo de produto); /api/sales-orders/results exige só commercial.sales_orders."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.view","reason":"PERM-32: finance.suppliers.view também em service_termination para preservar OR legado."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.manage","reason":"PERM-32: finance.suppliers.manage também em service_termination para preservar OR legado."},
+  {"code":"ALIAS_WIDE","subject":"employees.administrative_data.view","reason":"OR intencional: dados administrativos e observações restritas compartilham employees.administrative_data.view no catálogo FE."},
+  {"code":"ALIAS_WIDE","subject":"employees.compensation.values.view","reason":"OR intencional: valores de remuneração e dados sensíveis compartilham employees.compensation.values.view no catálogo FE."},
+  {"code":"ALIAS_WIDE","subject":"employees.sensitive_data.view","reason":"OR intencional: dados sensíveis, eventos e valores de remuneração compartilham employees.sensitive_data.view no catálogo FE."},
+  {"code":"ALIAS_WIDE","subject":"employees.team.descendants.view","reason":"OR intencional: o módulo Pessoas e o escopo de equipe compartilham employees.team.descendants.view para o líder abrir o RH."},
+  {"code":"ALIAS_WIDE","subject":"employees.team.view","reason":"OR intencional: o módulo Pessoas e o escopo de equipe compartilham employees.team.view para o líder abrir o RH."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:sales_orders.flow.values.view","reason":"OR intencional: a margem do relatório de descontos aceita sales_orders.flow.values.view além da chave própria."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:commercial.satisfaction.export","reason":"OR intencional: exportar a campanha e a resposta individual usam commercial.satisfaction.export."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:employees.team.view","reason":"OR intencional: admin.employees e admin.employees.team compartilham employees.team.view."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:employees.team.descendants.view","reason":"OR intencional: admin.employees e admin.employees.team compartilham employees.team.descendants.view."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:employees.administrative_data.view","reason":"OR intencional: dados administrativos e observações restritas compartilham employees.administrative_data.view."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:employees.sensitive_data.view","reason":"OR intencional: dados sensíveis, eventos e valores de remuneração compartilham employees.sensitive_data.view."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:employees.compensation.values.view","reason":"OR intencional: valores de remuneração e dados sensíveis compartilham employees.compensation.values.view."},
   {"code":"SEED_RESOURCE_MISSING_FROM_CONTRACT","subject":"comissoes.tab.provisao_pedido","reason":"Seed legado de comissões sem ponte canônica ainda; gap pré-existente em main."},
-  {"code":"AUDIT_ACTIONABLE_ERROR","subject":"audit:SIDEBAR_WITHOUT_CONTRACT:org-chart","reason":"org-chart no menu sem moduleId canônico dedicado; gap pré-existente em main."},
 ];
 
 export function baselineKey(

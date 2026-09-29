@@ -44,6 +44,10 @@ import {
   verifyTurnstileToken,
 } from "../lib/satisfaction/satisfactionTurnstile.server.js";
 import { isSatisfactionPublicPathAllowed } from "../lib/satisfaction/satisfactionPublicSurface.js";
+import {
+  SATISFACTION_TURNSTILE_ORIGIN,
+  buildSatisfactionPublicCsp,
+} from "../lib/satisfaction/satisfactionPublicCsp.js";
 
 const ROOT = process.cwd();
 const SURVEY_APP_SRC = readFileSync(join(ROOT, "src/public-satisfaction/SurveyApp.tsx"), "utf8");
@@ -61,6 +65,10 @@ const ROUTES_SRC = readFileSync(
 );
 const HOMOLOG_NGINX = readFileSync(
   join(ROOT, "infra/satisfaction-homolog/nginx/induscost-satisfaction-homolog.conf"),
+  "utf8"
+);
+const HOMOLOG_SYSTEMD = readFileSync(
+  join(ROOT, "infra/satisfaction-homolog/systemd/98-satisfaction-public.conf"),
   "utf8"
 );
 
@@ -446,19 +454,32 @@ describe("Public Host Guard e nginx de homologação preservados", () => {
     assert.equal(isSatisfactionPublicPathAllowed("/api/public/satisfaction/submit", prod), true);
   });
 
-  it("este commit de aplicação NÃO abre a CSP de homologação", () => {
-    assert.match(HOMOLOG_NGINX, /Turnstile está DESABILITADO/);
-    assert.equal(HOMOLOG_NGINX.includes("challenges.cloudflare.com"), true);
+  it("homologação fica com MODE=disabled e CSP preparada só para a origem oficial", () => {
+    assert.match(HOMOLOG_SYSTEMD, /SATISFACTION_TURNSTILE_MODE=disabled/);
+    assert.doesNotMatch(HOMOLOG_SYSTEMD, /SATISFACTION_TURNSTILE_SECRET_KEY=/);
+    assert.doesNotMatch(HOMOLOG_SYSTEMD, /SATISFACTION_TURNSTILE_SITE_KEY=/);
+
+    const appCsp = buildSatisfactionPublicCsp();
+    assert.equal(appCsp.includes(SATISFACTION_TURNSTILE_ORIGIN), true);
+    assert.equal(appCsp.includes("*"), false);
+    assert.equal(appCsp.includes("unsafe-eval"), false);
+
     const cspLines = HOMOLOG_NGINX.split("\n").filter((line) =>
       line.includes("Content-Security-Policy")
     );
+    assert.ok(cspLines.length >= 1);
     for (const line of cspLines) {
-      assert.equal(
-        line.includes("challenges.cloudflare.com"),
-        false,
-        "nginx de homologação não deve liberar Turnstile neste commit"
-      );
+      assert.equal(line.includes("*"), false, line);
+      assert.equal(line.includes("unsafe-eval"), false, line);
+      assert.equal(line.includes("script-src 'self' https://challenges.cloudflare.com"), true, line);
+      assert.equal(line.includes("connect-src 'self' https://challenges.cloudflare.com"), true, line);
+      assert.equal(line.includes("frame-src https://challenges.cloudflare.com"), true, line);
+      assert.equal(line.includes("frame-ancestors 'none'"), true, line);
+      assert.equal(line.includes("object-src 'none'"), true, line);
     }
+    assert.match(HOMOLOG_NGINX, /location = \/r/);
+    assert.doesNotMatch(HOMOLOG_NGINX, /location\s+\/api\/auth/);
+    assert.doesNotMatch(HOMOLOG_NGINX, /location\s+\/login/);
   });
 
   it("autosave PATCH /draft não envia turnstileToken", () => {

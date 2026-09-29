@@ -12,6 +12,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   dashboard: ResourceKeys.DASHBOARD,
   finance: ResourceKeys.FINANCEIRO,
   treasury: ResourceKeys.FINANCE_TREASURY,
+  "invested-capital-recovery": ResourceKeys.FINANCE_INVESTED_CAPITAL_RECOVERY,
   "portfolio-reconciliation": ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
   "crm-commercial": ResourceKeys.COMERCIAL_CRM,
   "sales-orders": ResourceKeys.COMERCIAL_PEDIDOS_VENDA,

@@ -35,26 +35,19 @@ describe("migration do ciclo de senha", () => {
       .sort();
   }
 
-  it("é a ÚLTIMA na ordem em que o Prisma aplica (lexicográfica)", () => {
-    const todas = migrations();
-    assert.equal(
-      todas[todas.length - 1],
-      MIGRATION,
-      "a migration precisa ordenar depois de todas as existentes"
-    );
-  });
-
-  it("o timestamp segue a sequência sintética do repositório", () => {
+  it("existe, ordena depois de goal_governance e admite migrations posteriores", () => {
     // Os timestamps deste repositório NÃO são datas reais: são um contador
-    // (um "dia" por migration, sempre às 120000). 20260915120000_goal_governance,
-    // por exemplo, foi commitada em 2026-08-28. Por isso a migration do ciclo
-    // de senha usa o próximo slot da sequência, e não a data do calendário —
-    // qualquer nome com data real cairia ANTES de migrations já existentes.
-    const anteriores = migrations().filter((n) => n !== MIGRATION);
-    const maiorAnterior = anteriores[anteriores.length - 1];
-    assert.equal(maiorAnterior, "20260915120000_goal_governance");
-    assert.ok(MIGRATION > maiorAnterior);
+    // (um "dia" por migration, sempre às 120000). A propriedade permanente é
+    // a ordem relativa a goal_governance e o caráter aditivo — não a posição
+    // absoluta de última migration do repositório.
+    const todas = migrations();
+    const goal = "20260915120000_goal_governance";
+    assert.ok(todas.includes(MIGRATION), "a migration do ciclo de senha precisa existir");
+    assert.ok(todas.includes(goal));
+    assert.ok(MIGRATION > goal, "auth_password_lifecycle precisa ordenar depois de goal_governance");
     assert.match(MIGRATION, /^\d{8}120000_/);
+    // Não exige que MIGRATION seja todas[todas.length - 1]: migrations
+    // posteriores são permitidas.
   });
 
   it("é aditiva: sem DROP, sem RENAME, sem backfill", () => {

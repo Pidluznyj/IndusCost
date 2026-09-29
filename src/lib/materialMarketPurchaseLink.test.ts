@@ -126,15 +126,13 @@ describe("materialMarketPurchaseLink", () => {
     assert.equal(timeline.totalEstimatedSavings, 4);
   });
 
-  it("schema não tem FK formal a PurchaseOrder", () => {
+  it("vínculo de mercado não cria FK formal para PurchaseOrder", () => {
     const schema = fs.readFileSync(path.join(process.cwd(), "prisma/schema.prisma"), "utf8");
-    assert.match(schema, /model MaterialMarketPurchaseLink/);
-    assert.match(schema, /purchaseOrderId\s+String\?\s+@db\.Uuid/);
-    assert.doesNotMatch(
-      schema,
-      /purchaseOrderId.*references: \[id\].*PurchaseOrder/s
-    );
-    assert.doesNotMatch(schema, /model PurchaseOrder\b/);
+    const block = schema.match(/model MaterialMarketPurchaseLink \{[\s\S]*?\n\}/);
+    assert.ok(block, "model MaterialMarketPurchaseLink");
+    assert.match(block[0], /purchaseOrderId\s+String\?\s+@db\.Uuid/);
+    assert.doesNotMatch(block[0], /purchaseOrder\s+PurchaseOrder/);
+    assert.doesNotMatch(block[0], /PurchaseOrder\s+@relation/);
   });
 
   it("serializa registro API com economia", () => {

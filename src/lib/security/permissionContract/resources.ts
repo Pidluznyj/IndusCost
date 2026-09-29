@@ -2496,6 +2496,25 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     moduleId: "employees-dashboard",
   },
   {
+    resourceKey: "admin.employees.org_chart",
+    label: "Organograma",
+    parentKey: "admin.employees",
+    groupId: "admin",
+    route: "/org-chart",
+    sortOrder: 728,
+    actions: [V(["employees.view"])],
+    relatedEndpoints: ["/api/employees/org/chart"],
+    sensitivity: "high",
+    appearsInSidebar: true,
+    isTab: false,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+    moduleId: "org-chart",
+    notes:
+      "Item real da sidebar. O gate continua employees.view no recurso admin.employees (a API /api/employees/org/chart usa esse recurso). Este registro só fecha o moduleId 1:1; o mapa da sidebar segue apontando para admin.employees para não dividir a decisão de acesso.",
+  },
+  {
     resourceKey: "admin.employees.personal_data",
     label: "RH — Dados pessoais",
     parentKey: "admin.employees",
@@ -2961,7 +2980,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     parentKey: "admin.settings",
     groupId: "admin",
     route: "/settings",
-    sortOrder: 724,
+    sortOrder: 727,
     actions: [
       V(["settings.material_stock_mirror.view"]),
       E(

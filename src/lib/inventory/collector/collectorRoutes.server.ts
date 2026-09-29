@@ -191,7 +191,31 @@ export function registerInventoryCollectorRoutes(
       .status(403)
       .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
 
-  app.post("/api/inventory/collector/enrollment", async (req, res) => {
+  // Guard visível na assinatura da rota. O aparelho ainda não está no Device
+  // Registry, então isto NÃO é deviceAuth: só confirma o peer Tailscale.
+  // Sem identidade estável, 403 — o handler repete a mesma negação.
+  const requireCollectorPeerIdentity: express.RequestHandler = (req, res, next) => {
+    void (async () => {
+      try {
+        const identity = await resolveInventoryCollectorPeerIdentity(req, {
+          identityResolver,
+          trustLocalProxy,
+        });
+        if (!identity) return denyEnrollment(res);
+        next();
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) {
+          return respondCollectorValidationError(res, e);
+        }
+        console.error("collector peer identity", e);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Erro ao confirmar o dispositivo." });
+        }
+      }
+    })();
+  };
+
+  app.post("/api/inventory/collector/enrollment", requireCollectorPeerIdentity, async (req, res) => {
     try {
       // Identidade vinda do cliente é recusada explicitamente (contrato claro).
       assertNoIdentityFieldsInBody(req.body);
@@ -221,7 +245,7 @@ export function registerInventoryCollectorRoutes(
     }
   });
 
-  app.get("/api/inventory/collector/enrollment", async (req, res) => {
+  app.get("/api/inventory/collector/enrollment", requireCollectorPeerIdentity, async (req, res) => {
     try {
       const identity = await resolveInventoryCollectorPeerIdentity(req, {
         identityResolver,

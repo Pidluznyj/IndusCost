@@ -26,6 +26,7 @@ import {
   type SalesOrderFlowResponsibleArea,
   type SalesOrderItemFlowStage,
 } from "./salesOrderFlowCatalog.js";
+import { normalizeNomusProductionOrderStatus } from "./nomusProductionOrderStatus.js";
 import {
   resolveSalesOrderItemProductionRequirement,
   type ResolveSalesOrderItemProductionRequirementInput,
@@ -74,6 +75,10 @@ export type SalesOrderItemFlowNfeAllocationInput = {
 export type SalesOrderItemFlowProductionLinkInput = {
   linkedQuantity?: Prisma.Decimal | string | number | null;
   isCurrent?: boolean;
+  /** Status Nomus da OP. Ausente ou desconhecido não prova execução. */
+  status?: string | null;
+  productionOrderId?: string | null;
+  productionOrderExternalId?: number | string | null;
 };
 
 export type ResolveSalesOrderItemFlowInput = {
@@ -232,13 +237,47 @@ function sumDedupedQty(
   return total;
 }
 
-function sumProductionOrderQty(
+function productionLinkIdentity(
+  link: SalesOrderItemFlowProductionLinkInput,
+  index: number
+): string {
+  const id = link.productionOrderId?.trim();
+  if (id) return `id:${id}`;
+  if (
+    link.productionOrderExternalId != null &&
+    String(link.productionOrderExternalId).trim() !== ""
+  ) {
+    return `ext:${String(link.productionOrderExternalId).trim()}`;
+  }
+  return `row:${index}`;
+}
+
+/**
+ * Soma vínculos atuais e não cancelados, uma vez por OP.
+ * `closedProductionOrderQuantity` só inclui status Encerrada — Liberada,
+ * Requisitada e status desconhecido continuam no total planejado, mas não
+ * provam execução.
+ */
+function summarizeProductionLinks(
   links: readonly SalesOrderItemFlowProductionLinkInput[] | undefined,
   inconsistencies: SalesOrderItemFlowInconsistency[]
-): QtyDecimal {
-  let total = ZERO;
-  for (const link of links ?? []) {
+): {
+  productionOrderQuantity: QtyDecimal;
+  closedProductionOrderQuantity: QtyDecimal;
+  hasActiveLink: boolean;
+} {
+  const seen = new Set<string>();
+  let productionOrderQuantity = ZERO;
+  let closedProductionOrderQuantity = ZERO;
+  let hasActiveLink = false;
+
+  for (const [index, link] of (links ?? []).entries()) {
     if (link.isCurrent === false) continue;
+    const status = normalizeNomusProductionOrderStatus(
+      typeof link.status === "string" ? link.status : null
+    );
+    if (status.isCanceled) continue;
+    hasActiveLink = true;
     const q = qty(link.linkedQuantity);
     if (q == null) {
       pushInconsistency(
@@ -248,9 +287,21 @@ function sumProductionOrderQty(
       );
       continue;
     }
-    total = total.add(max0(q));
+    const identity = productionLinkIdentity(link, index);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    const amount = max0(q);
+    productionOrderQuantity = productionOrderQuantity.add(amount);
+    if (status.isClosed) {
+      closedProductionOrderQuantity = closedProductionOrderQuantity.add(amount);
+    }
   }
-  return total;
+
+  return {
+    productionOrderQuantity,
+    closedProductionOrderQuantity,
+    hasActiveLink,
+  };
 }
 
 function sumDocumentQty(
@@ -338,14 +389,11 @@ export function resolveSalesOrderItemFlow(
 
   const activeRemainingQuantity = qty(fulfillment.remainingQuantity);
 
-  const productionOrderQuantity = sumProductionOrderQty(
-    input.productionOrderLinks,
-    inconsistencies
-  );
-
-  const hasOfficialOpLink = (input.productionOrderLinks ?? []).some(
-    (l) => l.isCurrent !== false
-  );
+  const {
+    productionOrderQuantity,
+    closedProductionOrderQuantity,
+    hasActiveLink: hasOfficialOpLink,
+  } = summarizeProductionLinks(input.productionOrderLinks, inconsistencies);
 
   const productionRequirement = resolveSalesOrderItemProductionRequirement({
     productType: input.productType,
@@ -558,6 +606,10 @@ export function resolveSalesOrderItemFlow(
     fulfillment.evidence.statusNormalized === "PENDING" ||
     (fulfillment.classification === "NOT_FULFILLED" &&
       fulfillment.evidence.statusNormalized === "PENDING");
+  // DS ou NF-e já emitidos são evidência operacional: não seguram o item em
+  // liberação comercial só porque o status Nomus está desconhecido ou pendente.
+  const hasDownstreamOperationalEvidence =
+    documentedQuantity.gt(0) || invoicedQuantity.gt(0);
 
   if (isCanceled) {
     currentStage = "CANCELED";
@@ -566,6 +618,7 @@ export function resolveSalesOrderItemFlow(
     currentStage = "CANCELED";
     stageReason = "Item desatualizado no Nomus — fora do fluxo ativo.";
   } else if (
+    !hasDownstreamOperationalEvidence &&
     fulfillment.classification === "UNKNOWN" &&
     fulfillment.evidence.statusNormalized !== "RELEASED" &&
     fulfillment.evidence.statusNormalized !== "PARTIAL" &&
@@ -575,7 +628,7 @@ export function resolveSalesOrderItemFlow(
     currentStage = "WAITING_RELEASE";
     stageReason =
       "Situação do item ainda não está clara — mantém aguardando liberação comercial.";
-  } else if (isPendingRelease) {
+  } else if (isPendingRelease && !hasDownstreamOperationalEvidence) {
     currentStage = "WAITING_RELEASE";
     stageReason = "Item aguardando liberação comercial.";
   } else {
@@ -630,23 +683,36 @@ export function resolveSalesOrderItemFlow(
         usedProductionProxy: producedQuantity == null && hasOfficialOpLink,
       });
     } else if (needsProduction && productionCoverageTarget.gt(0)) {
-      if (productionOrderQuantity.lt(productionCoverageTarget)) {
-        currentStage = "WAITING_PRODUCTION_ORDER";
-        stageReason = productionOrderQuantity.lte(0)
-          ? "Ainda falta produzir e não há Ordem de Produção válida vinculada."
-          : "A Ordem de Produção parcial ainda não cobre o que falta produzir (não é ausência total de OP).";
-      } else if (
+      if (
         producedQuantity != null &&
         producedQuantity.lt(productionCoverageTarget)
       ) {
         currentStage = "IN_PRODUCTION";
         stageReason =
           "A Ordem de Produção já cobre o planejamento, mas a quantidade produzida ainda é insuficiente.";
-      } else {
+      } else if (
+        producedQuantity != null &&
+        producedQuantity.gte(productionCoverageTarget)
+      ) {
         currentStage = postProductionStage;
         stageReason = stageReasonFor(currentStage, {
-          usedProductionProxy: producedQuantity == null && hasOfficialOpLink,
+          usedProductionProxy: false,
         });
+      } else if (closedProductionOrderQuantity.gte(productionCoverageTarget)) {
+        currentStage = postProductionStage;
+        stageReason = stageReasonFor(currentStage, {
+          usedProductionProxy: producedQuantity == null,
+        });
+      } else if (productionOrderQuantity.lt(productionCoverageTarget)) {
+        currentStage = "WAITING_PRODUCTION_ORDER";
+        stageReason = productionOrderQuantity.lte(0)
+          ? "Ainda falta produzir e não há Ordem de Produção válida vinculada."
+          : "A Ordem de Produção parcial ainda não cobre o que falta produzir (não é ausência total de OP).";
+      } else {
+        // Cobertura só planejada (Liberada, Requisitada, ABERTA, status ausente).
+        currentStage = "WAITING_PRODUCTION_ORDER";
+        stageReason =
+          "A Ordem de Produção cobre o planejamento, mas ainda não há evidência de execução.";
       }
     } else {
       if (skipProduction && requiresProduction === null) {
@@ -659,10 +725,12 @@ export function resolveSalesOrderItemFlow(
       });
     }
 
-    // UNKNOWN nunca conclui como enviado
+    // Status desconhecido não conclui o item sem NF-e válida cobrindo o alvo.
     if (
       fulfillment.classification === "UNKNOWN" &&
-      currentStage === "SHIPPED_COMPLETED"
+      currentStage === "SHIPPED_COMPLETED" &&
+      shipTargetQuantity.gt(0) &&
+      invoicedQuantity.lt(shipTargetQuantity)
     ) {
       currentStage = "WAITING_NFE";
       stageReason =
@@ -734,13 +802,14 @@ function resolvePostProductionStage(input: {
     // Corte total (fulfilled=0) ou sem obrigação → concluído operacionalmente
     return "SHIPPED_COMPLETED";
   }
+  // NF-e válida que cobre o alvo é terminal, mesmo com Documento de Saída cancelado.
+  if (input.shippedQuantity.gte(input.shipTargetQuantity)) {
+    return "SHIPPED_COMPLETED";
+  }
   if (input.documentedQuantity.lt(input.shipTargetQuantity)) {
     return "WAITING_OUTPUT_DOCUMENT";
   }
-  if (input.shippedQuantity.lt(input.shipTargetQuantity)) {
-    return "WAITING_NFE";
-  }
-  return "SHIPPED_COMPLETED";
+  return "WAITING_NFE";
 }
 
 function stageReasonFor(

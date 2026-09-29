@@ -6,10 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
-import {
-  pickSalesOrderFlowStageFromItemStages,
-  SALES_ORDER_ITEM_FLOW_STAGE_REASON,
-} from "./salesOrderFlowCatalog.js";
+import { pickSalesOrderFlowStageFromItemStages } from "./salesOrderFlowCatalog.js";
 import {
   resolveSalesOrderItemFlow,
   type ResolveSalesOrderItemFlowInput,
@@ -102,10 +99,7 @@ describe("salesOrderItemFlowEngine — correção WAITING_NFE / produção", () 
         })
       );
       assert.equal(r.currentStage, "WAITING_NFE", status.statusNormalized);
-      assert.equal(
-        r.stageReason,
-        SALES_ORDER_ITEM_FLOW_STAGE_REASON.DOCUMENTED_AWAITING_NFE
-      );
+      assert.match(r.stageReason, /falta NF-e válida/);
     }
   });
 
@@ -140,7 +134,7 @@ describe("salesOrderItemFlowEngine — correção WAITING_NFE / produção", () 
       mfg({ status: 99, statusNormalized: "UNKNOWN", productionOrderLinks: [] })
     );
     assert.equal(r.currentStage, "WAITING_RELEASE");
-    assert.match(r.stageReason, /UNKNOWN_STATUS_WITHOUT_DOWNSTREAM_EVIDENCE/);
+    assert.match(r.stageReason, /aguardando liberação comercial/);
   });
 
   it("9. Item sem necessidade de produção segue DS/NF", () => {
@@ -217,7 +211,7 @@ describe("salesOrderItemFlowEngine — correção WAITING_NFE / produção", () 
       })
     );
     assert.equal(r.currentStage, "WAITING_OUTPUT_DOCUMENT");
-    assert.match(r.stageReason, /PRODUCTION_ORDER_CLOSED_AWAITING_OUTPUT_DOCUMENT/);
+    assert.match(r.stageReason, /falta Documento de Saída/);
   });
 
   it("17. OP Encerrada + DS suficiente + NF insuficiente → WAITING_NFE", () => {
@@ -312,7 +306,7 @@ describe("salesOrderItemFlowEngine — correção WAITING_NFE / produção", () 
       })
     );
     assert.equal(partial.currentStage, "IN_PRODUCTION");
-    assert.match(partial.stageReason, /PRODUCED_QUANTITY_PARTIAL/);
+    assert.match(partial.stageReason, /quantidade produzida ainda é insuficiente/);
 
     const full = resolveSalesOrderItemFlow(
       mfg({

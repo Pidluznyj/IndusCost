@@ -10378,7 +10378,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/products/:id/commercial-formation",
     requireAppAuth,
-    requireAnyPermission(["proposals.view", "proposals.create", "proposals.update", "pricing.view"]),
+    requireAnyPermission(["proposals.view", "proposals.create", "proposals.edit", "pricing.view"]),
     async (req, res) => {
       const productId = String(req.params.id ?? "").trim();
       const refRaw = String(req.query.referenceDate ?? "").trim();

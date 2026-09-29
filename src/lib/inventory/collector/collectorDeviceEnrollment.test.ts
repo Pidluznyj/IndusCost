@@ -494,7 +494,12 @@ describe("enrollment · fronteiras do código", () => {
     const routes = codeOnly(read(ROUTES));
     assert.match(routes, /COLLECTOR_DEVICE_UNAUTHORIZED/);
     const denies = routes.match(/if \(!identity\) return denyEnrollment\(res\)/g) ?? [];
-    assert.equal(denies.length, 2, "POST e GET precisam negar identicamente");
+    assert.equal(
+      denies.length,
+      3,
+      "middleware, POST e GET precisam negar quando não há identidade"
+    );
+    assert.match(routes, /const requireCollectorPeerIdentity/);
   });
 
   it("31. enrollment fica FORA do middleware que exige device autorizado", () => {
@@ -506,6 +511,7 @@ describe("enrollment · fronteiras do código", () => {
     // (só entra quem já está autorizado — exatamente quem não precisa pedir).
     for (const idx of [post, get]) {
       const line = routes.slice(idx, routes.indexOf("\n", idx));
+      assert.match(line, /requireCollectorPeerIdentity/);
       assert.doesNotMatch(line, /deviceAuth/);
     }
   });

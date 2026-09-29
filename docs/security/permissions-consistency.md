@@ -67,6 +67,16 @@ Arquivo: `src/lib/security/permissionConsistency/baseline.ts` (~150 entradas na 
 - Ao **corrigir** um gap: remova a linha do baseline.
 - Ao **adicionar** gap novo: CI falha; só amplie o baseline com revisão explícita.
 
+### Revisão 2026-09-29 — ORs que não são drift
+
+Entradas novas no baseline, depois de confirmar no código que o alias repetido é o OR de acesso (não uma chave copiada por engano):
+
+- RH fino: `employees.team.view`, `employees.team.descendants.view`, `employees.administrative_data.view`, `employees.sensitive_data.view` e `employees.compensation.values.view` aparecem no módulo Pessoas e na aba que realmente decide aquele dado. Tirar o alias do pai fecharia o RH para o líder que só tem escopo de equipe.
+- `sales_orders.flow.values.view` também autoriza a margem do relatório de descontos (`canViewSalesOrderCommercialDiscountReportMargin`).
+- `commercial.satisfaction.export` autoriza o export da campanha e o da resposta individual.
+
+O gap `audit:SIDEBAR_WITHOUT_CONTRACT:org-chart` saiu do baseline: o contrato agora tem `admin.employees.org_chart` com `moduleId: "org-chart"`. O mapa da sidebar continua em `admin.employees`, porque o gate real é `employees.view` e a árvore de permissões não deve dividir essa decisão.
+
 ---
 
 ## Limitações

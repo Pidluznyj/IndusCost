@@ -176,10 +176,10 @@ describe("PERM-42 — liberação individual de submenus Operações", () => {
       OPERATIONS_RESOURCE_KEYS.inventoryWarehouses,
     ]);
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
-    const ops = nav.groups.find((g) => g.id === "operacoes");
-    assert.ok(ops);
+    const supply = nav.groups.find((g) => g.id === "cadeia_suprimentos");
+    assert.ok(supply);
     assert.deepEqual(
-      ops!.items.map((i) => i.itemId),
+      supply!.items.map((i) => i.itemId),
       ["inventory"]
     );
     const ids = nav.flatAccessibleItems.map((i) => i.id);

@@ -161,7 +161,7 @@ describe("PERM-43 — abas", () => {
     });
     assert.deepEqual(
       tabs.visibleTabs.map((t) => t.id).sort(),
-      ["catalog", "marketIntelligence"].sort()
+      ["catalog", "marketIntelligence", "stockConference"].sort()
     );
     assert.equal(tabs.isEmpty, false);
   });

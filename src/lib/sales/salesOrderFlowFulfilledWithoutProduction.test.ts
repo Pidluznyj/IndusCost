@@ -145,7 +145,7 @@ describe("salesOrderFlowFulfilledWithoutProduction (OP-06)", () => {
     assert.equal(r.fulfilledWithoutProduction, false);
   });
 
-  it("OP cobrindo somente o saldo residual libera WAITING_PRODUCTION_ORDER", () => {
+  it("OP sem evidência de execução no saldo residual permanece em WAITING_PRODUCTION_ORDER", () => {
     const r = resolveSalesOrderItemFlow(
       manufacturedNeedingOp("op-residual", {
         status: 3,
@@ -166,8 +166,8 @@ describe("salesOrderFlowFulfilledWithoutProduction (OP-06)", () => {
       })
     );
     assert.equal(r.remainingFulfillmentQuantity.eq(60), true);
-    assert.notEqual(r.currentStage, "WAITING_PRODUCTION_ORDER");
-    assert.equal(r.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    // Vínculo sem status Encerrada e sem producedQuantity não libera a coluna de OP.
+    assert.equal(r.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 
   it("pedido misto: item atendido sem OP + item com saldo sem OP → gargalo no pendente", () => {

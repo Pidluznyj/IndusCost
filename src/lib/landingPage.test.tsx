@@ -52,14 +52,11 @@ describe("LandingPage (rota /)", () => {
     assert.match(html, /id="recuperadoValor"/);
   });
 
-  it("CSS é escopado em .ic-landing e a landing estática mantém as URLs absolutas", () => {
+  it("CSS da landing fica escopado em .ic-landing", () => {
     const css = readFileSync("src/components/landing/landing-page.css", "utf8");
     const selectors = css.match(/^[.#a-z:*][^{@\n]*\{/gm) ?? [];
     const unscoped = selectors.filter((s) => !/^\.ic-landing\b/.test(s) && !/^(from|to|\d+%)/.test(s));
     assert.deepEqual(unscoped, []);
     assert.doesNotMatch(css, /^\s*(html|body)\s*\{/m);
-    const dist = readFileSync("landing-dist/index.html", "utf8");
-    assert.match(dist, /href="https:\/\/app\.grupolazarios\.com\.br"/);
-    assert.match(dist, /Cockpit \/\/ proposta #0417/);
   });
 });

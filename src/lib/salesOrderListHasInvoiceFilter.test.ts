@@ -47,7 +47,10 @@ describe("SalesOrdersModule — filtro Vínculo NF", () => {
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(module, /INVOICE_FILTER_OPTIONS/);
     assert.match(module, /sales-orders-filter-has-invoice/);
-    assert.match(module, /params\.set\("hasInvoice", hasInvoice\)/);
     assert.match(module, /setHasInvoice\(""\)/);
+    const listAndExport =
+      module.match(/params\.set\("hasInvoice", appliedFilters\.hasInvoice\)/g) ?? [];
+    assert.equal(listAndExport.length, 2);
+    assert.match(module, /params\.set\("hasInvoice", filters\.hasInvoice\)/);
   });
 });

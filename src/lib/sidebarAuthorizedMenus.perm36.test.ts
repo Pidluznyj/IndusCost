@@ -78,7 +78,10 @@ describe("PERM-36 — filterOfficialSidebarByEffectiveAccess", () => {
       "commercial.sales_orders",
     ]);
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
-    assert.deepEqual(groupItemIds(nav, "comercial"), ["sales-orders"]);
+    assert.deepEqual(groupItemIds(nav, "comercial"), [
+      "commercial-price-table",
+      "sales-orders",
+    ]);
     assert.equal(groupItemIds(nav, "comercial").includes("crm-commercial"), false);
     assert.equal(groupItemIds(nav, "comercial").includes("customers"), false);
     assert.equal(nav.groups.some((g) => g.id === "financeiro"), false);
@@ -96,7 +99,7 @@ describe("PERM-36 — filterOfficialSidebarByEffectiveAccess", () => {
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
     const visible = groupItemIds(nav, "comercial");
     const official = officialComercialOrder().filter((id) =>
-      ["crm-commercial", "customers", "sales-orders", "commissions"].includes(id)
+      ["crm-commercial", "customers", "commercial-price-table", "sales-orders", "commissions"].includes(id)
     );
     assert.deepEqual(visible, official);
   });

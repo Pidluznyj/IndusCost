@@ -121,27 +121,27 @@ O frontend público carrega `https://challenges.cloudflare.com/turnstile/v0/api.
 e renderiza o widget com `window.turnstile.render`. Sem esse script o desafio
 não existe e o submit chega sem token.
 
-### Homologação — habilitar Turnstile para teste real (posterior)
+### Homologação — widget desligado, CSP já preparada
 
-Este commit de aplicação **não** altera o nginx de homologação. Lá o Turnstile
-continua desligado (`SATISFACTION_TURNSTILE_MODE=disabled`) e a CSP **bloqueia**
-`challenges.cloudflare.com`.
+O drop-in `infra/satisfaction-homolog/systemd/98-satisfaction-public.conf`
+mantém `SATISFACTION_TURNSTILE_MODE=disabled` e **não** define site key nem
+secret. Com o modo desligado o browser não recebe site key e o widget não
+carrega. O motivo operacional continua sendo o egress: o serviço nega saída
+(`IPAddressDeny=any`) e um secret presente tornaria o siteverify obrigatório,
+fazendo todo submit falhar.
 
-Para um teste real posterior, o operador precisa:
+A CSP de homologação já permite somente `https://challenges.cloudflare.com`
+em `script-src`, `connect-src` e `frame-src`. Sem `*`, sem `unsafe-eval`.
+Isso não liga o desafio: só evita um segundo passo de nginx quando o modo
+passar a `required`.
+
+Para um teste real, o operador precisa:
 
 1. Criar o site Turnstile para o hostname público de homologação.
-2. Preencher `SATISFACTION_TURNSTILE_SITE_KEY` e `SATISFACTION_TURNSTILE_SECRET_KEY`.
+2. Preencher `SATISFACTION_TURNSTILE_SITE_KEY` e `SATISFACTION_TURNSTILE_SECRET_KEY` fora do git.
 3. Remover `SATISFACTION_TURNSTILE_MODE=disabled` (ou não definir a variável).
-4. No nginx de homologação, em **todos** os `Content-Security-Policy`, trocar
-   `script-src 'self'` por `script-src 'self' https://challenges.cloudflare.com`
-   e acrescentar `frame-src https://challenges.cloudflare.com`.
-   Sem `*`, sem `unsafe-eval`. Recorte de referência (o mesmo já usado em produção):
-
-   ```
-   script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com
-   ```
-
-5. Recarregar o nginx e reiniciar o processo Node de homologação.
+4. Liberar egress mínimo para `https://challenges.cloudflare.com/turnstile/v0/siteverify`. Não abrir a CSP além da origem oficial.
+5. Reiniciar o processo Node de homologação.
 6. Confirmar que o widget aparece em `/r` e que um submit sem token continua
    recusado (`TURNSTILE` / `MISSING_TOKEN`).
 

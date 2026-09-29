@@ -101,6 +101,7 @@ describe("salesOrderFlowApiValidationMatrix (OP-77)", () => {
         aggregate: async () => ({
           _max: { computedAt: new Date("2026-07-17T10:00:00Z") },
         }),
+        findMany: async () => [],
       },
     } as unknown as SalesOrderFlowSummaryDb;
 

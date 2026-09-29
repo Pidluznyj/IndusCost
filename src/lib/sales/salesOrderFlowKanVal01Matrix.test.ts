@@ -130,7 +130,12 @@ describe("KAN-VAL-01 — obrigação ativa, corte, estoque, OP e gargalo", () =>
       })
     );
     assert.equal(r.remainingFulfillmentQuantity.eq(600), true);
-    assert.notEqual(r.currentStage, "WAITING_PRODUCTION_ORDER");
+    assert.equal(r.productionOrderQuantity.eq(600), true);
+    // Vínculo sem status Encerrada e sem producedQuantity não é ausência de OP,
+    // mas também não prova execução — permanece em Aguardando OP.
+    assert.equal(r.currentStage, "WAITING_PRODUCTION_ORDER");
+    assert.match(r.stageReason, /evidência de execução/);
+    assert.doesNotMatch(r.stageReason, /não há Ordem de Produção válida/);
   });
 
   it("6 — parcial com OP insuficiente: cobertura parcial, não ausência total", () => {

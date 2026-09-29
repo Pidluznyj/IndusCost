@@ -117,3 +117,12 @@ export async function isSalesOrderVisibleInPortfolioReconciliation(
   );
   return allowed.has(id);
 }
+
+/** Atalho da rota HTTP: o client fica neste módulo, não no arquivo de rotas. */
+export async function isRequestSalesOrderVisibleInPortfolioReconciliation(
+  salesOrderId: string,
+  env?: Record<string, string | undefined>
+): Promise<boolean> {
+  const { prisma } = await import("@/src/lib/prisma.js");
+  return isSalesOrderVisibleInPortfolioReconciliation(prisma, salesOrderId, env);
+}

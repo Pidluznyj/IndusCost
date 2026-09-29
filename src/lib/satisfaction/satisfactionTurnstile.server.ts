@@ -68,8 +68,9 @@ export function isMisconfiguredForProduction(
 
 /**
  * Site key que pode ir ao browser. O secret nunca entra aqui.
- * Homologação com MODE=disabled recebe null — o widget não tenta carregar
- * contra a CSP que ainda bloqueia challenges.cloudflare.com.
+ * MODE=disabled (homologação sem secret/egress) devolve null: o widget não
+ * carrega. A CSP pode já permitir challenges.cloudflare.com; isso não liga
+ * o desafio sozinho.
  */
 export function toPublicTurnstileSiteKey(config: SatisfactionTurnstileConfig): string | null {
   if (config.mode !== "required") return null;

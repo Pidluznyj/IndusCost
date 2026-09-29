@@ -123,8 +123,10 @@ describe("pricing batch UI wiring", () => {
     assert.match(moduleSrc, /itemScope: batchItemScope/);
     assert.match(moduleSrc, /PRICING_BATCH_ITEM_SCOPE_OPTIONS/);
     assert.match(moduleSrc, /DEFAULT_PRICING_BATCH_ITEM_SCOPE/);
-    assert.match(moduleSrc, /Filtrar por SKU, código ou nome/);
-    assert.match(moduleSrc, /filterProductsForPricingBatchSearch/);
+    assert.match(
+      moduleSrc,
+      /filterProductsForPricingBatchSearch\(batchScopeProducts, searchTermBatch\)/
+    );
   });
 
   it("server usa motor server-side de lote", async () => {

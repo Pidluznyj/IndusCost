@@ -90,6 +90,8 @@ export const ResourceKeys = {
   FINANCE_SUPPLIERS: "finance.suppliers",
   /** Central de Tesouraria (contrato finance.treasury). */
   FINANCE_TREASURY: "finance.treasury",
+  /** Recuperação do dinheiro investido (contrato finance.invested_capital_recovery). */
+  FINANCE_INVESTED_CAPITAL_RECOVERY: "finance.invested_capital_recovery",
   FINANCE_ONE_PAGE: "finance.one_page",
   /** Prompt 13 — canônicos (contrato) com aliases legados no FE. */
   COMERCIAL_CLIENTES: "commercial.customers",
@@ -649,6 +651,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "SUBMENU",
     parentKey: ResourceKeys.FINANCEIRO,
     legacyAliasKeys: ["finance.treasury.view"],
+  },
+  {
+    key: ResourceKeys.FINANCE_INVESTED_CAPITAL_RECOVERY,
+    label: "Recuperação do Dinheiro Investido",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["finance.investedCapitalRecovery.view"],
   },
   {
     key: ResourceKeys.FINANCE_ONE_PAGE,

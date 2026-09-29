@@ -141,6 +141,7 @@ describe("portfolioReconciliationBusinessAnswers", () => {
       facts,
       filters,
       orderTotalBySalesOrderId: orderTotals,
+      asOfDate: "2026-07-10",
     });
 
     assert.ok(payload.businessAnswers);

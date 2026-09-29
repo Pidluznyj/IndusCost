@@ -177,7 +177,7 @@ describe("PERM-40 — matriz Dashboard + Engenharia", () => {
     });
     assert.deepEqual(
       tabs.visibleTabs.map((t) => t.id),
-      ["catalog", "marketIntelligence"]
+      ["catalog", "stockConference", "marketIntelligence"]
     );
     assert.equal(tabs.requestedDenied, false);
     assert.equal(tabs.isEmpty, false);
@@ -188,7 +188,7 @@ describe("PERM-40 — matriz Dashboard + Engenharia", () => {
     const tabs = resolveAuthorizedTabs(MATERIALS_UI_SECTIONS, c);
     assert.deepEqual(
       tabs.visibleTabs.map((t) => t.id),
-      ["catalog"]
+      ["catalog", "stockConference"]
     );
   });
 
