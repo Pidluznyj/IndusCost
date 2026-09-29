@@ -12,6 +12,7 @@ const WINANSI: Record<string, string> = {
   "ô": "\\364",
   "õ": "\\365",
   "ú": "\\372",
+  "ü": "\\374",
   "ç": "\\347",
   "Á": "\\301",
   "À": "\\300",
@@ -24,7 +25,22 @@ const WINANSI: Record<string, string> = {
   "Ô": "\\324",
   "Õ": "\\325",
   "Ú": "\\332",
+  "Ü": "\\334",
   "Ç": "\\307",
+  "º": "\\272",
+  "ª": "\\252",
+  "§": "\\247",
+  "·": "\\267",
+  "×": "\\327",
+  "–": "\\226",
+  "—": "\\227",
+  "‘": "\\221",
+  "’": "\\222",
+  "“": "\\223",
+  "”": "\\224",
+  "…": "\\205",
+  "•": "\\225",
+  "€": "\\200",
 };
 
 function escapePdfText(line: string): string {
@@ -40,7 +56,60 @@ function escapePdfText(line: string): string {
   return out;
 }
 
-export function buildTextPdf(lines: string[]): Buffer {
+/** Quebra por palavra para caber na largura útil. Linhas longas sem espaço são cortadas. */
+export function wrapPdfLines(lines: string[], maxChars: number): string[] {
+  const out: string[] = [];
+  for (const raw of lines) {
+    if (raw.length <= maxChars) {
+      out.push(raw);
+      continue;
+    }
+    let current = "";
+    for (const word of raw.split(" ")) {
+      let piece = word;
+      while (piece.length > maxChars) {
+        if (current) {
+          out.push(current);
+          current = "";
+        }
+        out.push(piece.slice(0, maxChars));
+        piece = piece.slice(maxChars);
+      }
+      if (!current) current = piece;
+      else if (current.length + 1 + piece.length <= maxChars) current = `${current} ${piece}`;
+      else {
+        out.push(current);
+        current = piece;
+      }
+    }
+    if (current) out.push(current);
+  }
+  return out;
+}
+
+function finishPdf(objects: string[], pageIds: number[], fontId: number, nextId: number): Buffer {
+  objects[1] = `<< /Type /Catalog /Pages 2 0 R >>`;
+  objects[2] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`;
+  objects[fontId] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`;
+  const lastId = nextId - 1;
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  for (let id = 1; id <= lastId; id += 1) {
+    offsets[id] = Buffer.byteLength(body);
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xrefAt = Buffer.byteLength(body);
+  body += `xref\n0 ${lastId + 1}\n`;
+  body += "0000000000 65535 f \n";
+  for (let id = 1; id <= lastId; id += 1) {
+    body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer << /Size ${lastId + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`;
+  return Buffer.from(body, "latin1");
+}
+
+export function buildTextPdf(input: string[]): Buffer {
+  const lines = wrapPdfLines(input, 100);
   const pages: string[][] = [];
   for (let i = 0; i < lines.length; i += 42) pages.push(lines.slice(i, i + 42));
   if (pages.length === 0) pages.push(["(vazio)"]);
@@ -60,36 +129,45 @@ export function buildTextPdf(lines: string[]): Buffer {
     objects[pageId] =
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`;
   }
-  objects[1] = `<< /Type /Catalog /Pages 2 0 R >>`;
-  objects[2] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`;
-  objects[fontId] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`;
-  const lastId = nextId - 1;
-  let body = "%PDF-1.4\n";
-  const offsets: number[] = [0];
-  for (let id = 1; id <= lastId; id += 1) {
-    offsets[id] = Buffer.byteLength(body);
-    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
-  }
-  const xrefAt = Buffer.byteLength(body);
-  body += `xref\n0 ${lastId + 1}\n`;
-  body += "0000000000 65535 f \n";
-  for (let id = 1; id <= lastId; id += 1) {
-    body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
-  }
-  body += `trailer << /Size ${lastId + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`;
-  return Buffer.from(body, "latin1");
+  return finishPdf(objects, pageIds, fontId, nextId);
 }
 
+export type ControlledCopyHeader = {
+  company: string;
+  title: string;
+  code: string;
+  versionLabel: string;
+  classification: string;
+};
+
+export const CONTROLLED_COPY_DEFAULT_HEADER: ControlledCopyHeader = {
+  company: "KOPPETEL / LAZARIOS",
+  title: "POLÍTICA COMERCIAL E DE COMISSIONAMENTO",
+  code: "POL-COM-001",
+  versionLabel: "1.0",
+  classification: "DOCUMENTO CONTROLADO  ·  USO INTERNO E RESTRITO",
+};
+
+/**
+ * Cópia controlada: marca d'água, cabeçalho com código/versão/classificação,
+ * rodapé com paginação, destinatário e código da cópia em todas as páginas.
+ * O texto entra integral (com quebra de linha por largura), nunca truncado.
+ */
 export function buildControlledPolicyPdf(input: {
   lines: string[];
   copyId: string;
   recipientName: string;
   recipientEmail: string;
   generatedAt: string;
+  header?: Partial<ControlledCopyHeader>;
+  /** Marca adicional no rodapé, ex.: "PRÉVIA — VERSÃO NÃO PUBLICADA". */
+  stamp?: string | null;
 }): Buffer {
-  const chunkSize = 26;
+  const header = { ...CONTROLLED_COPY_DEFAULT_HEADER, ...(input.header ?? {}) };
+  const lines = wrapPdfLines(input.lines, 108);
+  const chunkSize = 48;
   const chunks: string[][] = [];
-  for (let i = 0; i < input.lines.length; i += chunkSize) chunks.push(input.lines.slice(i, i + chunkSize));
+  for (let i = 0; i < lines.length; i += chunkSize) chunks.push(lines.slice(i, i + chunkSize));
   if (chunks.length === 0) chunks.push(["(vazio)"]);
   const pageCount = chunks.length;
   const fontId = 3;
@@ -110,18 +188,18 @@ export function buildControlledPolicyPdf(input: {
       "Q",
       "0 g",
       "BT /F1 8 Tf 40 812 Td 11 TL",
-      `(${escapePdfText("KOPPETEL / LAZARIOS")}) Tj T*`,
-      `(${escapePdfText("POLÍTICA COMERCIAL E DE COMISSIONAMENTO")}) Tj T*`,
-      `(${escapePdfText("POL-COM-001  VERSÃO 1.0")}) Tj T*`,
-      `(${escapePdfText("DOCUMENTO CONTROLADO  ·  USO INTERNO E RESTRITO")}) Tj T*`,
+      `(${escapePdfText(header.company)}) Tj T*`,
+      `(${escapePdfText(header.title)}) Tj T*`,
+      `(${escapePdfText(`${header.code}  VERSÃO ${header.versionLabel}`)}) Tj T*`,
+      `(${escapePdfText(header.classification)}) Tj T*`,
       "ET",
-      "BT /F1 9 Tf 40 748 Td 13 TL",
+      "BT /F1 8 Tf 40 762 Td 11 TL",
     ];
     for (const line of chunk) commands.push(`(${escapePdfText(line)}) Tj`, "T*");
     commands.push(
       "ET",
-      "BT /F1 8 Tf 40 46 Td 10 TL",
-      `(${escapePdfText("USO INTERNO E RESTRITO")}) Tj T*`,
+      "BT /F1 7 Tf 40 78 Td 9 TL",
+      `(${escapePdfText(input.stamp ? `${input.stamp}  ·  USO INTERNO E RESTRITO` : "USO INTERNO E RESTRITO")}) Tj T*`,
       `(${escapePdfText("Proibida divulgação ou reprodução não autorizada")}) Tj T*`,
       `(${escapePdfText(`Página ${pageNumber} de ${pageCount}`)}) Tj T*`,
       `(${escapePdfText(`Gerado para: ${input.recipientName}`)}) Tj T*`,
@@ -135,31 +213,19 @@ export function buildControlledPolicyPdf(input: {
     objects[pageId] =
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`;
   });
-  objects[1] = `<< /Type /Catalog /Pages 2 0 R >>`;
-  objects[2] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`;
-  objects[fontId] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`;
-  const lastId = nextId - 1;
-  let body = "%PDF-1.4\n";
-  const offsets: number[] = [0];
-  for (let id = 1; id <= lastId; id += 1) {
-    offsets[id] = Buffer.byteLength(body);
-    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
-  }
-  const xrefAt = Buffer.byteLength(body);
-  body += `xref\n0 ${lastId + 1}\n`;
-  body += "0000000000 65535 f \n";
-  for (let id = 1; id <= lastId; id += 1) {
-    body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
-  }
-  body += `trailer << /Size ${lastId + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`;
-  return Buffer.from(body, "latin1");
+  return finishPdf(objects, pageIds, fontId, nextId);
 }
 
 export function policyDocumentLines(input: {
   title: string;
-  version: number;
+  /** Rótulo documental ("1.0"), não o número interno. */
+  versionLabel: string;
+  code?: string;
+  company?: string;
+  cnpj?: string;
+  classification?: string;
   contentHash: string;
-  effectiveFrom: string;
+  effectiveFrom: string | null;
   publishedAt: string | null;
   content: string;
   summaryRules: string[];
@@ -167,9 +233,13 @@ export function policyDocumentLines(input: {
   return [
     "IndusCost — Política Comercial",
     input.title,
-    `Versão ${input.version}`,
-    `Vigência: ${input.effectiveFrom}`,
-    `Publicação: ${input.publishedAt ?? "—"}`,
+    ...(input.code ? [`Código: ${input.code}`] : []),
+    `Versão ${input.versionLabel}`,
+    ...(input.company ? [`Empresa: ${input.company}`] : []),
+    ...(input.cnpj ? [`CNPJ: ${input.cnpj}`] : []),
+    ...(input.classification ? [`Classificação: ${input.classification}`] : []),
+    `Vigência: ${input.effectiveFrom ?? "—"}`,
+    `Publicação: ${input.publishedAt ?? "— (não publicada)"}`,
     `SHA-256 do conteúdo: ${input.contentHash}`,
     "",
     ...input.content.split(/\r?\n/),
@@ -182,7 +252,7 @@ export function policyDocumentLines(input: {
 export function acceptanceReceiptLines(input: {
   acceptanceId: string;
   title: string;
-  version: number;
+  versionLabel: string;
   policyHash: string;
   signerName: string;
   signerEmail: string;
@@ -195,6 +265,8 @@ export function acceptanceReceiptLines(input: {
   challengeId: string;
   photoHash: string;
   evidenceHash: string;
+  normativeSnapshotHash?: string | null;
+  changeSetHash?: string | null;
 }): string[] {
   return [
     "IndusCost — Comprovante de aceite eletrônico",
@@ -204,8 +276,10 @@ export function acceptanceReceiptLines(input: {
     "Política Comercial",
     `Aceite: ${input.acceptanceId}`,
     `Documento: ${input.title}`,
-    `Versão: ${input.version}`,
+    `Versão: ${input.versionLabel}`,
     `SHA-256 da política: ${input.policyHash}`,
+    ...(input.normativeSnapshotHash ? [`SHA-256 do snapshot normativo: ${input.normativeSnapshotHash}`] : []),
+    ...(input.changeSetHash ? [`SHA-256 do changeset: ${input.changeSetHash}`] : []),
     `Signatário: ${input.signerName}`,
     `E-mail: ${input.signerEmail}`,
     `Perfil: ${input.role}`,

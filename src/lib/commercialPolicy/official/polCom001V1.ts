@@ -31,11 +31,14 @@ export const POL_COM_001_SUMMARY_RULES = [
 ];
 
 export const POL_COM_001_DECLARATIONS = [
-  "Declaro que tive acesso integral à Política Comercial e de Comissionamento POL-COM-001, versão 1.0.",
-  "Declaro que li e compreendi as regras aplicáveis às minhas atividades comerciais.",
-  "Declaro que compreendi as regras relativas a carteira, CRM, registros comerciais, precificação, margem, comissionamento, cobertura e demais procedimentos descritos na Política.",
+  "Declaro que tive acesso integral e li a Política Comercial e de Comissionamento POL-COM-001, versão 1.0, incluindo seus Anexos I a IV.",
+  "Declaro que li e compreendi as regras comerciais aplicáveis às minhas atividades comerciais.",
+  "Declaro que compreendi a Matriz Normativa de Comissão do Anexo I (faixas de Margem Oficial, percentuais e alçadas) e que somente a versão vigente do Anexo I se aplica.",
+  "Declaro que compreendi que clientes, carteira e informações comerciais são ativos da empresa e que a atribuição de Responsável Comercial representa responsabilidade, não propriedade pessoal do cliente.",
+  "Declaro que compreendi as regras de cobertura de ausência (Seção 8) e de inatividade e revisão de carteira em 90 dias corridos sem novo Pedido de Venda aprovado (Seção 11).",
+  "Declaro que compreendi as regras relativas a CRM, registros comerciais, precificação, margem, comissionamento e demais procedimentos descritos na Política, e as condutas vedadas da Seção 22.",
   "Comprometo-me a observar as regras e procedimentos oficiais aplicáveis durante minhas atividades.",
-  "Declaro estar ciente de que este documento possui classificação de USO INTERNO E RESTRITO.",
+  "Declaro estar ciente de que este documento possui classificação de USO INTERNO E RESTRITO e é documento controlado (Seção 23).",
   "Comprometo-me a não divulgar, reproduzir, compartilhar ou disponibilizar a Política e suas informações a terceiros sem autorização, ressalvadas as hipóteses legalmente permitidas.",
   "Reconheço que este aceite será registrado eletronicamente com dados técnicos destinados a comprovar autoria, integridade e momento do aceite.",
 ];
@@ -118,6 +121,58 @@ export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
     correctOptionId: "b",
     explanation:
       "A Seção 11 estabelece que, sem registro objetivo, atualizado e suficiente no CRM, o cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação. A reatribuição não afeta comissões já adquiridas.",
+  },
+  {
+    id: "q-matriz",
+    reviewChapterId: "anexo-i-matriz-normativa-de-comissao-margem-e-alcada",
+    prompt: "Pela Matriz Normativa do Anexo I, qual é a comissão do Vendedor para um Item de Venda com Margem Oficial de 50,00% ou mais?",
+    options: [
+      { id: "a", text: "5,00%, com aprovação prévia da Diretoria." },
+      { id: "b", text: "4,00%, no fluxo comercial ordinário." },
+      { id: "c", text: "1,00%, com aprovação prévia do Supervisor Comercial." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "O Anexo I fixa: abaixo de 30,00% = 1,00% (aprovação prévia da Diretoria); 30,00% a 34,99% = 1,00% (aprovação prévia do Supervisor Comercial); 35,00% a 39,99% = 2,00%; 40,00% a 49,99% = 3,00%; 50,00% ou mais = 4,00%, no fluxo comercial ordinário.",
+  },
+  {
+    id: "q-supervisor",
+    reviewChapterId: "14-comissao-do-supervisor-comercial",
+    prompt: "Como a Política trata a remuneração variável do Supervisor Comercial?",
+    options: [
+      { id: "a", text: "É descontada da comissão dos Vendedores do time." },
+      { id: "b", text: "Equivale a 33% das comissões elegíveis apuradas para os Vendedores do seu time, é parcela adicional suportada pela empresa e não reduz a comissão do Vendedor." },
+      { id: "c", text: "O Supervisor tem carteira própria e recebe comissão integral das vendas em que participa." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 14 fixa 33% do valor das comissões elegíveis dos Vendedores vinculados ao time, como parcela adicional suportada pela empresa, e afirma que o Supervisor não possui carteira própria para comissão individual.",
+  },
+  {
+    id: "q-campanha",
+    reviewChapterId: "9-campanhas-e-condicoes-comerciais-especificas",
+    prompt: "Uma campanha comercial pode ser aplicada sem identificação, versão, vigência, escopo e comunicação prévia?",
+    options: [
+      { id: "a", text: "Sim, se o Vendedor a mencionar na proposta." },
+      { id: "b", text: "Não. Toda campanha deve possuir identificação, versão, vigência, escopo, percentual ou fórmula, condições, alçadas, regra de cumulatividade e comunicação prévia; aplicar campanha inexistente, vencida ou fora do escopo é conduta vedada." },
+      { id: "c", text: "Sim, desde que o percentual seja maior que o da Matriz." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 9 exige identificação, versão, vigência, escopo, percentual ou fórmula, condições, alçadas, regra de cumulatividade e comunicação prévia (Anexo II), e a Seção 22 veda aplicar campanha inexistente, vencida ou fora do escopo.",
+  },
+  {
+    id: "q-vedadas",
+    reviewChapterId: "22-condutas-vedadas",
+    prompt: "Qual das condutas abaixo é vedada pela Seção 22 da Política?",
+    options: [
+      { id: "a", text: "Registrar no CRM, de forma contemporânea, um contato real com o cliente." },
+      { id: "b", text: "Criar registros artificiais para impedir a revisão de inatividade ou alterar a atribuição de uma operação." },
+      { id: "c", text: "Escalar ao Supervisor uma divergência de atribuição de venda." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 22 veda, entre outras condutas, criar registros artificiais para impedir revisão de inatividade ou alterar a atribuição de uma operação, alterar ou simular preço, custo, margem, data, cliente ou campanha, e combinar divisão informal de comissão sem registro e aprovação.",
   },
   {
     id: "q-copia",

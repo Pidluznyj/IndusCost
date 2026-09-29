@@ -15,14 +15,19 @@ import {
   type PolicyVersionBody,
   type SubmittedAnswer,
 } from "./commercialPolicyRules.js";
-import { isOfficialCommercialPolicyContent } from "./official/polCom001V1View.js";
+import { POL_COM_001_VERSION_LABEL, isOfficialCommercialPolicyContent } from "./official/polCom001V1View.js";
 import { officialCommercialPolicyBody, officialCommercialPolicyHash } from "./official/polCom001V1.js";
 import {
   auditPolCom001Publication,
   buildCurrentCommercialPolicyNormativeSnapshot,
+  changeSetHash,
   formatWhatChanged,
+  normativeSnapshotHash,
   planPolicyRevision,
   type NormativeChangeKind,
+  type NormativeSnapshot,
+  type PolicyChange,
+  type PrePublishFinding,
   type ReleaseNormativeInput,
 } from "./commercialPolicyNormative.js";
 import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
@@ -32,7 +37,7 @@ export type PolicyFailure = {
   status: number;
   code: string;
   message: string;
-  findings?: Array<{ code: string; document: string; system: string }>;
+  findings?: PrePublishFinding[];
 };
 
 export type PolicyActor = {
@@ -50,10 +55,31 @@ function fail(status: number, code: string, message: string): PolicyFailure {
   return { ok: false, status, code, message };
 }
 
+/**
+ * Transição de vigência: quando uma versão publicada com effectiveFrom futuro
+ * passa a vigorar, as publicadas com vigência anterior são aposentadas. Duas
+ * versões com a MESMA vigência continuam sendo conflito (não se escolhe uma).
+ */
+export async function settleScheduledVersions(store: CommercialPolicyStore, now: Date): Promise<void> {
+  if ((await store.countEffectivePublished(now)) < 2) return;
+  const effective = (await store.listVersions()).filter(
+    (row) => row.status === "PUBLISHED" && row.effectiveFrom.getTime() <= now.getTime()
+  );
+  const latest = effective.reduce<StoredVersion | null>(
+    (best, row) => (!best || row.effectiveFrom.getTime() > best.effectiveFrom.getTime() ? row : best),
+    null
+  );
+  if (!latest) return;
+  if (effective.some((row) => row.id !== latest.id && row.effectiveFrom.getTime() < latest.effectiveFrom.getTime())) {
+    await store.retirePublishedEffectiveBefore(latest.policyId, latest.effectiveFrom, latest.id);
+  }
+}
+
 async function loadCurrent(
   store: CommercialPolicyStore,
   now: Date
 ): Promise<{ conflict: true } | { conflict: false; version: StoredVersion | null }> {
+  await settleScheduledVersions(store, now);
   if ((await store.countEffectivePublished(now)) > 1) return { conflict: true };
   return { conflict: false, version: await store.currentPublished(now) };
 }
@@ -68,10 +94,21 @@ function bodyOf(version: StoredVersion): PolicyVersionBody {
   };
 }
 
+/** Rótulo documental da versão ("1.0", "1.1"); o número interno é só sequência de armazenamento. */
+export function versionLabelOf(version: Pick<StoredVersion, "content" | "versionNumber" | "changeSet">): string {
+  const fromChangeSet = version.changeSet?.[0]?.sourceVersionNew;
+  if (fromChangeSet) return fromChangeSet;
+  if (isOfficialCommercialPolicyContent(version.content)) return POL_COM_001_VERSION_LABEL;
+  return String(version.versionNumber);
+}
+
 export function versionPublicView(version: StoredVersion) {
+  const label = versionLabelOf(version);
+  const previousLabel = version.changeSet?.[0]?.sourceVersionOld ?? "anterior";
   return {
     id: version.id,
     version: version.versionNumber,
+    label,
     title: version.title,
     content: version.content,
     summaryRules: version.summaryRules,
@@ -81,13 +118,22 @@ export function versionPublicView(version: StoredVersion) {
     effectiveFrom: version.effectiveFrom.toISOString(),
     publishedAt: version.publishedAt?.toISOString() ?? null,
     status: version.status,
+    official: isOfficialCommercialPolicyContent(version.content),
     normativeSnapshotHash: version.normativeSnapshotHash ?? "",
     changeSetHash: version.changeSetHash ?? "",
-    whatChanged: formatWhatChanged(
-      version.changeSet ?? [],
-      version.changeSet?.[0]?.sourceVersionNew ?? String(version.versionNumber),
-      version.changeSet?.[0]?.sourceVersionOld ?? "anterior"
-    ),
+    previousVersionId: version.previousVersionId ?? null,
+    whatChanged: formatWhatChanged(version.changeSet ?? [], label, previousLabel),
+  };
+}
+
+/** Visão administrativa: inclui snapshot e changeset íntegros para a revisão assistida. */
+export function versionAdminView(version: StoredVersion) {
+  return {
+    ...versionPublicView(version),
+    questions: version.questions,
+    normativeSnapshot: (version.normativeSnapshot as NormativeSnapshot | undefined) ?? null,
+    changeSet: version.changeSet ?? [],
+    publishedByUserId: version.publishedByUserId,
   };
 }
 
@@ -129,11 +175,23 @@ export async function createPolicyDraft(
   return { ok: true, version };
 }
 
+export type PublishOptions = {
+  /** Snapshot normativo lido das fontes oficiais no momento da publicação. */
+  currentSnapshot?: NormativeSnapshot | null;
+};
+
+/**
+ * Publica um rascunho e o torna imutável. Se o rascunho é a POL-COM-001, a
+ * auditoria documento × sistema precisa estar sem BLOCKING. O snapshot
+ * normativo é congelado na versão (se o rascunho ainda não tinha) e um
+ * rascunho cujo snapshot não descreve mais o estado atual é recusado.
+ */
 export async function publishPolicyVersion(
   store: CommercialPolicyStore,
   versionId: string,
   actorUserId: string,
-  now: Date
+  now: Date,
+  options: PublishOptions = {}
 ): Promise<{ ok: true; version: StoredVersion } | PolicyFailure> {
   const version = await store.getVersion(versionId);
   if (!version) return fail(404, "NOT_FOUND", "Versão não encontrada.");
@@ -142,8 +200,9 @@ export async function publishPolicyVersion(
   }
   const error = validatePolicyDraft(bodyOf(version));
   if (error) return fail(422, "INVALID_POLICY", error);
+  const currentSnapshot = options.currentSnapshot ?? null;
   if (isOfficialCommercialPolicyContent(version.content)) {
-    const audit = auditPolCom001Publication(version.content);
+    const audit = auditPolCom001Publication(version.content, currentSnapshot);
     if (!audit.ready) {
       return {
         ...fail(
@@ -151,9 +210,27 @@ export async function publishPolicyVersion(
           "NOT_READY_FOR_PUBLICATION",
           "A POL-COM-001 não pode ser publicada enquanto o documento divergir das regras executadas pelo IndusCost."
         ),
-        findings: audit.findings.map((item) => ({ code: item.code, document: item.document, system: item.system })),
+        findings: audit.findings,
       };
     }
+  }
+  if (currentSnapshot && version.normativeSnapshotHash && version.normativeSnapshotHash !== normativeSnapshotHash(currentSnapshot)) {
+    return fail(
+      409,
+      "DRAFT_SNAPSHOT_STALE",
+      "O rascunho descreve um estado normativo que não é mais o atual do IndusCost. Revise o rascunho antes de publicar."
+    );
+  }
+  if (currentSnapshot && !version.normativeSnapshotHash) {
+    const published = await store.currentPublished(now);
+    const frozen = await store.attachNormative(version.id, {
+      normativeSnapshot: currentSnapshot,
+      normativeSnapshotHash: normativeSnapshotHash(currentSnapshot),
+      changeSet: [],
+      changeSetHash: changeSetHash([]),
+      previousVersionId: published?.id ?? null,
+    });
+    if (!frozen) return fail(409, "VERSION_IMMUTABLE", "A versão deixou de ser rascunho.");
   }
   const contentHash = hashPolicyContent(bodyOf(version));
   const published = await store.markPublished(version.id, {
@@ -162,17 +239,21 @@ export async function publishPolicyVersion(
     publishedByUserId: actorUserId,
   });
   if (!published) return fail(409, "VERSION_IMMUTABLE", "A versão deixou de ser rascunho.");
-  await store.retirePublishedExcept(version.policyId, version.id);
+  if (published.effectiveFrom.getTime() <= now.getTime()) {
+    await store.retirePublishedExcept(version.policyId, version.id);
+  }
+  // Vigência futura: a versão vigente continua valendo até effectiveFrom (settleScheduledVersions).
   return { ok: true, version: published };
 }
 
 export async function publishOfficialCommercialPolicy(
   store: CommercialPolicyStore,
   actorUserId: string,
-  now: Date
+  now: Date,
+  options: PublishOptions = {}
 ): Promise<{ ok: true; version: StoredVersion; alreadyPublished: boolean } | PolicyFailure> {
   const hash = officialCommercialPolicyHash();
-  const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
+  const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, options.currentSnapshot ?? null);
   if (!audit.ready) {
     return {
       ...fail(
@@ -180,7 +261,7 @@ export async function publishOfficialCommercialPolicy(
         "NOT_READY_FOR_PUBLICATION",
         "A POL-COM-001 não pode ser publicada enquanto o documento divergir das regras executadas pelo IndusCost."
       ),
-      findings: audit.findings.map((item) => ({ code: item.code, document: item.document, system: item.system })),
+      findings: audit.findings,
     };
   }
   const versions = await store.listVersions();
@@ -188,7 +269,7 @@ export async function publishOfficialCommercialPolicy(
   if (existing) return { ok: true, version: existing, alreadyPublished: true };
   const draft = await createPolicyDraft(store, officialCommercialPolicyBody(), now);
   if (draft.ok === false) return draft;
-  const published = await publishPolicyVersion(store, draft.version.id, actorUserId, now);
+  const published = await publishPolicyVersion(store, draft.version.id, actorUserId, now, options);
   if (published.ok === false) return published;
   return { ok: true, version: published.version, alreadyPublished: false };
 }
@@ -445,11 +526,23 @@ export async function invalidateCommercialPolicyAcceptance(
   return { ok: true as const, invalidationId: event.id, acceptanceId: acceptance.id };
 }
 
+/** O rascunho pendente da próxima versão: único por política enquanto não for publicado ou cancelado. */
+export function findPendingRevisionDraft(versions: StoredVersion[]): StoredVersion | null {
+  const drafts = versions.filter((row) => row.status === "DRAFT" && Array.isArray(row.changeSet));
+  drafts.sort((a, b) => b.versionNumber - a.versionNumber);
+  return drafts[0] ?? null;
+}
+
+/**
+ * Detecta → classifica → reutiliza o rascunho pendente (agregando o changeset)
+ * ou abre um novo. Mudança operacional ou referência controlada não abre nada.
+ */
 export async function openNormativeRevision(
   store: CommercialPolicyStore,
   input: {
     kind: NormativeChangeKind;
-    currentLabel: string;
+    /** Rótulo da versão vigente; se omitido, é derivado da versão publicada. */
+    currentLabel?: string;
     release: ReleaseNormativeInput;
     oldValue: unknown;
     newValue: unknown;
@@ -462,10 +555,12 @@ export async function openNormativeRevision(
 ) {
   const currentSnapshot = buildCurrentCommercialPolicyNormativeSnapshot(input.release);
   const versions = await store.listVersions();
-  const existingHash = versions.find((row) => row.status === "DRAFT")?.changeSetHash ?? null;
+  const published = versions.find((row) => row.status === "PUBLISHED") ?? null;
+  const currentLabel = input.currentLabel ?? (published ? versionLabelOf(published) : POL_COM_001_VERSION_LABEL);
+  const pending = findPendingRevisionDraft(versions);
   const plan = planPolicyRevision({
     kind: input.kind,
-    currentLabel: input.currentLabel,
+    currentLabel,
     currentSnapshot,
     oldValue: input.oldValue,
     newValue: input.newValue,
@@ -474,16 +569,27 @@ export async function openNormativeRevision(
     reason: input.reason,
     changedBy: input.changedBy,
     changedAt: input.now.toISOString(),
-    existingDraftChangeSetHash: existingHash,
+    existingDraftChangeSetHash: pending?.changeSetHash ?? null,
+    existingDraft: pending
+      ? { changeSet: pending.changeSet ?? [], snapshot: (pending.normativeSnapshot as NormativeSnapshot | undefined) ?? null }
+      : null,
   });
   if (!plan.draftRequired || !plan.changeSetHash) {
-    return { ok: true as const, impact: plan.impact, version: null, duplicate: false };
+    return { ok: true as const, impact: plan.impact, version: null, duplicate: false, aggregated: false, releaseUnchanged: input.release };
   }
-  if (plan.duplicate) {
-    const existing = versions.find((row) => row.status === "DRAFT" && row.changeSetHash === plan.changeSetHash);
-    return { ok: true as const, impact: plan.impact, version: existing ?? null, duplicate: true };
+  if (plan.duplicate && pending) {
+    return { ok: true as const, impact: plan.impact, version: pending, duplicate: true, aggregated: false, releaseUnchanged: input.release };
   }
-  const published = versions.find((row) => row.status === "PUBLISHED");
+  if (pending) {
+    const merged = await store.attachNormative(pending.id, {
+      normativeSnapshot: plan.snapshot,
+      normativeSnapshotHash: plan.snapshotHash,
+      changeSet: plan.changeSet,
+      changeSetHash: plan.changeSetHash,
+      previousVersionId: pending.previousVersionId ?? published?.id ?? null,
+    });
+    return { ok: true as const, impact: plan.impact, version: merged, duplicate: false, aggregated: true, releaseUnchanged: input.release };
+  }
   const draft = await createPolicyDraft(
     store,
     {
@@ -500,6 +606,7 @@ export async function openNormativeRevision(
     changeSetHash: plan.changeSetHash,
     previousVersionId: published?.id ?? null,
   });
-  return { ok: true as const, impact: plan.impact, version: attached, duplicate: false, releaseUnchanged: input.release };
+  return { ok: true as const, impact: plan.impact, version: attached, duplicate: false, aggregated: false, releaseUnchanged: input.release };
 }
 
+export type { PolicyChange };

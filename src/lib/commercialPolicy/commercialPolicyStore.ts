@@ -101,6 +101,8 @@ export type CommercialPolicyStore = {
   countEffectivePublished(now: Date): Promise<number>;
   insertControlledCopy(row: StoredControlledCopy): Promise<StoredControlledCopy>;
   retirePublishedExcept(policyId: string, keepId: string): Promise<void>;
+  /** Vigência prospectiva: aposenta as publicadas com effectiveFrom anterior à da versão que passou a vigorar. */
+  retirePublishedEffectiveBefore(policyId: string, effectiveBefore: Date, keepId: string): Promise<void>;
   markPublished(id: string, patch: { contentHash: string; publishedAt: Date; publishedByUserId: string }): Promise<StoredVersion | null>;
   attachNormative(id: string, patch: {
     normativeSnapshot: unknown;
@@ -207,6 +209,18 @@ export function createMemoryCommercialPolicyStore(): CommercialPolicyStore & {
     async retirePublishedExcept(policyIdValue, keepId) {
       for (const row of versions) {
         if (row.policyId === policyIdValue && row.id !== keepId && row.status === "PUBLISHED") {
+          row.status = "RETIRED";
+        }
+      }
+    },
+    async retirePublishedEffectiveBefore(policyIdValue, effectiveBefore, keepId) {
+      for (const row of versions) {
+        if (
+          row.policyId === policyIdValue &&
+          row.id !== keepId &&
+          row.status === "PUBLISHED" &&
+          row.effectiveFrom.getTime() < effectiveBefore.getTime()
+        ) {
           row.status = "RETIRED";
         }
       }
