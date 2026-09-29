@@ -145,7 +145,57 @@ export function HrOrgChartPage() {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [showUnassigned, setShowUnassigned] = useState(false);
+  const [pan, setPan] = useState({ x: 24, y: 24 });
+  const [panning, setPanning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+
+  const clampZoom = (value: number) => Math.min(1.6, Math.max(0.2, Number(value.toFixed(3))));
+
+  const fitChartToView = useCallback(() => {
+    const viewport = viewportRef.current;
+    const content = canvasRef.current;
+    if (!viewport || !content) return;
+    const width = content.offsetWidth;
+    const height = content.offsetHeight;
+    if (width <= 0 || height <= 0) return;
+    const pad = 32;
+    const nextZoom = clampZoom(
+      Math.min(
+        1,
+        (viewport.clientWidth - pad) / width,
+        (viewport.clientHeight - pad) / height
+      )
+    );
+    setZoom(nextZoom);
+    setPan({
+      x: Math.max(16, (viewport.clientWidth - width * nextZoom) / 2),
+      y: 24,
+    });
+  }, []);
+
+  const zoomAroundCenter = useCallback((delta: number) => {
+    const viewport = viewportRef.current;
+    setZoom((current) => {
+      const next = clampZoom(current + delta);
+      if (!viewport || next === current) return next;
+      const cx = viewport.clientWidth / 2;
+      const cy = viewport.clientHeight / 2;
+      const ratio = next / current;
+      setPan((currentPan) => ({
+        x: cx - (cx - currentPan.x) * ratio,
+        y: cy - (cy - currentPan.y) * ratio,
+      }));
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,6 +213,37 @@ export function HrOrgChartPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!chart) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => fitChartToView());
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chart, fitChartToView]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      const pointerX = event.clientX - rect.left;
+      const pointerY = event.clientY - rect.top;
+      setZoom((current) => {
+        const next = clampZoom(current * (event.deltaY > 0 ? 0.9 : 1.1));
+        if (next === current) return current;
+        const ratio = next / current;
+        setPan((currentPan) => ({
+          x: pointerX - (pointerX - currentPan.x) * ratio,
+          y: pointerY - (pointerY - currentPan.y) * ratio,
+        }));
+        return next;
+      });
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [chart]);
 
   const q = query.trim().toLowerCase();
 
@@ -358,7 +439,7 @@ export function HrOrgChartPage() {
             <button
               type="button"
               className="rounded-md p-2 hover:bg-accent"
-              onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))}
+              onClick={() => zoomAroundCenter(-0.1)}
               title="Diminuir zoom"
             >
               <ZoomOut className="h-4 w-4" />
@@ -369,7 +450,7 @@ export function HrOrgChartPage() {
             <button
               type="button"
               className="rounded-md p-2 hover:bg-accent"
-              onClick={() => setZoom((z) => Math.min(1.4, Number((z + 0.1).toFixed(2))))}
+              onClick={() => zoomAroundCenter(0.1)}
               title="Aumentar zoom"
             >
               <ZoomIn className="h-4 w-4" />
@@ -377,8 +458,9 @@ export function HrOrgChartPage() {
             <button
               type="button"
               className="rounded-md p-2 hover:bg-accent"
-              onClick={() => setZoom(0.9)}
-              title="Ajustar"
+              onClick={fitChartToView}
+              title="Expandir e ajustar o organograma à tela"
+              data-testid="hr-org-chart-fit"
             >
               <Maximize2 className="h-4 w-4" />
             </button>
@@ -394,13 +476,55 @@ export function HrOrgChartPage() {
         </div>
       </div>
 
-      <div className="overflow-auto rounded-xl border border-border bg-gradient-to-b from-slate-50 to-white p-6 dark:from-slate-950 dark:to-background">
+      <div
+        ref={viewportRef}
+        className={cn(
+          "relative h-[70vh] min-h-[420px] touch-none overflow-hidden rounded-xl border border-border bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-background",
+          panning ? "cursor-grabbing" : "cursor-grab"
+        )}
+        title="Arraste para mover o organograma"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          const target = event.target as HTMLElement | null;
+          if (target?.closest("button, a, input, textarea, select")) return;
+          dragRef.current = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            panX: pan.x,
+            panY: pan.y,
+          };
+          setPanning(true);
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          setPan({
+            x: drag.panX + event.clientX - drag.x,
+            y: drag.panY + event.clientY - drag.y,
+          });
+        }}
+        onPointerUp={(event) => {
+          if (dragRef.current?.pointerId !== event.pointerId) return;
+          dragRef.current = null;
+          setPanning(false);
+        }}
+        onPointerCancel={(event) => {
+          if (dragRef.current?.pointerId !== event.pointerId) return;
+          dragRef.current = null;
+          setPanning(false);
+        }}
+      >
         <div
           ref={canvasRef}
-          className="origin-top transition-transform duration-200"
-          style={{ transform: `scale(${zoom})`, width: `${100 / zoom}%` }}
+          className={cn("inline-block w-max p-6", panning && "select-none")}
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "0 0",
+          }}
         >
-          <div className="inline-flex min-w-full flex-col items-center pb-10">
+          <div className="inline-flex flex-col items-center pb-10">
             <div className="rounded-xl border border-slate-700 bg-slate-800 px-6 py-3 text-center text-white shadow-md">
               <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Organização</p>
               <p className="text-base font-semibold">{chart.name}</p>
@@ -468,6 +592,7 @@ export function HrOrgChartPage() {
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Colaborador
         </span>
+        <span>Arraste o organograma para mover. O botão de expandir encaixa tudo na área.</span>
       </div>
     </div>
   );
