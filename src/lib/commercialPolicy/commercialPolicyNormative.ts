@@ -79,7 +79,9 @@ export const DOCUMENT_INACTIVITY_DAYS = 90;
 /**
  * Fatos confirmados no código. A matriz de margem do Anexo I não existe como
  * parâmetro. A rotina mensal de carteira (POL-COM-001 §11) remove o responsável
- * exclusivo após 90 dias sem PV aprovado, salvo CRM válido. Os 33% do
+ * exclusivo após 90 dias sem PV com NF / Documento de Saída válido, salvo CRM
+ * válido. O texto da POL-COM-001 v1.0 ainda fala em “PV aprovado”; essa
+ * divergência exige nova versão da política. Os 33% do
  * supervisor não estão em CommissionSettings.
  */
 export const SYSTEM_NORMATIVE_FACTS = {
@@ -284,10 +286,10 @@ export function auditPolCom001Publication(content: string): {
   });
   findings.push({
     code: "PORTFOLIO_INACTIVITY_MISMATCH",
-    blocking: false,
-    document: "90 dias sem PV aprovado e sem CRM válido removem o responsável exclusivo.",
+    blocking: true,
+    document: "90 dias corridos sem novo Pedido de Venda aprovado e sem CRM válido removem o responsável exclusivo.",
     system:
-      "Rotina mensal customerCommercialOwnerInactivity: último SalesOrder SENT_TO_NOMUS (issueDate), preservação por CRM estruturado, baixa com INACTIVITY_90_DAYS e histórico em CrmCustomerPortfolioReview. O alerta de 90 dias do CRM permanece diagnóstico e não substitui esta rotina.",
+      "Rotina mensal customerCommercialOwnerInactivity: relógio = última NF / Documento de Saída válido (SalesOrderNfeLink → NomusNfe status 4, não cancelada, xmlDhEmi/dataProcessamento; NomusStockDocument não cancelado). SENT_TO_NOMUS + issueDate não reinicia. NEVER_INVOICED não remove. Preservação por CRM estruturado (sem Proposal.updatedAt sozinho). Baixa INACTIVITY_90_DAYS. Exige POLICY_VERSION_REQUIRED até republicar a §11.",
   });
   findings.push({
     code: "ELECTRONIC_GATE_AUDIENCE",
@@ -453,7 +455,7 @@ export function buildTransitionSnapshot(input: {
 export const POLICY_SYSTEM_MATRIX = [
   { section: "7 / Anexo I", rule: "Faixas de comissão", source: "Não parametrizado", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
   { section: "12", rule: "33% do supervisor", source: "Não parametrizado", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
-  { section: "11", rule: "90 dias e CRM", source: "customerCommercialOwnerInactivity (PV aprovado + CRM estruturado)", type: "NORMATIVE", versionable: true, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
+  { section: "11", rule: "90 dias e CRM", source: "customerCommercialOwnerInactivity (NF/DS válido + CRM estruturado; documento v1.0 ainda cita PV aprovado)", type: "NORMATIVE", versionable: true, impact: "POLICY_VERSION_REQUIRED", status: "POLICY_SYSTEM_MISMATCH" },
   { section: "14", rule: "Liberação por recebimento", source: "CommissionSettings.release.default_rule", type: "NORMATIVE", versionable: true, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
   { section: "5", rule: "Vendedor do pedido", source: "salesOrder.nomusSeller", type: "NORMATIVE", versionable: false, impact: "POLICY_VERSION_REQUIRED", status: "CONNECTED" },
   { section: "6", rule: "Conta institucional", source: "CommissionCustomerExclusionRule", type: "CONTROLLED_REFERENCE", versionable: true, impact: "CONTROLLED_REFERENCE_CHANGED", status: "CONNECTED" },

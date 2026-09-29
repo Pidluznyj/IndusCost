@@ -4,6 +4,7 @@ import { DOCUMENT_INACTIVITY_DAYS } from "@/src/lib/commercialPolicy/commercialP
 import {
   APPROVED_SALES_ORDER_STATUS,
   NEVER_APPROVED_SALES_ORDER,
+  NEVER_INVOICED,
   PORTFOLIO_INACTIVITY_REASON,
   PORTFOLIO_PRESERVED_REASON,
   calendarDaysBetweenSaoPaulo,
@@ -13,6 +14,7 @@ import {
   isInvalidForCommercialClock,
   isPortfolioReviewDue,
   pickLatestApprovedSalesOrder,
+  pickLatestValidInvoice,
   portfolioInactivityDays,
   saoPauloDateIso,
 } from "./customerCommercialOwnerInactivity.js";
@@ -344,11 +346,14 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
     const decision = decideCommercialOwnerInactivityAction({
       hasActiveOwner: true,
       lastApprovedOrder: null,
+      lastValidInvoice: null,
       referenceDate,
       preservation: EMPTY_PRESERVATION,
     });
     assert.equal(decision.action, "REVIEW_REQUIRED");
     assert.equal(decision.reasonCode, NEVER_APPROVED_SALES_ORDER);
+    assert.equal(decision.reasonCode, NEVER_INVOICED);
+    assert.equal(decision.status, "NEVER_INVOICED");
   });
 
   it("preservado num mês pode ser removido se o CRM deixar de ser válido", () => {
@@ -380,19 +385,66 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
     const preservation = evaluateCommercialPortfolioPreservation({
       referenceDate,
       lastApprovedIssueDate: LAST_PV,
-      proposals: [{ id: "p1", status: "SENT", expectedCloseDate: null, nextActionAt: null, updatedAt: spNoon("2026-08-01") }],
+      proposals: [
+        {
+          id: "p1",
+          status: "SENT",
+          expectedCloseDate: spNoon("2026-09-12"),
+          nextActionAt: spNoon("2026-09-05"),
+          updatedAt: spNoon("2026-08-01"),
+        },
+      ],
       contacts: [],
     });
     const decision = decideCommercialOwnerInactivityAction({
       hasActiveOwner: true,
       lastApprovedOrder: { id: "so-1", orderCode: "PV-1", issueDate: LAST_PV, status: "SENT_TO_NOMUS" },
+      lastValidInvoice: {
+        salesOrderId: "so-1",
+        salesOrderCode: "PV-1",
+        invoiceId: "nfe-1",
+        invoiceExternalId: 1,
+        invoiceNumber: "1",
+        invoiceDate: LAST_PV,
+        invoiceStatus: "4",
+        invoiceCanceled: false,
+        stockDocumentId: null,
+      },
       referenceDate,
       preservation,
     });
+    assert.equal(preservation.valid, true);
     assert.equal(decision.action, "KEEP_OWNER");
     assert.equal(decision.status, "PRESERVED_BY_CRM");
     assert.equal(decision.reasonCode, PORTFOLIO_PRESERVED_REASON);
     assert.ok(preservation.nextReviewDate);
+  });
+
+  it("Proposal.updatedAt técnico não preserva sozinho", () => {
+    const preservation = evaluateCommercialPortfolioPreservation({
+      referenceDate,
+      lastApprovedIssueDate: LAST_PV,
+      proposals: [{ id: "p-tech", status: "SENT", expectedCloseDate: null, nextActionAt: null, updatedAt: spNoon("2026-08-28") }],
+      contacts: [],
+    });
+    assert.equal(preservation.valid, false);
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: {
+        salesOrderId: "so-1",
+        salesOrderCode: "PV-1",
+        invoiceId: "nfe-1",
+        invoiceExternalId: 1,
+        invoiceNumber: "1",
+        invoiceDate: LAST_PV,
+        invoiceStatus: "4",
+        invoiceCanceled: false,
+        stockDocumentId: null,
+      },
+      referenceDate,
+      preservation,
+    });
+    assert.equal(decision.action, "REMOVE_OWNER");
   });
 });
 
@@ -413,5 +465,216 @@ describe("autoassign e agenda", () => {
     assert.equal(isPortfolioInactivityScheduledMinute(onSchedule), true);
     const otherDay = getSaoPauloDateTimeParts(new Date("2026-10-02T07:10:00.000Z"));
     assert.equal(isPortfolioInactivityScheduledMinute(otherDay), false);
+  });
+});
+
+describe("POL-COM-001 §11 — relógio por NF / Documento de Saída válido", () => {
+  const referenceDate = spNoon("2026-08-30");
+
+  function candidate(overrides: Record<string, unknown> = {}) {
+    return {
+      salesOrderId: "so-old",
+      salesOrderCode: "PD 02100",
+      nfeId: "nfe-1",
+      nfeExternalId: 111222,
+      nfeNumber: "111222",
+      nfeStatus: 4,
+      xmlDhEmi: spNoon("2026-06-01"),
+      dataProcessamento: spNoon("2026-06-01"),
+      xmlCancelamento: null,
+      stockDocumentId: "st-1",
+      stockIsCancelled: false,
+      stockStatusRaw: "emitido",
+      stockTipo: "saida",
+      stockDataDocumento: spNoon("2026-06-01"),
+      ...overrides,
+    };
+  }
+
+  function invoiceAt(iso: string) {
+    return {
+      salesOrderId: "so-1",
+      salesOrderCode: "PD 02710",
+      invoiceId: "nfe-1",
+      invoiceExternalId: 123456,
+      invoiceNumber: "123456",
+      invoiceDate: spNoon(iso),
+      invoiceStatus: "4",
+      invoiceCanceled: false,
+      stockDocumentId: "st-1",
+    };
+  }
+
+  it("PV SENT_TO_NOMUS sem NF não reinicia o relógio", () => {
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastApprovedOrder: { id: "so-new", orderCode: "PD 02710", issueDate: spNoon("2026-08-20"), status: "SENT_TO_NOMUS" },
+      lastValidInvoice: null,
+      referenceDate,
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.status, "NEVER_INVOICED");
+    assert.equal(decision.action, "REVIEW_REQUIRED");
+    assert.equal(pickLatestValidInvoice([]), null);
+  });
+
+  it("PV com NF válida reinicia o relógio", () => {
+    const latest = pickLatestValidInvoice([candidate({ xmlDhEmi: spNoon("2026-08-20") })]);
+    assert.equal(latest?.invoiceNumber, "111222");
+    assert.equal(
+      isPortfolioReviewDue({ lastValidInvoiceDate: latest!.invoiceDate, referenceDate }),
+      false
+    );
+  });
+
+  it("NF cancelada não conta", () => {
+    assert.equal(
+      pickLatestValidInvoice([
+        candidate({ nfeStatus: 7, xmlCancelamento: "<canc/>" }),
+        candidate({ nfeStatus: 7, stockIsCancelled: true }),
+      ]),
+      null
+    );
+  });
+
+  it("PV com NF válida antiga + PV recente sem NF usa a NF antiga", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({ salesOrderId: "so-old", xmlDhEmi: spNoon("2026-05-01") }),
+    ]);
+    assert.equal(latest?.salesOrderId, "so-old");
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastApprovedOrder: { id: "so-new", orderCode: "PD 02710", issueDate: spNoon("2026-08-20"), status: "SENT_TO_NOMUS" },
+      lastValidInvoice: latest,
+      referenceDate,
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.reviewDue, true);
+    assert.equal(decision.daysSinceLastValidInvoice, 121);
+  });
+
+  it("duas NFs válidas usa a mais recente", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({ nfeId: "a", nfeNumber: "1", xmlDhEmi: spNoon("2026-06-01") }),
+      candidate({ nfeId: "b", nfeNumber: "2", nfeExternalId: 2, xmlDhEmi: spNoon("2026-07-15") }),
+    ]);
+    assert.equal(latest?.invoiceNumber, "2");
+    assert.equal(saoPauloDateIso(latest!.invoiceDate), "2026-07-15");
+  });
+
+  it("NF válida + NF cancelada posterior usa a válida", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({ nfeId: "valid", nfeNumber: "123456", xmlDhEmi: spNoon("2026-06-01") }),
+      candidate({
+        nfeId: "canc",
+        nfeNumber: "999",
+        nfeExternalId: 999,
+        nfeStatus: 7,
+        xmlDhEmi: spNoon("2026-07-15"),
+        xmlCancelamento: "<canc/>",
+        stockIsCancelled: true,
+      }),
+    ]);
+    assert.equal(latest?.invoiceNumber, "123456");
+    assert.equal(saoPauloDateIso(latest!.invoiceDate), "2026-06-01");
+  });
+
+  it("faturamento parcial com NF válida conta", () => {
+    const latest = pickLatestValidInvoice([
+      candidate({ nfeNumber: "parcial", xmlDhEmi: spNoon("2026-08-01") }),
+    ]);
+    assert.ok(latest);
+    assert.equal(
+      isPortfolioReviewDue({ lastValidInvoiceDate: latest!.invoiceDate, referenceDate }),
+      false
+    );
+  });
+
+  it("cliente sem NF válida é NEVER_INVOICED", () => {
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: null,
+      referenceDate,
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.status, "NEVER_INVOICED");
+    assert.equal(decision.reasonCode, NEVER_INVOICED);
+    assert.equal(decision.action, "REVIEW_REQUIRED");
+  });
+
+  it("89 dias desde NF válida não revisa", () => {
+    const invoice = invoiceAt("2026-06-01");
+    assert.equal(calendarDaysBetweenSaoPaulo(invoice.invoiceDate, spNoon("2026-08-29")), 89);
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: invoice,
+      referenceDate: spNoon("2026-08-29"),
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.status, "ACTIVE");
+    assert.equal(decision.action, "KEEP_OWNER");
+  });
+
+  it("90 dias desde NF válida revisa", () => {
+    assert.equal(
+      isPortfolioReviewDue({ lastValidInvoiceDate: spNoon("2026-06-01"), referenceDate: spNoon("2026-08-30") }),
+      true
+    );
+  });
+
+  it("91 dias desde NF válida revisa", () => {
+    assert.equal(
+      isPortfolioReviewDue({ lastValidInvoiceDate: spNoon("2026-06-01"), referenceDate: spNoon("2026-08-31") }),
+      true
+    );
+  });
+
+  it("revisão + CRM válido preserva o responsável", () => {
+    const preservation = evaluateCommercialPortfolioPreservation({
+      referenceDate,
+      lastApprovedIssueDate: LAST_PV,
+      lastValidInvoiceDate: LAST_PV,
+      proposals: [
+        {
+          id: "p1",
+          status: "SENT",
+          expectedCloseDate: spNoon("2026-09-15"),
+          nextActionAt: spNoon("2026-09-10"),
+          updatedAt: spNoon("2026-08-18"),
+        },
+      ],
+      contacts: [],
+    });
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: invoiceAt("2026-06-01"),
+      referenceDate,
+      preservation,
+    });
+    assert.equal(decision.action, "KEEP_OWNER");
+    assert.equal(decision.status, "PRESERVED_BY_CRM");
+  });
+
+  it("revisão + CRM inválido remove o responsável", () => {
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: invoiceAt("2026-05-01"),
+      referenceDate,
+      preservation: EMPTY_PRESERVATION,
+    });
+    assert.equal(decision.action, "REMOVE_OWNER");
+    assert.equal(decision.status, "REMOVAL_ELIGIBLE");
+    assert.equal(decision.daysSinceLastValidInvoice, 121);
+  });
+
+  it("timezone SP não muda o dia civil da NF na virada UTC", () => {
+    const invoiceAlmostNextUtcDay = new Date("2026-06-02T02:30:00.000Z");
+    assert.equal(saoPauloDateIso(invoiceAlmostNextUtcDay), "2026-06-01");
+    const reference = new Date("2026-08-30T02:30:00.000Z");
+    assert.equal(calendarDaysBetweenSaoPaulo(invoiceAlmostNextUtcDay, reference), 89);
+    assert.equal(
+      isPortfolioReviewDue({ lastValidInvoiceDate: invoiceAlmostNextUtcDay, referenceDate: reference }),
+      false
+    );
   });
 });

@@ -9,19 +9,22 @@ import { CRM_CUSTOMER_COMMERCIAL_OWNER_ENTITY } from "@/src/lib/crmCustomerComme
 import {
   APPROVED_SALES_ORDER_STATUS,
   INACTIVITY_END_REASON_LABEL,
-  NEVER_APPROVED_SALES_ORDER,
+  NEVER_INVOICED,
   PORTFOLIO_INACTIVITY_REASON,
   PORTFOLIO_PRESERVED_REASON,
   calendarDaysBetweenSaoPaulo,
   decideCommercialOwnerInactivityAction,
   evaluateCommercialPortfolioPreservation,
   pickLatestApprovedSalesOrder,
+  pickLatestValidInvoice,
   portfolioInactivityDays,
   saoPauloDateIso,
   type CommercialPortfolioPreservation,
   type LastApprovedSalesOrder,
+  type LastValidInvoice,
   type PortfolioContactEvidence,
   type PortfolioInactivityAction,
+  type PortfolioInvoiceCandidate,
   type PortfolioProposalEvidence,
 } from "./customerCommercialOwnerInactivity.js";
 
@@ -48,27 +51,40 @@ type CustomerRow = {
 
 export type PortfolioInactivityPreviewRow = {
   customerId: string;
+  customerExternalId: number | null;
   externalId: number | null;
   taxId: string;
+  customerName: string;
   name: string;
   currentOwner: string | null;
+  lastInvoicedSalesOrderId: string | null;
+  lastInvoicedSalesOrderNumber: string | null;
+  lastValidInvoiceId: string | null;
+  lastValidInvoiceNumber: string | null;
+  lastValidInvoiceDate: string | null;
+  daysSinceLastValidInvoice: number | null;
+  invoiceStatus: string | null;
+  invoiceCanceled: boolean | null;
   lastApprovedSalesOrderId: string | null;
   lastApprovedSalesOrderCode: string | null;
   lastApprovedIssueDate: string | null;
   daysSinceLastApprovedOrder: number | null;
   crmValid: boolean;
+  crmEvidenceType: string | null;
   evidenceType: string | null;
   evidenceId: string | null;
   evidenceStatus: string | null;
   evidenceCode: string | null;
   evidenceDate: string | null;
+  businessEvidenceDate: string | null;
   evidenceAgeDays: number | null;
   evidenceDateSource: string | null;
   nextStep: string | null;
   nextStepDate: string | null;
   preservationReason: string | null;
   reasonCode: string;
-  proposedAction: PortfolioInactivityAction;
+  proposedAction: PortfolioInactivityAction | "KEEP_ACTIVE";
+  action: PortfolioInactivityAction | "KEEP_ACTIVE";
   status: string;
 };
 
@@ -81,6 +97,7 @@ export type PortfolioInactivityPreview = {
   inReview: number;
   preservedByCrm: number;
   removalEligible: number;
+  neverInvoiced: number;
   neverApprovedSalesOrder: number;
   alreadyUnassigned: number;
   rows: PortfolioInactivityPreviewRow[];
@@ -93,6 +110,7 @@ export type PortfolioInactivityApplyResult = {
   preserved: number;
   unchanged: number;
   skippedUnassigned: number;
+  neverInvoiced: number;
   neverApproved: number;
   results: Array<{
     customerId: string;
@@ -126,6 +144,116 @@ export async function loadLastApprovedSalesOrders(
   }
   for (const [customerId, list] of byCustomer) {
     const latest = pickLatestApprovedSalesOrder(list);
+    if (latest) map.set(customerId, latest);
+  }
+  return map;
+}
+
+export async function loadLastValidInvoices(
+  client: PrismaClient | Prisma.TransactionClient,
+  customerIds: string[]
+): Promise<Map<string, LastValidInvoice>> {
+  const map = new Map<string, LastValidInvoice>();
+  if (customerIds.length === 0) return map;
+  const db = asPrisma(client);
+  const orders = await db.salesOrder.findMany({
+    where: { customerId: { in: customerIds } },
+    select: { id: true, customerId: true, orderCode: true },
+  });
+  if (orders.length === 0) return map;
+  const orderIds = orders.map((row) => row.id);
+  const links = await db.salesOrderNfeLink.findMany({
+    where: { salesOrderId: { in: orderIds } },
+    select: {
+      salesOrderId: true,
+      nfeExternalId: true,
+      nfeNumber: true,
+      nfeStatus: true,
+      dataProcessamento: true,
+      nomusNfeId: true,
+    },
+  });
+  const nfeExternalIds = [...new Set(links.map((row) => row.nfeExternalId).filter((id) => Number.isFinite(id)))];
+  const [nfes, stocks] = nfeExternalIds.length
+    ? await Promise.all([
+        db.nomusNfe.findMany({
+          where: { externalId: { in: nfeExternalIds } },
+          select: {
+            id: true,
+            externalId: true,
+            numero: true,
+            status: true,
+            xmlDhEmi: true,
+            dataProcessamento: true,
+            xmlCancelamento: true,
+          },
+        }),
+        db.nomusStockDocument.findMany({
+          where: { idNfe: { in: nfeExternalIds } },
+          select: {
+            id: true,
+            idNfe: true,
+            isCancelled: true,
+            statusRaw: true,
+            tipoDocumentoEstoque: true,
+            dataDocumento: true,
+          },
+        }),
+      ])
+    : [[], []];
+
+  const nfeByExternalId = new Map(nfes.map((row) => [row.externalId, row]));
+  const stocksByIdNfe = new Map<number, typeof stocks>();
+  for (const stock of stocks) {
+    if (stock.idNfe == null) continue;
+    const list = stocksByIdNfe.get(stock.idNfe) ?? [];
+    list.push(stock);
+    stocksByIdNfe.set(stock.idNfe, list);
+  }
+  const orderById = new Map(orders.map((row) => [row.id, row]));
+  const candidatesByCustomer = new Map<string, PortfolioInvoiceCandidate[]>();
+
+  for (const link of links) {
+    const order = orderById.get(link.salesOrderId);
+    if (!order) continue;
+    const nfe = nfeByExternalId.get(link.nfeExternalId);
+    const relatedStocks = stocksByIdNfe.get(link.nfeExternalId) ?? [];
+    const base = {
+      salesOrderId: order.id,
+      salesOrderCode: order.orderCode,
+      nfeId: nfe?.id ?? link.nomusNfeId ?? null,
+      nfeExternalId: link.nfeExternalId,
+      nfeNumber: nfe?.numero ?? link.nfeNumber ?? null,
+      nfeStatus: nfe?.status ?? link.nfeStatus,
+      xmlDhEmi: nfe?.xmlDhEmi ?? null,
+      dataProcessamento: nfe?.dataProcessamento ?? link.dataProcessamento ?? null,
+      xmlCancelamento: nfe?.xmlCancelamento ?? null,
+    };
+    const variants: PortfolioInvoiceCandidate[] = [
+      {
+        ...base,
+        stockDocumentId: null,
+        stockIsCancelled: false,
+        stockStatusRaw: null,
+        stockTipo: null,
+        stockDataDocumento: null,
+      },
+      ...relatedStocks.map((stock) => ({
+        ...base,
+        stockDocumentId: stock.id,
+        stockIsCancelled: stock.isCancelled,
+        stockStatusRaw: stock.statusRaw,
+        stockTipo: stock.tipoDocumentoEstoque,
+        stockDataDocumento: stock.dataDocumento,
+      })),
+    ];
+    const list = candidatesByCustomer.get(order.customerId) ?? [];
+    list.push(...variants);
+    candidatesByCustomer.set(order.customerId, list);
+  }
+
+  for (const [customerId, candidates] of candidatesByCustomer) {
+    const latest = pickLatestValidInvoice(candidates);
     if (latest) map.set(customerId, latest);
   }
   return map;
@@ -203,16 +331,77 @@ export async function loadPortfolioCrmEvidence(
 
 function decideRow(input: {
   owner: OwnerRow | null;
-  lastApproved: LastApprovedSalesOrder | null;
+  lastInvoice: LastValidInvoice | null;
   preservation: CommercialPortfolioPreservation;
   referenceDate: Date;
 }) {
   return decideCommercialOwnerInactivityAction({
     hasActiveOwner: Boolean(input.owner?.isActive),
-    lastApprovedOrder: input.lastApproved,
+    lastValidInvoice: input.lastInvoice,
     referenceDate: input.referenceDate,
     preservation: input.preservation,
   });
+}
+
+function previewAction(
+  decision: ReturnType<typeof decideCommercialOwnerInactivityAction>
+): PortfolioInactivityAction | "KEEP_ACTIVE" {
+  if (decision.status === "ACTIVE") return "KEEP_ACTIVE";
+  return decision.action;
+}
+
+function toPreviewRow(input: {
+  customer: CustomerRow;
+  owner: OwnerRow | null;
+  lastInvoice: LastValidInvoice | null;
+  preservation: CommercialPortfolioPreservation;
+  decision: ReturnType<typeof decideCommercialOwnerInactivityAction>;
+}): PortfolioInactivityPreviewRow {
+  const action = previewAction(input.decision);
+  const invoiceDate = input.lastInvoice ? saoPauloDateIso(input.lastInvoice.invoiceDate) : null;
+  const evidenceDate = input.preservation.evidenceDate
+    ? saoPauloDateIso(input.preservation.evidenceDate)
+    : null;
+  return {
+    customerId: input.customer.id,
+    customerExternalId: input.customer.nomusExternalPersonId,
+    externalId: input.customer.nomusExternalPersonId,
+    taxId: input.customer.taxId,
+    customerName: input.customer.companyName,
+    name: input.customer.companyName,
+    currentOwner: input.owner?.isActive ? input.owner.sellerCanonicalName : null,
+    lastInvoicedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
+    lastInvoicedSalesOrderNumber: input.lastInvoice?.salesOrderCode ?? null,
+    lastValidInvoiceId: input.lastInvoice?.invoiceId ?? null,
+    lastValidInvoiceNumber: input.lastInvoice?.invoiceNumber ?? null,
+    lastValidInvoiceDate: invoiceDate,
+    daysSinceLastValidInvoice: input.decision.daysSinceLastValidInvoice,
+    invoiceStatus: input.lastInvoice?.invoiceStatus ?? null,
+    invoiceCanceled: input.lastInvoice ? input.lastInvoice.invoiceCanceled : null,
+    lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
+    lastApprovedSalesOrderCode: input.lastInvoice?.salesOrderCode ?? null,
+    lastApprovedIssueDate: invoiceDate,
+    daysSinceLastApprovedOrder: input.decision.daysSinceLastValidInvoice,
+    crmValid: input.preservation.valid,
+    crmEvidenceType: input.preservation.evidenceType,
+    evidenceType: input.preservation.evidenceType,
+    evidenceId: input.preservation.evidenceId,
+    evidenceStatus: input.preservation.evidenceStatus,
+    evidenceCode: input.preservation.evidenceCode,
+    evidenceDate,
+    businessEvidenceDate: evidenceDate,
+    evidenceAgeDays: input.preservation.evidenceAgeDays,
+    evidenceDateSource: input.preservation.evidenceDateSource,
+    nextStep: input.preservation.nextStep,
+    nextStepDate: input.preservation.nextStepDate
+      ? saoPauloDateIso(input.preservation.nextStepDate)
+      : null,
+    preservationReason: input.preservation.preservationReason,
+    reasonCode: input.decision.reasonCode,
+    proposedAction: action,
+    action,
+    status: input.decision.status,
+  };
 }
 
 export async function previewCommercialOwnerInactivity(
@@ -227,8 +416,8 @@ export async function previewCommercialOwnerInactivity(
   ]);
   const ownerByCustomer = new Map(owners.map((row) => [row.customerId, row]));
   const customerIds = customers.map((row) => row.id);
-  const [lastOrders, evidence] = await Promise.all([
-    loadLastApprovedSalesOrders(client, customerIds),
+  const [lastInvoices, evidence] = await Promise.all([
+    loadLastValidInvoices(client, customerIds),
     loadPortfolioCrmEvidence(client, customerIds),
   ]);
 
@@ -238,53 +427,34 @@ export async function previewCommercialOwnerInactivity(
   let inReview = 0;
   let preserved = 0;
   let removal = 0;
-  let neverApproved = 0;
+  let neverInvoiced = 0;
   let unassigned = 0;
 
   for (const customer of customers as CustomerRow[]) {
     const owner = ownerByCustomer.get(customer.id) ?? null;
-    const lastApproved = lastOrders.get(customer.id) ?? null;
+    const lastInvoice = lastInvoices.get(customer.id) ?? null;
     const preservation = evaluateCommercialPortfolioPreservation({
       referenceDate,
-      lastApprovedIssueDate: lastApproved?.issueDate ?? null,
+      lastApprovedIssueDate: lastInvoice?.invoiceDate ?? null,
+      lastValidInvoiceDate: lastInvoice?.invoiceDate ?? null,
       proposals: evidence.proposals.get(customer.id) ?? [],
       contacts: evidence.contacts.get(customer.id) ?? [],
     });
-    const decision = decideRow({ owner, lastApproved, preservation, referenceDate });
+    const decision = decideRow({ owner, lastInvoice, preservation, referenceDate });
     if (owner?.isActive) withActive += 1;
     if (decision.status === "ACTIVE") within += 1;
     if (decision.reviewDue) inReview += 1;
     if (decision.status === "PRESERVED_BY_CRM") preserved += 1;
     if (decision.action === "REMOVE_OWNER") removal += 1;
-    if (decision.reasonCode === NEVER_APPROVED_SALES_ORDER) neverApproved += 1;
+    if (decision.reasonCode === NEVER_INVOICED || decision.status === "NEVER_INVOICED") neverInvoiced += 1;
     if (decision.status === "UNASSIGNED") unassigned += 1;
 
-    if (decision.reviewDue || decision.reasonCode === NEVER_APPROVED_SALES_ORDER) {
-      rows.push({
-        customerId: customer.id,
-        externalId: customer.nomusExternalPersonId,
-        taxId: customer.taxId,
-        name: customer.companyName,
-        currentOwner: owner?.isActive ? owner.sellerCanonicalName : null,
-        lastApprovedSalesOrderId: lastApproved?.id ?? null,
-        lastApprovedSalesOrderCode: lastApproved?.orderCode ?? null,
-        lastApprovedIssueDate: lastApproved ? saoPauloDateIso(lastApproved.issueDate) : null,
-        daysSinceLastApprovedOrder: decision.daysSinceLastApprovedOrder,
-        crmValid: preservation.valid,
-        evidenceType: preservation.evidenceType,
-        evidenceId: preservation.evidenceId,
-        evidenceStatus: preservation.evidenceStatus,
-        evidenceCode: preservation.evidenceCode,
-        evidenceDate: preservation.evidenceDate ? saoPauloDateIso(preservation.evidenceDate) : null,
-        evidenceAgeDays: preservation.evidenceAgeDays,
-        evidenceDateSource: preservation.evidenceDateSource,
-        nextStep: preservation.nextStep,
-        nextStepDate: preservation.nextStepDate ? saoPauloDateIso(preservation.nextStepDate) : null,
-        preservationReason: preservation.preservationReason,
-        reasonCode: decision.reasonCode,
-        proposedAction: decision.action,
-        status: decision.status,
-      });
+    const shouldList =
+      Boolean(owner?.isActive) ||
+      decision.reviewDue ||
+      decision.reasonCode === NEVER_INVOICED;
+    if (shouldList) {
+      rows.push(toPreviewRow({ customer, owner, lastInvoice, preservation, decision }));
     }
   }
 
@@ -297,7 +467,8 @@ export async function previewCommercialOwnerInactivity(
     inReview,
     preservedByCrm: preserved,
     removalEligible: removal,
-    neverApprovedSalesOrder: neverApproved,
+    neverInvoiced,
+    neverApprovedSalesOrder: neverInvoiced,
     alreadyUnassigned: unassigned,
     rows,
   };
@@ -309,7 +480,7 @@ async function recordReviewAndMaybeRemove(input: {
   referenceDate: Date;
   customer: CustomerRow;
   owner: OwnerRow;
-  lastApproved: LastApprovedSalesOrder | null;
+  lastInvoice: LastValidInvoice | null;
   preservation: CommercialPortfolioPreservation;
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>;
 }): Promise<"REMOVED" | "PRESERVED" | "NO_CHANGE"> {
@@ -317,20 +488,27 @@ async function recordReviewAndMaybeRemove(input: {
   if (input.decision.action === "REVIEW_REQUIRED") return "NO_CHANGE";
   if (input.decision.action === "KEEP_OWNER" && !input.decision.reviewDue) return "NO_CHANGE";
 
-  const days = input.decision.daysSinceLastApprovedOrder;
+  const days = input.decision.daysSinceLastValidInvoice;
   const payload = {
     customerId: input.customer.id,
     previousOwnerIdentityKey: input.owner.sellerIdentityKey,
     previousOwnerName: input.owner.sellerCanonicalName,
     ownerStartedAt: input.owner.createdAt.toISOString(),
-    lastApprovedSalesOrderId: input.lastApproved?.id ?? null,
-    lastApprovedIssueDate: input.lastApproved ? saoPauloDateIso(input.lastApproved.issueDate) : null,
-    daysSinceLastApprovedOrder: days,
+    lastInvoicedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
+    lastInvoicedSalesOrderNumber: input.lastInvoice?.salesOrderCode ?? null,
+    lastValidInvoiceId: input.lastInvoice?.invoiceId ?? null,
+    lastValidInvoiceNumber: input.lastInvoice?.invoiceNumber ?? null,
+    lastValidInvoiceDate: input.lastInvoice ? saoPauloDateIso(input.lastInvoice.invoiceDate) : null,
+    daysSinceLastValidInvoice: days,
+    invoiceStatus: input.lastInvoice?.invoiceStatus ?? null,
+    invoiceCanceled: input.lastInvoice?.invoiceCanceled ?? null,
     crmValid: input.preservation.valid,
+    crmDecision: input.preservation.valid ? PORTFOLIO_PRESERVED_REASON : input.preservation.reasonCode,
     evidenceType: input.preservation.evidenceType,
     evidenceId: input.preservation.evidenceId,
     runId: input.runId,
     analyzedAt: input.referenceDate.toISOString(),
+    clockSource: "lastValidInvoiceDate",
   };
 
   if (input.decision.action === "KEEP_OWNER" && input.decision.reviewDue) {
@@ -344,9 +522,9 @@ async function recordReviewAndMaybeRemove(input: {
           previousOwnerIdentityKey: input.owner.sellerIdentityKey,
           previousOwnerName: input.owner.sellerCanonicalName,
           ownerStartedAt: input.owner.createdAt,
-          lastApprovedSalesOrderId: input.lastApproved?.id ?? null,
-          lastApprovedSalesOrderCode: input.lastApproved?.orderCode ?? null,
-          lastApprovedIssueDate: input.lastApproved?.issueDate ?? null,
+          lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
+          lastApprovedSalesOrderCode: input.lastInvoice?.salesOrderCode ?? null,
+          lastApprovedIssueDate: input.lastInvoice?.invoiceDate ?? null,
           daysSinceLastApprovedOrder: days,
           crmValid: true,
           evidenceType: input.preservation.evidenceType,
@@ -402,9 +580,9 @@ async function recordReviewAndMaybeRemove(input: {
         previousOwnerName: current.sellerCanonicalName,
         ownerStartedAt: current.createdAt,
         ownerEndedAt: endedAt,
-        lastApprovedSalesOrderId: input.lastApproved?.id ?? null,
-        lastApprovedSalesOrderCode: input.lastApproved?.orderCode ?? null,
-        lastApprovedIssueDate: input.lastApproved?.issueDate ?? null,
+        lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
+        lastApprovedSalesOrderCode: input.lastInvoice?.salesOrderCode ?? null,
+        lastApprovedIssueDate: input.lastInvoice?.invoiceDate ?? null,
         daysSinceLastApprovedOrder: days,
         crmValid: false,
         evidenceType: input.preservation.evidenceType,
@@ -446,8 +624,8 @@ export async function applyCommercialOwnerInactivity(
       })
     : [];
   const customerById = new Map(customers.map((row) => [row.id, row]));
-  const [lastOrders, evidence] = await Promise.all([
-    loadLastApprovedSalesOrders(client, customerIds),
+  const [lastInvoices, evidence] = await Promise.all([
+    loadLastValidInvoices(client, customerIds),
     loadPortfolioCrmEvidence(client, customerIds),
   ]);
 
@@ -455,7 +633,7 @@ export async function applyCommercialOwnerInactivity(
   let removed = 0;
   let preserved = 0;
   let unchanged = 0;
-  let neverApproved = 0;
+  let neverInvoiced = 0;
 
   for (const owner of owners) {
     const customer = customerById.get(owner.customerId);
@@ -464,20 +642,21 @@ export async function applyCommercialOwnerInactivity(
       results.push({ customerId: owner.customerId, action: "NO_CHANGE", reasonCode: "CUSTOMER_MISSING" });
       continue;
     }
-    const lastApproved = lastOrders.get(owner.customerId) ?? null;
+    const lastInvoice = lastInvoices.get(owner.customerId) ?? null;
     const preservation = evaluateCommercialPortfolioPreservation({
       referenceDate,
-      lastApprovedIssueDate: lastApproved?.issueDate ?? null,
+      lastApprovedIssueDate: lastInvoice?.invoiceDate ?? null,
+      lastValidInvoiceDate: lastInvoice?.invoiceDate ?? null,
       proposals: evidence.proposals.get(owner.customerId) ?? [],
       contacts: evidence.contacts.get(owner.customerId) ?? [],
     });
-    const decision = decideRow({ owner, lastApproved, preservation, referenceDate });
-    if (decision.reasonCode === NEVER_APPROVED_SALES_ORDER) {
-      neverApproved += 1;
+    const decision = decideRow({ owner, lastInvoice, preservation, referenceDate });
+    if (decision.reasonCode === NEVER_INVOICED || decision.status === "NEVER_INVOICED") {
+      neverInvoiced += 1;
       results.push({
         customerId: owner.customerId,
         action: "REVIEW_REQUIRED",
-        reasonCode: NEVER_APPROVED_SALES_ORDER,
+        reasonCode: NEVER_INVOICED,
       });
       continue;
     }
@@ -487,7 +666,7 @@ export async function applyCommercialOwnerInactivity(
       referenceDate,
       customer,
       owner,
-      lastApproved,
+      lastInvoice,
       preservation,
       decision,
     });
@@ -522,7 +701,8 @@ export async function applyCommercialOwnerInactivity(
     preserved,
     unchanged,
     skippedUnassigned: 0,
-    neverApproved,
+    neverInvoiced,
+    neverApproved: neverInvoiced,
     results,
   };
 }
@@ -532,11 +712,11 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
     `referenceDate=${preview.referenceDate}`,
     `analisados=${preview.analyzedCustomers}`,
     `com responsável ativo=${preview.customersWithActiveOwner}`,
-    `abaixo de ${portfolioInactivityDays()} dias=${preview.withinActivityWindow}`,
+    `abaixo de ${portfolioInactivityDays()} dias por NF válida=${preview.withinActivityWindow}`,
     `em revisão=${preview.inReview}`,
     `preservados por CRM=${preview.preservedByCrm}`,
     `elegíveis para remoção=${preview.removalEligible}`,
-    `sem PV aprovado=${preview.neverApprovedSalesOrder}`,
+    `never invoiced=${preview.neverInvoiced}`,
     `já sem responsável=${preview.alreadyUnassigned}`,
     "",
   ];
@@ -544,18 +724,20 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
     lines.push(
       [
         row.customerId,
-        row.externalId ?? "-",
-        row.name,
+        row.customerExternalId ?? row.externalId ?? "-",
+        row.customerName ?? row.name,
         row.currentOwner ?? "sem responsável",
-        row.lastApprovedSalesOrderCode ?? "nunca",
-        `dias=${row.daysSinceLastApprovedOrder ?? "-"}`,
+        `PV=${row.lastInvoicedSalesOrderNumber ?? "nunca"}`,
+        `NF=${row.lastValidInvoiceNumber ?? "-"}`,
+        `NF date=${row.lastValidInvoiceDate ?? "-"}`,
+        `dias=${row.daysSinceLastValidInvoice ?? "-"}`,
         `crm=${row.crmValid ? "sim" : "não"}`,
-        row.evidenceType ?? "-",
+        row.crmEvidenceType ?? row.evidenceType ?? "-",
         row.reasonCode,
-        row.proposedAction,
+        `action=${row.action ?? row.proposedAction}`,
       ].join(" | ")
     );
-    if (row.proposedAction === "KEEP_OWNER" && row.crmValid) {
+    if ((row.proposedAction === "KEEP_OWNER" || row.action === "KEEP_OWNER") && row.crmValid) {
       lines.push(`  evidenceType=${row.evidenceType ?? "-"}`);
       lines.push(`  evidenceId=${row.evidenceId ?? "-"}`);
       lines.push(`  evidenceStatus=${row.evidenceStatus ?? "-"}`);

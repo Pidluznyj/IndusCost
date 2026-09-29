@@ -213,11 +213,13 @@ describe("rascunho e publicação", () => {
     assert.equal(canApplyNormativeValue({ policyStatus: "PUBLISHED", effectiveFrom: NOW, now: later }), true);
   });
 
-  it("a rotina de 90 dias deixa de bloquear a publicação, sem marcar a política IN_SYNC", () => {
+  it("a rotina operacional por NF válida diverge do texto v1.0 e exige nova versão da política", () => {
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
     const finding = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
-    assert.equal(finding?.blocking, false);
-    assert.match(finding?.system ?? "", /SENT_TO_NOMUS/);
+    assert.equal(finding?.blocking, true);
+    assert.match(finding?.document ?? "", /Pedido de Venda aprovado/);
+    assert.match(finding?.system ?? "", /NF \/ Documento de Saída válido/);
+    assert.doesNotMatch(finding?.system ?? "", /último SalesOrder SENT_TO_NOMUS \(issueDate\)/);
     assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
     const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
     assert.equal(snapshot.portfolio.inactivityDays, 90);
