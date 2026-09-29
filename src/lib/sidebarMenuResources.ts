@@ -45,6 +45,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "org-chart": ResourceKeys.ADMIN_PESSOAS,
   guide: ResourceKeys.ADMIN_GUIA,
   goals: ResourceKeys.ADMIN_METAS,
+  exposure: ResourceKeys.ADMIN_EXPOSURE,
   opex: ResourceKeys.FINANCE_OPEX,
   taxes: ResourceKeys.FINANCE_TAXES,
   reports: ResourceKeys.FINANCE_REPORTS,

@@ -153,6 +153,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   ],
   guide: ["guide.view", "dashboard.view"],
   goals: ["goals.view"],
+  exposure: ["legal.exposure.view"],
 };
 
 /** Definição estática dos grupos oficiais da sidebar. */
@@ -248,7 +249,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Administração",
     iconKey: "Settings",
     order: 8,
-    itemIds: ["settings", "guide"],
+    itemIds: ["settings", "guide", "exposure"],
   },
 ];
 

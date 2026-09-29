@@ -74,6 +74,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   goals: "dashboard",
   settings: "administracao",
   guide: "administracao",
+  exposure: "administracao",
 };
 
 /** Paths canônicos que diferem de `/${moduleId}` — espelho de getModulePath. */

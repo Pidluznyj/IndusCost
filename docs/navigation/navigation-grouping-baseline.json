@@ -496,6 +496,18 @@
     },
     {
       "order": 39,
+      "itemId": "exposure",
+      "label": "Exposure",
+      "path": "/exposure",
+      "groupId": "administracao",
+      "groupLabel": "Administração",
+      "isDirect": false,
+      "requiredPermissions": [
+        "legal.exposure.view"
+      ]
+    },
+    {
+      "order": 40,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -547,6 +559,7 @@
     "portfolio-reconciliation": true,
     "goals": true,
     "guide": true,
+    "exposure": true,
     "settings": true
   },
   "permissionKeysByModule": {
@@ -699,6 +712,9 @@
     "guide": [
       "guide.view",
       "dashboard.view"
+    ],
+    "exposure": [
+      "legal.exposure.view"
     ],
     "goals": [
       "goals.view"

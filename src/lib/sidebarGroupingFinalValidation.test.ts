@@ -112,7 +112,7 @@ const EXPECTED_MENU: Record<
   ],
   // P1 (OKR): "Objetivos e Metas" saiu de Administração e virou item direto
   // ao lado do Dashboard — gestão do negócio, não configuração do sistema.
-  Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide],
+  Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide, MODULE_LABELS.exposure],
 };
 
 describe("validação final — estrutura de menu agrupado", () => {

@@ -263,6 +263,7 @@ import {
 } from "./src/lib/canonicalPersonRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
+import { registerLegalExposureRoutes } from "./src/lib/legalExposure/legalExposureRoutes.js";
 import { registerSatisfactionRoutes } from "./src/lib/satisfaction/satisfactionRoutes.js";
 import { registerSatisfactionPublicRoutes } from "./src/lib/satisfaction/satisfactionPublicRoutes.js";
 import {
@@ -15346,6 +15347,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireResource,
     getCurrentAppUser,
     authorizeRequest: authorizeResourceRequest,
+  });
+
+  registerLegalExposureRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
   });
 
   registerSatisfactionRoutes(app, {

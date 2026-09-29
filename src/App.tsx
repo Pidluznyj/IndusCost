@@ -21,6 +21,7 @@ import { FinancePortfolioReconciliationPage } from "./components/finance/Finance
 import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
 import { GoalsCockpitPage } from "./components/goals/GoalsCockpitPage";
+import { ExposurePage } from "./components/legalExposure/ExposurePage";
 import { SatisfactionModule } from "./components/commercial/satisfaction/SatisfactionModule";
 import { SatisfactionResultsPage } from "./components/commercial/satisfaction/SatisfactionResultsPage";
 import { SatisfactionInvitationsPage } from "./components/commercial/satisfaction/SatisfactionInvitationsPage";
@@ -1291,6 +1292,17 @@ export default function App() {
               description="Trajetória, fatias da equipe e iniciativas do objetivo."
             >
               <GoalDetailPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="exposure"
+          element={
+            <ModulePageShell
+              title="Exposure"
+              description="Monitoramento Jurídico Corporativo"
+            >
+              <ExposurePage />
             </ModulePageShell>
           }
         />

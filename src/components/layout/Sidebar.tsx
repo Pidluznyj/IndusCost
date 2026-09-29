@@ -42,6 +42,7 @@ import {
   PackageCheck,
   Landmark,
   Target,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -150,6 +151,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   reports: FileText,
   goals: Target,
   guide: BookOpen,
+  exposure: Shield,
   settings: Settings,
 };
 

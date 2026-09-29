@@ -150,6 +150,12 @@ export const ResourceKeys = {
   ADMIN_GUIA: "admin.guide",
   ADMIN_SETTINGS: "admin.settings",
   ADMIN_METAS: "admin.goals",
+  ADMIN_EXPOSURE: "admin.exposure",
+  ADMIN_EXPOSURE_SOURCES: "admin.exposure.sources",
+  ADMIN_EXPOSURE_SYNC: "admin.exposure.sync",
+  ADMIN_EXPOSURE_CERTIFICATES: "admin.exposure.certificates",
+  ADMIN_EXPOSURE_COMMUNICATIONS: "admin.exposure.communications",
+  ADMIN_EXPOSURE_SETTINGS: "admin.exposure.settings",
 } as const;
 
 export type PortfolioReconciliationUiTabId =
@@ -1070,6 +1076,48 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "SUBMENU",
     parentKey: ResourceKeys.ADMIN,
     legacyAliasKeys: ["guide.view"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE,
+    label: "Exposure",
+    type: "MENU",
+    parentKey: ResourceKeys.ADMIN,
+    legacyAliasKeys: ["legal.exposure.view", "legal.exposure.manage"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE_SOURCES,
+    label: "Exposure — Fontes",
+    type: "TAB",
+    parentKey: ResourceKeys.ADMIN_EXPOSURE,
+    legacyAliasKeys: ["legal.exposure.sources.view", "legal.exposure.sources.manage"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE_SYNC,
+    label: "Exposure — Sincronização",
+    type: "ACTION",
+    parentKey: ResourceKeys.ADMIN_EXPOSURE,
+    legacyAliasKeys: ["legal.exposure.sync.execute"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE_CERTIFICATES,
+    label: "Exposure — Certidões",
+    type: "TAB",
+    parentKey: ResourceKeys.ADMIN_EXPOSURE,
+    legacyAliasKeys: ["legal.exposure.certificates.view", "legal.exposure.certificates.manage"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE_COMMUNICATIONS,
+    label: "Exposure — Comunicações",
+    type: "TAB",
+    parentKey: ResourceKeys.ADMIN_EXPOSURE,
+    legacyAliasKeys: ["legal.exposure.communications.view"],
+  },
+  {
+    key: ResourceKeys.ADMIN_EXPOSURE_SETTINGS,
+    label: "Exposure — Configurações",
+    type: "TAB",
+    parentKey: ResourceKeys.ADMIN_EXPOSURE,
+    legacyAliasKeys: ["legal.exposure.settings.view", "legal.exposure.settings.manage"],
   },
   {
     key: ResourceKeys.ADMIN_SETTINGS,

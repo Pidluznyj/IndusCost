@@ -45,6 +45,7 @@ export type AppModuleId =
   | "portfolio-reconciliation"
   | "goals"
   | "guide"
+  | "exposure"
   | "settings";
 
 export type PermissionChecker = {
@@ -96,6 +97,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "portfolio-reconciliation",
   "goals",
   "guide",
+  "exposure",
   "settings",
 ];
 
@@ -219,6 +221,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "guide":
       // PERM-42: sem bleed de dashboard.view
       return check.hasPermission("guide.view");
+    case "exposure":
+      return check.hasPermission("legal.exposure.view");
     default:
       return false;
   }
@@ -461,6 +465,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "portfolio-reconciliation": "Conciliação de Carteira",
   goals: "Objetivos e Metas",
   guide: "Guia do Sistema",
+  exposure: "Exposure",
   settings: "Configurações",
 };
 

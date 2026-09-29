@@ -85,6 +85,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
   perm({ key: "guide.view", label: "Guia do Sistema", group: G, module: "guide", description: "Acessar o guia funcional do sistema.", type: "menu" }),
 
+  perm({ key: "legal.exposure.view", label: "Exposure", group: SYS, module: "exposure", description: "Ver o monitoramento jurídico das empresas do grupo.", type: "menu", risk: "sensitive" }),
+  perm({ key: "legal.exposure.manage", label: "Exposure — gerenciar", group: SYS, module: "exposure", description: "Cadastrar empresas monitoradas e tratar alertas.", type: "action", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"], risk: "sensitive" }),
+  perm({ key: "legal.exposure.sync.execute", label: "Exposure — sincronizar", group: SYS, module: "exposure", description: "Disparar consulta das fontes jurídicas.", type: "action", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"], risk: "critical" }),
+  perm({ key: "legal.exposure.sources.view", label: "Exposure — ver fontes", group: SYS, module: "exposure", description: "Ver saúde das fontes jurídicas, sem segredos.", type: "section", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"], risk: "sensitive" }),
+  perm({ key: "legal.exposure.sources.manage", label: "Exposure — gerenciar fontes", group: SYS, module: "exposure", description: "Alterar monitoramento por fonte.", type: "action", parentKey: "legal.exposure.sources.view", requires: ["legal.exposure.sources.view"], risk: "critical" }),
+  perm({ key: "legal.exposure.certificates.view", label: "Exposure — ver certidões", group: SYS, module: "exposure", description: "Consultar certidões registradas.", type: "section", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"] }),
+  perm({ key: "legal.exposure.certificates.manage", label: "Exposure — registrar certidões", group: SYS, module: "exposure", description: "Registrar certidão manual, sem scraping.", type: "action", parentKey: "legal.exposure.certificates.view", requires: ["legal.exposure.certificates.view"], risk: "sensitive" }),
+  perm({ key: "legal.exposure.communications.view", label: "Exposure — ver comunicações", group: SYS, module: "exposure", description: "Ver metadados de comunicações. Não dá ciência.", type: "section", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"], risk: "sensitive" }),
+  perm({ key: "legal.exposure.settings.view", label: "Exposure — ver configuração", group: SYS, module: "exposure", description: "Ver se as fontes estão configuradas, sem segredos.", type: "section", parentKey: "legal.exposure.view", requires: ["legal.exposure.view"] }),
+  perm({ key: "legal.exposure.settings.manage", label: "Exposure — gerenciar configuração", group: SYS, module: "exposure", description: "Alterar parâmetros não secretos do monitoramento.", type: "action", parentKey: "legal.exposure.settings.view", requires: ["legal.exposure.settings.view"], risk: "critical" }),
+
   // —— Metas (OKR) — docs/goal-engine-plan.md ——
   perm({ key: "goals.view", label: "Metas (OKR)", group: G, module: "goals", description: "Acessar o cockpit de metas e ver objetivos/KRs.", type: "menu" }),
   perm({ key: "goals.create", label: "Metas — criar", group: G, module: "goals", description: "Criar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),

@@ -67,6 +67,8 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   suppliers: "Forn.",
   "portfolio-reconciliation": "Conc.",
   guide: "Guia",
+  goals: "Metas",
+  exposure: "Expos.",
   settings: "Config.",
 };
 

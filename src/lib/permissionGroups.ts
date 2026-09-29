@@ -53,6 +53,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   dashboard: "dashboard-sistema",
   reports: "financeiro",
   guide: "administracao",
+  exposure: "administracao",
   products: "engenharia",
   "transformation-simulator": "engenharia",
   materials: "engenharia",
@@ -174,6 +175,7 @@ export const PERMISSION_ACCESS_GROUP_DEFINITIONS: readonly PermissionAccessGroup
       MODULE_LABELS.employees,
       MODULE_LABELS.settings,
       MODULE_LABELS.guide,
+      MODULE_LABELS.exposure,
     ],
   },
   {
@@ -375,7 +377,7 @@ export function getRelatedSidebarModulesForAccessGroup(
         "fleet",
       ];
     case "administracao":
-      return ["employees", "settings", "guide"];
+      return ["employees", "settings", "guide", "exposure"];
     default:
       return [];
   }

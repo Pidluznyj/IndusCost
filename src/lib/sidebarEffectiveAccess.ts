@@ -124,6 +124,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
    */
   goals: ["admin.goals"],
   guide: ["admin.guide"],
+  exposure: ["admin.exposure"],
   settings: ["admin.settings"],
 };
 
