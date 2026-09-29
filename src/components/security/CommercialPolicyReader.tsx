@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { POL_COM_001_CHAPTERS, type OfficialPolicyBlock } from "@/src/lib/commercialPolicy/official/polCom001V1Document.js";
+import { POL_COM_001_CHAPTERS, type OfficialPolicyBlock, type OfficialPolicyChapter } from "@/src/lib/commercialPolicy/official/polCom001V1Document.js";
 import {
   POL_COM_001_APPROVER,
   POL_COM_001_AREA,
   POL_COM_001_CLASSIFICATION,
+  POL_COM_001_CNPJ,
   POL_COM_001_CODE,
+  POL_COM_001_COMPANY,
   POL_COM_001_VERSION_LABEL,
 } from "@/src/lib/commercialPolicy/official/polCom001V1View.js";
 
@@ -28,16 +30,55 @@ function tone(text: string): string {
 }
 
 function blockText(block: OfficialPolicyBlock): string {
-  return block.type === "term" ? `${block.term} ${block.definition}` : block.text;
+  if (block.type === "term") return `${block.term} ${block.definition}`;
+  if (block.type === "table") return block.rows.map((row) => row.join(" ")).join(" ");
+  return block.text;
 }
 
+/** Tabela do documento oficial (capa, aprovação, Anexo I, Anexo IV): primeira linha é cabeçalho. */
+const PolicyTable: React.FC<{ rows: string[][] }> = ({ rows }) => {
+  const [head, ...body] = rows;
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full border-collapse text-sm">
+        {head ? (
+          <thead className="bg-muted/60">
+            <tr>
+              {head.map((cell, cellIndex) => (
+                <th key={cellIndex} className="border-b border-border px-3 py-2 text-left text-xs font-bold">{cell}</th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody>
+          {body.map((row, rowIndex) => (
+            <tr key={rowIndex} className={rowIndex % 2 === 1 ? "bg-muted/20" : ""}>
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} className="border-b border-border/60 px-3 py-2 align-top leading-relaxed">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/**
+ * Leitor do documento oficial. É o MESMO renderizador para o vendedor
+ * (modo aceite) e para a prévia do SUPER_ADMIN (modo preview, sem
+ * "Concluir leitura"). Renderiza texto, listas, glossário e tabelas.
+ */
 export const CommercialPolicyReader: React.FC<{
-  effectiveFrom: string;
+  effectiveFrom: string | null;
   initialChapterId?: string | null;
+  mode?: "acceptance" | "preview";
+  versionLabel?: string;
+  chapters?: OfficialPolicyChapter[];
   onGeneratePdf: () => void;
-  onFinish: () => void;
-}> = ({ effectiveFrom, initialChapterId, onGeneratePdf, onFinish }) => {
-  const chapters = POL_COM_001_CHAPTERS;
+  onFinish?: () => void;
+}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, chapters: chaptersProp, onGeneratePdf, onFinish }) => {
+  const chapters = chaptersProp ?? POL_COM_001_CHAPTERS;
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
   const [chapterId, setChapterId] = useState(start);
   const [visited, setVisited] = useState<Set<string>>(() => new Set([start]));
@@ -90,18 +131,25 @@ export const CommercialPolicyReader: React.FC<{
     return `${term.term} ${term.definition}`.toLowerCase().includes(needle);
   });
 
+  const vigencia = effectiveFrom ? new Date(effectiveFrom).toLocaleString("pt-BR") : "a definir na publicação";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="border-b border-border bg-card px-4 py-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold tracking-wide text-amber-800">DOCUMENTO CONTROLADO · USO INTERNO E RESTRITO</p>
+            <p className="text-[11px] font-bold tracking-wide text-amber-800">
+              DOCUMENTO CONTROLADO · USO INTERNO E RESTRITO{mode === "preview" ? " · PRÉVIA DO SUPER ADMIN" : ""}
+            </p>
             <h1 className="text-lg font-bold">Política Comercial e de Comissionamento</h1>
             <p className="text-xs text-muted-foreground">
-              {POL_COM_001_CODE} · Versão {POL_COM_001_VERSION_LABEL} · {POL_COM_001_CLASSIFICATION}
+              {POL_COM_001_CODE} · Versão {versionLabel} · {POL_COM_001_CLASSIFICATION}
             </p>
             <p className="text-xs text-muted-foreground">
-              Área: {POL_COM_001_AREA} · Aprovador: {POL_COM_001_APPROVER} · Vigência: {new Date(effectiveFrom).toLocaleString("pt-BR")}
+              {POL_COM_001_COMPANY} · CNPJ {POL_COM_001_CNPJ}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Área: {POL_COM_001_AREA} · Aprovador: {POL_COM_001_APPROVER} · Vigência: {vigencia}
             </p>
           </div>
           <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs font-semibold" onClick={onGeneratePdf}>
@@ -192,6 +240,7 @@ export const CommercialPolicyReader: React.FC<{
             {chapter?.blocks.map((block, blockIndex) => {
               if (block.type === "heading") return <h3 key={blockIndex} className="pt-2 text-base font-bold">{block.text}</h3>;
               if (block.type === "bullet") return <p key={blockIndex} className={`rounded-lg px-3 py-2 text-sm leading-relaxed ${tone(block.text)}`}>• {block.text}</p>;
+              if (block.type === "table") return <PolicyTable key={blockIndex} rows={block.rows} />;
               if (block.type === "term") return null;
               return <p key={blockIndex} className={`rounded-lg px-3 py-2 text-sm leading-relaxed ${tone(block.text)}`}>{block.text}</p>;
             })}
@@ -208,6 +257,8 @@ export const CommercialPolicyReader: React.FC<{
             <button type="button" className="rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground" onClick={() => openChapter(chapters[index + 1].id)}>
               Próximo
             </button>
+          ) : mode === "preview" || !onFinish ? (
+            <p className="px-4 py-3 text-sm font-semibold text-muted-foreground">Fim do documento</p>
           ) : (
             <button type="button" className="rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground" onClick={onFinish}>
               Concluir leitura

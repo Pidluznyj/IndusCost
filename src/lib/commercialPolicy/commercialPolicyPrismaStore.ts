@@ -229,6 +229,12 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
         data: { status: "RETIRED" },
       });
     },
+    async retirePublishedEffectiveBefore(policyId, effectiveBefore, keepId) {
+      await client.commercialPolicyVersion.updateMany({
+        where: { policyId, status: "PUBLISHED", id: { not: keepId }, effectiveFrom: { lt: effectiveBefore } },
+        data: { status: "RETIRED" },
+      });
+    },
     async markPublished(id, patch) {
       const updated = await client.commercialPolicyVersion.updateMany({
         where: { id, status: "DRAFT" },

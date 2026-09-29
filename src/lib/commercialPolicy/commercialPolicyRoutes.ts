@@ -22,13 +22,20 @@ import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore
 import {
   auditPolCom001Publication,
   buildCurrentCommercialPolicyNormativeSnapshot,
+  buildPolCom001ReconciliationMatrix,
   COMMERCIAL_POLICY_DEPENDENCIES,
+  compareDraftToCurrentNormativeState,
   comparePublishedPolicyToCurrentNormativeState,
+  normativeSnapshotHash,
+  sectionsAffectedByChanges,
+  type NormativeSnapshot,
+  type ReleaseNormativeInput,
 } from "./commercialPolicyNormative.js";
-import { officialCommercialPolicyBody } from "./official/polCom001V1.js";
+import { officialCommercialPolicyBody, officialCommercialPolicyHash } from "./official/polCom001V1.js";
 import {
   createPolicyDraft,
   createSignatureChallenge,
+  findPendingRevisionDraft,
   invalidateCommercialPolicyAcceptance,
   openNormativeRevision,
   publishOfficialCommercialPolicy,
@@ -37,16 +44,38 @@ import {
   recordKnowledgeAttempt,
   saveSignaturePhoto,
   signCommercialPolicy,
+  versionAdminView,
+  versionLabelOf,
   versionPublicView,
   type PolicyActor,
 } from "./commercialPolicyService.js";
-import type { CommercialPolicyStore } from "./commercialPolicyStore.js";
+import type { CommercialPolicyStore, StoredVersion } from "./commercialPolicyStore.js";
 import { sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
 import {
   POL_COM_001_CLASSIFICATION,
+  POL_COM_001_CNPJ,
   POL_COM_001_CODE,
+  POL_COM_001_COMPANY,
+  POL_COM_001_TITLE,
   POL_COM_001_VERSION_LABEL,
 } from "./official/polCom001V1View.js";
+
+const CONTROLLED_COPY_NOTICE = [
+  "CONFIDENCIALIDADE E RESTRIÇÃO DE USO",
+  "Este documento contém informações internas de natureza comercial, operacional e estratégica.",
+  "A presente cópia destina-se exclusivamente ao uso autorizado no exercício das atividades profissionais do destinatário.",
+  "Sua reprodução, distribuição, encaminhamento, exposição ou disponibilização externa sem autorização poderá sujeitar o responsável às medidas administrativas, contratuais e legais cabíveis, observadas as normas aplicáveis.",
+  "A posse desta cópia não implica autorização para divulgação.",
+  "A versão eletrônica vigente mantida no IndusCost constitui a referência oficial para consulta da política.",
+];
+
+export type PublicationStatus = "NOT_PUBLISHED" | "AWAITING_COMPATIBILIZATION" | "READY_FOR_PUBLICATION" | "PUBLISHED";
+
+export function resolvePublicationStatus(input: { published: boolean; blockers: number }): PublicationStatus {
+  if (input.published) return "PUBLISHED";
+  if (input.blockers > 0) return "AWAITING_COMPATIBILIZATION";
+  return "READY_FOR_PUBLICATION";
+}
 
 type SessionUser = {
   id: string;
@@ -106,11 +135,69 @@ export type CommercialPolicyRouteDeps = {
   now?: () => Date;
   verifyPassword?: (userId: string, password: string) => Promise<boolean>;
   countActiveSellers?: () => Promise<number>;
+  /** Fonte oficial da regra de liberação (CommissionSettings). Nos testes, injetada. */
+  loadRelease?: () => Promise<ReleaseNormativeInput>;
 };
 
 export function registerCommercialPolicyRoutes(app: express.Express, deps: CommercialPolicyRouteDeps): void {
   const store = deps.store ?? createPrismaCommercialPolicyStore();
   const now = deps.now ?? (() => new Date());
+  const loadRelease =
+    deps.loadRelease ??
+    (async (): Promise<ReleaseNormativeInput> => {
+      const settings = await loadCommissionSettings(prisma);
+      return {
+        releaseDefaultRule: settings.releaseDefaultRule,
+        partialPaymentEnabled: settings.partialPaymentEnabled,
+      };
+    });
+
+  /** Snapshot normativo atual; sem banco, o snapshot fica nulo e a auditoria registra WARNING em vez de fingir alinhamento. */
+  async function currentNormativeState(): Promise<{ snapshot: NormativeSnapshot | null; settingsSource: string }> {
+    try {
+      const release = await loadRelease();
+      return { snapshot: buildCurrentCommercialPolicyNormativeSnapshot(release), settingsSource: "DATABASE" };
+    } catch {
+      return { snapshot: null, settingsSource: "DATABASE_UNAVAILABLE" };
+    }
+  }
+
+  function controlledCopyLines(version: {
+    title: string;
+    label: string;
+    contentHash: string;
+    effectiveFrom: string | null;
+    publishedAt: string | null;
+    content: string;
+    summaryRules: string[];
+  }): string[] {
+    return [
+      ...CONTROLLED_COPY_NOTICE,
+      `${POL_COM_001_CODE} · versão ${version.label} · ${POL_COM_001_CLASSIFICATION}`,
+      "",
+      ...policyDocumentLines({
+        title: version.title,
+        versionLabel: version.label,
+        code: POL_COM_001_CODE,
+        company: POL_COM_001_COMPANY,
+        cnpj: POL_COM_001_CNPJ,
+        classification: POL_COM_001_CLASSIFICATION,
+        contentHash: version.contentHash,
+        effectiveFrom: version.effectiveFrom,
+        publishedAt: version.publishedAt,
+        content: version.content,
+        summaryRules: version.summaryRules,
+      }),
+    ];
+  }
+
+  function sendControlledCopy(res: express.Response, pdf: Buffer, copyId: string): express.Response {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="POL-COM-001-copia-${copyId}.pdf"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(pdf);
+  }
   const saveFile =
     deps.saveFile ??
     (async (userId: string, bytes: Buffer, fileName: string) => {
@@ -277,8 +364,10 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       acceptanceReceiptLines({
         acceptanceId: row.id,
         title: version?.title ?? "Política Comercial",
-        version: version?.versionNumber ?? 0,
+        versionLabel: version ? versionLabelOf(version) : "—",
         policyHash: row.policyContentHash,
+        normativeSnapshotHash: row.normativeSnapshotHash || null,
+        changeSetHash: row.changeSetHash || null,
         signerName: row.userNameSnapshot,
         signerEmail: row.userEmailSnapshot,
         role: row.roleSnapshot,
@@ -313,25 +402,16 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     }
     const generatedAt = now();
     const copyId = randomUUID();
-    const lines = [
-      "CONFIDENCIALIDADE E RESTRIÇÃO DE USO",
-      "Este documento contém informações internas de natureza comercial, operacional e estratégica.",
-      "A presente cópia destina-se exclusivamente ao uso autorizado no exercício das atividades profissionais do destinatário.",
-      "Sua reprodução, distribuição, encaminhamento, exposição ou disponibilização externa sem autorização poderá sujeitar o responsável às medidas administrativas, contratuais e legais cabíveis, observadas as normas aplicáveis.",
-      "A posse desta cópia não implica autorização para divulgação.",
-      "A versão eletrônica vigente mantida no IndusCost constitui a referência oficial para consulta da política.",
-      `${POL_COM_001_CODE} · versão ${POL_COM_001_VERSION_LABEL} · ${POL_COM_001_CLASSIFICATION}`,
-      "",
-      ...policyDocumentLines({
-        title: version.title,
-        version: version.versionNumber,
-        contentHash: version.contentHash,
-        effectiveFrom: version.effectiveFrom.toISOString(),
-        publishedAt: version.publishedAt?.toISOString() ?? null,
-        content: version.content,
-        summaryRules: version.summaryRules,
-      }),
-    ];
+    const label = versionLabelOf(version);
+    const lines = controlledCopyLines({
+      title: version.title,
+      label,
+      contentHash: version.contentHash,
+      effectiveFrom: version.effectiveFrom.toISOString(),
+      publishedAt: version.publishedAt?.toISOString() ?? null,
+      content: version.content,
+      summaryRules: version.summaryRules,
+    });
     const copyDigest = sha256Hex(
       `${copyId}|${version.contentHash}|${user.id}|${generatedAt.toISOString()}|${user.email}`
     );
@@ -363,12 +443,62 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       recipientName: user.name,
       recipientEmail: user.email,
       generatedAt: generatedAt.toISOString(),
+      header: { versionLabel: label, title: version.title },
     });
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="POL-COM-001-copia-${copyId}.pdf"`);
-    res.setHeader("Cache-Control", "private, no-store");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    return res.send(pdf);
+    return sendControlledCopy(res, pdf, copyId);
+  });
+
+  /**
+   * Cópia controlada da POL-COM-001 v1.0 ANTES da publicação (SUPER_ADMIN).
+   * Mesmo texto, mesmo cabeçalho e rodapé; carimbo de prévia; auditada.
+   * Não grava CommercialPolicyControlledCopy porque ainda não há versão.
+   */
+  app.get("/api/admin/commercial-policy/official/pol-com-001/document", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const body = officialCommercialPolicyBody();
+    const hash = officialCommercialPolicyHash();
+    const versions = await store.listVersions();
+    const published = versions.find((row) => row.status === "PUBLISHED" && row.contentHash === hash) ?? null;
+    const generatedAt = now();
+    const copyId = randomUUID();
+    const lines = controlledCopyLines({
+      title: body.title,
+      label: POL_COM_001_VERSION_LABEL,
+      contentHash: hash,
+      effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
+      publishedAt: published?.publishedAt?.toISOString() ?? null,
+      content: body.content,
+      summaryRules: body.summaryRules,
+    });
+    try {
+      await writeSecurityAuditLog(prisma, {
+        eventType: SECURITY_AUDIT_EVENTS.COMMERCIAL_POLICY_CONTROLLED_COPY,
+        actorUserId: user.id,
+        targetUserId: user.id,
+        ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+        userAgent: normalizeUserAgent(req.headers["user-agent"]),
+        metadata: {
+          copyId,
+          policyVersionId: published?.id ?? null,
+          prePublication: !published,
+          documentDigest: hash,
+          generatedAt: generatedAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error("[commercial-policy-copy-audit]", error);
+    }
+    const pdf = buildControlledPolicyPdf({
+      lines,
+      copyId,
+      recipientName: user.name,
+      recipientEmail: user.email,
+      generatedAt: generatedAt.toISOString(),
+      header: { versionLabel: POL_COM_001_VERSION_LABEL, title: POL_COM_001_TITLE },
+      stamp: published ? null : "PRÉVIA — VERSÃO AINDA NÃO PUBLICADA",
+    });
+    return sendControlledCopy(res, pdf, copyId);
   });
 
   app.get("/api/commercial-policy/photos/:id", deps.requireAppAuth, async (req, res) => {
@@ -388,43 +518,111 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   app.post("/api/admin/commercial-policy/official/pol-com-001", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
-    const published = await publishOfficialCommercialPolicy(store, user.id, now());
+    const state = await currentNormativeState();
+    const published = await publishOfficialCommercialPolicy(store, user.id, now(), { currentSnapshot: state.snapshot });
     if (published.ok === false) return res.status(published.status).json(published);
+    if (!published.alreadyPublished) {
+      try {
+        await writeSecurityAuditLog(prisma, {
+          eventType: SECURITY_AUDIT_EVENTS.POLICY_VERSION_PUBLISHED,
+          actorUserId: user.id,
+          targetUserId: null,
+          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+          userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          metadata: {
+            policyVersionId: published.version.id,
+            label: POL_COM_001_VERSION_LABEL,
+            contentHash: published.version.contentHash,
+            normativeSnapshotHash: published.version.normativeSnapshotHash ?? null,
+          },
+        });
+      } catch (error) {
+        console.error("[commercial-policy-publish-audit]", error);
+      }
+    }
     return res.status(published.alreadyPublished ? 200 : 201).json({
       alreadyPublished: published.alreadyPublished,
       version: versionPublicView(published.version),
     });
   });
 
+  /**
+   * Painel de integridade da política viva: cartão do documento, situação da
+   * publicação, achados com severidade, matriz de reconciliação, versão
+   * vigente, rascunho pendente, "o que mudou", snapshots, vigências e aceites.
+   */
   app.get("/api/admin/commercial-policy/integrity", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
-    const publication = auditPolCom001Publication(officialCommercialPolicyBody().content);
-    let release = { releaseDefaultRule: "EACH_RECEIVABLE_PAID", partialPaymentEnabled: true };
-    let settingsSource = "DEFAULT";
-    try {
-      const settings = await loadCommissionSettings(prisma);
-      release = {
-        releaseDefaultRule: settings.releaseDefaultRule,
-        partialPaymentEnabled: settings.partialPaymentEnabled,
-      };
-      settingsSource = "DATABASE";
-    } catch {
-      settingsSource = "DEFAULT_DATABASE_UNAVAILABLE";
-    }
-    const current = buildCurrentCommercialPolicyNormativeSnapshot(release);
-    const published = await store.currentPublished(now());
-    const compared = comparePublishedPolicyToCurrentNormativeState({
-      publishedHash: published?.normativeSnapshotHash || null,
-      current,
-      publicationAuditBlocking: !publication.ready,
-    });
+    const at = now();
+    const official = officialCommercialPolicyBody();
+    const officialHash = officialCommercialPolicyHash();
+    const state = await currentNormativeState();
+    const publication = auditPolCom001Publication(official.content, state.snapshot);
+    const versions = await store.listVersions();
+    const current = await store.currentPublished(at);
+    const officialPublished = versions.find((row) => row.status === "PUBLISHED" && row.contentHash === officialHash) ?? null;
+    const scheduled = versions
+      .filter((row) => row.status === "PUBLISHED" && row.effectiveFrom.getTime() > at.getTime())
+      .sort((a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime());
+    const draft = findPendingRevisionDraft(versions);
+    const draftState = draft && state.snapshot
+      ? compareDraftToCurrentNormativeState({ draftSnapshotHash: draft.normativeSnapshotHash ?? null, current: state.snapshot })
+      : draft
+        ? "DRAFT_UNVERIFIED"
+        : null;
+    const compared = state.snapshot
+      ? comparePublishedPolicyToCurrentNormativeState({
+          publishedHash: current?.normativeSnapshotHash || null,
+          current: state.snapshot,
+          publicationAuditBlocking: !publication.ready,
+        })
+      : publication.ready
+        ? "INVALID_CONFIGURATION"
+        : "POLICY_SYSTEM_MISMATCH";
+    const acceptances = await store.listAcceptances();
+    const acceptancesByVersion = versions.map((row: StoredVersion) => ({
+      versionId: row.id,
+      label: versionLabelOf(row),
+      status: row.status,
+      count: new Set(acceptances.filter((item) => item.policyVersionId === row.id).map((item) => item.userId)).size,
+    }));
     return res.json({
       status: compared,
       publication: publication.status,
+      publicationStatus: resolvePublicationStatus({ published: Boolean(officialPublished), blockers: publication.blockers }),
+      document: {
+        code: POL_COM_001_CODE,
+        title: POL_COM_001_TITLE,
+        versionLabel: POL_COM_001_VERSION_LABEL,
+        classification: POL_COM_001_CLASSIFICATION,
+        company: POL_COM_001_COMPANY,
+        cnpj: POL_COM_001_CNPJ,
+        contentHash: officialHash,
+        contentLength: official.content.length,
+        questions: official.questions.length,
+        declarations: official.declarations.length,
+        summaryRules: official.summaryRules.length,
+      },
+      counts: { blockers: publication.blockers, warnings: publication.warnings, informational: publication.informational },
       findings: publication.findings,
-      currentRelease: current.commissionRelease,
-      settingsSource,
+      reconciliation: buildPolCom001ReconciliationMatrix(state.snapshot),
+      currentSnapshot: state.snapshot,
+      currentSnapshotHash: state.snapshot ? normativeSnapshotHash(state.snapshot) : null,
+      currentRelease: state.snapshot?.commissionRelease ?? null,
+      settingsSource: state.settingsSource,
+      currentVersion: current ? versionAdminView(current) : null,
+      officialPublishedVersion: officialPublished ? versionAdminView(officialPublished) : null,
+      scheduledVersions: scheduled.map(versionAdminView),
+      pendingDraft: draft
+        ? {
+            ...versionAdminView(draft),
+            draftState,
+            affectedSections: sectionsAffectedByChanges(draft.changeSet ?? []),
+          }
+        : null,
+      acceptancesByVersion,
+      dependencies: COMMERCIAL_POLICY_DEPENDENCIES,
     });
   });
 
@@ -435,13 +633,19 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     if (!COMMERCIAL_POLICY_DEPENDENCIES.some((item) => item.key === kind)) {
       return res.status(422).json({ ok: false, code: "INVALID_DEPENDENCY", message: "Dependência normativa desconhecida." });
     }
+    let release: ReleaseNormativeInput;
+    try {
+      release = await loadRelease();
+    } catch {
+      return res.status(503).json({
+        ok: false,
+        code: "NORMATIVE_SOURCE_UNAVAILABLE",
+        message: "A fonte oficial da regra de liberação não está disponível; a revisão não foi aberta.",
+      });
+    }
     const opened = await openNormativeRevision(store, {
       kind: kind as "commission.releaseRule",
-      currentLabel: String(req.body?.currentLabel ?? "1.0"),
-      release: {
-        releaseDefaultRule: String(req.body?.releaseDefaultRule ?? "EACH_RECEIVABLE_PAID"),
-        partialPaymentEnabled: req.body?.partialPaymentEnabled !== false,
-      },
+      release,
       oldValue: req.body?.oldValue ?? null,
       newValue: req.body?.newValue ?? null,
       oldDisplayValue: String(req.body?.oldDisplayValue ?? ""),
@@ -451,28 +655,31 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       now: now(),
     });
     if (opened.ok === false) return res.status(opened.status).json(opened);
-    if (opened.version) {
+    if (opened.version && !opened.duplicate) {
       try {
         await writeSecurityAuditLog(prisma, {
-          eventType: SECURITY_AUDIT_EVENTS.POLICY_DRAFT_CREATED,
+          eventType: opened.aggregated ? SECURITY_AUDIT_EVENTS.POLICY_CHANGESET_GENERATED : SECURITY_AUDIT_EVENTS.POLICY_DRAFT_CREATED,
           actorUserId: user.id,
           targetUserId: null,
           ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
           userAgent: normalizeUserAgent(req.headers["user-agent"]),
           metadata: {
             dependencyKey: kind,
-            sourceVersion: String(req.body?.currentLabel ?? "1.0"),
+            sourceVersion: opened.version.changeSet?.[0]?.sourceVersionOld ?? null,
+            targetVersion: versionLabelOf(opened.version),
             draftVersionId: opened.version.id,
+            changeSetHash: opened.version.changeSetHash ?? null,
           },
         });
       } catch (error) {
         console.error("[commercial-policy-normative-audit]", error);
       }
     }
-    return res.status(opened.duplicate ? 200 : 201).json({
+    return res.status(opened.duplicate || opened.aggregated || !opened.version ? 200 : 201).json({
       impact: opened.impact,
       duplicate: opened.duplicate,
-      version: opened.version ? versionPublicView(opened.version) : null,
+      aggregated: opened.aggregated,
+      version: opened.version ? versionAdminView(opened.version) : null,
     });
   });
 
@@ -480,12 +687,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
     const versions = await store.listVersions();
-    return res.json({
-      versions: versions.map((version) => ({
-        ...versionPublicView(version),
-        questions: version.questions,
-      })),
-    });
+    return res.json({ versions: versions.map(versionAdminView) });
   });
 
   app.post("/api/admin/commercial-policy/versions", deps.requireAppAuth, async (req, res) => {
@@ -502,9 +704,30 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   app.post("/api/admin/commercial-policy/versions/:id/publish", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
-    const published = await publishPolicyVersion(store, String(req.params.id ?? ""), user.id, now());
+    const state = await currentNormativeState();
+    const published = await publishPolicyVersion(store, String(req.params.id ?? ""), user.id, now(), {
+      currentSnapshot: state.snapshot,
+    });
     if (published.ok === false) return res.status(published.status).json(published);
-    return res.json({ version: versionPublicView(published.version) });
+    try {
+      await writeSecurityAuditLog(prisma, {
+        eventType: SECURITY_AUDIT_EVENTS.POLICY_VERSION_PUBLISHED,
+        actorUserId: user.id,
+        targetUserId: null,
+        ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+        userAgent: normalizeUserAgent(req.headers["user-agent"]),
+        metadata: {
+          policyVersionId: published.version.id,
+          label: versionLabelOf(published.version),
+          contentHash: published.version.contentHash,
+          normativeSnapshotHash: published.version.normativeSnapshotHash ?? null,
+          changeSetHash: published.version.changeSetHash ?? null,
+        },
+      });
+    } catch (error) {
+      console.error("[commercial-policy-publish-audit]", error);
+    }
+    return res.json({ version: versionAdminView(published.version) });
   });
 
   app.post("/api/admin/commercial-policy/acceptances/:id/invalidate", deps.requireAppAuth, async (req, res) => {

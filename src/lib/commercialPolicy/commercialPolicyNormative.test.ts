@@ -118,7 +118,7 @@ describe("detecção de mudança", () => {
   });
 
   it("documento e sistema divergem na faixa de 50%", () => {
-    const top = DOCUMENT_ANNEX_I_BANDS.find((band) => band.label === "50% ou mais");
+    const top = DOCUMENT_ANNEX_I_BANDS.find((band) => band.label === "50,00% ou mais");
     assert.equal(top?.commissionPercent, 0.04);
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
     const matrix = audit.findings.find((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED");
@@ -217,9 +217,11 @@ describe("rascunho e publicação", () => {
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
     const finding = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
     assert.equal(finding?.blocking, true);
+    assert.equal(finding?.severity, "BLOCKING");
     assert.match(finding?.document ?? "", /Pedido de Venda aprovado/);
     assert.match(finding?.system ?? "", /NF \/ Documento de Saída válido/);
     assert.doesNotMatch(finding?.system ?? "", /último SalesOrder SENT_TO_NOMUS \(issueDate\)/);
+    assert.match(finding?.action ?? "", /POLICY_VERSION_REQUIRED/);
     assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
     const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
     assert.equal(snapshot.portfolio.inactivityDays, 90);
@@ -235,9 +237,14 @@ describe("rascunho e publicação", () => {
     );
   });
 
-  it("o anexo III em versão 2.0 bloqueia a publicação da 1.0", () => {
+  it("um teor que ainda cite versão 2.0 bloqueia; o documento corrigido registra só o informativo", () => {
+    const stale = auditPolCom001Publication(officialCommercialPolicyBody().content.replace("versão 1.0, vigente", "versão 2.0, vigente"));
+    assert.ok(stale.findings.some((item) => item.code === "DECLARED_VERSION_MISMATCH" && item.severity === "BLOCKING"));
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
-    assert.ok(audit.findings.some((item) => item.code === "DECLARED_VERSION_MISMATCH"));
+    assert.equal(audit.findings.some((item) => item.code === "DECLARED_VERSION_MISMATCH"), false);
+    const internal = audit.findings.find((item) => item.code === "DOCUMENT_INTERNAL_VERSION_MISMATCH");
+    assert.equal(internal?.severity, "INFORMATIONAL");
+    assert.match(internal?.document ?? "", /Anexo III .*= 2\.0/);
     assert.equal(
       comparePublishedPolicyToCurrentNormativeState({
         publishedHash: "abc",

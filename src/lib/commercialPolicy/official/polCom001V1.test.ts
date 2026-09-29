@@ -43,7 +43,9 @@ describe("POL-COM-001 conteúdo oficial", () => {
     assert.match(text, /4,00%/);
     assert.match(text, /33%/);
     assert.match(text, /90 dias corridos/);
-    assert.match(text, /versão 2\.0/);
+    // Anexo III corrigido para 1.0 na representação estruturada (DOCUMENT_INTERNAL_VERSION_MISMATCH registrado na auditoria).
+    assert.doesNotMatch(text, /versão 2\.0/);
+    assert.match(text, /código POL-COM-001, versão 1\.0/);
     for (const rule of POL_COM_001_SUMMARY_RULES) {
       assert.equal(text.includes(rule), true, rule);
     }
@@ -74,8 +76,12 @@ describe("POL-COM-001 conteúdo oficial", () => {
     if (first.ok || second.ok) return;
     assert.equal(first.code, "NOT_READY_FOR_PUBLICATION");
     assert.equal(second.code, "NOT_READY_FOR_PUBLICATION");
-    assert.ok(first.findings?.some((item) => item.code === "DECLARED_VERSION_MISMATCH"));
-    assert.ok(first.findings?.some((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED"));
+    assert.equal(first.findings?.some((item) => item.code === "DECLARED_VERSION_MISMATCH"), false);
+    const internal = first.findings?.find((item) => item.code === "DOCUMENT_INTERNAL_VERSION_MISMATCH");
+    assert.equal(internal?.severity, "INFORMATIONAL");
+    assert.equal(internal?.blocking, false);
+    assert.ok(first.findings?.some((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED" && item.blocking));
+    assert.ok(first.findings?.some((item) => item.code === "SUPERVISOR_SHARE_NOT_PARAMETERIZED" && item.blocking));
     assert.equal(await store.countEffectivePublished(NOW), 0);
     assert.equal(await sellerHasPendingPolicy(store, SELLER, NOW), false);
   });

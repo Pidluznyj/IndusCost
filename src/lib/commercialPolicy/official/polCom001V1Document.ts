@@ -3,7 +3,8 @@ export type OfficialPolicyBlock =
   | { type: "paragraph"; text: string }
   | { type: "heading"; text: string }
   | { type: "bullet"; text: string }
-  | { type: "term"; term: string; definition: string };
+  | { type: "term"; term: string; definition: string }
+  | { type: "table"; rows: string[][] };
 
 export type OfficialPolicyChapter = {
   id: string;
@@ -29,68 +30,41 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         "text": "Regras de Comissão de Vendas, Alçadas Comerciais, Campanhas, Carteiras, Coberturas e Supervisão"
       },
       {
-        "type": "paragraph",
-        "text": "Código"
-      },
-      {
-        "type": "paragraph",
-        "text": "POL-COM-001"
-      },
-      {
-        "type": "paragraph",
-        "text": "Versão"
-      },
-      {
-        "type": "paragraph",
-        "text": "1.0"
-      },
-      {
-        "type": "paragraph",
-        "text": "Classificação"
-      },
-      {
-        "type": "paragraph",
-        "text": "POLÍTICA OFICIAL — USO INTERNO E RESTRITO"
-      },
-      {
-        "type": "paragraph",
-        "text": "Área responsável"
-      },
-      {
-        "type": "paragraph",
-        "text": "Comercial / Administração"
-      },
-      {
-        "type": "paragraph",
-        "text": "Aprovador"
-      },
-      {
-        "type": "paragraph",
-        "text": "Diretoria"
-      },
-      {
-        "type": "paragraph",
-        "text": "Data de aprovação"
-      },
-      {
-        "type": "paragraph",
-        "text": "____/____/________"
-      },
-      {
-        "type": "paragraph",
-        "text": "Data de vigência"
-      },
-      {
-        "type": "paragraph",
-        "text": "____/____/________"
-      },
-      {
-        "type": "paragraph",
-        "text": "Empresa / CNPJ"
-      },
-      {
-        "type": "paragraph",
-        "text": "14.055.501/0001-80 Koppetel Comercio de Plásticos LTDA"
+        "type": "table",
+        "rows": [
+          [
+            "Código",
+            "POL-COM-001"
+          ],
+          [
+            "Versão",
+            "1.0"
+          ],
+          [
+            "Classificação",
+            "POLÍTICA OFICIAL — USO INTERNO E RESTRITO"
+          ],
+          [
+            "Área responsável",
+            "Comercial / Administração"
+          ],
+          [
+            "Aprovador",
+            "Diretoria"
+          ],
+          [
+            "Data de aprovação",
+            "____/____/________"
+          ],
+          [
+            "Data de vigência",
+            "____/____/________"
+          ],
+          [
+            "Empresa / CNPJ",
+            "14.055.501/0001-80 Koppetel Comercio de Plásticos LTDA"
+          ]
+        ]
       },
       {
         "type": "paragraph",
@@ -1284,40 +1258,24 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         "text": "A Política permanecerá válida até sua substituição formal por versão posterior."
       },
       {
-        "type": "paragraph",
-        "text": "Aprovação"
-      },
-      {
-        "type": "paragraph",
-        "text": "Nome / Função"
-      },
-      {
-        "type": "paragraph",
-        "text": "Data / Assinatura"
-      },
-      {
-        "type": "paragraph",
-        "text": "Diretoria"
-      },
-      {
-        "type": "paragraph",
-        "text": "______________________________"
-      },
-      {
-        "type": "paragraph",
-        "text": "______________________________"
-      },
-      {
-        "type": "paragraph",
-        "text": "Supervisor Comercial"
-      },
-      {
-        "type": "paragraph",
-        "text": "______________________________"
-      },
-      {
-        "type": "paragraph",
-        "text": "______________________________"
+        "type": "table",
+        "rows": [
+          [
+            "Aprovação",
+            "Nome / Função",
+            "Data / Assinatura"
+          ],
+          [
+            "Diretoria",
+            "______________________________",
+            "______________________________"
+          ],
+          [
+            "Supervisor Comercial",
+            "______________________________",
+            "______________________________"
+          ]
+        ]
       }
     ]
   },
@@ -1330,116 +1288,64 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         "text": "Este Anexo integra a Política POL-COM-001. A tabela abaixo é a única matriz normativa vigente para os negócios abrangidos enquanto não for substituída por revisão formal."
       },
       {
-        "type": "paragraph",
-        "text": "Controle da Matriz"
+        "type": "table",
+        "rows": [
+          [
+            "Controle da Matriz",
+            "Informação"
+          ],
+          [
+            "Código",
+            "MCOM-001"
+          ],
+          [
+            "Versão",
+            "1.0"
+          ],
+          [
+            "Data de aprovação",
+            "____/____/________"
+          ],
+          [
+            "Data de vigência",
+            "____/____/________"
+          ]
+        ]
       },
       {
-        "type": "paragraph",
-        "text": "Informação"
-      },
-      {
-        "type": "paragraph",
-        "text": "Código"
-      },
-      {
-        "type": "paragraph",
-        "text": "MCOM-001"
-      },
-      {
-        "type": "paragraph",
-        "text": "Versão"
-      },
-      {
-        "type": "paragraph",
-        "text": "1.0"
-      },
-      {
-        "type": "paragraph",
-        "text": "Data de aprovação"
-      },
-      {
-        "type": "paragraph",
-        "text": "____/____/________"
-      },
-      {
-        "type": "paragraph",
-        "text": "Data de vigência"
-      },
-      {
-        "type": "paragraph",
-        "text": "____/____/________"
-      },
-      {
-        "type": "paragraph",
-        "text": "Margem Oficial do Item"
-      },
-      {
-        "type": "paragraph",
-        "text": "Comissão do Vendedor"
-      },
-      {
-        "type": "paragraph",
-        "text": "Alçada Comercial"
-      },
-      {
-        "type": "paragraph",
-        "text": "Abaixo de 30,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "1,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "Aprovação prévia da Diretoria"
-      },
-      {
-        "type": "paragraph",
-        "text": "30,00% a 34,99%"
-      },
-      {
-        "type": "paragraph",
-        "text": "1,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "Aprovação prévia do Supervisor Comercial"
-      },
-      {
-        "type": "paragraph",
-        "text": "35,00% a 39,99%"
-      },
-      {
-        "type": "paragraph",
-        "text": "2,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "Fluxo comercial ordinário"
-      },
-      {
-        "type": "paragraph",
-        "text": "40,00% a 49,99%"
-      },
-      {
-        "type": "paragraph",
-        "text": "3,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "Fluxo comercial ordinário"
-      },
-      {
-        "type": "paragraph",
-        "text": "50,00% ou mais"
-      },
-      {
-        "type": "paragraph",
-        "text": "4,00%"
-      },
-      {
-        "type": "paragraph",
-        "text": "Fluxo comercial ordinário"
+        "type": "table",
+        "rows": [
+          [
+            "Margem Oficial do Item",
+            "Comissão do Vendedor",
+            "Alçada Comercial"
+          ],
+          [
+            "Abaixo de 30,00%",
+            "1,00%",
+            "Aprovação prévia da Diretoria"
+          ],
+          [
+            "30,00% a 34,99%",
+            "1,00%",
+            "Aprovação prévia do Supervisor Comercial"
+          ],
+          [
+            "35,00% a 39,99%",
+            "2,00%",
+            "Fluxo comercial ordinário"
+          ],
+          [
+            "40,00% a 49,99%",
+            "3,00%",
+            "Fluxo comercial ordinário"
+          ],
+          [
+            "50,00% ou mais",
+            "4,00%",
+            "Fluxo comercial ordinário"
+          ]
+        ]
       },
       {
         "type": "paragraph",
@@ -1507,7 +1413,7 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     "blocks": [
       {
         "type": "paragraph",
-        "text": "Declaro que recebi e tive acesso à Política Comercial e de Comissionamento, código POL-COM-001, versão 2.0, vigente a partir de ____/____/________, e fui informado(a) sobre as regras de margem, matriz de comissão, alçadas, campanhas, classificação de clientes, gestão de carteira, revisão por inatividade, cobertura temporária, vendas recorrentes/OEM, canais institucionais, transferência, pagamento, registros e conferência aplicáveis à função comercial abrangida."
+        "text": "Declaro que recebi e tive acesso à Política Comercial e de Comissionamento, código POL-COM-001, versão 1.0, vigente a partir de ____/____/________, e fui informado(a) sobre as regras de margem, matriz de comissão, alçadas, campanhas, classificação de clientes, gestão de carteira, revisão por inatividade, cobertura temporária, vendas recorrentes/OEM, canais institucionais, transferência, pagamento, registros e conferência aplicáveis à função comercial abrangida."
       },
       {
         "type": "paragraph",
@@ -1552,76 +1458,45 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         "text": "A. Fluxo decisório de cobertura"
       },
       {
-        "type": "paragraph",
-        "text": "Etapa"
-      },
-      {
-        "type": "paragraph",
-        "text": "Regra"
-      },
-      {
-        "type": "paragraph",
-        "text": "1"
-      },
-      {
-        "type": "paragraph",
-        "text": "Identificar se o Responsável Comercial está disponível no momento em que surge a demanda."
-      },
-      {
-        "type": "paragraph",
-        "text": "2"
-      },
-      {
-        "type": "paragraph",
-        "text": "Se estiver indisponível, confirmar ou registrar o Evento de Cobertura e o Vendedor de Cobertura."
-      },
-      {
-        "type": "paragraph",
-        "text": "3"
-      },
-      {
-        "type": "paragraph",
-        "text": "Verificar se, antes da cobertura, existia Operação Específica Materialmente Iniciada para aquela venda."
-      },
-      {
-        "type": "paragraph",
-        "text": "4"
-      },
-      {
-        "type": "paragraph",
-        "text": "Se existia e há Registro Material, preservar a vinculação da operação ao Responsável Comercial original; a cobertura executa somente o necessário para continuidade."
-      },
-      {
-        "type": "paragraph",
-        "text": "5"
-      },
-      {
-        "type": "paragraph",
-        "text": "Se não existia operação específica anterior, registrar a nova demanda no CRM em nome do Vendedor de Cobertura que efetivamente a assumirá."
-      },
-      {
-        "type": "paragraph",
-        "text": "6"
-      },
-      {
-        "type": "paragraph",
-        "text": "Se a mensagem entrou antes da cobertura, mas ficou sem tratamento, não decidir por mera data de recebimento ou mera descoberta: escalar ao Supervisor e aplicar os critérios da Seção 8.5."
-      },
-      {
-        "type": "paragraph",
-        "text": "7"
-      },
-      {
-        "type": "paragraph",
-        "text": "No retorno do Responsável, devolver a gestão ordinária da carteira sem transferir retroativamente vendas legitimamente atribuídas durante a cobertura."
-      },
-      {
-        "type": "paragraph",
-        "text": "8"
-      },
-      {
-        "type": "paragraph",
-        "text": "Em qualquer divergência, preservar os registros, impedir alteração unilateral e documentar a decisão."
+        "type": "table",
+        "rows": [
+          [
+            "Etapa",
+            "Regra"
+          ],
+          [
+            "1",
+            "Identificar se o Responsável Comercial está disponível no momento em que surge a demanda."
+          ],
+          [
+            "2",
+            "Se estiver indisponível, confirmar ou registrar o Evento de Cobertura e o Vendedor de Cobertura."
+          ],
+          [
+            "3",
+            "Verificar se, antes da cobertura, existia Operação Específica Materialmente Iniciada para aquela venda."
+          ],
+          [
+            "4",
+            "Se existia e há Registro Material, preservar a vinculação da operação ao Responsável Comercial original; a cobertura executa somente o necessário para continuidade."
+          ],
+          [
+            "5",
+            "Se não existia operação específica anterior, registrar a nova demanda no CRM em nome do Vendedor de Cobertura que efetivamente a assumirá."
+          ],
+          [
+            "6",
+            "Se a mensagem entrou antes da cobertura, mas ficou sem tratamento, não decidir por mera data de recebimento ou mera descoberta: escalar ao Supervisor e aplicar os critérios da Seção 8.5."
+          ],
+          [
+            "7",
+            "No retorno do Responsável, devolver a gestão ordinária da carteira sem transferir retroativamente vendas legitimamente atribuídas durante a cobertura."
+          ],
+          [
+            "8",
+            "Em qualquer divergência, preservar os registros, impedir alteração unilateral e documentar a decisão."
+          ]
+        ]
       },
       {
         "type": "heading",
@@ -1632,76 +1507,45 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         "text": "Antes da Data de Vigência, a empresa deverá registrar as situações em andamento que não podem ser avaliadas apenas pelas novas exigências documentais. O Mapa de Transição deverá conter, no mínimo:"
       },
       {
-        "type": "paragraph",
-        "text": "Campo"
-      },
-      {
-        "type": "paragraph",
-        "text": "Registro mínimo"
-      },
-      {
-        "type": "paragraph",
-        "text": "Carteiras vigentes"
-      },
-      {
-        "type": "paragraph",
-        "text": "Cliente, Responsável Comercial e data do snapshot"
-      },
-      {
-        "type": "paragraph",
-        "text": "Oportunidades ativas"
-      },
-      {
-        "type": "paragraph",
-        "text": "Cliente, oportunidade, responsável, estágio e último Registro Material"
-      },
-      {
-        "type": "paragraph",
-        "text": "Propostas abertas"
-      },
-      {
-        "type": "paragraph",
-        "text": "Número/data, cliente, responsável e validade"
-      },
-      {
-        "type": "paragraph",
-        "text": "Programações firmes / contratos"
-      },
-      {
-        "type": "paragraph",
-        "text": "Cliente, objeto, período e responsável comercial"
-      },
-      {
-        "type": "paragraph",
-        "text": "Coberturas em curso"
-      },
-      {
-        "type": "paragraph",
-        "text": "Responsável ausente, Vendedor de Cobertura e período"
-      },
-      {
-        "type": "paragraph",
-        "text": "Campanhas vigentes"
-      },
-      {
-        "type": "paragraph",
-        "text": "Código, versão, vigência e escopo"
-      },
-      {
-        "type": "paragraph",
-        "text": "Matriz vigente"
-      },
-      {
-        "type": "paragraph",
-        "text": "Versão e data de vigência"
-      },
-      {
-        "type": "paragraph",
-        "text": "Contas institucionais"
-      },
-      {
-        "type": "paragraph",
-        "text": "Classificação vigente e fonte oficial do cadastro"
+        "type": "table",
+        "rows": [
+          [
+            "Campo",
+            "Registro mínimo"
+          ],
+          [
+            "Carteiras vigentes",
+            "Cliente, Responsável Comercial e data do snapshot"
+          ],
+          [
+            "Oportunidades ativas",
+            "Cliente, oportunidade, responsável, estágio e último Registro Material"
+          ],
+          [
+            "Propostas abertas",
+            "Número/data, cliente, responsável e validade"
+          ],
+          [
+            "Programações firmes / contratos",
+            "Cliente, objeto, período e responsável comercial"
+          ],
+          [
+            "Coberturas em curso",
+            "Responsável ausente, Vendedor de Cobertura e período"
+          ],
+          [
+            "Campanhas vigentes",
+            "Código, versão, vigência e escopo"
+          ],
+          [
+            "Matriz vigente",
+            "Versão e data de vigência"
+          ],
+          [
+            "Contas institucionais",
+            "Classificação vigente e fonte oficial do cadastro"
+          ]
+        ]
       },
       {
         "type": "paragraph",
@@ -1717,6 +1561,7 @@ export function officialPolicyPlainText(chapters: OfficialPolicyChapter[] = POL_
     if (chapter.id !== "capa") lines.push(chapter.title);
     for (const block of chapter.blocks) {
       if (block.type === "term") lines.push(block.term, block.definition);
+      else if (block.type === "table") for (const row of block.rows) lines.push(...row);
       else lines.push(block.text);
     }
   }
