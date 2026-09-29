@@ -143,6 +143,8 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
         {
           id: "p1",
           status: "SENT",
+          number: 4412,
+          externalProposalCode: "PP-4412",
           expectedCloseDate: spNoon("2026-09-15"),
           nextActionAt: spNoon("2026-09-10"),
           updatedAt: spNoon("2026-08-18"),
@@ -152,6 +154,22 @@ describe("POL-COM-001 §11 — CRM estruturado", () => {
     });
     assert.equal(preservation.valid, true);
     assert.equal(preservation.evidenceType, "ACTIVE_PROPOSAL");
+    assert.equal(preservation.evidenceId, "p1");
+    assert.equal(preservation.evidenceStatus, "SENT");
+    assert.equal(preservation.evidenceCode, "PP-4412");
+    assert.equal(preservation.evidenceDateSource, "expectedCloseDate");
+    assert.equal(saoPauloDateIso(preservation.evidenceDate!), "2026-09-15");
+    assert.equal(preservation.evidenceAgeDays, 12);
+    assert.equal(saoPauloDateIso(preservation.nextStepDate!), "2026-09-10");
+    assert.match(preservation.preservationReason ?? "", /PP-4412/);
+    assert.match(preservation.preservationReason ?? "", /SENT/);
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastApprovedOrder: { id: "so-1", orderCode: "PV-1", issueDate: LAST_PV, status: "SENT_TO_NOMUS" },
+      referenceDate,
+      preservation,
+    });
+    assert.equal(decision.action, "KEEP_OWNER");
   });
 
   it("projeto/homologação em análise preserva", () => {

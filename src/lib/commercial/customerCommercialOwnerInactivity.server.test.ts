@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "path";
 import {
   applyCommercialOwnerInactivity,
+  formatPortfolioInactivityPreview,
   previewCommercialOwnerInactivity,
 } from "./customerCommercialOwnerInactivity.server.js";
 import { PORTFOLIO_INACTIVITY_REASON } from "./customerCommercialOwnerInactivity.js";
@@ -30,7 +31,16 @@ function createFakePrisma(seed: {
   customers?: Array<{ id: string; companyName: string; taxId: string; nomusExternalPersonId: number | null }>;
   owners?: Owner[];
   orders?: Array<{ id: string; customerId: string; orderCode: string; issueDate: Date; status: string }>;
-  proposals?: Array<{ id: string; customerId: string; status: string; expectedCloseDate: Date | null; nextActionAt: Date | null; updatedAt: Date }>;
+  proposals?: Array<{
+    id: string;
+    customerId: string;
+    status: string;
+    expectedCloseDate: Date | null;
+    nextActionAt: Date | null;
+    updatedAt: Date;
+    number?: number | null;
+    externalProposalCode?: string | null;
+  }>;
   contacts?: Array<{
     id: string;
     customerId: string;
@@ -136,6 +146,44 @@ describe("apply/preview da revisão de carteira", () => {
     assert.equal(fake.writes.ownerUpdate, 0);
     assert.equal(fake.writes.reviewCreate, 0);
     assert.equal(fake.writes.auditCreate, 0);
+  });
+
+  it("preview de preservação expõe evidência da proposta sem mudar KEEP_OWNER", async () => {
+    const fake = createFakePrisma({
+      customers: [{ id: CUSTOMER_A, companyName: "Cliente A", taxId: "1", nomusExternalPersonId: 10 }],
+      owners: [maria],
+      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PV-1", issueDate: LAST_PV, status: "SENT_TO_NOMUS" }],
+      proposals: [
+        {
+          id: "p1",
+          customerId: CUSTOMER_A,
+          status: "SENT",
+          number: 4412,
+          externalProposalCode: "PP-4412",
+          expectedCloseDate: new Date("2026-09-15T15:00:00.000Z"),
+          nextActionAt: new Date("2026-09-10T15:00:00.000Z"),
+          updatedAt: new Date("2026-08-18T15:00:00.000Z"),
+        },
+      ],
+    });
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    const row = preview.rows.find((item) => item.customerId === CUSTOMER_A);
+    assert.equal(row?.proposedAction, "KEEP_OWNER");
+    assert.equal(row?.evidenceType, "ACTIVE_PROPOSAL");
+    assert.equal(row?.evidenceId, "p1");
+    assert.equal(row?.evidenceStatus, "SENT");
+    assert.equal(row?.evidenceCode, "PP-4412");
+    assert.equal(row?.evidenceDate, "2026-09-15");
+    assert.equal(row?.evidenceDateSource, "expectedCloseDate");
+    assert.equal(row?.evidenceAgeDays, 12);
+    assert.equal(row?.nextStepDate, "2026-09-10");
+    assert.match(row?.preservationReason ?? "", /PP-4412/);
+    assert.equal(fake.writes.ownerUpdate, 0);
+    assert.equal(fake.writes.reviewCreate, 0);
+    const text = formatPortfolioInactivityPreview(preview);
+    assert.match(text, /evidenceType=ACTIVE_PROPOSAL/);
+    assert.match(text, /evidenceStatus=SENT/);
+    assert.match(text, /preservationReason=/);
   });
 
   it("apply remove, grava histórico e deixa o cliente sem responsável ativo", async () => {

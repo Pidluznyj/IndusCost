@@ -59,6 +59,14 @@ export type PortfolioInactivityPreviewRow = {
   crmValid: boolean;
   evidenceType: string | null;
   evidenceId: string | null;
+  evidenceStatus: string | null;
+  evidenceCode: string | null;
+  evidenceDate: string | null;
+  evidenceAgeDays: number | null;
+  evidenceDateSource: string | null;
+  nextStep: string | null;
+  nextStepDate: string | null;
+  preservationReason: string | null;
   reasonCode: string;
   proposedAction: PortfolioInactivityAction;
   status: string;
@@ -145,6 +153,8 @@ export async function loadPortfolioCrmEvidence(
         expectedCloseDate: true,
         nextActionAt: true,
         updatedAt: true,
+        number: true,
+        externalProposalCode: true,
       },
     }),
     db.commercialActivity.findMany({
@@ -170,6 +180,8 @@ export async function loadPortfolioCrmEvidence(
       expectedCloseDate: row.expectedCloseDate,
       nextActionAt: row.nextActionAt,
       updatedAt: row.updatedAt,
+      number: row.number,
+      externalProposalCode: row.externalProposalCode,
     });
     proposals.set(row.customerId, list);
   }
@@ -261,6 +273,14 @@ export async function previewCommercialOwnerInactivity(
         crmValid: preservation.valid,
         evidenceType: preservation.evidenceType,
         evidenceId: preservation.evidenceId,
+        evidenceStatus: preservation.evidenceStatus,
+        evidenceCode: preservation.evidenceCode,
+        evidenceDate: preservation.evidenceDate ? saoPauloDateIso(preservation.evidenceDate) : null,
+        evidenceAgeDays: preservation.evidenceAgeDays,
+        evidenceDateSource: preservation.evidenceDateSource,
+        nextStep: preservation.nextStep,
+        nextStepDate: preservation.nextStepDate ? saoPauloDateIso(preservation.nextStepDate) : null,
+        preservationReason: preservation.preservationReason,
         reasonCode: decision.reasonCode,
         proposedAction: decision.action,
         status: decision.status,
@@ -535,6 +555,18 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
         row.proposedAction,
       ].join(" | ")
     );
+    if (row.proposedAction === "KEEP_OWNER" && row.crmValid) {
+      lines.push(`  evidenceType=${row.evidenceType ?? "-"}`);
+      lines.push(`  evidenceId=${row.evidenceId ?? "-"}`);
+      lines.push(`  evidenceStatus=${row.evidenceStatus ?? "-"}`);
+      if (row.evidenceCode) lines.push(`  evidenceCode=${row.evidenceCode}`);
+      lines.push(`  evidenceDate=${row.evidenceDate ?? "-"}`);
+      if (row.evidenceDateSource) lines.push(`  evidenceDateSource=${row.evidenceDateSource}`);
+      lines.push(`  evidenceAgeDays=${row.evidenceAgeDays ?? "-"}`);
+      if (row.nextStep) lines.push(`  nextStep=${row.nextStep}`);
+      if (row.nextStepDate) lines.push(`  nextStepDate=${row.nextStepDate}`);
+      lines.push(`  preservationReason=${row.preservationReason ?? "-"}`);
+    }
   }
   return lines.join("\n");
 }

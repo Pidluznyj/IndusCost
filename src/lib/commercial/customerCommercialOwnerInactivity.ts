@@ -40,6 +40,8 @@ export type PortfolioProposalEvidence = {
   expectedCloseDate: Date | null;
   nextActionAt: Date | null;
   updatedAt: Date;
+  number?: number | null;
+  externalProposalCode?: string | null;
 };
 
 export type PortfolioContactEvidence = {
@@ -59,6 +61,14 @@ export type CommercialPortfolioPreservation = {
   evidenceId: string | null;
   evidenceDate: Date | null;
   nextReviewDate: Date | null;
+  /** Diagnóstico de preview. Não entra na decisão KEEP/REMOVE. */
+  evidenceStatus: string | null;
+  evidenceCode: string | null;
+  evidenceAgeDays: number | null;
+  evidenceDateSource: string | null;
+  nextStep: string | null;
+  nextStepDate: Date | null;
+  preservationReason: string | null;
 };
 
 export type PortfolioDecisionInput = {
@@ -191,6 +201,93 @@ function isStaleContact(contact: PortfolioContactEvidence, referenceDate: Date):
   return calendarDaysBetweenSaoPaulo(contactInstant(contact), referenceDate) >= portfolioInactivityDays();
 }
 
+const NO_DIAGNOSTICS = {
+  evidenceStatus: null,
+  evidenceCode: null,
+  evidenceAgeDays: null,
+  evidenceDateSource: null,
+  nextStep: null,
+  nextStepDate: null,
+  preservationReason: null,
+} as const;
+
+export function formatProposalEvidenceCode(proposal: PortfolioProposalEvidence): string {
+  const external = proposal.externalProposalCode?.trim();
+  if (external) return external;
+  if (proposal.number != null) return String(proposal.number);
+  return proposal.id;
+}
+
+function resolveProposalEvidenceDate(proposal: PortfolioProposalEvidence): {
+  date: Date;
+  source: "expectedCloseDate" | "nextActionAt" | "updatedAt";
+} {
+  if (proposal.expectedCloseDate) {
+    return { date: proposal.expectedCloseDate, source: "expectedCloseDate" };
+  }
+  if (proposal.nextActionAt) {
+    return { date: proposal.nextActionAt, source: "nextActionAt" };
+  }
+  return { date: proposal.updatedAt, source: "updatedAt" };
+}
+
+function proposalDiagnostics(
+  proposal: PortfolioProposalEvidence,
+  evidenceType: string,
+  referenceDate: Date
+): Pick<
+  CommercialPortfolioPreservation,
+  | "evidenceStatus"
+  | "evidenceCode"
+  | "evidenceAgeDays"
+  | "evidenceDateSource"
+  | "nextStep"
+  | "nextStepDate"
+  | "preservationReason"
+> {
+  const picked = resolveProposalEvidenceDate(proposal);
+  const code = formatProposalEvidenceCode(proposal);
+  const currentIso = saoPauloDateIso(proposal.updatedAt);
+  return {
+    evidenceStatus: proposal.status,
+    evidenceCode: code,
+    evidenceAgeDays: calendarDaysBetweenSaoPaulo(proposal.updatedAt, referenceDate),
+    evidenceDateSource: picked.source,
+    nextStep: null,
+    nextStepDate: proposal.nextActionAt,
+    preservationReason: `${evidenceType}: proposta ${code} em ${proposal.status}; considerada atual por ${picked.source}=${saoPauloDateIso(picked.date)} (atualizada em ${currentIso}).`,
+  };
+}
+
+function contactDiagnostics(
+  contact: PortfolioContactEvidence,
+  evidenceType: string,
+  evidenceDate: Date | null,
+  dateSource: string,
+  referenceDate: Date
+): Pick<
+  CommercialPortfolioPreservation,
+  | "evidenceStatus"
+  | "evidenceCode"
+  | "evidenceAgeDays"
+  | "evidenceDateSource"
+  | "nextStep"
+  | "nextStepDate"
+  | "preservationReason"
+> {
+  const current = contactInstant(contact);
+  const nextStep = contact.nextActionType?.trim() || null;
+  return {
+    evidenceStatus: contact.outcome?.trim() || contact.reason?.trim() || null,
+    evidenceCode: null,
+    evidenceAgeDays: calendarDaysBetweenSaoPaulo(current, referenceDate),
+    evidenceDateSource: dateSource,
+    nextStep,
+    nextStepDate: contact.nextActionAt,
+    preservationReason: `${evidenceType}: contato ${contact.id}; resultado=${contact.outcome ?? "-"} motivo=${contact.reason ?? "-"}; data=${saoPauloDateIso(evidenceDate ?? current)}; próximo passo=${nextStep ?? "-"}.`,
+  };
+}
+
 export function evaluateCommercialPortfolioPreservation(input: {
   referenceDate: Date;
   lastApprovedIssueDate: Date | null;
@@ -204,13 +301,16 @@ export function evaluateCommercialPortfolioPreservation(input: {
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
   if (openProposal) {
     const projectLike = openProposal.status === "ANALYSIS";
+    const evidenceType = projectLike ? "ACTIVE_PROJECT_OR_HOMOLOGATION" : "ACTIVE_PROPOSAL";
+    const picked = resolveProposalEvidenceDate(openProposal);
     return {
       valid: true,
       reasonCode: PORTFOLIO_PRESERVED_REASON,
-      evidenceType: projectLike ? "ACTIVE_PROJECT_OR_HOMOLOGATION" : "ACTIVE_PROPOSAL",
+      evidenceType,
       evidenceId: openProposal.id,
-      evidenceDate: openProposal.expectedCloseDate ?? openProposal.nextActionAt ?? openProposal.updatedAt,
+      evidenceDate: picked.date,
       nextReviewDate,
+      ...proposalDiagnostics(openProposal, evidenceType, input.referenceDate),
     };
   }
 
@@ -231,6 +331,13 @@ export function evaluateCommercialPortfolioPreservation(input: {
         evidenceId: contact.id,
         evidenceDate: contact.nextActionAt,
         nextReviewDate,
+        ...contactDiagnostics(
+          contact,
+          "DOCUMENTED_TEMPORARY_PAUSE",
+          contact.nextActionAt,
+          "nextActionAt",
+          input.referenceDate
+        ),
       };
     }
 
@@ -247,13 +354,21 @@ export function evaluateCommercialPortfolioPreservation(input: {
               outcome === "REQUESTS_PROPOSAL_REVISION"
             ? "ACTIVE_PROPOSAL"
             : "CONCRETE_COMMERCIAL_FACT";
+      const evidenceDate = contact.nextActionAt ?? contactInstant(contact);
       return {
         valid: true,
         reasonCode: PORTFOLIO_PRESERVED_REASON,
         evidenceType,
         evidenceId: contact.id,
-        evidenceDate: contact.nextActionAt ?? contactInstant(contact),
+        evidenceDate,
         nextReviewDate,
+        ...contactDiagnostics(
+          contact,
+          evidenceType,
+          evidenceDate,
+          contact.nextActionAt ? "nextActionAt" : "contactDate",
+          input.referenceDate
+        ),
       };
     }
 
@@ -270,6 +385,13 @@ export function evaluateCommercialPortfolioPreservation(input: {
         evidenceId: contact.id,
         evidenceDate: contact.nextActionAt,
         nextReviewDate,
+        ...contactDiagnostics(
+          contact,
+          "CONFIRMED_FUTURE_NEXT_STEP",
+          contact.nextActionAt,
+          "nextActionAt",
+          input.referenceDate
+        ),
       };
     }
   }
@@ -285,6 +407,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
       evidenceId: null,
       evidenceDate: null,
       nextReviewDate: null,
+      ...NO_DIAGNOSTICS,
     };
   }
 
@@ -296,6 +419,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
       evidenceId: latest.id,
       evidenceDate: contactInstant(latest),
       nextReviewDate: null,
+      ...NO_DIAGNOSTICS,
     };
   }
 
@@ -314,6 +438,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
       evidenceId: latest.id,
       evidenceDate: contactInstant(latest),
       nextReviewDate: null,
+      ...NO_DIAGNOSTICS,
     };
   }
 
@@ -325,6 +450,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
       evidenceId: latest.id,
       evidenceDate: contactInstant(latest),
       nextReviewDate: null,
+      ...NO_DIAGNOSTICS,
     };
   }
 
@@ -336,6 +462,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
       evidenceId: latest.id,
       evidenceDate: contactInstant(latest),
       nextReviewDate: null,
+      ...NO_DIAGNOSTICS,
     };
   }
 
@@ -346,6 +473,7 @@ export function evaluateCommercialPortfolioPreservation(input: {
     evidenceId: latest.id,
     evidenceDate: contactInstant(latest),
     nextReviewDate: null,
+    ...NO_DIAGNOSTICS,
   };
 }
 
