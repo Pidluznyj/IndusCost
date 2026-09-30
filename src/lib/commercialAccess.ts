@@ -88,6 +88,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "PATCH", path: "/api/crm/customers/:id/commercial-owner", resourceKey: "commercial.crm.assign_seller", action: "manage" },
 
   { method: "GET", path: "/api/customers", resourceKey: "commercial.customers", action: "view" },
+  { method: "GET", path: "/api/customers/export-report*", resourceKey: "commercial.customers", action: "view" },
   { method: "POST", path: "/api/customers", resourceKey: "commercial.customers", action: "create" },
   { method: "PUT", path: "/api/customers/:id", resourceKey: "commercial.customers", action: "update" },
   { method: "DELETE", path: "/api/customers/:id", resourceKey: "commercial.customers", action: "update" },

@@ -475,6 +475,7 @@ import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRanking
 import { registerOutputDocumentsRoutes } from "./src/lib/outputDocumentsRoutes.js";
 import { registerSalesOrderFlowRoutes } from "./src/lib/salesOrderFlowRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
+import { registerCustomerListReportExportRoutes } from "./src/lib/customerListReportExportRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCashFunnelRoutes.js";
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
@@ -13879,6 +13880,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Customers (Clientes) ---
+  registerCustomerListReportExportRoutes(app, {
+    requireAppAuth,
+    requireResource,
+  });
+
   app.get("/api/customers/import/template", requireAppAuth, requireResource("commercial.customers", "view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplate(CustomerImportConfig);
