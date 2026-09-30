@@ -210,7 +210,7 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
               active: row.active,
               createdAt: new Date(row.createdAt),
             },
-            update: { active: row.active, value: row.value, normalizedValue: row.normalizedValue },
+            update: { active: row.active, value: row.value, normalizedValue: row.normalizedValue, type: row.type },
           });
         }
         for (const row of next.connections) {

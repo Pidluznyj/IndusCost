@@ -132,6 +132,30 @@ export function registerLegalExposureRoutes(
     }
   });
 
+  app.get("/api/legal-exposure/entities/:id/aliases", auth, manage, async (req, res) => {
+    try {
+      res.json(await service.listAliases(String(req.params.id)));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post("/api/legal-exposure/entities/:id/aliases", auth, manage, async (req, res) => {
+    try {
+      res.status(201).json(await service.createAlias(String(req.params.id), req.body ?? {}, await userId(req)));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.patch("/api/legal-exposure/aliases/:id", auth, manage, async (req, res) => {
+    try {
+      res.json(await service.updateAlias(String(req.params.id), req.body ?? {}, await userId(req)));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   app.get("/api/legal-exposure/cases", auth, view, async (req, res) => {
     try {
       res.json(await service.listCases(queryOf(req)));
@@ -266,7 +290,9 @@ export function registerLegalExposureRoutes(
         res.status(400).json({ error: "Fonte inválida." });
         return;
       }
-      res.json(await service.testConnection(source as LegalExposureSource));
+      res.json(await service.testConnection(source as LegalExposureSource, {
+        entityId: typeof req.body?.entityId === "string" ? req.body.entityId : undefined,
+      }));
     } catch (error) {
       sendError(res, error);
     }

@@ -8,13 +8,28 @@ import { isValidCnpj } from "@/src/lib/companyCnpjFormat.js";
 import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
 import { saveAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { applyBatchToMemory } from "./legalExposureApply.js";
-import type { LegalExposureSource, NormalizedSourceBatch } from "./legalExposureContracts.js";
+import type { LegalAliasType, LegalExposureSource, NormalizedSourceBatch } from "./legalExposureContracts.js";
+import { LEGAL_ALIAS_TYPES } from "./legalExposureContracts.js";
 import { publicSourceConfiguration } from "./legalExposureFeatureFlags.js";
 import {
   matchExposureGroupCompanies,
   OUTSIDE_GROUP_COMPANY_MESSAGE,
 } from "./legalExposureEntityForm.js";
 import { normalizeExposureCnpj, normalizeLegalName, normalizeProcessNumber, sanitizePayload } from "./legalExposureNormalization.js";
+import { buildDjenDiscoveryTerms, isLegalAliasType } from "./legalExposureDiscovery.js";
+import {
+  collectDatajudTargetsFromBatch,
+  collectKnownCaseDatajudTargets,
+  countSourceOutcomes,
+  emptyEntitySyncCounters,
+  mergeDjenBatches,
+  missingTribunalBatch,
+  tagDiscoveryConfirmation,
+  unionDatajudTargets,
+  uniqueDiscoveredProcessCount,
+  type EntitySyncCounters,
+} from "./legalExposurePipeline.js";
+import { exposureAuditUserId } from "./legalExposureUuid.js";
 import {
   buildExposureDashboard,
   caseTimeline,
@@ -28,6 +43,7 @@ import {
 import type { LegalExposureRepository } from "./legalExposureRepository.server.js";
 import type {
   ExposureAuditRecord,
+  ExposureAliasRecord,
   ExposureEntityRecord,
   LegalExposureMemory,
 } from "./legalExposureStore.js";
@@ -119,41 +135,7 @@ function shouldApplyBatch(batch: NormalizedSourceBatch): boolean {
   );
 }
 
-function datajudTribunalAlias(value: string | null | undefined): string | null {
-  const alias = String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  return alias || null;
-}
-
-function collectDatajudTargets(batch: NormalizedSourceBatch): Array<{ processNumber: string; tribunalAlias: string }> {
-  const seen = new Set<string>();
-  const out: Array<{ processNumber: string; tribunalAlias: string }> = [];
-  for (const observation of batch.cases) {
-    const processNumber = normalizeProcessNumber(observation.processNumber);
-    const tribunalAlias = datajudTribunalAlias(observation.tribunal);
-    if (!processNumber || !tribunalAlias) continue;
-    const key = `${processNumber}:${tribunalAlias}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ processNumber, tribunalAlias });
-  }
-  return out;
-}
-
-function entityTribunalAliases(memory: LegalExposureMemory, entityId: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const row of memory.jurisdictions) {
-    if (!row.enabled || row.entityId !== entityId) continue;
-    const alias = datajudTribunalAlias(row.tribunal);
-    if (!alias || seen.has(alias)) continue;
-    seen.add(alias);
-    out.push(alias);
-  }
-  return out;
-}
+export type ExposureSyncTrigger = "MANUAL" | "SCHEDULED";
 
 export function createLegalExposureService(deps: ExposureServiceDeps) {
   const now = () => (deps.now ? deps.now() : new Date());
@@ -175,7 +157,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     const timestamp = now().toISOString();
     return {
       id: createId(),
-      userId,
+      userId: exposureAuditUserId(userId),
       action,
       entityId: refs.entityId ?? null,
       caseId: refs.caseId ?? null,
@@ -298,6 +280,118 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       );
       await deps.repository.persist(memory);
       return publicEntity(entity);
+    },
+    async listAliases(entityId: string) {
+      const memory = await deps.repository.load();
+      const entity = memory.entities.find((row) => row.id === entityId);
+      if (!entity) throw new ExposureServiceError("Empresa não encontrada.", "NOT_FOUND");
+      return memory.aliases.filter((row) => row.entityId === entityId).map(publicAlias);
+    },
+    async createAlias(
+      entityId: string,
+      input: { value: string; type: string },
+      userId: string
+    ) {
+      if (!isLegalAliasType(input.type)) {
+        throw new ExposureServiceError(
+          `Tipo de alias inválido. Use: ${LEGAL_ALIAS_TYPES.join(", ")}.`,
+          "VALIDATION"
+        );
+      }
+      const value = String(input.value ?? "").trim();
+      if (!value) throw new ExposureServiceError("Valor do alias obrigatório.", "VALIDATION");
+      const normalizedValue = normalizeLegalName(value);
+      if (!normalizedValue) throw new ExposureServiceError("Valor do alias obrigatório.", "VALIDATION");
+      const memory = await deps.repository.load();
+      const entity = memory.entities.find((row) => row.id === entityId);
+      if (!entity) throw new ExposureServiceError("Empresa não encontrada.", "NOT_FOUND");
+      const duplicate = memory.aliases.find(
+        (row) => row.entityId === entityId && row.active && row.normalizedValue === normalizedValue
+      );
+      if (duplicate) {
+        throw new ExposureServiceError("Alias já cadastrado para esta empresa.", "CONFLICT");
+      }
+      const timestamp = now().toISOString();
+      const inactiveSame = memory.aliases.find(
+        (row) =>
+          row.entityId === entityId &&
+          row.type === input.type &&
+          row.normalizedValue === normalizedValue &&
+          !row.active
+      );
+      if (inactiveSame) {
+        inactiveSame.value = value;
+        inactiveSame.active = true;
+        audit(memory, userId, "ENTITY_UPDATED", { entityId }, { operation: "ALIAS_CREATED", aliasId: inactiveSame.id });
+        await deps.repository.persist(memory);
+        return publicAlias(inactiveSame);
+      }
+      const alias = {
+        id: createId(),
+        entityId,
+        type: input.type,
+        value,
+        normalizedValue,
+        active: true,
+        createdAt: timestamp,
+      };
+      memory.aliases.push(alias);
+      audit(memory, userId, "ENTITY_UPDATED", { entityId }, { operation: "ALIAS_CREATED", aliasId: alias.id });
+      await deps.repository.persist(memory);
+      return publicAlias(alias);
+    },
+    async updateAlias(
+      id: string,
+      input: { value?: string; type?: string; active?: boolean },
+      userId: string
+    ) {
+      const memory = await deps.repository.load();
+      const alias = memory.aliases.find((row) => row.id === id);
+      if (!alias) throw new ExposureServiceError("Alias não encontrado.", "NOT_FOUND");
+      const entity = memory.entities.find((row) => row.id === alias.entityId);
+      if (!entity) throw new ExposureServiceError("Empresa não encontrada.", "NOT_FOUND");
+      const nextType = input.type != null ? input.type : alias.type;
+      if (!isLegalAliasType(nextType)) {
+        throw new ExposureServiceError(
+          `Tipo de alias inválido. Use: ${LEGAL_ALIAS_TYPES.join(", ")}.`,
+          "VALIDATION"
+        );
+      }
+      const nextValue = input.value != null ? String(input.value).trim() : alias.value;
+      if (!nextValue) throw new ExposureServiceError("Valor do alias obrigatório.", "VALIDATION");
+      const nextNormalized = normalizeLegalName(nextValue);
+      if (!nextNormalized) throw new ExposureServiceError("Valor do alias obrigatório.", "VALIDATION");
+      const nextActive = input.active != null ? Boolean(input.active) : alias.active;
+      if (nextActive) {
+        const duplicate = memory.aliases.find(
+          (row) =>
+            row.id !== alias.id &&
+            row.entityId === alias.entityId &&
+            row.active &&
+            row.normalizedValue === nextNormalized
+        );
+        if (duplicate) {
+          throw new ExposureServiceError("Alias já cadastrado para esta empresa.", "CONFLICT");
+        }
+      }
+      const disabling = alias.active && nextActive === false;
+      alias.type = nextType;
+      alias.value = nextValue;
+      alias.normalizedValue = nextNormalized;
+      alias.active = nextActive;
+      audit(
+        memory,
+        userId,
+        "ENTITY_UPDATED",
+        { entityId: alias.entityId },
+        {
+          operation: disabling ? "ALIAS_DISABLED" : "ALIAS_UPDATED",
+          aliasId: alias.id,
+          active: alias.active,
+        }
+      );
+      await deps.repository.persist(memory);
+      return publicAlias(alias);
     },
     async listCases(query: ExposureListQuery) {
       return listCases(await deps.repository.load(), query);
@@ -454,8 +548,10 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       mode?: "preview" | "apply";
       entityId?: string;
       processNumber?: string;
-    }, userId: string) {
+      trigger?: ExposureSyncTrigger;
+    }, userId: string | null) {
       const mode = input.mode === "apply" ? "apply" : "preview";
+      const trigger: ExposureSyncTrigger = input.trigger === "SCHEDULED" ? "SCHEDULED" : "MANUAL";
       const runners = deps.runners ?? (await defaultRunners());
       const memory = await deps.repository.load();
       const pipelineAll = !input.source || input.source === "ALL";
@@ -475,74 +571,118 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       }
 
       const batches: NormalizedSourceBatch[] = [];
+      const summaryEntities: Array<EntitySyncCounters & { entityId: string; legalName: string }> = [];
 
-      async function collectEntityBatches(entity: ExposureEntityRecord): Promise<NormalizedSourceBatch[]> {
-        const collected: NormalizedSourceBatch[] = [];
-        let djenBatch: NormalizedSourceBatch | null = null;
+      function applyOwned(entityId: string, batch: NormalizedSourceBatch) {
+        if (mode === "apply" && shouldApplyBatch(batch)) {
+          applyBatchToMemory(memory, {
+            entityId,
+            batch,
+            now: now().toISOString(),
+            createId,
+          });
+        }
+        batches.push(batch);
+      }
+
+      for (const entity of entities) {
+        const counters = emptyEntitySyncCounters();
+        const owned: NormalizedSourceBatch[] = [];
+        let mergedDjen: NormalizedSourceBatch | null = null;
 
         if (wantsDjen) {
+          const djenPages: NormalizedSourceBatch[] = [];
           if (scopedProcessNumber) {
-            djenBatch = await runners.djen({ numeroProcesso: scopedProcessNumber });
-          } else if (entity.legalName.trim()) {
-            djenBatch = await runners.djen({ nomeParte: entity.legalName.trim() });
+            djenPages.push(await runners.djen({ numeroProcesso: scopedProcessNumber }));
+            counters.discoveryTermsConsulted = [];
           } else {
-            djenBatch = failClosedBatch("DJEN", "DJEN exige nomeParte ou numeroProcesso.");
+            const terms = buildDjenDiscoveryTerms({
+              legalName: entity.legalName,
+              tradeName: entity.tradeName,
+              aliases: memory.aliases.filter((row) => row.entityId === entity.id),
+            });
+            counters.discoveryTermsConsulted = terms.map((term) => term.value);
+            if (terms.length === 0) {
+              djenPages.push(failClosedBatch("DJEN", "DJEN exige nomeParte ou numeroProcesso."));
+            } else {
+              for (const term of terms) {
+                const page = tagDiscoveryConfirmation(
+                  await runners.djen({ nomeParte: term.value }),
+                  term.trust
+                );
+                djenPages.push(page);
+              }
+            }
           }
-          collected.push(djenBatch);
+          counters.djenQueries = djenPages.length;
+          mergedDjen = mergeDjenBatches(djenPages);
+          counters.uniqueProcessesDiscovered = uniqueDiscoveredProcessCount(mergedDjen);
+          owned.push(mergedDjen);
+          applyOwned(entity.id, mergedDjen);
         }
 
         if (wantsDatajud) {
-          if (pipelineAll) {
-            const targets = djenBatch ? collectDatajudTargets(djenBatch) : [];
-            if (targets.length === 0) {
-              collected.push(failClosedBatch("DATAJUD", "DataJud exige número de processo conhecido."));
-            } else {
-              for (const target of targets) {
-                collected.push(
-                  await runners.datajud({
-                    processNumber: target.processNumber,
-                    tribunalAlias: target.tribunalAlias,
-                  })
-                );
-              }
-            }
-          } else {
+          const discovered = pipelineAll || wantsDjen ? collectDatajudTargetsFromBatch(mergedDjen) : [];
+          const known = collectKnownCaseDatajudTargets(memory, entity.id);
+          let targets = unionDatajudTargets(discovered, known.targets);
+          if (scopedProcessNumber) {
             const knownProcess = normalizeProcessNumber(scopedProcessNumber);
-            const aliases = entityTribunalAliases(memory, entity.id);
-            if (!knownProcess) {
-              collected.push(failClosedBatch("DATAJUD", "DataJud exige número de processo conhecido."));
-            } else if (aliases.length === 0) {
-              collected.push(failClosedBatch("DATAJUD", "DataJud exige tribunal do processo conhecido."));
-            } else {
-              for (const tribunalAlias of aliases) {
-                collected.push(await runners.datajud({ processNumber: knownProcess, tribunalAlias }));
-              }
+            targets = knownProcess
+              ? targets.filter((target) => target.processNumber === knownProcess)
+              : [];
+            if (knownProcess && targets.length === 0) {
+              const fromScope = known.targets.filter((target) => target.processNumber === knownProcess);
+              targets = fromScope;
+            }
+          }
+          counters.datajudTargets = targets.length;
+          counters.knownProcessesRefreshed = targets.filter((target) => target.origin === "KNOWN_CASE").length;
+          if (targets.length === 0 && known.skippedWithoutTribunal.length > 0) {
+            const skipped = missingTribunalBatch(known.skippedWithoutTribunal[0]!.processNumber);
+            owned.push(skipped);
+            applyOwned(entity.id, skipped);
+          } else if (targets.length === 0) {
+            const empty = failClosedBatch("DATAJUD", "DataJud exige número de processo conhecido.");
+            owned.push(empty);
+            applyOwned(entity.id, empty);
+          } else {
+            for (const skipped of known.skippedWithoutTribunal) {
+              const batch = missingTribunalBatch(skipped.processNumber);
+              owned.push(batch);
+              applyOwned(entity.id, batch);
+            }
+            for (const target of targets) {
+              const batch = await runners.datajud({
+                processNumber: target.processNumber,
+                tribunalAlias: target.tribunalAlias,
+              });
+              owned.push(batch);
+              applyOwned(entity.id, batch);
             }
           }
         }
 
         if (wantsDomicilio) {
-          collected.push(await runners.domicilio());
+          const domicilio = await runners.domicilio();
+          owned.push(domicilio);
+          applyOwned(entity.id, domicilio);
         }
-        return collected;
+
+        Object.assign(counters, countSourceOutcomes(owned));
+        summaryEntities.push({
+          entityId: entity.id,
+          legalName: entity.legalName,
+          ...counters,
+        });
       }
 
-      for (const entity of entities) {
-        const owned = await collectEntityBatches(entity);
-        for (const batch of owned) {
-          if (mode === "apply" && shouldApplyBatch(batch)) {
-            applyBatchToMemory(memory, {
-              entityId: entity.id,
-              batch,
-              now: now().toISOString(),
-              createId,
-            });
-          }
-          batches.push(batch);
-        }
-      }
-
-      audit(memory, userId, "MANUAL_SYNC", { entityId: input.entityId ?? null }, { mode, source: input.source ?? "ALL" });
+      audit(
+        memory,
+        userId,
+        "MANUAL_SYNC",
+        { entityId: input.entityId ?? null },
+        { mode, source: input.source ?? "ALL", trigger }
+      );
       await deps.repository.persist(memory);
       for (const batch of batches) {
         await deps.recordIntegrationRun?.({
@@ -560,6 +700,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       }
       return {
         mode,
+        trigger,
         externalCall: batches.some((batch) => batch.externalCall),
         batches: batches.map((batch) => ({
           source: batch.source,
@@ -571,19 +712,62 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           cases: batch.cases.length,
           communications: batch.communications.length,
         })),
+        summary: { entities: summaryEntities },
       };
     },
-    async testConnection(source: LegalExposureSource) {
+    async testConnection(source: LegalExposureSource, input?: { entityId?: string }) {
       const started = Date.now();
       const runners = deps.runners ?? (await defaultRunners());
-      const batch =
-        source === "DOMICILIO"
-          ? await runners.domicilio()
-          : source === "DATAJUD"
-            ? await runners.datajud()
-            : source === "DJEN"
-              ? await runners.djen()
-              : disabledRunner(source);
+      const memory = await deps.repository.load();
+      if (source === "DJEN") {
+        const entity = input?.entityId
+          ? memory.entities.find((row) => row.id === input.entityId && row.active)
+          : memory.entities.find((row) => row.active);
+        const nomeParte = entity?.legalName.trim() ?? "";
+        const batch = nomeParte
+          ? await runners.djen({ nomeParte })
+          : failClosedBatch("DJEN", "DJEN exige nomeParte ou numeroProcesso.");
+        return {
+          source,
+          success: batch.outcome === "SUCCESS" || batch.outcome === "NO_RESULTS" || batch.outcome === "PARTIAL",
+          latencyMs: Date.now() - started,
+          timestamp: now().toISOString(),
+          sanitizedError: batch.errorMessageSanitized,
+          externalCall: batch.externalCall,
+          connectivityTest: nomeParte ? "RUN" : "NOT_RUN_NO_ENTITY",
+        };
+      }
+      if (source === "DATAJUD") {
+        const entity = input?.entityId
+          ? memory.entities.find((row) => row.id === input.entityId && row.active)
+          : memory.entities.find((row) => row.active);
+        const known = entity ? collectKnownCaseDatajudTargets(memory, entity.id).targets[0] : undefined;
+        if (!known) {
+          return {
+            source,
+            success: true,
+            latencyMs: Date.now() - started,
+            timestamp: now().toISOString(),
+            sanitizedError: null,
+            externalCall: false,
+            connectivityTest: "NOT_RUN_NO_KNOWN_PROCESS",
+          };
+        }
+        const batch = await runners.datajud({
+          processNumber: known.processNumber,
+          tribunalAlias: known.tribunalAlias,
+        });
+        return {
+          source,
+          success: batch.outcome === "SUCCESS" || batch.outcome === "NO_RESULTS" || batch.outcome === "PARTIAL",
+          latencyMs: Date.now() - started,
+          timestamp: now().toISOString(),
+          sanitizedError: batch.errorMessageSanitized,
+          externalCall: batch.externalCall,
+          connectivityTest: "RUN",
+        };
+      }
+      const batch = source === "DOMICILIO" ? await runners.domicilio() : disabledRunner(source);
       return {
         source,
         success: batch.outcome === "SUCCESS" || batch.outcome === "NO_RESULTS",
@@ -591,6 +775,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         timestamp: now().toISOString(),
         sanitizedError: batch.errorMessageSanitized,
         externalCall: batch.externalCall,
+        connectivityTest: "RUN",
       };
     },
   };
@@ -611,5 +796,17 @@ function publicEntity(entity: ExposureEntityRecord) {
     monitorCertificates: entity.monitorCertificates,
     domicilioTenantId: entity.domicilioTenantId,
     lastSuccessfulSyncAt: entity.lastSuccessfulSyncAt,
+  };
+}
+
+function publicAlias(alias: ExposureAliasRecord) {
+  return {
+    id: alias.id,
+    entityId: alias.entityId,
+    type: alias.type,
+    value: alias.value,
+    normalizedValue: alias.normalizedValue,
+    active: alias.active,
+    createdAt: alias.createdAt,
   };
 }

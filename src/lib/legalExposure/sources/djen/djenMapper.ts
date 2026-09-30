@@ -19,20 +19,35 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function mapDjenPublications(body: unknown): NormalizedSourceBatch {
+export type DjenMappedPage = {
+  batch: NormalizedSourceBatch;
+  itemCount: number;
+  totalCount: number | null;
+};
+
+function readTotalCount(root: Record<string, unknown> | null): number | null {
+  const count = root?.count;
+  return typeof count === "number" && Number.isFinite(count) ? count : null;
+}
+
+export function mapDjenPublicationPage(body: unknown): DjenMappedPage {
   const root = asRecord(body);
   const list = Array.isArray(body) ? body : Array.isArray(root?.items) ? root.items : null;
   if (!list) {
     return {
-      source: "DJEN",
-      outcome: "INVALID_RESPONSE",
-      errorCode: "INVALID_RESPONSE",
-      errorMessageSanitized: "Resposta DJEN sem lista.",
-      retryAfterSeconds: null,
-      externalCall: true,
-      cases: [],
-      communications: [],
-      candidates: [],
+      batch: {
+        source: "DJEN",
+        outcome: "INVALID_RESPONSE",
+        errorCode: "INVALID_RESPONSE",
+        errorMessageSanitized: "Resposta DJEN sem lista.",
+        retryAfterSeconds: null,
+        externalCall: true,
+        cases: [],
+        communications: [],
+        candidates: [],
+      },
+      itemCount: 0,
+      totalCount: readTotalCount(root),
     };
   }
   const cases: NormalizedCaseObservation[] = [];
@@ -78,14 +93,22 @@ export function mapDjenPublications(body: unknown): NormalizedSourceBatch {
     }
   }
   return {
-    source: "DJEN",
-    outcome: cases.length + candidates.length === 0 ? "NO_RESULTS" : "SUCCESS",
-    errorCode: null,
-    errorMessageSanitized: null,
-    retryAfterSeconds: null,
-    externalCall: true,
-    cases,
-    communications: [],
-    candidates,
+    batch: {
+      source: "DJEN",
+      outcome: cases.length + candidates.length === 0 ? "NO_RESULTS" : "SUCCESS",
+      errorCode: null,
+      errorMessageSanitized: null,
+      retryAfterSeconds: null,
+      externalCall: true,
+      cases,
+      communications: [],
+      candidates,
+    },
+    itemCount: list.length,
+    totalCount: readTotalCount(root),
   };
+}
+
+export function mapDjenPublications(body: unknown): NormalizedSourceBatch {
+  return mapDjenPublicationPage(body).batch;
 }

@@ -275,6 +275,28 @@ describe("exposure routes", () => {
         method: "POST",
       });
       assert.equal(resolved.status, 200);
+
+      const aliases = await fetch(`${started.base}/api/legal-exposure/entities/${entity.id}/aliases`);
+      assert.equal(aliases.status, 200);
+      const createdAlias = await fetch(`${started.base}/api/legal-exposure/entities/${entity.id}/aliases`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "TRADE_NAME", value: "Lazarios" }),
+      });
+      assert.equal(createdAlias.status, 201);
+      const alias = (await createdAlias.json()) as { id: string };
+      const patched = await fetch(`${started.base}/api/legal-exposure/aliases/${alias.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      assert.equal(patched.status, 200);
+      const duplicate = await fetch(`${started.base}/api/legal-exposure/entities/${entity.id}/aliases`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "OTHER", value: official.name }),
+      });
+      assert.equal(duplicate.status, 409);
     } finally {
       await started.close();
     }

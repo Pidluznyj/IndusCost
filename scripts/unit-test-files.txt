@@ -344,4 +344,6 @@ src/lib/legalExposure/legalExposureRoutes.test.ts
 src/lib/legalExposure/legalExposureEntityForm.test.ts
 src/lib/legalExposure/legalExposureAuditPersistence.test.ts
 src/lib/legalExposure/legalExposureEntitySync.test.ts
+src/lib/legalExposure/legalExposureDiscovery.test.ts
+src/lib/legalExposure/legalExposureMonitoring.test.ts
 src/lib/legalExposure/sources/datajud/datajudKnownProcess.test.ts

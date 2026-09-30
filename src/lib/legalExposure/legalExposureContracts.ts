@@ -285,6 +285,8 @@ export type NormalizedCaseObservation = {
   parties: NormalizedParty[];
   movements: NormalizedMovement[];
   rawMetadata: unknown;
+  /** GENERIC: ABBREVIATION/OTHER sem autoassociação só pelo CNJ. */
+  discoveryConfirmation?: "TRUSTED" | "GENERIC";
 };
 
 export type NormalizedCommunicationObservation = {

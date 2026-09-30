@@ -16,6 +16,7 @@ import {
   type NormalizedSourceBatch,
 } from "./legalExposureContracts.js";
 import { correlateObservation } from "./legalExposureCorrelation.js";
+import { genericDiscoveryHasAdditionalEvidence, isTrustedDiscoveryAliasType } from "./legalExposureDiscovery.js";
 import { isCriticalMonitoringSource, statusFromQueryOutcome } from "./legalExposureHealth.js";
 import {
   movementFingerprint,
@@ -159,6 +160,9 @@ function entityContext(memory: LegalExposureMemory, entityId: string) {
     entity,
     cases,
     aliases: memory.aliases.filter((row) => row.entityId === entityId && row.active).map((row) => row.normalizedValue),
+    trustedAliasValues: memory.aliases
+      .filter((row) => row.entityId === entityId && row.active && isTrustedDiscoveryAliasType(row.type))
+      .map((row) => row.value),
     officialIds: memory.evidences
       .filter((row) => caseIds.has(row.caseId))
       .map((row) => ({ officialIdentifier: row.sourceIdentifier, caseId: row.caseId })),
@@ -172,6 +176,29 @@ function ensureCase(
 ): ExposureCaseRecord | null {
   const ctx = entityContext(memory, input.entityId);
   if (!ctx) return null;
+  if (
+    observation.discoveryConfirmation === "GENERIC" &&
+    !genericDiscoveryHasAdditionalEvidence({
+      explicitCnpj: observation.explicitCnpj,
+      candidateName: observation.candidateName,
+      entityCnpj: ctx.entity.cnpj,
+      entityLegalName: ctx.entity.legalName,
+      trustedAliasValues: ctx.trustedAliasValues,
+    })
+  ) {
+    const event = pushEvent(memory, input, {
+      eventKey: `CANDIDATE_REVIEW:${input.entityId}:${input.batch.source}:GENERIC:${normalizeProcessNumber(observation.processNumber) || normalizeLegalName(observation.candidateName) || "sem-chave"}`,
+      entityId: input.entityId,
+      caseId: null,
+      communicationId: null,
+      source: input.batch.source,
+      eventType: "CANDIDATE_REVIEW",
+      severity: "MEDIUM",
+      payload: { method: "GENERIC_ALIAS", name: observation.candidateName, processNumber: observation.processNumber },
+    });
+    pushAlert(memory, input, event, "LIKELY_REVIEW");
+    return null;
+  }
   const processNumberNormalized = normalizeProcessNumber(observation.processNumber);
   const decision = correlateObservation({
     processNumberNormalized,

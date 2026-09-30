@@ -19,6 +19,8 @@ export const LEGAL_EXPOSURE_ENV = {
   datajudApiKey: "DATAJUD_API_KEY",
   djen: "DJEN_ENABLED",
   djenBaseUrl: "DJEN_BASE_URL",
+  djenMaxPages: "DJEN_MAX_PAGES",
+  autosync: "LEGAL_EXPOSURE_AUTOSYNC_ENABLED",
 } as const;
 
 const ENABLED = new Set(["1", "true", "yes", "on", "enabled"]);
@@ -48,6 +50,10 @@ export function isDatajudCnpjDiscoveryEnabled(env: LegalExposureEnv = process.en
 
 export function isDjenEnabled(env: LegalExposureEnv = process.env): boolean {
   return isLegalExposureModuleEnabled(env) && isEnvFlagOn(LEGAL_EXPOSURE_ENV.djen, env);
+}
+
+export function isLegalExposureAutosyncEnabled(env: LegalExposureEnv = process.env): boolean {
+  return isEnvFlagOn(LEGAL_EXPOSURE_ENV.autosync, env);
 }
 
 export type SourceConfigurationState = {

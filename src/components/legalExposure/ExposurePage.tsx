@@ -11,8 +11,17 @@ import {
   NO_CASES_IDENTIFIED_COPY,
   OFFICIAL_COMMUNICATIONS_PORTAL_URL,
   SOURCE_STATUS_LABELS,
+  type LegalAliasType,
   type LegalSourceConnectionStatus,
 } from "@/src/lib/legalExposure/legalExposureContracts";
+import {
+  ALIAS_TYPE_OPTIONS,
+  buildCreateAliasBody,
+  exposureAliasCreateRequest,
+  exposureAliasListPath,
+  exposureAliasPatchRequest,
+  type ExposureAliasRow,
+} from "@/src/lib/legalExposure/legalExposureAliasForm";
 import {
   buildCreateEntityBody,
   buildUpdateEntityBody,
@@ -121,7 +130,20 @@ export function ExposurePage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [aliasesByEntity, setAliasesByEntity] = useState<Record<string, ExposureAliasRow[]>>({});
+  const [aliasDrafts, setAliasDrafts] = useState<Record<string, { value: string; type: LegalAliasType }>>({});
+  const [aliasError, setAliasError] = useState<string | null>(null);
   const companyActions = exposureEntityActions(permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module));
+
+  const reloadAliases = useCallback(async (list: MonitoredEntity[]) => {
+    const entries = await Promise.all(
+      list.map(async (entity) => {
+        const rows = await fetchJsonOk<ExposureAliasRow[]>(exposureAliasListPath(entity.id));
+        return [entity.id, rows] as const;
+      })
+    );
+    setAliasesByEntity(Object.fromEntries(entries));
+  }, []);
 
   const reloadOverview = useCallback(async () => {
     const [data, list, companies] = await Promise.all([
@@ -132,7 +154,10 @@ export function ExposurePage() {
     setDashboard(data);
     setEntities(list);
     setGroupCompanies(companies);
-  }, []);
+    if (permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module)) {
+      await reloadAliases(list);
+    }
+  }, [permissions, reloadAliases]);
 
   useEffect(() => {
     let cancelled = false;
@@ -250,6 +275,51 @@ export function ExposurePage() {
       await reloadOverview();
     } catch (err: unknown) {
       setFormError(exposureEntityErrorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitAlias(entityId: string) {
+    const draft = aliasDrafts[entityId] ?? { value: "", type: "OTHER" as LegalAliasType };
+    const built = buildCreateAliasBody(draft);
+    if (!built.ok) {
+      setAliasError(built.error);
+      return;
+    }
+    const request = exposureAliasCreateRequest(entityId);
+    setSaving(true);
+    setAliasError(null);
+    try {
+      await fetchJsonOk(request.path, {
+        method: request.method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(built.body),
+      });
+      setAliasDrafts((current) => ({ ...current, [entityId]: { value: "", type: "OTHER" } }));
+      setNotice("Alias adicionado.");
+      await reloadOverview();
+    } catch (err: unknown) {
+      setAliasError(exposureEntityErrorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function patchAlias(alias: ExposureAliasRow, patch: { value?: string; type?: LegalAliasType; active?: boolean }) {
+    const request = exposureAliasPatchRequest(alias.id);
+    setSaving(true);
+    setAliasError(null);
+    try {
+      await fetchJsonOk(request.path, {
+        method: request.method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      setNotice(patch.active === false ? "Alias desativado." : "Alias atualizado.");
+      await reloadOverview();
+    } catch (err: unknown) {
+      setAliasError(exposureEntityErrorText(err));
     } finally {
       setSaving(false);
     }
@@ -451,15 +521,129 @@ export function ExposurePage() {
       {tab === "sources" && dashboard ? <SourceGrid sources={dashboard.sources} certificates={dashboard.certificates} /> : null}
 
       {tab === "settings" && dashboard ? (
-        <ul className="space-y-2 text-sm">
-          {dashboard.configuration.map((row) => (
-            <li key={row.source}>
-              {row.source}: {row.configured ? "configurado" : "não configurado"}
-              {row.enabled ? "" : " · desligado"}
-            </li>
-          ))}
-          <li className="text-muted-foreground">{LIKELY_REVIEW_COPY} permanece como revisão humana. Segredos não são exibidos.</li>
-        </ul>
+        <div className="space-y-6">
+          <ul className="space-y-2 text-sm">
+            {dashboard.configuration.map((row) => (
+              <li key={row.source}>
+                {row.source}: {row.configured ? "configurado" : "não configurado"}
+                {row.enabled ? "" : " · desligado"}
+              </li>
+            ))}
+            <li className="text-muted-foreground">{LIKELY_REVIEW_COPY} permanece como revisão humana. Segredos não são exibidos.</li>
+          </ul>
+          {companyActions.showEdit ? (
+            <section className="space-y-4">
+              <h3 className="text-sm font-semibold">Aliases de descoberta DJEN</h3>
+              {aliasError ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{aliasError}</p> : null}
+              {entities.map((entity) => {
+                const draft = aliasDrafts[entity.id] ?? { value: "", type: "OTHER" as LegalAliasType };
+                return (
+                  <article key={entity.id} className="space-y-3 rounded-xl border border-border bg-card p-4">
+                    <div>
+                      <p className="font-medium">{entity.legalName}</p>
+                      <p className="text-xs text-muted-foreground">Razão social: {entity.legalName}</p>
+                      <p className="text-xs text-muted-foreground">Nome fantasia: {entity.tradeName || "—"}</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <th className="py-1">Tipo</th>
+                          <th className="py-1">Valor</th>
+                          <th className="py-1">Ativo</th>
+                          <th className="py-1" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(aliasesByEntity[entity.id] ?? []).map((alias) => (
+                          <tr key={alias.id} className="border-t border-border">
+                            <td className="py-2">
+                              <select
+                                value={alias.type}
+                                disabled={saving}
+                                onChange={(event) => void patchAlias(alias, { type: event.target.value as LegalAliasType })}
+                                className="rounded border border-border bg-background px-2 py-1"
+                              >
+                                {ALIAS_TYPE_OPTIONS.map((option) => (
+                                  <option key={option.type} value={option.type}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="py-2">
+                              <input
+                                defaultValue={alias.value}
+                                disabled={saving}
+                                onBlur={(event) => {
+                                  const value = event.target.value.trim();
+                                  if (value && value !== alias.value) void patchAlias(alias, { value });
+                                }}
+                                className="w-full rounded border border-border bg-background px-2 py-1"
+                              />
+                            </td>
+                            <td className="py-2">{alias.active ? "Sim" : "Não"}</td>
+                            <td className="py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={saving}
+                                className="text-sm font-semibold underline"
+                                onClick={() => void patchAlias(alias, { active: !alias.active })}
+                              >
+                                {alias.active ? "Desativar" : "Ativar"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Tipo
+                        <select
+                          value={draft.type}
+                          onChange={(event) =>
+                            setAliasDrafts((current) => ({
+                              ...current,
+                              [entity.id]: { ...draft, type: event.target.value as LegalAliasType },
+                            }))
+                          }
+                          className="mt-1 block rounded border border-border bg-background px-2 py-1 text-sm font-normal normal-case"
+                        >
+                          {ALIAS_TYPE_OPTIONS.map((option) => (
+                            <option key={option.type} value={option.type}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="min-w-[16rem] flex-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Valor
+                        <input
+                          value={draft.value}
+                          onChange={(event) =>
+                            setAliasDrafts((current) => ({
+                              ...current,
+                              [entity.id]: { ...draft, value: event.target.value },
+                            }))
+                          }
+                          className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-sm font-normal normal-case"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void submitAlias(entity.id)}
+                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                      >
+                        Adicionar alias
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          ) : null}
+        </div>
       ) : null}
 
       {dialog === "create" && createStep === "select" ? (
