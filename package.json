@@ -413,7 +413,7 @@
     "legal:exposure:djen:apply": "tsx scripts/legalExposureSync.ts --source=DJEN --apply --confirm-apply=LEGAL_EXPOSURE_APPLY",
     "legal:exposure:datajud:probe": "tsx scripts/legalExposureDatajudProbe.ts",
     "legal:exposure:health": "tsx scripts/legalExposureHealth.ts",
-    "test:legal-exposure": "tsx --test src/lib/legalExposure/legalExposureCore.test.ts src/lib/legalExposure/legalExposureSecurity.test.ts src/lib/legalExposure/legalExposureNavigation.test.ts src/lib/legalExposure/legalExposureRoutes.test.ts src/lib/navigationGroups.test.ts src/lib/sidebarGroupingFinalValidation.test.ts src/lib/security/permissionContract/permissionContract.test.ts",
+    "test:legal-exposure": "tsx --test src/lib/legalExposure/legalExposureCore.test.ts src/lib/legalExposure/legalExposureSecurity.test.ts src/lib/legalExposure/legalExposureNavigation.test.ts src/lib/legalExposure/legalExposureRoutes.test.ts src/lib/legalExposure/legalExposureEntityForm.test.ts src/lib/navigationGroups.test.ts src/lib/sidebarGroupingFinalValidation.test.ts src/lib/security/permissionContract/permissionContract.test.ts",
     "test:unit": "node scripts/run-unit-tests.mjs",
     "rebuild:sales-order-flow": "tsx scripts/rebuildSalesOrderFlow.ts",
     "rebuild:sales-order-flow:preview": "tsx scripts/rebuildSalesOrderFlow.ts --preview",

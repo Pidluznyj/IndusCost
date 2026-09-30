@@ -337,3 +337,4 @@ src/lib/legalExposure/legalExposureCore.test.ts
 src/lib/legalExposure/legalExposureSecurity.test.ts
 src/lib/legalExposure/legalExposureNavigation.test.ts
 src/lib/legalExposure/legalExposureRoutes.test.ts
+src/lib/legalExposure/legalExposureEntityForm.test.ts

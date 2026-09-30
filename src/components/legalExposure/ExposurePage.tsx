@@ -13,7 +13,24 @@ import {
   SOURCE_STATUS_LABELS,
   type LegalSourceConnectionStatus,
 } from "@/src/lib/legalExposure/legalExposureContracts";
+import {
+  buildCreateEntityBody,
+  buildUpdateEntityBody,
+  EMPTY_COMPANIES_COPY,
+  EMPTY_COMPANIES_MANAGE_HINT,
+  emptyCreateForm,
+  entityEditFormFrom,
+  exposureEntityActions,
+  exposureEntityErrorText,
+  exposureEntityRequest,
+  maskCnpjInput,
+  MONITOR_GLOBAL_NOTE,
+  type EntityCreateForm,
+  type EntityEditForm,
+  type MonitoredEntity,
+} from "@/src/lib/legalExposure/legalExposureEntityForm";
 import { LEGAL_EXPOSURE_RESOURCES } from "@/src/lib/legalExposure/legalExposurePermissions";
+import { formatCnpj } from "@/src/lib/companyCnpjFormat";
 import { fetchJsonOk } from "@/src/lib/http";
 import { usePermissions } from "@/src/hooks/usePermissions";
 
@@ -90,21 +107,34 @@ export function ExposurePage() {
   const [alerts, setAlerts] = useState<{ items: { id: string; title: string; summary: string; severity: string; requiresAction: boolean }[] } | null>(null);
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{ items: { kind: string; at: string; title: string; source: string | null }[] } | null>(null);
+  const [entities, setEntities] = useState<MonitoredEntity[]>([]);
+  const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [editing, setEditing] = useState<MonitoredEntity | null>(null);
+  const [createForm, setCreateForm] = useState<EntityCreateForm>(emptyCreateForm);
+  const [editForm, setEditForm] = useState<EntityEditForm | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const companyActions = exposureEntityActions(permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module));
 
-  const loadDashboard = useCallback(async () => {
-    const data = await fetchJsonOk<Dashboard>("/api/legal-exposure/dashboard");
+  const reloadOverview = useCallback(async () => {
+    const [data, list] = await Promise.all([
+      fetchJsonOk<Dashboard>("/api/legal-exposure/dashboard"),
+      fetchJsonOk<MonitoredEntity[]>("/api/legal-exposure/entities"),
+    ]);
     setDashboard(data);
+    setEntities(list);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    loadDashboard().catch((err: unknown) => {
-      if (!cancelled) setError(err instanceof Error ? err.message : "Falha ao carregar o Exposure.");
+    reloadOverview().catch((err: unknown) => {
+      if (!cancelled) setError(exposureEntityErrorText(err));
     });
     return () => {
       cancelled = true;
     };
-  }, [loadDashboard]);
+  }, [reloadOverview]);
 
   useEffect(() => {
     if (!visibleTabs.some((item) => item.id === tab) && visibleTabs[0]) setTab(visibleTabs[0].id);
@@ -128,6 +158,80 @@ export function ExposurePage() {
     setTab("action");
     const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?status=OPEN&page=1&pageSize=20");
     setAlerts(data);
+  }
+
+  function openCreate() {
+    setCreateForm(emptyCreateForm());
+    setFormError(null);
+    setDialog("create");
+  }
+
+  function openEdit(entity: MonitoredEntity) {
+    setEditing(entity);
+    setEditForm(entityEditFormFrom(entity));
+    setFormError(null);
+    setDialog("edit");
+  }
+
+  function closeDialog() {
+    if (saving) return;
+    setDialog(null);
+    setEditing(null);
+    setEditForm(null);
+    setFormError(null);
+  }
+
+  async function submitCreate() {
+    const built = buildCreateEntityBody(createForm);
+    if (!built.ok) {
+      setFormError(built.error);
+      return;
+    }
+    const request = exposureEntityRequest("create");
+    setSaving(true);
+    setFormError(null);
+    try {
+      await fetchJsonOk(request.path, {
+        method: request.method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(built.body),
+      });
+      setDialog(null);
+      setCreateForm(emptyCreateForm());
+      setNotice("Empresa adicionada.");
+      await reloadOverview();
+    } catch (err: unknown) {
+      setFormError(exposureEntityErrorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitEdit() {
+    if (!editing || !editForm) return;
+    if (!editForm.legalName.trim()) {
+      setFormError("Informe a razão social.");
+      return;
+    }
+    const request = exposureEntityRequest("edit", editing.id);
+    setSaving(true);
+    setFormError(null);
+    try {
+      await fetchJsonOk(request.path, {
+        method: request.method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildUpdateEntityBody(editForm)),
+      });
+      setDialog(null);
+      setEditing(null);
+      setEditForm(null);
+      setNotice("Empresa atualizada.");
+      await reloadOverview();
+    } catch (err: unknown) {
+      setFormError(exposureEntityErrorText(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function openTimeline(caseId: string) {
@@ -168,42 +272,79 @@ export function ExposurePage() {
             <Card label="Novidades hoje" value={dashboard.cards.newsToday} />
           </div>
           <p className="text-sm text-muted-foreground">{dashboard.absenceIsNotClearance}</p>
-          {dashboard.emptyState ? <p className="text-sm font-medium">{dashboard.emptyState}</p> : null}
+          {entities.length > 0 && dashboard.emptyState ? <p className="text-sm font-medium">{dashboard.emptyState}</p> : null}
+          {notice ? <p className="text-sm text-emerald-800">{notice}</p> : null}
           <SourceGrid sources={dashboard.sources} certificates={dashboard.certificates} />
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted/40 text-left">
-                <tr>
-                  <th className="px-3 py-2">Razão social</th>
-                  <th className="px-3 py-2">CNPJ</th>
-                  <th className="px-3 py-2">Monitoramento</th>
-                  <th className="px-3 py-2">Processos monitorados</th>
-                  <th className="px-3 py-2">Comunicações pendentes</th>
-                  <th className="px-3 py-2">Ações requeridas</th>
-                  <th className="px-3 py-2">Frescor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.entities.map((entity) => (
-                  <tr key={entity.id} className="border-t border-border">
-                    <td className="px-3 py-2">{entity.legalName}</td>
-                    <td className="px-3 py-2">{entity.cnpj}</td>
-                    <td className="px-3 py-2">
-                      {[entity.monitoring.domicilio && "Domicílio", entity.monitoring.datajud && "DataJud", entity.monitoring.djen && "DJEN"]
-                        .filter(Boolean)
-                        .join(", ") || "—"}
-                    </td>
-                    <td className="px-3 py-2">{entity.monitoredCases}</td>
-                    <td className="px-3 py-2">{entity.pendingCommunications}</td>
-                    <td className="px-3 py-2">{entity.actionRequired}</td>
-                    <td className="px-3 py-2">
-                      {entity.freshness.map((item) => SOURCE_STATUS_LABELS[item.status as LegalSourceConnectionStatus] ?? item.status).join(" · ") || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Empresas monitoradas</h2>
+              {companyActions.showAdd ? (
+                <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={openCreate}>
+                  + Adicionar empresa
+                </button>
+              ) : null}
+            </div>
+            {entities.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-4 text-sm">
+                <p className="font-medium">{EMPTY_COMPANIES_COPY}</p>
+                {companyActions.showAdd ? <p className="mt-1 text-muted-foreground">{EMPTY_COMPANIES_MANAGE_HINT}</p> : null}
+                {companyActions.showAdd ? (
+                  <button type="button" className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={openCreate}>
+                    Adicionar empresa
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/40 text-left">
+                    <tr>
+                      <th className="px-3 py-2">Razão social</th>
+                      <th className="px-3 py-2">CNPJ</th>
+                      <th className="px-3 py-2">Monitoramento</th>
+                      <th className="px-3 py-2">Processos monitorados</th>
+                      <th className="px-3 py-2">Comunicações pendentes</th>
+                      <th className="px-3 py-2">Ações requeridas</th>
+                      <th className="px-3 py-2">Frescor</th>
+                      {companyActions.showEdit ? <th className="px-3 py-2">Ações</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entities.map((entity) => {
+                      const metrics = dashboard.entities.find((row) => row.id === entity.id);
+                      return (
+                        <tr key={entity.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            {entity.legalName}
+                            {entity.active ? "" : " · inativa"}
+                          </td>
+                          <td className="px-3 py-2">{formatCnpj(entity.cnpj)}</td>
+                          <td className="px-3 py-2">
+                            {[entity.monitorDomicilio && "Domicílio", entity.monitorDatajud && "DataJud", entity.monitorDjen && "DJEN", entity.monitorCertificates && "Certidões"]
+                              .filter(Boolean)
+                              .join(", ") || "—"}
+                          </td>
+                          <td className="px-3 py-2">{metrics?.monitoredCases ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.pendingCommunications ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.actionRequired ?? "—"}</td>
+                          <td className="px-3 py-2">
+                            {metrics?.freshness.map((item) => SOURCE_STATUS_LABELS[item.status as LegalSourceConnectionStatus] ?? item.status).join(" · ") || "—"}
+                          </td>
+                          {companyActions.showEdit ? (
+                            <td className="px-3 py-2">
+                              <button type="button" className="text-sm font-semibold underline" onClick={() => openEdit(entity)}>
+                                Editar
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
       ) : null}
 
@@ -299,7 +440,192 @@ export function ExposurePage() {
           <li className="text-muted-foreground">{LIKELY_REVIEW_COPY} permanece como revisão humana. Segredos não são exibidos.</li>
         </ul>
       ) : null}
+
+      {dialog === "create" ? (
+        <EntityDialog
+          title="Adicionar empresa"
+          submitLabel="Adicionar empresa"
+          saving={saving}
+          error={formError}
+          onClose={closeDialog}
+          onSubmit={() => void submitCreate()}
+        >
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            CNPJ *
+            <input
+              required
+              value={createForm.cnpj}
+              onChange={(event) => setCreateForm({ ...createForm, cnpj: maskCnpjInput(event.target.value) })}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Razão social *
+            <input
+              required
+              value={createForm.legalName}
+              onChange={(event) => setCreateForm({ ...createForm, legalName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Nome fantasia
+            <input
+              value={createForm.tradeName}
+              onChange={(event) => setCreateForm({ ...createForm, tradeName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              UF
+              <input
+                maxLength={2}
+                value={createForm.state}
+                onChange={(event) => setCreateForm({ ...createForm, state: event.target.value.toUpperCase().slice(0, 2) })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              />
+            </label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Cidade
+              <input
+                value={createForm.city}
+                onChange={(event) => setCreateForm({ ...createForm, city: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              />
+            </label>
+          </div>
+        </EntityDialog>
+      ) : null}
+
+      {dialog === "edit" && editing && editForm ? (
+        <EntityDialog
+          title="Editar empresa"
+          submitLabel="Salvar"
+          saving={saving}
+          error={formError}
+          onClose={closeDialog}
+          onSubmit={() => void submitEdit()}
+        >
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            CNPJ
+            <input
+              readOnly
+              value={formatCnpj(editing.cnpj)}
+              className="mt-1 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Razão social *
+            <input
+              required
+              value={editForm.legalName}
+              onChange={(event) => setEditForm({ ...editForm, legalName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Nome fantasia
+            <input
+              value={editForm.tradeName}
+              onChange={(event) => setEditForm({ ...editForm, tradeName: event.target.value })}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              UF
+              <input
+                maxLength={2}
+                value={editForm.state}
+                onChange={(event) => setEditForm({ ...editForm, state: event.target.value.toUpperCase().slice(0, 2) })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              />
+            </label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Cidade
+              <input
+                value={editForm.city}
+                onChange={(event) => setEditForm({ ...editForm, city: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-sm font-normal normal-case">
+            <input
+              type="checkbox"
+              checked={editForm.active}
+              onChange={(event) => setEditForm({ ...editForm, active: event.target.checked })}
+            />
+            Empresa ativa
+          </label>
+          <fieldset className="space-y-2 text-sm font-normal normal-case">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monitorar</legend>
+            <MonitorToggle label="Domicílio Judicial" checked={editForm.monitorDomicilio} onChange={(checked) => setEditForm({ ...editForm, monitorDomicilio: checked })} />
+            <MonitorToggle label="DataJud" checked={editForm.monitorDatajud} onChange={(checked) => setEditForm({ ...editForm, monitorDatajud: checked })} />
+            <MonitorToggle label="DJEN" checked={editForm.monitorDjen} onChange={(checked) => setEditForm({ ...editForm, monitorDjen: checked })} />
+            <MonitorToggle label="Certidões" checked={editForm.monitorCertificates} onChange={(checked) => setEditForm({ ...editForm, monitorCertificates: checked })} />
+          </fieldset>
+          <p className="text-xs font-normal normal-case text-muted-foreground">{MONITOR_GLOBAL_NOTE}</p>
+        </EntityDialog>
+      ) : null}
     </div>
+  );
+}
+
+function EntityDialog({
+  title,
+  submitLabel,
+  saving,
+  error,
+  onClose,
+  onSubmit,
+  children,
+}: {
+  title: string;
+  submitLabel: string;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSubmit: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="exposure-entity-dialog-title"
+        className="w-full max-w-lg space-y-3 rounded-2xl border border-border bg-card p-6 shadow-xl"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <h3 id="exposure-entity-dialog-title" className="text-base font-semibold">
+          {title}
+        </h3>
+        {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {children}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onClose} disabled={saving}>
+            Cancelar
+          </button>
+          <button type="submit" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" disabled={saving}>
+            {saving ? "Salvando..." : submitLabel}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MonitorToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      {label}
+    </label>
   );
 }
 
