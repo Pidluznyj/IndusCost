@@ -3,12 +3,13 @@
  */
 
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { LegalExposureMemory } from "./legalExposureStore.js";
+import type { ExposureAuditRecord, LegalExposureMemory } from "./legalExposureStore.js";
 import { createEmptyExposureMemory } from "./legalExposureStore.js";
 
 export type LegalExposureRepository = {
   load(): Promise<LegalExposureMemory>;
   persist(next: LegalExposureMemory): Promise<void>;
+  appendAudit(record: ExposureAuditRecord): Promise<void>;
 };
 
 export function createMemoryExposureRepository(
@@ -23,6 +24,9 @@ export function createMemoryExposureRepository(
     async persist(next) {
       current = next;
     },
+    async appendAudit(record) {
+      current.audits.push(record);
+    },
   };
 }
 
@@ -33,6 +37,13 @@ function iso(value: Date | null | undefined): string | null {
 function date(value: string | null | undefined): Date | null {
   if (!value) return null;
   return new Date(value);
+}
+
+function persistTimestamps(row: { createdAt: string; updatedAt: string }) {
+  return {
+    createdAt: new Date(row.createdAt),
+    updatedAt: new Date(row.updatedAt),
+  };
 }
 
 function json(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
@@ -183,8 +194,8 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
           };
           await tx.legalExposureEntity.upsert({
             where: { id: row.id },
-            create: { id: row.id, ...data },
-            update: data,
+            create: { id: row.id, ...data, ...persistTimestamps(row) },
+            update: { ...data, updatedAt: new Date(row.updatedAt) },
           });
         }
         for (const row of next.aliases) {
@@ -217,8 +228,14 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
           };
           await tx.legalSourceConnection.upsert({
             where: { id: row.id },
-            create: { id: row.id, entityId: row.entityId, source: row.source, ...data },
-            update: data,
+            create: {
+              id: row.id,
+              entityId: row.entityId,
+              source: row.source,
+              ...data,
+              ...persistTimestamps(row),
+            },
+            update: { ...data, updatedAt: new Date(row.updatedAt) },
           });
         }
         for (const row of next.jurisdictions) {
@@ -233,7 +250,12 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
               createdAt: new Date(row.createdAt),
               updatedAt: new Date(row.updatedAt),
             },
-            update: { enabled: row.enabled, priority: row.priority, tribunal: row.tribunal },
+            update: {
+              enabled: row.enabled,
+              priority: row.priority,
+              tribunal: row.tribunal,
+              updatedAt: new Date(row.updatedAt),
+            },
           });
         }
         for (const row of next.cases) {
@@ -256,8 +278,8 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
           };
           await tx.legalCase.upsert({
             where: { id: row.id },
-            create: { id: row.id, entityId: row.entityId, ...data },
-            update: data,
+            create: { id: row.id, entityId: row.entityId, ...data, ...persistTimestamps(row) },
+            update: { ...data, updatedAt: new Date(row.updatedAt) },
           });
         }
         for (const row of next.evidences) {
@@ -278,6 +300,7 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
               sourceUpdatedAt: date(row.sourceUpdatedAt),
               rawMetadata: json(row.rawMetadata),
               rawHash: row.rawHash,
+              updatedAt: new Date(row.updatedAt),
             },
           });
         }
@@ -336,8 +359,9 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
               sourceCommunicationId: row.sourceCommunicationId,
               idempotencyKey: row.idempotencyKey,
               ...data,
+              ...persistTimestamps(row),
             },
-            update: data,
+            update: { ...data, updatedAt: new Date(row.updatedAt) },
           });
         }
         for (const row of next.events) {
@@ -385,8 +409,8 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
           };
           await tx.legalCertificate.upsert({
             where: { id: row.id },
-            create: { id: row.id, entityId: row.entityId, ...data },
-            update: data,
+            create: { id: row.id, entityId: row.entityId, ...data, ...persistTimestamps(row) },
+            update: { ...data, updatedAt: new Date(row.updatedAt) },
           });
         }
         for (const row of next.audits) {
@@ -401,6 +425,21 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
             update: {},
           });
         }
+      });
+    },
+    async appendAudit(record) {
+      await prisma.legalExposureAuditLog.create({
+        data: {
+          id: record.id,
+          userId: record.userId,
+          action: record.action,
+          entityId: record.entityId,
+          caseId: record.caseId,
+          communicationId: record.communicationId,
+          occurredAt: new Date(record.occurredAt),
+          metadata: json(record.metadata),
+          createdAt: new Date(record.createdAt),
+        },
       });
     },
   };

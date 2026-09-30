@@ -338,3 +338,4 @@ src/lib/legalExposure/legalExposureSecurity.test.ts
 src/lib/legalExposure/legalExposureNavigation.test.ts
 src/lib/legalExposure/legalExposureRoutes.test.ts
 src/lib/legalExposure/legalExposureEntityForm.test.ts
+src/lib/legalExposure/legalExposureAuditPersistence.test.ts

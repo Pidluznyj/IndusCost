@@ -107,6 +107,26 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     return memory;
   }
 
+  function buildAuditRecord(
+    userId: string | null,
+    action: ExposureAuditRecord["action"],
+    refs: { entityId?: string | null; caseId?: string | null; communicationId?: string | null },
+    metadata: unknown
+  ): ExposureAuditRecord {
+    const timestamp = now().toISOString();
+    return {
+      id: createId(),
+      userId,
+      action,
+      entityId: refs.entityId ?? null,
+      caseId: refs.caseId ?? null,
+      communicationId: refs.communicationId ?? null,
+      occurredAt: timestamp,
+      metadata: sanitizePayload(metadata),
+      createdAt: timestamp,
+    };
+  }
+
   function audit(
     memory: LegalExposureMemory,
     userId: string | null,
@@ -114,17 +134,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     refs: { entityId?: string | null; caseId?: string | null; communicationId?: string | null },
     metadata: unknown
   ) {
-    memory.audits.push({
-      id: createId(),
-      userId,
-      action,
-      entityId: refs.entityId ?? null,
-      caseId: refs.caseId ?? null,
-      communicationId: refs.communicationId ?? null,
-      occurredAt: now().toISOString(),
-      metadata: sanitizePayload(metadata),
-      createdAt: now().toISOString(),
-    });
+    memory.audits.push(buildAuditRecord(userId, action, refs, metadata));
   }
 
   return {
@@ -237,8 +247,9 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const memory = await deps.repository.load();
       const row = memory.cases.find((item) => item.id === id);
       if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
-      audit(memory, userId, "VIEW_CASE", { entityId: row.entityId, caseId: row.id }, {});
-      await deps.repository.persist(memory);
+      await deps.repository.appendAudit(
+        buildAuditRecord(userId, "VIEW_CASE", { entityId: row.entityId, caseId: row.id }, {})
+      );
       return {
         ...row,
         evidences: memory.evidences.filter((item) => item.caseId === id),
@@ -249,14 +260,16 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const memory = await deps.repository.load();
       const row = memory.cases.find((item) => item.id === id);
       if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
-      audit(memory, userId, "VIEW_CASE", { entityId: row.entityId, caseId: id }, { timeline: true });
-      await deps.repository.persist(memory);
+      await deps.repository.appendAudit(
+        buildAuditRecord(userId, "VIEW_CASE", { entityId: row.entityId, caseId: id }, { timeline: true })
+      );
       return caseTimeline(memory, id, query);
     },
     async listCommunications(query: ExposureListQuery, userId: string) {
       const memory = await deps.repository.load();
-      audit(memory, userId, "VIEW_COMMUNICATION_METADATA", {}, {});
-      await deps.repository.persist(memory);
+      await deps.repository.appendAudit(
+        buildAuditRecord(userId, "VIEW_COMMUNICATION_METADATA", {}, {})
+      );
       return listCommunications(memory, query);
     },
     async listEvents(query: ExposureListQuery) {
