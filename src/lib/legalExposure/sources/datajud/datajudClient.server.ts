@@ -11,6 +11,7 @@ import {
   assertDatajudCnpjDiscoveryBlocked,
   buildDatajudProcessQuery,
   DATAJUD_CNPJ_DISCOVERY_BLOCK_REASON,
+  DATAJUD_HTTP_TIMEOUT_MS,
 } from "./datajudContracts.js";
 import { mapDatajudSearch } from "./datajudMapper.js";
 
@@ -55,6 +56,7 @@ export async function searchDatajudByProcessNumber(input: {
     fetchImpl: input.fetchImpl,
     url: `${base}${path}`,
     path,
+    timeoutMs: DATAJUD_HTTP_TIMEOUT_MS,
     init: {
       method: "POST",
       headers: {
