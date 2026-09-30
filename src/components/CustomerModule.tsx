@@ -1,5 +1,6 @@
 // src/components/CustomerModule.tsx
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { 
   Plus, 
@@ -25,6 +26,9 @@ import {
 import { cn } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import type { CustomerListReportExportPayload } from "@/src/lib/customerListReportExport";
 import { Customer } from "@/src/types/commercial";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -40,6 +44,7 @@ import {
   canImportCustomers,
 } from "@/src/lib/commercialEngineeringPermissions";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
+import { CustomerListReportPrintDocument } from "./customers/CustomerListReportPrintDocument";
 import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
 import {
   CustomerCadastralStatusBadge,
@@ -52,11 +57,12 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange } from "@/src/lib/customerListQuery";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
+import { canExportCustomerListReport } from "@/src/lib/customerListReportExportAccess";
 import {
   buildCustomerListExportQuery,
   downloadCustomerListReportExport,
-  getCustomerListReportExportPdfUrl,
   getCustomerListReportExportXlsxUrl,
+  getCustomerListReportPayloadUrl,
 } from "@/src/lib/customerListReportExportUi";
 
 type CustomerListMeta = {
@@ -90,6 +96,7 @@ export const CustomerModule = () => {
   const allowEdit = canEditCustomers(resourceCheck);
   const allowImport = canImportCustomers(resourceCheck);
   const allowAssignOwner = canAssignCustomerCommercialOwnerAccess(auth.authUser);
+  const allowExportReport = canExportCustomerListReport(auth.authUser);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -112,6 +119,10 @@ export const CustomerModule = () => {
   const [ownerSelectFocus, setOwnerSelectFocus] = useState(false);
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const [printPayload, setPrintPayload] = useState<CustomerListReportExportPayload | null>(null);
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const brandingLoadedRef = useRef(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -297,20 +308,57 @@ export const CustomerModule = () => {
     }
   };
 
+  const ensureBranding = async () => {
+    if (brandingLoadedRef.current) return branding;
+    try {
+      const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>("/api/branding-settings", {
+        ttlMs: 300_000,
+      });
+      brandingLoadedRef.current = true;
+      setBranding(next);
+      return next;
+    } catch {
+      brandingLoadedRef.current = true;
+      setBranding(DEFAULT_BRANDING);
+      return DEFAULT_BRANDING;
+    }
+  };
+
   const handleExportPdf = async () => {
+    if (exportingPdf) return;
     setExportingPdf(true);
     try {
-      await downloadCustomerListReportExport(
-        getCustomerListReportExportPdfUrl(listExportQuery),
-        "clientes-relatorio.pdf"
+      await ensureBranding();
+      const payload = await fetchJsonOk<CustomerListReportExportPayload>(
+        getCustomerListReportPayloadUrl(listExportQuery)
       );
+      setPrintPayload(payload);
+      setPrintRequestId((id) => id + 1);
     } catch (error) {
-      console.error("Erro ao exportar PDF de clientes:", error);
+      console.error("Erro ao gerar PDF de clientes:", error);
       alert("Não foi possível gerar o PDF de clientes.");
-    } finally {
       setExportingPdf(false);
     }
   };
+
+  useEffect(() => {
+    if (printRequestId === 0 || !printPayload) return;
+    document.body.classList.add("customers-print-route");
+    const onAfterPrint = () => {
+      document.body.classList.remove("customers-print-route");
+      setPrintPayload(null);
+      setPrintRequestId(0);
+      setExportingPdf(false);
+    };
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, printPayload]);
 
   const listRows = customers;
 
@@ -352,6 +400,8 @@ export const CustomerModule = () => {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          {allowExportReport ? (
+            <>
           <button
             type="button"
             data-testid="customers-export-report-xlsx"
@@ -372,7 +422,7 @@ export const CustomerModule = () => {
             data-testid="customers-export-report-pdf"
             disabled={exportingXlsx || exportingPdf}
             onClick={() => void handleExportPdf()}
-            title="Exportar PDF da grade com o filtro atual"
+            title="Relatório institucional em PDF (logo, empresa, cópia controlada)"
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
           >
             {exportingPdf ? (
@@ -382,6 +432,8 @@ export const CustomerModule = () => {
             )}
             PDF
           </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => openCnpjLookup()}
@@ -963,6 +1015,12 @@ export const CustomerModule = () => {
         steps={CUSTOMER_TOUR_STEPS}
         tourName="Tour de Clientes"
       />
+      {printPayload
+        ? createPortal(
+            <CustomerListReportPrintDocument payload={printPayload} branding={branding} />,
+            document.body
+          )
+        : null}
     </div>
   );
 };

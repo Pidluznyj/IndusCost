@@ -3,6 +3,7 @@
  * Mesmos filtros da grade (busca + responsável comercial), sem paginação de 20.
  */
 import type { PrismaClient } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { attachCustomerCnpjRisk } from "./customerCnpjRiskSummary.server.js";
 import {
   attachCustomerCommercialOwnerListFields,
@@ -17,6 +18,11 @@ import {
   mapCustomerListReportExportRow,
   type CustomerListReportExportPayload,
 } from "./customerListReportExport.js";
+import {
+  CUSTOMER_LIST_REPORT_CLASSIFICATION,
+  buildCustomerListReportCopyCode,
+  serializeCustomerListReportFingerprintSource,
+} from "./customerListReportPrintMeta.js";
 
 const CUSTOMER_LIST_EXPORT_SELECT = {
   id: true,
@@ -33,7 +39,12 @@ const CUSTOMER_LIST_EXPORT_SELECT = {
 export async function loadCustomerListReportExportPayload(
   prisma: PrismaClient,
   query: Record<string, unknown>,
-  options: { includeFinancialDetails: boolean }
+  options: {
+    includeFinancialDetails: boolean;
+    emitterName?: string | null;
+    emitterEmail?: string | null;
+    emitterUserId?: string | null;
+  }
 ): Promise<CustomerListReportExportPayload> {
   const list = parseCustomerListQuery(query);
   const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
@@ -68,14 +79,42 @@ export async function loadCustomerListReportExportPayload(
     })
   );
 
+  const generatedAt = new Date().toISOString();
+  const appliedFilters = buildCustomerListReportAppliedFilters({
+    search: list.search,
+    ownerKey: list.commercialOwner,
+    ownerOptions: ownerFilter.options,
+  });
+  const emitterName = options.emitterName?.trim() || "—";
+  const emitterEmail = options.emitterEmail?.trim() || "—";
+  const emitterUserId = options.emitterUserId?.trim() || "unknown";
+  const fingerprint = createHash("sha256")
+    .update(
+      serializeCustomerListReportFingerprintSource({
+        generatedAt,
+        emitterUserId,
+        emitterEmail,
+        filters: appliedFilters,
+        rowCount: rows.length,
+        firstTaxId: rows[0]?.taxId ?? "",
+        lastTaxId: rows[rows.length - 1]?.taxId ?? "",
+      }),
+      "utf8"
+    )
+    .digest("hex");
+
   return {
-    generatedAt: new Date().toISOString(),
-    appliedFilters: buildCustomerListReportAppliedFilters({
-      search: list.search,
-      ownerKey: list.commercialOwner,
-      ownerOptions: ownerFilter.options,
-    }),
+    generatedAt,
+    appliedFilters,
     summary: buildCustomerListReportExportSummary(rows, totalMatched),
     rows,
+    copyControl: {
+      copyCode: buildCustomerListReportCopyCode(new Date(generatedAt), fingerprint),
+      fingerprint,
+      classification: CUSTOMER_LIST_REPORT_CLASSIFICATION,
+      emitterName,
+      emitterEmail,
+      emitterUserId,
+    },
   };
 }

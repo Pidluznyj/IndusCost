@@ -30,6 +30,7 @@ export type PrintPdfAuditEntry = {
 /** CSS compartilhado entre documentos de impressão IndusCost. */
 export const PRINT_GLOBAL_CSS_FILES = [
   "src/components/print/print-document.css",
+  "src/components/customers/customer-list-report-print.css",
   "src/reports-print.css",
   "src/proposal-print.css",
   "src/sales-order-print.css",
@@ -223,6 +224,29 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
     hasChartPrintRules: false,
     risk: "ok",
     notes: ["CSV client-side ou via API; sem print visual."],
+  },
+  {
+    id: "customer-list-report-print",
+    module: "Comercial",
+    feature: "Clientes — Relatório PDF institucional",
+    route: "/customers",
+    files: [
+      "src/components/customers/CustomerListReportPrintDocument.tsx",
+      "src/components/customers/customer-list-report-print.css",
+      "src/components/CustomerModule.tsx",
+      "src/lib/customerListReportPrintMeta.ts",
+    ],
+    printMode: "browser-print",
+    hasPrintCss: true,
+    hasNoPrintShell: true,
+    hasSafePageBreaks: true,
+    hasFooterSafeArea: true,
+    hasChartPrintRules: false,
+    risk: "ok",
+    notes: [
+      "A4 landscape; cabeçalho PrintHeader com logo e empresa.",
+      "Cópia controlada com emitente, código e SHA-256; marca d'água USO INTERNO.",
+    ],
   },
   {
     id: "sales-order-print",

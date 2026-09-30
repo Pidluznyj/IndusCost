@@ -1,0 +1,325 @@
+#customers-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm 8mm 14mm 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.customers-print-route #root {
+    display: none !important;
+  }
+
+  body.customers-print-route > *:not(#customers-print-root) {
+    display: none !important;
+  }
+
+  body.customers-print-route #customers-print-root,
+  body.customers-print-route #customers-print-root * {
+    visibility: visible !important;
+  }
+
+  .customers-print-no-print,
+  button {
+    display: none !important;
+  }
+
+  #customers-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  #customers-print-root .customers-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.5pt;
+    line-height: 1.35;
+    color: #0f172a;
+    padding-bottom: 8mm;
+  }
+
+  #customers-print-root .print-doc-header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 3mm;
+  }
+
+  #customers-print-root .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: max-content minmax(0, 1fr) 62mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
+  }
+
+  #customers-print-root .print-doc-logo {
+    max-height: 22mm !important;
+    max-width: 28mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  #customers-print-root .print-doc-company-name {
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 1mm !important;
+  }
+
+  #customers-print-root .print-doc-company-text {
+    font-size: 7.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  #customers-print-root .print-doc-meta {
+    border-left: 1px solid #cbd5e1 !important;
+    padding-left: 3mm !important;
+    font-size: 7.5pt !important;
+  }
+
+  #customers-print-root .print-doc-meta-title {
+    font-size: 10pt !important;
+    font-weight: 800 !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  #customers-print-root .print-doc-header-rule {
+    margin-top: 2.5mm !important;
+    border-top: 1px solid #94a3b8 !important;
+  }
+
+  #customers-print-root .customers-print-watermark {
+    position: fixed;
+    inset: 18%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.08;
+    font-size: 28pt;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #991b1b;
+    transform: rotate(-24deg);
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  #customers-print-root .customers-print-classification {
+    border: 1px solid #991b1b;
+    background: #fef2f2;
+    color: #7f1d1d;
+    padding: 2.5mm 3mm;
+    margin: 2mm 0 3mm;
+    break-inside: avoid;
+  }
+
+  #customers-print-root .customers-print-classification-title {
+    font-size: 8.5pt;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0 0 1mm;
+  }
+
+  #customers-print-root .customers-print-filter-band {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    padding: 2mm 3mm;
+    margin-bottom: 3mm;
+  }
+
+  #customers-print-root .customers-print-filter-band-label {
+    font-size: 6.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #475569;
+    margin: 0 0 0.8mm;
+  }
+
+  #customers-print-root .customers-print-section-title {
+    font-size: 9pt;
+    font-weight: 800;
+    margin: 0 0 2mm;
+    color: #0f172a;
+  }
+
+  #customers-print-root .customers-print-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2mm;
+    margin-bottom: 3mm;
+  }
+
+  #customers-print-root .customers-print-summary-card {
+    border: 1px solid #cbd5e1;
+    padding: 2mm;
+    background: #fff;
+  }
+
+  #customers-print-root .customers-print-summary-card-label {
+    font-size: 6.5pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 1mm;
+  }
+
+  #customers-print-root .customers-print-summary-card-value {
+    font-size: 11pt;
+    font-weight: 800;
+    margin: 0;
+  }
+
+  #customers-print-root .customers-print-summary-card--ok {
+    border-color: #86efac;
+    background: #f0fdf4;
+  }
+
+  #customers-print-root .customers-print-summary-card--risk {
+    border-color: #fca5a5;
+    background: #fef2f2;
+  }
+
+  #customers-print-root .customers-print-summary-card--muted {
+    background: #f8fafc;
+  }
+
+  #customers-print-root .customers-print-disclaimer-box {
+    border: 1px solid #e2e8f0;
+    background: #fffbeb;
+    padding: 2.5mm 3mm;
+    margin-bottom: 3mm;
+    break-inside: avoid;
+  }
+
+  #customers-print-root .customers-print-disclaimer-title {
+    font-size: 7.5pt;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0 0 1mm;
+    color: #92400e;
+  }
+
+  #customers-print-root .customers-print-disclaimer {
+    margin: 0;
+    font-size: 7pt;
+    color: #44403c;
+  }
+
+  #customers-print-root table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+  }
+
+  #customers-print-root thead {
+    display: table-header-group;
+  }
+
+  #customers-print-root tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  #customers-print-root th,
+  #customers-print-root td {
+    border: 0.4pt solid #cbd5e1;
+    padding: 1.2mm 1.4mm;
+    vertical-align: top;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #customers-print-root th {
+    background: #e2e8f0;
+    font-size: 6.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    text-align: left;
+  }
+
+  #customers-print-root td {
+    font-size: 7pt;
+  }
+
+  #customers-print-root .col-client {
+    width: 18%;
+  }
+  #customers-print-root .col-trade {
+    width: 13%;
+  }
+  #customers-print-root .col-cnpj {
+    width: 12%;
+  }
+  #customers-print-root .col-score {
+    width: 13%;
+  }
+  #customers-print-root .col-owner {
+    width: 12%;
+  }
+  #customers-print-root .col-city {
+    width: 10%;
+  }
+  #customers-print-root .col-seg {
+    width: 10%;
+  }
+  #customers-print-root .col-status {
+    width: 6%;
+  }
+  #customers-print-root .col-block {
+    width: 6%;
+  }
+
+  #customers-print-root .customers-print-status {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 6.5pt;
+    text-transform: uppercase;
+  }
+
+  #customers-print-root .customers-print-status--ok {
+    color: #166534;
+  }
+
+  #customers-print-root .customers-print-status--risk {
+    color: #991b1b;
+  }
+
+  #customers-print-root .customers-print-footer {
+    margin-top: 4mm;
+    font-size: 6.5pt;
+    color: #475569;
+    break-inside: avoid;
+  }
+
+  #customers-print-root .customers-print-stamp {
+    position: fixed;
+    left: 8mm;
+    right: 8mm;
+    bottom: 4mm;
+    font-size: 6pt;
+    color: #7f1d1d;
+    border-top: 0.6pt solid #fca5a5;
+    padding-top: 1.2mm;
+  }
+
+  #customers-print-root .customers-print-empty {
+    color: #64748b;
+  }
+}

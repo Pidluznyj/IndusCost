@@ -14,6 +14,7 @@ import {
   customerListReportWorkbookToBytes,
 } from "./customerListReportExport.js";
 import { loadCustomerListReportExportPayload } from "./customerListReportExport.server.js";
+import { canExportCustomerListReport } from "./customerListReportExportAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -24,6 +25,30 @@ function readRequestAuth(req: express.Request): AppAuthContext | null {
   return (req as { appAuth?: AppAuthContext }).appAuth ?? null;
 }
 
+function denyUnlessExportAllowed(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (!canExportCustomerListReport(readRequestAuth(req))) {
+    return res.status(403).json({
+      error: "Exportação de clientes restrita ao Super administrador e ao Supervisor comercial.",
+      code: "CUSTOMER_LIST_EXPORT_FORBIDDEN",
+    });
+  }
+  next();
+}
+
+async function loadExportPayload(req: express.Request) {
+  const auth = readRequestAuth(req);
+  return loadCustomerListReportExportPayload(prisma, req.query as Record<string, unknown>, {
+    includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
+    emitterName: auth?.name ?? null,
+    emitterEmail: auth?.email ?? null,
+    emitterUserId: auth?.id ?? null,
+  });
+}
+
 export function registerCustomerListReportExportRoutes(
   app: express.Express,
   auth: AuthGuards
@@ -31,15 +56,23 @@ export function registerCustomerListReportExportRoutes(
   const guard = [
     auth.requireAppAuth,
     auth.requireResource(COMMERCIAL_RESOURCE_KEYS.customers, COMMERCIAL_ACTIONS.view),
+    denyUnlessExportAllowed,
   ];
+
+  app.get("/api/customers/export-report", ...guard, async (req, res) => {
+    try {
+      const payload = await loadExportPayload(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(payload);
+    } catch (error) {
+      console.error("GET /api/customers/export-report", error);
+      res.status(500).json({ error: "Erro ao carregar relatório de clientes." });
+    }
+  });
 
   app.get("/api/customers/export-report.xlsx", ...guard, async (req, res) => {
     try {
-      const payload = await loadCustomerListReportExportPayload(
-        prisma,
-        req.query as Record<string, unknown>,
-        { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(readRequestAuth(req)) }
-      );
+      const payload = await loadExportPayload(req);
       const workbook = buildCustomerListReportExportWorkbook(payload);
       const bytes = customerListReportWorkbookToBytes(workbook);
       res.setHeader(
@@ -59,11 +92,7 @@ export function registerCustomerListReportExportRoutes(
 
   app.get("/api/customers/export-report.pdf", ...guard, async (req, res) => {
     try {
-      const payload = await loadCustomerListReportExportPayload(
-        prisma,
-        req.query as Record<string, unknown>,
-        { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(readRequestAuth(req)) }
-      );
+      const payload = await loadExportPayload(req);
       const pdf = buildCustomerListReportExportPdf(payload);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(

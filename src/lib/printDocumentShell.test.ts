@@ -65,6 +65,20 @@ describe("printDocumentShell", () => {
     assert.ok(css.includes("body.ar-overdue-print-route"));
   });
 
+  it("relatório de clientes print contém cabeçalho institucional, marca d'água e disclaimer", () => {
+    const doc = read("src/components/customers/CustomerListReportPrintDocument.tsx");
+    const css = read("src/components/customers/customer-list-report-print.css");
+    assert.ok(doc.includes("PrintHeader"));
+    assert.ok(doc.includes('documentHighlight={CUSTOMER_LIST_REPORT_PRINT_DOCUMENT_HIGHLIGHT}'));
+    assert.ok(doc.includes("CUSTOMER_LIST_REPORT_WATERMARK"));
+    assert.ok(doc.includes("CUSTOMER_LIST_REPORT_PRINT_DISCLAIMER"));
+    assert.ok(doc.includes("copyControl.copyCode"));
+    assert.ok(css.includes("A4 landscape"));
+    assert.ok(css.includes("table-header-group"));
+    assert.ok(css.includes("customers-print-watermark"));
+    assert.ok(css.includes("print-doc-header-grid"));
+  });
+
   it("print-document.css define thead table-header-group e oculta botões", () => {
     const css = read("src/components/print/print-document.css");
     assert.ok(css.includes("table-header-group"));

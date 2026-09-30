@@ -20,6 +20,10 @@ import {
   type CustomerListReportExportPayload,
 } from "./customerListReportExport.js";
 import { buildCustomerListExportQuery } from "./customerListReportExportUi.js";
+import {
+  buildCustomerListReportCopyCode,
+  serializeCustomerListReportFingerprintSource,
+} from "./customerListReportPrintMeta.js";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -79,6 +83,14 @@ function payload(overrides: Partial<CustomerListReportExportPayload> = {}): Cust
     }),
     summary: buildCustomerListReportExportSummary(rows, rows.length),
     rows,
+    copyControl: {
+      copyCode: "CLT-20260930-ABCDEF12",
+      fingerprint: "a".repeat(64),
+      classification: "DOCUMENTO CONTROLADO — USO INTERNO E RESTRITO",
+      emitterName: "Paulo Pidluznyj",
+      emitterEmail: "paulo@grupolazarios.com.br",
+      emitterUserId: "user-1",
+    },
     ...overrides,
   };
 }
@@ -137,10 +149,10 @@ describe("customerListReportExport", () => {
     assert.equal(empty[1]?.value, "Todos os responsáveis");
   });
 
-  it("Excel tem Resumo, Clientes e Filtros no padrão do sistema", () => {
+  it("Excel tem Resumo, Clientes, Filtros e Confidencialidade", () => {
     const wb = buildCustomerListReportExportWorkbook(payload());
     const parsed = XLSX.read(customerListReportWorkbookToBytes(wb), { type: "array" });
-    assert.deepEqual(parsed.SheetNames, ["Resumo", "Clientes", "Filtros"]);
+    assert.deepEqual(parsed.SheetNames, ["Resumo", "Clientes", "Filtros", "Confidencialidade"]);
     const clientes = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets.Clientes);
     assert.equal(clientes.length, 2);
     assert.equal(clientes[0]?.["Razão social"], "1 LINHA AGENCIA DE SERVICOS LTDA");
@@ -154,16 +166,42 @@ describe("customerListReportExport", () => {
     assert.equal(filtros[1]?.Valor, "Sem responsável");
     const resumo = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets.Resumo);
     assert.equal(resumo[0]?.Valor, CUSTOMER_LIST_REPORT_TITLE);
+    assert.equal(resumo.find((row) => row.Campo === "Código da cópia")?.Valor, "CLT-20260930-ABCDEF12");
+    const confidentiality = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      parsed.Sheets.Confidencialidade
+    );
+    assert.match(String(confidentiality[0]?.Texto), /CONFIDENCIALIDADE/);
+    assert.ok(confidentiality.some((row) => String(row.Texto).includes("não implica autorização")));
   });
 
-  it("PDF inclui título, filtros e linhas da grade", () => {
+  it("PDF de fallback carimba classificação, emitente e código da cópia", () => {
     const pdf = buildCustomerListReportExportPdf(payload()).toString("latin1");
     assert.match(pdf, /Relatorio de Clientes/);
+    assert.match(pdf, /DOCUMENTO CONTROLADO/);
+    assert.match(pdf, /CLT-20260930-ABCDEF12/);
+    assert.match(pdf, /Paulo Pidluznyj/);
     assert.match(pdf, /Filtros aplicados/);
     assert.match(pdf, /Busca: linha/);
     assert.match(pdf, /1 LINHA AGENCIA DE SERVICOS LTDA/);
     assert.equal(CUSTOMER_LIST_PDF_MAX_ROWS, 40);
     assert.equal(CUSTOMER_LIST_EXPORT_MAX, 8_000);
+  });
+
+  it("código da cópia e fingerprint são determinísticos para prova de emissão", () => {
+    const source = serializeCustomerListReportFingerprintSource({
+      generatedAt: "2026-09-30T12:00:00.000Z",
+      emitterUserId: "user-1",
+      emitterEmail: "paulo@grupolazarios.com.br",
+      filters: [{ label: "Busca", value: "acme" }],
+      rowCount: 2,
+      firstTaxId: "12.345.678/0001-90",
+      lastTaxId: "20.866.030/0001-00",
+    });
+    assert.match(source, /paulo@grupolazarios.com.br/);
+    assert.equal(
+      buildCustomerListReportCopyCode(new Date(2026, 8, 30), "abcdef123456"),
+      "CLT-20260930-ABCDEF12"
+    );
   });
 
   it("query da tela não envia paginação (exporta o filtro inteiro)", () => {
@@ -194,6 +232,33 @@ describe("customerListReportExport", () => {
     assert.match(server, /attachCustomerCnpjRisk/);
     assert.match(server, /attachCustomerCommercialOwnerListFields/);
     assert.match(server, /attachCustomerSalesBlocks/);
+    assert.match(server, /copyControl/);
+    assert.match(server, /createHash\("sha256"\)/);
+  });
+
+  it("PDF da tela usa cabeçalho institucional, marca d'água e cópia controlada", () => {
+    const page = readFileSync(join(ROOT, "components/CustomerModule.tsx"), "utf8");
+    const doc = readFileSync(
+      join(ROOT, "components/customers/CustomerListReportPrintDocument.tsx"),
+      "utf8"
+    );
+    const css = readFileSync(
+      join(ROOT, "components/customers/customer-list-report-print.css"),
+      "utf8"
+    );
+    const routes = readFileSync(join(ROOT, "lib/customerListReportExportRoutes.ts"), "utf8");
+    assert.match(page, /CustomerListReportPrintDocument/);
+    assert.match(page, /getCustomerListReportPayloadUrl/);
+    assert.match(page, /customers-print-route/);
+    assert.match(page, /\/api\/branding-settings/);
+    assert.match(doc, /PrintHeader/);
+    assert.match(doc, /CUSTOMER_LIST_REPORT_WATERMARK/);
+    assert.match(doc, /CUSTOMER_LIST_REPORT_PRINT_DISCLAIMER/);
+    assert.match(doc, /copyControl\.copyCode/);
+    assert.match(css, /A4 landscape/);
+    assert.match(css, /customers-print-watermark/);
+    assert.match(css, /table-header-group/);
+    assert.match(routes, /app\.get\("\/api\/customers\/export-report"/);
   });
 
   it("rotas e botões da tela usam o mesmo par Excel/PDF", () => {
@@ -209,8 +274,12 @@ describe("customerListReportExport", () => {
     assert.match(routes, /\/api\/customers\/export-report\.xlsx/);
     assert.match(routes, /\/api\/customers\/export-report\.pdf/);
     assert.match(routes, /COMMERCIAL_RESOURCE_KEYS\.customers/);
+    assert.match(page, /canExportCustomerListReport/);
+    assert.match(page, /allowExportReport/);
     assert.match(page, /data-testid="customers-export-report-xlsx"/);
     assert.match(page, /data-testid="customers-export-report-pdf"/);
+    assert.match(routes, /CUSTOMER_LIST_EXPORT_FORBIDDEN/);
+    assert.match(routes, /canExportCustomerListReport/);
     assert.match(page, /buildCustomerListExportQuery/);
     assert.match(page, /debouncedSearch/);
     assert.match(page, /ownerFilter/);

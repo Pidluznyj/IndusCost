@@ -1,7 +1,5 @@
 /**
- * Exportação Comercial > Clientes — XLSX / PDF (sem Prisma).
- * Mesmo padrão de Pedidos de Venda / Contas a Receber: abas Resumo + dados + Filtros,
- * PDF via buildMinimalPdfDocument.
+ * Exportação Comercial > Clientes — XLSX (sem Prisma) e payload do PDF institucional.
  */
 import * as XLSX from "xlsx";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
@@ -15,6 +13,11 @@ import {
   isCustomerSalesBlockIdentityUnresolved,
   type CustomerSalesBlockPublic,
 } from "./commercial/customerSalesBlockView.js";
+import {
+  CUSTOMER_LIST_REPORT_CLASSIFICATION,
+  CUSTOMER_LIST_REPORT_PRINT_NOTICE,
+  type CustomerListReportCopyControl,
+} from "./customerListReportPrintMeta.js";
 
 export const CUSTOMER_LIST_REPORT_TITLE = "Relatório de Clientes";
 export const CUSTOMER_LIST_REPORT_SOURCE = "Comercial > Clientes";
@@ -53,6 +56,7 @@ export type CustomerListReportExportPayload = {
   appliedFilters: Array<{ label: string; value: string }>;
   summary: CustomerListReportExportSummary;
   rows: CustomerListReportExportRow[];
+  copyControl: CustomerListReportCopyControl;
 };
 
 export function formatCustomerListExportCnpjScore(
@@ -195,9 +199,15 @@ export function buildCustomerListReportExportWorkbook(
   const wb = XLSX.utils.book_new();
   const { summary } = payload;
 
+  const copy = payload.copyControl;
   const resumoRows = [
     { Campo: "Relatório", Valor: CUSTOMER_LIST_REPORT_TITLE },
     { Campo: "Origem", Valor: CUSTOMER_LIST_REPORT_SOURCE },
+    { Campo: "Classificação", Valor: copy.classification || CUSTOMER_LIST_REPORT_CLASSIFICATION },
+    { Campo: "Código da cópia", Valor: copy.copyCode },
+    { Campo: "SHA-256 da emissão", Valor: copy.fingerprint },
+    { Campo: "Emitido por", Valor: copy.emitterName || "—" },
+    { Campo: "E-mail do emitente", Valor: copy.emitterEmail || "—" },
     { Campo: "Gerado em", Valor: formatDateTimeBr(payload.generatedAt) },
     { Campo: "Qtd clientes (filtro)", Valor: summary.customersCount },
     { Campo: "Qtd exportada", Valor: summary.exportedCount },
@@ -231,6 +241,17 @@ export function buildCustomerListReportExportWorkbook(
     );
   }
 
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      CUSTOMER_LIST_REPORT_PRINT_NOTICE.map((line, index) => ({
+        Ordem: index + 1,
+        Texto: line,
+      }))
+    ),
+    "Confidencialidade"
+  );
+
   return wb;
 }
 
@@ -252,7 +273,19 @@ export function customerListReportExportFilename(
 }
 
 export function buildCustomerListReportExportPdf(payload: CustomerListReportExportPayload): Buffer {
-  const lines: string[] = [`Gerado em: ${formatDateTimeBr(payload.generatedAt)}`, ""];
+  const copy = payload.copyControl;
+  const lines: string[] = [
+    copy.classification || CUSTOMER_LIST_REPORT_CLASSIFICATION,
+    `Copia controlada: ${copy.copyCode}`,
+    `SHA-256: ${copy.fingerprint}`,
+    `Emitido por: ${copy.emitterName} <${copy.emitterEmail}>`,
+    `Gerado em: ${formatDateTimeBr(payload.generatedAt)}`,
+    "",
+  ];
+  for (const line of CUSTOMER_LIST_REPORT_PRINT_NOTICE) {
+    lines.push(line);
+  }
+  lines.push("");
 
   if (payload.appliedFilters.length > 0) {
     lines.push("Filtros aplicados:");

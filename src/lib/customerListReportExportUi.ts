@@ -2,6 +2,7 @@
 
 export const CUSTOMER_LIST_EXPORT_XLSX_PATH = "/api/customers/export-report.xlsx";
 export const CUSTOMER_LIST_EXPORT_PDF_PATH = "/api/customers/export-report.pdf";
+export const CUSTOMER_LIST_EXPORT_PAYLOAD_PATH = "/api/customers/export-report";
 
 export function buildCustomerListExportQuery(input: {
   search?: string;
@@ -17,6 +18,10 @@ export function buildCustomerListExportQuery(input: {
 
 export function getCustomerListReportExportXlsxUrl(query = ""): string {
   return query ? `${CUSTOMER_LIST_EXPORT_XLSX_PATH}?${query}` : CUSTOMER_LIST_EXPORT_XLSX_PATH;
+}
+
+export function getCustomerListReportPayloadUrl(query = ""): string {
+  return query ? `${CUSTOMER_LIST_EXPORT_PAYLOAD_PATH}?${query}` : CUSTOMER_LIST_EXPORT_PAYLOAD_PATH;
 }
 
 export function getCustomerListReportExportPdfUrl(query = ""): string {
