@@ -68,7 +68,10 @@ export type OutlookScheduleInput = {
   orderSnapshotStatus: string | null;
   /** createdAt do schedule (ISO). Desempata quando o título tem mais de um schedule vigente. */
   scheduleCreatedAt?: string | null;
-  /** Título cancelado na origem (status = false): fora do fechamento oficial. */
+  /**
+   * Cancelamento COMPROVADO do título. O booleano `status` do Nomus não é esse
+   * sinal (indica baixa: false = em aberto); o loader não o usa para cancelar.
+   */
   titleCancelled?: boolean;
   /** Cobrança suspensa na origem: fora do fechamento oficial. */
   titleSuspended?: boolean;
@@ -118,6 +121,8 @@ export type OutlookTitleFacts = {
   invoiceNumber: string | null;
   settlementDate: string | null;
   cancelled: boolean;
+  /** `contasReceber.status` como veio do Nomus (true = baixado, false = em aberto). Só auditoria. */
+  nomusStatus?: boolean | null;
   suspended: boolean;
   sourcePresenceStatus: string | null;
   /** Sacado é empresa do grupo (fora da comissão). */

@@ -45,7 +45,7 @@ export const OUTLOOK_AUDIT_CAUSE_LABEL: Record<OutlookAuditCause, string> = {
   SCHEDULE_DUPLICADO: "mais de um schedule vigente para o mesmo título",
   EXCLUSAO_CLIENTE: "cliente com regra ativa em Exceções por cliente (schedule anterior à regra)",
   EMPRESA_GRUPO: "sacado é empresa do grupo",
-  CANCELADO: "título cancelado na origem (status = false)",
+  CANCELADO: "título com cancelamento comprovado na origem",
   COBRANCA_SUSPENSA: "título com cobrança suspensa na origem",
   TITULO_NAO_ENCONTRADO: "título sem registro no contas a receber ou removido na origem — PENDÊNCIA DE DADOS",
   TITULO_QUITADO: "título sem saldo em aberto e sem nenhum evento de recebimento",
@@ -320,7 +320,8 @@ function describe(row: OutlookAuditRow): string {
     `  ${sellerOf(row)} · PV ${row.fact.orderCode} · NF ${row.fact.nfeNumber ?? "—"} · CR ${row.fact.receivableCode ?? row.fact.receivableId}` +
     ` · parcela ${row.fact.installmentNumber} · venc ${row.fact.dueDate ?? "—"}\n` +
     `      original ${num(row.title?.amountReceivable) || "—"} · balanceReceivable ${num(row.title?.balanceRaw) || "—"}` +
-    ` · amountReceived ${num(row.title?.amountReceived) || "—"} · Σ receipts ${num(row.receiptsSum)}\n` +
+    ` · amountReceived ${num(row.title?.amountReceived) || "—"} · Σ receipts ${num(row.receiptsSum)}` +
+    ` · status Nomus ${row.title?.nomusStatus == null ? "—" : String(row.title.nomusStatus)}\n` +
     `      schedule ${row.fact.scheduleId} · snapshot ${snapshotOf(row)} (${row.fact.orderSnapshotStatus ?? "?"})` +
     ` · atribuída ${num(row.fact.allocatedCommission)} · antiga ${num(row.legacyForecast)} · nova ${num(row.line.forecastCommission)}` +
     ` · diferença ${num(row.titleDifference)} · causa ${row.cause ?? "—"}`
@@ -411,7 +412,7 @@ export function formatOutlookAuditReport(audit: OutlookAudit, context: OutlookAu
 export function buildOutlookAuditCsv(audit: OutlookAudit): string {
   const header = [
     "vendedor", "pedido", "nf", "cr", "parcela", "vencimento", "valor_original", "balance_receivable",
-    "amount_received_titulo", "soma_receipts", "schedule_id", "status_schedule", "snapshot_pv", "status_snapshot_pv",
+    "amount_received_titulo", "soma_receipts", "status_nomus", "schedule_id", "status_schedule", "snapshot_pv", "status_snapshot_pv",
     "comissao_atribuida", "previsao_antiga", "previsao_nova", "diferenca_titulo", "causa", "causa_descricao",
     "no_periodo", "diferenca_no_periodo", "vencido_antes_do_periodo", "pendencia_de_dados", "comissao_potencial_pendente",
     "realizada_antiga", "realizada_nova", "fora_da_previsao", "dif_baixa_titulo_menos_receipts", "motivo_linha",
@@ -430,6 +431,7 @@ export function buildOutlookAuditCsv(audit: OutlookAudit): string {
         num(row.title?.balanceRaw),
         num(row.title?.amountReceived),
         num(row.receiptsSum),
+        row.title?.nomusStatus == null ? "" : String(row.title.nomusStatus),
         row.fact.scheduleId,
         row.fact.scheduleStatus,
         snapshotOf(row),

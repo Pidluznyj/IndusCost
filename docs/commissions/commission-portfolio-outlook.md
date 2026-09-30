@@ -16,8 +16,8 @@ A previsão era `comissão atribuída ao CR − comissão realizada pelos evento
 2. **Saldo do título ignorado.** `NomusAccountsReceivable.balanceReceivable` era carregado, mas não
    entrava na conta. Título quitado com desconto, baixado sem evento de recebimento ou com evento
    faltando em `NomusReceivableReceipt` continuava com "previsto".
-3. **Título cancelado ou com cobrança suspensa.** O fechamento os deixa de fora
-   (`status = false`, `suspendCollection = true`); a previsão os contava.
+3. **Título com cobrança suspensa.** O fechamento os deixa de fora (`suspendCollection = true`); a
+   previsão os contava.
 4. **Exceções por cliente e empresas do grupo.** A previsão só olhava o status do schedule. Um schedule
    materializado antes da regra de Exceções continuava `ACTIVE` e gerava previsão; o fechamento aplica a
    regra viva. Agora o loader aplica as regras ativas na data da venda (mesma aplicação da Provisão por
@@ -53,6 +53,26 @@ comissão futura   = min(futura pelo saldo, comissão atribuída − comissão r
 
 Invariantes (`outlookInvariantsHold`): `0 ≤ futura ≤ atribuída`, `realizada + futura + fora da previsão ≤
 atribuída`, e sem saldo em aberto não existe comissão futura.
+
+## `NomusAccountsReceivable.status` não é cancelamento
+
+A primeira versão desta correção copiou do fechamento a leitura "status = false → título cancelado" e
+zerou a previsão: a auditoria em dados reais (30/09/2026) mostrou R$ 16.974,68 em 125 CRs com
+`status = false`, saldo em aberto integral, nada recebido e vencimento futuro.
+
+- O campo vem de `contasReceber.status` do Nomus sem inversão (`asBoolean(raw.status)` em
+  `nomusAccountsReceivableMapper.ts`).
+- O Financeiro sempre o leu como baixa: `true` = "Baixado (Nomus)", `false` = "Em aberto (Nomus)"
+  (`formatNomusStatusLabel`), e decide aberto/liquidado por saldo e data de baixa, nunca por ele.
+- Não existe campo de cancelamento no título. O sinal comprovado de que um título deixou de existir é
+  a ausência confirmada na origem (`sourcePresenceStatus = MISSING_CONFIRMED`), que a previsão trata
+  como saldo desconhecido (pendência de dados).
+
+Por isso a previsão não usa `status` para nada; ele só aparece na auditoria. A matriz que comprova a
+leitura nos dados reais sai de `scripts/auditNomusReceivableStatusSemantics.ts` (read-only).
+
+O fechamento por recebimento continua filtrando `status` nulo ou `true` e não foi alterado aqui; o
+efeito disso sobre títulos parcialmente recebidos e ainda em aberto precisa ser avaliado à parte.
 
 ## Tela
 

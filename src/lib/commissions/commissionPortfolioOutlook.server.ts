@@ -235,8 +235,12 @@ export async function loadCommissionPortfolioOutlookFacts(
         amountReceived,
         invoiceNumber: row.sourceInvoiceNumber,
         settlementDate: toCivilDateKey(row.settlementDate),
-        // Mesmo recorte do fechamento: status false = cancelado; cobrança suspensa fica fora.
-        cancelled: row.status === false,
+        // `status` do Nomus indica BAIXA (true = baixado, false = em aberto), não cancelamento:
+        // não decide nada aqui. Não há campo de cancelamento no título; o sinal comprovado é o
+        // título sumir da origem (MISSING_CONFIRMED), tratado acima como saldo desconhecido.
+        cancelled: false,
+        nomusStatus: row.status,
+        // Cobrança suspensa fica fora, como no fechamento.
         suspended: row.suspendCollection === true,
         sourcePresenceStatus: row.sourcePresenceStatus,
         groupCompany: isCommissionInternalGroupReceivable({ customerName: row.personName, customerCnpj: row.personCnpj }),

@@ -53,6 +53,7 @@
     "audit:commission:receipt-competence": "tsx scripts/auditCommissionReceiptCompetence.ts",
     "audit:commission:coverage": "tsx scripts/auditCommissionCoverage.ts",
     "audit:commission:outlook": "tsx scripts/auditCommissionOutlookOpenBalance.ts",
+    "audit:nomus:receivable-status": "tsx scripts/auditNomusReceivableStatusSemantics.ts",
     "commission:coverage:bootstrap:preview": "tsx scripts/commissionCoverageBootstrapPreview.ts",
     "commission:coverage:legacy-import": "tsx scripts/commissionLegacyCoverageImport.ts",
     "audit:finance:ar-received-decomposition": "tsx scripts/auditFinanceArReceivedDecomposition.ts",

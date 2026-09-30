@@ -29,6 +29,11 @@ import {
   formatOutlookAuditReport,
   OUTLOOK_AUDIT_CAUSES,
 } from "./commissionPortfolioOutlookAudit.js";
+import {
+  buildReceivableStatusMatrix,
+  formatReceivableStatusMatrix,
+  type ReceivableStatusAuditRow,
+} from "./nomusReceivableStatusAudit.js";
 import { parseCommissionPortfolioOutlookQuery, resolveOutlookOpenBalance } from "./commissionPortfolioOutlook.server.js";
 import {
   forecastCommissionFromMaterializedSchedule,
@@ -698,5 +703,101 @@ describe("auditoria CR a CR: regra antiga × regra nova", () => {
     const broken = { ...audit, reconciliation: { ...audit.reconciliation, unexplainedDifference: 12.34, balanced: false } };
     const report = formatOutlookAuditReport(broken, { today: TODAY, fromMonth: "2026-09", toMonth: null, seller: null, totalSchedules: facts.length, top: 5 }).join("\n");
     assert.match(report, /FAIL: soma das causas ≠ diferença removida/);
+  });
+});
+
+describe("status do título no Nomus é baixa, não cancelamento (auditoria real de 30/09/2026)", () => {
+  it("REGRESSÃO: o loader não deriva cancelamento de NomusAccountsReceivable.status", () => {
+    const loader = readFileSync(path.join(HERE, "commissionPortfolioOutlook.server.ts"), "utf8");
+    assert.doesNotMatch(loader, /cancelled:\s*row\.status/);
+    assert.doesNotMatch(loader, /status === false/);
+    assert.match(loader, /cancelled: false,/);
+    assert.match(loader, /nomusStatus: row\.status,/);
+    // O saldo desconhecido continua vindo só da ausência confirmada na origem.
+    assert.match(loader, /isNomusSourceOperationallyPresent\(row\.sourcePresenceStatus\)/);
+  });
+
+  it("CR com status=false, saldo integral e nenhum recebimento é comissão a receber (PD 02396 / PD 02838)", () => {
+    const openTitle = (partial: Partial<OutlookTitleFacts>): OutlookTitleFacts => ({
+      dueDate: "2026-10-22",
+      balance: 98_000,
+      balanceRaw: 98_000,
+      amountReceivable: 98_000,
+      amountReceived: 0,
+      invoiceNumber: "7434",
+      settlementDate: null,
+      cancelled: false,
+      nomusStatus: false,
+      suspended: false,
+      sourcePresenceStatus: "PRESENT",
+      ...partial,
+    });
+    const facts = [
+      cr({ scheduleId: "pd-02396", receivableId: 7434, orderCode: "PD 02396", dueDate: "2026-10-22", nominalAmount: 98_000, balanceReceivable: 98_000, allocatedCommission: 2_036.32 }),
+      cr({ scheduleId: "pd-02838", receivableId: 7651, orderCode: "PD 02838", installmentNumber: 3, dueDate: "2026-10-01", nominalAmount: 12_240, balanceReceivable: 12_240, allocatedCommission: 456.26 }),
+      // Snapshot substituído continua fora: é a causa real encontrada na auditoria.
+      cr({ scheduleId: "pd-02396-antigo", receivableId: 7434, orderCode: "PD 02396", orderSnapshotStatus: "SUPERSEDED", dueDate: "2026-10-22", nominalAmount: 98_000, balanceReceivable: 98_000, allocatedCommission: 2_036.32 }),
+    ];
+    const titles = new Map<number, OutlookTitleFacts>([
+      [7434, openTitle({})],
+      [7651, openTitle({ dueDate: "2026-10-01", balance: 12_240, balanceRaw: 12_240, amountReceivable: 12_240, invoiceNumber: "7651" })],
+    ]);
+    const audit = auditCommissionPortfolioOutlook(facts, titles, { fromMonth: "2026-09", toMonth: null, today: TODAY });
+    assert.equal(audit.reconciliation.newForecastTotal, 2_492.58);
+    assert.equal(audit.reconciliation.legacyForecastTotal, 4_528.9);
+    assert.deepEqual(
+      audit.reconciliation.byCause.map((entry) => [entry.cause, entry.count, entry.difference]),
+      [["SNAPSHOT_SUBSTITUIDO", 1, 2_036.32]]
+    );
+    assert.equal(audit.reconciliation.balanced, true);
+    assert.equal(audit.rows.some((row) => row.cause === "CANCELADO"), false);
+    const csv = buildOutlookAuditCsv(audit);
+    assert.ok(csv.split("\r\n")[0]!.includes("status_nomus"));
+    assert.match(formatOutlookAuditReport(audit, { today: TODAY, fromMonth: "2026-09", toMonth: null, seller: null, totalSchedules: 3, top: 5 }).join("\n"), /status Nomus false/);
+  });
+
+  it("matriz do status: false com saldo em aberto e true sem saldo → o campo descreve baixa", () => {
+    const row = (externalId: number, partial: Partial<ReceivableStatusAuditRow>): ReceivableStatusAuditRow => ({
+      externalId,
+      status: false,
+      suspendCollection: false,
+      sourcePresenceStatus: "PRESENT",
+      amountReceivable: 1_000,
+      amountReceived: 0,
+      balanceReceivable: 1_000,
+      settlementDate: null,
+      dueDate: "2026-10-10",
+      receiptCount: 0,
+      ...partial,
+    });
+    const matrix = buildReceivableStatusMatrix([
+      row(1, {}),
+      row(2, {}),
+      row(3, { amountReceived: 400, balanceReceivable: 600, receiptCount: 1 }),
+      row(4, { status: true, amountReceived: 1_000, balanceReceivable: 0, settlementDate: "2026-09-10", receiptCount: 1 }),
+      row(5, { status: true, amountReceived: 1_000, balanceReceivable: 0, settlementDate: "2026-09-12", receiptCount: 2 }),
+      row(6, { status: null }),
+    ]);
+    const [falseBucket, trueBucket, nullBucket] = matrix.buckets;
+    assert.deepEqual(
+      [falseBucket!.titles, falseBucket!.balancePositive, falseBucket!.fullyOpen, falseBucket!.partiallyReceived, falseBucket!.openBalanceTotal],
+      [3, 3, 2, 1, 2_600]
+    );
+    assert.deepEqual([trueBucket!.titles, trueBucket!.balanceZeroOrLess, trueBucket!.settled, trueBucket!.withSettlementDate, trueBucket!.withReceipt], [2, 2, 2, 2, 2]);
+    assert.equal(nullBucket!.titles, 1);
+    assert.deepEqual(falseBucket!.examples.fullyOpen, [1, 2]);
+    assert.equal(matrix.verdict, "FALSE_MEANS_OPEN");
+    assert.match(formatReceivableStatusMatrix(matrix).join("\n"), /true = baixado, false = em aberto/);
+  });
+
+  it("matriz do status: dados misturados não viram conclusão", () => {
+    const base = { suspendCollection: false, sourcePresenceStatus: "PRESENT", amountReceivable: 100, dueDate: null, receiptCount: 0 };
+    const matrix = buildReceivableStatusMatrix([
+      { ...base, externalId: 1, status: false, amountReceived: 0, balanceReceivable: 100, settlementDate: null },
+      { ...base, externalId: 2, status: false, amountReceived: 100, balanceReceivable: 0, settlementDate: "2026-09-01" },
+      { ...base, externalId: 3, status: true, amountReceived: 0, balanceReceivable: 100, settlementDate: null },
+      { ...base, externalId: 4, status: true, amountReceived: 100, balanceReceivable: 0, settlementDate: "2026-09-01" },
+    ]);
+    assert.equal(matrix.verdict, "INCONCLUSIVE");
   });
 });
