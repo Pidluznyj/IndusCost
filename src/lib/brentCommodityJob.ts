@@ -157,7 +157,7 @@ export const PORTFOLIO_INACTIVITY_REGISTERED_JOB = {
   runsOnWeekdaysOnly: false,
   slots: [{ slot: "MONTHLY", time: "04:10" }],
   description:
-    "No dia 1, após as sincronizações noturnas, revisa responsáveis comerciais: 90 dias corridos sem Pedido de Venda aprovado, com preservação por CRM válido.",
+    "No dia 1, após as sincronizações noturnas, revisa responsáveis comerciais: 90 dias corridos desde a última NF / Documento de Saída válido, com preservação por CRM válido.",
 } as const;
 
 export function listRegisteredScheduledJobs() {

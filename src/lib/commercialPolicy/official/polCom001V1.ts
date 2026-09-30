@@ -1,7 +1,8 @@
 /**
  * Pacote publicável da POL-COM-001 versão 1.0.
- * O texto normativo vem do documento oficial. Perguntas e declarações
- * apontam para esse texto e não criam regra comercial nova.
+ * O texto normativo vem do documento oficial (candidata v1.0 alinhada ao
+ * IndusCost). Perguntas e declarações apontam para esse texto e não criam
+ * regra comercial nova.
  */
 import { hashPolicyContent, type PolicyQuestion, type PolicyVersionBody } from "../commercialPolicyRules.js";
 import { POL_COM_001_TITLE, officialCommercialPolicyContent } from "./polCom001V1View.js";
@@ -22,20 +23,22 @@ export {
 export const POL_COM_001_SUMMARY_RULES = [
   "clientes, leads, oportunidades, propostas, preços, históricos, cadastros, canais e informações comerciais são ativos da empresa;",
   "a atribuição de cliente ou carteira representa responsabilidade comercial e não propriedade pessoal do cliente;",
-  "a comissão será determinada pela operação específica, pela classificação do cliente, pela Margem Oficial, pela Matriz vigente e pela efetiva atuação comercial registrada;",
+  "a comissão será determinada pela operação específica, pela classificação do cliente, pelo preço efetivamente praticado, pela Matriz de Referência vigente e pela efetiva atuação comercial registrada;",
+  "A interpolação é feita pelo preço praticado, e não pela margem: a margem de referência é atributo de cada nível comercial e serve para formar o seu preço de referência.",
   "a cobertura de ausência tem finalidade de continuidade do atendimento e não constitui, por si só, transferência definitiva de carteira ou penalidade;",
   "vendas específicas materialmente iniciadas antes de uma cobertura devem ser preservadas, enquanto novas demandas surgidas durante a cobertura seguem as regras da Seção 8;",
   "Cópias informais, planilhas locais ou mensagens não substituem o cadastro oficial vigente.",
-  "O período de 90 dias corridos sem novo Pedido de Venda aprovado constitui gatilho automático para verificação da condição de Responsável Comercial do cliente.",
+  "Completados 90 dias corridos sem novo Faturamento Válido, o cliente entra automaticamente em revisão de carteira, para verificação da condição de Responsável Comercial.",
+  "A apuração da parcela do Supervisor Comercial é realizada por procedimento administrativo próprio, com base nas comissões apuradas para os Vendedores do time, e não integra o cálculo automático de comissões do sistema.",
   "A leitura, o acesso ou o aceite eletrônico desta Política não autorizam sua distribuição externa.",
 ];
 
 export const POL_COM_001_DECLARATIONS = [
   "Declaro que tive acesso integral e li a Política Comercial e de Comissionamento POL-COM-001, versão 1.0, incluindo seus Anexos I a IV.",
   "Declaro que li e compreendi as regras comerciais aplicáveis às minhas atividades comerciais.",
-  "Declaro que compreendi a Matriz Normativa de Comissão do Anexo I (faixas de Margem Oficial, percentuais e alçadas) e que somente a versão vigente do Anexo I se aplica.",
+  "Declaro que compreendi a Matriz de Referência do Anexo I (níveis comerciais, margens e percentuais de referência, interpolação pelo preço praticado e alçadas) e que somente a versão vigente do Anexo I se aplica.",
   "Declaro que compreendi que clientes, carteira e informações comerciais são ativos da empresa e que a atribuição de Responsável Comercial representa responsabilidade, não propriedade pessoal do cliente.",
-  "Declaro que compreendi as regras de cobertura de ausência (Seção 8) e de inatividade e revisão de carteira em 90 dias corridos sem novo Pedido de Venda aprovado (Seção 11).",
+  "Declaro que compreendi as regras de cobertura de ausência (Seção 8) e de inatividade e revisão de carteira em 90 dias corridos sem novo Faturamento Válido (Seção 11).",
   "Declaro que compreendi as regras relativas a CRM, registros comerciais, precificação, margem, comissionamento e demais procedimentos descritos na Política, e as condutas vedadas da Seção 22.",
   "Comprometo-me a observar as regras e procedimentos oficiais aplicáveis durante minhas atividades.",
   "Declaro estar ciente de que este documento possui classificação de USO INTERNO E RESTRITO e é documento controlado (Seção 23).",
@@ -112,7 +115,7 @@ export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
   {
     id: "q-noventa",
     reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
-    prompt: "Ao final de 90 dias corridos sem novo Pedido de Venda aprovado e sem registro válido no CRM, o que a Política prevê?",
+    prompt: "Ao final de 90 dias corridos sem novo Faturamento Válido e sem registro válido no CRM, o que a Política prevê?",
     options: [
       { id: "a", text: "Nada muda até o Supervisor decidir." },
       { id: "b", text: "O cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação." },
@@ -120,20 +123,59 @@ export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 11 estabelece que, sem registro objetivo, atualizado e suficiente no CRM, o cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação. A reatribuição não afeta comissões já adquiridas.",
+      "A Seção 11 conta o prazo do último Faturamento Válido e estabelece que, sem registro objetivo, atualizado e suficiente no CRM, o cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação. A reatribuição é prospectiva e não afeta comissões já adquiridas.",
   },
   {
-    id: "q-matriz",
-    reviewChapterId: "anexo-i-matriz-normativa-de-comissao-margem-e-alcada",
-    prompt: "Pela Matriz Normativa do Anexo I, qual é a comissão do Vendedor para um Item de Venda com Margem Oficial de 50,00% ou mais?",
+    id: "q-faturamento",
+    reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
+    prompt: "Um Pedido de Venda ainda não faturado reinicia a contagem dos 90 dias de inatividade do cliente?",
     options: [
-      { id: "a", text: "5,00%, com aprovação prévia da Diretoria." },
-      { id: "b", text: "4,00%, no fluxo comercial ordinário." },
-      { id: "c", text: "1,00%, com aprovação prévia do Supervisor Comercial." },
+      { id: "a", text: "Sim. Basta existir um Pedido de Venda aprovado." },
+      { id: "b", text: "Não. Só nota fiscal ou Documento de Saída válido reinicia a contagem; pedido sem faturamento, orçamento, proposta e faturamento cancelado não reiniciam." },
+      { id: "c", text: "Sim, desde que o cliente já tenha pago a parcela anterior." },
     ],
     correctOptionId: "b",
     explanation:
-      "O Anexo I fixa: abaixo de 30,00% = 1,00% (aprovação prévia da Diretoria); 30,00% a 34,99% = 1,00% (aprovação prévia do Supervisor Comercial); 35,00% a 39,99% = 2,00%; 40,00% a 49,99% = 3,00%; 50,00% ou mais = 4,00%, no fluxo comercial ordinário.",
+      "A Seção 11 conta o prazo a partir do último Faturamento Válido: somente nota fiscal ou Documento de Saída válido reinicia a contagem. Pedido de Venda ainda não faturado, orçamento, proposta e faturamento cancelado não reiniciam, e o recebimento financeiro não é a referência do prazo.",
+  },
+  {
+    id: "q-preservacao",
+    reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
+    prompt: "Depois de 90 dias sem Faturamento Válido, o que pode preservar o Responsável Comercial do cliente?",
+    options: [
+      { id: "a", text: "Qualquer anotação recente no CRM, mesmo genérica, feita para manter a carteira." },
+      { id: "b", text: "Registro válido no CRM que demonstre fato comercial concreto, como proposta ou negociação em andamento com próximo passo definido, ou paralisação informada pelo cliente com data de retomada." },
+      { id: "c", text: "A simples atualização do cadastro ou de uma proposta antiga." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 11 exige registro objetivo, atualizado e suficiente. Registros genéricos, desatualizados ou artificiais e a simples atualização técnica de uma proposta ou de um cadastro não impedem a aplicação da regra de 90 dias; criar registro artificial para impedir a revisão é conduta vedada pela Seção 22.",
+  },
+  {
+    id: "q-matriz",
+    reviewChapterId: "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada",
+    prompt: "O preço efetivamente praticado de um Item de Venda ficou entre os preços de referência de dois níveis comerciais consecutivos. Como é determinada a comissão?",
+    options: [
+      { id: "a", text: "Aplica-se sempre o percentual do nível inferior, em degrau." },
+      { id: "b", text: "Por interpolação linear, feita pelo IndusCost, entre os percentuais dos dois níveis, conforme a posição do preço praticado entre os dois preços de referência." },
+      { id: "c", text: "Pela margem do item: cada faixa de margem tem um percentual fixo." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 7 e o Anexo I estabelecem que os níveis comerciais (Atacado, Varejo 1, Varejo 2 e Varejo 3) são pontos de referência. Entre os preços de referência de dois níveis consecutivos, o percentual é obtido por interpolação linear entre os percentuais desses níveis, pelo preço praticado — e não pela margem. No preço de referência de um nível, aplica-se o percentual desse nível.",
+  },
+  {
+    id: "q-limites",
+    reviewChapterId: "7-margem-oficial-matriz-de-comissao-precificacao-e-alcadas",
+    prompt: "O que acontece quando o preço praticado fica abaixo do preço de referência do Atacado, ou igual ou acima do preço de referência do Varejo 3?",
+    options: [
+      { id: "a", text: "Abaixo do Atacado não há comissão; acima do Varejo 3 o percentual continua subindo sem limite." },
+      { id: "b", text: "Abaixo do Atacado aplica-se o percentual indicado no Anexo I para preço abaixo da tabela; a partir do Varejo 3 aplica-se o percentual do Varejo 3, que é o teto da Matriz." },
+      { id: "c", text: "Nos dois casos a comissão é definida livremente pelo Supervisor Comercial." },
+    ],
+    correctOptionId: "b",
+    explanation:
+      "A Seção 7 fixa os limites: preço abaixo do preço de referência do Atacado recebe o percentual indicado no Anexo I para preço abaixo da tabela; preço igual ou superior ao preço de referência do Varejo 3 recebe o percentual do Varejo 3, que é o teto da Matriz.",
   },
   {
     id: "q-supervisor",
@@ -146,7 +188,7 @@ export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 14 fixa 33% do valor das comissões elegíveis dos Vendedores vinculados ao time, como parcela adicional suportada pela empresa, e afirma que o Supervisor não possui carteira própria para comissão individual.",
+      "A Seção 14 fixa 33% do valor das comissões elegíveis dos Vendedores vinculados ao time, como parcela adicional suportada pela empresa, e afirma que o Supervisor não possui carteira própria para comissão individual. A apuração dessa parcela é feita por procedimento administrativo próprio, fora do cálculo automático do sistema.",
   },
   {
     id: "q-campanha",

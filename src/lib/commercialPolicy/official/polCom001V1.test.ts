@@ -30,19 +30,23 @@ const SELLER = {
 };
 
 describe("POL-COM-001 conteúdo oficial", () => {
-  it("preserva o texto integral, a matriz e o anexo como estão no documento", () => {
+  it("preserva o texto integral; matriz e carteira descrevem o IndusCost e os valores da matriz vêm do snapshot", () => {
     const text = officialPolicyPlainText();
     assert.match(text, /POLÍTICA COMERCIAL E DE/);
     assert.match(text, /^COMISSIONAMENTO$/m);
     assert.match(text, /14\.055\.501\/0001-80/);
     assert.match(text, /Koppetel Comercio de Plásticos LTDA/);
-    assert.match(text, /35,00%/);
-    assert.match(text, /1,00%/);
-    assert.match(text, /2,00%/);
-    assert.match(text, /3,00%/);
-    assert.match(text, /4,00%/);
+    // Alçadas e o exemplo de interpolação seguem no texto; os percentuais dos níveis não são mais fixos no documento.
+    assert.match(text, /35,00% ou mais/);
+    assert.match(text, /recebe 1,50%/);
+    assert.match(text, /Atacado, Varejo 1, Varejo 2 e Varejo 3/);
+    assert.match(text, /interpolação linear/);
+    assert.doesNotMatch(text, /3,00%|4,00%/);
     assert.match(text, /33%/);
+    assert.match(text, /não integra o cálculo automático de comissões do sistema/);
     assert.match(text, /90 dias corridos/);
+    assert.match(text, /Faturamento Válido/);
+    assert.doesNotMatch(text, /sem novo Pedido de Venda aprovado/);
     // Anexo III corrigido para 1.0 na representação estruturada (DOCUMENT_INTERNAL_VERSION_MISMATCH registrado na auditoria).
     assert.doesNotMatch(text, /versão 2\.0/);
     assert.match(text, /código POL-COM-001, versão 1\.0/);
@@ -67,7 +71,7 @@ describe("POL-COM-001 conteúdo oficial", () => {
     assert.equal(right.passed, true);
   });
 
-  it("a publicação oficial fica bloqueada enquanto documento e sistema divergem", async () => {
+  it("sem o snapshot da Formação de Preço a publicação oficial fica bloqueada só pela matriz", async () => {
     const store = createMemoryCommercialPolicyStore();
     const first = await publishOfficialCommercialPolicy(store, "super-1", NOW);
     const second = await publishOfficialCommercialPolicy(store, "super-1", NOW);
@@ -81,7 +85,10 @@ describe("POL-COM-001 conteúdo oficial", () => {
     assert.equal(internal?.severity, "INFORMATIONAL");
     assert.equal(internal?.blocking, false);
     assert.ok(first.findings?.some((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED" && item.blocking));
-    assert.ok(first.findings?.some((item) => item.code === "SUPERVISOR_SHARE_NOT_PARAMETERIZED" && item.blocking));
+    assert.deepEqual(first.findings?.filter((item) => item.blocking).map((item) => item.code), ["COMMISSION_MATRIX_NOT_PARAMETERIZED"]);
+    const supervisor = first.findings?.find((item) => item.code === "SUPERVISOR_SHARE_MANUAL_PROCESS");
+    assert.equal(supervisor?.severity, "INFORMATIONAL");
+    assert.equal(supervisor?.blocking, false);
     assert.equal(await store.countEffectivePublished(NOW), 0);
     assert.equal(await sellerHasPendingPolicy(store, SELLER, NOW), false);
   });

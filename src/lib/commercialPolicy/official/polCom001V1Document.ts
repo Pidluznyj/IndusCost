@@ -1,4 +1,22 @@
-/** Conteúdo extraído do documento oficial POL-COM-001 v1.0. Não reescrever. */
+/**
+ * Candidata oficial da POL-COM-001 v1.0 (ainda não publicada).
+ *
+ * Base: texto extraído do DOCX original. Por decisão empresarial de 30/09/2026
+ * ("para regras que já existem no IndusCost, o sistema é a fonte da verdade"),
+ * a candidata diverge do DOCX onde ele descrevia algo que o sistema não executa:
+ *  - Seção 7 e Anexo I: comissão pelos níveis comerciais da Formação de Preço,
+ *    com interpolação linear pelo preço praticado (o DOCX trazia degraus por
+ *    faixa de Margem Oficial);
+ *  - Seção 11: 90 dias contados do último faturamento válido (o DOCX dizia
+ *    "sem novo Pedido de Venda aprovado");
+ *  - Seção 14: os 33% do Supervisor permanecem, apurados fora do motor;
+ *  - Anexo III: "versão 2.0" corrigido para 1.0.
+ * A matriz original do DOCX fica em DOCUMENT_ANNEX_I_BANDS (commercialPolicyNormative.ts)
+ * e o histórico em docs/POL-COM-001-publicacao-v1-0-diagnostico-2026-09-29.md.
+ *
+ * Os valores da Matriz de Referência não ficam neste texto: a linha em branco do
+ * Anexo I é preenchida com o snapshot normativo congelado na versão.
+ */
 export type OfficialPolicyBlock =
   | { type: "paragraph"; text: string }
   | { type: "heading"; text: string }
@@ -114,7 +132,7 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "bullet",
-        "text": "a comissão será determinada pela operação específica, pela classificação do cliente, pela Margem Oficial, pela Matriz vigente e pela efetiva atuação comercial registrada;"
+        "text": "a comissão será determinada pela operação específica, pela classificação do cliente, pelo preço efetivamente praticado, pela Matriz de Referência vigente e pela efetiva atuação comercial registrada;"
       },
       {
         "type": "bullet",
@@ -181,7 +199,17 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       {
         "type": "term",
         "term": "Matriz Normativa de Comissão",
-        "definition": "Tabela vigente, integrante desta Política por meio do Anexo I, que relaciona faixas de Margem Oficial, percentuais de comissão e alçadas."
+        "definition": "Matriz de referência vigente, integrante desta Política por meio do Anexo I, que relaciona os níveis comerciais da Formação de Preço às respectivas margens e percentuais de comissão de referência, e indica as alçadas de aprovação."
+      },
+      {
+        "type": "term",
+        "term": "Nível Comercial de Referência",
+        "definition": "Cada um dos níveis de preço publicados na Formação de Preço para um produto — Atacado, Varejo 1, Varejo 2 e Varejo 3 —, com preço, margem e percentual de comissão de referência."
+      },
+      {
+        "type": "term",
+        "term": "Faturamento Válido",
+        "definition": "Nota fiscal ou Documento de Saída regularmente emitido e não cancelado, vinculado a Pedido de Venda do cliente. Devolução, transferência e documento cancelado não constituem Faturamento Válido."
       },
       {
         "type": "term",
@@ -321,11 +349,47 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     "blocks": [
       {
         "type": "paragraph",
-        "text": "A Margem Oficial utilizada para enquadramento será a margem registrada no Item de Venda no momento da aprovação comercial do Pedido de Venda, calculada conforme a metodologia oficial de custos e preços vigente."
+        "text": "A Margem Oficial é a margem registrada no Item de Venda no momento da aprovação comercial do Pedido de Venda, calculada conforme a metodologia oficial de custos e preços vigente. Ela orienta a formação de preço e as alçadas de aprovação previstas no Anexo I."
       },
       {
         "type": "paragraph",
-        "text": "A Matriz Normativa de Comissão e Alçada integra esta Política por meio do Anexo I e constitui a única fonte oficial dos percentuais de comissão por faixa de margem. Tabelas copiadas em mensagens, apresentações, planilhas particulares ou documentos antigos não substituem a versão vigente do Anexo I."
+        "text": "A Formação de Preço mantém, para cada produto, quatro níveis comerciais de referência: Atacado, Varejo 1, Varejo 2 e Varejo 3. Cada nível publicado possui um preço de referência do produto, formado a partir de uma margem de referência, e um percentual de comissão de referência. Esses níveis são os pontos oficiais do cálculo da comissão e constam da Matriz de Referência do Anexo I."
+      },
+      {
+        "type": "paragraph",
+        "text": "A comissão de cada Item de Venda é determinada pela posição do preço unitário líquido efetivamente praticado em relação aos preços de referência do produto:"
+      },
+      {
+        "type": "bullet",
+        "text": "preço praticado igual ao preço de referência de um nível: aplica-se o percentual de comissão desse nível;"
+      },
+      {
+        "type": "bullet",
+        "text": "preço praticado entre os preços de referência de dois níveis consecutivos: o percentual é obtido por interpolação linear entre os percentuais desses dois níveis, na mesma proporção em que o preço praticado avança do nível inferior para o superior;"
+      },
+      {
+        "type": "bullet",
+        "text": "preço praticado abaixo do preço de referência do Atacado: aplica-se o percentual indicado no Anexo I para preço abaixo da tabela;"
+      },
+      {
+        "type": "bullet",
+        "text": "preço praticado igual ou superior ao preço de referência do Varejo 3: aplica-se o percentual do Varejo 3, que é o teto da Matriz."
+      },
+      {
+        "type": "paragraph",
+        "text": "A interpolação é feita pelo preço praticado, e não pela margem: a margem de referência é atributo de cada nível comercial e serve para formar o seu preço de referência. Exemplo: entre um nível que paga 1,00% e o nível seguinte que paga 2,00%, o Item de Venda vendido exatamente na metade do intervalo entre os dois preços de referência recebe 1,50%."
+      },
+      {
+        "type": "paragraph",
+        "text": "A comissão efetiva é sempre calculada pelo IndusCost, sobre a base definida na Seção 6, com os níveis comerciais vigentes na data de referência da operação — a do respectivo faturamento ou, na sua falta, a do Pedido de Venda. O percentual resultante é apurado com quatro casas decimais."
+      },
+      {
+        "type": "paragraph",
+        "text": "Enquanto o produto não possuir os quatro níveis comerciais publicados ou custo oficial vigente, a comissão do item não é calculada automaticamente e a operação fica pendente de regularização."
+      },
+      {
+        "type": "paragraph",
+        "text": "A Matriz de Referência do Anexo I constitui a única fonte oficial dos níveis, margens e percentuais de comissão de referência. Tabelas copiadas em mensagens, apresentações, planilhas particulares ou documentos antigos não substituem a versão vigente do Anexo I."
       },
       {
         "type": "paragraph",
@@ -337,11 +401,11 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "paragraph",
-        "text": "Venda com Margem Oficial inferior a 35,00% somente poderá ser aprovada mediante a alçada prevista na Matriz. Uma vez regularmente autorizada, a margem inferior não poderá ser utilizada, por si só, para negar a comissão prevista para a operação."
+        "text": "Venda com Margem Oficial inferior a 35,00% somente poderá ser aprovada mediante a alçada prevista no Anexo I. Uma vez regularmente autorizada, a margem inferior não poderá ser utilizada, por si só, para negar a comissão prevista para a operação. A aprovação por alçada é procedimento administrativo, registrado fora do cálculo automático da comissão."
       },
       {
         "type": "paragraph",
-        "text": "Para enquadramento em faixa, será considerado o percentual de margem com duas casas decimais, adotando-se arredondamento aritmético convencional conforme parametrização oficial do sistema."
+        "text": "Para verificação da alçada, será considerado o percentual de margem com duas casas decimais, adotando-se arredondamento aritmético convencional."
       }
     ]
   },
@@ -693,7 +757,31 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     "blocks": [
       {
         "type": "paragraph",
-        "text": "O período de 90 dias corridos sem novo Pedido de Venda aprovado constitui gatilho automático para verificação da condição de Responsável Comercial do cliente."
+        "text": "O prazo de inatividade comercial é contado a partir do último Faturamento Válido do cliente: a data da última nota fiscal ou Documento de Saída válido vinculado a um Pedido de Venda. Completados 90 dias corridos sem novo Faturamento Válido, o cliente entra automaticamente em revisão de carteira, para verificação da condição de Responsável Comercial."
+      },
+      {
+        "type": "paragraph",
+        "text": "Para a contagem desse prazo:"
+      },
+      {
+        "type": "bullet",
+        "text": "somente nota fiscal ou Documento de Saída válido reinicia a contagem;"
+      },
+      {
+        "type": "bullet",
+        "text": "faturamento cancelado, devolução e transferência não reiniciam a contagem;"
+      },
+      {
+        "type": "bullet",
+        "text": "Pedido de Venda ainda não faturado, orçamento e proposta não reiniciam a contagem;"
+      },
+      {
+        "type": "bullet",
+        "text": "o recebimento financeiro não é a referência do prazo;"
+      },
+      {
+        "type": "bullet",
+        "text": "cada Faturamento Válido reinicia a contagem, ainda que o Pedido de Venda tenha sido faturado apenas em parte."
       },
       {
         "type": "paragraph",
@@ -705,7 +793,27 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "paragraph",
-        "text": "A manutenção do Responsável Comercial após 90 dias sem compra dependerá da existência, no CRM, de registro válido que demonstre motivo comercial objetivo para a inatividade e evidencie acompanhamento efetivo da conta."
+        "text": "A manutenção do Responsável Comercial após 90 dias sem Faturamento Válido dependerá da existência, no CRM, de registro válido que demonstre motivo comercial objetivo para a inatividade e evidencie acompanhamento efetivo da conta."
+      },
+      {
+        "type": "paragraph",
+        "text": "São exemplos de registro válido, quando comprováveis no CRM:"
+      },
+      {
+        "type": "bullet",
+        "text": "proposta em análise, enviada ou aprovada, com previsão de fechamento ou próxima ação em data atual ou futura;"
+      },
+      {
+        "type": "bullet",
+        "text": "negociação concreta em andamento, registrada em contato dos últimos 90 dias, com próximo passo comercial definido;"
+      },
+      {
+        "type": "bullet",
+        "text": "contato dos últimos 90 dias com próxima ação comercial concreta agendada para data atual ou futura;"
+      },
+      {
+        "type": "bullet",
+        "text": "paralisação temporária informada pelo cliente, registrada em contato dos últimos 90 dias, com data futura de retomada."
       },
       {
         "type": "paragraph",
@@ -745,11 +853,19 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "paragraph",
-        "text": "Registros genéricos, desatualizados, artificiais, inseridos apenas para manutenção da carteira ou sem evidência de fato comercial concreto não impedirão a aplicação da regra de 90 dias."
+        "text": "Registros genéricos, desatualizados, artificiais, inseridos apenas para manutenção da carteira ou sem evidência de fato comercial concreto não impedirão a aplicação da regra de 90 dias. A simples atualização técnica de uma proposta ou de um cadastro, sem previsão de fechamento ou próxima ação registrada, não constitui registro válido."
+      },
+      {
+        "type": "paragraph",
+        "text": "Havendo registro válido, o Responsável Comercial é mantido e a carteira do cliente volta a ser revista no mês seguinte."
       },
       {
         "type": "paragraph",
         "text": "Não existindo registro válido no CRM ao término do período de 90 dias, a retirada da condição de Responsável Comercial exclusivo ocorrerá automaticamente, independentemente de decisão discricionária do Supervisor Comercial."
+      },
+      {
+        "type": "paragraph",
+        "text": "Clientes sem histórico de Faturamento Válido não serão automaticamente desvinculados exclusivamente por esta rotina de inatividade; seu tratamento seguirá os critérios comerciais e de gestão aplicáveis."
       },
       {
         "type": "paragraph",
@@ -836,6 +952,10 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       {
         "type": "paragraph",
         "text": "A parcela do Supervisor é adicional suportada pela empresa e não reduz, retém nem é descontada da comissão do Vendedor."
+      },
+      {
+        "type": "paragraph",
+        "text": "A apuração da parcela do Supervisor Comercial é realizada por procedimento administrativo próprio, com base nas comissões apuradas para os Vendedores do time, e não integra o cálculo automático de comissões do sistema."
       },
       {
         "type": "paragraph",
@@ -1193,7 +1313,7 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     "blocks": [
       {
         "type": "paragraph",
-        "text": "A empresa poderá revisar esta Política, a Matriz Normativa, as faixas de margem, percentuais, critérios de alçada e regras operacionais mediante nova versão formal, de acordo com necessidades econômicas, comerciais, operacionais ou de governança."
+        "text": "A empresa poderá revisar esta Política, a Matriz de Referência, os níveis comerciais, margens, percentuais, critérios de alçada e regras operacionais mediante nova versão formal, de acordo com necessidades econômicas, comerciais, operacionais ou de governança."
       },
       {
         "type": "paragraph",
@@ -1280,12 +1400,12 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     ]
   },
   {
-    "id": "anexo-i-matriz-normativa-de-comissao-margem-e-alcada",
-    "title": "ANEXO I — MATRIZ NORMATIVA DE COMISSÃO, MARGEM E ALÇADA",
+    "id": "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada",
+    "title": "ANEXO I — MATRIZ DE REFERÊNCIA DE FORMAÇÃO DE PREÇO, COMISSÃO E ALÇADA",
     "blocks": [
       {
         "type": "paragraph",
-        "text": "Este Anexo integra a Política POL-COM-001. A tabela abaixo é a única matriz normativa vigente para os negócios abrangidos enquanto não for substituída por revisão formal."
+        "text": "Este Anexo integra a Política POL-COM-001. A Matriz de Referência abaixo reproduz os níveis comerciais publicados na Formação de Preço e é a única matriz normativa vigente para os negócios abrangidos enquanto não for substituída por revisão formal."
       },
       {
         "type": "table",
@@ -1313,39 +1433,56 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
         ]
       },
       {
+        "type": "heading",
+        "text": "Matriz de Referência de Formação de Preço e Comissão"
+      },
+      {
+        "type": "table",
+        "rows": [
+          [
+            "Nível comercial",
+            "Margem de referência",
+            "Comissão de referência"
+          ],
+          [
+            "____",
+            "____",
+            "____"
+          ]
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "Os níveis acima constituem pontos de referência. Quando o preço unitário efetivamente praticado coincidir com o preço de referência de um nível, aplica-se o percentual desse nível. Quando se situar entre os preços de referência de dois níveis comerciais consecutivos, o percentual de comissão será determinado por interpolação linear entre os percentuais desses dois níveis, conforme o preço praticado, segundo a regra de cálculo do IndusCost vigente para esta versão da Matriz. Abaixo do preço de referência do Atacado aplica-se o percentual da linha de preço abaixo da tabela; a partir do preço de referência do Varejo 3, aplica-se o percentual do Varejo 3."
+      },
+      {
+        "type": "heading",
+        "text": "Alçadas de aprovação"
+      },
+      {
         "type": "table",
         "rows": [
           [
             "Margem Oficial do Item",
-            "Comissão do Vendedor",
             "Alçada Comercial"
           ],
           [
             "Abaixo de 30,00%",
-            "1,00%",
             "Aprovação prévia da Diretoria"
           ],
           [
             "30,00% a 34,99%",
-            "1,00%",
             "Aprovação prévia do Supervisor Comercial"
           ],
           [
-            "35,00% a 39,99%",
-            "2,00%",
-            "Fluxo comercial ordinário"
-          ],
-          [
-            "40,00% a 49,99%",
-            "3,00%",
-            "Fluxo comercial ordinário"
-          ],
-          [
-            "50,00% ou mais",
-            "4,00%",
+            "35,00% ou mais",
             "Fluxo comercial ordinário"
           ]
         ]
+      },
+      {
+        "type": "paragraph",
+        "text": "As alçadas são procedimento administrativo de aprovação e não alteram o percentual de comissão calculado pelo sistema."
       },
       {
         "type": "paragraph",

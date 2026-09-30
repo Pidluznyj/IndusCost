@@ -30,6 +30,7 @@ import {
   type PrePublishFinding,
   type ReleaseNormativeInput,
 } from "./commercialPolicyNormative.js";
+import { policyCommissionMatrixFromSnapshot } from "./policyAutoFields.js";
 import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
 
 export type PolicyFailure = {
@@ -123,6 +124,8 @@ export function versionPublicView(version: StoredVersion) {
     changeSetHash: version.changeSetHash ?? "",
     previousVersionId: version.previousVersionId ?? null,
     whatChanged: formatWhatChanged(version.changeSet ?? [], label, previousLabel),
+    // Matriz de Referência congelada nesta versão: é a que o Anexo I exibe, mesmo que a Formação de Preço mude depois.
+    commissionMatrix: policyCommissionMatrixFromSnapshot(version.normativeSnapshot),
   };
 }
 

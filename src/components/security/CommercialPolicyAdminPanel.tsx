@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { COMMERCIAL_POLICY_ACCEPTANCE_STEPS, downloadAuthenticatedFile } from "@/src/lib/commercialPolicy/commercialPolicyClient";
 import { parsePolicyChapters, type PolicyChapter } from "@/src/lib/commercialPolicy/policyDocumentFormat";
+import { policyCommissionMatrixFromSnapshot, type PolicyCommissionMatrix } from "@/src/lib/commercialPolicy/policyAutoFields";
 import { CommercialPolicyReader } from "@/src/components/security/CommercialPolicyReader";
 import { CommercialPolicyVersionEditor, type EditorPayload, type EditorQuestion } from "@/src/components/security/CommercialPolicyVersionEditor";
 
@@ -62,6 +63,7 @@ type VersionView = {
   normativeSnapshot?: unknown;
   changeSet?: PolicyChange[];
   approver?: { name: string; role: string } | null;
+  commissionMatrix?: PolicyCommissionMatrix | null;
 };
 
 type Integrity = {
@@ -114,6 +116,8 @@ type PreviewDoc = {
   effectiveFrom: string | null;
   publishedAt: string | null;
   approver: { name: string; role: string } | null;
+  /** Matriz do Anexo I: a congelada na versão ou, antes de publicar, a atual da Formação de Preço. */
+  commissionMatrix: PolicyCommissionMatrix | null;
   origin: string;
 };
 
@@ -166,6 +170,7 @@ function statusClass(status: Integrity["publicationStatus"]): string {
 
 function ownerClass(owner: string | undefined): string {
   if (owner === "SISTEMA") return "bg-violet-100 text-violet-900 border-violet-300";
+  if (owner === "PROCESSO") return "bg-sky-100 text-sky-900 border-sky-300";
   if (owner === "DOCUMENTO") return "bg-amber-100 text-amber-900 border-amber-300";
   return "bg-slate-100 text-slate-800 border-slate-300";
 }
@@ -213,6 +218,30 @@ const VersionSummary: React.FC<{ version: VersionView; title: string; extra?: Re
 );
 
 /** "O que falta para publicar": cada bloqueio com quem resolve, onde e como. */
+/** Regras administrativas que o IndusCost deliberadamente não calcula: aparecem como informação, sem bloquear. */
+const MANUAL_PROCESS_LABEL: Record<string, string> = {
+  SUPERVISOR_SHARE_MANUAL_PROCESS: "33% Supervisor",
+  APPROVAL_AUTHORITY_MANUAL_PROCESS: "Alçadas de aprovação",
+  COVERAGE_MANUAL_PROCESS: "Cobertura de ausência",
+};
+
+const ManualProcessNote: React.FC<{ findings: Finding[] }> = ({ findings }) => {
+  const manual = findings.filter((item) => MANUAL_PROCESS_LABEL[item.code] && item.severity !== "BLOCKING");
+  if (manual.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950" aria-label="Processos manuais" data-testid="policy-manual-process">
+      <p className="font-bold uppercase tracking-wide">Processo manual / externo ao motor — não bloqueia a publicação</p>
+      <ul className="mt-1.5 space-y-1.5">
+        {manual.map((item) => (
+          <li key={item.code}>
+            <span className="font-semibold">{MANUAL_PROCESS_LABEL[item.code]} · Seção {item.policySection}.</span> {item.system}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publicationStatus"]; onOpenEditor: () => void; onOpenDivergences: () => void; compact?: boolean; /** Coluna única, para o painel lateral estreito da prévia. */ stacked?: boolean }> = ({ findings, status, onOpenEditor, onOpenDivergences, compact, stacked }) => {
   const blockers = findings.filter((item) => item.severity === "BLOCKING");
   const warnings = findings.filter((item) => item.severity === "WARNING");
@@ -221,6 +250,7 @@ const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publi
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-950">
         <p className="font-semibold">Versão 1.0 publicada e vigente.</p>
         <p className="mt-1">Para alterar qualquer regra, crie um rascunho em "Conteúdo da política" (a partir da oficial ou duplicando a vigente): a publicação vira uma nova versão, com novo aceite dos vendedores.</p>
+        <ManualProcessNote findings={findings} />
       </div>
     );
   }
@@ -229,6 +259,7 @@ const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publi
       <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950">
         <p className="font-semibold">Nenhum bloqueio: a versão 1.0 pode ser publicada.</p>
         <p className="mt-1">Revise a prévia, gere a cópia controlada se quiser arquivar, e clique em "Publicar versão 1.0". {warnings.length ? `${warnings.length} alerta(s) não impedem a publicação.` : ""}</p>
+        <ManualProcessNote findings={findings} />
       </div>
     );
   }
@@ -297,6 +328,7 @@ const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publi
           Alertas (não bloqueiam): {warnings.map((item) => `${item.code} — ${item.resolution?.steps[0] ?? item.action}`).join(" · ")}
         </p>
       ) : null}
+      <ManualProcessNote findings={findings} />
     </div>
   );
 };
@@ -474,21 +506,24 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       version ? `POL-COM-001-v${version.label}-copia-controlada.pdf` : "POL-COM-001-v1.0-copia-controlada.pdf"
     ).catch((error: unknown) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "Não foi possível gerar a cópia controlada." }));
 
+  // Prévia antes de publicar: o Anexo I mostra os níveis atuais da Formação de Preço.
+  const currentCommissionMatrix = policyCommissionMatrixFromSnapshot(integrity?.currentSnapshot);
+
   const previewBlockerCount =
     integrity && integrity.publicationStatus !== "PUBLISHED" ? integrity.findings.filter((item) => item.severity === "BLOCKING").length : 0;
 
   const openOfficialPreview = () => {
-    setPreviewDoc({ chapters: null, title: doc?.title ?? "", label: doc?.versionLabel ?? "1.0", effectiveFrom: published?.effectiveFrom ?? null, publishedAt: published?.publishedAt ?? null, approver: published?.approver ?? null, origin: "documento oficial" });
+    setPreviewDoc({ chapters: null, title: doc?.title ?? "", label: doc?.versionLabel ?? "1.0", effectiveFrom: published?.effectiveFrom ?? null, publishedAt: published?.publishedAt ?? null, approver: published?.approver ?? null, commissionMatrix: published?.commissionMatrix ?? currentCommissionMatrix, origin: "documento oficial" });
     setPreviewView("admin");
     setPreviewPendingOpen(false);
   };
   const openVersionPreview = (version: VersionView) => {
     const isDraft = version.status === "DRAFT";
-    setPreviewDoc({ chapters: parsePolicyChapters(version.content), title: version.title, label: version.label, effectiveFrom: isDraft ? null : version.effectiveFrom, publishedAt: isDraft ? null : version.publishedAt, approver: version.approver ?? null, origin: `versão ${version.label} (${STATUS_LABEL[version.status] ?? version.status})` });
+    setPreviewDoc({ chapters: parsePolicyChapters(version.content), title: version.title, label: version.label, effectiveFrom: isDraft ? null : version.effectiveFrom, publishedAt: isDraft ? null : version.publishedAt, approver: version.approver ?? null, commissionMatrix: version.commissionMatrix ?? currentCommissionMatrix, origin: `versão ${version.label} (${STATUS_LABEL[version.status] ?? version.status})` });
     setPreviewView("seller");
   };
   const openEditorPreview = (payload: EditorPayload, label: string) => {
-    setPreviewDoc({ chapters: parsePolicyChapters(payload.content), title: payload.title, label, effectiveFrom: null, publishedAt: null, approver: null, origin: "rascunho em edição (não salvo)" });
+    setPreviewDoc({ chapters: parsePolicyChapters(payload.content), title: payload.title, label, effectiveFrom: null, publishedAt: null, approver: null, commissionMatrix: currentCommissionMatrix, origin: "rascunho em edição (não salvo)" });
     setPreviewView("seller");
   };
 
@@ -889,7 +924,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
           <div className="relative flex min-h-0 flex-1 bg-background">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {previewView === "admin" ? (
-                <CommercialPolicyReader fluid mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} onGeneratePdf={() => generatePdf()} />
+                <CommercialPolicyReader fluid mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} commissionMatrix={previewDoc.commissionMatrix} onGeneratePdf={() => generatePdf()} />
               ) : (
                 <>
                   <div className="border-b border-border bg-sky-50 px-4 py-2 text-xs text-sky-950">
@@ -913,7 +948,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
                       <button type="button" className="font-semibold underline" onClick={() => setSellerFinishNotice(false)}>Entendi</button>
                     </div>
                   ) : null}
-                  <CommercialPolicyReader fluid mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
+                  <CommercialPolicyReader fluid mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} commissionMatrix={previewDoc.commissionMatrix} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
                 </>
               )}
             </div>

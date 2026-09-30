@@ -7,7 +7,9 @@
  *  - data de aprovação  = data em que a versão foi publicada;
  *  - data de vigência   = vigência informada pelo administrador na publicação;
  *  - aprovação          = identificação de quem publicou (usuário autenticado);
- *  - termo de ciência   = usuário logado que assina, data e assinatura eletrônica.
+ *  - termo de ciência   = usuário logado que assina, data e assinatura eletrônica;
+ *  - Matriz de Referência do Anexo I = níveis comerciais congelados no snapshot
+ *    normativo da versão (margem e comissão de referência de cada nível).
  * Ninguém digita nada: o usuário só confere e aceita.
  */
 import type { PolicyBlock, PolicyChapter } from "./policyDocumentFormat.js";
@@ -26,7 +28,59 @@ export type PolicyAutoFieldContext = {
   acceptance: { id: string; acceptedAt: string; evidenceHash: string } | null;
   /** Instante atual (ISO), para a data do termo antes da assinatura. */
   today: string;
+  /**
+   * Matriz de Referência da versão: a do snapshot normativo congelado na
+   * publicação (ou a atual da Formação de Preço, em prévia antes de publicar).
+   * Ausente/nula = ainda não disponível.
+   */
+  commissionMatrix?: PolicyCommissionMatrix | null;
 };
+
+/** Níveis comerciais de referência e a comissão de preço abaixo do Atacado. */
+export type PolicyCommissionMatrix = {
+  levels: Array<{ name: string; marginPercent: number; commissionPercent: number }>;
+  belowLowestCommissionPercent: number;
+};
+
+/** Extrai a matriz de um snapshot normativo (de qualquer versão); nulo se o snapshot não a tiver. */
+export function policyCommissionMatrixFromSnapshot(snapshot: unknown): PolicyCommissionMatrix | null {
+  const matrix = (snapshot as { commissionMatrix?: unknown } | null | undefined)?.commissionMatrix as
+    | { parameterized?: unknown; bands?: unknown; outOfTableCommissionPercent?: unknown }
+    | undefined;
+  if (!matrix || matrix.parameterized !== true || !Array.isArray(matrix.bands)) return null;
+  const levels = matrix.bands.flatMap((band) => {
+    const row = band as { name?: unknown; marginPercent?: unknown; commissionPercent?: unknown };
+    return typeof row.name === "string" && typeof row.marginPercent === "number" && typeof row.commissionPercent === "number"
+      ? [{ name: row.name, marginPercent: row.marginPercent, commissionPercent: row.commissionPercent }]
+      : [];
+  });
+  if (levels.length === 0) return null;
+  return {
+    levels: [...levels].sort((a, b) => a.marginPercent - b.marginPercent),
+    belowLowestCommissionPercent: typeof matrix.outOfTableCommissionPercent === "number" ? matrix.outOfTableCommissionPercent : 0,
+  };
+}
+
+export function formatPolicyPercent(value: number): string {
+  return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+/** Cabeçalho da Matriz de Referência do Anexo I. */
+export function isCommissionMatrixHeader(row: readonly string[] | undefined): boolean {
+  return /^n[ií]vel comercial$/i.test((row?.[0] ?? "").trim());
+}
+
+const MATRIX_PENDING_ROW = ["definidos pela Formação de Preço vigente na publicação", "—", "—"];
+
+/** Linhas da Matriz de Referência a partir do snapshot: os níveis e, por último, o preço abaixo do Atacado. */
+export function commissionMatrixRows(matrix: PolicyCommissionMatrix | null | undefined): string[][] {
+  if (!matrix || matrix.levels.length === 0) return [MATRIX_PENDING_ROW];
+  const lowest = matrix.levels[0]!.name;
+  return [
+    ...matrix.levels.map((level) => [level.name, formatPolicyPercent(level.marginPercent), formatPolicyPercent(level.commissionPercent)]),
+    [`Preço abaixo do ${lowest} (abaixo da tabela)`, "—", formatPolicyPercent(matrix.belowLowestCommissionPercent)],
+  ];
+}
 
 const BLANK = /_{3,}(?:\s*\/\s*_{3,}\s*\/\s*_{3,})?/;
 const isBlank = (text: string | undefined) => Boolean(text) && text!.replace(BLANK, "").trim() === "";
@@ -119,6 +173,11 @@ function fillBlock(block: PolicyBlock, context: PolicyAutoFieldContext): PolicyB
     return text === block.text ? block : { ...block, text };
   }
   if (block.type === "table") {
+    // Matriz de Referência: as linhas em branco dão lugar aos níveis do snapshot da versão.
+    if (isCommissionMatrixHeader(block.rows[0]) && block.rows.slice(1).some((row) => row.every(isBlank))) {
+      const filled = block.rows.slice(1).filter((row) => !row.every(isBlank));
+      return { ...block, rows: [block.rows[0]!, ...filled, ...commissionMatrixRows(context.commissionMatrix)] };
+    }
     const rows = block.rows.map((row) => fillRow(row, context));
     return rows.every((row, index) => row === block.rows[index]) ? block : { ...block, rows };
   }

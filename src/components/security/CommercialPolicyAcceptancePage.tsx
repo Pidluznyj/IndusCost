@@ -209,6 +209,7 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           effectiveFrom={policy.effectiveFrom}
           publishedAt={policy.publishedAt}
           approver={policy.approver ?? null}
+          commissionMatrix={policy.commissionMatrix ?? null}
           signer={signer}
           initialChapterId={reviewChapterId}
           onGeneratePdf={() => void downloadAuthenticatedFile(`/api/commercial-policy/versions/${policy.id}/document`, "POL-COM-001-copia-controlada.pdf")}

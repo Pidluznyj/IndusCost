@@ -18,7 +18,7 @@ import {
 } from "./commercialPolicyPdf.js";
 import { buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
 import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
-import type { PolicyAutoFieldContext } from "./policyAutoFields.js";
+import { policyCommissionMatrixFromSnapshot, type PolicyAutoFieldContext } from "./policyAutoFields.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
   auditPolCom001Publication,
@@ -234,7 +234,12 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   }): Promise<PolicyAutoFieldContext> {
     const { version, acceptance, user } = input;
     const published = version && version.status !== "DRAFT" ? version : null;
+    // Versão publicada mostra a matriz congelada nela; antes de publicar, a da Formação de Preço atual.
+    const commissionMatrix =
+      policyCommissionMatrixFromSnapshot(published?.normativeSnapshot) ??
+      policyCommissionMatrixFromSnapshot((await currentNormativeState()).snapshot);
     return {
+      commissionMatrix,
       versionLabel: input.label,
       publishedAt: published?.publishedAt?.toISOString() ?? null,
       effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
@@ -676,7 +681,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       },
       counts: { blockers: publication.blockers, warnings: publication.warnings, informational: publication.informational },
       findings: publication.findings,
-      reconciliation: buildPolCom001ReconciliationMatrix(state.snapshot),
+      reconciliation: buildPolCom001ReconciliationMatrix(state.snapshot, official.content),
       currentSnapshot: state.snapshot,
       currentSnapshotHash: state.snapshot ? normativeSnapshotHash(state.snapshot) : null,
       currentRelease: state.snapshot?.commissionRelease ?? null,

@@ -1,3 +1,4 @@
+import type { PolicyCommissionMatrix } from "./policyAutoFields.js";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 
 /** Etapas do fluxo de aceite do vendedor, na ordem em que a página as apresenta. */
@@ -27,6 +28,8 @@ export type PendingPolicy = {
   whatChanged?: string[];
   /** Quem publicou a versão (aprovação eletrônica impressa no documento). */
   approver?: { name: string; role: string } | null;
+  /** Matriz de Referência congelada na versão (Anexo I). */
+  commissionMatrix?: PolicyCommissionMatrix | null;
 };
 
 export type PendingResponse = {

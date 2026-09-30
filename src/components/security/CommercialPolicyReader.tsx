@@ -20,6 +20,7 @@ const NOTICE_PHRASES = [
   "não autorizam sua distribuição",
   "90 dias",
   "única matriz normativa",
+  "pontos de referência",
   "única fonte oficial",
   "não substituem",
   "automaticamente",
@@ -31,8 +32,8 @@ const NOTICE_PHRASES = [
 /** Atalhos da capa para o que mais pesa na rotina do vendedor (só navegação; o texto é o do documento). */
 const KEY_POINTS: Array<{ chapterId: string; label: string; teaser: string }> = [
   { chapterId: "10-responsabilidade-comercial-e-carteira", label: "Carteira", teaser: "Clientes e carteira são ativos da empresa; a atribuição é responsabilidade, não propriedade." },
-  { chapterId: "anexo-i-matriz-normativa-de-comissao-margem-e-alcada", label: "Matriz de comissão", teaser: "Percentual por faixa de Margem Oficial e alçadas — Anexo I, versão vigente." },
-  { chapterId: "11-inatividade-de-cliente-e-revisao-de-carteira", label: "90 dias", teaser: "Sem novo Pedido de Venda aprovado e sem CRM válido, a exclusividade é revista." },
+  { chapterId: "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada", label: "Matriz de comissão", teaser: "Níveis de referência da Formação de Preço; entre dois níveis, interpolação pelo preço praticado — Anexo I." },
+  { chapterId: "11-inatividade-de-cliente-e-revisao-de-carteira", label: "90 dias", teaser: "Sem novo faturamento válido e sem CRM válido, a exclusividade é revista." },
   { chapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada", label: "Cobertura", teaser: "Venda já iniciada fica com o responsável; nova demanda segue a Seção 8." },
   { chapterId: "22-condutas-vedadas", label: "Condutas vedadas", teaser: "O que nunca fazer com preço, margem, registros, campanhas e comissão." },
   { chapterId: "23-confidencialidade-documento-controlado-e-uso-restrito", label: "Uso restrito", teaser: "Documento controlado: ler e aceitar não autoriza divulgar." },
@@ -117,20 +118,21 @@ export const CommercialPolicyReader: React.FC<{
   onFinish?: () => void;
   /** Ocupa toda a largura do contêiner (prévia em tela cheia) em vez da moldura de 80rem. */
   fluid?: boolean;
-  /** Dados reais que preenchem as lacunas do documento: publicação, quem aprovou, quem assina e o aceite. */
+  /** Dados reais que preenchem as lacunas do documento: publicação, quem aprovou, quem assina, o aceite e a Matriz do Anexo I. */
+  commissionMatrix?: PolicyAutoFieldContext["commissionMatrix"];
   publishedAt?: string | null;
   approver?: PolicyAutoFieldContext["approver"];
   signer?: PolicyAutoFieldContext["signer"];
   acceptance?: PolicyAutoFieldContext["acceptance"];
-}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish, fluid = false, publishedAt = null, approver = null, signer = null, acceptance = null }) => {
+}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish, fluid = false, commissionMatrix = null, publishedAt = null, approver = null, signer = null, acceptance = null }) => {
   const frame = fluid ? "max-w-none" : "max-w-7xl";
   const documentTitle = titleProp ? titleCase(titleProp) : "Política Comercial e de Comissionamento";
   const [today] = useState(() => new Date().toISOString());
   // Datas, aprovação e termo de ciência são preenchidos pelo sistema; o texto gravado (e o hash) não muda.
   const chapters = useMemo(
-    () => applyPolicyAutoFields(chaptersProp ?? POL_COM_001_CHAPTERS, { versionLabel, publishedAt, effectiveFrom, approver, signer, acceptance, today }),
+    () => applyPolicyAutoFields(chaptersProp ?? POL_COM_001_CHAPTERS, { versionLabel, publishedAt, effectiveFrom, approver, signer, acceptance, today, commissionMatrix }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- objetos comparados pelos campos: o pai os recria a cada render
-    [chaptersProp, versionLabel, publishedAt, effectiveFrom, approver?.name, approver?.role, signer?.name, signer?.email, signer?.role, acceptance?.id, today]
+    [chaptersProp, versionLabel, publishedAt, effectiveFrom, approver?.name, approver?.role, signer?.name, signer?.email, signer?.role, acceptance?.id, today, commissionMatrix]
   );
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
   const [chapterId, setChapterId] = useState(start);

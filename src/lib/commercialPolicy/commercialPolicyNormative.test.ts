@@ -91,7 +91,7 @@ describe("snapshot normativo", () => {
       partialPaymentEnabled: false,
     });
     assert.deepEqual(renderCommissionMatrixLines(frozen), lines);
-    assert.match(lines.join(" "), /não parametrizada/);
+    assert.match(lines.join(" "), /sem níveis comerciais publicados na Formação de Preço/);
     assert.equal(live.commissionRelease.basis, "SALES_ORDER_CREATED");
   });
 });
@@ -117,14 +117,16 @@ describe("detecção de mudança", () => {
     assert.equal(classifyCommercialChange("salesOrder.seller"), "OPERATIONAL_DATA");
   });
 
-  it("documento e sistema divergem na faixa de 50%", () => {
+  it("sem snapshot das tabelas publicadas a matriz não é dada como alinhada", () => {
+    // A matriz em degraus do DOCX original fica só como registro histórico da divergência.
     const top = DOCUMENT_ANNEX_I_BANDS.find((band) => band.label === "50,00% ou mais");
     assert.equal(top?.commissionPercent, 0.04);
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
     const matrix = audit.findings.find((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED");
     assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
-    assert.match(matrix?.document ?? "", /4,00%/);
+    assert.match(matrix?.document ?? "", /níveis comerciais do snapshot normativo da versão/);
     assert.match(matrix?.system ?? "", /Formação de Preço/);
+    assert.deepEqual(audit.findings.filter((item) => item.blocking).map((item) => item.code), ["COMMISSION_MATRIX_NOT_PARAMETERIZED"]);
   });
 });
 
@@ -213,17 +215,28 @@ describe("rascunho e publicação", () => {
     assert.equal(canApplyNormativeValue({ policyStatus: "PUBLISHED", effectiveFrom: NOW, now: later }), true);
   });
 
-  it("a rotina operacional por NF válida diverge do texto v1.0 e exige nova versão da política", () => {
+  it("a Seção 11 da candidata v1.0 descreve a rotina por NF válida; o texto do DOCX (PV aprovado) continuaria bloqueando", () => {
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content);
-    const finding = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
+    const aligned = audit.findings.find((item) => item.code.startsWith("PORTFOLIO_INACTIVITY_"));
+    assert.equal(aligned?.code, "PORTFOLIO_INACTIVITY_ALIGNED");
+    assert.equal(aligned?.blocking, false);
+    assert.equal(aligned?.severity, "INFORMATIONAL");
+    assert.match(aligned?.document ?? "", /90 dias corridos desde o último Faturamento Válido/);
+    assert.match(aligned?.system ?? "", /NF \/ Documento de Saída válido/);
+    assert.doesNotMatch(aligned?.system ?? "", /último SalesOrder SENT_TO_NOMUS \(issueDate\)/);
+    const docx = [
+      "# 11. INATIVIDADE DE CLIENTE E REVISÃO DE CARTEIRA",
+      "O período de 90 dias corridos sem novo Pedido de Venda aprovado constitui gatilho automático para verificação da condição de Responsável Comercial do cliente.",
+    ].join("\n");
+    const finding = auditPolCom001Publication(docx).findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
     assert.equal(finding?.blocking, true);
     assert.equal(finding?.severity, "BLOCKING");
     assert.match(finding?.document ?? "", /Pedido de Venda aprovado/);
-    assert.match(finding?.system ?? "", /NF \/ Documento de Saída válido/);
-    assert.doesNotMatch(finding?.system ?? "", /último SalesOrder SENT_TO_NOMUS \(issueDate\)/);
-    assert.match(finding?.action ?? "", /POLICY_VERSION_REQUIRED/);
-    assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
+    assert.match(finding?.system ?? "", /a rotina conta do último faturamento válido/);
+    assert.match(finding?.action ?? "", /não alterar a rotina/);
     const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
+    assert.equal(snapshot.portfolio.inactivityClock, "LAST_VALID_INVOICE");
+    assert.equal(snapshot.portfolio.neverInvoicedRemoved, false);
     assert.equal(snapshot.portfolio.inactivityDays, 90);
     assert.equal(snapshot.portfolio.crmEvidenceCanPreserveAssignment, true);
     assert.equal(snapshot.portfolio.systemBehavior, "REVIEW_THEN_REMOVE_OR_PRESERVE");

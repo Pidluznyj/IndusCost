@@ -10,6 +10,7 @@
 
 import { sha256Hex, stableStringify } from "./commercialPolicyRules.js";
 import { parsePolicyChapters } from "./policyDocumentFormat.js";
+import { isCommissionMatrixHeader } from "./policyAutoFields.js";
 
 export type NormativeImpact =
   | "POLICY_VERSION_REQUIRED"
@@ -68,7 +69,12 @@ export type CommissionMatrixBand = {
   approval: string;
 };
 
-/** Anexo I da POL-COM-001 v1.0 como está no documento. Não é configuração do IndusCost. */
+/**
+ * Anexo I do DOCX ORIGINAL da POL-COM-001 (degraus por faixa de Margem Oficial).
+ * Registro histórico: a candidata v1.0 não usa mais esta tabela — o Anexo I
+ * mostra os níveis comerciais da Formação de Preço (o sistema é a fonte da
+ * verdade). Continua servindo para auditar conteúdos que ainda tragam degraus.
+ */
 export const DOCUMENT_ANNEX_I_BANDS: CommissionMatrixBand[] = [
   { label: "Abaixo de 30,00%", commissionPercent: 0.01, approval: "Aprovação prévia da Diretoria" },
   { label: "30,00% a 34,99%", commissionPercent: 0.01, approval: "Aprovação prévia do Supervisor Comercial" },
@@ -113,11 +119,11 @@ export type CommissionMatrixInput = {
 /**
  * Fatos confirmados no código. A matriz de comissão vem da Formação de Preço
  * (margem-alvo e comissão por tabela publicada), lida em runtime; o motor
- * interpola o percentual entre faixas pelo preço vendido. A rotina de carteira (POL-COM-001 §11,
+ * interpola o percentual entre níveis pelo preço vendido. A rotina de carteira (POL-COM-001 §11,
  * customerCommercialOwnerInactivity) remove o responsável exclusivo após 90
- * dias sem PV com NF / Documento de Saída válido, salvo CRM estruturado
- * válido; o texto v1.0 ainda diz "PV aprovado" — divergência que exige nova
- * versão. Os 33% do supervisor não estão em CommissionSettings.
+ * dias sem NF / Documento de Saída válido, salvo CRM estruturado válido; cliente
+ * nunca faturado não é removido. Os 33% do supervisor são regra empresarial
+ * apurada por processo administrativo, fora do motor (decisão de 30/09/2026).
  */
 export const SYSTEM_NORMATIVE_FACTS = {
   commissionMatrixSource: "PriceTableVersion publicada (Formação de Preço): margem-alvo e comissão por tabela",
@@ -147,8 +153,11 @@ export type NormativeSnapshot = {
         engineRuleActive: boolean;
       };
   supervisorCommission: {
+    /** O IndusCost não calcula a parcela do Supervisor. */
     parameterized: false;
-    share: null;
+    calculationMode: "MANUAL_EXTERNAL_PROCESS";
+    /** Percentual que a Política estabelece (fração); mudar exige nova versão. */
+    documentedShare: number;
   };
   commissionRelease: {
     parameterized: true;
@@ -159,7 +168,11 @@ export type NormativeSnapshot = {
   portfolio: {
     parameterized: true;
     inactivityDays: number;
+    /** Referência do prazo: última NF / Documento de Saída válido vinculado a PV. */
+    inactivityClock: "LAST_VALID_INVOICE";
     crmEvidenceCanPreserveAssignment: true;
+    /** Cliente nunca faturado não é removido por esta rotina. */
+    neverInvoicedRemoved: false;
     systemBehavior: "REVIEW_THEN_REMOVE_OR_PRESERVE";
   };
   pricing: {
@@ -273,7 +286,11 @@ export function buildCurrentCommercialPolicyNormativeSnapshot(
           engineRuleActive: matrix.engineRuleActive,
         }
       : { parameterized: false, source: null, bands: null },
-    supervisorCommission: { parameterized: false, share: null },
+    supervisorCommission: {
+      parameterized: false,
+      calculationMode: "MANUAL_EXTERNAL_PROCESS",
+      documentedShare: DOCUMENT_SUPERVISOR_SHARE,
+    },
     commissionRelease: {
       parameterized: true,
       basis: release.releaseDefaultRule,
@@ -283,7 +300,9 @@ export function buildCurrentCommercialPolicyNormativeSnapshot(
     portfolio: {
       parameterized: true,
       inactivityDays: DOCUMENT_INACTIVITY_DAYS,
+      inactivityClock: SYSTEM_NORMATIVE_FACTS.portfolioInactivityClock,
       crmEvidenceCanPreserveAssignment: true,
+      neverInvoicedRemoved: false,
       systemBehavior: SYSTEM_NORMATIVE_FACTS.portfolioSystemBehavior,
     },
     pricing: { parameterized: false, normativeVersionId: null },
@@ -333,7 +352,7 @@ export function renderCommissionMatrixLines(snapshot: NormativeSnapshot): string
       ),
     ];
   }
-  return ["Anexo I: matriz normativa não parametrizada no IndusCost. O texto congelado desta versão permanece o documento."];
+  return ["Anexo I: sem níveis comerciais publicados na Formação de Preço quando esta versão foi congelada."];
 }
 
 /* ------------------------------------------------------------------ */
@@ -360,7 +379,7 @@ export type FindingCategory =
 
 /** Quem resolve e onde: o painel transforma isso em "o que fazer / onde fazer". */
 export type FindingResolution = {
-  owner: "SISTEMA" | "DOCUMENTO" | "DECISÃO";
+  owner: "SISTEMA" | "DOCUMENTO" | "DECISÃO" | "PROCESSO";
   where: string;
   steps: string[];
 };
@@ -399,11 +418,11 @@ const RESOLUTIONS: Record<string, FindingResolution> = {
     ],
   },
   COMMISSION_MATRIX_MISMATCH: {
-    owner: "SISTEMA",
-    where: "Comercial › Formação de Preço › Tabelas a gerar (ou editor de conteúdo, Anexo I)",
+    owner: "DOCUMENTO",
+    where: "Editor de conteúdo (Anexo I)",
     steps: [
-      "Opção A (sistema): gerar e publicar nova versão das tabelas com a margem e a comissão do Anexo I.",
-      "Opção B (documento): abrir um rascunho e corrigir a tabela do Anexo I para os valores publicados na Formação de Preço.",
+      "Corrigir a Matriz de Referência do Anexo I para os níveis publicados na Formação de Preço, ou deixar a linha em branco para o sistema preenchê-la com o snapshot da versão.",
+      "Não alterar a Formação de Preço só para coincidir com o texto: o sistema é a fonte da verdade.",
     ],
   },
   COMMISSION_MATRIX_ENGINE_RULE_INACTIVE: {
@@ -412,12 +431,11 @@ const RESOLUTIONS: Record<string, FindingResolution> = {
     steps: ["Criar ou ativar uma regra com tipo de cálculo \"Faixa comercial\" para que o motor leia as tabelas da Formação de Preço."],
   },
   COMMISSION_MATRIX_INTERPOLATED: {
-    owner: "DECISÃO",
-    where: "Editor de conteúdo (Seção 7 / Anexo I) ou motor de comissão",
+    owner: "DOCUMENTO",
+    where: "Editor de conteúdo (Seção 7 / Anexo I)",
     steps: [
-      "Opção A (documento): abrir um rascunho e incluir na Seção 7 ou no Anexo I que, entre uma faixa e a seguinte, o percentual é proporcional ao preço praticado. Ao salvar, esta pendência deixa de bloquear.",
-      "Opção B (sistema): mudar o motor de comissão para pagar em degrau (desenvolvimento no cálculo oficial).",
-      "Os percentuais e as margens das faixas já coincidem; falta só decidir o comportamento entre elas.",
+      "Reescrever a Seção 7 e o Anexo I: níveis comerciais de referência e interpolação linear entre eles pelo preço praticado, mínimo abaixo do Atacado e teto no Varejo 3.",
+      "Não converter o motor para degrau: a política segue o motor.",
     ],
   },
   COMMISSION_MATRIX_ALIGNED: { owner: "DECISÃO", where: "—", steps: ["Nada a fazer."] },
@@ -426,23 +444,24 @@ const RESOLUTIONS: Record<string, FindingResolution> = {
     where: "Diretoria / Supervisão Comercial",
     steps: ["Manter a aprovação prévia por alçada como processo manual registrado.", "Não bloqueia a publicação."],
   },
-  SUPERVISOR_SHARE_NOT_PARAMETERIZED: {
-    owner: "SISTEMA",
-    where: "Comissões › Configurações (CommissionSettings) — não há campo de supervisor nem vínculo vendedor → supervisor",
+  SUPERVISOR_SHARE_MANUAL_PROCESS: {
+    owner: "PROCESSO",
+    where: "Administração / Diretoria — processo administrativo externo ao motor de comissões",
     steps: [
-      "Decidir com a Diretoria: criar o parâmetro dos 33% adicionais do Supervisor e o vínculo de time no motor de comissão (desenvolvimento),",
-      "ou revisar a Seção 14 no editor de conteúdo (nova versão).",
+      "Nenhuma ação técnica obrigatória para publicação.",
+      "Manter o cálculo administrativo dos 33% documentado enquanto não houver decisão de automatização.",
     ],
   },
   PORTFOLIO_INACTIVITY_MISMATCH: {
     owner: "DOCUMENTO",
-    where: "Editor de conteúdo (Seção 11) ou rotina crm-owner-inactivity-review",
+    where: "Editor de conteúdo (Seção 11)",
     steps: [
-      "Opção A (documento): abrir um rascunho a partir da POL-COM-001 e reescrever a Seção 11 descrevendo o relógio por última NF / Documento de Saída válido; salvar e publicar como nova versão.",
-      "Opção B (sistema): reverter a rotina de carteira para contar a partir do PV aprovado (desenvolvimento).",
-      "Enquanto texto e rotina divergirem, a publicação fica bloqueada.",
+      "Reescrever a Seção 11 conforme a rotina real: 90 dias corridos desde o último faturamento válido (nota fiscal / Documento de Saída), com preservação por registro válido no CRM e sem remoção de cliente nunca faturado.",
+      "Não alterar a rotina de carteira: o sistema é a fonte da verdade.",
+      "A pendência some quando o texto descrever a rotina; não há como marcá-la como resolvida manualmente.",
     ],
   },
+  PORTFOLIO_INACTIVITY_ALIGNED: { owner: "DECISÃO", where: "—", steps: ["Nada a fazer."] },
   COMMISSION_RELEASE_UNVERIFIED: {
     owner: "SISTEMA",
     where: "Banco / Comissões › Configurações",
@@ -519,23 +538,77 @@ export type DocumentMatrixBand = {
   approval: string;
 };
 
-/**
- * Matriz do Anexo I como está escrita no conteúdo auditado (tabela "Margem
- * Oficial do Item"). Sem a tabela (conteúdo vazio ou texto plano), vale a
- * matriz do documento oficial v1.0.
- */
-export function readDocumentCommissionMatrix(content: string): {
+/** Nível comercial escrito por extenso no Anexo I (só quando a tabela não é a do snapshot). */
+export type DocumentMatrixLevel = { name: string; marginPercent: number; commissionPercent: number };
+
+export type DocumentCommissionMatrix = {
+  /**
+   * SNAPSHOT: a tabela "Nível comercial" tem a linha em branco, preenchida na
+   * exibição com a matriz congelada no snapshot da versão — documento e sistema
+   * mostram os mesmos valores por construção.
+   * LEVELS: a tabela "Nível comercial" traz os valores escritos.
+   * STEP_BANDS: tabela antiga por faixa de Margem Oficial (DOCX original).
+   */
+  form: "SNAPSHOT" | "LEVELS" | "STEP_BANDS";
+  levels: DocumentMatrixLevel[];
+  /** Comissão escrita para preço abaixo do menor nível (só em LEVELS). */
+  belowLowestCommissionPercent: number | null;
   bands: DocumentMatrixBand[];
-  /** O texto da Seção 7 / Anexo I descreve percentual proporcional entre faixas. */
+  /** Alçadas de aprovação escritas no Anexo I. */
+  approvals: Array<{ label: string; approval: string }>;
+  /** A Seção 7 / Anexo I descreve a interpolação entre níveis pelo PREÇO praticado. */
   describesInterpolation: boolean;
-} {
+};
+
+/**
+ * Matriz do Anexo I como está escrita no conteúdo auditado. Sem tabela
+ * (conteúdo vazio ou texto plano), vale a matriz em degraus do DOCX original.
+ */
+export function readDocumentCommissionMatrix(content: string): DocumentCommissionMatrix {
   const chapters = parsePolicyChapters(content).filter((chapter) => /^(7\.|ANEXO I\b)/i.test(chapter.title.trim()));
-  const table = chapters
+  const tables = chapters.flatMap((chapter) => chapter.blocks).filter((block) => block.type === "table");
+  const text = chapters
     .flatMap((chapter) => chapter.blocks)
-    .find((block) => block.type === "table" && /margem oficial/i.test(block.rows[0]?.[0] ?? ""));
+    .map((block) => (block.type === "paragraph" || block.type === "bullet" ? block.text : ""))
+    .join(" ");
+  // O motor interpola pelo preço vendido: o texto só está alinhado se disser as duas coisas.
+  const describesInterpolation = /interpola/i.test(text) && /pre[çc]o/i.test(text);
+
+  const approvalTable = tables.find(
+    (block) => block.type === "table" && /margem oficial/i.test(block.rows[0]?.[0] ?? "") && /al[çc]ada/i.test(block.rows[0]?.[block.rows[0].length - 1] ?? "")
+  );
+  const approvals =
+    approvalTable && approvalTable.type === "table"
+      ? approvalTable.rows.slice(1).map((row) => ({ label: row[0] ?? "", approval: row[row.length - 1] ?? "" }))
+      : DOCUMENT_ANNEX_I_BANDS.map((band) => ({ label: band.label, approval: band.approval }));
+
+  const levelTable = tables.find((block) => block.type === "table" && isCommissionMatrixHeader(block.rows[0]));
+  if (levelTable && levelTable.type === "table") {
+    const written = levelTable.rows.slice(1).flatMap((row): Array<DocumentMatrixLevel & { below: boolean }> => {
+      const commissionPercent = parsePercent(row[2] ?? "");
+      if (commissionPercent === null) return [];
+      const below = /abaixo/i.test(row[0] ?? "");
+      const marginPercent = parsePercent(row[1] ?? "");
+      if (!below && marginPercent === null) return [];
+      return [{ name: (row[0] ?? "").trim(), marginPercent: marginPercent ?? 0, commissionPercent, below }];
+    });
+    const levels = written.filter((row) => !row.below).map(({ below: _below, ...level }) => level);
+    return {
+      form: levels.length === 0 ? "SNAPSHOT" : "LEVELS",
+      levels,
+      belowLowestCommissionPercent: written.find((row) => row.below)?.commissionPercent ?? null,
+      bands: [],
+      approvals,
+      describesInterpolation,
+    };
+  }
+
+  const stepTable = tables.find(
+    (block) => block.type === "table" && /margem oficial/i.test(block.rows[0]?.[0] ?? "") && /comiss/i.test(block.rows[0]?.[1] ?? "")
+  );
   const rows: Array<[string, string, string]> =
-    table && table.type === "table"
-      ? table.rows.slice(1).map((row) => [row[0] ?? "", row[1] ?? "", row[2] ?? ""])
+    stepTable && stepTable.type === "table"
+      ? stepTable.rows.slice(1).map((row) => [row[0] ?? "", row[1] ?? "", row[2] ?? ""])
       : DOCUMENT_ANNEX_I_BANDS.map((band) => [band.label, formatPercent(band.commissionPercent * 100), band.approval]);
   const bands = rows.flatMap(([label, commission, approval]): DocumentMatrixBand[] => {
     const margin = parsePercent(label);
@@ -543,25 +616,27 @@ export function readDocumentCommissionMatrix(content: string): {
     if (margin === null || commissionPercent === null) return [];
     return [{ label, marginFrom: /abaixo/i.test(label) ? null : margin, commissionPercent, approval }];
   });
-  const text = chapters
-    .flatMap((chapter) => chapter.blocks)
-    .map((block) => (block.type === "paragraph" || block.type === "bullet" ? block.text : ""))
-    .join(" ");
-  return { bands, describesInterpolation: /interpola|proporcional/i.test(text) };
+  return { form: "STEP_BANDS", levels: [], belowLowestCommissionPercent: null, bands, approvals, describesInterpolation };
 }
 
 const sameNumber = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
 /**
- * Anexo I × Formação de Preço. A faixa do documento que começa em X% de margem
- * corresponde à tabela comercial cuja margem-alvo é X%; "Abaixo de X" é a
- * comissão de preço fora da tabela. Nada aqui é marcado à mão.
+ * Anexo I × Formação de Preço. O sistema é a fonte da verdade: os níveis
+ * comerciais publicados (margem e comissão de referência) e a interpolação
+ * linear pelo preço praticado. O documento está alinhado quando mostra os
+ * mesmos níveis e descreve a interpolação pelo preço. Nada é marcado à mão.
  */
 function auditCommissionMatrix(content: string, current: NormativeSnapshot | null): PrePublishFinding[] {
   const document = readDocumentCommissionMatrix(content);
-  const documentText = `Anexo I: comissão por faixa de Margem Oficial — ${document.bands.map((band) => `${band.label} = ${formatPercent(band.commissionPercent)}`).join("; ")}.`;
   const base = { category: "MATRIZ_COMISSAO" as const, policySection: POLICY_SECTIONS.matrix };
   const matrix = current?.commissionMatrix;
+  const documentText =
+    document.form === "SNAPSHOT"
+      ? "Anexo I: Matriz de Referência com os níveis comerciais do snapshot normativo da versão (margem e comissão de referência de cada nível)."
+      : document.form === "LEVELS"
+        ? `Anexo I: níveis comerciais de referência — ${document.levels.map((level) => `${level.name}: margem ${formatPercent(level.marginPercent)} → comissão ${formatPercent(level.commissionPercent)}`).join("; ")}.`
+        : `Anexo I: comissão por faixa de Margem Oficial — ${document.bands.map((band) => `${band.label} = ${formatPercent(band.commissionPercent)}`).join("; ")}.`;
 
   if (!matrix || !matrix.parameterized) {
     return [
@@ -571,35 +646,55 @@ function auditCommissionMatrix(content: string, current: NormativeSnapshot | nul
         severity: "BLOCKING",
         document: documentText,
         system: current
-          ? "A Formação de Preço não tem as quatro tabelas comerciais (Atacado, Varejo 1, Varejo 2 e Varejo 3) publicadas e vigentes com margem-alvo e comissão únicas por tabela; sem elas não há matriz para conferir."
+          ? "A Formação de Preço não tem as quatro tabelas comerciais (Atacado, Varejo 1, Varejo 2 e Varejo 3) publicadas e vigentes com margem-alvo e comissão únicas por tabela; sem elas não há matriz para o Anexo I."
           : "Snapshot normativo atual não informado nesta auditoria; as tabelas publicadas da Formação de Preço não foram lidas.",
-        action: "Gerar e publicar as quatro tabelas comerciais na Formação de Preço com a margem e a comissão do Anexo I.",
+        action: "Gerar e publicar as quatro tabelas comerciais na Formação de Preço; o Anexo I mostra o que estiver publicado.",
       }),
     ];
   }
 
   const tiers = [...matrix.bands].sort((a, b) => a.marginPercent - b.marginPercent);
-  const systemText = `Formação de Preço (tabelas publicadas): ${tiers.map((tier) => `${tier.name} — margem ${formatPercent(tier.marginPercent)} → comissão ${formatPercent(tier.commissionPercent)}`).join("; ")}; preço abaixo do Atacado → ${formatPercent(matrix.outOfTableCommissionPercent)}.`;
+  const systemText = `Formação de Preço (tabelas publicadas): ${tiers.map((tier) => `${tier.name} — margem ${formatPercent(tier.marginPercent)} → comissão ${formatPercent(tier.commissionPercent)}`).join("; ")}; preço abaixo do Atacado → ${formatPercent(matrix.outOfTableCommissionPercent)}; entre dois níveis, interpolação linear pelo preço vendido; a partir do Varejo 3, o percentual do Varejo 3.`;
   const findings: PrePublishFinding[] = [];
 
-  const below = document.bands.find((band) => band.marginFrom === null);
-  const stepped = document.bands.filter((band) => band.marginFrom !== null).sort((a, b) => (a.marginFrom ?? 0) - (b.marginFrom ?? 0));
   const differences: string[] = [];
-  if (stepped.length !== tiers.length) {
-    differences.push(`o Anexo I tem ${stepped.length} faixa(s) a partir de uma margem mínima e a Formação de Preço tem ${tiers.length} tabela(s)`);
-  } else {
-    stepped.forEach((band, index) => {
-      const tier = tiers[index];
-      if (!sameNumber(band.marginFrom ?? 0, tier.marginPercent)) {
-        differences.push(`faixa "${band.label}" começa em ${formatPercent(band.marginFrom ?? 0)} e a tabela ${tier.name} tem margem ${formatPercent(tier.marginPercent)}`);
-      }
-      if (!sameNumber(band.commissionPercent, tier.commissionPercent)) {
-        differences.push(`faixa "${band.label}" paga ${formatPercent(band.commissionPercent)} e a tabela ${tier.name} paga ${formatPercent(tier.commissionPercent)}`);
-      }
-    });
-  }
-  if (below && !sameNumber(below.commissionPercent, matrix.outOfTableCommissionPercent)) {
-    differences.push(`"${below.label}" paga ${formatPercent(below.commissionPercent)} e o motor paga ${formatPercent(matrix.outOfTableCommissionPercent)} abaixo do Atacado`);
+  if (document.form === "LEVELS") {
+    const levels = [...document.levels].sort((a, b) => a.marginPercent - b.marginPercent);
+    if (levels.length !== tiers.length) {
+      differences.push(`o Anexo I tem ${levels.length} nível(is) e a Formação de Preço tem ${tiers.length} tabela(s)`);
+    } else {
+      levels.forEach((level, index) => {
+        const tier = tiers[index]!;
+        if (!sameNumber(level.marginPercent, tier.marginPercent)) {
+          differences.push(`nível "${level.name}" tem margem ${formatPercent(level.marginPercent)} e a tabela ${tier.name} tem margem ${formatPercent(tier.marginPercent)}`);
+        }
+        if (!sameNumber(level.commissionPercent, tier.commissionPercent)) {
+          differences.push(`nível "${level.name}" paga ${formatPercent(level.commissionPercent)} e a tabela ${tier.name} paga ${formatPercent(tier.commissionPercent)}`);
+        }
+      });
+    }
+    if (document.belowLowestCommissionPercent !== null && !sameNumber(document.belowLowestCommissionPercent, matrix.outOfTableCommissionPercent)) {
+      differences.push(`preço abaixo da tabela paga ${formatPercent(document.belowLowestCommissionPercent)} no Anexo I e ${formatPercent(matrix.outOfTableCommissionPercent)} no motor`);
+    }
+  } else if (document.form === "STEP_BANDS") {
+    const below = document.bands.find((band) => band.marginFrom === null);
+    const stepped = document.bands.filter((band) => band.marginFrom !== null).sort((a, b) => (a.marginFrom ?? 0) - (b.marginFrom ?? 0));
+    if (stepped.length !== tiers.length) {
+      differences.push(`o Anexo I tem ${stepped.length} faixa(s) a partir de uma margem mínima e a Formação de Preço tem ${tiers.length} tabela(s)`);
+    } else {
+      stepped.forEach((band, index) => {
+        const tier = tiers[index]!;
+        if (!sameNumber(band.marginFrom ?? 0, tier.marginPercent)) {
+          differences.push(`faixa "${band.label}" começa em ${formatPercent(band.marginFrom ?? 0)} e a tabela ${tier.name} tem margem ${formatPercent(tier.marginPercent)}`);
+        }
+        if (!sameNumber(band.commissionPercent, tier.commissionPercent)) {
+          differences.push(`faixa "${band.label}" paga ${formatPercent(band.commissionPercent)} e a tabela ${tier.name} paga ${formatPercent(tier.commissionPercent)}`);
+        }
+      });
+    }
+    if (below && !sameNumber(below.commissionPercent, matrix.outOfTableCommissionPercent)) {
+      differences.push(`"${below.label}" paga ${formatPercent(below.commissionPercent)} e o motor paga ${formatPercent(matrix.outOfTableCommissionPercent)} abaixo do Atacado`);
+    }
   }
 
   if (differences.length > 0) {
@@ -610,7 +705,7 @@ function auditCommissionMatrix(content: string, current: NormativeSnapshot | nul
         severity: "BLOCKING",
         document: documentText,
         system: `${systemText} Diferenças: ${differences.join("; ")}.`,
-        action: "Publicar nova versão das tabelas na Formação de Preço com a margem e a comissão do Anexo I, ou revisar formalmente o Anexo I.",
+        action: "Ajustar o Anexo I da política candidata para os níveis publicados na Formação de Preço (o sistema é a fonte da verdade).",
       })
     );
   } else if (!matrix.engineRuleActive) {
@@ -624,15 +719,18 @@ function auditCommissionMatrix(content: string, current: NormativeSnapshot | nul
         action: "Ativar em Comissões › Regras uma regra do tipo \"Faixa comercial\" antes de publicar.",
       })
     );
-  } else if (!document.describesInterpolation) {
+  } else if (document.form === "STEP_BANDS" || !document.describesInterpolation) {
     findings.push(
       finding({
         ...base,
         code: "COMMISSION_MATRIX_INTERPOLATED",
         severity: "BLOCKING",
-        document: `${documentText} O texto descreve faixas em degrau: toda a faixa paga o mesmo percentual.`,
-        system: `${systemText} Os pontos da matriz coincidem, mas entre uma tabela e a seguinte o motor paga percentual proporcional ao preço vendido (interpolação linear), não o degrau. Ex.: um item vendido no meio do caminho entre ${tiers[0]?.name ?? "Atacado"} e ${tiers[1]?.name ?? "Varejo 1"} recebe ${formatPercent(((tiers[0]?.commissionPercent ?? 0) + (tiers[1]?.commissionPercent ?? 0)) / 2)}, e o Anexo I diz ${formatPercent(tiers[0]?.commissionPercent ?? 0)}.`,
-        action: "Descrever no Anexo I / Seção 7 que o percentual é proporcional entre faixas, ou mudar o motor para degrau.",
+        document:
+          document.form === "STEP_BANDS"
+            ? `${documentText} O texto descreve faixas em degrau: toda a faixa paga o mesmo percentual.`
+            : `${documentText} A Seção 7 e o Anexo I não descrevem a interpolação entre níveis pelo preço praticado.`,
+        system: `${systemText} Ex.: um item vendido no meio do caminho entre os preços de ${tiers[0]?.name ?? "Atacado"} e ${tiers[1]?.name ?? "Varejo 1"} recebe ${formatPercent(((tiers[0]?.commissionPercent ?? 0) + (tiers[1]?.commissionPercent ?? 0)) / 2)}.`,
+        action: "Reescrever a Seção 7 e o Anexo I da política candidata: níveis de referência e interpolação linear pelo preço praticado, como o motor calcula.",
       })
     );
   } else {
@@ -641,9 +739,9 @@ function auditCommissionMatrix(content: string, current: NormativeSnapshot | nul
         ...base,
         code: "COMMISSION_MATRIX_ALIGNED",
         severity: "INFORMATIONAL",
-        document: documentText,
-        system: `${systemText} Entre faixas o percentual é proporcional ao preço vendido, como o texto descreve.`,
-        action: "Nenhuma. Matriz do Anexo I alinhada à Formação de Preço.",
+        document: `${documentText} A Seção 7 descreve a interpolação linear entre níveis pelo preço praticado, o mínimo abaixo do Atacado e o teto no Varejo 3.`,
+        system: systemText,
+        action: "Nenhuma. A política descreve o motor de comissão do IndusCost.",
       })
     );
   }
@@ -653,12 +751,105 @@ function auditCommissionMatrix(content: string, current: NormativeSnapshot | nul
       ...base,
       code: "APPROVAL_AUTHORITY_MANUAL_PROCESS",
       severity: "WARNING",
-      document: `Alçadas do Anexo I: ${document.bands.filter((band) => /aprova/i.test(band.approval)).map((band) => `${band.label} — ${band.approval}`).join("; ") || "aprovação prévia para margens baixas"}.`,
+      document: `Alçadas do Anexo I: ${document.approvals.filter((row) => /aprova/i.test(row.approval)).map((row) => `${row.label} — ${row.approval}`).join("; ") || "aprovação prévia para margens baixas"}.`,
       system: "O IndusCost não bloqueia nem registra a aprovação prévia por alçada no Pedido de Venda; a autorização é processo manual da Diretoria / Supervisão.",
       action: "Manter a aprovação por alçada como processo manual registrado, ou desenvolver o bloqueio no Pedido de Venda; não bloqueia a publicação.",
     })
   );
   return findings;
+}
+
+/** Percentual do Supervisor escrito na Seção 14 (fração); nulo se o texto não o trouxer. */
+export function readDocumentSupervisorShare(content: string): number | null {
+  const chapter = parsePolicyChapters(content).find((item) => /^14\./.test(item.title.trim()));
+  const text = (chapter?.blocks ?? []).map((block) => ("text" in block ? block.text : "")).join(" ");
+  const percent = parsePercent(text);
+  return percent === null ? null : percent / 100;
+}
+
+/**
+ * Supervisor: regra empresarial válida, apurada por processo administrativo
+ * FORA do motor do IndusCost (decisão de 30/09/2026). Não é erro nem bloqueio;
+ * a auditoria só registra que o sistema não calcula a parcela.
+ */
+function auditSupervisorShare(content: string, current: NormativeSnapshot | null): PrePublishFinding {
+  const share = readDocumentSupervisorShare(content) ?? current?.supervisorCommission.documentedShare ?? DOCUMENT_SUPERVISOR_SHARE;
+  const shareText = `${Math.round(share * 100)}%`;
+  return finding({
+    code: "SUPERVISOR_SHARE_MANUAL_PROCESS",
+    category: "SUPERVISOR",
+    policySection: POLICY_SECTIONS.supervisor,
+    severity: "INFORMATIONAL",
+    document: `A Política estabelece ${shareText} das comissões elegíveis dos Vendedores do time para o Supervisor Comercial, como parcela adicional suportada pela empresa, sem reduzir a comissão do Vendedor.`,
+    system: "A remuneração do Supervisor é apurada por processo administrativo externo ao motor de comissões do IndusCost. O sistema não calcula nem fecha essa parcela.",
+    action: "Nenhuma ação técnica obrigatória para publicação. Manter cálculo administrativo documentado enquanto não houver decisão de automatização.",
+  });
+}
+
+export type DocumentInactivityRule = {
+  days: number | null;
+  /** Referência do prazo descrita na Seção 11. */
+  clock: "LAST_VALID_INVOICE" | "APPROVED_SALES_ORDER" | "UNKNOWN";
+  /** O texto diz que o CRM válido pode preservar o Responsável Comercial. */
+  crmCanPreserve: boolean;
+  /** O texto diz que cliente sem faturamento não é desvinculado só por esta rotina. */
+  neverInvoicedKept: boolean;
+};
+
+/** Regra de inatividade como está escrita na Seção 11 do conteúdo auditado. */
+export function readDocumentInactivityRule(content: string): DocumentInactivityRule {
+  const chapter = parsePolicyChapters(content).find((item) => /^11\./.test(item.title.trim()));
+  const text = (chapter?.blocks ?? []).map((block) => ("text" in block ? block.text : "")).join(" ");
+  const days = /(\d+)\s+dias corridos/i.exec(text);
+  const byOrder = /dias corridos sem novo Pedido de Venda aprovado/i.test(text);
+  const byInvoice = /faturamento v[áa]lido/i.test(text) && /nota fiscal|documento de sa[íi]da/i.test(text);
+  return {
+    days: days ? Number(days[1]) : null,
+    clock: byOrder ? "APPROVED_SALES_ORDER" : byInvoice ? "LAST_VALID_INVOICE" : "UNKNOWN",
+    crmCanPreserve: /registro v[áa]lido/i.test(text) && /CRM/.test(text),
+    neverInvoicedKept: /sem hist[óo]rico de faturamento v[áa]lido n[ãa]o ser[ãa]o automaticamente desvinculados/i.test(text),
+  };
+}
+
+/**
+ * Carteira: o sistema é a fonte da verdade — 90 dias corridos desde a última
+ * NF / Documento de Saída válido, preservação por CRM estruturado e cliente
+ * nunca faturado não removido. A Seção 11 precisa dizer o mesmo.
+ */
+function auditPortfolioInactivity(content: string, current: NormativeSnapshot | null): PrePublishFinding {
+  const document = readDocumentInactivityRule(content);
+  const systemDays = current?.portfolio.inactivityDays ?? DOCUMENT_INACTIVITY_DAYS;
+  const systemText = `${SYSTEM_NORMATIVE_FACTS.portfolioInactivitySource}: ${systemDays} dias corridos desde a última NF / Documento de Saída válido vinculado a Pedido de Venda (NF cancelada, devolução e transferência não contam; PV sem faturamento não reinicia; cada NF válida reinicia, mesmo em faturamento parcial). CRM estruturado válido preserva o responsável; atualização técnica, registro genérico ou artificial não. Cliente nunca faturado não é removido por esta rotina.`;
+  const differences: string[] = [];
+  if (document.clock === "APPROVED_SALES_ORDER") differences.push('o texto conta o prazo de "novo Pedido de Venda aprovado"; a rotina conta do último faturamento válido');
+  else if (document.clock === "UNKNOWN") differences.push("a Seção 11 não diz que o prazo é contado do último faturamento válido (nota fiscal / Documento de Saída)");
+  if (document.days !== null && document.days !== systemDays) differences.push(`o texto fala em ${document.days} dias e a rotina usa ${systemDays}`);
+  if (document.days === null) differences.push("a Seção 11 não informa o prazo em dias corridos");
+  if (!document.crmCanPreserve) differences.push("o texto não prevê a preservação por registro válido no CRM");
+  if (!document.neverInvoicedKept) differences.push("o texto não diz que cliente sem faturamento válido não é desvinculado só por esta rotina");
+
+  const base = { category: "CARTEIRA" as const, policySection: POLICY_SECTIONS.inactivity };
+  if (differences.length > 0) {
+    return finding({
+      ...base,
+      code: "PORTFOLIO_INACTIVITY_MISMATCH",
+      severity: "BLOCKING",
+      document:
+        document.clock === "APPROVED_SALES_ORDER"
+          ? `${document.days ?? "?"} dias corridos sem novo Pedido de Venda aprovado = gatilho de revisão; com registro material válido no CRM o Responsável Comercial pode ser preservado; sem ele, a exclusividade é retirada automaticamente.`
+          : `Seção 11 em desacordo com a rotina: ${differences.join("; ")}.`,
+      system: `${systemText} Diferenças: ${differences.join("; ")}.`,
+      action: "Reescrever a Seção 11 da política candidata conforme a rotina real (o sistema é a fonte da verdade); não alterar a rotina.",
+    });
+  }
+  return finding({
+    ...base,
+    code: "PORTFOLIO_INACTIVITY_ALIGNED",
+    severity: "INFORMATIONAL",
+    document: `${document.days} dias corridos desde o último Faturamento Válido (nota fiscal ou Documento de Saída válido); registro válido no CRM pode preservar o Responsável Comercial; cliente sem histórico de faturamento não é desvinculado só por esta rotina.`,
+    system: systemText,
+    action: "Nenhuma. A Seção 11 descreve a rotina de carteira do IndusCost.",
+  });
 }
 
 /**
@@ -705,28 +896,8 @@ export function auditPolCom001Publication(
     })
   );
   findings.push(...auditCommissionMatrix(content, current ?? null));
-  findings.push(
-    finding({
-      code: "SUPERVISOR_SHARE_NOT_PARAMETERIZED",
-      category: "SUPERVISOR",
-      policySection: POLICY_SECTIONS.supervisor,
-      severity: "BLOCKING",
-      document: "Supervisor Comercial recebe 33% das comissões elegíveis dos Vendedores do time; parcela adicional, sem carteira própria e sem base em conta institucional sem comissão do vendedor.",
-      system: "CommissionSettings não possui percentual de supervisor nem vínculo vendedor → supervisor para apuração.",
-      action: "Parametrizar a remuneração do supervisor (33%, adicional) e o vínculo de time antes de publicar.",
-    })
-  );
-  findings.push(
-    finding({
-      code: "PORTFOLIO_INACTIVITY_MISMATCH",
-      category: "CARTEIRA",
-      policySection: POLICY_SECTIONS.inactivity,
-      severity: "BLOCKING",
-      document: "90 dias corridos sem novo Pedido de Venda aprovado = gatilho de revisão; com registro material válido no CRM o Responsável Comercial pode ser preservado; sem ele, a exclusividade é retirada automaticamente.",
-      system: `${SYSTEM_NORMATIVE_FACTS.portfolioInactivitySource}: relógio = última NF / Documento de Saída válido (SalesOrderNfeLink → NomusNfe status 4, não cancelada, xmlDhEmi/dataProcessamento; NomusStockDocument não cancelado). SENT_TO_NOMUS + issueDate não reinicia. NEVER_INVOICED não remove. Preservação por CRM estruturado (sem Proposal.updatedAt sozinho). Baixa INACTIVITY_90_DAYS, histórico em CrmCustomerPortfolioReview.`,
-      action: "Republicar a Seção 11 em nova versão descrevendo o relógio por NF/Documento de Saída válido (POLICY_VERSION_REQUIRED) ou alinhar a rotina ao texto; não marcar IN_SYNC.",
-    })
-  );
+  findings.push(auditSupervisorShare(content, current ?? null));
+  findings.push(auditPortfolioInactivity(content, current ?? null));
 
   if (!current) {
     findings.push(
@@ -823,6 +994,10 @@ export function auditPolCom001Publication(
   };
 }
 
+function byCodeOf(findings: readonly PrePublishFinding[], code: string): PrePublishFinding | undefined {
+  return findings.find((item) => item.code === code);
+}
+
 /** Publicação só é impedida por BLOCKING; WARNING e INFORMATIONAL não impedem. */
 export function evaluatePublicationReadiness(findings: readonly PrePublishFinding[]): {
   ready: boolean;
@@ -833,8 +1008,10 @@ export function evaluatePublicationReadiness(findings: readonly PrePublishFindin
 }
 
 /** Matriz de reconciliação seção × regra × implementação (Ver divergências). */
-export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | null): ReconciliationRow[] {
-  const audit = auditPolCom001Publication("", current);
+export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | null, content = ""): ReconciliationRow[] {
+  const audit = auditPolCom001Publication(content, current);
+  const inactivity = audit.findings.find((item) => item.code.startsWith("PORTFOLIO_INACTIVITY_"));
+  const supervisor = byCodeOf(audit.findings, "SUPERVISOR_SHARE_MANUAL_PROCESS");
   const byCode = new Map(audit.findings.map((item) => [item.code, item]));
   const matrix = audit.findings.find((item) => item.code.startsWith("COMMISSION_MATRIX_"));
   const release = byCode.get("COMMISSION_RELEASE_ALIGNED") ?? byCode.get("COMMISSION_RELEASE_NOT_PROPORTIONAL") ?? byCode.get("COMMISSION_RELEASE_MISMATCH") ?? byCode.get("COMMISSION_RELEASE_UNVERIFIED");
@@ -868,7 +1045,7 @@ export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | 
     },
     {
       section: POLICY_SECTIONS.matrix,
-      rule: "Matriz por Margem Oficial (Anexo I: 1% / 1% / 2% / 3% / 4%)",
+      rule: "Matriz de Referência (Anexo I): níveis comerciais da Formação de Preço, com interpolação linear pelo preço praticado",
       implementation: matrix?.system ?? "Não conferido.",
       status: matrix?.code === "COMMISSION_MATRIX_ALIGNED" ? "ALINHADO" : matrix?.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED" ? "NÃO_IMPLEMENTADO" : "DIVERGENTE",
       severity: matrix?.severity ?? "BLOCKING",
@@ -913,21 +1090,21 @@ export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | 
     },
     {
       section: POLICY_SECTIONS.inactivity,
-      rule: "90 dias sem novo PV aprovado → revisão; CRM material válido preserva; sem CRM, retirada automática da exclusividade",
-      implementation: SYSTEM_NORMATIVE_FACTS.portfolioInactivitySource + ": relógio pela última NF/DS válido (PV SENT_TO_NOMUS sem NF não reinicia; NEVER_INVOICED não remove), job mensal, histórico em CrmCustomerPortfolioReview.",
-      status: "DIVERGENTE",
-      severity: "BLOCKING",
-      action: "Republicar a Seção 11 (relógio por NF/DS válido) em nova versão ou alinhar a rotina ao texto.",
-      findingCode: "PORTFOLIO_INACTIVITY_MISMATCH",
+      rule: "90 dias corridos desde o último faturamento válido → revisão; CRM válido preserva; sem CRM, retirada automática; nunca faturado não é removido",
+      implementation: inactivity?.system ?? "Não conferido.",
+      status: inactivity?.code === "PORTFOLIO_INACTIVITY_ALIGNED" ? "ALINHADO" : "DIVERGENTE",
+      severity: inactivity?.severity ?? "BLOCKING",
+      action: inactivity?.action ?? "Auditar com o conteúdo da política.",
+      findingCode: inactivity?.code ?? null,
     },
     {
       section: POLICY_SECTIONS.supervisor,
       rule: "Supervisor recebe 33% das comissões elegíveis do time; parcela adicional",
-      implementation: "Não parametrizado em CommissionSettings; sem vínculo de time.",
-      status: "NÃO_IMPLEMENTADO",
-      severity: "BLOCKING",
-      action: "Parametrizar 33% adicional e o vínculo vendedor → supervisor antes de publicar.",
-      findingCode: "SUPERVISOR_SHARE_NOT_PARAMETERIZED",
+      implementation: supervisor?.system ?? "Processo administrativo externo ao motor de comissões.",
+      status: "PROCESSO_MANUAL",
+      severity: "INFORMATIONAL",
+      action: supervisor?.action ?? "Nenhuma ação técnica obrigatória para publicação.",
+      findingCode: "SUPERVISOR_SHARE_MANUAL_PROCESS",
     },
     {
       section: POLICY_SECTIONS.payment,
@@ -1014,6 +1191,10 @@ export function applyNormativeChangeToSnapshot(
   }
   if (kind === "portfolio.inactivityDays" && typeof newValue === "number" && Number.isFinite(newValue)) {
     next.portfolio.inactivityDays = newValue;
+  }
+  // Cálculo continua manual; o que muda é a regra aceita pelo vendedor.
+  if (kind === "commission.supervisorShare" && typeof newValue === "number" && Number.isFinite(newValue)) {
+    next.supervisorCommission.documentedShare = newValue;
   }
   return next;
 }

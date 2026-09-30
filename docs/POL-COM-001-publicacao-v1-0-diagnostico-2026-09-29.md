@@ -2,6 +2,8 @@
 
 Branch: `feat/commercial-policy-v1-publication` (base `ebe043e3`). **Nada publicado. Nada em main. Sem deploy, sem banco real, sem homologação e sem produção.**
 
+> **Atualização 2026-09-30 — ver §7.** As seções 1 a 6 registram o diagnóstico de 29/09/2026 sobre o DOCX original e ficam preservadas como histórico. A candidata v1.0 foi depois alinhada ao IndusCost (o sistema é a fonte da verdade para regras que já existem nele): os três bloqueios descritos na §2 deixaram de existir.
+
 ## 1. Fonte oficial
 
 Único documento normativo: `LK - Politica Comercial e Comissionamento V1.0 - USO RESTRITO.docx` — POL-COM-001, versão 1.0, POLÍTICA OFICIAL — USO INTERNO E RESTRITO, Koppetel Comercio de Plásticos LTDA, CNPJ 14.055.501/0001-80. Versões 5.x e outros chats foram ignorados.
@@ -69,3 +71,48 @@ O DOCX foi extraído integralmente (texto + 7 tabelas) e comparado linha a linha
 - `tsc --noEmit`: 1332 erros = baseline (nenhum nos arquivos tocados; único delta vs. baseline antiga é o TS2345 pré-existente de `salesOrderItemFlowEngine.ts`). Foi necessário `prisma generate` offline (cliente estava defasado para `CrmCustomerPortfolioReview`).
 - `npm run build`: OK.
 - Tela verificada em harness Vite + Chrome headless (cenários bloqueado, divergências, prévia capa/Anexo I/Anexo III, publicada com rascunho 1.1, 768px).
+
+## 7. Alinhamento da candidata v1.0 ao IndusCost (2026-09-30)
+
+Branch: `feat/commercial-policy-v1-system-aligned` (base `0ac0ff10`). **Nada publicado. Sem deploy, sem banco real, sem homologação e sem produção.** Nenhuma versão da política havia sido publicada: o texto abaixo **consolida a v1.0** antes da primeira publicação (não é v1.1).
+
+Regra mestra: para regras que já existem no IndusCost, **o sistema é a fonte da verdade** e a política descreve o comportamento real. O DOCX original (`LK - Politica Comercial e Comissionamento V1.0`) divergia do sistema em três pontos; o registro dessas divergências fica nas seções 1–6 deste documento e em `DOCUMENT_ANNEX_I_BANDS` (matriz em degraus do DOCX, mantida só como histórico).
+
+### 7.1 Decisões
+
+| Tema | DOCX original | Sistema (fonte da verdade) | Candidata v1.0 | Achado |
+| --- | --- | --- | --- | --- |
+| Matriz de comissão (Seção 7 / Anexo I) | Degraus por faixa de Margem Oficial (<30% 1%; 30–34,99% 1%; 35–39,99% 2%; 40–49,99% 3%; ≥50% 4%) | `resolveCommercialPriceTier` + `interpolateCommercialCommissionRate`: quatro níveis publicados na Formação de Preço (Atacado, Varejo 1, Varejo 2, Varejo 3); preço igual ao do nível → percentual do nível; entre dois níveis → interpolação linear **pelo preço** praticado; abaixo do Atacado → percentual fixo de preço abaixo da tabela (`OUT_OF_TABLE_COMMISSION_PERCENT`); a partir do Varejo 3 → teto; 4 casas decimais; data de referência = faturamento (NF) ou, na falta, o Pedido | Seção 7 reescrita; Anexo I = "Matriz de Referência de Formação de Preço, Comissão e Alçada", tabela *Nível comercial · Margem de referência · Comissão de referência* **preenchida na exibição com `normativeSnapshot.commissionMatrix` da versão** (nenhum percentual fixo no texto) | `COMMISSION_MATRIX_ALIGNED` (INFORMATIONAL) quando o texto descreve níveis + interpolação pelo preço e a Formação de Preço tem as quatro tabelas publicadas com regra "Faixa comercial" ativa |
+| Supervisor 33% (Seção 14) | 33% das comissões elegíveis do time, parcela adicional | Não existe no motor nem em `CommissionSettings` | Texto mantido + "apuração por procedimento administrativo próprio, não integra o cálculo automático do sistema" | `SUPERVISOR_SHARE_MANUAL_PROCESS` (INFORMATIONAL, não bloqueia, responsável PROCESSO); snapshot `{ parameterized: false, calculationMode: "MANUAL_EXTERNAL_PROCESS", documentedShare: 0.33 }`. **O supervisor não foi implementado no motor.** |
+| Carteira / 90 dias (Seção 11) | 90 dias corridos sem novo **Pedido de Venda aprovado** | `customerCommercialOwnerInactivity`: 90 dias corridos desde a última **NF / Documento de Saída válido**; PV sem NF, proposta e recebimento não reiniciam; faturamento parcial reinicia; CRM estruturado válido preserva; `NEVER_INVOICED` não remove | Seção 11 reescrita com "Faturamento Válido" (termo novo na Seção 4), exemplos de registro válido no CRM, revisão no mês seguinte quando preservado e a regra de cliente sem histórico de faturamento | `PORTFOLIO_INACTIVITY_ALIGNED` (INFORMATIONAL) |
+
+As alçadas de aprovação do Anexo I continuam no documento como **procedimento administrativo** (`APPROVAL_AUTHORITY_MANUAL_PROCESS`, WARNING, não bloqueia).
+
+### 7.2 Como a auditoria decide (nada é marcado à mão)
+
+- `readDocumentCommissionMatrix` classifica o Anexo I em `SNAPSHOT` (linha em branco preenchida pelo snapshot), `LEVELS` (níveis escritos por extenso) ou `STEP_BANDS` (tabela antiga por faixa de margem). `STEP_BANDS`, ou texto que não descreva interpolação pelo preço, continua gerando `COMMISSION_MATRIX_INTERPOLATED` (BLOCKING); níveis escritos diferentes dos publicados geram `COMMISSION_MATRIX_MISMATCH`; sem as quatro tabelas publicadas, `COMMISSION_MATRIX_NOT_PARAMETERIZED`; sem regra "Faixa comercial" ativa, `COMMISSION_MATRIX_ENGINE_RULE_INACTIVE`.
+- `readDocumentInactivityRule` lê da Seção 11 o prazo, o relógio (faturamento válido × PV aprovado), a preservação por CRM e a regra do nunca faturado; qualquer diferença em relação à rotina gera `PORTFOLIO_INACTIVITY_MISMATCH` (BLOCKING). O texto do DOCX continuaria bloqueando.
+- Publicação com as tabelas da Formação de Preço publicadas: **0 BLOCKING, 2 WARNING** (alçadas manuais; abrangência do gate eletrônico), **8 INFORMATIONAL**. Sem as quatro tabelas publicadas, resta 1 BLOCKING (`COMMISSION_MATRIX_NOT_PARAMETERIZED`) — é condição de dados da Formação de Preço no ambiente, não de texto.
+
+### 7.3 Snapshot, exibição e versões
+
+- A matriz exibida (leitor do vendedor, prévia do admin, cópia controlada em PDF) vem de `policyCommissionMatrixFromSnapshot(version.normativeSnapshot)`; antes de publicar, a prévia usa a Formação de Preço atual. Mudar as tabelas depois da publicação muda o hash do snapshot atual (`POLICY_UPDATE_REQUIRED`) e **não** altera o que a versão publicada mostra.
+- `portfolio` no snapshot ganhou `inactivityClock: "LAST_VALID_INVOICE"` e `neverInvoicedRemoved: false`.
+- Mudar o percentual do supervisor (`commission.supervisorShare`) continua exigindo nova versão da política.
+
+### 7.4 Questionário, declarações e resumo
+
+15 perguntas (novas: `q-faturamento`, `q-preservacao`, `q-limites`; reescritas: `q-matriz` — interpolação pelo preço —, `q-noventa`, explicação de `q-supervisor`), declarações da matriz e da inatividade atualizadas, 10 regras-resumo — todas frases literais do documento.
+
+### 7.5 O que não mudou
+
+Motor de comissão, `customerCommercialOwnerInactivity` (só a descrição do job em `brentCommodityJob.ts` foi corrigida para "desde a última NF / Documento de Saída válido"), fechamento, percentuais, migrations, banco.
+
+### 7.6 Validação (2026-09-30)
+
+- `src/lib/commercialPolicy/**/*.test.ts`: **111/111**.
+- `customerCommercialOwnerInactivity` (+ server), `commission-commercial-tier`, `commercialMarginCore`: **96/96**.
+- `npm run test:commissions`: 730 testes, 725 passam, 5 falhas conhecidas (idênticas à baseline).
+- `tsc --noEmit`: nenhum erro novo nos arquivos desta entrega (total 1509; os 3 acima da baseline anterior de 1506 estão em `legalExposure`, fora desta entrega).
+- `npm run build`: OK.
+- Painel verificado em harness Vite: "Pronta para publicação", 0 bloqueante(s), nota "Processo manual / externo ao motor — não bloqueia a publicação" com "33% Supervisor", Anexo I renderizado com os níveis do snapshot.

@@ -29,14 +29,19 @@ import {
   DOCUMENT_SOURCE_ANNEX_III_VERSION,
   DOCUMENT_SUPERVISOR_SHARE,
   POLICY_SECTIONS,
+  applyNormativeChangeToSnapshot,
   auditPolCom001Publication,
   buildCurrentCommercialPolicyNormativeSnapshot,
   buildPolCom001ReconciliationMatrix,
   classifyCommercialChange,
   compareDraftToCurrentNormativeState,
+  comparePublishedPolicyToCurrentNormativeState,
   evaluatePublicationReadiness,
   normativeSnapshotHash,
   planPolicyRevision,
+  readDocumentInactivityRule,
+  readDocumentSupervisorShare,
+  type CommissionMatrixInput,
   type PrePublishFinding,
 } from "./commercialPolicyNormative.js";
 import { registerCommercialPolicyRoutes, resolvePublicationStatus } from "./commercialPolicyRoutes.js";
@@ -50,6 +55,7 @@ import {
   POL_COM_001_COMPANY,
   POL_COM_001_DECLARATIONS,
   POL_COM_001_QUESTIONS,
+  POL_COM_001_SUMMARY_RULES,
   POL_COM_001_TITLE,
   POL_COM_001_VERSION_LABEL,
   officialCommercialPolicyBody,
@@ -57,10 +63,32 @@ import {
   officialCommercialPolicyHash,
 } from "./official/polCom001V1.js";
 import { POL_COM_001_CHAPTERS, officialPolicyPlainText } from "./official/polCom001V1Document.js";
+import {
+  decideCommercialOwnerInactivityAction,
+  evaluateCommercialPortfolioPreservation,
+  isPortfolioReviewDue,
+  pickLatestValidInvoice,
+  type PortfolioContactEvidence,
+  type PortfolioProposalEvidence,
+} from "../commercial/customerCommercialOwnerInactivity.js";
 
+const ANNEX_I = "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada";
 const NOW = new Date("2026-09-29T12:00:00.000Z");
 const RELEASE = { releaseDefaultRule: "EACH_RECEIVABLE_PAID", partialPaymentEnabled: true };
-const SNAPSHOT = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
+/** Níveis comerciais publicados na Formação de Preço (a fonte da Matriz de Referência). */
+const PRICING: CommissionMatrixInput = {
+  tiers: [
+    { code: "ATACADO", name: "Atacado", marginPercent: 30, commissionPercent: 1 },
+    { code: "VAREJO_1", name: "Varejo 1", marginPercent: 35, commissionPercent: 2 },
+    { code: "VAREJO_2", name: "Varejo 2", marginPercent: 40, commissionPercent: 3 },
+    { code: "VAREJO_3", name: "Varejo 3", marginPercent: 50, commissionPercent: 4 },
+  ],
+  outOfTableCommissionPercent: 1,
+  engineRuleActive: true,
+};
+const SNAPSHOT = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING);
+/** Formação de Preço sem as quatro tabelas publicadas: não há matriz para o Anexo I. */
+const SNAPSHOT_NO_TABLES = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
 
 const SHORT_BODY = {
   title: "Política de teste",
@@ -134,7 +162,7 @@ describe("POL-COM-001 v1.0 — documento oficial (testes 1–7, 20)", () => {
     assert.ok(POL_COM_001_QUESTIONS.some((question) => question.reviewChapterId === section.id));
   });
 
-  it("20: documento integral, não truncado, idêntico ao texto do DOCX (exceto Anexo III → 1.0), com tabelas", () => {
+  it("20: documento integral, não truncado, com tabelas; diverge do DOCX só onde o sistema é a fonte da verdade", () => {
     const text = officialPolicyPlainText();
     assert.ok(text.length > 50_000, String(text.length));
     assert.equal(POL_COM_001_CHAPTERS.length, 33);
@@ -144,47 +172,74 @@ describe("POL-COM-001 v1.0 — documento oficial (testes 1–7, 20)", () => {
       assert.equal(text.includes(title), true, title);
     }
     const tables = POL_COM_001_CHAPTERS.flatMap((item) => item.blocks.filter((block) => block.type === "table"));
-    assert.equal(tables.length, 6);
-    const matrix = chapter("anexo-i-matriz-normativa-de-comissao-margem-e-alcada").blocks.filter((block) => block.type === "table");
-    assert.equal(matrix.length, 2);
-    assert.ok(matrix[1].type === "table");
-    assert.deepEqual(matrix[1].rows[0], ["Margem Oficial do Item", "Comissão do Vendedor", "Alçada Comercial"]);
-    assert.deepEqual(matrix[1].rows[5], ["50,00% ou mais", "4,00%", "Fluxo comercial ordinário"]);
+    assert.equal(tables.length, 7);
+    const matrix = chapter(ANNEX_I).blocks.filter((block) => block.type === "table");
+    assert.equal(matrix.length, 3);
+    assert.ok(matrix[1].type === "table" && matrix[2].type === "table");
+    // Matriz de Referência: os valores não ficam no texto — a linha em branco recebe o snapshot da versão.
+    assert.deepEqual(matrix[1].rows, [["Nível comercial", "Margem de referência", "Comissão de referência"], ["____", "____", "____"]]);
+    // As alçadas continuam no documento, como procedimento administrativo.
+    assert.deepEqual(matrix[2].rows[0], ["Margem Oficial do Item", "Alçada Comercial"]);
+    assert.deepEqual(matrix[2].rows[1], ["Abaixo de 30,00%", "Aprovação prévia da Diretoria"]);
+    // Nenhum resíduo das regras do DOCX que o sistema não executa.
+    assert.doesNotMatch(text, /sem novo Pedido de Venda aprovado/);
+    assert.doesNotMatch(text, /50,00% ou mais/);
+    assert.doesNotMatch(text, /por faixa de margem/);
     assert.equal(hashPolicyContent(officialCommercialPolicyBody()), officialCommercialPolicyHash());
   });
 });
 
-describe("POL-COM-001 v1.0 — regras que bloqueiam (testes 8–10)", () => {
-  it("8: a matriz do Anexo I termina em 4% para ≥ 50% e o motor não a executa → BLOCKING", () => {
+describe("POL-COM-001 v1.0 — as três decisões de 30/09/2026 (testes 8–10)", () => {
+  it("8: matriz — a política segue o motor: níveis da Formação de Preço e interpolação pelo preço → alinhada", () => {
+    // A matriz em degraus do DOCX original fica só como registro histórico.
     assert.deepEqual(
       DOCUMENT_ANNEX_I_BANDS.map((band) => [band.label, band.commissionPercent]),
       [["Abaixo de 30,00%", 0.01], ["30,00% a 34,99%", 0.01], ["35,00% a 39,99%", 0.02], ["40,00% a 49,99%", 0.03], ["50,00% ou mais", 0.04]]
     );
-    assert.equal(DOCUMENT_ANNEX_I_BANDS[0].approval, "Aprovação prévia da Diretoria");
-    assert.equal(DOCUMENT_ANNEX_I_BANDS[1].approval, "Aprovação prévia do Supervisor Comercial");
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
-    const matrix = audit.findings.find((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED");
-    assert.equal(matrix?.severity, "BLOCKING");
-    assert.equal(matrix?.blocking, true);
+    const matrix = audit.findings.find((item) => item.code.startsWith("COMMISSION_MATRIX_"));
+    assert.equal(matrix?.code, "COMMISSION_MATRIX_ALIGNED");
+    assert.equal(matrix?.severity, "INFORMATIONAL");
+    assert.equal(matrix?.blocking, false);
     assert.equal(matrix?.policySection, POLICY_SECTIONS.matrix);
-    assert.match(matrix?.document ?? "", /50,00% ou mais = 4,00%/);
-    assert.doesNotMatch(matrix?.document ?? "", /= 5,00%/);
+    assert.match(matrix?.system ?? "", /Varejo 3 — margem 50,00% → comissão 4,00%/);
+    assert.match(matrix?.system ?? "", /interpolação linear pelo preço vendido/);
+    // Sem as tabelas publicadas não há matriz: continua bloqueando, sem fingir alinhamento.
+    const noTables = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT_NO_TABLES);
+    assert.equal(noTables.findings.find((item) => item.code.startsWith("COMMISSION_MATRIX_"))?.code, "COMMISSION_MATRIX_NOT_PARAMETERIZED");
+    assert.equal(noTables.ready, false);
   });
 
-  it("9: supervisor 33% adicional não parametrizado → BLOCKING, sem fingir parametrização", () => {
+  it("9: supervisor — 33% permanece na política como processo manual externo ao motor; informa, não bloqueia", () => {
     assert.equal(DOCUMENT_SUPERVISOR_SHARE, 0.33);
-    assert.equal(SNAPSHOT.supervisorCommission.parameterized, false);
-    assert.equal(SNAPSHOT.supervisorCommission.share, null);
+    assert.deepEqual(SNAPSHOT.supervisorCommission, { parameterized: false, calculationMode: "MANUAL_EXTERNAL_PROCESS", documentedShare: 0.33 });
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
-    const finding = audit.findings.find((item) => item.code === "SUPERVISOR_SHARE_NOT_PARAMETERIZED");
-    assert.equal(finding?.severity, "BLOCKING");
+    assert.equal(audit.findings.some((item) => item.code === "SUPERVISOR_SHARE_NOT_PARAMETERIZED"), false);
+    const finding = audit.findings.find((item) => item.code === "SUPERVISOR_SHARE_MANUAL_PROCESS");
+    assert.equal(finding?.severity, "INFORMATIONAL");
+    assert.equal(finding?.blocking, false);
+    assert.equal(finding?.resolution.owner, "PROCESSO");
     assert.match(finding?.document ?? "", /33%/);
-    assert.match(finding?.system ?? "", /não possui percentual de supervisor/);
+    assert.match(finding?.system ?? "", /processo administrativo externo ao motor de comissões/);
+    assert.match(finding?.action ?? "", /Nenhuma ação técnica obrigatória para publicação/);
+    // 13 e 18: o documento mantém os 33% e não afirma que o IndusCost calcula a parcela.
+    const section = chapter("14-comissao-do-supervisor-comercial").blocks.map((block) => ("text" in block ? block.text : "")).join(" ");
+    assert.match(section, /equivalente a 33%/);
+    assert.match(section, /não integra o cálculo automático de comissões do sistema/);
+    assert.doesNotMatch(section, /calculad[ao] pelo (IndusCost|sistema)/i);
+    assert.equal(readDocumentSupervisorShare(officialCommercialPolicyBody().content), 0.33);
+    // 14: nada em CommissionSettings: o snapshot de liberação não ganhou campo de supervisor.
+    assert.deepEqual(Object.keys(SNAPSHOT.commissionRelease).sort(), ["basis", "mode", "parameterized", "source"]);
+    // Mudar 33% → 25% continua exigindo nova versão, mesmo com cálculo manual.
+    assert.equal(classifyCommercialChange("commission.supervisorShare"), "POLICY_VERSION_REQUIRED");
+    assert.equal(applyNormativeChangeToSnapshot(SNAPSHOT, "commission.supervisorShare", 0.25).supervisorCommission.documentedShare, 0.25);
   });
 
-  it("10: documento = 90 dias sem PV aprovado + CRM material; sistema = relógio por NF/DS válido → PORTFOLIO_INACTIVITY_MISMATCH (BLOCKING)", () => {
+  it("10: carteira — a Seção 11 descreve a rotina real (último faturamento válido + CRM) → alinhada", () => {
     assert.equal(DOCUMENT_INACTIVITY_DAYS, 90);
     assert.equal(SNAPSHOT.portfolio.inactivityDays, 90);
+    assert.equal(SNAPSHOT.portfolio.inactivityClock, "LAST_VALID_INVOICE");
+    assert.equal(SNAPSHOT.portfolio.neverInvoicedRemoved, false);
     assert.equal(SNAPSHOT.portfolio.systemBehavior, "REVIEW_THEN_REMOVE_OR_PRESERVE");
     assert.equal(SNAPSHOT.portfolio.crmEvidenceCanPreserveAssignment, true);
     const source = readFileSync(new URL("../commercial/customerCommercialOwnerInactivity.ts", import.meta.url), "utf8");
@@ -192,22 +247,40 @@ describe("POL-COM-001 v1.0 — regras que bloqueiam (testes 8–10)", () => {
     assert.match(source, /NEVER_INVOICED/);
     assert.match(source, /REMOVE_OWNER/);
     assert.match(source, /PRESERVED_BY_CRM|PORTFOLIO_REVIEW_PRESERVED/);
+    assert.deepEqual(readDocumentInactivityRule(officialCommercialPolicyBody().content), {
+      days: 90,
+      clock: "LAST_VALID_INVOICE",
+      crmCanPreserve: true,
+      neverInvoicedKept: true,
+    });
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
-    const mismatch = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
+    assert.equal(audit.findings.some((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH"), false);
+    const aligned = audit.findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_ALIGNED");
+    assert.equal(aligned?.severity, "INFORMATIONAL");
+    assert.equal(aligned?.blocking, false);
+    assert.match(aligned?.system ?? "", /NF \/ Documento de Saída válido/);
+    assert.match(aligned?.system ?? "", /Cliente nunca faturado não é removido/);
+    // O texto antigo ("PV aprovado") continuaria bloqueando: a auditoria compara, não carimba.
+    const legacy = officialCommercialPolicyBody().content.replace(
+      /O prazo de inatividade comercial é contado[^\n]*/,
+      "O período de 90 dias corridos sem novo Pedido de Venda aprovado constitui gatilho automático para verificação da condição de Responsável Comercial do cliente."
+    );
+    const mismatch = auditPolCom001Publication(legacy, SNAPSHOT).findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
     assert.equal(mismatch?.severity, "BLOCKING");
-    assert.equal(mismatch?.blocking, true);
     assert.match(mismatch?.document ?? "", /90 dias corridos sem novo Pedido de Venda aprovado/);
-    assert.match(mismatch?.system ?? "", /NF \/ Documento de Saída válido/);
-    assert.match(mismatch?.system ?? "", /NEVER_INVOICED não remove/);
   });
 });
 
 describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11–19)", () => {
   it("13/14: blocker impede, warning e informativo não impedem; abrangência do gate é WARNING", () => {
-    const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
+    const aligned = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
+    assert.equal(aligned.ready, true);
+    assert.equal(aligned.status, "READY");
+    assert.equal(aligned.blockers, 0);
+    const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT_NO_TABLES);
     assert.equal(audit.ready, false);
     assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
-    assert.equal(audit.blockers, 3);
+    assert.equal(audit.blockers, 1);
     const gate = audit.findings.find((item) => item.code === "ELECTRONIC_GATE_AUDIENCE");
     assert.equal(gate?.severity, "WARNING");
     assert.equal(gate?.blocking, false);
@@ -242,13 +315,19 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
   });
 
   it("matriz de reconciliação cobre as seções centrais com status e severidade", () => {
-    const rows = buildPolCom001ReconciliationMatrix(SNAPSHOT);
+    const rows = buildPolCom001ReconciliationMatrix(SNAPSHOT, officialCommercialPolicyBody().content);
     const bySection = new Map(rows.map((row) => [row.section, row]));
-    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.status, "NÃO_IMPLEMENTADO");
-    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.findingCode, "COMMISSION_MATRIX_NOT_PARAMETERIZED");
-    assert.equal(bySection.get(POLICY_SECTIONS.supervisor)?.status, "NÃO_IMPLEMENTADO");
-    assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.status, "DIVERGENTE");
-    assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.severity, "BLOCKING");
+    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.status, "ALINHADO");
+    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.findingCode, "COMMISSION_MATRIX_ALIGNED");
+    assert.equal(bySection.get(POLICY_SECTIONS.supervisor)?.status, "PROCESSO_MANUAL");
+    assert.equal(bySection.get(POLICY_SECTIONS.supervisor)?.severity, "INFORMATIONAL");
+    assert.equal(bySection.get(POLICY_SECTIONS.supervisor)?.findingCode, "SUPERVISOR_SHARE_MANUAL_PROCESS");
+    assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.status, "ALINHADO");
+    assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.severity, "INFORMATIONAL");
+    assert.equal(rows.some((row) => row.severity === "BLOCKING"), false);
+    // Sem as tabelas publicadas, só a matriz bloqueia.
+    const noTables = buildPolCom001ReconciliationMatrix(SNAPSHOT_NO_TABLES, officialCommercialPolicyBody().content);
+    assert.deepEqual(noTables.filter((row) => row.severity === "BLOCKING").map((row) => row.findingCode), ["COMMISSION_MATRIX_NOT_PARAMETERIZED"]);
     assert.equal(bySection.get(POLICY_SECTIONS.coverage)?.status, "PROCESSO_MANUAL");
     assert.equal(bySection.get(POLICY_SECTIONS.campaigns)?.status, "TEXTO_NORMATIVO");
     assert.equal(bySection.get(POLICY_SECTIONS.payment)?.status, "ALINHADO");
@@ -256,17 +335,44 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
     assert.equal(bySection.get("Capa / Anexo III")?.findingCode, "DOCUMENT_INTERNAL_VERSION_MISMATCH");
   });
 
-  it("13: a publicação oficial é recusada com os achados bloqueantes e não grava versão", async () => {
+  it("13: a publicação oficial é recusada enquanto houver bloqueio e não grava versão", async () => {
     const store = createMemoryCommercialPolicyStore();
-    const result = await publishOfficialCommercialPolicy(store, "super-1", NOW, { currentSnapshot: SNAPSHOT });
+    const result = await publishOfficialCommercialPolicy(store, "super-1", NOW, { currentSnapshot: SNAPSHOT_NO_TABLES });
     assert.equal(result.ok, false);
     if (result.ok) return;
     assert.equal(result.code, "NOT_READY_FOR_PUBLICATION");
     assert.deepEqual(
       result.findings?.filter((item) => item.blocking).map((item) => item.code),
-      ["COMMISSION_MATRIX_NOT_PARAMETERIZED", "SUPERVISOR_SHARE_NOT_PARAMETERIZED", "PORTFOLIO_INACTIVITY_MISMATCH"]
+      ["COMMISSION_MATRIX_NOT_PARAMETERIZED"]
     );
     assert.equal(store.versions.length, 0);
+  });
+
+  it("17: com a política alinhada ao sistema, a falta de parametrização do supervisor não impede publicar; o snapshot congela a matriz", async () => {
+    const store = createMemoryCommercialPolicyStore();
+    const result = await publishOfficialCommercialPolicy(store, "super-1", NOW, { currentSnapshot: SNAPSHOT });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.version.normativeSnapshotHash, normativeSnapshotHash(SNAPSHOT));
+    const view = versionPublicView(result.version);
+    assert.deepEqual(
+      view.commissionMatrix?.levels.map((level) => [level.name, level.marginPercent, level.commissionPercent]),
+      [["Atacado", 30, 1], ["Varejo 1", 35, 2], ["Varejo 2", 40, 3], ["Varejo 3", 50, 4]]
+    );
+    assert.equal(view.commissionMatrix?.belowLowestCommissionPercent, 1);
+    // A Formação de Preço muda depois: a versão publicada continua mostrando a matriz antiga.
+    const changed = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, {
+      ...PRICING,
+      tiers: PRICING.tiers.map((tier) => (tier.code === "VAREJO_3" ? { ...tier, commissionPercent: 5 } : tier)),
+    });
+    assert.notEqual(normativeSnapshotHash(changed), result.version.normativeSnapshotHash);
+    assert.equal(
+      comparePublishedPolicyToCurrentNormativeState({ publishedHash: result.version.normativeSnapshotHash ?? null, current: changed, publicationAuditBlocking: false }),
+      "POLICY_UPDATE_REQUIRED"
+    );
+    assert.equal(versionPublicView(result.version).commissionMatrix?.levels.at(-1)?.commissionPercent, 4);
+    assert.equal(classifyCommercialChange("commission.matrix"), "POLICY_VERSION_REQUIRED");
+    assert.equal(classifyCommercialChange("commission.band"), "POLICY_VERSION_REQUIRED");
   });
 
   it("15/16/17: versão publicada é imutável, congela o snapshot, e o aceite registra versão, hash e snapshot", async () => {
@@ -326,7 +432,7 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
       "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada",
       "11-inatividade-de-cliente-e-revisao-de-carteira",
       "4-definicoes",
-      "anexo-i-matriz-normativa-de-comissao-margem-e-alcada",
+      ANNEX_I,
       "14-comissao-do-supervisor-comercial",
       "9-campanhas-e-condicoes-comerciais-especificas",
       "22-condutas-vedadas",
@@ -335,8 +441,25 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
     ]) {
       assert.ok(covered.has(chapterId), chapterId);
     }
-    const matrixQuestion = POL_COM_001_QUESTIONS.find((question) => question.id === "q-matriz");
-    assert.match(matrixQuestion?.options.find((option) => option.id === matrixQuestion.correctOptionId)?.text ?? "", /4,00%/);
+    const correct = (id: string) => {
+      const question = POL_COM_001_QUESTIONS.find((item) => item.id === id);
+      return `${question?.prompt ?? ""} ${question?.options.find((option) => option.id === question.correctOptionId)?.text ?? ""}`;
+    };
+    // Matriz: a pergunta prova a interpolação pelo preço e os limites, não um degrau de margem.
+    assert.match(correct("q-matriz"), /interpolação linear/);
+    assert.match(correct("q-matriz"), /preço praticado/);
+    assert.match(correct("q-limites"), /Abaixo do Atacado/);
+    assert.match(correct("q-limites"), /teto da Matriz/);
+    // Carteira: faturamento válido, PV sem NF não reinicia, CRM válido preserva, registro genérico não.
+    assert.match(correct("q-noventa"), /90 dias corridos sem novo Faturamento Válido/);
+    assert.match(correct("q-faturamento"), /Só nota fiscal ou Documento de Saída válido reinicia/);
+    assert.match(correct("q-preservacao"), /fato comercial concreto/);
+    const all = JSON.stringify({ POL_COM_001_QUESTIONS, POL_COM_001_DECLARATIONS, POL_COM_001_SUMMARY_RULES });
+    assert.doesNotMatch(all, /Pedido de Venda aprovado e sem registro/);
+    assert.doesNotMatch(all, /sem novo Pedido de Venda aprovado/);
+    assert.doesNotMatch(all, /50,00% ou mais/);
+    assert.doesNotMatch(all, /faixas de Margem Oficial/);
+    assert.equal(POL_COM_001_QUESTIONS.length, 15);
   });
 
   it("19: o gate eletrônico continua restrito ao SELLER e SUPER_ADMIN não fica pendente", async () => {
@@ -365,6 +488,7 @@ describe("POL-COM-001 v1.0 — prévia e cópia controlada antes da publicação
       saveFile: async () => ({ storageKey: "k" }),
       readFile: async () => Buffer.from(""),
       loadRelease: async () => RELEASE,
+      loadCommissionMatrix: async () => PRICING,
     });
     const server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -388,12 +512,16 @@ describe("POL-COM-001 v1.0 — prévia e cópia controlada antes da publicação
         pendingDraft: unknown;
         settingsSource: string;
       };
-      assert.equal(body.publicationStatus, "AWAITING_COMPATIBILIZATION");
+      assert.equal(body.publicationStatus, "READY_FOR_PUBLICATION");
       assert.equal(body.document.code, "POL-COM-001");
       assert.equal(body.document.versionLabel, "1.0");
       assert.equal(body.document.cnpj, "14.055.501/0001-80");
       assert.equal(body.document.contentHash, officialCommercialPolicyHash());
-      assert.equal(body.counts.blockers, 3);
+      assert.equal(body.counts.blockers, 0);
+      // 16: o painel recebe o supervisor como processo manual, não como erro.
+      const supervisor = body.findings.find((item) => item.code === "SUPERVISOR_SHARE_MANUAL_PROCESS");
+      assert.equal(supervisor?.severity, "INFORMATIONAL");
+      assert.equal(supervisor?.resolution.owner, "PROCESSO");
       assert.ok(body.counts.warnings >= 1);
       assert.ok(body.reconciliation.length >= 10);
       assert.equal(body.currentVersion, null);
@@ -624,5 +752,122 @@ describe("política viva — v1.0 como baseline (complementares 1–15)", () => 
     assert.equal(opened.version.content, officialCommercialPolicyContent());
     assert.deepEqual(opened.version.changeSet?.map((item) => item.policySection), [POLICY_SECTIONS.inactivity]);
     assert.equal(opened.version.title, "Política Comercial 1.1");
+  });
+});
+
+describe("Seção 11 × rotina de carteira do IndusCost (testes 19–29)", () => {
+  const spNoon = (isoDate: string) => new Date(`${isoDate}T15:00:00.000Z`);
+  const referenceDate = spNoon("2026-08-30");
+  const section = chapter("11-inatividade-de-cliente-e-revisao-de-carteira").blocks.map((block) => ("text" in block ? block.text : "")).join("\n");
+  const nfe = (overrides: Record<string, unknown> = {}) => ({
+    salesOrderId: "so-1",
+    salesOrderCode: "PD 02100",
+    nfeId: "nfe-1",
+    nfeExternalId: 111222,
+    nfeNumber: "111222",
+    nfeStatus: 4,
+    xmlDhEmi: spNoon("2026-06-01"),
+    dataProcessamento: spNoon("2026-06-01"),
+    xmlCancelamento: null,
+    stockDocumentId: "st-1",
+    stockIsCancelled: false,
+    stockStatusRaw: "emitido",
+    stockTipo: "saida",
+    stockDataDocumento: spNoon("2026-06-01"),
+    ...overrides,
+  });
+  const preservationOf = (input: { proposals?: PortfolioProposalEvidence[]; contacts?: PortfolioContactEvidence[] }) =>
+    evaluateCommercialPortfolioPreservation({
+      referenceDate,
+      lastApprovedIssueDate: spNoon("2026-06-01"),
+      lastValidInvoiceDate: spNoon("2026-06-01"),
+      proposals: input.proposals ?? [],
+      contacts: input.contacts ?? [],
+    });
+  const decide = (lastValidInvoice: ReturnType<typeof pickLatestValidInvoice>, at: Date, preservation = preservationOf({})) =>
+    decideCommercialOwnerInactivityAction({ hasActiveOwner: true, lastValidInvoice, referenceDate: at, preservation });
+
+  it("19: o texto conta o prazo do último Faturamento Válido, não de Pedido de Venda aprovado", () => {
+    assert.match(section, /contado a partir do último Faturamento Válido/);
+    assert.match(section, /90 dias corridos/);
+    assert.doesNotMatch(section, /sem novo Pedido de Venda aprovado/);
+  });
+
+  it("20/21/22: só faturamento válido reinicia — PV sem NF e NF cancelada não; faturamento parcial sim", () => {
+    assert.match(section, /Pedido de Venda ainda não faturado/);
+    assert.match(section, /faturamento cancelado/i);
+    assert.match(section, /ainda que o Pedido de Venda tenha sido faturado apenas em parte/);
+    // PV aprovado recente, sem NF: o relógio não reinicia (cliente segue sem faturamento válido).
+    const withoutInvoice = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastApprovedOrder: { id: "so-new", orderCode: "PD 02710", issueDate: spNoon("2026-08-20"), status: "SENT_TO_NOMUS" },
+      lastValidInvoice: null,
+      referenceDate,
+      preservation: preservationOf({}),
+    });
+    assert.equal(withoutInvoice.status, "NEVER_INVOICED");
+    // NF cancelada posterior não conta: vale a NF válida anterior.
+    const latest = pickLatestValidInvoice([
+      nfe(),
+      nfe({ nfeId: "nfe-2", nfeNumber: "cancelada", nfeStatus: 6, xmlDhEmi: spNoon("2026-08-10"), dataProcessamento: spNoon("2026-08-10"), xmlCancelamento: "<canc/>", stockIsCancelled: true }),
+    ]);
+    assert.equal(latest?.invoiceNumber, "111222");
+    // Faturamento parcial com NF válida reinicia.
+    const partial = pickLatestValidInvoice([
+      nfe(),
+      nfe({ nfeId: "nfe-3", nfeNumber: "parcial", xmlDhEmi: spNoon("2026-08-01"), dataProcessamento: spNoon("2026-08-01"), stockDataDocumento: spNoon("2026-08-01") }),
+    ]);
+    assert.equal(partial?.invoiceNumber, "parcial");
+    assert.equal(decide(partial, referenceDate).action, "KEEP_OWNER");
+  });
+
+  it("23/24: 89 dias mantém; ao completar 90 dias o cliente entra em revisão", () => {
+    const invoice = pickLatestValidInvoice([nfe()]);
+    assert.equal(decide(invoice, spNoon("2026-08-29")).status, "ACTIVE");
+    assert.equal(isPortfolioReviewDue({ lastValidInvoiceDate: spNoon("2026-06-01"), referenceDate }), true);
+    assert.match(section, /Completados 90 dias corridos sem novo Faturamento Válido, o cliente entra automaticamente em revisão de carteira/);
+  });
+
+  it("25: registro válido no CRM preserva o Responsável Comercial e a carteira é revista no mês seguinte", () => {
+    const preservation = preservationOf({
+      proposals: [{ id: "p1", status: "SENT", expectedCloseDate: spNoon("2026-09-15"), nextActionAt: spNoon("2026-09-10"), updatedAt: spNoon("2026-08-18") }],
+    });
+    assert.equal(preservation.valid, true);
+    const decision = decide(pickLatestValidInvoice([nfe()]), referenceDate, preservation);
+    assert.equal(decision.action, "KEEP_OWNER");
+    assert.equal(decision.status, "PRESERVED_BY_CRM");
+    assert.match(section, /Havendo registro válido/);
+    assert.match(section, /revista no mês seguinte/);
+  });
+
+  it("26/27: registro genérico, artificial ou simples atualização técnica não preserva; sem CRM válido o responsável é removido", () => {
+    const generic = preservationOf({
+      contacts: [{ id: "c1", contactDate: spNoon("2026-08-20"), createdAt: spNoon("2026-08-20"), outcome: "RELATIONSHIP_MAINTAINED", reason: "RELATIONSHIP", nextActionType: "NONE", nextActionAt: null }],
+    });
+    assert.equal(generic.valid, false);
+    const artificial = preservationOf({
+      contacts: [{ id: "c2", contactDate: spNoon("2026-08-30"), createdAt: spNoon("2026-08-30"), outcome: "OTHER_RESULT", reason: "OTHER", nextActionType: "NONE", nextActionAt: null }],
+    });
+    assert.equal(artificial.valid, false);
+    const technical = preservationOf({ proposals: [{ id: "p2", status: "SENT", expectedCloseDate: null, nextActionAt: null, updatedAt: spNoon("2026-08-29") }] });
+    assert.equal(technical.valid, false);
+    const decision = decide(pickLatestValidInvoice([nfe()]), referenceDate, generic);
+    assert.equal(decision.action, "REMOVE_OWNER");
+    assert.match(section, /genéric/i);
+    assert.match(section, /atualização técnica/i);
+    assert.match(section, /deixará automaticamente de possuir Responsável Comercial exclusivo/);
+  });
+
+  it("28: cliente sem histórico de Faturamento Válido não é desvinculado só por esta rotina", () => {
+    const decision = decide(null, referenceDate);
+    assert.equal(decision.status, "NEVER_INVOICED");
+    assert.equal(decision.action, "REVIEW_REQUIRED");
+    assert.match(section, /Clientes sem histórico de Faturamento Válido não serão automaticamente desvinculados exclusivamente por esta rotina/);
+  });
+
+  it("29: o alinhamento não tocou a rotina: só a descrição do job mudou", () => {
+    const job = readFileSync(new URL("../brentCommodityJob.ts", import.meta.url), "utf8");
+    assert.match(job, /90 dias corridos desde a última NF \/ Documento de Saída válido/);
+    assert.doesNotMatch(job, /90 dias corridos sem Pedido de Venda aprovado/);
   });
 });

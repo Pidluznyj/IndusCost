@@ -15,7 +15,10 @@ import {
   type CommissionMatrixInput,
 } from "./commercialPolicyNormative.js";
 import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
-import { applyPolicyAutoFields, type PolicyAutoFieldContext } from "./policyAutoFields.js";
+import { applyPolicyAutoFields, policyCommissionMatrixFromSnapshot, type PolicyAutoFieldContext } from "./policyAutoFields.js";
+import { resolveCommercialCommissionFromTiers } from "../commercialMarginCore.js";
+import { roundRatePercent } from "../commissions/commission-commercial-tier.js";
+import { OUT_OF_TABLE_COMMISSION_PERCENT } from "../commissions/commissionOutOfTable.js";
 import { parsePolicyChapters, policyChaptersPlainText } from "./policyDocumentFormat.js";
 import { parsePublicationEffectiveDate, registerCommercialPolicyRoutes } from "./commercialPolicyRoutes.js";
 import { createMemoryCommercialPolicyStore } from "./commercialPolicyStore.js";
@@ -44,14 +47,75 @@ const matrixFinding = (content: string, matrix: CommissionMatrixInput | null) =>
     item.code.startsWith("COMMISSION_MATRIX_")
   );
 
+/** Anexo I com os níveis escritos por extenso (em vez da linha preenchida pelo snapshot). */
+const withWrittenLevels = (rows: Array<[string, string, string]>) =>
+  CONTENT.replace("| ____ | ____ | ____ |", rows.map((row) => `| ${row.join(" | ")} |`).join("\n"));
+
+/** Anexo I do DOCX original: comissão em degraus por faixa de Margem Oficial. */
+const LEGACY_STEP_CONTENT = [
+  "# 7. MARGEM OFICIAL, MATRIZ DE COMISSÃO, PRECIFICAÇÃO E ALÇADAS",
+  "O percentual de comissão de cada Item de Venda é o da faixa de Margem Oficial do Anexo I.",
+  "# ANEXO I — MATRIZ NORMATIVA DE COMISSÃO, MARGEM E ALÇADA",
+  "",
+  "| Margem Oficial do Item | Comissão do Vendedor | Alçada Comercial |",
+  "| Abaixo de 30,00% | 1,00% | Aprovação prévia da Diretoria |",
+  "| 30,00% a 34,99% | 1,00% | Aprovação prévia do Supervisor Comercial |",
+  "| 35,00% a 39,99% | 2,00% | Fluxo comercial ordinário |",
+  "| 40,00% a 49,99% | 3,00% | Fluxo comercial ordinário |",
+  "| 50,00% ou mais | 4,00% | Fluxo comercial ordinário |",
+  "",
+].join("\n");
+
 describe("Anexo I × Formação de Preço", () => {
-  it("lê a matriz do próprio conteúdo auditado", () => {
+  it("1/2: a Seção 7 e o Anexo I descrevem níveis de referência e interpolação pelo preço; a tabela não traz valor fixo", () => {
     const document = readDocumentCommissionMatrix(CONTENT);
+    assert.equal(document.form, "SNAPSHOT");
+    assert.deepEqual(document.levels, []);
+    assert.deepEqual(document.bands, []);
+    assert.equal(document.describesInterpolation, true);
     assert.deepEqual(
-      document.bands.map((band) => [band.marginFrom, band.commissionPercent]),
-      [[null, 1], [30, 1], [35, 2], [40, 3], [50, 4]]
+      document.approvals.map((row) => row.label),
+      ["Abaixo de 30,00%", "30,00% a 34,99%", "35,00% ou mais"]
     );
-    assert.equal(document.describesInterpolation, false);
+    const text = policyChaptersPlainText(parsePolicyChapters(CONTENT));
+    assert.match(text, /quatro níveis comerciais de referência: Atacado, Varejo 1, Varejo 2 e Varejo 3/);
+    assert.match(text, /interpolação linear entre os percentuais desses dois níveis/);
+    assert.match(text, /A interpolação é feita pelo preço praticado, e não pela margem/);
+    assert.match(text, /aplica-se o percentual do Varejo 3, que é o teto da Matriz/);
+    assert.match(text, /A comissão efetiva é sempre calculada pelo IndusCost/);
+    // A matriz em degraus do DOCX não está mais no texto.
+    assert.doesNotMatch(text, /50,00% ou mais/);
+    assert.doesNotMatch(text, /Comissão do Vendedor/);
+  });
+
+  it("3/4: o Anexo I é renderizado com os níveis do snapshot da versão, na ordem, com a linha de preço abaixo da tabela", () => {
+    const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING);
+    const annex = applyPolicyAutoFields(parsePolicyChapters(CONTENT), {
+      versionLabel: "1.0", publishedAt: null, effectiveFrom: null, approver: null, signer: null, acceptance: null, today: NOW.toISOString(),
+      commissionMatrix: policyCommissionMatrixFromSnapshot(snapshot),
+    }).find((chapter) => chapter.title.startsWith("ANEXO I —"));
+    const table = annex?.blocks.find((block) => block.type === "table" && /nível comercial/i.test(block.rows[0]?.[0] ?? ""));
+    assert.ok(table && table.type === "table");
+    assert.deepEqual(table.rows, [
+      ["Nível comercial", "Margem de referência", "Comissão de referência"],
+      ["Atacado", "30,00%", "1,00%"],
+      ["Varejo 1", "35,00%", "2,00%"],
+      ["Varejo 2", "40,00%", "3,00%"],
+      ["Varejo 3", "50,00%", "4,00%"],
+      ["Preço abaixo do Atacado (abaixo da tabela)", "—", "1,00%"],
+    ]);
+  });
+
+  it("5: versão publicada continua mostrando a matriz congelada quando a Formação de Preço muda", () => {
+    const frozen = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING);
+    const later = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, {
+      ...PRICING,
+      tiers: PRICING.tiers.map((tier) => (tier.code === "VAREJO_3" ? { ...tier, marginPercent: 55, commissionPercent: 5 } : tier)),
+    });
+    assert.deepEqual(policyCommissionMatrixFromSnapshot(frozen)?.levels.at(-1), { name: "Varejo 3", marginPercent: 50, commissionPercent: 4 });
+    assert.deepEqual(policyCommissionMatrixFromSnapshot(later)?.levels.at(-1), { name: "Varejo 3", marginPercent: 55, commissionPercent: 5 });
+    assert.notEqual(normativeSnapshotHash(frozen), normativeSnapshotHash(later));
+    assert.equal(policyCommissionMatrixFromSnapshot(buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, null)), null);
   });
 
   it("sem as quatro tabelas publicadas continua bloqueando como não parametrizada", () => {
@@ -61,38 +125,53 @@ describe("Anexo I × Formação de Preço", () => {
     assert.match(finding?.resolution.where ?? "", /Formação de Preço/);
   });
 
-  it("margens e comissões iguais às do Anexo I deixam de acusar matriz ausente, mas a interpolação do motor é dita e bloqueia", () => {
-    const finding = matrixFinding(CONTENT, PRICING);
-    assert.equal(finding?.code, "COMMISSION_MATRIX_INTERPOLATED");
-    assert.equal(finding?.severity, "BLOCKING");
-    assert.match(finding?.system ?? "", /Atacado — margem 30,00% → comissão 1,00%/);
-    assert.match(finding?.system ?? "", /Varejo 3 — margem 50,00% → comissão 4,00%/);
-    assert.match(finding?.system ?? "", /recebe 1,50%/);
-  });
-
-  it("quando o texto descreve o percentual proporcional entre faixas, a matriz fica alinhada", () => {
-    const revised = CONTENT.replace(
-      "# ANEXO I — MATRIZ NORMATIVA DE COMISSÃO, MARGEM E ALÇADA",
-      "# ANEXO I — MATRIZ NORMATIVA DE COMISSÃO, MARGEM E ALÇADA\nEntre uma faixa e a seguinte, o percentual de comissão é proporcional ao preço praticado."
-    );
-    assert.notEqual(revised, CONTENT);
-    const audit = auditPolCom001Publication(revised, buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING));
+  it("11: a política candidata fica alinhada — o texto representa o motor; as alçadas seguem como processo manual", () => {
+    const audit = auditPolCom001Publication(CONTENT, buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING));
     const finding = audit.findings.find((item) => item.code.startsWith("COMMISSION_MATRIX_"));
     assert.equal(finding?.code, "COMMISSION_MATRIX_ALIGNED");
     assert.equal(finding?.severity, "INFORMATIONAL");
-    // As alçadas seguem como processo manual: alerta, não bloqueio.
+    assert.equal(finding?.blocking, false);
+    assert.match(finding?.system ?? "", /Atacado — margem 30,00% → comissão 1,00%/);
+    assert.match(finding?.system ?? "", /Varejo 3 — margem 50,00% → comissão 4,00%/);
     assert.equal(audit.findings.find((item) => item.code === "APPROVAL_AUTHORITY_MANUAL_PROCESS")?.severity, "WARNING");
+    assert.equal(audit.findings.some((item) => item.code === "COMMISSION_MATRIX_INTERPOLATED"), false);
   });
 
-  it("tabela publicada com comissão ou margem diferente do Anexo I bloqueia apontando a diferença", () => {
-    const finding = matrixFinding(CONTENT, {
-      ...PRICING,
-      tiers: PRICING.tiers.map((tier) => (tier.code === "VAREJO_3" ? { ...tier, commissionPercent: 5 } : tier.code === "VAREJO_1" ? { ...tier, marginPercent: 40 } : tier)),
-    });
+  it("11: COMMISSION_MATRIX_INTERPOLATED só some por comparação real — texto em degraus ou sem interpolação continua bloqueando", () => {
+    const legacy = readDocumentCommissionMatrix(LEGACY_STEP_CONTENT);
+    assert.equal(legacy.form, "STEP_BANDS");
+    assert.deepEqual(
+      legacy.bands.map((band) => [band.marginFrom, band.commissionPercent]),
+      [[null, 1], [30, 1], [35, 2], [40, 3], [50, 4]]
+    );
+    const stepped = matrixFinding(LEGACY_STEP_CONTENT, PRICING);
+    assert.equal(stepped?.code, "COMMISSION_MATRIX_INTERPOLATED");
+    assert.equal(stepped?.severity, "BLOCKING");
+    assert.match(stepped?.document ?? "", /faixas em degrau/);
+    assert.match(stepped?.system ?? "", /recebe 1,50%/);
+    // Tabela nova, mas sem dizer que a interpolação é pelo preço: ainda não representa o motor.
+    const silent = CONTENT.replace(/interpola[^\s.,;:]*/gi, "proporção");
+    assert.notEqual(silent, CONTENT);
+    const finding = matrixFinding(silent, PRICING);
+    assert.equal(finding?.code, "COMMISSION_MATRIX_INTERPOLATED");
+    assert.equal(finding?.severity, "BLOCKING");
+  });
+
+  it("níveis escritos no Anexo I diferentes dos publicados bloqueiam apontando a diferença; iguais ficam alinhados", () => {
+    const same = withWrittenLevels([["Atacado", "30,00%", "1,00%"], ["Varejo 1", "35,00%", "2,00%"], ["Varejo 2", "40,00%", "3,00%"], ["Varejo 3", "50,00%", "4,00%"], ["Preço abaixo do Atacado", "—", "1,00%"]]);
+    assert.equal(readDocumentCommissionMatrix(same).form, "LEVELS");
+    assert.equal(matrixFinding(same, PRICING)?.code, "COMMISSION_MATRIX_ALIGNED");
+    const different = withWrittenLevels([["Atacado", "30,00%", "1,00%"], ["Varejo 1", "40,00%", "2,00%"], ["Varejo 2", "45,00%", "3,00%"], ["Varejo 3", "50,00%", "5,00%"], ["Preço abaixo do Atacado", "—", "0,50%"]]);
+    const finding = matrixFinding(different, PRICING);
     assert.equal(finding?.code, "COMMISSION_MATRIX_MISMATCH");
     assert.equal(finding?.severity, "BLOCKING");
-    assert.match(finding?.system ?? "", /"50,00% ou mais" paga 4,00% e a tabela Varejo 3 paga 5,00%/);
-    assert.match(finding?.system ?? "", /começa em 35,00% e a tabela Varejo 1 tem margem 40,00%/);
+    assert.match(finding?.system ?? "", /nível "Varejo 1" tem margem 40,00% e a tabela Varejo 1 tem margem 35,00%/);
+    assert.match(finding?.system ?? "", /nível "Varejo 3" paga 5,00% e a tabela Varejo 3 paga 4,00%/);
+    assert.match(finding?.system ?? "", /preço abaixo da tabela paga 0,50% no Anexo I e 1,00% no motor/);
+    // Matriz em degraus do DOCX com números diferentes dos publicados também é divergência.
+    const legacy = matrixFinding(LEGACY_STEP_CONTENT, { ...PRICING, tiers: PRICING.tiers.map((tier) => (tier.code === "VAREJO_3" ? { ...tier, commissionPercent: 5 } : tier)) });
+    assert.equal(legacy?.code, "COMMISSION_MATRIX_MISMATCH");
+    assert.match(legacy?.system ?? "", /"50,00% ou mais" paga 4,00% e a tabela Varejo 3 paga 5,00%/);
   });
 
   it("matriz igual mas sem regra \"Faixa comercial\" ativa bloqueia: o motor não lê as tabelas", () => {
@@ -109,9 +188,61 @@ describe("Anexo I × Formação de Preço", () => {
   });
 
   it("a matriz de reconciliação mostra a linha da matriz conforme o achado e a das alçadas como processo manual", () => {
-    const rows = buildPolCom001ReconciliationMatrix(buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING));
-    assert.equal(rows.find((row) => row.findingCode === "COMMISSION_MATRIX_INTERPOLATED")?.status, "DIVERGENTE");
+    const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING);
+    const rows = buildPolCom001ReconciliationMatrix(snapshot, CONTENT);
+    assert.equal(rows.find((row) => row.findingCode === "COMMISSION_MATRIX_ALIGNED")?.status, "ALINHADO");
     assert.equal(rows.find((row) => row.findingCode === "APPROVAL_AUTHORITY_MANUAL_PROCESS")?.status, "PROCESSO_MANUAL");
+    const legacy = buildPolCom001ReconciliationMatrix(snapshot, LEGACY_STEP_CONTENT);
+    assert.equal(legacy.find((row) => row.findingCode === "COMMISSION_MATRIX_INTERPOLATED")?.status, "DIVERGENTE");
+  });
+});
+
+describe("o texto da política × o motor de comissão (testes 6–10)", () => {
+  // Um produto com os quatro preços de referência publicados; comissões iguais às da matriz.
+  const tiers = [
+    { id: "ATACADO", marginRate: 0.3, salePrice: 100, commissionRate: 0.01 },
+    { id: "VAREJO_1", marginRate: 0.35, salePrice: 110, commissionRate: 0.02 },
+    { id: "VAREJO_2", marginRate: 0.4, salePrice: 120, commissionRate: 0.03 },
+    { id: "VAREJO_3", marginRate: 0.5, salePrice: 140, commissionRate: 0.04 },
+  ];
+  const percent = (netUnitPrice: number) => {
+    const result = resolveCommercialCommissionFromTiers({ netUnitPrice, tiers, belowLowestCommissionRate: OUT_OF_TABLE_COMMISSION_PERCENT / 100 });
+    assert.equal(result.ok, true);
+    return result.ok && result.commissionRate !== null ? roundRatePercent(result.commissionRate * 100) : null;
+  };
+
+  it("6: preço igual ao de referência de um nível paga o percentual do nível", () => {
+    assert.equal(percent(100), 1);
+    assert.equal(percent(110), 2);
+    assert.equal(percent(120), 3);
+    assert.equal(percent(140), 4);
+  });
+
+  it("7: no meio do intervalo entre dois preços de referência o motor paga 1,50%, como o exemplo da Seção 7", () => {
+    assert.equal(percent(105), 1.5);
+    assert.equal(percent(115), 2.5);
+    // A proporção é do preço, não da margem: 1/4 do caminho entre Varejo 2 e Varejo 3.
+    assert.equal(percent(125), 3.25);
+    assert.match(CONTENT, /vendido exatamente na metade do intervalo entre os dois preços de referência recebe 1,50%/);
+  });
+
+  it("8: abaixo do preço do Atacado vale o percentual de preço abaixo da tabela, o mesmo que o Anexo I mostra", () => {
+    assert.equal(percent(99.99), OUT_OF_TABLE_COMMISSION_PERCENT);
+    assert.equal(percent(50), OUT_OF_TABLE_COMMISSION_PERCENT);
+    const matrix = policyCommissionMatrixFromSnapshot(buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING));
+    assert.equal(matrix?.belowLowestCommissionPercent, OUT_OF_TABLE_COMMISSION_PERCENT);
+  });
+
+  it("9: a partir do preço do Varejo 3 o percentual não sobe: o Varejo 3 é o teto", () => {
+    assert.equal(percent(140), 4);
+    assert.equal(percent(141), 4);
+    assert.equal(percent(1000), 4);
+  });
+
+  it("10: o percentual sai com quatro casas decimais, como a Seção 7 informa", () => {
+    assert.equal(percent(103.333333), 1.3333);
+    assert.equal(percent(133.3), 3.665);
+    assert.match(CONTENT, /apurado com quatro casas decimais/);
   });
 });
 
@@ -225,10 +356,20 @@ describe("campos automáticos do documento", () => {
       recipientName: "Ana Vendedora",
       recipientEmail: "ana@koppetel.com",
       generatedAt: NOW.toISOString(),
-      autoFields: { ...published, signer: { name: "Ana Vendedora", email: "ana@koppetel.com", role: "SELLER" }, acceptance: { id: "ac-1", acceptedAt: "2026-10-02T13:30:00.000Z", evidenceHash: "abc123" } },
+      autoFields: {
+        ...published,
+        signer: { name: "Ana Vendedora", email: "ana@koppetel.com", role: "SELLER" },
+        acceptance: { id: "ac-1", acceptedAt: "2026-10-02T13:30:00.000Z", evidenceHash: "abc123" },
+        commissionMatrix: policyCommissionMatrixFromSnapshot(buildCurrentCommercialPolicyNormativeSnapshot(RELEASE, PRICING)),
+      },
     });
     const latin = pdf.toString("latin1");
     assert.equal(latin.includes("____"), false);
+    // 12: a Matriz de Referência impressa é a do snapshot.
+    assert.ok(latin.includes("Varejo 3"));
+    assert.ok(latin.includes("50,00%"));
+    assert.ok(latin.includes("4,00%"));
+    assert.ok(latin.includes("abaixo da tabela"));
     assert.ok(latin.includes("Profissional: Ana Vendedora"));
     assert.ok(latin.includes("aceite ac-1"));
   });
@@ -294,10 +435,11 @@ describe("vigência informada na publicação", () => {
       const body = (await res.json()) as { findings: Array<{ code: string; severity: string }>; currentSnapshot: { commissionMatrix: { parameterized: boolean } } };
       assert.equal(body.currentSnapshot.commissionMatrix.parameterized, true);
       assert.equal(body.findings.some((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED"), false);
-      assert.deepEqual(
-        body.findings.filter((item) => item.severity === "BLOCKING").map((item) => item.code).sort(),
-        ["COMMISSION_MATRIX_INTERPOLATED", "PORTFOLIO_INACTIVITY_MISMATCH", "SUPERVISOR_SHARE_NOT_PARAMETERIZED"]
-      );
+      assert.deepEqual(body.findings.filter((item) => item.severity === "BLOCKING").map((item) => item.code), []);
+      const code = (prefix: string) => body.findings.find((item) => item.code.startsWith(prefix));
+      assert.deepEqual([code("COMMISSION_MATRIX_")?.code, code("COMMISSION_MATRIX_")?.severity], ["COMMISSION_MATRIX_ALIGNED", "INFORMATIONAL"]);
+      assert.deepEqual([code("SUPERVISOR_SHARE_")?.code, code("SUPERVISOR_SHARE_")?.severity], ["SUPERVISOR_SHARE_MANUAL_PROCESS", "INFORMATIONAL"]);
+      assert.deepEqual([code("PORTFOLIO_INACTIVITY_")?.code, code("PORTFOLIO_INACTIVITY_")?.severity], ["PORTFOLIO_INACTIVITY_ALIGNED", "INFORMATIONAL"]);
     } finally {
       server.close();
     }

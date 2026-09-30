@@ -18,7 +18,7 @@ Compra realizada = último **Pedido de Venda com NF / Documento de Saída válid
 
 Cliente sem nenhuma NF/DS válida: `NEVER_INVOICED` — **não remove** o responsável.
 
-A POL-COM-001 v1.0 ainda descreve “90 dias sem PV aprovado”. Finding `PORTFOLIO_INACTIVITY_MISMATCH` permanece **blocking** (`POLICY_VERSION_REQUIRED`) até nova versão publicada. **Não** marcar IN_SYNC.
+O DOCX original da POL-COM-001 v1.0 descrevia “90 dias sem PV aprovado”. Em 2026-09-30 a Seção 11 da candidata v1.0 (ainda não publicada) foi reescrita para descrever esta rotina — o sistema é a fonte da verdade — e a auditoria passa a emitir `PORTFOLIO_INACTIVITY_ALIGNED` (informativo). O alinhamento é conferido por comparação do texto com a rotina (`readDocumentInactivityRule`): um texto que volte a falar em “PV aprovado” gera de novo `PORTFOLIO_INACTIVITY_MISMATCH` (**blocking**). A rotina não foi alterada.
 
 Colunas existentes de `CrmCustomerPortfolioReview` (`lastApprovedSalesOrder*`) recebem o PV faturado e a data da NF; o `payload` JSON guarda os nomes corretos (`lastValidInvoiceDate`, `lastValidInvoiceId`, `lastInvoicedSalesOrderId`, `daysSinceLastValidInvoice`, `invoiceDateSource`). Sem migration nova.
 
@@ -87,4 +87,4 @@ Job oficial: `crm-owner-inactivity-review`, `10 4 1 * *` em `America/Sao_Paulo` 
 5. Histórico do vínculo anterior permanece; cliente fica sem responsável ativo.
 6. Novo PV **não** restaura o responsável automaticamente (`blockAutoAssignUntilManual`).
 7. Comissão, vendedor do PV, SalesOrder e Documento de Saída intactos.
-8. Política viva: `PORTFOLIO_INACTIVITY_MISMATCH` blocking até republicar a §11.
+8. Política viva: com a §11 da candidata v1.0 alinhada, o painel mostra `PORTFOLIO_INACTIVITY_ALIGNED`; `PORTFOLIO_INACTIVITY_MISMATCH` só reaparece se texto e rotina voltarem a divergir.
