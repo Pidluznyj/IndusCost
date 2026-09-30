@@ -1,18 +1,17 @@
-/**
+﻿/**
  * Exposure — monitoramento jurídico das empresas do grupo.
  * A tela não dá ciência e não mostra segredo.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
+  EXPOSURE_LOADING_COPY,
   LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
-  LIKELY_REVIEW_COPY,
+  MULTIPLE_GROUP_NOTE,
   SOURCE_LABELS,
-  SOURCE_STATUS_LABELS,
   type ExposureCaseListItem,
   type LegalAliasType,
-  type LegalSourceConnectionStatus,
   type Page,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
@@ -52,17 +51,16 @@ import {
   type ExposureCaseListFilters,
 } from "./ExposureCaseList";
 import {
+  EMPTY_COMMUNICATION_FILTERS,
   ExposureAlertsTab,
   ExposureCertificatesTab,
   ExposureCommunicationsTab,
   ExposureSourcesTab,
-  ExposureTimelineTab,
   type ExposureAlertItem,
   type ExposureCertificateItem,
+  type ExposureCommunicationFilters,
   type ExposureCommunicationItem,
-  type ExposureEventItem,
-  type ExposureTimelineCase,
-  type ExposureTimelineItem,
+  type ExposureSourceItem,
 } from "./ExposureFeed";
 import { formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 import { ExposureCaseDossier } from "./ExposureCaseDossier";
@@ -72,7 +70,6 @@ type TabId =
   | "action"
   | "cases"
   | "communications"
-  | "timeline"
   | "certificates"
   | "sources"
   | "settings";
@@ -82,7 +79,6 @@ const TABS: { id: TabId; label: string; resource: string }[] = [
   { id: "action", label: "Ação Requerida", resource: LEGAL_EXPOSURE_RESOURCES.module },
   { id: "cases", label: "Processos", resource: LEGAL_EXPOSURE_RESOURCES.module },
   { id: "communications", label: "Comunicações", resource: LEGAL_EXPOSURE_RESOURCES.communications },
-  { id: "timeline", label: "Linha do Tempo", resource: LEGAL_EXPOSURE_RESOURCES.module },
   { id: "certificates", label: "Certidões", resource: LEGAL_EXPOSURE_RESOURCES.certificates },
   { id: "sources", label: "Fontes", resource: LEGAL_EXPOSURE_RESOURCES.sources },
   { id: "settings", label: "Configurações", resource: LEGAL_EXPOSURE_RESOURCES.settings },
@@ -94,25 +90,26 @@ type Dashboard = {
     monitoredCases: number;
     pendingCommunications: number;
     newsToday: number;
+    passiveCases?: number;
+    futureHearings?: number;
+    knownClaimCount?: number;
+    knownClaimTotalFormatted?: string | null;
   };
   emptyState: string | null;
     absenceIsNotClearance: string;
     multipleGroupNote?: string;
-  sources: {
-    source: string;
-    label: string;
-    status: LegalSourceConnectionStatus;
-    statusLabel: string;
-    lastSuccessfulAt: string | null;
-    healthy: boolean;
-  }[];
+    monitoredCasesLabel?: string;
+  sources: ExposureSourceItem[];
   entities: {
     id: string;
     legalName: string;
     cnpj: string;
     monitoredCases: number;
+    polePassive?: number;
+    poleActive?: number;
     pendingCommunications: number;
     actionRequired: number;
+    lastSuccessfulSyncAt?: string | null;
     monitoring: { domicilio: boolean; datajud: boolean; djen: boolean; certificates: boolean };
     freshness: { source: string; status: string; healthy: boolean }[];
   }[];
@@ -124,28 +121,27 @@ type Dashboard = {
   configuration: { source: string; configured: boolean; enabled: boolean }[];
 };
 
-function statusClass(status: LegalSourceConnectionStatus): string {
-  if (status === "HEALTHY") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "NOT_CONFIGURED" || status === "DISABLED") return "border-slate-200 bg-slate-50 text-slate-600";
-  return "border-amber-200 bg-amber-50 text-amber-900";
-}
-
 export function ExposurePage() {
   const permissions = usePermissions();
   const visibleTabs = TABS.filter((tab) => permissions.canView(tab.resource));
   const [tab, setTab] = useState<TabId>("overview");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tabError, setTabError] = useState<Partial<Record<TabId, string | null>>>({});
+  const [tabLoading, setTabLoading] = useState<Partial<Record<TabId, boolean>>>({});
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [cases, setCases] = useState<Page<ExposureCaseListItem> | null>(null);
   const [caseFilters, setCaseFilters] = useState<ExposureCaseListFilters>(EMPTY_CASE_LIST_FILTERS);
   const [communications, setCommunications] = useState<{ items: ExposureCommunicationItem[] } | null>(null);
+  const [commFilters, setCommFilters] = useState<ExposureCommunicationFilters>(EMPTY_COMMUNICATION_FILTERS);
   const [alerts, setAlerts] = useState<{ items: ExposureAlertItem[] } | null>(null);
+  const [busyAlertId, setBusyAlertId] = useState<string | null>(null);
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<{ items: ExposureTimelineItem[]; case: ExposureTimelineCase | null } | null>(null);
-  const [feed, setFeed] = useState<{ items: ExposureEventItem[] } | null>(null);
   const [dossier, setDossier] = useState<React.ComponentProps<typeof ExposureCaseDossier>["dossier"] | null>(null);
   const [refreshingCase, setRefreshingCase] = useState(false);
   const [certificates, setCertificates] = useState<ExposureCertificateItem[] | null>(null);
+  const [sourceTestBusy, setSourceTestBusy] = useState<string | null>(null);
+  const [sourceTestResult, setSourceTestResult] = useState<{ source: string; message: string } | null>(null);
   const [entities, setEntities] = useState<MonitoredEntity[]>([]);
   const [groupCompanies, setGroupCompanies] = useState<ExposureGroupCompany[]>([]);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
@@ -176,7 +172,7 @@ export function ExposurePage() {
   }, []);
 
   const reloadOverview = useCallback(async () => {
-    // Cada bloco é independente: a falha de um não esconde os outros nem dispara nova carga.
+    setOverviewLoading(true);
     const [data, list, companies] = await Promise.allSettled([
       fetchJsonOk<Dashboard>("/api/legal-exposure/dashboard"),
       fetchJsonOk<MonitoredEntity[]>("/api/legal-exposure/entities"),
@@ -189,6 +185,7 @@ export function ExposurePage() {
     if (canManageModule && list.status === "fulfilled") {
       await reloadAliases(list.value);
     }
+    setOverviewLoading(false);
     if (failure && failure.status === "rejected") throw failure.reason;
     setError(null);
   }, [canManageModule, reloadAliases]);
@@ -227,53 +224,114 @@ export function ExposurePage() {
 
   async function loadCases(filters: ExposureCaseListFilters) {
     setTab("cases");
-    const data = await fetchJsonOk<Page<ExposureCaseListItem>>(caseListPath(filters));
-    setCases(data);
+    setTabLoading((current) => ({ ...current, cases: true }));
+    setTabError((current) => ({ ...current, cases: null }));
+    setCases(null);
+    try {
+      const data = await fetchJsonOk<Page<ExposureCaseListItem>>(caseListPath(filters));
+      setCases(data);
+    } catch (err: unknown) {
+      setTabError((current) => ({ ...current, cases: exposureEntityErrorText(err) }));
+    } finally {
+      setTabLoading((current) => ({ ...current, cases: false }));
+    }
   }
 
-  async function openCases() {
-    await loadCases(caseFilters);
+  async function openCases(patch?: Partial<ExposureCaseListFilters>) {
+    const next = { ...EMPTY_CASE_LIST_FILTERS, ...patch };
+    setCaseFilters(next);
+    await loadCases(next);
   }
 
-  async function openCommunications() {
+  function communicationsPath(filters: ExposureCommunicationFilters): string {
+    const params = new URLSearchParams();
+    params.set("page", "1");
+    params.set("pageSize", "20");
+    if (filters.entityId) params.set("entityId", filters.entityId);
+    if (filters.q.trim()) params.set("q", filters.q.trim());
+    if (filters.communicationType) params.set("communicationType", filters.communicationType);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.tribunal.trim()) params.set("tribunal", filters.tribunal.trim());
+    if (filters.source) params.set("source", filters.source);
+    return `/api/legal-exposure/communications?${params.toString()}`;
+  }
+
+  async function loadCommunications(filters: ExposureCommunicationFilters) {
     setTab("communications");
-    const data = await fetchJsonOk<NonNullable<typeof communications>>("/api/legal-exposure/communications?page=1&pageSize=20");
-    setCommunications(data);
+    setTabLoading((current) => ({ ...current, communications: true }));
+    setTabError((current) => ({ ...current, communications: null }));
+    setCommunications(null);
+    try {
+      const data = await fetchJsonOk<NonNullable<typeof communications>>(communicationsPath(filters));
+      setCommunications(data);
+    } catch (err: unknown) {
+      setTabError((current) => ({ ...current, communications: exposureEntityErrorText(err) }));
+    } finally {
+      setTabLoading((current) => ({ ...current, communications: false }));
+    }
+  }
+
+  async function openCommunications(patch?: Partial<ExposureCommunicationFilters>) {
+    const next = { ...EMPTY_COMMUNICATION_FILTERS, ...patch };
+    setCommFilters(next);
+    await loadCommunications(next);
   }
 
   async function openAction() {
     setTab("action");
-    const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?status=OPEN&page=1&pageSize=20");
-    setAlerts(data);
-  }
-
-  async function updateAlert(alertId: string, action: "acknowledge" | "resolve") {
-    setSaving(true);
-    setError(null);
+    setTabLoading((current) => ({ ...current, action: true }));
+    setTabError((current) => ({ ...current, action: null }));
+    setAlerts(null);
     try {
-      await fetchJsonOk(`/api/legal-exposure/alerts/${alertId}/${action}`, { method: "POST" });
-      setNotice(action === "acknowledge" ? "Ciência registrada no IndusCost (não substitui o portal oficial)." : "Alerta marcado como resolvido.");
-      await openAction();
+      const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?status=OPEN&page=1&pageSize=20");
+      setAlerts(data);
     } catch (err: unknown) {
-      setError(exposureEntityErrorText(err));
+      setTabError((current) => ({ ...current, action: exposureEntityErrorText(err) }));
     } finally {
-      setSaving(false);
+      setTabLoading((current) => ({ ...current, action: false }));
     }
   }
 
-  /** Linha do tempo sem processo escolhido: novidades de todas as empresas. */
-  async function openFeed() {
-    setSelectedCase(null);
-    setTimeline(null);
-    setTab("timeline");
-    const data = await fetchJsonOk<NonNullable<typeof feed>>("/api/legal-exposure/events?page=1&pageSize=30");
-    setFeed(data);
+  async function updateAlert(alertId: string, action: "acknowledge" | "resolve") {
+    setBusyAlertId(alertId);
+    setSaving(true);
+    setTabError((current) => ({ ...current, action: null }));
+    try {
+      await fetchJsonOk(`/api/legal-exposure/alerts/${alertId}/${action}`, { method: "POST" });
+      setAlerts((current) =>
+        current
+          ? {
+              items: current.items.map((item) =>
+                item.id === alertId
+                  ? { ...item, status: action === "acknowledge" ? "ACKNOWLEDGED" : "RESOLVED", requiresAction: action !== "resolve" }
+                  : item
+              ),
+            }
+          : current
+      );
+      setNotice(action === "acknowledge" ? "Ação reconhecida no IndusCost (não substitui o portal oficial)." : "Ação marcada como resolvida.");
+      void reloadOverview().catch(() => undefined);
+    } catch (err: unknown) {
+      setTabError((current) => ({ ...current, action: exposureEntityErrorText(err) }));
+    } finally {
+      setSaving(false);
+      setBusyAlertId(null);
+    }
   }
 
   async function openCertificates() {
     setTab("certificates");
-    const data = await fetchJsonOk<ExposureCertificateItem[]>("/api/legal-exposure/certificates");
-    setCertificates(data);
+    setTabLoading((current) => ({ ...current, certificates: true }));
+    setTabError((current) => ({ ...current, certificates: null }));
+    setCertificates(null);
+    try {
+      const data = await fetchJsonOk<ExposureCertificateItem[]>("/api/legal-exposure/certificates");
+      setCertificates(data);
+    } catch (err: unknown) {
+      setTabError((current) => ({ ...current, certificates: exposureEntityErrorText(err) }));
+    } finally {
+      setTabLoading((current) => ({ ...current, certificates: false }));
+    }
   }
 
   function openCreate() {
@@ -414,11 +472,28 @@ export function ExposurePage() {
     setDossier(data);
   }
 
-  async function openTimeline(caseId: string) {
-    setSelectedCase(caseId);
-    setTab("timeline");
-    const data = await fetchJsonOk<NonNullable<typeof timeline>>(`/api/legal-exposure/cases/${caseId}/timeline?page=1&pageSize=30`);
-    setTimeline(data);
+  async function testSource(source: string) {
+    setSourceTestBusy(source);
+    try {
+      const result = await fetchJsonOk<{ success?: boolean; sanitizedError?: string | null; connectivityTest?: string }>(
+        "/api/legal-exposure/sources/test",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source }),
+        }
+      );
+      setSourceTestResult({
+        source,
+        message: result.success
+          ? `Conexão ok${result.connectivityTest ? ` (${result.connectivityTest})` : ""}.`
+          : result.sanitizedError || "Falha no teste de conexão.",
+      });
+    } catch (err: unknown) {
+      setSourceTestResult({ source, message: exposureEntityErrorText(err) });
+    } finally {
+      setSourceTestBusy(null);
+    }
   }
 
   return (
@@ -429,12 +504,16 @@ export function ExposurePage() {
             key={item.id}
             type="button"
             onClick={() => {
-              if (item.id === "cases") void openCases();
-              else if (item.id === "communications") void openCommunications();
+              if (item.id === "cases") void loadCases(caseFilters);
+              else if (item.id === "communications") void loadCommunications(commFilters);
               else if (item.id === "action") void openAction();
-              else if (item.id === "timeline") void openFeed();
               else if (item.id === "certificates") void openCertificates();
-              else setTab(item.id);
+              else if (item.id === "sources") {
+                setTab("sources");
+                void reloadOverview().catch((err: unknown) => {
+                  setTabError((current) => ({ ...current, sources: exposureEntityErrorText(err) }));
+                });
+              } else setTab(item.id);
             }}
             className={`rounded-full border px-3 py-1 text-sm ${tab === item.id ? "border-slate-900 bg-slate-900 text-white" : "border-border bg-card"}`}
           >
@@ -443,18 +522,57 @@ export function ExposurePage() {
         ))}
       </div>
 
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {tab === "overview" && error ? (
+        <p role="alert" className="text-sm text-red-700">{error}</p>
+      ) : null}
+
+      {tab === "overview" && overviewLoading && !dashboard ? (
+        <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p>
+      ) : null}
 
       {tab === "overview" && dashboard ? (
         <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
-            <Card label="Ação requerida" value={dashboard.cards.actionRequired} />
-            <Card label="Processos monitorados" value={dashboard.cards.monitoredCases} />
-            <Card label="Comunicações pendentes" value={dashboard.cards.pendingCommunications} />
-            <Card label="Novidades hoje" value={dashboard.cards.newsToday} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Card label="Ações requeridas" value={dashboard.cards.actionRequired} onClick={() => void openAction()} />
+            <Card label="Processos únicos" value={dashboard.cards.monitoredCases} onClick={() => void openCases()} />
+            <Card
+              label="Comunicações pendentes"
+              value={dashboard.cards.pendingCommunications}
+              onClick={() => void openCommunications({ status: "PENDING" })}
+            />
+            <Card label="Novidades hoje" value={dashboard.cards.newsToday} onClick={() => void openCommunications()} />
+            <Card
+              label="Processos no polo passivo"
+              value={dashboard.cards.passiveCases ?? 0}
+              onClick={() => void openCases({ pole: "PASSIVE" })}
+            />
+            {(dashboard.cards.futureHearings ?? 0) > 0 ? (
+              <Card
+                label="Audiências futuras"
+                value={dashboard.cards.futureHearings ?? 0}
+                onClick={() => void openCases({ hasHearing: "true" })}
+              />
+            ) : dashboard.cards.knownClaimTotalFormatted ? (
+              <Card
+                label="Valor conhecido das causas"
+                value={dashboard.cards.knownClaimTotalFormatted}
+                onClick={() => void openCases()}
+              />
+            ) : (
+              <Card
+                label="Audiências futuras"
+                value={dashboard.cards.futureHearings ?? 0}
+                onClick={() => void openCases({ hasHearing: "true" })}
+              />
+            )}
           </div>
+          {dashboard.cards.knownClaimTotalFormatted && (dashboard.cards.futureHearings ?? 0) > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Valor conhecido das causas: <button type="button" className="font-semibold underline" onClick={() => void openCases()}>{dashboard.cards.knownClaimTotalFormatted}</button>
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground">{dashboard.absenceIsNotClearance}</p>
-          {dashboard.multipleGroupNote ? <p className="text-xs text-muted-foreground">{dashboard.multipleGroupNote}</p> : null}
+          <p className="text-xs text-muted-foreground">{dashboard.multipleGroupNote || MULTIPLE_GROUP_NOTE}</p>
           {entities.length > 0 && dashboard.emptyState ? <p className="text-sm font-medium">{dashboard.emptyState}</p> : null}
           {notice ? <p className="text-sm text-emerald-800">{notice}</p> : null}
           <button
@@ -466,7 +584,6 @@ export function ExposurePage() {
           >
             Gerar relatório PDF
           </button>
-          <SourceGrid sources={dashboard.sources} certificates={dashboard.certificates} />
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">Empresas monitoradas</h2>
@@ -491,13 +608,14 @@ export function ExposurePage() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-muted/40 text-left">
                     <tr>
-                      <th className="px-3 py-2">Razão social</th>
+                      <th className="px-3 py-2">Nome</th>
                       <th className="px-3 py-2">CNPJ</th>
-                      <th className="px-3 py-2">Monitoramento</th>
-                      <th className="px-3 py-2">Processos monitorados</th>
-                      <th className="px-3 py-2">Comunicações pendentes</th>
+                      <th className="px-3 py-2">Processos únicos</th>
+                      <th className="px-3 py-2">Polo passivo</th>
+                      <th className="px-3 py-2">Polo ativo</th>
                       <th className="px-3 py-2">Ações requeridas</th>
-                      <th className="px-3 py-2">Frescor</th>
+                      <th className="px-3 py-2">Última atualização</th>
+                      <th className="px-3 py-2">Fontes habilitadas</th>
                       {companyActions.showEdit ? <th className="px-3 py-2">Ações</th> : null}
                     </tr>
                   </thead>
@@ -511,16 +629,15 @@ export function ExposurePage() {
                             {entity.active ? "" : " · inativa"}
                           </td>
                           <td className="px-3 py-2">{formatCnpj(entity.cnpj)}</td>
+                          <td className="px-3 py-2">{metrics?.monitoredCases ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.polePassive ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.poleActive ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.actionRequired ?? "—"}</td>
+                          <td className="px-3 py-2">{formatExposureDateTime(metrics?.lastSuccessfulSyncAt ?? entity.lastSuccessfulSyncAt) ?? "nunca"}</td>
                           <td className="px-3 py-2">
                             {[entity.monitorDomicilio && "Domicílio", entity.monitorDatajud && "DataJud", entity.monitorDjen && "DJEN", entity.monitorCertificates && "Certidões"]
                               .filter(Boolean)
                               .join(", ") || "—"}
-                          </td>
-                          <td className="px-3 py-2">{metrics?.monitoredCases ?? "—"}</td>
-                          <td className="px-3 py-2">{metrics?.pendingCommunications ?? "—"}</td>
-                          <td className="px-3 py-2">{metrics?.actionRequired ?? "—"}</td>
-                          <td className="px-3 py-2">
-                            {metrics?.freshness.map((item) => SOURCE_STATUS_LABELS[item.status as LegalSourceConnectionStatus] ?? item.status).join(" · ") || "—"}
                           </td>
                           {companyActions.showEdit ? (
                             <td className="px-3 py-2">
@@ -545,6 +662,9 @@ export function ExposurePage() {
           alerts={alerts?.items ?? null}
           canManage={companyActions.showEdit}
           busy={saving}
+          busyId={busyAlertId}
+          loading={tabLoading.action}
+          error={tabError.action ?? null}
           onOpenCase={(caseId) => void openDossier(caseId)}
           onAcknowledge={(alertId) => void updateAlert(alertId, "acknowledge")}
           onResolve={(alertId) => void updateAlert(alertId, "resolve")}
@@ -556,6 +676,8 @@ export function ExposurePage() {
           cases={cases}
           entities={entities.map((entity) => ({ id: entity.id, legalName: entity.legalName }))}
           filters={caseFilters}
+          loading={tabLoading.cases}
+          error={tabError.cases ?? null}
           onFilterChange={(patch) => {
             const next = { ...caseFilters, ...patch };
             setCaseFilters(next);
@@ -575,56 +697,72 @@ export function ExposurePage() {
       )}
 
       {tab === "communications" && (
-        <ExposureCommunicationsTab communications={communications?.items ?? null} onOpenCase={(caseId) => void openDossier(caseId)} />
-      )}
-
-      {tab === "timeline" && (
-        <ExposureTimelineTab
-          legalCase={selectedCase ? timeline?.case ?? null : null}
-          timeline={selectedCase ? timeline?.items ?? null : null}
-          feed={feed?.items ?? null}
-          onOpenCase={(caseId) => void openTimeline(caseId)}
-          onClearCase={() => void openFeed()}
+        <ExposureCommunicationsTab
+          communications={communications?.items ?? null}
+          entities={entities.map((entity) => ({ id: entity.id, legalName: entity.legalName }))}
+          filters={commFilters}
+          loading={tabLoading.communications}
+          error={tabError.communications ?? null}
+          onFilterChange={(patch) => {
+            const next = { ...commFilters, ...patch };
+            setCommFilters(next);
+            void loadCommunications(next);
+          }}
+          onOpenCase={(caseId) => void openDossier(caseId)}
         />
       )}
 
-      {tab === "certificates" && dashboard ? (
-        <div className="space-y-4">
-          <ExposureCertificatesTab certificates={certificates} entities={entities} />
-          <CertificatesPanel
-            entities={entities}
-            note={dashboard.certificates.cndtNote || CNDT_DOES_NOT_MEAN_NO_CASES_COPY}
-            rows={(certificates ?? []).map((row) => ({
-              ...row,
-              registeredByUserId: null,
-              createdAt: row.issuedAt ?? "",
-            }))}
-            onReload={async () => {
-              const data = await fetchJsonOk<ExposureCertificateItem[]>("/api/legal-exposure/certificates");
-              setCertificates(data);
-            }}
-          />
-        </div>
-      ) : null}
+      {tab === "certificates" && (
+        <ExposureCertificatesTab
+          certificates={certificates}
+          entities={entities}
+          note={dashboard?.certificates.cndtNote || CNDT_DOES_NOT_MEAN_NO_CASES_COPY}
+          loading={tabLoading.certificates}
+          error={tabError.certificates ?? null}
+          canManage={companyActions.showEdit}
+          onRegister={async (body) => {
+            await fetchJsonOk("/api/legal-exposure/certificates", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            await openCertificates();
+          }}
+        />
+      )}
 
-      {tab === "sources" && dashboard ? <ExposureSourcesTab sources={dashboard.sources} /> : null}
+      {tab === "sources" && (
+        <ExposureSourcesTab
+          sources={dashboard?.sources ?? []}
+          loading={overviewLoading && !dashboard}
+          error={tabError.sources ?? null}
+          onTest={(source) => void testSource(source)}
+          testBusy={sourceTestBusy}
+          testResult={sourceTestResult}
+        />
+      )}
 
       {tab === "settings" && dashboard ? (
         <div className="space-y-6">
           <section className="space-y-3">
-            <h2 className="text-base font-semibold">Fontes</h2>
+            <h2 className="text-base font-semibold">Empresas monitoradas</h2>
+            <p className="text-sm text-muted-foreground">{MULTIPLE_GROUP_NOTE}</p>
+            <p className="text-sm">{entities.length} empresa(s) ativa(s) no monitoramento.</p>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-base font-semibold">Monitoramento por fonte</h2>
             <ul className="space-y-2 text-sm">
               {dashboard.configuration.map((row) => (
                 <li key={row.source}>
-                  {row.source}: {row.configured ? "configurado" : "não configurado"}
-                  {row.enabled ? "" : " · desligado"}
+                  {SOURCE_LABELS[row.source as keyof typeof SOURCE_LABELS] ?? row.source}: {row.configured ? "configurado" : "não configurado"}
+                  {row.enabled ? "" : " · Desligado"}
                 </li>
               ))}
             </ul>
           </section>
           {companyActions.showEdit ? (
             <section className="space-y-4">
-              <h2 className="text-base font-semibold">Empresas monitoradas e aliases DJEN</h2>
+              <h2 className="text-base font-semibold">Aliases de descoberta</h2>
               {aliasError ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{aliasError}</p> : null}
               {entities.map((entity) => {
                 const draft = aliasDrafts[entity.id] ?? { value: "", type: "OTHER" as LegalAliasType };
@@ -734,6 +872,18 @@ export function ExposurePage() {
               })}
             </section>
           ) : null}
+          <section className="space-y-3">
+            <h2 className="text-base font-semibold">Configurações técnicas visíveis</h2>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              {dashboard.configuration.map((row) => (
+                <li key={`${row.source}-tech`}>
+                  {SOURCE_LABELS[row.source as keyof typeof SOURCE_LABELS] ?? row.source}:{" "}
+                  {row.enabled ? "habilitada" : "Desligado"} · {row.configured ? "credencial/config presente" : "sem configuração local"}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">Segredos e tokens não são exibidos nesta tela.</p>
+          </section>
         </div>
       ) : null}
 
@@ -952,6 +1102,15 @@ function EntityDialog({
   showSubmit?: boolean;
   children: React.ReactNode;
 }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    titleRef.current?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, saving]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <form
@@ -964,7 +1123,7 @@ function EntityDialog({
           onSubmit();
         }}
       >
-        <h3 id="exposure-entity-dialog-title" className="text-base font-semibold">
+        <h3 id="exposure-entity-dialog-title" ref={titleRef} tabIndex={-1} className="text-base font-semibold">
           {title}
         </h3>
         {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -998,175 +1157,20 @@ function MonitorToggle({ label, checked, onChange }: { label: string; checked: b
   );
 }
 
-function Card({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
+function Card({ label, value, onClick }: { label: string; value: number | string; onClick?: () => void }) {
+  const className = "rounded-xl border border-border bg-card p-4 text-left";
+  const body = (
+    <>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="text-2xl font-semibold">{value}</p>
-    </div>
+    </>
   );
-}
-
-function CertificatesPanel({
-  entities,
-  note,
-  rows,
-  onReload,
-}: {
-  entities: MonitoredEntity[];
-  note: string;
-  rows: Array<{
-    id: string;
-    entityId: string;
-    type: string;
-    tribunal: string | null;
-    result: string;
-    issuedAt: string | null;
-    validUntil: string | null;
-    verificationCode: string | null;
-    originalFileName: string | null;
-    notes: string | null;
-    registeredByUserId: string | null;
-    createdAt: string;
-  }>;
-  onReload: () => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [entityId, setEntityId] = useState(entities[0]?.id ?? "");
-  const [type, setType] = useState("CNDT");
-  const [result, setResult] = useState("NEGATIVE");
-  const [tribunal, setTribunal] = useState("");
-  const [notes, setNotes] = useState("");
-  return (
-    <div className="space-y-3 text-sm">
-      <p>{note}</p>
-      <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={() => setOpen(true)}>
-        + Registrar certidão
+  if (onClick) {
+    return (
+      <button type="button" className={`${className} hover:border-slate-400`} onClick={onClick}>
+        {body}
       </button>
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="min-w-full text-sm">
-          <thead className="bg-muted/40 text-left">
-            <tr>
-              <th className="px-3 py-2">Empresa</th>
-              <th className="px-3 py-2">Tipo</th>
-              <th className="px-3 py-2">Tribunal</th>
-              <th className="px-3 py-2">Resultado</th>
-              <th className="px-3 py-2">Emissão</th>
-              <th className="px-3 py-2">Validade</th>
-              <th className="px-3 py-2">Código</th>
-              <th className="px-3 py-2">Arquivo</th>
-              <th className="px-3 py-2">Observações</th>
-              <th className="px-3 py-2">Registrado por</th>
-              <th className="px-3 py-2">Cadastro</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t border-border">
-                <td className="px-3 py-2">{entities.find((entity) => entity.id === row.entityId)?.legalName ?? row.entityId}</td>
-                <td className="px-3 py-2">{row.type}</td>
-                <td className="px-3 py-2">{row.tribunal ?? "—"}</td>
-                <td className="px-3 py-2">{row.result}</td>
-                <td className="px-3 py-2">{row.issuedAt ?? "—"}</td>
-                <td className="px-3 py-2">{row.validUntil ?? "—"}</td>
-                <td className="px-3 py-2">{row.verificationCode ?? "—"}</td>
-                <td className="px-3 py-2">{row.originalFileName ?? "—"}</td>
-                <td className="px-3 py-2">{row.notes ?? "—"}</td>
-                <td className="px-3 py-2">{row.registeredByUserId ?? "—"}</td>
-                <td className="px-3 py-2">{row.createdAt}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {open ? (
-        <div className="rounded-xl border border-border p-3 space-y-2">
-          <select className="rounded border px-2 py-1" value={entityId} onChange={(event) => setEntityId(event.target.value)}>
-            {entities.map((entity) => (
-              <option key={entity.id} value={entity.id}>{entity.legalName}</option>
-            ))}
-          </select>
-          <select className="rounded border px-2 py-1" value={type} onChange={(event) => setType(event.target.value)}>
-            <option value="CNDT">CNDT</option>
-            <option value="TRT_LABOR_CASES">Certidão TRT</option>
-            <option value="OTHER">Outra</option>
-          </select>
-          <select className="rounded border px-2 py-1" value={result} onChange={(event) => setResult(event.target.value)}>
-            <option value="NEGATIVE">Negativa</option>
-            <option value="POSITIVE">Positiva</option>
-            <option value="UNKNOWN">Desconhecido</option>
-          </select>
-          <input className="rounded border px-2 py-1" placeholder="Tribunal" value={tribunal} onChange={(event) => setTribunal(event.target.value)} />
-          <input className="rounded border px-2 py-1" placeholder="Observações" value={notes} onChange={(event) => setNotes(event.target.value)} />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-white"
-              disabled={saving || !entityId}
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  await fetchJsonOk("/api/legal-exposure/certificates", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ entityId, type, result, tribunal, notes }),
-                  });
-                  setOpen(false);
-                  await onReload();
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              Salvar
-            </button>
-            <button type="button" className="underline" onClick={() => setOpen(false)}>Cancelar</button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SourceGrid({
-  sources,
-  certificates,
-}: {
-  sources: Dashboard["sources"];
-  certificates: Dashboard["certificates"];
-}) {
-  return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {sources.map((source) => (
-        <div key={source.source} className={`rounded-xl border p-3 text-sm ${statusClass(source.status)}`}>
-          <p className="font-semibold">{source.label}</p>
-          <p>{source.statusLabel}</p>
-          <p>Última consulta com sucesso: {formatExposureDateTime(source.lastSuccessfulAt) ?? "nunca"}</p>
-          <button
-            type="button"
-            className="mt-2 text-xs font-semibold underline"
-            onClick={() =>
-              void fetchJsonOk("/api/legal-exposure/sources/test", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ source: source.source }),
-              })
-            }
-          >
-            Testar conexão
-          </button>
-        </div>
-      ))}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-        <p className="font-semibold">Certidão TRT</p>
-        <p>Última emissão: {formatExposureDateTime(certificates.trt?.issuedAt) ?? "não registrada"}</p>
-      </div>
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-        <p className="font-semibold">CNDT</p>
-        <p>Última emissão: {formatExposureDateTime(certificates.cndt?.issuedAt) ?? "não registrada"}</p>
-        <p className="mt-1 text-xs">{CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
-      </div>
-    </div>
-  );
+    );
+  }
+  return <div className={className}>{body}</div>;
 }

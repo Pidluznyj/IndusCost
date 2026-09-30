@@ -12,8 +12,11 @@ import {
   CASE_HEARING_UNKNOWN_COPY,
   CASE_POLE_UNCONFIRMED_COPY,
   CASE_STAGE_UNKNOWN_COPY,
+  CASE_STATUS_UNKNOWN_COPY,
+  EXPOSURE_LOADING_COPY,
   LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
   MULTIPLE_GROUP_NOTE,
+  NO_CASES_FILTER_COPY,
   NO_CASES_IDENTIFIED_COPY,
   SOURCE_KIND_LABELS,
   SOURCE_LABELS,
@@ -68,6 +71,8 @@ type Props = {
   cases: Page<ExposureCaseListItem> | null;
   entities: ExposureCaseListEntityOption[];
   filters: ExposureCaseListFilters;
+  loading?: boolean;
+  error?: string | null;
   onFilterChange: (patch: Partial<ExposureCaseListFilters>) => void;
   onClearFilters: () => void;
   onPageChange: (page: number) => void;
@@ -98,6 +103,8 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
   const { item, onOpenCase } = props;
   const verified = item.verificationStatus === "CONFIRMED_OFFICIAL";
   const claimant = item.claimants[0];
+  const groupNames = item.groupEntities.map((entity) => entity.legalName).join(", ");
+  const where = [item.courtUnit, item.tribunal, item.jurisdiction].filter(Boolean).join(" · ");
   return (
     <article className="rounded-xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -112,15 +119,26 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
           {caseVerificationLabel(item.verificationStatus)}
         </span>
       </div>
+      <p className="mt-2 text-base font-medium">
+        {claimant?.name ?? CASE_CLAIMANT_UNKNOWN_COPY}
+        {" × "}
+        {groupNames || "empresa do grupo não identificada"}
+      </p>
+      <p className="mt-1 text-lg font-semibold">{item.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
+      <p className="text-sm text-muted-foreground">
+        {caseFiledAtLabel(item.filedAt)}
+        {where ? ` · ${where}` : ""}
+      </p>
+      <p className="text-sm">
+        {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}
+        {" · "}
+        {item.currentStatus?.trim() || CASE_STATUS_UNKNOWN_COPY}
+      </p>
       {item.groupEntities.length > 1 ? (
         <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {item.groupEntities.length} empresas do grupo neste processo
         </p>
       ) : null}
-      <p className="mt-1 text-sm">
-        {[item.jurisdiction, item.tribunal].filter(Boolean).join(" · ") || "Tribunal não informado"}
-      </p>
-      <p className="text-sm text-muted-foreground">{item.courtUnit || "Vara não informada"}</p>
 
       <div className="mt-3 space-y-1 text-sm">
         <p className="text-xs font-semibold uppercase text-muted-foreground">Empresas do grupo</p>
@@ -132,19 +150,15 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
             </span>
           ))}
         </div>
-        <p className="text-xs font-semibold uppercase text-muted-foreground">Reclamante</p>
-        <p>{claimant ? `${claimant.name}${claimant.partyType ? ` · ${claimant.partyType}` : ""}` : CASE_CLAIMANT_UNKNOWN_COPY}</p>
         <p>Classe: {item.className ?? CASE_CLASS_UNKNOWN_COPY}</p>
-        <p>Valor da causa: {item.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
         <p>
           {CASE_FILED_AT_LABEL}: {caseFiledAtLabel(item.filedAt)}
         </p>
-        <p>Fase: {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}</p>
         <p>Última movimentação: {caseMovementLabel(item.latestMovement)}</p>
         <p>
           Próximo evento:{" "}
           {item.nextHearing
-            ? `${formatExposureDateTime(item.nextHearing.scheduledAt) ?? item.nextHearing.scheduledAt} · ${item.nextHearing.type ?? "Audiência"}`
+            ? `${formatExposureDateTime(item.nextHearing.scheduledAt) ?? "data não informada"} · ${item.nextHearing.type ?? "Audiência"}`
             : CASE_HEARING_UNKNOWN_COPY}
         </p>
         <p>
@@ -187,6 +201,8 @@ export function ExposureCaseList({
   cases,
   entities,
   filters,
+  loading,
+  error,
   onFilterChange,
   onClearFilters,
   onPageChange,
@@ -197,6 +213,19 @@ export function ExposureCaseList({
   const pageSize = cases?.pageSize ?? LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const showPagination = total > pageSize;
+  const hasActiveFilter = Boolean(
+    filters.q.trim() ||
+      filters.entityId ||
+      filters.tribunal.trim() ||
+      filters.source ||
+      filters.verification ||
+      filters.enrichment ||
+      filters.pole ||
+      filters.stage ||
+      filters.hasHearing ||
+      filters.hasRequiredAction ||
+      filters.multipleGroup
+  );
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">{ABSENCE_IS_NOT_CLEARANCE_COPY}</p>
@@ -325,10 +354,20 @@ export function ExposureCaseList({
         </div>
       </div>
 
-      {(cases?.items ?? []).length === 0 ? <p className="text-sm">{NO_CASES_IDENTIFIED_COPY}</p> : null}
-      {(cases?.items ?? []).map((item) => (
-        <CaseCard key={item.id} item={item} onOpenCase={onOpenCase} />
-      ))}
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
+      {!loading && (cases?.items ?? []).length === 0 ? (
+        <p className="text-sm">{hasActiveFilter ? NO_CASES_FILTER_COPY : NO_CASES_IDENTIFIED_COPY}</p>
+      ) : null}
+      {!loading
+        ? (cases?.items ?? []).map((item) => (
+            <CaseCard key={item.id} item={item} onOpenCase={onOpenCase} />
+          ))
+        : null}
 
       {showPagination ? (
         <div className="flex flex-wrap items-center justify-between gap-2">

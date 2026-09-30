@@ -58,6 +58,7 @@ function queryOf(req: express.Request) {
     claimMin: text("claimMin"),
     claimMax: text("claimMax"),
     timelineKind: text("timelineKind"),
+    communicationType: text("communicationType"),
     page: q.page,
     pageSize: q.pageSize,
   };

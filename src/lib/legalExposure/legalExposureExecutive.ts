@@ -22,7 +22,7 @@ import {
 } from "./legalExposureContracts.js";
 import { formatProcessNumber, normalizeLegalName } from "./legalExposureNormalization.js";
 import { maskPartyDocument } from "./legalExposurePrivacy.js";
-import { movementComplementsText } from "./legalExposureFeedUi.js";
+import { eventDetail, eventTypeLabel, movementComplementsText } from "./legalExposureFeedUi.js";
 import {
   displayProcessClass,
   enrichmentStatusOf,
@@ -62,6 +62,7 @@ export type ExposureListQuery = {
   claimMin?: string | number | null;
   claimMax?: string | number | null;
   timelineKind?: string | null;
+  communicationType?: string | null;
   page?: unknown;
   pageSize?: unknown;
 };
@@ -233,9 +234,9 @@ function mergeHearings(rows: ExposureHearingRecord[]): ExposureExecutiveHearing[
 function formatClaim(value: string | null, currency: string | null): string | null {
   if (!value) return null;
   const amount = Number(value);
-  if (!Number.isFinite(amount)) return value;
+  if (!Number.isFinite(amount) || amount <= 0) return null;
   if (!currency || currency === "BRL") return formatCurrencyBrl(amount);
-  return `${currency} ${value}`;
+  return `${currency} ${amount.toLocaleString("pt-BR")}`;
 }
 
 function daysAgo(iso: string | null, now: Date): number | null {
@@ -529,8 +530,8 @@ export function buildGroupedCaseTimeline(
   const events = collectForCases(indexes.eventsByCase, caseIds).map((row) => ({
     kind: "event" as const,
     at: row.detectedAt,
-    title: row.eventType,
-    description: null,
+    title: eventTypeLabel(row.eventType),
+    description: eventDetail(row.eventType, row.payload),
     source: row.source,
     sourceCode: null,
     courtUnit: null,
@@ -662,8 +663,21 @@ export function buildExposureProcessDossier(
     groupNote: item.multipleGroupEntities ? MULTIPLE_GROUP_NOTE : null,
     parties: {
       active: item.claimants,
+      group: item.groupEntities,
       passiveGroup: item.groupEntities.filter((row) => row.pole === "PASSIVE"),
       passiveOthers: item.otherDefendants,
+      thirdParties: collectForCases(indexes.partiesByCase, item.caseIds)
+        .filter((row) => row.pole === "THIRD_PARTY")
+        .map((row) => ({
+          name: row.name,
+          partyType: row.partyType,
+          pole: row.pole,
+          personType: row.personType,
+          documentMasked: maskPartyDocument({ document: row.documentNormalized, personType: row.personType }),
+          isGroupEntity: Boolean(row.documentNormalized && memory.entities.some((entity) => entity.cnpj.replace(/\D/g, "") === row.documentNormalized)),
+          entityId: null,
+          sources: [row.source],
+        })),
       attorneys: item.attorneys,
     },
     timeline: timeline.items,

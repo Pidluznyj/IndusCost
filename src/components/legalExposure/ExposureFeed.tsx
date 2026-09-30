@@ -4,9 +4,14 @@
  * de qual processo/empresa, quando e o que fazer. Sem código bruto na tela.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import {
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
+  EXPOSURE_LOADING_COPY,
+  NO_ACTION_REQUIRED_COPY,
+  NO_CERTIFICATES_COPY,
+  NO_COMMUNICATIONS_FILTER_COPY,
+  NO_TIMELINE_EVENTS_COPY,
   OFFICIAL_COMMUNICATIONS_PORTAL_URL,
   SOURCE_LABELS,
   type LegalCertificateResult,
@@ -111,6 +116,8 @@ export type ExposureCertificateItem = {
   verificationCode: string | null;
   originalFileName: string | null;
   notes: string | null;
+  registeredByUserId?: string | null;
+  createdAt?: string;
 };
 
 export type ExposureSourceItem = {
@@ -120,7 +127,27 @@ export type ExposureSourceItem = {
   statusLabel: string;
   lastSuccessfulAt: string | null;
   lastAttemptAt?: string | null;
+  lastErrorCode?: string | null;
+  enabled?: boolean;
   healthy: boolean;
+};
+
+export type ExposureCommunicationFilters = {
+  entityId: string;
+  q: string;
+  communicationType: string;
+  status: string;
+  tribunal: string;
+  source: string;
+};
+
+export const EMPTY_COMMUNICATION_FILTERS: ExposureCommunicationFilters = {
+  entityId: "",
+  q: "",
+  communicationType: "",
+  status: "",
+  tribunal: "",
+  source: "",
 };
 
 const SEVERITY_CLASS: Record<LegalExposureSeverity, string> = {
@@ -203,6 +230,9 @@ export function ExposureAlertsTab({
   alerts,
   canManage,
   busy,
+  busyId,
+  loading,
+  error,
   onOpenCase,
   onAcknowledge,
   onResolve,
@@ -210,6 +240,9 @@ export function ExposureAlertsTab({
   alerts: ExposureAlertItem[] | null;
   canManage: boolean;
   busy: boolean;
+  busyId?: string | null;
+  loading?: boolean;
+  error?: string | null;
   onOpenCase: (caseId: string) => void;
   onAcknowledge: (alertId: string) => void;
   onResolve: (alertId: string) => void;
@@ -220,51 +253,167 @@ export function ExposureAlertsTab({
       <p className="text-sm text-muted-foreground">
         Cada item abaixo pede uma providência humana. Dar ciência aqui não substitui a ciência no portal oficial.
       </p>
-      {alerts && items.length === 0 ? <EmptyState text="Nenhuma ação requerida em aberto." /> : null}
-      {items.map((item) => (
-        <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-alert">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Chip className={SEVERITY_CLASS[item.severity]}>{SEVERITY_LABELS[item.severity]}</Chip>
-              <Chip>{ALERT_STATUS_LABELS[item.status]}</Chip>
-              {item.source ? <Chip>{sourceLabel(item.source)}</Chip> : null}
-            </div>
-            <p className="text-xs text-muted-foreground">Detectado em {formatExposureDateTime(item.createdAt) ?? "—"}</p>
-          </div>
-          <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
-          <p className="text-sm text-muted-foreground">{item.summary}</p>
-          {item.detail ? <p className="mt-1 text-sm">{item.detail}</p> : null}
-          <div className="mt-3 border-t border-border pt-3">
-            <ReferenceLine reference={item.reference} onOpenCase={onOpenCase} />
-          </div>
-          {canManage ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {item.status === "OPEN" ? (
-                <button type="button" disabled={busy} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold disabled:opacity-60" onClick={() => onAcknowledge(item.id)}>
-                  Marcar como ciente
-                </button>
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
+      {!loading && alerts && items.length === 0 ? <EmptyState text={NO_ACTION_REQUIRED_COPY} /> : null}
+      {!loading
+        ? items.map((item) => (
+            <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-alert">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip className={SEVERITY_CLASS[item.severity]}>{SEVERITY_LABELS[item.severity]}</Chip>
+                  <Chip>{ALERT_STATUS_LABELS[item.status]}</Chip>
+                  {item.source ? <Chip>{sourceLabel(item.source)}</Chip> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">Detectado em {formatExposureDateTime(item.createdAt) ?? "—"}</p>
+              </div>
+              <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
+              <p className="text-sm text-muted-foreground">{item.summary}</p>
+              {item.detail ? <p className="mt-1 text-sm">{item.detail}</p> : null}
+              <div className="mt-3 border-t border-border pt-3">
+                <ReferenceLine reference={item.reference} onOpenCase={onOpenCase} />
+              </div>
+              {canManage ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {item.status === "OPEN" ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold disabled:opacity-60"
+                      onClick={() => onAcknowledge(item.id)}
+                    >
+                      {busyId === item.id && busy ? "Reconhecendo..." : "Reconhecer"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                    onClick={() => onResolve(item.id)}
+                  >
+                    {busyId === item.id && busy ? "Resolvendo..." : "Resolver"}
+                  </button>
+                </div>
               ) : null}
-              <button type="button" disabled={busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" onClick={() => onResolve(item.id)}>
-                Marcar como resolvido
-              </button>
-            </div>
-          ) : null}
-        </article>
-      ))}
+            </article>
+          ))
+        : null}
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- Comunicações */
 
-export function ExposureCommunicationsTab({ communications, onOpenCase }: { communications: ExposureCommunicationItem[] | null; onOpenCase: (caseId: string) => void }) {
+export function ExposureCommunicationsTab({
+  communications,
+  entities,
+  filters,
+  loading,
+  error,
+  onFilterChange,
+  onOpenCase,
+}: {
+  communications: ExposureCommunicationItem[] | null;
+  entities: Array<{ id: string; legalName: string }>;
+  filters: ExposureCommunicationFilters;
+  loading?: boolean;
+  error?: string | null;
+  onFilterChange: (patch: Partial<ExposureCommunicationFilters>) => void;
+  onOpenCase: (caseId: string) => void;
+}) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
         Citações, intimações e demais comunicações oficiais detectadas. A ciência válida é a registrada no portal oficial.
       </p>
-      {communications && communications.length === 0 ? <EmptyState text="Nenhuma comunicação detectada nas fontes consultadas." /> : null}
-      {(communications ?? []).map((item) => (
+      <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-card p-3">
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Empresa
+          <select
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.entityId}
+            onChange={(event) => onFilterChange({ entityId: event.target.value })}
+          >
+            <option value="">Todas</option>
+            {entities.map((entity) => (
+              <option key={entity.id} value={entity.id}>
+                {entity.legalName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          CNJ
+          <input
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.q}
+            onChange={(event) => onFilterChange({ q: event.target.value })}
+          />
+        </label>
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Tipo
+          <select
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.communicationType}
+            onChange={(event) => onFilterChange({ communicationType: event.target.value })}
+          >
+            <option value="">Todos</option>
+            <option value="CITATION">Citação</option>
+            <option value="INTIMATION">Intimação</option>
+            <option value="HEARING">Audiência</option>
+            <option value="DECISION">Decisão</option>
+            <option value="OTHER">Outra</option>
+          </select>
+        </label>
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Status
+          <select
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.status}
+            onChange={(event) => onFilterChange({ status: event.target.value })}
+          >
+            <option value="">Todos</option>
+            <option value="PENDING">Pendente de ciência</option>
+            <option value="ACKNOWLEDGED">Ciência registrada</option>
+            <option value="EXPIRED">Prazo expirado</option>
+            <option value="CANCELED">Cancelada</option>
+          </select>
+        </label>
+        <label className="flex min-w-[8rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Tribunal
+          <input
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.tribunal}
+            onChange={(event) => onFilterChange({ tribunal: event.target.value })}
+          />
+        </label>
+        <label className="flex min-w-[8rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Fonte
+          <select
+            className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+            value={filters.source}
+            onChange={(event) => onFilterChange({ source: event.target.value })}
+          >
+            <option value="">Todas</option>
+            <option value="DJEN">DJEN</option>
+            <option value="DOMICILIO">Domicílio</option>
+            <option value="DATAJUD">DataJud</option>
+          </select>
+        </label>
+      </div>
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
+      {!loading && communications && communications.length === 0 ? <EmptyState text={NO_COMMUNICATIONS_FILTER_COPY} /> : null}
+      {!loading
+        ? (communications ?? []).map((item) => (
         <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-communication">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -278,6 +427,7 @@ export function ExposureCommunicationsTab({ communications, onOpenCase }: { comm
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <ReferenceLine reference={item.reference} onOpenCase={onOpenCase} />
             <div className="space-y-1">
+              <Fact label="Órgão" value={[item.tribunal, item.courtUnit].filter(Boolean).join(" · ") || "não informado"} />
               <Fact label="Disponibilizada pela fonte" value={formatExposureDateTime(item.availableAt) ?? "não informada pela fonte"} />
               <Fact label="Prazo de ciência" value={formatExposureDateTime(item.scienceDeadlineAt) ?? "não informado pela fonte"} />
               <Fact label="Situação na fonte" value={item.sourceStatus || "não informada"} muted />
@@ -289,7 +439,8 @@ export function ExposureCommunicationsTab({ communications, onOpenCase }: { comm
             </a>
           </div>
         </article>
-      ))}
+          ))
+        : null}
     </div>
   );
 }
@@ -304,7 +455,7 @@ const TimelineEntry: React.FC<{ item: ExposureTimelineItem }> = ({ item }) => {
       <p className="text-xs text-muted-foreground">
         <span className="font-semibold uppercase tracking-wide text-slate-600">{KIND_LABELS[item.kind]}</span>
         {" · "}
-        {AT_KIND_LABELS[item.atKind]} {formatExposureDateTime(item.at) ?? item.at}
+        {AT_KIND_LABELS[item.atKind]} {formatExposureDateTime(item.at) ?? "data não informada"}
         {" · "}
         {sourceLabel(item.source)}
       </p>
@@ -354,7 +505,7 @@ export function ExposureTimelineTab({
             <Fact label="Situação" value={caseStatusLabel(legalCase.currentStatus)} />
           </div>
         </section>
-        {timeline && timeline.length === 0 ? <EmptyState text="Nenhuma movimentação ou comunicação registrada para este processo." /> : null}
+        {timeline && timeline.length === 0 ? <EmptyState text={NO_TIMELINE_EVENTS_COPY} /> : null}
         {timeline && timeline.length > 0 ? (
           <ol className="space-y-4 border-l border-border pl-3">
             {timeline.map((item, index) => (
@@ -397,50 +548,248 @@ export function ExposureTimelineTab({
 export function ExposureCertificatesTab({
   certificates,
   entities,
+  note,
+  loading,
+  error,
+  canManage,
+  onRegister,
 }: {
   certificates: ExposureCertificateItem[] | null;
   entities: Array<{ id: string; legalName: string; cnpj: string }>;
+  note: string;
+  loading?: boolean;
+  error?: string | null;
+  canManage: boolean;
+  onRegister: (body: {
+    entityId: string;
+    type: LegalCertificateType;
+    result: LegalCertificateResult;
+    tribunal: string;
+    notes: string;
+    issuedAt: string;
+    validUntil: string;
+    originalFileName: string | null;
+    contentBase64: string | null;
+  }) => Promise<void>;
 }) {
+  const [entityFilter, setEntityFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [resultFilter, setResultFilter] = useState("");
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [entityId, setEntityId] = useState(entities[0]?.id ?? "");
+  const [type, setType] = useState<LegalCertificateType>("CNDT");
+  const [result, setResult] = useState<LegalCertificateResult>("NEGATIVE");
+  const [tribunal, setTribunal] = useState("");
+  const [notes, setNotes] = useState("");
+  const [issuedAt, setIssuedAt] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileBase64, setFileBase64] = useState<string | null>(null);
   const entityName = (id: string) => entities.find((entity) => entity.id === id)?.legalName ?? "Empresa não identificada";
-  const resultClass = (result: LegalCertificateResult) =>
-    result === "NEGATIVE"
+  const resultClass = (value: LegalCertificateResult) =>
+    value === "NEGATIVE"
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : result === "POSITIVE"
+      : value === "POSITIVE"
         ? "border-red-200 bg-red-50 text-red-800"
-        : result === "POSITIVE_WITH_EFFECTS_OF_NEGATIVE"
+        : value === "POSITIVE_WITH_EFFECTS_OF_NEGATIVE"
           ? "border-amber-200 bg-amber-50 text-amber-900"
           : "border-slate-200 bg-slate-50 text-slate-700";
-  const expired = (validUntil: string | null) => Boolean(validUntil && Date.parse(validUntil) < Date.now());
+  const expired = (value: string | null) => Boolean(value && Date.parse(value) < Date.now());
+  const rows = (certificates ?? []).filter((row) => {
+    if (entityFilter && row.entityId !== entityFilter) return false;
+    if (typeFilter && row.type !== typeFilter) return false;
+    if (resultFilter && row.result !== resultFilter) return false;
+    return true;
+  });
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">{CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
-      {certificates && certificates.length === 0 ? <EmptyState text="Nenhuma certidão registrada. Registre a certidão emitida no portal do tribunal para acompanhar a validade." /> : null}
-      {(certificates ?? []).map((item) => (
-        <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-certificate">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Chip className={resultClass(item.result)}>{CERTIFICATE_RESULT_LABELS[item.result]}</Chip>
-              {expired(item.validUntil) ? <Chip className="border-red-200 bg-red-50 text-red-800">Validade vencida</Chip> : null}
-            </div>
-            <p className="text-xs text-muted-foreground">Emitida em {formatExposureDate(item.issuedAt) ?? "data não informada"}</p>
+      <p className="text-sm text-muted-foreground">{note || CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
+      <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-card p-3">
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Empresa
+          <select className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm" value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
+            <option value="">Todas</option>
+            {entities.map((entity) => (
+              <option key={entity.id} value={entity.id}>{entity.legalName}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Tipo
+          <select className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <option value="">Todos</option>
+            <option value="CNDT">CNDT</option>
+            <option value="TRT_LABOR_CASES">Certidão TRT</option>
+            <option value="OTHER">Outra</option>
+          </select>
+        </label>
+        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Resultado
+          <select className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm" value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}>
+            <option value="">Todos</option>
+            <option value="NEGATIVE">Negativa</option>
+            <option value="POSITIVE">Positiva</option>
+            <option value="POSITIVE_WITH_EFFECTS_OF_NEGATIVE">Positiva com efeitos de negativa</option>
+            <option value="UNKNOWN">Não informado</option>
+          </select>
+        </label>
+      </div>
+      {canManage ? (
+        <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={() => setOpen(true)}>
+          + Registrar certidão
+        </button>
+      ) : null}
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
+      {!loading && certificates && rows.length === 0 ? <EmptyState text={NO_CERTIFICATES_COPY} /> : null}
+      {!loading
+        ? rows.map((item) => (
+            <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-certificate">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip className={resultClass(item.result)}>{CERTIFICATE_RESULT_LABELS[item.result]}</Chip>
+                  {expired(item.validUntil) ? <Chip className="border-red-200 bg-red-50 text-red-800">Validade vencida</Chip> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">Emitida em {formatExposureDate(item.issuedAt) ?? "data não informada"}</p>
+              </div>
+              <h3 className="mt-2 text-base font-semibold">{CERTIFICATE_TYPE_LABELS[item.type]}</h3>
+              <p className="text-sm">{entityName(item.entityId)}</p>
+              <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+                <Fact label="Válida até" value={formatExposureDate(item.validUntil) ?? "não informada"} />
+                <Fact label="Tribunal" value={item.tribunal ?? "não informado"} />
+                <Fact label="Arquivo" value={item.originalFileName ?? "não anexado"} />
+                <Fact label="Registrado por" value={item.registeredByUserId ?? "não informado"} />
+                <Fact label="Cadastro" value={formatExposureDateTime(item.createdAt ?? null) ?? "não informado"} />
+                <Fact label="Código de verificação" value={item.verificationCode ?? "não informado"} />
+              </div>
+              {item.type === "CNDT" && item.result === "NEGATIVE" ? (
+                <p className="mt-2 text-xs text-muted-foreground">{CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
+              ) : null}
+              {item.notes ? <p className="mt-2 text-sm text-muted-foreground">{item.notes}</p> : null}
+            </article>
+          ))
+        : null}
+      {open ? (
+        <form
+          className="space-y-2 rounded-xl border border-border p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!entityId) return;
+            setSaving(true);
+            void onRegister({
+              entityId,
+              type,
+              result,
+              tribunal,
+              notes,
+              issuedAt,
+              validUntil,
+              originalFileName: fileName,
+              contentBase64: fileBase64,
+            }).finally(() => {
+              setSaving(false);
+              setOpen(false);
+            });
+          }}
+        >
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Empresa
+            <select className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={entityId} onChange={(event) => setEntityId(event.target.value)}>
+              {entities.map((entity) => (
+                <option key={entity.id} value={entity.id}>{entity.legalName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tipo
+            <select className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={type} onChange={(event) => setType(event.target.value as LegalCertificateType)}>
+              <option value="CNDT">CNDT</option>
+              <option value="TRT_LABOR_CASES">Certidão TRT</option>
+              <option value="OTHER">Outra</option>
+            </select>
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Resultado
+            <select className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={result} onChange={(event) => setResult(event.target.value as LegalCertificateResult)}>
+              <option value="NEGATIVE">Negativa</option>
+              <option value="POSITIVE">Positiva</option>
+              <option value="POSITIVE_WITH_EFFECTS_OF_NEGATIVE">Positiva com efeitos de negativa</option>
+              <option value="UNKNOWN">Desconhecido</option>
+            </select>
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tribunal
+            <input className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={tribunal} onChange={(event) => setTribunal(event.target.value)} />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Emissão
+            <input type="date" className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={issuedAt} onChange={(event) => setIssuedAt(event.target.value)} />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Validade
+            <input type="date" className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Arquivo
+            <input
+              type="file"
+              className="mt-1 block w-full text-sm font-normal normal-case"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) {
+                  setFileName(null);
+                  setFileBase64(null);
+                  return;
+                }
+                setFileName(file.name);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const value = String(reader.result ?? "");
+                  const base64 = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
+                  setFileBase64(base64);
+                };
+                reader.readAsDataURL(file);
+              }}
+            />
+          </label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Observações
+            <input className="mt-1 w-full rounded border px-2 py-1 text-sm font-normal normal-case" value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-3 py-1.5 text-white" disabled={saving || !entityId}>
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+            <button type="button" className="underline" onClick={() => setOpen(false)}>Cancelar</button>
           </div>
-          <h3 className="mt-2 text-base font-semibold">{CERTIFICATE_TYPE_LABELS[item.type]}</h3>
-          <p className="text-sm">{entityName(item.entityId)}</p>
-          <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
-            <Fact label="Válida até" value={formatExposureDate(item.validUntil) ?? "não informada"} />
-            <Fact label="Tribunal" value={item.tribunal ?? "não informado"} />
-            <Fact label="Código de verificação" value={item.verificationCode ?? "não informado"} />
-          </div>
-          {item.notes ? <p className="mt-2 text-sm text-muted-foreground">{item.notes}</p> : null}
-        </article>
-      ))}
+        </form>
+      ) : null}
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- Fontes */
 
-export function ExposureSourcesTab({ sources }: { sources: ExposureSourceItem[] }) {
+export function ExposureSourcesTab({
+  sources,
+  loading,
+  error,
+  onTest,
+  testBusy,
+  testResult,
+}: {
+  sources: ExposureSourceItem[];
+  loading?: boolean;
+  error?: string | null;
+  onTest: (source: string) => void;
+  testBusy?: string | null;
+  testResult?: { source: string; message: string } | null;
+}) {
   const tone = (status: LegalSourceConnectionStatus) =>
     status === "HEALTHY"
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -452,6 +801,12 @@ export function ExposureSourcesTab({ sources }: { sources: ExposureSourceItem[] 
       <p className="text-sm text-muted-foreground">
         Situação de cada fonte consultada. Uma fonte parada ou desatualizada não sustenta ausência de exposição.
       </p>
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         {sources.map((source) => (
           <article key={source.source} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-source">
@@ -461,9 +816,22 @@ export function ExposureSourcesTab({ sources }: { sources: ExposureSourceItem[] 
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{SOURCE_STATUS_HINTS[source.status]}</p>
             <div className="mt-3 space-y-1">
+              <Fact label="Configuração" value={source.enabled === false ? "Desligado" : "Habilitada na empresa/fonte"} />
               <Fact label="Última consulta com sucesso" value={formatExposureDateTime(source.lastSuccessfulAt) ?? "nunca"} />
               <Fact label="Última tentativa" value={formatExposureDateTime(source.lastAttemptAt ?? null) ?? "nunca"} />
+              {source.status !== "DISABLED" && source.status !== "NOT_CONFIGURED" && source.lastErrorCode ? (
+                <Fact label="Erro atual" value={source.lastErrorCode} />
+              ) : null}
             </div>
+            <button
+              type="button"
+              className="mt-3 text-sm font-semibold underline"
+              disabled={testBusy === source.source}
+              onClick={() => onTest(source.source)}
+            >
+              {testBusy === source.source ? "Testando..." : "Testar conexão"}
+            </button>
+            {testResult?.source === source.source ? <p className="mt-1 text-xs text-muted-foreground">{testResult.message}</p> : null}
           </article>
         ))}
       </div>

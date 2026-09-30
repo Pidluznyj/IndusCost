@@ -118,6 +118,7 @@ describe("ExposureCaseList", () => {
     assert.ok(html.includes(CASE_POLE_PASSIVE_COPY));
     assert.equal(html.includes("polo UNKNOWN"), false);
     assert.ok(html.includes("Maria Exemplo"));
+    assert.ok(html.includes("×"));
     assert.ok(html.includes("Ver processo"));
     assert.ok(html.includes("Limpar filtros"));
     assert.ok(html.includes("Empresa"));
@@ -262,7 +263,79 @@ describe("ExposureCaseDossier", () => {
     assert.ok(html.includes("Fontes"));
     assert.ok(html.includes("Gerar PDF"));
     assert.ok(html.includes("Maria Exemplo"));
+    assert.ok(html.includes('role="dialog"'));
     assert.equal(html.includes("12345678909"), false);
+  });
+
+  it("partes e timeline do dossiê usam rótulos gerenciais", () => {
+    const html = renderToStaticMarkup(
+      <ExposureCaseDossier
+        dossier={{
+          ...item(),
+          parties: {
+            active: item().claimants,
+            group: item().groupEntities,
+            passiveGroup: item().groupEntities,
+            passiveOthers: [{ name: "Outro Reu", partyType: "RECLAMADA", pole: "PASSIVE", personType: "ORGANIZATION", documentMasked: "**.***.***/****-00", isGroupEntity: false, entityId: null, sources: ["DATAJUD"] }],
+            thirdParties: [{ name: "Terceiro Teste", partyType: "TERCEIRO", pole: "THIRD_PARTY", personType: "PERSON", documentMasked: "***.***.***-00", isGroupEntity: false, entityId: null, sources: ["DATAJUD"] }],
+            attorneys: [{ name: "Advogado Teste", oabNumber: "12345", oabState: "PR", representedPartyName: null, documentMasked: null, sources: ["ESCAVADOR"] }],
+          },
+          timeline: [
+            {
+              kind: "movement",
+              at: "2026-09-30T10:00:00.000Z",
+              title: "Distribuído",
+              description: null,
+              source: "DATAJUD",
+              sourceCode: "123",
+              courtUnit: "09ª VARA",
+              complements: [],
+              communicationType: null,
+              subject: null,
+              status: null,
+            },
+          ],
+          communications: [],
+        }}
+        initialTab="partes"
+        onClose={() => {}}
+        onRefresh={() => {}}
+        onPdf={() => {}}
+      />
+    );
+    assert.ok(html.includes("EMPRESA DO GRUPO"));
+    assert.ok(html.includes("Terceiros"));
+    assert.ok(html.includes("Terceiro Teste"));
+    assert.ok(html.includes("Outro Reu"));
+    assert.equal(html.includes("12345678909"), false);
+    const timelineHtml = renderToStaticMarkup(
+      <ExposureCaseDossier
+        dossier={{
+          ...item(),
+          timeline: [
+            {
+              kind: "movement",
+              at: "2026-09-30T10:00:00.000Z",
+              title: "Distribuído",
+              description: "detalhe recolhível",
+              source: "DATAJUD",
+              sourceCode: "123",
+              courtUnit: "09ª VARA",
+              complements: [],
+              communicationType: null,
+              subject: null,
+              status: null,
+            },
+          ],
+        }}
+        initialTab="timeline"
+        onClose={() => {}}
+        onRefresh={() => {}}
+        onPdf={() => {}}
+      />
+    );
+    assert.ok(timelineHtml.includes("MOVIMENTAÇÃO"));
+    assert.ok(timelineHtml.includes("Ver detalhes"));
   });
 });
 
@@ -270,6 +343,9 @@ describe("ExposurePage cases tab", () => {
   it("não renderiza polo literal e usa a lista executiva", () => {
     const pageSrc = readFileSync(join(process.cwd(), "src/components/legalExposure/ExposurePage.tsx"), "utf8");
     assert.match(pageSrc, /ExposureCaseList/);
+    assert.match(pageSrc, /label: "Visão Geral"/);
+    assert.match(pageSrc, /label: "Ação Requerida"/);
+    assert.doesNotMatch(pageSrc, /label: "Linha do Tempo"/);
     assert.equal(pageSrc.includes("polo {item.entityPole}"), false);
     assert.equal(/legal-exposure\/cases\?page=1&pageSize=20/.test(pageSrc), false);
   });
